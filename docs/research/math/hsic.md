@@ -252,37 +252,35 @@ See [centered_kernel_alignment.md](centered_kernel_alignment.md) for details.
 
 ### Foundational
 
-1. **Gretton, A., Bousquet, O., Smola, A., & Schölkopf, B.** (2005). "Measuring Statistical Dependence with Hilbert-Schmidt Norms." *ALT 2005*.
+1. **Gretton, A., Bousquet, O., Smola, A., & Schölkopf, B.** (2005). "Measuring Statistical Dependence with Hilbert-Schmidt Norms." *ALT 2005*. [DOI:10.1007/11564089_7](https://doi.org/10.1007/11564089_7)
    - *Original HSIC definition*
 
-2. **Gretton, A., Fukumizu, K., Teo, C.H., Song, L., Schölkopf, B., & Smola, A.** (2008). "A Kernel Statistical Test of Independence." *NeurIPS 2008*.
+2. **Gretton, A., Fukumizu, K., Teo, C.H., Song, L., Schölkopf, B., & Smola, A.** (2008). "A Kernel Statistical Test of Independence." *NeurIPS 2008*. [Paper](https://proceedings.neurips.cc/paper/2007/hash/d5cfead94f5350c12c322b5b664544c1-Abstract.html)
    - *HSIC for independence testing*
 
-3. **Song, L., Smola, A., Gretton, A., Bedo, J., & Borgwardt, K.** (2012). "Feature Selection via Dependence Maximization." *JMLR*, 13, 1393-1434.
+3. **Song, L., Smola, A., Gretton, A., Bedo, J., & Borgwardt, K.** (2012). "Feature Selection via Dependence Maximization." *JMLR*, 13, 1393-1434. [JMLR](https://jmlr.org/papers/v13/song12a.html)
    - *HSIC for feature selection*
 
 ### Neural Network Applications
 
-4. **Kornblith, S., Norouzi, M., Lee, H., & Hinton, G.** (2019). "Similarity of Neural Network Representations Revisited." *ICML 2019*.
-   arXiv: 1905.00414
+4. **[Kornblith et al. (2019)](../../references/arxiv/Kornblith_2019_CKA_Neural_Similarity.pdf)**. "Similarity of Neural Network Representations Revisited." *ICML 2019*. [arXiv:1905.00414](https://arxiv.org/abs/1905.00414)
    - *CKA (normalized HSIC) for neural networks*
 
-5. **Nguyen, T., Raghu, M., & Kornblith, S.** (2021). "Do Wide and Deep Networks Learn the Same Things?" *ICLR 2021*.
+5. **Nguyen, T., Raghu, M., & Kornblith, S.** (2021). "Do Wide and Deep Networks Learn the Same Things?" *ICLR 2021*. [OpenReview](https://openreview.net/forum?id=KDhbMzEkZlk)
    - *CKA applications*
 
 ### 2024-2025 Advances
 
-6. **Murphy, D., et al.** (2024). "Debiased Similarity Measures for Neural Network Representations."
+6. **Murphy, D., et al.** (2024). "Debiased Similarity Measures for Neural Network Representations." [arXiv:2405.01012](https://arxiv.org/abs/2405.01012)
    - *Bias correction for HSIC/CKA*
 
-7. **Podsiadly, M., et al.** (2025). "HSIC-based objectives for self-supervised learning."
+7. **Podsiadly, M., et al.** (2025). "HSIC-based objectives for self-supervised learning." [arXiv](https://arxiv.org/search/?query=HSIC+self-supervised+learning&searchtype=all)
    - *Modern SSL applications*
 
-8. **Nature Scientific Reports** (2022). "A fast kernel independence test for cluster-correlated data."
-   DOI: 10.1038/s41598-022-26278-9
+8. **Nature Scientific Reports** (2022). "A fast kernel independence test for cluster-correlated data." [DOI:10.1038/s41598-022-26278-9](https://doi.org/10.1038/s41598-022-26278-9)
    - *HSIC for correlated data*
 
-9. **arXiv 2508.21815** (2025). "Achieving Hilbert-Schmidt Independence Under Rényi Differential Privacy."
+9. **arXiv 2508.21815** (2025). "Achieving Hilbert-Schmidt Independence Under Rényi Differential Privacy." [arXiv:2508.21815](https://arxiv.org/abs/2508.21815)
    - *Privacy-preserving HSIC*
 
 ---

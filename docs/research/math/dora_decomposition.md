@@ -226,30 +226,31 @@ Layer-wise adaptive low-rank adaptation:
 
 ### Primary Reference
 
-1. **Liu, S.-Y., Wang, C.-Y., Yin, H., Molchanov, P., Wang, Y.-C.F., Cheng, K.-T., & Chen, M.-H.** (2024). "DoRA: Weight-Decomposed Low-Rank Adaptation." *ICML 2024* (Oral, 1.5% acceptance rate).
-   arXiv: 2402.09353
+1. **Liu, S.-Y., Wang, C.-Y., Yin, H., Molchanov, P., Wang, Y.-C.F., Cheng, K.-T., & Chen, M.-H.** (2024). "DoRA: Weight-Decomposed Low-Rank Adaptation." *ICML 2024* (Oral, 1.5% acceptance rate). [arXiv:2402.09353](https://arxiv.org/abs/2402.09353)
    - *The foundational paper*
 
 ### Theoretical Foundation
 
-2. **Salimans, T., & Kingma, D.P.** (2016). "Weight Normalization: A Simple Reparameterization to Accelerate Training of Deep Neural Networks." *NeurIPS 2016*.
+2. **Salimans, T., & Kingma, D.P.** (2016). "Weight Normalization: A Simple Reparameterization to Accelerate Training of Deep Neural Networks." *NeurIPS 2016*. [arXiv:1602.07868](https://arxiv.org/abs/1602.07868)
    - *Weight normalization that inspired DoRA's decomposition*
+
+3. **[Hu et al. (2022)](../../references/arxiv/Hu_2022_LoRA_Low_Rank_Adaptation.pdf)**. "LoRA: Low-Rank Adaptation of Large Language Models." *ICLR 2022*. [arXiv:2106.09685](https://arxiv.org/abs/2106.09685)
+   - *Foundation for low-rank adaptation*
 
 ### Extensions
 
-3. **DoRAN** (2025). "Stabilizing Weight-Decomposed Low-Rank Adaptation via Noise Injection and Auxiliary Networks."
+4. **DoRAN** (2025). "Stabilizing Weight-Decomposed Low-Rank Adaptation via Noise Injection and Auxiliary Networks." [arXiv](https://arxiv.org/search/?query=DoRAN+weight+decomposed&searchtype=all)
    - *Training stability improvements*
 
-4. **MAP** (2025). "Revisiting Weight Decomposition for Low-Rank Adaptation."
+5. **MAP** (2025). "Revisiting Weight Decomposition for Low-Rank Adaptation." [arXiv](https://arxiv.org/search/?query=MAP+weight+decomposition+low-rank&searchtype=all)
    - *Refined decomposition analysis*
 
-5. **La-LoRA** (2025). "Parameter-efficient fine-tuning with layer-wise adaptive low-rank adaptation."
+6. **La-LoRA** (2025). "Parameter-efficient fine-tuning with layer-wise adaptive low-rank adaptation." [arXiv](https://arxiv.org/search/?query=layer-wise+adaptive+LoRA&searchtype=all)
    - *Layer-adaptive extension*
 
 ### Implementation
 
-6. **NVlabs/DoRA** (2024). Official PyTorch implementation.
-   GitHub: https://github.com/NVlabs/DoRA
+7. **NVlabs/DoRA** (2024). Official PyTorch implementation. [GitHub](https://github.com/NVlabs/DoRA)
    - *Reference implementation*
 
 ---

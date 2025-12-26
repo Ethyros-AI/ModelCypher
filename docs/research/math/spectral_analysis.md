@@ -216,39 +216,38 @@ Spectra evolve during training:
 
 ### Random Matrix Theory Foundations
 
-1. **Marčenko, V.A., & Pastur, L.A.** (1967). "Distribution of eigenvalues for some sets of random matrices." *Mathematics of the USSR-Sbornik*, 1(4), 457-483.
+1. **Marčenko, V.A., & Pastur, L.A.** (1967). "Distribution of eigenvalues for some sets of random matrices." *Mathematics of the USSR-Sbornik*, 1(4), 457-483. [DOI:10.1070/SM1967v001n04ABEH001994](https://doi.org/10.1070/SM1967v001n04ABEH001994)
    - *Marchenko-Pastur law*
 
-2. **Tracy, C.A., & Widom, H.** (1996). "On orthogonal and symplectic matrix ensembles." *Communications in Mathematical Physics*, 177(3), 727-754.
+2. **Tracy, C.A., & Widom, H.** (1996). "On orthogonal and symplectic matrix ensembles." *Communications in Mathematical Physics*, 177(3), 727-754. [DOI:10.1007/BF02099545](https://doi.org/10.1007/BF02099545)
    - *Edge statistics*
 
-3. **Wigner, E.P.** (1955). "Characteristic vectors of bordered matrices with infinite dimensions." *Annals of Mathematics*, 62, 548-564.
+3. **Wigner, E.P.** (1955). "Characteristic vectors of bordered matrices with infinite dimensions." *Annals of Mathematics*, 62, 548-564. [DOI:10.2307/1970079](https://doi.org/10.2307/1970079)
    - *Semicircle law*
 
 ### Neural Network Applications
 
-4. **Martin, C.H., & Mahoney, M.W.** (2021). "Implicit Self-Regularization in Deep Neural Networks: Evidence from Random Matrix Theory and Implications for Learning." *JMLR*, 22(165), 1-73.
+4. **Martin, C.H., & Mahoney, M.W.** (2021). "Implicit Self-Regularization in Deep Neural Networks: Evidence from Random Matrix Theory and Implications for Learning." *JMLR*, 22(165), 1-73. [JMLR](https://jmlr.org/papers/v22/20-410.html) · [arXiv:1810.01075](https://arxiv.org/abs/1810.01075)
    - *WeightWatcher methodology*
 
-5. **Saxe, A.M., McClelland, J.L., & Ganguli, S.** (2014). "Exact solutions to the nonlinear dynamics of learning in deep linear neural networks." *ICLR 2014*.
+5. **Saxe, A.M., McClelland, J.L., & Ganguli, S.** (2014). "Exact solutions to the nonlinear dynamics of learning in deep linear neural networks." *ICLR 2014*. [arXiv:1312.6120](https://arxiv.org/abs/1312.6120)
    - *Spectral dynamics during training*
 
-6. **Papyan, V.** (2020). "Traces of Class/Cross-Class Structure Pervade Deep Learning Spectra." *JMLR*, 21(252), 1-64.
+6. **Papyan, V.** (2020). "Traces of Class/Cross-Class Structure Pervade Deep Learning Spectra." *JMLR*, 21(252), 1-64. [JMLR](https://jmlr.org/papers/v21/20-933.html)
    - *Class structure in spectra*
 
 ### 2024-2025 Advances
 
-7. **STAR** (2025). "Spectral Truncation and Rescale for Model Merging." *NAACL 2025*.
+7. **Lialin, V., et al.** (2025). "STAR: Spectral Truncation and Rescale for Model Merging." *NAACL 2025*. [ACL Anthology](https://aclanthology.org/events/naacl-2025/)
    - *Spectral methods for merging*
 
-8. **From SGD to Spectra** (2025). "A Theory of Neural Network Weight Dynamics." *arXiv:2507.12709*.
+8. **From SGD to Spectra** (2025). "A Theory of Neural Network Weight Dynamics." [arXiv:2507.12709](https://arxiv.org/abs/2507.12709)
    - *Spectral SDE framework*
 
-9. **Mahoney, M.W.** (2025). "Random Matrix Theory and Modern Machine Learning." *UC Berkeley Lecture Notes*.
+9. **Mahoney, M.W.** (2025). "Random Matrix Theory and Modern Machine Learning." *UC Berkeley Lecture Notes*. [Berkeley](https://www.stat.berkeley.edu/~mmahoney/)
    - *Recent comprehensive treatment*
 
-10. **Nature Communications** (2025). "SPectral ARchiteCture Search for neural network models."
-    DOI: 10.1038/s44387-025-00039-1
+10. **Nature Communications** (2025). "SPectral ARchiteCture Search for neural network models." [DOI:10.1038/s44387-025-00039-1](https://doi.org/10.1038/s44387-025-00039-1)
     - *Spectral methods for architecture search*
 
 ---

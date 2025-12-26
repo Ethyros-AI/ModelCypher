@@ -164,35 +164,29 @@ Key findings:
 
 ### Primary Reference
 
-1. **Gargiulo, A.A., Crisostomi, D., Bucarelli, M.S., Scardapane, S., Silvestri, F., & Rodolà, E.** (2025). "Task Singular Vectors: Reducing Task Interference in Model Merging." *CVPR 2025*.
-   arXiv: 2412.00081
-   Paper: https://openaccess.thecvf.com/content/CVPR2025/papers/Gargiulo_Task_Singular_Vectors_Reducing_Task_Interference_in_Model_Merging_CVPR_2025_paper.pdf
+1. **Gargiulo, A.A., Crisostomi, D., Bucarelli, M.S., Scardapane, S., Silvestri, F., & Rodolà, E.** (2025). "Task Singular Vectors: Reducing Task Interference in Model Merging." *CVPR 2025*. [arXiv:2412.00081](https://arxiv.org/abs/2412.00081) · [CVPR Paper](https://openaccess.thecvf.com/content/CVPR2025/papers/Gargiulo_Task_Singular_Vectors_Reducing_Task_Interference_in_Model_Merging_CVPR_2025_paper.pdf)
    - *The foundational TSV paper*
 
 ### Related Model Merging
 
-2. **Ilharco, G., et al.** (2023). "Editing Models with Task Arithmetic." *ICLR 2023*.
-   arXiv: 2212.04089
+2. **[Ilharco et al. (2023)](../../references/arxiv/Ilharco_2023_Task_Arithmetic.pdf)**. "Editing Models with Task Arithmetic." *ICLR 2023*. [arXiv:2212.04089](https://arxiv.org/abs/2212.04089)
    - *Task vectors concept*
 
-3. **Yadav, P., et al.** (2024). "TIES-Merging: Resolving Interference When Merging Models." *NeurIPS 2023*.
-   arXiv: 2306.01708
+3. **[Yadav et al. (2023)](../../references/arxiv/Yadav_2023_TIES_Merging.pdf)**. "TIES-Merging: Resolving Interference When Merging Models." *NeurIPS 2023*. [arXiv:2306.01708](https://arxiv.org/abs/2306.01708)
    - *Ties-based merging baseline*
 
-4. **Yu, L., et al.** (2024). "DARE: Drop and Rescale for Model Merging." *ICML 2024*.
-   arXiv: 2311.03099
+4. **Yu, L., et al.** (2024). "DARE: Drop and Rescale for Model Merging." *ICML 2024*. [arXiv:2311.03099](https://arxiv.org/abs/2311.03099)
    - *Sparsification-based merging*
 
 ### SVD-Based Methods
 
-5. **Lialin, V., et al.** (2025). "STAR: Spectral Truncation and Rescale for Model Merging." *NAACL 2025*.
+5. **Lialin, V., et al.** (2025). "STAR: Spectral Truncation and Rescale for Model Merging." *NAACL 2025*. [ACL Anthology](https://aclanthology.org/)
    - *Adaptive rank truncation*
 
-6. **Panariello, A., et al.** (2025). "Accurate and Efficient Low-Rank Model Merging in Core Space." *arXiv*.
+6. **Panariello, A., et al.** (2025). "Accurate and Efficient Low-Rank Model Merging in Core Space." [arXiv](https://arxiv.org/search/?query=low-rank+model+merging+core+space&searchtype=all)
    - *Low-rank merging in aligned space*
 
-7. **Kim, J., et al.** (2025). "KnOTS: Model merging with SVD to tie the Knots." *ICLR 2025*.
-   arXiv: 2410.19735
+7. **Kim, J., et al.** (2025). "KnOTS: Model merging with SVD to tie the Knots." *ICLR 2025*. [arXiv:2410.19735](https://arxiv.org/abs/2410.19735)
    - *SVD for LoRA alignment*
 
 ---

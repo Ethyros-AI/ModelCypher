@@ -194,7 +194,7 @@ SLERP can be combined with TIES or DARE as a final merge step.
 
 ### Foundational
 
-1. **Shoemake, K.** (1985). "Animating Rotation with Quaternion Curves." *SIGGRAPH 1985*, Computer Graphics, 19(3), 245-254.
+1. **Shoemake, K.** (1985). "Animating Rotation with Quaternion Curves." *SIGGRAPH 1985*, Computer Graphics, 19(3), 245-254. [DOI:10.1145/325334.325242](https://doi.org/10.1145/325334.325242)
    - *Original SLERP formulation for quaternions*
 
 2. **Davis, G.** (attributed). Symmetric weighted sum formula for geometric SLERP.
@@ -202,23 +202,22 @@ SLERP can be combined with TIES or DARE as a final merge step.
 
 ### Neural Network Applications
 
-3. **Kao, W.-C., Gur, I., Polymenakos, E., Bansal, K., & Ravi, S.** (2023). "SLERP: Spherical Linear Interpolation between Neural Networks." *arXiv preprint arXiv:2305.17493*.
+3. **Kao, W.-C., Gur, I., Polymenakos, E., Bansal, K., & Ravi, S.** (2023). "SLERP: Spherical Linear Interpolation between Neural Networks." [arXiv:2305.17493](https://arxiv.org/abs/2305.17493)
    - *SLERP for LLM merging*
 
-4. **ACL 2025 Industry Track** (2025). "Model Merging for Knowledge Editing." *ACL Anthology*.
+4. **ACL 2025 Industry Track** (2025). "Model Merging for Knowledge Editing." [ACL Anthology](https://aclanthology.org/)
    - *Comparative analysis of SLERP vs other methods*
 
-5. **Nature Communications: Materials** (2025). "Fine-tuning large language models for domain adaptation."
-   DOI: 10.1038/s41524-025-01564-y
+5. **Nature Communications: Materials** (2025). "Fine-tuning large language models for domain adaptation." [DOI:10.1038/s41524-025-01564-y](https://doi.org/10.1038/s41524-025-01564-y)
    - *SLERP effectiveness in domain adaptation*
 
 ### 2025 Practical Applications
 
-6. **Phi-2 Python SLERP Merging** (2025). Practical guide to SLERP merging.
-   - *Production deployment patterns*
-
-7. **MergeKit Documentation** (2024-2025). SLERP implementation in mergekit.
+6. **MergeKit Documentation** (2024-2025). SLERP implementation in mergekit. [GitHub](https://github.com/cg123/mergekit)
    - *Standard tooling for SLERP merging*
+
+7. **Hugging Face Hub** (2024-2025). SLERP-merged models collection. [HuggingFace](https://huggingface.co/models?search=slerp)
+   - *Production deployment patterns*
 
 ---
 

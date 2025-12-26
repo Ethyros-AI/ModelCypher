@@ -215,32 +215,22 @@ class GramAligner:
         sample_transform = self._compute_sample_transform(K_s_c, K_t_c)
         b.eval(sample_transform)
 
-        # Step 2: Find a feature-space transformation that achieves
-        # the same effect on the Gram matrix.
+        # Step 2: Build a feature-space transformation that reproduces
+        # the sample-space alignment, then refine until CKA = 1.
         #
         # We want: (A_s @ F) @ (A_s @ F)^T = T @ K_s @ T^T = K_t
         # i.e., A_s @ F @ F^T @ A_s^T = K_t
-        #
-        # This is an optimization problem. We iterate to find F.
+        feature_transform = self._feature_transform_from_sample_transform(
+            source_centered, sample_transform
+        )
         feature_transform, iterations, final_cka = self._find_feature_transform(
-            source_centered, target_centered, K_t_c
+            source_centered, target_centered, K_t_c, initial_transform=feature_transform
         )
         if final_cka < 1.0 - self._tolerance:
-            fallback = self._feature_transform_from_sample_transform(
-                source_centered, sample_transform
+            raise ValueError(
+                f"GramAligner failed to phase-lock (CKA={final_cka:.8f}). "
+                "Alignment must reach CKA=1.0 before proceeding."
             )
-            source_transformed = b.matmul(source_centered, fallback)
-            K_s_t = b.matmul(source_transformed, b.transpose(source_transformed))
-            K_s_t_c = b.matmul(b.matmul(H, K_s_t), H)
-            b.eval(K_s_t_c)
-            fallback_cka = self._compute_cka_from_centered_grams(K_s_t_c, K_t_c)
-
-            logger.warning(
-                "GramAligner: Falling back to sample-space transform (CKA=%.8f).",
-                fallback_cka,
-            )
-            feature_transform = fallback
-            final_cka = fallback_cka
 
         # Compute alignment error
         source_transformed = b.matmul(source_centered, feature_transform)
@@ -322,6 +312,7 @@ class GramAligner:
         source_centered: "Array",
         target_centered: "Array",
         K_t_c: "Array",
+        initial_transform: "Array | None" = None,
     ) -> tuple["Array", int, float]:
         """Find feature-space transform F such that (A_s @ F)'s Gram ≈ K_t.
 
@@ -334,72 +325,75 @@ class GramAligner:
         d_s = b.shape(source_centered)[1]
         d_t = b.shape(target_centered)[1]
 
-        # SVD of both activation matrices
-        # For [n, d] matrix: U is [n, k], S is [k], Vt is [k, d] where k = min(n, d)
-        U_s_full, sigma_s, Vt_s = b.svd(source_centered)
-        U_t_full, sigma_t, Vt_t = b.svd(target_centered)
-        b.eval(U_s_full, sigma_s, Vt_s, U_t_full, sigma_t, Vt_t)
+        if initial_transform is None:
+            # SVD of both activation matrices
+            # For [n, d] matrix: U is [n, k], S is [k], Vt is [k, d] where k = min(n, d)
+            U_s_full, sigma_s, Vt_s = b.svd(source_centered)
+            U_t_full, sigma_t, Vt_t = b.svd(target_centered)
+            b.eval(U_s_full, sigma_s, Vt_s, U_t_full, sigma_t, Vt_t)
 
-        # Get the rank (number of singular values)
-        r_s = len(b.to_numpy(sigma_s))
-        r_t = len(b.to_numpy(sigma_t))
+            # Get the rank (number of singular values)
+            r_s = len(b.to_numpy(sigma_s))
+            r_t = len(b.to_numpy(sigma_t))
 
-        # Truncate U to match singular value count
-        # U_s_full might be [n, n] or [n, min(n,d)], we need [n, r_s]
-        U_s_shape = b.shape(U_s_full)
-        U_t_shape = b.shape(U_t_full)
+            # Truncate U to match singular value count
+            # U_s_full might be [n, n] or [n, min(n,d)], we need [n, r_s]
+            U_s_shape = b.shape(U_s_full)
+            U_t_shape = b.shape(U_t_full)
 
-        if U_s_shape[1] > r_s:
-            U_s = U_s_full[:, :r_s]
+            if U_s_shape[1] > r_s:
+                U_s = U_s_full[:, :r_s]
+            else:
+                U_s = U_s_full
+
+            if U_t_shape[1] > r_t:
+                U_t = U_t_full[:, :r_t]
+            else:
+                U_t = U_t_full
+            b.eval(U_s, U_t)
+
+            # Truncate Vt to match as well
+            # Vt_s might be [d, d] but we need [r_s, d]
+            Vt_s_shape = b.shape(Vt_s)
+            Vt_t_shape = b.shape(Vt_t)
+
+            if Vt_s_shape[0] > r_s:
+                Vt_s = Vt_s[:r_s, :]
+            if Vt_t_shape[0] > r_t:
+                Vt_t = Vt_t[:r_t, :]
+            b.eval(Vt_s, Vt_t)
+
+            # Alignment matrix in sample space [r_s, r_t]
+            M = b.matmul(b.transpose(U_s), U_t)
+            b.eval(M)
+
+            # Initial transform: V_s @ Σ_s^{-1} @ M @ Σ_t @ V_t^T
+            sigma_s_inv = sigma_s / (sigma_s * sigma_s + self._regularization)
+
+            # V_s is Vt_s^T: [d_s, r_s]
+            V_s = b.transpose(Vt_s)
+            V_t = b.transpose(Vt_t)
+            b.eval(V_s, V_t)
+
+            # T1 = V_s @ diag(Σ_s^{-1}) = V_s * sigma_s_inv (broadcast over rows)
+            # V_s is [d_s, r_s], sigma_s_inv is [r_s]
+            T1 = V_s * b.reshape(sigma_s_inv, (1, -1))
+            b.eval(T1)
+
+            # T2 = T1 @ M where T1 is [d_s, r_s], M is [r_s, r_t]
+            T2 = b.matmul(T1, M)
+            b.eval(T2)
+
+            # T3 = T2 @ diag(Σ_t) = T2 * sigma_t (broadcast over rows)
+            # T2 is [d_s, r_t], sigma_t is [r_t]
+            T3 = T2 * b.reshape(sigma_t, (1, -1))
+            b.eval(T3)
+
+            # F = T3 @ V_t^T where T3 is [d_s, r_t], Vt_t is [r_t, d_t]
+            F = b.matmul(T3, Vt_t)
+            b.eval(F)
         else:
-            U_s = U_s_full
-
-        if U_t_shape[1] > r_t:
-            U_t = U_t_full[:, :r_t]
-        else:
-            U_t = U_t_full
-        b.eval(U_s, U_t)
-
-        # Truncate Vt to match as well
-        # Vt_s might be [d, d] but we need [r_s, d]
-        Vt_s_shape = b.shape(Vt_s)
-        Vt_t_shape = b.shape(Vt_t)
-
-        if Vt_s_shape[0] > r_s:
-            Vt_s = Vt_s[:r_s, :]
-        if Vt_t_shape[0] > r_t:
-            Vt_t = Vt_t[:r_t, :]
-        b.eval(Vt_s, Vt_t)
-
-        # Alignment matrix in sample space [r_s, r_t]
-        M = b.matmul(b.transpose(U_s), U_t)
-        b.eval(M)
-
-        # Initial transform: V_s @ Σ_s^{-1} @ M @ Σ_t @ V_t^T
-        sigma_s_inv = sigma_s / (sigma_s * sigma_s + self._regularization)
-
-        # V_s is Vt_s^T: [d_s, r_s]
-        V_s = b.transpose(Vt_s)
-        V_t = b.transpose(Vt_t)
-        b.eval(V_s, V_t)
-
-        # T1 = V_s @ diag(Σ_s^{-1}) = V_s * sigma_s_inv (broadcast over rows)
-        # V_s is [d_s, r_s], sigma_s_inv is [r_s]
-        T1 = V_s * b.reshape(sigma_s_inv, (1, -1))
-        b.eval(T1)
-
-        # T2 = T1 @ M where T1 is [d_s, r_s], M is [r_s, r_t]
-        T2 = b.matmul(T1, M)
-        b.eval(T2)
-
-        # T3 = T2 @ diag(Σ_t) = T2 * sigma_t (broadcast over rows)
-        # T2 is [d_s, r_t], sigma_t is [r_t]
-        T3 = T2 * b.reshape(sigma_t, (1, -1))
-        b.eval(T3)
-
-        # F = T3 @ V_t^T where T3 is [d_s, r_t], Vt_t is [r_t, d_t]
-        F = b.matmul(T3, Vt_t)
-        b.eval(F)
+            F = initial_transform
 
         # Iterate to refine (gradient descent on CKA)
         H = self._centering_matrix(n_samples)

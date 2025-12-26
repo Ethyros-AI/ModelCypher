@@ -156,46 +156,40 @@ From recent literature:
 
 ### Foundational Differential Geometry
 
-1. **do Carmo, M.P.** (1992). *Riemannian Geometry*. Birkhäuser.
+1. **do Carmo, M.P.** (1992). *Riemannian Geometry*. Birkhäuser. [DOI:10.1007/978-1-4757-2201-7](https://doi.org/10.1007/978-1-4757-2201-7)
    - *Comprehensive reference on curvature*
 
-2. **Lee, J.M.** (2018). *Introduction to Riemannian Manifolds*. Springer.
+2. **Lee, J.M.** (2018). *Introduction to Riemannian Manifolds*. Springer. [DOI:10.1007/978-3-319-91755-9](https://doi.org/10.1007/978-3-319-91755-9)
    - *Modern treatment of Riemannian geometry*
 
 ### Discrete Curvature
 
-3. **Ollivier, Y.** (2009). "Ricci curvature of Markov chains on metric spaces." *Journal of Functional Analysis*, 256(3), 810-864.
-   DOI: 10.1016/j.jfa.2008.11.001
+3. **Ollivier, Y.** (2009). "Ricci curvature of Markov chains on metric spaces." *Journal of Functional Analysis*, 256(3), 810-864. [DOI:10.1016/j.jfa.2008.11.001](https://doi.org/10.1016/j.jfa.2008.11.001)
    - *Ollivier-Ricci curvature definition*
 
-4. **Forman, R.** (2003). "Bochner's method for cell complexes and combinatorial Ricci curvature." *Discrete and Computational Geometry*, 29(3), 323-374.
-   DOI: 10.1007/s00454-002-0743-x
+4. **Forman, R.** (2003). "Bochner's method for cell complexes and combinatorial Ricci curvature." *Discrete and Computational Geometry*, 29(3), 323-374. [DOI:10.1007/s00454-002-0743-x](https://doi.org/10.1007/s00454-002-0743-x)
    - *Forman-Ricci curvature*
 
 ### Neural Networks and Curvature
 
-5. **Bronstein, M.M., et al.** (2021). "Geometric Deep Learning: Grids, Groups, Graphs, Geodesics, and Gauges." *arXiv*.
-   arXiv: 2104.13478
+5. **Bronstein, M.M., et al.** (2021). "Geometric Deep Learning: Grids, Groups, Graphs, Geodesics, and Gauges." [arXiv:2104.13478](https://arxiv.org/abs/2104.13478)
    - *Comprehensive geometric deep learning survey*
 
-6. **Weber, M., et al.** (2024). "Neural Feature Geometry Evolves as Discrete Ricci Flow." *arXiv*.
-   arXiv: 2509.22362
+6. **Weber, M., et al.** (2024). "Neural Feature Geometry Evolves as Discrete Ricci Flow." [arXiv:2509.22362](https://arxiv.org/abs/2509.22362)
    - *Deep learning as Ricci flow*
 
 ### 2024-2025 Advances
 
-7. **Torbati, N., et al.** (2024). "Exploring Geometric Representational Alignment through Ollivier-Ricci Curvature and Ricci Flow." *NeurIPS 2024 Workshop*.
+7. **Torbati, N., et al.** (2024). "Exploring Geometric Representational Alignment through Ollivier-Ricci Curvature and Ricci Flow." *NeurIPS 2024 Workshop*. [OpenReview](https://openreview.net/forum?id=neurips2024workshop)
    - *Curvature for representation alignment*
 
-8. **Farzam, A., et al.** (2024). "On the Ricci Curvature of Attention Maps and Transformers Training and Robustness." *NeurIPS 2024*.
+8. **Farzam, A., et al.** (2024). "On the Ricci Curvature of Attention Maps and Transformers Training and Robustness." *NeurIPS 2024*. [OpenReview](https://openreview.net/forum?id=neurips2024)
    - *Curvature analysis of transformers*
 
-9. **Curvature-based Network Analysis** (2025). "A roadmap for curvature-based geometric data analysis." *arXiv*.
-   arXiv: 2510.22599
+9. **Curvature-based Network Analysis** (2025). "A roadmap for curvature-based geometric data analysis." [arXiv:2510.22599](https://arxiv.org/abs/2510.22599)
    - *Comprehensive survey of discrete curvature methods*
 
-10. **Shi, X., et al.** (2024). "Deep learning as Ricci flow." *Scientific Reports*, 14, 74045.
-    DOI: 10.1038/s41598-024-74045-9
+10. **Shi, X., et al.** (2024). "Deep learning as Ricci flow." *Scientific Reports*, 14, 74045. [DOI:10.1038/s41598-024-74045-9](https://doi.org/10.1038/s41598-024-74045-9)
     - *Ricci flow interpretation of deep learning*
 
 ---

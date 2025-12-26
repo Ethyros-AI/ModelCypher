@@ -185,21 +185,18 @@ aligned = relative_repr(en_embeddings, en_anchors)
 
 ### Primary Reference
 
-1. **Moschella, L., Maiorca, V., Fumero, M., Norelli, A., Locatello, F., & Rodolà, E.** (2023). "Relative representations enable zero-shot latent space communication." *ICLR 2023* (Notable Top 5%).
-   arXiv: 2209.15430
-   OpenReview: https://openreview.net/forum?id=SrC-nwieGJ
+1. **Moschella, L., Maiorca, V., Fumero, M., Norelli, A., Locatello, F., & Rodolà, E.** (2023). "Relative representations enable zero-shot latent space communication." *ICLR 2023* (Notable Top 5%). [arXiv:2209.15430](https://arxiv.org/abs/2209.15430) · [OpenReview](https://openreview.net/forum?id=SrC-nwieGJ)
    - *The foundational paper*
 
 ### Extensions and Applications
 
-2. **Cannistraci, I., et al.** (2023). "Bootstrapping Parallel Anchors for Relative Representations." *ICLR 2023 Tiny Papers*.
+2. **Cannistraci, I., et al.** (2023). "Bootstrapping Parallel Anchors for Relative Representations." *ICLR 2023 Tiny Papers*. [OpenReview](https://openreview.net/forum?id=xKWWepBdMZ)
    - *Learning anchors without labels*
 
-3. **Jian, Z., et al.** (2023). "Policy Stitching: Learning Transferable Robot Policies." *CoRL 2023*.
+3. **Jian, Z., et al.** (2023). "Policy Stitching: Learning Transferable Robot Policies." *CoRL 2023*. [OpenReview](https://openreview.net/forum?id=fOqaLJNORCv)
    - *Relative representations for robotics*
 
-4. **Ricciardi, A.P., et al.** (2025). "Zero-Shot Stitching in Reinforcement Learning using Relative Representations." *EWRL 2023*.
-   arXiv: 2404.12917
+4. **Ricciardi, A.P., et al.** (2025). "Zero-Shot Stitching in Reinforcement Learning using Relative Representations." *EWRL 2023*. [arXiv:2404.12917](https://arxiv.org/abs/2404.12917)
    - *RL with relative representations*
 
 5. **Model Stitching Survey** (2025). "Model Stitching in Neural Networks." *Emergent Mind Topic*.
@@ -207,12 +204,12 @@ aligned = relative_repr(en_embeddings, en_anchors)
 
 ### Cross-Lingual
 
-6. **Norelli, A., et al.** (2024). "Model Stitching with Static Word Embeddings for Crosslingual Zero-Shot Transfer." *Insights Workshop 2024*.
+6. **Norelli, A., et al.** (2024). "Model Stitching with Static Word Embeddings for Crosslingual Zero-Shot Transfer." *Insights Workshop 2024*. [ACL Anthology](https://aclanthology.org/events/insights-2024/)
    - *Cross-lingual stitching*
 
 ### Theoretical Connections
 
-7. **Fumero, M., et al.** (2024). "Connecting Neural Models Latent Geometries with Relative Geodesic Representations." *arXiv*.
+7. **Fumero, M., et al.** (2024). "Connecting Neural Models Latent Geometries with Relative Geodesic Representations." [arXiv:2411.13768](https://arxiv.org/abs/2411.13768)
    - *Geodesic extension of relative representations*
 
 8. **Moschella, L.** (2023). *Latent Communication in Artificial Neural Networks*. PhD Thesis, Sapienza University of Rome.

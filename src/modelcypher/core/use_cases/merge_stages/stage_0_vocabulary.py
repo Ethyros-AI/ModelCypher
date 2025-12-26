@@ -109,12 +109,9 @@ def stage_vocabulary_align(
         "tokenizers_provided": source_tokenizer is not None and target_tokenizer is not None,
     }
 
-    # Skip if tokenizers not provided
+    # Tokenizers are required for deterministic binary/vocab alignment.
     if source_tokenizer is None or target_tokenizer is None:
-        logger.info("Tokenizers not provided, skipping vocabulary alignment")
-        metrics["skipped"] = True
-        metrics["reason"] = "tokenizers_not_provided"
-        return VocabularyResult(source_weights, metrics, False)
+        raise ValueError("Tokenizers are required for binary/vocabulary alignment.")
 
     # Find embedding layer keys
     embed_keys = [k for k in source_weights if "embed" in k.lower() and "weight" in k.lower()]
@@ -198,6 +195,7 @@ def stage_vocabulary_align(
     # Apply merger to each embedding layer
     modified_weights = source_weights.copy()
     aligned_layers = 0
+    alignment_tol = 1e-12
 
     for embed_key in embed_keys:
         source_embed = source_weights.get(embed_key)
@@ -253,18 +251,24 @@ def stage_vocabulary_align(
                 target_tokenizer,
                 backend,
             )
-            if byte_alignment is not None:
-                source_embed = byte_alignment["aligned_source"]
-                backend.eval(source_embed)
-                binary_metrics[embed_key] = {
-                    "bytes_shared": byte_alignment["bytes_shared"],
-                    "cka_before": byte_alignment["cka_before"],
-                    "cka_after": byte_alignment["cka_after"],
-                    "alignment_error": byte_alignment["alignment_error"],
-                    "iterations": byte_alignment["iterations"],
-                    "source_dim": byte_alignment["source_dim"],
-                    "target_dim": byte_alignment["target_dim"],
-                }
+            if byte_alignment is None:
+                raise ValueError("Binary alignment failed: no shared byte anchors.")
+            if byte_alignment["cka_after"] < 1.0 - alignment_tol:
+                raise ValueError(
+                    f"Binary alignment failed to phase-lock (CKA={byte_alignment['cka_after']:.12f})."
+                )
+
+            source_embed = byte_alignment["aligned_source"]
+            backend.eval(source_embed)
+            binary_metrics[embed_key] = {
+                "bytes_shared": byte_alignment["bytes_shared"],
+                "cka_before": byte_alignment["cka_before"],
+                "cka_after": byte_alignment["cka_after"],
+                "alignment_error": byte_alignment["alignment_error"],
+                "iterations": byte_alignment["iterations"],
+                "source_dim": byte_alignment["source_dim"],
+                "target_dim": byte_alignment["target_dim"],
+            }
 
             # Vocabulary (2D) alignment: phase-lock on UnifiedAtlas anchors.
             vocab_metrics = metrics.setdefault("vocab_phase_lock", {})
@@ -275,16 +279,22 @@ def stage_vocabulary_align(
                 target_tokenizer,
                 backend,
             )
-            if atlas_alignment is not None:
-                source_embed = atlas_alignment["aligned_source"]
-                backend.eval(source_embed)
-                vocab_metrics[embed_key] = {
-                    "anchors_shared": atlas_alignment["anchors_shared"],
-                    "cka_before": atlas_alignment["cka_before"],
-                    "cka_after": atlas_alignment["cka_after"],
-                    "alignment_error": atlas_alignment["alignment_error"],
-                    "iterations": atlas_alignment["iterations"],
-                }
+            if atlas_alignment is None:
+                raise ValueError("Vocabulary alignment failed: no shared atlas anchors.")
+            if atlas_alignment["cka_after"] < 1.0 - alignment_tol:
+                raise ValueError(
+                    f"Vocabulary alignment failed to phase-lock (CKA={atlas_alignment['cka_after']:.12f})."
+                )
+
+            source_embed = atlas_alignment["aligned_source"]
+            backend.eval(source_embed)
+            vocab_metrics[embed_key] = {
+                "anchors_shared": atlas_alignment["anchors_shared"],
+                "cka_before": atlas_alignment["cka_before"],
+                "cka_after": atlas_alignment["cka_after"],
+                "alignment_error": atlas_alignment["alignment_error"],
+                "iterations": atlas_alignment["iterations"],
+            }
 
             # Run CrossVocabMerger
             result = merger.merge(
@@ -353,7 +363,7 @@ def stage_vocabulary_align(
         except Exception as e:
             logger.error("Failed to align %s: %s", embed_key, e)
             metrics[f"{embed_key}_error"] = str(e)
-            continue
+            raise
 
     metrics["aligned_layers"] = aligned_layers
     metrics["alignment_applied"] = aligned_layers > 0
@@ -459,19 +469,15 @@ def _frechet_mean_vectors(
     if float(max_norm) < 1e-6:
         return vectors[0]
 
-    k_neighbors = max(1, min(5, vectors.shape[0] - 1))
-    try:
-        mean = frechet_mean(
-            vectors,
-            backend=backend,
-            k_neighbors=k_neighbors,
-            max_k_neighbors=vectors.shape[0] - 1,
-        )
-        backend.eval(mean)
-        return mean
-    except Exception as exc:
-        logger.warning("Frechet mean fallback to first vector: %s", exc)
-        return vectors[0]
+    k_neighbors = max(1, vectors.shape[0] - 1)
+    mean = frechet_mean(
+        vectors,
+        backend=backend,
+        k_neighbors=k_neighbors,
+        max_k_neighbors=k_neighbors,
+    )
+    backend.eval(mean)
+    return mean
 
 
 def _build_byte_embedding_map(
@@ -514,15 +520,14 @@ def _align_bytes(
     )
     shared = sorted(set(source_bytes) & set(target_bytes))
     if len(shared) < 2:
-        logger.warning("Binary alignment skipped: only %d shared bytes", len(shared))
-        return None
+        raise ValueError(f"Binary alignment needs shared byte anchors; found {len(shared)}.")
 
     source_matrix = backend.stack([source_bytes[b] for b in shared], axis=0)
     target_matrix = backend.stack([target_bytes[b] for b in shared], axis=0)
     backend.eval(source_matrix, target_matrix)
 
     cka_before = compute_cka(source_matrix, target_matrix, backend=backend).cka
-    aligner = GramAligner(backend=backend)
+    aligner = GramAligner(backend=backend, max_iterations=5000, tolerance=1e-12)
     result = aligner.find_perfect_alignment(source_matrix, target_matrix)
     transform = backend.array(result.feature_transform)
     aligned_source = backend.matmul(source_embed, transform)
@@ -590,15 +595,14 @@ def _align_unified_atlas(
     )
     shared = sorted(set(source_anchors) & set(target_anchors))
     if len(shared) < 2:
-        logger.warning("Atlas alignment skipped: only %d shared anchors", len(shared))
-        return None
+        raise ValueError(f"Vocabulary alignment needs shared atlas anchors; found {len(shared)}.")
 
     source_matrix = backend.stack([source_anchors[k] for k in shared], axis=0)
     target_matrix = backend.stack([target_anchors[k] for k in shared], axis=0)
     backend.eval(source_matrix, target_matrix)
 
     cka_before = compute_cka(source_matrix, target_matrix, backend=backend).cka
-    aligner = GramAligner(backend=backend)
+    aligner = GramAligner(backend=backend, max_iterations=5000, tolerance=1e-12)
     result = aligner.find_perfect_alignment(source_matrix, target_matrix)
     transform = backend.array(result.feature_transform)
     aligned_source = backend.matmul(source_embed, transform)

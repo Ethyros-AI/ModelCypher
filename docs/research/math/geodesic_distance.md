@@ -205,23 +205,21 @@ where $d$ is the intrinsic dimension. For neural networks:
 
 ### Foundational
 
-1. **Dijkstra, E.W.** (1959). "A note on two problems in connexion with graphs." *Numerische Mathematik*, 1, 269-271.
+1. **Dijkstra, E.W.** (1959). "A note on two problems in connexion with graphs." *Numerische Mathematik*, 1, 269-271. [DOI:10.1007/BF01386390](https://doi.org/10.1007/BF01386390)
    - *Shortest path algorithm*
 
-2. **Tenenbaum, J.B., de Silva, V., & Langford, J.C.** (2000). "A Global Geometric Framework for Nonlinear Dimensionality Reduction." *Science*, 290(5500), 2319-2323.
-   DOI: 10.1126/science.290.5500.2319
+2. **Tenenbaum, J.B., de Silva, V., & Langford, J.C.** (2000). "A Global Geometric Framework for Nonlinear Dimensionality Reduction." *Science*, 290(5500), 2319-2323. [DOI:10.1126/science.290.5500.2319](https://doi.org/10.1126/science.290.5500.2319)
    - *ISOMAP and geodesic approximation guarantees*
 
-3. **Bernstein, M., de Silva, V., Langford, J.C., & Tenenbaum, J.B.** (2000). "Graph Approximations to Geodesics on Embedded Manifolds." *Technical Report*.
+3. **Bernstein, M., de Silva, V., Langford, J.C., & Tenenbaum, J.B.** (2000). "Graph Approximations to Geodesics on Embedded Manifolds." *Technical Report*. [Stanford](https://web.stanford.edu/class/cs368a/readings/bernstein_graph_approx.pdf)
    - *Convergence analysis*
 
 ### Modern Treatment
 
-4. **Peyre, G., & Cuturi, M.** (2019). "Computational Optimal Transport." *Foundations and Trends in Machine Learning*, 11(5-6), 355-607.
-   arXiv: 1803.00567
+4. **Peyre, G., & Cuturi, M.** (2019). "Computational Optimal Transport." *Foundations and Trends in Machine Learning*, 11(5-6), 355-607. [arXiv:1803.00567](https://arxiv.org/abs/1803.00567)
    - *Chapter on geodesic computation*
 
-5. **Lee, J.A., & Verleysen, M.** (2007). *Nonlinear Dimensionality Reduction*. Springer.
+5. **Lee, J.A., & Verleysen, M.** (2007). *Nonlinear Dimensionality Reduction*. Springer. [DOI:10.1007/978-0-387-39351-3](https://doi.org/10.1007/978-0-387-39351-3)
    - *Comprehensive treatment of manifold methods*
 
 ---

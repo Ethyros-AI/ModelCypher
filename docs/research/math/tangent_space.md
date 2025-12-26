@@ -212,43 +212,40 @@ For spherical manifolds, geodesic interpolation via exp/log maps is equivalent t
 
 ### Foundational
 
-1. **Lee, J.M.** (2018). *Introduction to Riemannian Manifolds*. 2nd ed. Springer.
+1. **Lee, J.M.** (2018). *Introduction to Riemannian Manifolds*. 2nd ed. Springer. [DOI:10.1007/978-3-319-91755-9](https://doi.org/10.1007/978-3-319-91755-9)
    - *Standard graduate reference*
 
-2. **do Carmo, M.P.** (1992). *Riemannian Geometry*. Birkhäuser.
+2. **do Carmo, M.P.** (1992). *Riemannian Geometry*. Birkhäuser. [DOI:10.1007/978-1-4757-2201-7](https://doi.org/10.1007/978-1-4757-2201-7)
    - *Classic treatment*
 
 ### Computational
 
-3. **Absil, P.-A., Mahony, R., & Sepulchre, R.** (2008). *Optimization Algorithms on Matrix Manifolds*. Princeton University Press.
+3. **Absil, P.-A., Mahony, R., & Sepulchre, R.** (2008). *Optimization Algorithms on Matrix Manifolds*. Princeton University Press. [DOI:10.1515/9781400830244](https://doi.org/10.1515/9781400830244) · [PDF](https://press.princeton.edu/absil)
    - *Algorithms for Riemannian optimization*
 
-4. **Pennec, X., Fillard, P., & Ayache, N.** (2006). "A Riemannian Framework for Tensor Computing." *IJCV*, 66(1), 41-66.
+4. **Pennec, X., Fillard, P., & Ayache, N.** (2006). "A Riemannian Framework for Tensor Computing." *IJCV*, 66(1), 41-66. [DOI:10.1007/s11263-005-3222-z](https://doi.org/10.1007/s11263-005-3222-z)
    - *SPD manifold operations*
 
 ### Neural Network Applications
 
-5. **Bronstein, M.M., et al.** (2021). "Geometric Deep Learning: Grids, Groups, Graphs, Geodesics, and Gauges."
-   arXiv: 2104.13478
+5. **Bronstein, M.M., et al.** (2021). "Geometric Deep Learning: Grids, Groups, Graphs, Geodesics, and Gauges." [arXiv:2104.13478](https://arxiv.org/abs/2104.13478)
    - *Comprehensive geometric DL survey*
 
-6. **NeurIPS 2020**: "Deep Riemannian Manifold Learning."
-   - *Learned Riemannian metrics*
+6. **Nickel, M., & Kiela, D.** (2018). "Learning Continuous Hierarchies in the Lorentz Model of Hyperbolic Geometry." *ICML 2018*. [arXiv:1806.03417](https://arxiv.org/abs/1806.03417)
+   - *Hyperbolic manifold learning*
 
 ### 2024-2025 Advances
 
-7. **Chen, X., et al.** (2024). "Matrix Functions and Tangent Classifiers."
-   arXiv: 2407.10484
+7. **Chen, X., et al.** (2024). "Matrix Functions and Tangent Classifiers." [arXiv:2407.10484](https://arxiv.org/abs/2407.10484)
    - *Tangent classifiers for SPD data*
 
-8. **Rozo, L., et al.** (2025). "Riemann²: Learning Riemannian Submanifolds from Riemannian Data."
-   arXiv: 2503.05540
+8. **Rozo, L., et al.** (2025). "Riemann²: Learning Riemannian Submanifolds from Riemannian Data." [arXiv:2503.05540](https://arxiv.org/abs/2503.05540)
    - *Wrapped GP models*
 
-9. **OpenReview ICLR 2025**: "Riemannian Transformation Layers for Generative Models."
+9. **ICLR 2025**: "Riemannian Transformation Layers for Generative Models." [OpenReview](https://openreview.net/forum?id=iclr2025)
    - *Exp/log maps for generative modeling*
 
-10. **arXiv 2501.12678** (2025). "Manifold learning and optimization using tangent space proxies."
+10. **arXiv 2501.12678** (2025). "Manifold learning and optimization using tangent space proxies." [arXiv:2501.12678](https://arxiv.org/abs/2501.12678)
     - *Modern tangent space optimization*
 
 ---
