@@ -152,18 +152,28 @@ The weight space of neural networks has complex topology. SLERP's success sugges
 
 | Class/Function | Line | Description |
 |----------------|------|-------------|
-| `VectorMath.slerp()` | 163 | Core SLERP for two vectors with magnitude interpolation |
-| `VectorMath.slerp_batch()` | 253 | Per-layer SLERP for dict-based weight merging |
+| `VectorMath.slerp()` | 163 | Pure Python SLERP (fallback) |
+| `VectorMath.slerp_batch()` | 253 | Pure Python per-layer SLERP |
+| `BackendVectorMath.slerp()` | 572 | **GPU-accelerated SLERP** via Backend protocol |
+| `BackendVectorMath.slerp_batch()` | 657 | GPU-accelerated per-layer SLERP |
+| `get_vector_math()` | 723 | Factory function to get best implementation |
 
-**Related implementations**:
-- Model merging infrastructure in [`merging/`](../../../../src/modelcypher/core/domain/merging/)
-- Weight arithmetic in [`task_singular_vectors.py`](../../../../src/modelcypher/core/domain/geometry/task_singular_vectors.py)
+**Usage**:
+```python
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.vector_math import get_vector_math
+
+backend = get_default_backend()
+vm = get_vector_math(backend)  # Returns BackendVectorMath for GPU acceleration
+result = vm.slerp(v0, v1, 0.5)
+```
 
 **Design decisions**:
-1. **Per-layer SLERP**: `slerp_batch()` applies independently to each layer
-2. **Magnitude handling**: `interpolate_magnitude` parameter (default True) to preserve or interpolate magnitudes
-3. **Edge case handling**: Falls back to linear interpolation for near-parallel (θ≈0) or near-antipodal (θ≈π) vectors
-4. **Pure Python**: Uses Python math for portability; MLX/JAX arrays auto-convert via `_to_list()`
+1. **Dual implementation**: Pure Python fallback + GPU-accelerated Backend version
+2. **Per-layer SLERP**: `slerp_batch()` applies independently to each layer
+3. **Magnitude handling**: `interpolate_magnitude` parameter (default True)
+4. **Numerical stability**: Uses Backend's `finfo()` for machine-epsilon thresholds
+5. **Edge case handling**: Falls back to linear interpolation for near-parallel (θ≈0) or near-antipodal (θ≈π) vectors
 
 ---
 
