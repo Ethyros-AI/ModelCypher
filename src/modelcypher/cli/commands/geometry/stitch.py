@@ -23,7 +23,7 @@ Provides commands for:
 
 Commands:
     mc geometry stitch analyze --checkpoint <path1> --checkpoint <path2>
-    mc geometry stitch apply --source <path> --target <path> --output <path>
+    mc geometry stitch apply --source <path> --target <path> --destination <path>
 """
 
 from __future__ import annotations
@@ -113,7 +113,7 @@ def geometry_stitch_apply(
     """Apply stitching operation between checkpoints.
 
     Examples:
-        mc geometry stitch apply --source ./ckpt1 --target ./ckpt2 --output ./stitched
+        mc geometry stitch apply --source ./ckpt1 --target ./ckpt2 --destination ./stitched
     """
     context = _context(ctx)
     service = GeometryStitchService()

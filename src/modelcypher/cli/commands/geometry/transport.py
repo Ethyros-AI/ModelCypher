@@ -60,7 +60,7 @@ def geometry_transport_merge(
         ..., "--plan", "-p", help="JSON file with transport plan [N x M]"
     ),
     output: Path | None = typer.Option(
-        None, "--output", "-o", help="Output file for merged weights"
+        None, "--output-file", "-o", help="Output file for merged weights"
     ),
 ):
     """
@@ -143,7 +143,7 @@ def geometry_transport_synthesize(
         ..., "--target-weights", help="JSON file with target weights"
     ),
     output: Path | None = typer.Option(
-        None, "--output", "-o", help="Output file for merged weights"
+        None, "--output-file", "-o", help="Output file for merged weights"
     ),
 ):
     """

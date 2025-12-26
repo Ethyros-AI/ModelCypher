@@ -53,7 +53,9 @@ def transfer_project(
     concept_probes: str = typer.Option(
         None, "--probes", help="JSON file with concept probe prompts"
     ),
-    output: str = typer.Option(None, "-o", "--output", help="Output path for transfer result JSON"),
+    output: str = typer.Option(
+        None, "-o", "--output-file", help="Output path for transfer result JSON"
+    ),
     generate_lora: bool = typer.Option(False, "--lora", help="Also generate geometric LoRA"),
     lora_rank: int = typer.Option(4, "--rank", help="Target rank for geometric LoRA"),
     min_anchors: int = typer.Option(10, "--min-anchors", help="Minimum anchors for projection"),
@@ -241,7 +243,7 @@ def transfer_profile(
     model_path: str = typer.Option(..., "--model", help="Path to model directory"),
     concept: str = typer.Option(..., "--concept", help="Concept name"),
     probes_file: str = typer.Option(None, "--probes", help="JSON file with probe prompts"),
-    output: str = typer.Option(None, "-o", "--output", help="Output path for profile JSON"),
+    output: str = typer.Option(None, "-o", "--output-file", help="Output path for profile JSON"),
 ) -> None:
     """Compute anchor distance profile for a concept.
 

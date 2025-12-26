@@ -56,7 +56,7 @@ def geometry_refinement_analyze(
     source_crm: str | None = typer.Option(None, "--source-crm", help="Path to source CRM file"),
     target_crm: str | None = typer.Option(None, "--target-crm", help="Path to target CRM file"),
     output_file: str | None = typer.Option(
-        None, "--output", "-o", help="Write JSON result to file"
+        None, "--output-file", "-o", help="Write JSON result to file"
     ),
 ) -> None:
     """Analyze refinement density between base and adapted models.

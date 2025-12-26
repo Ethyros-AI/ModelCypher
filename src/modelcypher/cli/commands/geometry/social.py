@@ -120,7 +120,7 @@ def social_probe_model(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to the model directory"),
     layer: int = typer.Option(-1, help="Layer to analyze (default is last)"),
-    output_file: str = typer.Option(None, "--output", "-o", help="File to save activations"),
+    output_file: str = typer.Option(None, "--output-file", "-o", help="File to save activations"),
 ) -> None:
     """Probe a model for social geometry structure."""
     context = _context(ctx)
