@@ -195,48 +195,16 @@ For spherical manifolds, geodesic interpolation via exp/log maps is equivalent t
 
 ---
 
-## ModelCypher Implementation
+## Code Implementation
 
-**Location**: `src/modelcypher/core/domain/geometry/tangent_space_alignment.py`
+**Primary Location**: [`src/modelcypher/core/domain/geometry/tangent_space_alignment.py`](../../../../src/modelcypher/core/domain/geometry/tangent_space_alignment.py)
 
-```python
-class TangentSpaceOperations:
-    """Tangent space operations for Riemannian manifolds."""
+| Class/Function | Line | Description |
+|----------------|------|-------------|
+| `TangentSpaceAlignment` | 124 | Main class with exp/log maps and parallel transport |
 
-    def exp_map(
-        self,
-        base: Array,
-        tangent_vector: Array,
-        manifold: str = "sphere",
-    ) -> Array:
-        """
-        Exponential map: tangent space → manifold.
-        """
-
-    def log_map(
-        self,
-        base: Array,
-        point: Array,
-        manifold: str = "sphere",
-    ) -> Array:
-        """
-        Logarithm map: manifold → tangent space.
-        """
-
-    def parallel_transport(
-        self,
-        vector: Array,
-        from_point: Array,
-        to_point: Array,
-    ) -> Array:
-        """
-        Parallel transport vector along geodesic.
-        """
-```
-
-**Also in**: `src/modelcypher/core/domain/geometry/riemannian_utils.py`
-- Fréchet mean using tangent space iterations
-- Geodesic distances
+**Also in**:
+- [`riemannian_utils.py`](../../../../src/modelcypher/core/domain/geometry/riemannian_utils.py) - Fréchet mean uses tangent space iterations internally
 
 ---
 

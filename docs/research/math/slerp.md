@@ -146,25 +146,17 @@ The weight space of neural networks has complex topology. SLERP's success sugges
 
 ---
 
-## ModelCypher Implementation
+## Code Implementation
 
-**Location**: `src/modelcypher/core/domain/geometry/vector_math.py`
+> **Status**: SLERP is documented but not yet implemented in ModelCypher.
 
-```python
-def slerp_merge(
-    weights_a: dict[str, Array],
-    weights_b: dict[str, Array],
-    t: float,
-    per_layer: bool = True,
-    backend: Backend | None = None,
-) -> dict[str, Array]:
-    """
-    Merge two models using spherical linear interpolation.
+**Planned Location**: `src/modelcypher/core/domain/geometry/vector_math.py`
 
-    Interpolates along great circle arcs rather than linear paths,
-    avoiding loss barriers in weight space.
-    """
-```
+The SLERP algorithm is straightforward to implement following the pseudocode above. When added, it will integrate with the existing merge pipeline.
+
+**Related implementations**:
+- Model merging infrastructure exists in [`merging/`](../../../../src/modelcypher/core/domain/merging/)
+- Weight arithmetic in [`task_singular_vectors.py`](../../../../src/modelcypher/core/domain/geometry/task_singular_vectors.py)
 
 **Design decisions**:
 1. **Per-layer SLERP**: Apply independently to each layer

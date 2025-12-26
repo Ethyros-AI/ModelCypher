@@ -232,43 +232,15 @@ For large models:
 
 ---
 
-## ModelCypher Implementation
+## Code Implementation
 
-**Location**: `src/modelcypher/core/domain/geometry/permutation_aligner.py`
+**Primary Location**: [`src/modelcypher/core/domain/geometry/permutation_aligner.py`](../../../../src/modelcypher/core/domain/geometry/permutation_aligner.py)
 
-```python
-class PermutationAligner:
-    """Align neural networks modulo permutation symmetries."""
-
-    def weight_match(
-        self,
-        weights_a: dict[str, Array],
-        weights_b: dict[str, Array],
-        backend: Backend | None = None,
-    ) -> list[Array]:
-        """
-        Find permutations aligning model B to model A.
-        """
-
-    def activation_match(
-        self,
-        model_a,
-        model_b,
-        calibration_data: Array,
-    ) -> list[Array]:
-        """
-        Find permutations based on activation similarity.
-        """
-
-    def apply_permutations(
-        self,
-        weights: dict[str, Array],
-        permutations: list[Array],
-    ) -> dict[str, Array]:
-        """
-        Apply permutations to weight matrices.
-        """
-```
+| Class/Function | Line | Description |
+|----------------|------|-------------|
+| `PermutationAlignerError` | 51 | Custom exception for alignment errors |
+| `PermutationAlignerErrorKind` | 57 | Enum for error types |
+| `PermutationAligner` | 131 | Main class with `weight_match()`, `activation_match()`, `apply_permutations()` |
 
 ---
 

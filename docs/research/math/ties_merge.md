@@ -295,4 +295,17 @@ def geometric_ties_merge(models, pretrained, activations, density=0.2):
 
 ---
 
+## Code Implementation
+
+> **Status**: TIES-Merging concepts inform ModelCypher's merge strategies but are not a standalone implementation.
+
+**Related implementations**:
+- [`task_singular_vectors.py`](../../../../src/modelcypher/core/domain/geometry/task_singular_vectors.py) - SVD-based task vector handling
+- [`dare_sparsity.py`](../../../../src/modelcypher/core/domain/geometry/dare_sparsity.py) - Sparsification (often combined with TIES)
+- [`fisher_blending.py`](../../../../src/modelcypher/core/domain/geometry/fisher_blending.py) - Importance-weighted merging
+
+The sign election and trimming concepts from TIES are integrated into the geometric merge pipeline rather than implemented as a separate module.
+
+---
+
 *TIES-Merging resolves the fundamental conflict problem: when models disagree on direction, elect the consensus and only merge the agreeing parameters.*

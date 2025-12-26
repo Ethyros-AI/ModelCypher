@@ -216,37 +216,19 @@ Variance increases with drop rate—hence the limit on practical $p$.
 
 ---
 
-## ModelCypher Implementation
+## Code Implementation
 
-**Location**: `src/modelcypher/core/domain/geometry/dare_sparsity.py`
+**Primary Location**: [`src/modelcypher/core/domain/geometry/dare_sparsity.py`](../../../../src/modelcypher/core/domain/geometry/dare_sparsity.py)
 
-```python
-class DARESparsifier:
-    """Drop And REscale sparsification for model merging."""
+| Class/Function | Line | Description |
+|----------------|------|-------------|
+| `Configuration` | 31 | Config with sparsity threshold, droppable percentile |
+| `LayerSparsityMetrics` | 47 | Per-layer sparsity result |
+| `SparsityAnalysis` | 71 | Full DARE analysis result |
+| `DARESparsityAnalyzer` | 87 | Main analyzer class with `analyze()` method |
 
-    def sparsify(
-        self,
-        pretrained: dict[str, Array],
-        finetuned: dict[str, Array],
-        drop_rate: float = 0.9,
-        backend: Backend | None = None,
-    ) -> dict[str, Array]:
-        """
-        Apply DARE sparsification.
-        """
-
-    def sparsify_for_merge(
-        self,
-        pretrained: dict[str, Array],
-        finetuned_models: list[dict[str, Array]],
-        drop_rate: float = 0.9,
-    ) -> list[dict[str, Array]]:
-        """
-        Sparsify multiple models for merging.
-
-        Uses same random seed structure for consistency.
-        """
-```
+**Also in**:
+- [`geometry_adapter_service.py:618`](../../../../src/modelcypher/core/use_cases/geometry_adapter_service.py) - `dare_merge_readiness()` helper
 
 ---
 

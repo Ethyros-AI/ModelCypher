@@ -108,23 +108,21 @@ Recent work shows deep networks approximately implement discrete Ricci flow:
 
 ---
 
-## ModelCypher Implementation
+## Code Implementation
 
-**Location**: `src/modelcypher/core/domain/geometry/manifold_curvature.py`
+**Primary Location**: [`src/modelcypher/core/domain/geometry/manifold_curvature.py`](../../../../src/modelcypher/core/domain/geometry/manifold_curvature.py)
 
-```python
-def estimate_curvature(
-    points: Array,
-    method: str = "ollivier",  # "ollivier", "forman", or "geodesic_defect"
-    k_neighbors: int = 10,
-    backend: Backend | None = None,
-) -> CurvatureResult:
-    """
-    Estimate manifold curvature from point cloud.
+| Class/Function | Line | Description |
+|----------------|------|-------------|
+| `CurvatureSign` | 52 | Enum for positive/negative/mixed curvature |
+| `CurvatureConfig` | 62 | Configuration with method, neighbors, thresholds |
+| `LocalCurvature` | 79 | Per-point curvature result |
+| `ManifoldCurvatureProfile` | 135 | Full manifold curvature profile |
+| `SectionalCurvatureEstimator` | 231 | Main estimator class with Ollivier/Forman/defect methods |
 
-    Returns per-point curvature estimates and global statistics.
-    """
-```
+**Also in**:
+- [`riemannian_utils.py:142`](../../../../src/modelcypher/core/domain/geometry/riemannian_utils.py) - `CurvatureEstimate` dataclass
+- [`loss_landscape_mlx.py:75`](../../../../src/modelcypher/core/domain/training/loss_landscape_mlx.py) - `CurvatureMetrics` for training
 
 **Design decisions**:
 1. **Multiple methods**: Ollivier, Forman, geodesic defect

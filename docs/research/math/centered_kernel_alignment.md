@@ -117,24 +117,23 @@ This unifies several representation comparison methods under one framework.
 
 ---
 
-## ModelCypher Implementation
+## Code Implementation
 
-**Location**: `src/modelcypher/core/domain/geometry/cka.py`
+**Primary Location**: [`src/modelcypher/core/domain/geometry/cka.py`](../../../../src/modelcypher/core/domain/geometry/cka.py)
 
-```python
-def compute_cka_backend(
-    x: Array,
-    y: Array,
-    backend: Backend,
-) -> float:
-    """
-    Compute linear CKA using the Backend protocol.
+| Class/Function | Line | Description |
+|----------------|------|-------------|
+| `CKAResult` | 68 | Result dataclass with similarity, kernel type |
+| `compute_cka()` | 270 | Main CKA computation function |
+| `compute_cka_matrix()` | 376 | Pairwise CKA between multiple representations |
+| `compute_cka_backend()` | 458 | Backend-agnostic CKA computation |
+| `compute_cka_from_lists()` | 515 | CKA from Python lists |
+| `compute_cka_from_grams()` | 548 | CKA directly from Gram matrices |
 
-    Uses geodesic distances for Gram matrices when curvature
-    is significant. Falls back to Euclidean only for n=2
-    (where geodesic = Euclidean by construction).
-    """
-```
+**Also used in**:
+- [`manifold_stitcher.py:928`](../../../../src/modelcypher/core/domain/geometry/manifold_stitcher.py) - CKA for stitching quality
+- [`probe_calibration.py:110`](../../../../src/modelcypher/core/domain/geometry/probe_calibration.py) - probe similarity
+- [`concept_response_matrix.py:155`](../../../../src/modelcypher/core/domain/geometry/concept_response_matrix.py) - concept alignment
 
 **Design decisions**:
 1. **Backend-agnostic**: Works with MLX, JAX, or any backend

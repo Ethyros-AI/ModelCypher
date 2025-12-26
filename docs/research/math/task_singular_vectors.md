@@ -125,29 +125,15 @@ TSV shows this is **not just a convenient parameterization** but reflects the tr
 
 ---
 
-## ModelCypher Implementation
+## Code Implementation
 
-**Location**: `src/modelcypher/core/domain/geometry/task_singular_vectors.py`
+**Primary Location**: [`src/modelcypher/core/domain/geometry/task_singular_vectors.py`](../../../../src/modelcypher/core/domain/geometry/task_singular_vectors.py)
 
-```python
-@dataclass
-class TaskSingularVectorResult:
-    """Result of TSV decomposition."""
-    singular_values: Array      # σ₁, ..., σ_r
-    left_vectors: Array         # U
-    right_vectors: Array        # V (the TSVs)
-    effective_rank: int         # Rank capturing 99% of variance
-    compression_ratio: float    # Achievable compression
-
-def compute_task_singular_vectors(
-    task_matrix: Array,
-    config: TSVConfig,
-    backend: Backend,
-) -> TaskSingularVectorResult:
-    """
-    Compute Task Singular Vectors for a layer's task matrix.
-    """
-```
+| Class/Function | Line | Description |
+|----------------|------|-------------|
+| `TaskVectorDecomposition` | 64 | Result with U, S, Vt, variance captured, effective rank |
+| `SVDBlendConfig` | 103 | Configuration with numerical stability params |
+| `_find_spectral_gap()` | 142 | Find natural rank cutoff from spectral gap |
 
 **Design decisions**:
 1. **Per-layer analysis**: TSV computed separately per layer

@@ -183,36 +183,15 @@ For merged models, we can analyze:
 
 ---
 
-## ModelCypher Implementation
+## Code Implementation
 
-**Location**: `src/modelcypher/core/domain/geometry/dora_decomposition.py`
+**Primary Location**: [`src/modelcypher/core/domain/geometry/dora_decomposition.py`](../../../../src/modelcypher/core/domain/geometry/dora_decomposition.py)
 
-```python
-class DoRADecomposition:
-    """Weight decomposition into magnitude and direction components."""
-
-    def decompose(
-        self,
-        weights: dict[str, Array],
-        backend: Backend | None = None,
-    ) -> DoRAComponents:
-        """
-        Decompose model weights into magnitude and direction.
-
-        Returns per-layer magnitude vectors and directional matrices.
-        """
-
-    def analyze_adaptation(
-        self,
-        base_weights: dict[str, Array],
-        adapted_weights: dict[str, Array],
-    ) -> AdaptationAnalysis:
-        """
-        Analyze how adaptation changed magnitude vs direction.
-
-        Returns correlation and per-layer statistics.
-        """
-```
+| Class/Function | Line | Description |
+|----------------|------|-------------|
+| `DoRAConfig` | 69 | Configuration for decomposition analysis |
+| `DoRADecomposition` | 183 | Main class with `decompose()` and `analyze_adaptation()` |
+| `DoRAMetricKey` | 369 | Enum for metric types |
 
 **Design decisions**:
 1. **Per-layer decomposition**: Each layer analyzed independently

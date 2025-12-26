@@ -112,24 +112,19 @@ The discrete GW problem is NP-hard in general, but the entropic-regularized vers
 
 ---
 
-## ModelCypher Implementation
+## Code Implementation
 
-**Location**: `src/modelcypher/core/domain/geometry/gromov_wasserstein.py`
+**Primary Location**: [`src/modelcypher/core/domain/geometry/gromov_wasserstein.py`](../../../../src/modelcypher/core/domain/geometry/gromov_wasserstein.py)
 
-```python
-def gromov_wasserstein_transport(
-    source_gram: Array,
-    target_gram: Array,
-    config: GWConfig,
-    backend: Backend,
-) -> GWResult:
-    """
-    Compute Gromov-Wasserstein transport plan.
+| Class/Function | Line | Description |
+|----------------|------|-------------|
+| `GromovWassersteinDistance` | 133 | Main GW computation class with `compute()` method |
 
-    Uses geodesic distance matrices (not Euclidean) for
-    accurate manifold-aware transport.
-    """
-```
+**Also in**:
+- [`geometry_validation_suite.py:105`](../../../../src/modelcypher/core/domain/geometry/geometry_validation_suite.py) - `GromovWassersteinConfig`
+- [`geometry_validation_suite.py:251`](../../../../src/modelcypher/core/domain/geometry/geometry_validation_suite.py) - `GromovWassersteinValidation`
+- [`optimal_transport.py:22`](../../../../src/modelcypher/infrastructure/adapters/mlx/optimal_transport.py) - MLX `GromovWassersteinSolver`
+- [`geometry_metrics_service.py:53`](../../../../src/modelcypher/core/use_cases/geometry_metrics_service.py) - `GromovWassersteinResult`
 
 **Design decisions**:
 1. **Geodesic Gram matrices**: Input distance matrices use geodesic, not Euclidean

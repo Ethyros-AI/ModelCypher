@@ -126,25 +126,19 @@ Output Layer:  ID ≈ number of classes
 
 ---
 
-## ModelCypher Implementation
+## Code Implementation
 
-**Location**: `src/modelcypher/core/domain/geometry/intrinsic_dimension.py`
+**Primary Location**: [`src/modelcypher/core/domain/geometry/intrinsic_dimension.py`](../../../../src/modelcypher/core/domain/geometry/intrinsic_dimension.py)
 
-```python
-def estimate_intrinsic_dimension(
-    points: Array,
-    method: str = "mle",  # "mle" or "twonn"
-    k_neighbors: int = 10,
-    use_geodesic: bool = True,
-    backend: Backend | None = None,
-) -> IntrinsicDimensionResult:
-    """
-    Estimate intrinsic dimension of a point cloud.
+| Class/Function | Line | Description |
+|----------------|------|-------------|
+| `IntrinsicDimension` | 89 | Main class with MLE and TwoNN estimators |
 
-    Uses geodesic distances by default for curvature-aware
-    estimation on neural network manifolds.
-    """
-```
+**Also in**:
+- [`types.py:229`](../../../../src/modelcypher/core/domain/geometry/types.py) - `IntrinsicDimensionResult` dataclass
+- [`geometry_metrics_service.py:66`](../../../../src/modelcypher/core/use_cases/geometry_metrics_service.py) - Service-level result
+- [`geometry_metrics_service.py:195`](../../../../src/modelcypher/core/use_cases/geometry_metrics_service.py) - `estimate_intrinsic_dimension()` method
+- [`async_geometry.py:106`](../../../../src/modelcypher/ports/async_geometry.py) - Async port definition
 
 **Design decisions**:
 1. **Geodesic by default**: Uses k-NN graph distances

@@ -200,42 +200,15 @@ Spectra evolve during training:
 
 ---
 
-## ModelCypher Implementation
+## Code Implementation
 
-**Location**: `src/modelcypher/core/domain/geometry/spectral_analysis.py`
+**Primary Location**: [`src/modelcypher/core/domain/geometry/spectral_analysis.py`](../../../../src/modelcypher/core/domain/geometry/spectral_analysis.py)
 
-```python
-class SpectralAnalyzer:
-    """Spectral analysis of neural network weight matrices."""
-
-    def analyze_layer(
-        self,
-        weights: Array,
-        backend: Backend | None = None,
-    ) -> LayerSpectralSignature:
-        """
-        Compute spectral signature for a single layer.
-        """
-
-    def analyze_model(
-        self,
-        model_weights: dict[str, Array],
-    ) -> ModelSpectralProfile:
-        """
-        Compute spectral profile across all layers.
-
-        Returns per-layer signatures and aggregate statistics.
-        """
-
-    def compare_spectra(
-        self,
-        profile_a: ModelSpectralProfile,
-        profile_b: ModelSpectralProfile,
-    ) -> SpectralCompatibility:
-        """
-        Assess spectral compatibility for merging.
-        """
-```
+| Class/Function | Line | Description |
+|----------------|------|-------------|
+| `SpectralMetrics` | 62 | Core metrics dataclass (eigenvalues, effective rank, etc.) |
+| `SpectralConfig` | 95 | Configuration for spectral analysis |
+| `spectral_summary()` | 363 | Aggregate statistics across layers |
 
 ---
 

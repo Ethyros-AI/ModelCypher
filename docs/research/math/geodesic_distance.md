@@ -147,26 +147,17 @@ if np.any(np.isinf(geo_dist)):
 
 ---
 
-## ModelCypher Implementation
+## Code Implementation
 
-**Location**: `src/modelcypher/core/domain/geometry/riemannian_utils.py`
+**Primary Location**: [`src/modelcypher/core/domain/geometry/riemannian_utils.py`](../../../../src/modelcypher/core/domain/geometry/riemannian_utils.py)
 
-```python
-def geodesic_distances(
-    self,
-    points: Array,
-    k_neighbors: int | None = None,
-) -> GeodesicDistanceResult:
-    """
-    Compute pairwise geodesic distances via k-NN graph.
+| Class/Function | Line | Description |
+|----------------|------|-------------|
+| `GeodesicDistanceResult` | 131 | Result dataclass with distances, graph, defect |
+| `RiemannianGeometry.geodesic_distances()` | 293 | Instance method for k-NN graph geodesics |
+| `geodesic_distance_matrix()` | 1172 | Standalone function for pairwise distances |
 
-    The k-NN graph defines the discrete manifold structure.
-    Shortest paths on this graph ARE geodesics by definition.
-
-    NO FALLBACK TO EUCLIDEAN. If the graph is disconnected,
-    we raise an error rather than silently give wrong answers.
-    """
-```
+**Also in**: [`riemannian_density.py:261`](../../../../src/modelcypher/core/domain/geometry/riemannian_density.py) - point-to-point geodesic distance
 
 **Design decisions**:
 1. **No Euclidean fallback**: Disconnection is an error, not a fallback case

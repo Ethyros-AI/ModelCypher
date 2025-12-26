@@ -176,38 +176,16 @@ Models with similar topological structure:
 
 ---
 
-## ModelCypher Implementation
+## Code Implementation
 
-**Location**: `src/modelcypher/core/domain/geometry/topological_fingerprint.py`
+**Primary Location**: [`src/modelcypher/core/domain/geometry/topological_fingerprint.py`](../../../../src/modelcypher/core/domain/geometry/topological_fingerprint.py)
 
-```python
-class TopologicalFingerprint:
-    """Topological fingerprinting of neural representations."""
+| Class/Function | Line | Description |
+|----------------|------|-------------|
+| `TopologicalFingerprint` | 153 | Main class with `compute_fingerprint()` and `compare_fingerprints()` |
 
-    def compute_fingerprint(
-        self,
-        activations: Array,
-        max_dim: int = 2,
-        backend: Backend | None = None,
-    ) -> TopologicalSignature:
-        """
-        Compute topological fingerprint of activations.
-
-        Returns Betti numbers, persistence diagrams, and summary statistics.
-        """
-
-    def compare_fingerprints(
-        self,
-        fingerprint_a: TopologicalSignature,
-        fingerprint_b: TopologicalSignature,
-        metric: str = "wasserstein",
-    ) -> float:
-        """
-        Compare two topological fingerprints.
-
-        Uses Wasserstein or bottleneck distance between persistence diagrams.
-        """
-```
+**Also in**:
+- [`geometry_metrics_service.py:78`](../../../../src/modelcypher/core/use_cases/geometry_metrics_service.py) - `TopologicalFingerprintResult`
 
 **Design decisions**:
 1. **Multi-scale**: Capture features at all scales

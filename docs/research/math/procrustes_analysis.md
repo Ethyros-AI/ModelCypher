@@ -120,25 +120,20 @@ for centered matrices with specific normalization.
 
 ---
 
-## ModelCypher Implementation
+## Code Implementation
 
-**Location**: `src/modelcypher/core/domain/geometry/generalized_procrustes.py`
+**Primary Location**: [`src/modelcypher/core/domain/geometry/generalized_procrustes.py`](../../../../src/modelcypher/core/domain/geometry/generalized_procrustes.py)
 
-```python
-class GeneralizedProcrustes:
-    """Generalized Procrustes Analysis with Fréchet mean support."""
+| Class/Function | Line | Description |
+|----------------|------|-------------|
+| `GeneralizedProcrustes` | 105 | Main GPA class with `align()` method |
 
-    def align(
-        self,
-        matrices: list[Array],
-        config: GPAConfig,
-    ) -> GPAResult:
-        """
-        Align multiple matrices to consensus.
-
-        Uses Fréchet mean for consensus when config.frechet_mean.enabled=True.
-        """
-```
+**Procrustes functions in other modules**:
+- [`backend_matrix_utils.py:241`](../../../../src/modelcypher/core/domain/geometry/backend_matrix_utils.py) - `procrustes_rotation()` via SVD
+- [`backend_matrix_utils.py:320`](../../../../src/modelcypher/core/domain/geometry/backend_matrix_utils.py) - `procrustes_align()` full alignment
+- [`geometry_engine.py:117`](../../../../src/modelcypher/core/use_cases/geometry_engine.py) - `orthogonal_procrustes()` port
+- [`cross_dimensional_projection.py:310`](../../../../src/modelcypher/core/domain/geometry/cross_dimensional_projection.py) - projection with Procrustes
+- [`embedding_projector.py:240`](../../../../src/modelcypher/core/domain/vocabulary/embedding_projector.py) - vocabulary alignment
 
 **Design decisions**:
 1. **Fréchet mean option**: Curvature-aware consensus computation

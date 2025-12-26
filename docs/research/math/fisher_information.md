@@ -117,25 +117,15 @@ This gives "Fishers for Free" without extra computation.
 
 ---
 
-## ModelCypher Implementation
+## Code Implementation
 
-**Location**: `src/modelcypher/core/domain/geometry/fisher_blending.py`
+**Primary Location**: [`src/modelcypher/core/domain/geometry/fisher_blending.py`](../../../../src/modelcypher/core/domain/geometry/fisher_blending.py)
 
-```python
-def fisher_weighted_merge(
-    models: list[dict[str, Array]],
-    fisher_matrices: list[dict[str, Array]],
-    model_weights: list[float] | None = None,
-    config: FisherConfig | None = None,
-    backend: Backend | None = None,
-) -> dict[str, Array]:
-    """
-    Merge models using Fisher-weighted averaging.
-
-    Each parameter is weighted by its importance (Fisher value)
-    in each source model.
-    """
-```
+| Class/Function | Line | Description |
+|----------------|------|-------------|
+| `FisherBlendingConfig` | 67 | Configuration with diagonal approx, per-layer settings |
+| `FisherBlendingResult` | 184 | Result with merged weights, importance maps |
+| `fisher_weighted_merge()` | 360 | Main Fisher-weighted merge function |
 
 **Design decisions**:
 1. **Diagonal by default**: Full Fisher is impractical for LLMs

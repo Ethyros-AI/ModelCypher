@@ -127,31 +127,15 @@ Relative representations align with our geometric framework:
 
 ---
 
-## ModelCypher Implementation
+## Code Implementation
 
-**Location**: `src/modelcypher/core/domain/geometry/relative_representation.py`
+**Primary Location**: [`src/modelcypher/core/domain/geometry/relative_representation.py`](../../../../src/modelcypher/core/domain/geometry/relative_representation.py)
 
-```python
-def compute_relative_representation(
-    points: Array,
-    anchors: Array,
-    similarity: str = "cosine",
-    normalize: bool = True,
-    backend: Backend | None = None,
-) -> Array:
-    """
-    Compute relative representations using anchor similarities.
-
-    Args:
-        points: [n, d] points to transform
-        anchors: [k, d] anchor points
-        similarity: "cosine" or "rbf"
-        normalize: Whether to L2-normalize output
-
-    Returns:
-        [n, k] relative representations
-    """
-```
+| Class/Function | Line | Description |
+|----------------|------|-------------|
+| `RelativeRepresentation` | 54 | Class encapsulating relative representation computation |
+| `compute_relative_representation()` | 134 | Standalone function for computing relative representations |
+| `align_relative_representations()` | 170 | Align representations across models |
 
 **Design decisions**:
 1. **Multiple similarity functions**: Cosine (default) and RBF

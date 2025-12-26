@@ -211,33 +211,19 @@ $$\text{shift} = \text{HSIC}(\text{source features}, \text{domain indicator})$$
 
 ---
 
-## ModelCypher Implementation
+## Code Implementation
 
-**Location**: `src/modelcypher/core/domain/geometry/cka.py`
+HSIC is implemented as part of the CKA module (CKA = normalized HSIC).
 
-```python
-def compute_hsic(
-    K: Array,
-    L: Array,
-    unbiased: bool = True,
-    backend: Backend | None = None,
-) -> float:
-    """
-    Compute Hilbert-Schmidt Independence Criterion.
+**Primary Location**: [`src/modelcypher/core/domain/geometry/cka.py`](../../../../src/modelcypher/core/domain/geometry/cka.py)
 
-    The mathematical foundation underlying CKA.
-    """
+| Class/Function | Line | Description |
+|----------------|------|-------------|
+| `CKAResult` | 68 | Result dataclass (includes HSIC internally) |
+| `compute_cka()` | 270 | CKA via normalized HSIC |
+| `compute_cka_from_grams()` | 548 | Direct Gram matrix version |
 
-def compute_cka(
-    X: Array,
-    Y: Array,
-    kernel: str = "linear",
-    backend: Backend | None = None,
-) -> float:
-    """
-    Compute Centered Kernel Alignment via normalized HSIC.
-    """
-```
+The HSIC computation is embedded within the CKA functions (centering, trace product, normalization).
 
 ---
 

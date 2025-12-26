@@ -82,25 +82,17 @@ The Fréchet mean is differentiable with respect to input points, enabling backp
 
 ---
 
-## ModelCypher Implementation
+## Code Implementation
 
-**Location**: `src/modelcypher/core/domain/geometry/riemannian_utils.py`
+**Primary Location**: [`src/modelcypher/core/domain/geometry/riemannian_utils.py`](../../../../src/modelcypher/core/domain/geometry/riemannian_utils.py)
 
-```python
-def frechet_mean(
-    self,
-    points: Array,
-    weights: Array | None = None,
-    max_iterations: int = 100,
-    tolerance: float = 1e-6,
-) -> FrechetMeanResult:
-    """
-    Compute Fréchet mean using geodesic gradient descent.
+| Class/Function | Line | Description |
+|----------------|------|-------------|
+| `FrechetMeanResult` | 121 | Result dataclass with mean, iterations, convergence |
+| `RiemannianGeometry.frechet_mean()` | 164 | Instance method for Fréchet mean computation |
+| `frechet_mean()` | 1146 | Standalone function wrapping the class method |
 
-    NO CLAMPING: Uses true geodesic/Euclidean ratio.
-    Raises ValueError for disconnected manifolds.
-    """
-```
+**Also used in**: [`generalized_procrustes.py:32`](../../../../src/modelcypher/core/domain/geometry/generalized_procrustes.py) - `FrechetMeanConfig` for GPA consensus
 
 **Key design decisions**:
 1. **No Euclidean fallback** - If geodesic computation fails, we raise an error
