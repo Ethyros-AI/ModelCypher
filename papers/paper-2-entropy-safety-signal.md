@@ -16,7 +16,9 @@ Intensity modifiers sharpen language model output distributions. We measure toke
 
 Prompt modifications change LLM behavior through entropy dynamics. The softmax output has Boltzmann form:
 
-$$p(x_i | x_{<i}) = \frac{\exp(z_i / T)}{\sum_j \exp(z_j / T)}$$
+$$p(x_i = v \mid x_{<i}) = \frac{\exp(z_{i,v} / T)}{\sum_{v' \in V} \exp(z_{i,v'} / T)}$$
+
+where $z_{i,v}$ is the pre-softmax logit for token $v$ at position $i$, and $V$ is the vocabulary.
 
 This is not a metaphor—it is literal statistical mechanics. Temperature controls exploration; prompt modifications perturb the energy landscape.
 

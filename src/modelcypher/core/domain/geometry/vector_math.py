@@ -654,6 +654,116 @@ class BackendVectorMath:
         self.backend.eval(result)
         return result
 
+    def slerp_matrix(
+        self,
+        m0: Any,
+        m1: Any,
+        t: float,
+        epsilon: float | None = None,
+    ) -> tuple[Any, dict[str, float]] | None:
+        """Spherical linear interpolation for 2D weight matrices.
+
+        Treats each matrix as a high-dimensional vector and applies SLERP.
+        This preserves both source and target geometry proportionally,
+        unlike SVD-based merging which uses only target geometry.
+
+        For weight matrices W₀ and W₁:
+        1. Flatten to vectors v₀, v₁
+        2. Compute angle θ = arccos(v₀·v₁ / (||v₀|| ||v₁||))
+        3. SLERP: v_merged = (sin((1-t)θ)/sinθ)v₀ + (sin(tθ)/sinθ)v₁
+        4. Reshape back to matrix
+
+        Args:
+            m0: First matrix (Backend array, shape [m, n])
+            m1: Second matrix (Backend array, shape [m, n])
+            t: Interpolation factor in [0, 1]. t=0 returns m0, t=1 returns m1.
+            epsilon: Threshold for near-parallel detection.
+
+        Returns:
+            Tuple of (interpolated_matrix, metrics), or None if invalid.
+            Metrics include: angle_deg, interpolation_mode, magnitude_ratio.
+        """
+        if epsilon is None:
+            epsilon = self._finfo.eps * 100
+
+        m0_arr = self._ensure_array(m0)
+        m1_arr = self._ensure_array(m1)
+
+        if m0_arr is None or m1_arr is None:
+            return None
+
+        shape_m0 = self.backend.shape(m0_arr)
+        shape_m1 = self.backend.shape(m1_arr)
+
+        if shape_m0 != shape_m1 or len(shape_m0) != 2:
+            return None
+
+        # Flatten matrices to vectors
+        v0 = self.backend.reshape(m0_arr, (-1,))
+        v1 = self.backend.reshape(m1_arr, (-1,))
+
+        # Compute magnitudes (Frobenius norms)
+        norm_v0 = self.backend.norm(v0)
+        norm_v1 = self.backend.norm(v1)
+        self.backend.eval(norm_v0, norm_v1)
+
+        norm_v0_val = _to_scalar(norm_v0)
+        norm_v1_val = _to_scalar(norm_v1)
+
+        if norm_v0_val <= self._finfo.eps or norm_v1_val <= self._finfo.eps:
+            return None
+
+        # Normalize
+        v0_unit = v0 / norm_v0
+        v1_unit = v1 / norm_v1
+
+        # Compute cosine similarity (dot product of unit vectors)
+        dot = self.backend.dot(v0_unit, v1_unit)
+        dot_clamped = self.backend.clip(dot, -1.0, 1.0)
+        self.backend.eval(dot_clamped)
+        dot_val = _to_scalar(dot_clamped)
+
+        # Compute angle
+        theta = math.acos(dot_val)
+        angle_deg = math.degrees(theta)
+
+        metrics = {
+            "angle_deg": angle_deg,
+            "magnitude_ratio": norm_v0_val / (norm_v1_val + 1e-10),
+            "cosine_similarity": dot_val,
+        }
+
+        # Handle edge cases
+        if theta < epsilon:
+            # Near-identical: linear interpolation
+            result_flat = v0 * (1.0 - t) + v1 * t
+            metrics["interpolation_mode"] = "linear_parallel"
+        elif theta > math.pi - epsilon:
+            # Near-antipodal: linear interpolation (SLERP undefined)
+            result_flat = v0 * (1.0 - t) + v1 * t
+            metrics["interpolation_mode"] = "linear_antipodal"
+        else:
+            # Standard SLERP
+            sin_theta = math.sin(theta)
+            s0 = math.sin((1.0 - t) * theta) / sin_theta
+            s1 = math.sin(t * theta) / sin_theta
+
+            # Interpolate on unit sphere then rescale
+            result_unit = v0_unit * s0 + v1_unit * s1
+
+            # Interpolate magnitude linearly
+            target_mag = (1.0 - t) * norm_v0_val + t * norm_v1_val
+            result_flat = result_unit * target_mag
+            metrics["interpolation_mode"] = "slerp"
+
+        self.backend.eval(result_flat)
+
+        # Reshape back to matrix
+        result = self.backend.reshape(result_flat, shape_m0)
+        self.backend.eval(result)
+
+        return result, metrics
+
     def slerp_batch(
         self,
         weights_a: dict[str, Any],

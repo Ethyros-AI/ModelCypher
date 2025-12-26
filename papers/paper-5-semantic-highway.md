@@ -36,11 +36,17 @@ This paper provides empirical evidence for this hypothesis through cross-archite
 
 We use the Two-Nearest Neighbors (TwoNN) method (Facco et al., 2017) to estimate local intrinsic dimension:
 
-```
-ID = log(N-1) / log(μ)
-```
+For each point $i$, let $r_{i,1}$ and $r_{i,2}$ be the first and second nearest-neighbor distances, and define:
 
-where μ is the ratio of second-nearest to first-nearest neighbor distances, computed via geodesic path lengths on a k-NN graph (k=10).
+$$\mu_i = \frac{r_{i,2}}{r_{i,1}}$$
+
+Under the TwoNN model assumptions, $\mu$ follows $F(\mu) = 1 - \mu^{-d}$, implying a linear relationship:
+
+$$-\log(1 - F(\mu)) = d \, \log(\mu)$$
+
+Using the empirical CDF, we estimate $d$ as the slope of a regression through the origin between $x_i = \log(\mu_{(i)})$ and $y_i = -\log\left(1 - \frac{i}{N}\right)$ for sorted ratios $\mu_{(i)}$.
+
+Distances $r_{i,1}, r_{i,2}$ are computed via geodesic path lengths on a k-NN graph (k=10).
 
 ### 2.2 Semantic Probe Corpus
 

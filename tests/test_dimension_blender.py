@@ -19,12 +19,14 @@
 Dimension Blender Unit Tests.
 
 Tests for the DimensionBlender module with lazy import handling.
+Uses Backend protocol instead of numpy for array operations.
 """
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
+
+from modelcypher.core.domain._backend import get_default_backend
 
 
 def _test_correlation_config():
@@ -94,13 +96,15 @@ class TestCorrelationWeights:
             compute_dimension_correlations,
         )
 
+        backend = get_default_backend()
         config = _test_correlation_config()
 
-        # Create source and target activations
+        # Create source and target activations using backend
         hidden_dim = 10
         num_probes = 5
-        source = np.random.randn(num_probes, hidden_dim).astype(np.float32)
-        target = source.copy()  # Identical activations
+        backend.random_seed(42)
+        source = backend.random_randn((num_probes, hidden_dim))
+        target = source  # Identical activations
 
         correlations = compute_dimension_correlations(source, target, config)
 
@@ -115,23 +119,24 @@ class TestCorrelationWeights:
             compute_dimension_correlations,
         )
 
+        backend = get_default_backend()
         config = _test_correlation_config()
 
         hidden_dim = 10
         num_probes = 5
-        source = np.random.randn(num_probes, hidden_dim).astype(np.float32)
-        target = np.random.randn(num_probes, hidden_dim).astype(np.float32)
+        backend.random_seed(42)
+        source = backend.random_randn((num_probes, hidden_dim))
+        backend.random_seed(43)
+        target = backend.random_randn((num_probes, hidden_dim))
 
         correlations = compute_dimension_correlations(source, target, config)
         weights = compute_correlation_weights(correlations, config)
 
-        from modelcypher.core.domain._backend import get_default_backend
-        backend = get_default_backend()
         weights_np = backend.to_numpy(weights)
 
         assert weights_np.shape == (hidden_dim,)
-        assert np.all(weights_np >= 0)
-        assert np.all(weights_np <= 1)
+        assert (weights_np >= 0).all()
+        assert (weights_np <= 1).all()
 
     def test_compute_correlation_based_alpha(self):
         """compute_correlation_based_alpha returns valid alpha vector."""
@@ -139,18 +144,22 @@ class TestCorrelationWeights:
             compute_correlation_based_alpha,
         )
 
+        backend = get_default_backend()
         config = _test_correlation_config()
 
         hidden_dim = 10
         num_probes = 5
-        source = np.random.randn(num_probes, hidden_dim).astype(np.float32)
-        target = np.random.randn(num_probes, hidden_dim).astype(np.float32)
+        backend.random_seed(42)
+        source = backend.random_randn((num_probes, hidden_dim))
+        backend.random_seed(43)
+        target = backend.random_randn((num_probes, hidden_dim))
 
         alpha, correlations = compute_correlation_based_alpha(source, target, config, base_alpha=0.5)
 
-        assert alpha.shape == (hidden_dim,)
-        assert np.all(alpha >= 0)
-        assert np.all(alpha <= 1)
+        alpha_np = backend.to_numpy(alpha)
+        assert alpha_np.shape == (hidden_dim,)
+        assert (alpha_np >= 0).all()
+        assert (alpha_np <= 1).all()
 
 
 class TestAffinityMaps:

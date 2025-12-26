@@ -50,7 +50,7 @@ CKA compares Gram matrices (inner product structures) between representations:
 
 $$\text{CKA}(G_A, G_B) = \frac{\langle \tilde{K}, \tilde{L} \rangle_F}{\|\tilde{K}\|_F \|\tilde{L}\|_F}$$
 
-where $\tilde{K} = HG_AH$ and $\tilde{L} = HG_BH$ are centered kernels.
+where $\tilde{K} = HG_AH$ and $\tilde{L} = HG_BH$ are centered kernels, and $H = I_n - \frac{1}{n}\mathbf{1}\mathbf{1}^T$ is the centering matrix.
 
 CKA = 1 means identical relational structure. CKA = 0 means orthogonal structure.
 

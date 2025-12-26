@@ -78,11 +78,13 @@ Before attempting transfer, we compute layer-wise compatibility:
 
 ### 3.2 Anchor-Locked Procrustes
 
-Standard Procrustes finds rotation R minimizing ||A_SR - A_T||². However, Procrustes solutions are ambiguous up to sign flips across singular values, which can cause "mirror world" bugs.
+Standard (orthogonal) Procrustes finds an orthogonal matrix $R$ minimizing $\|A_S R - A_T\|_F^2$. In practice, the optimal solution can include a reflection ($\det(R) = -1$), and near-degenerate singular values can make the alignment numerically unstable; both can manifest as "mirror world" bugs.
 
 **Anchor Locking**: We constrain R such that designated anchor pairs have positive cosine similarity:
 
-$$R^* = \arg\min_R ||A_SR - A_T||_F^2 \quad \text{s.t.} \quad \langle a_i R, b_i \rangle > 0 \; \forall i \in \text{locks}$$
+For matched hidden dimension $d$ (or after projecting both sides to a shared $d$), we solve the orthogonal Procrustes problem with additional sign constraints, where $O(d) = \{R \in \mathbb{R}^{d \times d} : R^T R = I\}$:
+
+$$R^* = \arg\min_{R \in O(d)} \|A_S R - A_T\|_F^2 \quad \text{s.t.} \quad \langle a_i R, b_i \rangle > 0 \;\; \forall i \in \text{locks}$$
 
 We solve this via iterative projection: SVD for unconstrained rotation, then sign correction for locked anchors.
 

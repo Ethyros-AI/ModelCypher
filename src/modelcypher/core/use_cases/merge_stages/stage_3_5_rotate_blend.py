@@ -57,23 +57,30 @@ logger = logging.getLogger(__name__)
 class RotateBlendConfig:
     """Configuration for Stages 3-5.
 
-    GEOMETRY-DRIVEN MERGE: No arbitrary thresholds.
+    GEOMETRY-DRIVEN MERGE: Two strategies available.
 
-    The merge formula is mathematically derived:
-    1. Procrustes alignment: Find optimal rotation R* = argmin ||W_t - R @ W_s||_F
-    2. SVD decomposition: Extract singular vectors (geometry) and values (magnitude)
-    3. Fréchet mean: Geometric mean of singular values (geodesic midpoint on ℝ^+)
-    4. Reconstruct: Use target's geometry with merged magnitudes
+    1. SLERP (Spherical Linear Interpolation) - DEFAULT for cross-model merges:
+       - Treats weight matrices as high-dimensional vectors
+       - Interpolates along geodesic on hypersphere
+       - Preserves BOTH source and target geometry proportionally
+       - Formula: W = (sin((1-t)θ)/sinθ)W_s + (sin(tθ)/sinθ)W_t
 
-    W_merged = U_t @ diag(√(σ_s' ⊙ σ_t)) @ V_t^T
+    2. Fréchet-SVD (legacy) - for same-architecture merges:
+       - Decomposes into U, Σ, V
+       - Uses TARGET geometry with blended magnitudes
+       - Formula: W = U_t @ diag(√(σ_s ⊙ σ_t)) @ V_t^T
 
-    No tunable alpha. Base alpha is derived from probe geometry, not config.
+    SLERP is preferred for disparate models because it doesn't
+    destroy source geometry by projecting onto target's singular vectors.
     """
 
-    # Legacy flags - kept for backward compatibility but ignored
-    # The pure geometric merge has no parameters
-    enable_rotation: bool = True  # Always true - rotation is the alignment step
-    use_transport_guided: bool = False  # Transport is alternative alignment method
+    # SLERP-based merging (preserves both geometries)
+    use_slerp: bool = True  # Default to SLERP for cross-model merges
+    slerp_t: float = 0.5  # Interpolation factor: 0=source, 1=target
+
+    # Legacy flags - kept for backward compatibility
+    enable_rotation: bool = True  # Pre-alignment before merge
+    use_transport_guided: bool = False  # Transport alternative
 
     # PROPAGATE (zipper) - maintains layer continuity
     enable_zipper: bool = True
