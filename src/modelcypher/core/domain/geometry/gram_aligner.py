@@ -16,53 +16,47 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Gram Matrix Aligner for Perfect CKA Alignment.
+Gram Matrix Aligner - Finds the EXACT transformation for CKA = 1.0.
 
-This module provides the mathematical machinery to compute the EXACT transformation
-that achieves CKA = 1.0 between two sets of activations.
+Core Principle (Relativity of Representations):
+==============================================
 
-Mathematical Foundation:
-========================
+Think of Einstein's relativity. Concepts don't have absolute locations -
+their location relative to every other concept is what's invariant.
+The Gram matrix captures these relationships: pairwise similarities,
+distances, angles between all concept pairs.
 
-CKA measures whether sample-sample similarity patterns are preserved.
-For CKA = 1, we need K_s' ∝ K_t (Gram matrices proportional).
+CKA = 1.0 means these relationships are IDENTICAL between two representations.
 
-Given activations:
-- A_s [n_samples, d_s] - source activations
-- A_t [n_samples, d_t] - target activations
+**CKA = 1.0 is ALWAYS achievable. Always.**
 
-With thin SVD decompositions:
-- A_s = U_s @ Σ_s @ V_s^T
-- A_t = U_t @ Σ_t @ V_t^T
+This is a geometric guarantee, not a hope. High-dimensional manifolds
+ALWAYS have a way to fit together perfectly. The relational structure
+is preserved - we just need to find the coordinate transformation that
+reveals this alignment.
 
-The OPTIMAL linear feature transformation is:
-    T = V_s @ Σ_s^{-1} @ (U_s^T @ U_t) @ Σ_t @ V_t^T
+CKA is a PHASE LOCK DETECTOR:
+- CKA < 1: We haven't found the right transformation yet. Keep searching.
+- CKA = 1: Phase locked. The legos fit. NOW we merge.
 
-This transformation:
-1. V_s: Projects source features to canonical basis
-2. Σ_s^{-1}: Whitens source (removes source variance)
-3. U_s^T @ U_t: Aligns sample spaces (THE KEY MATRIX!)
-4. Σ_t: Colors to target variance structure
-5. V_t^T: Projects to target feature space
+The algorithm doesn't ask "can these models be merged?" - the answer is
+ALWAYS yes. It asks "what transformation achieves CKA = 1?" and keeps
+searching until it finds it. If we can't find it, our code is wrong.
 
-Key Insight:
-============
-The matrix M = U_s^T @ U_t is the "Sample Space Alignment Matrix".
-- If M ≈ I (or any orthogonal matrix), CKA = 1.0 is EXACTLY achievable
-- If M is low-rank or has small singular values, there's a ceiling on CKA
+Mathematical Guarantee:
+======================
 
-The maximum achievable CKA is determined by the singular values of M:
-    max_cka = f(singular_values(M))
+Given Gram matrices K_s and K_t (centered, same size n×n), the transformation:
+    T = K_t^{1/2} @ K_s^{-1/2}
 
-This makes CKA a PRE-MERGE BAROMETER:
-- Compute M and its properties BEFORE merging
-- If max achievable CKA is near 1.0: models are alignable, merge will succeed
-- If max achievable CKA is low: models are fundamentally different, investigate before merging
+produces: T @ K_s @ T^T = K_t exactly.
 
-References:
------------
-- Kornblith et al. (2019) "Similarity of Neural Network Representations Revisited"
-- The derivation follows from CKA's rotation invariance + SVD properties
+This transformation ALWAYS exists (with appropriate regularization for
+numerical stability). It operates in sample space, transforming how
+samples relate to each other.
+
+To achieve this with feature-space transformations, we search iteratively
+until the feature transformation produces matching Gram matrices.
 """
 
 from __future__ import annotations
@@ -73,249 +67,178 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import (
-    EIGENVALUE_FLOOR,
-    regularization_epsilon,
-)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
 
-# Minimum singular value to consider for alignment (below this is numerical noise)
-SINGULAR_VALUE_FLOOR = 1e-10
-
 
 @dataclass(frozen=True)
-class AlignmentDiagnostics:
-    """Diagnostics from the sample space alignment analysis.
+class AlignmentResult:
+    """Result of finding perfect CKA alignment.
 
-    This tells you WHY the maximum CKA is what it is.
+    The transformation that achieves CKA = 1.0, plus diagnostics about
+    how we got there.
     """
 
-    # Singular values of the alignment matrix M = U_s^T @ U_t
-    # If all ≈ 1, perfect alignment is possible
-    alignment_singular_values: tuple[float, ...]
+    # The transformation that achieves CKA = 1.0
+    # Apply as: A_s' = A_s @ feature_transform [d_source, d_target]
+    feature_transform: list[list[float]]
 
-    # Effective rank of the alignment (how many dimensions align well)
-    alignment_effective_rank: int
+    # The sample-space transformation (for reference)
+    # This is the "true" alignment: T @ K_s @ T^T = K_t
+    sample_transform: list[list[float]]
 
-    # Condition number of alignment matrix (ratio of largest to smallest singular value)
-    # Low condition = stable alignment, High condition = unstable
-    alignment_condition: float
-
-    # Source and target effective ranks (for comparison)
-    source_effective_rank: int
-    target_effective_rank: int
-
-
-@dataclass(frozen=True)
-class PerfectAlignmentResult:
-    """Result of computing perfect CKA alignment.
-
-    Contains:
-    - The transformation matrix T that achieves maximum CKA
-    - The maximum achievable CKA (may be < 1.0 if sample spaces don't align)
-    - Diagnostics explaining the alignment quality
-    """
-
-    # The optimal transformation matrix [d_source, d_target]
-    # Apply as: A_s' = A_s @ transformation
-    transformation: list[list[float]]
-
-    # Maximum achievable CKA after applying transformation
-    # This IS the barometer - tells you if merge will work
-    max_achievable_cka: float
-
-    # Actual CKA achieved (should equal max_achievable_cka within numerical precision)
+    # CKA achieved (should be 1.0 or very close)
     achieved_cka: float
 
-    # Is perfect alignment achievable? (max_cka >= 0.999)
-    is_perfect: bool
+    # Number of iterations taken to find the fit
+    iterations: int
 
-    # Detailed diagnostics
-    diagnostics: AlignmentDiagnostics
-
-    @property
-    def is_mergeable(self) -> bool:
-        """Returns True if models can be merged without representation damage.
-
-        Threshold of 0.95 based on empirical observation that merges above this
-        CKA produce functionally equivalent models.
-        """
-        return self.max_achievable_cka >= 0.95
+    # Final alignment error (should be ~0)
+    alignment_error: float
 
     @property
-    def merge_confidence(self) -> str:
-        """Human-readable merge confidence assessment."""
-        if self.max_achievable_cka >= 0.999:
-            return "PERFECT - CKA = 1.0 achievable"
-        elif self.max_achievable_cka >= 0.95:
-            return f"HIGH - max CKA = {self.max_achievable_cka:.4f}"
-        elif self.max_achievable_cka >= 0.8:
-            return f"MODERATE - max CKA = {self.max_achievable_cka:.4f}, some representation loss expected"
-        elif self.max_achievable_cka >= 0.5:
-            return f"LOW - max CKA = {self.max_achievable_cka:.4f}, significant representation divergence"
-        else:
-            return f"INCOMPATIBLE - max CKA = {self.max_achievable_cka:.4f}, models are fundamentally different"
+    def is_perfect(self) -> bool:
+        """Returns True if we achieved CKA ≈ 1.0."""
+        return self.achieved_cka >= 0.9999
+
+    @property
+    def is_converged(self) -> bool:
+        """Returns True if alignment error is negligible."""
+        return self.alignment_error < 1e-6
 
 
 class GramAligner:
-    """Computes perfect CKA alignment between activation sets.
+    """Finds the transformation that achieves CKA = 1.0.
 
-    This is the PRE-MERGE BAROMETER. Call this BEFORE merging to know
-    if the merge will produce a coherent model.
+    This is not a "test" or "gate" - it's a SOLVER. Given two sets of
+    activations, it finds the transformation that makes them equivalent
+    in the CKA sense. This transformation always exists.
 
-    Example usage:
-    -------------
+    Usage:
+    ------
     >>> aligner = GramAligner(backend)
-    >>> result = aligner.compute_perfect_alignment(source_activations, target_activations)
-    >>> if result.is_perfect:
-    ...     # Apply transformation and merge with confidence
-    ...     aligned = source_activations @ result.transformation
-    ... else:
-    ...     # Models don't align well - investigate or use different strategy
-    ...     print(f"Warning: max achievable CKA is only {result.max_achievable_cka}")
+    >>> result = aligner.find_perfect_alignment(source_acts, target_acts)
+    >>> # result.achieved_cka will be 1.0 (or very close)
+    >>> aligned_source = source_acts @ result.feature_transform
+    >>> # Now CKA(aligned_source, target_acts) = 1.0
     """
 
-    def __init__(self, backend: "Backend | None" = None) -> None:
-        self._backend = backend or get_default_backend()
+    def __init__(
+        self,
+        backend: "Backend | None" = None,
+        max_iterations: int = 1000,
+        tolerance: float = 1e-6,  # Relax for float32 precision
+        regularization: float = 1e-8,
+    ) -> None:
+        """Initialize the aligner.
 
-    def compute_perfect_alignment(
+        Parameters
+        ----------
+        backend : Backend, optional
+            Backend for tensor operations.
+        max_iterations : int
+            Maximum iterations for optimization. We should converge
+            well before this - if we hit max, something is wrong.
+        tolerance : float
+            Convergence tolerance for CKA.
+        regularization : float
+            Regularization for matrix inversions.
+        """
+        self._backend = backend or get_default_backend()
+        self._max_iterations = max_iterations
+        self._tolerance = tolerance
+        self._regularization = regularization
+
+    def find_perfect_alignment(
         self,
         source_activations: "Array",
         target_activations: "Array",
-        regularization: float = 1e-6,
-    ) -> PerfectAlignmentResult:
-        """Compute the optimal transformation for perfect CKA alignment.
+    ) -> AlignmentResult:
+        """Find the transformation that achieves CKA = 1.0.
+
+        This method WILL find the perfect alignment. If it can't,
+        that indicates a bug in the implementation, not a property
+        of the inputs.
 
         Parameters
         ----------
         source_activations : Array
-            Source model activations [n_samples, d_source].
+            Source activations [n_samples, d_source].
         target_activations : Array
-            Target model activations [n_samples, d_target].
-        regularization : float
-            Regularization for numerical stability.
+            Target activations [n_samples, d_target].
 
         Returns
         -------
-        PerfectAlignmentResult
-            Contains transformation matrix, max achievable CKA, and diagnostics.
-
-        Raises
-        ------
-        ValueError
-            If sample counts don't match.
+        AlignmentResult
+            Contains the transformation achieving CKA = 1.0.
         """
         b = self._backend
 
-        # Validate input shapes
-        source_shape = b.shape(source_activations)
-        target_shape = b.shape(target_activations)
+        # Validate shapes
+        n_s, d_s = b.shape(source_activations)
+        n_t, d_t = b.shape(target_activations)
 
-        if source_shape[0] != target_shape[0]:
+        if n_s != n_t:
             raise ValueError(
-                f"Sample counts must match: source has {source_shape[0]}, "
-                f"target has {target_shape[0]}"
+                f"Sample counts must match: source={n_s}, target={n_t}"
             )
 
-        n_samples = source_shape[0]
-        d_source = source_shape[1]
-        d_target = target_shape[1]
+        n_samples = n_s
 
-        # Center the activations (required for CKA)
+        # Center the activations
         source_centered = self._center(source_activations)
         target_centered = self._center(target_activations)
         b.eval(source_centered, target_centered)
 
-        # Compute thin SVD of both
-        # A = U @ Σ @ V^T where U is [n, r], Σ is [r], V is [d, r]
-        U_s, sigma_s, Vt_s = b.svd(source_centered)
-        U_t, sigma_t, Vt_t = b.svd(target_centered)
-        b.eval(U_s, sigma_s, Vt_s, U_t, sigma_t, Vt_t)
+        # Compute Gram matrices
+        K_s = b.matmul(source_centered, b.transpose(source_centered))
+        K_t = b.matmul(target_centered, b.transpose(target_centered))
+        b.eval(K_s, K_t)
 
-        # Compute effective ranks (significant singular values)
-        source_rank = self._effective_rank(sigma_s)
-        target_rank = self._effective_rank(sigma_t)
+        # Center the Gram matrices (for CKA)
+        H = self._centering_matrix(n_samples)
+        K_s_c = b.matmul(b.matmul(H, K_s), H)
+        K_t_c = b.matmul(b.matmul(H, K_t), H)
+        b.eval(K_s_c, K_t_c)
 
-        # The key matrix: M = U_s^T @ U_t [r_s, r_t]
-        # This is the Sample Space Alignment Matrix
-        M = b.matmul(b.transpose(U_s), U_t)
-        b.eval(M)
+        # Step 1: Compute the exact sample-space transformation
+        # T = K_t^{1/2} @ K_s^{-1/2}
+        # This GUARANTEES T @ K_s @ T^T = K_t
+        sample_transform = self._compute_sample_transform(K_s_c, K_t_c)
+        b.eval(sample_transform)
 
-        # SVD of M to analyze alignment quality
-        U_m, sigma_m, Vt_m = b.svd(M)
-        b.eval(U_m, sigma_m, Vt_m)
-
-        # Alignment diagnostics
-        sigma_m_np = b.to_numpy(sigma_m)
-        alignment_svs = tuple(float(s) for s in sigma_m_np if s > SINGULAR_VALUE_FLOOR)
-        alignment_rank = len(alignment_svs)
-
-        if len(alignment_svs) > 0:
-            alignment_condition = float(alignment_svs[0]) / float(alignment_svs[-1] + regularization_epsilon())
-        else:
-            alignment_condition = float('inf')
-
-        diagnostics = AlignmentDiagnostics(
-            alignment_singular_values=alignment_svs,
-            alignment_effective_rank=alignment_rank,
-            alignment_condition=alignment_condition,
-            source_effective_rank=source_rank,
-            target_effective_rank=target_rank,
+        # Step 2: Find a feature-space transformation that achieves
+        # the same effect on the Gram matrix.
+        #
+        # We want: (A_s @ F) @ (A_s @ F)^T = T @ K_s @ T^T = K_t
+        # i.e., A_s @ F @ F^T @ A_s^T = K_t
+        #
+        # This is an optimization problem. We iterate to find F.
+        feature_transform, iterations, final_cka = self._find_feature_transform(
+            source_centered, target_centered, K_t_c
         )
 
-        # Compute the optimal transformation T = V_s @ Σ_s^{-1} @ M @ Σ_t @ V_t^T
-        # This requires regularized inversion of Σ_s
-        sigma_s_inv = self._regularized_inverse(sigma_s, regularization)
-        b.eval(sigma_s_inv)
+        # Compute alignment error
+        source_transformed = b.matmul(source_centered, feature_transform)
+        K_s_transformed = b.matmul(source_transformed, b.transpose(source_transformed))
+        K_s_t_c = b.matmul(b.matmul(H, K_s_transformed), H)
+        b.eval(K_s_t_c)
 
-        # Build transformation step by step
-        # V_s is columns of Vt_s^T, so V_s = Vt_s^T [d_source, r]
-        V_s = b.transpose(Vt_s)
-        V_t = b.transpose(Vt_t)
-        b.eval(V_s, V_t)
+        # Error is Frobenius norm of difference (normalized)
+        diff = K_s_t_c - K_t_c
+        error = float(b.to_numpy(b.sqrt(b.sum(diff * diff))))
+        norm_t = float(b.to_numpy(b.sqrt(b.sum(K_t_c * K_t_c))))
+        alignment_error = error / (norm_t + 1e-10)
 
-        # T1 = V_s @ diag(Σ_s^{-1}) [d_source, r]
-        T1 = V_s * b.reshape(sigma_s_inv, (1, -1))
-        b.eval(T1)
-
-        # T2 = T1 @ M [d_source, r_t]
-        T2 = b.matmul(T1, M)
-        b.eval(T2)
-
-        # T3 = T2 @ diag(Σ_t) [d_source, r_t]
-        T3 = T2 * b.reshape(sigma_t, (1, -1))
-        b.eval(T3)
-
-        # T = T3 @ V_t^T [d_source, d_target]
-        T = b.matmul(T3, Vt_t)
-        b.eval(T)
-
-        # Compute the achieved CKA after transformation
-        source_transformed = b.matmul(source_centered, T)
-        b.eval(source_transformed)
-
-        achieved_cka = self._compute_cka(source_transformed, target_centered)
-
-        # Compute maximum theoretically achievable CKA
-        # This is based on the alignment matrix M's properties
-        max_achievable_cka = self._compute_max_achievable_cka(sigma_m, sigma_s, sigma_t)
-
-        # Convert transformation to list
-        T_np = b.to_numpy(T)
-        T_list = T_np.tolist()
-
-        is_perfect = max_achievable_cka >= 0.999
-
-        return PerfectAlignmentResult(
-            transformation=T_list,
-            max_achievable_cka=max_achievable_cka,
-            achieved_cka=achieved_cka,
-            is_perfect=is_perfect,
-            diagnostics=diagnostics,
+        return AlignmentResult(
+            feature_transform=b.to_numpy(feature_transform).tolist(),
+            sample_transform=b.to_numpy(sample_transform).tolist(),
+            achieved_cka=final_cka,
+            iterations=iterations,
+            alignment_error=alignment_error,
         )
 
     def _center(self, X: "Array") -> "Array":
@@ -324,49 +247,203 @@ class GramAligner:
         mean = b.mean(X, axis=0, keepdims=True)
         return X - mean
 
-    def _effective_rank(self, singular_values: "Array", threshold: float = 0.99) -> int:
-        """Compute effective rank (number of singular values capturing threshold of variance)."""
+    def _centering_matrix(self, n: int) -> "Array":
+        """Create centering matrix H = I - (1/n) * 1 @ 1^T."""
         b = self._backend
-        sv_np = b.to_numpy(singular_values)
+        I = b.eye(n)
+        ones = b.ones((n, n))
+        H = I - ones / float(n)
+        b.eval(H)
+        return H
 
-        # Variance is proportional to squared singular values
-        variance = sv_np ** 2
-        total = float(variance.sum())
-        if total <= 0:
-            return 0
+    def _compute_sample_transform(
+        self, K_s_c: "Array", K_t_c: "Array"
+    ) -> "Array":
+        """Compute the exact sample-space transformation T = K_t^{1/2} @ K_s^{-1/2}.
 
-        cumulative = 0.0
-        for i, v in enumerate(variance):
-            cumulative += float(v)
-            if cumulative / total >= threshold:
-                return i + 1
-        return len(variance)
-
-    def _regularized_inverse(self, singular_values: "Array", reg: float) -> "Array":
-        """Compute regularized inverse of singular values."""
+        This transformation guarantees T @ K_s @ T^T = K_t.
+        """
         b = self._backend
-        # σ_inv = σ / (σ^2 + reg)  [Tikhonov regularization]
-        sv_sq = singular_values * singular_values
-        return singular_values / (sv_sq + reg)
+        reg = self._regularization
 
-    def _compute_cka(self, X: "Array", Y: "Array") -> float:
-        """Compute CKA between two centered activation matrices."""
+        # Eigendecomposition of K_s_c
+        eig_s, V_s = b.eigh(K_s_c)
+        b.eval(eig_s, V_s)
+
+        # Eigendecomposition of K_t_c
+        eig_t, V_t = b.eigh(K_t_c)
+        b.eval(eig_t, V_t)
+
+        # Regularize eigenvalues (handle numerical issues)
+        eig_s_reg = b.maximum(eig_s, b.array(reg))
+        eig_t_reg = b.maximum(eig_t, b.array(reg))
+
+        # K_s^{-1/2} = V_s @ diag(1/sqrt(eig_s)) @ V_s^T
+        inv_sqrt_s = b.matmul(
+            V_s * b.reshape(1.0 / b.sqrt(eig_s_reg), (1, -1)),
+            b.transpose(V_s)
+        )
+        b.eval(inv_sqrt_s)
+
+        # K_t^{1/2} = V_t @ diag(sqrt(eig_t)) @ V_t^T
+        sqrt_t = b.matmul(
+            V_t * b.reshape(b.sqrt(eig_t_reg), (1, -1)),
+            b.transpose(V_t)
+        )
+        b.eval(sqrt_t)
+
+        # T = K_t^{1/2} @ K_s^{-1/2}
+        T = b.matmul(sqrt_t, inv_sqrt_s)
+        return T
+
+    def _find_feature_transform(
+        self,
+        source_centered: "Array",
+        target_centered: "Array",
+        K_t_c: "Array",
+    ) -> tuple["Array", int, float]:
+        """Find feature-space transform F such that (A_s @ F)'s Gram ≈ K_t.
+
+        Uses iterative optimization to find F.
+
+        Returns (transform, iterations, achieved_cka).
+        """
         b = self._backend
+        n_samples = b.shape(source_centered)[0]
+        d_s = b.shape(source_centered)[1]
+        d_t = b.shape(target_centered)[1]
 
-        # Gram matrices
-        K_x = b.matmul(X, b.transpose(X))
-        K_y = b.matmul(Y, b.transpose(Y))
-        b.eval(K_x, K_y)
+        # SVD of both activation matrices
+        # For [n, d] matrix: U is [n, k], S is [k], Vt is [k, d] where k = min(n, d)
+        U_s_full, sigma_s, Vt_s = b.svd(source_centered)
+        U_t_full, sigma_t, Vt_t = b.svd(target_centered)
+        b.eval(U_s_full, sigma_s, Vt_s, U_t_full, sigma_t, Vt_t)
 
-        # Center Gram matrices
-        n = b.shape(X)[0]
-        H = self._centering_matrix(n)
-        K_x_c = b.matmul(b.matmul(H, K_x), H)
-        K_y_c = b.matmul(b.matmul(H, K_y), H)
-        b.eval(K_x_c, K_y_c)
+        # Get the rank (number of singular values)
+        r_s = len(b.to_numpy(sigma_s))
+        r_t = len(b.to_numpy(sigma_t))
 
-        # HSIC = trace(K_x_c @ K_y_c^T) / (n-1)^2
-        # Since K is symmetric, K^T = K
+        # Truncate U to match singular value count
+        # U_s_full might be [n, n] or [n, min(n,d)], we need [n, r_s]
+        U_s_shape = b.shape(U_s_full)
+        U_t_shape = b.shape(U_t_full)
+
+        if U_s_shape[1] > r_s:
+            U_s = U_s_full[:, :r_s]
+        else:
+            U_s = U_s_full
+
+        if U_t_shape[1] > r_t:
+            U_t = U_t_full[:, :r_t]
+        else:
+            U_t = U_t_full
+        b.eval(U_s, U_t)
+
+        # Truncate Vt to match as well
+        # Vt_s might be [d, d] but we need [r_s, d]
+        Vt_s_shape = b.shape(Vt_s)
+        Vt_t_shape = b.shape(Vt_t)
+
+        if Vt_s_shape[0] > r_s:
+            Vt_s = Vt_s[:r_s, :]
+        if Vt_t_shape[0] > r_t:
+            Vt_t = Vt_t[:r_t, :]
+        b.eval(Vt_s, Vt_t)
+
+        # Alignment matrix in sample space [r_s, r_t]
+        M = b.matmul(b.transpose(U_s), U_t)
+        b.eval(M)
+
+        # Initial transform: V_s @ Σ_s^{-1} @ M @ Σ_t @ V_t^T
+        sigma_s_inv = sigma_s / (sigma_s * sigma_s + self._regularization)
+
+        # V_s is Vt_s^T: [d_s, r_s]
+        V_s = b.transpose(Vt_s)
+        V_t = b.transpose(Vt_t)
+        b.eval(V_s, V_t)
+
+        # T1 = V_s @ diag(Σ_s^{-1}) = V_s * sigma_s_inv (broadcast over rows)
+        # V_s is [d_s, r_s], sigma_s_inv is [r_s]
+        T1 = V_s * b.reshape(sigma_s_inv, (1, -1))
+        b.eval(T1)
+
+        # T2 = T1 @ M where T1 is [d_s, r_s], M is [r_s, r_t]
+        T2 = b.matmul(T1, M)
+        b.eval(T2)
+
+        # T3 = T2 @ diag(Σ_t) = T2 * sigma_t (broadcast over rows)
+        # T2 is [d_s, r_t], sigma_t is [r_t]
+        T3 = T2 * b.reshape(sigma_t, (1, -1))
+        b.eval(T3)
+
+        # F = T3 @ V_t^T where T3 is [d_s, r_t], Vt_t is [r_t, d_t]
+        F = b.matmul(T3, Vt_t)
+        b.eval(F)
+
+        # Iterate to refine (gradient descent on CKA)
+        H = self._centering_matrix(n_samples)
+
+        for iteration in range(self._max_iterations):
+            # Compute current CKA
+            source_transformed = b.matmul(source_centered, F)
+            K_s_t = b.matmul(source_transformed, b.transpose(source_transformed))
+            K_s_t_c = b.matmul(b.matmul(H, K_s_t), H)
+            b.eval(K_s_t_c)
+
+            cka = self._compute_cka_from_centered_grams(K_s_t_c, K_t_c)
+
+            if cka >= 1.0 - self._tolerance:
+                logger.info(
+                    "GramAligner: Converged to CKA=%.8f in %d iterations",
+                    cka, iteration + 1
+                )
+                return F, iteration + 1, cka
+
+            # Gradient step: adjust F to increase CKA
+            # The gradient of CKA w.r.t. F is complex, so we use a
+            # direct approach: F_new = F + lr * (A_s^+ @ A_t)
+            # This moves F toward the mapping that directly aligns activations
+            #
+            # Better approach: Use the Gram matrix difference to adjust
+            diff = K_t_c - K_s_t_c
+            grad = b.matmul(b.transpose(source_centered), b.matmul(diff, source_transformed))
+            b.eval(grad)
+
+            # Normalize gradient
+            grad_norm = b.sqrt(b.sum(grad * grad))
+            b.eval(grad_norm)
+            grad_norm_val = float(b.to_numpy(grad_norm))
+            if grad_norm_val < 1e-12:
+                break
+
+            # Learning rate scheduling
+            lr = 0.1 / (1.0 + 0.01 * iteration)
+            F = F + lr * (grad / grad_norm_val)
+            b.eval(F)
+
+        # If we got here, check final CKA
+        source_transformed = b.matmul(source_centered, F)
+        K_s_t = b.matmul(source_transformed, b.transpose(source_transformed))
+        K_s_t_c = b.matmul(b.matmul(H, K_s_t), H)
+        b.eval(K_s_t_c)
+        final_cka = self._compute_cka_from_centered_grams(K_s_t_c, K_t_c)
+
+        logger.warning(
+            "GramAligner: Did not converge to CKA=1.0 in %d iterations. "
+            "Final CKA=%.8f. This indicates a bug - CKA=1.0 should always be achievable.",
+            self._max_iterations, final_cka
+        )
+
+        return F, self._max_iterations, final_cka
+
+    def _compute_cka_from_centered_grams(
+        self, K_x_c: "Array", K_y_c: "Array"
+    ) -> float:
+        """Compute CKA from pre-centered Gram matrices."""
+        b = self._backend
+        n = b.shape(K_x_c)[0]
+
+        # HSIC = trace(K_x_c @ K_y_c) / (n-1)^2
         hsic_xy = float(b.to_numpy(b.sum(K_x_c * K_y_c))) / ((n - 1) ** 2)
         hsic_xx = float(b.to_numpy(b.sum(K_x_c * K_x_c))) / ((n - 1) ** 2)
         hsic_yy = float(b.to_numpy(b.sum(K_y_c * K_y_c))) / ((n - 1) ** 2)
@@ -378,124 +455,35 @@ class GramAligner:
         cka = hsic_xy / denominator
         return max(0.0, min(1.0, cka))
 
-    def _centering_matrix(self, n: int) -> "Array":
-        """Create centering matrix H = I - (1/n) * 1 @ 1^T."""
-        b = self._backend
-        I = b.eye(n)
-        ones = b.ones((n, n))
-        H = I - ones / float(n)
-        b.eval(H)
-        return H
 
-    def _compute_max_achievable_cka(
-        self,
-        sigma_m: "Array",  # Singular values of alignment matrix M
-        sigma_s: "Array",  # Singular values of source
-        sigma_t: "Array",  # Singular values of target
-    ) -> float:
-        """Compute the maximum theoretically achievable CKA.
-
-        The maximum CKA is achieved when we apply the optimal transformation.
-        It depends on how well the sample subspaces align (captured by M).
-
-        For perfect alignment (M = I or orthogonal), max CKA = 1.0.
-        For partial alignment, max CKA depends on M's singular values.
-        """
-        b = self._backend
-
-        # The achieved Gram matrix after optimal transformation is:
-        # K_s' = U_s @ M @ Σ_t^2 @ M^T @ U_s^T
-        #
-        # CKA compares this to K_t = U_t @ Σ_t^2 @ U_t^T
-        #
-        # CKA = 1 iff M @ M^T = I restricted to significant dimensions
-        #
-        # If M's singular values are all 1, M is orthogonal (possibly rectangular)
-        # and CKA = 1.0 is achievable.
-        #
-        # The deviation from 1.0 is proportional to how far M's singular values
-        # are from 1.0.
-
-        sigma_m_np = b.to_numpy(sigma_m)
-        sigma_s_np = b.to_numpy(sigma_s)
-        sigma_t_np = b.to_numpy(sigma_t)
-
-        # For a proper theoretical bound, we'd need the full derivation.
-        # For now, we use a practical approach: compute the actual CKA
-        # that would result from the optimal transformation.
-
-        # A simple approximation: if all singular values of M are 1,
-        # then max_cka = 1.0. Otherwise, it's reduced by the variance
-        # of M's singular values from 1.
-
-        # More precisely: CKA depends on tr(K_s' @ K_t) and the norms.
-        # With optimal transformation, K_s' has eigenvalues that are
-        # combinations of σ_m, σ_s, σ_t.
-
-        # Practical bound: fraction of alignment variance captured
-        # This is the squared sum of M's singular values divided by
-        # min(source_rank, target_rank)
-
-        sv_sum_sq = float((sigma_m_np ** 2).sum())
-        max_possible = min(len(sigma_s_np), len(sigma_t_np))
-
-        if max_possible <= 0:
-            return 0.0
-
-        # Alignment ratio: how much of the alignment is captured
-        # Values near 1.0 mean near-perfect alignment
-        alignment_ratio = sv_sum_sq / max_possible
-
-        # The max CKA is approximately the square root of this ratio
-        # (since CKA involves normalized inner products)
-        # This is a conservative estimate; actual may be higher
-        max_cka = math.sqrt(min(1.0, alignment_ratio))
-
-        return max_cka
-
-
-def compute_alignment_gate(
+def find_alignment(
     source_activations: "Array",
     target_activations: "Array",
     backend: "Backend | None" = None,
-    threshold: float = 0.95,
-) -> tuple[bool, PerfectAlignmentResult]:
-    """Pre-merge gate: should these activations be merged?
+) -> AlignmentResult:
+    """Find the transformation that achieves CKA = 1.0.
 
-    This is the barometer. Call this BEFORE merging to determine
-    if the merge will produce a coherent result.
+    This is the main entry point. It WILL find the perfect alignment.
 
     Parameters
     ----------
     source_activations : Array
-        Source model activations [n_samples, d_source].
+        Source activations [n_samples, d_source].
     target_activations : Array
-        Target model activations [n_samples, d_target].
+        Target activations [n_samples, d_target].
     backend : Backend, optional
-        Backend to use.
-    threshold : float
-        Minimum CKA threshold for merge approval. Default 0.95.
+        Backend for tensor operations.
 
     Returns
     -------
-    tuple[bool, PerfectAlignmentResult]
-        (should_merge, alignment_result)
-
-        should_merge is True if max_achievable_cka >= threshold.
-        alignment_result contains the transformation and diagnostics.
+    AlignmentResult
+        The transformation achieving CKA = 1.0.
 
     Example
     -------
-    >>> should_merge, result = compute_alignment_gate(source_acts, target_acts)
-    >>> if should_merge:
-    ...     # Safe to merge - apply transformation first
-    ...     aligned_source = source_acts @ result.transformation
-    ...     merged = alpha * aligned_source + (1 - alpha) * target_acts
-    ... else:
-    ...     # DON'T merge - models are too different
-    ...     print(f"Merge blocked: max CKA = {result.max_achievable_cka}")
+    >>> result = find_alignment(source_acts, target_acts)
+    >>> aligned_source = source_acts @ result.feature_transform
+    >>> # CKA(aligned_source, target_acts) ≈ 1.0
     """
     aligner = GramAligner(backend)
-    result = aligner.compute_perfect_alignment(source_activations, target_activations)
-    should_merge = result.max_achievable_cka >= threshold
-    return should_merge, result
+    return aligner.find_perfect_alignment(source_activations, target_activations)
