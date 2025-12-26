@@ -187,11 +187,11 @@ Whether semantic primes possess special properties—larger probability clouds, 
 
 ## References
 
-Kornblith, S., et al. (2019). Similarity of Neural Network Representations Revisited. *ICML 2019*. arXiv:1905.00414.
+[Kornblith et al. (2019)](../docs/references/arxiv/Kornblith_2019_CKA_Neural_Similarity.pdf). Similarity of Neural Network Representations Revisited. *ICML 2019*. [arXiv:1905.00414](https://arxiv.org/abs/1905.00414).
 
-Wierzbicka, A. (1996). *Semantics: Primes and Universals*. Oxford University Press.
+Wierzbicka, A. (1996). *Semantics: Primes and Universals*. [Oxford University Press](https://global.oup.com/academic/product/semantics-9780198700029).
 
-Huh, M., et al. (2024). The Platonic Representation Hypothesis. *ICML 2024*.
+[Huh et al. (2024)](../docs/references/arxiv/Huh_2024_Platonic_Representation.pdf). The Platonic Representation Hypothesis. *ICML 2024*. [arXiv:2405.07987](https://arxiv.org/abs/2405.07987).
 
 ---
 

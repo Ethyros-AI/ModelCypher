@@ -231,15 +231,15 @@ We present a protocol for measuring entropy dynamics under prompt perturbation a
 
 ## References
 
-Farquhar, S., Kossen, J., Kuhn, L., & Gal, Y. (2024). Detecting Hallucinations in Large Language Models Using Semantic Entropy. *Nature* 630: 625-630.
+Farquhar, S., Kossen, J., Kuhn, L., & Gal, Y. (2024). Detecting Hallucinations in Large Language Models Using Semantic Entropy. *Nature* 630: 625-630. [DOI:10.1038/s41586-024-07421-0](https://doi.org/10.1038/s41586-024-07421-0).
 
-Guo, C., Pleiss, G., Sun, Y., & Weinberger, K.Q. (2017). On Calibration of Modern Neural Networks. *ICML 2017*.
+Guo, C., Pleiss, G., Sun, Y., & Weinberger, K.Q. (2017). On Calibration of Modern Neural Networks. *ICML 2017*. [arXiv:1706.04599](https://arxiv.org/abs/1706.04599).
 
-Kossen, J., et al. (2024). Semantic Entropy Probes: Robust and Cheap Hallucination Detection in LLMs. arXiv:2406.15927.
+[Kossen et al. (2024)](../docs/references/arxiv/Kossen_2024_Semantic_Entropy_Probes.pdf). Semantic Entropy Probes: Robust and Cheap Hallucination Detection in LLMs. [arXiv:2406.15927](https://arxiv.org/abs/2406.15927).
 
-Peeperkorn, M., et al. (2024). Temperature and Creativity in Language Model Decoding. *ArXiv*.
+Peeperkorn, M., et al. (2024). Temperature and Creativity in Language Model Decoding. [arXiv:2407.00253](https://arxiv.org/abs/2407.00253).
 
-Zou, A., et al. (2024). Improving Alignment and Robustness with Circuit Breakers. *NeurIPS 2024*. arXiv:2406.04313.
+[Zou et al. (2024)](../docs/references/arxiv/Zou_2024_Circuit_Breakers.pdf). Improving Alignment and Robustness with Circuit Breakers. *NeurIPS 2024*. [arXiv:2406.04313](https://arxiv.org/abs/2406.04313).
 
 ---
 

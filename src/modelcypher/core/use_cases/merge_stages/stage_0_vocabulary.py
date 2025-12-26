@@ -554,24 +554,17 @@ def _build_atlas_anchor_map(
     probes = UnifiedAtlasInventory.all_probes()
 
     for probe in probes:
-        text_vectors: list["object"] = []
-        for text in probe.support_texts:
-            if not text or len(text.strip()) < 2:
-                continue
-            token_ids = _encode_ids(tokenizer, text)
-            valid = [tid for tid in token_ids if 0 <= tid < vocab_size]
-            vec = _frechet_mean_from_ids(valid, embedding, backend)
-            if vec is not None:
-                text_vectors.append(vec)
-
-        if not text_vectors:
+        text = next(
+            (t for t in probe.support_texts if t and len(t.strip()) >= 2),
+            None,
+        )
+        if not text:
             continue
-        if len(text_vectors) == 1:
-            anchor = text_vectors[0]
-        else:
-            stacked = backend.stack(text_vectors, axis=0)
-            anchor = _frechet_mean_vectors(stacked, backend)
-        anchor_map[probe.probe_id] = anchor
+        token_ids = _encode_ids(tokenizer, text)
+        valid = [tid for tid in token_ids if 0 <= tid < vocab_size]
+        vec = _frechet_mean_from_ids(valid, embedding, backend)
+        if vec is not None:
+            anchor_map[probe.probe_id] = vec
 
     return anchor_map
 

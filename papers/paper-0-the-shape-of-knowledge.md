@@ -8,9 +8,9 @@
 
 ## Abstract
 
-Knowledge in large language models has shape. Concepts occupy bounded regions in high-dimensional representation space. Inference follows trajectories through this space. Mathematical formulas define constraint surfaces. Safety can be enforced by constraining these trajectories. These are not metaphors---they are measurable geometric properties that we demonstrate across model families using Centered Kernel Alignment, topological fingerprinting, Procrustes alignment, and entropy dynamics.
+Knowledge in large language models has shape. Concepts occupy bounded regions in high-dimensional representation space. Inference follows trajectories through this space. Mathematical formulas define constraint surfaces. Safety can be enforced by constraining these trajectories. These are not metaphors---they are measurable geometric properties that we demonstrate across model families using [Centered Kernel Alignment](../docs/GLOSSARY.md#cka-centered-kernel-alignment), [topological fingerprinting](../docs/geometry/topological_fingerprints.md), [Procrustes alignment](../docs/GLOSSARY.md#procrustes-alignment), and entropy dynamics.
 
-This paper synthesizes foundational work into the **Geometric Knowledge Thesis** and introduces a new claim: **dimensions are nested compressions**. Binary encoding (1D) compresses to vocabulary (2D), which compresses to physical reality (3D), which compresses to the conceptual manifold (4D+). Alignment at dimension N requires prior alignment at dimensions 1 through N-1. This hierarchical structure explains why cross-family model merges fail despite high semantic CKA: convergent 4D+ geometry cannot compensate for divergent 1D/2D projections.
+This paper synthesizes foundational work into the **Geometric Knowledge Thesis** and introduces a new claim: **dimensions are nested compressions**. Binary encoding (1D) compresses to vocabulary (2D), which compresses to physical reality (3D), which compresses to the conceptual manifold (4D+). Alignment at dimension N requires prior alignment at dimensions 1 through N-1. This hierarchical structure explains why cross-family model merges fail despite high semantic [CKA](../docs/GLOSSARY.md#cka-centered-kernel-alignment): convergent 4D+ geometry cannot compensate for divergent 1D/2D projections.
 
 ## 1. Introduction
 
@@ -59,7 +59,7 @@ Language models trained on text are not merely predicting tokens---they are **re
 
 ### 1.2 Contributions
 
-1. **The Geometric Knowledge Thesis**: Knowledge has invariant *relational* geometry across model families. We operationalize this with normalized Gram matrices and CKA, showing cross-family alignment consistently exceeds 0.9 across diverse anchor sets (Paper 1).
+1. **The Geometric Knowledge Thesis**: Knowledge has invariant *relational* geometry across model families. We operationalize this with normalized [Gram matrices](paper-1-invariant-semantic-structure.md#31-representation-extraction) and CKA, showing cross-family alignment consistently exceeds 0.9 across diverse anchor sets ([Paper 1](paper-1-invariant-semantic-structure.md)).
 
 2. **The Dimensional Hierarchy**: Dimensions are nested compressions. Alignment at dimension N requires alignment at dimensions 1 through N-1. This explains cross-family merge failures despite high semantic CKA.
 
@@ -67,7 +67,7 @@ Language models trained on text are not merely predicting tokens---they are **re
 
 4. **The Operational Semantics Hypothesis**: Mathematical formulas are encoded as constraint surfaces. Pythagorean triples show 88.5% cross-model position similarity; classification accuracy reaches 100% on Llama 3.2 3B.
 
-5. **The ModelCypher Toolkit**: 274 modules, 3,000+ tests, implementing geometry from 46 foundational papers.
+5. **The ModelCypher Toolkit**: 274 modules, 3,000+ tests, implementing geometry from 46 foundational papers ([Paper 4](paper-4-modelcypher-toolkit.md)).
 
 ## 2. The Geometric Knowledge Thesis
 
@@ -87,7 +87,7 @@ Token generation is trajectory through representation space. Each forward pass m
 
 Across independently trained model families, many concept sets induce stable relational structure when compared via centered, normalized Gram matrices. This invariance is broad rather than limited to theoretically-motivated sets.
 
-**Evidence**: Paper 1 finds cross-family CKA > 0.9 across Qwen, Llama, and Mistral. Semantic primes reach CKA = 0.92, while frequency-matched random word sets reach CKA = 0.94---indicating invariance is universal, not prime-specific.
+**Evidence**: [Paper 1](paper-1-invariant-semantic-structure.md) finds cross-family CKA > 0.9 across Qwen, Llama, and Mistral. [Semantic primes](../docs/GLOSSARY.md#semantic-prime) reach CKA = 0.92, while frequency-matched random word sets reach CKA = 0.94---indicating invariance is universal, not prime-specific.
 
 ### Claim 4: Formulas Are Constraint Surfaces
 
@@ -167,7 +167,7 @@ Recent theoretical work by Lobashev (2025) provides information-geometric founda
 
 ### 3.3 Linguistic Thermodynamics
 
-Semantic entropy (Farquhar et al., 2024) measures distributional uncertainty at the meaning level. High entropy = model is uncertain. Low entropy = model is confident. Paper 2 shows this signal predicts safety-relevant behavior.
+Semantic entropy (Farquhar et al., 2024) measures distributional uncertainty at the meaning level. High entropy = model is uncertain. Low entropy = model is confident. [Paper 2](paper-2-entropy-safety-signal.md) shows this signal predicts safety-relevant behavior.
 
 ### 3.4 Representation Engineering
 
@@ -175,7 +175,7 @@ Zou et al. (2023) block specific directions to remove capabilities. Arditi et al
 
 ### 3.5 Information Bottleneck
 
-Tishby & Zaslavsky (2015) proposed that deep networks compress inputs while retaining task-relevant information. Paper 5 observes this empirically: a sharp early-layer "dimensionality cliff" followed by a low-ID plateau. The cliff corresponds to projection from 2D (tokenized input) to the conceptual manifold (4D+), discarding architecture-specific degrees of freedom while retaining semantic structure.
+Tishby & Zaslavsky (2015) proposed that deep networks compress inputs while retaining task-relevant information. [Paper 5](paper-5-semantic-highway.md) observes this empirically: a sharp early-layer "dimensionality cliff" followed by a low-[intrinsic dimension](../docs/GLOSSARY.md#intrinsic-dimension) plateau. The cliff corresponds to projection from 2D (tokenized input) to the conceptual manifold (4D+), discarding architecture-specific degrees of freedom while retaining semantic structure.
 
 ## 4. Safety Through Geometry
 
@@ -196,7 +196,7 @@ Zou et al. (2024) achieve 87-90% harmful request rejection by monitoring represe
 
 ### 4.3 Safety Sidecars (LoRA "Shotgun")
 
-Paper 2's $\Delta H$ signal is powerful but naively expensive: it compares distributions from a base model versus a tuned model. A practical alternative is a **safety sidecar**: a small LoRA adapter trained to ride alongside the base model and act as the cheap differential. The system can compute a $\Delta H$-like divergence between the base distribution and the base+sidecar distribution and escalate when the divergence indicates the model is entering a high-risk region of behavior space.
+[Paper 2](paper-2-entropy-safety-signal.md)'s $\Delta H$ signal is powerful but naively expensive: it compares distributions from a base model versus a tuned model. A practical alternative is a **safety sidecar**: a small LoRA adapter trained to ride alongside the base model and act as the cheap differential. The system can compute a $\Delta H$-like divergence between the base distribution and the base+sidecar distribution and escalate when the divergence indicates the model is entering a high-risk region of behavior space.
 
 ### 4.4 Dimensional Safety Implications
 
@@ -254,7 +254,7 @@ The Geometric Knowledge Thesis is falsifiable:
   - Cross-family merges succeed without vocabulary alignment (would indicate 4D+ structure is sufficient)
   - Models with identical vocabularies but different training data show lower semantic CKA than models with different vocabularies but similar training data (would indicate vocabulary is not foundational)
 
-Paper 1 tests Claim 3 directly. Claim 4 is validated by the Pythagorean triple experiments. Claim 5 is tested by the experiments in Section 5.
+[Paper 1](paper-1-invariant-semantic-structure.md) tests Claim 3 directly. Claim 4 is validated by the Pythagorean triple experiments. Claim 5 is tested by the experiments in Section 5.
 
 ## 7. Related Work
 
@@ -268,7 +268,7 @@ Delétang et al. (2024) prove the equivalence of prediction and compression. We 
 Li et al. (2025) demonstrate that "vocabulary mismatch greatly hinders deep knowledge transfer between different models." TokAlign addresses this at the 2D level; our framework explains why this is necessary (dimensional prerequisite) and predicts when it is sufficient.
 
 ### Cross-Architecture Transfer
-Our Paper 3 demonstrates 65-78% skill retention on cross-family transfer. The dimensional hierarchy predicts this partial success: high CKA at 4D+ enables meaningful transfer, but 2D misalignment limits achievable quality.
+Our [Paper 3](paper-3-cross-architecture-transfer.md) demonstrates 65-78% skill retention on cross-family transfer. The dimensional hierarchy predicts this partial success: high CKA at 4D+ enables meaningful transfer, but 2D misalignment limits achievable quality.
 
 ### Holographic Principle
 Bekenstein (2003) and 't Hooft (1993) established that information in volumes can be encoded on boundaries. We apply this principle analogically: higher-dimensional semantic structure is encoded in lower-dimensional projections, and alignment must respect this encoding hierarchy.
@@ -284,41 +284,41 @@ The dimensional hierarchy provides a new lens for understanding model behavior:
 3. **Why transfer works partially**: High-dimensional structure transfers; low-dimensional encodings do not
 4. **Where to intervene**: Safety must address all levels of the hierarchy
 
-This is not speculation---it is the theoretical foundation for the empirical results in Papers 1-5 and the 3,000+ tests in ModelCypher.
+This is not speculation---it is the theoretical foundation for the empirical results in [Papers 1](paper-1-invariant-semantic-structure.md)-[5](paper-5-semantic-highway.md) and the 3,000+ tests in ModelCypher.
 
 ## References
 
-Amari, S. (2000). *Methods of Information Geometry*. American Mathematical Society.
+Amari, S. (2000). *Methods of Information Geometry*. [American Mathematical Society](https://bookstore.ams.org/mmono-191).
 
-Arditi, A., et al. (2024). Refusal in Language Models Is Mediated by a Single Direction. arXiv:2406.11717.
+[Arditi et al. (2024)](../docs/references/arxiv/Arditi_2024_Refusal_Single_Direction.pdf). Refusal in Language Models Is Mediated by a Single Direction. [arXiv:2406.11717](https://arxiv.org/abs/2406.11717).
 
-Bekenstein, J. D. (2003). Information in the Holographic Universe. *Scientific American*.
+Bekenstein, J. D. (2003). Information in the Holographic Universe. *Scientific American*, 289(2), 58-65. [DOI:10.1038/scientificamerican0803-58](https://doi.org/10.1038/scientificamerican0803-58).
 
-Belrose, N., et al. (2023). Eliciting Latent Predictions from Transformers with the Tuned Lens. arXiv:2303.08112.
+[Belrose et al. (2023)](../docs/references/arxiv/Belrose_2023_Tuned_Lens.pdf). Eliciting Latent Predictions from Transformers with the Tuned Lens. [arXiv:2303.08112](https://arxiv.org/abs/2303.08112).
 
-Delétang, G., et al. (2024). Language Modeling Is Compression. *ICLR 2024*.
+[Delétang et al. (2024)](../docs/references/arxiv/Deletang_2024_Language_Compression.pdf). Language Modeling Is Compression. *ICLR 2024*. [arXiv:2310.10631](https://arxiv.org/abs/2310.10631).
 
-Fefferman, C., et al. (2016). Testing the manifold hypothesis. *Journal of the American Mathematical Society*.
+Fefferman, C., Mitter, S., & Narayanan, H. (2016). Testing the manifold hypothesis. *Journal of the American Mathematical Society*, 29(4), 983-1049. [DOI:10.1090/jams/852](https://doi.org/10.1090/jams/852).
 
-Huh, M., et al. (2024). The Platonic Representation Hypothesis. arXiv:2405.07987.
+[Huh et al. (2024)](../docs/references/arxiv/Huh_2024_Platonic_Representation.pdf). The Platonic Representation Hypothesis. *ICML 2024*. [arXiv:2405.07987](https://arxiv.org/abs/2405.07987).
 
-Li, C., et al. (2025). TokAlign: Efficient Vocabulary Adaptation via Token Alignment. *ACL 2025*.
+[Li et al. (2025)](../docs/references/arxiv/Li_2025_TokAlign.pdf). TokAlign: Efficient Vocabulary Adaptation via Token Alignment. *ACL 2025*. [arXiv:2506.03523](https://arxiv.org/abs/2506.03523).
 
-Lobashev, A. (2025). An Information-Geometric View of the Platonic Representation Hypothesis. *NeurIPS Workshop on Symmetry and Geometry in Neural Representations*.
+[Lobashev (2025)](../docs/references/arxiv/Lobashev_2025_PRH_Information_Geometry.pdf). An Information-Geometric View of the Platonic Representation Hypothesis. *NeurIPS Workshop on Symmetry and Geometry in Neural Representations*. [OpenReview](https://openreview.net/forum?id=ZVbH3FZGLM).
 
-nostalgebraist. (2020). interpreting GPT: the logit lens. *LessWrong*.
+nostalgebraist. (2020). interpreting GPT: the logit lens. [*LessWrong*](https://www.lesswrong.com/posts/AcKRB8wDpdaN6v6ru/interpreting-gpt-the-logit-lens).
 
-Farquhar, S., et al. (2024). Detecting Hallucinations in Large Language Models Using Semantic Entropy. *Nature*.
+Farquhar, S., et al. (2024). Detecting Hallucinations in Large Language Models Using Semantic Entropy. *Nature*, 630, 625-630. [DOI:10.1038/s41586-024-07421-0](https://doi.org/10.1038/s41586-024-07421-0).
 
-Templeton, A., et al. (2024). Scaling Monosemanticity: Extracting Interpretable Features from Claude 3 Sonnet. *Anthropic*.
+Templeton, A., et al. (2024). Scaling Monosemanticity: Extracting Interpretable Features from Claude 3 Sonnet. [*Anthropic*](https://transformer-circuits.pub/2024/scaling-monosemanticity/).
 
-'t Hooft, G. (1993). Dimensional Reduction in Quantum Gravity. arXiv:gr-qc/9310026.
+['t Hooft (1993)](../docs/references/arxiv/tHooft_1993_Dimensional_Reduction.pdf). Dimensional Reduction in Quantum Gravity. [arXiv:gr-qc/9310026](https://arxiv.org/abs/gr-qc/9310026).
 
-Tishby, N., & Zaslavsky, N. (2015). Deep Learning and the Information Bottleneck Principle. *IEEE ITW*.
+Tishby, N., & Zaslavsky, N. (2015). Deep Learning and the Information Bottleneck Principle. *IEEE Information Theory Workshop (ITW)*. [arXiv:1503.02406](https://arxiv.org/abs/1503.02406).
 
-Zou, A., et al. (2023). Representation Engineering: A Top-Down Approach to AI Transparency. arXiv:2310.01405.
+[Zou et al. (2023)](../docs/references/arxiv/Zou_2023_Representation_Engineering.pdf). Representation Engineering: A Top-Down Approach to AI Transparency. [arXiv:2310.01405](https://arxiv.org/abs/2310.01405).
 
-Zou, A., et al. (2024). Circuit Breakers: Removing Model Behaviors via Targeted Ablation. arXiv:2406.04313.
+[Zou et al. (2024)](../docs/references/arxiv/Zou_2024_Circuit_Breakers.pdf). Circuit Breakers: Removing Model Behaviors via Targeted Ablation. [arXiv:2406.04313](https://arxiv.org/abs/2406.04313).
 
 ## Appendix A: Dimensional Hierarchy Mathematics
 
@@ -358,6 +358,8 @@ Cross-family models have:
 Merging $E_A$ and $E_B$ without aligning $T_A$ and $T_B$ produces an embedding layer that inverts neither projection correctly.
 
 ## Appendix B: CLI Commands for Experimentation
+
+See [CLI-REFERENCE.md](../docs/CLI-REFERENCE.md) for complete command documentation.
 
 ```bash
 # Measure vocabulary overlap between models
