@@ -159,7 +159,7 @@ class UnifiedGeometricMerger:
                      All geometric operations run on GPU when using MLXBackend.
         """
         self._model_loader = model_loader
-        self.config = config or UnifiedMergeConfig.default()
+        self.config = config or UnifiedMergeConfig()
 
         # Default to MLXBackend for GPU-accelerated operations
         if backend is None:
