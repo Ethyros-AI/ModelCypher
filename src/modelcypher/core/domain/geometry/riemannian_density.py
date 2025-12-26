@@ -46,7 +46,7 @@ from .manifold_curvature import (
     LocalCurvature,
     SectionalCurvatureEstimator,
 )
-from .riemannian_utils import RiemannianGeometry
+from .riemannian_utils import GeodesicDistanceResult, RiemannianGeometry
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +115,10 @@ class ConceptVolume:
     # When comparing volumes of different dimensions, CKA uses these
     # to compute Gram matrices (n x n) which are dimension-agnostic.
     raw_activations: "Array | None" = field(default=None, repr=False)
+
+    # Geodesic context for proper log map computation in density_at
+    # Stores k-NN graph and distance matrix for curvature-aware density
+    _geodesic_context: "GeodesicDistanceResult | None" = field(default=None, repr=False)
 
     # Cached values for efficiency
     _precision: "Array | None" = field(default=None, repr=False)
@@ -194,8 +198,69 @@ class ConceptVolume:
         mean_log = sum(log_eigs) / len(log_eigs)
         return math.exp(mean_log) ** 0.5
 
+    def _compute_tangent_vector(self, point: "Array") -> "Array":
+        """Compute tangent vector from centroid to point using log map.
+
+        If geodesic context is available, scales by geodesic/Euclidean ratio.
+        Otherwise returns raw Euclidean difference.
+
+        Args:
+            point: Point in activation space
+
+        Returns:
+            Tangent vector at centroid pointing toward point
+        """
+        backend = get_default_backend()
+        point_arr = backend.array(point)
+        centroid_arr = backend.array(self.centroid)
+        diff = point_arr - centroid_arr
+
+        # If no geodesic context or raw activations, use Euclidean
+        if self._geodesic_context is None or self.raw_activations is None:
+            return diff
+
+        # Compute geodesic distance from centroid to point
+        rg = RiemannianGeometry(backend)
+
+        # Attach point to the manifold graph
+        geo_from_point = rg._geodesic_distances_from_query(
+            self.raw_activations,
+            point_arr,
+            geo_result=self._geodesic_context,
+        )
+
+        # Also get distances from centroid to all activations
+        geo_from_centroid = rg._geodesic_distances_from_query(
+            self.raw_activations,
+            centroid_arr,
+            geo_result=self._geodesic_context,
+        )
+        backend.eval(geo_from_point, geo_from_centroid)
+
+        # Geodesic distance from centroid to point is approximated by
+        # finding the path through the graph: min_i(geo_centroid_to_i + geo_i_to_point)
+        total_dists = geo_from_centroid + geo_from_point
+        geo_dist = backend.min(total_dists)
+        backend.eval(geo_dist)
+        geo_dist_float = float(backend.to_numpy(geo_dist))
+
+        # Euclidean distance
+        euc_dist_sq = backend.sum(diff * diff)
+        backend.eval(euc_dist_sq)
+        euc_dist = math.sqrt(float(backend.to_numpy(euc_dist_sq)))
+
+        # Scale factor: geodesic / euclidean
+        if euc_dist < 1e-10:
+            return diff  # Point is at centroid
+        scale = geo_dist_float / euc_dist
+
+        return diff * scale
+
     def density_at(self, point: "Array") -> float:
         """Compute probability density at a point.
+
+        Uses proper Riemannian log map when geodesic context is available,
+        scaling the tangent vector by geodesic/Euclidean ratio.
 
         Args:
             point: Point in activation space (d-dimensional)
@@ -204,13 +269,13 @@ class ConceptVolume:
             Probability density value
         """
         backend = get_default_backend()
-        # Convert to backend arrays if needed (handles numpy from tests)
-        point_arr = backend.array(point)
-        centroid_arr = backend.array(self.centroid)
-        diff = point_arr - centroid_arr
-        # mahal_sq = diff @ precision @ diff
-        temp = backend.matmul(diff, self.precision)
-        mahal_sq_arr = backend.matmul(temp, diff)
+
+        # Compute tangent vector (log map if geodesic context available)
+        tangent = self._compute_tangent_vector(point)
+
+        # mahal_sq = tangent @ precision @ tangent
+        temp = backend.matmul(tangent, self.precision)
+        mahal_sq_arr = backend.matmul(temp, tangent)
         backend.eval(mahal_sq_arr)
         mahal_sq = float(backend.to_numpy(mahal_sq_arr))
 
@@ -472,6 +537,11 @@ class RiemannianDensityEstimator:
         centroid = result.mean
         backend.eval(centroid)
 
+        # Compute geodesic context for proper log map in density_at
+        # This k-NN graph is reused for all density computations
+        k_neighbors = min(max(3, n // 3), n - 1) if n > 1 else 1
+        geodesic_context = rg.geodesic_distances(activations, k_neighbors=k_neighbors)
+
         # Estimate local curvature at centroid
         local_curvature = None
         if self.config.use_curvature_correction and n >= d + 2:
@@ -498,6 +568,7 @@ class RiemannianDensityEstimator:
             influence_type=self.config.influence_type,
             student_t_df=self.config.student_t_df,
             raw_activations=activations if store_raw_activations else None,
+            _geodesic_context=geodesic_context if store_raw_activations else None,
         )
 
     def compute_relation(
