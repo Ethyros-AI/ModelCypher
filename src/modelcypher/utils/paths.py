@@ -28,3 +28,12 @@ def ensure_dir(path: str | Path) -> Path:
     resolved = expand_path(path)
     resolved.mkdir(parents=True, exist_ok=True)
     return resolved
+
+
+def get_jobs_dir() -> Path:
+    """Get the jobs directory, creating it if necessary.
+
+    Returns:
+        Path to ~/.modelcypher/jobs
+    """
+    return ensure_dir(Path.home() / ".modelcypher" / "jobs")

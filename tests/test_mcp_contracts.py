@@ -107,20 +107,46 @@ def _seed_geometry_job(tmp_home: Path, job_id: str) -> None:
 
 
 def _seed_adapter_files(tmp_path: Path) -> tuple[Path, Path]:
+    """Create test adapter files in safetensors format."""
+    from safetensors.numpy import save_file
+    import numpy as np
+
     backend = get_default_backend()
-    base_path = tmp_path / "base.npz"
-    checkpoint_path = tmp_path / "adapter.npz"
-    base_weight = backend.arange(12, dtype="float32").reshape(4, 3)
-    lora_a = backend.arange(6, dtype="float32").reshape(2, 3)
-    lora_b = backend.arange(8, dtype="float32").reshape(4, 2)
+    # LoRA shapes: A is [in, rank], B is [rank, out]
+    # delta = A @ B = [in, out]
+    # Base weight must match delta shape [in, out]
+    lora_a = backend.arange(6, dtype="float32").reshape(3, 2)  # [3, 2] - in=3, rank=2
+    lora_b = backend.arange(8, dtype="float32").reshape(2, 4)  # [2, 4] - rank=2, out=4
+    # delta = [3, 2] @ [2, 4] = [3, 4], so base weight must be [3, 4]
+    base_weight = backend.arange(12, dtype="float32").reshape(3, 4)
     backend.eval(base_weight)
     backend.eval(lora_a)
     backend.eval(lora_b)
 
-    import numpy as np
-    np.savez(base_path, layer=backend.to_numpy(base_weight))
-    np.savez(checkpoint_path, **{"layer.lora_A": backend.to_numpy(lora_a), "layer.lora_B": backend.to_numpy(lora_b)})
-    return checkpoint_path, base_path
+    # Create base model directory with safetensors
+    # Base weight key must match the adapter layer name (without lora_a/lora_b suffix)
+    base_dir = tmp_path / "base_model"
+    base_dir.mkdir()
+    base_path = base_dir / "model.safetensors"
+    save_file(
+        {"layers.0.self_attn.q_proj.weight": np.asarray(backend.to_numpy(base_weight))},
+        str(base_path),
+    )
+
+    # Create adapter directory with safetensors
+    # Note: weight keys must end with lora_a or lora_b (lowercase) for detection
+    adapter_dir = tmp_path / "adapter"
+    adapter_dir.mkdir()
+    checkpoint_path = adapter_dir / "adapters.safetensors"
+    save_file(
+        {
+            "layers.0.self_attn.q_proj.lora_a": np.asarray(backend.to_numpy(lora_a)),
+            "layers.0.self_attn.q_proj.lora_b": np.asarray(backend.to_numpy(lora_b)),
+        },
+        str(checkpoint_path),
+    )
+
+    return adapter_dir, base_dir
 
 
 def _extract_structured(result: types.CallToolResult) -> dict:
@@ -326,32 +352,47 @@ def test_mc_geometry_training_history_schema(mcp_env: dict[str, str]):
 def test_mc_safety_circuit_breaker_schema(mcp_env: dict[str, str]):
     async def runner(session: ClientSession):
         return await _await_with_timeout(
-            session.call_tool("mc_safety_circuit_breaker", arguments={"jobId": "job-geometry-1"})
+            session.call_tool(
+                "mc_safety_circuit_breaker",
+                arguments={
+                    "adapterName": "test-adapter",
+                    "adapterDescription": "Test adapter for circuit breaker",
+                    "skillTags": ["general"],
+                    "entropyDelta": [0.1, 0.2, 0.15],
+                },
+            )
         )
 
     result = _run_mcp(mcp_env, runner)
     payload = _extract_structured(result)
     assert payload["_schema"] == "mc.safety.circuit_breaker.v1"
-    assert "severity" in payload
-    assert "state" in payload
-    assert "signals" in payload
-    assert "thresholds" in payload
-    assert "recommendedAction" in payload
+    assert payload["adapterName"] == "test-adapter"
+    assert "threatIndicatorCount" in payload
+    assert "maxThreatSeverity" in payload
+    assert "entropyStats" in payload
+    assert "indicators" in payload
+    assert "nextActions" in payload
 
 
 def test_mc_safety_persona_drift_schema(mcp_env: dict[str, str]):
     async def runner(session: ClientSession):
         return await _await_with_timeout(
-            session.call_tool("mc_safety_persona_drift", arguments={"jobId": "job-geometry-1"})
+            session.call_tool(
+                "mc_safety_persona_drift",
+                arguments={
+                    "baselinePersona": {"helpful": 0.9, "harmless": 0.95, "honest": 0.85},
+                    "currentBehavior": ["responds helpfully", "provides accurate information"],
+                },
+            )
         )
 
     result = _run_mcp(mcp_env, runner)
     payload = _extract_structured(result)
     assert payload["_schema"] == "mc.safety.persona_drift.v1"
-    assert payload["jobId"] == "job-geometry-1"
-    assert payload["overallDriftMagnitude"] >= 0.0
-    assert "traitDrifts" in payload
-    assert "refusalDirectionCorrelation" in payload
+    assert payload["driftMagnitude"] >= 0.0
+    assert "missingTraitCount" in payload
+    assert "traitScores" in payload
+    assert "nextActions" in payload
 
 
 def test_mc_geometry_dare_sparsity_schema(mcp_env: dict[str, str], tmp_path: Path):
@@ -370,7 +411,7 @@ def test_mc_geometry_dare_sparsity_schema(mcp_env: dict[str, str], tmp_path: Pat
     assert payload["_schema"] == "mc.geometry.dare_sparsity.v1"
     assert payload["checkpointPath"] == str(checkpoint_path)
     assert "effectiveSparsity" in payload
-    assert "qualityAssessment" in payload
+    assert "mergeReadiness" in payload
     assert "interpretation" in payload
     assert "layerRanking" in payload
 

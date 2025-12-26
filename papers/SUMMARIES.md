@@ -18,9 +18,9 @@ One-sentence thesis, key result, and verification command for each paper.
 
 ## Paper 1: Invariant Semantic Structure
 
-**Thesis:** Semantic primes (GOOD, BAD, THINK, KNOW) have invariant geometric structure across model families.
+**Thesis:** Representation geometry is invariant across model families—all concepts (not just semantic primes) show high cross-model CKA.
 
-**Key Result:** CKA = 0.82 across Qwen/Llama/Mistral (vs 0.54 for controls, p < 0.001).
+**Key Result:** Cross-family CKA = 0.94 ± 0.01 across Qwen/Llama/Mistral. Semantic primes (0.92) ≈ random words (0.94), demonstrating universal geometric convergence.
 
 **Verify:**
 ```bash
@@ -77,6 +77,25 @@ mc --help          # 50+ commands available
 ```
 
 → [Full Paper](paper-4-modelcypher-toolkit.md)
+
+---
+
+## Paper 5: The Semantic Highway
+
+**Thesis:** All transformer language models compress tokenized input to a universal low-dimensional semantic manifold (~1.4 intrinsic dimension) within the first 1-2 layers, regardless of architecture, size, or training data.
+
+**Key Result:** Cross-architecture validation across Qwen (0.5B), Llama (3B), and Mistral (7B) shows:
+- 41-79% intrinsic dimension collapse in layers 0-2
+- Universal plateau at ID = 1.40 ± 0.10
+- Harder domains compress more (ρ = 0.832)
+
+**Verify:**
+```bash
+mc geometry atlas dimensionality-study /path/to/model --layer 2 --output json
+# Expected: Mean ID ~1.3-1.5 at layer 2
+```
+
+→ [Full Paper](paper-5-semantic-highway.md)
 
 ---
 
