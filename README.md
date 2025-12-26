@@ -194,7 +194,8 @@ ModelCypher supports multiple compute backends:
 | **MLX** | macOS (Apple Silicon) | Default on Mac. Unified memory, fast local inference. |
 | **JAX** | Linux/TPU/GPU | Google TPU pods, Anthropic infrastructure, CUDA GPUs. |
 | **CUDA** | Linux (NVIDIA) | Stub for future PyTorch CUDA support. |
-| **NumPy** | Any | Testing and CI (no GPU required). |
+
+> **Note**: NumPy is explicitly prohibited in ModelCypher. All tensor operations use the Backend protocol for GPU acceleration and numerical consistency.
 
 Select a backend via environment variable:
 ```bash
@@ -206,6 +207,20 @@ Install JAX support:
 ```bash
 poetry install -E jax
 ```
+
+## Scale Limits
+
+**Key finding**: If you can run inference, you can merge. Geometric operations are lightweight.
+
+| Hardware | Tested Configuration | RAM Used | Status |
+|----------|---------------------|----------|--------|
+| M4 Max 128GB | 80B + 8B models (47GB weights) | 36% | ✅ |
+| M4 Max 128GB | 80B + 3B models (48GB weights) | 37% | ✅ |
+| M4 Max 128GB | Theoretical 2x 80B | ~65% | Feasible |
+
+Unlike training (which requires ~3x model size for gradients), geometric analysis uses only model weight memory. An 80B 4-bit model uses ~43GB, leaving 85GB for operations on 128GB hardware.
+
+See [papers/NEGATIVE-RESULTS.md](papers/NEGATIVE-RESULTS.md) for full experimental data.
 
 ## Tests
 

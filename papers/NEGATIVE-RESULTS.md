@@ -46,7 +46,43 @@ Semantic primes showed **lower** cross-model CKA than random words, not higher. 
 
 ## 2. Scale Limits and Memory Constraints
 
-*Section to be populated after scale limit testing*
+**Experiment Date**: 2025-12-25
+**Hardware**: Apple M4 Max, 128GB unified memory
+
+### Key Finding: If You Can Run Inference, You Can Merge
+
+Unlike training (which requires ~3x model size in RAM for gradients), geometric analysis and merging are computationally lightweight. The operations are simple matrix manipulations on embeddings.
+
+### Memory Test Results
+
+| Model Combination | Combined Weight Size | Peak RAM Used | RAM Utilization |
+|-------------------|---------------------|---------------|-----------------|
+| Qwen2.5-3B + Mistral-7B | 9.6 GB | 9,774 MB | 7.5% |
+| Qwen3-8B + Qwen2.5-3B | 10.1 GB | 10,280 MB | 7.8% |
+| **Qwen3-80B + Mistral-7B** | **46 GB** | **46,655 MB** | **35.6%** |
+| **Qwen3-80B + Qwen3-8B** | **47 GB** | **47,161 MB** | **36.0%** |
+| **Qwen3-80B + Qwen2.5-3B-bf16** | **48 GB** | **48,653 MB** | **37.1%** |
+
+### Implications
+
+1. **No "training overhead"** - Geometric operations use only the model weight memory
+2. **80B models are practical** - An 80B 4-bit model uses only ~43GB, leaving 85GB for other operations
+3. **Two 80B models could theoretically be loaded simultaneously** - 82GB headroom after 80B+3B
+4. **Rule of thumb**: If you can load both models for inference, you can analyze and merge them
+
+### Verified Limit on 128GB M4 Max
+
+- **Confirmed working**: 80B + 8B models (47GB combined, 36% RAM)
+- **Headroom remaining**: 82GB after largest test
+- **Theoretical maximum**: ~110GB of combined model weights (accounting for system overhead)
+
+### Performance Timings
+
+| Operation | Model Pair | Time |
+|-----------|-----------|------|
+| Interference analysis (4 domains) | 0.5B + 3B | 76s |
+| Interference analysis (4 domains) | 3B + 7B | 293s |
+| Model loading only | 80B + 3B | 3.4s |
 
 ---
 

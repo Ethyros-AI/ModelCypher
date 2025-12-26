@@ -295,6 +295,95 @@ class ConceptVolume:
         """
         return self.density_at(point) >= threshold
 
+    def mahalanobis_distance_batch(self, points: "Array") -> "Array":
+        """Compute Mahalanobis distance from centroid to multiple points.
+
+        Args:
+            points: Array of points (n x d)
+
+        Returns:
+            Array of Mahalanobis distances (n,)
+        """
+        backend = get_default_backend()
+        # diff: (n, d)
+        diff = points - self.centroid
+        # mahal_sq = sum((diff @ precision) * diff, axis=1)
+        temp = backend.matmul(diff, self.precision)  # (n, d)
+        mahal_sq = backend.sum(temp * diff, axis=1)  # (n,)
+        backend.eval(mahal_sq)
+        return backend.sqrt(backend.maximum(mahal_sq, backend.array(0.0)))
+
+    def density_at_batch(self, points: "Array") -> "Array":
+        """Compute probability density at multiple points (vectorized).
+
+        Args:
+            points: Array of points (n x d)
+
+        Returns:
+            Array of probability density values (n,)
+        """
+        backend = get_default_backend()
+        d = self.dimension
+
+        # Compute Mahalanobis squared for all points at once
+        diff = points - self.centroid  # (n, d)
+        temp = backend.matmul(diff, self.precision)  # (n, d)
+        mahal_sq = backend.sum(temp * diff, axis=1)  # (n,)
+
+        if self.influence_type == InfluenceType.GAUSSIAN:
+            # Multivariate Gaussian: exp(log_norm - 0.5 * mahal_sq)
+            log_norm = -0.5 * (d * math.log(2 * math.pi) + self.log_det_covariance)
+            densities = backend.exp(backend.array(log_norm) - 0.5 * mahal_sq)
+
+        elif self.influence_type == InfluenceType.LAPLACIAN:
+            # Multivariate Laplacian: exp(-sqrt(mahal_sq)) / 2^d
+            mahal = backend.sqrt(backend.maximum(mahal_sq, backend.array(0.0)))
+            densities = backend.exp(-mahal) / (2**d)
+
+        elif self.influence_type == InfluenceType.STUDENT_T:
+            # Multivariate t-distribution
+            nu = float(self.student_t_df)
+            log_norm = (
+                math.lgamma((nu + d) / 2)
+                - math.lgamma(nu / 2)
+                - d / 2 * math.log(nu * math.pi)
+                - 0.5 * self.log_det_covariance
+            )
+            densities = backend.exp(backend.array(log_norm)) * backend.pow(
+                1 + mahal_sq / nu, -(nu + d) / 2
+            )
+
+        elif self.influence_type == InfluenceType.UNIFORM:
+            # Uniform ball: 1/volume if inside, 0 otherwise
+            vol = self.volume
+            inside = mahal_sq <= self.geodesic_radius**2
+            densities = backend.where(
+                inside,
+                backend.full(mahal_sq.shape, 1.0 / vol if vol > 0 else 0.0),
+                backend.zeros(mahal_sq.shape),
+            )
+        else:
+            densities = backend.zeros(mahal_sq.shape)
+
+        backend.eval(densities)
+        return densities
+
+    def contains_batch(self, points: "Array", threshold: float = 0.05) -> "Array":
+        """Check if multiple points are within concept volume (vectorized).
+
+        Args:
+            points: Array of points (n x d)
+            threshold: Density threshold for membership
+
+        Returns:
+            Boolean array indicating membership (n,)
+        """
+        backend = get_default_backend()
+        densities = self.density_at_batch(points)
+        result = densities >= threshold
+        backend.eval(result)
+        return result
+
 
 @dataclass
 class ConceptVolumeRelation:
@@ -834,10 +923,18 @@ class RiemannianDensityEstimator:
         # Sample from volume_b
         samples_b = sample_mvn(volume_b.centroid, volume_b.covariance, n_samples)
 
-        # Count samples from A that are in B's high-density region
+        # Count samples using vectorized batch operations (GPU-accelerated)
         threshold = self.config.membership_threshold
-        a_in_b = sum(volume_b.contains(samples_a[i], threshold) for i in range(n_samples))
-        b_in_a = sum(volume_a.contains(samples_b[i], threshold) for i in range(n_samples))
+        a_in_b_mask = volume_b.contains_batch(samples_a, threshold)
+        b_in_a_mask = volume_a.contains_batch(samples_b, threshold)
+
+        # Sum boolean masks to get counts
+        a_in_b_sum = backend.sum(backend.astype(a_in_b_mask, "float32"))
+        b_in_a_sum = backend.sum(backend.astype(b_in_a_mask, "float32"))
+        backend.eval(a_in_b_sum, b_in_a_sum)
+
+        a_in_b = int(backend.to_numpy(a_in_b_sum))
+        b_in_a = int(backend.to_numpy(b_in_a_sum))
 
         # Overlap coefficient
         return max(a_in_b, b_in_a) / n_samples
@@ -902,7 +999,9 @@ class RiemannianDensityEstimator:
         alignment = backend.mean(sq_vals)
         backend.eval(alignment)
 
-        return float(backend.to_numpy(alignment))
+        # Clamp to [0, 1] to handle floating point precision
+        result = float(backend.to_numpy(alignment))
+        return max(0.0, min(1.0, result))
 
 
 def batch_estimate_volumes(

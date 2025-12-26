@@ -396,3 +396,118 @@ class TestMathematicalInvariants:
             assert len(distances) == n
             for row in distances:
                 assert len(row) == n
+
+
+class TestBackendTopologicalFingerprint:
+    """Tests for GPU-accelerated BackendTopologicalFingerprint."""
+
+    @pytest.fixture
+    def backend(self):
+        return get_default_backend()
+
+    @pytest.fixture
+    def backend_fp(self, backend):
+        return BackendTopologicalFingerprint(backend)
+
+    def test_compute_matches_pure_python(self, backend_fp) -> None:
+        """Backend compute should match pure Python results."""
+        points = [[0.0, 0.0], [1.0, 0.0], [0.5, 1.0], [2.0, 0.5]]
+
+        pure = TopologicalFingerprint.compute(points, max_dimension=1)
+        gpu = backend_fp.compute(points, max_dimension=1)
+
+        # Summary should match
+        assert pure.summary.component_count == gpu.summary.component_count
+        assert pure.summary.cycle_count == gpu.summary.cycle_count
+        assert pure.summary.average_persistence == pytest.approx(
+            gpu.summary.average_persistence, abs=1e-6
+        )
+        assert pure.summary.max_persistence == pytest.approx(
+            gpu.summary.max_persistence, abs=1e-6
+        )
+
+    def test_compare_matches_pure_python(self, backend_fp) -> None:
+        """Backend compare should match pure Python results."""
+        points_a = [[0.0, 0.0], [1.0, 0.0], [0.5, 1.0]]
+        points_b = [[0.0, 0.0], [2.0, 0.0], [1.0, 2.0]]
+
+        fp_a = TopologicalFingerprint.compute(points_a, max_dimension=1)
+        fp_b = TopologicalFingerprint.compute(points_b, max_dimension=1)
+
+        pure = TopologicalFingerprint.compare(fp_a, fp_b)
+        gpu = backend_fp.compare(fp_a, fp_b)
+
+        assert pure.bottleneck_distance == pytest.approx(
+            gpu.bottleneck_distance, abs=1e-6
+        )
+        assert pure.wasserstein_distance == pytest.approx(
+            gpu.wasserstein_distance, abs=1e-6
+        )
+        assert pure.betti_difference == gpu.betti_difference
+
+    def test_bottleneck_distance_matches(self, backend_fp) -> None:
+        """Backend bottleneck distance should match pure Python."""
+        points = [
+            PersistencePoint(0.0, 1.0, 0),
+            PersistencePoint(0.2, 0.8, 0),
+            PersistencePoint(0.1, 0.5, 1),
+        ]
+        diag = PersistenceDiagram(points)
+
+        pure = TopologicalFingerprint._bottleneck_distance(diag, diag)
+        gpu = backend_fp._bottleneck_distance(diag, diag)
+
+        assert pure == pytest.approx(gpu, abs=1e-6)
+
+    def test_wasserstein_distance_matches(self, backend_fp) -> None:
+        """Backend Wasserstein distance should match pure Python."""
+        points = [
+            PersistencePoint(0.0, 1.0, 0),
+            PersistencePoint(0.2, 0.8, 0),
+        ]
+        diag = PersistenceDiagram(points)
+
+        pure = TopologicalFingerprint._wasserstein_distance(diag, diag)
+        gpu = backend_fp._wasserstein_distance(diag, diag)
+
+        assert pure == pytest.approx(gpu, abs=1e-6)
+
+    def test_entropy_matches(self, backend_fp) -> None:
+        """Backend entropy computation should match pure Python."""
+        values = [0.1, 0.2, 0.3, 0.4, 0.5]
+
+        pure = TopologicalFingerprint._compute_entropy(values)
+        gpu = backend_fp._compute_entropy(values)
+
+        assert pure == pytest.approx(gpu, abs=1e-6)
+
+    def test_empty_input_matches(self, backend_fp) -> None:
+        """Empty input should work identically."""
+        pure = TopologicalFingerprint.compute([])
+        gpu = backend_fp.compute([])
+
+        assert pure.summary.component_count == gpu.summary.component_count
+        assert pure.summary.cycle_count == gpu.summary.cycle_count
+
+    def test_single_point_matches(self, backend_fp) -> None:
+        """Single point should work identically."""
+        pure = TopologicalFingerprint.compute([[0.0, 0.0]])
+        gpu = backend_fp.compute([[0.0, 0.0]])
+
+        assert pure.summary.component_count == gpu.summary.component_count
+        assert pure.summary.cycle_count == gpu.summary.cycle_count
+
+
+class TestGetTopologicalFingerprint:
+    """Tests for the factory function."""
+
+    def test_returns_class_without_backend(self) -> None:
+        """Factory should return TopologicalFingerprint class without backend."""
+        result = get_topological_fingerprint()
+        assert result is TopologicalFingerprint
+
+    def test_returns_instance_with_backend(self) -> None:
+        """Factory should return BackendTopologicalFingerprint instance with backend."""
+        backend = get_default_backend()
+        result = get_topological_fingerprint(backend)
+        assert isinstance(result, BackendTopologicalFingerprint)
