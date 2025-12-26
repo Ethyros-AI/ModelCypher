@@ -8,7 +8,7 @@
 
 ## Abstract
 
-Knowledge in large language models has shape. Concepts occupy bounded regions in high-dimensional representation space. Inference follows trajectories through this space. Mathematical formulas define constraint surfaces. Safety can be enforced by constraining these trajectories. These are not metaphors—they are measurable geometric properties that we demonstrate across model families using Centered Kernel Alignment, topological fingerprinting, Procrustes alignment, and entropy dynamics. This paper synthesizes 14 pillars of prior work into the **Geometric Knowledge Thesis** and provides the theoretical foundation for the empirical demonstrations in Papers I–III.
+Knowledge in large language models has shape. Concepts occupy bounded regions in high-dimensional representation space. Inference follows trajectories through this space. Mathematical formulas define constraint surfaces. Safety can be enforced by constraining these trajectories. These are not metaphors—they are measurable geometric properties that we demonstrate across model families using Centered Kernel Alignment, topological fingerprinting, Procrustes alignment, and entropy dynamics. This paper synthesizes 14 pillars of prior work into the **Geometric Knowledge Thesis** and provides the theoretical foundation for the empirical demonstrations in Papers 1–3.
 
 ## 1. Introduction
 
@@ -48,7 +48,7 @@ graph TD
 
 ### 1.1 Contributions
 
-1. **The Geometric Knowledge Thesis**: Knowledge has invariant shape across model families. We prove this with CKA measurements showing semantic primes achieve 0.82 cross-model alignment versus 0.54 for controls (Paper I).
+1. **The Geometric Knowledge Thesis**: Knowledge has invariant *relational* geometry across model families. We operationalize this with normalized Gram matrices and CKA, and show cross-family alignment is consistently high (≈0.9+) across diverse anchor sets—semantic primes included (Paper 1; see [NEGATIVE-RESULTS.md](NEGATIVE-RESULTS.md) for baselines).
 
 2. **Operational Geometry**: We define computable constructs—anchor sets, Gram matrices, topological fingerprints—that make "knowledge as geometry" measurable.
 
@@ -72,9 +72,9 @@ Token generation is trajectory through representation space. Each forward pass m
 
 ### Claim 3: Invariant Anchors Exist
 
-Certain concepts—semantic primes from the Natural Semantic Metalanguage tradition—induce stable relational structure across model families trained on different data with different architectures.
+Across independently trained model families, many concept sets induce stable relational structure when compared via centered, normalized Gram matrices. Semantic primes from the Natural Semantic Metalanguage tradition are a principled, human-motivated anchor set for this measurement, but high invariance is not exclusive to primes.
 
-**Evidence**: Paper I demonstrates CKA = 0.82 for semantic primes versus 0.54 for frequency-matched controls across Qwen, Llama, and Mistral families. The structure is not identical but it is *aligned*—the shape of knowledge transfers.
+**Evidence**: Paper 1 finds cross-family CKA > 0.9 across Qwen, Llama, and Mistral. Semantic primes reach CKA ≈ 0.92, while frequency-matched random word sets reach CKA ≈ 0.94—indicating invariance is broad rather than prime-specific (see [NEGATIVE-RESULTS.md](NEGATIVE-RESULTS.md)).
 
 ### Claim 4: Formulas Are Constraint Surfaces
 
@@ -82,7 +82,7 @@ Mathematical relationships are encoded as geometric constraints in latent space.
 
 **Evidence**: Cross-model invariance testing on Pythagorean triples achieves 88.5% position similarity after Procrustes alignment across Llama, Mistral, and Qwen families. The triangle formed by (9, 16, 25) shows 99.4% shape similarity across architectures. Llama 3.2 3B achieves 100% classification accuracy separating valid Pythagorean triples from invalid ones using only embedding geometry—no fine-tuning, no prompting. (See [Experiment: Operational Semantics Hypothesis](../experiments/operational-semantics-hypothesis/EXPERIMENT_LOG.md) for full methodology and data.)
 
-This validates Claims 1 and 3 with mathematical concepts as anchors. Numbers behave like semantic primes: they have invariant relational structure. The formula a² + b² = c² is the geometric constraint that positions 5 correctly relative to (3, 4) across all tested models.
+This validates Claims 1 and 3 with mathematical concepts as anchors. Numbers behave like robust anchors: they have invariant relational structure across model families. The formula a² + b² = c² is the geometric constraint that positions 5 correctly relative to (3, 4) across all tested models.
 
 ## 3. Synthesis of 14 Pillars
 
@@ -94,7 +94,7 @@ Fefferman (2016) proves we can test whether data lies on a manifold. Amari (2000
 
 ### 3.2 Linguistic Thermodynamics
 
-Semantic entropy (Farquhar et al., 2024) measures distributional uncertainty at the meaning level. High entropy = model is uncertain. Low entropy = model is confident. Paper II shows this signal predicts safety-relevant behavior.
+Semantic entropy (Farquhar et al., 2024) measures distributional uncertainty at the meaning level. High entropy = model is uncertain. Low entropy = model is confident. Paper 2 shows this signal predicts safety-relevant behavior.
 
 ### 3.3 Representation Engineering
 
@@ -115,19 +115,23 @@ RLHF conditions the policy. We constrain the trajectory. These are complementary
 
 Zou et al. (2024) achieve 87-90% harmful request rejection by monitoring representation space and intervening when boundary conditions are violated. This is geometric safety in practice.
 
+### 4.3 Safety Sidecars (LoRA "Shotgun")
+
+Paper 2’s ΔH signal is powerful but naively expensive: it compares distributions from a base model versus a tuned model. A practical alternative is a **safety sidecar**: a small LoRA adapter trained to ride alongside the base model and act as the cheap differential. The system can compute a ΔH-like divergence between the base distribution and the base+sidecar distribution and escalate (or let the sidecar take control) when the divergence indicates the model is entering a high-risk region of behavior space.
+
 ## 5. Falsification Criteria
 
 The Geometric Knowledge Thesis is falsifiable:
 
 - **Claim 1 Fails If**: Conceptual boundaries are unbounded or highly non-convex such that region-based analysis provides no predictive power.
-- **Claim 3 Fails If**: Semantic primes show no higher cross-model CKA than random word sets (p > 0.05 by permutation test).
+- **Claim 3 Fails If**: After centering and unit-diagonal normalization of Gram matrices, cross-family CKA is not consistently high across diverse anchor sets (e.g., if most sets fall below 0.8), or if the result is so sensitive to anchor choice that no stable invariant geometry can be stated.
 - **Claim 4 Fails If**: Cross-model Procrustes alignment shows <70% position similarity for mathematical constraints, OR classification accuracy for valid vs. invalid Pythagorean triples falls below chance (50%).
 
-Paper I tests Claim 3 directly. Claim 4 is tested via cross-model invariance experiments on Pythagorean triples. Current results support the thesis.
+Paper 1 tests Claim 3 directly (including negative results on prime-specificity). Claim 4 is tested via cross-model invariance experiments on Pythagorean triples. Current results support the thesis.
 
 ## 6. Conclusion
 
-Knowledge has shape. Inference is trajectory. Formulas are constraint surfaces. Safety is constraint. This is not speculation—it is the theoretical foundation for the empirical results in Papers I–III and the 3,000+ tests in ModelCypher.
+Knowledge has shape. Inference is trajectory. Formulas are constraint surfaces. Safety is constraint. This is not speculation—it is the theoretical foundation for the empirical results in Papers 1–3 and the 3,000+ tests in ModelCypher.
 
 ## References
 
