@@ -131,7 +131,7 @@ ModelCypher/
 │   └── mcp/                  # MCP server (148 tools)
 ├── docs/                     # Documentation (you are here)
 ├── papers/                   # Research manuscripts
-└── tests/                    # 2400+ tests
+└── tests/                    # 3060 tests
 ```
 
 ---

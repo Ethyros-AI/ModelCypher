@@ -21,7 +21,7 @@ mc geometry manifold analyze ./your-model --output text
 Honest answer: these are preprints. Publication is pending data insertion.
 
 **What we have instead:**
-- 2400+ passing tests with deterministic seeds
+- 3060 passing tests with deterministic seeds
 - Falsification-first experimental design (hypotheses stated before results)
 - Reproducible CLI commands for every claim
 - 46 cited papers from NeurIPS, ICML, ICLR, Nature

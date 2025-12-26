@@ -232,7 +232,7 @@ Instead:
 - `test_*_properties.py`: Hypothesis property-based tests
 - `test_mcp_*.py`: MCP server contract tests
 - `test_geometry_*.py`: Geometry validation tests
-- **2400+ passing tests** - Don't break them
+- **3060 passing tests** - Don't break them
 
 ---
 
@@ -275,6 +275,6 @@ Instead:
 5. **Don't return "incompatible"** - Models are ALWAYS compatible. Return transformation effort, not rejections.
 6. **Don't hallucinate requirements** - If it's not documented here, don't invent it
 7. **Don't "fix" architecture** - The MLX imports in training/ are intentional
-8. **Don't over-engineer** - The codebase works; 2400+ tests prove it
+8. **Don't over-engineer** - The codebase works; 3060 tests prove it
 9. **Don't guess at external APIs** - Research current documentation before implementing
 10. **Don't run full test suite casually** - Run domain-specific batches (e.g., `pytest tests/test_geometry.py -q`). Full suite takes 20+ minutes.
