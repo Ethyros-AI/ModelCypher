@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from modelcypher.core.domain.geometry import DoRADecomposition
+from modelcypher.core.domain.geometry.backend_matrix_utils import BackendMatrixUtils
 from modelcypher.ports.backend import Array, Backend
 
 
@@ -51,6 +52,7 @@ class SinkhornResult:
 class GeometryEngine:
     def __init__(self, backend: Backend) -> None:
         self.backend = backend
+        self._matrix_utils = BackendMatrixUtils(backend)
 
     def compute_lora_geometry(
         self,
@@ -138,21 +140,8 @@ class GeometryEngine:
             z_target = z_target * sqrt_weights
             self.backend.eval(z_source, z_target)
 
-        m = self.backend.matmul(self.backend.transpose(z_source), z_target)
-        self.backend.eval(m)
-
-        # Use backend SVD for orthogonal Procrustes
-        u, _, vt = self.backend.svd(m)
-        self.backend.eval(u, vt)
-        omega_pre = self.backend.matmul(u, vt)
-        self.backend.eval(omega_pre)
-        det = self._determinant_sign_backend(omega_pre)
-        if det < 0:
-            # Flip sign of last column of u
-            u_np = self.backend.to_numpy(u)
-            u_np[:, -1] *= -1.0
-            u = self.backend.array(u_np, dtype="float32")
-        omega = self.backend.matmul(u, vt)
+        procrustes = self._matrix_utils.procrustes_rotation(z_source, z_target)
+        omega = procrustes.rotation
         self.backend.eval(omega)
 
         diff = self.backend.matmul(z_source, omega) - z_target
@@ -196,21 +185,8 @@ class GeometryEngine:
         transported_target = transported_mass / stabilized
         self.backend.eval(transported_target)
 
-        m = self.backend.matmul(self.backend.transpose(z_source), transported_target)
-        self.backend.eval(m)
-
-        # Use backend SVD for orthogonal Procrustes
-        u, _, vt = self.backend.svd(m)
-        self.backend.eval(u, vt)
-        omega_pre = self.backend.matmul(u, vt)
-        self.backend.eval(omega_pre)
-        det = self._determinant_sign_backend(omega_pre)
-        if det < 0:
-            # Flip sign of last column of u
-            u_np = self.backend.to_numpy(u)
-            u_np[:, -1] *= -1.0
-            u = self.backend.array(u_np, dtype="float32")
-        omega = self.backend.matmul(u, vt)
+        procrustes = self._matrix_utils.procrustes_rotation(z_source, transported_target)
+        omega = procrustes.rotation
         self.backend.eval(omega)
 
         aligned = self.backend.matmul(z_source, omega)
@@ -299,48 +275,6 @@ class GeometryEngine:
         # Convert to numpy using backend then extract item
         np_arr = self.backend.to_numpy(self.backend.array(array))
         return float(np_arr.item()) if hasattr(np_arr, "item") else float(np_arr)
-
-    def _to_numpy(self, array: Any) -> Any:
-        """Convert array to numpy-compatible format for scipy interop."""
-        if hasattr(self.backend, "to_numpy"):
-            return self.backend.to_numpy(array)
-        return array
-
-    def _determinant_sign_backend(self, matrix: Array) -> float:
-        """Compute determinant sign using backend operations."""
-        self.backend.eval(matrix)
-        k = int(self.backend.shape(matrix)[0])
-        if k == 0 or k != int(self.backend.shape(matrix)[1]):
-            return 1.0
-        if k == 1:
-            val = float(self.backend.to_numpy(matrix[0, 0]).item())
-            return 1.0 if val >= 0 else -1.0
-
-        # Convert to numpy for the LU decomposition (not performance critical)
-        a = self.backend.to_numpy(matrix).astype(float).copy()
-        sign = 1.0
-        for i in range(k):
-            max_row = i
-            max_val = abs(a[i, i])
-            for row in range(i + 1, k):
-                val = abs(a[row, i])
-                if val > max_val:
-                    max_val = val
-                    max_row = row
-            if max_row != i:
-                a[[i, max_row], :] = a[[max_row, i], :]
-                sign = -sign
-            pivot = a[i, i]
-            if abs(pivot) < 1e-10:
-                return 1.0
-            for row in range(i + 1, k):
-                factor = a[row, i] / pivot
-                a[row, i:k] -= factor * a[i, i:k]
-
-        diag_product = 1.0
-        for i in range(k):
-            diag_product *= a[i, i]
-        return 1.0 if diag_product * sign >= 0 else -1.0
 
 
 @dataclass(frozen=True)

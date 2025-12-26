@@ -21,15 +21,10 @@ This module provides hardware-accelerated matrix operations using the
 Backend protocol. Operations run on MLX (Apple Silicon), JAX (TPU/GPU),
 or CPU fallback depending on the backend passed.
 
-Relationship with MatrixUtils:
-    BackendMatrixUtils (this module) - Requires explicit backend in constructor.
-        Use when you already have a backend instance (common in geometry pipelines).
-
-    MatrixUtils - Simpler API, uses get_default_backend() internally.
-        Use when you don't need to pass an explicit backend instance.
-
-    Both modules share the same PairwiseProcrustesResult type and provide
-    equivalent mathematical operations. Choose based on your API needs.
+Relationship with GeometryEngine:
+    BackendMatrixUtils (this module) provides canonical matrix operations
+    for geometry pipelines. GeometryEngine composes these utilities for
+    use-case level workflows.
 
 Example:
     backend = MLXBackend()

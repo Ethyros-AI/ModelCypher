@@ -684,6 +684,7 @@ class CrossManifoldProjector:
             local_curvature=target_curvature,
             num_samples=source_volume.num_samples,
             influence_type=source_volume.influence_type,
+            student_t_df=source_volume.student_t_df,
         )
 
     def _compute_confidence_components(
