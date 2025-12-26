@@ -25,7 +25,6 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
-from modelcypher.core.domain.dataset_validation import DatasetContentFormat
 from modelcypher.core.domain.model_search import (
     ModelSearchError,
     ModelSearchFilters,
@@ -37,7 +36,6 @@ from modelcypher.core.domain.training import TrainingConfig
 from modelcypher.core.use_cases.concept_response_matrix_service import (
     ConceptResponseMatrixService,
 )
-from modelcypher.core.use_cases.dataset_editor_service import DatasetEditorService
 from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
 from modelcypher.core.use_cases.evaluation_service import (
     EvalConfig,
@@ -90,15 +88,7 @@ TOOL_PROFILES = {
         "mc_system_status",
         "mc_validate_train",
         "mc_estimate_train",
-        "mc_dataset_validate",
-        "mc_dataset_get_row",
-        "mc_dataset_update_row",
-        "mc_dataset_add_row",
-        "mc_dataset_delete_row",
-        "mc_dataset_convert",
         "mc_doc_convert",
-        "mc_dataset_list",  # New
-        "mc_dataset_delete",  # New
         "mc_model_fetch",
         "mc_model_list",
         "mc_model_search",
@@ -191,8 +181,6 @@ TOOL_PROFILES = {
         "mc_adapter_inspect",  # New
         # Phase 2: Safety tools
         "mc_safety_adapter_probe",  # New - adapter delta feature probing
-        "mc_safety_dataset_scan",  # New - dataset safety scanning
-        "mc_safety_lint_identity",  # New - identity instruction linting
         # Phase 2: Entropy tools
         "mc_entropy_window",  # New - sliding window tracking
         "mc_entropy_conversation_track",  # New - conversation entropy
@@ -201,17 +189,12 @@ TOOL_PROFILES = {
         "mc_agent_trace_import",  # New - trace import
         "mc_agent_trace_analyze",  # New - trace analytics
         "mc_agent_validate_action",  # New - action validation
-        # Phase 2: Dataset tools
-        "mc_dataset_format_analyze",  # New - format analysis
-        "mc_dataset_chunk",  # New - document chunking
-        "mc_dataset_template",  # New - chat template info
         # Eval tools
         "mc_eval_run",  # New
         "mc_eval_list",  # New
         "mc_eval_show",  # New
         "mc_train_preflight",  # New
         "mc_train_export",  # New
-        "mc_dataset_preprocess",  # New
         # Geometry refinement and stitching tools
         "mc_geometry_refinement_analyze",  # New - RefinementDensityAnalyzer
         "mc_geometry_stitch_train",  # New - AffineStitchingLayer training
@@ -257,15 +240,7 @@ TOOL_PROFILES = {
         "mc_system_status",
         "mc_validate_train",
         "mc_estimate_train",
-        "mc_dataset_validate",
-        "mc_dataset_get_row",
-        "mc_dataset_update_row",
-        "mc_dataset_add_row",
-        "mc_dataset_delete_row",
-        "mc_dataset_convert",
         "mc_doc_convert",
-        "mc_dataset_list",
-        "mc_dataset_delete",
         "mc_model_fetch",
         "mc_model_list",
         "mc_model_search",
@@ -308,7 +283,6 @@ TOOL_PROFILES = {
         "mc_eval_show",
         "mc_train_preflight",
         "mc_train_export",
-        "mc_dataset_preprocess",
         # Geometry refinement and merge validation
         "mc_geometry_refinement_analyze",
         "mc_geometry_stitch_train",
@@ -385,21 +359,6 @@ TOOL_PROFILES = {
 }
 
 
-def _parse_dataset_format(value: str) -> DatasetContentFormat:
-    key = value.lower()
-    if key == "text":
-        return DatasetContentFormat.text
-    if key == "chat":
-        return DatasetContentFormat.chat
-    if key == "completion":
-        return DatasetContentFormat.completion
-    if key == "tools":
-        return DatasetContentFormat.tools
-    if key == "instruction":
-        return DatasetContentFormat.instruction
-    raise ValueError("Unsupported format. Use text, chat, completion, tools, or instruction.")
-
-
 def _map_job_status(status: str) -> str:
     if status == "pending":
         return "queued"
@@ -440,7 +399,6 @@ def build_server() -> FastMCP:
     job_service = factory.job_service()
     model_service = factory.model_service()
     model_search_service = factory.model_search_service()
-    dataset_service = factory.dataset_service()
     system_service = factory.system_service()
     checkpoint_service = factory.checkpoint_service()
     evaluation_service = factory.evaluation_service()
@@ -449,7 +407,6 @@ def build_server() -> FastMCP:
 
     # Services without port dependencies (direct instantiation)
     model_probe_service = ModelProbeService()
-    dataset_editor_service = DatasetEditorService(job_service=job_service)
     settings_service = SettingsService()
 
     # Use inference engine from registry
@@ -1422,103 +1379,6 @@ def build_server() -> FastMCP:
                 "status": "exported",
             }
 
-    if "mc_dataset_validate" in tool_set:
-
-        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_dataset_validate(path: str) -> dict:
-            dataset_path = _require_existing_path(path)
-            result = dataset_service.validate_dataset(dataset_path)
-            return {
-                "_schema": "mc.dataset.validate.v1",
-                "valid": result["valid"],
-                "path": dataset_path,
-                "exampleCount": result["totalExamples"],
-                "tokenStats": {
-                    "min": result["minTokens"],
-                    "max": result["maxTokens"],
-                    "average": result["averageTokens"],
-                },
-                "warnings": result["warnings"],
-                "errors": result["errors"],
-                "nextActions": (
-                    [f"mc_train_start with dataset={dataset_path}"]
-                    if result["valid"]
-                    else ["Fix dataset issues", "mc_dataset_validate after fixes"]
-                ),
-            }
-
-    if "mc_dataset_get_row" in tool_set:
-
-        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_dataset_get_row(path: str, lineNumber: int) -> dict:
-            if lineNumber <= 0:
-                raise ValueError("lineNumber must be a positive integer")
-            dataset_path = _require_existing_path(path)
-            row = dataset_editor_service.get_row(dataset_path, lineNumber)
-            return _row_payload(row)
-
-    if "mc_dataset_update_row" in tool_set:
-
-        @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_dataset_update_row(path: str, lineNumber: int, content: dict) -> dict:
-            if lineNumber <= 0:
-                raise ValueError("lineNumber must be a positive integer")
-            dataset_path = _require_existing_path(path)
-            result = dataset_editor_service.update_row(dataset_path, lineNumber, content)
-            return {
-                "_schema": "mc.dataset.edit.v1",
-                "status": result.status,
-                "lineNumber": result.line_number,
-                "row": _row_payload(result.row) if result.row else None,
-                "warnings": result.warnings,
-            }
-
-    if "mc_dataset_add_row" in tool_set:
-
-        @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_dataset_add_row(path: str, format: str, fields: dict) -> dict:
-            parsed_format = _parse_dataset_format(format)
-            result = dataset_editor_service.add_row(path, parsed_format, fields)
-            return {
-                "_schema": "mc.dataset.edit.v1",
-                "status": result.status,
-                "lineNumber": result.line_number,
-                "row": _row_payload(result.row) if result.row else None,
-                "warnings": result.warnings,
-            }
-
-    if "mc_dataset_delete_row" in tool_set:
-
-        @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_dataset_delete_row(path: str, lineNumber: int) -> dict:
-            if lineNumber <= 0:
-                raise ValueError("lineNumber must be a positive integer")
-            dataset_path = _require_existing_path(path)
-            result = dataset_editor_service.delete_row(dataset_path, lineNumber)
-            return {
-                "_schema": "mc.dataset.edit.v1",
-                "status": result.status,
-                "lineNumber": result.line_number,
-                "row": None,
-                "warnings": result.warnings,
-            }
-
-    if "mc_dataset_convert" in tool_set:
-
-        @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_dataset_convert(path: str, targetFormat: str, outputPath: str) -> dict:
-            dataset_path = _require_existing_path(path)
-            parsed_format = _parse_dataset_format(targetFormat)
-            result = dataset_editor_service.convert_dataset(dataset_path, parsed_format, outputPath)
-            return {
-                "_schema": "mc.dataset.convert.v1",
-                "sourcePath": result.source_path,
-                "outputPath": result.output_path,
-                "targetFormat": result.target_format.value,
-                "lineCount": result.line_count,
-                "warnings": result.warnings,
-            }
-
     if "mc_doc_convert" in tool_set:
 
         @mcp.tool(annotations=MUTATING_ANNOTATIONS)
@@ -1549,66 +1409,8 @@ def build_server() -> FastMCP:
                 "outputPath": outputPath,
                 "message": message,
                 "nextActions": [
-                    "mc_dataset_validate to validate the output dataset",
                     "mc_train_start to begin training",
                 ],
-            }
-
-    if "mc_dataset_list" in tool_set:
-
-        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_dataset_list() -> dict:
-            """List available datasets."""
-            datasets = dataset_service.list_datasets()
-            return {
-                "_schema": "mc.dataset.list.v1",
-                "datasets": [
-                    {
-                        "id": ds.id,
-                        "name": ds.name,
-                        "path": ds.path,
-                        "exampleCount": ds.example_count,
-                        "sizeBytes": ds.size_bytes,
-                    }
-                    for ds in datasets
-                ],
-                "count": len(datasets),
-            }
-
-    if "mc_dataset_delete" in tool_set:
-
-        @mcp.tool(annotations=DESTRUCTIVE_ANNOTATIONS)
-        def mc_dataset_delete(datasetId: str, confirmationToken: str | None = None) -> dict:
-            """Delete a registered dataset. Requires confirmation if MC_MCP_REQUIRE_CONFIRMATION=1."""
-            try:
-                confirmation_manager.require_confirmation(
-                    operation="delete_dataset",
-                    tool_name="mc_dataset_delete",
-                    parameters={"datasetId": datasetId},
-                    description=f"Delete dataset '{datasetId}' from local registry",
-                    confirmation_token=confirmationToken,
-                )
-            except ConfirmationError as e:
-                return create_confirmation_response(
-                    e,
-                    description=f"Delete dataset '{datasetId}' from local registry",
-                    timeout_seconds=security_config.confirmation_timeout_seconds,
-                )
-            dataset_service.delete_dataset(datasetId)
-            return {"_schema": "mc.dataset.delete.v1", "datasetId": datasetId, "status": "deleted"}
-
-    if "mc_dataset_preprocess" in tool_set:
-
-        @mcp.tool(annotations=MUTATING_ANNOTATIONS)
-        def mc_dataset_preprocess(input: str, output: str, tokenizer: str = "gpt2") -> dict:
-            """Preprocess a dataset for training."""
-            result = dataset_service.preprocess_dataset(input, output, tokenizer)
-            return {
-                "_schema": "mc.dataset.preprocess.v1",
-                "processedExamples": result["processedExamples"],
-                "skippedExamples": result["skippedExamples"],
-                "outputPath": result["outputPath"],
-                "nextActions": ["mc_dataset_validate with processed file"],
             }
 
     if "mc_model_fetch" in tool_set:
