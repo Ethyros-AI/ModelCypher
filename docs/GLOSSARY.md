@@ -144,7 +144,7 @@ The degree to which a model's latent space encodes a "down" direction where heav
 
 ### Euclidean Consistency Score
 A measure of whether the model's spatial representations obey the Pythagorean theorem.
--   **Test**: For triplets of anchors that should form right triangles (e.g., floor→left_hand→ceiling), we check if $dist(A,C)^2 ≈ dist(A,B)^2 + dist(B,^2$.
+-   **Test**: For triplets of anchors that should form right triangles (e.g., floor→left_hand→ceiling), we check if $dist(A,C)^2 ≈ dist(A,B)^2 + dist(B,C)^2$.
 -   **Scoring**: >0.6 = Euclidean, <0.3 = non-Euclidean (curved or distorted space).
 -   **Human explanation**: "The model's internal '3D world' actually follows Euclidean geometry, like the real world."
 

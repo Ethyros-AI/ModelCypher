@@ -85,8 +85,8 @@ Download MLX-compatible models from Hugging Face:
 # Using huggingface-cli
 huggingface-cli download mlx-community/Qwen2.5-0.5B-Instruct-bf16 --local-dir ./models/qwen2.5-0.5b
 
-# Or use the ModelCypher CLI
-mc model download mlx-community/Qwen2.5-0.5B-Instruct-bf16 --output ./models/
+# Or use the ModelCypher CLI to fetch a model
+mc model fetch mlx-community/Qwen2.5-0.5B-Instruct-bf16
 ```
 
 ## Tips

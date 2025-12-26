@@ -181,13 +181,13 @@ from modelcypher.core.domain.agents.unified_atlas import (
 def _unified_atlas_anchors(
     self,
     tokenizer: Tokenizer,
-    embedding: np.ndarray,
+    embedding: Array,  # Backend protocol array type
     vocab: int,
     confidence: dict[str, float],
-) -> dict[str, np.ndarray]:
+) -> dict[str, Array]:
     """Extract anchors from all 343 unified atlas probes."""
     probes = UnifiedAtlasInventory.all_probes()
-    anchors: dict[str, np.ndarray] = {}
+    anchors: dict[str, Array] = {}
 
     for probe in probes:
         vectors = []
@@ -199,7 +199,7 @@ def _unified_atlas_anchors(
 
         if vectors:
             anchor_id = probe.probe_id
-            anchors[anchor_id] = np.mean(np.stack(vectors), axis=0)
+            anchors[anchor_id] = backend.mean(backend.stack(vectors), axis=0)
             confidence[anchor_id] = probe.cross_domain_weight
 
     return anchors

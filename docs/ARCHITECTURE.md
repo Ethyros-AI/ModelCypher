@@ -8,7 +8,7 @@ ModelCypher follows a strict **Hexagonal Architecture** (also known as Ports and
 flowchart TB
     subgraph EXTERNAL["External Drivers"]
         CLI["CLI<br/>(mc / modelcypher)"]
-        MCP["MCP Server<br/>(150+ tools)"]
+        MCP["MCP Server<br/>(148 tools)"]
     end
 
     subgraph ADAPTERS["Adapters Layer"]

@@ -175,7 +175,7 @@ ModelCypher MCP supports multiple tool profiles to reduce token overhead. Set vi
 ```mermaid
 flowchart TB
     subgraph PROFILES["MC_MCP_PROFILE Options"]
-        FULL["full<br/>(150+ tools)"]
+        FULL["full<br/>(148 tools)"]
         TRAIN["training<br/>(68 tools)"]
         INFER["inference<br/>(20 tools)"]
         MON["monitoring<br/>(18 tools)"]
@@ -198,7 +198,7 @@ flowchart TB
 
 | Profile | Tools | Token Impact | Use Case |
 |---------|-------|--------------|----------|
-| `full` | 150+ | High | Development, exploration |
+| `full` | 148 | High | Development, exploration |
 | `training` | 68 | Medium | Fine-tuning workflows |
 | `inference` | 20 | Low | Production inference |
 | `monitoring` | 18 | Low | Read-only health checks |

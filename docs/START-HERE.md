@@ -128,10 +128,10 @@ ModelCypher/
 │   ├── core/domain/          # Pure math + business logic
 │   ├── adapters/             # Hardware integrations
 │   ├── cli/                  # CLI commands
-│   └── mcp/                  # MCP server (150+ tools)
+│   └── mcp/                  # MCP server (148 tools)
 ├── docs/                     # Documentation (you are here)
 ├── papers/                   # Research manuscripts
-└── tests/                    # 3030+ tests
+└── tests/                    # 2400+ tests
 ```
 
 ---

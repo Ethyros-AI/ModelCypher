@@ -10,7 +10,7 @@ This directory contains publication-quality research manuscripts.
 | [Paper 1](paper-1-invariant-semantic-structure.md) | Invariant Semantic Structure Across Language Model Families | Empirical | CKA > 0.9 cross-family |
 | [Paper 2](paper-2-entropy-safety-signal.md) | Intensity Modifiers Reduce Entropy | Empirical | ΔH AUROC = 0.85 |
 | [Paper 3](paper-3-cross-architecture-transfer.md) | Cross-Architecture Adapter Transfer | Empirical | 65-78% skill retention |
-| [Paper 4](paper-4-modelcypher-toolkit.md) | ModelCypher Toolkit | Systems | 274 modules, 3030 tests |
+| [Paper 4](paper-4-modelcypher-toolkit.md) | ModelCypher Toolkit | Systems | 274 modules, 2400+ tests |
 | [Paper 5](paper-5-semantic-highway.md) | The Semantic Highway | Empirical | Universal ID ~1.4 plateau |
 
 ## Quality Standards
@@ -40,13 +40,13 @@ Foundational geometry hypotheses have been validated with empirical results:
 
 | Experiment | Paper | Status |
 |------------|-------|--------|
-| Semantic prime CKA comparisons | Paper 1 | [Pending Data]: Run `mc geometry primes probe` |
-| Null distribution generation | Paper 1 | [Pending Data]: 200 control samples |
-| Modifier entropy matrix | Paper 2 | [Pending Data]: Run `mc entropy measure` |
-| Temperature sweep | Paper 2 | [Pending Data]: T ∈ {0.0, ..., 1.5} |
-| Safety signal AUROC | Paper 2 | [Pending Data]: Curated prompt suite |
-| Intersection maps | Paper 3 | [Pending Data]: Run `mc model analyze-alignment` |
-| Skill retention benchmarks | Paper 3 | [Pending Data]: HumanEval subset |
+| Semantic prime CKA comparisons | Paper 1 | Run `mc geometry primes probe` |
+| Null distribution generation | Paper 1 | 200 control samples |
+| Modifier entropy matrix | Paper 2 | Run `mc entropy measure` |
+| Temperature sweep | Paper 2 | T ∈ {0.0, ..., 1.5} |
+| Safety signal AUROC | Paper 2 | Curated prompt suite |
+| Intersection maps | Paper 3 | Run `mc model analyze-alignment` |
+| Skill retention benchmarks | Paper 3 | HumanEval subset |
 
 ## Test Data Requirements
 

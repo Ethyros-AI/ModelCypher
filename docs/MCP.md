@@ -1,9 +1,9 @@
 # ModelCypher MCP Server Documentation
 
 **Version:** 1.2.0
-**Last Updated:** 2025-12-22
+**Last Updated:** 2025-12-25
 **MCP SDK:** Python `mcp` FastMCP
-**Protocol:** MCP Specification 2025-03-26
+**Protocol:** MCP Specification 2024-11-05
 
 ## Overview
 
@@ -185,15 +185,13 @@ training:
   mc_geometry_crm_build, mc_geometry_crm_compare,
   mc_safety_circuit_breaker, mc_safety_persona_drift, mc_geometry_safety_jailbreak_test,
   mc_geometry_dare_sparsity, mc_geometry_dora_decomposition, mc_calibration_run,
-  mc_calibration_status, mc_calibration_apply, mc_rag_build, mc_rag_query, mc_rag_list,
-  mc_rag_delete, mc_thermo_measure, mc_thermo_detect, mc_thermo_detect_batch, mc_storage_usage,
+  mc_calibration_status, mc_calibration_apply, mc_thermo_measure, mc_thermo_detect, mc_thermo_detect_batch, mc_storage_usage,
   mc_storage_cleanup, mc_research_sparse_region, mc_research_afm, mc_adapter_merge, mc_eval_run,
   mc_eval_list, mc_eval_show, mc_train_preflight, mc_train_export, mc_dataset_preprocess
 
 inference:
   mc_inventory, mc_settings_snapshot, mc_model_list, mc_infer, mc_infer_run, mc_infer_batch,
-  mc_infer_suite, mc_system_status, mc_rag_build, mc_rag_query, mc_rag_list, mc_rag_delete,
-  mc_ensemble_create, mc_ensemble_run, mc_ensemble_list, mc_ensemble_delete
+  mc_infer_suite, mc_system_status, mc_ensemble_create, mc_ensemble_run, mc_ensemble_list, mc_ensemble_delete
 
 monitoring:
   mc_inventory, mc_settings_snapshot, mc_job_status, mc_job_list, mc_job_detail, mc_system_status,
@@ -1703,7 +1701,7 @@ The `ServiceContext` class provides lazy-loaded access to all domain services.
 - Modularized geometry tools into `src/modelcypher/mcp/tools/geometry.py`
 - Added `ServiceContext` for lazy-loaded service access
 - Reduced server.py from ~4900 to ~3400 lines
-- Total: 60+ tools across all profiles
+- Total: 148 tools in full profile
 
 ### 1.1.0 (2025-11-26)
 

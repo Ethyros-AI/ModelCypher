@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0] - 2024-12-24
+## [1.0.0] - 2025-12-25
 
 Initial public release of ModelCypher - a Python framework for measuring and experimenting with the geometry of representations in large language models.
 
@@ -66,7 +66,7 @@ Initial public release of ModelCypher - a Python framework for measuring and exp
 
 #### MCP Server
 - Full Model Context Protocol server (`modelcypher-mcp`)
-- 150+ tools for model analysis and manipulation
+- 148 tools for model analysis and manipulation
 - IDE integration support (VS Code, Cursor, etc.)
 
 ### Technical Highlights
@@ -74,7 +74,7 @@ Initial public release of ModelCypher - a Python framework for measuring and exp
 - Hexagonal architecture (Ports and Adapters pattern)
 - Strict separation: domain logic has no adapter imports
 - Property-based testing with Hypothesis
-- 3,030+ passing tests
+- 2,400+ passing tests
 - Type hints throughout (PEP 561 compliant)
 
 ---

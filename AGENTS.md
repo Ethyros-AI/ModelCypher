@@ -76,7 +76,7 @@ src/modelcypher/
 ├── adapters/          # Concrete implementations (hf_hub, filesystem)
 ├── backends/          # MLX, JAX, CUDA (stub) - NO NUMPY
 ├── cli/               # Typer CLI (entry: mc / modelcypher)
-├── mcp/               # Model Context Protocol server (150+ tools)
+├── mcp/               # Model Context Protocol server (148 tools)
 └── data/              # Static data (semantic_primes.json, etc.)
 ```
 
@@ -210,7 +210,7 @@ Instead:
 | Document | Purpose |
 |----------|---------|
 | `docs/CLI-REFERENCE.md` | Command shapes and output fields |
-| `docs/MCP.md` | MCP tool definitions (150+ tools) |
+| `docs/MCP.md` | MCP tool definitions (148 tools) |
 | `docs/ARCHITECTURE.md` | Hexagonal architecture details |
 | `docs/GLOSSARY.md` | Shared vocabulary for geometry concepts |
 | `docs/START-HERE.md` | Orientation for different user types |
@@ -232,7 +232,7 @@ Instead:
 - `test_*_properties.py`: Hypothesis property-based tests
 - `test_mcp_*.py`: MCP server contract tests
 - `test_geometry_*.py`: Geometry validation tests
-- **3030+ passing tests** - Don't break them
+- **2400+ passing tests** - Don't break them
 
 ---
 
@@ -275,6 +275,6 @@ Instead:
 5. **Don't return "incompatible"** - Models are ALWAYS compatible. Return transformation effort, not rejections.
 6. **Don't hallucinate requirements** - If it's not documented here, don't invent it
 7. **Don't "fix" architecture** - The MLX imports in training/ are intentional
-8. **Don't over-engineer** - The codebase works; 3030 tests prove it
+8. **Don't over-engineer** - The codebase works; 2400+ tests prove it
 9. **Don't guess at external APIs** - Research current documentation before implementing
 10. **Don't run full test suite casually** - Run domain-specific batches (e.g., `pytest tests/test_geometry.py -q`). Full suite takes 20+ minutes.

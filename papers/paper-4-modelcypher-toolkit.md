@@ -8,7 +8,7 @@
 
 ## Abstract
 
-**ModelCypher** makes the Geometric Knowledge Thesis operational. The toolkit implements 274 domain modules for measuring representation geometry, entropy dynamics, safety constraints, and cross-architecture transfer. Three core capabilities: (1) CKA-based cross-model comparison achieves 0.82 alignment on semantic primes versus 0.54 for controls, (2) entropy divergence (ΔH) detects harmful prompts with AUROC = 0.85 before generation, (3) anchor-locked Procrustes enables adapter transfer across architectures with 65-78% skill retention. The framework integrates with CLI and Model Context Protocol (MCP) for agentic workflows. Validated with 3,000+ passing tests. Implements methodology from 46 foundational papers. AGPLv3 license.
+**ModelCypher** makes the Geometric Knowledge Thesis operational. The toolkit implements 274 domain modules for measuring representation geometry, entropy dynamics, safety constraints, and cross-architecture transfer. Three core capabilities: (1) CKA-based cross-model comparison achieves 0.82 alignment on semantic primes versus 0.54 for controls, (2) entropy divergence (ΔH) detects harmful prompts with AUROC = 0.85 before generation, (3) anchor-locked Procrustes enables adapter transfer across architectures with 65-78% skill retention. The framework integrates with CLI and Model Context Protocol (MCP) for agentic workflows. Validated with 2,400+ passing tests. Implements methodology from 46 foundational papers. AGPLv3 license.
 
 ---
 
@@ -32,7 +32,7 @@ The toolkit implements four core capabilities:
 
 **Diagnostics Before Intervention**: Compatibility assessment precedes merge attempts. Bad merges are prevented, not debugged.
 
-**Reproducibility**: Deterministic seeds. Version-pinned dependencies. 3,000+ passing tests.
+**Reproducibility**: Deterministic seeds. Version-pinned dependencies. 2,400+ passing tests.
 
 ---
 
@@ -137,7 +137,7 @@ $$d_{\text{refusal}} = \mathbb{E}[h_{\text{refuse}}] - \mathbb{E}[h_{\text{compl
 | Metric | Value |
 |--------|-------|
 | Domain modules | 274 |
-| Unit tests | 3,000+ |
+| Unit tests | 2,400+ |
 | Pass rate | 100% |
 
 ### 4.2 Module Import Guard
@@ -214,7 +214,7 @@ mc eval suite --model merged --suite humaneval-subset.json
 
 ## 8. Conclusion
 
-ModelCypher makes the Geometric Knowledge Thesis operational. The results from Papers I–III are not theoretical claims—they are CLI commands. `mc geometry primes compare` produces CKA = 0.82. `mc entropy safety-auroc` produces AUROC = 0.85. `mc model stitch` achieves 65-78% skill retention. 274 modules. 3,000+ tests. 46 papers implemented. Knowledge has shape, and now we can measure it.
+ModelCypher makes the Geometric Knowledge Thesis operational. The results from Papers I–III are not theoretical claims—they are CLI commands. `mc geometry primes compare` produces CKA = 0.82. `mc entropy safety-auroc` produces AUROC = 0.85. `mc model stitch` achieves 65-78% skill retention. 274 modules. 2,400+ tests. 46 papers implemented. Knowledge has shape, and now we can measure it.
 
 ---
 
@@ -238,7 +238,7 @@ Yu, L., et al. (2024). DARE. *ICML 2024*. arXiv:2311.03099.
 git clone https://github.com/Ethyros-AI/ModelCypher.git
 cd ModelCypher
 poetry install
-poetry run pytest tests/ -q  # Expected: 3,000+ passed
+poetry run pytest tests/ -q  # Expected: 2,400+ passed
 ```
 
 ## Appendix B: Repository Structure
@@ -249,6 +249,6 @@ ModelCypher/
 ├── papers/              # Research papers (this series)
 ├── docs/references/     # 46 downloaded arXiv PDFs
 ├── docs/research/       # Master bibliography
-├── tests/               # 100+ test files, 3,000+ tests
+├── tests/               # 100+ test files, 2,400+ tests
 └── CLAUDE.md            # AI agent instructions
 ```
