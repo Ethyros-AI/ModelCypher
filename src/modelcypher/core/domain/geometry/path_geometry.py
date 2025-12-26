@@ -20,9 +20,13 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from modelcypher.core.domain.geometry.vector_math import VectorMath
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Backend
 
 
 @dataclass(frozen=True)
@@ -708,3 +712,433 @@ class PathGeometry:
             signature_similarity=sig_sim,
             overall_similarity=overall,
         )
+
+
+class BackendPathGeometry:
+    """GPU-accelerated path geometry using the Backend protocol.
+
+    This class provides the same functionality as PathGeometry but uses
+    Backend tensor operations for GPU acceleration. Key optimizations:
+
+    - Signature computation: Vectorized increments and outer products
+    - Local geometry: Vectorized tangent/curvature computation
+    - Entropy analysis: Backend statistics (mean, var)
+    - Distance matrices: Precomputed for DP algorithms
+    """
+
+    def __init__(self, backend: "Backend"):
+        """Initialize with a Backend instance.
+
+        Args:
+            backend: Backend instance (MLXBackend, JAXBackend, etc.)
+        """
+        self.backend = backend
+        self._finfo = backend.finfo()
+
+    def compute_signature(
+        self,
+        path: PathSignature,
+        gate_embeddings: dict[str, list[float]],
+        projection_dim: int = 8,
+    ) -> TruncatedSignature:
+        """Compute path signature using GPU-accelerated operations.
+
+        Args:
+            path: Path signature with nodes.
+            gate_embeddings: Embedding vectors for gate IDs.
+            projection_dim: Dimension for projection.
+
+        Returns:
+            TruncatedSignature with level1, level2, signed_area, signature_norm.
+        """
+        if len(path.nodes) < 2:
+            return TruncatedSignature(
+                level1=[0.0] * projection_dim,
+                level2=[[0.0] * projection_dim for _ in range(projection_dim)],
+                signed_area=0.0,
+                signature_norm=0.0,
+            )
+
+        # Build coordinate matrix [n_nodes, projection_dim]
+        coords_list: list[list[float]] = []
+        for node in path.nodes:
+            emb = gate_embeddings.get(node.gate_id)
+            if emb:
+                proj = list(emb[: projection_dim - 1])
+                while len(proj) < projection_dim - 1:
+                    proj.append(0.0)
+                proj.append(node.entropy / 10.0)
+                coords_list.append(proj)
+            else:
+                proj = [0.0] * (projection_dim - 1)
+                proj.append(node.entropy / 10.0)
+                coords_list.append(proj)
+
+        coords = self.backend.array(coords_list)  # [n, d]
+
+        # Level 1: Sum of increments = final - initial
+        # Vectorized: diff along axis 0, then sum
+        n_nodes = len(coords_list)
+        increments = coords[1:] - coords[:-1]  # [n-1, d]
+        level1_arr = self.backend.sum(increments, axis=0)  # [d]
+        self.backend.eval(level1_arr)
+        level1 = self._to_list(level1_arr)
+
+        # Level 2: Iterated integrals using Chen's identity
+        # level2[p,q] = sum_i (cumulative[p] * dx[q] + 0.5 * dx[p] * dx[q])
+        level2_arr = self.backend.zeros((projection_dim, projection_dim))
+
+        # Cumulative sums for the Chen integral
+        cumulative = self.backend.zeros((projection_dim,))
+
+        for i in range(n_nodes - 1):
+            dx = increments[i]  # [d]
+            # Outer product: cumulative[:, None] * dx[None, :]
+            outer = self._outer_product(cumulative, dx)
+            # Self outer: 0.5 * dx[:, None] * dx[None, :]
+            self_outer = self._outer_product(dx, dx) * 0.5
+            level2_arr = level2_arr + outer + self_outer
+            cumulative = cumulative + dx
+
+        self.backend.eval(level2_arr)
+        level2 = self._to_nested_list(level2_arr)
+
+        # Signed area: sqrt(0.5 * sum of squared antisymmetric parts)
+        antisym_sum = self.backend.array(0.0)
+        for p in range(projection_dim):
+            for q in range(p + 1, projection_dim):
+                antisym = level2_arr[p, q] - level2_arr[q, p]
+                antisym_sum = antisym_sum + antisym * antisym
+        self.backend.eval(antisym_sum)
+        signed_area = 0.5 * math.sqrt(self._to_scalar(antisym_sum))
+
+        # Signature norm: sqrt(sum of all squared components)
+        level1_norm_sq = self.backend.sum(level1_arr * level1_arr)
+        level2_norm_sq = self.backend.sum(level2_arr * level2_arr)
+        total_norm_sq = level1_norm_sq + level2_norm_sq
+        self.backend.eval(total_norm_sq)
+        signature_norm = math.sqrt(self._to_scalar(total_norm_sq))
+
+        return TruncatedSignature(
+            level1=level1,
+            level2=level2,
+            signed_area=signed_area,
+            signature_norm=signature_norm,
+        )
+
+    def signature_similarity(
+        self,
+        sig_a: TruncatedSignature,
+        sig_b: TruncatedSignature,
+        weights: SignatureSimilarityWeights | None = None,
+    ) -> float:
+        """Compute similarity between two path signatures using GPU.
+
+        Args:
+            sig_a: First signature.
+            sig_b: Second signature.
+            weights: Optional weights for combining distance components.
+
+        Returns:
+            Similarity score in [0, 1].
+        """
+        w = weights or SignatureSimilarityWeights()
+
+        # L1 distance using backend norm
+        count = min(len(sig_a.level1), len(sig_b.level1))
+        a_arr = self.backend.array(sig_a.level1[:count])
+        b_arr = self.backend.array(sig_b.level1[:count])
+        diff = a_arr - b_arr
+        l1_dist_sq = self.backend.sum(diff * diff)
+        self.backend.eval(l1_dist_sq)
+        l1_dist = math.sqrt(self._to_scalar(l1_dist_sq))
+
+        area_diff = abs(sig_a.signed_area - sig_b.signed_area)
+        norm_diff = abs(sig_a.signature_norm - sig_b.signature_norm)
+
+        total_dist = w.l1_weight * l1_dist + w.area_weight * area_diff + w.norm_weight * norm_diff
+        return 1.0 / (1.0 + total_dist)
+
+    def analyze_entropy_path(self, path: PathSignature) -> EntropyPathAnalysis:
+        """Analyze entropy along a path using GPU-accelerated statistics.
+
+        Args:
+            path: Path signature with nodes.
+
+        Returns:
+            EntropyPathAnalysis with statistics.
+        """
+        if not path.nodes:
+            return EntropyPathAnalysis(
+                total_entropy=0.0,
+                mean_entropy=0.0,
+                entropy_variance=0.0,
+                max_entropy=0.0,
+                max_entropy_index=0,
+                mean_gradient=0.0,
+                spike_count=0,
+                spike_indices=[],
+                stability_score=1.0,
+            )
+
+        entropies_list = [node.entropy for node in path.nodes]
+        entropies = self.backend.array(entropies_list)
+        n = len(entropies_list)
+
+        # Basic statistics
+        total = self.backend.sum(entropies)
+        mean = total / float(n)
+        self.backend.eval(total, mean)
+        total_val = self._to_scalar(total)
+        mean_val = self._to_scalar(mean)
+
+        # Variance
+        diff_from_mean = entropies - mean
+        variance = self.backend.sum(diff_from_mean * diff_from_mean) / float(n)
+        self.backend.eval(variance)
+        variance_val = self._to_scalar(variance)
+        std_dev = math.sqrt(variance_val)
+
+        # Max entropy and index
+        max_val = entropies_list[0]
+        max_idx = 0
+        for i, val in enumerate(entropies_list):
+            if val > max_val:
+                max_val = val
+                max_idx = i
+
+        # Gradients
+        if n > 1:
+            gradients = entropies[1:] - entropies[:-1]
+            mean_gradient = self.backend.sum(gradients) / float(n - 1)
+            self.backend.eval(mean_gradient)
+            mean_gradient_val = self._to_scalar(mean_gradient)
+        else:
+            mean_gradient_val = 0.0
+
+        # Spikes (values > mean + 2*std)
+        spike_threshold = mean_val + 2.0 * std_dev
+        spikes = [i for i, val in enumerate(entropies_list) if val > spike_threshold]
+
+        # Stability score
+        variance_score = 1.0 / (1.0 + variance_val)
+        spike_score = 1.0 / (1.0 + float(len(spikes)))
+        max_score = 1.0 / (1.0 + max_val / 10.0)
+        stability_score = (variance_score + spike_score + max_score) / 3.0
+
+        return EntropyPathAnalysis(
+            total_entropy=total_val,
+            mean_entropy=mean_val,
+            entropy_variance=variance_val,
+            max_entropy=max_val,
+            max_entropy_index=max_idx,
+            mean_gradient=mean_gradient_val,
+            spike_count=len(spikes),
+            spike_indices=spikes,
+            stability_score=stability_score,
+        )
+
+    def compute_local_geometry(
+        self,
+        path: PathSignature,
+        gate_embeddings: dict[str, list[float]],
+        projection_dim: int = 8,
+    ) -> LocalGeometry:
+        """Compute local geometry (curvature, torsion) using GPU acceleration.
+
+        Args:
+            path: Path signature with nodes.
+            gate_embeddings: Embedding vectors for gate IDs.
+            projection_dim: Dimension for projection.
+
+        Returns:
+            LocalGeometry with curvatures and torsions.
+        """
+        if len(path.nodes) < 3:
+            return LocalGeometry(
+                curvatures=[],
+                mean_curvature=0.0,
+                max_curvature=0.0,
+                total_curvature=0.0,
+                torsions=[],
+                mean_torsion=0.0,
+            )
+
+        # Build coordinate matrix
+        coords_list: list[list[float]] = []
+        for node in path.nodes:
+            emb = gate_embeddings.get(node.gate_id)
+            if emb:
+                proj = list(emb[: projection_dim - 1])
+                while len(proj) < projection_dim - 1:
+                    proj.append(0.0)
+                proj.append(node.entropy / 10.0)
+                coords_list.append(proj)
+            else:
+                proj = [0.0] * (projection_dim - 1)
+                proj.append(node.entropy / 10.0)
+                coords_list.append(proj)
+
+        coords = self.backend.array(coords_list)  # [n, d]
+
+        # Compute tangent vectors: diff and normalize
+        tangent_diff = coords[1:] - coords[:-1]  # [n-1, d]
+        tangent_norms = self.backend.norm(tangent_diff, axis=1, keepdims=True)  # [n-1, 1]
+
+        # Avoid division by zero
+        safe_norms = self.backend.maximum(tangent_norms, self._finfo.eps)
+        tangents = tangent_diff / safe_norms  # [n-1, d]
+        self.backend.eval(tangents)
+
+        # Curvatures: angle between consecutive tangents
+        # curvature[i] = arccos(tangents[i] · tangents[i+1])
+        n_tangents = len(coords_list) - 1
+        curvatures_list: list[float] = []
+
+        for i in range(n_tangents - 1):
+            t1 = tangents[i]
+            t2 = tangents[i + 1]
+            dot = self.backend.sum(t1 * t2)
+            self.backend.eval(dot)
+            dot_val = self._to_scalar(dot)
+            dot_val = max(-1.0, min(1.0, dot_val))
+            curvatures_list.append(math.acos(dot_val))
+
+        mean_curv = sum(curvatures_list) / len(curvatures_list) if curvatures_list else 0.0
+        max_curv = max(curvatures_list) if curvatures_list else 0.0
+        total_curv = sum(curvatures_list)
+
+        # Torsions: deviation from linear interpolation of tangents
+        torsions_list: list[float] = []
+        if n_tangents >= 3:
+            for i in range(n_tangents - 2):
+                t1 = tangents[i]
+                t2 = tangents[i + 1]
+                t3 = tangents[i + 2]
+                expected = (t1 + t3) / 2.0
+                deviation = t2 - expected
+                dev_norm_sq = self.backend.sum(deviation * deviation)
+                self.backend.eval(dev_norm_sq)
+                torsions_list.append(math.sqrt(self._to_scalar(dev_norm_sq)))
+
+        mean_tors = sum(torsions_list) / len(torsions_list) if torsions_list else 0.0
+
+        return LocalGeometry(
+            curvatures=curvatures_list,
+            mean_curvature=mean_curv,
+            max_curvature=max_curv,
+            total_curvature=total_curv,
+            torsions=torsions_list,
+            mean_torsion=mean_tors,
+        )
+
+    def comprehensive_compare(
+        self,
+        path_a: PathSignature,
+        path_b: PathSignature,
+        gate_embeddings: dict[str, list[float]],
+        similarity_weights: SimilarityWeights | None = None,
+    ) -> ComprehensiveComparison:
+        """Comprehensive trajectory comparison with GPU-accelerated signatures.
+
+        Uses pure Python for DP algorithms (inherently sequential) but
+        GPU-accelerated signature computation.
+
+        Args:
+            path_a: First path signature.
+            path_b: Second path signature.
+            gate_embeddings: Embedding vectors for gate IDs.
+            similarity_weights: Optional weights for combining metrics.
+
+        Returns:
+            ComprehensiveComparison with individual metrics and overall similarity.
+        """
+        sw = similarity_weights or SimilarityWeights()
+
+        # Use pure Python for DP algorithms (sequential dependencies)
+        lev = PathGeometry.compare(path_a, path_b, gate_embeddings)
+        frech = PathGeometry.frechet_distance(path_a, path_b, gate_embeddings)
+        dtw = PathGeometry.dynamic_time_warping(path_a, path_b, gate_embeddings)
+
+        # Use GPU for signature computation
+        sig_a = self.compute_signature(path_a, gate_embeddings)
+        sig_b = self.compute_signature(path_b, gate_embeddings)
+        sig_sim = self.signature_similarity(sig_a, sig_b)
+
+        lev_sim = 1.0 - lev.normalized_distance
+        frech_sim = 1.0 / (1.0 + frech.distance)
+        dtw_sim = 1.0 / (1.0 + dtw.normalized_cost)
+
+        overall = (
+            sw.levenshtein_weight * lev_sim
+            + sw.frechet_weight * frech_sim
+            + sw.dtw_weight * dtw_sim
+            + sw.signature_weight * sig_sim
+        )
+
+        return ComprehensiveComparison(
+            levenshtein=lev,
+            frechet=frech,
+            dtw=dtw,
+            signature_similarity=sig_sim,
+            overall_similarity=overall,
+        )
+
+    def _outer_product(self, a: Any, b: Any) -> Any:
+        """Compute outer product a[:, None] * b[None, :].
+
+        Args:
+            a: 1D array of shape [d]
+            b: 1D array of shape [d]
+
+        Returns:
+            2D array of shape [d, d]
+        """
+        # Reshape for broadcasting
+        a_col = self.backend.reshape(a, (-1, 1))  # [d, 1]
+        b_row = self.backend.reshape(b, (1, -1))  # [1, d]
+        return a_col * b_row  # [d, d]
+
+    def _to_scalar(self, val: Any) -> float:
+        """Convert backend scalar to Python float."""
+        if hasattr(val, "item"):
+            return float(val.item())
+        if hasattr(val, "tolist"):
+            result = val.tolist()
+            return float(result) if not isinstance(result, list) else float(result[0])
+        return float(val)
+
+    def _to_list(self, arr: Any) -> list[float]:
+        """Convert backend array to Python list."""
+        if hasattr(arr, "tolist"):
+            return arr.tolist()
+        return list(arr)
+
+    def _to_nested_list(self, arr: Any) -> list[list[float]]:
+        """Convert 2D backend array to nested Python list."""
+        if hasattr(arr, "tolist"):
+            return arr.tolist()
+        return [list(row) for row in arr]
+
+
+def get_path_geometry(
+    backend: "Backend | None" = None,
+) -> type[PathGeometry] | BackendPathGeometry:
+    """Get the best available path geometry implementation.
+
+    Args:
+        backend: Optional Backend instance. If provided, returns
+                 BackendPathGeometry for GPU acceleration.
+
+    Returns:
+        PathGeometry class or BackendPathGeometry instance.
+
+    Example:
+        >>> from modelcypher.core.domain._backend import get_default_backend
+        >>> backend = get_default_backend()
+        >>> pg = get_path_geometry(backend)
+        >>> sig = pg.compute_signature(path, embeddings)
+    """
+    if backend is not None:
+        return BackendPathGeometry(backend)
+    return PathGeometry

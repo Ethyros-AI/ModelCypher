@@ -30,12 +30,15 @@ import math
 
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.path_geometry import (
     AlignmentOp,
+    BackendPathGeometry,
     PathGeometry,
     PathNode,
     PathSignature,
     SimilarityWeights,
+    get_path_geometry,
 )
 
 
@@ -386,3 +389,156 @@ class TestComprehensiveCompare:
         # Different weights should produce different scores
         # (unless paths are identical, which they're not)
         assert result_lev.overall_similarity != result_sig.overall_similarity
+
+
+class TestBackendPathGeometry:
+    """Tests for the GPU-accelerated BackendPathGeometry."""
+
+    @pytest.fixture
+    def backend(self):
+        return get_default_backend()
+
+    @pytest.fixture
+    def pg(self, backend):
+        return BackendPathGeometry(backend)
+
+    def test_compute_signature_identical_to_pure_python(self, pg) -> None:
+        """Backend signature computation should match pure Python."""
+        path = _make_path(["A", "B", "C"])
+        emb = _simple_embeddings()
+
+        pure_sig = PathGeometry.compute_signature(path, emb)
+        backend_sig = pg.compute_signature(path, emb)
+
+        # Compare level1
+        for i in range(len(pure_sig.level1)):
+            assert pure_sig.level1[i] == pytest.approx(backend_sig.level1[i], abs=1e-6)
+
+        # Compare signed area and norm
+        assert pure_sig.signed_area == pytest.approx(backend_sig.signed_area, abs=1e-6)
+        assert pure_sig.signature_norm == pytest.approx(backend_sig.signature_norm, abs=1e-6)
+
+    def test_signature_similarity_identical_to_pure_python(self, pg) -> None:
+        """Backend signature similarity should match pure Python."""
+        path_a = _make_path(["A", "B", "C"])
+        path_b = _make_path(["A", "D", "C"])
+        emb = _simple_embeddings()
+
+        sig_a = PathGeometry.compute_signature(path_a, emb)
+        sig_b = PathGeometry.compute_signature(path_b, emb)
+
+        pure_sim = PathGeometry.signature_similarity(sig_a, sig_b)
+        backend_sim = pg.signature_similarity(sig_a, sig_b)
+
+        assert pure_sim == pytest.approx(backend_sim, abs=1e-6)
+
+    def test_analyze_entropy_path_identical_to_pure_python(self, pg) -> None:
+        """Backend entropy analysis should match pure Python."""
+        nodes = [
+            PathNode(gate_id="A", token_index=0, entropy=1.0),
+            PathNode(gate_id="B", token_index=1, entropy=5.0),
+            PathNode(gate_id="C", token_index=2, entropy=2.0),
+            PathNode(gate_id="D", token_index=3, entropy=3.0),
+            PathNode(gate_id="E", token_index=4, entropy=1.5),
+        ]
+        path = PathSignature(model_id="m", prompt_id="p", nodes=nodes)
+
+        pure_analysis = PathGeometry.analyze_entropy_path(path)
+        backend_analysis = pg.analyze_entropy_path(path)
+
+        assert pure_analysis.total_entropy == pytest.approx(
+            backend_analysis.total_entropy, abs=1e-6
+        )
+        assert pure_analysis.mean_entropy == pytest.approx(
+            backend_analysis.mean_entropy, abs=1e-6
+        )
+        assert pure_analysis.entropy_variance == pytest.approx(
+            backend_analysis.entropy_variance, abs=1e-6
+        )
+        assert pure_analysis.max_entropy == backend_analysis.max_entropy
+        assert pure_analysis.max_entropy_index == backend_analysis.max_entropy_index
+        assert pure_analysis.mean_gradient == pytest.approx(
+            backend_analysis.mean_gradient, abs=1e-6
+        )
+
+    def test_compute_local_geometry_identical_to_pure_python(self, pg) -> None:
+        """Backend local geometry should match pure Python."""
+        path = _make_path(["A", "B", "C", "D"])
+        emb = _simple_embeddings()
+
+        pure_geom = PathGeometry.compute_local_geometry(path, emb)
+        backend_geom = pg.compute_local_geometry(path, emb)
+
+        assert len(pure_geom.curvatures) == len(backend_geom.curvatures)
+        for i in range(len(pure_geom.curvatures)):
+            assert pure_geom.curvatures[i] == pytest.approx(
+                backend_geom.curvatures[i], abs=1e-5
+            )
+
+        assert pure_geom.mean_curvature == pytest.approx(
+            backend_geom.mean_curvature, abs=1e-5
+        )
+        assert pure_geom.max_curvature == pytest.approx(backend_geom.max_curvature, abs=1e-5)
+        assert pure_geom.total_curvature == pytest.approx(
+            backend_geom.total_curvature, abs=1e-5
+        )
+
+    def test_comprehensive_compare_identical_to_pure_python(self, pg) -> None:
+        """Backend comprehensive comparison should match pure Python."""
+        path_a = _make_path(["A", "B", "C"])
+        path_b = _make_path(["A", "D", "C"])
+        emb = _simple_embeddings()
+
+        pure_result = PathGeometry.comprehensive_compare(path_a, path_b, emb)
+        backend_result = pg.comprehensive_compare(path_a, path_b, emb)
+
+        # DP algorithms are identical (use pure Python)
+        assert pure_result.levenshtein.total_distance == backend_result.levenshtein.total_distance
+        assert pure_result.frechet.distance == backend_result.frechet.distance
+        assert pure_result.dtw.total_cost == backend_result.dtw.total_cost
+
+        # Signature similarity computed by Backend
+        assert pure_result.signature_similarity == pytest.approx(
+            backend_result.signature_similarity, abs=1e-6
+        )
+        assert pure_result.overall_similarity == pytest.approx(
+            backend_result.overall_similarity, abs=1e-6
+        )
+
+    def test_empty_path_handling(self, pg) -> None:
+        """Backend should handle empty paths correctly."""
+        empty = PathSignature(model_id="m", prompt_id="p", nodes=[])
+        emb = _simple_embeddings()
+
+        analysis = pg.analyze_entropy_path(empty)
+        assert analysis.total_entropy == 0.0
+        assert analysis.stability_score == 1.0
+
+        sig = pg.compute_signature(empty, emb)
+        assert sig.signature_norm == 0.0
+
+    def test_single_node_path(self, pg) -> None:
+        """Backend should handle single node paths correctly."""
+        path = _make_path(["A"])
+        emb = _simple_embeddings()
+
+        sig = pg.compute_signature(path, emb)
+        assert sig.signature_norm == 0.0
+
+        geom = pg.compute_local_geometry(path, emb)
+        assert geom.curvatures == []
+
+
+class TestGetPathGeometry:
+    """Tests for the factory function."""
+
+    def test_returns_class_without_backend(self) -> None:
+        """Factory should return PathGeometry class without backend."""
+        result = get_path_geometry()
+        assert result is PathGeometry
+
+    def test_returns_instance_with_backend(self) -> None:
+        """Factory should return BackendPathGeometry instance with backend."""
+        backend = get_default_backend()
+        result = get_path_geometry(backend)
+        assert isinstance(result, BackendPathGeometry)
