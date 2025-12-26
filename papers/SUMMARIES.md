@@ -82,17 +82,17 @@ mc --help          # 50+ commands available
 
 ## Paper 5: The Semantic Highway
 
-**Thesis:** All transformer language models compress tokenized input to a universal low-dimensional semantic manifold (~1.4 intrinsic dimension) within the first 1-2 layers, regardless of architecture, size, or training data.
+**Thesis:** In three tested transformer LLMs, intrinsic dimension drops sharply in the first 1–2 layers and then stabilizes in a low-ID plateau (~1.3–1.5). We treat this as a preliminary observation and a hypothesis about projection onto a low-dimensional conceptual manifold.
 
-**Key Result:** Cross-architecture validation across Qwen (0.5B), Llama (3B), and Mistral (7B) shows:
-- 41-79% intrinsic dimension collapse in layers 0-2
-- Universal plateau at ID = 1.40 ± 0.10
-- Harder domains compress more (ρ = 0.832)
+**Key Result:** Across Qwen (0.5B), Llama (3B), and Mistral (7B) we observe:
+- 40–79% intrinsic dimension collapse in layers 0–2
+- Post-cliff plateau in the 1.3–1.5 range (mean 1.40 ± 0.10 across these models)
+- In Qwen, higher initial domain ID compresses more (ρ = 0.832)
 
 **Verify:**
 ```bash
-mc geometry atlas dimensionality-study /path/to/model --layer 2 --output json
-# Expected: Mean ID ~1.3-1.5 at layer 2
+mc geometry atlas dimensionality-study /path/to/model --layer 0 --layer 1 --layer 2 --output json
+# Look for an early-layer cliff and a low-ID plateau in the first few layers
 ```
 
 → [Full Paper](paper-5-semantic-highway.md)

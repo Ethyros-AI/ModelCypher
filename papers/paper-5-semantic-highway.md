@@ -211,11 +211,27 @@ This three-regime interpretation suggests (but does not guarantee) that:
 
 This aligns with empirical observations that middle-layer SLERP merging outperforms early/late layer merging.
 
+### 4.5 Limitations and Follow-Up Experiments
+
+This document reports a pattern observed in **three** models. That is enough to motivate a hypothesis, not enough to claim a universal property.
+
+Key limitations:
+- **Model coverage**: Only three instruction-tuned transformer models; broader coverage (base models, multilingual, different training data, more scales) is required.
+- **Quantization mismatch**: Two models are 4-bit while one is bf16; quantization can affect distances and therefore ID estimates.
+- **Small per-probe sample sizes**: Probes use 3–8 support texts; TwoNN is valid at small N but can be high-variance, especially per-probe. The mean across 373 probes may be stable, but this should be verified with confidence intervals and repeated runs.
+- **Estimator + distance sensitivity**: Results may depend on TwoNN configuration (regression vs MLE), k-NN geodesic parameters, and probe construction choices.
+
+Follow-up experiments to test generality:
+1. Replicate across a wider model suite (base vs instruct, more families/sizes, multilingual).
+2. Cross-check multiple ID estimators and report uncertainty (e.g., TwoNN regression vs MLE + bootstrap).
+3. Stress-test probe construction (different corpora, different invariant probe sets, randomized controls).
+4. Test whether the plateau regime correlates with cross-model transfer success (Paper 3) and with mid-layer geometric similarity metrics (e.g., CKA).
+
 ## 5. Related Work
 
 **Intrinsic Dimension in Neural Networks**: Ansuini et al. (2019) measured ID in vision networks; we extend this to language models with semantic probes.
 
-**Platonic Representation Hypothesis**: Huh et al. (2024) showed cross-model representation similarity; we provide a mechanistic explanation via the semantic highway.
+**Platonic Representation Hypothesis**: Huh et al. (2024) showed cross-model representation similarity; we propose a candidate mechanistic interpretation via early-layer ID collapse and a mid-layer plateau regime.
 
 **Information Bottleneck**: Tishby & Zaslavsky (2015) proposed compression-relevance tradeoffs; we observe this as the cliff.
 
@@ -241,9 +257,9 @@ done
 
 Across three tested transformer LLMs, we observe an early-layer intrinsic-dimension collapse followed by a low-ID plateau around ~1.4. Rather than claiming universality, we treat this as a concrete observation and a working hypothesis about representation geometry over depth. If the pattern holds more broadly, it may:
 
-1. **Explains representation convergence**: All models hit the same bottleneck
-2. **Explains transfer learning**: Shared highway enables cross-architecture compatibility
-3. **Predicts optimal intervention points**: Highway layers are the target for geometric modification
+1. **Help explain representation convergence**: architectures may rapidly project onto a shared low-dimensional regime
+2. **Support transfer learning**: mid-layer compatibility could be higher than early/late layers
+3. **Suggest intervention layers**: geometric interventions may be most stable in the plateau regime
 
 In these three models, the cliff location varies (L0→L1 vs L1→L2), while the plateau range is similar. Determining whether that similarity is a property of language, training, architecture, or the estimator requires broader replication.
 

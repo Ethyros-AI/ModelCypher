@@ -11,7 +11,7 @@ This directory contains publication-quality research manuscripts.
 | [Paper 2](paper-2-entropy-safety-signal.md) | Intensity Modifiers Reduce Entropy | Empirical | ΔH AUROC = 0.85 |
 | [Paper 3](paper-3-cross-architecture-transfer.md) | Cross-Architecture Adapter Transfer | Empirical | 65-78% skill retention |
 | [Paper 4](paper-4-modelcypher-toolkit.md) | ModelCypher Toolkit | Systems | 274 modules, 3060 tests |
-| [Paper 5](paper-5-semantic-highway.md) | The Semantic Highway | Empirical | Universal ID ~1.4 plateau |
+| [Paper 5](paper-5-semantic-highway.md) | The Semantic Highway | Empirical | Early-layer ID cliff + low-ID plateau (3 models) |
 
 ## Quality Standards
 
