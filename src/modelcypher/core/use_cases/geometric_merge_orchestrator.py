@@ -98,8 +98,11 @@ STAGE 9: DOMAIN ANALYSIS (optional)
 
 from __future__ import annotations
 
+import json
 import logging
+import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -1007,6 +1010,7 @@ class GeometricMergeOrchestrator:
         target_weights: dict[str, "Array"],
         geometry: MergeGeometry,
         extract_layer_index_fn: Any,
+        checkpoint_dir: str | None = None,
     ) -> tuple[dict[str, "Array"], dict[str, Any]]:
         """
         Execute merge using the computed geometry.
@@ -1043,10 +1047,27 @@ class GeometricMergeOrchestrator:
             "curvature_aware_blends": 0,
             "verb_noun_applied": 0,
             "gw_transport_used": 0,
+            "embedding_frechet_blends": 0,
             # Cross-architecture metrics
             "cross_arch_layer_mappings": 0,
             "cross_arch_dim_projections": 0,
         }
+        checkpoint_path = None
+        weight_keys = [
+            key for key in target_weights.keys()
+            if not key.endswith(".scales") and not key.endswith(".biases")
+        ]
+        total_weights = len(weight_keys)
+
+        if checkpoint_dir:
+            checkpoint_path = Path(checkpoint_dir) / "merge_checkpoint.json"
+            checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+            metrics["checkpoint_path"] = str(checkpoint_path)
+
+        def _write_checkpoint(payload: dict[str, Any]) -> None:
+            if checkpoint_path is None:
+                return
+            checkpoint_path.write_text(json.dumps(payload, sort_keys=True))
 
         # Build reverse correspondence: target_layer -> source_layer
         layer_correspondence = geometry.layer_correspondence
@@ -1090,9 +1111,7 @@ class GeometricMergeOrchestrator:
 
             return weight, False
 
-        for key in sorted(target_weights.keys()):
-            if key.endswith(".scales") or key.endswith(".biases"):
-                continue
+        for idx, key in enumerate(sorted(weight_keys), start=1):
 
             # For cross-architecture models, find corresponding source key
             source_key = key
@@ -1112,9 +1131,39 @@ class GeometricMergeOrchestrator:
                     )
                     metrics["cross_arch_layer_mappings"] += 1
 
+            _write_checkpoint(
+                {
+                    "status": "start",
+                    "index": idx,
+                    "total": total_weights,
+                    "key": key,
+                    "source_key": source_key,
+                    "layer_idx": target_layer_idx,
+                    "timestamp": time.time(),
+                }
+            )
+            logger.info(
+                "MERGE WEIGHT [%d/%d] %s (source=%s)",
+                idx,
+                total_weights,
+                key,
+                source_key,
+            )
+
             if source_key not in source_weights:
                 # No source weight found - use target as-is
                 merged[key] = target_weights[key]
+                _write_checkpoint(
+                    {
+                        "status": "skipped",
+                        "index": idx,
+                        "total": total_weights,
+                        "key": key,
+                        "source_key": source_key,
+                        "layer_idx": target_layer_idx,
+                        "timestamp": time.time(),
+                    }
+                )
                 continue
 
             source_w = dequantize_if_needed(
@@ -1200,10 +1249,20 @@ class GeometricMergeOrchestrator:
                 target_f32 = b.astype(target_w, "float32")
                 merged_w = None  # Will be set by one of the blending paths
 
+                # Embedding-scale matrices: use direct Fréchet mean to avoid SVD blowups.
+                m_rows, n_cols = source_f32.shape
+                if m_rows > 4 * n_cols and m_rows > 10000:
+                    eps = 1e-10
+                    source_abs = b.abs(source_f32)
+                    target_abs = b.abs(target_f32)
+                    merged_w = b.sqrt((source_abs + eps) * (target_abs + eps)) * b.sign(target_f32)
+                    b.eval(merged_w)
+                    metrics["embedding_frechet_blends"] += 1
+
                 # ============================================================
                 # A.1: Apply shared subspace projections if available
                 # ============================================================
-                if (layer_geom and layer_geom.source_projection is not None
+                if merged_w is None and (layer_geom and layer_geom.source_projection is not None
                         and layer_geom.target_projection is not None):
                     src_proj = layer_geom.source_projection
                     tgt_proj = layer_geom.target_projection
@@ -1374,6 +1433,17 @@ class GeometricMergeOrchestrator:
             target_dtype = target_w.dtype
             dtype_str = target_dtype.name if hasattr(target_dtype, "name") else str(target_dtype).replace("mlx.core.", "")
             merged[key] = b.astype(merged_w, dtype_str)
+            _write_checkpoint(
+                {
+                    "status": "done",
+                    "index": idx,
+                    "total": total_weights,
+                    "key": key,
+                    "source_key": source_key,
+                    "layer_idx": target_layer_idx,
+                    "timestamp": time.time(),
+                }
+            )
             metrics["weights_merged"] += 1
 
         # Copy target-only keys
@@ -1383,7 +1453,7 @@ class GeometricMergeOrchestrator:
 
         logger.info(
             "MERGE: %d weights, %d rotations, %d Fisher, %d dimension, %d DARE | "
-            "NEW: %d shared_subspace, %d curvature, %d verb_noun, %d intrinsic_scaled | "
+            "NEW: %d shared_subspace, %d curvature, %d verb_noun, %d intrinsic_scaled, %d embed_frechet | "
             "CROSS-ARCH: %d layer_maps, %d dim_projects",
             metrics["weights_merged"],
             metrics["rotations_applied"],
@@ -1394,6 +1464,7 @@ class GeometricMergeOrchestrator:
             metrics["curvature_aware_blends"],
             metrics["verb_noun_applied"],
             metrics["intrinsic_dim_scaled"],
+            metrics["embedding_frechet_blends"],
             metrics["cross_arch_layer_mappings"],
             metrics["cross_arch_dim_projections"],
         )

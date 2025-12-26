@@ -205,7 +205,7 @@ def stage_vocabulary_align(
             logger.warning("Missing embedding for key %s", embed_key)
             continue
 
-        # Dequantize embeddings to float for exact alignment math.
+        # Vocabulary is the 2D compression plane; dequantize the 1D binary basis first.
         from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
 
         source_embed = dequantize_if_needed(source_embed, embed_key, source_weights, backend)
@@ -265,11 +265,11 @@ def stage_vocabulary_align(
                 # Raw python data - convert to backend array
                 merged_embed = backend.array(merged_embed)
 
-            # Cast to original dtype if needed
-            source_dtype = backend.dtype(source_embed)
-            merged_embed = backend.astype(merged_embed, source_dtype)
+            # Keep float32 to preserve the aligned vocabulary plane; requantize at final save.
+            merged_embed = backend.astype(merged_embed, "float32")
             backend.eval(merged_embed)
-            modified_weights[embed_key] = merged_embed
+            # Keep on CPU to reduce GPU pressure; will be moved to backend on demand.
+            modified_weights[embed_key] = backend.to_numpy(merged_embed)
             aligned_layers += 1
 
             # Record metrics

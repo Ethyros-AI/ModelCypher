@@ -215,9 +215,9 @@ class UnifiedGeometricMerger:
                 source_path, target_path, output_dir, dry_run
             )
 
-        # Load weights
-        source_weights, _ = self._load_weights(source_path)
-        target_weights, target_format = self._load_weights(target_path)
+        # Load weights (CPU first to reduce GPU memory pressure during merge)
+        source_weights, _ = self._load_weights_cpu(source_path)
+        target_weights, target_format = self._load_weights_cpu(target_path)
 
         # Identify layers
         layer_indices = self._extract_layer_indices(target_weights)
@@ -506,6 +506,7 @@ class UnifiedGeometricMerger:
             target_weights=target_weights,
             geometry=geometry,
             extract_layer_index_fn=self._extract_layer_index,
+            checkpoint_dir=output_dir,
         )
 
         # Detect target quantization and requantize merged weights to match
@@ -788,6 +789,11 @@ class UnifiedGeometricMerger:
         Returns native arrays (mx.array for MLX) that run on GPU.
         """
         weights = self._model_loader.load_weights(model_path)
+        return weights, "safetensors"
+
+    def _load_weights_cpu(self, model_path: str) -> tuple[dict[str, Any], str]:
+        """Load model weights as CPU arrays to reduce GPU memory pressure."""
+        weights = self._model_loader.load_weights_as_numpy(model_path)
         return weights, "safetensors"
 
     def _load_weights_as_arrays(self, model_path: str) -> tuple[dict[str, "Array"], str]:
