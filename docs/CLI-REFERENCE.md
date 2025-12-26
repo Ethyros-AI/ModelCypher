@@ -41,7 +41,7 @@ Primary workflows:
 - `mc inventory`, `mc system`
 
 Research + diagnostics:
-- `mc geometry` (validate/training/safety/adapter/primes/stitch/path/crm/sparse/refusal/persona/manifold/transport)
+- `mc geometry` (validate/training/safety/adapter/primes/stitch/path/crm/sparse/refusal/persona/manifold/transport/atlas/spatial)
 - `mc thermo` (analyze/path/entropy/measure/detect/ridge-detect/phase/sweep)
 - `mc entropy` (analyze/detect-distress/verify-baseline/window/conversation-track/dual-path)
 - `mc safety` (adapter-probe/dataset-scan/lint-identity)
@@ -51,6 +51,17 @@ Research + diagnostics:
 - `mc calibration`, `mc stability`, `mc agent-eval`, `mc dashboard`
 - `mc ensemble`, `mc research`, `mc help`, `mc schema`, `mc completions`
 - `mc validate` (train), `mc estimate`, `mc explain`
+
+## Geometry Atlas Commands
+```bash
+mc geometry atlas dimensionality <model_path> --layer <n>
+mc geometry atlas dimensionality-study <model_path> --layer <n> [-l ...]
+```
+
+## Geometry Spatial Commands
+```bash
+mc geometry spatial euclidean <activations_file>
+```
 
 ## Phase 2 Commands
 

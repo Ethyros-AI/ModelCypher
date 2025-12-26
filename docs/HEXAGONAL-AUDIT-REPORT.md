@@ -343,7 +343,7 @@ ModelCypher's hexagonal architecture implementation achieves **perfect complianc
 - **Consistent use of protocols** for abstraction
 - **Complete Backend protocol implementation** across all three backends (MLX, JAX, CUDA)
 - **Well-documented exceptions** to architectural rules
-- **Strong enforcement** of domain rules (no numpy, geodesic-first)
+- **Strong enforcement** of domain rules (no numpy in core math, geodesic-first)
 
 The architecture fully supports the project's goals of backend-agnostic geometric analysis with GPU acceleration across MLX, JAX, and CUDA platforms.
 

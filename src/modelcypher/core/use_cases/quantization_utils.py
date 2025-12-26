@@ -91,24 +91,26 @@ def dequantize_if_needed(
     backend: Backend,
     hint: QuantizationHint | None = None,
 ) -> Any:
-    weight_np = backend.to_numpy(weight) if not hasattr(weight, 'dtype') else weight
-    # Convert to backend array for dtype checking
-    import math
-    # Check if dtype is float (handle both numpy and backend dtypes)
-    dtype_name = str(getattr(weight_np, 'dtype', backend.to_numpy(backend.array(weight_np)).dtype))
-    is_float = 'float' in dtype_name
-    if is_float:
-        return weight_np
+    # Check if this is a backend array (mx.array, jax.Array, etc.)
+    # If so, we need special handling to avoid std::bad_cast on uint32
+    is_backend_array = hasattr(weight, 'dtype') and not hasattr(weight, '__array_interface__')
 
-    # Check if dtype is integer or unsigned
-    dtype_kind = str(getattr(weight_np, 'dtype', '')).lower()
+    # Get dtype string for checking
+    dtype_name = str(getattr(weight, 'dtype', ''))
+    is_float = 'float' in dtype_name.lower()
+    if is_float:
+        # Already float, return as-is
+        return weight
+
+    # Check if dtype is integer or unsigned (quantized weights)
+    dtype_kind = dtype_name.lower()
     if 'int' not in dtype_kind and 'uint' not in dtype_kind:
         logger.warning(
             "Unsupported dtype for weight %s (dtype=%s); skipping dequantization.",
             base_key,
-            weight_np.dtype,
+            dtype_name,
         )
-        return weight_np
+        return weight
 
     base = base_key.replace(".weight", "")
     scales_key = f"{base}.scales"
@@ -120,15 +122,19 @@ def dequantize_if_needed(
             "Quantized weight %s missing scales; skipping dequantization.",
             base_key,
         )
-        return weight_np
+        return weight
 
-    scales_np = backend.to_numpy(scales)
     biases = all_params.get(biases_key)
     biases_present = biases is not None
+
+    # Get shapes for quantization parameter inference
+    weight_shape = weight.shape
+    scales_shape = scales.shape
+
     params = resolve_quantization(
         base_key=base_key,
-        weight_shape=weight_np.shape,
-        scales_shape=scales_np.shape,
+        weight_shape=weight_shape,
+        scales_shape=scales_shape,
         hint=hint,
         biases_present=biases_present,
     )
@@ -137,7 +143,7 @@ def dequantize_if_needed(
             "Unable to infer quantization parameters for %s; skipping dequantization.",
             base_key,
         )
-        return weight_np
+        return weight
 
     logger.debug(
         "Dequantizing %s (bits=%s groupSize=%s mode=%s)",
@@ -147,10 +153,16 @@ def dequantize_if_needed(
         params.mode,
     )
 
-    weight_arr = backend.array(weight_np)
-    scales_arr = backend.array(scales_np)
-    biases_np = backend.to_numpy(biases) if biases is not None else None
-    biases_arr = backend.array(biases_np) if biases is not None else None
+    # For backend arrays, use them directly without re-wrapping
+    # This avoids std::bad_cast on uint32 arrays
+    if is_backend_array:
+        weight_arr = weight
+        scales_arr = scales
+        biases_arr = biases
+    else:
+        weight_arr = backend.array(weight)
+        scales_arr = backend.array(scales)
+        biases_arr = backend.array(biases) if biases is not None else None
 
     dequantized = backend.dequantize(
         weight_arr,
