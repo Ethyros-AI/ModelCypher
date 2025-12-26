@@ -74,7 +74,7 @@ src/modelcypher/
 │   ├── ports/         # Abstract interfaces (Backend protocol = 58 methods)
 │   └── use_cases/     # Service orchestration
 ├── adapters/          # Concrete implementations (hf_hub, filesystem)
-├── backends/          # MLX, JAX, CUDA (stub) - NO NUMPY
+├── backends/          # MLX, JAX, CUDA (stub) - no numpy in core math
 ├── cli/               # Typer CLI (entry: mc / modelcypher)
 ├── mcp/               # Model Context Protocol server (148 tools)
 └── data/              # Static data (semantic_primes.json, etc.)

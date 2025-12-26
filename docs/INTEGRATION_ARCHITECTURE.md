@@ -85,7 +85,7 @@ for probe in probes:
 UnifiedAtlasInventory (373 probes)
          │
          ├──► AnchorExtractor
-         │    └─ Should use all 7 atlas sources, not just 2
+         │    └─ Should use all 9 atlas sources, not just 2
          │
          ├──► merge_engine.py::RotationalMerger
          │    └─ SharedAnchors should be built from atlas probes

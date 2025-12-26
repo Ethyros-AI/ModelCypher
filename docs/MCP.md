@@ -1660,6 +1660,17 @@ Phase 2 adds comprehensive safety, entropy, agent, and dataset tools for deeper 
 | `mc_dataset_chunk` | Chunk documents with hierarchical boundary preservation | Mutating |
 | `mc_dataset_template` | Apply chat template (Llama3, Qwen, Gemma, etc.) | Mutating |
 
+### Geometry Tools (Atlas + Spatial)
+
+| Tool | Purpose | Category |
+|------|---------|----------|
+| `mc_geometry_atlas_inventory` | List available atlas probes (sources, domains, counts) | Read-only |
+| `mc_geometry_atlas_dimensionality` | Intrinsic dimensionality for atlas probes at a layer | Read-only |
+| `mc_geometry_atlas_dimensionality_study` | Multi-layer dimensionality sweep for atlas probes | Read-only |
+| `mc_geometry_spatial_euclidean` | Euclidean consistency check for spatial anchors | Read-only |
+
+Note: Full geometry tool coverage (path, CRM, stitch, probes, manifold) is implemented in `src/modelcypher/mcp/tools/geometry.py`.
+
 ---
 
 ## Modular Architecture
