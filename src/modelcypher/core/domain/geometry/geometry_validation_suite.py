@@ -90,6 +90,16 @@ class Thresholds:
             frechet_distance_max=frechet_distance_max,
         )
 
+    @classmethod
+    def standard(cls) -> "Thresholds":
+        """Return standard thresholds."""
+        return cls.with_parameters()
+
+    @classmethod
+    def default(cls) -> "Thresholds":
+        """Alias for standard thresholds."""
+        return cls.standard()
+
 
 @dataclass(frozen=True)
 class GromovWassersteinConfig:
@@ -167,6 +177,16 @@ class GromovWassersteinConfig:
             num_restarts=num_restarts,
         )
 
+    @classmethod
+    def standard(cls) -> "GromovWassersteinConfig":
+        """Return standard GW solver configuration."""
+        return cls.with_parameters()
+
+    @classmethod
+    def default(cls) -> "GromovWassersteinConfig":
+        """Alias for standard GW solver configuration."""
+        return cls.standard()
+
     def solver_config(self) -> GWConfig:
         return GWConfig(
             max_outer_iterations=self.max_outer_iterations,
@@ -215,6 +235,16 @@ class Config:
             thresholds=thresholds or Thresholds.with_parameters(),
             gromov_wasserstein=gromov_wasserstein or GromovWassersteinConfig.with_parameters(),
         )
+
+    @classmethod
+    def standard(cls) -> "Config":
+        """Return standard suite configuration."""
+        return cls.with_parameters()
+
+    @classmethod
+    def default(cls) -> "Config":
+        """Alias for standard suite configuration."""
+        return cls.standard()
 
 
 @dataclass(frozen=True)
@@ -300,13 +330,13 @@ class GeometryValidationSuite:
         self._backend = backend or get_default_backend()
         self._gw = GromovWassersteinDistance(self._backend)
 
-    def run(self, config: Config) -> Report:
+    def run(self, config: Config | None = None) -> Report:
         """Run the full geometry validation suite.
 
         Args:
             config: Suite configuration (use with_parameters() to create).
         """
-        resolved = config
+        resolved = config or Config.default()
         fixtures = self._build_fixtures()
         gw_validation = self._validate_gromov_wasserstein(
             fixture=fixtures.gromov_wasserstein,
@@ -336,7 +366,7 @@ class GeometryValidationSuite:
         )
 
     @staticmethod
-    def run_static(config: Config) -> Report:
+    def run_static(config: Config | None = None) -> Report:
         """Static method for backward compatibility.
 
         Args:

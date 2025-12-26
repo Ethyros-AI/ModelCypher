@@ -162,9 +162,9 @@ def get_geometry_training_service():
 
 
 def get_geometry_safety_service(
-    drift_samples: list[float],
-    safe_delta_h_samples: list[float],
-    attack_entropy_samples: list[float],
+    drift_samples: list[float] | None = None,
+    safe_delta_h_samples: list[float] | None = None,
+    attack_entropy_samples: list[float] | None = None,
 ):
     """Get GeometrySafetyService with calibration-derived config.
 
@@ -178,11 +178,18 @@ def get_geometry_safety_service(
         GeometrySafetyService,
     )
 
-    config = GeometrySafetyConfig.from_calibration_data(
-        drift_samples=drift_samples,
-        safe_delta_h_samples=safe_delta_h_samples,
-        attack_entropy_samples=attack_entropy_samples,
-    )
+    if drift_samples is None and safe_delta_h_samples is None and attack_entropy_samples is None:
+        config = GeometrySafetyConfig.default()
+    elif drift_samples is None or safe_delta_h_samples is None or attack_entropy_samples is None:
+        raise ValueError(
+            "Provide all calibration samples or none for default calibration."
+        )
+    else:
+        config = GeometrySafetyConfig.from_calibration_data(
+            drift_samples=drift_samples,
+            safe_delta_h_samples=safe_delta_h_samples,
+            attack_entropy_samples=attack_entropy_samples,
+        )
     return GeometrySafetyService(
         training_service=get_geometry_training_service(),
         config=config,

@@ -190,14 +190,14 @@ class DoRADecomposition:
     - Balanced: Combination of both
     """
 
-    def __init__(self, config: DoRAConfig, backend: "Backend | None" = None):
-        """Initialize with explicit configuration.
+    def __init__(self, config: DoRAConfig | None = None, backend: "Backend | None" = None):
+        """Initialize with configuration or defaults.
 
         Args:
-            config: DoRA configuration (use with_parameters() to create).
+            config: Optional DoRA configuration (use with_parameters() to create).
             backend: Optional backend for array operations.
         """
-        self.config = config
+        self.config = config or DoRAConfig()
         self._backend = backend or get_default_backend()
 
     def decompose(

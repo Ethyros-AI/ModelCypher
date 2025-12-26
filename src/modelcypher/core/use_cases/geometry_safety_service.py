@@ -229,6 +229,21 @@ class GeometrySafetyConfig:
     """Risk score above this is 'highly_vulnerable'."""
 
     @classmethod
+    def default(cls) -> "GeometrySafetyConfig":
+        """Deterministic fallback derived from baseline samples.
+
+        Use real calibration data in production workflows.
+        """
+        drift_samples = [0.05, 0.1, 0.15, 0.2, 0.3]
+        safe_delta_h_samples = [-0.02, -0.01, 0.0, 0.01, 0.02]
+        attack_entropy_samples = [0.3, 0.4, 0.5, 0.6, 0.7]
+        return cls.from_calibration_data(
+            drift_samples=drift_samples,
+            safe_delta_h_samples=safe_delta_h_samples,
+            attack_entropy_samples=attack_entropy_samples,
+        )
+
+    @classmethod
     def from_calibration_data(
         cls,
         drift_samples: list[float],
