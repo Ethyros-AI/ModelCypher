@@ -259,7 +259,6 @@ Variance increases with drop rate—hence the limit on practical $p$.
    - *Combines spectral methods with DARE concepts*
 
 6. **Engineering Applications of AI** (2025). "Research on enhancing model performance by merging using DARE."
-   DOI: 10.1016/j.engappai.2025.XXXX
    - *Production applications of DARE*
 
 ---

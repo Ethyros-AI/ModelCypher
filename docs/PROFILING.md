@@ -57,7 +57,7 @@ Stores layer activations for probe texts.
 
 | Property | Value |
 |----------|-------|
-| Location | `/Volumes/CodeCypher/caches/activations/` |
+| Location | `~/.modelcypher/caches/activations/` |
 | Key | Model + layer + probe batch |
 | TTL | 7 days (configurable) |
 | Size | 10-100 MB per model |

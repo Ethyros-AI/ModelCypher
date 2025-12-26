@@ -17,7 +17,7 @@ Each experiment lives in its own directory with:
 
 ## Reproducibility
 
-Experiments were run on Apple Silicon (M-series) using MLX backend. Models stored on external volume at `/Volumes/CodeCypher/models/`.
+Experiments were run on Apple Silicon (M-series) using MLX backend. Models can be stored locally or downloaded from Hugging Face.
 
 To reproduce:
 ```bash
@@ -27,6 +27,6 @@ poetry run python <script>.py --model /path/to/model --output ../results/
 
 ## Adding New Experiments
 
-1. Run experiments on external volume (`/Volumes/CodeCypher/experiments/`)
+1. Run experiments in your preferred location
 2. Once validated, copy to repository under `experiments/<name>/`
 3. Reference from the appropriate paper

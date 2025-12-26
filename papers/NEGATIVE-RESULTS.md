@@ -101,6 +101,4 @@ rather than semantic structure specifically (see NEGATIVE-RESULTS.md).
 
 ## Experimental Data
 
-Full data files are available at:
-- `/Volumes/CodeCypher/experiments/credibility-validation-2025-12-25/paper1_null_distribution.json`
-- `/Volumes/CodeCypher/experiments/credibility-validation-2025-12-25/paper1_cka_validation_FIXED.json`
+Full data files are available in the `experiments/` directory after running validation commands.

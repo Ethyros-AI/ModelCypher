@@ -6,7 +6,7 @@ We welcome contributions that advance the geometric analysis of language models.
 
 ```bash
 # Clone and setup
-git clone https://github.com/EthyrosAI/ModelCypher.git
+git clone https://github.com/Ethyros-AI/ModelCypher.git
 cd ModelCypher
 poetry install --all-extras
 

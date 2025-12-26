@@ -3,7 +3,7 @@
 > **Status**: Validated (2025-12-23)
 > **Implementation**: `src/modelcypher/core/domain/geometry/spatial_3d.py`, `cross_grounding_transfer.py`
 > **CLI**: `mc geometry spatial probe-model`, `mc geometry spatial cross-grounding`
-> **Experiment Data**: `/Volumes/CodeCypher/experiments/spatial-grounding-validation-2025-12-23/`
+> **Experiment Data**: See `experiments/` directory
 
 ## The Problem: Do Text Models Understand Space?
 

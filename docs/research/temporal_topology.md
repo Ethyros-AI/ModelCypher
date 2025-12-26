@@ -4,7 +4,7 @@
 > **Implementation**: `src/modelcypher/core/domain/geometry/temporal_topology.py`
 > **Atlas**: `src/modelcypher/core/domain/agents/temporal_atlas.py`
 > **CLI**: `mc geometry temporal probe-model`, `mc geometry temporal anchors`
-> **Experiment Data**: `/Volumes/CodeCypher/experiments/temporal-topology-validation-2025-12-23/`
+> **Experiment Data**: See `experiments/` directory
 
 ## The Problem: Do Models Encode Temporal Structure?
 

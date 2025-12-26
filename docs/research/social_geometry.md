@@ -3,7 +3,7 @@
 > **Status**: Validated (2025-12-23)
 > **Implementation**: `src/modelcypher/core/domain/geometry/social_geometry.py`
 > **CLI**: `mc geometry social probe-model`, `mc geometry social anchors`
-> **Experiment Data**: `/Volumes/CodeCypher/experiments/social-geometry-validation-2025-12-23/`
+> **Experiment Data**: See `experiments/` directory
 
 ## The Problem: Do Models Encode Social Structure?
 

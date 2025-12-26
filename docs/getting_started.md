@@ -24,7 +24,7 @@ ModelCypher is a high-dimensional geometry engine for Large Language Models. It 
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/EthyrosAI/ModelCypher.git
+   git clone https://github.com/Ethyros-AI/ModelCypher.git
    cd ModelCypher
    ```
 

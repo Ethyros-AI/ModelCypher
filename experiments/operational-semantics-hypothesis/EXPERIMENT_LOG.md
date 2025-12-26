@@ -35,13 +35,13 @@ All experiments will use the validated ModelCypher CLI and MCP infrastructure. N
 
 ### 2.2 Models Under Test
 
-| Model | Size | Quantization | Path |
-|-------|------|--------------|------|
-| Qwen2.5-0.5B | 0.5B | bf16 | /Volumes/CodeCypher/models/mlx-community/Qwen2.5-0.5B-Instruct-bf16 |
-| Llama-3.2-3B | 3B | 4-bit | /Volumes/CodeCypher/models/mlx-community/Llama-3.2-3B-Instruct-4bit |
-| Qwen2.5-3B | 3B | bf16 | /Volumes/CodeCypher/models/mlx-community/Qwen2.5-3B-Instruct-bf16 |
-| Mistral-7B | 7B | 4-bit | /Volumes/CodeCypher/models/mlx-community/Mistral-7B-Instruct-v0.3-4bit |
-| Qwen3-8B | 8B | 4-bit | /Volumes/CodeCypher/models/mlx-community/Qwen3-8B-4bit |
+| Model | Size | Quantization | HuggingFace ID |
+|-------|------|--------------|----------------|
+| Qwen2.5-0.5B | 0.5B | bf16 | mlx-community/Qwen2.5-0.5B-Instruct-bf16 |
+| Llama-3.2-3B | 3B | 4-bit | mlx-community/Llama-3.2-3B-Instruct-4bit |
+| Qwen2.5-3B | 3B | bf16 | mlx-community/Qwen2.5-3B-Instruct-bf16 |
+| Mistral-7B | 7B | 4-bit | mlx-community/Mistral-7B-Instruct-v0.3-4bit |
+| Qwen3-8B | 8B | 4-bit | mlx-community/Qwen3-8B-4bit |
 
 ### 2.3 Relevant CLI Tools
 
