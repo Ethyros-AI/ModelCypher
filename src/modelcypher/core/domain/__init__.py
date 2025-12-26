@@ -34,7 +34,6 @@ from typing import TYPE_CHECKING
 _SUBPACKAGES = {
     "adapters",
     "agents",
-    "dataset",
     "dynamics",
     "entropy",
     "evaluation",
@@ -56,10 +55,6 @@ _SUBPACKAGES = {
 
 _ROOT_MODULES = {
     "chat_template",
-    "dataset_export_formatter",
-    "dataset_file_enumerator",
-    "dataset_validation",
-    "dataset_validator",
     "model_search",
     "models",
     "settings",
@@ -139,7 +134,6 @@ if TYPE_CHECKING:
     from . import (  # noqa: F401
         adapters,
         agents,
-        dataset,
         dynamics,
         entropy,
         evaluation,

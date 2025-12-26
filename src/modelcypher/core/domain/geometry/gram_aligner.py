@@ -264,6 +264,10 @@ class GramAligner:
             )
 
         n_samples = n_s
+        if initial_transform is not None:
+            shape = b.shape(initial_transform)
+            if shape[0] != d_s or shape[1] != d_t:
+                initial_transform = None
 
         # MLX linear algebra requires float32/float64; keep alignment math stable.
         source_activations = b.astype(source_activations, "float32")
@@ -438,6 +442,11 @@ class GramAligner:
 
         # CLOSED-FORM SOLUTION: F = A_s^+ @ A_t
         # This GUARANTEES CKA = 1.0 when A_s has full row rank (n <= d_s)
+        if initial_transform is not None:
+            shape = b.shape(initial_transform)
+            if shape[0] != d_s or shape[1] != d_t:
+                initial_transform = None
+
         if initial_transform is None:
             # Compute pseudoinverse via SVD: A_s^+ = V @ Σ^{-1} @ U^T
             U_s, sigma_s, Vt_s = self._safe_svd(
@@ -717,10 +726,26 @@ class GramAligner:
         cka: float,
     ) -> "AlignmentSignal":
         from modelcypher.core.domain.geometry.alignment_diagnostic import (
+            AlignmentSignal,
             alignment_signal_from_matrices,
         )
 
         b = self._backend
+        if b.shape(source_aligned) != b.shape(target_centered):
+            return AlignmentSignal(
+                dimension=3,
+                cka_achieved=float(cka),
+                divergence_pattern="dimension_mismatch",
+                suggested_transformation="expand_anchors",
+                iteration=0,
+                metadata={
+                    "source_rows": float(b.shape(source_aligned)[0]),
+                    "source_cols": float(b.shape(source_aligned)[1]),
+                    "target_rows": float(b.shape(target_centered)[0]),
+                    "target_cols": float(b.shape(target_centered)[1]),
+                },
+            )
+
         n_samples = b.shape(source_aligned)[0]
         labels = [f"sample:{idx}" for idx in range(n_samples)]
         return alignment_signal_from_matrices(

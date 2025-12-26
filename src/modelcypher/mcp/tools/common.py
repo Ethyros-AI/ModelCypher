@@ -66,24 +66,6 @@ def require_existing_directory(path: str) -> str:
     return str(resolved)
 
 
-def parse_dataset_format(value: str):
-    """Parse dataset format string to enum."""
-    from modelcypher.core.domain.dataset_validation import DatasetContentFormat
-
-    key = value.lower()
-    if key == "text":
-        return DatasetContentFormat.text
-    if key == "chat":
-        return DatasetContentFormat.chat
-    if key == "completion":
-        return DatasetContentFormat.completion
-    if key == "tools":
-        return DatasetContentFormat.tools
-    if key == "instruction":
-        return DatasetContentFormat.instruction
-    raise ValueError("Unsupported format. Use text, chat, completion, tools, or instruction.")
-
-
 def map_job_status(status: str) -> str:
     """Map internal job status to external representation."""
     if status == "pending":
@@ -109,21 +91,6 @@ def expand_rag_paths(paths: list[str]) -> list[str]:
     if not expanded:
         raise ValueError("No files found to index.")
     return expanded
-
-
-def row_payload(row) -> dict:
-    """Convert a dataset row to payload dict."""
-    return {
-        "_schema": "mc.dataset.row.v1",
-        "lineNumber": row.line_number,
-        "raw": row.raw,
-        "format": row.format.value,
-        "fields": row.fields,
-        "validationMessages": row.validation_messages,
-        "rawTruncated": row.raw_truncated,
-        "rawFullBytes": row.raw_full_bytes,
-        "fieldsTruncated": row.fields_truncated,
-    }
 
 
 IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60
@@ -164,8 +131,6 @@ class ServiceContext:
     _model_service: object = None
     _model_search_service: object = None
     _model_probe_service: object = None
-    _dataset_service: object = None
-    _dataset_editor_service: object = None
     _system_service: object = None
     _settings_service: object = None
     _checkpoint_service: object = None
@@ -230,20 +195,6 @@ class ServiceContext:
 
             self._model_probe_service = ModelProbeService()
         return self._model_probe_service
-
-    @property
-    def dataset_service(self):
-        if self._dataset_service is None:
-            self._dataset_service = self.factory.dataset_service()
-        return self._dataset_service
-
-    @property
-    def dataset_editor_service(self):
-        if self._dataset_editor_service is None:
-            from modelcypher.core.use_cases.dataset_editor_service import DatasetEditorService
-
-            self._dataset_editor_service = DatasetEditorService(job_service=self.job_service)
-        return self._dataset_editor_service
 
     @property
     def system_service(self):
