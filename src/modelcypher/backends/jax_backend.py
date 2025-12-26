@@ -30,7 +30,7 @@ JAX is ideal for high-dimensional geometry work due to:
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 import numpy as _np_interop  # Interop boundary: Backend protocol requires to_numpy() and dtype mapping
 
@@ -177,6 +177,15 @@ class JAXBackend(Backend):
 
     def sign(self, array: Array) -> Array:
         return self.jnp.sign(array)
+
+    def sin(self, array: Array) -> Array:
+        return self.jnp.sin(array)
+
+    def cos(self, array: Array) -> Array:
+        return self.jnp.cos(array)
+
+    def arccos(self, array: Array) -> Array:
+        return self.jnp.arccos(array)
 
     def maximum(self, lhs: Array, rhs: Array) -> Array:
         return self.jnp.maximum(lhs, rhs)
@@ -455,3 +464,258 @@ class JAXBackend(Backend):
         if dtype is _np_interop.int64:
             return self.jnp.int64
         return dtype
+
+    # =========================================================================
+    # SOTA PERFORMANCE APIs (JAX)
+    # =========================================================================
+
+    def compile(
+        self,
+        fun: Callable,
+        inputs: list | None = None,
+        outputs: list | None = None,
+        shapeless: bool = False,
+    ) -> Callable:
+        """JIT-compile a function using XLA.
+
+        Parameters
+        ----------
+        fun : Callable
+            Function to compile.
+        inputs : list, optional
+            Unused, kept for API compatibility with MLX.
+        outputs : list, optional
+            Unused, kept for API compatibility with MLX.
+        shapeless : bool, optional
+            Unused in JAX (shapes always traced). Default is False.
+
+        Returns
+        -------
+        Callable
+            JIT-compiled function with XLA optimizations.
+        """
+        return self.jax.jit(fun)
+
+    def vmap(
+        self,
+        fun: Callable,
+        in_axes: int | tuple | None = 0,
+        out_axes: int | tuple | None = 0,
+    ) -> Callable:
+        """Vectorize a function over batch dimension.
+
+        Parameters
+        ----------
+        fun : Callable
+            Function to vectorize.
+        in_axes : int, tuple, or None, optional
+            Axis of each input to vectorize over. None means do not vectorize.
+            Default is 0.
+        out_axes : int, tuple, or None, optional
+            Where to place the batch axis in outputs. Default is 0.
+
+        Returns
+        -------
+        Callable
+            Vectorized function that processes batches efficiently.
+        """
+        return self.jax.vmap(fun, in_axes=in_axes, out_axes=out_axes)
+
+    def async_eval(self, *arrays: Array) -> None:
+        """Asynchronously evaluate arrays without blocking.
+
+        Parameters
+        ----------
+        *arrays : Array
+            Arrays to evaluate asynchronously.
+
+        Notes
+        -----
+        JAX operations are asynchronous by default via XLA dispatch.
+        This is a no-op for API compatibility.
+        """
+        # JAX is async by default - XLA dispatches operations asynchronously.
+        # No explicit action needed.
+        pass
+
+    # --- Fused Kernels ---
+
+    def rms_norm(self, x: Array, weight: Array, eps: float = 1e-5) -> Array:
+        """Apply RMS normalization.
+
+        Parameters
+        ----------
+        x : Array
+            Input array to normalize.
+        weight : Array
+            Scaling weights.
+        eps : float, optional
+            Epsilon for numerical stability. Default is 1e-5.
+
+        Returns
+        -------
+        Array
+            RMS-normalized output.
+        """
+        # RMSNorm: x / sqrt(mean(x^2) + eps) * weight
+        variance = self.jnp.mean(x**2, axis=-1, keepdims=True)
+        x_normed = x * self.jax.lax.rsqrt(variance + eps)
+        return x_normed * weight
+
+    def layer_norm(
+        self, x: Array, weight: Array | None, bias: Array | None, eps: float = 1e-5
+    ) -> Array:
+        """Apply layer normalization.
+
+        Parameters
+        ----------
+        x : Array
+            Input array to normalize.
+        weight : Array or None
+            Scaling weights.
+        bias : Array or None
+            Bias terms.
+        eps : float, optional
+            Epsilon for numerical stability. Default is 1e-5.
+
+        Returns
+        -------
+        Array
+            Layer-normalized output.
+        """
+        # LayerNorm: (x - mean) / sqrt(var + eps) * gamma + beta
+        mean = self.jnp.mean(x, axis=-1, keepdims=True)
+        variance = self.jnp.var(x, axis=-1, keepdims=True)
+        x_normed = (x - mean) * self.jax.lax.rsqrt(variance + eps)
+        if weight is not None:
+            x_normed = x_normed * weight
+        if bias is not None:
+            x_normed = x_normed + bias
+        return x_normed
+
+    def rope(
+        self,
+        x: Array,
+        dims: int,
+        traditional: bool = False,
+        base: float = 10000.0,
+        scale: float = 1.0,
+        offset: int = 0,
+    ) -> Array:
+        """Apply rotary position embeddings.
+
+        Parameters
+        ----------
+        x : Array
+            Input array of shape (..., seq_len, dims).
+        dims : int
+            Number of dimensions to apply RoPE to.
+        traditional : bool, optional
+            Use traditional RoPE formulation. Default is False.
+        base : float, optional
+            Base for frequency computation. Default is 10000.0.
+        scale : float, optional
+            Scaling factor. Default is 1.0.
+        offset : int, optional
+            Position offset. Default is 0.
+
+        Returns
+        -------
+        Array
+            Output with rotary position embeddings applied.
+        """
+        seq_len = x.shape[-2]
+        half_dims = dims // 2
+
+        # Compute frequencies
+        inv_freq = 1.0 / (base ** (self.jnp.arange(0, half_dims, dtype=x.dtype) / half_dims))
+
+        # Position indices
+        positions = (self.jnp.arange(seq_len) + offset) * scale
+
+        # Compute sin/cos: [seq_len, half_dims]
+        freqs = self.jnp.outer(positions, inv_freq)
+        cos = self.jnp.cos(freqs)
+        sin = self.jnp.sin(freqs)
+
+        # Reshape for broadcasting
+        cos = cos[None, None, :, :]  # [1, 1, seq_len, half_dims]
+        sin = sin[None, None, :, :]  # [1, 1, seq_len, half_dims]
+
+        # Split x into two halves
+        x1 = x[..., :half_dims]
+        x2 = x[..., half_dims:dims]
+
+        if traditional:
+            # Traditional RoPE: interleaved rotation
+            cos_full = self.jnp.tile(cos, (1, 1, 1, 2))
+            sin_full = self.jnp.tile(sin, (1, 1, 1, 2))
+            rotated = self.jnp.concatenate([-x2, x1], axis=-1)
+            x_rope = x[..., :dims] * cos_full + rotated * sin_full
+        else:
+            # Modern RoPE: paired rotation
+            x_rope = self.jnp.concatenate([x1 * cos - x2 * sin, x1 * sin + x2 * cos], axis=-1)
+
+        # Preserve dimensions beyond RoPE range
+        if x.shape[-1] > dims:
+            return self.jnp.concatenate([x_rope, x[..., dims:]], axis=-1)
+        return x_rope
+
+    def scaled_dot_product_attention(
+        self,
+        q: Array,
+        k: Array,
+        v: Array,
+        scale: float,
+        mask: Array | None = None,
+    ) -> Array:
+        """Compute scaled dot-product attention.
+
+        Parameters
+        ----------
+        q : Array
+            Query array.
+        k : Array
+            Key array.
+        v : Array
+            Value array.
+        scale : float
+            Scaling factor for attention scores.
+        mask : Array or None, optional
+            Attention mask. Default is None.
+
+        Returns
+        -------
+        Array
+            Attention output.
+        """
+        # Compute attention scores: Q @ K^T * scale
+        scores = self.jnp.einsum("...qhd,...khd->...hqk", q, k) * scale
+
+        # Apply mask if provided
+        if mask is not None:
+            scores = scores + mask
+
+        # Softmax and apply to values
+        attn_weights = self.jax.nn.softmax(scores, axis=-1)
+        return self.jnp.einsum("...hqk,...khd->...qhd", attn_weights, v)
+
+    # --- Stream Management ---
+
+    def new_stream(self, device: str = "gpu") -> Any:
+        """Create a new stream for parallel execution.
+
+        Args:
+            device: "gpu" or "cpu"
+
+        Returns:
+            None - JAX manages streams internally via XLA.
+        """
+        # JAX manages device placement internally via XLA.
+        # No explicit stream creation needed.
+        return None
+
+    def synchronize(self) -> None:
+        """Synchronize all computation (wait for all work to complete)."""
+        # Block until all pending computations are complete
+        self.jax.block_until_ready(self.jnp.array(0))

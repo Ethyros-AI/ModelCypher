@@ -73,8 +73,6 @@ from modelcypher.ports.inference import HiddenStateEngine, InferenceEngine
 from modelcypher.ports.model_loader import ModelLoaderPort
 from modelcypher.ports.model_search import ModelSearchService
 
-# NOTE: SyncGeometryPort not imported here to avoid circular dependency with use_cases
-# Use: from modelcypher.ports.geometry import GeometryPort as SyncGeometryPort
 # Storage Ports
 from modelcypher.ports.storage import (
     CompareStore,
@@ -99,7 +97,6 @@ __all__ = [
     "ModelSearchService",
     "HubAdapterPort",
     "ModelLoaderPort",
-    # SyncGeometryPort removed due to circular import - import directly from ports.geometry
     # Storage
     "ModelStore",
     "JobStore",

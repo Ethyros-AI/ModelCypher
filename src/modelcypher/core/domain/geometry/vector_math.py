@@ -20,12 +20,21 @@ Vector Math Utilities.
 
 Provides common vector operations for geometry domain computations.
 Supports both Python lists and MLX arrays as inputs.
+
+Two implementations are provided:
+- VectorMath: Pure Python fallback (always available)
+- BackendVectorMath: GPU-accelerated via Backend protocol (preferred)
+
+Use get_vector_math() to get the best available implementation.
 """
 
 from __future__ import annotations
 
 import math
-from typing import Sequence
+from typing import TYPE_CHECKING, Any, Sequence
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Backend
 
 # Type alias for array-like inputs (list or MLX array)
 ArrayLike = list[float] | Sequence[float]
@@ -43,6 +52,16 @@ def _len(arr: ArrayLike) -> int:
     if hasattr(arr, "shape"):
         return arr.shape[0] if arr.shape else 0
     return len(arr)
+
+
+def _to_scalar(val: Any) -> float:
+    """Convert backend array scalar to Python float."""
+    if hasattr(val, "item"):
+        return float(val.item())
+    if hasattr(val, "tolist"):
+        result = val.tolist()
+        return float(result) if not isinstance(result, list) else float(result[0])
+    return float(val)
 
 
 class VectorMath:
@@ -413,3 +432,311 @@ class SparseVectorMath:
                 dot += val * larger[key]
 
         return dot / (norm_a * norm_b)
+
+
+class BackendVectorMath:
+    """GPU-accelerated vector math using the Backend protocol.
+
+    This class provides the same operations as VectorMath but uses
+    Backend tensor operations for GPU acceleration. Use this for
+    large vectors or batch operations.
+
+    All operations work directly on Backend arrays without conversion
+    to Python lists, enabling full GPU utilization.
+    """
+
+    def __init__(self, backend: "Backend"):
+        """Initialize with a Backend instance.
+
+        Args:
+            backend: Backend instance (MLXBackend, JAXBackend, etc.)
+        """
+        self.backend = backend
+        # Cache finfo for numerical stability
+        self._finfo = backend.finfo()
+
+    def dot(self, a: Any, b: Any) -> float | None:
+        """Compute dot product using backend operations.
+
+        Args:
+            a: First vector (Backend array or convertible)
+            b: Second vector (Backend array or convertible)
+
+        Returns:
+            Dot product as Python float, or None if invalid.
+        """
+        # Convert to backend arrays if needed
+        a_arr = self._ensure_array(a)
+        b_arr = self._ensure_array(b)
+
+        if a_arr is None or b_arr is None:
+            return None
+
+        shape_a = self.backend.shape(a_arr)
+        shape_b = self.backend.shape(b_arr)
+
+        if len(shape_a) != 1 or len(shape_b) != 1 or shape_a[0] != shape_b[0]:
+            return None
+        if shape_a[0] == 0:
+            return None
+
+        result = self.backend.dot(a_arr, b_arr)
+        self.backend.eval(result)
+        return _to_scalar(result)
+
+    def l2_norm(self, a: Any) -> float | None:
+        """Compute L2 norm using backend operations.
+
+        Args:
+            a: Vector (Backend array or convertible)
+
+        Returns:
+            L2 norm as Python float, or None if invalid.
+        """
+        a_arr = self._ensure_array(a)
+        if a_arr is None:
+            return None
+
+        shape = self.backend.shape(a_arr)
+        if len(shape) != 1 or shape[0] == 0:
+            return None
+
+        result = self.backend.norm(a_arr)
+        self.backend.eval(result)
+        val = _to_scalar(result)
+        return val if val > 0 else None
+
+    def l2_normalized(self, a: Any) -> Any:
+        """Return L2-normalized vector using backend operations.
+
+        Args:
+            a: Vector (Backend array or convertible)
+
+        Returns:
+            Normalized vector as Backend array.
+        """
+        a_arr = self._ensure_array(a)
+        if a_arr is None:
+            return a
+
+        norm = self.backend.norm(a_arr)
+        self.backend.eval(norm)
+        norm_val = _to_scalar(norm)
+
+        if norm_val <= self._finfo.eps:
+            return a_arr
+
+        return a_arr / norm
+
+    def cosine_similarity(self, a: Any, b: Any) -> float | None:
+        """Compute cosine similarity using backend operations.
+
+        Args:
+            a: First vector (Backend array or convertible)
+            b: Second vector (Backend array or convertible)
+
+        Returns:
+            Cosine similarity in [-1, 1], or None if invalid.
+        """
+        a_arr = self._ensure_array(a)
+        b_arr = self._ensure_array(b)
+
+        if a_arr is None or b_arr is None:
+            return None
+
+        shape_a = self.backend.shape(a_arr)
+        shape_b = self.backend.shape(b_arr)
+
+        if len(shape_a) != 1 or len(shape_b) != 1 or shape_a[0] != shape_b[0]:
+            return None
+        if shape_a[0] == 0:
+            return None
+
+        # Compute norms
+        norm_a = self.backend.norm(a_arr)
+        norm_b = self.backend.norm(b_arr)
+        self.backend.eval(norm_a, norm_b)
+
+        norm_a_val = _to_scalar(norm_a)
+        norm_b_val = _to_scalar(norm_b)
+
+        if norm_a_val <= self._finfo.eps or norm_b_val <= self._finfo.eps:
+            return None
+
+        # Compute dot product
+        dot = self.backend.dot(a_arr, b_arr)
+        self.backend.eval(dot)
+
+        return _to_scalar(dot) / (norm_a_val * norm_b_val)
+
+    def slerp(
+        self,
+        v0: Any,
+        v1: Any,
+        t: float,
+        epsilon: float | None = None,
+        interpolate_magnitude: bool = True,
+    ) -> Any | None:
+        """Spherical linear interpolation using backend operations.
+
+        GPU-accelerated SLERP that works directly on Backend arrays.
+        Formula: SLERP(v0, v1, t) = (sin((1-t)θ)/sinθ)v0 + (sin(tθ)/sinθ)v1
+
+        Args:
+            v0: First vector (Backend array or convertible)
+            v1: Second vector (Backend array or convertible)
+            t: Interpolation factor in [0, 1]
+            epsilon: Threshold for near-parallel detection. If None, uses
+                     backend's machine epsilon.
+            interpolate_magnitude: If True, interpolate magnitudes linearly.
+
+        Returns:
+            Interpolated vector as Backend array, or None if invalid.
+        """
+        if epsilon is None:
+            epsilon = self._finfo.eps * 100  # Reasonable threshold
+
+        v0_arr = self._ensure_array(v0)
+        v1_arr = self._ensure_array(v1)
+
+        if v0_arr is None or v1_arr is None:
+            return None
+
+        shape_v0 = self.backend.shape(v0_arr)
+        shape_v1 = self.backend.shape(v1_arr)
+
+        if shape_v0 != shape_v1 or len(shape_v0) != 1 or shape_v0[0] == 0:
+            return None
+
+        # Compute magnitudes
+        norm_v0 = self.backend.norm(v0_arr)
+        norm_v1 = self.backend.norm(v1_arr)
+        self.backend.eval(norm_v0, norm_v1)
+
+        norm_v0_val = _to_scalar(norm_v0)
+        norm_v1_val = _to_scalar(norm_v1)
+
+        if norm_v0_val <= self._finfo.eps or norm_v1_val <= self._finfo.eps:
+            return None
+
+        # Normalize inputs
+        v0_unit = v0_arr / norm_v0
+        v1_unit = v1_arr / norm_v1
+
+        # Compute dot product and clamp to [-1, 1]
+        dot = self.backend.dot(v0_unit, v1_unit)
+        dot_clamped = self.backend.clip(dot, -1.0, 1.0)
+        self.backend.eval(dot_clamped)
+        dot_val = _to_scalar(dot_clamped)
+
+        # Compute angle
+        theta = math.acos(dot_val)  # Scalar operation, fine with Python math
+
+        # Handle edge cases
+        if theta < epsilon or theta > math.pi - epsilon:
+            # Near-parallel or near-antipodal: fall back to linear
+            result = v0_arr * (1.0 - t) + v1_arr * t
+            self.backend.eval(result)
+            return result
+
+        # SLERP formula using backend trig functions
+        sin_theta = math.sin(theta)
+        s0 = math.sin((1.0 - t) * theta) / sin_theta
+        s1 = math.sin(t * theta) / sin_theta
+
+        result = v0_unit * s0 + v1_unit * s1
+
+        # Optionally rescale to interpolated magnitude
+        if interpolate_magnitude:
+            target_mag = (1.0 - t) * norm_v0_val + t * norm_v1_val
+            result = result * target_mag
+
+        self.backend.eval(result)
+        return result
+
+    def slerp_batch(
+        self,
+        weights_a: dict[str, Any],
+        weights_b: dict[str, Any],
+        t: float,
+        epsilon: float | None = None,
+        interpolate_magnitude: bool = True,
+    ) -> dict[str, Any]:
+        """Apply SLERP to dictionaries of weight vectors.
+
+        GPU-accelerated batch SLERP for model weight merging.
+
+        Args:
+            weights_a: First model's weights as {layer_name: array}
+            weights_b: Second model's weights as {layer_name: array}
+            t: Interpolation factor in [0, 1]
+            epsilon: Threshold for near-parallel detection
+            interpolate_magnitude: Whether to interpolate magnitudes
+
+        Returns:
+            Merged weights as {layer_name: interpolated_array}.
+        """
+        result: dict[str, Any] = {}
+        all_keys = set(weights_a.keys()) | set(weights_b.keys())
+
+        for key in all_keys:
+            if key not in weights_a:
+                result[key] = weights_b[key]
+            elif key not in weights_b:
+                result[key] = weights_a[key]
+            else:
+                merged = self.slerp(
+                    weights_a[key],
+                    weights_b[key],
+                    t,
+                    epsilon=epsilon,
+                    interpolate_magnitude=interpolate_magnitude,
+                )
+                if merged is not None:
+                    result[key] = merged
+
+        return result
+
+    def _ensure_array(self, data: Any) -> Any | None:
+        """Convert data to Backend array if needed.
+
+        Args:
+            data: Input data (list, array, or Backend array)
+
+        Returns:
+            Backend array, or None if conversion fails.
+        """
+        if data is None:
+            return None
+
+        # Check if already a backend array (has shape attribute)
+        if hasattr(data, "shape"):
+            return data
+
+        # Convert from list/sequence
+        try:
+            return self.backend.array(data)
+        except (TypeError, ValueError):
+            return None
+
+
+def get_vector_math(backend: "Backend | None" = None) -> VectorMath | BackendVectorMath:
+    """Get the best available vector math implementation.
+
+    Args:
+        backend: Optional Backend instance. If provided, returns
+                 BackendVectorMath for GPU acceleration. If None,
+                 returns the pure Python VectorMath.
+
+    Returns:
+        VectorMath or BackendVectorMath instance.
+
+    Example:
+        >>> from modelcypher.core.domain._backend import get_default_backend
+        >>> backend = get_default_backend()
+        >>> vm = get_vector_math(backend)
+        >>> result = vm.slerp(v0, v1, 0.5)
+    """
+    if backend is not None:
+        return BackendVectorMath(backend)
+    return VectorMath()

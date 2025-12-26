@@ -29,10 +29,12 @@ import math
 import pytest
 
 from modelcypher.core.domain.geometry.vector_math import (
+    BackendVectorMath,
     SparseVectorMath,
     VectorMath,
     _len,
     _to_list,
+    get_vector_math,
 )
 
 
@@ -406,3 +408,101 @@ class TestVectorMathSlerpBatch:
         """Batch SLERP of empty dicts returns empty dict."""
         result = VectorMath.slerp_batch({}, {}, 0.5)
         assert result == {}
+
+
+class TestBackendVectorMath:
+    """Tests for GPU-accelerated BackendVectorMath."""
+
+    @pytest.fixture
+    def backend(self):
+        """Get the default backend for testing."""
+        from modelcypher.core.domain._backend import get_default_backend
+        return get_default_backend()
+
+    @pytest.fixture
+    def bvm(self, backend):
+        """Get BackendVectorMath instance."""
+        return BackendVectorMath(backend)
+
+    def test_dot_product(self, backend, bvm):
+        """Test GPU-accelerated dot product."""
+        v1 = backend.array([1.0, 2.0, 3.0])
+        v2 = backend.array([4.0, 5.0, 6.0])
+        result = bvm.dot(v1, v2)
+        assert result == pytest.approx(32.0)
+
+    def test_l2_norm(self, backend, bvm):
+        """Test GPU-accelerated L2 norm."""
+        v = backend.array([3.0, 4.0])
+        result = bvm.l2_norm(v)
+        assert result == pytest.approx(5.0)
+
+    def test_cosine_similarity(self, backend, bvm):
+        """Test GPU-accelerated cosine similarity."""
+        v1 = backend.array([1.0, 0.0])
+        v2 = backend.array([0.0, 1.0])
+        result = bvm.cosine_similarity(v1, v2)
+        assert result == pytest.approx(0.0)
+
+    def test_slerp_orthogonal(self, backend, bvm):
+        """Test GPU-accelerated SLERP on orthogonal vectors."""
+        v0 = backend.array([1.0, 0.0, 0.0])
+        v1 = backend.array([0.0, 1.0, 0.0])
+        result = bvm.slerp(v0, v1, 0.5)
+        backend.eval(result)
+        result_list = result.tolist()
+        assert result_list[0] == pytest.approx(0.7071, rel=0.01)
+        assert result_list[1] == pytest.approx(0.7071, rel=0.01)
+        assert result_list[2] == pytest.approx(0.0)
+
+    def test_slerp_magnitude_interpolation(self, backend, bvm):
+        """Test SLERP interpolates magnitudes correctly."""
+        v0 = backend.array([2.0, 0.0, 0.0])
+        v1 = backend.array([0.0, 4.0, 0.0])
+        result = bvm.slerp(v0, v1, 0.5)
+        norm = bvm.l2_norm(result)
+        assert norm == pytest.approx(3.0, rel=0.001)
+
+    def test_slerp_from_list(self, backend, bvm):
+        """Test SLERP auto-converts lists to backend arrays."""
+        v0 = [1.0, 0.0, 0.0]
+        v1 = [0.0, 1.0, 0.0]
+        result = bvm.slerp(v0, v1, 0.5)
+        backend.eval(result)
+        result_list = result.tolist()
+        assert result_list[0] == pytest.approx(0.7071, rel=0.01)
+
+    def test_precision_matches_pure_python(self, backend, bvm):
+        """Verify Backend results match pure Python within precision."""
+        v0 = [1.0, 0.0, 0.0]
+        v1 = [0.0, 1.0, 0.0]
+
+        # Pure Python
+        py_result = VectorMath.slerp(v0, v1, 0.5)
+
+        # Backend
+        v0_arr = backend.array(v0)
+        v1_arr = backend.array(v1)
+        gpu_result = bvm.slerp(v0_arr, v1_arr, 0.5)
+        backend.eval(gpu_result)
+        gpu_result_list = gpu_result.tolist()
+
+        # Check precision (should be within float32 epsilon)
+        for py_val, gpu_val in zip(py_result, gpu_result_list):
+            assert py_val == pytest.approx(gpu_val, abs=1e-6)
+
+
+class TestGetVectorMath:
+    """Tests for the get_vector_math factory function."""
+
+    def test_returns_vectormath_without_backend(self):
+        """Without backend, returns pure Python VectorMath."""
+        vm = get_vector_math(None)
+        assert isinstance(vm, VectorMath)
+
+    def test_returns_backendvectormath_with_backend(self):
+        """With backend, returns GPU-accelerated BackendVectorMath."""
+        from modelcypher.core.domain._backend import get_default_backend
+        backend = get_default_backend()
+        vm = get_vector_math(backend)
+        assert isinstance(vm, BackendVectorMath)
