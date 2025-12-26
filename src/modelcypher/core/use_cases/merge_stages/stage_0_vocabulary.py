@@ -442,9 +442,36 @@ def _frechet_mean_from_ids(
         return embedding[token_ids[0]]
     idx = backend.array(token_ids)
     vectors = backend.take(embedding, idx, axis=0)
-    mean = frechet_mean(vectors, backend=backend)
-    backend.eval(mean)
-    return mean
+    return _frechet_mean_vectors(vectors, backend)
+
+
+def _frechet_mean_vectors(
+    vectors: "object",
+    backend: "object",
+) -> "object":
+    if vectors.shape[0] <= 1:
+        return vectors[0]
+
+    diff = vectors - vectors[:1]
+    diff_norm = backend.norm(diff, axis=1)
+    max_norm = backend.max(diff_norm)
+    backend.eval(max_norm)
+    if float(max_norm) < 1e-6:
+        return vectors[0]
+
+    k_neighbors = max(1, min(5, vectors.shape[0] - 1))
+    try:
+        mean = frechet_mean(
+            vectors,
+            backend=backend,
+            k_neighbors=k_neighbors,
+            max_k_neighbors=vectors.shape[0] - 1,
+        )
+        backend.eval(mean)
+        return mean
+    except Exception as exc:
+        logger.warning("Frechet mean fallback to first vector: %s", exc)
+        return vectors[0]
 
 
 def _build_byte_embedding_map(
@@ -543,7 +570,7 @@ def _build_atlas_anchor_map(
             anchor = text_vectors[0]
         else:
             stacked = backend.stack(text_vectors, axis=0)
-            anchor = frechet_mean(stacked, backend=backend)
+            anchor = _frechet_mean_vectors(stacked, backend)
         anchor_map[probe.probe_id] = anchor
 
     return anchor_map
