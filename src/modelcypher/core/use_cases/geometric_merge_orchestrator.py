@@ -310,6 +310,32 @@ class GeometricMergeOrchestrator:
 
         logger.debug("Infrastructure: epsilon=%e", self._epsilon)
 
+    def _select_anchor_indices_by_coverage(
+        self,
+        points: "Array",
+        n_anchors: int,
+    ) -> list[int]:
+        b = self._backend
+        n = int(points.shape[0])
+        if n_anchors <= 0 or n <= n_anchors:
+            return list(range(n))
+
+        from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+
+        k_neighbors = min(10, n - 1)
+        norms = b.norm(points, axis=1)
+        b.eval(norms)
+        seed_idx = int(b.to_numpy(b.argmax(norms)))
+
+        rg = RiemannianGeometry(b)
+        fps_result = rg.farthest_point_sampling(
+            points,
+            n_samples=n_anchors,
+            seed_idx=seed_idx,
+            k_neighbors=k_neighbors,
+        )
+        return fps_result.selected_indices
+
     def _stage_probe_fingerprint(
         self,
         geometry: MergeGeometry,
@@ -508,8 +534,9 @@ class GeometricMergeOrchestrator:
             tgt_stacked = b.stack(tgt_acts[:n], axis=0)
             b.eval(src_stacked, tgt_stacked)
 
-            # Use target activations as anchors (they're the reference)
-            anchors = b.stack(tgt_acts[:n_anchors], axis=0)
+            # Use coverage-selected target activations as anchors (balanced manifold coverage).
+            anchor_indices = self._select_anchor_indices_by_coverage(tgt_stacked, n_anchors)
+            anchors = b.take(tgt_stacked, b.array(anchor_indices), axis=0)
             b.eval(anchors)
 
             # Compute relative representations

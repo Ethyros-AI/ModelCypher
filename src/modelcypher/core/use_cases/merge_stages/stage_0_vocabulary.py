@@ -86,6 +86,9 @@ class VocabularyConfig:
     phase_lock_max_iterations: int = 0
     use_all_support_texts: bool = True
     balance_anchor_weights: bool = True
+    use_coverage_anchor_selection: bool = True
+    coverage_k_neighbors: int | None = None
+    coverage_candidate_multiplier: int = 3
 
 
 @dataclass
@@ -208,6 +211,9 @@ def stage_vocabulary_align(
     solver_rounds = max(1, config.alignment_solver_rounds)
     phase_lock_max_iterations = config.phase_lock_max_iterations
     balance_anchor_weights = config.balance_anchor_weights
+    use_coverage_anchor_selection = config.use_coverage_anchor_selection
+    coverage_k_neighbors = config.coverage_k_neighbors
+    coverage_candidate_multiplier = max(1, config.coverage_candidate_multiplier)
 
     for embed_key in embed_keys:
         embed_start = time.perf_counter()
@@ -286,17 +292,56 @@ def stage_vocabulary_align(
                     f"Binary phase lock failed: only {len(shared_bytes)} shared byte anchors."
                 )
             else:
-                # Stack anchor matrices ONCE
+                # Stack anchor matrices ONCE (full set, then coverage-select if needed)
                 max_anchor_count = min(len(shared_bytes), int(source_embed.shape[1]))
+                source_byte_matrix_full = backend.stack(
+                    [source_bytes[b] for b in shared_bytes], axis=0
+                )
+                target_byte_matrix_full = backend.stack(
+                    [target_bytes[b] for b in shared_bytes], axis=0
+                )
+                backend.eval(source_byte_matrix_full, target_byte_matrix_full)
+
+                coverage_meta: dict[str, float] | None = None
                 if len(shared_bytes) > max_anchor_count:
                     # Keep anchors <= feature dim so the system stays full-row-rank for exact solve.
-                    if balance_anchor_weights:
+                    if use_coverage_anchor_selection:
+                        selected_indices, coverage_meta = _select_coverage_indices(
+                            target_byte_matrix_full,
+                            max_anchor_count,
+                            backend,
+                            k_neighbors=coverage_k_neighbors,
+                        )
+                        shared_bytes = [shared_bytes[idx] for idx in selected_indices]
+                        idx_arr = backend.array(selected_indices)
+                        source_byte_matrix = backend.take(
+                            source_byte_matrix_full, idx_arr, axis=0
+                        )
+                        target_byte_matrix = backend.take(
+                            target_byte_matrix_full, idx_arr, axis=0
+                        )
+                        backend.eval(source_byte_matrix, target_byte_matrix)
+                    elif balance_anchor_weights:
                         shared_bytes = _uniform_subset(shared_bytes, max_anchor_count)
+                        source_byte_matrix = backend.stack(
+                            [source_bytes[b] for b in shared_bytes], axis=0
+                        )
+                        target_byte_matrix = backend.stack(
+                            [target_bytes[b] for b in shared_bytes], axis=0
+                        )
+                        backend.eval(source_byte_matrix, target_byte_matrix)
                     else:
                         shared_bytes = shared_bytes[:max_anchor_count]
-                source_byte_matrix = backend.stack([source_bytes[b] for b in shared_bytes], axis=0)
-                target_byte_matrix = backend.stack([target_bytes[b] for b in shared_bytes], axis=0)
-                backend.eval(source_byte_matrix, target_byte_matrix)
+                        source_byte_matrix = backend.stack(
+                            [source_bytes[b] for b in shared_bytes], axis=0
+                        )
+                        target_byte_matrix = backend.stack(
+                            [target_bytes[b] for b in shared_bytes], axis=0
+                        )
+                        backend.eval(source_byte_matrix, target_byte_matrix)
+                else:
+                    source_byte_matrix = source_byte_matrix_full
+                    target_byte_matrix = target_byte_matrix_full
                 byte_labels = [f"byte:{b}" for b in shared_bytes]
 
                 best_alignment: dict[str, Any] | None = None
@@ -366,6 +411,7 @@ def stage_vocabulary_align(
                         "iterations": best_alignment["iterations"],
                         "source_dim": source_byte_matrix.shape[1],
                         "target_dim": target_byte_matrix.shape[1],
+                        "coverage": coverage_meta,
                         "signals": binary_signals,
                         "phase_locked": bool(last_signal and last_signal.is_phase_locked),
                         "balance_ratio": (
@@ -424,21 +470,63 @@ def stage_vocabulary_align(
                 )
                 shared_atlas = sorted(set(source_atlas_map) & set(target_atlas_map))
 
+            coverage_meta: dict[str, float] | None = None
             if len(shared_atlas) >= 2:
                 max_anchor_count = min(len(shared_atlas), int(source_embed.shape[1]))
-                if len(shared_atlas) > max_anchor_count:
-                    # Balance anchor coverage while keeping full-row-rank for exact solve.
-                    if balance_anchor_weights:
-                        shared_atlas = _balanced_anchor_subset(shared_atlas, max_anchor_count)
-                    else:
-                        shared_atlas = shared_atlas[:max_anchor_count]
+                candidate_atlas = shared_atlas
+                if len(shared_atlas) > max_anchor_count and balance_anchor_weights:
+                    candidate_count = min(
+                        len(shared_atlas), max_anchor_count * coverage_candidate_multiplier
+                    )
+                    candidate_atlas = _balanced_anchor_subset(shared_atlas, candidate_count)
 
-            target_atlas_matrix = None
-            if len(shared_atlas) >= 2:
-                target_atlas_matrix = backend.stack(
-                    [target_atlas_map[k] for k in shared_atlas], axis=0
+                target_atlas_matrix_full = backend.stack(
+                    [target_atlas_map[k] for k in candidate_atlas], axis=0
                 )
-                backend.eval(target_atlas_matrix)
+                backend.eval(target_atlas_matrix_full)
+                source_atlas_matrix_full = backend.stack(
+                    [source_atlas_map[k] for k in candidate_atlas], axis=0
+                )
+                backend.eval(source_atlas_matrix_full)
+
+                if len(candidate_atlas) > max_anchor_count:
+                    if use_coverage_anchor_selection:
+                        selected_indices, coverage_meta = _select_coverage_indices(
+                            target_atlas_matrix_full,
+                            max_anchor_count,
+                            backend,
+                            k_neighbors=coverage_k_neighbors,
+                        )
+                        shared_atlas = [candidate_atlas[idx] for idx in selected_indices]
+                        idx_arr = backend.array(selected_indices)
+                        target_atlas_matrix = backend.take(
+                            target_atlas_matrix_full, idx_arr, axis=0
+                        )
+                        source_atlas_matrix = backend.take(
+                            source_atlas_matrix_full, idx_arr, axis=0
+                        )
+                        backend.eval(target_atlas_matrix, source_atlas_matrix)
+                    else:
+                        if balance_anchor_weights:
+                            shared_atlas = _balanced_anchor_subset(
+                                candidate_atlas, max_anchor_count
+                            )
+                        else:
+                            shared_atlas = candidate_atlas[:max_anchor_count]
+                        target_atlas_matrix = backend.stack(
+                            [target_atlas_map[k] for k in shared_atlas], axis=0
+                        )
+                        backend.eval(target_atlas_matrix)
+                        source_atlas_matrix = backend.stack(
+                            [source_atlas_map[k] for k in shared_atlas], axis=0
+                        )
+                        backend.eval(source_atlas_matrix)
+                else:
+                    target_atlas_matrix = target_atlas_matrix_full
+                    source_atlas_matrix = source_atlas_matrix_full
+                    shared_atlas = candidate_atlas
+            else:
+                target_atlas_matrix = None
 
             if len(shared_atlas) < 2 or target_atlas_matrix is None:
                 raise RuntimeError(
@@ -453,11 +541,6 @@ def stage_vocabulary_align(
                 previous_transform: Any | None = None
                 iteration = 0
                 iteration_budget = alignment_iterations
-
-                source_atlas_matrix = backend.stack(
-                    [source_atlas_map[k] for k in shared_atlas], axis=0
-                )
-                backend.eval(source_atlas_matrix)
 
                 while True:
                     atlas_alignment = _align_bytes_from_matrices(
@@ -524,15 +607,73 @@ def stage_vocabulary_align(
                             shared_atlas = sorted(
                                 set(source_atlas_map) & set(target_atlas_map)
                             )
-                            target_atlas_matrix = backend.stack(
-                                [target_atlas_map[k] for k in shared_atlas], axis=0
+                            max_anchor_count = min(
+                                len(shared_atlas), int(source_embed.shape[1])
                             )
-                            backend.eval(target_atlas_matrix)
+                            candidate_atlas = shared_atlas
+                            if len(shared_atlas) > max_anchor_count and balance_anchor_weights:
+                                candidate_count = min(
+                                    len(shared_atlas),
+                                    max_anchor_count * coverage_candidate_multiplier,
+                                )
+                                candidate_atlas = _balanced_anchor_subset(
+                                    shared_atlas, candidate_count
+                                )
+
+                            target_atlas_matrix_full = backend.stack(
+                                [target_atlas_map[k] for k in candidate_atlas], axis=0
+                            )
+                            source_atlas_matrix_full = backend.stack(
+                                [source_atlas_map[k] for k in candidate_atlas], axis=0
+                            )
+                            backend.eval(target_atlas_matrix_full, source_atlas_matrix_full)
+
+                            if len(candidate_atlas) > max_anchor_count:
+                                if use_coverage_anchor_selection:
+                                    selected_indices, coverage_meta = _select_coverage_indices(
+                                        target_atlas_matrix_full,
+                                        max_anchor_count,
+                                        backend,
+                                        k_neighbors=coverage_k_neighbors,
+                                    )
+                                    shared_atlas = [
+                                        candidate_atlas[idx] for idx in selected_indices
+                                    ]
+                                    idx_arr = backend.array(selected_indices)
+                                    target_atlas_matrix = backend.take(
+                                        target_atlas_matrix_full, idx_arr, axis=0
+                                    )
+                                    source_atlas_matrix = backend.take(
+                                        source_atlas_matrix_full, idx_arr, axis=0
+                                    )
+                                    backend.eval(
+                                        target_atlas_matrix,
+                                        source_atlas_matrix,
+                                    )
+                                else:
+                                    if balance_anchor_weights:
+                                        shared_atlas = _balanced_anchor_subset(
+                                            candidate_atlas, max_anchor_count
+                                        )
+                                    else:
+                                        shared_atlas = candidate_atlas[:max_anchor_count]
+                                    target_atlas_matrix = backend.stack(
+                                        [target_atlas_map[k] for k in shared_atlas],
+                                        axis=0,
+                                    )
+                                    source_atlas_matrix = backend.stack(
+                                        [source_atlas_map[k] for k in shared_atlas],
+                                        axis=0,
+                                    )
+                                    backend.eval(
+                                        target_atlas_matrix,
+                                        source_atlas_matrix,
+                                    )
+                            else:
+                                target_atlas_matrix = target_atlas_matrix_full
+                                source_atlas_matrix = source_atlas_matrix_full
+                                shared_atlas = candidate_atlas
                             atlas_labels = list(shared_atlas)
-                            source_atlas_matrix = backend.stack(
-                                [source_atlas_map[k] for k in shared_atlas], axis=0
-                            )
-                            backend.eval(source_atlas_matrix)
                         logger.info(
                             "Vocabulary phase lock not reached; expanding search to %d solver iterations",
                             solver_iterations,
@@ -551,6 +692,7 @@ def stage_vocabulary_align(
                         "signals": vocab_signals,
                         "phase_locked": bool(last_signal and last_signal.is_phase_locked),
                         "support_texts": "all" if use_all_support_texts else "first",
+                        "coverage": coverage_meta,
                         "balance_ratio": (
                             last_signal.metadata.get("balance_ratio")
                             if last_signal is not None
@@ -884,6 +1026,41 @@ def _uniform_subset(values: list[int], max_count: int) -> list[int]:
         pos = int(idx * step)
         selected.append(values[min(pos, len(values) - 1)])
     return selected
+
+
+def _select_coverage_indices(
+    points: "object",
+    max_count: int,
+    backend: "object",
+    k_neighbors: int | None = None,
+) -> tuple[list[int], dict[str, float]]:
+    n = int(points.shape[0])
+    if max_count <= 0 or n <= max_count:
+        return list(range(n)), {"coverage_applied": 0.0}
+
+    from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+
+    k_neighbors = k_neighbors if k_neighbors is not None else min(10, n - 1)
+    k_neighbors = max(1, min(int(k_neighbors), n - 1))
+
+    # Seed with the largest-norm anchor to maximize initial coverage.
+    norms = backend.norm(points, axis=1)
+    backend.eval(norms)
+    seed_idx = int(backend.to_numpy(backend.argmax(norms)))
+
+    rg = RiemannianGeometry(backend)
+    fps_result = rg.farthest_point_sampling(
+        points,
+        n_samples=max_count,
+        seed_idx=seed_idx,
+        k_neighbors=k_neighbors,
+    )
+
+    return fps_result.selected_indices, {
+        "coverage_applied": 1.0,
+        "coverage_radius": float(fps_result.coverage_radius),
+        "k_neighbors": float(k_neighbors),
+    }
 
 
 def _balanced_anchor_subset(anchor_ids: list[str], max_count: int) -> list[str]:
