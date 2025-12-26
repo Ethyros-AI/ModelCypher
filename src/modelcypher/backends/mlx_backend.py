@@ -289,6 +289,15 @@ class MLXBackend(Backend):
     def sign(self, array: Array) -> Array:
         return self.mx.sign(array)
 
+    def sin(self, array: Array) -> Array:
+        return self.mx.sin(array)
+
+    def cos(self, array: Array) -> Array:
+        return self.mx.cos(array)
+
+    def arccos(self, array: Array) -> Array:
+        return self.mx.arccos(array)
+
     def clip(
         self, array: Array, min_val: float | Array | None, max_val: float | Array | None
     ) -> Array:

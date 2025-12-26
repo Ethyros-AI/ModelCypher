@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 from modelcypher.ports.backend import Array, Backend, FloatInfo
 
