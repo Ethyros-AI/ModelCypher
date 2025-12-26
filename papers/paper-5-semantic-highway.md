@@ -12,7 +12,7 @@ Across three transformer language models (Qwen2.5-0.5B-Instruct, Llama-3.2-3B-In
 
 ## 1. Introduction
 
-The Platonic Representation Hypothesis (Huh et al., 2024) suggests that independently trained neural networks converge to similar internal representations. Our prior work (Paper 1) validates strong cross-family similarity with CKA > 0.9 on several anchor sets. An open question remains: *what dynamics produce this convergence across architectures?*
+The Platonic Representation Hypothesis (Huh et al., 2024) suggests that independently trained neural networks converge to similar internal representations. Our prior work ([Paper 1](paper-1-invariant-semantic-structure.md)) validates strong cross-family similarity with CKA > 0.9 on several anchor sets. An open question remains: *what dynamics produce this convergence across architectures?*
 
 This paper reports a simple empirical observation about *intrinsic dimension over depth* in three transformer LLMs. When we measure ID using TwoNN across a fixed semantic probe corpus, all three models show an early-layer ID collapse followed by a low-ID plateau. We use "semantic highway" as a shorthand label for this plateau regime, but treat it as a **working hypothesis** rather than a universal property.
 
@@ -200,7 +200,7 @@ If the plateau regime generalizes, it could help explain why cross-architecture 
 - **Different ramps**: Entry/exit zones are architecture-specific
 - **LoRA efficiency**: Adapters modify highway traffic, not the road itself
 
-Our Paper 3 results (65-78% skill retention on Qwen→Llama transfer) are consistent with this story, but do not by themselves establish causality between a low-ID plateau and transfer success.
+Our [Paper 3](paper-3-cross-architecture-transfer.md) results (65-78% skill retention on Qwen→Llama transfer) are consistent with this story, but do not by themselves establish causality between a low-ID plateau and transfer success.
 
 ### 4.4 Implications for Model Merging
 
@@ -274,14 +274,14 @@ This working hypothesis would be weakened or refuted if broader tests show that:
 
 ## References
 
-Ansuini, A., Laio, A., Macke, J. H., & Zoccolan, D. (2019). Intrinsic dimension of data representations in deep neural networks. NeurIPS.
+Ansuini, A., Laio, A., Macke, J. H., & Zoccolan, D. (2019). Intrinsic dimension of data representations in deep neural networks. *NeurIPS*. [arXiv:1905.12784](https://arxiv.org/abs/1905.12784).
 
-Facco, E., d'Errico, M., Rodriguez, A., & Laio, A. (2017). Estimating the intrinsic dimension of datasets by a minimal neighborhood information. Scientific Reports.
+Facco, E., d'Errico, M., Rodriguez, A., & Laio, A. (2017). Estimating the intrinsic dimension of datasets by a minimal neighborhood information. *Scientific Reports* 7, 12140. [DOI:10.1038/s41598-017-11873-y](https://doi.org/10.1038/s41598-017-11873-y).
 
-Huh, M., Cheung, B., Wang, T., & Isola, P. (2024). The Platonic Representation Hypothesis. arXiv:2405.07987.
+[Huh et al. (2024)](../docs/references/arxiv/Huh_2024_Platonic_Representation.pdf). The Platonic Representation Hypothesis. *ICML 2024*. [arXiv:2405.07987](https://arxiv.org/abs/2405.07987).
 
-Jawahar, G., Sagot, B., & Seddah, D. (2019). What does BERT learn about the structure of language? ACL.
+Jawahar, G., Sagot, B., & Seddah, D. (2019). What does BERT learn about the structure of language? *ACL*. [arXiv:1905.05950](https://arxiv.org/abs/1905.05950).
 
-Tishby, N., & Zaslavsky, N. (2015). Deep learning and the information bottleneck principle. ITW.
+Tishby, N., & Zaslavsky, N. (2015). Deep learning and the information bottleneck principle. *IEEE ITW*. [arXiv:1503.02406](https://arxiv.org/abs/1503.02406).
 
-Voita, E., Talbot, D., Moiseev, F., Sennrich, R., & Titov, I. (2019). Analyzing multi-head self-attention: Specialized heads do the heavy lifting. ACL.
+Voita, E., Talbot, D., Moiseev, F., Sennrich, R., & Titov, I. (2019). Analyzing multi-head self-attention: Specialized heads do the heavy lifting. *ACL*. [arXiv:1905.09418](https://arxiv.org/abs/1905.09418).

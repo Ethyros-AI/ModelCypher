@@ -220,15 +220,15 @@ ModelCypher makes the Geometric Knowledge Thesis operational. The results from P
 
 ## References
 
-Arditi, A., et al. (2024). Refusal in Language Models Is Mediated by a Single Direction. arXiv:2406.11717.
+[Arditi et al. (2024)](../docs/references/arxiv/Arditi_2024_Refusal_Single_Direction.pdf). Refusal in Language Models Is Mediated by a Single Direction. [arXiv:2406.11717](https://arxiv.org/abs/2406.11717).
 
-Kornblith, S., et al. (2019). Similarity of Neural Network Representations Revisited. *ICML 2019*. arXiv:1905.00414.
+[Kornblith et al. (2019)](../docs/references/arxiv/Kornblith_2019_CKA_Neural_Similarity.pdf). Similarity of Neural Network Representations Revisited. *ICML 2019*. [arXiv:1905.00414](https://arxiv.org/abs/1905.00414).
 
-Naitzat, G., et al. (2020). Topology of Deep Neural Networks. *JMLR*, 21(184), 1-85. arXiv:2004.06093.
+[Naitzat et al. (2020)](../docs/references/arxiv/Naitzat_2020_Topology_Deep_Neural_Networks.pdf). Topology of Deep Neural Networks. *JMLR*, 21(184), 1-85. [arXiv:2004.06093](https://arxiv.org/abs/2004.06093).
 
-Yadav, P., et al. (2023). TIES-Merging. *NeurIPS 2023*. arXiv:2306.01708.
+[Yadav et al. (2023)](../docs/references/arxiv/Yadav_2023_TIES_Merging.pdf). TIES-Merging. *NeurIPS 2023*. [arXiv:2306.01708](https://arxiv.org/abs/2306.01708).
 
-Yu, L., et al. (2024). DARE. *ICML 2024*. arXiv:2311.03099.
+Yu, L., et al. (2024). DARE. *ICML 2024*. [arXiv:2311.03099](https://arxiv.org/abs/2311.03099).
 
 ---
 

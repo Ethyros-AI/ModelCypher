@@ -210,16 +210,16 @@ Adapters transfer across architectures. A LoRA trained on Qwen runs on Llama wit
 
 ## References
 
-Ainsworth, S.K., Hayase, J., & Srinivasa, S.S. (2023). Git Re-Basin: Merging Models modulo Permutation Symmetries. *ICLR 2023*. arXiv:2209.04836.
+[Ainsworth et al. (2023)](../docs/references/arxiv/Ainsworth_2023_Git_ReBasin.pdf). Git Re-Basin: Merging Models modulo Permutation Symmetries. *ICLR 2023*. [arXiv:2209.04836](https://arxiv.org/abs/2209.04836).
 
-Bansal, Y., et al. (2021). Stitching Neural Networks with Minimal Shift. *NeurIPS 2021*.
+Bansal, Y., et al. (2021). Stitching Neural Networks with Minimal Shift. *NeurIPS 2021*. [Paper](https://proceedings.neurips.cc/paper/2021/hash/90610aa0e24f63ec6e69a5ceb1b40e3d-Abstract.html).
 
-Hu, E.J., et al. (2022). LoRA: Low-Rank Adaptation of Large Language Models. *ICLR 2022*. arXiv:2106.09685.
+[Hu et al. (2022)](../docs/references/arxiv/Hu_2022_LoRA_Low_Rank_Adaptation.pdf). LoRA: Low-Rank Adaptation of Large Language Models. *ICLR 2022*. [arXiv:2106.09685](https://arxiv.org/abs/2106.09685).
 
-Ilharco, G., et al. (2023). Editing Models with Task Arithmetic. *ICLR 2023*. arXiv:2212.04089.
+[Ilharco et al. (2023)](../docs/references/arxiv/Ilharco_2023_Task_Arithmetic.pdf). Editing Models with Task Arithmetic. *ICLR 2023*. [arXiv:2212.04089](https://arxiv.org/abs/2212.04089).
 
-Singh, S.P., & Jaggi, M. (2020). Model Fusion via Optimal Transport. *NeurIPS 2020*.
+Singh, S.P., & Jaggi, M. (2020). Model Fusion via Optimal Transport. *NeurIPS 2020*. [arXiv:1910.05653](https://arxiv.org/abs/1910.05653).
 
-Yadav, P., et al. (2023). TIES-Merging: Resolving Interference When Merging Models. *NeurIPS 2023*. arXiv:2306.01708.
+[Yadav et al. (2023)](../docs/references/arxiv/Yadav_2023_TIES_Merging.pdf). TIES-Merging: Resolving Interference When Merging Models. *NeurIPS 2023*. [arXiv:2306.01708](https://arxiv.org/abs/2306.01708).
 
-Yu, L., et al. (2024). Language Models are Super Mario: Absorbing Abilities from Homologous Models as a Free Lunch (DARE). *ICML 2024*. arXiv:2311.03099.
+Yu, L., et al. (2024). Language Models are Super Mario: Absorbing Abilities from Homologous Models as a Free Lunch (DARE). *ICML 2024*. [arXiv:2311.03099](https://arxiv.org/abs/2311.03099).

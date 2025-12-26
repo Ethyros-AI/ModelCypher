@@ -225,6 +225,23 @@ class GramAligner:
         feature_transform, iterations, final_cka = self._find_feature_transform(
             source_centered, target_centered, K_t_c
         )
+        if final_cka < 1.0 - self._tolerance:
+            fallback = self._feature_transform_from_sample_transform(
+                source_centered, sample_transform
+            )
+            source_transformed = b.matmul(source_centered, fallback)
+            K_s_t = b.matmul(source_transformed, b.transpose(source_transformed))
+            K_s_t_c = b.matmul(b.matmul(H, K_s_t), H)
+            b.eval(K_s_t_c)
+            fallback_cka = self._compute_cka_from_centered_grams(K_s_t_c, K_t_c)
+
+            if fallback_cka >= final_cka:
+                logger.warning(
+                    "GramAligner: Falling back to sample-space transform (CKA=%.8f).",
+                    fallback_cka,
+                )
+                feature_transform = fallback
+                final_cka = fallback_cka
 
         # Compute alignment error
         source_transformed = b.matmul(source_centered, feature_transform)
@@ -440,6 +457,32 @@ class GramAligner:
         )
 
         return F, self._max_iterations, final_cka
+
+    def _pseudo_inverse(self, matrix: "Array") -> "Array":
+        """Compute a stable pseudoinverse using SVD."""
+        b = self._backend
+        U, S, Vt = b.svd(matrix)
+        b.eval(U, S, Vt)
+
+        s_inv = S / (S * S + self._regularization)
+        V = b.transpose(Vt)
+        V_scaled = V * b.reshape(s_inv, (1, -1))
+        pinv = b.matmul(V_scaled, b.transpose(U))
+        b.eval(pinv)
+        return pinv
+
+    def _feature_transform_from_sample_transform(
+        self,
+        source_centered: "Array",
+        sample_transform: "Array",
+    ) -> "Array":
+        """Construct a feature transform that reproduces the sample-space alignment."""
+        b = self._backend
+        aligned_samples = b.matmul(sample_transform, source_centered)
+        pinv = self._pseudo_inverse(source_centered)
+        transform = b.matmul(pinv, aligned_samples)
+        b.eval(transform)
+        return transform
 
     def _compute_cka_from_centered_grams(
         self, K_x_c: "Array", K_y_c: "Array"
