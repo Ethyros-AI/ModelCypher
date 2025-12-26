@@ -29,10 +29,13 @@ import math
 
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.topological_fingerprint import (
+    BackendTopologicalFingerprint,
     PersistenceDiagram,
     PersistencePoint,
     TopologicalFingerprint,
+    get_topological_fingerprint,
 )
 
 

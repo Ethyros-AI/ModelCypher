@@ -702,3 +702,469 @@ class TopologicalFingerprint:
             if p > 0:
                 entropy -= p * math.log(p)
         return entropy
+
+
+class BackendTopologicalFingerprint:
+    """GPU-accelerated topological fingerprinting using the Backend protocol.
+
+    Provides the same functionality as TopologicalFingerprint but uses
+    Backend tensor operations for GPU acceleration where beneficial.
+
+    Key optimizations:
+    - Vectorized cost matrix building for bottleneck/Wasserstein distances
+    - Backend-accelerated entropy computation
+    - Vectorized edge extraction from distance matrix
+    """
+
+    def __init__(self, backend: "Backend"):
+        """Initialize with a Backend instance.
+
+        Args:
+            backend: Backend instance (MLXBackend, JAXBackend, etc.)
+        """
+        self.backend = backend
+
+    def compute(
+        self,
+        points: list[list[float]],
+        max_dimension: int = 1,
+        max_filtration: float | None = None,
+        num_steps: int = 50,
+        config: TopologyConfig | None = None,
+    ) -> Fingerprint:
+        """Compute topological fingerprint using Backend acceleration.
+
+        Args:
+            points: Point cloud as list of vectors.
+            max_dimension: Maximum homology dimension (0 or 1).
+            max_filtration: Maximum filtration value.
+            num_steps: Number of filtration steps (unused, for interface parity).
+            config: Topology configuration.
+
+        Returns:
+            Fingerprint with persistence diagram and summary statistics.
+        """
+        if config is None:
+            config = TopologyConfig()
+
+        if len(points) < 2:
+            return Fingerprint(
+                diagram=PersistenceDiagram([]),
+                betti_numbers={},
+                summary=TopologySummary(len(points), 0, 0.0, 0.0, 0.0),
+            )
+
+        b = self.backend
+        distances = self._compute_pairwise_distances(points)
+
+        # Determine filtration range from the data itself
+        dist_arr = b.array(distances)
+        b.eval(dist_arr)
+
+        # Get max and min (excluding zeros) using backend
+        max_val = b.max(dist_arr)
+        b.eval(max_val)
+        max_dist = max_filtration if max_filtration is not None else float(b.to_numpy(max_val))
+
+        # For min nonzero, we need to mask zeros
+        flat = b.reshape(dist_arr, (-1,))
+        # Create mask for positive values
+        positive_mask = flat > 0
+        # Replace zeros with inf for min computation
+        masked = b.where(positive_mask, flat, b.full(flat.shape, float("inf")))
+        min_val = b.min(masked)
+        b.eval(min_val)
+        min_dist = float(b.to_numpy(min_val))
+        if min_dist == float("inf"):
+            min_dist = 0.0
+
+        diagram = self._vietoris_rips_filtration(
+            distances=distances,
+            min_filtration=min_dist,
+            max_filtration=max_dist,
+            num_steps=num_steps,
+            max_dimension=max_dimension,
+        )
+
+        # Filter noise
+        threshold = max_dist * config.persistence_noise_fraction
+        betti = diagram.betti_numbers(persistence_threshold=threshold)
+
+        significant_points = [p for p in diagram.points if p.persistence > threshold]
+        persistences = [p.persistence for p in significant_points]
+
+        summary = TopologySummary(
+            component_count=betti.get(0, 1),
+            cycle_count=betti.get(1, 0),
+            average_persistence=sum(persistences) / len(persistences) if persistences else 0.0,
+            max_persistence=max(persistences) if persistences else 0.0,
+            persistence_entropy=self._compute_entropy(persistences),
+        )
+
+        return Fingerprint(diagram, betti, summary)
+
+    def compare(
+        self, fingerprint_a: Fingerprint, fingerprint_b: Fingerprint
+    ) -> ComparisonResult:
+        """Compare two topological fingerprints using Backend acceleration.
+
+        Args:
+            fingerprint_a: First fingerprint.
+            fingerprint_b: Second fingerprint.
+
+        Returns:
+            ComparisonResult with distance metrics and similarity score.
+        """
+        bottleneck = self._bottleneck_distance(fingerprint_a.diagram, fingerprint_b.diagram)
+        wasserstein = self._wasserstein_distance(fingerprint_a.diagram, fingerprint_b.diagram)
+
+        betti_diff = 0
+        all_dims = set(fingerprint_a.betti_numbers.keys()) | set(fingerprint_b.betti_numbers.keys())
+        for dim in all_dims:
+            a = fingerprint_a.betti_numbers.get(dim, 0)
+            b_val = fingerprint_b.betti_numbers.get(dim, 0)
+            betti_diff += abs(a - b_val)
+
+        scale = max(
+            fingerprint_a.summary.max_persistence, fingerprint_b.summary.max_persistence, 1e-6
+        )
+
+        score = (
+            math.exp(-bottleneck / scale)
+            * math.exp(-wasserstein / scale)
+            * (1.0 / (1 + betti_diff))
+        )
+
+        betti_match = betti_diff == 0
+
+        if betti_diff == 0 and bottleneck < 1e-6:
+            interp = "Identical topological structure."
+        elif betti_diff == 0:
+            interp = f"Same topology, bottleneck distance {bottleneck:.4f} (scale {scale:.4f})."
+        else:
+            interp = f"Different Betti numbers (diff={betti_diff}), bottleneck {bottleneck:.4f}."
+
+        return ComparisonResult(
+            bottleneck_distance=bottleneck,
+            wasserstein_distance=wasserstein,
+            betti_difference=betti_diff,
+            similarity_score=score,
+            betti_numbers_match=betti_match,
+            interpretation=interp,
+        )
+
+    def _compute_pairwise_distances(self, points: list[list[float]]) -> list[list[float]]:
+        """Compute pairwise geodesic distances using Backend."""
+        from modelcypher.core.domain.geometry.riemannian_utils import (
+            geodesic_distance_matrix,
+        )
+
+        n = len(points)
+        if n == 0:
+            return []
+
+        b = self.backend
+        pts = b.array(points)
+
+        k_neighbors = min(max(3, n // 3), n - 1)
+        geo_dist = geodesic_distance_matrix(pts, k_neighbors=k_neighbors, backend=b)
+        b.eval(geo_dist)
+        return b.to_numpy(geo_dist).tolist()
+
+    def _vietoris_rips_filtration(
+        self,
+        distances: list[list[float]],
+        min_filtration: float,
+        max_filtration: float,
+        num_steps: int,
+        max_dimension: int,
+    ) -> PersistenceDiagram:
+        """Compute persistent homology via Vietoris-Rips filtration.
+
+        Uses Backend for vectorized edge extraction, but Union-Find
+        remains sequential as it's inherently order-dependent.
+        """
+        b = self.backend
+        n = len(distances)
+        persistence_points: list[PersistencePoint] = []
+
+        # Vectorized edge extraction using Backend
+        dist_arr = b.array(distances)
+        b.eval(dist_arr)
+
+        # Get upper triangular indices and values
+        # Build edges list more efficiently
+        edges: list[tuple[int, int, float]] = []
+        dist_np = b.to_numpy(dist_arr)
+        for i in range(n):
+            for j in range(i + 1, n):
+                edges.append((i, j, float(dist_np[i, j])))
+        edges.sort(key=lambda x: x[2])
+
+        # 0-dim persistence (connected components) - Union-Find is sequential
+        parent = list(range(n))
+        rank = [0] * n
+
+        def find(x: int) -> int:
+            if parent[x] != x:
+                parent[x] = find(parent[x])
+            return parent[x]
+
+        def union(x: int, y: int, component_birth: list[float]) -> int | None:
+            px, py = find(x), find(y)
+            if px == py:
+                return None
+
+            birth_x = component_birth[px]
+            birth_y = component_birth[py]
+
+            survivor, dying = (px, py)
+            if birth_x < birth_y:
+                survivor, dying = px, py
+            elif birth_y < birth_x:
+                survivor, dying = py, px
+            else:
+                if rank[px] < rank[py]:
+                    survivor, dying = py, px
+                elif rank[px] > rank[py]:
+                    survivor, dying = px, py
+                else:
+                    survivor, dying = px, py
+                    rank[px] += 1
+
+            parent[dying] = survivor
+            return dying
+
+        component_birth = [0.0] * n
+
+        for i, j, dist in edges:
+            if dist > max_filtration:
+                break
+
+            dying = union(i, j, component_birth)
+            if dying is not None:
+                birth = component_birth[dying]
+                death = dist
+                if death > birth:
+                    persistence_points.append(PersistencePoint(birth, death, 0))
+
+        for i in range(n):
+            if find(i) == i:
+                persistence_points.append(PersistencePoint(0.0, max_filtration, 0))
+
+        # 1-dim persistence (cycles) with Backend-accelerated triangle detection
+        if max_dimension >= 1:
+            parent = list(range(n))
+            rank = [0] * n
+
+            possible_cycles: list[PersistencePoint] = []
+
+            for i, j, dist in edges:
+                if dist > max_filtration:
+                    break
+
+                px, py = find(i), find(j)
+                if px == py:
+                    # Vectorized triangle fill detection using Backend
+                    # For each k, compute max(dist, d[i,k], d[j,k])
+                    row_i = dist_arr[i, :]
+                    row_j = dist_arr[j, :]
+                    triangle_fills = b.maximum(b.maximum(row_i, row_j), b.full((n,), dist))
+                    # Set self-edges to inf
+                    fills_np = b.to_numpy(triangle_fills)
+                    fills_np[i] = float("inf")
+                    fills_np[j] = float("inf")
+
+                    min_fill = float(min(fills_np))
+                    if min_fill < max_filtration and min_fill > dist:
+                        possible_cycles.append(PersistencePoint(dist, min_fill, 1))
+                else:
+                    union(i, j, component_birth)
+
+            persistence_points.extend(possible_cycles[:20])
+
+        return PersistenceDiagram(persistence_points)
+
+    def _bottleneck_distance(
+        self, diag_a: PersistenceDiagram, diag_b: PersistenceDiagram
+    ) -> float:
+        """Compute bottleneck distance with Backend-accelerated cost matrix."""
+        points_a = diag_a.points
+        points_b = diag_b.points
+
+        dims = set([p.dimension for p in points_a] + [p.dimension for p in points_b])
+        max_dist = 0.0
+
+        b = self.backend
+
+        for dim in dims:
+            pa = [p for p in points_a if p.dimension == dim]
+            pb = [p for p in points_b if p.dimension == dim]
+
+            n_a, n_b = len(pa), len(pb)
+
+            if n_a == 0 and n_b == 0:
+                continue
+
+            if n_a == 0:
+                for pt in pb:
+                    max_dist = max(max_dist, (pt.death - pt.birth) / 2.0)
+                continue
+            if n_b == 0:
+                for pt in pa:
+                    max_dist = max(max_dist, (pt.death - pt.birth) / 2.0)
+                continue
+
+            # Vectorized cost matrix building
+            n = n_a + n_b
+            births_a = b.array([p.birth for p in pa])
+            deaths_a = b.array([p.death for p in pa])
+            births_b = b.array([p.birth for p in pb])
+            deaths_b = b.array([p.death for p in pb])
+            b.eval(births_a, deaths_a, births_b, deaths_b)
+
+            # Compute L-infinity costs: max(|birth_a - birth_b|, |death_a - death_b|)
+            # Shape: [n_a, n_b]
+            birth_diff = b.abs(b.reshape(births_a, (-1, 1)) - b.reshape(births_b, (1, -1)))
+            death_diff = b.abs(b.reshape(deaths_a, (-1, 1)) - b.reshape(deaths_b, (1, -1)))
+            match_costs = b.maximum(birth_diff, death_diff)
+            b.eval(match_costs)
+
+            # Build full cost matrix
+            cost = [[float("inf")] * n for _ in range(n)]
+            match_np = b.to_numpy(match_costs)
+            for i in range(n_a):
+                for j in range(n_b):
+                    cost[i][j] = float(match_np[i, j])
+                diag_cost_a = (pa[i].death - pa[i].birth) / 2.0
+                cost[i][n_b + i] = diag_cost_a
+
+            for i in range(n_b):
+                diag_cost_b = (pb[i].death - pb[i].birth) / 2.0
+                cost[n_a + i][i] = diag_cost_b
+                for j in range(n_b, n):
+                    cost[n_a + i][j] = 0.0
+
+            matching = TopologicalFingerprint._hungarian_algorithm(cost)
+
+            for i, j in enumerate(matching):
+                if i < n_a or j < n_b:
+                    if cost[i][j] < float("inf"):
+                        max_dist = max(max_dist, cost[i][j])
+
+        return max_dist
+
+    def _wasserstein_distance(
+        self, diag_a: PersistenceDiagram, diag_b: PersistenceDiagram
+    ) -> float:
+        """Compute Wasserstein distance with Backend-accelerated cost matrix."""
+        total_dist = 0.0
+        count = 0
+
+        dims = set([p.dimension for p in diag_a.points] + [p.dimension for p in diag_b.points])
+        b = self.backend
+
+        for dim in dims:
+            pa = [p for p in diag_a.points if p.dimension == dim]
+            pb = [p for p in diag_b.points if p.dimension == dim]
+
+            n_a, n_b = len(pa), len(pb)
+
+            if n_a == 0 and n_b == 0:
+                continue
+
+            if n_a == 0:
+                for pt in pb:
+                    total_dist += pt.death - pt.birth
+                    count += 1
+                continue
+            if n_b == 0:
+                for pt in pa:
+                    total_dist += pt.death - pt.birth
+                    count += 1
+                continue
+
+            # Vectorized cost matrix building
+            n = n_a + n_b
+            births_a = b.array([p.birth for p in pa])
+            deaths_a = b.array([p.death for p in pa])
+            births_b = b.array([p.birth for p in pb])
+            deaths_b = b.array([p.death for p in pb])
+            b.eval(births_a, deaths_a, births_b, deaths_b)
+
+            # Compute L1 costs: |birth_a - birth_b| + |death_a - death_b|
+            birth_diff = b.abs(b.reshape(births_a, (-1, 1)) - b.reshape(births_b, (1, -1)))
+            death_diff = b.abs(b.reshape(deaths_a, (-1, 1)) - b.reshape(deaths_b, (1, -1)))
+            match_costs = birth_diff + death_diff
+            b.eval(match_costs)
+
+            # Build full cost matrix
+            cost = [[float("inf")] * n for _ in range(n)]
+            match_np = b.to_numpy(match_costs)
+            for i in range(n_a):
+                for j in range(n_b):
+                    cost[i][j] = float(match_np[i, j])
+                diag_cost_a = pa[i].death - pa[i].birth
+                cost[i][n_b + i] = diag_cost_a
+
+            for i in range(n_b):
+                diag_cost_b = pb[i].death - pb[i].birth
+                cost[n_a + i][i] = diag_cost_b
+                for j in range(n_b, n):
+                    cost[n_a + i][j] = 0.0
+
+            matching = TopologicalFingerprint._hungarian_algorithm(cost)
+
+            for i, j in enumerate(matching):
+                if cost[i][j] < float("inf"):
+                    total_dist += cost[i][j]
+                    if i < n_a or j < n_b:
+                        count += 1
+
+        return total_dist / count if count > 0 else 0.0
+
+    def _compute_entropy(self, values: list[float]) -> float:
+        """Compute persistence entropy using Backend."""
+        if not values:
+            return 0.0
+
+        b = self.backend
+        arr = b.array(values)
+        total = b.sum(arr)
+        b.eval(total)
+        total_val = float(b.to_numpy(total))
+
+        if total_val <= 1e-9:
+            return 0.0
+
+        probs = arr / total
+        # Compute -sum(p * log(p)), avoiding log(0)
+        # Add small epsilon to avoid log(0)
+        log_probs = b.log(probs + 1e-10)
+        entropy = -b.sum(probs * log_probs)
+        b.eval(entropy)
+
+        return float(b.to_numpy(entropy))
+
+
+def get_topological_fingerprint(
+    backend: "Backend | None" = None,
+) -> type[TopologicalFingerprint] | BackendTopologicalFingerprint:
+    """Get the best available topological fingerprint implementation.
+
+    Args:
+        backend: Optional Backend instance. If provided, returns
+                 BackendTopologicalFingerprint for GPU acceleration.
+
+    Returns:
+        TopologicalFingerprint class or BackendTopologicalFingerprint instance.
+
+    Example:
+        >>> from modelcypher.core.domain._backend import get_default_backend
+        >>> backend = get_default_backend()
+        >>> tf = get_topological_fingerprint(backend)
+        >>> fingerprint = tf.compute([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
+    """
+    if backend is not None:
+        return BackendTopologicalFingerprint(backend)
+    return TopologicalFingerprint
