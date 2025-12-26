@@ -204,8 +204,22 @@ class UnifiedGeometricMerger:
         layer_indices = self._extract_layer_indices(target_weights)
         logger.info("Found %d layers", len(layer_indices))
 
-        # Load tokenizer and models for probe stage
-        tokenizer = self._load_tokenizer(target_path)
+        # Load tokenizers for vocabulary alignment
+        source_tokenizer = self._load_tokenizer(source_path)
+        target_tokenizer = self._load_tokenizer(target_path)
+
+        # =================================================================
+        # STAGE 0: VOCABULARY (Cross-vocabulary alignment for embedding layers)
+        # =================================================================
+        logger.info("STAGE 0: VOCABULARY ALIGNMENT")
+        source_weights, vocab_metrics, vocab_aligned = self._stage_vocabulary(
+            source_weights=source_weights,
+            target_weights=target_weights,
+            source_tokenizer=source_tokenizer,
+            target_tokenizer=target_tokenizer,
+        )
+
+        # Load models for probe stage
         source_model = None
         target_model = None
         if self.config.probe_mode == "precise":
@@ -222,7 +236,7 @@ class UnifiedGeometricMerger:
             target_weights=target_weights,
             source_model=source_model,
             target_model=target_model,
-            tokenizer=tokenizer,
+            tokenizer=target_tokenizer,
         )
 
         layer_confidences: dict[int, float] = probe_result.get("confidences", {})
@@ -272,7 +286,7 @@ class UnifiedGeometricMerger:
 
         result = UnifiedMergeResult(
             merged_weights=merged_weights,
-            vocab_metrics={},
+            vocab_metrics=vocab_metrics,
             probe_metrics=probe_metrics,
             permute_metrics=permute_metrics,
             rotate_metrics=rotate_metrics,
@@ -284,7 +298,7 @@ class UnifiedGeometricMerger:
             weight_count=len(merged_weights),
             timestamp=datetime.utcnow(),
             output_path=output_path,
-            vocab_aligned=False,
+            vocab_aligned=vocab_aligned,
             safety_verdict="geometric",
             refusal_preserved=True,
         )
@@ -300,6 +314,37 @@ class UnifiedGeometricMerger:
     # =========================================================================
     # STAGE DELEGATES
     # =========================================================================
+
+    def _stage_vocabulary(
+        self,
+        source_weights: dict[str, "Array"],
+        target_weights: dict[str, "Array"],
+        source_tokenizer: Any | None,
+        target_tokenizer: Any | None,
+    ) -> tuple[dict[str, "Array"], dict[str, Any], bool]:
+        """Stage 0: Align source vocabulary to target vocabulary."""
+        from .merge_stages.stage_0_vocabulary import (
+            VocabularyConfig,
+            stage_vocabulary_align,
+        )
+
+        config = VocabularyConfig()
+
+        result = stage_vocabulary_align(
+            source_weights=source_weights,
+            target_weights=target_weights,
+            source_tokenizer=source_tokenizer,
+            target_tokenizer=target_tokenizer,
+            config=config,
+        )
+
+        if result.was_aligned:
+            logger.info("Vocabulary alignment applied")
+        else:
+            reason = result.metrics.get("reason", "unknown")
+            logger.info("Vocabulary alignment skipped: %s", reason)
+
+        return result.modified_weights, result.metrics, result.was_aligned
 
     def _stage_probe(
         self,
