@@ -161,6 +161,147 @@ class VectorMath:
         return max(0.0, min(1.0, result))
 
     @staticmethod
+    def slerp(
+        v0: ArrayLike,
+        v1: ArrayLike,
+        t: float,
+        epsilon: float = 1e-6,
+        interpolate_magnitude: bool = True,
+    ) -> list[float] | None:
+        """Spherical linear interpolation (SLERP) between two vectors.
+
+        SLERP follows the geodesic (great circle arc) on the hypersphere,
+        providing smoother interpolation than linear averaging for neural
+        network weight merging.
+
+        Formula: SLERP(v0, v1, t) = (sin((1-t)θ)/sinθ)v0 + (sin(tθ)/sinθ)v1
+        where θ = arccos(v0·v1) is the angle between normalized vectors.
+
+        Args:
+            v0: First vector (list or MLX array)
+            v1: Second vector (list or MLX array)
+            t: Interpolation factor in [0, 1]. t=0 returns v0, t=1 returns v1.
+            epsilon: Threshold for near-parallel detection. When angle < epsilon,
+                     falls back to linear interpolation to avoid numerical issues.
+            interpolate_magnitude: If True (default), interpolate magnitudes
+                linearly. If False, return unit-normalized result.
+
+        Returns:
+            Interpolated vector as Python list, or None if vectors are invalid
+            (empty, different lengths, or zero-norm).
+
+        References:
+            Shoemake, K. (1985). "Animating Rotation with Quaternion Curves."
+            SIGGRAPH 1985, Computer Graphics, 19(3), 245-254.
+        """
+        len_v0 = _len(v0)
+        len_v1 = _len(v1)
+        if len_v0 != len_v1 or len_v0 == 0:
+            return None
+
+        v0_list = _to_list(v0)
+        v1_list = _to_list(v1)
+
+        # Compute magnitudes
+        norm_v0 = VectorMath.l2_norm(v0_list)
+        norm_v1 = VectorMath.l2_norm(v1_list)
+        if norm_v0 is None or norm_v1 is None:
+            return None
+
+        # Normalize inputs
+        inv_norm_v0 = 1.0 / norm_v0
+        inv_norm_v1 = 1.0 / norm_v1
+        v0_unit = [x * inv_norm_v0 for x in v0_list]
+        v1_unit = [x * inv_norm_v1 for x in v1_list]
+
+        # Compute dot product and clamp to [-1, 1] for numerical stability
+        dot = sum(a * b for a, b in zip(v0_unit, v1_unit))
+        dot = max(-1.0, min(1.0, dot))
+
+        # Compute angle between vectors
+        theta = math.acos(dot)
+
+        # Handle near-parallel case (θ ≈ 0) - fall back to linear interpolation
+        if theta < epsilon:
+            result = [
+                (1.0 - t) * v0_list[i] + t * v1_list[i] for i in range(len_v0)
+            ]
+            return result
+
+        # Handle near-antipodal case (θ ≈ π) - SLERP is undefined
+        # Use linear interpolation as fallback (not ideal but defined)
+        if theta > math.pi - epsilon:
+            result = [
+                (1.0 - t) * v0_list[i] + t * v1_list[i] for i in range(len_v0)
+            ]
+            return result
+
+        # SLERP formula: s0 * v0_unit + s1 * v1_unit
+        sin_theta = math.sin(theta)
+        s0 = math.sin((1.0 - t) * theta) / sin_theta
+        s1 = math.sin(t * theta) / sin_theta
+
+        result = [s0 * v0_unit[i] + s1 * v1_unit[i] for i in range(len_v0)]
+
+        # Optionally rescale to interpolated magnitude
+        if interpolate_magnitude:
+            target_mag = (1.0 - t) * norm_v0 + t * norm_v1
+            result = [x * target_mag for x in result]
+
+        return result
+
+    @staticmethod
+    def slerp_batch(
+        weights_a: dict[str, ArrayLike],
+        weights_b: dict[str, ArrayLike],
+        t: float,
+        epsilon: float = 1e-6,
+        interpolate_magnitude: bool = True,
+    ) -> dict[str, list[float]]:
+        """Apply SLERP to dictionaries of weight vectors (per-layer merging).
+
+        Useful for merging model weights where each key corresponds to a layer.
+
+        Args:
+            weights_a: First model's weights as {layer_name: vector}
+            weights_b: Second model's weights as {layer_name: vector}
+            t: Interpolation factor in [0, 1]
+            epsilon: Threshold for near-parallel detection
+            interpolate_magnitude: Whether to interpolate magnitudes
+
+        Returns:
+            Merged weights as {layer_name: interpolated_vector}.
+            Keys present in only one dict are included unchanged.
+            Keys with incompatible vectors are skipped with a warning.
+        """
+        result: dict[str, list[float]] = {}
+        all_keys = set(weights_a.keys()) | set(weights_b.keys())
+
+        for key in all_keys:
+            if key not in weights_a:
+                # Only in weights_b
+                result[key] = _to_list(weights_b[key])
+            elif key not in weights_b:
+                # Only in weights_a
+                result[key] = _to_list(weights_a[key])
+            else:
+                # Present in both - apply SLERP
+                merged = VectorMath.slerp(
+                    weights_a[key],
+                    weights_b[key],
+                    t,
+                    epsilon=epsilon,
+                    interpolate_magnitude=interpolate_magnitude,
+                )
+                if merged is not None:
+                    result[key] = merged
+                else:
+                    # Incompatible vectors - skip (caller should handle)
+                    pass
+
+        return result
+
+    @staticmethod
     def _rankdata(values: list[float]) -> list[float]:
         """Compute average ranks for values (ties get averaged ranks)."""
         n = len(values)

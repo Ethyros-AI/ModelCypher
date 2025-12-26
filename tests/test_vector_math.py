@@ -272,3 +272,137 @@ class TestSparseVectorMathCosineSimilarity:
         """Sparse cosine similarity of empty dicts returns None."""
         assert SparseVectorMath.cosine_similarity({}, {}) is None
         assert SparseVectorMath.cosine_similarity({"a": 1.0}, {}) is None
+
+
+class TestVectorMathSlerp:
+    """Tests for VectorMath.slerp() - Spherical Linear Interpolation."""
+
+    def test_slerp_orthogonal_midpoint(self):
+        """SLERP between orthogonal vectors at t=0.5 gives 45-degree result."""
+        v0 = [1.0, 0.0, 0.0]
+        v1 = [0.0, 1.0, 0.0]
+        result = VectorMath.slerp(v0, v1, 0.5)
+        # At 45 degrees: [cos(45), sin(45), 0] = [0.7071, 0.7071, 0]
+        assert result is not None
+        assert result[0] == pytest.approx(0.7071, rel=0.01)
+        assert result[1] == pytest.approx(0.7071, rel=0.01)
+        assert result[2] == pytest.approx(0.0)
+
+    def test_slerp_t0_returns_v0(self):
+        """SLERP at t=0 returns the first vector."""
+        v0 = [1.0, 0.0, 0.0]
+        v1 = [0.0, 1.0, 0.0]
+        result = VectorMath.slerp(v0, v1, 0.0)
+        assert result is not None
+        assert result == [1.0, 0.0, 0.0]
+
+    def test_slerp_t1_returns_v1(self):
+        """SLERP at t=1 returns the second vector."""
+        v0 = [1.0, 0.0, 0.0]
+        v1 = [0.0, 1.0, 0.0]
+        result = VectorMath.slerp(v0, v1, 1.0)
+        assert result is not None
+        assert result == [0.0, 1.0, 0.0]
+
+    def test_slerp_preserves_unit_norm(self):
+        """SLERP of unit vectors has unit norm when interpolate_magnitude=True."""
+        v0 = [1.0, 0.0, 0.0]
+        v1 = [0.0, 1.0, 0.0]
+        for t in [0.0, 0.25, 0.5, 0.75, 1.0]:
+            result = VectorMath.slerp(v0, v1, t)
+            assert result is not None
+            norm = VectorMath.l2_norm(result)
+            assert norm == pytest.approx(1.0, rel=0.001)
+
+    def test_slerp_magnitude_interpolation(self):
+        """SLERP interpolates magnitudes linearly."""
+        v0 = [2.0, 0.0, 0.0]  # magnitude 2
+        v1 = [0.0, 4.0, 0.0]  # magnitude 4
+        result = VectorMath.slerp(v0, v1, 0.5)
+        assert result is not None
+        # Expected magnitude: (2 + 4) / 2 = 3
+        norm = VectorMath.l2_norm(result)
+        assert norm == pytest.approx(3.0, rel=0.001)
+
+    def test_slerp_no_magnitude_interpolation(self):
+        """SLERP without magnitude interpolation returns unit vector."""
+        v0 = [2.0, 0.0, 0.0]
+        v1 = [0.0, 4.0, 0.0]
+        result = VectorMath.slerp(v0, v1, 0.5, interpolate_magnitude=False)
+        assert result is not None
+        norm = VectorMath.l2_norm(result)
+        assert norm == pytest.approx(1.0, rel=0.001)
+
+    def test_slerp_near_parallel_fallback(self):
+        """SLERP falls back to linear for near-parallel vectors."""
+        v0 = [1.0, 0.0, 0.0]
+        v1 = [1.0, 0.0001, 0.0]  # Almost parallel
+        result = VectorMath.slerp(v0, v1, 0.5)
+        assert result is not None
+        # Should be close to linear interpolation
+        assert result[0] == pytest.approx(1.0, rel=0.01)
+        assert result[1] == pytest.approx(0.00005, rel=0.1)
+
+    def test_slerp_empty_vectors(self):
+        """SLERP of empty vectors returns None."""
+        assert VectorMath.slerp([], [], 0.5) is None
+
+    def test_slerp_mismatched_lengths(self):
+        """SLERP of mismatched lengths returns None."""
+        assert VectorMath.slerp([1.0, 2.0], [1.0], 0.5) is None
+
+    def test_slerp_zero_vector(self):
+        """SLERP with zero vector returns None."""
+        assert VectorMath.slerp([0.0, 0.0], [1.0, 0.0], 0.5) is None
+
+    def test_slerp_with_mlx_arrays(self):
+        """SLERP works with MLX arrays."""
+        try:
+            import mlx.core as mx
+
+            v0 = mx.array([1.0, 0.0, 0.0])
+            v1 = mx.array([0.0, 1.0, 0.0])
+            result = VectorMath.slerp(v0, v1, 0.5)
+            assert result is not None
+            assert result[0] == pytest.approx(0.7071, rel=0.01)
+            assert result[1] == pytest.approx(0.7071, rel=0.01)
+        except ImportError:
+            pytest.skip("MLX not available")
+
+
+class TestVectorMathSlerpBatch:
+    """Tests for VectorMath.slerp_batch() - batch SLERP for weight merging."""
+
+    def test_slerp_batch_basic(self):
+        """Basic batch SLERP on matching weight dicts."""
+        weights_a = {"layer1": [1.0, 0.0], "layer2": [0.0, 1.0]}
+        weights_b = {"layer1": [0.0, 1.0], "layer2": [1.0, 0.0]}
+        result = VectorMath.slerp_batch(weights_a, weights_b, 0.5)
+        assert "layer1" in result
+        assert "layer2" in result
+        # Both should be 45-degree interpolations
+        assert result["layer1"][0] == pytest.approx(0.7071, rel=0.01)
+        assert result["layer1"][1] == pytest.approx(0.7071, rel=0.01)
+
+    def test_slerp_batch_missing_key_in_b(self):
+        """Batch SLERP includes keys only in weights_a unchanged."""
+        weights_a = {"layer1": [1.0, 0.0], "layer2": [0.5, 0.5]}
+        weights_b = {"layer1": [0.0, 1.0]}
+        result = VectorMath.slerp_batch(weights_a, weights_b, 0.5)
+        # layer1 should be interpolated
+        assert result["layer1"][0] == pytest.approx(0.7071, rel=0.01)
+        # layer2 should be unchanged from weights_a
+        assert result["layer2"] == [0.5, 0.5]
+
+    def test_slerp_batch_missing_key_in_a(self):
+        """Batch SLERP includes keys only in weights_b unchanged."""
+        weights_a = {"layer1": [1.0, 0.0]}
+        weights_b = {"layer1": [0.0, 1.0], "layer2": [0.3, 0.7]}
+        result = VectorMath.slerp_batch(weights_a, weights_b, 0.5)
+        # layer2 should be unchanged from weights_b
+        assert result["layer2"] == [0.3, 0.7]
+
+    def test_slerp_batch_empty_dicts(self):
+        """Batch SLERP of empty dicts returns empty dict."""
+        result = VectorMath.slerp_batch({}, {}, 0.5)
+        assert result == {}

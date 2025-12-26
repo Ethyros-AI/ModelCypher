@@ -39,6 +39,10 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    svd_rank_threshold,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -348,13 +352,11 @@ def _project_procrustes(
             R = b.matmul(U, Vt_proc)
             b.eval(R)
 
-            # Handle reflection
+            # Handle reflection - flip last column of U if det(R) < 0
             det_R = b.det(R)
             b.eval(det_R)
             if float(b.to_numpy(det_R)) < 0:
-                U_cols = [U[:, i:i+1] for i in range(d_t - 1)]
-                U_cols.append(U[:, -1:] * -1.0)
-                U_fixed = b.concatenate(U_cols, axis=1)
+                U_fixed = b.concatenate([U[:, :-1], -U[:, -1:]], axis=1)
                 R = b.matmul(U_fixed, Vt_proc)
                 b.eval(R)
 
@@ -364,7 +366,8 @@ def _project_procrustes(
             # Alignment score from energy preserved
             total_energy = float(b.to_numpy(b.sum(S ** 2)))
             kept_energy = float(b.to_numpy(b.sum(S[:d_t] ** 2)))
-            score = kept_energy / (total_energy + 1e-10)
+            eps = float(division_epsilon(b, S))
+            score = kept_energy / (total_energy + eps)
         else:
             # Expand: Procrustes on shared dims, pad with zeros
             # Zeros are geometrically exact - introduce no spurious correlations
@@ -431,28 +434,42 @@ def _project_svd(
     # STEP 1: SVD both matrices
     # =========================================================================
     # For tall matrices (embeddings), use column-space SVD
+    eps_s = float(division_epsilon(b, source))
+    eps_t = float(division_epsilon(b, target))
     if m_s > 4 * d_s:
         # Column Gram: G = X^T @ X [d_s, d_s]
         G_source = b.matmul(b.transpose(source), source)
         _, S_s, Vt_s = b.svd(G_source, compute_uv=True)
-        S_s = b.sqrt(S_s + 1e-10)
+        S_s = b.sqrt(S_s + eps_s)
     else:
         _, S_s, Vt_s = b.svd(source, compute_uv=True)
 
     if m_t > 4 * d_t:
         G_target = b.matmul(b.transpose(target), target)
         _, S_t, Vt_t = b.svd(G_target, compute_uv=True)
-        S_t = b.sqrt(S_t + 1e-10)
+        S_t = b.sqrt(S_t + eps_t)
     else:
         _, S_t, Vt_t = b.svd(target, compute_uv=True)
 
     b.eval(S_s, Vt_s, S_t, Vt_t)
 
     # =========================================================================
-    # STEP 2: Find shared subspace dimension
+    # STEP 2: Find shared subspace dimension (rank-aware)
     # =========================================================================
-    # Use minimum of both feature dimensions
-    k = min(d_s, d_t, int(S_s.shape[0]), int(S_t.shape[0]))
+    # Compute numerical rank for each matrix to avoid projecting onto null space
+    rank_thresh_s = svd_rank_threshold(b, source)
+    rank_thresh_t = svd_rank_threshold(b, target)
+    b.eval(rank_thresh_s, rank_thresh_t)
+
+    # Count singular values above threshold (numerical rank)
+    S_s_np = b.to_numpy(S_s)
+    S_t_np = b.to_numpy(S_t)
+    rank_s = int((S_s_np > float(b.to_numpy(rank_thresh_s))).sum())
+    rank_t = int((S_t_np > float(b.to_numpy(rank_thresh_t))).sum())
+
+    # Use minimum of ranks and dimensions for safe truncation
+    k = min(rank_s, rank_t, d_s, d_t, int(S_s.shape[0]), int(S_t.shape[0]))
+    k = max(k, 1)  # Ensure at least 1 dimension
 
     # =========================================================================
     # STEP 3: Project source to shared subspace

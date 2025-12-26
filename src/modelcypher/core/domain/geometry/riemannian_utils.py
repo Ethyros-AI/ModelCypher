@@ -362,6 +362,8 @@ class RiemannianGeometry:
             adj = _set_matrix_element(backend, adj, i, i, 0.0)
 
         # Build symmetric k-NN adjacency
+        # Use precision-aware epsilon for edge weight floor
+        edge_eps = float(division_epsilon(backend, euclidean_dist))
         for i in range(n):
             # Get distances from point i
             dists = euclidean_np[i, :].tolist()
@@ -370,8 +372,8 @@ class RiemannianGeometry:
             sorted_pairs = sorted(other_pairs, key=lambda x: x[1])
             nearest_indices = [p[0] for p in sorted_pairs[:k_neighbors]]
             for j in nearest_indices:
-                # Symmetric edges
-                edge_weight = max(dists[j], 1e-10)
+                # Symmetric edges - floor at precision-aware epsilon
+                edge_weight = max(dists[j], edge_eps)
                 adj = _set_matrix_element(backend, adj, i, j, edge_weight)
                 adj = _set_matrix_element(backend, adj, j, i, edge_weight)
 

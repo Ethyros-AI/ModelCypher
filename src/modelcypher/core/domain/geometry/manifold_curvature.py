@@ -42,6 +42,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -677,7 +678,9 @@ class SectionalCurvatureEstimator:
 
         denom = g_uu * g_vv - g_uv * g_uv
 
-        if abs(denom) < 1e-10:
+        # Use precision-aware epsilon for denominator check
+        eps = float(division_epsilon(backend, metric))
+        if abs(denom) < eps:
             return 0.0
 
         return riemann_component / denom

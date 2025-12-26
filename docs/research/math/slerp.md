@@ -148,20 +148,22 @@ The weight space of neural networks has complex topology. SLERP's success sugges
 
 ## Code Implementation
 
-> **Status**: SLERP is documented but not yet implemented in ModelCypher.
+**Primary Location**: [`src/modelcypher/core/domain/geometry/vector_math.py`](../../../../src/modelcypher/core/domain/geometry/vector_math.py)
 
-**Planned Location**: `src/modelcypher/core/domain/geometry/vector_math.py`
-
-The SLERP algorithm is straightforward to implement following the pseudocode above. When added, it will integrate with the existing merge pipeline.
+| Class/Function | Line | Description |
+|----------------|------|-------------|
+| `VectorMath.slerp()` | 163 | Core SLERP for two vectors with magnitude interpolation |
+| `VectorMath.slerp_batch()` | 253 | Per-layer SLERP for dict-based weight merging |
 
 **Related implementations**:
-- Model merging infrastructure exists in [`merging/`](../../../../src/modelcypher/core/domain/merging/)
+- Model merging infrastructure in [`merging/`](../../../../src/modelcypher/core/domain/merging/)
 - Weight arithmetic in [`task_singular_vectors.py`](../../../../src/modelcypher/core/domain/geometry/task_singular_vectors.py)
 
 **Design decisions**:
-1. **Per-layer SLERP**: Apply independently to each layer
-2. **Magnitude handling**: Option to preserve or interpolate magnitudes
-3. **Adaptive t**: Different interpolation factors per layer (optional)
+1. **Per-layer SLERP**: `slerp_batch()` applies independently to each layer
+2. **Magnitude handling**: `interpolate_magnitude` parameter (default True) to preserve or interpolate magnitudes
+3. **Edge case handling**: Falls back to linear interpolation for near-parallel (θ≈0) or near-antipodal (θ≈π) vectors
+4. **Pure Python**: Uses Python math for portability; MLX/JAX arrays auto-convert via `_to_list()`
 
 ---
 

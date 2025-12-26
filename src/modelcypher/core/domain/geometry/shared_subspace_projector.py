@@ -514,6 +514,7 @@ class SharedSubspaceProjector:
             return None
         u, singular_values, v_t = svd
 
+        # Compute omega = U @ V^T
         omega = [0.0 for _ in range(d * d)]
         for i in range(d):
             for j in range(d):
@@ -521,6 +522,20 @@ class SharedSubspaceProjector:
                 for k in range(d):
                     total += u[i * d + k] * v_t[k * d + j]
                 omega[i * d + j] = total
+
+        # Check for reflection (det < 0) and fix by flipping last column of U
+        det = SharedSubspaceProjector._compute_determinant(omega, d)
+        if det < 0:
+            # Flip last column of U
+            for i in range(d):
+                u[i * d + (d - 1)] = -u[i * d + (d - 1)]
+            # Recompute omega with corrected U
+            for i in range(d):
+                for j in range(d):
+                    total = 0.0
+                    for k in range(d):
+                        total += u[i * d + k] * v_t[k * d + j]
+                    omega[i * d + j] = total
 
         rotated_source = [0.0 for _ in range(n * d)]
         for sample in range(n):
@@ -1111,6 +1126,52 @@ class SharedSubspaceProjector:
                 row.append(flat[i * cols + j])
             result.append(row)
         return result
+
+    @staticmethod
+    def _compute_determinant(matrix: list[float], d: int) -> float:
+        """Compute determinant of d×d matrix stored as flat list.
+
+        Uses Gaussian elimination with partial pivoting.
+        For orthogonal matrices (from SVD), result is always ±1.
+        """
+        # Make a copy to avoid modifying input
+        work = list(matrix)
+        sign = 1.0
+
+        for col in range(d):
+            # Find pivot (largest absolute value in column)
+            max_row = col
+            max_val = abs(work[col * d + col])
+            for row in range(col + 1, d):
+                val = abs(work[row * d + col])
+                if val > max_val:
+                    max_val = val
+                    max_row = row
+
+            # Check for singular matrix
+            if max_val < 1e-15:
+                return 0.0
+
+            # Swap rows if needed
+            if max_row != col:
+                for j in range(d):
+                    idx1 = col * d + j
+                    idx2 = max_row * d + j
+                    work[idx1], work[idx2] = work[idx2], work[idx1]
+                sign = -sign
+
+            # Eliminate below pivot
+            pivot = work[col * d + col]
+            for row in range(col + 1, d):
+                factor = work[row * d + col] / pivot
+                for j in range(col, d):
+                    work[row * d + j] -= factor * work[col * d + j]
+
+        # Product of diagonal elements
+        det = sign
+        for i in range(d):
+            det *= work[i * d + i]
+        return det
 
     @staticmethod
     def _compute_procrustes_error(

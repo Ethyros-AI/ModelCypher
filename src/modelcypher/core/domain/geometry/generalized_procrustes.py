@@ -17,12 +17,16 @@
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -61,6 +65,18 @@ class Config:
     min_models: int = 2
     allow_scaling: bool = False
     frechet_mean: FrechetMeanConfig = FrechetMeanConfig()  # Fréchet mean by default
+    per_layer_smoothness_threshold: float = 0.7
+    """Threshold for deciding per-layer vs global rotation alignment.
+
+    When smoothness_ratio < this threshold, per-layer rotations are significantly
+    better than global rotation, indicating the models organize information
+    differently at different depths.
+
+    When smoothness_ratio >= this threshold, a single global rotation suffices.
+
+    Default 0.7 based on empirical observation that ratios below 0.7 typically
+    indicate meaningful structural differences requiring per-layer alignment.
+    """
 
     @staticmethod
     def default() -> "Config":
@@ -200,7 +216,9 @@ class GeneralizedProcrustes:
         if config.allow_scaling:
             norms = self._backend.sqrt(self._backend.sum(X**2, axis=(1, 2)))
             ones_arr = self._backend.ones((1,))
-            scale_factors = self._backend.where(norms > 1e-12, 1.0 / norms, ones_arr)
+            # Use precision-aware epsilon instead of hardcoded 1e-12
+            eps = division_epsilon(self._backend, norms)
+            scale_factors = self._backend.where(norms > eps, 1.0 / norms, ones_arr)
             X = X * scale_factors[:, None, None]
             scales = norms
 
@@ -248,11 +266,15 @@ class GeneralizedProcrustes:
             # New Consensus (uses Fréchet mean if configured for curvature-awareness)
             new_consensus = self._compute_consensus(aligned_X, config)
 
-            # Error
+            # Error - normalize by total data energy for scale-invariant convergence
             diffs = aligned_X - new_consensus
             current_error = float(self._backend.to_numpy(self._backend.sum(diffs**2)))
+            total_energy = float(self._backend.to_numpy(self._backend.sum(aligned_X**2)))
 
-            rel_change = abs(prev_error - current_error) / max(prev_error, 1e-12)
+            # Use relative residual error instead of relative change in error
+            # This is scale-invariant: same behavior regardless of input magnitude
+            eps = float(division_epsilon(self._backend, aligned_X))
+            rel_change = current_error / max(total_energy, eps)
             if rel_change < config.convergence_threshold:
                 converged = True
                 consensus = new_consensus
@@ -268,7 +290,8 @@ class GeneralizedProcrustes:
         # Variance calc
         total_var = float(self._backend.to_numpy(self._backend.sum(aligned_X**2)))
         residual_var = current_error
-        ratio = 1.0 - (residual_var / total_var) if total_var > 1e-12 else 0.0
+        var_eps = float(division_epsilon(self._backend, aligned_X))
+        ratio = 1.0 - (residual_var / total_var) if total_var > var_eps else 0.0
 
         return Result(
             consensus=self._backend.to_numpy(consensus).tolist(),
@@ -293,6 +316,7 @@ class GeneralizedProcrustes:
     ) -> Result | None:
         extracted: list[list[list[float]]] = []
         min_dim = None
+        max_dim = None
         for crm in crms:
             if layer not in crm.activations:
                 return None
@@ -305,10 +329,21 @@ class GeneralizedProcrustes:
                 return None
             dim = len(mat[0])
             min_dim = dim if min_dim is None else min(min_dim, dim)
+            max_dim = dim if max_dim is None else max(max_dim, dim)
             extracted.append(mat)
 
         if min_dim is None or min_dim <= 0:
             return None
+
+        # Log warning if significant dimension truncation occurs
+        if max_dim is not None and max_dim > min_dim:
+            loss_pct = (1 - min_dim / max_dim) * 100
+            if loss_pct > 25:
+                logger.warning(
+                    f"GPA dimension truncation at layer {layer}: {max_dim} -> {min_dim} "
+                    f"({loss_pct:.1f}% dimension loss). Consider using projection-based "
+                    f"alignment (CKA/Gram) to preserve more geometry."
+                )
 
         # Truncate to the shared minimum dimension to align overlapping subspaces.
         trimmed = [[vec[:min_dim] for vec in mat] for mat in extracted]
@@ -614,7 +649,8 @@ class RotationContinuityAnalyzer:
 
         # Compute metrics
         mean_layer_error = sum(layer_r.error for layer_r in layer_results) / len(layer_results)
-        smoothness_ratio = mean_layer_error / max(global_error, 1e-12)
+        error_eps = float(division_epsilon(backend, global_error_arr))
+        smoothness_ratio = mean_layer_error / max(global_error, error_eps)
 
         # Rotation roughness
         rotation_roughness = sum(
@@ -627,8 +663,8 @@ class RotationContinuityAnalyzer:
         ]
         mean_angular_velocity = sum(angular_devs) / max(len(angular_devs), 1)
 
-        # Requires per-layer alignment if smoothness_ratio < 0.7
-        requires_per_layer = smoothness_ratio < 0.7
+        # Requires per-layer alignment if smoothness_ratio < threshold
+        requires_per_layer = smoothness_ratio < config.per_layer_smoothness_threshold
 
         return RotationContinuityResult(
             source_model=source_model,
