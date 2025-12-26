@@ -280,26 +280,9 @@ def stage_vocabulary_align(
             shared_bytes = sorted(set(source_bytes) & set(target_bytes))
 
             if len(shared_bytes) < 2:
-                last_signal = AlignmentSignal(
-                    dimension=1,
-                    cka_achieved=0.0,
-                    divergence_pattern="insufficient_anchors",
-                    suggested_transformation="expand_anchors",
-                    iteration=0,
+                raise RuntimeError(
+                    f"Binary phase lock failed: only {len(shared_bytes)} shared byte anchors."
                 )
-                binary_signals.append(last_signal.to_dict())
-                binary_metrics[embed_key] = {
-                    "bytes_shared": 0,
-                    "cka_before": 0.0,
-                    "cka_after": 0.0,
-                    "alignment_error": 0.0,
-                    "iterations": 0,
-                    "source_dim": source_embed.shape[1] if source_embed.ndim == 2 else 0,
-                    "target_dim": target_embed.shape[1] if target_embed.ndim == 2 else 0,
-                    "signals": binary_signals,
-                    "phase_locked": False,
-                    "balance_ratio": None,
-                }
             else:
                 # Stack anchor matrices ONCE
                 max_anchor_count = min(len(shared_bytes), int(source_embed.shape[1]))
@@ -476,25 +459,9 @@ def stage_vocabulary_align(
                 backend.eval(target_atlas_matrix)
 
             if len(shared_atlas) < 2 or target_atlas_matrix is None:
-                last_signal = AlignmentSignal(
-                    dimension=2,
-                    cka_achieved=0.0,
-                    divergence_pattern="insufficient_anchors",
-                    suggested_transformation="expand_anchors",
-                    iteration=0,
+                raise RuntimeError(
+                    f"Vocabulary phase lock failed: only {len(shared_atlas)} shared anchors."
                 )
-                vocab_signals.append(last_signal.to_dict())
-                vocab_metrics[embed_key] = {
-                    "anchors_shared": 0,
-                    "cka_before": 0.0,
-                    "cka_after": 0.0,
-                    "alignment_error": 0.0,
-                    "iterations": 0,
-                    "signals": vocab_signals,
-                    "phase_locked": False,
-                    "support_texts": "all" if use_all_support_texts else "first",
-                    "balance_ratio": None,
-                }
             else:
                 atlas_labels = list(shared_atlas)
                 current_source = source_embed

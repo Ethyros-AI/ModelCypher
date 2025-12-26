@@ -109,15 +109,7 @@ class StorageService:
             Path(checkpoint.file_path) for checkpoint in self._job_store.list_checkpoints()
         )
 
-        dataset_bytes = 0
-        for dataset in self._dataset_store.list_datasets():
-            path = Path(dataset.path)
-            if path.exists():
-                dataset_bytes += self._path_size(path)
-            else:
-                dataset_bytes += int(dataset.size_bytes)
-
-        other_bytes = dataset_bytes
+        other_bytes = 0
         other_bytes += self._path_size(self._caches_dir)
         other_bytes += self._path_size(self._hf_cache_dir)
         other_bytes += self._path_size(self._exports_dir)

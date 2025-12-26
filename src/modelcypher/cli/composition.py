@@ -96,7 +96,6 @@ def get_storage_service() -> "StorageService":
     return StorageService(
         model_store=registry.model_store,
         job_store=registry.job_store,
-        dataset_store=registry.dataset_store,
         base_dir=registry.base_dir,
         logs_dir=registry.logs_dir,
     )
