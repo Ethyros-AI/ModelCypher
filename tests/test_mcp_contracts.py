@@ -195,8 +195,6 @@ def test_tool_list_includes_core_tools(mcp_env: dict[str, str]):
     assert "mc_settings_snapshot" in names
     assert "mc_system_status" in names
     assert "mc_model_list" in names
-    assert "mc_dataset_validate" in names
-    assert "mc_job_list" in names
     assert "mc_geometry_validate" in names
     assert "mc_geometry_training_status" in names
     assert "mc_geometry_training_history" in names
@@ -213,7 +211,6 @@ def test_mc_inventory_schema(mcp_env: dict[str, str]):
     result = _run_mcp(mcp_env, runner)
     payload = _extract_structured(result)
     assert "models" in payload
-    assert "datasets" in payload
     assert "checkpoints" in payload
     assert "jobs" in payload
     assert "workspace" in payload
@@ -281,38 +278,6 @@ def test_mc_model_list_schema(mcp_env: dict[str, str]):
     assert "models" in payload
     assert "count" in payload
     assert "nextActions" in payload
-
-
-def test_mc_dataset_validate_schema(mcp_env: dict[str, str], tmp_path: Path):
-    dataset_path = tmp_path / "sample.jsonl"
-    dataset_path.write_text('{"text": "hello"}\n{"text": "world"}\n', encoding="utf-8")
-
-    async def runner(session: ClientSession):
-        return await _await_with_timeout(
-            session.call_tool("mc_dataset_validate", arguments={"path": str(dataset_path)})
-        )
-
-    result = _run_mcp(mcp_env, runner)
-    payload = _extract_structured(result)
-    assert payload["_schema"] == "mc.dataset.validate.v1"
-    assert payload["path"] == str(dataset_path.resolve())
-    assert "exampleCount" in payload
-    assert "tokenStats" in payload
-    assert "warnings" in payload
-    assert "errors" in payload
-    assert "nextActions" in payload
-
-
-def test_mc_job_list_schema(mcp_env: dict[str, str]):
-    async def runner(session: ClientSession):
-        return await _await_with_timeout(session.call_tool("mc_job_list", arguments={}))
-
-    result = _run_mcp(mcp_env, runner)
-    payload = _extract_structured(result)
-    assert payload["_schema"] == "mc.job.list.v1"
-    assert "jobs" in payload
-    assert "count" in payload
-    assert payload["count"] == len(payload["jobs"])
 
 
 def test_mc_system_resource(mcp_env: dict[str, str]):

@@ -17,13 +17,10 @@
 
 """Safety analysis CLI commands.
 
-Provides commands for adapter probing, dataset scanning,
-output guard configuration, and stability suite execution.
+Provides commands for adapter probing and stability suite execution.
 
 Commands:
     mc safety adapter-probe --adapter <path>
-    mc safety dataset-scan --dataset <path>
-    mc safety lint-identity --dataset <path>
 """
 
 from __future__ import annotations

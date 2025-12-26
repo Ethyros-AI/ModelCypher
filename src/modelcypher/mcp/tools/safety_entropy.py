@@ -162,7 +162,6 @@ def register_safety_tools(ctx: ServiceContext) -> None:
             creator: str | None = None,
             baseModelId: str | None = None,
             targetModules: list[str] | None = None,
-            trainingDatasets: list[str] | None = None,
         ) -> dict:
             """Scan adapter metadata for threat indicators (static analysis)."""
             from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
@@ -174,7 +173,6 @@ def register_safety_tools(ctx: ServiceContext) -> None:
                 creator=creator,
                 base_model_id=baseModelId,
                 target_modules=targetModules,
-                training_datasets=trainingDatasets,
             )
             payload = SafetyProbeService.threat_indicators_payload(indicators)
             payload["_schema"] = "mc.safety.redteam_scan.v1"

@@ -1550,8 +1550,6 @@ def build_server() -> FastMCP:
             merged: str,
             source: str | None = None,
             target: str | None = None,
-            perplexityDataset: str | None = None,
-            perplexityMaxSamples: int = 100,
             coherencePrompts: list[str] | None = None,
             taskProbes: list[dict] | None = None,
             geometricDiagnosis: bool = True,
@@ -1560,7 +1558,6 @@ def build_server() -> FastMCP:
             Run full merge validation suite on a merged model.
 
             Validates model behavior using:
-            - Perplexity on held-out text (if dataset provided)
             - Coherence scoring (if prompts provided)
             - Task probes (if probes provided)
             - Geometric diagnosis (if source/target provided and issues detected)
@@ -1571,13 +1568,7 @@ def build_server() -> FastMCP:
             source_path = _require_existing_directory(source) if source else None
             target_path = _require_existing_directory(target) if target else None
 
-            dataset_path = None
-            if perplexityDataset:
-                dataset_path = _require_existing_path(perplexityDataset)
-
             config = MergeValidationConfig(
-                perplexity_dataset=dataset_path,
-                perplexity_max_samples=perplexityMaxSamples,
                 coherence_prompts=coherencePrompts,
                 task_probes=taskProbes,
                 geometric_diagnosis=geometricDiagnosis,
@@ -1603,55 +1594,10 @@ def build_server() -> FastMCP:
                 next_actions.append("Consider layer-wise alpha adjustment")
             else:
                 next_actions.append("mc_infer to test the merged model")
-                next_actions.append("mc_eval_run for comprehensive evaluation")
+                next_actions.append("mc_merge_entropy_validate for stability checks")
 
             payload["nextActions"] = next_actions
             return payload
-
-    if "mc_merge_perplexity" in tool_set:
-
-        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_merge_perplexity(
-            model: str,
-            dataset: str,
-            maxSamples: int = 100,
-            batchSize: int = 4,
-        ) -> dict:
-            """
-            Compute perplexity of a model on a held-out dataset.
-
-            Lower perplexity = better language modeling capability.
-            Use this to compare merged model against source/target.
-            """
-            model_path = _require_existing_directory(model)
-            dataset_path = _require_existing_path(dataset)
-
-            perplexity = merge_validation_service.compute_perplexity(
-                model_path, dataset_path, maxSamples, batchSize
-            )
-
-            return {
-                "_schema": "mc.merge.perplexity.v1",
-                "model": model_path,
-                "dataset": dataset_path,
-                "perplexity": perplexity,
-                "sampleCount": maxSamples,
-                "interpretation": (
-                    "excellent"
-                    if perplexity < 5
-                    else "good"
-                    if perplexity < 10
-                    else "acceptable"
-                    if perplexity < 20
-                    else "degraded"
-                    if perplexity < 50
-                    else "poor"
-                ),
-                "nextActions": [
-                    "mc_merge_coherence for coherence scoring",
-                    "mc_merge_validate for full validation suite",
-                ],
-            }
 
     if "mc_merge_coherence" in tool_set:
 

@@ -22,7 +22,6 @@ from datetime import datetime
 from modelcypher.adapters.filesystem_storage import FileSystemStore
 from modelcypher.core.domain.models import (
     CheckpointRecord,
-    DatasetInfo,
     EvaluationResult,
     ModelInfo,
 )
@@ -48,23 +47,6 @@ def test_atomic_write_cleans_temp_files(tmp_path, monkeypatch) -> None:
     tmp_files = list(store.paths.base.glob(".models.json.*.tmp"))
     assert tmp_files == []
     assert store.paths.base.joinpath("models.json.lock").exists()
-
-
-def test_register_dataset_locks(tmp_path, monkeypatch):
-    monkeypatch.setenv("MODELCYPHER_HOME", str(tmp_path / "mc_home"))
-    store = FileSystemStore()
-    dataset = DatasetInfo(
-        id="ds1",
-        name="ds1",
-        path=str(tmp_path / "data"),
-        size_bytes=100,
-        example_count=10,
-        created_at=datetime.utcnow(),
-    )
-    store.register_dataset(dataset)
-
-    assert store.paths.datasets.exists()
-    assert store.paths.base.joinpath("datasets.json.lock").exists()
 
 
 def test_add_checkpoint_locks(tmp_path, monkeypatch):

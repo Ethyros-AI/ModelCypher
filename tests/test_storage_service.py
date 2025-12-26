@@ -22,7 +22,7 @@ from datetime import datetime
 from pathlib import Path
 
 from modelcypher.adapters.filesystem_storage import FileSystemStore
-from modelcypher.core.domain.models import CheckpointRecord, DatasetInfo, ModelInfo
+from modelcypher.core.domain.models import CheckpointRecord, ModelInfo
 from modelcypher.core.use_cases.storage_service import BYTES_PER_GB, StorageService
 
 
@@ -62,19 +62,6 @@ def test_storage_usage_computes_sizes(tmp_path, monkeypatch) -> None:
         )
     )
 
-    dataset_path = tmp_path / "dataset.jsonl"
-    _write_bytes(dataset_path, 1024)
-    store.register_dataset(
-        DatasetInfo(
-            id="dataset-1",
-            name="dataset-1",
-            path=str(dataset_path),
-            size_bytes=1024,
-            example_count=1,
-            created_at=datetime.utcnow(),
-        )
-    )
-
     checkpoint_path = tmp_path / "checkpoint.safetensors"
     _write_bytes(checkpoint_path, 512)
     store.add_checkpoint(
@@ -104,7 +91,7 @@ def test_storage_usage_computes_sizes(tmp_path, monkeypatch) -> None:
     assert usage.total_gb == 10.0
     assert abs(usage.models_gb - (2048 / BYTES_PER_GB)) < 1e-9
     assert abs(usage.checkpoints_gb - (512 / BYTES_PER_GB)) < 1e-9
-    expected_other = (1024 + 256 + 64 + 128) / BYTES_PER_GB
+    expected_other = (256 + 64 + 128) / BYTES_PER_GB
     assert abs(usage.other_gb - expected_other) < 1e-9
 
 

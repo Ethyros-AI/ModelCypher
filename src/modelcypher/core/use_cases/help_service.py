@@ -333,13 +333,12 @@ class HelpService:
                 "type": "object",
                 "properties": {
                     "models": {"type": "array"},
-                    "datasets": {"type": "array"},
                     "checkpoints": {"type": "array"},
                     "jobs": {"type": "array"},
                     "workspace": {"type": "object"},
                     "mlxVersion": {"type": ["string", "null"]},
                 },
-                "required": ["models", "datasets", "jobs"],
+                "required": ["models", "checkpoints", "jobs"],
             },
         }
 
@@ -352,7 +351,7 @@ _mc_completions() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="train job checkpoint model system dataset eval compare doc geometry adapter thermo calibration rag stability agent-eval dashboard help inventory explain"
+    commands="model system geometry adapter entropy thermo safety agent stability dashboard storage ensemble infer agent-eval research help inventory explain"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- ${cur}) )

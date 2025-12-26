@@ -453,46 +453,76 @@ def stage_vocabulary_align(
             # Refresh cache key after binary alignment (embedding changed).
             source_cache_key = _make_embedding_cache_key(source_embed, backend)
 
-            # Pre-project shared vocabulary anchors to stabilize 2D alignment.
+            # Vocabulary token phase-lock (2D): align shared token embeddings directly.
+            token_metrics = metrics.setdefault("token_phase_lock", {})
             if overlap:
-                try:
-                    from modelcypher.core.domain.vocabulary.embedding_projector import (
-                        EmbeddingProjector,
-                        ProjectionConfig,
+                shared_tokens = sorted(overlap)
+                source_indices = []
+                target_indices = []
+                for token in shared_tokens:
+                    src_idx = source_vocab.get(token)
+                    tgt_idx = target_vocab.get(token)
+                    if src_idx is None or tgt_idx is None:
+                        continue
+                    if src_idx >= source_embed.shape[0] or tgt_idx >= target_embed.shape[0]:
+                        continue
+                    source_indices.append(src_idx)
+                    target_indices.append(tgt_idx)
+
+                if len(source_indices) >= 2:
+                    max_anchor_count = min(len(source_indices), int(source_embed.shape[1]))
+                    source_token_matrix_full = backend.stack(
+                        [source_embed[idx] for idx in source_indices], axis=0
                     )
+                    target_token_matrix_full = backend.stack(
+                        [target_embed[idx] for idx in target_indices], axis=0
+                    )
+                    backend.eval(source_token_matrix_full, target_token_matrix_full)
 
-                    shared_tokens = sorted(overlap)
-                    source_indices = []
-                    target_indices = []
-                    for token in shared_tokens:
-                        src_idx = source_vocab.get(token)
-                        tgt_idx = target_vocab.get(token)
-                        if src_idx is None or tgt_idx is None:
-                            continue
-                        if src_idx >= source_embed.shape[0] or tgt_idx >= target_embed.shape[0]:
-                            continue
-                        source_indices.append(src_idx)
-                        target_indices.append(tgt_idx)
-
-                    if source_indices and target_indices:
-                        projection_config = ProjectionConfig(
-                            strategy=projection_strategy,
-                            anchor_count=min(config.anchor_count, len(source_indices)),
+                    token_indices, token_rank_meta = _select_shared_full_rank_indices(
+                        source_token_matrix_full,
+                        target_token_matrix_full,
+                        max_anchor_count,
+                        backend,
+                    )
+                    if len(token_indices) >= 2:
+                        idx_arr = backend.array(token_indices)
+                        source_token_matrix = backend.take(
+                            source_token_matrix_full, idx_arr, axis=0
                         )
-                        projector = EmbeddingProjector(projection_config, backend=backend)
-                        projection_result = projector.project(
+                        target_token_matrix = backend.take(
+                            target_token_matrix_full, idx_arr, axis=0
+                        )
+                        backend.eval(source_token_matrix, target_token_matrix)
+
+                        token_labels = [f"token:{shared_tokens[idx]}" for idx in token_indices]
+                        token_alignment = _align_bytes_from_matrices(
                             source_embed,
-                            target_embed,
-                            shared_token_indices=(source_indices, target_indices),
+                            source_token_matrix,
+                            target_token_matrix,
+                            token_labels,
+                            backend,
+                            max_iterations=solver_iterations,
+                            tolerance=precision_tol,
+                            max_rounds=solver_rounds,
+                            anchor_weights=None,
+                            initial_transform=None,
+                            require_phase_lock=True,
                         )
-                        source_embed = projection_result.projected_embeddings
+
+                        source_embed = token_alignment["aligned_source"]
                         backend.eval(source_embed)
                         source_cache_key = _make_embedding_cache_key(source_embed, backend)
-                        metrics.setdefault("vocab_preprojection", {})[embed_key] = (
-                            projection_result.to_dict()
-                        )
-                except Exception as e:
-                    logger.debug("Pre-projection skipped for %s: %s", embed_key, e)
+                        token_metrics[embed_key] = {
+                            "tokens_shared": len(source_indices),
+                            "anchors_used": len(token_indices),
+                            "cka_before": token_alignment["cka_before"],
+                            "cka_after": token_alignment["cka_after"],
+                            "alignment_error": token_alignment["alignment_error"],
+                            "iterations": token_alignment["iterations"],
+                            "rank_source": token_rank_meta.get("rank_source"),
+                            "rank_target": token_rank_meta.get("rank_target"),
+                        }
 
             # Vocabulary (2D) alignment: phase-lock on UnifiedAtlas anchors.
             # Pre-compute atlas anchor maps ONCE (may rebuild if use_all_support_texts changes)

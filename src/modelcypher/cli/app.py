@@ -36,10 +36,8 @@ from modelcypher.cli.commands import agent_eval as agent_eval_commands
 from modelcypher.cli.commands import dashboard as dashboard_commands
 from modelcypher.cli.commands import ensemble as ensemble_commands
 from modelcypher.cli.commands import entropy as entropy_commands
-from modelcypher.cli.commands import eval as eval_commands
 from modelcypher.cli.commands import help_cmd as help_commands
 from modelcypher.cli.commands import infer as infer_commands
-from modelcypher.cli.commands import job as job_commands
 from modelcypher.cli.commands import model as model_commands
 from modelcypher.cli.commands import research as research_commands
 from modelcypher.cli.commands import safety as safety_commands
@@ -47,7 +45,6 @@ from modelcypher.cli.commands import stability as stability_commands
 from modelcypher.cli.commands import storage as storage_commands
 from modelcypher.cli.commands import system as system_commands
 from modelcypher.cli.commands import thermo as thermo_commands
-from modelcypher.cli.commands import train as train_commands
 from modelcypher.cli.commands.geometry import crm as geometry_crm_commands
 from modelcypher.cli.commands.geometry import atlas as geometry_atlas_commands
 from modelcypher.cli.commands.geometry import emotion as geometry_emotion_commands
@@ -73,16 +70,8 @@ from modelcypher.cli.commands.geometry import training as geometry_training_comm
 from modelcypher.cli.commands.geometry import transfer as geometry_transfer_cabe_commands
 from modelcypher.cli.commands.geometry import transport as geometry_transport_commands
 from modelcypher.cli.commands.geometry import waypoint as geometry_waypoint_commands
-from modelcypher.cli.composition import (
-    get_training_service,
-)
 from modelcypher.cli.context import CLIContext, resolve_ai_mode, resolve_output_format
 from modelcypher.cli.output import write_error, write_output
-from modelcypher.cli.presenters import (
-    doc_convert_payload,
-)
-from modelcypher.core.domain.training import Hyperparameters, TrainingConfig
-from modelcypher.core.use_cases.doc_service import DocService
 from modelcypher.core.use_cases.geometry_service import GeometryService
 from modelcypher.utils.errors import ErrorDetail
 from modelcypher.utils.json import dump_json
@@ -153,24 +142,13 @@ class _GlobalOptionsTyperGroup(TyperGroup):
 
 
 app = typer.Typer(no_args_is_help=True, add_completion=False, cls=_GlobalOptionsTyperGroup)
-doc_app = typer.Typer(no_args_is_help=True)
-validate_app = typer.Typer(no_args_is_help=True)
-estimate_app = typer.Typer(no_args_is_help=True)
 geometry_app = typer.Typer(no_args_is_help=True)
 
 # Hidden dev group for diagnostic/internal commands
 dev_app = typer.Typer(no_args_is_help=True, hidden=True)
 
-app.add_typer(train_commands.train_app, name="train")
-app.add_typer(job_commands.app, name="job")
-app.add_typer(train_commands.checkpoint_app, name="checkpoint")
 app.add_typer(model_commands.app, name="model")
 app.add_typer(system_commands.app, name="system")
-app.add_typer(eval_commands.eval_app, name="eval")
-app.add_typer(eval_commands.compare_app, name="compare")
-app.add_typer(doc_app, name="doc")
-app.add_typer(validate_app, name="validate")
-app.add_typer(estimate_app, name="estimate")
 app.add_typer(geometry_app, name="geometry")
 geometry_app.add_typer(geometry_path_commands.app, name="path")
 geometry_app.add_typer(geometry_training_commands.app, name="training")
@@ -199,7 +177,6 @@ geometry_app.add_typer(geometry_waypoint_commands.app, name="waypoint")
 geometry_app.add_typer(geometry_interference_commands.app, name="interference")
 app.add_typer(entropy_commands.app, name="entropy")
 app.add_typer(adapter_commands.adapter_app, name="adapter")
-app.add_typer(adapter_commands.calibration_app, name="calibration")
 app.add_typer(thermo_commands.app, name="thermo")
 app.add_typer(safety_commands.app, name="safety")
 app.add_typer(agent_commands.app, name="agent")
@@ -268,132 +245,6 @@ def explain(ctx: typer.Context, command: str = typer.Argument(...)) -> None:
 
     service = HelpService()
     payload = service.explain(command)
-    write_output(payload, context.output_format, context.pretty)
-
-
-@doc_app.command("convert")
-def doc_convert(
-    ctx: typer.Context,
-    input: list[str] = typer.Option(..., "--input"),
-    output_path: str = typer.Option(..., "--output-path", "-o"),
-    chunk_size: int = typer.Option(2000, "--chunk-size"),
-    chunk_overlap: int = typer.Option(200, "--chunk-overlap"),
-    text_only: bool = typer.Option(True, "--text-only"),
-    stream: bool = typer.Option(False, "--stream"),
-    update_manifest: bool = typer.Option(False, "--update-manifest"),
-) -> None:
-    context = _context(ctx)
-    service = DocService()
-    result, events = service.convert(
-        inputs=input,
-        output_path=output_path,
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap,
-        text_only=text_only,
-        stream=stream,
-        update_manifest=update_manifest,
-    )
-    if stream:
-        for event in events:
-            sys.stdout.write(json.dumps(event) + "\n")
-        return
-    write_output(doc_convert_payload(result), context.output_format, context.pretty)
-
-
-@validate_app.command("train")
-def validate_train(
-    ctx: typer.Context,
-    model: str = typer.Option(..., "--model"),
-    dataset: str = typer.Option(..., "--dataset"),
-    learning_rate: float = typer.Option(1e-5, "--learning-rate"),
-    batch_size: int = typer.Option(4, "--batch-size"),
-    sequence_length: int = typer.Option(2048, "--sequence-length"),
-    epochs: int = typer.Option(1, "--epochs"),
-) -> None:
-    context = _context(ctx)
-    service = get_training_service()
-    hyperparams = Hyperparameters(
-        batch_size=batch_size,
-        learning_rate=learning_rate,
-        epochs=epochs,
-        sequence_length=sequence_length,
-    )
-    config = TrainingConfig(
-        model_id=model,
-        dataset_path=dataset,
-        output_path=".",
-        hyperparameters=hyperparams,
-    )
-    result = service.preflight(config)
-    payload = {
-        "valid": result["canProceed"],
-        "model": {"id": model, "found": True, "architecture": None},
-        "dataset": {"path": dataset, "exists": True, "readable": True},
-        "memory": {
-            "willFit": result["canProceed"],
-            "recommendedBatchSize": result["predictedBatchSize"],
-            "projectedPeakGB": None,
-            "availableGB": None,
-        },
-        "config": {
-            "batchSize": batch_size,
-            "sequenceLength": sequence_length,
-            "learningRate": learning_rate,
-            "epochs": epochs,
-        },
-        "warnings": [],
-        "errors": [] if result["canProceed"] else ["Configuration may not fit in memory"],
-        "nextActions": [f"mc train start --model {model} --dataset {dataset}"],
-    }
-    write_output(payload, context.output_format, context.pretty)
-
-
-@estimate_app.command("train")
-def estimate_train(
-    ctx: typer.Context,
-    model: str = typer.Option(..., "--model"),
-    dataset: str = typer.Option(..., "--dataset"),
-    batch_size: int = typer.Option(1, "--batch-size"),
-    sequence_length: int = typer.Option(2048, "--sequence-length"),
-    dtype: str = typer.Option("fp16", "--dtype"),
-) -> None:
-    context = _context(ctx)
-    service = get_training_service()
-    hyperparams = Hyperparameters(
-        batch_size=batch_size,
-        learning_rate=1e-5,
-        epochs=1,
-        sequence_length=sequence_length,
-    )
-    config = TrainingConfig(
-        model_id=model,
-        dataset_path=dataset,
-        output_path=".",
-        hyperparameters=hyperparams,
-    )
-    result = service.preflight(config)
-    payload = {
-        "willFit": result["canProceed"],
-        "recommendedBatchSize": result["predictedBatchSize"],
-        "projectedPeakGB": result["estimatedVRAMUsageBytes"] / (1024**3)
-        if result["estimatedVRAMUsageBytes"]
-        else None,
-        "availableGB": result["availableVRAMBytes"] / (1024**3)
-        if result["availableVRAMBytes"]
-        else None,
-        "ttftSeconds": None,
-        "tokensPerSecond": None,
-        "tokensPerSecondMin": None,
-        "tokensPerSecondMax": None,
-        "confidence": "low",
-        "powerSource": "unknown",
-        "thermalState": "unknown",
-        "etaSeconds": None,
-        "notes": [f"dtype={dtype}"],
-        "nextActions": [
-            f"mc train start --model {model} --dataset {dataset} --batch-size {batch_size}"
-        ],
-    }
     write_output(payload, context.output_format, context.pretty)
 
 

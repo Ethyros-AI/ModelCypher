@@ -17,10 +17,7 @@
 
 """Integration tests for Training adapters (requires MLX)."""
 
-import json
 from unittest.mock import MagicMock, patch
-
-import numpy as np
 import pytest
 
 # Attempt MLX import - skip module entirely if unavailable
@@ -38,22 +35,7 @@ except ImportError:
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 
 from modelcypher.adapters.model_loader import load_model_for_training
-from modelcypher.adapters.training_dataset import TrainingDataset
 from modelcypher.core.domain.training.lora_mlx import LoRAConfig
-
-
-class MockTokenizer:
-    def __init__(self):
-        self.pad_token_id = 0
-
-    def __call__(self, texts, **kwargs):
-        # Mock tokenization
-        batch_size = len(texts)
-        seq_len = 10
-        return {"input_ids": np.zeros((batch_size, seq_len), dtype=np.int32)}
-
-    def apply_chat_template(self, messages, **kwargs):
-        return " ".join(m["content"] for m in messages)
 
 
 class MockModel(nn.Module):
@@ -64,36 +46,6 @@ class MockModel(nn.Module):
 
     def __call__(self, x):
         return x
-
-
-def test_training_dataset_loading(tmp_path):
-    """Test that TrainingDataset correctly loads and tokenizes samples."""
-    dataset_file = tmp_path / "train.jsonl"
-    samples = [
-        {"text": "Hello world"},
-        {"messages": [{"role": "user", "content": "How are you?"}]},
-        {"invalid": "data"},  # Should be ignored
-    ]
-
-    with open(dataset_file, "w") as f:
-        for s in samples:
-            f.write(json.dumps(s) + "\n")
-
-    tokenizer = MockTokenizer()
-    dataset = TrainingDataset(str(dataset_file), tokenizer, batch_size=2)
-
-    assert len(dataset._samples) == 2
-
-    # Check iteration
-    batches = list(dataset)
-    assert len(batches) == 1
-    inputs, labels = batches[0]
-
-    assert isinstance(inputs, mx.array)
-    assert isinstance(labels, mx.array)
-    # inputs should be [batch, seq-1], labels should be [batch, seq-1]
-    assert inputs.shape == (2, 9)
-    assert labels.shape == (2, 9)
 
 
 @patch("modelcypher.adapters.model_loader.mlx_lm_load")
