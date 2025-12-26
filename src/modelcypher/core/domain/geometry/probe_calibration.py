@@ -131,38 +131,10 @@ class ProbeCalibrator:
         if len(activations_a) != len(activations_b):
             raise ValueError("Activation matrices must have same number of samples")
 
-        if len(activations_a) < 2:
-            return 0.0
+        from modelcypher.core.domain.geometry.cka import compute_cka
 
-        # Convert to backend arrays
-        X = self.backend.array(activations_a, dtype="float32")
-        Y = self.backend.array(activations_b, dtype="float32")
-
-        # Center the data
-        X = X - self.backend.mean(X, axis=0, keepdims=True)
-        Y = Y - self.backend.mean(Y, axis=0, keepdims=True)
-
-        # Compute Gram matrices (linear kernel)
-        K = self.backend.matmul(X, self.backend.transpose(X))
-        L = self.backend.matmul(Y, self.backend.transpose(Y))
-
-        # Center the Gram matrices (HSIC centering)
-        n = K.shape[0]
-        H = self.backend.eye(n) - self.backend.ones((n, n)) / n
-        K_centered = self.backend.matmul(self.backend.matmul(H, K), H)
-        L_centered = self.backend.matmul(self.backend.matmul(H, L), H)
-
-        # CKA = HSIC(K, L) / sqrt(HSIC(K, K) * HSIC(L, L))
-        hsic_kl = self.backend.sum(K_centered * L_centered)
-        hsic_kk = self.backend.sum(K_centered * K_centered)
-        hsic_ll = self.backend.sum(L_centered * L_centered)
-
-        denom = self.backend.sqrt(hsic_kk * hsic_ll)
-        if float(denom) < 1e-10:
-            return 0.0
-
-        cka = float(hsic_kl / denom)
-        return max(0.0, min(1.0, cka))
+        result = compute_cka(activations_a, activations_b, backend=self.backend)
+        return result.cka if result.is_valid else 0.0
 
     def calibrate_probe(
         self,

@@ -477,6 +477,8 @@ def compute_cka(
         gram_x = _rbf_gram_matrix(activations_x, backend)
         gram_y = _rbf_gram_matrix(activations_y, backend)
 
+    same_grams = gram_key_x == gram_key_y
+
     # Center Gram matrices (with caching) - needed for biased estimator
     centered_x = _center_gram_matrix(gram_x, backend, gram_key_x)
     centered_y = _center_gram_matrix(gram_y, backend, gram_key_y)
@@ -499,6 +501,11 @@ def compute_cka(
         n_features_y, n_features_y, centered_y, centered_y
     )
 
+    if same_grams and hsic_xx > 0.0:
+        # Identical Gram keys imply identical geometry; avoid numerical drift.
+        hsic_xy = hsic_xx
+        hsic_yy = hsic_xx
+
     # CKA = HSIC(X,Y) / sqrt(HSIC(X,X) * HSIC(Y,Y))
     denominator = math.sqrt(hsic_xx * hsic_yy)
 
@@ -511,6 +518,8 @@ def compute_cka(
 
     # Clamp to [0, 1] (can exceed due to numerical issues)
     cka = max(0.0, min(1.0, cka))
+    if cka >= 1.0 - eps:
+        cka = 1.0
 
     return CKAResult(
         cka=cka,
@@ -632,9 +641,27 @@ def compute_cka_backend(
     Returns:
         CKA similarity value in [0, 1]
     """
-    # Use cached Gram matrices
-    gram_x = _cache.get_or_compute_gram(x, backend, kernel_type="linear")
-    gram_y = _cache.get_or_compute_gram(y, backend, kernel_type="linear")
+    if x.shape[0] < 2 or y.shape[0] < 2:
+        return 0.0
+
+    gram_key_x = _cache.make_gram_key(x, backend, kernel_type="linear")
+    gram_key_y = _cache.make_gram_key(y, backend, kernel_type="linear")
+
+    if gram_key_x == gram_key_y:
+        # Identical Gram keys imply identical geometry; return exact self-similarity.
+        return 1.0
+
+    gram_x = _cache.get_gram(gram_key_x)
+    if gram_x is None:
+        gram_x = backend.matmul(x, backend.transpose(x))
+        backend.eval(gram_x)
+        _cache.set_gram(gram_key_x, gram_x)
+
+    gram_y = _cache.get_gram(gram_key_y)
+    if gram_y is None:
+        gram_y = backend.matmul(y, backend.transpose(y))
+        backend.eval(gram_y)
+        _cache.set_gram(gram_key_y, gram_y)
 
     # HSIC via Frobenius inner product: sum(K * L)
     hsic_xy_arr = backend.sum(gram_x * gram_y)
@@ -657,7 +684,10 @@ def compute_cka_backend(
         return 0.0
 
     cka = hsic_xy / denom
-    return max(0.0, min(1.0, cka))
+    cka = max(0.0, min(1.0, cka))
+    if cka >= 1.0 - eps:
+        cka = 1.0
+    return cka
 
 
 def compute_cka_from_lists(
@@ -776,7 +806,10 @@ def compute_cka_from_grams(
         return 0.0
 
     cka = hsic_ab / denom
-    return max(0.0, min(1.0, cka))
+    cka = max(0.0, min(1.0, cka))
+    if cka >= 1.0 - eps:
+        cka = 1.0
+    return cka
 
 
 def ensemble_similarity(

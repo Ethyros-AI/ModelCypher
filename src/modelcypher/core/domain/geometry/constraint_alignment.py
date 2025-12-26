@@ -171,16 +171,23 @@ class ConstraintAligner:
         This tells us which layer pairs have matching conceptual geometry.
         A pair with CKA ≈ 1.0 means the concepts are identically positioned.
         """
-        from modelcypher.core.domain.geometry.probe_calibration import ProbeCalibrator
-
-        calibrator = ProbeCalibrator(self.backend)
+        from modelcypher.core.domain.geometry.cka import compute_cka
         cka_matrix: dict[tuple[int, int], float] = {}
 
         for source_layer, source_acts in source_activations.items():
             for target_layer, target_acts in target_activations.items():
-                # Reshape to [1, dim] for CKA computation
-                cka = calibrator.compute_cka([source_acts], [target_acts])
-                cka_matrix[(source_layer, target_layer)] = cka
+                min_len = min(len(source_acts), len(target_acts))
+                if min_len < 2:
+                    cka_matrix[(source_layer, target_layer)] = 0.0
+                    continue
+
+                # Treat dimensions as samples to avoid the n=1 CKA degeneracy.
+                source_vec = self.backend.array(source_acts[:min_len])
+                target_vec = self.backend.array(target_acts[:min_len])
+                source_mat = self.backend.reshape(source_vec, (-1, 1))
+                target_mat = self.backend.reshape(target_vec, (-1, 1))
+                result = compute_cka(source_mat, target_mat, backend=self.backend)
+                cka_matrix[(source_layer, target_layer)] = result.cka if result.is_valid else 0.0
 
         return cka_matrix
 

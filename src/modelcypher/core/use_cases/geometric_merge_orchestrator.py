@@ -133,6 +133,10 @@ class LayerGeometry:
     permutation_matrix: "Array | None" = None
     alignment_quality: float = 0.0
 
+    # Gromov-Wasserstein (Stage 2)
+    gw_distance: float = 0.0
+    gw_coupling: "Array | None" = None  # Transport plan for neuron correspondence
+
     # Interference (Stage 5)
     interference_score: float = 0.0
     transform_requirements: list[str] = field(default_factory=list)
@@ -164,6 +168,11 @@ class MergeGeometry:
     overall_gw_distance: float = 0.0
     mean_shared_dimension: float = 0.0
     mean_intrinsic_dimension: float = 0.0
+
+    # Cross-architecture support
+    is_cross_architecture: bool = False
+    layer_correspondence: dict[int, int] | None = None  # source_layer -> target_layer
+    alignment_quality: float = 0.0  # Quality of layer correspondence
 
     # Safety
     refusal_preserved: bool = True
@@ -228,6 +237,12 @@ class GeometricMergeOrchestrator:
         if source_activations and target_activations:
             self._stage_probe_fingerprint(
                 geometry, source_activations, target_activations, tokenizer
+            )
+
+        # STAGE 1.5: Layer correspondence for cross-architecture models
+        if source_activations and target_activations:
+            self._stage_layer_correspondence(
+                geometry, source_activations, target_activations, b
             )
 
         # STAGE 2-8: Per-layer analysis
@@ -391,6 +406,7 @@ class GeometricMergeOrchestrator:
             logger.debug("manifold_curvature failed for layer %d: %s", layer_geom.layer_idx, e)
 
         # gromov_wasserstein - distance between source and target representations
+        # A.5: Store both distance AND coupling matrix for transport-guided merge
         if src_acts and len(src_acts) >= 5:
             try:
                 from modelcypher.core.domain.geometry.gromov_wasserstein import (
@@ -404,11 +420,18 @@ class GeometricMergeOrchestrator:
 
                 gw = GromovWassersteinDistance(b)
                 result = gw.compute(src_stacked, tgt_stacked, GWConfig())
+
+                # Store GW distance and coupling matrix for use in merge
+                layer_geom.gw_distance = result.distance
+                if hasattr(result, 'coupling') and result.coupling is not None:
+                    layer_geom.gw_coupling = result.coupling
+
                 logger.debug(
-                    "Layer %d: GW_distance=%.4f, converged=%s",
+                    "Layer %d: GW_distance=%.4f, converged=%s, coupling_stored=%s",
                     layer_geom.layer_idx,
                     result.distance,
                     result.converged,
+                    layer_geom.gw_coupling is not None,
                 )
             except Exception as e:
                 logger.debug("gromov_wasserstein failed for layer %d: %s", layer_geom.layer_idx, e)
@@ -805,6 +828,158 @@ class GeometricMergeOrchestrator:
         except Exception:
             pass
 
+    def _stage_layer_correspondence(
+        self,
+        geometry: MergeGeometry,
+        source_activations: dict[int, list["Array"]] | None,
+        target_activations: dict[int, list["Array"]] | None,
+        b: "Backend",
+    ) -> None:
+        """
+        STAGE 1.5: Compute layer correspondence for cross-architecture models.
+
+        Uses CrossArchitectureLayerMatcher with CKA-based dynamic programming
+        to find optimal monotonic alignment between source and target layers.
+
+        This stage is crucial for cross-architecture merges where:
+        - Models have different layer counts (e.g., 12 vs 24 layers)
+        - Models have different hidden dimensions (e.g., 768 vs 4096)
+
+        The layer correspondence tells merge_weights() which source layer
+        maps to which target layer.
+        """
+        if not source_activations or not target_activations:
+            return
+
+        src_layers = sorted(source_activations.keys())
+        tgt_layers = sorted(target_activations.keys())
+
+        # Detect cross-architecture
+        is_cross_arch = len(src_layers) != len(tgt_layers)
+
+        # Also check dimension mismatch from activations
+        if src_layers and tgt_layers:
+            src_first_acts = source_activations.get(src_layers[0], [])
+            tgt_first_acts = target_activations.get(tgt_layers[0], [])
+            if src_first_acts and tgt_first_acts:
+                src_dim = src_first_acts[0].shape[-1] if src_first_acts[0].ndim > 0 else 0
+                tgt_dim = tgt_first_acts[0].shape[-1] if tgt_first_acts[0].ndim > 0 else 0
+                if src_dim != tgt_dim and src_dim > 0 and tgt_dim > 0:
+                    is_cross_arch = True
+
+        geometry.is_cross_architecture = is_cross_arch
+
+        if not is_cross_arch:
+            # Same architecture - simple 1:1 mapping
+            geometry.layer_correspondence = {i: i for i in range(len(tgt_layers))}
+            geometry.alignment_quality = 1.0
+            return
+
+        # Use CrossArchitectureLayerMatcher for different layer counts
+        try:
+            from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
+                CrossArchitectureLayerMatcher,
+                Configuration,
+            )
+            from modelcypher.core.domain.geometry.concept_response_matrix import (
+                ConceptResponseMatrix,
+            )
+
+            # Build CRM-like structures from activations
+            # We need to compute CKA between all layer pairs
+
+            # First, compute a CKA matrix manually since we don't have full CRMs
+            from modelcypher.core.domain.geometry.cka import compute_cka
+
+            n_src = len(src_layers)
+            n_tgt = len(tgt_layers)
+            cka_matrix: list[list[float]] = []
+
+            for src_idx in src_layers:
+                row: list[float] = []
+                src_acts = source_activations.get(src_idx, [])
+                if not src_acts:
+                    row = [0.0] * n_tgt
+                    cka_matrix.append(row)
+                    continue
+
+                for tgt_idx in tgt_layers:
+                    tgt_acts = target_activations.get(tgt_idx, [])
+                    if not tgt_acts:
+                        row.append(0.0)
+                        continue
+
+                    # Compute CKA between activations at these layers
+                    n = min(len(src_acts), len(tgt_acts))
+                    if n < 2:
+                        row.append(0.0)
+                        continue
+
+                    try:
+                        src_stacked = b.stack(src_acts[:n], axis=0)
+                        tgt_stacked = b.stack(tgt_acts[:n], axis=0)
+                        b.eval(src_stacked, tgt_stacked)
+
+                        # Handle dimension mismatch with Gram-based CKA
+                        if src_stacked.shape[1] != tgt_stacked.shape[1]:
+                            # Use Gram matrices for cross-dimensional CKA
+                            from modelcypher.core.domain.geometry.cka import (
+                                compute_cka_from_grams,
+                            )
+                            gram_src = b.matmul(src_stacked, b.transpose(src_stacked))
+                            gram_tgt = b.matmul(tgt_stacked, b.transpose(tgt_stacked))
+                            b.eval(gram_src, gram_tgt)
+                            cka_val = compute_cka_from_grams(gram_src, gram_tgt, backend=b)
+                        else:
+                            result = compute_cka(src_stacked, tgt_stacked, backend=b)
+                            cka_val = result.cka if result.is_valid else 0.0
+
+                        row.append(float(cka_val))
+                    except Exception:
+                        row.append(0.0)
+
+                cka_matrix.append(row)
+
+            # Use dynamic programming to find optimal monotonic alignment
+            config = Configuration.with_thresholds(
+                high_confidence_threshold=0.75,
+                medium_confidence_threshold=0.5,
+                max_skip=3,
+            )
+
+            # Use DP alignment directly since we have the CKA matrix
+            dp_path, alignment_score = CrossArchitectureLayerMatcher._dynamic_programming_alignment(
+                cka_matrix,
+                max_skip=config.max_skip,
+                skip_penalty=config.skip_penalty,
+            )
+
+            # Build correspondence dict from DP path
+            correspondence: dict[int, int] = {}
+            for src_pos, tgt_pos in dp_path:
+                if src_pos < len(src_layers) and tgt_pos < len(tgt_layers):
+                    correspondence[src_layers[src_pos]] = tgt_layers[tgt_pos]
+
+            geometry.layer_correspondence = correspondence
+            geometry.alignment_quality = alignment_score / len(dp_path) if dp_path else 0.0
+
+            logger.info(
+                "STAGE 1.5: Cross-architecture layer correspondence: %d -> %d layers, quality=%.4f",
+                len(src_layers),
+                len(tgt_layers),
+                geometry.alignment_quality,
+            )
+
+        except Exception as e:
+            logger.warning("Cross-architecture layer matching failed: %s", e)
+            # Fallback: simple linear interpolation of layer indices
+            ratio = len(tgt_layers) / len(src_layers) if src_layers else 1.0
+            geometry.layer_correspondence = {
+                src_layers[i]: tgt_layers[min(int(i * ratio), len(tgt_layers) - 1)]
+                for i in range(len(src_layers))
+            }
+            geometry.alignment_quality = 0.5
+
     def _compute_global_metrics(self, geometry: MergeGeometry) -> None:
         """Compute global summary metrics."""
         layer_geoms = list(geometry.layer_geometries.values())
@@ -845,6 +1020,10 @@ class GeometricMergeOrchestrator:
         5. Apply null-space filtering (interference elimination)
         6. Apply DARE sparsification (optional sparsity)
 
+        For cross-architecture models:
+        - Uses layer_correspondence mapping to find source weights for each target layer
+        - Applies cross_dimensional_projection when dimensions don't match
+
         Key insight: Higher dimensions contain lower dimensions.
         We blend at EACH dimension level using computed weights.
         """
@@ -857,7 +1036,31 @@ class GeometricMergeOrchestrator:
             "dimension_weights_used": 0,
             "null_space_filtered": 0,
             "dare_sparsified": 0,
+            # New metrics for connected geometry
+            "transform_requirements_checked": 0,
+            "intrinsic_dim_scaled": 0,
+            "alpha_scaled_by_interference": 0,
+            "shared_subspace_blends": 0,
+            "curvature_aware_blends": 0,
+            "verb_noun_applied": 0,
+            "gw_transport_used": 0,
+            # Cross-architecture metrics
+            "cross_arch_layer_mappings": 0,
+            "cross_arch_dim_projections": 0,
         }
+
+        # Build reverse correspondence: target_layer -> source_layer
+        layer_correspondence = geometry.layer_correspondence
+        reverse_correspondence: dict[int, int] = {}
+        if layer_correspondence:
+            for src_layer, tgt_layer in layer_correspondence.items():
+                reverse_correspondence[tgt_layer] = src_layer
+
+        if geometry.is_cross_architecture:
+            logger.info(
+                "Cross-architecture merge: %d layer mappings",
+                len(layer_correspondence) if layer_correspondence else 0,
+            )
 
         from modelcypher.core.domain.geometry.task_singular_vectors import (
             SVDBlendConfig,
@@ -866,21 +1069,40 @@ class GeometricMergeOrchestrator:
         from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
 
         for key in sorted(target_weights.keys()):
-            if key not in source_weights:
-                merged[key] = target_weights[key]
-                continue
-
             if key.endswith(".scales") or key.endswith(".biases"):
                 continue
 
+            # For cross-architecture models, find corresponding source key
+            source_key = key
+            target_layer_idx = extract_layer_index_fn(key)
+
+            if geometry.is_cross_architecture and target_layer_idx is not None and reverse_correspondence:
+                # Find which source layer maps to this target layer
+                source_layer_idx = reverse_correspondence.get(target_layer_idx)
+
+                if source_layer_idx is not None and source_layer_idx != target_layer_idx:
+                    # Replace target layer index with source layer index in the key
+                    import re
+                    source_key = re.sub(
+                        rf"layers\.{target_layer_idx}\.",
+                        f"layers.{source_layer_idx}.",
+                        key
+                    )
+                    metrics["cross_arch_layer_mappings"] += 1
+
+            if source_key not in source_weights:
+                # No source weight found - use target as-is
+                merged[key] = target_weights[key]
+                continue
+
             source_w = dequantize_if_needed(
-                source_weights[key], key, source_weights, b
+                source_weights[source_key], source_key, source_weights, b
             )
             target_w = dequantize_if_needed(
                 target_weights[key], key, target_weights, b
             )
 
-            layer_idx = extract_layer_index_fn(key)
+            layer_idx = target_layer_idx
             layer_geom = geometry.layer_geometries.get(layer_idx) if layer_idx is not None else None
 
             # Handle shape mismatch using cross_dimensional_projection
@@ -896,6 +1118,7 @@ class GeometricMergeOrchestrator:
                 )
                 source_w = result.projected
                 b.eval(source_w)
+                metrics["cross_arch_dim_projections"] += 1
 
             # Apply per-layer rotation if available (from activation Procrustes)
             if layer_geom and layer_geom.procrustes_rotation is not None and source_w.ndim == 2:
@@ -911,18 +1134,127 @@ class GeometricMergeOrchestrator:
                     metrics["rotations_applied"] += 1
                 b.eval(source_w)
 
+            # ============================================================
+            # A.2: Check transform_requirements and set dispatch flags
+            # ============================================================
+            use_geodesic_blend = False
+            apply_boundary_smoothing = False
+            if layer_geom and layer_geom.transform_requirements:
+                for transform in layer_geom.transform_requirements:
+                    if transform == "CURVATURE_CORRECTION":
+                        use_geodesic_blend = True
+                    elif transform == "ALPHA_SCALING":
+                        # Reduce alpha in high-interference regions
+                        pass  # Will be applied below with interference_score
+                    elif transform == "BOUNDARY_SMOOTHING":
+                        apply_boundary_smoothing = True
+                metrics["transform_requirements_checked"] += 1
+
             # Get base alpha for this layer
             alpha = 0.5
             if layer_geom:
                 alpha = layer_geom.smoothed_alpha
 
+                # ============================================================
+                # A.4: Scale alpha by intrinsic dimension
+                # ============================================================
+                if layer_geom.intrinsic_dimension > 0:
+                    ambient_dim = layer_geom.manifold_dimension or (
+                        source_w.shape[-1] if source_w.ndim >= 1 else 1
+                    )
+                    if ambient_dim > 0:
+                        compression_ratio = layer_geom.intrinsic_dimension / ambient_dim
+                        if compression_ratio < 0.1:
+                            # Heavily compressed - trust target more for stability
+                            alpha = alpha * 0.5
+                            metrics["intrinsic_dim_scaled"] += 1
+                        elif compression_ratio > 0.5:
+                            # High-dimensional data - can blend more confidently
+                            alpha = min(1.0, alpha * 1.2)
+                            metrics["intrinsic_dim_scaled"] += 1
+
+                # Apply interference-based alpha scaling (from A.2 transform requirements)
+                if "ALPHA_SCALING" in layer_geom.transform_requirements:
+                    alpha = alpha * (1.0 - layer_geom.interference_score)
+                    metrics["alpha_scaled_by_interference"] += 1
+
             # Apply SVD-aware blending for 2D weights
             if source_w.ndim == 2 and target_w.ndim == 2 and min(source_w.shape) >= 2:
                 source_f32 = b.astype(source_w, "float32")
                 target_f32 = b.astype(target_w, "float32")
+                merged_w = None  # Will be set by one of the blending paths
+
+                # ============================================================
+                # A.1: Apply shared subspace projections if available
+                # ============================================================
+                if (layer_geom and layer_geom.source_projection is not None
+                        and layer_geom.target_projection is not None):
+                    src_proj = layer_geom.source_projection
+                    tgt_proj = layer_geom.target_projection
+                    shared_dim = layer_geom.shared_dimension
+
+                    # Check if projections are compatible with weight dimensions
+                    if (shared_dim > 0 and source_f32.shape[1] == src_proj.shape[0]
+                            and target_f32.shape[1] == tgt_proj.shape[0]):
+                        try:
+                            # Project weights into shared subspace
+                            source_in_shared = b.matmul(source_f32, src_proj)
+                            target_in_shared = b.matmul(target_f32, tgt_proj)
+
+                            # Blend in shared space
+                            blended_shared = alpha * target_in_shared + (1 - alpha) * source_in_shared
+
+                            # Project back to target space using pseudo-inverse (transpose for orthogonal)
+                            tgt_proj_pinv = b.transpose(tgt_proj)
+                            merged_w = b.matmul(blended_shared, tgt_proj_pinv)
+                            b.eval(merged_w)
+                            metrics["shared_subspace_blends"] += 1
+                        except Exception:
+                            merged_w = None  # Fall back to other blending methods
+
+                # ============================================================
+                # A.3: Curvature-aware geodesic blending (SLERP)
+                # ============================================================
+                if merged_w is None and use_geodesic_blend and layer_geom and abs(layer_geom.curvature) > 0.05:
+                    try:
+                        # SLERP: Spherical linear interpolation for curved manifolds
+                        # For weight matrices, normalize and interpolate on the unit sphere
+                        source_norm = b.norm(source_f32)
+                        target_norm = b.norm(target_f32)
+                        b.eval(source_norm, target_norm)
+
+                        if float(source_norm) > 1e-6 and float(target_norm) > 1e-6:
+                            source_unit = source_f32 / source_norm
+                            target_unit = target_f32 / target_norm
+
+                            # Compute angle between normalized matrices
+                            dot = b.sum(source_unit * target_unit)
+                            b.eval(dot)
+                            dot_val = float(dot)
+                            dot_val = max(-1.0, min(1.0, dot_val))  # Clamp for acos
+
+                            import math as m
+                            theta = m.acos(dot_val)
+
+                            if abs(theta) > 1e-6:
+                                # SLERP formula: (sin((1-t)*theta) * a + sin(t*theta) * b) / sin(theta)
+                                sin_theta = m.sin(theta)
+                                w_source = m.sin((1 - alpha) * theta) / sin_theta
+                                w_target = m.sin(alpha * theta) / sin_theta
+
+                                # Interpolate direction
+                                merged_unit = w_source * source_unit + w_target * target_unit
+
+                                # Interpolate magnitude (geometric mean for Fréchet)
+                                merged_norm = b.sqrt(source_norm * target_norm)
+                                merged_w = merged_unit * merged_norm
+                                b.eval(merged_w)
+                                metrics["curvature_aware_blends"] += 1
+                    except Exception:
+                        merged_w = None  # Fall back to linear blending
 
                 # Use Fisher weights if available for dimension-specific blending
-                if layer_geom and layer_geom.fisher_weights is not None:
+                if merged_w is None and layer_geom and layer_geom.fisher_weights is not None:
                     hidden_dim = layer_geom.fisher_weights.shape[0]
                     # Apply Fisher-weighted blending per dimension
                     # fisher_weights[d] = how much to trust target for dimension d
@@ -937,38 +1269,52 @@ class GeometricMergeOrchestrator:
                         fw = b.reshape(layer_geom.fisher_weights, (-1, 1))
                         merged_w = fw * target_f32 + (1.0 - fw) * source_f32
                         metrics["fisher_weights_used"] += 1
-                    else:
-                        # Fallback to SVD blending
-                        merged_w = blend_with_svd_awareness(
-                            source_f32, target_f32, alpha, SVDBlendConfig()
-                        )
-                else:
-                    # Use dimension correlations if available
-                    if layer_geom and layer_geom.dimension_alphas is not None:
-                        hidden_dim = layer_geom.dimension_alphas.shape[0]
-                        if source_f32.shape[1] == hidden_dim:
-                            # Per-dimension alpha: high correlation = trust either
-                            # Low correlation = trust target (stability)
-                            da = b.reshape(layer_geom.dimension_alphas, (1, -1))
-                            # alpha_d controls blend: 1 = trust target, 0 = trust source
-                            # We want: low corr -> trust target, high corr -> blend evenly
-                            target_weight = 1.0 - 0.5 * da  # Range [0.5, 1.0]
-                            merged_w = target_weight * target_f32 + (1.0 - target_weight) * source_f32
-                            metrics["dimension_weights_used"] += 1
-                        elif source_f32.shape[0] == hidden_dim:
-                            da = b.reshape(layer_geom.dimension_alphas, (-1, 1))
-                            target_weight = 1.0 - 0.5 * da
-                            merged_w = target_weight * target_f32 + (1.0 - target_weight) * source_f32
-                            metrics["dimension_weights_used"] += 1
-                        else:
-                            merged_w = blend_with_svd_awareness(
-                                source_f32, target_f32, alpha, SVDBlendConfig()
-                            )
-                    else:
-                        # Fallback to SVD-aware blending
-                        merged_w = blend_with_svd_awareness(
-                            source_f32, target_f32, alpha, SVDBlendConfig()
-                        )
+
+                # Use dimension correlations if available and no merged_w yet
+                if merged_w is None and layer_geom and layer_geom.dimension_alphas is not None:
+                    hidden_dim = layer_geom.dimension_alphas.shape[0]
+                    if source_f32.shape[1] == hidden_dim:
+                        # Per-dimension alpha: high correlation = trust either
+                        # Low correlation = trust target (stability)
+                        da = b.reshape(layer_geom.dimension_alphas, (1, -1))
+                        # alpha_d controls blend: 1 = trust target, 0 = trust source
+                        # We want: low corr -> trust target, high corr -> blend evenly
+                        target_weight = 1.0 - 0.5 * da  # Range [0.5, 1.0]
+                        merged_w = target_weight * target_f32 + (1.0 - target_weight) * source_f32
+                        metrics["dimension_weights_used"] += 1
+                    elif source_f32.shape[0] == hidden_dim:
+                        da = b.reshape(layer_geom.dimension_alphas, (-1, 1))
+                        target_weight = 1.0 - 0.5 * da
+                        merged_w = target_weight * target_f32 + (1.0 - target_weight) * source_f32
+                        metrics["dimension_weights_used"] += 1
+
+                # Fallback to SVD-aware blending if nothing else worked
+                if merged_w is None:
+                    merged_w = blend_with_svd_awareness(
+                        source_f32, target_f32, alpha, SVDBlendConfig()
+                    )
+
+                # ============================================================
+                # A.6: Apply verb-noun mask if available
+                # ============================================================
+                if layer_geom and layer_geom.verb_noun_mask is not None:
+                    vn_mask = layer_geom.verb_noun_mask
+                    hidden_dim = vn_mask.shape[0]
+                    # verb_noun_mask gives per-dimension alpha:
+                    # High value = verb-like = trust source (skill donor)
+                    # Low value = noun-like = trust target (knowledge base)
+                    if source_f32.shape[1] == hidden_dim:
+                        vn_weights = b.reshape(vn_mask, (1, -1))
+                        # Re-blend with verb-noun weights
+                        # merged = vn * source + (1-vn) * target
+                        merged_w = vn_weights * source_f32 + (1.0 - vn_weights) * merged_w
+                        b.eval(merged_w)
+                        metrics["verb_noun_applied"] += 1
+                    elif source_f32.shape[0] == hidden_dim:
+                        vn_weights = b.reshape(vn_mask, (-1, 1))
+                        merged_w = vn_weights * source_f32 + (1.0 - vn_weights) * merged_w
+                        b.eval(merged_w)
+                        metrics["verb_noun_applied"] += 1
 
                 b.eval(merged_w)
 
@@ -1020,12 +1366,20 @@ class GeometricMergeOrchestrator:
                 merged[key] = target_weights[key]
 
         logger.info(
-            "MERGE: %d weights, %d rotations, %d Fisher, %d dimension, %d DARE",
+            "MERGE: %d weights, %d rotations, %d Fisher, %d dimension, %d DARE | "
+            "NEW: %d shared_subspace, %d curvature, %d verb_noun, %d intrinsic_scaled | "
+            "CROSS-ARCH: %d layer_maps, %d dim_projects",
             metrics["weights_merged"],
             metrics["rotations_applied"],
             metrics["fisher_weights_used"],
             metrics["dimension_weights_used"],
             metrics["dare_sparsified"],
+            metrics["shared_subspace_blends"],
+            metrics["curvature_aware_blends"],
+            metrics["verb_noun_applied"],
+            metrics["intrinsic_dim_scaled"],
+            metrics["cross_arch_layer_mappings"],
+            metrics["cross_arch_dim_projections"],
         )
 
         return merged, metrics

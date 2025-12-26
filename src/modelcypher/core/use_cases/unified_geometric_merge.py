@@ -134,6 +134,18 @@ class UnifiedMergeResult:
     refusal_preserved: bool = True
 
 
+@dataclass
+class CrossArchitectureInfo:
+    """Information about cross-architecture model pair."""
+
+    is_cross_architecture: bool = False
+    source_layer_count: int = 0
+    target_layer_count: int = 0
+    source_hidden_dim: int = 0
+    target_hidden_dim: int = 0
+    layer_correspondence: dict[int, int] | None = None
+
+
 class UnifiedGeometricMerger:
     """
     Unified geometric merge pipeline.
@@ -249,6 +261,22 @@ class UnifiedGeometricMerger:
         layer_confidences: dict[int, float] = probe_result.get("confidences", {})
         dimension_correlations: dict = probe_result.get("dimension_correlations", {})
         intersection_map_obj = probe_result.get("intersection_map")
+        probe_failed = bool(probe_metrics.get("probe_failed"))
+        perfect_alignment = bool(probe_metrics.get("perfect_alignment"))
+
+        if probe_failed or not perfect_alignment:
+            min_cka = probe_metrics.get("min_cka", 0.0)
+            mean_cka = probe_metrics.get("mean_cka", 0.0)
+            logger.error(
+                "PROBE GATE: Alignment not perfect (mean_cka=%.4f, min_cka=%.4f). "
+                "Merge aborted until CKA=1.0 is achievable.",
+                mean_cka,
+                min_cka,
+            )
+            raise ValueError(
+                "Merge aborted: CKA must equal 1.0 before merging. "
+                "Fix alignment/probing until perfect geometry is measured."
+            )
 
         # Log activation collection results
         if source_activations and target_activations:
@@ -445,6 +473,16 @@ class UnifiedGeometricMerger:
             target_activations=target_activations,
             tokenizer=target_tokenizer,
         )
+
+        if geometry.overall_cka != 1.0:
+            logger.error(
+                "PROBE GATE: Overall CKA=%.4f. Merge aborted until CKA=1.0 is achievable.",
+                geometry.overall_cka,
+            )
+            raise ValueError(
+                "Merge aborted: CKA must equal 1.0 before merging. "
+                "Fix alignment/probing until perfect geometry is measured."
+            )
 
         # Execute merge using geometry
         logger.info("EXECUTING MERGE...")
@@ -826,6 +864,83 @@ class UnifiedGeometricMerger:
         if match:
             return int(match.group(1))
         return None
+
+    def _detect_cross_architecture(
+        self,
+        source_weights: dict[str, "Array"],
+        target_weights: dict[str, "Array"],
+    ) -> CrossArchitectureInfo:
+        """
+        Detect if models have different architectures (layer count or hidden dim).
+
+        Cross-architecture merging requires layer correspondence mapping and
+        potentially dimension projection. This method detects the mismatch
+        and returns information needed for alignment.
+
+        Args:
+            source_weights: Source model weights
+            target_weights: Target model weights
+
+        Returns:
+            CrossArchitectureInfo with detection results
+        """
+        # Extract layer counts
+        source_layers = self._extract_layer_indices(source_weights)
+        target_layers = self._extract_layer_indices(target_weights)
+
+        layer_mismatch = len(source_layers) != len(target_layers)
+
+        # Check dimension mismatch from representative weight matrices
+        source_hidden_dim = 0
+        target_hidden_dim = 0
+
+        # Look for q_proj weights as they reflect hidden dimension
+        for key in source_weights:
+            if ".q_proj.weight" in key or ".self_attn.q_proj.weight" in key:
+                source_hidden_dim = source_weights[key].shape[-1]
+                break
+
+        for key in target_weights:
+            if ".q_proj.weight" in key or ".self_attn.q_proj.weight" in key:
+                target_hidden_dim = target_weights[key].shape[-1]
+                break
+
+        # Fallback to any 2D weight if q_proj not found
+        if source_hidden_dim == 0:
+            for key in source_weights:
+                w = source_weights[key]
+                if w.ndim == 2 and "layers.0." in key:
+                    source_hidden_dim = w.shape[-1]
+                    break
+
+        if target_hidden_dim == 0:
+            for key in target_weights:
+                w = target_weights[key]
+                if w.ndim == 2 and "layers.0." in key:
+                    target_hidden_dim = w.shape[-1]
+                    break
+
+        dim_mismatch = source_hidden_dim != target_hidden_dim and source_hidden_dim > 0 and target_hidden_dim > 0
+
+        is_cross_arch = layer_mismatch or dim_mismatch
+
+        if is_cross_arch:
+            logger.info(
+                "Cross-architecture detected: source=%d layers/%d dim, target=%d layers/%d dim",
+                len(source_layers),
+                source_hidden_dim,
+                len(target_layers),
+                target_hidden_dim,
+            )
+
+        return CrossArchitectureInfo(
+            is_cross_architecture=is_cross_arch,
+            source_layer_count=len(source_layers),
+            target_layer_count=len(target_layers),
+            source_hidden_dim=source_hidden_dim,
+            target_hidden_dim=target_hidden_dim,
+            layer_correspondence=None,  # Computed later if needed
+        )
 
 
 def unified_merge(

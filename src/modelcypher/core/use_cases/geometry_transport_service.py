@@ -155,8 +155,7 @@ class GeometryTransportService:
         tgt_arr = backend.array(target_activations)
         cka = CKAComputer(backend)
         similarity = cka.linear_cka(src_arr, tgt_arr)
-        backend.eval(similarity)
-        blend_alpha = float(backend.to_numpy(similarity))
+        blend_alpha = float(similarity)
 
         gw_config = GWConfig(
             epsilon=gw_epsilon,
