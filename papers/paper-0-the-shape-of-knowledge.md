@@ -320,42 +320,43 @@ Tishby, N., & Zaslavsky, N. (2015). Deep Learning and the Information Bottleneck
 
 [Zou et al. (2024)](../docs/references/arxiv/Zou_2024_Circuit_Breakers.pdf). Circuit Breakers: Removing Model Behaviors via Targeted Ablation. [arXiv:2406.04313](https://arxiv.org/abs/2406.04313).
 
-## Appendix A: Dimensional Hierarchy Mathematics
+## Appendix A: The Axioms of Dimensional Alignment
 
-### A.1 Compression as Projection
+### A.1 Definitions
 
-Let $X^{(n)}$ denote representation at dimension $n$. The compression from dimension $n$ to dimension $n-1$ is a projection $\pi_{n \to n-1}: X^{(n)} \to X^{(n-1)}$.
+Let $\mathcal{M}$ be a conceptual manifold (the "Territory").
+Let $\mathcal{X}$ be a representation space (the "Map").
+Let $T: \mathcal{M} \to \mathcal{X}$ be a projection (compression) function.
 
-For lossless compression (invertible projection):
-$$X^{(n)} = \pi^{-1}_{n \to n-1}(X^{(n-1)})$$
+**Definition 1 (Lossless Encoding)**: A transformation $T$ is lossless if there exists a decoder $T^{-1}$ such that $T^{-1}(T(m)) = m$ for all $m \in \mathcal{M}$. This preserves **Information** (Shannon Entropy).
 
-For lossy compression:
-$$X^{(n)} \approx \pi^{-1}_{n \to n-1}(X^{(n-1)}) + \epsilon$$
+**Definition 2 (Isometry)**: A transformation $T$ is an isometry if it preserves metric structure: $d_{\mathcal{X}}(T(a), T(b)) = d_{\mathcal{M}}(a, b)$ for all $a, b \in \mathcal{M}$. This preserves **Geometry** (Gromov-Wasserstein Distance).
 
-where $\epsilon$ represents information lost in compression.
+### A.2 Axiom 1: The Preservation of Structure
+Information is scale-invariant, but meaning is geometry-dependent. For a language model to capture the "shape of knowledge," the projection $T$ must approximate an isometry, not merely a lossless encoding.
+(See [Gromov-Wasserstein](../docs/research/math/gromov_wasserstein.md))
 
-### A.2 Alignment Prerequisite Theorem
+### A.3 Lemma 1: Encoding $\neq$ Isometry
+**Statement**: Existence of a bijection (lossless encoding) does not imply preservation of neighborhood structure.
 
-**Claim**: If $\text{CKA}(\pi_A^{(n-1)}, \pi_B^{(n-1)}) < \theta$, then $\text{CKA}(X_A^{(n)}, X_B^{(n)}) < f(\theta)$ for some monotonic $f$.
+**Proof**: Consider a random permutation $P$ of a sorted sequence $S$. $P(S)$ contains identical information to $S$ ($H(S) = H(P(S))$), but topological features (adjacency, smoothness) are destroyed.
 
-**Intuition**: Misaligned lower-dimensional projections cannot produce aligned higher-dimensional structures because the reconstruction operator $\pi^{-1}$ depends on the projection.
+**Implication**: Vocabulary alignment is not just about mapping token IDs (bijection); it is about ensuring the token lattice preserves the semantic topology of the embedding space. If $\text{GW}(\text{Vocab}_A, \text{Vocab}_B) \gg 0$, high-dimensional alignment is ill-defined.
 
-### A.3 Vocabulary as 2D Foundation
+### A.4 Lemma 2: The Hierarchical Isometry Condition
+**Statement**: Geometric alignment at dimension $D$ is possible if and only if there exists an $\epsilon$-isometry at all dimensions $d < D$.
 
-For language models:
-- $X^{(1)}$ = byte/character sequence
-- $X^{(2)}$ = token sequence (vocabulary-dependent)
-- $X^{(3)}$ = embedding sequence
-- $X^{(4+)}$ = semantic manifold
+$$ \text{Alignable}(X^{(D)}, Y^{(D)}) \iff \forall d < D, \exists \phi_d : X^{(d)} \to Y^{(d)} \text{ s.t. } \| \phi_d - \text{Isometry} \| < \epsilon $$
 
-The tokenizer $T: X^{(1)} \to X^{(2)}$ defines the 1D→2D projection. Different tokenizers implement different projections, and the embedding layer is trained to invert the specific projection used during training.
+**Application**:
+1.  **1D (Binary)**: If byte-streams are not bijective, $d=1$ alignment fails.
+2.  **2D (Vocabulary)**: If the token lattice does not induce the same geometric neighbors (see [Intrinsic Dimension](../docs/research/math/intrinsic_dimension.md)), $d=2$ alignment fails.
+3.  **3D+ (Manifold)**: Phase-lock (CKA $\approx$ 1.0) is only meaningful if the coordinate systems defined by $d=1,2$ are isometric.
 
-Cross-family models have:
-- Different $T_A, T_B$ (different 1D→2D projections)
-- Trained embedding layers $E_A, E_B$ that expect specific tokenizations
-- Convergent $X^{(4+)}$ (Platonic representation)
+### A.5 The Phase-Lock Paradox
+**Observation**: Models $A$ and $B$ show Semantic CKA $\approx$ 0.94 (Paper 1) but merge failure.
 
-Merging $E_A$ and $E_B$ without aligning $T_A$ and $T_B$ produces an embedding layer that inverts neither projection correctly.
+**Resolution**: The models converged to the same 4D manifold ($\mathcal{M}$), but projected it onto non-isometric 2D grids ($\mathcal{V}_A, \mathcal{V}_B$). CKA (see [Centered Kernel Alignment](../docs/research/math/centered_kernel_alignment.md)) measures the similarity of $\mathcal{M}_A$ and $\mathcal{M}_B$ *post-alignment*, hiding the fact that the transformation $\phi_{2D}: \mathcal{V}_A \to \mathcal{V}_B$ required to merge weights does not exist or was not found.
 
 ## Appendix B: CLI Commands for Experimentation
 

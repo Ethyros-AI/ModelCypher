@@ -476,19 +476,6 @@ def build_server() -> FastMCP:
             raise ValueError(f"Directory does not exist: {resolved}")
         return str(resolved)
 
-    def _row_payload(row) -> dict:
-        return {
-            "_schema": "mc.dataset.row.v1",
-            "lineNumber": row.line_number,
-            "raw": row.raw,
-            "format": row.format.value,
-            "fields": row.fields,
-            "validationMessages": row.validation_messages,
-            "rawTruncated": row.raw_truncated,
-            "rawFullBytes": row.raw_full_bytes,
-            "fieldsTruncated": row.fields_truncated,
-        }
-
     def _system_status_payload() -> dict:
         readiness = system_service.readiness()
         readiness_score = readiness.get("readinessScore", 0)
@@ -1587,21 +1574,6 @@ def build_server() -> FastMCP:
                 "filePath": checkpoint.get("filePath"),
             }
             for checkpoint in checkpoints
-        ]
-        return dump_json(entries)
-
-    @mcp.resource("mc://datasets")
-    def resource_datasets() -> str:
-        datasets = dataset_service.list_datasets()
-        entries = [
-            {
-                "id": dataset.id,
-                "name": dataset.name,
-                "path": dataset.path,
-                "sizeBytes": dataset.size_bytes,
-                "exampleCount": dataset.example_count,
-            }
-            for dataset in datasets
         ]
         return dump_json(entries)
 
@@ -2847,7 +2819,6 @@ def build_server() -> FastMCP:
     # Register modular tools (extracted from this file for maintainability)
     from modelcypher.mcp.tools.agent import register_agent_tools
     from modelcypher.mcp.tools.common import ServiceContext
-    from modelcypher.mcp.tools.dataset import register_dataset_tools
     from modelcypher.mcp.tools.geometry import (
         register_geometry_crm_tools,
         register_geometry_interference_tools,
@@ -2873,7 +2844,6 @@ def build_server() -> FastMCP:
     register_safety_tools(service_context)
     register_entropy_tools(service_context)
     register_agent_tools(service_context)
-    register_dataset_tools(service_context)
     register_geometry_tools(service_context)
     register_geometry_invariant_tools(service_context)
     register_geometry_safety_tools(service_context)
