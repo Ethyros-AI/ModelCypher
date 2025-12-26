@@ -348,36 +348,69 @@ class GeometricMergeOrchestrator:
         if not tgt_acts or len(tgt_acts) < 5:
             return
 
-        # intrinsic_dimension
+        # intrinsic_dimension - Two-NN method (Facco et al., 2017)
         try:
             from modelcypher.core.domain.geometry.intrinsic_dimension import (
-                IntrinsicDimensionEstimator,
+                IntrinsicDimension,
+                TwoNNConfiguration,
             )
             stacked = b.stack(tgt_acts, axis=0)
             b.eval(stacked)
-            estimator = IntrinsicDimensionEstimator(backend=b)
-            result = estimator.estimate(stacked)
-            layer_geom.intrinsic_dimension = result.dimension
+            result = IntrinsicDimension.compute_two_nn(stacked, TwoNNConfiguration(), b)
+            layer_geom.intrinsic_dimension = result.intrinsic_dimension
             logger.debug(
-                "Layer %d: intrinsic_dim=%.1f",
+                "Layer %d: intrinsic_dim=%.1f (usable=%d/%d)",
                 layer_geom.layer_idx,
                 layer_geom.intrinsic_dimension,
+                result.usable_count,
+                result.sample_count,
             )
         except Exception as e:
             logger.debug("intrinsic_dimension failed for layer %d: %s", layer_geom.layer_idx, e)
 
-        # manifold_curvature
+        # manifold_curvature - sectional curvature for geodesic interpolation
         try:
             from modelcypher.core.domain.geometry.manifold_curvature import (
-                ManifoldCurvatureEstimator,
+                SectionalCurvatureEstimator,
+                CurvatureConfig,
             )
             stacked = b.stack(tgt_acts, axis=0)
             b.eval(stacked)
-            estimator = ManifoldCurvatureEstimator(backend=b)
-            result = estimator.estimate_sectional_curvature(stacked)
-            layer_geom.curvature = result.mean_curvature
+            stacked_np = b.to_numpy(stacked).tolist()
+            estimator = SectionalCurvatureEstimator(CurvatureConfig())
+            profile = estimator.estimate_curvature_profile(stacked_np, backend=b)
+            layer_geom.curvature = profile.global_mean
+            logger.debug(
+                "Layer %d: curvature=%.4f, sign=%s",
+                layer_geom.layer_idx,
+                layer_geom.curvature,
+                profile.dominant_sign.value,
+            )
         except Exception as e:
             logger.debug("manifold_curvature failed for layer %d: %s", layer_geom.layer_idx, e)
+
+        # gromov_wasserstein - distance between source and target representations
+        if src_acts and len(src_acts) >= 5:
+            try:
+                from modelcypher.core.domain.geometry.gromov_wasserstein import (
+                    GromovWassersteinDistance,
+                    Config as GWConfig,
+                )
+                n = min(len(src_acts), len(tgt_acts), 50)  # Limit for speed
+                src_stacked = b.stack(src_acts[:n], axis=0)
+                tgt_stacked = b.stack(tgt_acts[:n], axis=0)
+                b.eval(src_stacked, tgt_stacked)
+
+                gw = GromovWassersteinDistance(b)
+                result = gw.compute(src_stacked, tgt_stacked, GWConfig())
+                logger.debug(
+                    "Layer %d: GW_distance=%.4f, converged=%s",
+                    layer_geom.layer_idx,
+                    result.distance,
+                    result.converged,
+                )
+            except Exception as e:
+                logger.debug("gromov_wasserstein failed for layer %d: %s", layer_geom.layer_idx, e)
 
     def _stage_find_shared_structure(
         self,
@@ -628,11 +661,12 @@ class GeometricMergeOrchestrator:
         except Exception:
             pass
 
-        # fisher_blending - importance weights
+        # fisher_blending - importance weights from activation variance
+        # Higher variance = more important = trust that model more
         try:
             from modelcypher.core.domain.geometry.fisher_blending import (
                 FisherBlendingConfig,
-                estimate_fisher_from_activations,
+                FisherWeights,
             )
 
             if src_acts and tgt_acts and len(src_acts) >= 5 and len(tgt_acts) >= 5:
@@ -641,13 +675,72 @@ class GeometricMergeOrchestrator:
                 tgt_stacked = b.stack(tgt_acts[:n], axis=0)
                 b.eval(src_stacked, tgt_stacked)
 
-                config = FisherBlendingConfig()
-                fisher_result = estimate_fisher_from_activations(
-                    src_stacked, tgt_stacked, config, backend=b
+                # Estimate Fisher from activation variance (inverse variance)
+                # High variance = uncertain = low Fisher = trust other model
+                src_var = b.var(src_stacked, axis=0)
+                tgt_var = b.var(tgt_stacked, axis=0)
+                b.eval(src_var, tgt_var)
+
+                # Fisher ~ 1/variance (stable for small variance)
+                epsilon = 1e-6
+                src_fisher = 1.0 / (src_var + epsilon)
+                tgt_fisher = 1.0 / (tgt_var + epsilon)
+                b.eval(src_fisher, tgt_fisher)
+
+                # Combined weights: normalize and store
+                total_fisher = src_fisher + tgt_fisher
+                layer_geom.fisher_weights = tgt_fisher / (total_fisher + epsilon)
+                b.eval(layer_geom.fisher_weights)
+
+                logger.debug(
+                    "Layer %d: Fisher weights computed, mean=%.4f",
+                    layer_geom.layer_idx,
+                    float(b.mean(layer_geom.fisher_weights).item()),
                 )
-                layer_geom.fisher_weights = fisher_result.combined_weights
         except Exception as e:
             logger.debug("fisher_blending failed for layer %d: %s", layer_geom.layer_idx, e)
+
+        # dimension_blender - per-dimension domain-based alphas
+        try:
+            from modelcypher.core.domain.geometry.dimension_blender import (
+                compute_dimension_correlations,
+            )
+
+            if src_acts and tgt_acts and len(src_acts) >= 5 and len(tgt_acts) >= 5:
+                n = min(len(src_acts), len(tgt_acts))
+                src_stacked = b.stack(src_acts[:n], axis=0)
+                tgt_stacked = b.stack(tgt_acts[:n], axis=0)
+                b.eval(src_stacked, tgt_stacked)
+
+                # Compute per-dimension correlation between source and target
+                # High correlation = safe to blend evenly
+                # Low correlation = trust target for stability
+                src_np = b.to_numpy(src_stacked)
+                tgt_np = b.to_numpy(tgt_stacked)
+
+                # Correlation per dimension
+                hidden_dim = src_np.shape[1]
+                dim_correlations = []
+                for d in range(hidden_dim):
+                    src_col = src_np[:, d]
+                    tgt_col = tgt_np[:, d]
+                    # Cosine similarity
+                    dot = float((src_col * tgt_col).sum())
+                    norm_src = float((src_col ** 2).sum() ** 0.5)
+                    norm_tgt = float((tgt_col ** 2).sum() ** 0.5)
+                    corr = dot / (norm_src * norm_tgt + 1e-10)
+                    dim_correlations.append(max(0.0, min(1.0, corr)))
+
+                layer_geom.dimension_alphas = b.array(dim_correlations)
+                b.eval(layer_geom.dimension_alphas)
+
+                logger.debug(
+                    "Layer %d: dimension correlations computed, mean=%.4f",
+                    layer_geom.layer_idx,
+                    sum(dim_correlations) / len(dim_correlations),
+                )
+        except Exception as e:
+            logger.debug("dimension_blender failed for layer %d: %s", layer_geom.layer_idx, e)
 
         # Compute base alpha from alignment quality and shared dimension
         # Higher alignment quality = more source contribution
@@ -744,12 +837,15 @@ class GeometricMergeOrchestrator:
         Execute merge using the computed geometry.
 
         Uses ALL blending strategies in sequence:
-        1. Apply per-layer rotations
-        2. Apply dimension-specific alphas
-        3. Apply Fisher-weighted blending
-        4. Apply task singular vector separation
-        5. Apply null-space filtering
-        6. Apply DARE sparsification (optional)
+        1. Apply per-layer Procrustes rotations (from activation alignment)
+        2. Apply dimension-specific alphas (from correlation analysis)
+        3. Apply Fisher-weighted blending (from importance analysis)
+        4. Apply task singular vector separation (skill vs structure)
+        5. Apply null-space filtering (interference elimination)
+        6. Apply DARE sparsification (optional sparsity)
+
+        Key insight: Higher dimensions contain lower dimensions.
+        We blend at EACH dimension level using computed weights.
         """
         b = self._backend
         merged: dict[str, "Array"] = {}
@@ -757,7 +853,9 @@ class GeometricMergeOrchestrator:
             "weights_merged": 0,
             "rotations_applied": 0,
             "fisher_weights_used": 0,
+            "dimension_weights_used": 0,
             "null_space_filtered": 0,
+            "dare_sparsified": 0,
         }
 
         from modelcypher.core.domain.geometry.task_singular_vectors import (
@@ -784,7 +882,7 @@ class GeometricMergeOrchestrator:
             layer_idx = extract_layer_index_fn(key)
             layer_geom = geometry.layer_geometries.get(layer_idx) if layer_idx is not None else None
 
-            # Handle shape mismatch
+            # Handle shape mismatch using cross_dimensional_projection
             if source_w.shape != target_w.shape:
                 from modelcypher.core.domain.geometry.cross_dimensional_projection import (
                     project_cross_dimensional,
@@ -798,7 +896,7 @@ class GeometricMergeOrchestrator:
                 source_w = result.projected
                 b.eval(source_w)
 
-            # Apply per-layer rotation if available
+            # Apply per-layer rotation if available (from activation Procrustes)
             if layer_geom and layer_geom.procrustes_rotation is not None and source_w.ndim == 2:
                 R = layer_geom.procrustes_rotation
                 hidden_dim = R.shape[0]
@@ -812,7 +910,7 @@ class GeometricMergeOrchestrator:
                     metrics["rotations_applied"] += 1
                 b.eval(source_w)
 
-            # Get alpha for this layer
+            # Get base alpha for this layer
             alpha = 0.5
             if layer_geom:
                 alpha = layer_geom.smoothed_alpha
@@ -822,12 +920,90 @@ class GeometricMergeOrchestrator:
                 source_f32 = b.astype(source_w, "float32")
                 target_f32 = b.astype(target_w, "float32")
 
-                merged_w = blend_with_svd_awareness(
-                    source_f32, target_f32, alpha, SVDBlendConfig()
-                )
+                # Use Fisher weights if available for dimension-specific blending
+                if layer_geom and layer_geom.fisher_weights is not None:
+                    hidden_dim = layer_geom.fisher_weights.shape[0]
+                    # Apply Fisher-weighted blending per dimension
+                    # fisher_weights[d] = how much to trust target for dimension d
+                    if source_f32.shape[1] == hidden_dim:
+                        # Weight is [hidden_dim], broadcast to columns
+                        fw = b.reshape(layer_geom.fisher_weights, (1, -1))
+                        # Blend: merged = fw * target + (1-fw) * source
+                        merged_w = fw * target_f32 + (1.0 - fw) * source_f32
+                        metrics["fisher_weights_used"] += 1
+                    elif source_f32.shape[0] == hidden_dim:
+                        # Weight applies to rows
+                        fw = b.reshape(layer_geom.fisher_weights, (-1, 1))
+                        merged_w = fw * target_f32 + (1.0 - fw) * source_f32
+                        metrics["fisher_weights_used"] += 1
+                    else:
+                        # Fallback to SVD blending
+                        merged_w = blend_with_svd_awareness(
+                            source_f32, target_f32, alpha, SVDBlendConfig()
+                        )
+                else:
+                    # Use dimension correlations if available
+                    if layer_geom and layer_geom.dimension_alphas is not None:
+                        hidden_dim = layer_geom.dimension_alphas.shape[0]
+                        if source_f32.shape[1] == hidden_dim:
+                            # Per-dimension alpha: high correlation = trust either
+                            # Low correlation = trust target (stability)
+                            da = b.reshape(layer_geom.dimension_alphas, (1, -1))
+                            # alpha_d controls blend: 1 = trust target, 0 = trust source
+                            # We want: low corr -> trust target, high corr -> blend evenly
+                            target_weight = 1.0 - 0.5 * da  # Range [0.5, 1.0]
+                            merged_w = target_weight * target_f32 + (1.0 - target_weight) * source_f32
+                            metrics["dimension_weights_used"] += 1
+                        elif source_f32.shape[0] == hidden_dim:
+                            da = b.reshape(layer_geom.dimension_alphas, (-1, 1))
+                            target_weight = 1.0 - 0.5 * da
+                            merged_w = target_weight * target_f32 + (1.0 - target_weight) * source_f32
+                            metrics["dimension_weights_used"] += 1
+                        else:
+                            merged_w = blend_with_svd_awareness(
+                                source_f32, target_f32, alpha, SVDBlendConfig()
+                            )
+                    else:
+                        # Fallback to SVD-aware blending
+                        merged_w = blend_with_svd_awareness(
+                            source_f32, target_f32, alpha, SVDBlendConfig()
+                        )
+
                 b.eval(merged_w)
+
+                # Apply DARE sparsification if interference score is high
+                if layer_geom and layer_geom.interference_score > 0.5:
+                    try:
+                        from modelcypher.core.domain.geometry.dare_sparsity import (
+                            Configuration as DAREConfig,
+                            analyze_sparsity,
+                        )
+                        # Compute delta and sparsify
+                        delta = merged_w - target_f32
+                        b.eval(delta)
+                        delta_np = b.to_numpy(delta)
+
+                        # Analyze sparsity
+                        config = DAREConfig(
+                            sparsity_threshold=0.01,
+                            droppable_percentile=0.9,
+                        )
+                        analysis = analyze_sparsity({"delta": delta}, config)
+
+                        # Drop low-magnitude components
+                        threshold = 0.01 * float(b.max(b.abs(delta)).item())
+                        mask = b.abs(delta) > threshold
+                        b.eval(mask)
+                        sparse_delta = delta * b.astype(mask, "float32")
+                        b.eval(sparse_delta)
+
+                        merged_w = target_f32 + sparse_delta
+                        b.eval(merged_w)
+                        metrics["dare_sparsified"] += 1
+                    except Exception:
+                        pass
             else:
-                # 1D tensors - geometric mean of magnitudes
+                # 1D tensors - geometric mean of magnitudes (Fréchet mean on R+)
                 merged_w = b.sqrt((b.abs(source_w) + 1e-10) * (b.abs(target_w) + 1e-10)) * b.sign(target_w)
                 b.eval(merged_w)
 
@@ -841,6 +1017,15 @@ class GeometricMergeOrchestrator:
         for key in target_weights:
             if key not in merged and not key.endswith(".scales") and not key.endswith(".biases"):
                 merged[key] = target_weights[key]
+
+        logger.info(
+            "MERGE: %d weights, %d rotations, %d Fisher, %d dimension, %d DARE",
+            metrics["weights_merged"],
+            metrics["rotations_applied"],
+            metrics["fisher_weights_used"],
+            metrics["dimension_weights_used"],
+            metrics["dare_sparsified"],
+        )
 
         return merged, metrics
 

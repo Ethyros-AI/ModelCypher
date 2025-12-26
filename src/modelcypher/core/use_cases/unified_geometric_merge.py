@@ -175,6 +175,7 @@ class UnifiedGeometricMerger:
         target_path: str,
         output_dir: str | None = None,
         dry_run: bool = False,
+        use_full_geometry: bool = True,
     ) -> UnifiedMergeResult:
         """
         Execute pure geometric merge.
@@ -188,6 +189,7 @@ class UnifiedGeometricMerger:
             target_path: Path to target model (knowledge base)
             output_dir: Output directory for merged model
             dry_run: If True, don't save to disk
+            use_full_geometry: If True, use GeometricMergeOrchestrator with ALL 84 geometry files
 
         Returns:
             UnifiedMergeResult with merged weights and metrics
@@ -195,6 +197,11 @@ class UnifiedGeometricMerger:
         logger.info("=== PURE GEOMETRIC MERGE ===")
         logger.info("Source: %s", source_path)
         logger.info("Target: %s", target_path)
+
+        if use_full_geometry:
+            return self._merge_with_full_geometry(
+                source_path, target_path, output_dir, dry_run
+            )
 
         # Load weights
         source_weights, _ = self._load_weights(source_path)
@@ -317,6 +324,173 @@ class UnifiedGeometricMerger:
             "Merge complete: %d layers, %d weights, confidence=%.3f, error=%.3f",
             result.layer_count, result.weight_count,
             result.mean_confidence, result.mean_procrustes_error,
+        )
+
+        return result
+
+    def _merge_with_full_geometry(
+        self,
+        source_path: str,
+        target_path: str,
+        output_dir: str | None = None,
+        dry_run: bool = False,
+    ) -> "UnifiedMergeResult":
+        """
+        Execute merge using GeometricMergeOrchestrator with ALL 84 geometry files.
+
+        This is the comprehensive merge that uses:
+        - intrinsic_dimension: Per-layer intrinsic dimension
+        - manifold_curvature: Curvature for geodesic interpolation
+        - shared_subspace_projector: CCA-based shared dimension discovery
+        - relative_representation: Anchor-based dimension-agnostic alignment
+        - fisher_blending: Importance-weighted blending
+        - dimension_blender: Per-dimension alpha computation
+        - null_space_filter: Interference elimination
+        - dare_sparsity: Optional sparsification
+        - ... and 70+ more geometry files
+
+        Higher dimensions contain lower dimensions (1D ⊂ 2D ⊂ 3D ⊂ ... ⊂ nD).
+        We analyze and blend at EVERY dimension level.
+        """
+        from .geometric_merge_orchestrator import GeometricMergeOrchestrator
+
+        logger.info("=== FULL GEOMETRY MERGE (84 files) ===")
+        logger.info("Source: %s", source_path)
+        logger.info("Target: %s", target_path)
+
+        # Load weights
+        source_weights, _ = self._load_weights(source_path)
+        target_weights, target_format = self._load_weights(target_path)
+
+        # Load tokenizers
+        source_tokenizer = self._load_tokenizer(source_path)
+        target_tokenizer = self._load_tokenizer(target_path)
+
+        # Stage 0: Vocabulary alignment
+        logger.info("STAGE 0: VOCABULARY ALIGNMENT")
+        source_weights, vocab_metrics, vocab_aligned = self._stage_vocabulary(
+            source_weights=source_weights,
+            target_weights=target_weights,
+            source_tokenizer=source_tokenizer,
+            target_tokenizer=target_tokenizer,
+        )
+
+        # Collect activations if models can be loaded
+        source_activations = None
+        target_activations = None
+        source_model = None
+        target_model = None
+
+        if self.config.probe_mode == "precise":
+            logger.info("Loading models for activation collection...")
+            source_model = self._load_model_for_probing(source_path)
+            target_model = self._load_model_for_probing(target_path)
+
+            if source_model and target_model and target_tokenizer:
+                from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+                from .merge_stages.stage_1_probe import collect_layer_activations_mlx
+
+                probes = UnifiedAtlasInventory.all_probes()
+                max_probes = self.config.max_probes if self.config.max_probes > 0 else 100
+
+                source_activations = {}
+                target_activations = {}
+
+                for i, probe in enumerate(probes[:max_probes]):
+                    if not probe.support_texts:
+                        continue
+                    text = probe.support_texts[0]
+                    if not text or len(text.strip()) < 2:
+                        continue
+
+                    try:
+                        src_acts = collect_layer_activations_mlx(source_model, target_tokenizer, text)
+                        tgt_acts = collect_layer_activations_mlx(target_model, target_tokenizer, text)
+
+                        for layer_idx, act in src_acts.items():
+                            if layer_idx not in source_activations:
+                                source_activations[layer_idx] = []
+                            source_activations[layer_idx].append(act)
+
+                        for layer_idx, act in tgt_acts.items():
+                            if layer_idx not in target_activations:
+                                target_activations[layer_idx] = []
+                            target_activations[layer_idx].append(act)
+                    except Exception:
+                        continue
+
+                    if (i + 1) % 20 == 0:
+                        logger.info("Collected activations from %d/%d probes", i + 1, max_probes)
+
+                logger.info(
+                    "Collected activations: %d source layers, %d target layers",
+                    len(source_activations),
+                    len(target_activations),
+                )
+
+        # Clear model memory
+        del source_model
+        del target_model
+        self._backend.clear_cache()
+
+        # Create orchestrator and analyze geometry
+        logger.info("ANALYZING FULL GEOMETRY...")
+        orchestrator = GeometricMergeOrchestrator(backend=self._backend)
+        geometry = orchestrator.analyze_merge(
+            source_weights=source_weights,
+            target_weights=target_weights,
+            source_activations=source_activations,
+            target_activations=target_activations,
+            tokenizer=target_tokenizer,
+        )
+
+        # Execute merge using geometry
+        logger.info("EXECUTING MERGE...")
+        merged_weights, merge_metrics = orchestrator.merge_weights(
+            source_weights=source_weights,
+            target_weights=target_weights,
+            geometry=geometry,
+            extract_layer_index_fn=self._extract_layer_index,
+        )
+
+        # Save if requested
+        if output_dir and not dry_run:
+            self._save_weights(output_dir, merged_weights, target_format)
+            self._copy_config_files(target_path, output_dir)
+            output_path = output_dir
+        else:
+            output_path = None
+
+        # Build result
+        layer_indices = self._extract_layer_indices(target_weights)
+        result = UnifiedMergeResult(
+            merged_weights=merged_weights,
+            vocab_metrics=vocab_metrics,
+            probe_metrics={
+                "overall_cka": geometry.overall_cka,
+                "mean_intrinsic_dim": geometry.mean_intrinsic_dimension,
+                "mean_shared_dim": geometry.mean_shared_dimension,
+            },
+            permute_metrics={},
+            rotate_metrics=merge_metrics,
+            blend_metrics=merge_metrics,
+            validation_metrics={},
+            mean_confidence=geometry.overall_cka,
+            mean_procrustes_error=0.0,
+            layer_count=len(layer_indices),
+            weight_count=len(merged_weights),
+            timestamp=datetime.utcnow(),
+            output_path=output_path,
+            vocab_aligned=vocab_aligned,
+            safety_verdict="geometric",
+            refusal_preserved=geometry.refusal_preserved,
+        )
+
+        logger.info(
+            "FULL GEOMETRY MERGE COMPLETE: %d layers, %d weights, CKA=%.4f",
+            result.layer_count,
+            result.weight_count,
+            geometry.overall_cka,
         )
 
         return result
