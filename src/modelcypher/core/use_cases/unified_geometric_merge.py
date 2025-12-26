@@ -453,6 +453,47 @@ class UnifiedGeometricMerger:
             extract_layer_index_fn=self._extract_layer_index,
         )
 
+        # Detect target quantization and requantize merged weights to match
+        target_is_quantized = any(
+            k.endswith(".scales") or k.endswith(".biases")
+            for k in target_weights.keys()
+        )
+
+        if target_is_quantized:
+            from .quantization_utils import (
+                QuantizationHint,
+                quantization_config_from_payload,
+                requantize_weights,
+            )
+            import json
+            from pathlib import Path
+
+            # Read target config to get quantization params
+            config_path = Path(target_path) / "config.json"
+            quant_hint = QuantizationHint(bits=4, group_size=64, mode="affine")  # Default
+            if config_path.exists():
+                try:
+                    with open(config_path) as f:
+                        config_data = json.load(f)
+                    quant_config = quantization_config_from_payload(config_data)
+                    if quant_config and quant_config.default:
+                        quant_hint = quant_config.default
+                        logger.info(
+                            "Detected target quantization: %d-bit, group_size=%d",
+                            quant_hint.bits,
+                            quant_hint.group_size,
+                        )
+                except Exception as e:
+                    logger.warning("Could not read target config for quantization: %s", e)
+
+            logger.info("Requantizing merged weights to match target format...")
+            merged_weights = requantize_weights(
+                merged_weights,
+                self._backend,
+                quant_hint,
+            )
+            logger.info("Requantization complete: %d weights", len(merged_weights))
+
         # Save if requested
         if output_dir and not dry_run:
             self._save_weights(output_dir, merged_weights, target_format)

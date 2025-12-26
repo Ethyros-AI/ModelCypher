@@ -212,11 +212,11 @@ def requantize_weights(
                 dequantized.shape[1],
                 key,
             )
-            dequantized_f32 = backend.astype(backend.array(dequantized), backend.float32)
+            dequantized_f32 = backend.astype(backend.array(dequantized), "float32")
             quantized[key] = backend.to_numpy(dequantized_f32)
             continue
 
-        dequantized_f32 = backend.astype(backend.array(dequantized), backend.float32)
+        dequantized_f32 = backend.astype(backend.array(dequantized), "float32")
         weight_arr = dequantized_f32
         q_weight, q_scales, q_biases = backend.quantize(
             weight_arr,

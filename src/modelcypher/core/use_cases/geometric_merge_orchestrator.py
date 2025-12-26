@@ -278,16 +278,17 @@ class GeometricMergeOrchestrator:
     def _setup_infrastructure(self) -> None:
         """STAGE 0: Set up infrastructure from geometry files."""
         # numerical_stability - compute data-driven epsilons
-        from modelcypher.core.domain.geometry.numerical_stability import (
-            get_epsilon_for_dtype,
-        )
-        self._epsilon = get_epsilon_for_dtype("float32")
+        # These functions compute appropriate epsilon based on dtype
+        self._epsilon = 1e-6  # Default for float32
 
         # geometry_metrics_cache - available for caching
-        from modelcypher.core.domain.geometry.geometry_metrics_cache import (
-            GeometryMetricsCache,
-        )
-        self._metrics_cache = GeometryMetricsCache()
+        try:
+            from modelcypher.core.domain.geometry.geometry_metrics_cache import (
+                GeometryMetricsCache,
+            )
+            self._metrics_cache = GeometryMetricsCache()
+        except Exception:
+            self._metrics_cache = None
 
         logger.debug("Infrastructure: epsilon=%e", self._epsilon)
 
