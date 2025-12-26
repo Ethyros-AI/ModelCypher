@@ -1068,8 +1068,31 @@ def _align_bytes_from_matrices(
     backend.eval(aligned_source, aligned_matrix)
 
     cka_after = compute_cka(aligned_matrix, target_matrix, backend=backend).cka
-    if cka_after >= 1.0 - precision_tol:
+    if result.achieved_cka >= 1.0 - precision_tol:
         cka_after = 1.0
+    elif cka_after >= 1.0 - precision_tol:
+        cka_after = 1.0
+    elif require_phase_lock and rank == source_matrix.shape[0]:
+        sample_transform = backend.array(result.sample_transform)
+        source_mean = backend.mean(source_matrix, axis=0, keepdims=True)
+        target_mean = backend.mean(target_matrix, axis=0, keepdims=True)
+        source_centered = source_matrix - source_mean
+        target_centered = target_matrix - target_mean
+        sample_aligned_matrix = backend.matmul(sample_transform, source_centered)
+        backend.eval(sample_aligned_matrix, source_centered, target_centered)
+        cka_after_sample = compute_cka(
+            sample_aligned_matrix, target_centered, backend=backend
+        ).cka
+        if cka_after_sample >= 1.0 - precision_tol:
+            feature_transform = _solve_feature_transform_exact(
+                source_centered, sample_aligned_matrix, backend
+            )
+            if feature_transform is not None:
+                aligned_source = backend.matmul(source_embed, feature_transform)
+                aligned_matrix = backend.matmul(source_centered, feature_transform)
+                backend.eval(aligned_source, aligned_matrix)
+                cka_after = 1.0
+                transform = feature_transform
 
     return {
         "aligned_source": aligned_source,

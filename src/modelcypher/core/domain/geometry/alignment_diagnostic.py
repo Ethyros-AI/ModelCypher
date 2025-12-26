@@ -87,6 +87,17 @@ def alignment_signal_from_matrices(
 ) -> AlignmentSignal:
     """Build an AlignmentSignal from paired anchor matrices."""
     b = backend or get_default_backend()
+    phase_tol = b.finfo(source_matrix.dtype).eps * 1e3
+    if cka_achieved >= 1.0 - phase_tol:
+        return AlignmentSignal(
+            dimension=dimension,
+            cka_achieved=float(cka_achieved),
+            cka_target=1.0,
+            divergence_pattern="phase_locked",
+            suggested_transformation="none",
+            iteration=iteration,
+            metadata={"phase_tol": float(phase_tol)},
+        )
     n_samples = b.shape(source_matrix)[0]
     labels = list(labels) if labels is not None else [f"sample:{i}" for i in range(n_samples)]
 
