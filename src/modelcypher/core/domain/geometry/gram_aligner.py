@@ -450,7 +450,98 @@ class GramAligner:
         else:
             F = initial_transform
 
-        # If closed-form solutions failed, refine with gradient descent
+        # SAMPLE-SPACE APPROACH for rank-deficient sources
+        # When feature-space closed-form fails (rank deficiency), use sample-space transform directly:
+        # T @ K_s @ T^T = K_t is EXACT regardless of rank
+        # Apply: A_s' = T @ A_s
+        #
+        # This implements the dimensional hierarchy: 1D (binary) encodes 2D (vocabulary) encodes 3D+
+        # The Gram matrix relationship is the invariant; we transform in sample space.
+
+        # Compute sample-space transform T = K_t^{1/2} @ K_s^{-1/2}
+        K_s = b.matmul(source_centered, b.transpose(source_centered))
+        K_t = b.matmul(target_centered, b.transpose(target_centered))
+        K_s_c_local = b.matmul(b.matmul(H, K_s), H)
+        b.eval(K_s_c_local)
+
+        # Eigendecomposition for matrix square roots
+        eig_s, V_s = b.eigh(K_s_c_local)
+        eig_t, V_t = b.eigh(K_t_c)
+        b.eval(eig_s, V_s, eig_t, V_t)
+
+        # Try different regularization levels for sample-space approach
+        for reg in [1e-6, 1e-8, 1e-10, 1e-12, 1e-14]:
+            eig_s_reg = b.maximum(eig_s, b.array(reg))
+            eig_t_reg = b.maximum(eig_t, b.array(reg))
+
+            # K_s^{-1/2} = V_s @ diag(1/sqrt(eig_s)) @ V_s^T
+            inv_sqrt_s = b.matmul(
+                V_s * b.reshape(1.0 / b.sqrt(eig_s_reg), (1, -1)),
+                b.transpose(V_s)
+            )
+
+            # K_t^{1/2} = V_t @ diag(sqrt(eig_t)) @ V_t^T
+            sqrt_t = b.matmul(
+                V_t * b.reshape(b.sqrt(eig_t_reg), (1, -1)),
+                b.transpose(V_t)
+            )
+            b.eval(inv_sqrt_s, sqrt_t)
+
+            # T = K_t^{1/2} @ K_s^{-1/2}
+            T = b.matmul(sqrt_t, inv_sqrt_s)
+            b.eval(T)
+
+            # Transform source in sample space: A_s' = T @ A_s
+            # Result: A_s' @ A_s'^T = T @ K_s @ T^T = K_t
+            source_transformed_sample = b.matmul(T, source_centered)
+            b.eval(source_transformed_sample)
+
+            # Compute feature transform F that achieves this: A_s @ F = A_s'
+            # F = A_s^+ @ A_s' = A_s^+ @ T @ A_s
+            U_s, sigma_s, Vt_s = b.svd(source_centered)
+            b.eval(U_s, sigma_s, Vt_s)
+
+            sigma_np = b.to_numpy(sigma_s)
+            r_s = len(sigma_np)
+            if b.shape(U_s)[1] > r_s:
+                U_s = U_s[:, :r_s]
+            if b.shape(Vt_s)[0] > r_s:
+                Vt_s = Vt_s[:r_s, :]
+            b.eval(U_s, Vt_s)
+
+            max_sigma = float(sigma_np[0]) if len(sigma_np) > 0 else 1.0
+            threshold = max_sigma * reg
+            sigma_inv = b.where(
+                sigma_s > threshold,
+                1.0 / sigma_s,
+                b.zeros_like(sigma_s)
+            )
+            b.eval(sigma_inv)
+
+            V_s_mat = b.transpose(Vt_s)
+            V_s_scaled = V_s_mat * b.reshape(sigma_inv, (1, -1))
+            pinv_s = b.matmul(V_s_scaled, b.transpose(U_s))
+            b.eval(pinv_s)
+
+            # F = A_s^+ @ (T @ A_s)
+            F_sample = b.matmul(pinv_s, source_transformed_sample)
+            b.eval(F_sample)
+
+            # Verify CKA
+            source_aligned = b.matmul(source_centered, F_sample)
+            K_aligned = b.matmul(source_aligned, b.transpose(source_aligned))
+            K_aligned_c = b.matmul(b.matmul(H, K_aligned), H)
+            b.eval(K_aligned_c)
+            cka = self._compute_cka_from_centered_grams(K_aligned_c, K_t_c)
+
+            if cka >= 1.0 - self._tolerance:
+                logger.info(
+                    "GramAligner: Sample-space converged to CKA=%.8f with reg=%.2e",
+                    cka, reg
+                )
+                return F_sample, 1, cka
+
+        # Last resort: gradient descent refinement
         max_iters = max_iterations or self._max_iterations
         best_F = F
         best_cka = 0.0
@@ -469,7 +560,7 @@ class GramAligner:
 
             if cka >= 1.0 - self._tolerance:
                 logger.info(
-                    "GramAligner: Converged to CKA=%.8f in %d iterations",
+                    "GramAligner: Gradient converged to CKA=%.8f in %d iterations",
                     cka, iteration + 1
                 )
                 return F, iteration + 1, cka
