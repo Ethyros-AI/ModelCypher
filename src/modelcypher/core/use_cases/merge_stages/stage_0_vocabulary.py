@@ -625,117 +625,202 @@ def stage_vocabulary_align(
                         best_alignment = atlas_alignment
                         previous_transform = atlas_alignment.get("feature_transform")
 
-                    last_signal = alignment_signal_from_matrices(
-                        atlas_alignment["aligned_matrix"],
-                        target_atlas_matrix,
-                        atlas_labels,
-                        backend=backend,
-                        dimension=2,
-                        cka_achieved=atlas_alignment["cka_after"],
-                        iteration=iteration,
+                last_signal = alignment_signal_from_matrices(
+                    atlas_alignment["aligned_matrix"],
+                    target_atlas_matrix,
+                    atlas_labels,
+                    backend=backend,
+                    dimension=2,
+                    cka_achieved=atlas_alignment["cka_after"],
+                    iteration=iteration,
+                )
+                vocab_signals.append(last_signal.to_dict())
+
+                if last_signal.is_phase_locked:
+                    break
+
+                if available_indices and target_atlas_matrix_full is not None:
+                    refresh_count = min(
+                        len(available_indices),
+                        max(1, len(shared_atlas) // 20),
                     )
-                    vocab_signals.append(last_signal.to_dict())
+                    label_to_pos = {label: pos for pos, label in enumerate(shared_atlas)}
+                    drop_positions: list[int] = []
+                    for label in last_signal.misaligned_anchors:
+                        pos = label_to_pos.get(label)
+                        if pos is not None and pos not in drop_positions:
+                            drop_positions.append(pos)
+                        if len(drop_positions) >= refresh_count:
+                            break
 
-                    if last_signal.is_phase_locked:
-                        break
+                    if drop_positions:
+                        for pos in sorted(drop_positions, reverse=True):
+                            selected_indices.pop(pos)
+                        replacements = available_indices[: len(drop_positions)]
+                        available_indices = available_indices[len(drop_positions) :]
+                        selected_indices.extend(replacements)
 
-                    iteration += 1
-                    if phase_lock_max_iterations > 0 and iteration >= phase_lock_max_iterations:
-                        raise RuntimeError(
-                            f"Vocabulary phase lock failed after {iteration} iterations."
+                        idx_arr = backend.array(selected_indices)
+                        target_atlas_matrix = backend.take(
+                            target_atlas_matrix_full, idx_arr, axis=0
                         )
-                    if iteration >= iteration_budget:
-                        iteration_budget *= 2
-                        solver_iterations = int(solver_iterations * 1.5)
-                        solver_rounds = max(solver_rounds + 1, solver_rounds)
-                        if not use_all_support_texts:
-                            use_all_support_texts = True
-                            target_atlas_map = _build_atlas_anchor_map(
-                                target_tokenizer,
-                                target_embed,
-                                target_embed.shape[0],
-                                backend,
-                                use_all_support_texts=True,
-                                cache_key=target_cache_key,
-                            )
-                            source_atlas_map = _build_atlas_anchor_map(
-                                source_tokenizer,
-                                source_embed,
-                                source_embed.shape[0],
-                                backend,
-                                use_all_support_texts=True,
-                                cache_key=source_cache_key,
-                            )
-                            shared_atlas = sorted(
-                                set(source_atlas_map) & set(target_atlas_map)
-                            )
-                            max_anchor_count = min(
-                                len(shared_atlas), int(source_embed.shape[1])
-                            )
-                            candidate_atlas = shared_atlas
-                            if len(shared_atlas) > max_anchor_count and balance_anchor_weights:
-                                candidate_count = min(
-                                    len(shared_atlas),
-                                    max_anchor_count * coverage_candidate_multiplier,
-                                )
-                                candidate_atlas = _balanced_anchor_subset(
-                                    shared_atlas, candidate_count
-                                )
+                        source_atlas_matrix = backend.take(
+                            source_atlas_matrix_full, idx_arr, axis=0
+                        )
+                        backend.eval(target_atlas_matrix, source_atlas_matrix)
 
-                            target_atlas_matrix_full = backend.stack(
-                                [target_atlas_map[k] for k in candidate_atlas], axis=0
+                        rank_indices, rank_meta = _select_full_rank_indices(
+                            target_atlas_matrix,
+                            int(source_atlas_matrix.shape[0]),
+                            backend,
+                        )
+                        if len(rank_indices) < int(source_atlas_matrix.shape[0]):
+                            selected_indices = [
+                                selected_indices[idx] for idx in rank_indices
+                            ]
+                            idx_arr = backend.array(selected_indices)
+                            target_atlas_matrix = backend.take(
+                                target_atlas_matrix_full, idx_arr, axis=0
                             )
-                            source_atlas_matrix_full = backend.stack(
-                                [source_atlas_map[k] for k in candidate_atlas], axis=0
+                            source_atlas_matrix = backend.take(
+                                source_atlas_matrix_full, idx_arr, axis=0
                             )
-                            backend.eval(target_atlas_matrix_full, source_atlas_matrix_full)
+                            backend.eval(target_atlas_matrix, source_atlas_matrix)
 
-                            if len(candidate_atlas) > max_anchor_count:
-                                if use_coverage_anchor_selection:
-                                    selected_indices, coverage_meta = _select_coverage_indices(
-                                        target_atlas_matrix_full,
-                                        max_anchor_count,
-                                        backend,
-                                        k_neighbors=coverage_k_neighbors,
-                                    )
-                                    shared_atlas = [
-                                        candidate_atlas[idx] for idx in selected_indices
-                                    ]
-                                    idx_arr = backend.array(selected_indices)
-                                    target_atlas_matrix = backend.take(
-                                        target_atlas_matrix_full, idx_arr, axis=0
-                                    )
-                                    source_atlas_matrix = backend.take(
-                                        source_atlas_matrix_full, idx_arr, axis=0
-                                    )
-                                    backend.eval(
-                                        target_atlas_matrix,
-                                        source_atlas_matrix,
+                        shared_atlas = [candidate_atlas[idx] for idx in selected_indices]
+                        atlas_labels = list(shared_atlas)
+
+                        if coverage_meta is None:
+                            coverage_meta = {}
+                        coverage_meta.update(rank_meta)
+
+                        selected_set = set(selected_indices)
+                        available_indices = [
+                            idx
+                            for idx in range(len(candidate_atlas))
+                            if idx not in selected_set
+                        ]
+
+                iteration += 1
+                if phase_lock_max_iterations > 0 and iteration >= phase_lock_max_iterations:
+                    raise RuntimeError(
+                        f"Vocabulary phase lock failed after {iteration} iterations."
+                    )
+                if iteration >= iteration_budget:
+                    iteration_budget *= 2
+                    solver_iterations = int(solver_iterations * 1.5)
+                    solver_rounds = max(solver_rounds + 1, solver_rounds)
+                    if not use_all_support_texts:
+                        use_all_support_texts = True
+                        target_atlas_map = _build_atlas_anchor_map(
+                            target_tokenizer,
+                            target_embed,
+                            target_embed.shape[0],
+                            backend,
+                            use_all_support_texts=True,
+                            cache_key=target_cache_key,
+                        )
+                        source_atlas_map = _build_atlas_anchor_map(
+                            source_tokenizer,
+                            source_embed,
+                            source_embed.shape[0],
+                            backend,
+                            use_all_support_texts=True,
+                            cache_key=source_cache_key,
+                        )
+                        shared_atlas = sorted(
+                            set(source_atlas_map) & set(target_atlas_map)
+                        )
+                        max_anchor_count = min(
+                            len(shared_atlas), int(source_embed.shape[1])
+                        )
+                        candidate_atlas = shared_atlas
+                        if len(shared_atlas) > max_anchor_count and balance_anchor_weights:
+                            candidate_count = min(
+                                len(shared_atlas),
+                                max_anchor_count * coverage_candidate_multiplier,
+                            )
+                            candidate_atlas = _balanced_anchor_subset(
+                                shared_atlas, candidate_count
+                            )
+
+                        target_atlas_matrix_full = backend.stack(
+                            [target_atlas_map[k] for k in candidate_atlas], axis=0
+                        )
+                        source_atlas_matrix_full = backend.stack(
+                            [source_atlas_map[k] for k in candidate_atlas], axis=0
+                        )
+                        backend.eval(target_atlas_matrix_full, source_atlas_matrix_full)
+
+                        if len(candidate_atlas) > max_anchor_count:
+                            if use_coverage_anchor_selection:
+                                selected_indices, coverage_meta = _select_coverage_indices(
+                                    target_atlas_matrix_full,
+                                    max_anchor_count,
+                                    backend,
+                                    k_neighbors=coverage_k_neighbors,
+                                )
+                            else:
+                                if balance_anchor_weights:
+                                    selected_atlas = _balanced_anchor_subset(
+                                        candidate_atlas, max_anchor_count
                                     )
                                 else:
-                                    if balance_anchor_weights:
-                                        shared_atlas = _balanced_anchor_subset(
-                                            candidate_atlas, max_anchor_count
-                                        )
-                                    else:
-                                        shared_atlas = candidate_atlas[:max_anchor_count]
-                                    target_atlas_matrix = backend.stack(
-                                        [target_atlas_map[k] for k in shared_atlas],
-                                        axis=0,
-                                    )
-                                    source_atlas_matrix = backend.stack(
-                                        [source_atlas_map[k] for k in shared_atlas],
-                                        axis=0,
-                                    )
-                                    backend.eval(
-                                        target_atlas_matrix,
-                                        source_atlas_matrix,
-                                    )
-                            else:
-                                target_atlas_matrix = target_atlas_matrix_full
-                                source_atlas_matrix = source_atlas_matrix_full
-                                shared_atlas = candidate_atlas
-                            atlas_labels = list(shared_atlas)
+                                    selected_atlas = candidate_atlas[:max_anchor_count]
+                                atlas_index = {
+                                    anchor: idx
+                                    for idx, anchor in enumerate(candidate_atlas)
+                                }
+                                selected_indices = [
+                                    atlas_index[a] for a in selected_atlas if a in atlas_index
+                                ]
+                        else:
+                            selected_indices = list(range(len(candidate_atlas)))
+
+                        if selected_indices:
+                            idx_arr = backend.array(selected_indices)
+                            target_atlas_matrix = backend.take(
+                                target_atlas_matrix_full, idx_arr, axis=0
+                            )
+                            source_atlas_matrix = backend.take(
+                                source_atlas_matrix_full, idx_arr, axis=0
+                            )
+                            backend.eval(target_atlas_matrix, source_atlas_matrix)
+
+                            rank_indices, rank_meta = _select_full_rank_indices(
+                                target_atlas_matrix,
+                                int(source_atlas_matrix.shape[0]),
+                                backend,
+                            )
+                            if len(rank_indices) < int(source_atlas_matrix.shape[0]):
+                                selected_indices = [
+                                    selected_indices[idx] for idx in rank_indices
+                                ]
+                                idx_arr = backend.array(selected_indices)
+                                target_atlas_matrix = backend.take(
+                                    target_atlas_matrix_full, idx_arr, axis=0
+                                )
+                                source_atlas_matrix = backend.take(
+                                    source_atlas_matrix_full, idx_arr, axis=0
+                                )
+                                backend.eval(target_atlas_matrix, source_atlas_matrix)
+
+                            if coverage_meta is None:
+                                coverage_meta = {}
+                            coverage_meta.update(rank_meta)
+
+                        selected_set = set(selected_indices)
+                        available_indices = [
+                            idx
+                            for idx in range(len(candidate_atlas))
+                            if idx not in selected_set
+                        ]
+                        shared_atlas = [candidate_atlas[idx] for idx in selected_indices]
+                        atlas_labels = list(shared_atlas)
+                    logger.info(
+                        "Vocabulary phase lock not reached; expanding search to %d solver iterations",
+                        solver_iterations,
+                    )
                         logger.info(
                             "Vocabulary phase lock not reached; expanding search to %d solver iterations",
                             solver_iterations,

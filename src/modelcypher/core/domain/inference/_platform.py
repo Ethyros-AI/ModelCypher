@@ -40,6 +40,7 @@ Platform-specific implementations:
 
 from __future__ import annotations
 
+import os
 import platform
 from typing import TYPE_CHECKING
 
@@ -88,6 +89,11 @@ def get_inference_platform() -> str:
         'jax' on Linux with JAX (TPU/GPU)
         'cpu' otherwise
     """
+    env_backend = os.environ.get("MC_BACKEND", "").lower()
+    if not env_backend:
+        env_backend = os.environ.get("MODELCYPHER_BACKEND", "").lower()
+    if env_backend in ("mlx", "cuda", "jax"):
+        return env_backend
     if _is_mlx_available():
         return "mlx"
     if _is_cuda_available():
