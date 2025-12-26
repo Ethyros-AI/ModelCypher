@@ -331,7 +331,13 @@ class ManifoldFidelitySweep:
             return 0.0
 
     def _compute_knn_overlap(self, x: "Array", y: "Array", k: int = None) -> float:
-        """k-NN neighborhood preservation."""
+        """k-NN neighborhood preservation using geodesic distances.
+
+        Geodesic distances account for manifold curvature. Euclidean distance
+        would give incorrect neighbor rankings in curved spaces.
+        """
+        from .riemannian_utils import RiemannianGeometry
+
         b = self._backend
         if k is None:
             k = min(self.config.neighbor_count, x.shape[0] - 1)
@@ -340,13 +346,14 @@ class ManifoldFidelitySweep:
         if n < 2:
             return 0.0
 
-        # Compute pairwise distances
-        def pairwise_dist(pts: "Array") -> "Array":
-            sq_norms = b.sum(pts**2, axis=1, keepdims=True)
-            return sq_norms + b.transpose(sq_norms) - 2 * b.matmul(pts, b.transpose(pts))
+        # Compute geodesic pairwise distances (curvature is inherent in high-D)
+        rg = RiemannianGeometry(b)
+        k_geo = min(max(3, n // 3), n - 1)
 
-        dx = pairwise_dist(x)
-        dy = pairwise_dist(y)
+        dx_result = rg.geodesic_distances(x, k_neighbors=k_geo)
+        dy_result = rg.geodesic_distances(y, k_neighbors=k_geo)
+        dx = dx_result.distances
+        dy = dy_result.distances
         b.eval(dx, dy)
 
         # Get k-nearest neighbors
@@ -367,24 +374,33 @@ class ManifoldFidelitySweep:
         return overlap_sum / n
 
     def _compute_distance_correlation(self, x: "Array", y: "Array") -> float:
-        """Pearson correlation of pairwise distances."""
+        """Pearson correlation of pairwise geodesic distances.
+
+        Geodesic distances account for manifold curvature. Comparing Euclidean
+        distances would give incorrect correlation in curved spaces.
+        """
+        from .riemannian_utils import RiemannianGeometry
+
         b = self._backend
         n = x.shape[0]
         if n < 2:
             return 0.0
 
-        # Compute upper triangular pairwise distances
-        def upper_tri_distances(pts: "Array") -> list[float]:
-            dists = []
-            pts_list = b.to_numpy(pts).tolist()
-            for i in range(n):
-                for j in range(i + 1, n):
-                    d = sum((pts_list[i][k] - pts_list[j][k]) ** 2 for k in range(len(pts_list[i])))
-                    dists.append(math.sqrt(d))
-            return dists
+        # Compute geodesic pairwise distances (curvature is inherent in high-D)
+        rg = RiemannianGeometry(b)
+        k_geo = min(max(3, n // 3), n - 1)
 
-        dx = upper_tri_distances(x)
-        dy = upper_tri_distances(y)
+        dx_result = rg.geodesic_distances(x, k_neighbors=k_geo)
+        dy_result = rg.geodesic_distances(y, k_neighbors=k_geo)
+        dx_mat = dx_result.distances
+        dy_mat = dy_result.distances
+        b.eval(dx_mat, dy_mat)
+
+        # Extract upper triangular pairwise distances
+        dx_np = b.to_numpy(dx_mat)
+        dy_np = b.to_numpy(dy_mat)
+        dx = [float(dx_np[i, j]) for i in range(n) for j in range(i + 1, n)]
+        dy = [float(dy_np[i, j]) for i in range(n) for j in range(i + 1, n)]
 
         if len(dx) < 2:
             return 0.0
