@@ -236,29 +236,28 @@ Variance increases with drop rate—hence the limit on practical $p$.
 
 ### Primary Reference
 
-1. **Yu, L., Yu, B., Yu, H., Huang, F., & Li, Y.** (2024). "Language Models are Super Mario: Absorbing Abilities from Homologous Models as a Free Lunch." *ICML 2024*.
-   arXiv: 2311.03099
+1. **Yu, L., Yu, B., Yu, H., Huang, F., & Li, Y.** (2024). "Language Models are Super Mario: Absorbing Abilities from Homologous Models as a Free Lunch." *ICML 2024*. [arXiv:2311.03099](https://arxiv.org/abs/2311.03099)
    - *Original DARE paper*
 
 ### Extensions
 
-2. **Deng, Z., et al.** (2024). "DAREx: Drop And REscale with Extreme Sparsity."
+2. **Deng, Z., et al.** (2024). "DAREx: Drop And REscale with Extreme Sparsity." [arXiv](https://arxiv.org/search/?query=DAREx+drop+rescale+extreme&searchtype=all)
    - *Improved DARE for extreme drop rates*
 
-3. **Davari, M.-J., & Belilovsky, E.** (2024). "Model Breadcrumbs: Scaling Multi-Task Model Merging with Sparse Masks." *ECCV 2024*.
+3. **Davari, M.-J., & Belilovsky, E.** (2024). "Model Breadcrumbs: Scaling Multi-Task Model Merging with Sparse Masks." *ECCV 2024*. [arXiv:2312.06795](https://arxiv.org/abs/2312.06795)
    - *Magnitude-based alternative to random dropping*
 
 ### Theoretical Analysis
 
-4. **Wang, X., et al.** (2024). "FREE-Merging: Fourier-based Redundancy Elimination for Efficient Model Merging."
+4. **Wang, X., et al.** (2024). "FREE-Merging: Fourier-based Redundancy Elimination for Efficient Model Merging." [arXiv](https://arxiv.org/search/?query=FREE-Merging+Fourier+redundancy&searchtype=all)
    - *Frequency-domain analysis of redundancy*
 
 ### 2025 Applications
 
-5. **NAACL 2025**: "STAR: Spectral Truncation and Rescale for Model Merging."
+5. **NAACL 2025**: "STAR: Spectral Truncation and Rescale for Model Merging." [ACL Anthology](https://aclanthology.org/)
    - *Combines spectral methods with DARE concepts*
 
-6. **Engineering Applications of AI** (2025). "Research on enhancing model performance by merging using DARE."
+6. **Engineering Applications of AI** (2025). "Research on enhancing model performance by merging using DARE." [Elsevier](https://www.sciencedirect.com/journal/engineering-applications-of-artificial-intelligence)
    - *Production applications of DARE*
 
 ---

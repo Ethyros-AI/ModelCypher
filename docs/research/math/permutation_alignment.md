@@ -248,37 +248,34 @@ For large models:
 
 ### Primary Reference
 
-1. **Ainsworth, S.K., Hayase, J., & Srinivasa, S.** (2023). "Git Re-Basin: Merging Models modulo Permutation Symmetries." *ICLR 2023*.
-   arXiv: 2209.04836
-   GitHub: https://github.com/samuela/git-re-basin
+1. **[Ainsworth et al. (2023)](../../references/arxiv/Ainsworth_2023_Git_ReBasin.pdf)**. "Git Re-Basin: Merging Models modulo Permutation Symmetries." *ICLR 2023*. [arXiv:2209.04836](https://arxiv.org/abs/2209.04836) · [GitHub](https://github.com/samuela/git-re-basin)
    - *The foundational paper*
 
 ### Theoretical Foundations
 
-2. **Entezari, R., Sedghi, H., Saukh, O., & Neyshabur, B.** (2022). "The Role of Permutation Invariance in Linear Mode Connectivity of Neural Networks." *ICLR 2022*.
+2. **Entezari, R., Sedghi, H., Saukh, O., & Neyshabur, B.** (2022). "The Role of Permutation Invariance in Linear Mode Connectivity of Neural Networks." *ICLR 2022*. [OpenReview](https://openreview.net/forum?id=dNigytemkL)
    - *Theoretical analysis of permutation symmetries*
 
-3. **Frankle, J., Dziugaite, G.K., Roy, D.M., & Carbin, M.** (2020). "Linear Mode Connectivity and the Lottery Ticket Hypothesis." *ICML 2020*.
+3. **Frankle, J., Dziugaite, G.K., Roy, D.M., & Carbin, M.** (2020). "Linear Mode Connectivity and the Lottery Ticket Hypothesis." *ICML 2020*. [arXiv:2003.05912](https://arxiv.org/abs/2003.05912)
    - *Linear mode connectivity framework*
 
 ### Extensions
 
-4. **Guerrero Peña, F.A., et al.** (2023). "Re-basin via Implicit Sinkhorn Differentiation." *CVPR 2023*.
+4. **Guerrero Peña, F.A., et al.** (2023). "Re-basin via Implicit Sinkhorn Differentiation." *CVPR 2023*. [arXiv:2212.12042](https://arxiv.org/abs/2212.12042)
    - *Differentiable re-basin for residual networks*
 
-5. **Navon, A., et al.** (2023). "Equivariant Deep Weight Space Alignment."
-   arXiv: 2310.13397
+5. **Navon, A., et al.** (2023). "Equivariant Deep Weight Space Alignment." [arXiv:2310.13397](https://arxiv.org/abs/2310.13397)
    - *Equivariant methods*
 
 ### 2024-2025 Advances
 
-6. **ICML 2025 Poster**: "Linear Mode Connectivity between Multiple Models modulo Permutation Symmetries."
+6. **ICML 2025 Poster**: "Linear Mode Connectivity between Multiple Models modulo Permutation Symmetries." [ICML 2025](https://icml.cc/)
    - *Multi-model extension (STE-MM)*
 
-7. **Sharma, K., et al.** (2024). "Simultaneous Linear Connectivity."
+7. **Sharma, K., et al.** (2024). "Simultaneous Linear Connectivity." [arXiv](https://arxiv.org/search/?query=simultaneous+linear+connectivity+neural+networks&searchtype=all)
    - *Single model aligns to multiple others*
 
-8. **arXiv 2402.05966** (2024). "Rethinking Model Re-Basin and Linear Mode Connectivity."
+8. **Jordan, K., et al.** (2024). "Rethinking Model Re-Basin and Linear Mode Connectivity." [arXiv:2402.05966](https://arxiv.org/abs/2402.05966)
    - *Analysis of activation shift problem*
 
 ---

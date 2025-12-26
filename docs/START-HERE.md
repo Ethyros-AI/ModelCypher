@@ -120,6 +120,47 @@ mc model merge --source ./model-A --target ./model-B --output-dir ./merged
 
 ---
 
+## Documentation Map
+
+```
+START-HERE.md (you are here)
+    │
+    ├── For Intuition ────────────────────┐
+    │   ├── GEOMETRY-GUIDE.md             │
+    │   ├── WHY-GEOMETRY-MATTERS.md       │
+    │   └── geometry/mental_model.md      │
+    │                                     │
+    ├── For Precision ───────────────────>│── GLOSSARY.md (reference)
+    │   └── geometry/*.md (6 deep dives)  │
+    │                                     │
+    └── For Research ─────────────────────┤
+        ├── papers/paper-0 (framework)    │  ← Start here for theory
+        ├── papers/paper-1 (CKA)          │
+        ├── papers/paper-2 (entropy)      │
+        ├── papers/paper-3 (transfer)     │
+        ├── papers/paper-4 (toolkit)      │
+        └── papers/paper-5 (highway)      │
+                                          │
+    All paths converge at:────────────────┘
+        └── CLI-REFERENCE.md (how to measure)
+```
+
+### Reading Order
+
+**For the Big Picture** (30 min):
+1. [Paper 0: The Shape of Knowledge](../papers/paper-0-the-shape-of-knowledge.md) — Framework
+2. [Paper 5: The Semantic Highway](../papers/paper-5-semantic-highway.md) — Key observation
+
+**For Implementation** (1 hour):
+3. [Paper 1: Invariant Semantic Structure](../papers/paper-1-invariant-semantic-structure.md) — CKA methodology
+4. [Paper 3: Cross-Architecture Transfer](../papers/paper-3-cross-architecture-transfer.md) — Merge technique
+5. [Paper 4: ModelCypher Toolkit](../papers/paper-4-modelcypher-toolkit.md) — CLI usage
+
+**For Safety** (30 min):
+6. [Paper 2: Entropy Safety Signal](../papers/paper-2-entropy-safety-signal.md) — ΔH monitoring
+
+---
+
 ## Repository Structure
 
 ```
@@ -130,8 +171,11 @@ ModelCypher/
 │   ├── cli/                  # CLI commands
 │   └── mcp/                  # MCP server (148 tools)
 ├── docs/                     # Documentation (you are here)
-├── papers/                   # Research manuscripts
-└── tests/                    # 3030 tests
+│   ├── geometry/             # Deep-dive geometry docs
+│   ├── research/             # Research methodology
+│   └── references/arxiv/     # 51 reference PDFs
+├── papers/                   # Research manuscripts (0-5)
+└── tests/                    # 3060 tests
 ```
 
 ---

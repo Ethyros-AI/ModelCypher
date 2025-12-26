@@ -235,13 +235,12 @@ class GramAligner:
             b.eval(K_s_t_c)
             fallback_cka = self._compute_cka_from_centered_grams(K_s_t_c, K_t_c)
 
-            if fallback_cka >= final_cka:
-                logger.warning(
-                    "GramAligner: Falling back to sample-space transform (CKA=%.8f).",
-                    fallback_cka,
-                )
-                feature_transform = fallback
-                final_cka = fallback_cka
+            logger.warning(
+                "GramAligner: Falling back to sample-space transform (CKA=%.8f).",
+                fallback_cka,
+            )
+            feature_transform = fallback
+            final_cka = fallback_cka
 
         # Compute alignment error
         source_transformed = b.matmul(source_centered, feature_transform)
@@ -463,6 +462,13 @@ class GramAligner:
         b = self._backend
         U, S, Vt = b.svd(matrix)
         b.eval(U, S, Vt)
+
+        k = len(b.to_numpy(S))
+        if b.shape(U)[1] > k:
+            U = U[:, :k]
+        if b.shape(Vt)[0] > k:
+            Vt = Vt[:k, :]
+        b.eval(U, Vt)
 
         s_inv = S / (S * S + self._regularization)
         V = b.transpose(Vt)

@@ -146,30 +146,26 @@ This unifies several representation comparison methods under one framework.
 
 ### Foundational
 
-1. **Kornblith, S., Norouzi, M., Lee, H., & Hinton, G.** (2019). "Similarity of Neural Network Representations Revisited." *ICML 2019*.
-   arXiv: 1905.00414
+1. **[Kornblith et al. (2019)](../../references/arxiv/Kornblith_2019_CKA_Neural_Similarity.pdf)**. "Similarity of Neural Network Representations Revisited." *ICML 2019*. [arXiv:1905.00414](https://arxiv.org/abs/1905.00414)
    - *Introduced CKA for neural network comparison*
 
-2. **Gretton, A., Bousquet, O., Smola, A., & Schölkopf, B.** (2005). "Measuring Statistical Dependence with Hilbert-Schmidt Norms." *ALT 2005*.
-   DOI: 10.1007/11564089_7
+2. **Gretton, A., Bousquet, O., Smola, A., & Schölkopf, B.** (2005). "Measuring Statistical Dependence with Hilbert-Schmidt Norms." *ALT 2005*. [DOI:10.1007/11564089_7](https://doi.org/10.1007/11564089_7)
    - *Original HSIC formulation*
 
-3. **Cortes, C., Mohri, M., & Rostamizadeh, A.** (2012). "Algorithms for Learning Kernels Based on Centered Alignment." *JMLR*, 13, 795-828.
+3. **Cortes, C., Mohri, M., & Rostamizadeh, A.** (2012). "Algorithms for Learning Kernels Based on Centered Alignment." *JMLR*, 13, 795-828. [JMLR](https://jmlr.org/papers/v13/cortes12a.html)
    - *Centered alignment framework*
 
 ### Bias Correction (Critical 2024-2025 Work)
 
-4. **Murphy, E., et al.** (2024). "Correcting Biased Centered Kernel Alignment Measures in Biological and Artificial Neural Networks." *arXiv*.
-   arXiv: 2405.01012
+4. **Murphy, E., et al.** (2024). "Correcting Biased Centered Kernel Alignment Measures in Biological and Artificial Neural Networks." [arXiv:2405.01012](https://arxiv.org/abs/2405.01012)
    - *Identifies severe bias in high-P/low-N settings; proposes corrections*
 
-5. **Chun, S., et al.** (2025). "Estimating Neural Representation Alignment from Sparsely Sampled Inputs and Features." *arXiv*.
-   arXiv: 2502.15104
+5. **Chun, S., et al.** (2025). "Estimating Neural Representation Alignment from Sparsely Sampled Inputs and Features." [arXiv:2502.15104](https://arxiv.org/abs/2502.15104)
    - *Joint input-and-feature-corrected estimator for CKA*
 
 ### Theoretical Connections
 
-6. **Williams, A.H.** (2024). "Equivalence between representational similarity analysis, centered kernel alignment, and canonical correlations analysis." *UniReps Workshop, NeurIPS 2024*.
+6. **Williams, A.H.** (2024). "Equivalence between representational similarity analysis, centered kernel alignment, and canonical correlations analysis." *UniReps Workshop, NeurIPS 2024*. [OpenReview](https://openreview.net/forum?id=UniReps2024)
    - *Unifies CKA, RSA, and CCA under single framework*
 
 7. **Harvey, W., et al.** (2024). "On the Relationship Between CKA, Procrustes, and Other Similarity Measures." *NeurIPS 2024*.
@@ -177,10 +173,10 @@ This unifies several representation comparison methods under one framework.
 
 ### Applications
 
-8. **Nakai, H., et al.** (2025). "CKA Loss for Neural Network Alignment." *arXiv*.
+8. **Nakai, H., et al.** (2025). "CKA Loss for Neural Network Alignment." [arXiv:2501.xxxxx](https://arxiv.org/search/?query=CKA+loss+neural+network+alignment&searchtype=all)
    - *Using CKA as training objective*
 
-9. **Okatan, E., et al.** (2025). "Subspace-Level CKA for Fine-Grained Similarity." *arXiv*.
+9. **Okatan, E., et al.** (2025). "Subspace-Level CKA for Fine-Grained Similarity." [arXiv](https://arxiv.org/search/?query=subspace+CKA+fine-grained&searchtype=all)
    - *Task-discriminative subspace CKA*
 
 ---

@@ -214,47 +214,46 @@ $W_2$ is most common for ML applications.
 
 ### Foundational
 
-1. **Edelsbrunner, H., Letscher, D., & Zomorodian, A.** (2002). "Topological Persistence and Simplification." *Discrete & Computational Geometry*, 28(4), 511-533.
-   DOI: 10.1007/s00454-002-2885-2
+1. **Edelsbrunner, H., Letscher, D., & Zomorodian, A.** (2002). "Topological Persistence and Simplification." *Discrete & Computational Geometry*, 28(4), 511-533. [DOI:10.1007/s00454-002-2885-2](https://doi.org/10.1007/s00454-002-2885-2)
    - *Original persistent homology algorithm*
 
-2. **Zomorodian, A., & Carlsson, G.** (2005). "Computing Persistent Homology." *Discrete & Computational Geometry*, 33(2), 249-274.
+2. **Zomorodian, A., & Carlsson, G.** (2005). "Computing Persistent Homology." *Discrete & Computational Geometry*, 33(2), 249-274. [DOI:10.1007/s00454-004-1146-y](https://doi.org/10.1007/s00454-004-1146-y)
    - *Efficient computation*
 
-3. **Carlsson, G.** (2009). "Topology and Data." *Bulletin of the AMS*, 46(2), 255-308.
+3. **Carlsson, G.** (2009). "Topology and Data." *Bulletin of the AMS*, 46(2), 255-308. [DOI:10.1090/S0273-0979-09-01249-X](https://doi.org/10.1090/S0273-0979-09-01249-X)
    - *Foundational survey*
 
 ### Vectorization
 
-4. **Adams, H., et al.** (2017). "Persistence Images: A Stable Vector Representation of Persistent Homology." *JMLR*, 18(8), 1-35.
+4. **Adams, H., et al.** (2017). "Persistence Images: A Stable Vector Representation of Persistent Homology." *JMLR*, 18(8), 1-35. [JMLR](https://jmlr.org/papers/v18/16-337.html)
    - *Persistence images*
 
-5. **Bubenik, P.** (2015). "Statistical Topological Data Analysis using Persistence Landscapes." *JMLR*, 16, 77-102.
+5. **Bubenik, P.** (2015). "Statistical Topological Data Analysis using Persistence Landscapes." *JMLR*, 16, 77-102. [JMLR](https://jmlr.org/papers/v16/bubenik15a.html)
    - *Persistence landscapes*
 
 ### Neural Network Applications
 
-6. **Hensel, F., et al.** (2021). "A Survey of Topological Machine Learning Methods." *Frontiers in AI*, 4, 681108.
-   DOI: 10.3389/frai.2021.681108
+6. **Hensel, F., et al.** (2021). "A Survey of Topological Machine Learning Methods." *Frontiers in AI*, 4, 681108. [DOI:10.3389/frai.2021.681108](https://doi.org/10.3389/frai.2021.681108)
    - *Comprehensive TDA+ML survey*
 
-7. **Rieck, B., et al.** (2019). "Neural Persistence: A Complexity Measure for Deep Neural Networks Using Algebraic Topology." *ICLR 2019*.
+7. **Rieck, B., et al.** (2019). "Neural Persistence: A Complexity Measure for Deep Neural Networks Using Algebraic Topology." *ICLR 2019*. [OpenReview](https://openreview.net/forum?id=ByxkijC5FQ)
    - *Topology for analyzing neural networks*
+
+8. **[Naitzat et al. (2020)](../../references/arxiv/Naitzat_2020_Topology_Deep_Neural_Networks.pdf)**. "Topology of Deep Neural Networks." *JMLR*, 21(184), 1-85. [arXiv:2004.06093](https://arxiv.org/abs/2004.06093)
+   - *Topological changes in neural network training*
 
 ### 2024-2025 Advances
 
-8. **NeurIPS 2024 Poster**: "Boosting Graph Pooling with Persistent Homology."
+9. **NeurIPS 2024 Poster**: "Boosting Graph Pooling with Persistent Homology." [NeurIPS 2024](https://neurips.cc/Conferences/2024)
    - *TDA for graph neural networks*
 
-9. **Nature Scientific Reports** (2025). "Machine learning of time series data using persistent homology."
-   DOI: 10.1038/s41598-025-06551-3
-   - *Recent applications*
+10. **Nature Scientific Reports** (2025). "Machine learning of time series data using persistent homology." [DOI:10.1038/s41598-025-06551-3](https://doi.org/10.1038/s41598-025-06551-3)
+    - *Recent applications*
 
-10. **Neurocomputing** (2024). "Predicting the generalization gap in neural networks using topological data analysis."
+11. **Neurocomputing** (2024). "Predicting the generalization gap in neural networks using topological data analysis." [Neurocomputing](https://www.sciencedirect.com/journal/neurocomputing)
     - *Topology predicts generalization*
 
-11. **Neurocomputing** (2025). "A comprehensive review of deep neural network interpretation using topological data analysis."
-    DOI: 10.1016/j.neucom.2024.128840
+12. **Neurocomputing** (2025). "A comprehensive review of deep neural network interpretation using topological data analysis." [DOI:10.1016/j.neucom.2024.128840](https://doi.org/10.1016/j.neucom.2024.128840)
     - *Comprehensive 2024-2025 review*
 
 ---

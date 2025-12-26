@@ -255,34 +255,31 @@ def geometric_ties_merge(models, pretrained, activations, density=0.2):
 
 ### Primary Reference
 
-1. **Yadav, P., Tam, D., Choshen, L., Raffel, C., & Bansal, M.** (2023). "TIES-Merging: Resolving Interference When Merging Models." *NeurIPS 2023*.
-   arXiv: 2306.01708
-   OpenReview: https://openreview.net/forum?id=xtaX3WyCj1
+1. **[Yadav et al. (2023)](../../references/arxiv/Yadav_2023_TIES_Merging.pdf)**. "TIES-Merging: Resolving Interference When Merging Models." *NeurIPS 2023*. [arXiv:2306.01708](https://arxiv.org/abs/2306.01708) · [OpenReview](https://openreview.net/forum?id=xtaX3WyCj1)
    - *The foundational TIES paper*
 
 ### Task Arithmetic Foundation
 
-2. **Ilharco, G., Ribeiro, M.T., Wortsman, M., Gururangan, S., Schmidt, L., Hajishirzi, H., & Farhadi, A.** (2023). "Editing Models with Task Arithmetic." *ICLR 2023*.
-   arXiv: 2212.04089
+2. **[Ilharco et al. (2023)](../../references/arxiv/Ilharco_2023_Task_Arithmetic.pdf)**. "Editing Models with Task Arithmetic." *ICLR 2023*. [arXiv:2212.04089](https://arxiv.org/abs/2212.04089)
    - *Task vector foundation*
 
 ### Extensions and Variants
 
-3. **TIES-SVD** (Stoica et al., 2024). "Integrating SVD for refined fusion."
+3. **Stoica et al.** (2024). "TIES-SVD: Integrating SVD for refined fusion." [arXiv](https://arxiv.org/search/?query=TIES-SVD+merging&searchtype=all)
    - *SVD extension of TIES*
 
-4. **CAT Merging** (2025). "Conflict-Aware Task Merging."
+4. **CAT Merging** (2025). "Conflict-Aware Task Merging." [arXiv](https://arxiv.org/search/?query=conflict-aware+task+merging&searchtype=all)
    - *Improved conflict detection*
 
-5. **Wang, X., et al.** (2024). "TALL Masks / Consensus: Deactivating irrelevant parameters through binary masking."
+5. **Wang, X., et al.** (2024). "TALL Masks / Consensus: Deactivating irrelevant parameters through binary masking." [arXiv](https://arxiv.org/search/?query=TALL+masks+consensus+merging&searchtype=all)
    - *Binary masking alternative*
 
 ### Applications
 
-6. **SemEval 2025**: "Unlearning via Model Merging using TIES."
+6. **SemEval 2025**: "Unlearning via Model Merging using TIES." [ACL Anthology](https://aclanthology.org/)
    - *TIES for model unlearning*
 
-7. **NVIDIA Developer Blog** (2024). "An Introduction to Model Merging for LLMs."
+7. **NVIDIA Developer Blog** (2024). "An Introduction to Model Merging for LLMs." [NVIDIA Blog](https://developer.nvidia.com/blog/an-introduction-to-model-merging-for-llms/)
    - *Practical TIES guide*
 
 ---

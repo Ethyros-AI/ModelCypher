@@ -164,40 +164,36 @@ This penalizes changes to important parameters, preventing catastrophic forgetti
 
 ### Foundational
 
-1. **Fisher, R.A.** (1925). "Theory of Statistical Estimation." *Proceedings of the Cambridge Philosophical Society*, 22, 700-725.
+1. **Fisher, R.A.** (1925). "Theory of Statistical Estimation." *Proceedings of the Cambridge Philosophical Society*, 22, 700-725. [DOI:10.1017/S0305004100009580](https://doi.org/10.1017/S0305004100009580)
    - *Original Fisher information*
 
-2. **Amari, S.** (2016). *Information Geometry and Its Applications*. Springer.
+2. **Amari, S.** (2016). *Information Geometry and Its Applications*. Springer. [Book](https://link.springer.com/book/10.1007/978-4-431-55978-8)
    - *Comprehensive treatment of information geometry*
 
 ### Neural Network Merging
 
-3. **Matena, M.S., & Raffel, C.** (2022). "Merging Models with Fisher-Weighted Averaging." *NeurIPS 2022*.
-   arXiv: 2111.09832
+3. **Matena, M.S., & Raffel, C.** (2022). "Merging Models with Fisher-Weighted Averaging." *NeurIPS 2022*. [arXiv:2111.09832](https://arxiv.org/abs/2111.09832)
    - *Fisher merging for neural networks*
 
-4. **Tam, D., et al.** (2024). "Dynamic Fisher-weighted Model Merging via Bayesian Optimization." *NAACL 2025*.
+4. **Tam, D., et al.** (2024). "Dynamic Fisher-weighted Model Merging via Bayesian Optimization." *NAACL 2025*. [ACL Anthology](https://aclanthology.org/)
    - *Geometric analysis of Fisher merging*
 
-5. **Li, Y.X., Dangel, F., Tam, D., & Raffel, C.** (2025). "Fishers for Free? Approximating the Fisher Information Matrix by Recycling the Squared Gradient Accumulator." *ICML 2025 Spotlight*.
-   OpenReview: https://openreview.net/forum?id=m3zrHhiCCj
+5. **Li, Y.X., Dangel, F., Tam, D., & Raffel, C.** (2025). "Fishers for Free? Approximating the Fisher Information Matrix by Recycling the Squared Gradient Accumulator." *ICML 2025 Spotlight*. [OpenReview](https://openreview.net/forum?id=m3zrHhiCCj)
    - *Efficient Fisher from optimizer state*
 
 ### Federated Learning
 
-6. **Jhunjhunwala, D., et al.** (2024). "FedFisher: Leveraging Fisher Information for One-Shot Federated Learning." *AISTATS 2024*.
+6. **Jhunjhunwala, D., et al.** (2024). "FedFisher: Leveraging Fisher Information for One-Shot Federated Learning." *AISTATS 2024*. [PMLR](https://proceedings.mlr.press/v238/)
    - *Fisher for federated merging*
 
 ### Continual Learning
 
-7. **Kirkpatrick, J., et al.** (2017). "Overcoming catastrophic forgetting in neural networks." *PNAS*, 114(13), 3521-3526.
-   DOI: 10.1073/pnas.1611835114
+7. **Kirkpatrick, J., et al.** (2017). "Overcoming catastrophic forgetting in neural networks." *PNAS*, 114(13), 3521-3526. [DOI:10.1073/pnas.1611835114](https://doi.org/10.1073/pnas.1611835114)
    - *Elastic Weight Consolidation (EWC)*
 
 ### Approximations
 
-8. **Martens, J., & Grosse, R.** (2015). "Optimizing Neural Networks with Kronecker-Factored Approximate Curvature." *ICML 2015*.
-   arXiv: 1503.05671
+8. **Martens, J., & Grosse, R.** (2015). "Optimizing Neural Networks with Kronecker-Factored Approximate Curvature." *ICML 2015*. [arXiv:1503.05671](https://arxiv.org/abs/1503.05671)
    - *K-FAC approximation*
 
 ---

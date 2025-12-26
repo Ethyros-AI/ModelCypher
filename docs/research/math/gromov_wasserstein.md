@@ -147,41 +147,34 @@ where $D_\pi = \text{diag}(\pi^T \mathbf{1})$ normalizes the transport.
 
 ### Foundational
 
-1. **Mémoli, F.** (2011). "Gromov-Wasserstein Distances and the Metric Approach to Object Matching." *Foundations of Computational Mathematics*, 11(4), 417-487.
-   DOI: 10.1007/s10208-011-9093-5
+1. **Mémoli, F.** (2011). "Gromov-Wasserstein Distances and the Metric Approach to Object Matching." *Foundations of Computational Mathematics*, 11(4), 417-487. [DOI:10.1007/s10208-011-9093-5](https://doi.org/10.1007/s10208-011-9093-5)
    - *Original formulation of GW distance*
 
-2. **Peyré, G., Cuturi, M., & Solomon, J.** (2016). "Gromov-Wasserstein Averaging of Kernel and Distance Matrices." *ICML 2016*.
+2. **Peyré, G., Cuturi, M., & Solomon, J.** (2016). "Gromov-Wasserstein Averaging of Kernel and Distance Matrices." *ICML 2016*. [Paper](https://proceedings.mlr.press/v48/peyre16.html)
    - *Computational framework for GW*
 
-3. **Vayer, T., Chapel, L., Flamary, R., Tavenard, R., & Courty, N.** (2019). "Fused Gromov-Wasserstein Distance for Structured Objects." *ICML 2019*.
-   arXiv: 1811.02834
+3. **Vayer, T., Chapel, L., Flamary, R., Tavenard, R., & Courty, N.** (2019). "Fused Gromov-Wasserstein Distance for Structured Objects." *ICML 2019*. [arXiv:1811.02834](https://arxiv.org/abs/1811.02834)
    - *FGW combining structure and features*
 
 ### Word Embeddings and NLP
 
-4. **Alvarez-Melis, D., & Jaakkola, T.S.** (2018). "Gromov-Wasserstein Alignment of Word Embedding Spaces." *EMNLP 2018*.
-   arXiv: 1809.00013
+4. **Alvarez-Melis, D., & Jaakkola, T.S.** (2018). "Gromov-Wasserstein Alignment of Word Embedding Spaces." *EMNLP 2018*. [arXiv:1809.00013](https://arxiv.org/abs/1809.00013)
    - *GW for cross-lingual embedding alignment*
 
 ### Neural Network Applications
 
-5. **Alvarez-Melis, D., & Fusi, N.** (2020). "Geometric Dataset Distances via Optimal Transport." *NeurIPS 2020*.
-   arXiv: 2002.02923
+5. **Alvarez-Melis, D., & Fusi, N.** (2020). "Geometric Dataset Distances via Optimal Transport." *NeurIPS 2020*. [arXiv:2002.02923](https://arxiv.org/abs/2002.02923)
    - *GW for comparing datasets*
 
-6. **Sato, R., et al.** (2025). "Unsupervised alignment in neuroscience: Introducing a toolbox for Gromov-Wasserstein optimal transport." *Journal of Neuroscience Methods*, 419, 110443.
-   DOI: 10.1016/j.jneumeth.2025.110443
+6. **Sato, R., et al.** (2025). "Unsupervised alignment in neuroscience: Introducing a toolbox for Gromov-Wasserstein optimal transport." *Journal of Neuroscience Methods*, 419, 110443. [DOI:10.1016/j.jneumeth.2025.110443](https://doi.org/10.1016/j.jneumeth.2025.110443)
    - *GWOT for neural representation alignment*
 
 ### Computational Advances (2024-2025)
 
-7. **Carrasco, X.A., et al.** (2023). "Neural Gromov-Wasserstein Optimal Transport." *arXiv*.
-   arXiv: 2303.05978
+7. **Carrasco, X.A., et al.** (2023). "Neural Gromov-Wasserstein Optimal Transport." [arXiv:2303.05978](https://arxiv.org/abs/2303.05978)
    - *Scalable neural method for GW*
 
-8. **Gromov-Wasserstein Tutorial** (2024). "Recent Advances in Optimal Transport for Machine Learning." *arXiv*.
-   arXiv: 2306.16156
+8. **Peyré, G., & Cuturi, M.** (2019). "Computational Optimal Transport." *Foundations and Trends in Machine Learning*, 11(5-6), 355-607. [arXiv:1803.00567](https://arxiv.org/abs/1803.00567)
    - *Comprehensive survey including GW*
 
 ---

@@ -173,41 +173,35 @@ consensus, transformations = gpa(model_representations)
 
 ### Foundational
 
-1. **Schönemann, P.H.** (1966). "A generalized solution of the orthogonal Procrustes problem." *Psychometrika*, 31(1), 1-10.
-   DOI: 10.1007/BF02289451
+1. **Schönemann, P.H.** (1966). "A generalized solution of the orthogonal Procrustes problem." *Psychometrika*, 31(1), 1-10. [DOI:10.1007/BF02289451](https://doi.org/10.1007/BF02289451)
    - *Original closed-form solution*
 
-2. **Gower, J.C.** (1975). "Generalized Procrustes Analysis." *Psychometrika*, 40(1), 33-51.
-   DOI: 10.1007/BF02291478
+2. **Gower, J.C.** (1975). "Generalized Procrustes Analysis." *Psychometrika*, 40(1), 33-51. [DOI:10.1007/BF02291478](https://doi.org/10.1007/BF02291478)
    - *Multi-matrix extension*
 
-3. **Goodall, C.** (1991). "Procrustes methods in the statistical analysis of shape." *Journal of the Royal Statistical Society B*, 53(2), 285-339.
+3. **Goodall, C.** (1991). "Procrustes methods in the statistical analysis of shape." *Journal of the Royal Statistical Society B*, 53(2), 285-339. [JSTOR](https://www.jstor.org/stable/2345744)
    - *Comprehensive treatment*
 
 ### Neural Network Applications
 
-4. **Hamilton, W.L., Leskovec, J., & Jurafsky, D.** (2016). "Diachronic Word Embeddings Reveal Statistical Laws of Semantic Change." *ACL 2016*.
-   arXiv: 1605.09096
+4. **Hamilton, W.L., Leskovec, J., & Jurafsky, D.** (2016). "Diachronic Word Embeddings Reveal Statistical Laws of Semantic Change." *ACL 2016*. [arXiv:1605.09096](https://arxiv.org/abs/1605.09096)
    - *Procrustes for word embedding alignment*
 
-5. **Ding, F., et al.** (2021). "Grounding Representation Similarity with Statistical Testing." *NeurIPS 2021*.
-   arXiv: 2108.01661
+5. **Ding, F., et al.** (2021). "Grounding Representation Similarity with Statistical Testing." *NeurIPS 2021*. [arXiv:2108.01661](https://arxiv.org/abs/2108.01661)
    - *Statistical framework for Procrustes*
 
 ### 2024-2025 Advances
 
-6. **Zielnicki, A., & Hsiao, D.** (2025). "When Embedding Models Meet: Procrustes Bounds and Alignment." *arXiv*.
-   arXiv: 2510.13406
+6. **Zielnicki, A., & Hsiao, D.** (2025). "When Embedding Models Meet: Procrustes Bounds and Alignment." [arXiv:2510.13406](https://arxiv.org/abs/2510.13406)
    - *Procrustes for embedding model versions*
 
-7. **Harvey, W., et al.** (2024). "Duality of Bures and Shape Distances with Implications for Representation Similarity." *CCN 2024*.
+7. **Harvey, W., et al.** (2024). "Duality of Bures and Shape Distances with Implications for Representation Similarity." *CCN 2024*. [CCN](https://2024.ccneuro.org/)
    - *Connects Procrustes to other similarity measures*
 
-8. **Chen, Y., et al.** (2025). "ProcrustesGPT: Compressing LLMs with Structured Matrices and Orthogonal Procrustes." *ACL Findings 2025*.
+8. **Chen, Y., et al.** (2025). "ProcrustesGPT: Compressing LLMs with Structured Matrices and Orthogonal Procrustes." *ACL Findings 2025*. [ACL Anthology](https://aclanthology.org/)
    - *Procrustes for LLM compression*
 
-9. **Similarity Survey** (2023). "Similarity of Neural Networks: A Survey of Functional and Representational Measures." *arXiv*.
-   arXiv: 2305.06329
+9. **Klabunde, M., et al.** (2023). "Similarity of Neural Networks: A Survey of Functional and Representational Measures." [arXiv:2305.06329](https://arxiv.org/abs/2305.06329)
    - *Comprehensive comparison including Procrustes*
 
 ---

@@ -105,38 +105,32 @@ The Fréchet mean is differentiable with respect to input points, enabling backp
 
 ### Foundational
 
-1. **Fréchet, M.** (1948). "Les éléments aléatoires de nature quelconque dans un espace distancié." *Annales de l'Institut Henri Poincaré*, 10(4), 215-310.
+1. **Fréchet, M.** (1948). "Les éléments aléatoires de nature quelconque dans un espace distancié." *Annales de l'Institut Henri Poincaré*, 10(4), 215-310. [Numdam](http://www.numdam.org/item/AIHP_1948__10_4_215_0/)
    - *Original definition of metric space mean*
 
-2. **Karcher, H.** (1977). "Riemannian center of mass and mollifier smoothing." *Communications on Pure and Applied Mathematics*, 30(5), 509-541.
+2. **Karcher, H.** (1977). "Riemannian center of mass and mollifier smoothing." *Communications on Pure and Applied Mathematics*, 30(5), 509-541. [DOI:10.1002/cpa.3160300502](https://doi.org/10.1002/cpa.3160300502)
    - *Riemannian formulation and gradient descent algorithm*
 
-3. **Sturm, K.-T.** (2003). "Probability measures on metric spaces of nonpositive curvature." *Contemporary Mathematics*, 338, 357-390.
-   DOI: 10.1090/conm/338/06080
+3. **Sturm, K.-T.** (2003). "Probability measures on metric spaces of nonpositive curvature." *Contemporary Mathematics*, 338, 357-390. [DOI:10.1090/conm/338/06080](https://doi.org/10.1090/conm/338/06080)
    - *Existence and uniqueness in Hadamard spaces*
 
 ### Neural Network Applications
 
-4. **Lou, A., Katsman, I., Jiang, Q., Belongie, S., Lim, S.-N., & De Sa, C.** (2020). "Differentiating through the Fréchet Mean." *ICML 2020*.
-   arXiv: 2003.00335
+4. **Lou, A., Katsman, I., Jiang, Q., Belongie, S., Lim, S.-N., & De Sa, C.** (2020). "Differentiating through the Fréchet Mean." *ICML 2020*. [arXiv:2003.00335](https://arxiv.org/abs/2003.00335)
    - *Enables backprop through Fréchet mean; hyperbolic neural networks*
 
-5. **Chakraborty, R., & Vemuri, B.C.** (2015). "Recursive Fréchet mean computation on the Grassmannian and its applications to computer vision." *ICCV 2015*.
-   DOI: 10.1109/ICCV.2015.483
+5. **Chakraborty, R., & Vemuri, B.C.** (2015). "Recursive Fréchet mean computation on the Grassmannian and its applications to computer vision." *ICCV 2015*. [DOI:10.1109/ICCV.2015.483](https://doi.org/10.1109/ICCV.2015.483)
    - *Efficient computation for subspace manifolds*
 
-6. **Chakraborty, R., Bouza, J., Manton, J.H., & Vemuri, B.C.** (2020). "ManifoldNet: A Deep Neural Network for Manifold-valued Data with Applications." *IEEE TPAMI*, 44(2), 799-810.
-   DOI: 10.1109/TPAMI.2020.3003846
+6. **Chakraborty, R., Bouza, J., Manton, J.H., & Vemuri, B.C.** (2020). "ManifoldNet: A Deep Neural Network for Manifold-valued Data with Applications." *IEEE TPAMI*, 44(2), 799-810. [DOI:10.1109/TPAMI.2020.3003846](https://doi.org/10.1109/TPAMI.2020.3003846)
    - *General framework for manifold-valued deep learning*
 
 ### 2024-2025 Advances
 
-7. **Iao, Y., et al.** (2025). "DFNN: A Deep Fréchet Neural Network Framework." *arXiv*.
-   arXiv: 2510.17072
+7. **Iao, Y., et al.** (2025). "DFNN: A Deep Fréchet Neural Network Framework." [arXiv:2510.17072](https://arxiv.org/abs/2510.17072)
    - *Deep learning for Fréchet regression on metric spaces*
 
-8. **Yang, Z., et al.** (2023). "Poincaré Fréchet mean." *Pattern Recognition*, 136, 109232.
-   DOI: 10.1016/j.patcog.2023.109232
+8. **Yang, Z., et al.** (2023). "Poincaré Fréchet mean." *Pattern Recognition*, 136, 109232. [DOI:10.1016/j.patcog.2023.109232](https://doi.org/10.1016/j.patcog.2023.109232)
    - *Specialized algorithms for hyperbolic space*
 
 ---
