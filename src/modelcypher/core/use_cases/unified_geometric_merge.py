@@ -266,7 +266,7 @@ class UnifiedGeometricMerger:
         )
 
         # =================================================================
-        # STAGES 3-5: PURE GEOMETRIC MERGE (with null-space filtering)
+        # STAGES 3-5: PURE GEOMETRIC MERGE (with per-layer alignment)
         # =================================================================
         logger.info("STAGES 3-5: GEOMETRIC MERGE")
         merged_weights, rotate_metrics, blend_metrics = self._stage_rotate_blend_propagate(
@@ -275,6 +275,7 @@ class UnifiedGeometricMerger:
             layer_indices,
             layer_confidences,
             dimension_correlations,
+            source_activations=source_activations,
             target_activations=target_activations,
         )
 
@@ -431,10 +432,12 @@ class UnifiedGeometricMerger:
         layer_indices: list[int],
         layer_confidences: dict[int, float],
         dimension_correlations: dict,
+        source_activations: dict | None = None,
         target_activations: dict | None = None,
     ) -> tuple[dict[str, "Array"], dict[str, Any], dict[str, Any]]:
-        """Stages 3-5: PURE GEOMETRIC MERGE with null-space filtering.
+        """Stages 3-5: PURE GEOMETRIC MERGE with per-layer alignment.
 
+        Uses activations to compute per-layer rotations before merging.
         W_merged = U_t @ diag(√(σ_s' ⊙ σ_t)) @ V_t^T
 
         Layer confidences from probe stage inform alignment quality.
@@ -459,6 +462,7 @@ class UnifiedGeometricMerger:
             config=config,
             extract_layer_index_fn=self._extract_layer_index,
             backend=self._backend,
+            source_activations=source_activations,
             target_activations=target_activations,
         )
 

@@ -375,6 +375,7 @@ def stage_rotate_blend_propagate(
     config: RotateBlendConfig,
     extract_layer_index_fn: Callable[[str], int | None],
     backend: Any | None = None,
+    source_activations: dict[int, list[Any]] | None = None,
     target_activations: dict[int, list[Any]] | None = None,
 ) -> RotateBlendResult:
     """
@@ -407,28 +408,92 @@ def stage_rotate_blend_propagate(
     layer_rotations: dict[int, "Array"] = {}
     layer_null_projections: dict[int, Any] = {}
 
-    if target_activations:
+    if source_activations and target_activations:
         logger.info(
             "PER-LAYER ALIGNMENT: Computing rotations from %d layer activations",
             len(target_activations),
         )
 
-        # We need source activations too for per-layer alignment
-        # For now, compute null-space projections (will add full CCA alignment later)
+        # Compute per-layer Procrustes rotations from paired activations
+        # This aligns source representation space to target for each layer independently
+        for layer_idx in sorted(target_activations.keys()):
+            src_acts = source_activations.get(layer_idx)
+            tgt_acts = target_activations.get(layer_idx)
+
+            if src_acts and tgt_acts and len(src_acts) >= 5 and len(tgt_acts) >= 5:
+                n_samples = min(len(src_acts), len(tgt_acts))
+                try:
+                    # Stack activations: [n_samples, hidden_dim]
+                    src_stacked = b.stack(src_acts[:n_samples], axis=0)
+                    tgt_stacked = b.stack(tgt_acts[:n_samples], axis=0)
+                    b.eval(src_stacked, tgt_stacked)
+
+                    # Procrustes: find R such that ||tgt - src @ R||_F is minimized
+                    # M = src.T @ tgt -> R = U @ V.T from SVD(M)
+                    M = b.matmul(b.transpose(src_stacked), tgt_stacked)
+                    b.eval(M)
+
+                    # SVD
+                    U_M, _, Vt_M = b.svd(M, compute_uv=True)
+                    b.eval(U_M, Vt_M)
+
+                    R = b.matmul(U_M, Vt_M)
+                    b.eval(R)
+
+                    # Handle reflection (ensure det(R) = +1)
+                    det_R = b.det(R)
+                    b.eval(det_R)
+                    det_val = float(det_R.item()) if hasattr(det_R, 'item') else float(b.to_numpy(det_R))
+                    if det_val < 0:
+                        n_cols = U_M.shape[1]
+                        U_cols = [U_M[:, i:i+1] for i in range(n_cols - 1)]
+                        U_cols.append(U_M[:, -1:] * -1.0)
+                        U_fixed = b.concatenate(U_cols, axis=1)
+                        R = b.matmul(U_fixed, Vt_M)
+                        b.eval(R)
+
+                    # Compute alignment quality
+                    src_rotated = b.matmul(src_stacked, R)
+                    diff = tgt_stacked - src_rotated
+                    b.eval(src_rotated, diff)
+                    error_norm = b.norm(b.reshape(diff, (-1,)))
+                    target_norm = b.norm(b.reshape(tgt_stacked, (-1,)))
+                    b.eval(error_norm, target_norm)
+                    alignment_quality = 1.0 - float(error_norm.item()) / (float(target_norm.item()) + 1e-10)
+
+                    if alignment_quality > 0.3:  # Only use if alignment is reasonable
+                        layer_rotations[layer_idx] = R
+                        logger.debug(
+                            "LAYER %d: Procrustes alignment quality=%.3f",
+                            layer_idx, alignment_quality,
+                        )
+                    else:
+                        logger.debug(
+                            "LAYER %d: Skipping rotation (quality=%.3f too low)",
+                            layer_idx, alignment_quality,
+                        )
+
+                except Exception as e:
+                    logger.debug("LAYER %d: Failed to compute rotation: %s", layer_idx, e)
+
+        if layer_rotations:
+            logger.info(
+                "PER-LAYER ALIGNMENT: Computed %d layer rotations",
+                len(layer_rotations),
+            )
+
+    elif target_activations:
+        # Only target activations available - compute null-space projections
         from modelcypher.core.domain.geometry.null_space_filter import (
             NullSpaceFilter,
             NullSpaceFilterConfig,
         )
 
         null_space_filter = NullSpaceFilter(
-            NullSpaceFilterConfig(
-                rank_threshold=0.01,
-                min_samples=5,
-            ),
+            NullSpaceFilterConfig(rank_threshold=0.01, min_samples=5),
             backend=b,
         )
 
-        # Precompute null-space projections for each layer
         for layer_idx, act_list in target_activations.items():
             if act_list and len(act_list) >= 5:
                 stacked = b.stack(act_list, axis=0)
@@ -460,6 +525,8 @@ def stage_rotate_blend_propagate(
         "shape_mismatches": 0,
         "null_space_filtered": 0,
         "null_space_preservation": [],
+        "per_layer_rotations_applied": 0,
+        "per_layer_rotation_layers": len(layer_rotations),
     }
 
     layer_alphas: dict[int, float] = {}
@@ -577,6 +644,24 @@ def stage_rotate_blend_propagate(
                     "  -> projected with alignment_score=%.4f",
                     result.alignment_score,
                 )
+
+        # Apply per-layer rotation to source weights if available
+        # This is the KEY fix: align source to target representation space per-layer
+        if layer_idx is not None and layer_idx in layer_rotations and source_w.ndim == 2:
+            R = layer_rotations[layer_idx]
+            hidden_dim = R.shape[0]
+
+            # Apply rotation based on which dimension matches hidden_dim
+            source_f32 = b.astype(source_w, "float32")
+            if source_w.shape[1] == hidden_dim:
+                # Weights with hidden_dim as input: W @ R
+                source_w = b.matmul(source_f32, R)
+                metrics["per_layer_rotations_applied"] += 1
+            elif source_w.shape[0] == hidden_dim:
+                # Weights with hidden_dim as output: R.T @ W
+                source_w = b.matmul(b.transpose(R), source_f32)
+                metrics["per_layer_rotations_applied"] += 1
+            b.eval(source_w)
 
         # Apply geometric merge for 2D weight matrices
         if source_w.ndim == 2 and target_w.ndim == 2 and min(source_w.shape) >= 2:
@@ -721,6 +806,14 @@ def stage_rotate_blend_propagate(
     if metrics["merge_qualities"]:
         mq = metrics["merge_qualities"]
         metrics["mean_merge_quality"] = sum(mq) / len(mq)
+
+    # Add per-layer rotation summary
+    if metrics["per_layer_rotations_applied"] > 0:
+        logger.info(
+            "PER-LAYER ALIGNMENT: Applied %d rotations from %d layers",
+            metrics["per_layer_rotations_applied"],
+            metrics["per_layer_rotation_layers"],
+        )
 
     # Add null-space filtering summary
     if metrics["null_space_preservation"]:
