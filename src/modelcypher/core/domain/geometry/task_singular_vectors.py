@@ -224,7 +224,10 @@ def decompose_task_vector(
         )
 
     # Compute task vector and SVD
-    delta = source_weight - target_weight
+    # Cast to float32 for SVD (bfloat16 not supported)
+    source_f32 = backend.astype(source_weight, "float32")
+    target_f32 = backend.astype(target_weight, "float32")
+    delta = source_f32 - target_f32
 
     try:
         U, S, Vt = backend.svd(delta, full_matrices=False)
