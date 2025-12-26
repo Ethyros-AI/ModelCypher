@@ -206,7 +206,7 @@ mc eval suite --model merged --suite humaneval-subset.json
 ## 7. Limitations
 
 1. **MLX-Centric**: Optimized for Apple Silicon; CUDA support is secondary.
-2. **English-Centric**: Anchor sets are English; multilingual probes are TODO.
+2. **English-Centric**: Anchor sets are primarily English; multilingual probe support is in development.
 3. **Model Coverage**: Tested on Qwen, Llama, Mistral; other families may require adaptation.
 4. **Approximate Methods**: Geometric alignment is not exact; compatibility assessment is heuristic.
 
@@ -235,7 +235,7 @@ Yu, L., et al. (2024). DARE. *ICML 2024*. arXiv:2311.03099.
 ## Appendix A: Installation
 
 ```bash
-git clone https://github.com/user/ModelCypher.git
+git clone https://github.com/Ethyros-AI/ModelCypher.git
 cd ModelCypher
 poetry install
 poetry run pytest tests/ -q  # Expected: 3,000+ passed

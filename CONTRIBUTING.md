@@ -161,7 +161,7 @@ poetry run pytest tests/ -m mlx
 If you are an AI assistant generating code for this repository:
 
 1. **No Hallucinations**: Do not invent modules or imports. Check `src/modelcypher` for existing tools.
-2. **Rigor**: Prefer `numpy`/`mlx` vector operations over loop-based logic.
+2. **Rigor**: Prefer `mlx` and Backend protocol vector operations over loop-based logic. Never use numpy (see CLAUDE.md).
 3. **Context**: Respect the existing "knowledge-as-geometry" ontology. See `docs/GLOSSARY.md`.
 4. **Git Safety**: Do not run destructive git commands. Other agents may be working concurrently.
 

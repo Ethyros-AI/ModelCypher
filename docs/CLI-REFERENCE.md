@@ -50,7 +50,7 @@ Research + diagnostics:
 - `mc compare` (run/list/show/checkpoints/baseline/score)
 - `mc calibration`, `mc stability`, `mc agent-eval`, `mc dashboard`
 - `mc ensemble`, `mc research`, `mc help`, `mc schema`, `mc completions`
-- Optional: `mc rag` (build/query/list/delete)
+- `mc validate` (train), `mc estimate`, `mc explain`
 
 ## Phase 2 Commands
 

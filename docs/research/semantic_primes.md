@@ -25,7 +25,7 @@ We utilize the **Natural Semantic Metalanguage (NSM)** inventory: ~65 proposed s
 
 ## Empirical Validation
 
-See [Paper 1: The Manifold Hypothesis of Agency](../../papers/paper-1-manifold-hypothesis-of-agency.md) for full results, including:
+See [Paper 1: Invariant Semantic Structure](../../papers/paper-1-invariant-semantic-structure.md) for full results, including:
 -   CKA scores vs null distributions
 -   Falsification criteria (failed convergence > 10% drift)
 -   Control baselines (frequency-matched random words)

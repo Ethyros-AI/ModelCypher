@@ -207,10 +207,14 @@ def compute_spectral_metrics(
     source_arr = b.array(source_weight) if not hasattr(source_weight, "shape") else source_weight
     target_arr = b.array(target_weight) if not hasattr(target_weight, "shape") else target_weight
 
+    # Cast to float32 for SVD (bfloat16 not supported)
+    source_f32 = b.astype(source_arr, "float32")
+    target_f32 = b.astype(target_arr, "float32")
+
     # SVD - compute only singular values (not U or Vt) to avoid 92GB allocation
     # For (vocab_size, hidden_dim) matrices, full U would be vocab_size^2
-    source_s = b.svd(source_arr, compute_uv=False)
-    target_s = b.svd(target_arr, compute_uv=False)
+    source_s = b.svd(source_f32, compute_uv=False)
+    target_s = b.svd(target_f32, compute_uv=False)
 
     # Limit to top_k if not using full SVD
     if not config.use_full_svd:
