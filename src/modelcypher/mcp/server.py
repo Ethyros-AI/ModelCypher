@@ -78,7 +78,17 @@ TOOL_PROFILES = {
     "full": {
         "mc_inventory",
         "mc_settings_snapshot",
+        "mc_train_start",
+        "mc_job_status",
+        "mc_job_list",
+        "mc_job_detail",
+        "mc_job_cancel",
+        "mc_job_pause",
+        "mc_job_resume",
+        "mc_job_delete",
         "mc_system_status",
+        "mc_validate_train",
+        "mc_estimate_train",
         "mc_model_fetch",
         "mc_model_list",
         "mc_model_search",
@@ -88,6 +98,9 @@ TOOL_PROFILES = {
         "mc_model_merge",  # New
         "mc_model_register",  # New
         "mc_model_delete",  # New
+        "mc_checkpoint_export",
+        "mc_checkpoint_list",  # New
+        "mc_checkpoint_delete",  # New
         "mc_geometry_training_status",
         "mc_geometry_training_history",
         "mc_geometry_validate",
@@ -131,6 +144,9 @@ TOOL_PROFILES = {
         "mc_geometry_atlas_inventory",  # New - multi-atlas probe inventory
         "mc_infer",
         # New tools for CLI/MCP parity
+        "mc_calibration_run",
+        "mc_calibration_status",
+        "mc_calibration_apply",
         "mc_stability_run",
         "mc_stability_report",
         "mc_agent_eval_run",
@@ -173,6 +189,12 @@ TOOL_PROFILES = {
         "mc_agent_trace_import",  # New - trace import
         "mc_agent_trace_analyze",  # New - trace analytics
         "mc_agent_validate_action",  # New - action validation
+        # Eval tools
+        "mc_eval_run",  # New
+        "mc_eval_list",  # New
+        "mc_eval_show",  # New
+        "mc_train_preflight",  # New
+        "mc_train_export",  # New
         # Geometry refinement and stitching tools
         "mc_geometry_refinement_analyze",  # New - RefinementDensityAnalyzer
         "mc_geometry_stitch_train",  # New - AffineStitchingLayer training
@@ -206,10 +228,23 @@ TOOL_PROFILES = {
     "training": {
         "mc_inventory",
         "mc_settings_snapshot",
+        "mc_train_start",
+        "mc_job_status",
+        "mc_job_list",
+        "mc_job_detail",
+        "mc_job_cancel",
+        "mc_job_pause",
+        "mc_job_resume",
+        "mc_job_delete",
         "mc_system_status",
+        "mc_validate_train",
+        "mc_estimate_train",
         "mc_model_fetch",
         "mc_model_list",
         "mc_model_search",
+        "mc_checkpoint_export",
+        "mc_checkpoint_list",
+        "mc_checkpoint_delete",
         "mc_geometry_training_status",
         "mc_geometry_training_history",
         "mc_geometry_validate",
@@ -226,6 +261,9 @@ TOOL_PROFILES = {
         "mc_geometry_crm_build",
         "mc_geometry_crm_compare",
         "mc_geometry_crm_sequence_inventory",
+        "mc_calibration_run",
+        "mc_calibration_status",
+        "mc_calibration_apply",
         # Thermo tools
         "mc_thermo_measure",
         "mc_thermo_detect",
@@ -238,6 +276,11 @@ TOOL_PROFILES = {
         "mc_research_afm",
         # Adapter tools
         "mc_adapter_merge",
+        "mc_eval_run",
+        "mc_eval_list",
+        "mc_eval_show",
+        "mc_train_preflight",
+        "mc_train_export",
         # Geometry refinement and merge validation
         "mc_geometry_refinement_analyze",
         "mc_geometry_stitch_train",
@@ -277,6 +320,9 @@ TOOL_PROFILES = {
     "monitoring": {
         "mc_inventory",
         "mc_settings_snapshot",
+        "mc_job_status",
+        "mc_job_list",
+        "mc_job_detail",
         "mc_system_status",
         "mc_geometry_training_status",
         "mc_geometry_training_history",

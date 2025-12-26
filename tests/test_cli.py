@@ -42,3 +42,23 @@ def test_geometry_validate_command():
     assert result.exit_code == 0
     # JSON output uses camelCase
     assert "gromovWasserstein" in result.stdout
+
+
+def test_estimate_train_command(tmp_path):
+    dataset = tmp_path / "data.jsonl"
+    dataset.write_text('{"text": "train data"}\n', encoding="utf-8")
+    result = runner.invoke(
+        app,
+        [
+            "estimate",
+            "train",
+            "--model",
+            "test-model",
+            "--dataset",
+            str(dataset),
+            "--output",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "willFit" in result.stdout

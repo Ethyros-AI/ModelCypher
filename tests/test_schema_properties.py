@@ -101,7 +101,15 @@ def validate_schema_structure(schema: dict) -> bool:
 # **Validates: Requirements 7.3**
 @given(
     command=st.sampled_from(
-        ["geometry validate", "geometry_validate", "model list", "model_list", "inventory"]
+        [
+            "train start",
+            "train_start",
+            "geometry validate",
+            "geometry_validate",
+            "model list",
+            "model_list",
+            "inventory",
+        ]
     ),
 )
 @settings(max_examples=100, deadline=None)
@@ -138,7 +146,7 @@ def test_schema_returns_valid_json_schema(command: str):
 
 
 @given(
-    command=st.sampled_from(["geometry validate", "model list", "inventory"]),
+    command=st.sampled_from(["train start", "geometry validate", "model list", "inventory"]),
 )
 @settings(max_examples=100, deadline=None)
 def test_schema_has_consistent_structure(command: str):
@@ -155,7 +163,15 @@ def test_schema_has_consistent_structure(command: str):
 @given(
     invalid_command=st.text(min_size=1, max_size=30).filter(
         lambda s: s.lower().replace(" ", "_").replace("-", "_")
-        not in {"geometry_validate", "geometryvalidate", "model_list", "modellist", "inventory"}
+        not in {
+            "train_start",
+            "trainstart",
+            "geometry_validate",
+            "geometryvalidate",
+            "model_list",
+            "modellist",
+            "inventory",
+        }
     ),
 )
 @settings(max_examples=50, deadline=None)
@@ -171,7 +187,7 @@ def test_schema_rejects_invalid_command(invalid_command: str):
 
 
 @given(
-    command=st.sampled_from(["geometry validate", "model list", "inventory"]),
+    command=st.sampled_from(["train start", "geometry validate", "model list", "inventory"]),
 )
 @settings(max_examples=100, deadline=None)
 def test_schema_properties_have_valid_types(command: str):
