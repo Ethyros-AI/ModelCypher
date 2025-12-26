@@ -40,6 +40,8 @@ class AlignmentSignal:
     gap: float = 0.0
 
     misaligned_anchors: list[str] = field(default_factory=list)
+    anchor_labels: list[str] = field(default_factory=list)
+    anchor_divergence: list[float] = field(default_factory=list)
     divergence_pattern: str = "unknown"
     suggested_transformation: str = "refine"
     iteration: int = 0
@@ -64,6 +66,8 @@ class AlignmentSignal:
             "cka_target": self.cka_target,
             "gap": self.gap,
             "misaligned_anchors": list(self.misaligned_anchors),
+            "anchor_labels": list(self.anchor_labels),
+            "anchor_divergence": list(self.anchor_divergence),
             "divergence_pattern": self.divergence_pattern,
             "suggested_transformation": self.suggested_transformation,
             "iteration": self.iteration,
@@ -135,6 +139,8 @@ def alignment_signal_from_matrices(
         cka_achieved=float(cka_achieved),
         cka_target=1.0,
         misaligned_anchors=misaligned,
+        anchor_labels=labels,
+        anchor_divergence=dist_list,
         divergence_pattern=divergence_pattern,
         suggested_transformation=suggested,
         iteration=iteration,

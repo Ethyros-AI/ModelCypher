@@ -76,6 +76,8 @@ class VocabularyConfig:
     alignment_solver_iterations: int = 5000
     alignment_solver_rounds: int = 1
     alignment_tolerance: float = 1e-12
+    use_all_support_texts: bool = True
+    balance_anchor_weights: bool = True
 
 
 @dataclass
@@ -210,8 +212,10 @@ def stage_vocabulary_align(
     alignment_iterations = max(1, config.alignment_iterations)
     solver_iterations = config.alignment_solver_iterations
     solver_rounds = max(1, config.alignment_solver_rounds)
+    balance_anchor_weights = config.balance_anchor_weights
 
     for embed_key in embed_keys:
+        use_all_support_texts = config.use_all_support_texts
         source_embed = source_weights.get(embed_key)
         target_embed = target_weights.get(embed_key)
 
@@ -264,6 +268,7 @@ def stage_vocabulary_align(
             best_alignment: dict[str, Any] | None = None
             best_cka = -1.0
             last_signal: AlignmentSignal | None = None
+            anchor_weights: list[float] | None = None
 
             for iteration in range(alignment_iterations):
                 byte_alignment = _align_bytes(
@@ -275,6 +280,7 @@ def stage_vocabulary_align(
                     max_iterations=solver_iterations,
                     tolerance=alignment_tol,
                     max_rounds=solver_rounds,
+                    anchor_weights=anchor_weights,
                 )
                 if byte_alignment is None:
                     last_signal = AlignmentSignal(
@@ -307,6 +313,9 @@ def stage_vocabulary_align(
                     current_source = byte_alignment["aligned_source"]
                     break
 
+                if balance_anchor_weights:
+                    anchor_weights = _compute_anchor_weights(last_signal)
+
                 current_source = _apply_alignment_correction(
                     byte_alignment["aligned_source"],
                     last_signal,
@@ -327,6 +336,11 @@ def stage_vocabulary_align(
                     "target_dim": best_alignment["target_dim"],
                     "signals": binary_signals,
                     "phase_locked": bool(last_signal and last_signal.is_phase_locked),
+                    "balance_ratio": (
+                        last_signal.metadata.get("balance_ratio")
+                        if last_signal is not None
+                        else None
+                    ),
                 }
             else:
                 binary_metrics[embed_key] = {
@@ -339,6 +353,7 @@ def stage_vocabulary_align(
                     "target_dim": target_embed.shape[1] if target_embed.ndim == 2 else 0,
                     "signals": binary_signals,
                     "phase_locked": False,
+                    "balance_ratio": None,
                 }
 
             metrics["alignment_signals"].setdefault(embed_key, {})["binary"] = binary_signals
@@ -351,7 +366,7 @@ def stage_vocabulary_align(
             best_alignment = None
             best_cka = -1.0
             last_signal = None
-            use_all_support_texts = False
+            anchor_weights = None
 
             for iteration in range(alignment_iterations):
                 atlas_alignment = _align_unified_atlas(
@@ -364,6 +379,7 @@ def stage_vocabulary_align(
                     max_iterations=solver_iterations,
                     tolerance=alignment_tol,
                     max_rounds=solver_rounds,
+                    anchor_weights=anchor_weights,
                 )
                 if atlas_alignment is None:
                     last_signal = AlignmentSignal(
@@ -376,6 +392,7 @@ def stage_vocabulary_align(
                     vocab_signals.append(last_signal.to_dict())
                     if not use_all_support_texts:
                         use_all_support_texts = True
+                        anchor_weights = None
                         continue
                     break
 
@@ -401,6 +418,10 @@ def stage_vocabulary_align(
 
                 if last_signal.suggested_transformation == "expand_anchors":
                     use_all_support_texts = True
+                    anchor_weights = None
+
+                if balance_anchor_weights:
+                    anchor_weights = _compute_anchor_weights(last_signal)
 
                 current_source = _apply_alignment_correction(
                     atlas_alignment["aligned_source"],
@@ -421,6 +442,11 @@ def stage_vocabulary_align(
                     "signals": vocab_signals,
                     "phase_locked": bool(last_signal and last_signal.is_phase_locked),
                     "support_texts": "all" if use_all_support_texts else "first",
+                    "balance_ratio": (
+                        last_signal.metadata.get("balance_ratio")
+                        if last_signal is not None
+                        else None
+                    ),
                 }
             else:
                 vocab_metrics[embed_key] = {
@@ -432,6 +458,7 @@ def stage_vocabulary_align(
                     "signals": vocab_signals,
                     "phase_locked": False,
                     "support_texts": "all" if use_all_support_texts else "first",
+                    "balance_ratio": None,
                 }
 
             metrics["alignment_signals"].setdefault(embed_key, {})["vocab"] = vocab_signals
@@ -648,6 +675,44 @@ def _apply_alignment_correction(
     return embedding
 
 
+def _compute_anchor_weights(signal: AlignmentSignal | None) -> list[float] | None:
+    if signal is None:
+        return None
+    divergences = signal.anchor_divergence
+    if not divergences:
+        return None
+    mean_div = signal.metadata.get("mean_divergence", 0.0)
+    if mean_div <= 0.0:
+        return [1.0 for _ in divergences]
+
+    weights = [float(mean_div) / (float(d) + 1e-12) for d in divergences]
+    mean_weight = sum(weights) / len(weights) if weights else 1.0
+    if mean_weight > 0:
+        weights = [w / mean_weight for w in weights]
+
+    balance_ratio = max(1.0, float(signal.metadata.get("balance_ratio", 1.0)))
+    min_weight = 1.0 / balance_ratio
+    max_weight = balance_ratio
+    weights = [min(max(w, min_weight), max_weight) for w in weights]
+    return weights
+
+
+def _apply_anchor_weights(
+    matrix: "object",
+    anchor_weights: list[float] | None,
+    backend: "object",
+) -> "object":
+    if anchor_weights is None:
+        return matrix
+    if matrix.shape[0] != len(anchor_weights):
+        return matrix
+    weights = backend.array(anchor_weights)
+    weights = backend.reshape(weights, (-1, 1))
+    scaled = matrix * backend.sqrt(weights)
+    backend.eval(scaled)
+    return scaled
+
+
 def _build_byte_embedding_map(
     tokenizer: Any,
     embedding: "object",
@@ -676,6 +741,7 @@ def _align_bytes(
     max_iterations: int = 1000,
     tolerance: float = 1e-6,
     max_rounds: int = 1,
+    anchor_weights: list[float] | None = None,
 ) -> dict[str, Any] | None:
     source_bytes = _build_byte_embedding_map(
         source_tokenizer,
@@ -698,13 +764,15 @@ def _align_bytes(
     backend.eval(source_matrix, target_matrix)
 
     cka_before = compute_cka(source_matrix, target_matrix, backend=backend).cka
+    weighted_source = _apply_anchor_weights(source_matrix, anchor_weights, backend)
+    weighted_target = _apply_anchor_weights(target_matrix, anchor_weights, backend)
     aligner = GramAligner(
         backend=backend,
         max_iterations=max_iterations,
         max_rounds=max_rounds,
         tolerance=tolerance,
     )
-    result = aligner.find_perfect_alignment(source_matrix, target_matrix)
+    result = aligner.find_perfect_alignment(weighted_source, weighted_target)
     transform = backend.array(result.feature_transform)
     aligned_source = backend.matmul(source_embed, transform)
     backend.eval(aligned_source)
@@ -772,6 +840,7 @@ def _align_unified_atlas(
     max_iterations: int = 1000,
     tolerance: float = 1e-6,
     max_rounds: int = 1,
+    anchor_weights: list[float] | None = None,
 ) -> dict[str, Any] | None:
     source_anchors = _build_atlas_anchor_map(
         source_tokenizer,
@@ -796,13 +865,15 @@ def _align_unified_atlas(
     backend.eval(source_matrix, target_matrix)
 
     cka_before = compute_cka(source_matrix, target_matrix, backend=backend).cka
+    weighted_source = _apply_anchor_weights(source_matrix, anchor_weights, backend)
+    weighted_target = _apply_anchor_weights(target_matrix, anchor_weights, backend)
     aligner = GramAligner(
         backend=backend,
         max_iterations=max_iterations,
         max_rounds=max_rounds,
         tolerance=tolerance,
     )
-    result = aligner.find_perfect_alignment(source_matrix, target_matrix)
+    result = aligner.find_perfect_alignment(weighted_source, weighted_target)
     transform = backend.array(result.feature_transform)
     aligned_source = backend.matmul(source_embed, transform)
     backend.eval(aligned_source)
