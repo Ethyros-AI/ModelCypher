@@ -57,6 +57,9 @@ logs/
 .mcp.json
 .kiro/
 
+# Private planning documents (not for public repo)
+plans/
+
 # Generated artifacts
 *.svg
 dependencies.txt
