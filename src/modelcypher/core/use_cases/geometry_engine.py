@@ -176,7 +176,14 @@ class GeometryEngine:
         z_target = self.backend.matmul(target_anchors, target_basis)
         self.backend.eval(z_source, z_target)
 
-        cost_matrix = solver.squared_euclidean_cost(z_source, z_target, normalize=True)
+        cost_matrix = self._geodesic_cost_matrix(
+            z_source,
+            z_target,
+            k_neighbors=config.geodesic_k_neighbors,
+            square=config.geodesic_square,
+            normalize=config.geodesic_normalize,
+            stability_epsilon=config.stability_epsilon,
+        )
         sinkhorn_result = solver.solve(cost_matrix, config=config)
 
         transported_mass = self.backend.matmul(sinkhorn_result.plan, z_target)
@@ -201,6 +208,42 @@ class GeometryEngine:
         error = rss_value / denom_value
 
         return omega, sinkhorn_result.plan, error, sinkhorn_result
+
+    def _geodesic_cost_matrix(
+        self,
+        source: Array,
+        target: Array,
+        *,
+        k_neighbors: int | None,
+        square: bool,
+        normalize: bool,
+        stability_epsilon: float,
+    ) -> Array:
+        """Compute geodesic cost matrix for Sinkhorn alignment.
+
+        Geodesic distance is the correct metric on curved manifolds; Euclidean
+        costs are invalid for high-dimensional geometry.
+        """
+        from modelcypher.core.domain.geometry.riemannian_utils import (
+            geodesic_distance_matrix,
+        )
+
+        combined = self.backend.concatenate([source, target], axis=0)
+        combined = self.backend.astype(combined, "float32")
+        geo = geodesic_distance_matrix(combined, k_neighbors=k_neighbors, backend=self.backend)
+        self.backend.eval(geo)
+
+        n = int(source.shape[0])
+        m = int(target.shape[0])
+        cost = geo[:n, n : n + m]
+        if square:
+            cost = cost * cost
+        if normalize:
+            max_val = self.backend.max(cost)
+            denom = self.backend.maximum(max_val, self.backend.array(stability_epsilon))
+            cost = cost / denom
+        self.backend.eval(cost)
+        return cost
 
     @staticmethod
     def compute_dora(
@@ -284,6 +327,9 @@ class SinkhornSolverConfig:
     convergence_threshold: float = 1e-6
     use_log_domain: bool = True
     stability_epsilon: float = 1e-9
+    geodesic_k_neighbors: int | None = None
+    geodesic_square: bool = True
+    geodesic_normalize: bool = True
 
 
 class SinkhornSolver:

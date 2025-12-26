@@ -1145,16 +1145,16 @@ class ManifoldStitcher:
         pts = b.array(points)
         d_dim = pts.shape[1]
 
-        # Precompute geodesic distance matrix and Riemannian geometry for Fréchet means
+        # Precompute geodesic distances and Riemannian geometry for Fréchet means
         from modelcypher.core.domain.geometry.riemannian_utils import (
             RiemannianGeometry,
-            geodesic_distance_matrix,
         )
 
         riemannian = RiemannianGeometry(backend=b)
-        geodesic_dist_matrix = geodesic_distance_matrix(
-            pts, k_neighbors=min(geodesic_k_neighbors, n - 1), backend=b
+        geodesic_result = riemannian.geodesic_distances(
+            pts, k_neighbors=min(geodesic_k_neighbors, n - 1)
         )
+        geodesic_dist_matrix = geodesic_result.distances
 
         def compute_distance_to_centroids(
             pts_arr: "Array", centroid_indices: list[int]
@@ -1168,6 +1168,22 @@ class ManifoldStitcher:
             for ci, idx in enumerate(centroid_indices):
                 dists_np[:, ci] = geo_np[:, idx]
             return b.array(dists_np)
+
+        def compute_geodesic_distances_to_centroids(centroids_arr: "Array") -> "Array":
+            """Compute geodesic distances from all points to centroids (geodesic-only)."""
+            num_centroids = int(centroids_arr.shape[0])
+            if num_centroids == 0:
+                return b.zeros((n, 0))
+            rows = []
+            for ci in range(num_centroids):
+                geo_from_centroid = riemannian._geodesic_distances_from_query(
+                    pts,
+                    centroids_arr[ci],
+                    geo_result=geodesic_result,
+                )
+                b.eval(geo_from_centroid)
+                rows.append(geo_from_centroid)
+            return b.stack(rows, axis=1)
 
         # K-Means++ Initialization using actual data points as initial centroids
         first_idx = int(b.to_numpy(b.random_randint(0, n, shape=(1,))).item())
@@ -1199,39 +1215,9 @@ class ManifoldStitcher:
         centroids = b.array(centroids_np)
         assignments = b.zeros((n,), dtype="int32")
 
-        # Track representative data point index for each centroid
-        # Initially, representatives are the centroid_indices from k-means++
-        centroid_reps = list(centroid_indices)
-        geo_np = b.to_numpy(geodesic_dist_matrix)
-
         for _ in range(max_iterations):
             # Assignment step: assign each point to nearest centroid using geodesic distances
-            # Centroids may not be data points after Fréchet mean update, so we use
-            # the nearest data point to each centroid as a geodesic proxy.
-            #
-            # For each centroid c with representative r:
-            #   d_geo(point_i, centroid_c) ≈ d_geo(point_i, r) + d_euc(r, c)
-            # The geodesic term dominates; Euclidean offset handles centroid drift.
-
-            # Compute distance from each centroid to its representative (Euclidean offset)
-            centroid_offsets = []
-            for ci in range(k):
-                rep_idx = centroid_reps[ci]
-                rep_pt = b.to_numpy(pts[rep_idx])
-                cent_pt = b.to_numpy(centroids[ci])
-                offset = float(sum((rep_pt[d] - cent_pt[d]) ** 2 for d in range(d_dim)) ** 0.5)
-                centroid_offsets.append(offset)
-
-            # Build geodesic distance matrix [n, k] using representatives
-            dists_np = [[0.0] * k for _ in range(n)]
-            for ci in range(k):
-                rep_idx = centroid_reps[ci]
-                offset = centroid_offsets[ci]
-                for pi in range(n):
-                    # Geodesic to representative + Euclidean offset for centroid drift
-                    dists_np[pi][ci] = geo_np[pi, rep_idx] + 0.1 * offset
-
-            dists = b.array(dists_np)
+            dists = compute_geodesic_distances_to_centroids(centroids)
             new_assignments = b.argmin(dists, axis=1)
 
             # Check convergence

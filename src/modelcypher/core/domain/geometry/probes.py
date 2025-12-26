@@ -145,8 +145,19 @@ class CompositionalProbes:
         if n == 0 or d == 0:
             return CompositionAnalysis(probe, [], float("inf"), 0.0, [])
 
-        # Centroid
-        centroid = b.mean(component_embeddings, axis=0)
+        # Centroid via Fréchet mean (geodesic-only on curved manifolds)
+        from modelcypher.core.domain.geometry.riemannian_utils import (
+            RiemannianGeometry,
+        )
+
+        rg = RiemannianGeometry(b)
+        centroid_result = rg.frechet_mean(
+            component_embeddings,
+            max_iterations=50,
+            tolerance=1e-5,
+        )
+        centroid = centroid_result.mean
+        b.eval(centroid)
 
         # Centroid similarity
         centroid_sim_arr = CompositionalProbes._cosine_similarity(
