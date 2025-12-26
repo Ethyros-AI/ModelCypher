@@ -2,7 +2,7 @@
 name = "modelcypher"
 version = "1.0.0"
 description = "ModelCypher core engines, CLI, and MCP tools for model training and analysis"
-authors = ["EthyrosAI LLC"]
+authors = ["Jason Kempf <jason@ethyros.ai>"]
 readme = "README.md"
 license = "AGPL-3.0-only"
 homepage = "https://github.com/EthyrosAI/ModelCypher"

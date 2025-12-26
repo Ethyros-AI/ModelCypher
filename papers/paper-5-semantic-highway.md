@@ -236,7 +236,9 @@ for layer in 0 1 2 3 4 5 6 8 12 16 20; do
 done
 ```
 
-**Data locations**: Results saved to `experiments/` directory after running the above commands.
+**Data locations**:
+- Qwen 0.5B: `/Volumes/CodeCypher/experiments/atlas_dimensionality_onset_anchors_Qwen2.5-0.5B-Instruct-bf16_20251225_204422/`
+- Llama 3B & Mistral 7B: `/Volumes/CodeCypher/experiments/cliff-replication-2025-12-25/`
 
 ## 7. Conclusion
 

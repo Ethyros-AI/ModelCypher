@@ -3,6 +3,7 @@ message: "If you use this software in your research, please cite it as below."
 authors:
 - family-names: "Kempf"
   given-names: "Jason"
+  email: "jason@ethyros.ai"
 - name: "Ethyros-AI"
 title: "ModelCypher: High-Dimensional Geometry for LLM Safety and Merging"
 version: 1.0.0

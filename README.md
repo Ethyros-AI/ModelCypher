@@ -234,6 +234,12 @@ This project is licensed under the **GNU Affero General Public License v3.0**. S
 
 This license ensures that the codebase remains free and open source. If you modify this code and provide it as a service (SaaS), you are required to release your modifications under the same license. Knowledge should be free.
 
+## Contact
+
+**Author**: Jason Kempf
+**Email**: jason@ethyros.ai
+**Organization**: [EthyrosAI](https://ethyros.ai)
+
 ## Citation
 
 If you use ModelCypher in your research, please cite it using the metadata in [`CITATION.cff`](CITATION.cff) or as follows:

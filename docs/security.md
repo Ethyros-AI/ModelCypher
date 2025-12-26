@@ -98,4 +98,4 @@ All file path operations:
 
 ## 5. Reporting Vulnerabilities
 
-If you discover a security vulnerability, please do not open a public issue. Email `security@modelcypher.com`.
+If you discover a security vulnerability, please do not open a public issue. Email `jason@ethyros.ai`.
