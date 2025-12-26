@@ -139,6 +139,7 @@ class TestCenterMatrix:
             mlx_backend.to_numpy(centered_once),
             mlx_backend.to_numpy(centered_twice),
             rtol=1e-5,
+            atol=1e-6,  # Needed for values near zero after centering
         )
 
 
