@@ -33,6 +33,7 @@ from typing import Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.alignment_diagnostic import (
     AlignmentSignal,
     alignment_signal_from_matrices,
@@ -42,6 +43,9 @@ from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
 
 logger = logging.getLogger(__name__)
+
+# Session cache for anchor maps - keyed by (embedding_hash, tokenizer_id, map_type)
+_anchor_map_cache: dict[str, dict[str | int, "object"]] = {}
 
 
 @dataclass
@@ -261,66 +265,118 @@ def stage_vocabulary_align(
             backend.eval(source_embed, target_embed)
 
             # Binary (1D) alignment: align byte-level anchors before vocabulary blending.
+            # Pre-compute byte maps ONCE to avoid repeated Fréchet mean computation.
             binary_metrics = metrics.setdefault("binary_alignment", {})
             binary_signals: list[dict[str, Any]] = []
-            current_source = source_embed
-            best_source = source_embed
-            best_alignment: dict[str, Any] | None = None
-            best_cka = -1.0
-            last_signal: AlignmentSignal | None = None
-            anchor_weights: list[float] | None = None
 
-            for iteration in range(alignment_iterations):
-                byte_alignment = _align_bytes(
-                    current_source,
-                    target_embed,
-                    source_tokenizer,
-                    target_tokenizer,
-                    backend,
-                    max_iterations=solver_iterations,
-                    tolerance=alignment_tol,
-                    max_rounds=solver_rounds,
-                    anchor_weights=anchor_weights,
+            source_bytes = _build_byte_embedding_map(
+                source_tokenizer, source_embed, source_embed.shape[0], backend
+            )
+            target_bytes = _build_byte_embedding_map(
+                target_tokenizer, target_embed, target_embed.shape[0], backend
+            )
+            shared_bytes = sorted(set(source_bytes) & set(target_bytes))
+
+            if len(shared_bytes) < 2:
+                last_signal = AlignmentSignal(
+                    dimension=1,
+                    cka_achieved=0.0,
+                    divergence_pattern="insufficient_anchors",
+                    suggested_transformation="expand_anchors",
+                    iteration=0,
                 )
-                if byte_alignment is None:
-                    last_signal = AlignmentSignal(
+                binary_signals.append(last_signal.to_dict())
+                binary_metrics[embed_key] = {
+                    "bytes_shared": 0,
+                    "cka_before": 0.0,
+                    "cka_after": 0.0,
+                    "alignment_error": 0.0,
+                    "iterations": 0,
+                    "source_dim": source_embed.shape[1] if source_embed.ndim == 2 else 0,
+                    "target_dim": target_embed.shape[1] if target_embed.ndim == 2 else 0,
+                    "signals": binary_signals,
+                    "phase_locked": False,
+                    "balance_ratio": None,
+                }
+            else:
+                # Stack anchor matrices ONCE
+                source_byte_matrix = backend.stack([source_bytes[b] for b in shared_bytes], axis=0)
+                target_byte_matrix = backend.stack([target_bytes[b] for b in shared_bytes], axis=0)
+                backend.eval(source_byte_matrix, target_byte_matrix)
+                byte_labels = [f"byte:{b}" for b in shared_bytes]
+
+                current_source = source_embed
+                current_byte_matrix = source_byte_matrix
+                best_source = source_embed
+                best_alignment: dict[str, Any] | None = None
+                best_cka = -1.0
+                last_signal: AlignmentSignal | None = None
+                anchor_weights: list[float] | None = None
+
+                for iteration in range(alignment_iterations):
+                    byte_alignment = _align_bytes_from_matrices(
+                        current_source,
+                        current_byte_matrix,
+                        target_byte_matrix,
+                        byte_labels,
+                        backend,
+                        max_iterations=solver_iterations,
+                        tolerance=alignment_tol,
+                        max_rounds=solver_rounds,
+                        anchor_weights=anchor_weights,
+                    )
+
+                    if byte_alignment["cka_after"] > best_cka:
+                        best_cka = byte_alignment["cka_after"]
+                        best_source = byte_alignment["aligned_source"]
+                        best_alignment = byte_alignment
+
+                    last_signal = alignment_signal_from_matrices(
+                        byte_alignment["aligned_matrix"],
+                        target_byte_matrix,
+                        byte_labels,
+                        backend=backend,
                         dimension=1,
-                        cka_achieved=0.0,
-                        divergence_pattern="insufficient_anchors",
-                        suggested_transformation="expand_anchors",
+                        cka_achieved=byte_alignment["cka_after"],
                         iteration=iteration,
                     )
                     binary_signals.append(last_signal.to_dict())
-                    break
 
-                if byte_alignment["cka_after"] > best_cka:
-                    best_cka = byte_alignment["cka_after"]
-                    best_source = byte_alignment["aligned_source"]
-                    best_alignment = byte_alignment
+                    if last_signal.is_phase_locked:
+                        current_source = byte_alignment["aligned_source"]
+                        break
 
-                last_signal = alignment_signal_from_matrices(
-                    byte_alignment["aligned_matrix"],
-                    byte_alignment["target_matrix"],
-                    byte_alignment["anchor_labels"],
-                    backend=backend,
-                    dimension=1,
-                    cka_achieved=byte_alignment["cka_after"],
-                    iteration=iteration,
-                )
-                binary_signals.append(last_signal.to_dict())
+                    if balance_anchor_weights:
+                        anchor_weights = _compute_anchor_weights(last_signal)
 
-                if last_signal.is_phase_locked:
-                    current_source = byte_alignment["aligned_source"]
-                    break
+                    # Transform anchors directly instead of recomputing
+                    current_source = _apply_alignment_correction(
+                        byte_alignment["aligned_source"],
+                        last_signal,
+                        backend,
+                    )
+                    current_byte_matrix = byte_alignment["aligned_matrix"]
 
-                if balance_anchor_weights:
-                    anchor_weights = _compute_anchor_weights(last_signal)
+                source_embed = best_source if last_signal and not last_signal.is_phase_locked else current_source
+                backend.eval(source_embed)
 
-                current_source = _apply_alignment_correction(
-                    byte_alignment["aligned_source"],
-                    last_signal,
-                    backend,
-                )
+                if best_alignment is not None:
+                    binary_metrics[embed_key] = {
+                        "bytes_shared": len(shared_bytes),
+                        "cka_before": best_alignment["cka_before"],
+                        "cka_after": best_alignment["cka_after"],
+                        "alignment_error": best_alignment["alignment_error"],
+                        "iterations": best_alignment["iterations"],
+                        "source_dim": source_byte_matrix.shape[1],
+                        "target_dim": target_byte_matrix.shape[1],
+                        "signals": binary_signals,
+                        "phase_locked": bool(last_signal and last_signal.is_phase_locked),
+                        "balance_ratio": (
+                            last_signal.metadata.get("balance_ratio")
+                            if last_signal is not None
+                            else None
+                        ),
+                    }
 
             source_embed = best_source if last_signal and not last_signal.is_phase_locked else current_source
             backend.eval(source_embed)
@@ -719,12 +775,36 @@ def _apply_anchor_weights(
     return scaled
 
 
+def _make_embedding_cache_key(embedding: "object", backend: "object") -> str:
+    """Create a cache key from embedding matrix shape and content sample."""
+    cache = ComputationCache.shared()
+    return cache.make_array_key(embedding, backend)
+
+
 def _build_byte_embedding_map(
     tokenizer: Any,
     embedding: "object",
     vocab_size: int,
     backend: "object",
 ) -> dict[int, "object"]:
+    """Build byte anchor map with session caching.
+
+    This is expensive (256 Fréchet mean computations) so we cache the result
+    based on the embedding matrix hash.
+    """
+    global _anchor_map_cache
+
+    # Create cache key from embedding content
+    embed_key = _make_embedding_cache_key(embedding, backend)
+    cache_key = f"byte_map_{embed_key}"
+
+    # Check cache
+    if cache_key in _anchor_map_cache:
+        logger.debug("Cache hit for byte map: %s", cache_key[:16])
+        return _anchor_map_cache[cache_key]
+
+    logger.debug("Cache miss for byte map: %s - computing...", cache_key[:16])
+
     byte_map: dict[int, "object"] = {}
     for byte_value in range(256):
         text = bytes([byte_value]).decode("latin-1")
@@ -735,6 +815,11 @@ def _build_byte_embedding_map(
         vec = _frechet_mean_from_ids(valid, embedding, backend)
         if vec is not None:
             byte_map[byte_value] = vec
+
+    # Cache the result
+    _anchor_map_cache[cache_key] = byte_map
+    logger.debug("Cached byte map with %d entries", len(byte_map))
+
     return byte_map
 
 
@@ -748,6 +833,7 @@ def _align_bytes(
     tolerance: float = 1e-6,
     max_rounds: int = 1,
     anchor_weights: list[float] | None = None,
+    initial_transform: "object | None" = None,
 ) -> dict[str, Any] | None:
     source_bytes = _build_byte_embedding_map(
         source_tokenizer,
@@ -778,7 +864,14 @@ def _align_bytes(
         max_rounds=max_rounds,
         tolerance=tolerance,
     )
-    result = aligner.find_perfect_alignment(weighted_source, weighted_target)
+    init_transform = (
+        backend.array(initial_transform) if initial_transform is not None else None
+    )
+    result = aligner.find_perfect_alignment(
+        weighted_source,
+        weighted_target,
+        initial_transform=init_transform,
+    )
     transform = backend.array(result.feature_transform)
     aligned_source = backend.matmul(source_embed, transform)
     backend.eval(aligned_source)
@@ -792,6 +885,7 @@ def _align_bytes(
         "aligned_matrix": aligned_matrix,
         "target_matrix": target_matrix,
         "anchor_labels": [f"byte:{b}" for b in shared],
+        "feature_transform": transform,
         "bytes_shared": len(shared),
         "cka_before": cka_before,
         "cka_after": cka_after,
@@ -809,6 +903,24 @@ def _build_atlas_anchor_map(
     backend: "object",
     use_all_support_texts: bool = False,
 ) -> dict[str, "object"]:
+    """Build UnifiedAtlas anchor map with session caching.
+
+    This is expensive (373+ Fréchet mean computations) so we cache the result
+    based on the embedding matrix hash and support_texts flag.
+    """
+    global _anchor_map_cache
+
+    # Create cache key from embedding content + support_texts flag
+    embed_key = _make_embedding_cache_key(embedding, backend)
+    cache_key = f"atlas_map_{embed_key}_all{use_all_support_texts}"
+
+    # Check cache
+    if cache_key in _anchor_map_cache:
+        logger.debug("Cache hit for atlas map: %s", cache_key[:20])
+        return _anchor_map_cache[cache_key]
+
+    logger.debug("Cache miss for atlas map: %s - computing...", cache_key[:20])
+
     anchor_map: dict[str, "object"] = {}
     probes = UnifiedAtlasInventory.all_probes()
 
@@ -833,6 +945,10 @@ def _build_atlas_anchor_map(
             if vec is not None:
                 anchor_map[f"{probe.probe_id}:{idx}"] = vec
 
+    # Cache the result
+    _anchor_map_cache[cache_key] = anchor_map
+    logger.debug("Cached atlas map with %d entries", len(anchor_map))
+
     return anchor_map
 
 
@@ -847,6 +963,7 @@ def _align_unified_atlas(
     tolerance: float = 1e-6,
     max_rounds: int = 1,
     anchor_weights: list[float] | None = None,
+    initial_transform: "object | None" = None,
 ) -> dict[str, Any] | None:
     source_anchors = _build_atlas_anchor_map(
         source_tokenizer,
@@ -879,7 +996,14 @@ def _align_unified_atlas(
         max_rounds=max_rounds,
         tolerance=tolerance,
     )
-    result = aligner.find_perfect_alignment(weighted_source, weighted_target)
+    init_transform = (
+        backend.array(initial_transform) if initial_transform is not None else None
+    )
+    result = aligner.find_perfect_alignment(
+        weighted_source,
+        weighted_target,
+        initial_transform=init_transform,
+    )
     transform = backend.array(result.feature_transform)
     aligned_source = backend.matmul(source_embed, transform)
     backend.eval(aligned_source)
@@ -893,6 +1017,7 @@ def _align_unified_atlas(
         "aligned_matrix": aligned_matrix,
         "target_matrix": target_matrix,
         "anchor_labels": shared,
+        "feature_transform": transform,
         "anchors_shared": len(shared),
         "cka_before": cka_before,
         "cka_after": cka_after,

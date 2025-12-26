@@ -164,6 +164,7 @@ class GramAligner:
         self,
         source_activations: "Array",
         target_activations: "Array",
+        initial_transform: "Array | None" = None,
     ) -> AlignmentResult:
         """Find the transformation that achieves CKA = 1.0.
 
@@ -228,13 +229,14 @@ class GramAligner:
         #
         # We want: (A_s @ F) @ (A_s @ F)^T = T @ K_s @ T^T = K_t
         # i.e., A_s @ F @ F^T @ A_s^T = K_t
-        feature_transform = self._feature_transform_from_sample_transform(
-            source_centered, sample_transform
-        )
-        initial_transform = feature_transform
+        feature_transform = initial_transform
+        if feature_transform is None:
+            feature_transform = self._feature_transform_from_sample_transform(
+                source_centered, sample_transform
+            )
         if b.shape(feature_transform)[1] != b.shape(target_centered)[1]:
             # Sample-space transform preserves source dimensionality; use SVD init for cross-dim.
-            initial_transform = None
+            feature_transform = None
         total_iterations = 0
         max_iterations = self._max_iterations
         final_cka = 0.0
