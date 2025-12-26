@@ -197,11 +197,12 @@ def model_merge(
         output = {
             "status": "success",
             "outputDir": result.output_path,
-            "layersMerged": result.layers_merged,
+            "layerCount": result.layer_count,
+            "weightCount": result.weight_count,
+            "meanConfidence": result.mean_confidence,
+            "vocabAligned": result.vocab_aligned,
             "metrics": {
                 "meanProcrustesError": result.mean_procrustes_error,
-                "meanSpectralRatio": result.mean_spectral_ratio,
-                "meanEffectiveAlpha": result.mean_effective_alpha,
             },
         }
         write_output(output, context.output_format, context.pretty)

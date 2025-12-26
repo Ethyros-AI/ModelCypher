@@ -122,8 +122,11 @@ def stage_permute(
         target_arr[key] = arr
 
     # Build anchor embeddings from model's embedding layer
+    # Must find .weight specifically, not .scales or .biases
     anchor_key = None
     for key in target_weights:
+        if key.endswith(".scales") or key.endswith(".biases"):
+            continue
         if "embed_tokens" in key or "wte" in key or "embedding" in key.lower():
             anchor_key = key
             break

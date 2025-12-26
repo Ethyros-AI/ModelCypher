@@ -177,6 +177,8 @@ def build_alignment_from_vocabs(
     source_vocab: dict[str, int],
     target_vocab: dict[str, int],
     similarity_threshold: float = 0.8,
+    max_prefix_length: int = 8,
+    max_prefix_matches: int = 3,
 ) -> VocabularyAlignmentMap:
     """
     Build alignment map from source and target vocabulary dictionaries.
@@ -197,12 +199,29 @@ def build_alignment_from_vocabs(
         target_vocab_size=len(target_vocab),
     )
 
-    # Build reverse lookups
-    {token: id_ for token, id_ in source_vocab.items()}
-    target_by_token = {token: id_ for token, id_ in target_vocab.items()}
-    {id_: token for token, id_ in target_vocab.items()}
+    # Build direct and normalized lookups for fast matching
+    target_by_token = target_vocab
+    normalized_target: dict[str, tuple[str, int]] = {}
+    prefix_map: dict[str, list[tuple[str, int]]] = {}
 
-    for source_token, source_id in source_vocab.items():
+    if max_prefix_length < 0:
+        max_prefix_length = 0
+
+    for token, tid in target_vocab.items():
+        normalized = token.lower().strip()
+        existing = normalized_target.get(normalized)
+        if existing is None or tid < existing[1]:
+            normalized_target[normalized] = (token, tid)
+
+        if max_prefix_length > 0:
+            for i in range(1, min(max_prefix_length, len(token)) + 1):
+                prefix = token[:i]
+                prefix_map.setdefault(prefix, []).append((token, tid))
+
+    # Deterministic iteration by token id
+    source_items = sorted(source_vocab.items(), key=lambda x: x[1])
+
+    for source_token, source_id in source_items:
         if source_token in target_by_token:
             # Exact match
             target_id = target_by_token[source_token]
@@ -218,43 +237,60 @@ def build_alignment_from_vocabs(
         else:
             # Try normalized matching (lowercase, strip whitespace)
             normalized = source_token.lower().strip()
-            matched = False
+            normalized_match = normalized_target.get(normalized)
+            if normalized_match is not None:
+                target_token, target_id = normalized_match
+                alignment = TokenAlignment(
+                    source_id=source_id,
+                    source_token=source_token,
+                    target_ids=[target_id],
+                    target_tokens=[target_token],
+                    weights=[1.0],
+                    quality=AlignmentQuality.SIMILAR,
+                    confidence=0.9,
+                )
+            else:
+                # Try prefix matching for subwords (bounded to avoid O(N*M))
+                prefix_matches: list[tuple[str, int]] = []
+                if max_prefix_length > 0:
+                    if len(source_token) <= max_prefix_length:
+                        prefix_matches.extend(prefix_map.get(source_token, []))
 
-            for target_token, target_id in target_vocab.items():
-                if target_token.lower().strip() == normalized:
-                    alignment = TokenAlignment(
-                        source_id=source_id,
-                        source_token=source_token,
-                        target_ids=[target_id],
-                        target_tokens=[target_token],
-                        weights=[1.0],
-                        quality=AlignmentQuality.SIMILAR,
-                        confidence=0.9,
-                    )
-                    matched = True
-                    break
+                    max_len = min(len(source_token), max_prefix_length)
+                    for i in range(1, max_len + 1):
+                        prefix = source_token[:i]
+                        if prefix in target_by_token:
+                            prefix_matches.append((prefix, target_by_token[prefix]))
 
-            if not matched:
-                # Try prefix/suffix matching for subwords
-                prefix_matches = [
-                    (t, tid)
-                    for t, tid in target_vocab.items()
-                    if t.startswith(source_token) or source_token.startswith(t)
-                ]
-
-                if prefix_matches and len(prefix_matches) <= 3:
-                    target_tokens = [t for t, _ in prefix_matches]
-                    target_ids = [tid for _, tid in prefix_matches]
-                    weights = [1.0 / len(prefix_matches)] * len(prefix_matches)
-                    alignment = TokenAlignment(
-                        source_id=source_id,
-                        source_token=source_token,
-                        target_ids=target_ids,
-                        target_tokens=target_tokens,
-                        weights=weights,
-                        quality=AlignmentQuality.APPROXIMATE,
-                        confidence=0.6,
-                    )
+                if prefix_matches:
+                    # Deduplicate and bound matches deterministically
+                    unique: dict[int, str] = {}
+                    for token, tid in prefix_matches:
+                        if tid not in unique:
+                            unique[tid] = token
+                    if len(unique) <= max_prefix_matches:
+                        target_ids = sorted(unique.keys())
+                        target_tokens = [unique[tid] for tid in target_ids]
+                        weights = [1.0 / len(target_ids)] * len(target_ids)
+                        alignment = TokenAlignment(
+                            source_id=source_id,
+                            source_token=source_token,
+                            target_ids=target_ids,
+                            target_tokens=target_tokens,
+                            weights=weights,
+                            quality=AlignmentQuality.APPROXIMATE,
+                            confidence=0.6,
+                        )
+                    else:
+                        alignment = TokenAlignment(
+                            source_id=source_id,
+                            source_token=source_token,
+                            target_ids=[],
+                            target_tokens=[],
+                            weights=[],
+                            quality=AlignmentQuality.UNMAPPED,
+                            confidence=0.0,
+                        )
                 else:
                     # No match found
                     alignment = TokenAlignment(

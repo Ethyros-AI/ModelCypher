@@ -128,7 +128,20 @@ class MLXBackend(Backend):
         return array.astype(self._map_dtype(dtype))
 
     # --- Linear Algebra (requires eval for CPU stream ops) ---
-    def svd(self, array: Array, compute_uv: bool = True) -> tuple[Array, Array, Array] | Array:
+    def svd(
+        self,
+        array: Array,
+        compute_uv: bool = True,
+        full_matrices: bool | None = None,
+    ) -> tuple[Array, Array, Array] | Array:
+        # Accept both compute_uv and full_matrices for compatibility
+        # full_matrices=False is equivalent to compute_uv=True (compact SVD)
+        # full_matrices=True means compute full U and Vt matrices
+        if full_matrices is not None:
+            # MLX's compute_uv means "return U, S, Vt" not "use full matrices"
+            # We always want compact SVD, so compute_uv=True
+            compute_uv = True
+
         # MLX SVD requires CPU stream - must eval before returning
         result = self.mx.linalg.svd(array, compute_uv=compute_uv, stream=self.mx.cpu)
         if compute_uv:

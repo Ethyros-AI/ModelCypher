@@ -81,6 +81,10 @@ class CrossVocabMergeConfig:
     max_alignments_per_token: int = 3  # Max target tokens per source token
     anchor_count: int = 1000  # Anchors for projection alignment
     regularization: float = 1e-6
+    max_similarity_pairs: int = 5_000_000  # Upper bound for similarity dot products
+    max_unmapped_similarity: int = 5000  # Cap number of unmapped tokens to refine
+    max_prefix_length: int = 8  # Prefix length for fast subword matching
+    max_prefix_matches: int = 3  # Max prefix matches to accept
 
     @classmethod
     def from_similarity_distribution(
@@ -318,10 +322,26 @@ class CrossVocabMerger:
 
         # Start with string-based alignment
         alignment_map = build_alignment_from_vocabs(
-            source_vocab, target_vocab, self.config.similarity_threshold
+            source_vocab,
+            target_vocab,
+            self.config.similarity_threshold,
+            max_prefix_length=self.config.max_prefix_length,
+            max_prefix_matches=self.config.max_prefix_matches,
         )
 
         if not self.config.use_embedding_similarity:
+            return alignment_map
+
+        target_vocab_size = alignment_map.target_vocab_size
+        unmapped_count = alignment_map.unmapped_count
+        candidate_pairs = unmapped_count * target_vocab_size
+        if self.config.max_similarity_pairs > 0 and candidate_pairs > self.config.max_similarity_pairs:
+            logger.warning(
+                "Skipping embedding similarity: %d unmapped x %d targets (>%d pairs).",
+                unmapped_count,
+                target_vocab_size,
+                self.config.max_similarity_pairs,
+            )
             return alignment_map
 
         # Enhance unmapped tokens with embedding similarity
@@ -346,11 +366,23 @@ class CrossVocabMerger:
         source_normalized = source_for_sim / source_norms
         target_normalized = target_for_sim / target_norms
 
-        # Process unmapped tokens
+        # Process unmapped tokens (bounded for determinism and performance)
+        unmapped_alignments = [
+            alignment
+            for alignment in alignment_map.iter_alignments()
+            if alignment.quality == AlignmentQuality.UNMAPPED
+        ]
+        unmapped_alignments.sort(key=lambda a: a.source_id)
+        if self.config.max_unmapped_similarity > 0 and len(unmapped_alignments) > self.config.max_unmapped_similarity:
+            logger.info(
+                "Limiting embedding similarity to %d/%d unmapped tokens.",
+                self.config.max_unmapped_similarity,
+                len(unmapped_alignments),
+            )
+            unmapped_alignments = unmapped_alignments[: self.config.max_unmapped_similarity]
+
         unmapped_count = 0
-        for alignment in list(alignment_map.iter_alignments()):
-            if alignment.quality != AlignmentQuality.UNMAPPED:
-                continue
+        for alignment in unmapped_alignments:
 
             # Compute cosine similarity with all target tokens
             if alignment.source_id >= source_normalized.shape[0]:

@@ -58,6 +58,10 @@ class VocabularyConfig:
     # Advanced
     use_embedding_similarity: bool = True
     anchor_count: int = 1000
+    max_similarity_pairs: int = 5_000_000
+    max_unmapped_similarity: int = 5000
+    max_prefix_length: int = 8
+    max_prefix_matches: int = 3
 
 
 @dataclass
@@ -151,6 +155,10 @@ def stage_vocabulary_align(
         preserve_special_tokens=config.preserve_special_tokens,
         use_embedding_similarity=config.use_embedding_similarity,
         anchor_count=config.anchor_count,
+        max_similarity_pairs=config.max_similarity_pairs,
+        max_unmapped_similarity=config.max_unmapped_similarity,
+        max_prefix_length=config.max_prefix_length,
+        max_prefix_matches=config.max_prefix_matches,
     )
 
     merger = CrossVocabMerger(merge_config)

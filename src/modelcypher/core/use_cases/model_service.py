@@ -137,11 +137,12 @@ class ModelService:
         result: dict[str, Any] = {
             "status": "success",
             "outputPath": merge_result.output_path,
-            "layersMerged": merge_result.layers_merged,
+            "layerCount": merge_result.layer_count,
+            "weightCount": merge_result.weight_count,
+            "meanConfidence": merge_result.mean_confidence,
+            "vocabAligned": merge_result.vocab_aligned,
             "metrics": {
                 "meanProcrustesError": merge_result.mean_procrustes_error,
-                "meanSpectralRatio": merge_result.mean_spectral_ratio,
-                "meanEffectiveAlpha": merge_result.mean_effective_alpha,
             },
         }
 

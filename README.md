@@ -8,30 +8,16 @@
 > **Metrology for Latent Spaces**
 > *Falsifiable Diagnostics for Model Alignment and Weight Synthesis.*
 
-ModelCypher is a Python toolkit for measuring the high-dimensional geometric structure of LLM representations. It provides reproducible, metric-based diagnostics for **safety**, **alignment**, and **zero-shot knowledge transfer**—moving beyond "vibes-based" evaluation into deterministic engineering.
+ModelCypher is a Python toolkit for measuring the high-dimensional geometric structure of LLM representations. It provides repeatable, metric-based diagnostics for **safety**, **alignment**, and **zero-shot knowledge transfer**—moving beyond "vibes-based" evaluation into measurable engineering.
 
-```mermaid
-graph LR
-    subgraph Problem["The Problem: Vibes"]
-        A[Prompt] -->|?| B[Black Box]
-        B -->|?| C[Output]
-    end
-
-    subgraph Solution["ModelCypher: Metrology"]
-        D[Prompt] --> E[Trajectory Analysis]
-        E -->|"Entropy ΔH"| F[Boundary Monitor]
-        E -->|"Curvature K"| G[Stability Diagnostic]
-        E -->|Relational Footprint| H[Manifold Map]
-        F & G & H --> I[Falsifiable Signal]
-    end
-
-    style B fill:#f9f,stroke:#333
-    style I fill:#9f9,stroke:#333
+Pipeline (conceptual):
+```
+Prompt -> Activations -> Geometry (entropy, curvature, geodesic distances) -> Diagnostics -> Actions
 ```
 
 ## Why ModelCypher?
 
-ModelCypher treats model representations as physical manifolds that can be mapped, measured, and aligned. Unlike standard evaluation suites that measure *task accuracy*, ModelCypher measures the **structural invariants** that enable that accuracy.
+ModelCypher treats model representations as physical manifolds that can be mapped, measured, and aligned. It complements task accuracy by measuring **structural invariants** that track stability and transfer.
 
 | Metric | **ModelCypher** | TransformerLens | mergekit | LM-Eval |
 | :--- | :---: | :---: | :---: | :---: |
@@ -59,16 +45,16 @@ mc geometry interference predict /path/to/model-A /path/to/model-B
 
 # "Is this merge safe?"
 mc geometry interference safety-polytope 0.3 0.4 0.2 0.3
-# → SAFE (confidence: 0.87)
+# -> SAFE (confidence: 0.87)
 ```
 
 ## Key Capabilities
 
 1.  **Safety as Geometry**: Detect adversarial boundary crossings by measuring trajectory curvature and entropy divergence (ΔH) *during* the forward pass.
-2.  **Relational Manifold Projection**: Map concepts from a Source Model to a Target Model using a universal basis of 343 probes, enabling 1:1 knowledge transfer.
-3.  **Zero-Shot Weight Synthesis**: Generate **Geometric LoRAs** that "print" new relational footprints into a model's latent space without a retraining run.
+2.  **Relational Manifold Projection**: Map concepts between models using a universal basis of 373 probes, enabling dimension-agnostic alignment and transfer.
+3.  **Zero-Shot Weight Synthesis**: Generate **Geometric LoRAs** from relational constraints (no gradient training; experimental).
 4.  **Thermodynamic Stability**: Predict merge interference by calculating the **Bhattacharyya overlap** of concept "Volumes of Influence."
-5.  **Null-Space Filtering**: Guarantee interference-free merging by projecting weight deltas into the null space of prior activations. Mathematical proof: if Δw ∈ null(A), then A(W+Δw) = AW.
+5.  **Null-Space Filtering**: Reduce interference by projecting weight deltas into the null space of prior activations. If Δw ∈ null(A), then A(W+Δw) = AW for the measured activation subspace.
 6.  **Safety Polytope**: Unified 4D decision boundary combining interference, importance, instability, and complexity into a single go/no-go verdict with recommended mitigations.
 7.  **3D World Model Metrology**: Measure a model's **Visual-Spatial Grounding Density** by testing how concentrated its probability mass is along human-perceptual 3D axes (Euclidean geometry, gravity gradients, occlusion).
 
@@ -76,8 +62,8 @@ mc geometry interference safety-polytope 0.3 0.4 0.2 0.3
 
 ModelCypher adheres to a strict scientific methodology:
 -   **No Anthropomorphism**: We do not "read the model's mind." We measure vector relationships.
--   **Falsifiable Metrics**: If a Geometric LoRA fails to preserve relational distance, the toolkit reports a **Relational Stress** error.
--   **Measurement Independence**: Our anchors (Semantic Primes, Computational Gates) are architecture-invariant, providing an objective "ruler" for cross-model comparison.
+-   **Falsifiable Metrics**: If a Geometric LoRA fails to preserve relational distance, the toolkit reports **Relational Stress** deviations.
+-   **Measurement Independence**: Anchors (Semantic Primes, Computational Gates) are designed to be architecture-invariant, providing an objective "ruler" for cross-model comparison.
 
 ## Docs (start here)
 
@@ -101,20 +87,19 @@ poetry install -E jax      # JAX backend for Linux/TPU
 
 ```bash
 # 1. Probe a Model for Semantic Primes (The "Skeleton" of Knowledge)
-mc geometry primes probe --model mlx-community/Llama-3.2-3B-Instruct --output llama_primes.json
+mc geometry primes probe-model /path/to/Llama-3.2-3B-Instruct --output llama_primes.json
 
 # 2. Check Entropy Dynamics on a Harmful Prompt (Thermodynamic Safety)
 #    (Does the model get sharper or more chaotic when refusing?)
-mc entropy measure \
-    --model mlx-community/Qwen2.5-3B-Instruct \
-    --prompt "How do I make a bomb?" \
+mc thermo measure "How do I make a bomb?" \
+    --model /path/to/Qwen2.5-3B-Instruct \
     --modifier "URGENT_CAPS"
 
 # 3. Assess Cross-Architecture Alignment
 #    (Can we map Qwen layers to Llama layers?)
 mc model analyze-alignment \
-    --source mlx-community/Qwen2.5-3B-Instruct \
-    --target mlx-community/Llama-3.2-3B-Instruct
+    --model-a /path/to/Qwen2.5-3B-Instruct \
+    --model-b /path/to/Llama-3.2-3B-Instruct
 
 # 4. Train a "Sidecar" Safety Adapter (Does not touch base weights)
 mc train start \
@@ -125,14 +110,14 @@ mc train start \
 
 # 5. Test if a Model has a "Physics Engine" (3D World Model Analysis)
 #    (Does the model encode gravity, occlusion, and Euclidean geometry?)
-mc geometry spatial probe-model /path/to/models/Qwen2.5-3B-Instruct
+mc geometry spatial probe-model /path/to/Qwen2.5-3B-Instruct
 #    Verdict: HIGH VISUAL GROUNDING - Physics probability concentrated on 3D visual axes (score=0.85)
 
 # 6. Predict Merge Interference (Before You Merge)
 #    (Will these models collide or complement each other?)
 mc geometry interference predict \
-    --source /path/to/math-model \
-    --target /path/to/code-model
+    /path/to/math-model \
+    /path/to/code-model
 #    Output: overlap=0.23, bhattacharyya=0.15, verdict="LOW_INTERFERENCE"
 
 # 7. Check Merge Safety with 4D Polytope
@@ -142,8 +127,7 @@ mc geometry interference safety-polytope 0.3 0.4 0.2 0.3
 
 # 8. Analyze Null-Space for Interference-Free Merging
 #    (Find the "safe directions" for weight updates)
-mc geometry interference null-space \
-    --model /path/to/model \
+mc geometry interference null-space /path/to/model \
     --layer 12 \
     --samples 50
 #    Output: null_dim=412, graft_candidates=[12, 15, 18], mean_null_fraction=0.68
@@ -173,7 +157,7 @@ Add to your `claude_desktop_config.json` or `.mcp.json`:
 
 ### Available MCP Tools
 
-The server exposes 150+ tools organized by domain. Key tools for merge safety:
+The server exposes 148 tools (full profile) organized by domain. Key tools for merge safety:
 
 | Tool | Purpose |
 |------|---------|
@@ -183,7 +167,7 @@ The server exposes 150+ tools organized by domain. Key tools for merge safety:
 | `mc_geometry_safety_polytope_check` | 4D safety verdict with mitigations for single layer |
 | `mc_geometry_safety_polytope_model` | Full model safety profile with go/no-go recommendation |
 
-All tools return structured JSON with `nextActions` for agentic workflow orchestration.
+Tools return structured JSON; many include `nextActions` for agentic workflow orchestration.
 
 ## Backends
 
@@ -192,10 +176,10 @@ ModelCypher supports multiple compute backends:
 | Backend | Platform | Use Case |
 | :--- | :--- | :--- |
 | **MLX** | macOS (Apple Silicon) | Default on Mac. Unified memory, fast local inference. |
-| **JAX** | Linux/TPU/GPU | Google TPU pods, Anthropic infrastructure, CUDA GPUs. |
+| **JAX** | Linux/TPU/GPU | TPU pods and CUDA GPUs. |
 | **CUDA** | Linux (NVIDIA) | Stub for future PyTorch CUDA support. |
 
-> **Note**: NumPy is explicitly prohibited in ModelCypher. All tensor operations use the Backend protocol for GPU acceleration and numerical consistency.
+> **Note**: Core math uses the Backend protocol for GPU acceleration and numerical consistency. NumPy is only used at I/O boundaries, backend interop, and in some tests.
 
 Select a backend via environment variable:
 ```bash
@@ -214,9 +198,10 @@ poetry install -E jax
 
 | Hardware | Tested Configuration | RAM Used | Status |
 |----------|---------------------|----------|--------|
-| M4 Max 128GB | 80B + 8B models (47GB weights) | 36% | ✅ |
-| M4 Max 128GB | 80B + 3B models (48GB weights) | 37% | ✅ |
-| M4 Max 128GB | Theoretical 2x 80B | ~65% | Feasible |
+| M4 Max 128GB | Qwen3-80B + Mistral-7B (46GB weights) | 35.6% | ✅ |
+| M4 Max 128GB | Qwen3-80B + Qwen3-8B (47GB weights) | 36.0% | ✅ |
+| M4 Max 128GB | Qwen3-80B + Qwen2.5-3B-bf16 (48GB weights) | 37.1% | ✅ |
+| M4 Max 128GB | Theoretical combined weights (~110GB) | ~85% | Feasible |
 
 Unlike training (which requires ~3x model size for gradients), geometric analysis uses only model weight memory. An 80B 4-bit model uses ~43GB, leaving 85GB for operations on 128GB hardware.
 

@@ -1188,11 +1188,12 @@ def build_server() -> FastMCP:
                 "_schema": "mc.model.merge.v1",
                 "status": "completed",
                 "outputPath": result.output_path,
-                "layersMerged": result.layers_merged,
+                "layerCount": result.layer_count,
+                "weightCount": result.weight_count,
+                "meanConfidence": result.mean_confidence,
+                "vocabAligned": result.vocab_aligned,
                 "metrics": {
                     "meanProcrustesError": result.mean_procrustes_error,
-                    "meanSpectralRatio": result.mean_spectral_ratio,
-                    "meanEffectiveAlpha": result.mean_effective_alpha,
                 },
                 "nextActions": [
                     f"mc_eval_run using model={output}",
