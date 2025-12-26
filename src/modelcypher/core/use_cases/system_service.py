@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from modelcypher.ports import DatasetStore, ModelStore
+    from modelcypher.ports import ModelStore
 
 
 class _StorePaths(Protocol):
@@ -45,16 +45,13 @@ class SystemService:
     def __init__(
         self,
         model_store: "ModelStore",
-        dataset_store: "DatasetStore",
     ) -> None:
         """Initialize SystemService with required dependencies.
 
         Args:
             model_store: Model store port implementation (REQUIRED).
-            dataset_store: Dataset store port implementation (REQUIRED).
         """
         self._model_store = model_store
-        self._dataset_store = dataset_store
 
     def status(self) -> dict:
         return self.readiness()

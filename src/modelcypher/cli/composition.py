@@ -201,7 +201,6 @@ def get_system_service():
     registry = _get_registry()
     return SystemService(
         model_store=registry.model_store,
-        dataset_store=registry.dataset_store,
     )
 
 

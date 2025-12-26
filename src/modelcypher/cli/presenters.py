@@ -24,15 +24,8 @@ from modelcypher.core.domain.model_search import ModelSearchPage, ModelSearchRes
 from modelcypher.core.domain.models import (
     CompareCheckpointResult,
     CompareSession,
-    DatasetInfo,
     EvaluationResult,
     ModelInfo,
-)
-from modelcypher.core.use_cases.dataset_editor_service import (
-    DatasetConversionResult,
-    DatasetEditResult,
-    DatasetPreviewResult,
-    DatasetRowSnapshot,
 )
 from modelcypher.core.use_cases.doc_service import DocConvertResult
 
@@ -48,64 +41,6 @@ def model_payload(model: ModelInfo) -> dict[str, Any]:
         "parameterCount": model.parameter_count,
         "isDefaultChat": model.is_default_chat,
         "createdAt": _format_timestamp(model.created_at),
-    }
-
-
-def dataset_payload(dataset: DatasetInfo) -> dict[str, Any]:
-    return {
-        "id": dataset.id,
-        "name": dataset.name,
-        "path": dataset.path,
-        "sizeBytes": dataset.size_bytes,
-        "exampleCount": dataset.example_count,
-        "createdAt": _format_timestamp(dataset.created_at),
-    }
-
-
-def dataset_row_payload(row: DatasetRowSnapshot) -> dict[str, Any]:
-    return {
-        "_schema": "mc.dataset.row.v1",
-        "lineNumber": row.line_number,
-        "raw": row.raw,
-        "format": row.format.value,
-        "fields": row.fields,
-        "validationMessages": row.validation_messages,
-        "rawTruncated": row.raw_truncated,
-        "rawFullBytes": row.raw_full_bytes,
-        "fieldsTruncated": row.fields_truncated,
-    }
-
-
-def dataset_preview_payload(
-    preview: DatasetPreviewResult, warnings: list[str] | None = None
-) -> dict[str, Any]:
-    return {
-        "_schema": "mc.dataset.preview.v1",
-        "path": preview.path,
-        "rowCount": len(preview.rows),
-        "rows": [dataset_row_payload(row) for row in preview.rows],
-        "warnings": warnings or [],
-    }
-
-
-def dataset_edit_payload(result: DatasetEditResult) -> dict[str, Any]:
-    return {
-        "_schema": "mc.dataset.edit.v1",
-        "status": result.status,
-        "lineNumber": result.line_number,
-        "row": dataset_row_payload(result.row) if result.row else None,
-        "warnings": result.warnings,
-    }
-
-
-def dataset_convert_payload(result: DatasetConversionResult) -> dict[str, Any]:
-    return {
-        "_schema": "mc.dataset.convert.v1",
-        "sourcePath": result.source_path,
-        "outputPath": result.output_path,
-        "targetFormat": result.target_format.value,
-        "lineCount": result.line_count,
-        "warnings": result.warnings,
     }
 
 
