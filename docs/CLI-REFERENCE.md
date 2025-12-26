@@ -22,35 +22,38 @@ ModelCypher CLI is standalone. Use `mc` (or `modelcypher`) for all commands.
 Environment variables:
 - `MC_AI_MODE`, `MC_NO_AI`
 - `MC_OUTPUT`
-- `MC_TRACE_ID`
-- `MC_NO_PROMPT`, `MC_ALLOW_ALL`
-- `NO_COLOR`, `MC_NO_COLOR`
-- `MC_NO_PAGER`
 
 ## Command Map
 
 Primary workflows:
-- `mc train` (start/preflight/status/pause/resume/cancel/logs/export)
+- `mc train` (start/preflight/status/pause/resume/cancel/export/logs)
 - `mc job` (list/show/attach/delete)
 - `mc checkpoint` (list/delete/export)
-- `mc model` (list/register/delete/fetch/merge/search/probe/validate-merge/analyze-alignment)
-- `mc dataset` (validate/preprocess/convert/preview/get-row/update-row/add-row/delete-row/list/delete/pack-asif)
+- `mc model` (list/register/delete/fetch/merge/search/probe/validate-merge/validate-knowledge/analyze-alignment/vocab-compare)
+- `mc dataset` (validate/preprocess/convert/preview/get-row/update-row/add-row/delete-row/list/delete/pack-asif/quality/auto-fix/format-analyze/chunk/template)
 - `mc doc` (convert/validate)
-- `mc infer` (single run, batch, suite)
-- `mc storage` (usage/status, cleanup)
+- `mc infer` (run/suite)
+- `mc storage` (status/usage/cleanup)
 - `mc inventory`, `mc system`
 
 Research + diagnostics:
-- `mc geometry` (validate/training/safety/adapter/primes/stitch/path/crm/sparse/refusal/persona/manifold/transport/atlas/spatial)
-- `mc thermo` (analyze/path/entropy/measure/detect/ridge-detect/phase/sweep)
-- `mc entropy` (analyze/detect-distress/verify-baseline/window/conversation-track/dual-path)
+- `mc geometry` (path/training/safety/adapter/atlas/primes/stitch/crm/metrics/sparse/refusal/persona/manifold/transport/refinement/invariant/emotion/merge-entropy/transfer/spatial/social/temporal/moral/waypoint/interference)
+- `mc thermo` (analyze/path/entropy/measure/detect/detect-batch/ridge-detect/phase/sweep/benchmark/parity)
+- `mc entropy` (analyze/detect-distress/verify-baseline/window/conversation-track/dual-path/calibrate)
 - `mc safety` (adapter-probe/dataset-scan/lint-identity)
 - `mc agent` (trace-import/trace-analyze/validate-action)
 - `mc eval` (run/list/show)
 - `mc compare` (run/list/show/checkpoints/baseline/score)
-- `mc calibration`, `mc stability`, `mc agent-eval`, `mc dashboard`
-- `mc ensemble`, `mc research`, `mc help`, `mc schema`, `mc completions`
-- `mc validate` (train), `mc estimate`, `mc explain`
+- `mc adapter` (inspect/project/wrap-mlx/smooth/merge)
+- `mc calibration` (run/status/apply)
+- `mc stability` (run/report)
+- `mc agent-eval` (run/results)
+- `mc dashboard` (metrics/export)
+- `mc ensemble` (create/run/list/delete)
+- `mc research` (sparse-region/afm)
+- `mc help` (ask/completions/schema)
+- `mc explain`
+- `mc validate` (train/dataset), `mc estimate` (train)
 
 ## Geometry Atlas Commands
 ```bash
@@ -60,10 +63,17 @@ mc geometry atlas dimensionality-study <model_path> --layer <n> [-l ...]
 
 ## Geometry Spatial Commands
 ```bash
+mc geometry spatial anchors
+mc geometry spatial probe-model <model_path>
+mc geometry spatial analyze <activations_file>
 mc geometry spatial euclidean <activations_file>
+mc geometry spatial gravity <activations_file>
+mc geometry spatial density <activations_file>
+mc geometry spatial cross-grounding-feasibility <source_activations> <target_activations>
+mc geometry spatial cross-grounding-transfer <source_activations> <target_activations> --concepts <file>
 ```
 
-## Phase 2 Commands
+## Selected Commands
 
 ### Safety Commands
 ```bash
@@ -74,9 +84,9 @@ mc safety lint-identity --dataset <path>    # Lint for intrinsic identity issues
 
 ### Entropy Commands
 ```bash
-mc entropy window --model <path> --config <json>       # Sliding window entropy tracking
-mc entropy conversation-track --session <file>         # Multi-turn conversation analysis
-mc entropy dual-path --base <path> --adapter <path>    # Dual-path security analysis
+mc entropy window '[[3.5, 0.2], [3.6, 0.1]]' --size 50          # Sliding window entropy tracking
+mc entropy conversation-track --session <file>                  # Multi-turn conversation analysis
+mc entropy dual-path '[{"base": [3.5, 0.2], "adapter": [3.8, 0.3]}]'  # Base vs adapter divergence
 ```
 
 ### Agent Commands
@@ -86,10 +96,10 @@ mc agent trace-analyze --trace <file>       # Analyze agent traces
 mc agent validate-action --action <json>    # Validate agent actions
 ```
 
-### Dataset Commands (Phase 2 additions)
+### Dataset Commands
 ```bash
 mc dataset format-analyze <path>            # Detect dataset format (text/chat/instruction/etc)
-mc dataset chunk --file <path> --size <n>   # Chunk documents for training
+mc dataset chunk --file <path> --output <file> --size <n>   # Chunk documents for training
 mc dataset template --model <family>        # Apply chat template
 ```
 
@@ -100,5 +110,5 @@ mc dataset template --model <family>        # Apply chat template
 
 ## Schemas + Completions
 
-- `mc schema --list` to list schemas; `mc schema <key>` to emit JSON schema.
-- `mc completions --shell {bash,zsh,fish}` to generate shell completions.
+- `mc help schema <command>` emits JSON schema for a command.
+- `mc help completions {bash,zsh,fish}` generates shell completions.

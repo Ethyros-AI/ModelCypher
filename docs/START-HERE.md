@@ -19,7 +19,7 @@ Download a small model and probe its geometry:
 huggingface-cli download mlx-community/Qwen2.5-0.5B-Instruct-bf16 --local-dir ./models/qwen-0.5b
 
 # Probe it
-mc geometry spatial probe-model ./models/qwen-0.5b --output text
+mc geometry spatial probe-model ./models/qwen-0.5b
 ```
 
 **Output:**
@@ -77,10 +77,10 @@ A toolkit for measuring the geometric structure of LLM representations.
 
 ```bash
 # Predict interference before merging
-mc geometry interference predict --source ./model-A --target ./model-B
+mc geometry interference predict ./model-A ./model-B
 
 # Merge with geometric alignment
-mc model merge --source ./model-A --target ./model-B --method procrustes
+mc model merge --source ./model-A --target ./model-B --output-dir ./merged
 ```
 
 → [CLI Reference](CLI-REFERENCE.md) · [Why Geometry Matters](WHY-GEOMETRY-MATTERS.md) · [Verification](VERIFICATION.md)
@@ -131,7 +131,7 @@ ModelCypher/
 │   └── mcp/                  # MCP server (148 tools)
 ├── docs/                     # Documentation (you are here)
 ├── papers/                   # Research manuscripts
-└── tests/                    # 3060 tests
+└── tests/                    # 3030 tests
 ```
 
 ---

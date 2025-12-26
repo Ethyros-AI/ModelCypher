@@ -9,6 +9,7 @@ This document provides guidance for AI coding assistants (Claude, Gemini, Copilo
 ## Concurrency Rules
 
 Multiple AI agents work on this codebase concurrently. Before making changes:
+If other files are modified and you do not need to touch them, continue without pausing; only stop when overlap is required.
 
 1. **Check git status first** - Look for uncommitted changes from other agents
 2. **If unexpected files are modified** - Do not revert or overwrite; proceed unless your work would touch those files
