@@ -371,20 +371,37 @@ class SharedSubspaceProjector:
         d_source: int,
         d_target: int,
         config: Config,
+        backend: "Backend | None" = None,
     ) -> Result | None:
-        centered_source, _ = SharedSubspaceProjector._center_matrix(source_activations, weights)
-        centered_target, _ = SharedSubspaceProjector._center_matrix(target_activations, weights)
+        b = backend or get_default_backend()
 
-        source_gram = SharedSubspaceProjector._compute_gram_matrix(centered_source, n, d_source)
-        target_gram = SharedSubspaceProjector._compute_gram_matrix(centered_target, n, d_target)
+        # Convert to backend arrays
+        source_array = b.array(source_activations)
+        target_array = b.array(target_activations)
+        b.eval(source_array, target_array)
 
-        source_eigen = GeometricFingerprint.symmetric_eigenvalues(source_gram, n)
-        target_eigen = GeometricFingerprint.symmetric_eigenvalues(target_gram, n)
-        if source_eigen is None or target_eigen is None:
-            return None
+        weight_vector = SharedSubspaceProjector._normalize_weights(weights, backend=b)
+        source_centered, _ = SharedSubspaceProjector._center_array(source_array, weight_vector, backend=b)
+        target_centered, _ = SharedSubspaceProjector._center_array(target_array, weight_vector, backend=b)
+        b.eval(source_centered, target_centered)
 
-        source_sorted = sorted([float(val) for val in source_eigen], reverse=True)
-        target_sorted = sorted([float(val) for val in target_eigen], reverse=True)
+        # Compute Gram matrices using backend: G = X @ X^T
+        source_centered_t = b.transpose(source_centered)
+        target_centered_t = b.transpose(target_centered)
+        source_gram = b.matmul(source_centered, source_centered_t)
+        target_gram = b.matmul(target_centered, target_centered_t)
+        b.eval(source_gram, target_gram)
+
+        # Eigendecomposition of Gram matrices
+        source_eigenvalues, _ = b.eigh(source_gram)
+        target_eigenvalues, _ = b.eigh(target_gram)
+        b.eval(source_eigenvalues, target_eigenvalues)
+
+        # Sort eigenvalues in descending order (eigh returns ascending)
+        source_eig_np = b.to_numpy(source_eigenvalues)
+        target_eig_np = b.to_numpy(target_eigenvalues)
+        source_sorted = sorted([float(val) for val in source_eig_np], reverse=True)
+        target_sorted = sorted([float(val) for val in target_eig_np], reverse=True)
 
         def effective_rank(values: list[float], threshold: float) -> int:
             total = sum(val for val in values if val > 0)
@@ -405,53 +422,61 @@ class SharedSubspaceProjector:
         if shared_dim <= 0:
             return None
 
-        source_cov = SharedSubspaceProjector._compute_covariance(
-            centered_source, centered_source, n
+        # Covariance matrices: C = X^T @ X / n
+        source_cov = b.matmul(source_centered_t, source_centered) / float(n)
+        target_cov = b.matmul(target_centered_t, target_centered) / float(n)
+        b.eval(source_cov, target_cov)
+
+        # Regularize covariances
+        source_cov = SharedSubspaceProjector._regularize_covariance(
+            source_cov, config.cca_regularization, backend=b
         )
-        target_cov = SharedSubspaceProjector._compute_covariance(
-            centered_target, centered_target, n
+        target_cov = SharedSubspaceProjector._regularize_covariance(
+            target_cov, config.cca_regularization, backend=b
         )
 
-        source_cov_reg = list(source_cov)
-        target_cov_reg = list(target_cov)
-        for i in range(d_source):
-            source_cov_reg[i * d_source + i] += config.cca_regularization
-        for i in range(d_target):
-            target_cov_reg[i * d_target + i] += config.cca_regularization
+        # Eigendecomposition of covariance matrices
+        source_cov_eigenvalues, source_cov_eigenvectors = b.eigh(source_cov)
+        target_cov_eigenvalues, target_cov_eigenvectors = b.eigh(target_cov)
+        b.eval(source_cov_eigenvalues, source_cov_eigenvectors)
+        b.eval(target_cov_eigenvalues, target_cov_eigenvectors)
 
-        source_eigenvectors = SharedSubspaceProjector._compute_eigenvectors(
-            source_cov_reg, d_source, shared_dim
-        )
-        target_eigenvectors = SharedSubspaceProjector._compute_eigenvectors(
-            target_cov_reg, d_target, shared_dim
-        )
-        if source_eigenvectors is None or target_eigenvectors is None:
-            return None
+        # Select top-k eigenvectors (eigh returns ascending, so take last k)
+        source_proj = source_cov_eigenvectors[:, -shared_dim:]
+        target_proj = target_cov_eigenvectors[:, -shared_dim:]
+        # Reverse columns to get descending order
+        source_proj = b.array(b.to_numpy(source_proj)[:, ::-1].copy())
+        target_proj = b.array(b.to_numpy(target_proj)[:, ::-1].copy())
+        b.eval(source_proj, target_proj)
 
-        source_projected = SharedSubspaceProjector._matrix_multiply(
-            centered_source, source_eigenvectors, n, d_source, shared_dim
-        )
-        target_projected = SharedSubspaceProjector._matrix_multiply(
-            centered_target, target_eigenvectors, n, d_target, shared_dim
-        )
+        # Project data to shared space
+        source_projected = b.matmul(source_centered, source_proj)
+        target_projected = b.matmul(target_centered, target_proj)
+        b.eval(source_projected, target_projected)
 
-        alignment_error = SharedSubspaceProjector._compute_procrustes_error(
-            source_projected, target_projected, n, shared_dim
-        )
+        # Compute alignment error using backend
+        diff = source_projected - target_projected
+        error_sum = b.sum(diff * diff)
+        target_norm_sq = b.sum(target_projected * target_projected)
+        b.eval(error_sum, target_norm_sq)
+        error_sum_float = float(b.to_numpy(error_sum).item())
+        target_norm_float = float(b.to_numpy(target_norm_sq).item())
+        alignment_error = math.sqrt(error_sum_float / target_norm_float) if target_norm_float > 0 else 0.0
 
+        # Compute alignment strengths using backend
         alignment_strengths: list[float] = []
         for k in range(shared_dim):
-            sum_prod = 0.0
-            sum_sq_s = 0.0
-            sum_sq_t = 0.0
-            for i in range(n):
-                s = source_projected[i * shared_dim + k]
-                t = target_projected[i * shared_dim + k]
-                sum_prod += s * t
-                sum_sq_s += s * s
-                sum_sq_t += t * t
-            denom = math.sqrt(sum_sq_s * sum_sq_t)
-            alignment_strengths.append(abs(sum_prod / denom) if denom > 0 else 0.0)
+            s_col = source_projected[:, k]
+            t_col = target_projected[:, k]
+            sum_prod = b.sum(s_col * t_col)
+            sum_sq_s = b.sum(s_col * s_col)
+            sum_sq_t = b.sum(t_col * t_col)
+            b.eval(sum_prod, sum_sq_s, sum_sq_t)
+            prod_float = float(b.to_numpy(sum_prod).item())
+            sq_s_float = float(b.to_numpy(sum_sq_s).item())
+            sq_t_float = float(b.to_numpy(sum_sq_t).item())
+            denom = math.sqrt(sq_s_float * sq_t_float)
+            alignment_strengths.append(abs(prod_float / denom) if denom > 0 else 0.0)
 
         source_variance = sum(source_sorted[:shared_dim])
         target_variance = sum(target_sorted[:shared_dim])
@@ -462,16 +487,16 @@ class SharedSubspaceProjector:
             (source_variance + target_variance) / denom_total if denom_total > 0 else 0.0
         )
 
+        # Convert projections to lists
+        source_proj_list = b.to_numpy(source_proj).tolist()
+        target_proj_list = b.to_numpy(target_proj).tolist()
+
         return Result(
             shared_dimension=shared_dim,
             source_dimension=d_source,
             target_dimension=d_target,
-            source_projection=SharedSubspaceProjector._reshape_to_matrix(
-                source_eigenvectors, d_source, shared_dim
-            ),
-            target_projection=SharedSubspaceProjector._reshape_to_matrix(
-                target_eigenvectors, d_target, shared_dim
-            ),
+            source_projection=source_proj_list,
+            target_projection=target_proj_list,
             alignment_strengths=alignment_strengths,
             alignment_error=alignment_error,
             shared_variance_ratio=shared_variance_ratio,
@@ -488,99 +513,115 @@ class SharedSubspaceProjector:
         d_source: int,
         d_target: int,
         config: Config,
+        backend: "Backend | None" = None,
     ) -> Result | None:
         if d_source != d_target:
             return SharedSubspaceProjector._discover_with_cca(
                 source_activations, target_activations, weights, n, d_source, d_target, config
             )
 
+        b = backend or get_default_backend()
         d = d_source
-        centered_source, _ = SharedSubspaceProjector._center_matrix(source_activations, weights)
-        centered_target, _ = SharedSubspaceProjector._center_matrix(target_activations, weights)
 
-        source_flat = [val for row in centered_source for val in row]
-        target_flat = [val for row in centered_target for val in row]
+        # Convert to backend arrays
+        source_array = b.array(source_activations)
+        target_array = b.array(target_activations)
+        b.eval(source_array, target_array)
 
-        m = [0.0 for _ in range(d * d)]
-        for i in range(d):
-            for j in range(d):
-                total = 0.0
-                for sample in range(n):
-                    total += source_flat[sample * d + i] * target_flat[sample * d + j]
-                m[i * d + j] = total
+        weight_vector = SharedSubspaceProjector._normalize_weights(weights, backend=b)
+        source_centered, _ = SharedSubspaceProjector._center_array(source_array, weight_vector, backend=b)
+        target_centered, _ = SharedSubspaceProjector._center_array(target_array, weight_vector, backend=b)
+        b.eval(source_centered, target_centered)
 
-        svd = SharedSubspaceProjector._svd_decomposition(m, d, d)
-        if svd is None:
-            return None
-        u, singular_values, v_t = svd
+        # Compute M = source^T @ target for Procrustes
+        source_centered_t = b.transpose(source_centered)
+        m_matrix = b.matmul(source_centered_t, target_centered)
+        b.eval(m_matrix)
 
-        # Compute omega = U @ V^T
-        omega = [0.0 for _ in range(d * d)]
-        for i in range(d):
-            for j in range(d):
-                total = 0.0
-                for k in range(d):
-                    total += u[i * d + k] * v_t[k * d + j]
-                omega[i * d + j] = total
+        # SVD of M
+        u, singular_values, v_t = b.svd(m_matrix)
+        b.eval(u, singular_values, v_t)
+
+        # Compute omega = U @ V^T (orthogonal rotation matrix)
+        omega = b.matmul(u, v_t)
+        b.eval(omega)
 
         # Check for reflection (det < 0) and fix by flipping last column of U
-        det = SharedSubspaceProjector._compute_determinant(omega, d)
+        # Compute determinant using Backend (for orthogonal matrix, det = product of signs)
+        omega_np = b.to_numpy(omega)
+        # Use numpy for determinant since Backend may not have it
+        det = 1.0
+        work = omega_np.copy()
+        for col in range(d):
+            max_row = col
+            for row in range(col + 1, d):
+                if abs(work[row, col]) > abs(work[max_row, col]):
+                    max_row = row
+            if abs(work[max_row, col]) < 1e-15:
+                det = 0.0
+                break
+            if max_row != col:
+                work[[col, max_row]] = work[[max_row, col]]
+                det = -det
+            pivot = work[col, col]
+            for row in range(col + 1, d):
+                factor = work[row, col] / pivot
+                work[row, col:] -= factor * work[col, col:]
+            det *= work[col, col]
+
         if det < 0:
             # Flip last column of U
-            for i in range(d):
-                u[i * d + (d - 1)] = -u[i * d + (d - 1)]
+            u_np = b.to_numpy(u)
+            u_np[:, -1] = -u_np[:, -1]
+            u = b.array(u_np)
+            b.eval(u)
             # Recompute omega with corrected U
-            for i in range(d):
-                for j in range(d):
-                    total = 0.0
-                    for k in range(d):
-                        total += u[i * d + k] * v_t[k * d + j]
-                    omega[i * d + j] = total
+            omega = b.matmul(u, v_t)
+            b.eval(omega)
 
-        rotated_source = [0.0 for _ in range(n * d)]
-        for sample in range(n):
-            for j in range(d):
-                total = 0.0
-                for k in range(d):
-                    total += source_flat[sample * d + k] * omega[k * d + j]
-                rotated_source[sample * d + j] = total
+        # Compute rotated source = source @ omega
+        rotated_source = b.matmul(source_centered, omega)
+        b.eval(rotated_source)
 
-        error_sum = 0.0
-        target_norm = 0.0
-        for idx in range(n * d):
-            diff = rotated_source[idx] - target_flat[idx]
-            error_sum += diff * diff
-            target_norm += target_flat[idx] * target_flat[idx]
-        alignment_error = math.sqrt(error_sum / target_norm) if target_norm > 0 else 0.0
+        # Compute alignment error
+        diff = rotated_source - target_centered
+        error_sum = b.sum(diff * diff)
+        target_norm_sq = b.sum(target_centered * target_centered)
+        b.eval(error_sum, target_norm_sq)
+        error_sum_float = float(b.to_numpy(error_sum).item())
+        target_norm_float = float(b.to_numpy(target_norm_sq).item())
+        alignment_error = math.sqrt(error_sum_float / target_norm_float) if target_norm_float > 0 else 0.0
 
-        total_singular = sum(singular_values)
+        # Convert singular values to list
+        singular_list = b.to_numpy(singular_values).tolist()
+        total_singular = sum(singular_list)
+
         cum_sum = 0.0
         shared_dim = 0
-        for idx, value in enumerate(singular_values):
+        for idx, value in enumerate(singular_list):
             cum_sum += value
             if total_singular > 0 and (cum_sum / total_singular) >= config.variance_threshold:
                 shared_dim = idx + 1
                 break
         shared_dim = min(max(shared_dim, 1), config.max_shared_dimension, d)
 
-        identity = []
-        for i in range(d):
-            row = [0.0 for _ in range(d)]
-            row[i] = 1.0
-            identity.append(row)
+        # Create identity matrix using backend
+        identity = b.eye(d)
+        b.eval(identity)
+        identity_list = b.to_numpy(identity).tolist()
 
         shared_variance_ratio = cum_sum / total_singular if total_singular > 0 else 0.0
 
         strengths = [
-            value / (total_singular if total_singular > 0 else 1.0) for value in singular_values
+            value / (total_singular if total_singular > 0 else 1.0) for value in singular_list
         ]
 
         return Result(
             shared_dimension=shared_dim,
             source_dimension=d,
             target_dimension=d,
-            source_projection=identity,
-            target_projection=SharedSubspaceProjector._reshape_to_matrix(omega, d, d),
+            source_projection=identity_list,
+            target_projection=b.to_numpy(omega).tolist(),
             alignment_strengths=strengths,
             alignment_error=alignment_error,
             shared_variance_ratio=shared_variance_ratio,
