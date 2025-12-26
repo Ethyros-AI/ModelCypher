@@ -85,6 +85,7 @@ class CrossVocabMergeConfig:
     max_unmapped_similarity: int = 5000  # Cap number of unmapped tokens to refine
     max_prefix_length: int = 8  # Prefix length for fast subword matching
     max_prefix_matches: int = 3  # Max prefix matches to accept
+    similarity_batch_size: int = 128  # Batch size for cosine similarity
 
     @classmethod
     def from_similarity_distribution(
@@ -382,38 +383,41 @@ class CrossVocabMerger:
             unmapped_alignments = unmapped_alignments[: self.config.max_unmapped_similarity]
 
         unmapped_count = 0
-        for alignment in unmapped_alignments:
+        valid_alignments = [
+            alignment
+            for alignment in unmapped_alignments
+            if alignment.source_id < source_normalized.shape[0]
+        ]
+        batch_size = max(1, int(self.config.similarity_batch_size))
 
-            # Compute cosine similarity with all target tokens
-            if alignment.source_id >= source_normalized.shape[0]:
-                continue
-            source_vec = source_normalized[alignment.source_id]
-            similarities = b.matmul(source_vec[None, :], target_normalized.T)[0]
-
-            # Get top-k matches
-            k = self.config.max_alignments_per_token
+        for batch_start in range(0, len(valid_alignments), batch_size):
+            batch = valid_alignments[batch_start:batch_start + batch_size]
+            source_ids = [alignment.source_id for alignment in batch]
+            source_batch = source_normalized[source_ids]
+            similarities = b.matmul(source_batch, target_normalized.T)
             sim_np = b.to_numpy(similarities)
 
-            # Find top k indices
-            top_indices = sim_np.argsort()[-k:][::-1]
-            top_sims = sim_np[top_indices]
+            for row_idx, alignment in enumerate(batch):
+                row = sim_np[row_idx]
+                k = self.config.max_alignments_per_token
 
-            # Filter by threshold
-            mask = top_sims >= self.config.similarity_threshold
-            if not mask.any():
-                # Take best match even if below threshold
-                top_indices = top_indices[:1]
-                top_sims = top_sims[:1]
-            else:
-                top_indices = top_indices[mask]
-                top_sims = top_sims[mask]
+                top_indices = row.argsort()[-k:][::-1]
+                top_sims = row[top_indices]
 
-            if len(top_indices) > 0:
-                # Create new alignment
+                mask = top_sims >= self.config.similarity_threshold
+                if not mask.any():
+                    top_indices = top_indices[:1]
+                    top_sims = top_sims[:1]
+                else:
+                    top_indices = top_indices[mask]
+                    top_sims = top_sims[mask]
+
+                if len(top_indices) == 0:
+                    continue
+
                 target_ids = [int(idx) for idx in top_indices]
                 target_tokens = [target_id_to_token.get(idx, f"<{idx}>") for idx in target_ids]
 
-                # Normalize weights
                 weights = (
                     top_sims / top_sims.sum()
                     if top_sims.sum() > 0
@@ -421,7 +425,6 @@ class CrossVocabMerger:
                 )
                 weights = [float(w) for w in weights]
 
-                # Determine quality - thresholds from config, not hardcoded
                 max_sim = float(top_sims[0])
                 if max_sim >= self.config.high_similarity_threshold:
                     quality = AlignmentQuality.SIMILAR
@@ -442,10 +445,8 @@ class CrossVocabMerger:
                     metadata={"cosine_similarities": [float(s) for s in top_sims]},
                 )
 
-                # Update alignment map
                 alignment_map.alignments[alignment.source_id] = new_alignment
 
-                # Update stats
                 if alignment.quality == AlignmentQuality.UNMAPPED:
                     alignment_map.unmapped_count -= 1
                 if quality == AlignmentQuality.SIMILAR:

@@ -37,6 +37,7 @@ Stage implementations are in merge_stages/ subpackage for modularity.
 from __future__ import annotations
 
 import logging
+import time
 import re
 import shutil
 from dataclasses import dataclass, field
@@ -402,6 +403,7 @@ class UnifiedGeometricMerger:
         logger.info("=== FULL GEOMETRY MERGE (84 files) ===")
         logger.info("Source: %s", source_path)
         logger.info("Target: %s", target_path)
+        logger.info("Backend: %s", type(self._backend).__name__)
 
         # Load weights
         source_weights, _ = self._load_weights(source_path)
@@ -413,11 +415,16 @@ class UnifiedGeometricMerger:
 
         # Stage 0: Vocabulary alignment
         logger.info("STAGE 0: VOCABULARY ALIGNMENT")
+        stage_start = time.perf_counter()
         source_weights, vocab_metrics, vocab_aligned = self._stage_vocabulary(
             source_weights=source_weights,
             target_weights=target_weights,
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
+        )
+        logger.info(
+            "STAGE 0: VOCABULARY ALIGNMENT completed in %.2fs",
+            time.perf_counter() - stage_start,
         )
 
         # Collect activations if models can be loaded
@@ -428,8 +435,13 @@ class UnifiedGeometricMerger:
 
         if self.config.probe_mode == "precise":
             logger.info("Loading models for activation collection...")
+            load_start = time.perf_counter()
             source_model = self._load_model_for_probing(source_path)
             target_model = self._load_model_for_probing(target_path)
+            logger.info(
+                "STAGE 1: Model load completed in %.2fs",
+                time.perf_counter() - load_start,
+            )
 
             if source_model and target_model and source_tokenizer and target_tokenizer:
                 from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
@@ -480,6 +492,7 @@ class UnifiedGeometricMerger:
 
         # Create orchestrator and analyze geometry
         logger.info("ANALYZING FULL GEOMETRY...")
+        analyze_start = time.perf_counter()
         orchestrator = GeometricMergeOrchestrator(backend=self._backend)
         geometry = orchestrator.analyze_merge(
             source_weights=source_weights,
@@ -487,6 +500,10 @@ class UnifiedGeometricMerger:
             source_activations=source_activations,
             target_activations=target_activations,
             tokenizer=target_tokenizer,
+        )
+        logger.info(
+            "ANALYZING FULL GEOMETRY completed in %.2fs",
+            time.perf_counter() - analyze_start,
         )
 
         if geometry.overall_cka != 1.0:
@@ -498,12 +515,17 @@ class UnifiedGeometricMerger:
 
         # Execute merge using geometry
         logger.info("EXECUTING MERGE...")
+        merge_start = time.perf_counter()
         merged_weights, merge_metrics = orchestrator.merge_weights(
             source_weights=source_weights,
             target_weights=target_weights,
             geometry=geometry,
             extract_layer_index_fn=self._extract_layer_index,
             checkpoint_dir=output_dir,
+        )
+        logger.info(
+            "EXECUTING MERGE completed in %.2fs",
+            time.perf_counter() - merge_start,
         )
 
         # Detect target quantization and requantize merged weights to match

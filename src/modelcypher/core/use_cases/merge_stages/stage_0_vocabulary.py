@@ -28,6 +28,7 @@ Uses the superior CrossVocabMerger pipeline:
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -74,6 +75,7 @@ class VocabularyConfig:
     max_unmapped_similarity: int = 5000
     max_prefix_length: int = 8
     max_prefix_matches: int = 3
+    similarity_batch_size: int = 128
 
     # Phase-lock alignment tuning
     alignment_iterations: int = 8
@@ -119,12 +121,14 @@ def stage_vocabulary_align(
         VocabularyResult with modified weights, metrics, and alignment status
     """
     backend = get_default_backend()
+    cache = ComputationCache.shared()
 
     metrics: dict[str, Any] = {
         "enabled": True,
         "tokenizers_provided": source_tokenizer is not None and target_tokenizer is not None,
     }
     metrics["alignment_signals"] = {}
+    metrics["timing_ms"] = {}
 
     # Tokenizers are required for deterministic binary/vocab alignment.
     if source_tokenizer is None or target_tokenizer is None:
@@ -166,23 +170,6 @@ def stage_vocabulary_align(
         ProjectionStrategy.PROCRUSTES,
     )
 
-    # Configure merger
-    merge_config = CrossVocabMergeConfig(
-        projection_strategy=projection_strategy,
-        similarity_threshold=config.similarity_threshold,
-        confidence_threshold=config.confidence_threshold,
-        blend_alpha=config.blend_alpha,
-        preserve_special_tokens=config.preserve_special_tokens,
-        use_embedding_similarity=config.use_embedding_similarity,
-        anchor_count=config.anchor_count,
-        max_similarity_pairs=config.max_similarity_pairs,
-        max_unmapped_similarity=config.max_unmapped_similarity,
-        max_prefix_length=config.max_prefix_length,
-        max_prefix_matches=config.max_prefix_matches,
-    )
-
-    merger = CrossVocabMerger(merge_config)
-
     # Extract vocabulary mappings from tokenizers
     source_vocab = _extract_vocab(source_tokenizer)
     target_vocab = _extract_vocab(target_tokenizer)
@@ -212,6 +199,7 @@ def stage_vocabulary_align(
     # Apply merger to each embedding layer
     modified_weights = source_weights.copy()
     aligned_layers = 0
+    stage_start = time.perf_counter()
     alignment_tol = config.alignment_tolerance
     alignment_iterations = max(1, config.alignment_iterations)
     solver_iterations = config.alignment_solver_iterations
@@ -219,6 +207,7 @@ def stage_vocabulary_align(
     balance_anchor_weights = config.balance_anchor_weights
 
     for embed_key in embed_keys:
+        embed_start = time.perf_counter()
         use_all_support_texts = config.use_all_support_texts
         source_embed = source_weights.get(embed_key)
         target_embed = target_weights.get(embed_key)
@@ -263,17 +252,28 @@ def stage_vocabulary_align(
                 "target",
             )
             backend.eval(source_embed, target_embed)
+            source_cache_key = _make_embedding_cache_key(source_embed, backend)
+            target_cache_key = _make_embedding_cache_key(target_embed, backend)
 
             # Binary (1D) alignment: align byte-level anchors before vocabulary blending.
             # Pre-compute byte maps ONCE to avoid repeated Fréchet mean computation.
             binary_metrics = metrics.setdefault("binary_alignment", {})
             binary_signals: list[dict[str, Any]] = []
+            binary_start = time.perf_counter()
 
             source_bytes = _build_byte_embedding_map(
-                source_tokenizer, source_embed, source_embed.shape[0], backend
+                source_tokenizer,
+                source_embed,
+                source_embed.shape[0],
+                backend,
+                cache_key=source_cache_key,
             )
             target_bytes = _build_byte_embedding_map(
-                target_tokenizer, target_embed, target_embed.shape[0], backend
+                target_tokenizer,
+                target_embed,
+                target_embed.shape[0],
+                backend,
+                cache_key=target_cache_key,
             )
             shared_bytes = sorted(set(source_bytes) & set(target_bytes))
 
@@ -312,6 +312,7 @@ def stage_vocabulary_align(
                 best_cka = -1.0
                 last_signal: AlignmentSignal | None = None
                 anchor_weights: list[float] | None = None
+                previous_transform: Any | None = None
 
                 for iteration in range(alignment_iterations):
                     byte_alignment = _align_bytes_from_matrices(
@@ -324,12 +325,14 @@ def stage_vocabulary_align(
                         tolerance=alignment_tol,
                         max_rounds=solver_rounds,
                         anchor_weights=anchor_weights,
+                        initial_transform=previous_transform,
                     )
 
                     if byte_alignment["cka_after"] > best_cka:
                         best_cka = byte_alignment["cka_after"]
                         best_source = byte_alignment["aligned_source"]
                         best_alignment = byte_alignment
+                        previous_transform = byte_alignment.get("feature_transform")
 
                     last_signal = alignment_signal_from_matrices(
                         byte_alignment["aligned_matrix"],
@@ -378,133 +381,65 @@ def stage_vocabulary_align(
                         ),
                     }
 
-            source_embed = best_source if last_signal and not last_signal.is_phase_locked else current_source
-            backend.eval(source_embed)
-
-            if best_alignment is not None:
-                binary_metrics[embed_key] = {
-                    "bytes_shared": best_alignment["bytes_shared"],
-                    "cka_before": best_alignment["cka_before"],
-                    "cka_after": best_alignment["cka_after"],
-                    "alignment_error": best_alignment["alignment_error"],
-                    "iterations": best_alignment["iterations"],
-                    "source_dim": best_alignment["source_dim"],
-                    "target_dim": best_alignment["target_dim"],
-                    "signals": binary_signals,
-                    "phase_locked": bool(last_signal and last_signal.is_phase_locked),
-                    "balance_ratio": (
-                        last_signal.metadata.get("balance_ratio")
-                        if last_signal is not None
-                        else None
-                    ),
-                }
-            else:
-                binary_metrics[embed_key] = {
-                    "bytes_shared": 0,
-                    "cka_before": 0.0,
-                    "cka_after": 0.0,
-                    "alignment_error": 0.0,
-                    "iterations": 0,
-                    "source_dim": source_embed.shape[1] if source_embed.ndim == 2 else 0,
-                    "target_dim": target_embed.shape[1] if target_embed.ndim == 2 else 0,
-                    "signals": binary_signals,
-                    "phase_locked": False,
-                    "balance_ratio": None,
-                }
-
             metrics["alignment_signals"].setdefault(embed_key, {})["binary"] = binary_signals
+            metrics["timing_ms"].setdefault(embed_key, {})[
+                "binary_alignment_ms"
+            ] = (time.perf_counter() - binary_start) * 1000
 
             # Vocabulary (2D) alignment: phase-lock on UnifiedAtlas anchors.
+            # Pre-compute atlas anchor maps ONCE (may rebuild if use_all_support_texts changes)
             vocab_metrics = metrics.setdefault("vocab_phase_lock", {})
             vocab_signals: list[dict[str, Any]] = []
-            current_source = source_embed
-            best_source = source_embed
-            best_alignment = None
-            best_cka = -1.0
-            last_signal = None
-            anchor_weights = None
+            vocab_start = time.perf_counter()
 
-            for iteration in range(alignment_iterations):
-                atlas_alignment = _align_unified_atlas(
-                    current_source,
-                    target_embed,
+            def _build_atlas_matrices(src_embed: "object", use_all: bool) -> tuple:
+                """Helper to build atlas matrices with caching."""
+                src_anchors = _build_atlas_anchor_map(
                     source_tokenizer,
-                    target_tokenizer,
+                    src_embed,
+                    src_embed.shape[0],
                     backend,
-                    use_all_support_texts=use_all_support_texts,
-                    max_iterations=solver_iterations,
-                    tolerance=alignment_tol,
-                    max_rounds=solver_rounds,
-                    anchor_weights=anchor_weights,
+                    use_all_support_texts=use_all,
+                    cache_key=source_cache_key,
                 )
-                if atlas_alignment is None:
-                    last_signal = AlignmentSignal(
-                        dimension=2,
-                        cka_achieved=0.0,
-                        divergence_pattern="insufficient_anchors",
-                        suggested_transformation="expand_anchors",
-                        iteration=iteration,
+                tgt_anchors = _build_atlas_anchor_map(
+                    target_tokenizer,
+                    target_embed,
+                    target_embed.shape[0],
+                    backend,
+                    use_all_support_texts=use_all,
+                    cache_key=target_cache_key,
+                )
+                shared = sorted(set(src_anchors) & set(tgt_anchors))
+                if len(shared) < 2:
+                    return None, None, None, shared
+                src_matrix = backend.stack([src_anchors[k] for k in shared], axis=0)
+                tgt_matrix = backend.stack([tgt_anchors[k] for k in shared], axis=0)
+                backend.eval(src_matrix, tgt_matrix)
+                return src_matrix, tgt_matrix, shared, shared
+
+            # Initial atlas anchor build
+            source_atlas_matrix, target_atlas_matrix, shared_atlas, _ = _build_atlas_matrices(
+                source_embed, use_all_support_texts
+            )
+
+            if source_atlas_matrix is None:
+                # Try with all support texts
+                if not use_all_support_texts:
+                    use_all_support_texts = True
+                    source_atlas_matrix, target_atlas_matrix, shared_atlas, _ = _build_atlas_matrices(
+                        source_embed, True
                     )
-                    vocab_signals.append(last_signal.to_dict())
-                    if not use_all_support_texts:
-                        use_all_support_texts = True
-                        anchor_weights = None
-                        continue
-                    break
 
-                if atlas_alignment["cka_after"] > best_cka:
-                    best_cka = atlas_alignment["cka_after"]
-                    best_source = atlas_alignment["aligned_source"]
-                    best_alignment = atlas_alignment
-
-                last_signal = alignment_signal_from_matrices(
-                    atlas_alignment["aligned_matrix"],
-                    atlas_alignment["target_matrix"],
-                    atlas_alignment["anchor_labels"],
-                    backend=backend,
+            if source_atlas_matrix is None:
+                last_signal = AlignmentSignal(
                     dimension=2,
-                    cka_achieved=atlas_alignment["cka_after"],
-                    iteration=iteration,
+                    cka_achieved=0.0,
+                    divergence_pattern="insufficient_anchors",
+                    suggested_transformation="expand_anchors",
+                    iteration=0,
                 )
                 vocab_signals.append(last_signal.to_dict())
-
-                if last_signal.is_phase_locked:
-                    current_source = atlas_alignment["aligned_source"]
-                    break
-
-                if last_signal.suggested_transformation == "expand_anchors":
-                    use_all_support_texts = True
-                    anchor_weights = None
-
-                if balance_anchor_weights:
-                    anchor_weights = _compute_anchor_weights(last_signal)
-
-                current_source = _apply_alignment_correction(
-                    atlas_alignment["aligned_source"],
-                    last_signal,
-                    backend,
-                )
-
-            source_embed = best_source if last_signal and not last_signal.is_phase_locked else current_source
-            backend.eval(source_embed)
-
-            if best_alignment is not None:
-                vocab_metrics[embed_key] = {
-                    "anchors_shared": best_alignment["anchors_shared"],
-                    "cka_before": best_alignment["cka_before"],
-                    "cka_after": best_alignment["cka_after"],
-                    "alignment_error": best_alignment["alignment_error"],
-                    "iterations": best_alignment["iterations"],
-                    "signals": vocab_signals,
-                    "phase_locked": bool(last_signal and last_signal.is_phase_locked),
-                    "support_texts": "all" if use_all_support_texts else "first",
-                    "balance_ratio": (
-                        last_signal.metadata.get("balance_ratio")
-                        if last_signal is not None
-                        else None
-                    ),
-                }
-            else:
                 vocab_metrics[embed_key] = {
                     "anchors_shared": 0,
                     "cka_before": 0.0,
@@ -516,16 +451,135 @@ def stage_vocabulary_align(
                     "support_texts": "all" if use_all_support_texts else "first",
                     "balance_ratio": None,
                 }
+            else:
+                atlas_labels = list(shared_atlas)
+                current_source = source_embed
+                current_atlas_matrix = source_atlas_matrix
+                best_source = source_embed
+                best_alignment: dict[str, Any] | None = None
+                best_cka = -1.0
+                last_signal: AlignmentSignal | None = None
+                anchor_weights: list[float] | None = None
+                previous_transform: Any | None = None
+
+                for iteration in range(alignment_iterations):
+                    atlas_alignment = _align_bytes_from_matrices(
+                        current_source,
+                        current_atlas_matrix,
+                        target_atlas_matrix,
+                        atlas_labels,
+                        backend,
+                        max_iterations=solver_iterations,
+                        tolerance=alignment_tol,
+                        max_rounds=solver_rounds,
+                        anchor_weights=anchor_weights,
+                        initial_transform=previous_transform,
+                    )
+
+                    if atlas_alignment["cka_after"] > best_cka:
+                        best_cka = atlas_alignment["cka_after"]
+                        best_source = atlas_alignment["aligned_source"]
+                        best_alignment = atlas_alignment
+                        previous_transform = atlas_alignment.get("feature_transform")
+
+                    last_signal = alignment_signal_from_matrices(
+                        atlas_alignment["aligned_matrix"],
+                        target_atlas_matrix,
+                        atlas_labels,
+                        backend=backend,
+                        dimension=2,
+                        cka_achieved=atlas_alignment["cka_after"],
+                        iteration=iteration,
+                    )
+                    vocab_signals.append(last_signal.to_dict())
+
+                    if last_signal.is_phase_locked:
+                        current_source = atlas_alignment["aligned_source"]
+                        break
+
+                    if balance_anchor_weights:
+                        anchor_weights = _compute_anchor_weights(last_signal)
+
+                    # Transform anchors directly instead of recomputing
+                    current_source = _apply_alignment_correction(
+                        atlas_alignment["aligned_source"],
+                        last_signal,
+                        backend,
+                    )
+                    current_atlas_matrix = atlas_alignment["aligned_matrix"]
+
+                source_embed = best_source if last_signal and not last_signal.is_phase_locked else current_source
+                backend.eval(source_embed)
+
+                if best_alignment is not None:
+                    vocab_metrics[embed_key] = {
+                        "anchors_shared": len(shared_atlas),
+                        "cka_before": best_alignment["cka_before"],
+                        "cka_after": best_alignment["cka_after"],
+                        "alignment_error": best_alignment["alignment_error"],
+                        "iterations": best_alignment["iterations"],
+                        "signals": vocab_signals,
+                        "phase_locked": bool(last_signal and last_signal.is_phase_locked),
+                        "support_texts": "all" if use_all_support_texts else "first",
+                        "balance_ratio": (
+                            last_signal.metadata.get("balance_ratio")
+                            if last_signal is not None
+                            else None
+                        ),
+                    }
+                else:
+                    vocab_metrics[embed_key] = {
+                        "anchors_shared": 0,
+                        "cka_before": 0.0,
+                        "cka_after": 0.0,
+                        "alignment_error": 0.0,
+                        "iterations": 0,
+                        "signals": vocab_signals,
+                        "phase_locked": False,
+                        "support_texts": "all" if use_all_support_texts else "first",
+                        "balance_ratio": None,
+                    }
 
             metrics["alignment_signals"].setdefault(embed_key, {})["vocab"] = vocab_signals
+            metrics["timing_ms"].setdefault(embed_key, {})[
+                "vocab_alignment_ms"
+            ] = (time.perf_counter() - vocab_start) * 1000
+
+            phase_locked = (
+                bool(binary_metrics.get(embed_key, {}).get("phase_locked"))
+                and bool(vocab_metrics.get(embed_key, {}).get("phase_locked"))
+            )
+            effective_strategy = projection_strategy
+            if phase_locked and source_embed.shape[1] == target_embed.shape[1]:
+                effective_strategy = ProjectionStrategy.TRUNCATE
+
+            merge_config = CrossVocabMergeConfig(
+                projection_strategy=effective_strategy,
+                similarity_threshold=config.similarity_threshold,
+                confidence_threshold=config.confidence_threshold,
+                blend_alpha=config.blend_alpha,
+                preserve_special_tokens=config.preserve_special_tokens,
+                use_embedding_similarity=config.use_embedding_similarity,
+                anchor_count=config.anchor_count,
+                max_similarity_pairs=config.max_similarity_pairs,
+                max_unmapped_similarity=config.max_unmapped_similarity,
+                max_prefix_length=config.max_prefix_length,
+                max_prefix_matches=config.max_prefix_matches,
+                similarity_batch_size=config.similarity_batch_size,
+            )
+            merger = CrossVocabMerger(merge_config)
 
             # Run CrossVocabMerger
+            merge_start = time.perf_counter()
             result = merger.merge(
                 source_embeddings=source_embed,
                 target_embeddings=target_embed,
                 source_vocab=source_vocab,
                 target_vocab=target_vocab,
             )
+            metrics["timing_ms"].setdefault(embed_key, {})[
+                "cross_vocab_merge_ms"
+            ] = (time.perf_counter() - merge_start) * 1000
 
             # Check quality
             quality_metrics = merger.analyze_merge_quality(result)
@@ -566,7 +620,7 @@ def stage_vocabulary_align(
             aligned_layers += 1
 
             # Record metrics
-            metrics[f"{embed_key}_projection_strategy"] = config.projection_strategy
+            metrics[f"{embed_key}_projection_strategy"] = effective_strategy.value
             metrics[f"{embed_key}_alignment_coverage"] = result.alignment_map.coverage
             metrics[f"{embed_key}_alignment_confidence"] = result.alignment_map.mean_confidence
             metrics[f"{embed_key}_projection_score"] = result.projection_result.alignment_score
@@ -582,6 +636,9 @@ def stage_vocabulary_align(
                 quality_metrics["overall_quality_score"],
                 quality_metrics["recommendation"],
             )
+            metrics["timing_ms"].setdefault(embed_key, {})[
+                "total_ms"
+            ] = (time.perf_counter() - embed_start) * 1000
 
         except Exception as e:
             logger.error("Failed to align %s: %s", embed_key, e)
@@ -590,6 +647,17 @@ def stage_vocabulary_align(
 
     metrics["aligned_layers"] = aligned_layers
     metrics["alignment_applied"] = aligned_layers > 0
+    metrics["timing_ms"]["stage_total_ms"] = (time.perf_counter() - stage_start) * 1000
+
+    cache_stats = cache.get_stats()
+    metrics["cache_stats"] = {
+        "hits": cache_stats.hits,
+        "misses": cache_stats.misses,
+        "evictions": cache_stats.evictions,
+        "hit_rate": cache_stats.hit_rate,
+        "saved_ms": cache_stats.total_compute_time_saved_ms,
+        "sizes": cache.get_cache_sizes(),
+    }
 
     if aligned_layers > 0:
         logger.info("Vocabulary alignment applied to %d layers", aligned_layers)
@@ -786,6 +854,7 @@ def _build_byte_embedding_map(
     embedding: "object",
     vocab_size: int,
     backend: "object",
+    cache_key: str | None = None,
 ) -> dict[int, "object"]:
     """Build byte anchor map with session caching.
 
@@ -795,7 +864,7 @@ def _build_byte_embedding_map(
     global _anchor_map_cache
 
     # Create cache key from embedding content
-    embed_key = _make_embedding_cache_key(embedding, backend)
+    embed_key = cache_key or _make_embedding_cache_key(embedding, backend)
     cache_key = f"byte_map_{embed_key}"
 
     # Check cache
@@ -821,6 +890,61 @@ def _build_byte_embedding_map(
     logger.debug("Cached byte map with %d entries", len(byte_map))
 
     return byte_map
+
+
+def _align_bytes_from_matrices(
+    source_embed: "object",
+    source_matrix: "object",
+    target_matrix: "object",
+    anchor_labels: list[str],
+    backend: "object",
+    max_iterations: int = 1000,
+    tolerance: float = 1e-6,
+    max_rounds: int = 1,
+    anchor_weights: list[float] | None = None,
+    initial_transform: "object | None" = None,
+) -> dict[str, Any]:
+    """Align using pre-computed anchor matrices (avoids recomputing Fréchet means).
+
+    This is the optimized inner loop function that works with pre-computed
+    anchor matrices, avoiding the expensive Fréchet mean recomputation.
+    """
+    cka_before = compute_cka(source_matrix, target_matrix, backend=backend).cka
+    weighted_source = _apply_anchor_weights(source_matrix, anchor_weights, backend)
+    weighted_target = _apply_anchor_weights(target_matrix, anchor_weights, backend)
+
+    aligner = GramAligner(
+        backend=backend,
+        max_iterations=max_iterations,
+        max_rounds=max_rounds,
+        tolerance=tolerance,
+    )
+    init_transform = (
+        backend.array(initial_transform) if initial_transform is not None else None
+    )
+    result = aligner.find_perfect_alignment(
+        weighted_source,
+        weighted_target,
+        initial_transform=init_transform,
+    )
+    transform = backend.array(result.feature_transform)
+
+    aligned_source = backend.matmul(source_embed, transform)
+    aligned_matrix = backend.matmul(source_matrix, transform)
+    backend.eval(aligned_source, aligned_matrix)
+
+    cka_after = compute_cka(aligned_matrix, target_matrix, backend=backend).cka
+
+    return {
+        "aligned_source": aligned_source,
+        "aligned_matrix": aligned_matrix,
+        "anchor_labels": anchor_labels,
+        "feature_transform": transform,
+        "cka_before": cka_before,
+        "cka_after": cka_after,
+        "alignment_error": result.alignment_error,
+        "iterations": result.iterations,
+    }
 
 
 def _align_bytes(
@@ -902,6 +1026,7 @@ def _build_atlas_anchor_map(
     vocab_size: int,
     backend: "object",
     use_all_support_texts: bool = False,
+    cache_key: str | None = None,
 ) -> dict[str, "object"]:
     """Build UnifiedAtlas anchor map with session caching.
 
@@ -911,7 +1036,7 @@ def _build_atlas_anchor_map(
     global _anchor_map_cache
 
     # Create cache key from embedding content + support_texts flag
-    embed_key = _make_embedding_cache_key(embedding, backend)
+    embed_key = cache_key or _make_embedding_cache_key(embedding, backend)
     cache_key = f"atlas_map_{embed_key}_all{use_all_support_texts}"
 
     # Check cache

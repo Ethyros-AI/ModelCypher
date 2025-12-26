@@ -348,9 +348,15 @@ class GramAligner:
         initial_transform: "Array | None" = None,
         max_iterations: int | None = None,
     ) -> tuple["Array", int, float]:
-        """Find feature-space transform F such that (A_s @ F)'s Gram ≈ K_t.
+        """Find feature-space transform F such that (A_s @ F)'s Gram = K_t.
 
-        Uses iterative optimization to find F.
+        Uses CLOSED-FORM solution F = A_s^+ @ A_t for exact CKA = 1.0.
+
+        Mathematical guarantee:
+        - For A_s [n, d_s] with full row rank (n <= d_s), A_s @ A_s^+ = I_n
+        - So A_s @ F = A_s @ A_s^+ @ A_t = A_t exactly
+        - Therefore (A_s @ F) @ (A_s @ F)^T = A_t @ A_t^T = K_t
+        - CKA = 1.0 exactly, no iteration needed
 
         Returns (transform, iterations, achieved_cka).
         """
@@ -359,88 +365,107 @@ class GramAligner:
         d_s = b.shape(source_centered)[1]
         d_t = b.shape(target_centered)[1]
 
+        # Use centering matrix for CKA computation
+        H = self._centering_matrix(n_samples)
+
+        # CLOSED-FORM SOLUTION: F = A_s^+ @ A_t
+        # This GUARANTEES CKA = 1.0 when A_s has full row rank (n <= d_s)
         if initial_transform is None:
-            # SVD of both activation matrices
-            # For [n, d] matrix: U is [n, k], S is [k], Vt is [k, d] where k = min(n, d)
-            U_s_full, sigma_s, Vt_s = b.svd(source_centered)
-            U_t_full, sigma_t, Vt_t = b.svd(target_centered)
-            b.eval(U_s_full, sigma_s, Vt_s, U_t_full, sigma_t, Vt_t)
+            # Compute pseudoinverse via SVD: A_s^+ = V @ Σ^{-1} @ U^T
+            U_s, sigma_s, Vt_s = b.svd(source_centered)
+            b.eval(U_s, sigma_s, Vt_s)
 
-            # Get the rank (number of singular values)
-            r_s = len(b.to_numpy(sigma_s))
-            r_t = len(b.to_numpy(sigma_t))
-
-            # Truncate U to match singular value count
-            # U_s_full might be [n, n] or [n, min(n,d)], we need [n, r_s]
-            U_s_shape = b.shape(U_s_full)
-            U_t_shape = b.shape(U_t_full)
-
-            if U_s_shape[1] > r_s:
-                U_s = U_s_full[:, :r_s]
-            else:
-                U_s = U_s_full
-
-            if U_t_shape[1] > r_t:
-                U_t = U_t_full[:, :r_t]
-            else:
-                U_t = U_t_full
-            b.eval(U_s, U_t)
-
-            # Truncate Vt to match as well
-            # Vt_s might be [d, d] but we need [r_s, d]
-            Vt_s_shape = b.shape(Vt_s)
-            Vt_t_shape = b.shape(Vt_t)
-
-            if Vt_s_shape[0] > r_s:
+            # Truncate to actual rank
+            sigma_np = b.to_numpy(sigma_s)
+            r_s = len(sigma_np)
+            if b.shape(U_s)[1] > r_s:
+                U_s = U_s[:, :r_s]
+            if b.shape(Vt_s)[0] > r_s:
                 Vt_s = Vt_s[:r_s, :]
-            if Vt_t_shape[0] > r_t:
-                Vt_t = Vt_t[:r_t, :]
-            b.eval(Vt_s, Vt_t)
+            b.eval(U_s, Vt_s)
 
-            # Alignment matrix in sample space [r_s, r_t]
-            M = b.matmul(b.transpose(U_s), U_t)
-            b.eval(M)
+            # Regularized inverse of singular values
+            # Use relative threshold based on largest singular value
+            max_sigma = float(sigma_np[0]) if len(sigma_np) > 0 else 1.0
+            threshold = max_sigma * self._regularization
+            sigma_inv = b.where(
+                sigma_s > threshold,
+                1.0 / sigma_s,
+                b.zeros_like(sigma_s)
+            )
+            b.eval(sigma_inv)
 
-            # Initial transform: V_s @ Σ_s^{-1} @ M @ Σ_t @ V_t^T
-            sigma_s_inv = sigma_s / (sigma_s * sigma_s + self._regularization)
-
-            # V_s is Vt_s^T: [d_s, r_s]
+            # Pseudoinverse: A_s^+ = V_s @ diag(Σ^{-1}) @ U_s^T
+            # V_s = Vt_s^T: [d_s, r_s]
             V_s = b.transpose(Vt_s)
-            V_t = b.transpose(Vt_t)
-            b.eval(V_s, V_t)
+            V_s_scaled = V_s * b.reshape(sigma_inv, (1, -1))
+            pinv_s = b.matmul(V_s_scaled, b.transpose(U_s))
+            b.eval(pinv_s)
 
-            # T1 = V_s @ diag(Σ_s^{-1}) = V_s * sigma_s_inv (broadcast over rows)
-            # V_s is [d_s, r_s], sigma_s_inv is [r_s]
-            T1 = V_s * b.reshape(sigma_s_inv, (1, -1))
-            b.eval(T1)
-
-            # T2 = T1 @ M where T1 is [d_s, r_s], M is [r_s, r_t]
-            T2 = b.matmul(T1, M)
-            b.eval(T2)
-
-            # T3 = T2 @ diag(Σ_t) = T2 * sigma_t (broadcast over rows)
-            # T2 is [d_s, r_t], sigma_t is [r_t]
-            T3 = T2 * b.reshape(sigma_t, (1, -1))
-            b.eval(T3)
-
-            # F = T3 @ V_t^T where T3 is [d_s, r_t], Vt_t is [r_t, d_t]
-            F = b.matmul(T3, Vt_t)
+            # F = A_s^+ @ A_t: [d_s, n] @ [n, d_t] = [d_s, d_t]
+            F = b.matmul(pinv_s, target_centered)
             b.eval(F)
+
+            # Verify CKA = 1.0
+            source_transformed = b.matmul(source_centered, F)
+            K_s_t = b.matmul(source_transformed, b.transpose(source_transformed))
+            K_s_t_c = b.matmul(b.matmul(H, K_s_t), H)
+            b.eval(K_s_t_c)
+            cka = self._compute_cka_from_centered_grams(K_s_t_c, K_t_c)
+
+            if cka >= 1.0 - self._tolerance:
+                logger.info(
+                    "GramAligner: Converged to CKA=%.8f in %d iterations",
+                    cka, 1
+                )
+                return F, 1, cka
+
+            # If closed-form didn't reach 1.0, try with tighter regularization
+            for reg_scale in [0.1, 0.01, 0.001, 1e-4, 1e-6, 1e-8, 1e-10, 1e-12]:
+                threshold = max_sigma * reg_scale
+                sigma_inv = b.where(
+                    sigma_s > threshold,
+                    1.0 / sigma_s,
+                    b.zeros_like(sigma_s)
+                )
+                b.eval(sigma_inv)
+
+                V_s_scaled = V_s * b.reshape(sigma_inv, (1, -1))
+                pinv_s = b.matmul(V_s_scaled, b.transpose(U_s))
+                F = b.matmul(pinv_s, target_centered)
+                b.eval(F)
+
+                source_transformed = b.matmul(source_centered, F)
+                K_s_t = b.matmul(source_transformed, b.transpose(source_transformed))
+                K_s_t_c = b.matmul(b.matmul(H, K_s_t), H)
+                b.eval(K_s_t_c)
+                cka = self._compute_cka_from_centered_grams(K_s_t_c, K_t_c)
+
+                if cka >= 1.0 - self._tolerance:
+                    logger.info(
+                        "GramAligner: Converged to CKA=%.8f with reg=%.2e",
+                        cka, reg_scale
+                    )
+                    return F, 1, cka
         else:
             F = initial_transform
 
-        # Iterate to refine (gradient descent on CKA)
-        H = self._centering_matrix(n_samples)
-
+        # If closed-form solutions failed, refine with gradient descent
         max_iters = max_iterations or self._max_iterations
+        best_F = F
+        best_cka = 0.0
+
         for iteration in range(max_iters):
-            # Compute current CKA
             source_transformed = b.matmul(source_centered, F)
             K_s_t = b.matmul(source_transformed, b.transpose(source_transformed))
             K_s_t_c = b.matmul(b.matmul(H, K_s_t), H)
             b.eval(K_s_t_c)
 
             cka = self._compute_cka_from_centered_grams(K_s_t_c, K_t_c)
+
+            if cka > best_cka:
+                best_cka = cka
+                best_F = F
 
             if cka >= 1.0 - self._tolerance:
                 logger.info(
@@ -449,35 +474,29 @@ class GramAligner:
                 )
                 return F, iteration + 1, cka
 
-            # Gradient step: adjust F to increase CKA
-            # The gradient of CKA w.r.t. F is complex, so we use a
-            # direct approach: F_new = F + lr * (A_s^+ @ A_t)
-            # This moves F toward the mapping that directly aligns activations
-            #
-            # Better approach: Use the Gram matrix difference to adjust
+            # Gradient step with adaptive learning rate
             diff = K_t_c - K_s_t_c
             grad = b.matmul(b.transpose(source_centered), b.matmul(diff, source_transformed))
             b.eval(grad)
 
-            # Normalize gradient
             grad_norm = b.sqrt(b.sum(grad * grad))
             b.eval(grad_norm)
             grad_norm_val = float(b.to_numpy(grad_norm))
-            if grad_norm_val < 1e-12:
+            if grad_norm_val < 1e-14:
                 break
 
-            # Learning rate scheduling
-            lr = 0.1 / (1.0 + 0.01 * iteration)
-            F = F + lr * (grad / grad_norm_val)
+            # Aggressive learning rate for faster convergence
+            lr = 1.0 / (1.0 + 0.001 * iteration)
+            F = F + lr * (grad / (grad_norm_val + 1e-12))
             b.eval(F)
 
-        # If we got here, check final CKA
-        source_transformed = b.matmul(source_centered, F)
+        # Return best result
+        source_transformed = b.matmul(source_centered, best_F)
         K_s_t = b.matmul(source_transformed, b.transpose(source_transformed))
         K_s_t_c = b.matmul(b.matmul(H, K_s_t), H)
         b.eval(K_s_t_c)
         final_cka = self._compute_cka_from_centered_grams(K_s_t_c, K_t_c)
-        return F, max_iters, final_cka
+        return best_F, max_iters, final_cka
 
     def _pseudo_inverse(self, matrix: "Array") -> "Array":
         """Compute a stable pseudoinverse using SVD."""
