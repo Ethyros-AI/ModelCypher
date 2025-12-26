@@ -231,6 +231,10 @@ class GramAligner:
         feature_transform = self._feature_transform_from_sample_transform(
             source_centered, sample_transform
         )
+        initial_transform = feature_transform
+        if b.shape(feature_transform)[1] != b.shape(target_centered)[1]:
+            # Sample-space transform preserves source dimensionality; use SVD init for cross-dim.
+            initial_transform = None
         total_iterations = 0
         max_iterations = self._max_iterations
         final_cka = 0.0
@@ -241,7 +245,7 @@ class GramAligner:
                 source_centered,
                 target_centered,
                 K_t_c,
-                initial_transform=feature_transform,
+                initial_transform=initial_transform,
                 max_iterations=max_iterations,
             )
             total_iterations += iterations

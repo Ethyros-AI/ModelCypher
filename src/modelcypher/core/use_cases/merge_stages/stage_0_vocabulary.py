@@ -626,17 +626,23 @@ def _frechet_mean_vectors(
     vectors: "object",
     backend: "object",
 ) -> "object":
-    if vectors.shape[0] <= 1:
+    """Compute Fréchet mean of vectors with full geodesic precision.
+
+    For byte/vocabulary anchors, we need EXACT alignment - no approximations.
+    """
+    n_vectors = vectors.shape[0]
+    if n_vectors <= 1:
         return vectors[0]
 
+    # Check if vectors are identical (exact match, no computation needed)
     diff = vectors - vectors[:1]
     diff_norm = backend.norm(diff, axis=1)
     max_norm = backend.max(diff_norm)
     backend.eval(max_norm)
-    if float(max_norm) < 1e-6:
+    if float(max_norm) < 1e-12:
         return vectors[0]
 
-    k_neighbors = max(1, vectors.shape[0] - 1)
+    k_neighbors = max(1, n_vectors - 1)
     mean = frechet_mean(
         vectors,
         backend=backend,
