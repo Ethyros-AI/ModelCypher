@@ -90,14 +90,23 @@ def alignment_signal_from_matrices(
     n_samples = b.shape(source_matrix)[0]
     labels = list(labels) if labels is not None else [f"sample:{i}" for i in range(n_samples)]
 
-    # Per-anchor divergence
-    diff = source_matrix - target_matrix
-    distances = b.norm(diff, axis=1)
+    # Per-anchor divergence (fallback to Gram-space when dimensions differ)
+    if b.shape(source_matrix) != b.shape(target_matrix):
+        source_gram = b.matmul(source_matrix, b.transpose(source_matrix))
+        target_gram = b.matmul(target_matrix, b.transpose(target_matrix))
+        b.eval(source_gram, target_gram)
+        diff = source_gram - target_gram
+        distances = b.norm(diff, axis=1)
+    else:
+        diff = source_matrix - target_matrix
+        distances = b.norm(diff, axis=1)
     dist_list = list(b.to_numpy(distances).tolist())
 
     top_k = min(top_k, len(dist_list))
     ranked = sorted(range(len(dist_list)), key=lambda i: dist_list[i], reverse=True)
     misaligned = [labels[i] for i in ranked[:top_k]]
+
+    shape_mismatch = b.shape(source_matrix) != b.shape(target_matrix)
 
     # Rank diagnostics
     rank_source = _matrix_rank(source_matrix, b)
@@ -120,6 +129,9 @@ def alignment_signal_from_matrices(
     elif abs(scale_ratio - 1.0) > 0.05:
         divergence_pattern = "scale"
         suggested = "scale_normalization"
+    if shape_mismatch:
+        divergence_pattern = "dimension_mismatch"
+        suggested = "expand_anchors"
 
     mean_divergence = sum(dist_list) / len(dist_list) if dist_list else 0.0
     max_divergence = max(dist_list) if dist_list else 0.0
@@ -132,6 +144,7 @@ def alignment_signal_from_matrices(
         "max_divergence": max_divergence,
         "mean_divergence": mean_divergence,
         "balance_ratio": balance_ratio,
+        "shape_mismatch": 1.0 if shape_mismatch else 0.0,
     }
 
     return AlignmentSignal(

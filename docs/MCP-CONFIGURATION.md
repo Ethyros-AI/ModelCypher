@@ -208,7 +208,7 @@ flowchart TB
 **training** includes:
 - Core: `mc_inventory`, `mc_settings`, `mc_system`
 - Training: `mc_train_*`, `mc_job_*`, `mc_checkpoint_*`
-- Data: `mc_dataset_*`, `mc_doc_*`
+- Data: `mc_doc_*`
 - Geometry: `mc_geometry_*`
 - Safety: `mc_safety_*`
 
@@ -307,10 +307,7 @@ flowchart TB
 
 2. Reduce concurrent operations
 
-3. Use streaming for large datasets:
-   ```bash
-   mc dataset chunk --streaming ./large_file.jsonl
-   ```
+3. Reduce batch sizes for large operations
 
 4. Restart the MCP server to clear memory
 

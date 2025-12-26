@@ -62,7 +62,6 @@ Initial public release of ModelCypher - a Python framework for measuring and exp
 - `mc thermo measure/ridge-detect/phase/sweep` - Thermodynamics commands
 - `mc adapter blend/ensemble` - Adapter management
 - `mc research taxonomy` - Research taxonomy tools
-- `mc dataset quality/auto-fix` - Dataset validation
 
 #### MCP Server
 - Full Model Context Protocol server (`modelcypher-mcp`)
@@ -91,3 +90,4 @@ Initial public release of ModelCypher - a Python framework for measuring and exp
 ### Removed
 - Rotational merger implementation (superseded by unified merge)
 - Deprecated audit and verification scripts
+- Dataset validation and quality functionality (focus on core geometry mission)

@@ -98,31 +98,24 @@ mc model analyze-alignment \
     --model-a /path/to/Qwen2.5-3B-Instruct \
     --model-b /path/to/Llama-3.2-3B-Instruct
 
-# 4. Train a "Sidecar" Safety Adapter (Does not touch base weights)
-mc train start \
-    --model mlx-community/Mistral-7B-v0.2 \
-    --dataset data/safety_pairs.jsonl \
-    --lora-rank 8 \
-    --out adapters/safety_sidecar
-
-# 5. Test if a Model has a "Physics Engine" (3D World Model Analysis)
+# 4. Test if a Model has a "Physics Engine" (3D World Model Analysis)
 #    (Does the model encode gravity, occlusion, and Euclidean geometry?)
 mc geometry spatial probe-model /path/to/Qwen2.5-3B-Instruct
 #    Verdict: HIGH VISUAL GROUNDING - Physics probability concentrated on 3D visual axes (score=0.85)
 
-# 6. Predict Merge Interference (Before You Merge)
+# 5. Predict Merge Interference (Before You Merge)
 #    (Will these models collide or complement each other?)
 mc geometry interference predict \
     /path/to/math-model \
     /path/to/code-model
 #    Output: overlap=0.23, bhattacharyya=0.15, verdict="LOW_INTERFERENCE"
 
-# 7. Check Merge Safety with 4D Polytope
+# 6. Check Merge Safety with 4D Polytope
 #    (Single go/no-go decision with recommended mitigations)
 mc geometry interference safety-polytope 0.3 0.4 0.2 0.3
 #    Output: {"verdict": "SAFE", "confidence": 0.87, "mitigations": []}
 
-# 8. Analyze Null-Space for Interference-Free Merging
+# 7. Analyze Null-Space for Interference-Free Merging
 #    (Find the "safe directions" for weight updates)
 mc geometry interference null-space /path/to/model \
     --layer 12 \

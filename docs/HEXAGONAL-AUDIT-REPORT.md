@@ -73,7 +73,7 @@ All imports use:
 | Core | `Backend` (60+ methods) |
 | Inference | `InferenceEngine`, `HiddenStateEngine`, `InferenceEnginePort` |
 | Training | `TrainingEngine` |
-| Storage | `ModelStore`, `DatasetStore`, `JobStore`, `EvaluationStore`, `CompareStore`, `ManifoldProfileStore` |
+| Storage | `ModelStore`, `JobStore`, `EvaluationStore`, `CompareStore`, `ManifoldProfileStore` |
 | Specialized | `ModelLoaderPort`, `ModelSearchService`, `HubAdapterPort`, `Exporter`, `ModelProbePort` |
 | Embeddings | `EmbeddingProvider`, `EmbedderPort` |
 | Geometry | `GeometryPort` (async) |

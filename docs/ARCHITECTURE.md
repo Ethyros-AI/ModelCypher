@@ -100,8 +100,7 @@ src/modelcypher/mcp/
     ├── common.py          # ServiceContext (lazy-loaded services), helpers
     ├── geometry.py        # Geometry analysis tools (path, CRM, stitch, etc.)
     ├── safety_entropy.py  # Safety probes, entropy tracking
-    ├── agent.py           # Agent trace import/analysis
-    └── dataset.py         # Dataset format detection, chunking, templating
+    └── agent.py           # Agent trace import/analysis
 ```
 
 The `ServiceContext` class provides lazy-loaded access to all domain services, avoiding circular imports and reducing startup time.
@@ -114,11 +113,10 @@ The core domain is organized by concern:
 |--------|-------------|
 | `geometry/` | Path detection, manifold analysis, CRM, topological fingerprints |
 | `entropy/` | Entropy tracking, divergence calculation, model state classification |
-| `safety/` | Adapter safety, dataset scanning, circuit breaker, capability guard |
+| `safety/` | Adapter safety, circuit breaker, capability guard |
 | `agents/` | Trace analytics, action validation, LoRA expert routing |
 | `training/` | Checkpoint management, preflight checks, resource guards |
-| `validation/` | Dataset format detection, identity linting, file enumeration |
-| `dataset/` | Chat templates, document chunking, streaming shuffle |
+| `validation/` | Auto-fix engine for training data |
 | `thermo/` | Linguistic thermodynamics, ridge detection, phase transitions |
 | `adapters/` | LoRA merging, adapter blending, ensemble orchestration |
 | `inference/` | Dual-path generation, entropy dynamics |

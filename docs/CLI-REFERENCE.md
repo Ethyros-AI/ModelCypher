@@ -30,7 +30,6 @@ Primary workflows:
 - `mc job` (list/show/attach/delete)
 - `mc checkpoint` (list/delete/export)
 - `mc model` (list/register/delete/fetch/merge/search/probe/validate-merge/validate-knowledge/analyze-alignment/vocab-compare)
-- `mc dataset` (validate/preprocess/convert/preview/get-row/update-row/add-row/delete-row/list/delete/pack-asif/quality/auto-fix/format-analyze/chunk/template)
 - `mc doc` (convert/validate)
 - `mc infer` (run/suite)
 - `mc storage` (status/usage/cleanup)
@@ -40,7 +39,7 @@ Research + diagnostics:
 - `mc geometry` (path/training/safety/adapter/atlas/primes/stitch/crm/metrics/sparse/refusal/persona/manifold/transport/refinement/invariant/emotion/merge-entropy/transfer/spatial/social/temporal/moral/waypoint/interference)
 - `mc thermo` (analyze/path/entropy/measure/detect/detect-batch/ridge-detect/phase/sweep/benchmark/parity)
 - `mc entropy` (analyze/detect-distress/verify-baseline/window/conversation-track/dual-path/calibrate)
-- `mc safety` (adapter-probe/dataset-scan/lint-identity)
+- `mc safety` (adapter-probe)
 - `mc agent` (trace-import/trace-analyze/validate-action)
 - `mc eval` (run/list/show)
 - `mc compare` (run/list/show/checkpoints/baseline/score)
@@ -53,7 +52,7 @@ Research + diagnostics:
 - `mc research` (sparse-region/afm)
 - `mc help` (ask/completions/schema)
 - `mc explain`
-- `mc validate` (train/dataset), `mc estimate` (train)
+- `mc validate` (train), `mc estimate` (train)
 
 ## Geometry Atlas Commands
 ```bash
@@ -78,8 +77,6 @@ mc geometry spatial cross-grounding-transfer <source_activations> <target_activa
 ### Safety Commands
 ```bash
 mc safety adapter-probe --adapter <path>    # Run adapter safety probes
-mc safety dataset-scan --dataset <path>     # Scan dataset for safety issues
-mc safety lint-identity --dataset <path>    # Lint for intrinsic identity issues
 ```
 
 ### Entropy Commands
@@ -94,13 +91,6 @@ mc entropy dual-path '[{"base": [3.5, 0.2], "adapter": [3.8, 0.3]}]'  # Base vs 
 mc agent trace-import --file <path>         # Import OpenTelemetry/Monocle traces
 mc agent trace-analyze --trace <file>       # Analyze agent traces
 mc agent validate-action --action <json>    # Validate agent actions
-```
-
-### Dataset Commands
-```bash
-mc dataset format-analyze <path>            # Detect dataset format (text/chat/instruction/etc)
-mc dataset chunk --file <path> --output-file <file> --size <n>   # Chunk documents for training
-mc dataset template --model <family>        # Apply chat template
 ```
 
 ## Streaming

@@ -56,7 +56,7 @@ export MC_MCP_CONFIRMATION_TIMEOUT=300  # Optional, default 5 minutes
 
 **How It Works:**
 
-When enabled, destructive tools (`mc_job_delete`, `mc_model_delete`, `mc_dataset_delete`, `mc_checkpoint_delete`, `mc_rag_delete`, `mc_storage_cleanup`, `mc_ensemble_delete`) require a two-step confirmation:
+When enabled, destructive tools (`mc_job_delete`, `mc_model_delete`, `mc_checkpoint_delete`, `mc_rag_delete`, `mc_storage_cleanup`, `mc_ensemble_delete`) require a two-step confirmation:
 
 1. **First Call**: Returns a confirmation token and description
    ```json

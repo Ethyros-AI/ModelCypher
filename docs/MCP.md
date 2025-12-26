@@ -168,7 +168,7 @@ flowchart TB
 | Profile | Tools | Estimated Tokens | Use Case |
 |---------|-------|------------------|----------|
 | `full` | All tools in `src/modelcypher/mcp/server.py` | Varies | Complete access (default) |
-| `training` | Training + dataset + doc + rag + storage + eval + geometry | Varies | Training workflows |
+| `training` | Training + doc + rag + storage + eval + geometry | Varies | Training workflows |
 | `inference` | Inference + rag + ensemble + storage usage | Varies | Inference only |
 | `monitoring` | Read-only monitoring subset | Varies | Read-only monitoring |
 
@@ -178,16 +178,14 @@ flowchart TB
 training:
   mc_inventory, mc_settings_snapshot, mc_train_start, mc_job_status, mc_job_list, mc_job_detail,
   mc_job_cancel, mc_job_pause, mc_job_resume, mc_job_delete, mc_system_status, mc_validate_train,
-  mc_estimate_train, mc_dataset_validate, mc_dataset_get_row, mc_dataset_update_row, mc_dataset_add_row,
-  mc_dataset_delete_row, mc_dataset_convert, mc_doc_convert, mc_dataset_list, mc_dataset_delete,
-  mc_model_fetch, mc_model_list, mc_model_search, mc_checkpoint_export, mc_checkpoint_list,
-  mc_checkpoint_delete, mc_geometry_training_status, mc_geometry_training_history, mc_geometry_validate,
-  mc_geometry_crm_build, mc_geometry_crm_compare,
+  mc_estimate_train, mc_doc_convert, mc_model_fetch, mc_model_list, mc_model_search,
+  mc_checkpoint_export, mc_checkpoint_list, mc_checkpoint_delete, mc_geometry_training_status,
+  mc_geometry_training_history, mc_geometry_validate, mc_geometry_crm_build, mc_geometry_crm_compare,
   mc_safety_circuit_breaker, mc_safety_persona_drift, mc_geometry_safety_jailbreak_test,
   mc_geometry_dare_sparsity, mc_geometry_dora_decomposition, mc_calibration_run,
   mc_calibration_status, mc_calibration_apply, mc_thermo_measure, mc_thermo_detect, mc_thermo_detect_batch, mc_storage_usage,
   mc_storage_cleanup, mc_research_sparse_region, mc_research_afm, mc_adapter_merge, mc_eval_run,
-  mc_eval_list, mc_eval_show, mc_train_preflight, mc_train_export, mc_dataset_preprocess
+  mc_eval_list, mc_eval_show, mc_train_preflight, mc_train_export
 
 inference:
   mc_inventory, mc_settings_snapshot, mc_model_list, mc_infer, mc_infer_run, mc_infer_batch,
@@ -231,7 +229,7 @@ All tools include MCP annotations for AI client optimization:
 
 | Category | Tools | Annotations |
 |----------|-------|-------------|
-| Read-only | `mc_inventory`, `mc_settings_snapshot`, `mc_job_status`, `mc_job_list`, `mc_job_detail`, `mc_model_list`, `mc_system_status`, `mc_validate_train`, `mc_estimate_train`, `mc_dataset_validate`, `mc_geometry_validate`, `mc_geometry_training_status`, `mc_geometry_training_history`, `mc_geometry_crm_compare`, `mc_safety_circuit_breaker`, `mc_safety_persona_drift`, `mc_geometry_dare_sparsity`, `mc_geometry_dora_decomposition` | `readOnly=true, idempotent=true` |
+| Read-only | `mc_inventory`, `mc_settings_snapshot`, `mc_job_status`, `mc_job_list`, `mc_job_detail`, `mc_model_list`, `mc_system_status`, `mc_validate_train`, `mc_estimate_train`, `mc_geometry_validate`, `mc_geometry_training_status`, `mc_geometry_training_history`, `mc_geometry_crm_compare`, `mc_safety_circuit_breaker`, `mc_safety_persona_drift`, `mc_geometry_dare_sparsity`, `mc_geometry_dora_decomposition` | `readOnly=true, idempotent=true` |
 | Mutating | `mc_train_start`, `mc_job_pause`, `mc_job_resume`, `mc_infer`, `mc_checkpoint_export`, `mc_geometry_crm_build` | `readOnly=false` |
 | Destructive | `mc_job_cancel` | `destructive=true, idempotent=true` |
 | Network | `mc_model_fetch`, `mc_model_search` | `openWorld=true, idempotent=true` |
@@ -266,15 +264,6 @@ All tools include MCP annotations for AI client optimization:
       "path": "/Users/.../models/llama-3.2-1b"
     }
   ],
-  "datasets": [
-    {
-      "id": "uuid",
-      "name": "my-dataset",
-      "path": "/path/to/dataset.jsonl",
-      "sizeBytes": 1048576,
-      "exampleCount": 1000
-    }
-  ],
   "checkpoints": [
     {
       "jobId": "job-uuid",
@@ -288,8 +277,7 @@ All tools include MCP annotations for AI client optimization:
       "jobId": "uuid",
       "status": "running",
       "progress": 0.45,
-      "modelId": "llama-3.2-1b",
-      "datasetPath": "/path/to/dataset.jsonl"
+      "modelId": "llama-3.2-1b"
     }
   ],
   "workspace": {
@@ -308,7 +296,7 @@ All tools include MCP annotations for AI client optimization:
 
 **Example Usage (AI Agent):**
 ```
-Call mc_inventory first to see what models and datasets are available before starting training.
+Call mc_inventory first to see what models are available before starting training.
 ```
 
 ---
@@ -1297,25 +1285,6 @@ Resources provide read-only access to ModelCypher state via standard MCP resourc
 ]
 ```
 
-### mc://datasets
-
-**Description:** All registered datasets
-
-**MIME Type:** `application/json`
-
-**Content:**
-```json
-[
-  {
-    "id": "uuid",
-    "name": "my-dataset",
-    "path": "/path/to/dataset.jsonl",
-    "sizeBytes": 1048576,
-    "exampleCount": 1000
-  }
-]
-```
-
 ### mc://system
 
 **Description:** System readiness and environment info
@@ -1333,7 +1302,7 @@ Resources provide read-only access to ModelCypher state via standard MCP resourc
 **Always start with `mc_inventory`** to understand available resources before taking actions.
 
 ```
-1. mc_inventory → Learn what models, datasets, jobs exist
+1. mc_inventory → Learn what models, checkpoints, jobs exist
 2. mc_system_status → Verify system is ready for training
 3. mc_train_start → Start training with validated inputs
 4. mc_job_status (poll) → Monitor progress
@@ -1626,15 +1595,13 @@ This pattern is documented here for future evaluation when ModelCypher's tool co
 
 ## Phase 2 MCP Tools
 
-Phase 2 adds comprehensive safety, entropy, agent, and dataset tools for deeper model analysis.
+Phase 2 adds comprehensive safety, entropy, and agent tools for deeper model analysis.
 
 ### Safety Tools
 
 | Tool | Purpose | Category |
 |------|---------|----------|
 | `mc_safety_adapter_probe` | Run adapter safety probes (delta features, L2 norms, sparsity) | Read-only |
-| `mc_safety_dataset_scan` | Scan dataset for safety issues with two-layer moderation | Read-only |
-| `mc_safety_lint_identity` | Lint for intrinsic identity/roleplay issues | Read-only |
 
 ### Entropy Tools
 
@@ -1651,14 +1618,6 @@ Phase 2 adds comprehensive safety, entropy, agent, and dataset tools for deeper 
 | `mc_agent_trace_import` | Import OpenTelemetry/Monocle traces | Mutating |
 | `mc_agent_trace_analyze` | Analyze agent traces for compliance and patterns | Read-only |
 | `mc_agent_validate_action` | Validate agent action against safety policies | Read-only |
-
-### Dataset Tools (Phase 2)
-
-| Tool | Purpose | Category |
-|------|---------|----------|
-| `mc_dataset_format_analyze` | Detect dataset format (text/chat/instruction/completion/tools) | Read-only |
-| `mc_dataset_chunk` | Chunk documents with hierarchical boundary preservation | Mutating |
-| `mc_dataset_template` | Apply chat template (Llama3, Qwen, Gemma, etc.) | Mutating |
 
 ### Geometry Tools (Atlas + Spatial)
 
@@ -1679,13 +1638,12 @@ The MCP server uses a modular tool registration pattern for maintainability:
 
 ```
 src/modelcypher/mcp/
-├── server.py              # Core server (3400 lines)
+├── server.py              # Core server
 └── tools/
     ├── common.py          # ServiceContext, helpers, annotations
     ├── geometry.py        # Geometry tools (path, CRM, stitch, etc.)
     ├── safety_entropy.py  # Safety and entropy tools
-    ├── agent.py           # Agent trace tools
-    └── dataset.py         # Dataset format/chunk/template tools
+    └── agent.py           # Agent trace tools
 ```
 
 Each tool module exports registration functions:
@@ -1695,10 +1653,9 @@ Each tool module exports registration functions:
 - `register_geometry_primes_tools(ctx)` - Semantic prime analysis
 - `register_geometry_crm_tools(ctx)` - Concept response matrix
 - `register_geometry_stitch_tools(ctx)` - Manifold stitching and refinement
-- `register_safety_tools(ctx)` - Adapter/dataset safety probes
+- `register_safety_tools(ctx)` - Adapter safety probes
 - `register_entropy_tools(ctx)` - Window, conversation, dual-path tracking
 - `register_agent_tools(ctx)` - Trace import/analysis/validation
-- `register_dataset_tools(ctx)` - Format detection, chunking, templating
 
 The `ServiceContext` class provides lazy-loaded access to all domain services.
 
@@ -1708,11 +1665,10 @@ The `ServiceContext` class provides lazy-loaded access to all domain services.
 
 ### 1.2.0 (2025-12-22)
 
-- Added Phase 2 MCP tools: safety, entropy, agent, dataset
+- Added Phase 2 MCP tools: safety, entropy, agent
 - Modularized geometry tools into `src/modelcypher/mcp/tools/geometry.py`
 - Added `ServiceContext` for lazy-loaded service access
 - Reduced server.py from ~4900 to ~3400 lines
-- Total: 148 tools in full profile
 
 ### 1.1.0 (2025-11-26)
 
@@ -1721,14 +1677,14 @@ The `ServiceContext` class provides lazy-loaded access to all domain services.
 - Added MCP tool annotations (readOnlyHint, destructiveHint, idempotentHint, openWorldHint)
 - Fixed mc_infer to use checkpoint paths only (narrowed contract)
 - Fixed mc_infer model cleanup to use `defer` for guaranteed unload on all exits
-- Added 5 new tools: mc_validate_train, mc_estimate_train, mc_dataset_validate, mc_model_fetch, mc_checkpoint_export
-- Total: 30 tools, 5 resources
+- Added 4 new tools: mc_validate_train, mc_estimate_train, mc_model_fetch, mc_checkpoint_export
+- Total: 30 tools, 4 resources
 
 ### 1.0.0 (2025-11-26)
 
 - Initial release
 - 10 tools: mc_inventory, mc_train_start, mc_job_status, mc_job_list, mc_job_cancel, mc_job_pause, mc_job_resume, mc_model_list, mc_infer, mc_system_status
-- 5 resources: mc://models, mc://jobs, mc://checkpoints, mc://datasets, mc://system
+- 4 resources: mc://models, mc://jobs, mc://checkpoints, mc://system
 - ServiceLifecycle integration for graceful shutdown
 - Official MCP Swift SDK v0.10.0+
 
