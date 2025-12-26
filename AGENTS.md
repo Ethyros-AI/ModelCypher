@@ -69,7 +69,7 @@ src/modelcypher/
 │   │   ├── entropy/   # Shannon entropy calculations
 │   │   ├── merging/   # Model merge algorithms
 │   │   ├── thermo/    # LinguisticThermodynamics, RidgeCross
-│   │   ├── agents/    # UnifiedAtlas (343 probes), semantic primes
+│   │   ├── agents/    # UnifiedAtlas (373 probes), semantic primes
 │   │   └── validation/# DatasetQualityScorer, AutoFixEngine
 │   ├── ports/         # Abstract interfaces (Backend protocol = 58 methods)
 │   └── use_cases/     # Service orchestration
@@ -97,9 +97,12 @@ src/modelcypher/
 
 ---
 
-## CRITICAL: No NumPy. Anywhere. Ever.
+## CRITICAL: No NumPy in core math
 
-**NEVER import numpy. Not in domain code. Not in use_cases. Not in tests. NOWHERE.**
+**Do NOT import numpy in core/domain geometry or use_cases.** NumPy is permitted only at:
+- I/O boundaries (e.g., `npz` export)
+- Backend interop (dtype mapping, `to_numpy`)
+- Tests that explicitly require it
 
 NumPy is:
 - **Imprecise** - CPU floating point vs GPU tensor operations give different results

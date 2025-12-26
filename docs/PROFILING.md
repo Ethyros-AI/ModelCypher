@@ -115,7 +115,7 @@ mc geometry crm-build --layers -4,-3,-2,-1 ./model
 Use fewer probes for quick estimates:
 
 ```bash
-# Use only semantic primes (65 probes instead of 343)
+# Use only semantic primes (65 probes instead of 373)
 mc geometry crm-build --atlas semantic_primes ./model
 ```
 
@@ -209,7 +209,7 @@ print(f"Memory used: {(after - before) / 1e9:.2f} GB")
 
 ### Issue: Slow CRM Build
 
-**Cause:** 343 probes × N layers × batch inference
+**Cause:** 373 probes × N layers × batch inference
 
 **Solutions:**
 1. Use layer subset: `--layers 0,6,12,18,24`
@@ -232,8 +232,8 @@ Typical timings on M1 Max (32GB):
 
 | Operation | Time | Notes |
 |-----------|------|-------|
-| Model probe (0.5B) | ~5s | Full 343 probes |
-| Model probe (7B) | ~30s | Full 343 probes |
+| Model probe (0.5B) | ~5s | Full 373 probes |
+| Model probe (7B) | ~30s | Full 373 probes |
 | CRM build (0.5B) | ~15s | All layers |
 | CRM build (7B) | ~2min | All layers |
 | Merge validation | ~10s | Two adapters |
