@@ -27,16 +27,20 @@ Uses the superior CrossVocabMerger pipeline:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
 import time
 from pathlib import Path
-from dataclasses import dataclass
 from typing import Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
-from modelcypher.core.domain.cache import CacheConfig, TwoLevelCache
-from modelcypher.core.domain.cache import ComputationCache
+from modelcypher.core.domain.cache import (
+    CacheConfig,
+    ComputationCache,
+    TwoLevelCache,
+    content_hash,
+)
 from modelcypher.core.domain.geometry.alignment_diagnostic import (
     AlignmentSignal,
     alignment_signal_from_matrices,
@@ -189,6 +193,9 @@ def stage_vocabulary_align(
         metrics["reason"] = "vocab_extraction_failed"
         return VocabularyResult(source_weights, metrics, False)
 
+    source_tokenizer_key = _make_tokenizer_cache_key(source_tokenizer, source_vocab)
+    target_tokenizer_key = _make_tokenizer_cache_key(target_tokenizer, target_vocab)
+
     metrics["source_vocab_size"] = len(source_vocab)
     metrics["target_vocab_size"] = len(target_vocab)
 
@@ -281,6 +288,7 @@ def stage_vocabulary_align(
                 target_embed.shape[0],
                 backend,
                 cache_key=target_cache_key,
+                tokenizer_key=target_tokenizer_key,
             )
             source_bytes = _build_byte_embedding_map(
                 source_tokenizer,
@@ -288,6 +296,7 @@ def stage_vocabulary_align(
                 source_embed.shape[0],
                 backend,
                 cache_key=source_cache_key,
+                tokenizer_key=source_tokenizer_key,
             )
             shared_bytes = sorted(set(source_bytes) & set(target_bytes))
 
@@ -541,6 +550,7 @@ def stage_vocabulary_align(
                 backend,
                 use_all_support_texts=use_all_support_texts,
                 cache_key=target_cache_key,
+                tokenizer_key=target_tokenizer_key,
             )
             source_atlas_map = _build_atlas_anchor_map(
                 source_tokenizer,
@@ -549,6 +559,7 @@ def stage_vocabulary_align(
                 backend,
                 use_all_support_texts=use_all_support_texts,
                 cache_key=source_cache_key,
+                tokenizer_key=source_tokenizer_key,
             )
             shared_atlas = sorted(set(source_atlas_map) & set(target_atlas_map))
 
@@ -561,6 +572,7 @@ def stage_vocabulary_align(
                     backend,
                     use_all_support_texts=True,
                     cache_key=target_cache_key,
+                    tokenizer_key=target_tokenizer_key,
                 )
                 source_atlas_map = _build_atlas_anchor_map(
                     source_tokenizer,
@@ -569,6 +581,7 @@ def stage_vocabulary_align(
                     backend,
                     use_all_support_texts=True,
                     cache_key=source_cache_key,
+                    tokenizer_key=source_tokenizer_key,
                 )
                 shared_atlas = sorted(set(source_atlas_map) & set(target_atlas_map))
 
@@ -705,160 +718,43 @@ def stage_vocabulary_align(
                         best_alignment = atlas_alignment
                         previous_transform = atlas_alignment.get("feature_transform")
 
-                last_signal = alignment_signal_from_matrices(
-                    atlas_alignment["aligned_matrix"],
-                    target_atlas_matrix,
-                    atlas_labels,
-                    backend=backend,
-                    dimension=2,
-                    cka_achieved=atlas_alignment["cka_after"],
-                    iteration=iteration,
-                )
-                vocab_signals.append(last_signal.to_dict())
-
-                if last_signal.is_phase_locked:
-                    break
-
-                if available_indices and target_atlas_matrix_full is not None:
-                    refresh_count = min(
-                        len(available_indices),
-                        max(1, len(shared_atlas) // 20),
+                    last_signal = alignment_signal_from_matrices(
+                        atlas_alignment["aligned_matrix"],
+                        target_atlas_matrix,
+                        atlas_labels,
+                        backend=backend,
+                        dimension=2,
+                        cka_achieved=atlas_alignment["cka_after"],
+                        iteration=iteration,
                     )
-                    label_to_pos = {label: pos for pos, label in enumerate(shared_atlas)}
-                    drop_positions: list[int] = []
-                    for label in last_signal.misaligned_anchors:
-                        pos = label_to_pos.get(label)
-                        if pos is not None and pos not in drop_positions:
-                            drop_positions.append(pos)
-                        if len(drop_positions) >= refresh_count:
-                            break
+                    vocab_signals.append(last_signal.to_dict())
 
-                    if drop_positions:
-                        for pos in sorted(drop_positions, reverse=True):
-                            selected_indices.pop(pos)
-                        replacements = available_indices[: len(drop_positions)]
-                        available_indices = available_indices[len(drop_positions) :]
-                        selected_indices.extend(replacements)
+                    if last_signal.is_phase_locked:
+                        break
 
-                        idx_arr = backend.array(selected_indices)
-                        target_atlas_matrix = backend.take(
-                            target_atlas_matrix_full, idx_arr, axis=0
+                    if available_indices and target_atlas_matrix_full is not None:
+                        refresh_count = min(
+                            len(available_indices),
+                            max(1, len(shared_atlas) // 20),
                         )
-                        source_atlas_matrix = backend.take(
-                            source_atlas_matrix_full, idx_arr, axis=0
-                        )
-                        backend.eval(target_atlas_matrix, source_atlas_matrix)
+                        label_to_pos = {
+                            label: pos for pos, label in enumerate(shared_atlas)
+                        }
+                        drop_positions: list[int] = []
+                        for label in last_signal.misaligned_anchors:
+                            pos = label_to_pos.get(label)
+                            if pos is not None and pos not in drop_positions:
+                                drop_positions.append(pos)
+                            if len(drop_positions) >= refresh_count:
+                                break
 
-                        rank_indices, rank_meta = _select_shared_full_rank_indices(
-                            source_atlas_matrix,
-                            target_atlas_matrix,
-                            int(source_atlas_matrix.shape[0]),
-                            backend,
-                        )
-                        if len(rank_indices) < int(source_atlas_matrix.shape[0]):
-                            selected_indices = [
-                                selected_indices[idx] for idx in rank_indices
-                            ]
-                            idx_arr = backend.array(selected_indices)
-                            target_atlas_matrix = backend.take(
-                                target_atlas_matrix_full, idx_arr, axis=0
-                            )
-                            source_atlas_matrix = backend.take(
-                                source_atlas_matrix_full, idx_arr, axis=0
-                            )
-                            backend.eval(target_atlas_matrix, source_atlas_matrix)
+                        if drop_positions:
+                            for pos in sorted(drop_positions, reverse=True):
+                                selected_indices.pop(pos)
+                            replacements = available_indices[: len(drop_positions)]
+                            available_indices = available_indices[len(drop_positions) :]
+                            selected_indices.extend(replacements)
 
-                        shared_atlas = [candidate_atlas[idx] for idx in selected_indices]
-                        atlas_labels = list(shared_atlas)
-
-                        if coverage_meta is None:
-                            coverage_meta = {}
-                        coverage_meta.update(rank_meta)
-
-                        selected_set = set(selected_indices)
-                        available_indices = [
-                            idx
-                            for idx in range(len(candidate_atlas))
-                            if idx not in selected_set
-                        ]
-
-                iteration += 1
-                if phase_lock_max_iterations > 0 and iteration >= phase_lock_max_iterations:
-                    raise RuntimeError(
-                        f"Vocabulary phase lock failed after {iteration} iterations."
-                    )
-                if iteration >= iteration_budget:
-                    iteration_budget *= 2
-                    solver_iterations = int(solver_iterations * 1.5)
-                    solver_rounds = max(solver_rounds + 1, solver_rounds)
-                    if not use_all_support_texts:
-                        use_all_support_texts = True
-                        target_atlas_map = _build_atlas_anchor_map(
-                            target_tokenizer,
-                            target_embed,
-                            target_embed.shape[0],
-                            backend,
-                            use_all_support_texts=True,
-                            cache_key=target_cache_key,
-                        )
-                        source_atlas_map = _build_atlas_anchor_map(
-                            source_tokenizer,
-                            source_embed,
-                            source_embed.shape[0],
-                            backend,
-                            use_all_support_texts=True,
-                            cache_key=source_cache_key,
-                        )
-                        shared_atlas = sorted(
-                            set(source_atlas_map) & set(target_atlas_map)
-                        )
-                        max_anchor_count = min(
-                            len(shared_atlas), int(source_embed.shape[1])
-                        )
-                        candidate_atlas = shared_atlas
-                        if len(shared_atlas) > max_anchor_count and balance_anchor_weights:
-                            candidate_count = min(
-                                len(shared_atlas),
-                                max_anchor_count * coverage_candidate_multiplier,
-                            )
-                            candidate_atlas = _balanced_anchor_subset(
-                                shared_atlas, candidate_count
-                            )
-
-                        target_atlas_matrix_full = backend.stack(
-                            [target_atlas_map[k] for k in candidate_atlas], axis=0
-                        )
-                        source_atlas_matrix_full = backend.stack(
-                            [source_atlas_map[k] for k in candidate_atlas], axis=0
-                        )
-                        backend.eval(target_atlas_matrix_full, source_atlas_matrix_full)
-
-                        if len(candidate_atlas) > max_anchor_count:
-                            if use_coverage_anchor_selection:
-                                selected_indices, coverage_meta = _select_coverage_indices(
-                                    target_atlas_matrix_full,
-                                    max_anchor_count,
-                                    backend,
-                                    k_neighbors=coverage_k_neighbors,
-                                )
-                            else:
-                                if balance_anchor_weights:
-                                    selected_atlas = _balanced_anchor_subset(
-                                        candidate_atlas, max_anchor_count
-                                    )
-                                else:
-                                    selected_atlas = candidate_atlas[:max_anchor_count]
-                                atlas_index = {
-                                    anchor: idx
-                                    for idx, anchor in enumerate(candidate_atlas)
-                                }
-                                selected_indices = [
-                                    atlas_index[a] for a in selected_atlas if a in atlas_index
-                                ]
-                        else:
-                            selected_indices = list(range(len(candidate_atlas)))
-
-                        if selected_indices:
                             idx_arr = backend.array(selected_indices)
                             target_atlas_matrix = backend.take(
                                 target_atlas_matrix_full, idx_arr, axis=0
@@ -887,22 +783,160 @@ def stage_vocabulary_align(
                                 )
                                 backend.eval(target_atlas_matrix, source_atlas_matrix)
 
+                            shared_atlas = [
+                                candidate_atlas[idx] for idx in selected_indices
+                            ]
+                            atlas_labels = list(shared_atlas)
+
                             if coverage_meta is None:
                                 coverage_meta = {}
                             coverage_meta.update(rank_meta)
 
-                        selected_set = set(selected_indices)
-                        available_indices = [
-                            idx
-                            for idx in range(len(candidate_atlas))
-                            if idx not in selected_set
-                        ]
-                        shared_atlas = [candidate_atlas[idx] for idx in selected_indices]
-                        atlas_labels = list(shared_atlas)
-                    logger.info(
-                        "Vocabulary phase lock not reached; expanding search to %d solver iterations",
-                        solver_iterations,
-                    )
+                            selected_set = set(selected_indices)
+                            available_indices = [
+                                idx
+                                for idx in range(len(candidate_atlas))
+                                if idx not in selected_set
+                            ]
+
+                    iteration += 1
+                    if (
+                        phase_lock_max_iterations > 0
+                        and iteration >= phase_lock_max_iterations
+                    ):
+                        raise RuntimeError(
+                            f"Vocabulary phase lock failed after {iteration} iterations."
+                        )
+                    if iteration >= iteration_budget:
+                        iteration_budget *= 2
+                        solver_iterations = int(solver_iterations * 1.5)
+                        solver_rounds = max(solver_rounds + 1, solver_rounds)
+                        if not use_all_support_texts:
+                            use_all_support_texts = True
+                            target_atlas_map = _build_atlas_anchor_map(
+                                target_tokenizer,
+                                target_embed,
+                                target_embed.shape[0],
+                                backend,
+                                use_all_support_texts=True,
+                                cache_key=target_cache_key,
+                                tokenizer_key=target_tokenizer_key,
+                            )
+                            source_atlas_map = _build_atlas_anchor_map(
+                                source_tokenizer,
+                                source_embed,
+                                source_embed.shape[0],
+                                backend,
+                                use_all_support_texts=True,
+                                cache_key=source_cache_key,
+                                tokenizer_key=source_tokenizer_key,
+                            )
+                            shared_atlas = sorted(
+                                set(source_atlas_map) & set(target_atlas_map)
+                            )
+                            max_anchor_count = min(
+                                len(shared_atlas), int(source_embed.shape[1])
+                            )
+                            candidate_atlas = shared_atlas
+                            if (
+                                len(shared_atlas) > max_anchor_count
+                                and balance_anchor_weights
+                            ):
+                                candidate_count = min(
+                                    len(shared_atlas),
+                                    max_anchor_count * coverage_candidate_multiplier,
+                                )
+                                candidate_atlas = _balanced_anchor_subset(
+                                    shared_atlas, candidate_count
+                                )
+
+                            target_atlas_matrix_full = backend.stack(
+                                [target_atlas_map[k] for k in candidate_atlas], axis=0
+                            )
+                            source_atlas_matrix_full = backend.stack(
+                                [source_atlas_map[k] for k in candidate_atlas], axis=0
+                            )
+                            backend.eval(
+                                target_atlas_matrix_full, source_atlas_matrix_full
+                            )
+
+                            if len(candidate_atlas) > max_anchor_count:
+                                if use_coverage_anchor_selection:
+                                    (
+                                        selected_indices,
+                                        coverage_meta,
+                                    ) = _select_coverage_indices(
+                                        target_atlas_matrix_full,
+                                        max_anchor_count,
+                                        backend,
+                                        k_neighbors=coverage_k_neighbors,
+                                    )
+                                else:
+                                    if balance_anchor_weights:
+                                        selected_atlas = _balanced_anchor_subset(
+                                            candidate_atlas, max_anchor_count
+                                        )
+                                    else:
+                                        selected_atlas = candidate_atlas[:max_anchor_count]
+                                    atlas_index = {
+                                        anchor: idx
+                                        for idx, anchor in enumerate(candidate_atlas)
+                                    }
+                                    selected_indices = [
+                                        atlas_index[a]
+                                        for a in selected_atlas
+                                        if a in atlas_index
+                                    ]
+                            else:
+                                selected_indices = list(range(len(candidate_atlas)))
+
+                            if selected_indices:
+                                idx_arr = backend.array(selected_indices)
+                                target_atlas_matrix = backend.take(
+                                    target_atlas_matrix_full, idx_arr, axis=0
+                                )
+                                source_atlas_matrix = backend.take(
+                                    source_atlas_matrix_full, idx_arr, axis=0
+                                )
+                                backend.eval(target_atlas_matrix, source_atlas_matrix)
+
+                                rank_indices, rank_meta = _select_shared_full_rank_indices(
+                                    source_atlas_matrix,
+                                    target_atlas_matrix,
+                                    int(source_atlas_matrix.shape[0]),
+                                    backend,
+                                )
+                                if len(rank_indices) < int(source_atlas_matrix.shape[0]):
+                                    selected_indices = [
+                                        selected_indices[idx] for idx in rank_indices
+                                    ]
+                                    idx_arr = backend.array(selected_indices)
+                                    target_atlas_matrix = backend.take(
+                                        target_atlas_matrix_full, idx_arr, axis=0
+                                    )
+                                    source_atlas_matrix = backend.take(
+                                        source_atlas_matrix_full, idx_arr, axis=0
+                                    )
+                                    backend.eval(target_atlas_matrix, source_atlas_matrix)
+
+                                if coverage_meta is None:
+                                    coverage_meta = {}
+                                coverage_meta.update(rank_meta)
+
+                            selected_set = set(selected_indices)
+                            available_indices = [
+                                idx
+                                for idx in range(len(candidate_atlas))
+                                if idx not in selected_set
+                            ]
+                            shared_atlas = [
+                                candidate_atlas[idx] for idx in selected_indices
+                            ]
+                            atlas_labels = list(shared_atlas)
+                        logger.info(
+                            "Vocabulary phase lock not reached; expanding search to %d solver iterations",
+                            solver_iterations,
+                        )
 
                 source_embed = best_source
                 backend.eval(source_embed)
@@ -1580,9 +1614,34 @@ def _make_embedding_cache_key(embedding: "object", backend: "object") -> str:
     return cache.make_array_key(embedding, backend)
 
 
-def _make_tokenizer_cache_key(tokenizer: Any, vocab: dict[str, int]) -> str:
-    vocab_size = len(vocab) if vocab is not None else 0
-    return f"{type(tokenizer).__name__}:{vocab_size}"
+def _make_tokenizer_cache_key(tokenizer: Any, vocab: dict[str, int] | None) -> str:
+    vocab_size = len(vocab) if vocab else 0
+    name: str | None = None
+    for attr in ("name_or_path", "model_name", "name"):
+        value = getattr(tokenizer, attr, None)
+        if isinstance(value, str) and value:
+            name = value
+            break
+
+    if name:
+        return f"{type(tokenizer).__name__}:{name}:{vocab_size}"
+    if not vocab:
+        return f"{type(tokenizer).__name__}:{vocab_size}"
+
+    sample_ids: set[int] = set()
+    sample_ids.update(range(min(8, vocab_size)))
+    if vocab_size > 8:
+        sample_ids.update(range(max(0, vocab_size - 8), vocab_size))
+    if vocab_size > 16:
+        sample_ids.add(vocab_size // 2)
+
+    sample_pairs = [
+        (idx, token) for token, idx in vocab.items() if idx in sample_ids
+    ]
+    sample_pairs.sort()
+    sample_text = "|".join(f"{idx}:{token}" for idx, token in sample_pairs)
+    fingerprint = content_hash({"sample": sample_text, "size": vocab_size})
+    return f"{type(tokenizer).__name__}:{vocab_size}:{fingerprint}"
 
 
 def _get_anchor_disk_cache() -> "TwoLevelCache[dict[str, list[float]]]":
@@ -1609,22 +1668,37 @@ def _build_byte_embedding_map(
     vocab_size: int,
     backend: "object",
     cache_key: str | None = None,
+    tokenizer_key: str | None = None,
 ) -> dict[int, "object"]:
     """Build byte anchor map with session caching.
 
     This is expensive (256 Fréchet mean computations) so we cache the result
-    based on the embedding matrix hash.
+    based on the embedding matrix hash and tokenizer signature.
     """
     global _anchor_map_cache
 
-    # Create cache key from embedding content
     embed_key = cache_key or _make_embedding_cache_key(embedding, backend)
-    cache_key = f"byte_map_{embed_key}"
+    tokenizer_key = tokenizer_key or f"{type(tokenizer).__name__}:{vocab_size}"
+    key_payload = {
+        "type": "byte_map",
+        "embed": embed_key,
+        "tokenizer": tokenizer_key,
+        "version": _ANCHOR_CACHE_VERSION,
+    }
+    cache_key = f"byte_map_{content_hash(key_payload)}"
 
     # Check cache
     if cache_key in _anchor_map_cache:
         logger.debug("Cache hit for byte map: %s", cache_key[:16])
         return _anchor_map_cache[cache_key]
+
+    disk_cache = _get_anchor_disk_cache()
+    disk_payload = disk_cache.get(cache_key)
+    if disk_payload is not None:
+        byte_map = {int(k): backend.array(v) for k, v in disk_payload.items()}
+        _anchor_map_cache[cache_key] = byte_map
+        logger.debug("Cache hit for byte map (disk): %s", cache_key[:16])
+        return byte_map
 
     logger.debug("Cache miss for byte map: %s - computing...", cache_key[:16])
 
@@ -1641,6 +1715,14 @@ def _build_byte_embedding_map(
 
     # Cache the result
     _anchor_map_cache[cache_key] = byte_map
+    try:
+        disk_payload = {
+            str(key): backend.to_numpy(value).tolist()
+            for key, value in byte_map.items()
+        }
+        disk_cache.set(cache_key, disk_payload)
+    except (TypeError, ValueError) as e:
+        logger.debug("Skipping byte map disk cache: %s", e)
     logger.debug("Cached byte map with %d entries", len(byte_map))
 
     return byte_map
@@ -1833,22 +1915,38 @@ def _build_atlas_anchor_map(
     backend: "object",
     use_all_support_texts: bool = False,
     cache_key: str | None = None,
+    tokenizer_key: str | None = None,
 ) -> dict[str, "object"]:
     """Build UnifiedAtlas anchor map with session caching.
 
     This is expensive (373+ Fréchet mean computations) so we cache the result
-    based on the embedding matrix hash and support_texts flag.
+    based on the embedding matrix hash, tokenizer signature, and support_texts flag.
     """
     global _anchor_map_cache
 
-    # Create cache key from embedding content + support_texts flag
     embed_key = cache_key or _make_embedding_cache_key(embedding, backend)
-    cache_key = f"atlas_map_{embed_key}_all{use_all_support_texts}"
+    tokenizer_key = tokenizer_key or f"{type(tokenizer).__name__}:{vocab_size}"
+    key_payload = {
+        "type": "atlas_map",
+        "embed": embed_key,
+        "tokenizer": tokenizer_key,
+        "support_all": use_all_support_texts,
+        "version": _ANCHOR_CACHE_VERSION,
+    }
+    cache_key = f"atlas_map_{content_hash(key_payload)}"
 
     # Check cache
     if cache_key in _anchor_map_cache:
         logger.debug("Cache hit for atlas map: %s", cache_key[:20])
         return _anchor_map_cache[cache_key]
+
+    disk_cache = _get_anchor_disk_cache()
+    disk_payload = disk_cache.get(cache_key)
+    if disk_payload is not None:
+        anchor_map = {key: backend.array(value) for key, value in disk_payload.items()}
+        _anchor_map_cache[cache_key] = anchor_map
+        logger.debug("Cache hit for atlas map (disk): %s", cache_key[:20])
+        return anchor_map
 
     logger.debug("Cache miss for atlas map: %s - computing...", cache_key[:20])
 
@@ -1878,6 +1976,14 @@ def _build_atlas_anchor_map(
 
     # Cache the result
     _anchor_map_cache[cache_key] = anchor_map
+    try:
+        disk_payload = {
+            str(key): backend.to_numpy(value).tolist()
+            for key, value in anchor_map.items()
+        }
+        disk_cache.set(cache_key, disk_payload)
+    except (TypeError, ValueError) as e:
+        logger.debug("Skipping atlas map disk cache: %s", e)
     logger.debug("Cached atlas map with %d entries", len(anchor_map))
 
     return anchor_map
