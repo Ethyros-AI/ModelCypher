@@ -56,7 +56,6 @@ from modelcypher.utils.locks import FileLock, FileLockError
 from modelcypher.utils.paths import expand_path
 
 from .model_loader import load_model_for_training
-from .training_dataset import TrainingDataset
 
 logger = logging.getLogger(__name__)
 
@@ -102,22 +101,14 @@ class LocalTrainingEngine(TrainingEngine):
         PreflightResult
             Resource estimates including predicted batch size, VRAM requirements, and feasibility.
         """
-        # Simple heuristic for VRAM
-        dataset_path = expand_path(config.dataset_path)
-        dataset_size = os.path.getsize(dataset_path) if dataset_path.exists() else 0
-
-        # Assume 4-bit model takes ~4.5GB, float16 takes ~15GB for 7B
-        # This is a guestimate.
-        estimated_vram = 5 * 1024 * 1024 * 1024 + int(dataset_size * 1.5)
-        available_memory = self._available_memory_bytes()
-
-        can_proceed = estimated_vram < available_memory
-        batch_size = _get_hp_attr(config, "batch_size", 1)
+        logger.warning(
+            "Training workflows are disabled: dataset support has been removed from the toolset."
+        )
         return PreflightResult(
-            predicted_batch_size=batch_size or 1,
-            estimated_vram_bytes=estimated_vram,
-            available_vram_bytes=available_memory,
-            can_proceed=can_proceed,
+            predicted_batch_size=0,
+            estimated_vram_bytes=0,
+            available_vram_bytes=self._available_memory_bytes(),
+            can_proceed=False,
         )
 
     def start(
@@ -139,6 +130,9 @@ class LocalTrainingEngine(TrainingEngine):
         tuple of (TrainingJob, list of dict)
             Training job record and list of training events.
         """
+        raise RuntimeError(
+            "Training workflows are disabled: dataset support has been removed from the toolset."
+        )
         # Pre-check lock
         if self.lock.is_locked():
             raise RuntimeError("Another training job is already running on this machine.")

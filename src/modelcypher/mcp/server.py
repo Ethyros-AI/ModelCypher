@@ -78,19 +78,7 @@ TOOL_PROFILES = {
     "full": {
         "mc_inventory",
         "mc_settings_snapshot",
-        "mc_train_start",
-        "mc_dataset_validate",
-        "mc_job_status",
-        "mc_job_list",
-        "mc_job_detail",
-        "mc_job_cancel",
-        "mc_job_pause",
-        "mc_job_resume",
-        "mc_job_delete",  # New
         "mc_system_status",
-        "mc_validate_train",
-        "mc_estimate_train",
-        "mc_doc_convert",
         "mc_model_fetch",
         "mc_model_list",
         "mc_model_search",
@@ -100,9 +88,6 @@ TOOL_PROFILES = {
         "mc_model_merge",  # New
         "mc_model_register",  # New
         "mc_model_delete",  # New
-        "mc_checkpoint_export",
-        "mc_checkpoint_list",  # New
-        "mc_checkpoint_delete",  # New
         "mc_geometry_training_status",
         "mc_geometry_training_history",
         "mc_geometry_validate",
@@ -146,9 +131,6 @@ TOOL_PROFILES = {
         "mc_geometry_atlas_inventory",  # New - multi-atlas probe inventory
         "mc_infer",
         # New tools for CLI/MCP parity
-        "mc_calibration_run",
-        "mc_calibration_status",
-        "mc_calibration_apply",
         "mc_stability_run",
         "mc_stability_report",
         "mc_agent_eval_run",
@@ -191,19 +173,12 @@ TOOL_PROFILES = {
         "mc_agent_trace_import",  # New - trace import
         "mc_agent_trace_analyze",  # New - trace analytics
         "mc_agent_validate_action",  # New - action validation
-        # Eval tools
-        "mc_eval_run",  # New
-        "mc_eval_list",  # New
-        "mc_eval_show",  # New
-        "mc_train_preflight",  # New
-        "mc_train_export",  # New
         # Geometry refinement and stitching tools
         "mc_geometry_refinement_analyze",  # New - RefinementDensityAnalyzer
         "mc_geometry_stitch_train",  # New - AffineStitchingLayer training
         "mc_geometry_domain_profile",  # New - DomainSignalProfile
         # Merge validation tools
         "mc_merge_validate",  # New - Full merge validation suite
-        "mc_merge_perplexity",  # New - Perplexity on held-out text
         "mc_merge_coherence",  # New - Coherence scoring
         "mc_merge_probe",  # New - Task probes
         "mc_merge_diagnose",  # New - Geometric diagnosis
@@ -231,25 +206,10 @@ TOOL_PROFILES = {
     "training": {
         "mc_inventory",
         "mc_settings_snapshot",
-        "mc_train_start",
-        "mc_dataset_validate",
-        "mc_job_status",
-        "mc_job_list",
-        "mc_job_detail",
-        "mc_job_cancel",
-        "mc_job_pause",
-        "mc_job_resume",
-        "mc_job_delete",
         "mc_system_status",
-        "mc_validate_train",
-        "mc_estimate_train",
-        "mc_doc_convert",
         "mc_model_fetch",
         "mc_model_list",
         "mc_model_search",
-        "mc_checkpoint_export",
-        "mc_checkpoint_list",
-        "mc_checkpoint_delete",
         "mc_geometry_training_status",
         "mc_geometry_training_history",
         "mc_geometry_validate",
@@ -266,9 +226,6 @@ TOOL_PROFILES = {
         "mc_geometry_crm_build",
         "mc_geometry_crm_compare",
         "mc_geometry_crm_sequence_inventory",
-        "mc_calibration_run",
-        "mc_calibration_status",
-        "mc_calibration_apply",
         # Thermo tools
         "mc_thermo_measure",
         "mc_thermo_detect",
@@ -281,16 +238,10 @@ TOOL_PROFILES = {
         "mc_research_afm",
         # Adapter tools
         "mc_adapter_merge",
-        "mc_eval_run",
-        "mc_eval_list",
-        "mc_eval_show",
-        "mc_train_preflight",
-        "mc_train_export",
         # Geometry refinement and merge validation
         "mc_geometry_refinement_analyze",
         "mc_geometry_stitch_train",
         "mc_merge_validate",
-        "mc_merge_perplexity",
         "mc_merge_diagnose",
         # Phase 13: CLI/MCP Parity
         "mc_model_validate_knowledge",  # Knowledge transfer validation
@@ -326,9 +277,6 @@ TOOL_PROFILES = {
     "monitoring": {
         "mc_inventory",
         "mc_settings_snapshot",
-        "mc_job_status",
-        "mc_job_list",
-        "mc_job_detail",
         "mc_system_status",
         "mc_geometry_training_status",
         "mc_geometry_training_history",
@@ -483,7 +431,7 @@ def build_server() -> FastMCP:
         readiness = system_service.readiness()
         readiness_score = readiness.get("readinessScore", 0)
         if readiness_score >= 80:
-            next_actions = ["mc_train_start to begin training"]
+            next_actions = ["mc_geometry_validate for baseline geometry", "mc_merge_validate to vet merges"]
         elif readiness_score >= 60:
             next_actions = ["Address blockers first", "mc_system_status to recheck"]
         else:
@@ -519,12 +467,10 @@ def build_server() -> FastMCP:
                         "status": _map_job_status(job.get("status", "")),
                         "progress": job.get("progress", 0.0),
                         "modelId": job.get("modelId"),
-                        "datasetPath": job.get("datasetPath"),
                     }
                 )
             return {
                 "models": inventory.get("models", []),
-                "datasets": inventory.get("datasets", []),
                 "checkpoints": inventory.get("checkpoints", []),
                 "jobs": jobs,
                 "workspace": inventory.get("workspace", {}),
@@ -532,77 +478,6 @@ def build_server() -> FastMCP:
                 "cudaVersion": inventory.get("cudaVersion"),
                 "jaxVersion": inventory.get("jaxVersion"),
                 "policies": inventory.get("policies", {}),
-            }
-
-    if "mc_dataset_validate" in tool_set:
-
-        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_dataset_validate(path: str, maxSamples: int | None = None) -> dict:
-            dataset_path = _require_existing_path(path)
-            example_count = 0
-            token_counts: list[int] = []
-            warnings: list[str] = []
-            errors: list[str] = []
-
-            def extract_text(payload: object) -> str | None:
-                if isinstance(payload, dict):
-                    for key in ("text", "prompt", "completion", "content"):
-                        value = payload.get(key)
-                        if isinstance(value, str) and value.strip():
-                            return value.strip()
-                    messages = payload.get("messages")
-                    if isinstance(messages, list):
-                        return " ".join(
-                            msg.get("content", "")
-                            for msg in messages
-                            if isinstance(msg, dict) and msg.get("content")
-                        ).strip()
-                return None
-
-            try:
-                with open(dataset_path, "r", encoding="utf-8") as handle:
-                    for line_number, line in enumerate(handle, start=1):
-                        if maxSamples is not None and example_count >= maxSamples:
-                            break
-                        trimmed = line.strip()
-                        if not trimmed:
-                            continue
-                        try:
-                            payload = json.loads(trimmed)
-                        except json.JSONDecodeError:
-                            warnings.append(f"line {line_number}: invalid JSON")
-                            continue
-                        text = extract_text(payload)
-                        if not text:
-                            warnings.append(f"line {line_number}: missing text field")
-                            continue
-                        example_count += 1
-                        token_counts.append(len(text.split()))
-            except Exception as exc:
-                errors.append(str(exc))
-
-            token_stats = {
-                "minTokens": min(token_counts) if token_counts else 0,
-                "maxTokens": max(token_counts) if token_counts else 0,
-                "meanTokens": (sum(token_counts) / len(token_counts)) if token_counts else 0.0,
-                "totalTokens": sum(token_counts),
-            }
-
-            if errors:
-                next_actions = ["mc_doc_convert to normalize dataset", "mc_dataset_validate to retry"]
-            elif warnings:
-                next_actions = ["mc_doc_convert to normalize dataset", "mc_train_start with dataset"]
-            else:
-                next_actions = ["mc_train_start with dataset", "mc_train_preflight for fit check"]
-
-            return {
-                "_schema": "mc.dataset.validate.v1",
-                "path": str(Path(dataset_path).resolve()),
-                "exampleCount": example_count,
-                "tokenStats": token_stats,
-                "warnings": warnings,
-                "errors": errors,
-                "nextActions": next_actions,
             }
 
     if "mc_train_start" in tool_set:

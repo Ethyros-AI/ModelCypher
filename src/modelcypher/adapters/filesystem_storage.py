@@ -29,7 +29,6 @@ from modelcypher.core.domain.models import (
     CheckpointRecord,
     CompareCheckpointResult,
     CompareSession,
-    DatasetInfo,
     EvaluationResult,
     ModelInfo,
     TrainingJob,
@@ -50,7 +49,6 @@ class StoragePaths:
         base = Path(os.environ.get("MODELCYPHER_HOME", "~/.modelcypher"))
         self.base = ensure_dir(base)
         self.models = self.base / "models.json"
-        self.datasets = self.base / "datasets.json"
         self.jobs = ensure_dir(self.base / "jobs")
         self.checkpoints = self.base / "checkpoints.json"
         self.evaluations = self.base / "evaluations.json"
@@ -72,17 +70,6 @@ class FileSystemStore(ModelStore, JobStore, EvaluationStore, CompareStore):
         """
         payload = self._read_list(self.paths.models)
         return [self._model_from_dict(item) for item in payload]
-
-    def list_datasets(self) -> list[DatasetInfo]:
-        """List all registered datasets.
-
-        Returns
-        -------
-        list of DatasetInfo
-            Registered dataset records (may be empty).
-        """
-        payload = self._read_list(self.paths.datasets)
-        return [self._dataset_from_dict(item) for item in payload]
 
     def get_model(self, model_id: str) -> ModelInfo | None:
         """Get model by ID or alias.
@@ -427,21 +414,6 @@ class FileSystemStore(ModelStore, JobStore, EvaluationStore, CompareStore):
             size_bytes=payload.get("size_bytes", 0),
             parameter_count=payload.get("parameter_count"),
             is_default_chat=payload.get("is_default_chat", False),
-            created_at=self._from_iso(payload.get("created_at")) or datetime.utcnow(),
-        )
-
-    def _dataset_to_dict(self, dataset: DatasetInfo) -> dict:
-        payload = asdict(dataset)
-        payload["created_at"] = self._to_iso(dataset.created_at)
-        return payload
-
-    def _dataset_from_dict(self, payload: dict) -> DatasetInfo:
-        return DatasetInfo(
-            id=payload.get("id", ""),
-            name=payload.get("name", ""),
-            path=payload.get("path", ""),
-            size_bytes=payload.get("size_bytes", 0),
-            example_count=payload.get("example_count"),
             created_at=self._from_iso(payload.get("created_at")) or datetime.utcnow(),
         )
 
