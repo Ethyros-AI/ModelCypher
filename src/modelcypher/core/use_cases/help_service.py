@@ -67,7 +67,18 @@ class HelpService:
         related_commands = []
         examples = []
 
-        if "merge" in question_lower:
+        if "train" in question_lower:
+            related_commands = ["mc train start", "mc train preflight", "mc train status"]
+            examples = [
+                "mc train start --model qwen-0.5b --dataset data.jsonl --epochs 3",
+                "mc train preflight --model qwen-0.5b --dataset data.jsonl",
+            ]
+            answer = (
+                "Training uses the `mc train` command group with geometry-aware monitoring. "
+                "Start with `mc train start`, preflight with `mc train preflight`, "
+                "and track progress via `mc train status`."
+            )
+        elif "merge" in question_lower:
             related_commands = ["mc model merge", "mc merge validate", "mc merge diagnose"]
             examples = [
                 "mc model merge --source ./model-a --target ./model-b --output ./merged",
@@ -105,7 +116,7 @@ class HelpService:
                 "`mc geometry training status` for live metrics."
             )
         else:
-            related_commands = ["mc inventory", "mc geometry validate", "mc --help"]
+            related_commands = ["mc inventory", "mc geometry validate", "mc train --help"]
             examples = ["mc inventory --output json", "mc geometry validate --output json"]
             answer = (
                 "ModelCypher focuses on geometry-first diagnostics and merge validation. "
@@ -143,7 +154,18 @@ class HelpService:
             "estimatedDuration": None,
         }
 
-        if "model fetch" in command_lower:
+        if "train start" in command_lower:
+            payload.update(
+                {
+                    "description": "Initialize and execute a LoRA fine-tuning job",
+                    "serviceCalls": ["TrainingService.start", "LocalTrainingEngine.start"],
+                    "affectedResources": ["VRAM", "Disk (checkpoints)", "CPU"],
+                    "requiredPermissions": ["Filesystem Write", "GPU Access"],
+                    "warnings": ["High power consumption", "Thermal throttling possible"],
+                    "estimatedDuration": "Minutes to Hours",
+                }
+            )
+        elif "model fetch" in command_lower:
             payload.update(
                 {
                     "description": "Download a model from remote repository",
