@@ -44,6 +44,7 @@ _SUBMODULES = {
     "cka",
     "compositional_probes",
     "concept_detector",
+    "concept_dimensionality",
     "concept_response_matrix",
     "cross_architecture_layer_matcher",
     "cross_cultural_geometry",

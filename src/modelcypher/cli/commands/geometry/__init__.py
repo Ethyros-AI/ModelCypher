@@ -18,6 +18,7 @@
 """Geometry analysis CLI commands.
 
 This package contains all geometry-related CLI commands organized by domain:
+- atlas: Unified atlas probe analysis
 - emotion: Emotion concept analysis
 - invariant: Invariant-based layer mapping with triangulation scoring
 - manifold: Manifold clustering and dimension estimation
@@ -38,6 +39,7 @@ Each module exports a Typer app that is registered as a sub-command of `mc geome
 """
 
 from modelcypher.cli.commands.geometry import (
+    atlas,
     emotion,
     interference,
     invariant,
@@ -57,6 +59,7 @@ from modelcypher.cli.commands.geometry import (
 )
 
 __all__ = [
+    "atlas",
     "emotion",
     "interference",
     "transfer",
