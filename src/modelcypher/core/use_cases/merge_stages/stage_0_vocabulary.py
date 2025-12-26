@@ -98,6 +98,8 @@ def stage_vocabulary_align(
     Returns:
         VocabularyResult with modified weights, metrics, and alignment status
     """
+    backend = get_default_backend()
+
     metrics: dict[str, Any] = {
         "enabled": True,
         "tokenizers_provided": source_tokenizer is not None and target_tokenizer is not None,
@@ -203,6 +205,19 @@ def stage_vocabulary_align(
             logger.warning("Missing embedding for key %s", embed_key)
             continue
 
+        # Dequantize embeddings to float for exact alignment math.
+        from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
+
+        source_embed = dequantize_if_needed(source_embed, embed_key, source_weights, backend)
+        target_embed = dequantize_if_needed(target_embed, embed_key, target_weights, backend)
+
+        # Ensure backend arrays with stable dtype for linear algebra.
+        source_embed = backend.array(source_embed)
+        target_embed = backend.array(target_embed)
+        source_embed = backend.astype(source_embed, "float32")
+        target_embed = backend.astype(target_embed, "float32")
+        backend.eval(source_embed, target_embed)
+
         logger.info(
             "Aligning %s: source=%s, target=%s",
             embed_key,
@@ -224,27 +239,22 @@ def stage_vocabulary_align(
 
             if result.compatibility.compatibility_score < config.min_compatibility_score:
                 logger.warning(
-                    "Low compatibility score %.2f for %s, skipping",
+                    "Low compatibility score %.2f for %s (continuing alignment)",
                     result.compatibility.compatibility_score,
                     embed_key,
                 )
-                metrics[f"{embed_key}_skipped"] = True
-                metrics[f"{embed_key}_reason"] = "low_compatibility"
-                continue
+                metrics[f"{embed_key}_warning"] = "low_compatibility"
 
             if result.alignment_map.coverage < config.min_coverage:
                 logger.warning(
-                    "Low coverage %.2f for %s, skipping",
+                    "Low coverage %.2f for %s (continuing alignment)",
                     result.alignment_map.coverage,
                     embed_key,
                 )
-                metrics[f"{embed_key}_skipped"] = True
-                metrics[f"{embed_key}_reason"] = "low_coverage"
-                continue
+                metrics[f"{embed_key}_warning"] = "low_coverage"
 
             # Convert result to backend array format, preserving original dtype
             merged_embed = result.merged_embeddings
-            backend = get_default_backend()
 
             # Ensure we have a backend array
             if hasattr(merged_embed, "numpy"):

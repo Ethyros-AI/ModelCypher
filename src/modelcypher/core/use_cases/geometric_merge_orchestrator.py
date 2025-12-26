@@ -535,55 +535,54 @@ class GeometricMergeOrchestrator:
         b: "Backend",
     ) -> None:
         """STAGE 4: Compute alignment transformations."""
-        if not src_acts or not tgt_acts or len(src_acts) < 5 or len(tgt_acts) < 5:
+        if not src_acts or not tgt_acts:
             return
 
         n = min(len(src_acts), len(tgt_acts))
+        if n < 2:
+            logger.error(
+                "Layer %d: Phase lock requires >= 2 activation samples, got %d",
+                layer_geom.layer_idx,
+                n,
+            )
+            raise ValueError("Phase lock failed: insufficient activation samples")
 
-        # Procrustes from activations
+        # Phase-lock alignment from activations (CKA = 1.0)
         try:
+            from modelcypher.core.domain.geometry.gram_aligner import GramAligner
+
             src_stacked = b.stack(src_acts[:n], axis=0)
             tgt_stacked = b.stack(tgt_acts[:n], axis=0)
             b.eval(src_stacked, tgt_stacked)
 
-            # M = src.T @ tgt, R = U @ V.T from SVD(M)
-            M = b.matmul(b.transpose(src_stacked), tgt_stacked)
-            b.eval(M)
-            U, _, Vt = b.svd(M, compute_uv=True)
-            b.eval(U, Vt)
-            R = b.matmul(U, Vt)
-            b.eval(R)
+            aligner = GramAligner(backend=b)
+            result = aligner.find_perfect_alignment(src_stacked, tgt_stacked)
+            transform = b.array(result.feature_transform)
+            b.eval(transform)
 
-            # Handle reflection
-            det_R = b.det(R)
-            b.eval(det_R)
-            det_val = float(det_R.item()) if hasattr(det_R, 'item') else float(b.to_numpy(det_R))
-            if det_val < 0:
-                n_cols = U.shape[1]
-                U_cols = [U[:, i:i+1] for i in range(n_cols - 1)]
-                U_cols.append(U[:, -1:] * -1.0)
-                U_fixed = b.concatenate(U_cols, axis=1)
-                R = b.matmul(U_fixed, Vt)
-                b.eval(R)
+            if not result.is_perfect:
+                logger.error(
+                    "Layer %d: Phase lock failed (cka=%.8f, error=%.6f, iters=%d)",
+                    layer_geom.layer_idx,
+                    result.achieved_cka,
+                    result.alignment_error,
+                    result.iterations,
+                )
+                raise ValueError("Phase lock failed: CKA did not reach 1.0")
 
-            layer_geom.procrustes_rotation = R
-
-            # Compute alignment quality
-            src_rotated = b.matmul(src_stacked, R)
-            diff = tgt_stacked - src_rotated
-            b.eval(src_rotated, diff)
-            error_norm = b.norm(b.reshape(diff, (-1,)))
-            target_norm = b.norm(b.reshape(tgt_stacked, (-1,)))
-            b.eval(error_norm, target_norm)
-            layer_geom.alignment_quality = 1.0 - float(error_norm.item()) / (float(target_norm.item()) + 1e-10)
+            layer_geom.procrustes_rotation = transform
+            layer_geom.alignment_quality = result.achieved_cka
 
             logger.debug(
-                "Layer %d: alignment_quality=%.4f",
+                "Layer %d: phase_lock_cka=%.8f (iters=%d, error=%.6f)",
                 layer_geom.layer_idx,
-                layer_geom.alignment_quality,
+                result.achieved_cka,
+                result.iterations,
+                result.alignment_error,
             )
         except Exception as e:
-            logger.debug("Procrustes failed for layer %d: %s", layer_geom.layer_idx, e)
+            logger.error("Phase lock failed for layer %d: %s", layer_geom.layer_idx, e)
+            raise
 
         # tangent_space_alignment - local alignment
         try:
@@ -1068,6 +1067,29 @@ class GeometricMergeOrchestrator:
         )
         from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
 
+        def _apply_phase_lock_transform(
+            weight: "Array",
+            transform: "Array",
+        ) -> tuple["Array", bool]:
+            """Apply phase-lock transform to weight if dimensions match."""
+            if weight.ndim != 2:
+                return weight, False
+
+            t_in = transform.shape[0]
+            weight_f32 = b.astype(weight, "float32")
+
+            if weight.shape[1] == t_in:
+                aligned = b.matmul(weight_f32, transform)
+                b.eval(aligned)
+                return aligned, True
+
+            if weight.shape[0] == t_in:
+                aligned = b.matmul(b.transpose(transform), weight_f32)
+                b.eval(aligned)
+                return aligned, True
+
+            return weight, False
+
         for key in sorted(target_weights.keys()):
             if key.endswith(".scales") or key.endswith(".biases"):
                 continue
@@ -1105,6 +1127,14 @@ class GeometricMergeOrchestrator:
             layer_idx = target_layer_idx
             layer_geom = geometry.layer_geometries.get(layer_idx) if layer_idx is not None else None
 
+            # Apply per-layer phase lock transform before shape normalization
+            if layer_geom and layer_geom.procrustes_rotation is not None:
+                source_w, applied = _apply_phase_lock_transform(
+                    source_w, layer_geom.procrustes_rotation
+                )
+                if applied:
+                    metrics["rotations_applied"] += 1
+
             # Handle shape mismatch using cross_dimensional_projection
             if source_w.shape != target_w.shape:
                 from modelcypher.core.domain.geometry.cross_dimensional_projection import (
@@ -1119,20 +1149,6 @@ class GeometricMergeOrchestrator:
                 source_w = result.projected
                 b.eval(source_w)
                 metrics["cross_arch_dim_projections"] += 1
-
-            # Apply per-layer rotation if available (from activation Procrustes)
-            if layer_geom and layer_geom.procrustes_rotation is not None and source_w.ndim == 2:
-                R = layer_geom.procrustes_rotation
-                hidden_dim = R.shape[0]
-                source_f32 = b.astype(source_w, "float32")
-
-                if source_w.shape[1] == hidden_dim:
-                    source_w = b.matmul(source_f32, R)
-                    metrics["rotations_applied"] += 1
-                elif source_w.shape[0] == hidden_dim:
-                    source_w = b.matmul(b.transpose(R), source_f32)
-                    metrics["rotations_applied"] += 1
-                b.eval(source_w)
 
             # ============================================================
             # A.2: Check transform_requirements and set dispatch flags

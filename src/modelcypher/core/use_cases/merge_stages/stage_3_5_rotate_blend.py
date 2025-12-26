@@ -19,7 +19,7 @@
 Stages 3-5: ROTATE + BLEND + PROPAGATE
 
 For each layer:
-1. ROTATE: Compute/apply geometric alignment (Procrustes or GW Transport)
+1. ROTATE: Phase-lock alignment to CKA=1.0 (GramAligner)
 2. BLEND: Compute multi-layer alpha with all adjustments
 3. PROPAGATE: Carry rotation to next layer (zipper)
 
@@ -402,83 +402,79 @@ def stage_rotate_blend_propagate(
     if hasattr(b, "clear_cache"):
         b.clear_cache()
 
-    # Initialize per-layer rotation matrices from activations
-    # This is the KEY fix: each layer has its own rotation between source and target
-    # representations, not just a global embedding rotation
+    # Initialize per-layer phase-lock transforms from activations
+    # CKA is the barometer: we search for the transform that locks to CKA=1.0
     layer_rotations: dict[int, "Array"] = {}
     layer_null_projections: dict[int, Any] = {}
+    phase_lock_ckas: dict[int, float] = {}
+    phase_lock_iterations: dict[int, int] = {}
+    phase_lock_errors: dict[int, float] = {}
 
     if source_activations and target_activations:
         logger.info(
-            "PER-LAYER ALIGNMENT: Computing rotations from %d layer activations",
+            "PHASE LOCK: Searching per-layer transforms from %d layer activations",
             len(target_activations),
         )
 
-        # Compute per-layer Procrustes rotations from paired activations
-        # This aligns source representation space to target for each layer independently
+        from modelcypher.core.domain.geometry.gram_aligner import GramAligner
+
+        aligner = GramAligner(backend=b)
+
         for layer_idx in sorted(target_activations.keys()):
             src_acts = source_activations.get(layer_idx)
             tgt_acts = target_activations.get(layer_idx)
 
-            if src_acts and tgt_acts and len(src_acts) >= 5 and len(tgt_acts) >= 5:
-                n_samples = min(len(src_acts), len(tgt_acts))
-                try:
-                    # Stack activations: [n_samples, hidden_dim]
-                    src_stacked = b.stack(src_acts[:n_samples], axis=0)
-                    tgt_stacked = b.stack(tgt_acts[:n_samples], axis=0)
-                    b.eval(src_stacked, tgt_stacked)
+            if not src_acts or not tgt_acts:
+                continue
 
-                    # Procrustes: find R such that ||tgt - src @ R||_F is minimized
-                    # M = src.T @ tgt -> R = U @ V.T from SVD(M)
-                    M = b.matmul(b.transpose(src_stacked), tgt_stacked)
-                    b.eval(M)
+            n_samples = min(len(src_acts), len(tgt_acts))
+            if n_samples < 2:
+                logger.error(
+                    "LAYER %d: Phase lock requires >= 2 activation samples, got %d",
+                    layer_idx,
+                    n_samples,
+                )
+                raise ValueError("Phase lock failed: insufficient activation samples")
 
-                    # SVD
-                    U_M, _, Vt_M = b.svd(M, compute_uv=True)
-                    b.eval(U_M, Vt_M)
+            try:
+                # Stack activations: [n_samples, hidden_dim]
+                src_stacked = b.stack(src_acts[:n_samples], axis=0)
+                tgt_stacked = b.stack(tgt_acts[:n_samples], axis=0)
+                b.eval(src_stacked, tgt_stacked)
 
-                    R = b.matmul(U_M, Vt_M)
-                    b.eval(R)
+                result = aligner.find_perfect_alignment(src_stacked, tgt_stacked)
+                transform = b.array(result.feature_transform)
+                b.eval(transform)
 
-                    # Handle reflection (ensure det(R) = +1)
-                    det_R = b.det(R)
-                    b.eval(det_R)
-                    det_val = float(det_R.item()) if hasattr(det_R, 'item') else float(b.to_numpy(det_R))
-                    if det_val < 0:
-                        n_cols = U_M.shape[1]
-                        U_cols = [U_M[:, i:i+1] for i in range(n_cols - 1)]
-                        U_cols.append(U_M[:, -1:] * -1.0)
-                        U_fixed = b.concatenate(U_cols, axis=1)
-                        R = b.matmul(U_fixed, Vt_M)
-                        b.eval(R)
+                if not result.is_perfect:
+                    logger.error(
+                        "LAYER %d: Phase lock failed (cka=%.8f, error=%.6f, iters=%d)",
+                        layer_idx,
+                        result.achieved_cka,
+                        result.alignment_error,
+                        result.iterations,
+                    )
+                    raise ValueError("Phase lock failed: CKA did not reach 1.0")
 
-                    # Compute alignment quality
-                    src_rotated = b.matmul(src_stacked, R)
-                    diff = tgt_stacked - src_rotated
-                    b.eval(src_rotated, diff)
-                    error_norm = b.norm(b.reshape(diff, (-1,)))
-                    target_norm = b.norm(b.reshape(tgt_stacked, (-1,)))
-                    b.eval(error_norm, target_norm)
-                    alignment_quality = 1.0 - float(error_norm.item()) / (float(target_norm.item()) + 1e-10)
+                layer_rotations[layer_idx] = transform
+                phase_lock_ckas[layer_idx] = result.achieved_cka
+                phase_lock_iterations[layer_idx] = result.iterations
+                phase_lock_errors[layer_idx] = result.alignment_error
 
-                    if alignment_quality > 0.3:  # Only use if alignment is reasonable
-                        layer_rotations[layer_idx] = R
-                        logger.debug(
-                            "LAYER %d: Procrustes alignment quality=%.3f",
-                            layer_idx, alignment_quality,
-                        )
-                    else:
-                        logger.debug(
-                            "LAYER %d: Skipping rotation (quality=%.3f too low)",
-                            layer_idx, alignment_quality,
-                        )
-
-                except Exception as e:
-                    logger.debug("LAYER %d: Failed to compute rotation: %s", layer_idx, e)
+                logger.debug(
+                    "LAYER %d: Phase lock CKA=%.8f (iters=%d, error=%.6f)",
+                    layer_idx,
+                    result.achieved_cka,
+                    result.iterations,
+                    result.alignment_error,
+                )
+            except Exception as e:
+                logger.error("LAYER %d: Phase lock alignment failed: %s", layer_idx, e)
+                raise
 
         if layer_rotations:
             logger.info(
-                "PER-LAYER ALIGNMENT: Computed %d layer rotations",
+                "PHASE LOCK: Computed %d per-layer transforms",
                 len(layer_rotations),
             )
 
@@ -518,6 +514,10 @@ def stage_rotate_blend_propagate(
         "merge_qualities": [],
         "layer_confidences_used": layer_confidences.copy() if layer_confidences else {},
         "spectral_confidences": [],
+        "phase_lock_layers": len(layer_rotations),
+        "phase_lock_ckas": phase_lock_ckas,
+        "phase_lock_iterations": phase_lock_iterations,
+        "phase_lock_errors": phase_lock_errors,
         "geometric_merges": 0,
         "task_svd_merges": 0,
         "frechet_svd_merges": 0,
@@ -528,6 +528,11 @@ def stage_rotate_blend_propagate(
         "per_layer_rotations_applied": 0,
         "per_layer_rotation_layers": len(layer_rotations),
     }
+
+    if phase_lock_ckas:
+        metrics["phase_lock_mean_cka"] = sum(phase_lock_ckas.values()) / len(phase_lock_ckas)
+        metrics["phase_lock_min_cka"] = min(phase_lock_ckas.values())
+        metrics["phase_lock_max_cka"] = max(phase_lock_ckas.values())
 
     if not layer_confidences and dimension_correlations:
         derived_confidences: dict[int, float] = {}
@@ -591,11 +596,34 @@ def stage_rotate_blend_propagate(
     if layer_confidences:
         conf_vals = list(layer_confidences.values())
         mean_conf = sum(conf_vals) / len(conf_vals) if conf_vals else 0.0
-        logger.info(
-            "GEOMETRIC MERGE: %d layers, mean_confidence=%.3f (from probe)",
-            len(layer_confidences), mean_conf,
-        )
+    logger.info(
+        "GEOMETRIC MERGE: %d layers, mean_confidence=%.3f (from probe)",
+        len(layer_confidences), mean_conf,
+    )
     logger.info("GEOMETRIC MERGE: Processing %d weight keys", total_weights)
+
+    def _apply_phase_lock_transform(
+        weight: "Array",
+        transform: "Array",
+    ) -> tuple["Array", bool]:
+        """Apply phase-lock transform to weight if dimensions match."""
+        if weight.ndim != 2:
+            return weight, False
+
+        t_in = transform.shape[0]
+        weight_f32 = b.astype(weight, "float32")
+
+        if weight.shape[1] == t_in:
+            aligned = b.matmul(weight_f32, transform)
+            b.eval(aligned)
+            return aligned, True
+
+        if weight.shape[0] == t_in:
+            aligned = b.matmul(b.transpose(transform), weight_f32)
+            b.eval(aligned)
+            return aligned, True
+
+        return weight, False
 
     for key in sorted(target_weights.keys()):
         if key not in source_weights:
@@ -618,6 +646,13 @@ def stage_rotate_blend_propagate(
         layer_idx = extract_layer_index_fn(key)
         base_alpha = layer_alphas.get(layer_idx, mean_alpha) if task_blend_enabled else None
         layer_confidence = 0.5 if base_alpha is None else max(0.0, min(1.0, 1.0 - base_alpha))
+
+        # Apply phase-lock transform before shape normalization if available
+        if layer_idx is not None and layer_idx in layer_rotations and source_w.ndim == 2:
+            transform = layer_rotations[layer_idx]
+            source_w, applied = _apply_phase_lock_transform(source_w, transform)
+            if applied:
+                metrics["per_layer_rotations_applied"] += 1
 
         # Handle shape mismatch - project source to target shape
         if source_w.shape != target_w.shape:
@@ -664,24 +699,6 @@ def stage_rotate_blend_propagate(
                     "  -> projected with alignment_score=%.4f",
                     result.alignment_score,
                 )
-
-        # Apply per-layer rotation to source weights if available
-        # This is the KEY fix: align source to target representation space per-layer
-        if layer_idx is not None and layer_idx in layer_rotations and source_w.ndim == 2:
-            R = layer_rotations[layer_idx]
-            hidden_dim = R.shape[0]
-
-            # Apply rotation based on which dimension matches hidden_dim
-            source_f32 = b.astype(source_w, "float32")
-            if source_w.shape[1] == hidden_dim:
-                # Weights with hidden_dim as input: W @ R
-                source_w = b.matmul(source_f32, R)
-                metrics["per_layer_rotations_applied"] += 1
-            elif source_w.shape[0] == hidden_dim:
-                # Weights with hidden_dim as output: R.T @ W
-                source_w = b.matmul(b.transpose(R), source_f32)
-                metrics["per_layer_rotations_applied"] += 1
-            b.eval(source_w)
 
         # Apply geometric merge for 2D weight matrices
         if source_w.ndim == 2 and target_w.ndim == 2 and min(source_w.shape) >= 2:
@@ -830,7 +847,7 @@ def stage_rotate_blend_propagate(
     # Add per-layer rotation summary
     if metrics["per_layer_rotations_applied"] > 0:
         logger.info(
-            "PER-LAYER ALIGNMENT: Applied %d rotations from %d layers",
+            "PHASE LOCK: Applied %d transforms from %d layers",
             metrics["per_layer_rotations_applied"],
             metrics["per_layer_rotation_layers"],
         )

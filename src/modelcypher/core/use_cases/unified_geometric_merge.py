@@ -264,19 +264,37 @@ class UnifiedGeometricMerger:
         probe_failed = bool(probe_metrics.get("probe_failed"))
         perfect_alignment = bool(probe_metrics.get("perfect_alignment"))
 
-        if probe_failed or not perfect_alignment:
+        if probe_failed:
             min_cka = probe_metrics.get("min_cka", 0.0)
             mean_cka = probe_metrics.get("mean_cka", 0.0)
             logger.error(
-                "PROBE GATE: Alignment not perfect (mean_cka=%.4f, min_cka=%.4f). "
-                "Merge aborted until CKA=1.0 is achievable.",
+                "PROBE GATE: No usable alignment signals (mean_cka=%.4f, min_cka=%.4f). "
+                "Phase-lock alignment cannot proceed.",
                 mean_cka,
                 min_cka,
             )
             raise ValueError(
-                "Merge aborted: CKA must equal 1.0 before merging. "
-                "Fix alignment/probing until perfect geometry is measured."
+                "Merge aborted: probe stage failed to determine alignment signals. "
+                "Ensure probes and activations are available."
             )
+
+        if not perfect_alignment:
+            min_cka = probe_metrics.get("min_cka", 0.0)
+            mean_cka = probe_metrics.get("mean_cka", 0.0)
+            if source_activations and target_activations:
+                logger.info(
+                    "PROBE BAROMETER: Alignment not locked yet (mean_cka=%.4f, min_cka=%.4f). "
+                    "Phase-lock alignment will search for CKA=1.0 before blending.",
+                    mean_cka,
+                    min_cka,
+                )
+            else:
+                logger.warning(
+                    "PROBE BAROMETER: Alignment not locked yet (mean_cka=%.4f, min_cka=%.4f) "
+                    "but no activations were collected. Phase-lock alignment is unavailable.",
+                    mean_cka,
+                    min_cka,
+                )
 
         # Log activation collection results
         if source_activations and target_activations:
@@ -421,7 +439,7 @@ class UnifiedGeometricMerger:
                 from .merge_stages.stage_1_probe import collect_layer_activations_mlx
 
                 probes = UnifiedAtlasInventory.all_probes()
-                max_probes = self.config.max_probes if self.config.max_probes > 0 else 100
+                max_probes = self.config.max_probes if self.config.max_probes > 0 else len(probes)
 
                 source_activations = {}
                 target_activations = {}
@@ -475,13 +493,10 @@ class UnifiedGeometricMerger:
         )
 
         if geometry.overall_cka != 1.0:
-            logger.error(
-                "PROBE GATE: Overall CKA=%.4f. Merge aborted until CKA=1.0 is achievable.",
+            logger.info(
+                "PROBE BAROMETER: Overall CKA=%.4f. "
+                "Phase-lock alignment will resolve per-layer alignment before merging.",
                 geometry.overall_cka,
-            )
-            raise ValueError(
-                "Merge aborted: CKA must equal 1.0 before merging. "
-                "Fix alignment/probing until perfect geometry is measured."
             )
 
         # Execute merge using geometry

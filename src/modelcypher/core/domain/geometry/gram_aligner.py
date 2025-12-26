@@ -188,6 +188,11 @@ class GramAligner:
 
         n_samples = n_s
 
+        # MLX linear algebra requires float32/float64; keep alignment math stable.
+        source_activations = b.astype(source_activations, "float32")
+        target_activations = b.astype(target_activations, "float32")
+        b.eval(source_activations, target_activations)
+
         # Center the activations
         source_centered = self._center(source_activations)
         target_centered = self._center(target_activations)

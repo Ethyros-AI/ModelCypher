@@ -537,8 +537,10 @@ class CrossVocabMerger:
         target_vocab_size, hidden_dim = target_embeddings.shape
         alpha = self.config.blend_alpha
 
-        # Initialize with target embeddings
-        merged = b.array(b.to_numpy(target_embeddings).copy())
+        # Initialize with target embeddings (materialize once for fast updates)
+        merged_np = b.to_numpy(target_embeddings).copy()
+        projected_np = b.to_numpy(projected_source)
+        target_np = b.to_numpy(target_embeddings)
 
         stats = {
             "source_preserved": 0,
@@ -556,7 +558,7 @@ class CrossVocabMerger:
             if source_id >= projected_source.shape[0]:
                 continue
 
-            source_vec = projected_source[source_id]
+            source_vec = projected_np[source_id]
 
             if len(alignment.target_ids) == 1:
                 # One-to-one mapping
@@ -564,7 +566,7 @@ class CrossVocabMerger:
                 if target_id >= target_vocab_size:
                     continue
 
-                target_vec = target_embeddings[target_id]
+                target_vec = target_np[target_id]
 
                 # Skip special tokens if configured
                 if self.config.preserve_special_tokens and self._is_special_token(
@@ -584,11 +586,7 @@ class CrossVocabMerger:
                     effective_alpha = min(alpha, 0.3) * alignment.confidence
 
                 blended = effective_alpha * source_vec + (1 - effective_alpha) * target_vec
-
-                # Update merged embeddings
-                merged_np = b.to_numpy(merged)
-                merged_np[target_id] = b.to_numpy(blended)
-                merged = b.array(merged_np)
+                merged_np[target_id] = blended
 
                 stats["blended"] += 1
 
@@ -598,17 +596,15 @@ class CrossVocabMerger:
                     if target_id >= target_vocab_size:
                         continue
 
-                    target_vec = target_embeddings[target_id]
+                    target_vec = target_np[target_id]
                     effective_alpha = alpha * alignment.confidence * weight
 
                     blended = effective_alpha * source_vec + (1 - effective_alpha) * target_vec
-
-                    merged_np = b.to_numpy(merged)
-                    merged_np[target_id] = b.to_numpy(blended)
-                    merged = b.array(merged_np)
+                    merged_np[target_id] = blended
 
                 stats["interpolated"] += 1
 
+        merged = b.array(merged_np)
         return merged, stats
 
     def _is_special_token(self, token: str) -> bool:
