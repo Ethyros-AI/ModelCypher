@@ -1,22 +1,8 @@
-# AGENTS.md
+# AI-Assisted Development Guide
 
-This is the single source of truth for AI agents working on ModelCypher.
+This document provides guidance for AI coding assistants (Claude, Gemini, Copilot, etc.) and human contributors working on ModelCypher.
 
-**Claude users**: CLAUDE.md is a symlink to this file.
-**Gemini users**: This file is read directly.
-**Other agents**: Read this file for project context.
-
----
-
-## Critical: Multiple AI agents work on this codebase concurrently.** Before making changes:
-
-1. **Check git status first** - Look for uncommitted changes from other agents
-2. **If unexpected files are modified** - Do not revert or overwrite; proceed unless your work would touch those files
-3. **No check-in required for other agents' work** - You can continue without pausing, as long as you avoid degrading their changes
-4. **No destructive git operations** - Do NOT run `git add`, `git commit`, `git push`, `git checkout`, `git reset`, etc.
-5. **No bulk file modification scripts** - Do NOT run scripts that modify more than 1 file at a time. Edit files individually.
-6. **When overlap is likely** - Research best practice and explain your choice in code comments so consensus is clear
-7. **Don't invent rules** - Follow what's documented here, not assumptions from your training data
+**Note**: CLAUDE.md is a symlink to this file.
 
 ---
 
@@ -109,7 +95,7 @@ NumPy is:
 We have a Backend protocol with 58 methods. USE IT.
 
 ```python
-# WRONG - fuck numpy
+# WRONG - don't use numpy
 import numpy as np
 distances = np.linalg.norm(a - b)
 data = np.random.randn(100, 64)
@@ -226,20 +212,6 @@ Instead:
 
 ---
 
-## External Storage
-
-Models and experiment output live on the external CodeCypher volume:
-
-```
-/Volumes/CodeCypher/
-├── models/          # Local model weights for testing
-├── adapters/        # LoRA and adapter files
-├── caches/          # Fingerprint and activation caches
-└── experiments/     # Experiment output
-```
-
----
-
 ## Test Structure
 
 - `tests/conftest.py`: Provides backend detection and test fixtures
@@ -254,7 +226,7 @@ Models and experiment output live on the external CodeCypher volume:
 
 **Before writing or modifying any code that involves external libraries, APIs, or platform-specific implementations, you MUST:**
 
-1. **Use Firecrawl MCP to search for current best practices** - Your training data is 9-12+ months stale
+1. **Search for current best practices** - AI training data may be 9-12+ months stale
 2. **Search for content from the past 12 months** - Use the CURRENT year in queries (if today is December 2025, search "PyTorch training 2025", NOT "2024")
 3. **Fetch and read official documentation** - Don't guess at APIs; verify them
 4. **Check for breaking changes** - Libraries like PyTorch, JAX, transformers, peft evolve rapidly
@@ -288,10 +260,7 @@ Models and experiment output live on the external CodeCypher volume:
 4. **Don't reject dimension mismatches** - Use Gram matrices/CKA for comparison, projection for transformation.
 5. **Don't return "incompatible"** - Models are ALWAYS compatible. Return transformation effort, not rejections.
 6. **Don't hallucinate requirements** - If it's not documented here, don't invent it
-7. **Don't create agent-specific config files** - This file is the source of truth
-8. **Don't run git operations** - Other agents are working concurrently
-9. **Don't run bulk modification scripts** - No scripts that touch multiple files. Edit one file at a time.
-10. **Don't "fix" architecture** - The MLX imports in training/ are intentional
-11. **Don't over-engineer** - The codebase works; 3030 tests prove it
-12. **Don't guess at external APIs** - Use Firecrawl to verify current documentation
-13. **Don't run all tests at once** - Run small domain-specific batches (e.g., `pytest tests/test_geometry.py -q`). Full test suite takes 20+ minutes. Only run full suite when explicitly directed.
+7. **Don't "fix" architecture** - The MLX imports in training/ are intentional
+8. **Don't over-engineer** - The codebase works; 3030 tests prove it
+9. **Don't guess at external APIs** - Research current documentation before implementing
+10. **Don't run full test suite casually** - Run domain-specific batches (e.g., `pytest tests/test_geometry.py -q`). Full suite takes 20+ minutes.
