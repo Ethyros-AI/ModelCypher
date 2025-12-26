@@ -29,11 +29,13 @@ from __future__ import annotations
 
 import logging
 import time
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+from modelcypher.core.domain.cache import CacheConfig, TwoLevelCache
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.alignment_diagnostic import (
     AlignmentSignal,
@@ -48,6 +50,8 @@ logger = logging.getLogger(__name__)
 
 # Session cache for anchor maps - keyed by (embedding_hash, tokenizer_id, map_type)
 _anchor_map_cache: dict[str, dict[str | int, "object"]] = {}
+_anchor_disk_cache: "TwoLevelCache[dict[str, list[float]]] | None" = None
+_ANCHOR_CACHE_VERSION = 1
 
 
 @dataclass
@@ -1574,6 +1578,29 @@ def _make_embedding_cache_key(embedding: "object", backend: "object") -> str:
     """Create a cache key from embedding matrix shape and content sample."""
     cache = ComputationCache.shared()
     return cache.make_array_key(embedding, backend)
+
+
+def _make_tokenizer_cache_key(tokenizer: Any, vocab: dict[str, int]) -> str:
+    vocab_size = len(vocab) if vocab is not None else 0
+    return f"{type(tokenizer).__name__}:{vocab_size}"
+
+
+def _get_anchor_disk_cache() -> "TwoLevelCache[dict[str, list[float]]]":
+    global _anchor_disk_cache
+    if _anchor_disk_cache is None:
+        base = Path.home() / "Library" / "Caches" / "ModelCypher" / "anchor_maps"
+        config = CacheConfig(
+            memory_limit=4,
+            disk_ttl_seconds=30 * 24 * 60 * 60,
+            cache_version=_ANCHOR_CACHE_VERSION,
+        )
+        _anchor_disk_cache = TwoLevelCache(
+            cache_directory=base,
+            serializer=lambda payload: payload,
+            deserializer=lambda payload: payload,
+            config=config,
+        )
+    return _anchor_disk_cache
 
 
 def _build_byte_embedding_map(

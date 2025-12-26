@@ -254,6 +254,11 @@ class HelpService:
     def _build_command_help(self) -> dict[str, dict[str, Any]]:
         """Build command help database."""
         return {
+            "train_start": {
+                "description": "Start a new training job",
+                "usage": "mc train start --model <id> --dataset <path>",
+                "required": ["--model", "--dataset"],
+            },
             "geometry_validate": {
                 "description": "Validate geometric invariants and diagnostics",
                 "usage": "mc geometry validate --output json",
