@@ -33,6 +33,7 @@ from modelcypher.core.domain.geometry.intrinsic_dimension import (
     TwoNNConfiguration,
 )
 from modelcypher.core.domain.geometry.probe_calibration import ActivationProvider
+from modelcypher.core.domain.geometry.vector_math import VectorMath
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
@@ -102,6 +103,35 @@ class ConceptDimensionalityReport:
     domain_summaries: list[DomainSummary]
     results: list[ConceptDimensionalityResult]
     skipped: list[SkippedProbe]
+
+
+@dataclass(frozen=True)
+class LayerDimensionalitySummary:
+    layer: int
+    mean_dimension: float | None
+    dimension_histogram: dict[str, int]
+    domain_mean_dimensions: dict[str, float]
+    domain_rank: list[str]
+
+
+@dataclass(frozen=True)
+class DomainRankCorrelation:
+    layer_a: int
+    layer_b: int
+    domain_count: int
+    spearman: float | None
+
+
+@dataclass(frozen=True)
+class ConceptDimensionalityStudyReport:
+    layers: list[int]
+    layer_summaries: list[LayerDimensionalitySummary]
+    bottleneck_layer: int | None
+    bottleneck_mean_dimension: float | None
+    endpoint_mean_dimension: float | None
+    collapse_ratio: float | None
+    domain_rank_correlations: list[DomainRankCorrelation]
+    mean_domain_rank_correlation: float | None
 
 
 class ConceptDimensionalityAnalyzer:
@@ -373,3 +403,110 @@ class ConceptDimensionalityAnalyzer:
                 )
             )
         return summaries
+
+
+class ConceptDimensionalityStudy:
+    """Summarize dimensionality reports across layers."""
+
+    @staticmethod
+    def summarize(
+        reports: list[ConceptDimensionalityReport],
+    ) -> ConceptDimensionalityStudyReport:
+        if not reports:
+            return ConceptDimensionalityStudyReport(
+                layers=[],
+                layer_summaries=[],
+                bottleneck_layer=None,
+                bottleneck_mean_dimension=None,
+                endpoint_mean_dimension=None,
+                collapse_ratio=None,
+                domain_rank_correlations=[],
+                mean_domain_rank_correlation=None,
+            )
+
+        sorted_reports = sorted(reports, key=lambda r: r.layer)
+        summaries: list[LayerDimensionalitySummary] = []
+        for report in sorted_reports:
+            domain_means = {
+                summary.domain: summary.mean_dimension
+                for summary in report.domain_summaries
+                if summary.mean_dimension is not None
+            }
+            domain_rank = [
+                name for name, _ in sorted(domain_means.items(), key=lambda item: item[1])
+            ]
+            summaries.append(
+                LayerDimensionalitySummary(
+                    layer=report.layer,
+                    mean_dimension=report.mean_dimension,
+                    dimension_histogram=report.dimension_histogram,
+                    domain_mean_dimensions=domain_means,
+                    domain_rank=domain_rank,
+                )
+            )
+
+        bottleneck_layer = None
+        bottleneck_mean = None
+        for summary in summaries:
+            if summary.mean_dimension is None:
+                continue
+            if bottleneck_mean is None or summary.mean_dimension < bottleneck_mean:
+                bottleneck_mean = summary.mean_dimension
+                bottleneck_layer = summary.layer
+
+        endpoint_mean = None
+        if len(summaries) >= 2:
+            first = summaries[0].mean_dimension
+            last = summaries[-1].mean_dimension
+            if first is not None and last is not None:
+                endpoint_mean = (first + last) / 2.0
+
+        collapse_ratio = None
+        if endpoint_mean is not None and bottleneck_mean is not None and endpoint_mean > 0:
+            collapse_ratio = bottleneck_mean / endpoint_mean
+
+        correlations: list[DomainRankCorrelation] = []
+        for i in range(len(summaries)):
+            for j in range(i + 1, len(summaries)):
+                a = summaries[i]
+                b = summaries[j]
+                common = sorted(set(a.domain_mean_dimensions) & set(b.domain_mean_dimensions))
+                if len(common) < 2:
+                    correlations.append(
+                        DomainRankCorrelation(
+                            layer_a=a.layer,
+                            layer_b=b.layer,
+                            domain_count=len(common),
+                            spearman=None,
+                        )
+                    )
+                    continue
+                vals_a = [a.domain_mean_dimensions[name] for name in common]
+                vals_b = [b.domain_mean_dimensions[name] for name in common]
+                spearman = VectorMath.spearman_correlation(vals_a, vals_b)
+                correlations.append(
+                    DomainRankCorrelation(
+                        layer_a=a.layer,
+                        layer_b=b.layer,
+                        domain_count=len(common),
+                        spearman=spearman,
+                    )
+                )
+
+        spearman_values = [
+            item.spearman for item in correlations if item.spearman is not None
+        ]
+        mean_spearman = None
+        if spearman_values:
+            mean_spearman = sum(spearman_values) / float(len(spearman_values))
+
+        return ConceptDimensionalityStudyReport(
+            layers=[summary.layer for summary in summaries],
+            layer_summaries=summaries,
+            bottleneck_layer=bottleneck_layer,
+            bottleneck_mean_dimension=bottleneck_mean,
+            endpoint_mean_dimension=endpoint_mean,
+            collapse_ratio=collapse_ratio,
+            domain_rank_correlations=correlations,
+            mean_domain_rank_correlation=mean_spearman,
+        )

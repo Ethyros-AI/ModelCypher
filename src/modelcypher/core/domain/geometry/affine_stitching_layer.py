@@ -20,8 +20,12 @@ from __future__ import annotations
 import math
 import random
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Backend
 
 
 @dataclass(frozen=True)
@@ -518,3 +522,355 @@ class AffineStitchingLayer:
                 row.append(flat[i * cols + j])
             result.append(row)
         return result
+
+
+class BackendAffineStitchingLayer:
+    """GPU-accelerated affine stitching using the Backend protocol.
+
+    This class provides the same functionality as AffineStitchingLayer but uses
+    Backend tensor operations for GPU acceleration. All matrix operations are
+    vectorized and run on GPU when available.
+
+    Performance improvements:
+    - Forward/backward pass: O(1) GPU ops vs O(n*d_target*d_source) Python loops
+    - Gradient computation: Vectorized outer products vs triple-nested loops
+    - SVD: Native backend SVD vs 30-iteration power method
+    """
+
+    def __init__(self, backend: "Backend"):
+        """Initialize with a Backend instance.
+
+        Args:
+            backend: Backend instance (MLXBackend, JAXBackend, etc.)
+        """
+        self.backend = backend
+        self._finfo = backend.finfo()
+
+    def train(
+        self,
+        training_data: list[AnchorPair],
+        config: Config = Config(),
+    ) -> Result | None:
+        """Train affine transformation using GPU-accelerated gradient descent.
+
+        Args:
+            training_data: List of (source, target) activation pairs
+            config: Training configuration
+
+        Returns:
+            Result with learned weights and bias, or None if training fails.
+        """
+        if len(training_data) < config.min_samples:
+            return None
+
+        first = training_data[0]
+        d_source = len(first.source_activation)
+        d_target = len(first.target_activation)
+        if d_source <= 0 or d_target <= 0:
+            return None
+
+        for pair in training_data:
+            if len(pair.source_activation) != d_source or len(pair.target_activation) != d_target:
+                return None
+
+        n = len(training_data)
+
+        # Convert to backend arrays: source [n, d_source], target [n, d_target]
+        source_data = [pair.source_activation for pair in training_data]
+        target_data = [pair.target_activation for pair in training_data]
+        source = self.backend.array(source_data)
+        target = self.backend.array(target_data)
+
+        # Initialize weights [d_target, d_source] and bias [d_target]
+        if config.use_procrustes_warm_start and d_source == d_target:
+            weights = self._procrustes_initialization(source, target, d_source)
+        else:
+            scale = math.sqrt(2.0 / float(d_source + d_target))
+            weights = self.backend.random_uniform(
+                -scale, scale, shape=(d_target, d_source)
+            )
+
+        bias = self.backend.zeros((d_target,))
+        weight_momentum = self.backend.zeros((d_target, d_source))
+        bias_momentum = self.backend.zeros((d_target,))
+
+        loss_history: list[float] = []
+        prev_loss = float("inf")
+        converged = False
+        iterations = 0
+
+        n_float = float(n)
+
+        for iter_idx in range(config.max_iterations):
+            iterations = iter_idx + 1
+
+            # Forward pass: pred = source @ W.T + bias  [n, d_target]
+            forward_preds = self.backend.matmul(source, self.backend.transpose(weights)) + bias
+
+            # Backward pass: pred = target @ W  [n, d_source]
+            backward_preds = self.backend.matmul(target, weights)
+
+            # Compute losses
+            forward_diff = forward_preds - target
+            backward_diff = backward_preds - source
+
+            forward_loss = self.backend.mean(forward_diff * forward_diff)
+            backward_loss = self.backend.mean(backward_diff * backward_diff)
+            reg_loss = self.backend.sum(weights * weights) * config.weight_decay
+
+            total_loss = (
+                config.forward_weight * forward_loss
+                + config.backward_weight * backward_loss
+                + reg_loss
+            )
+
+            self.backend.eval(total_loss)
+            total_loss_val = self._to_scalar(total_loss)
+            loss_history.append(total_loss_val)
+
+            relative_change = abs(prev_loss - total_loss_val) / max(prev_loss, 1e-12)
+            if relative_change < config.convergence_threshold and iter_idx > 10:
+                converged = True
+                break
+            prev_loss = total_loss_val
+
+            # Gradient computation (vectorized)
+            # Forward gradient: d_W = (2/n) * forward_error.T @ source
+            # d_bias = (2/n) * sum(forward_error)
+            scale_factor = 2.0 / n_float
+
+            d_w_forward = self.backend.matmul(
+                self.backend.transpose(forward_diff), source
+            ) * (config.forward_weight * scale_factor)
+            d_b = self.backend.sum(forward_diff, axis=0) * (config.forward_weight * scale_factor)
+
+            # Backward gradient: contribution to d_W
+            # d_W[j,k] = sum_i(target[i,j] * backward_error[i,k]) = target.T @ backward_error
+            # Shape: [d_target, n] @ [n, d_source] = [d_target, d_source]
+            d_w_backward = self.backend.matmul(
+                self.backend.transpose(target), backward_diff
+            ) * (config.backward_weight * scale_factor)
+
+            d_w = d_w_forward + d_w_backward
+
+            # L2 regularization gradient
+            d_w = d_w + 2.0 * config.weight_decay * weights
+
+            # Update with momentum
+            if config.use_momentum:
+                weight_momentum = (
+                    config.momentum_coefficient * weight_momentum
+                    + config.learning_rate * d_w
+                )
+                bias_momentum = (
+                    config.momentum_coefficient * bias_momentum
+                    + config.learning_rate * d_b
+                )
+                weights = weights - weight_momentum
+                bias = bias - bias_momentum
+            else:
+                weights = weights - config.learning_rate * d_w
+                bias = bias - config.learning_rate * d_b
+
+            self.backend.eval(weights, bias)
+
+        # Compute final errors
+        forward_error = self._compute_reconstruction_error(weights, bias, source, target)
+        backward_error = self._compute_backward_reconstruction_error(weights, source, target)
+
+        # Convert weights back to list format
+        self.backend.eval(weights, bias)
+        weights_list = self._to_nested_list(weights)
+        bias_list = self._to_list(bias)
+
+        return Result(
+            weights=weights_list,
+            bias=bias_list,
+            loss_history=loss_history,
+            forward_error=forward_error,
+            backward_error=backward_error,
+            converged=converged,
+            iterations=iterations,
+            source_dimension=d_source,
+            target_dimension=d_target,
+            sample_count=n,
+        )
+
+    def apply(
+        self,
+        activations: Any,
+        weights: Any,
+        bias: Any,
+    ) -> Any:
+        """Apply affine transformation using GPU acceleration.
+
+        Args:
+            activations: Input activations [n, d_source] (array or list)
+            weights: Weight matrix [d_target, d_source] (array or list)
+            bias: Bias vector [d_target] (array or list)
+
+        Returns:
+            Transformed activations [n, d_target] as backend array.
+        """
+        act = self._ensure_array(activations)
+        W = self._ensure_array(weights)
+        b = self._ensure_array(bias)
+
+        if act is None or W is None or b is None:
+            return self.backend.array([])
+
+        # out = activations @ W.T + bias
+        result = self.backend.matmul(act, self.backend.transpose(W)) + b
+        self.backend.eval(result)
+        return result
+
+    def apply_inverse(
+        self,
+        activations: Any,
+        weights: Any,
+    ) -> Any:
+        """Apply inverse (transpose) transformation using GPU acceleration.
+
+        Args:
+            activations: Input activations [n, d_target] (array or list)
+            weights: Weight matrix [d_target, d_source] (array or list)
+
+        Returns:
+            Reconstructed activations [n, d_source] as backend array.
+        """
+        act = self._ensure_array(activations)
+        W = self._ensure_array(weights)
+
+        if act is None or W is None:
+            return self.backend.array([])
+
+        # out = activations @ W
+        result = self.backend.matmul(act, W)
+        self.backend.eval(result)
+        return result
+
+    def _procrustes_initialization(
+        self,
+        source: Any,
+        target: Any,
+        size: int,
+    ) -> Any:
+        """Initialize weights using Procrustes analysis with backend SVD.
+
+        Args:
+            source: Source activations [n, size]
+            target: Target activations [n, size]
+            size: Dimension (must be square)
+
+        Returns:
+            Orthogonal weight matrix [size, size]
+        """
+        # M = source.T @ target
+        M = self.backend.matmul(self.backend.transpose(source), target)
+
+        # SVD: M = U @ S @ V.T
+        try:
+            U, S, Vt = self.backend.svd(M)
+            # Orthogonal approximation: W = U @ V.T
+            weights = self.backend.matmul(U, Vt)
+            self.backend.eval(weights)
+            return weights
+        except Exception:
+            # Fallback to identity
+            return self.backend.eye(size)
+
+    def _compute_reconstruction_error(
+        self,
+        weights: Any,
+        bias: Any,
+        source: Any,
+        target: Any,
+    ) -> float:
+        """Compute relative reconstruction error for forward pass."""
+        pred = self.backend.matmul(source, self.backend.transpose(weights)) + bias
+        diff = pred - target
+        error_sum = self.backend.sum(diff * diff)
+        target_norm = self.backend.sum(target * target)
+        self.backend.eval(error_sum, target_norm)
+
+        error_val = self._to_scalar(error_sum)
+        norm_val = self._to_scalar(target_norm)
+
+        if norm_val <= self._finfo.eps:
+            return 0.0
+        return math.sqrt(error_val / norm_val)
+
+    def _compute_backward_reconstruction_error(
+        self,
+        weights: Any,
+        source: Any,
+        target: Any,
+    ) -> float:
+        """Compute relative reconstruction error for backward pass."""
+        pred = self.backend.matmul(target, weights)
+        diff = pred - source
+        error_sum = self.backend.sum(diff * diff)
+        source_norm = self.backend.sum(source * source)
+        self.backend.eval(error_sum, source_norm)
+
+        error_val = self._to_scalar(error_sum)
+        norm_val = self._to_scalar(source_norm)
+
+        if norm_val <= self._finfo.eps:
+            return 0.0
+        return math.sqrt(error_val / norm_val)
+
+    def _ensure_array(self, data: Any) -> Any | None:
+        """Convert data to Backend array if needed."""
+        if data is None:
+            return None
+        if hasattr(data, "shape"):
+            return data
+        try:
+            return self.backend.array(data)
+        except (TypeError, ValueError):
+            return None
+
+    def _to_scalar(self, val: Any) -> float:
+        """Convert backend scalar to Python float."""
+        if hasattr(val, "item"):
+            return float(val.item())
+        if hasattr(val, "tolist"):
+            result = val.tolist()
+            return float(result) if not isinstance(result, list) else float(result[0])
+        return float(val)
+
+    def _to_list(self, arr: Any) -> list[float]:
+        """Convert backend array to Python list."""
+        if hasattr(arr, "tolist"):
+            return arr.tolist()
+        return list(arr)
+
+    def _to_nested_list(self, arr: Any) -> list[list[float]]:
+        """Convert 2D backend array to nested Python list."""
+        if hasattr(arr, "tolist"):
+            return arr.tolist()
+        return [list(row) for row in arr]
+
+
+def get_affine_stitching_layer(
+    backend: "Backend | None" = None
+) -> AffineStitchingLayer | BackendAffineStitchingLayer:
+    """Get the best available affine stitching implementation.
+
+    Args:
+        backend: Optional Backend instance. If provided, returns
+                 BackendAffineStitchingLayer for GPU acceleration.
+
+    Returns:
+        AffineStitchingLayer or BackendAffineStitchingLayer instance.
+
+    Example:
+        >>> from modelcypher.core.domain._backend import get_default_backend
+        >>> backend = get_default_backend()
+        >>> stitcher = get_affine_stitching_layer(backend)
+        >>> result = stitcher.train(training_data)
+    """
+    if backend is not None:
+        return BackendAffineStitchingLayer(backend)
+    return AffineStitchingLayer()

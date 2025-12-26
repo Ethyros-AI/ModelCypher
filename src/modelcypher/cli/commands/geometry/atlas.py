@@ -37,6 +37,8 @@ from modelcypher.core.domain.agents.unified_atlas import (
 from modelcypher.core.domain.geometry.concept_dimensionality import (
     ConceptDimensionalityAnalyzer,
     ConceptDimensionalityConfig,
+    ConceptDimensionalityReport,
+    ConceptDimensionalityStudy,
 )
 from modelcypher.core.domain.geometry.probe_calibration import load_calibration_weights
 from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
@@ -113,6 +115,55 @@ def _parse_domains(values: list[str] | None) -> set[AtlasDomain] | None:
             f"Invalid domains: {', '.join(invalid)}. Allowed: {', '.join(sorted(allowed))}"
         )
     return {AtlasDomain(value) for value in values}
+
+def _report_payload(report: ConceptDimensionalityReport) -> dict:
+    return {
+        "layer": report.layer,
+        "totalProbes": report.total_probes,
+        "analyzedCount": report.analyzed_count,
+        "skippedCount": report.skipped_count,
+        "meanDimension": report.mean_dimension,
+        "weightedMeanDimension": report.weighted_mean_dimension,
+        "dimensionHistogram": report.dimension_histogram,
+        "domainSummaries": [
+            {
+                "domain": summary.domain,
+                "probeCount": summary.probe_count,
+                "meanDimension": summary.mean_dimension,
+                "dimensionHistogram": summary.dimension_histogram,
+            }
+            for summary in report.domain_summaries
+        ],
+        "results": [
+            {
+                "probeID": result.probe_id,
+                "name": result.name,
+                "source": result.source,
+                "domain": result.domain,
+                "category": result.category,
+                "layer": result.layer,
+                "supportTextCount": result.support_text_count,
+                "sampleCount": result.sample_count,
+                "usableCount": result.usable_count,
+                "intrinsicDimension": result.intrinsic_dimension,
+                "dimensionClass": result.dimension_class,
+                "calibrationWeight": result.calibration_weight,
+                "confidenceLower": result.ci_lower,
+                "confidenceUpper": result.ci_upper,
+            }
+            for result in report.results
+        ],
+        "skipped": [
+            {
+                "probeID": item.probe_id,
+                "name": item.name,
+                "reason": item.reason,
+                "supportTextCount": item.support_text_count,
+                "calibrationWeight": item.calibration_weight,
+            }
+            for item in report.skipped
+        ],
+    }
 
 
 @app.command("dimensionality")
@@ -208,51 +259,7 @@ def atlas_dimensionality(
     payload = {
         "_schema": "mc.geometry.atlas.dimensionality.v1",
         "modelPath": model_path,
-        "layer": target_layer,
-        "totalProbes": report.total_probes,
-        "analyzedCount": report.analyzed_count,
-        "skippedCount": report.skipped_count,
-        "meanDimension": report.mean_dimension,
-        "weightedMeanDimension": report.weighted_mean_dimension,
-        "dimensionHistogram": report.dimension_histogram,
-        "domainSummaries": [
-            {
-                "domain": summary.domain,
-                "probeCount": summary.probe_count,
-                "meanDimension": summary.mean_dimension,
-                "dimensionHistogram": summary.dimension_histogram,
-            }
-            for summary in report.domain_summaries
-        ],
-        "results": [
-            {
-                "probeID": result.probe_id,
-                "name": result.name,
-                "source": result.source,
-                "domain": result.domain,
-                "category": result.category,
-                "layer": result.layer,
-                "supportTextCount": result.support_text_count,
-                "sampleCount": result.sample_count,
-                "usableCount": result.usable_count,
-                "intrinsicDimension": result.intrinsic_dimension,
-                "dimensionClass": result.dimension_class,
-                "calibrationWeight": result.calibration_weight,
-                "confidenceLower": result.ci_lower,
-                "confidenceUpper": result.ci_upper,
-            }
-            for result in report.results
-        ],
-        "skipped": [
-            {
-                "probeID": item.probe_id,
-                "name": item.name,
-                "reason": item.reason,
-                "supportTextCount": item.support_text_count,
-                "calibrationWeight": item.calibration_weight,
-            }
-            for item in report.skipped
-        ],
+        **_report_payload(report),
         "nextActions": [
             "mc geometry metrics intrinsic-dimension for point cloud validation",
             "mc geometry invariant map for layer alignment cross-checks",
@@ -292,6 +299,191 @@ def atlas_dimensionality(
                 f"2D {summary.dimension_histogram.get('2D', 0)}, "
                 f"3D {summary.dimension_histogram.get('3D', 0)}, "
                 f"4D+ {summary.dimension_histogram.get('4D+', 0)}"
+            )
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("dimensionality-study")
+def atlas_dimensionality_study(
+    ctx: typer.Context,
+    model_path: str = typer.Argument(..., help="Path to the model directory"),
+    layers: list[int] | None = typer.Option(
+        None, "--layer", "-l", help="Layer to analyze (repeatable)"
+    ),
+    sources: list[str] | None = typer.Option(
+        None, "--source", "-s", help="Filter by atlas source (repeatable)"
+    ),
+    domains: list[str] | None = typer.Option(
+        None, "--domain", "-d", help="Filter by atlas domain (repeatable)"
+    ),
+    max_probes: int = typer.Option(0, "--max-probes", help="Limit probes (0 = all)"),
+    min_support_texts: int = typer.Option(
+        3, "--min-support-texts", help="Minimum support texts required"
+    ),
+    max_support_texts: int = typer.Option(
+        6, "--max-support-texts", help="Maximum support texts per probe"
+    ),
+    max_total_texts: int = typer.Option(
+        8, "--max-total-texts", help="Maximum total texts used per probe"
+    ),
+    k_neighbors: int = typer.Option(
+        10, "--k-neighbors", help="k for geodesic distance graph"
+    ),
+    bootstrap: int = typer.Option(0, "--bootstrap", help="Bootstrap resamples (0 = none)"),
+    regression: bool = typer.Option(
+        True,
+        "--regression/--no-regression",
+        is_flag=True,
+        flag_value=True,
+        help="Use regression-based TwoNN estimation",
+    ),
+    calibration_file: str | None = typer.Option(
+        None, "--calibration", help="Calibration JSON file for probe weights"
+    ),
+    min_calibration: float | None = typer.Option(
+        None, "--min-calibration", help="Skip probes below this calibration weight"
+    ),
+    include_results: bool = typer.Option(
+        False,
+        "--include-results/--summary-only",
+        help="Include per-probe results for each layer",
+    ),
+) -> None:
+    """Run atlas dimensionality across multiple layers and summarize structure."""
+    context = _context(ctx)
+
+    from modelcypher.adapters.model_loader import load_model_for_training
+    from modelcypher.backends.mlx_backend import MLXBackend
+
+    model, tokenizer = load_model_for_training(model_path)
+    model_type = getattr(model, "model_type", "unknown")
+    resolved = resolve_model_backbone(model, model_type)
+    if not resolved:
+        raise typer.BadParameter("Could not resolve model architecture.")
+
+    embed_tokens, layers_module, norm = resolved
+    num_layers = len(layers_module)
+    if not layers:
+        layers = [0, num_layers // 2, num_layers - 1]
+
+    resolved_layers: list[int] = []
+    for layer in layers:
+        layer_idx = layer if layer >= 0 else num_layers + layer
+        if layer_idx < 0 or layer_idx >= num_layers:
+            raise typer.BadParameter(
+                f"Layer {layer} is out of range for {num_layers} layers."
+            )
+        resolved_layers.append(layer_idx)
+
+    resolved_layers = sorted(set(resolved_layers))
+
+    source_filter = _parse_sources(sources)
+    domain_filter = _parse_domains(domains)
+
+    probes = UnifiedAtlasInventory.all_probes()
+    if source_filter:
+        probes = [probe for probe in probes if probe.source in source_filter]
+    if domain_filter:
+        probes = [probe for probe in probes if probe.domain in domain_filter]
+    if max_probes > 0 and max_probes < len(probes):
+        probes = probes[:max_probes]
+
+    calibration_weights = (
+        load_calibration_weights(calibration_file) if calibration_file else {}
+    )
+
+    backend = MLXBackend()
+    provider = BackboneActivationProvider(tokenizer, embed_tokens, layers_module, norm, backend)
+    analyzer = ConceptDimensionalityAnalyzer(backend=backend)
+    config = ConceptDimensionalityConfig(
+        min_support_texts=min_support_texts,
+        max_support_texts=max_support_texts,
+        max_total_texts=max_total_texts,
+        use_regression=regression,
+        bootstrap_resamples=bootstrap,
+        geodesic_k_neighbors=k_neighbors,
+        min_calibration_weight=min_calibration,
+    )
+
+    reports: list[ConceptDimensionalityReport] = []
+    for layer_idx in resolved_layers:
+        report = analyzer.analyze(
+            probes=probes,
+            activation_provider=provider,
+            layer=layer_idx,
+            config=config,
+            calibration_weights=calibration_weights,
+        )
+        reports.append(report)
+
+    study = ConceptDimensionalityStudy.summarize(reports)
+
+    payload = {
+        "_schema": "mc.geometry.atlas.dimensionality_study.v1",
+        "modelPath": model_path,
+        "layers": study.layers,
+        "bottleneckLayer": study.bottleneck_layer,
+        "bottleneckMeanDimension": study.bottleneck_mean_dimension,
+        "endpointMeanDimension": study.endpoint_mean_dimension,
+        "collapseRatio": study.collapse_ratio,
+        "meanDomainRankCorrelation": study.mean_domain_rank_correlation,
+        "domainRankCorrelations": [
+            {
+                "layerA": item.layer_a,
+                "layerB": item.layer_b,
+                "domainCount": item.domain_count,
+                "spearman": item.spearman,
+            }
+            for item in study.domain_rank_correlations
+        ],
+        "layerSummaries": [
+            {
+                "layer": summary.layer,
+                "meanDimension": summary.mean_dimension,
+                "dimensionHistogram": summary.dimension_histogram,
+                "domainMeanDimensions": summary.domain_mean_dimensions,
+                "domainRank": summary.domain_rank,
+            }
+            for summary in study.layer_summaries
+        ],
+        "layerReports": [_report_payload(report) for report in reports]
+        if include_results
+        else None,
+        "nextActions": [
+            "mc geometry atlas dimensionality for single-layer deep dives",
+            "mc geometry invariant map for layer alignment cross-checks",
+        ],
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "ATLAS DIMENSIONALITY STUDY",
+            f"Model: {model_path}",
+            f"Layers: {', '.join(str(layer) for layer in study.layers)}",
+        ]
+        if study.bottleneck_layer is not None:
+            lines.append(f"Bottleneck Layer: {study.bottleneck_layer}")
+        if study.bottleneck_mean_dimension is not None:
+            lines.append(f"Bottleneck Mean Dimension: {study.bottleneck_mean_dimension:.3f}")
+        if study.collapse_ratio is not None:
+            lines.append(f"Collapse Ratio: {study.collapse_ratio:.3f}")
+        if study.mean_domain_rank_correlation is not None:
+            lines.append(
+                f"Mean Domain Rank Correlation: {study.mean_domain_rank_correlation:.3f}"
+            )
+        lines.append("")
+        lines.append("Layer Summaries:")
+        for summary in study.layer_summaries:
+            mean_dim = summary.mean_dimension
+            mean_text = f"{mean_dim:.3f}" if mean_dim is not None else "n/a"
+            hist = summary.dimension_histogram
+            lines.append(
+                f"  L{summary.layer}: mean {mean_text} | "
+                f"1D {hist.get('1D', 0)}, 2D {hist.get('2D', 0)}, "
+                f"3D {hist.get('3D', 0)}, 4D+ {hist.get('4D+', 0)}"
             )
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
