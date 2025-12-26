@@ -724,6 +724,16 @@ def stage_rotate_blend_propagate(
         mq = metrics["merge_qualities"]
         metrics["mean_merge_quality"] = sum(mq) / len(mq)
 
+    # Add null-space filtering summary
+    if metrics["null_space_preservation"]:
+        pres = metrics["null_space_preservation"]
+        metrics["mean_null_space_preservation"] = sum(pres) / len(pres)
+        logger.info(
+            "NULL-SPACE FILTERING: %d weights filtered, mean preservation=%.1f%%",
+            metrics["null_space_filtered"],
+            metrics["mean_null_space_preservation"] * 100,
+        )
+
     logger.info(
         "GEOMETRIC MERGE COMPLETE: %d weights, mean_error=%.4f, mean_quality=%.4f",
         metrics["geometric_merges"],
