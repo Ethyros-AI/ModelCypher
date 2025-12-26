@@ -1342,7 +1342,7 @@ def _select_full_rank_indices(
     norm_list = backend.to_numpy(norms).tolist()
     ranked = sorted(range(n), key=lambda idx: norm_list[idx], reverse=True)
 
-    eps = max(machine_epsilon(backend, points), 1e-6)
+    eps = max(machine_epsilon(backend, points), 1e-12)
     selected: list[int] = []
     basis: list["object"] = []
 
@@ -1401,7 +1401,7 @@ def _select_shared_full_rank_indices(
     norm_list = backend.to_numpy(norms).tolist()
     ranked = sorted(range(n), key=lambda idx: norm_list[idx], reverse=True)
 
-    eps = max(machine_epsilon(backend, combined), 1e-6)
+    eps = max(machine_epsilon(backend, combined), 1e-12)
 
     def _orthonormalize(
         vec: "object",
@@ -1452,7 +1452,7 @@ def _select_shared_full_rank_indices(
             return float("inf")
         return (max(values) / min(values)) ** 0.5
 
-    max_condition = 1e2
+    max_condition = _dynamic_condition_threshold(combined, backend)
     while selected and len(selected) > 2:
         idx_arr = backend.array(selected)
         src_sel = backend.take(source_points, idx_arr, axis=0)
@@ -1534,9 +1534,17 @@ def _matrix_rank_for_alignment(
         return 0
     max_val = max(values)
     if eps is None:
-        eps = max(machine_epsilon(backend, matrix), 1e-6)
+        eps = max(machine_epsilon(backend, matrix), 1e-12)
     threshold = max_val * eps
     return sum(1 for val in values if val > threshold)
+
+
+def _dynamic_condition_threshold(
+    matrix: "object",
+    backend: "object",
+) -> float:
+    eps = max(machine_epsilon(backend, matrix), 1e-12)
+    return min(1e4, 1.0 / (eps ** 0.5))
 
 
 def _solve_feature_transform_exact(
@@ -1555,7 +1563,7 @@ def _solve_feature_transform_exact(
     backend.eval(eigvals, eigvecs)
     values = [float(v) for v in backend.to_numpy(eigvals).tolist()]
     max_eig = max(values) if values else 1.0
-    eps = max(reg, 1e-12)
+    eps = max(reg, machine_epsilon(backend, gram))
     threshold = max_eig * eps
 
     inv_vals = backend.where(
@@ -1566,12 +1574,15 @@ def _solve_feature_transform_exact(
     backend.eval(inv_vals)
 
     inv_diag = backend.reshape(inv_vals, (1, -1))
-    gram_pinv = backend.matmul(eigvecs * inv_diag, backend.transpose(eigvecs))
-    backend.eval(gram_pinv)
+    gram_inv_subspace = backend.matmul(
+        eigvecs * inv_diag,
+        backend.transpose(eigvecs),
+    )
+    backend.eval(gram_inv_subspace)
 
     transform = backend.matmul(
         backend.transpose(source_matrix),
-        backend.matmul(gram_pinv, target_matrix),
+        backend.matmul(gram_inv_subspace, target_matrix),
     )
     backend.eval(transform)
     return transform

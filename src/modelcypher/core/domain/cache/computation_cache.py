@@ -88,11 +88,11 @@ class CacheEntry:
 class ComputationCacheConfig:
     """Configuration for computation cache behavior."""
 
-    max_gram_entries: int = 50
-    max_geodesic_entries: int = 20
-    max_svd_entries: int = 30
-    max_frechet_entries: int = 30
-    max_centered_gram_entries: int = 50
+    max_gram_entries: int = 200
+    max_geodesic_entries: int = 1024
+    max_svd_entries: int = 32
+    max_frechet_entries: int = 1024
+    max_centered_gram_entries: int = 200
 
 
 class ComputationCache:

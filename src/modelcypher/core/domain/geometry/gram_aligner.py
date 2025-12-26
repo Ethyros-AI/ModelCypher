@@ -67,6 +67,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -161,80 +162,13 @@ class GramAligner:
         self._regularization = regularization
         self._logger = logging.getLogger(__name__)
 
-    def _safe_svd(
-        self,
-        matrix: "Array",
-        context: str = "SVD",
-    ) -> tuple["Array", "Array", "Array"]:
-        """Compute SVD with error handling for rank-deficient matrices.
-
-        If standard SVD fails (e.g., on near-singular matrices), applies
-        regularization to stabilize the computation.
-
-        Parameters
-        ----------
-        matrix : Array
-            Matrix to decompose.
-        context : str
-            Context string for error messages.
-
-        Returns
-        -------
-        tuple[Array, Array, Array]
-            U, S, Vt from SVD decomposition.
-
-        Raises
-        ------
-        ValueError
-            If SVD fails even after regularization attempts.
-        """
-        b = self._backend
-
-        try:
-            U, S, Vt = b.svd(matrix)
-            b.eval(U, S, Vt)
-
-            # Validate result - check for degenerate singular values
-            s_np = b.to_numpy(S)
-            rank = int((s_np > 1e-10).sum())
-            if rank == 0:
-                raise ValueError("Matrix is effectively zero-rank")
-
-            return U, S, Vt
-
-        except Exception as e:
-            self._logger.warning(f"{context}: SVD failed ({e}), applying regularization")
-
-            # Add regularization to stabilize
-            m, n = b.shape(matrix)
-            min_dim = min(m, n)
-            reg_strength = max(self._regularization * 1e4, 1e-6)
-
-            if m >= n:
-                # Add to A^T @ A
-                regularized = matrix + reg_strength * b.eye(m, n)
-            else:
-                regularized = matrix + reg_strength * b.eye(m, n)
-
-            try:
-                U, S, Vt = b.svd(regularized)
-                b.eval(U, S, Vt)
-                self._logger.info(f"{context}: SVD succeeded after regularization")
-                return U, S, Vt
-            except Exception as e2:
-                self._logger.error(f"{context}: SVD failed even after regularization: {e2}")
-                raise ValueError(
-                    f"Cannot compute SVD for {context}: matrix is numerically unstable. "
-                    f"Original error: {e}, After regularization: {e2}"
-                ) from e2
-
     def _solve_feature_transform(
         self,
         source_centered: "Array",
         target_centered: "Array",
         reg: float | None = None,
     ) -> "Array | None":
-        """Solve F = A_s^T (A_s A_s^T)^+ A_t without SVD."""
+        """Solve F = A_s^T (A_s A_s^T)^-1 A_t using a rank-aware inverse."""
         b = self._backend
         n_samples = b.shape(source_centered)[0]
         if n_samples == 0:
@@ -248,8 +182,8 @@ class GramAligner:
 
         values = [float(v) for v in b.to_numpy(eigvals).tolist()]
         max_eig = max(values) if values else 1.0
-        eps = reg if reg is not None else max(self._regularization, 1e-12)
-        threshold = max_eig * max(eps, 1e-12)
+        eps = reg if reg is not None else max(self._regularization, machine_epsilon(b, gram))
+        threshold = max_eig * max(eps, machine_epsilon(b, gram))
 
         inv_vals = b.where(
             eigvals > threshold,
@@ -259,10 +193,16 @@ class GramAligner:
         b.eval(inv_vals)
 
         inv_diag = b.reshape(inv_vals, (1, -1))
-        gram_pinv = b.matmul(eigvecs * inv_diag, b.transpose(eigvecs))
-        b.eval(gram_pinv)
+        gram_inv_subspace = b.matmul(
+            eigvecs * inv_diag,
+            b.transpose(eigvecs),
+        )
+        b.eval(gram_inv_subspace)
 
-        F = b.matmul(b.transpose(source_centered), b.matmul(gram_pinv, target_centered))
+        F = b.matmul(
+            b.transpose(source_centered),
+            b.matmul(gram_inv_subspace, target_centered),
+        )
         b.eval(F)
         return F
 
@@ -349,7 +289,7 @@ class GramAligner:
                 source_centered, sample_transform
             )
         if b.shape(feature_transform)[1] != b.shape(target_centered)[1]:
-            # Sample-space transform preserves source dimensionality; use SVD init for cross-dim.
+            # Sample-space transform preserves source dimensionality; reset for cross-dim.
             feature_transform = None
         total_iterations = 0
         max_iterations = self._max_iterations
@@ -430,7 +370,11 @@ class GramAligner:
         eig_t, V_t = b.eigh(K_t_c)
         b.eval(eig_t, V_t)
 
-        eps = max(self._regularization, 1e-12)
+        eps = max(
+            self._regularization,
+            machine_epsilon(b, K_s_c),
+            machine_epsilon(b, K_t_c),
+        )
         max_s = float(b.to_numpy(b.max(eig_s))) if b.shape(eig_s)[0] > 0 else 1.0
         max_t = float(b.to_numpy(b.max(eig_t))) if b.shape(eig_t)[0] > 0 else 1.0
         threshold_s = max_s * eps
@@ -476,11 +420,11 @@ class GramAligner:
     ) -> tuple["Array", int, float]:
         """Find feature-space transform F such that (A_s @ F)'s Gram = K_t.
 
-        Uses CLOSED-FORM solution F = A_s^+ @ A_t for exact CKA = 1.0.
+        Uses CLOSED-FORM solution F = A_s^T (A_s A_s^T)^-1 A_t for exact CKA = 1.0.
 
         Mathematical guarantee:
-        - For A_s [n, d_s] with full row rank (n <= d_s), A_s @ A_s^+ = I_n
-        - So A_s @ F = A_s @ A_s^+ @ A_t = A_t exactly
+        - For A_s [n, d_s] with full row rank (n <= d_s), A_s A_s^T is invertible
+        - So A_s @ F = A_s @ A_s^T (A_s A_s^T)^-1 @ A_t = A_t exactly
         - Therefore (A_s @ F) @ (A_s @ F)^T = A_t @ A_t^T = K_t
         - CKA = 1.0 exactly, no iteration needed
 
@@ -494,7 +438,7 @@ class GramAligner:
         # Use centering matrix for CKA computation
         H = self._centering_matrix(n_samples)
 
-        # CLOSED-FORM SOLUTION: F = A_s^+ @ A_t
+        # CLOSED-FORM SOLUTION: F = A_s^T (A_s A_s^T)^-1 @ A_t
         # This GUARANTEES CKA = 1.0 when A_s has full row rank (n <= d_s)
         if initial_transform is not None:
             shape = b.shape(initial_transform)
@@ -573,7 +517,7 @@ class GramAligner:
             b.eval(source_transformed_sample)
 
             # Compute feature transform F that achieves this: A_s @ F = A_s'
-            # F = A_s^+ @ A_s' = A_s^+ @ T @ A_s
+            # F = A_s^T (A_s A_s^T)^-1 @ A_s' = A_s^T (A_s A_s^T)^-1 @ T @ A_s
             F_sample = self._solve_feature_transform(
                 source_centered,
                 source_transformed_sample,
@@ -643,25 +587,6 @@ class GramAligner:
         b.eval(K_s_t_c)
         final_cka = self._compute_cka_from_centered_grams(K_s_t_c, K_t_c)
         return best_F, max_iters, final_cka
-
-    def _pseudo_inverse(self, matrix: "Array") -> "Array":
-        """Compute a stable pseudoinverse using SVD."""
-        b = self._backend
-        U, S, Vt = self._safe_svd(matrix, context="pseudo_inverse")
-
-        k = len(b.to_numpy(S))
-        if b.shape(U)[1] > k:
-            U = U[:, :k]
-        if b.shape(Vt)[0] > k:
-            Vt = Vt[:k, :]
-        b.eval(U, Vt)
-
-        s_inv = S / (S * S + self._regularization)
-        V = b.transpose(Vt)
-        V_scaled = V * b.reshape(s_inv, (1, -1))
-        pinv = b.matmul(V_scaled, b.transpose(U))
-        b.eval(pinv)
-        return pinv
 
     def _feature_transform_from_sample_transform(
         self,
