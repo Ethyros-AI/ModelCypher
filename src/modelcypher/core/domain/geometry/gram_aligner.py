@@ -228,6 +228,33 @@ class GramAligner:
                     f"Original error: {e}, After regularization: {e2}"
                 ) from e2
 
+    def _solve_feature_transform(
+        self,
+        source_centered: "Array",
+        target_centered: "Array",
+        reg: float | None = None,
+    ) -> "Array | None":
+        """Solve F = A_s^T (A_s A_s^T + reg I)^{-1} A_t without SVD."""
+        b = self._backend
+        n_samples = b.shape(source_centered)[0]
+        if n_samples == 0:
+            return None
+
+        reg_val = reg if reg is not None else max(self._regularization, 1e-8)
+        gram = b.matmul(source_centered, b.transpose(source_centered))
+        gram_reg = gram + reg_val * b.eye(n_samples)
+        b.eval(gram_reg)
+
+        try:
+            solution = b.solve(gram_reg, target_centered)
+        except Exception as exc:
+            self._logger.warning("GramAligner: solve-based transform failed (%s)", exc)
+            return None
+
+        F = b.matmul(b.transpose(source_centered), solution)
+        b.eval(F)
+        return F
+
     def find_perfect_alignment(
         self,
         source_activations: "Array",
@@ -302,6 +329,10 @@ class GramAligner:
         # We want: (A_s @ F) @ (A_s @ F)^T = T @ K_s @ T^T = K_t
         # i.e., A_s @ F @ F^T @ A_s^T = K_t
         feature_transform = initial_transform
+        if feature_transform is None:
+            feature_transform = self._solve_feature_transform(
+                source_centered, target_centered
+            )
         if feature_transform is None:
             feature_transform = self._feature_transform_from_sample_transform(
                 source_centered, sample_transform
@@ -448,41 +479,36 @@ class GramAligner:
                 initial_transform = None
 
         if initial_transform is None:
-            # Compute pseudoinverse via SVD: A_s^+ = V @ Σ^{-1} @ U^T
-            U_s, sigma_s, Vt_s = self._safe_svd(
-                source_centered, context="find_perfect_alignment source"
-            )
+            F = self._solve_feature_transform(source_centered, target_centered)
+            if F is None:
+                U_s, sigma_s, Vt_s = self._safe_svd(
+                    source_centered, context="find_perfect_alignment source"
+                )
 
-            # Truncate to actual rank
-            sigma_np = b.to_numpy(sigma_s)
-            r_s = len(sigma_np)
-            if b.shape(U_s)[1] > r_s:
-                U_s = U_s[:, :r_s]
-            if b.shape(Vt_s)[0] > r_s:
-                Vt_s = Vt_s[:r_s, :]
-            b.eval(U_s, Vt_s)
+                sigma_np = b.to_numpy(sigma_s)
+                r_s = len(sigma_np)
+                if b.shape(U_s)[1] > r_s:
+                    U_s = U_s[:, :r_s]
+                if b.shape(Vt_s)[0] > r_s:
+                    Vt_s = Vt_s[:r_s, :]
+                b.eval(U_s, Vt_s)
 
-            # Regularized inverse of singular values
-            # Use relative threshold based on largest singular value
-            max_sigma = float(sigma_np[0]) if len(sigma_np) > 0 else 1.0
-            threshold = max_sigma * self._regularization
-            sigma_inv = b.where(
-                sigma_s > threshold,
-                1.0 / sigma_s,
-                b.zeros_like(sigma_s)
-            )
-            b.eval(sigma_inv)
+                max_sigma = float(sigma_np[0]) if len(sigma_np) > 0 else 1.0
+                threshold = max_sigma * self._regularization
+                sigma_inv = b.where(
+                    sigma_s > threshold,
+                    1.0 / sigma_s,
+                    b.zeros_like(sigma_s),
+                )
+                b.eval(sigma_inv)
 
-            # Pseudoinverse: A_s^+ = V_s @ diag(Σ^{-1}) @ U_s^T
-            # V_s = Vt_s^T: [d_s, r_s]
-            V_s = b.transpose(Vt_s)
-            V_s_scaled = V_s * b.reshape(sigma_inv, (1, -1))
-            pinv_s = b.matmul(V_s_scaled, b.transpose(U_s))
-            b.eval(pinv_s)
+                V_s = b.transpose(Vt_s)
+                V_s_scaled = V_s * b.reshape(sigma_inv, (1, -1))
+                pinv_s = b.matmul(V_s_scaled, b.transpose(U_s))
+                b.eval(pinv_s)
 
-            # F = A_s^+ @ A_t: [d_s, n] @ [n, d_t] = [d_s, d_t]
-            F = b.matmul(pinv_s, target_centered)
-            b.eval(F)
+                F = b.matmul(pinv_s, target_centered)
+                b.eval(F)
 
             # Verify CKA = 1.0
             source_transformed = b.matmul(source_centered, F)
@@ -499,32 +525,27 @@ class GramAligner:
                 return F, 1, cka
 
             # If closed-form didn't reach 1.0, try with tighter regularization
-            for reg_scale in [0.1, 0.01, 0.001, 1e-4, 1e-6, 1e-8, 1e-10, 1e-12]:
-                threshold = max_sigma * reg_scale
-                sigma_inv = b.where(
-                    sigma_s > threshold,
-                    1.0 / sigma_s,
-                    b.zeros_like(sigma_s)
-                )
-                b.eval(sigma_inv)
-
-                V_s_scaled = V_s * b.reshape(sigma_inv, (1, -1))
-                pinv_s = b.matmul(V_s_scaled, b.transpose(U_s))
-                F = b.matmul(pinv_s, target_centered)
-                b.eval(F)
-
-                source_transformed = b.matmul(source_centered, F)
-                K_s_t = b.matmul(source_transformed, b.transpose(source_transformed))
-                K_s_t_c = b.matmul(b.matmul(H, K_s_t), H)
-                b.eval(K_s_t_c)
-                cka = self._compute_cka_from_centered_grams(K_s_t_c, K_t_c)
-
-                if cka >= 1.0 - self._tolerance:
-                    logger.info(
-                        "GramAligner: Converged to CKA=%.8f with reg=%.2e",
-                        cka, reg_scale
+            if initial_transform is None:
+                for reg_scale in [1e-6, 1e-8, 1e-10, 1e-12]:
+                    F = self._solve_feature_transform(
+                        source_centered, target_centered, reg=reg_scale
                     )
-                    return F, 1, cka
+                    if F is None:
+                        continue
+
+                    source_transformed = b.matmul(source_centered, F)
+                    K_s_t = b.matmul(source_transformed, b.transpose(source_transformed))
+                    K_s_t_c = b.matmul(b.matmul(H, K_s_t), H)
+                    b.eval(K_s_t_c)
+                    cka = self._compute_cka_from_centered_grams(K_s_t_c, K_t_c)
+
+                    if cka >= 1.0 - self._tolerance:
+                        logger.info(
+                            "GramAligner: Converged to CKA=%.8f with reg=%.2e",
+                            cka,
+                            reg_scale,
+                        )
+                        return F, 1, cka
         else:
             F = initial_transform
 
@@ -576,35 +597,13 @@ class GramAligner:
 
             # Compute feature transform F that achieves this: A_s @ F = A_s'
             # F = A_s^+ @ A_s' = A_s^+ @ T @ A_s
-            U_s, sigma_s, Vt_s = self._safe_svd(
-                source_centered, context="feature_transform_refinement"
+            F_sample = self._solve_feature_transform(
+                source_centered,
+                source_transformed_sample,
+                reg=reg,
             )
-
-            sigma_np = b.to_numpy(sigma_s)
-            r_s = len(sigma_np)
-            if b.shape(U_s)[1] > r_s:
-                U_s = U_s[:, :r_s]
-            if b.shape(Vt_s)[0] > r_s:
-                Vt_s = Vt_s[:r_s, :]
-            b.eval(U_s, Vt_s)
-
-            max_sigma = float(sigma_np[0]) if len(sigma_np) > 0 else 1.0
-            threshold = max_sigma * reg
-            sigma_inv = b.where(
-                sigma_s > threshold,
-                1.0 / sigma_s,
-                b.zeros_like(sigma_s)
-            )
-            b.eval(sigma_inv)
-
-            V_s_mat = b.transpose(Vt_s)
-            V_s_scaled = V_s_mat * b.reshape(sigma_inv, (1, -1))
-            pinv_s = b.matmul(V_s_scaled, b.transpose(U_s))
-            b.eval(pinv_s)
-
-            # F = A_s^+ @ (T @ A_s)
-            F_sample = b.matmul(pinv_s, source_transformed_sample)
-            b.eval(F_sample)
+            if F_sample is None:
+                continue
 
             # Verify CKA
             source_aligned = b.matmul(source_centered, F_sample)
@@ -695,9 +694,11 @@ class GramAligner:
         """Construct a feature transform that reproduces the sample-space alignment."""
         b = self._backend
         aligned_samples = b.matmul(sample_transform, source_centered)
-        pinv = self._pseudo_inverse(source_centered)
-        transform = b.matmul(pinv, aligned_samples)
-        b.eval(transform)
+        transform = self._solve_feature_transform(source_centered, aligned_samples)
+        if transform is None:
+            pinv = self._pseudo_inverse(source_centered)
+            transform = b.matmul(pinv, aligned_samples)
+            b.eval(transform)
         return transform
 
     def _compute_cka_from_centered_grams(
