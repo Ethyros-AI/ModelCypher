@@ -10,10 +10,7 @@
 
 ModelCypher is a Python toolkit for measuring the high-dimensional geometric structure of LLM representations. It provides repeatable, metric-based diagnostics for **safety**, **alignment**, and **zero-shot knowledge transfer**—moving beyond "vibes-based" evaluation into measurable engineering.
 
-Pipeline (conceptual):
-- Prompt -> Activations
-- Geometry (entropy, curvature, geodesic distances)
-- Diagnostics -> Actions
+LLMs aren't black boxes: they are high-dimensional geometry. ModelCypher decodes that geometry.
 
 ## Why ModelCypher?
 

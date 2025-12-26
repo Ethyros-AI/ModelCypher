@@ -57,7 +57,9 @@ def predict_interference(
         "--domains",
         help="Comma-separated domains (spatial,social,temporal,moral). Default: all",
     ),
-    output_file: str | None = typer.Option(None, "--output", "-o", help="Save report to file"),
+    output_file: str | None = typer.Option(
+        None, "--output-file", "-o", help="Save report to file"
+    ),
 ) -> None:
     """Analyze merge requirements between source and target models."""
     context = _context(ctx)

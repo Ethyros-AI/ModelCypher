@@ -469,7 +469,7 @@ def spatial_probe_model(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to the model directory"),
     layer: int = typer.Option(-1, help="Layer to analyze (default is last)"),
-    output_file: str = typer.Option(None, "--output", "-o", help="File to save activations"),
+    output_file: str = typer.Option(None, "--output-file", "-o", help="File to save activations"),
 ) -> None:
     """Probe a model for 3D world model geometry."""
     context = _context(ctx)
@@ -677,7 +677,7 @@ def cross_grounding_transfer(
         None, "--concepts", "-c", help="JSON file with concepts to transfer {id: [vector]}"
     ),
     output_file: str = typer.Option(
-        None, "--output", "-o", help="Output file for Ghost Anchors (JSON)"
+        None, "--output-file", "-o", help="Output file for Ghost Anchors (JSON)"
     ),
     source_grounding: str = typer.Option(
         "unknown",

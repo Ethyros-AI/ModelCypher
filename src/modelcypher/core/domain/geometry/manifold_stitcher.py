@@ -1155,6 +1155,8 @@ class ManifoldStitcher:
             pts, k_neighbors=min(geodesic_k_neighbors, n - 1)
         )
         geodesic_dist_matrix = geodesic_result.distances
+        # Precompute numpy version for centroid representative updates
+        geo_np = b.to_numpy(geodesic_dist_matrix)
 
         def compute_distance_to_centroids(
             pts_arr: "Array", centroid_indices: list[int]
@@ -1214,6 +1216,8 @@ class ManifoldStitcher:
         centroids_np = b.to_numpy(pts[centroid_indices])
         centroids = b.array(centroids_np)
         assignments = b.zeros((n,), dtype="int32")
+        # Track representative data point for each centroid (for geodesic proxy)
+        centroid_reps = list(centroid_indices)
 
         for _ in range(max_iterations):
             # Assignment step: assign each point to nearest centroid using geodesic distances

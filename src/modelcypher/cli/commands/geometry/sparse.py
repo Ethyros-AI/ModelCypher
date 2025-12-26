@@ -139,7 +139,9 @@ def geometry_sparse_neurons(
     domain: str = typer.Option(None, "--domain", help="Use built-in domain probes"),
     layer_start: float = typer.Option(0.0, "--layer-start", help="Start layer fraction (0.0-1.0)"),
     layer_end: float = typer.Option(1.0, "--layer-end", help="End layer fraction (0.0-1.0)"),
-    output_file: str = typer.Option(None, "--output", help="Path to save neuron sparsity map"),
+    output_file: str = typer.Option(
+        None, "--output-file", "-o", help="Path to save neuron sparsity map"
+    ),
 ) -> None:
     """
     Analyze per-neuron sparsity for fine-grained knowledge grafting.

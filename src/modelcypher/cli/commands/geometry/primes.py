@@ -125,7 +125,7 @@ def primes_probe_model(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to the model directory"),
     layer: int = typer.Option(-1, help="Layer to analyze (default is last)"),
-    output_file: str = typer.Option(None, "--output", "-o", help="File to save activations"),
+    output_file: str = typer.Option(None, "--output-file", "-o", help="File to save activations"),
 ) -> None:
     """Probe a model for semantic prime representations.
 
@@ -134,7 +134,7 @@ def primes_probe_model(
 
     Examples:
         mc geometry primes probe-model ./model
-        mc geometry primes probe-model ./model --output primes.json
+        mc geometry primes probe-model ./model --output-file primes.json
     """
     context = _context(ctx)
 
