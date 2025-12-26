@@ -36,7 +36,8 @@ def test_layer_norm_spectral_norm():
     source_np = backend.to_numpy(source_ln)
     target_np = backend.to_numpy(target_ln)
 
-    metrics = compute_spectral_metrics(source_np, target_np)
+    config = SpectralConfig()
+    metrics = compute_spectral_metrics(source_np, target_np, config=config)
 
     assert metrics.condition_number == 1.0
     # sqrt(3) for source, sqrt(1 + 1 + 1.21) for target
@@ -58,7 +59,8 @@ def test_layer_norm_mismatch_confidence():
     source_np = backend.to_numpy(source_ln)
     target_np = backend.to_numpy(target_ln)
 
-    metrics = compute_spectral_metrics(source_np, target_np)
+    config = SpectralConfig()
+    metrics = compute_spectral_metrics(source_np, target_np, config=config)
 
     # ratio = 1/10 = 0.1
     # confidence = min(0.1, 10.0) = 0.1
@@ -90,11 +92,12 @@ def test_layer_norm_identical_confidence():
     """Identical LayerNorms should have 1.0 confidence."""
     backend = get_default_backend()
     backend.random_seed(42)
-    ln = backend.random_randn((128,))
+    ln = backend.random_normal((128,))
     backend.eval(ln)
 
     ln_np = backend.to_numpy(ln)
-    metrics = compute_spectral_metrics(ln_np, ln_np)
+    config = SpectralConfig()
+    metrics = compute_spectral_metrics(ln_np, ln_np, config=config)
 
     assert metrics.spectral_confidence == pytest.approx(1.0)
     assert metrics.delta_frobenius == pytest.approx(0.0)

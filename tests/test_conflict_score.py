@@ -252,8 +252,8 @@ class TestKLDivergenceInvariants:
         backend.random_seed(seed)
         calc = ConflictScoreCalculator(top_k=5)
 
-        base_data = backend.random_randn((100,))
-        adapted_data = backend.random_randn((100,))
+        base_data = backend.random_normal((100,))
+        adapted_data = backend.random_normal((100,))
         backend.eval(base_data, adapted_data)
 
         base = mx.array(backend.to_numpy(base_data).astype("float32"))
@@ -295,8 +295,8 @@ class TestKLDivergenceInvariants:
         calc = ConflictScoreCalculator(top_k=5)
 
         # Generate random uniform values in [0.1, 5.0]
-        p_data = backend.random_uniform((100,)) * 4.9 + 0.1
-        q_data = backend.random_uniform((100,)) * 4.9 + 0.1
+        p_data = backend.random_uniform(low=0.1, high=5.0, shape=(100,))
+        q_data = backend.random_uniform(low=0.1, high=5.0, shape=(100,))
         backend.eval(p_data, q_data)
 
         p = mx.array(backend.to_numpy(p_data).astype("float32"))
@@ -324,8 +324,8 @@ class TestApprovalRateInvariants:
         backend.random_seed(seed)
         calc = ConflictScoreCalculator(top_k=5)
 
-        base_data = backend.random_randn((100,))
-        adapted_data = backend.random_randn((100,))
+        base_data = backend.random_normal((100,))
+        adapted_data = backend.random_normal((100,))
         backend.eval(base_data, adapted_data)
 
         base = mx.array(backend.to_numpy(base_data).astype("float32"))
@@ -387,8 +387,8 @@ class TestConflictScoreInvariants:
         backend.random_seed(seed)
         calc = ConflictScoreCalculator(top_k=5)
 
-        base_data = backend.random_randn((100,))
-        adapted_data = backend.random_randn((100,))
+        base_data = backend.random_normal((100,))
+        adapted_data = backend.random_normal((100,))
         backend.eval(base_data, adapted_data)
 
         base = mx.array(backend.to_numpy(base_data).astype("float32"))

@@ -103,7 +103,7 @@ class TestCorrelationWeights:
         hidden_dim = 10
         num_probes = 5
         backend.random_seed(42)
-        source = backend.random_randn((num_probes, hidden_dim))
+        source = backend.random_normal((num_probes, hidden_dim))
         target = source  # Identical activations
 
         correlations = compute_dimension_correlations(source, target, config)
@@ -125,9 +125,9 @@ class TestCorrelationWeights:
         hidden_dim = 10
         num_probes = 5
         backend.random_seed(42)
-        source = backend.random_randn((num_probes, hidden_dim))
+        source = backend.random_normal((num_probes, hidden_dim))
         backend.random_seed(43)
-        target = backend.random_randn((num_probes, hidden_dim))
+        target = backend.random_normal((num_probes, hidden_dim))
 
         correlations = compute_dimension_correlations(source, target, config)
         weights = compute_correlation_weights(correlations, config)
@@ -150,9 +150,9 @@ class TestCorrelationWeights:
         hidden_dim = 10
         num_probes = 5
         backend.random_seed(42)
-        source = backend.random_randn((num_probes, hidden_dim))
+        source = backend.random_normal((num_probes, hidden_dim))
         backend.random_seed(43)
-        target = backend.random_randn((num_probes, hidden_dim))
+        target = backend.random_normal((num_probes, hidden_dim))
 
         alpha, correlations = compute_correlation_based_alpha(source, target, config, base_alpha=0.5)
 

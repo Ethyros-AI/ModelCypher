@@ -98,7 +98,7 @@ def compute_token_rank_metrics(
 
     # Rank = count of tokens with strictly higher probability
     # rank 0 = top token (highest prob), rank vocab_size-1 = lowest prob
-    token_rank = int(b.to_numpy(b.sum(b.cast(probabilities > token_prob, b.float32))))
+    token_rank = int(b.to_numpy(b.sum(b.astype(probabilities > token_prob, "float32"))))
 
     # Normalized approval: 1 = top token, 0 = bottom token
     # Formula: 1 - (rank / (vocab_size - 1)) for rank in [0, vocab_size-1]

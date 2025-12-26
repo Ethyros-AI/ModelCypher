@@ -373,7 +373,7 @@ class TestEntropyBoundsInvariants:
         calc = LogitEntropyCalculator()
 
         # Random logits
-        logits_data = backend.random_randn((100,))
+        logits_data = backend.random_normal((100,))
         backend.eval(logits_data)
         logits = mx.array(backend.to_numpy(logits_data).astype("float32"))
         entropy, _ = calc.compute(logits)
@@ -405,7 +405,7 @@ class TestEntropyBoundsInvariants:
         backend.random_seed(seed)
         calc = LogitEntropyCalculator()
 
-        logits_data = backend.random_randn((100,))
+        logits_data = backend.random_normal((100,))
         backend.eval(logits_data)
         logits = mx.array(backend.to_numpy(logits_data).astype("float32"))
         _, variance = calc.compute(logits)
@@ -422,7 +422,7 @@ class TestEntropyBoundsInvariants:
         backend.random_seed(seed)
         calc = LogitEntropyCalculator()
 
-        logits_data = backend.random_randn((100,))
+        logits_data = backend.random_normal((100,))
         backend.eval(logits_data)
         logits = mx.array(backend.to_numpy(logits_data).astype("float32"))
         _, _, normalized = calc.compute_with_normalization(logits)

@@ -1,34 +1,30 @@
-# Paper 5: The Semantic Highway
+# Paper 5: The Semantic Highway (Preliminary Observation)
 
 **Author**: Jason Kempf
 **Affiliation**: EthyrosAI
 **Date**: December 2025
 
-> **Status**: Empirical validation with cross-architecture replication.
+> **Status**: Preliminary empirical observation across three model families; hypothesis for further testing.
 
 ## Abstract
 
-We discover a universal property of transformer language models: **all architectures compress input representations to the same low-dimensional manifold (~1.4 intrinsic dimension) within the first 1-2 layers, regardless of model family, size, or training data**. Using TwoNN intrinsic dimension estimation across 373 semantic probes, we demonstrate this "semantic highway" in three model families—Qwen (0.5B), Llama (3B), and Mistral (7B). The compression magnitude varies (41-79%), but the plateau value is invariant. We further show that harder semantic domains (higher initial ID) compress more aggressively (ρ = 0.832), suggesting the cliff acts as a normalizing bottleneck. These findings explain why cross-architecture transfer learning succeeds and predict optimal layers for geometric intervention.
+Across three transformer language models (Qwen2.5-0.5B-Instruct, Llama-3.2-3B-Instruct, Mistral-7B-Instruct-v0.3), we observe a consistent pattern in intrinsic dimension (ID) profiles measured with TwoNN on a 373-probe semantic corpus: (1) a sharp early-layer drop in ID ("dimensionality cliff"), and (2) a mid-layer plateau in the range 1.3–1.5. The magnitude and layer index of the cliff vary by architecture (40–79% drop across the tested models). Using Qwen with broader layer coverage, we also observe that domains with higher initial ID compress more strongly (Spearman ρ = 0.832). We present these results as an observation, not a universal law, and propose a working hypothesis: early transformer layers rapidly project tokenized representations onto a low-dimensional conceptual manifold, after which representations evolve primarily within that manifold. We outline follow-up tests needed to determine how broadly this pattern holds across architectures, scales, languages, and training regimes.
 
 ## 1. Introduction
 
-The Platonic Representation Hypothesis (Huh et al., 2024) observes that neural networks trained on different data converge to similar internal representations. Our prior work (Paper 1) validated this with CKA > 0.9 across model families. But *why* do representations converge? What mechanism forces independently trained models toward the same structure?
+The Platonic Representation Hypothesis (Huh et al., 2024) suggests that independently trained neural networks converge to similar internal representations. Our prior work (Paper 1) validates strong cross-family similarity with CKA > 0.9 on several anchor sets. An open question remains: *what dynamics produce this convergence across architectures?*
 
-We propose the **Semantic Highway Hypothesis**:
-
-> All sufficiently large transformer models compress tokenized input to a low-dimensional semantic manifold within the first few layers, maintain this representation through a "semantic highway" of middle layers, then expand for task-specific output formatting.
-
-This paper provides empirical evidence for this hypothesis through cross-architecture intrinsic dimension measurement.
+This paper reports a simple empirical observation about *intrinsic dimension over depth* in three transformer LLMs. When we measure ID using TwoNN across a fixed semantic probe corpus, all three models show an early-layer ID collapse followed by a low-ID plateau. We use "semantic highway" as a shorthand label for this plateau regime, but treat it as a **working hypothesis** rather than a universal property.
 
 ### 1.1 Contributions
 
-1. **Discovery of the dimensionality cliff**: 41-79% intrinsic dimension collapse in layers 0-2 across all tested architectures.
+1. **Observed early-layer cliff (3 models)**: A sharp reduction in intrinsic dimension within the first 1–2 layers for all tested models.
 
-2. **Universal plateau value**: Post-cliff ID stabilizes at 1.3-1.5 regardless of initial dimensionality or architecture.
+2. **Observed low-ID plateau (3 models)**: A mid-layer ID plateau in the range 1.3–1.5 for all tested models.
 
-3. **Complexity normalization**: Harder semantic domains (higher initial ID) experience proportionally greater compression (ρ = 0.832).
+3. **Domain-dependent compression (Qwen)**: In Qwen 0.5B, higher initial domain ID correlates with stronger compression (ρ = 0.832).
 
-4. **Three-zone architecture**: Entry zone (variable ID) → Semantic highway (plateau) → Exit zone (expansion).
+4. **Hypothesis + test plan**: A concrete mechanism hypothesis (rapid projection to a conceptual manifold) and a set of follow-up experiments to test generality.
 
 ## 2. Methods
 
