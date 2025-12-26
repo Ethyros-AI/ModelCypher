@@ -1112,50 +1112,28 @@ class GeometricMergeOrchestrator:
             return weight, False
 
         for idx, key in enumerate(sorted(weight_keys), start=1):
-
-            # For cross-architecture models, find corresponding source key
             source_key = key
             target_layer_idx = extract_layer_index_fn(key)
 
-            if geometry.is_cross_architecture and target_layer_idx is not None and reverse_correspondence:
-                # Find which source layer maps to this target layer
-                source_layer_idx = reverse_correspondence.get(target_layer_idx)
+            try:
+                # For cross-architecture models, find corresponding source key
+                if geometry.is_cross_architecture and target_layer_idx is not None and reverse_correspondence:
+                    # Find which source layer maps to this target layer
+                    source_layer_idx = reverse_correspondence.get(target_layer_idx)
 
-                if source_layer_idx is not None and source_layer_idx != target_layer_idx:
-                    # Replace target layer index with source layer index in the key
-                    import re
-                    source_key = re.sub(
-                        rf"layers\.{target_layer_idx}\.",
-                        f"layers.{source_layer_idx}.",
-                        key
-                    )
-                    metrics["cross_arch_layer_mappings"] += 1
+                    if source_layer_idx is not None and source_layer_idx != target_layer_idx:
+                        # Replace target layer index with source layer index in the key
+                        import re
+                        source_key = re.sub(
+                            rf"layers\.{target_layer_idx}\.",
+                            f"layers.{source_layer_idx}.",
+                            key
+                        )
+                        metrics["cross_arch_layer_mappings"] += 1
 
-            _write_checkpoint(
-                {
-                    "status": "start",
-                    "index": idx,
-                    "total": total_weights,
-                    "key": key,
-                    "source_key": source_key,
-                    "layer_idx": target_layer_idx,
-                    "timestamp": time.time(),
-                }
-            )
-            logger.info(
-                "MERGE WEIGHT [%d/%d] %s (source=%s)",
-                idx,
-                total_weights,
-                key,
-                source_key,
-            )
-
-            if source_key not in source_weights:
-                # No source weight found - use target as-is
-                merged[key] = target_weights[key]
                 _write_checkpoint(
                     {
-                        "status": "skipped",
+                        "status": "start",
                         "index": idx,
                         "total": total_weights,
                         "key": key,
@@ -1164,287 +1142,338 @@ class GeometricMergeOrchestrator:
                         "timestamp": time.time(),
                     }
                 )
-                continue
-
-            source_w = dequantize_if_needed(
-                source_weights[source_key], source_key, source_weights, b
-            )
-            target_w = dequantize_if_needed(
-                target_weights[key], key, target_weights, b
-            )
-
-            layer_idx = target_layer_idx
-            layer_geom = geometry.layer_geometries.get(layer_idx) if layer_idx is not None else None
-
-            # Apply per-layer phase lock transform before shape normalization
-            if layer_geom and layer_geom.procrustes_rotation is not None:
-                source_w, applied = _apply_phase_lock_transform(
-                    source_w, layer_geom.procrustes_rotation
+                logger.info(
+                    "MERGE WEIGHT [%d/%d] %s (source=%s)",
+                    idx,
+                    total_weights,
+                    key,
+                    source_key,
                 )
-                if applied:
-                    metrics["rotations_applied"] += 1
 
-            # Handle shape mismatch using cross_dimensional_projection
-            if source_w.shape != target_w.shape:
-                from modelcypher.core.domain.geometry.cross_dimensional_projection import (
-                    project_cross_dimensional,
-                    ProjectionMethod,
-                )
-                result = project_cross_dimensional(
-                    source_w, target_w,
-                    method=ProjectionMethod.GRAM_TRANSPORT,
-                    backend=b,
-                )
-                source_w = result.projected
-                b.eval(source_w)
-                metrics["cross_arch_dim_projections"] += 1
-
-            # ============================================================
-            # A.2: Check transform_requirements and set dispatch flags
-            # ============================================================
-            use_geodesic_blend = False
-            apply_boundary_smoothing = False
-            if layer_geom and layer_geom.transform_requirements:
-                for transform in layer_geom.transform_requirements:
-                    if transform == "CURVATURE_CORRECTION":
-                        use_geodesic_blend = True
-                    elif transform == "ALPHA_SCALING":
-                        # Reduce alpha in high-interference regions
-                        pass  # Will be applied below with interference_score
-                    elif transform == "BOUNDARY_SMOOTHING":
-                        apply_boundary_smoothing = True
-                metrics["transform_requirements_checked"] += 1
-
-            # Get base alpha for this layer
-            alpha = 0.5
-            if layer_geom:
-                alpha = layer_geom.smoothed_alpha
-
-                # ============================================================
-                # A.4: Scale alpha by intrinsic dimension
-                # ============================================================
-                if layer_geom.intrinsic_dimension > 0:
-                    ambient_dim = layer_geom.manifold_dimension or (
-                        source_w.shape[-1] if source_w.ndim >= 1 else 1
+                if source_key not in source_weights:
+                    # No source weight found - use target as-is
+                    merged[key] = target_weights[key]
+                    _write_checkpoint(
+                        {
+                            "status": "skipped",
+                            "index": idx,
+                            "total": total_weights,
+                            "key": key,
+                            "source_key": source_key,
+                            "layer_idx": target_layer_idx,
+                            "timestamp": time.time(),
+                        }
                     )
-                    if ambient_dim > 0:
-                        compression_ratio = layer_geom.intrinsic_dimension / ambient_dim
-                        if compression_ratio < 0.1:
-                            # Heavily compressed - trust target more for stability
-                            alpha = alpha * 0.5
-                            metrics["intrinsic_dim_scaled"] += 1
-                        elif compression_ratio > 0.5:
-                            # High-dimensional data - can blend more confidently
-                            alpha = min(1.0, alpha * 1.2)
-                            metrics["intrinsic_dim_scaled"] += 1
+                    continue
 
-                # Apply interference-based alpha scaling (from A.2 transform requirements)
-                if "ALPHA_SCALING" in layer_geom.transform_requirements:
-                    alpha = alpha * (1.0 - layer_geom.interference_score)
-                    metrics["alpha_scaled_by_interference"] += 1
+                source_w = dequantize_if_needed(
+                    source_weights[source_key], source_key, source_weights, b
+                )
+                target_w = dequantize_if_needed(
+                    target_weights[key], key, target_weights, b
+                )
 
-            # Apply SVD-aware blending for 2D weights
-            if source_w.ndim == 2 and target_w.ndim == 2 and min(source_w.shape) >= 2:
-                source_f32 = b.astype(source_w, "float32")
-                target_f32 = b.astype(target_w, "float32")
-                merged_w = None  # Will be set by one of the blending paths
+                layer_idx = target_layer_idx
+                layer_geom = geometry.layer_geometries.get(layer_idx) if layer_idx is not None else None
 
-                # Embedding-scale matrices: use direct Fréchet mean to avoid SVD blowups.
-                m_rows, n_cols = source_f32.shape
-                if m_rows > 4 * n_cols and m_rows > 10000:
-                    eps = 1e-10
-                    source_abs = b.abs(source_f32)
-                    target_abs = b.abs(target_f32)
-                    merged_w = b.sqrt((source_abs + eps) * (target_abs + eps)) * b.sign(target_f32)
-                    b.eval(merged_w)
-                    metrics["embedding_frechet_blends"] += 1
+                # Apply per-layer phase lock transform before shape normalization
+                if layer_geom and layer_geom.procrustes_rotation is not None:
+                    source_w, applied = _apply_phase_lock_transform(
+                        source_w, layer_geom.procrustes_rotation
+                    )
+                    if applied:
+                        metrics["rotations_applied"] += 1
 
-                # ============================================================
-                # A.1: Apply shared subspace projections if available
-                # ============================================================
-                if merged_w is None and (layer_geom and layer_geom.source_projection is not None
-                        and layer_geom.target_projection is not None):
-                    src_proj = layer_geom.source_projection
-                    tgt_proj = layer_geom.target_projection
-                    shared_dim = layer_geom.shared_dimension
+                # Handle shape mismatch using cross_dimensional_projection
+                if source_w.shape != target_w.shape:
+                    from modelcypher.core.domain.geometry.cross_dimensional_projection import (
+                        project_cross_dimensional,
+                        ProjectionMethod,
+                    )
 
-                    # Check if projections are compatible with weight dimensions
-                    if (shared_dim > 0 and source_f32.shape[1] == src_proj.shape[0]
-                            and target_f32.shape[1] == tgt_proj.shape[0]):
-                        try:
-                            # Project weights into shared subspace
-                            source_in_shared = b.matmul(source_f32, src_proj)
-                            target_in_shared = b.matmul(target_f32, tgt_proj)
-
-                            # Blend in shared space
-                            blended_shared = alpha * target_in_shared + (1 - alpha) * source_in_shared
-
-                            # Project back to target space using pseudo-inverse (transpose for orthogonal)
-                            tgt_proj_pinv = b.transpose(tgt_proj)
-                            merged_w = b.matmul(blended_shared, tgt_proj_pinv)
-                            b.eval(merged_w)
-                            metrics["shared_subspace_blends"] += 1
-                        except Exception:
-                            merged_w = None  # Fall back to other blending methods
+                    if source_w.ndim == 1 and target_w.ndim == 1:
+                        # Vector weights need a 2D view for cross-dimensional projection.
+                        source_view = b.reshape(source_w, (1, source_w.shape[0]))
+                        target_view = b.reshape(target_w, (1, target_w.shape[0]))
+                        result = project_cross_dimensional(
+                            source_view, target_view,
+                            method=ProjectionMethod.GRAM_TRANSPORT,
+                            backend=b,
+                        )
+                        source_w = b.reshape(result.projected, target_w.shape)
+                        b.eval(source_w)
+                        metrics["cross_arch_dim_projections"] += 1
+                    else:
+                        result = project_cross_dimensional(
+                            source_w, target_w,
+                            method=ProjectionMethod.GRAM_TRANSPORT,
+                            backend=b,
+                        )
+                        source_w = result.projected
+                        b.eval(source_w)
+                        metrics["cross_arch_dim_projections"] += 1
 
                 # ============================================================
-                # A.3: Curvature-aware geodesic blending (SLERP)
+                # A.2: Check transform_requirements and set dispatch flags
                 # ============================================================
-                if merged_w is None and use_geodesic_blend and layer_geom and abs(layer_geom.curvature) > 0.05:
-                    try:
-                        # SLERP: Spherical linear interpolation for curved manifolds
-                        # For weight matrices, normalize and interpolate on the unit sphere
-                        source_norm = b.norm(source_f32)
-                        target_norm = b.norm(target_f32)
-                        b.eval(source_norm, target_norm)
+                use_geodesic_blend = False
+                apply_boundary_smoothing = False
+                if layer_geom and layer_geom.transform_requirements:
+                    for transform in layer_geom.transform_requirements:
+                        if transform == "CURVATURE_CORRECTION":
+                            use_geodesic_blend = True
+                        elif transform == "ALPHA_SCALING":
+                            # Reduce alpha in high-interference regions
+                            pass  # Will be applied below with interference_score
+                        elif transform == "BOUNDARY_SMOOTHING":
+                            apply_boundary_smoothing = True
+                    metrics["transform_requirements_checked"] += 1
 
-                        if float(source_norm) > 1e-6 and float(target_norm) > 1e-6:
-                            source_unit = source_f32 / source_norm
-                            target_unit = target_f32 / target_norm
+                # Get base alpha for this layer
+                alpha = 0.5
+                if layer_geom:
+                    alpha = layer_geom.smoothed_alpha
 
-                            # Compute angle between normalized matrices
-                            dot = b.sum(source_unit * target_unit)
-                            b.eval(dot)
-                            dot_val = float(dot)
-                            dot_val = max(-1.0, min(1.0, dot_val))  # Clamp for acos
+                    # ============================================================
+                    # A.4: Scale alpha by intrinsic dimension
+                    # ============================================================
+                    if layer_geom.intrinsic_dimension > 0:
+                        ambient_dim = layer_geom.manifold_dimension or (
+                            source_w.shape[-1] if source_w.ndim >= 1 else 1
+                        )
+                        if ambient_dim > 0:
+                            compression_ratio = layer_geom.intrinsic_dimension / ambient_dim
+                            if compression_ratio < 0.1:
+                                # Heavily compressed - trust target more for stability
+                                alpha = alpha * 0.5
+                                metrics["intrinsic_dim_scaled"] += 1
+                            elif compression_ratio > 0.5:
+                                # High-dimensional data - can blend more confidently
+                                alpha = min(1.0, alpha * 1.2)
+                                metrics["intrinsic_dim_scaled"] += 1
 
-                            import math as m
-                            theta = m.acos(dot_val)
+                    # Apply interference-based alpha scaling (from A.2 transform requirements)
+                    if "ALPHA_SCALING" in layer_geom.transform_requirements:
+                        alpha = alpha * (1.0 - layer_geom.interference_score)
+                        metrics["alpha_scaled_by_interference"] += 1
 
-                            if abs(theta) > 1e-6:
-                                # SLERP formula: (sin((1-t)*theta) * a + sin(t*theta) * b) / sin(theta)
-                                sin_theta = m.sin(theta)
-                                w_source = m.sin((1 - alpha) * theta) / sin_theta
-                                w_target = m.sin(alpha * theta) / sin_theta
+                # Apply SVD-aware blending for 2D weights
+                if source_w.ndim == 2 and target_w.ndim == 2 and min(source_w.shape) >= 2:
+                    source_f32 = b.astype(source_w, "float32")
+                    target_f32 = b.astype(target_w, "float32")
+                    merged_w = None  # Will be set by one of the blending paths
 
-                                # Interpolate direction
-                                merged_unit = w_source * source_unit + w_target * target_unit
+                    # Embedding-scale matrices: use direct Fréchet mean to avoid SVD blowups.
+                    m_rows, n_cols = source_f32.shape
+                    if m_rows > 4 * n_cols and m_rows > 10000:
+                        eps = 1e-10
+                        source_abs = b.abs(source_f32)
+                        target_abs = b.abs(target_f32)
+                        merged_w = b.sqrt((source_abs + eps) * (target_abs + eps)) * b.sign(target_f32)
+                        b.eval(merged_w)
+                        metrics["embedding_frechet_blends"] += 1
 
-                                # Interpolate magnitude (geometric mean for Fréchet)
-                                merged_norm = b.sqrt(source_norm * target_norm)
-                                merged_w = merged_unit * merged_norm
+                    # ============================================================
+                    # A.1: Apply shared subspace projections if available
+                    # ============================================================
+                    if merged_w is None and (layer_geom and layer_geom.source_projection is not None
+                            and layer_geom.target_projection is not None):
+                        src_proj = layer_geom.source_projection
+                        tgt_proj = layer_geom.target_projection
+                        shared_dim = layer_geom.shared_dimension
+
+                        # Check if projections are compatible with weight dimensions
+                        if (shared_dim > 0 and source_f32.shape[1] == src_proj.shape[0]
+                                and target_f32.shape[1] == tgt_proj.shape[0]):
+                            try:
+                                # Project weights into shared subspace
+                                source_in_shared = b.matmul(source_f32, src_proj)
+                                target_in_shared = b.matmul(target_f32, tgt_proj)
+
+                                # Blend in shared space
+                                blended_shared = alpha * target_in_shared + (1 - alpha) * source_in_shared
+
+                                # Project back to target space using pseudo-inverse (transpose for orthogonal)
+                                tgt_proj_pinv = b.transpose(tgt_proj)
+                                merged_w = b.matmul(blended_shared, tgt_proj_pinv)
                                 b.eval(merged_w)
-                                metrics["curvature_aware_blends"] += 1
-                    except Exception:
-                        merged_w = None  # Fall back to linear blending
+                                metrics["shared_subspace_blends"] += 1
+                            except Exception:
+                                merged_w = None  # Fall back to other blending methods
 
-                # Use Fisher weights if available for dimension-specific blending
-                if merged_w is None and layer_geom and layer_geom.fisher_weights is not None:
-                    hidden_dim = layer_geom.fisher_weights.shape[0]
-                    # Apply Fisher-weighted blending per dimension
-                    # fisher_weights[d] = how much to trust target for dimension d
-                    if source_f32.shape[1] == hidden_dim:
-                        # Weight is [hidden_dim], broadcast to columns
-                        fw = b.reshape(layer_geom.fisher_weights, (1, -1))
-                        # Blend: merged = fw * target + (1-fw) * source
-                        merged_w = fw * target_f32 + (1.0 - fw) * source_f32
-                        metrics["fisher_weights_used"] += 1
-                    elif source_f32.shape[0] == hidden_dim:
-                        # Weight applies to rows
-                        fw = b.reshape(layer_geom.fisher_weights, (-1, 1))
-                        merged_w = fw * target_f32 + (1.0 - fw) * source_f32
-                        metrics["fisher_weights_used"] += 1
+                    # ============================================================
+                    # A.3: Curvature-aware geodesic blending (SLERP)
+                    # ============================================================
+                    if merged_w is None and use_geodesic_blend and layer_geom and abs(layer_geom.curvature) > 0.05:
+                        try:
+                            # SLERP: Spherical linear interpolation for curved manifolds
+                            # For weight matrices, normalize and interpolate on the unit sphere
+                            source_norm = b.norm(source_f32)
+                            target_norm = b.norm(target_f32)
+                            b.eval(source_norm, target_norm)
 
-                # Use dimension correlations if available and no merged_w yet
-                if merged_w is None and layer_geom and layer_geom.dimension_alphas is not None:
-                    hidden_dim = layer_geom.dimension_alphas.shape[0]
-                    if source_f32.shape[1] == hidden_dim:
-                        # Per-dimension alpha: high correlation = trust either
-                        # Low correlation = trust target (stability)
-                        da = b.reshape(layer_geom.dimension_alphas, (1, -1))
-                        # alpha_d controls blend: 1 = trust target, 0 = trust source
-                        # We want: low corr -> trust target, high corr -> blend evenly
-                        target_weight = 1.0 - 0.5 * da  # Range [0.5, 1.0]
-                        merged_w = target_weight * target_f32 + (1.0 - target_weight) * source_f32
-                        metrics["dimension_weights_used"] += 1
-                    elif source_f32.shape[0] == hidden_dim:
-                        da = b.reshape(layer_geom.dimension_alphas, (-1, 1))
-                        target_weight = 1.0 - 0.5 * da
-                        merged_w = target_weight * target_f32 + (1.0 - target_weight) * source_f32
-                        metrics["dimension_weights_used"] += 1
+                            if float(source_norm) > 1e-6 and float(target_norm) > 1e-6:
+                                source_unit = source_f32 / source_norm
+                                target_unit = target_f32 / target_norm
 
-                # Fallback to SVD-aware blending if nothing else worked
-                if merged_w is None:
-                    merged_w = blend_with_svd_awareness(
-                        source_f32, target_f32, alpha, SVDBlendConfig()
-                    )
+                                # Compute angle between normalized matrices
+                                dot = b.sum(source_unit * target_unit)
+                                b.eval(dot)
+                                dot_val = float(dot)
+                                dot_val = max(-1.0, min(1.0, dot_val))  # Clamp for acos
 
-                # ============================================================
-                # A.6: Apply verb-noun mask if available
-                # ============================================================
-                if layer_geom and layer_geom.verb_noun_mask is not None:
-                    vn_mask = layer_geom.verb_noun_mask
-                    hidden_dim = vn_mask.shape[0]
-                    # verb_noun_mask gives per-dimension alpha:
-                    # High value = verb-like = trust source (skill donor)
-                    # Low value = noun-like = trust target (knowledge base)
-                    if source_f32.shape[1] == hidden_dim:
-                        vn_weights = b.reshape(vn_mask, (1, -1))
-                        # Re-blend with verb-noun weights
-                        # merged = vn * source + (1-vn) * target
-                        merged_w = vn_weights * source_f32 + (1.0 - vn_weights) * merged_w
-                        b.eval(merged_w)
-                        metrics["verb_noun_applied"] += 1
-                    elif source_f32.shape[0] == hidden_dim:
-                        vn_weights = b.reshape(vn_mask, (-1, 1))
-                        merged_w = vn_weights * source_f32 + (1.0 - vn_weights) * merged_w
-                        b.eval(merged_w)
-                        metrics["verb_noun_applied"] += 1
+                                import math as m
+                                theta = m.acos(dot_val)
 
-                b.eval(merged_w)
+                                if abs(theta) > 1e-6:
+                                    # SLERP formula: (sin((1-t)*theta) * a + sin(t*theta) * b) / sin(theta)
+                                    sin_theta = m.sin(theta)
+                                    w_source = m.sin((1 - alpha) * theta) / sin_theta
+                                    w_target = m.sin(alpha * theta) / sin_theta
 
-                # Apply DARE sparsification if interference score is high
-                if layer_geom and layer_geom.interference_score > 0.5:
-                    try:
-                        from modelcypher.core.domain.geometry.dare_sparsity import (
-                            Configuration as DAREConfig,
-                            analyze_sparsity,
+                                    # Interpolate direction
+                                    merged_unit = w_source * source_unit + w_target * target_unit
+
+                                    # Interpolate magnitude (geometric mean for Fréchet)
+                                    merged_norm = b.sqrt(source_norm * target_norm)
+                                    merged_w = merged_unit * merged_norm
+                                    b.eval(merged_w)
+                                    metrics["curvature_aware_blends"] += 1
+                        except Exception:
+                            merged_w = None  # Fall back to linear blending
+
+                    # Use Fisher weights if available for dimension-specific blending
+                    if merged_w is None and layer_geom and layer_geom.fisher_weights is not None:
+                        hidden_dim = layer_geom.fisher_weights.shape[0]
+                        # Apply Fisher-weighted blending per dimension
+                        # fisher_weights[d] = how much to trust target for dimension d
+                        if source_f32.shape[1] == hidden_dim:
+                            # Weight is [hidden_dim], broadcast to columns
+                            fw = b.reshape(layer_geom.fisher_weights, (1, -1))
+                            # Blend: merged = fw * target + (1-fw) * source
+                            merged_w = fw * target_f32 + (1.0 - fw) * source_f32
+                            metrics["fisher_weights_used"] += 1
+                        elif source_f32.shape[0] == hidden_dim:
+                            # Weight applies to rows
+                            fw = b.reshape(layer_geom.fisher_weights, (-1, 1))
+                            merged_w = fw * target_f32 + (1.0 - fw) * source_f32
+                            metrics["fisher_weights_used"] += 1
+
+                    # Use dimension correlations if available and no merged_w yet
+                    if merged_w is None and layer_geom and layer_geom.dimension_alphas is not None:
+                        hidden_dim = layer_geom.dimension_alphas.shape[0]
+                        if source_f32.shape[1] == hidden_dim:
+                            # Per-dimension alpha: high correlation = trust either
+                            # Low correlation = trust target (stability)
+                            da = b.reshape(layer_geom.dimension_alphas, (1, -1))
+                            # alpha_d controls blend: 1 = trust target, 0 = trust source
+                            # We want: low corr -> trust target, high corr -> blend evenly
+                            target_weight = 1.0 - 0.5 * da  # Range [0.5, 1.0]
+                            merged_w = target_weight * target_f32 + (1.0 - target_weight) * source_f32
+                            metrics["dimension_weights_used"] += 1
+                        elif source_f32.shape[0] == hidden_dim:
+                            da = b.reshape(layer_geom.dimension_alphas, (-1, 1))
+                            target_weight = 1.0 - 0.5 * da
+                            merged_w = target_weight * target_f32 + (1.0 - target_weight) * source_f32
+                            metrics["dimension_weights_used"] += 1
+
+                    # Fallback to SVD-aware blending if nothing else worked
+                    if merged_w is None:
+                        merged_w = blend_with_svd_awareness(
+                            source_f32, target_f32, alpha, SVDBlendConfig()
                         )
-                        # Compute delta and sparsify
-                        delta = merged_w - target_f32
-                        b.eval(delta)
-                        delta_np = b.to_numpy(delta)
 
-                        # Analyze sparsity
-                        config = DAREConfig(
-                            sparsity_threshold=0.01,
-                            droppable_percentile=0.9,
-                        )
-                        analysis = analyze_sparsity({"delta": delta}, config)
+                    # ============================================================
+                    # A.6: Apply verb-noun mask if available
+                    # ============================================================
+                    if layer_geom and layer_geom.verb_noun_mask is not None:
+                        vn_mask = layer_geom.verb_noun_mask
+                        hidden_dim = vn_mask.shape[0]
+                        # verb_noun_mask gives per-dimension alpha:
+                        # High value = verb-like = trust source (skill donor)
+                        # Low value = noun-like = trust target (knowledge base)
+                        if source_f32.shape[1] == hidden_dim:
+                            vn_weights = b.reshape(vn_mask, (1, -1))
+                            # Re-blend with verb-noun weights
+                            # merged = vn * source + (1-vn) * target
+                            merged_w = vn_weights * source_f32 + (1.0 - vn_weights) * merged_w
+                            b.eval(merged_w)
+                            metrics["verb_noun_applied"] += 1
+                        elif source_f32.shape[0] == hidden_dim:
+                            vn_weights = b.reshape(vn_mask, (-1, 1))
+                            merged_w = vn_weights * source_f32 + (1.0 - vn_weights) * merged_w
+                            b.eval(merged_w)
+                            metrics["verb_noun_applied"] += 1
 
-                        # Drop low-magnitude components
-                        threshold = 0.01 * float(b.max(b.abs(delta)).item())
-                        mask = b.abs(delta) > threshold
-                        b.eval(mask)
-                        sparse_delta = delta * b.astype(mask, "float32")
-                        b.eval(sparse_delta)
+                    b.eval(merged_w)
 
-                        merged_w = target_f32 + sparse_delta
-                        b.eval(merged_w)
-                        metrics["dare_sparsified"] += 1
-                    except Exception:
-                        pass
-            else:
-                # 1D tensors - geometric mean of magnitudes (Fréchet mean on R+)
-                merged_w = b.sqrt((b.abs(source_w) + 1e-10) * (b.abs(target_w) + 1e-10)) * b.sign(target_w)
-                b.eval(merged_w)
+                    # Apply DARE sparsification if interference score is high
+                    if layer_geom and layer_geom.interference_score > 0.5:
+                        try:
+                            from modelcypher.core.domain.geometry.dare_sparsity import (
+                                Configuration as DAREConfig,
+                                analyze_sparsity,
+                            )
+                            # Compute delta and sparsify
+                            delta = merged_w - target_f32
+                            b.eval(delta)
+                            delta_np = b.to_numpy(delta)
 
-            # Preserve target dtype
-            target_dtype = target_w.dtype
-            dtype_str = target_dtype.name if hasattr(target_dtype, "name") else str(target_dtype).replace("mlx.core.", "")
-            merged[key] = b.astype(merged_w, dtype_str)
-            _write_checkpoint(
-                {
-                    "status": "done",
-                    "index": idx,
-                    "total": total_weights,
-                    "key": key,
-                    "source_key": source_key,
-                    "layer_idx": target_layer_idx,
-                    "timestamp": time.time(),
-                }
-            )
-            metrics["weights_merged"] += 1
+                            # Analyze sparsity
+                            config = DAREConfig(
+                                sparsity_threshold=0.01,
+                                droppable_percentile=0.9,
+                            )
+                            analysis = analyze_sparsity({"delta": delta}, config)
+
+                            # Drop low-magnitude components
+                            threshold = 0.01 * float(b.max(b.abs(delta)).item())
+                            mask = b.abs(delta) > threshold
+                            b.eval(mask)
+                            sparse_delta = delta * b.astype(mask, "float32")
+                            b.eval(sparse_delta)
+
+                            merged_w = target_f32 + sparse_delta
+                            b.eval(merged_w)
+                            metrics["dare_sparsified"] += 1
+                        except Exception:
+                            pass
+                else:
+                    # 1D tensors - geometric mean of magnitudes (Fréchet mean on R+)
+                    merged_w = b.sqrt((b.abs(source_w) + 1e-10) * (b.abs(target_w) + 1e-10)) * b.sign(target_w)
+                    b.eval(merged_w)
+
+                # Preserve target dtype
+                target_dtype = target_w.dtype
+                dtype_str = target_dtype.name if hasattr(target_dtype, "name") else str(target_dtype).replace("mlx.core.", "")
+                merged[key] = b.astype(merged_w, dtype_str)
+                _write_checkpoint(
+                    {
+                        "status": "done",
+                        "index": idx,
+                        "total": total_weights,
+                        "key": key,
+                        "source_key": source_key,
+                        "layer_idx": target_layer_idx,
+                        "timestamp": time.time(),
+                    }
+                )
+                metrics["weights_merged"] += 1
+            except Exception as exc:
+                _write_checkpoint(
+                    {
+                        "status": "error",
+                        "index": idx,
+                        "total": total_weights,
+                        "key": key,
+                        "source_key": source_key,
+                        "layer_idx": target_layer_idx,
+                        "error": str(exc),
+                        "timestamp": time.time(),
+                    }
+                )
+                logger.exception("MERGE WEIGHT FAILED: %s", key)
+                raise
 
         # Copy target-only keys
         for key in target_weights:

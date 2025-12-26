@@ -2,9 +2,9 @@
 
 Complete index of research citations from `KnowledgeasHighDimensionalGeometryInLLMs.md`.
 
-## Downloaded PDFs (46)
+## Downloaded PDFs (51)
 
-All arXiv papers are downloaded to `arxiv/` with `Author_Year_ShortTitle.pdf` naming.
+All arXiv and OpenReview papers are downloaded to `arxiv/` with `Author_Year_ShortTitle.pdf` naming.
 
 | File | Citation | arXiv |
 |------|----------|-------|
@@ -67,6 +67,18 @@ Recent papers referenced in [merge_algorithm_synthesis.md](../research/merge_alg
 | [Liu_2024_MKA_Pruning_Merging.pdf](arxiv/Liu_2024_MKA_Pruning_Merging.pdf) | Pruning via Merging: Manifold Alignment Based Layer Merging | 2406.16323 |
 | [DiSipio_2024_Information_Geometry_LLM.pdf](arxiv/DiSipio_2024_Information_Geometry_LLM.pdf) | Rethinking LLM Training through Information Geometry | 2406.12411 |
 
+### Paper 0: Dimensional Hierarchy (NEW)
+
+Papers cited in the Geometric Knowledge Thesis and Dimensional Hierarchy framework:
+
+| File | Citation | arXiv/DOI |
+|------|----------|-----------|
+| [Huh_2024_Platonic_Representation.pdf](arxiv/Huh_2024_Platonic_Representation.pdf) | Huh et al. - The Platonic Representation Hypothesis (ICML 2024) | 2405.07987 |
+| [Deletang_2024_Language_Compression.pdf](arxiv/Deletang_2024_Language_Compression.pdf) | Delétang et al. - Language Modeling Is Compression (ICLR 2024) | 2310.10631 |
+| [Li_2025_TokAlign.pdf](arxiv/Li_2025_TokAlign.pdf) | Li et al. - TokAlign: Efficient Vocabulary Adaptation (ACL 2025) | 2506.03523 |
+| [Lobashev_2025_PRH_Information_Geometry.pdf](arxiv/Lobashev_2025_PRH_Information_Geometry.pdf) | Lobashev - Information-Geometric View of PRH (NeurIPS Workshop 2025) | openreview.net |
+| [tHooft_1993_Dimensional_Reduction.pdf](arxiv/tHooft_1993_Dimensional_Reduction.pdf) | 't Hooft - Dimensional Reduction in Quantum Gravity | gr-qc/9310026 |
+
 ---
 
 ## Books & Monographs (Not Downloadable - Copyright)
@@ -111,16 +123,20 @@ Recent papers referenced in [merge_algorithm_synthesis.md](../research/merge_alg
 - Garipov et al. (2018). Loss Surfaces, Mode Connectivity - https://papers.nips.cc/paper/2018
 
 ### ICML
-- Huh et al. (2024). Platonic Representation Hypothesis - ICML 2024, PMLR 235
+- [Huh_2024_Platonic_Representation.pdf](arxiv/Huh_2024_Platonic_Representation.pdf) - Huh et al. (2024). Platonic Representation Hypothesis - ICML 2024, PMLR 235
 - Park et al. (2024). Linear Representation Hypothesis - ICML 2024, PMLR 235
 - Liu et al. (2024). DoRA - ICML 2024, PMLR 235 (Oral)
 - Yu et al. (2024). DARE - ICML 2024, PMLR 235
 - Wortsman et al. (2022). Model Soups - ICML 2022, PMLR 162
 
+### ICLR
+- [Deletang_2024_Language_Compression.pdf](arxiv/Deletang_2024_Language_Compression.pdf) - Delétang et al. (2024). Language Modeling Is Compression - ICLR 2024
+
 ### ACL/NAACL
 - Hewitt & Manning (2019). Structural Probe - NAACL-HLT 2019
 - Li & Liang (2021). Prefix-Tuning - ACL-IJCNLP 2021
 - Aghajanyan et al. (2021). Intrinsic Dimensionality - ACL-IJCNLP 2021
+- [Li_2025_TokAlign.pdf](arxiv/Li_2025_TokAlign.pdf) - Li et al. (2025). TokAlign: Efficient Vocabulary Adaptation via Token Alignment - ACL 2025
 
 ---
 
@@ -132,13 +148,34 @@ Recent papers referenced in [merge_algorithm_synthesis.md](../research/merge_alg
 
 ---
 
+## Physics & Mathematics Journals
+
+| Citation | Publication |
+|----------|-------------|
+| Bekenstein, J. D. (2003). Information in the Holographic Universe | Scientific American |
+| Fefferman, C., Mitter, S., & Narayanan, H. (2016). Testing the Manifold Hypothesis | J. Amer. Math. Soc. 29(4): 983-1049 |
+| [tHooft_1993_Dimensional_Reduction.pdf](arxiv/tHooft_1993_Dimensional_Reduction.pdf) - 't Hooft, G. (1993). Dimensional Reduction in Quantum Gravity | arXiv:gr-qc/9310026 |
+
+---
+
+## Information Theory
+
+| Citation | Publication |
+|----------|-------------|
+| Tishby, N., & Zaslavsky, N. (2015). Deep Learning and the Information Bottleneck Principle | IEEE ITW 2015 |
+| Shannon, C. E. (1948). A Mathematical Theory of Communication | Bell System Technical Journal |
+
+---
+
 ## Summary
 
 | Category | Count | Status |
 |----------|-------|--------|
-| arXiv PDFs | 46 | ✅ Downloaded |
+| arXiv/OpenReview PDFs | 51 | ✅ Downloaded |
 | Books | 15 | 📚 Copyright (links provided) |
 | Distill/TC | 6 | 🔗 URLs provided |
 | Conference | ~20 | 🔗 Venue info provided |
-| Journals | ~10 | 🔗 DOI info provided |
-| **Total** | ~97 | - |
+| Physics/Math Journals | 3 | 🔗 DOI/venue provided |
+| Information Theory | 2 | 🔗 Venue provided |
+| Nature & Science | 1 | 🔗 DOI provided |
+| **Total** | ~100+ | - |
