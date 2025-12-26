@@ -279,6 +279,24 @@ class HelpService:
     def _get_schemas(self) -> dict[str, dict[str, Any]]:
         """Get JSON schemas for command outputs."""
         return {
+            "train_start": {
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "type": "object",
+                "properties": {
+                    "jobId": {"type": "string"},
+                    "batchSize": {"type": "integer"},
+                },
+                "required": ["jobId", "batchSize"],
+            },
+            "trainstart": {
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "type": "object",
+                "properties": {
+                    "jobId": {"type": "string"},
+                    "batchSize": {"type": "integer"},
+                },
+                "required": ["jobId", "batchSize"],
+            },
             "geometry_validate": {
                 "$schema": "http://json-schema.org/draft-07/schema#",
                 "type": "object",
@@ -354,7 +372,7 @@ _mc_completions() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="model system geometry adapter entropy thermo safety agent stability dashboard storage ensemble infer agent-eval research help inventory explain"
+    commands="model system geometry adapter entropy thermo safety agent stability dashboard storage ensemble infer agent-eval research help inventory explain train job checkpoint eval compare validate estimate calibration"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- ${cur}) )
@@ -367,6 +385,30 @@ _mc_completions() {
             ;;
         geometry)
             COMPREPLY=( $(compgen -W "validate path training safety adapter primes stitch" -- ${cur}) )
+            ;;
+        train)
+            COMPREPLY=( $(compgen -W "start preflight status pause resume cancel export logs" -- ${cur}) )
+            ;;
+        job)
+            COMPREPLY=( $(compgen -W "list show attach delete" -- ${cur}) )
+            ;;
+        checkpoint)
+            COMPREPLY=( $(compgen -W "list export delete" -- ${cur}) )
+            ;;
+        eval)
+            COMPREPLY=( $(compgen -W "list show run" -- ${cur}) )
+            ;;
+        compare)
+            COMPREPLY=( $(compgen -W "list show run checkpoints baseline score" -- ${cur}) )
+            ;;
+        validate)
+            COMPREPLY=( $(compgen -W "train" -- ${cur}) )
+            ;;
+        estimate)
+            COMPREPLY=( $(compgen -W "train" -- ${cur}) )
+            ;;
+        calibration)
+            COMPREPLY=( $(compgen -W "run status apply" -- ${cur}) )
             ;;
         *)
             ;;
@@ -401,6 +443,14 @@ _mc() {
         'help:Help commands'
         'inventory:System inventory'
         'explain:Command explanations'
+        'train:Training jobs'
+        'job:Training job management'
+        'checkpoint:Checkpoint management'
+        'eval:Evaluation runs'
+        'compare:Evaluation comparisons'
+        'validate:Validation utilities'
+        'estimate:Estimation utilities'
+        'calibration:Calibration runs'
     )
 
     _describe 'command' commands
@@ -431,4 +481,12 @@ complete -c mc -n "__fish_use_subcommand" -a research -d "Research tools"
 complete -c mc -n "__fish_use_subcommand" -a help -d "Help commands"
 complete -c mc -n "__fish_use_subcommand" -a inventory -d "System inventory"
 complete -c mc -n "__fish_use_subcommand" -a explain -d "Command explanations"
+complete -c mc -n "__fish_use_subcommand" -a train -d "Training jobs"
+complete -c mc -n "__fish_use_subcommand" -a job -d "Training job management"
+complete -c mc -n "__fish_use_subcommand" -a checkpoint -d "Checkpoint management"
+complete -c mc -n "__fish_use_subcommand" -a eval -d "Evaluation runs"
+complete -c mc -n "__fish_use_subcommand" -a compare -d "Evaluation comparisons"
+complete -c mc -n "__fish_use_subcommand" -a validate -d "Validation utilities"
+complete -c mc -n "__fish_use_subcommand" -a estimate -d "Estimation utilities"
+complete -c mc -n "__fish_use_subcommand" -a calibration -d "Calibration runs"
 """
