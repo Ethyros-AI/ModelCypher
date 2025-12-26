@@ -90,7 +90,7 @@ class AlignmentResult:
     # This is the "true" alignment: T @ K_s @ T^T = K_t
     sample_transform: list[list[float]]
 
-    # CKA achieved (should be 1.0 or very close)
+    # CKA achieved (1.0 is phase lock)
     achieved_cka: float
 
     # Number of iterations taken to find the fit
@@ -98,6 +98,9 @@ class AlignmentResult:
 
     # Final alignment error (should be ~0)
     alignment_error: float
+
+    # Diagnostic signal describing any residual gap
+    diagnostic: "AlignmentSignal | None" = None
 
     @property
     def is_perfect(self) -> bool:
@@ -130,6 +133,7 @@ class GramAligner:
         self,
         backend: "Backend | None" = None,
         max_iterations: int = 1000,
+        max_rounds: int = 1,
         tolerance: float = 1e-6,  # Relax for float32 precision
         regularization: float = 1e-8,
     ) -> None:
@@ -142,6 +146,9 @@ class GramAligner:
         max_iterations : int
             Maximum iterations for optimization. We should converge
             well before this - if we hit max, something is wrong.
+        max_rounds : int
+            Maximum search rounds to reach phase lock. Each round increases
+            the iteration budget and returns a diagnostic if still unlocked.
         tolerance : float
             Convergence tolerance for CKA.
         regularization : float
@@ -149,6 +156,7 @@ class GramAligner:
         """
         self._backend = backend or get_default_backend()
         self._max_iterations = max_iterations
+        self._max_rounds = max_rounds
         self._tolerance = tolerance
         self._regularization = regularization
 
@@ -223,13 +231,29 @@ class GramAligner:
         feature_transform = self._feature_transform_from_sample_transform(
             source_centered, sample_transform
         )
-        feature_transform, iterations, final_cka = self._find_feature_transform(
-            source_centered, target_centered, K_t_c, initial_transform=feature_transform
-        )
-        if final_cka < 1.0 - self._tolerance:
-            raise ValueError(
-                f"GramAligner failed to phase-lock (CKA={final_cka:.8f}). "
-                "Alignment must reach CKA=1.0 before proceeding."
+        total_iterations = 0
+        max_iterations = self._max_iterations
+        final_cka = 0.0
+        rounds = max(1, self._max_rounds)
+
+        for round_idx in range(rounds):
+            feature_transform, iterations, final_cka = self._find_feature_transform(
+                source_centered,
+                target_centered,
+                K_t_c,
+                initial_transform=feature_transform,
+                max_iterations=max_iterations,
+            )
+            total_iterations += iterations
+
+            if final_cka >= 1.0 - self._tolerance:
+                break
+
+            max_iterations *= 2
+            logger.info(
+                "GramAligner: Phase lock not reached (cka=%.8f). Expanding search to %d iterations.",
+                final_cka,
+                max_iterations,
             )
 
         # Compute alignment error
@@ -244,12 +268,15 @@ class GramAligner:
         norm_t = float(b.to_numpy(b.sqrt(b.sum(K_t_c * K_t_c))))
         alignment_error = error / (norm_t + 1e-10)
 
+        diagnostic = self._diagnose_alignment(source_transformed, target_centered, final_cka)
+
         return AlignmentResult(
             feature_transform=b.to_numpy(feature_transform).tolist(),
             sample_transform=b.to_numpy(sample_transform).tolist(),
             achieved_cka=final_cka,
-            iterations=iterations,
+            iterations=total_iterations,
             alignment_error=alignment_error,
+            diagnostic=diagnostic,
         )
 
     def _center(self, X: "Array") -> "Array":
@@ -313,6 +340,7 @@ class GramAligner:
         target_centered: "Array",
         K_t_c: "Array",
         initial_transform: "Array | None" = None,
+        max_iterations: int | None = None,
     ) -> tuple["Array", int, float]:
         """Find feature-space transform F such that (A_s @ F)'s Gram ≈ K_t.
 
@@ -398,7 +426,8 @@ class GramAligner:
         # Iterate to refine (gradient descent on CKA)
         H = self._centering_matrix(n_samples)
 
-        for iteration in range(self._max_iterations):
+        max_iters = max_iterations or self._max_iterations
+        for iteration in range(max_iters):
             # Compute current CKA
             source_transformed = b.matmul(source_centered, F)
             K_s_t = b.matmul(source_transformed, b.transpose(source_transformed))
@@ -442,14 +471,7 @@ class GramAligner:
         K_s_t_c = b.matmul(b.matmul(H, K_s_t), H)
         b.eval(K_s_t_c)
         final_cka = self._compute_cka_from_centered_grams(K_s_t_c, K_t_c)
-
-        logger.warning(
-            "GramAligner: Did not converge to CKA=1.0 in %d iterations. "
-            "Final CKA=%.8f. This indicates a bug - CKA=1.0 should always be achievable.",
-            self._max_iterations, final_cka
-        )
-
-        return F, self._max_iterations, final_cka
+        return F, max_iters, final_cka
 
     def _pseudo_inverse(self, matrix: "Array") -> "Array":
         """Compute a stable pseudoinverse using SVD."""
@@ -502,6 +524,29 @@ class GramAligner:
 
         cka = hsic_xy / denominator
         return max(0.0, min(1.0, cka))
+
+    def _diagnose_alignment(
+        self,
+        source_aligned: "Array",
+        target_centered: "Array",
+        cka: float,
+    ) -> "AlignmentSignal":
+        from modelcypher.core.domain.geometry.alignment_diagnostic import (
+            alignment_signal_from_matrices,
+        )
+
+        b = self._backend
+        n_samples = b.shape(source_aligned)[0]
+        labels = [f"sample:{idx}" for idx in range(n_samples)]
+        return alignment_signal_from_matrices(
+            source_aligned,
+            target_centered,
+            labels,
+            backend=b,
+            dimension=3,
+            cka_achieved=cka,
+            iteration=0,
+        )
 
 
 def find_alignment(

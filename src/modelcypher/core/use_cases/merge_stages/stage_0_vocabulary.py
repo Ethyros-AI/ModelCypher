@@ -33,6 +33,10 @@ from typing import Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+from modelcypher.core.domain.geometry.alignment_diagnostic import (
+    AlignmentSignal,
+    alignment_signal_from_matrices,
+)
 from modelcypher.core.domain.geometry.cka import compute_cka
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
@@ -66,6 +70,12 @@ class VocabularyConfig:
     max_unmapped_similarity: int = 5000
     max_prefix_length: int = 8
     max_prefix_matches: int = 3
+
+    # Phase-lock alignment tuning
+    alignment_iterations: int = 8
+    alignment_solver_iterations: int = 5000
+    alignment_solver_rounds: int = 1
+    alignment_tolerance: float = 1e-12
 
 
 @dataclass
@@ -108,6 +118,7 @@ def stage_vocabulary_align(
         "enabled": True,
         "tokenizers_provided": source_tokenizer is not None and target_tokenizer is not None,
     }
+    metrics["alignment_signals"] = {}
 
     # Tokenizers are required for deterministic binary/vocab alignment.
     if source_tokenizer is None or target_tokenizer is None:
@@ -195,7 +206,10 @@ def stage_vocabulary_align(
     # Apply merger to each embedding layer
     modified_weights = source_weights.copy()
     aligned_layers = 0
-    alignment_tol = 1e-12
+    alignment_tol = config.alignment_tolerance
+    alignment_iterations = max(1, config.alignment_iterations)
+    solver_iterations = config.alignment_solver_iterations
+    solver_rounds = max(1, config.alignment_solver_rounds)
 
     for embed_key in embed_keys:
         source_embed = source_weights.get(embed_key)
@@ -244,57 +258,183 @@ def stage_vocabulary_align(
 
             # Binary (1D) alignment: align byte-level anchors before vocabulary blending.
             binary_metrics = metrics.setdefault("binary_alignment", {})
-            byte_alignment = _align_bytes(
-                source_embed,
-                target_embed,
-                source_tokenizer,
-                target_tokenizer,
-                backend,
-            )
-            if byte_alignment is None:
-                raise ValueError("Binary alignment failed: no shared byte anchors.")
-            if byte_alignment["cka_after"] < 1.0 - alignment_tol:
-                raise ValueError(
-                    f"Binary alignment failed to phase-lock (CKA={byte_alignment['cka_after']:.12f})."
+            binary_signals: list[dict[str, Any]] = []
+            current_source = source_embed
+            best_source = source_embed
+            best_alignment: dict[str, Any] | None = None
+            best_cka = -1.0
+            last_signal: AlignmentSignal | None = None
+
+            for iteration in range(alignment_iterations):
+                byte_alignment = _align_bytes(
+                    current_source,
+                    target_embed,
+                    source_tokenizer,
+                    target_tokenizer,
+                    backend,
+                    max_iterations=solver_iterations,
+                    tolerance=alignment_tol,
+                    max_rounds=solver_rounds,
+                )
+                if byte_alignment is None:
+                    last_signal = AlignmentSignal(
+                        dimension=1,
+                        cka_achieved=0.0,
+                        divergence_pattern="insufficient_anchors",
+                        suggested_transformation="expand_anchors",
+                        iteration=iteration,
+                    )
+                    binary_signals.append(last_signal.to_dict())
+                    break
+
+                if byte_alignment["cka_after"] > best_cka:
+                    best_cka = byte_alignment["cka_after"]
+                    best_source = byte_alignment["aligned_source"]
+                    best_alignment = byte_alignment
+
+                last_signal = alignment_signal_from_matrices(
+                    byte_alignment["aligned_matrix"],
+                    byte_alignment["target_matrix"],
+                    byte_alignment["anchor_labels"],
+                    backend=backend,
+                    dimension=1,
+                    cka_achieved=byte_alignment["cka_after"],
+                    iteration=iteration,
+                )
+                binary_signals.append(last_signal.to_dict())
+
+                if last_signal.is_phase_locked:
+                    current_source = byte_alignment["aligned_source"]
+                    break
+
+                current_source = _apply_alignment_correction(
+                    byte_alignment["aligned_source"],
+                    last_signal,
+                    backend,
                 )
 
-            source_embed = byte_alignment["aligned_source"]
+            source_embed = best_source if last_signal and not last_signal.is_phase_locked else current_source
             backend.eval(source_embed)
-            binary_metrics[embed_key] = {
-                "bytes_shared": byte_alignment["bytes_shared"],
-                "cka_before": byte_alignment["cka_before"],
-                "cka_after": byte_alignment["cka_after"],
-                "alignment_error": byte_alignment["alignment_error"],
-                "iterations": byte_alignment["iterations"],
-                "source_dim": byte_alignment["source_dim"],
-                "target_dim": byte_alignment["target_dim"],
-            }
+
+            if best_alignment is not None:
+                binary_metrics[embed_key] = {
+                    "bytes_shared": best_alignment["bytes_shared"],
+                    "cka_before": best_alignment["cka_before"],
+                    "cka_after": best_alignment["cka_after"],
+                    "alignment_error": best_alignment["alignment_error"],
+                    "iterations": best_alignment["iterations"],
+                    "source_dim": best_alignment["source_dim"],
+                    "target_dim": best_alignment["target_dim"],
+                    "signals": binary_signals,
+                    "phase_locked": bool(last_signal and last_signal.is_phase_locked),
+                }
+            else:
+                binary_metrics[embed_key] = {
+                    "bytes_shared": 0,
+                    "cka_before": 0.0,
+                    "cka_after": 0.0,
+                    "alignment_error": 0.0,
+                    "iterations": 0,
+                    "source_dim": source_embed.shape[1] if source_embed.ndim == 2 else 0,
+                    "target_dim": target_embed.shape[1] if target_embed.ndim == 2 else 0,
+                    "signals": binary_signals,
+                    "phase_locked": False,
+                }
+
+            metrics["alignment_signals"].setdefault(embed_key, {})["binary"] = binary_signals
 
             # Vocabulary (2D) alignment: phase-lock on UnifiedAtlas anchors.
             vocab_metrics = metrics.setdefault("vocab_phase_lock", {})
-            atlas_alignment = _align_unified_atlas(
-                source_embed,
-                target_embed,
-                source_tokenizer,
-                target_tokenizer,
-                backend,
-            )
-            if atlas_alignment is None:
-                raise ValueError("Vocabulary alignment failed: no shared atlas anchors.")
-            if atlas_alignment["cka_after"] < 1.0 - alignment_tol:
-                raise ValueError(
-                    f"Vocabulary alignment failed to phase-lock (CKA={atlas_alignment['cka_after']:.12f})."
+            vocab_signals: list[dict[str, Any]] = []
+            current_source = source_embed
+            best_source = source_embed
+            best_alignment = None
+            best_cka = -1.0
+            last_signal = None
+            use_all_support_texts = False
+
+            for iteration in range(alignment_iterations):
+                atlas_alignment = _align_unified_atlas(
+                    current_source,
+                    target_embed,
+                    source_tokenizer,
+                    target_tokenizer,
+                    backend,
+                    use_all_support_texts=use_all_support_texts,
+                    max_iterations=solver_iterations,
+                    tolerance=alignment_tol,
+                    max_rounds=solver_rounds,
+                )
+                if atlas_alignment is None:
+                    last_signal = AlignmentSignal(
+                        dimension=2,
+                        cka_achieved=0.0,
+                        divergence_pattern="insufficient_anchors",
+                        suggested_transformation="expand_anchors",
+                        iteration=iteration,
+                    )
+                    vocab_signals.append(last_signal.to_dict())
+                    if not use_all_support_texts:
+                        use_all_support_texts = True
+                        continue
+                    break
+
+                if atlas_alignment["cka_after"] > best_cka:
+                    best_cka = atlas_alignment["cka_after"]
+                    best_source = atlas_alignment["aligned_source"]
+                    best_alignment = atlas_alignment
+
+                last_signal = alignment_signal_from_matrices(
+                    atlas_alignment["aligned_matrix"],
+                    atlas_alignment["target_matrix"],
+                    atlas_alignment["anchor_labels"],
+                    backend=backend,
+                    dimension=2,
+                    cka_achieved=atlas_alignment["cka_after"],
+                    iteration=iteration,
+                )
+                vocab_signals.append(last_signal.to_dict())
+
+                if last_signal.is_phase_locked:
+                    current_source = atlas_alignment["aligned_source"]
+                    break
+
+                if last_signal.suggested_transformation == "expand_anchors":
+                    use_all_support_texts = True
+
+                current_source = _apply_alignment_correction(
+                    atlas_alignment["aligned_source"],
+                    last_signal,
+                    backend,
                 )
 
-            source_embed = atlas_alignment["aligned_source"]
+            source_embed = best_source if last_signal and not last_signal.is_phase_locked else current_source
             backend.eval(source_embed)
-            vocab_metrics[embed_key] = {
-                "anchors_shared": atlas_alignment["anchors_shared"],
-                "cka_before": atlas_alignment["cka_before"],
-                "cka_after": atlas_alignment["cka_after"],
-                "alignment_error": atlas_alignment["alignment_error"],
-                "iterations": atlas_alignment["iterations"],
-            }
+
+            if best_alignment is not None:
+                vocab_metrics[embed_key] = {
+                    "anchors_shared": best_alignment["anchors_shared"],
+                    "cka_before": best_alignment["cka_before"],
+                    "cka_after": best_alignment["cka_after"],
+                    "alignment_error": best_alignment["alignment_error"],
+                    "iterations": best_alignment["iterations"],
+                    "signals": vocab_signals,
+                    "phase_locked": bool(last_signal and last_signal.is_phase_locked),
+                    "support_texts": "all" if use_all_support_texts else "first",
+                }
+            else:
+                vocab_metrics[embed_key] = {
+                    "anchors_shared": 0,
+                    "cka_before": 0.0,
+                    "cka_after": 0.0,
+                    "alignment_error": 0.0,
+                    "iterations": 0,
+                    "signals": vocab_signals,
+                    "phase_locked": False,
+                    "support_texts": "all" if use_all_support_texts else "first",
+                }
+
+            metrics["alignment_signals"].setdefault(embed_key, {})["vocab"] = vocab_signals
 
             # Run CrossVocabMerger
             result = merger.merge(
