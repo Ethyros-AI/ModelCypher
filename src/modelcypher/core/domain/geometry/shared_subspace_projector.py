@@ -68,7 +68,7 @@ class Config:
 def validate_crm_uses_atlas(crm: ConceptResponseMatrix) -> tuple[bool, dict]:
     """Check if ConceptResponseMatrix was built using unified atlas probes.
 
-    The unified atlas provides 321 probes across 7 sources for cross-domain
+    The unified atlas provides 373 probes across 9 sources for cross-domain
     triangulation. CRM data built from atlas probes enables more robust
     dimension-agnostic alignment.
 

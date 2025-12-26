@@ -76,6 +76,7 @@ class FisherBlendingConfig:
     max_fisher: float = 1e8  # Maximum Fisher value (prevents overflow)
     source_bias: float = 0.0  # Bias toward source model (-1 to 1)
     clip_alpha: bool = True  # Whether to clip resulting alpha to [0, 1]
+    seed: int | None = 42  # Deterministic perturbations when set
 
 
 @dataclass
@@ -468,7 +469,11 @@ def estimate_fisher_from_loss_landscape(
     all_fisher: list[float] = []
     total_params = 0
 
-    for key, w in weights.items():
+    if config.seed is not None:
+        b.random_seed(config.seed)
+
+    for key in sorted(weights.keys()):
+        w = weights[key]
         # Sample perturbations and measure loss changes
         loss_deltas: "list[Array]" = []
 

@@ -749,7 +749,7 @@ class TriangulatedProbeBuilder:
     """
     Builds triangulated probe sets for enhanced fingerprinting.
 
-    Now uses UnifiedAtlasInventory (321 probes across 7 atlas sources)
+    Now uses UnifiedAtlasInventory (373 probes across 9 atlas sources)
     instead of hardcoded probe lists. This provides:
     - SEQUENCE_INVARIANT: 68 probes
     - SEMANTIC_PRIME: 65 probes
@@ -758,6 +758,8 @@ class TriangulatedProbeBuilder:
     - TEMPORAL_CONCEPT: 25 probes
     - SOCIAL_CONCEPT: 25 probes
     - MORAL_CONCEPT: 30 probes
+    - COMPOSITIONAL: 22 probes
+    - PHILOSOPHICAL_CONCEPT: 30 probes
     """
 
     @staticmethod
@@ -765,7 +767,7 @@ class TriangulatedProbeBuilder:
         config: TriangulatedProbingConfig | None = None,
     ) -> list[Any]:
         """
-        Build probe set from UnifiedAtlasInventory (321 probes).
+        Build probe set from UnifiedAtlasInventory (373 probes).
 
         Returns list of AtlasProbe objects with:
         - probe_id: Unique identifier
@@ -810,7 +812,7 @@ class TriangulatedProbeBuilder:
 
     @staticmethod
     def build_all_probes() -> list[Any]:
-        """Get all 321 probes for full triangulation."""
+        """Get all 373 probes for full triangulation."""
         # Lazy import to avoid circular dependency
         from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
 
@@ -1109,6 +1111,7 @@ class ManifoldStitcher:
         max_iterations: int = 50,
         backend: "Backend | None" = None,
         geodesic_k_neighbors: int = 10,
+        seed: int | None = 42,
     ) -> tuple[list[int], list[list[float]]]:
         """Riemannian K-means clustering with geodesic distances.
 
@@ -1135,6 +1138,9 @@ class ManifoldStitcher:
         n = len(points)
         if n == 0 or k <= 0:
             return ([], [])
+
+        if seed is not None:
+            b.random_seed(seed)
 
         pts = b.array(points)
         d_dim = pts.shape[1]

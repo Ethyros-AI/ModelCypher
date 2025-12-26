@@ -491,15 +491,17 @@ def _project_svd(
         mismatch = abs(m_s - m_t)
 
         if mismatch > max_tractable_mismatch:
-            # Large row mismatch indicates embedding layers with different vocab
-            # This MUST be handled by vocabulary alignment BEFORE projection.
-            raise ValueError(
-                f"Row dimension mismatch ({m_s} -> {m_t}, delta={mismatch}) is too large "
-                f"for exact SVD projection (limit: {max_tractable_mismatch}). "
-                f"Vocabulary alignment must be performed BEFORE cross-dimensional "
-                f"projection. Use stage 0 VocabularyAligner for embedding layers. "
-                f"NO TRUNCATION - geometry must be exact."
+            # Large row mismatch indicates embedding layers with different vocab.
+            # Fall back to gram transport to preserve geometry without truncation.
+            logger.warning(
+                "Row mismatch (%s -> %s, delta=%s) exceeds SVD limit (%s); "
+                "falling back to gram_transport.",
+                m_s,
+                m_t,
+                mismatch,
+                max_tractable_mismatch,
             )
+            return _project_gram_transport(source, target, b)
 
         # Small mismatch: use truncation/padding (acceptable for MLP/attention weights)
         if m_s > m_t:

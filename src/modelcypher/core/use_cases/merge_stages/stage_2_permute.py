@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -97,16 +98,26 @@ def stage_permute(
         logger.info("PERMUTE: Disabled")
         return PermuteResult(source_weights, {"skipped": True})
 
-    # Convert weights to backend arrays
+    # Convert weights to backend arrays (with dequantization for quantized models)
     source_arr: dict[str, "Array"] = {}
     target_arr: dict[str, "Array"] = {}
 
     for key, val in source_weights.items():
-        arr = b.astype(b.array(val), "float32")
+        # Skip quantization metadata keys
+        if key.endswith(".scales") or key.endswith(".biases"):
+            continue
+        # Dequantize if quantized, then convert to float32
+        dequant = dequantize_if_needed(val, key, source_weights, b)
+        arr = b.astype(b.array(dequant), "float32")
         b.eval(arr)
         source_arr[key] = arr
     for key, val in target_weights.items():
-        arr = b.astype(b.array(val), "float32")
+        # Skip quantization metadata keys
+        if key.endswith(".scales") or key.endswith(".biases"):
+            continue
+        # Dequantize if quantized, then convert to float32
+        dequant = dequantize_if_needed(val, key, target_weights, b)
+        arr = b.astype(b.array(dequant), "float32")
         b.eval(arr)
         target_arr[key] = arr
 
@@ -119,6 +130,8 @@ def stage_permute(
 
     if anchor_key is not None:
         embed = target_weights[anchor_key]
+        # Dequantize if quantized
+        embed = dequantize_if_needed(embed, anchor_key, target_weights, b)
         num_anchors = min(128, embed.shape[0])
         embed_slice = embed[:num_anchors]
         anchors = b.astype(b.array(embed_slice), "float32")

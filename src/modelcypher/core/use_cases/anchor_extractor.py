@@ -127,7 +127,7 @@ class AnchorExtractor:
         confidence: dict[str, float] = {}
 
         if cfg.use_unified_atlas:
-            # Use all 321 probes from the unified atlas (supersedes individual atlas calls)
+            # Use all 373 probes from the unified atlas (supersedes individual atlas calls)
             anchors.update(self._unified_atlas_anchors(tokenizer, embedding, vocab, confidence))
         else:
             # Legacy mode: use subset of atlas sources
@@ -392,7 +392,7 @@ class AnchorExtractor:
         vocab: int,
         confidence: dict[str, float],
     ) -> dict[str, np.ndarray]:
-        """Extract anchors from all 321 unified atlas probes.
+        """Extract anchors from all 373 unified atlas probes.
 
         Uses the complete UnifiedAtlasInventory which includes:
         - SEQUENCE_INVARIANT: 68 probes (Fibonacci, Lucas, Primes, Catalan, etc.)
@@ -403,7 +403,7 @@ class AnchorExtractor:
         - SOCIAL_CONCEPT: 25 probes (power, kinship, formality, status)
         - MORAL_CONCEPT: 30 probes (Haidt's Moral Foundations Theory)
 
-        Total: 321 probes for cross-domain triangulation.
+        Total: 373 probes for cross-domain triangulation.
         """
         probes = UnifiedAtlasInventory.all_probes()
         anchors: dict[str, np.ndarray] = {}

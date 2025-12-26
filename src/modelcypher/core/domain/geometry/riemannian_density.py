@@ -201,8 +201,7 @@ class ConceptVolume:
     def _compute_tangent_vector(self, point: "Array") -> "Array":
         """Compute tangent vector from centroid to point using log map.
 
-        If geodesic context is available, scales by geodesic/Euclidean ratio.
-        Otherwise returns raw Euclidean difference.
+        Requires geodesic context; Euclidean fallback is invalid on curved manifolds.
 
         Args:
             point: Point in activation space
@@ -215,9 +214,12 @@ class ConceptVolume:
         centroid_arr = backend.array(self.centroid)
         diff = point_arr - centroid_arr
 
-        # If no geodesic context or raw activations, use Euclidean
+        # Geodesic context is mandatory for curvature-correct log maps
         if self._geodesic_context is None or self.raw_activations is None:
-            return diff
+            raise ValueError(
+                "Geodesic context required for Riemannian log map. "
+                "Build volumes with store_raw_activations=True."
+            )
 
         # Compute geodesic distance from centroid to point
         rg = RiemannianGeometry(backend)
@@ -566,7 +568,7 @@ class RiemannianDensityEstimator:
         concept_id: str,
         activations: "Array",
         metric_fn: Callable[["Array"], "Array"] | None = None,
-        store_raw_activations: bool = False,
+        store_raw_activations: bool = True,
     ) -> ConceptVolume:
         """Estimate concept volume from activation samples.
 
@@ -575,7 +577,7 @@ class RiemannianDensityEstimator:
             activations: Array of activation vectors (n x d)
             metric_fn: Optional metric tensor function for Riemannian geometry
             store_raw_activations: If True, store raw activations for CKA comparison
-                                   across different dimensions
+                                   across different dimensions (required for geodesic log map)
 
         Returns:
             ConceptVolume modeling the concept's distribution
@@ -589,6 +591,10 @@ class RiemannianDensityEstimator:
 
         if n < 2:
             # Single sample - return point mass
+            geodesic_context = None
+            if store_raw_activations:
+                rg = RiemannianGeometry(backend)
+                geodesic_context = rg.geodesic_distances(activations, k_neighbors=1)
             return ConceptVolume(
                 concept_id=concept_id,
                 centroid=activations[0],
@@ -599,6 +605,7 @@ class RiemannianDensityEstimator:
                 influence_type=self.config.influence_type,
                 student_t_df=self.config.student_t_df,
                 raw_activations=activations if store_raw_activations else None,
+                _geodesic_context=geodesic_context if store_raw_activations else None,
             )
 
         # Compute centroid using Fréchet mean - the only correct method on curved manifolds

@@ -40,6 +40,7 @@ class Config:
     use_momentum: bool = True
     momentum_coefficient: float = 0.9
     use_procrustes_warm_start: bool = True
+    seed: int | None = 42
 
     @staticmethod
     def default() -> "Config":
@@ -136,6 +137,9 @@ class AffineStitchingLayer:
         n = len(training_data)
         source = [pair.source_activation for pair in training_data]
         target = [pair.target_activation for pair in training_data]
+
+        if config.seed is not None:
+            random.seed(config.seed)
 
         if config.use_procrustes_warm_start and d_source == d_target:
             weights = AffineStitchingLayer._procrustes_initialization(source, target, d_source)
@@ -580,6 +584,9 @@ class BackendAffineStitchingLayer:
         target_data = [pair.target_activation for pair in training_data]
         source = self.backend.array(source_data)
         target = self.backend.array(target_data)
+
+        if config.seed is not None:
+            self.backend.random_seed(config.seed)
 
         # Initialize weights [d_target, d_source] and bias [d_target]
         if config.use_procrustes_warm_start and d_source == d_target:
