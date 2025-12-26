@@ -10,7 +10,7 @@ Use the shell's `time` command for simple timing:
 
 ```bash
 # Time a geometry operation
-time mc geometry crm-build --model ./model --output crm.json
+time mc geometry crm build --model ./model --output-path ./crm.json
 
 # Time with verbose output
 MC_LOG_LEVEL=debug mc geometry validate ./model
@@ -62,19 +62,13 @@ Stores layer activations for probe texts.
 | TTL | 7 days (configurable) |
 | Size | 10-100 MB per model |
 
-**Usage:**
-```bash
-# Enable activation caching
-mc geometry crm-build --cache-activations ./model
-```
-
 ### CRM Cache
 
 Concept Response Matrices are stored at the specified output path.
 
 ```bash
 # Reuse existing CRM
-mc geometry crm-compare --crm-a ./crm1.json --crm-b ./crm2.json
+mc geometry crm compare --crm-a ./crm1.json --crm-b ./crm2.json
 ```
 
 ## Optimizing Geometry Operations

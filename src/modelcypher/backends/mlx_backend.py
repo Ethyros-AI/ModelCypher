@@ -353,6 +353,9 @@ class MLXBackend(Backend):
     def norm(
         self, array: Array, axis: int | tuple[int, ...] | None = None, keepdims: bool = False
     ) -> Array:
+        # Ensure array is MLX array
+        if not hasattr(array, '__mlx_array__') and hasattr(array, '__array__'):
+            array = self.mx.array(array)
         return self.mx.linalg.norm(array, axis=axis, keepdims=keepdims)
 
     def det(self, array: Array) -> Array:

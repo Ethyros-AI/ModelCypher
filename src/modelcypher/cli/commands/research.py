@@ -249,7 +249,9 @@ def taxonomy_report(
     signatures_file: str = typer.Argument(..., help="Path to JSON file with entropy signatures"),
     model_id: str = typer.Option("unknown", "--model", help="Model identifier"),
     k: int = typer.Option(5, "--k", help="Number of clusters"),
-    output_file: str | None = typer.Option(None, "--output", "-o", help="Output markdown file"),
+    output_file: str | None = typer.Option(
+        None, "--output-file", "-o", help="Output markdown file"
+    ),
 ) -> None:
     """Generate markdown report for taxonomy experiment.
 

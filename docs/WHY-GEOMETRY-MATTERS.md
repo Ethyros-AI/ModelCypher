@@ -124,14 +124,9 @@ mc geometry validate
 mc model merge \
     --source ./model-A \
     --target ./model-B \
-    --method procrustes \
-    --output ./merged-geometric
+    --output-dir ./merged-geometric
 
-mc model merge \
-    --source ./model-A \
-    --target ./model-B \
-    --method linear \
-    --output ./merged-naive
+# For a naive baseline, run your preferred linear merge tool and save to ./merged-naive.
 
 # Compare results
 mc model probe ./merged-geometric --output text

@@ -683,7 +683,7 @@ def dataset_format_analyze(
 def dataset_chunk(
     ctx: typer.Context,
     file: str = typer.Option(..., "--file", help="Path to input file"),
-    output: str = typer.Option(..., "--output", "-o", help="Path to output file"),
+    output: str = typer.Option(..., "--output-file", "-o", help="Path to output file"),
     size: int = typer.Option(512, "--size", help="Target chunk size in tokens"),
     overlap: int = typer.Option(50, "--overlap", help="Overlap between chunks in tokens"),
 ) -> None:
@@ -693,7 +693,7 @@ def dataset_chunk(
     Respects paragraph and sentence boundaries.
 
     Examples:
-        mc dataset chunk --file ./document.txt --output ./chunks.jsonl --size 512
+        mc dataset chunk --file ./document.txt --output-file ./chunks.jsonl --size 512
         mc dataset chunk --file ./long.txt -o ./chunked.jsonl --size 1024 --overlap 100
     """
     from modelcypher.cli.output import write_error

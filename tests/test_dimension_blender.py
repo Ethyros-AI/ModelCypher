@@ -125,9 +125,13 @@ class TestCorrelationWeights:
         correlations = compute_dimension_correlations(source, target, config)
         weights = compute_correlation_weights(correlations, config)
 
-        assert weights.shape == (hidden_dim,)
-        assert np.all(weights >= 0)
-        assert np.all(weights <= 1)
+        from modelcypher.core.domain._backend import get_default_backend
+        backend = get_default_backend()
+        weights_np = backend.to_numpy(weights)
+
+        assert weights_np.shape == (hidden_dim,)
+        assert np.all(weights_np >= 0)
+        assert np.all(weights_np <= 1)
 
     def test_compute_correlation_based_alpha(self):
         """compute_correlation_based_alpha returns valid alpha vector."""

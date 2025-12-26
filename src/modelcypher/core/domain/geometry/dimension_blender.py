@@ -637,6 +637,9 @@ def compute_dimension_correlations(
     """
 
     backend = get_default_backend()
+    # Convert to backend arrays if needed (handles numpy inputs)
+    source_activations = backend.array(source_activations)
+    target_activations = backend.array(target_activations)
     backend.eval(source_activations, target_activations)
 
     # Ensure same shape

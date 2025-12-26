@@ -101,12 +101,12 @@ def adapter_project(
     ctx: typer.Context,
     adapter_path: str = typer.Argument(..., help="Path to adapter"),
     target_space: str = typer.Option("default", "--target-space"),
-    output: str = typer.Option(..., "--output", help="Output path"),
+    output: str = typer.Option(..., "--output-path", "-o", help="Output path"),
 ) -> None:
     """Project adapter to target space.
 
     Examples:
-        mc adapter project ./adapter --target-space llama --output ./projected
+        mc adapter project ./adapter --target-space llama --output-path ./projected
     """
     context = _context(ctx)
     from modelcypher.core.use_cases.adapter_service import AdapterService
@@ -126,12 +126,12 @@ def adapter_project(
 def adapter_wrap_mlx(
     ctx: typer.Context,
     adapter_path: str = typer.Argument(..., help="Path to adapter"),
-    output: str = typer.Option(..., "--output", help="Output path"),
+    output: str = typer.Option(..., "--output-path", "-o", help="Output path"),
 ) -> None:
     """Wrap adapter for MLX compatibility.
 
     Examples:
-        mc adapter wrap-mlx ./adapter --output ./wrapped
+        mc adapter wrap-mlx ./adapter --output-path ./wrapped
     """
     context = _context(ctx)
     from modelcypher.core.use_cases.adapter_service import AdapterService
@@ -151,13 +151,13 @@ def adapter_wrap_mlx(
 def adapter_smooth(
     ctx: typer.Context,
     adapter_path: str = typer.Argument(..., help="Path to adapter"),
-    output: str = typer.Option(..., "--output", help="Output path"),
+    output: str = typer.Option(..., "--output-path", "-o", help="Output path"),
     strength: float = typer.Option(0.1, "--strength"),
 ) -> None:
     """Apply smoothing to adapter weights.
 
     Examples:
-        mc adapter smooth ./adapter --output ./smoothed --strength 0.2
+        mc adapter smooth ./adapter --output-path ./smoothed --strength 0.2
     """
     context = _context(ctx)
     from modelcypher.core.use_cases.adapter_service import AdapterService

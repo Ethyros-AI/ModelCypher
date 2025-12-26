@@ -591,7 +591,10 @@ def entropy_calibrate(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model", help="Path to model directory"),
     output: str = typer.Option(
-        None, "--output", "-o", help="Path to save calibration JSON (default: model_dir/entropy_calibration.json)"
+        None,
+        "--output-file",
+        "-o",
+        help="Path to save calibration JSON (default: model_dir/entropy_calibration.json)",
     ),
     max_tokens: int = typer.Option(50, "--max-tokens", help="Max tokens per prompt"),
     temperature: float = typer.Option(0.7, "--temperature", help="Sampling temperature"),
@@ -603,7 +606,7 @@ def entropy_calibrate(
 
     Examples:
         mc entropy calibrate --model /path/to/model
-        mc entropy calibrate --model /path/to/model --output ./calibration.json
+        mc entropy calibrate --model /path/to/model --output-file ./calibration.json
         mc entropy calibrate --model /path/to/model --max-tokens 100
     """
     context = _context(ctx)

@@ -175,7 +175,8 @@ def test_safety_lint_identity_with_issues(tmp_path):
 
 def test_entropy_analyze_basic():
     """Test entropy analyze command with sample data."""
-    samples = "[[3.5, 0.2], [3.6, 0.15], [3.4, 0.18], [3.7, 0.22]]"
+    # Requires at least 5 samples for calibration-based analysis
+    samples = "[[3.5, 0.2], [3.6, 0.15], [3.4, 0.18], [3.7, 0.22], [3.55, 0.19]]"
 
     result = runner.invoke(
         app,
@@ -192,7 +193,7 @@ def test_entropy_analyze_basic():
     assert "trendSlope" in data  # Actual geometric measurement
     assert "entropyMean" in data
     assert "sampleCount" in data
-    assert data["sampleCount"] == 4
+    assert data["sampleCount"] == 5
 
 
 def test_entropy_analyze_invalid_samples():

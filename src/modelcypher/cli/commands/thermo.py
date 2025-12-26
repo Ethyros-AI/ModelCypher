@@ -597,7 +597,7 @@ def thermo_benchmark(
     temperature: float = typer.Option(1.0, "--temperature", "-t", help="Sampling temperature"),
     max_tokens: int = typer.Option(64, "--max-tokens", help="Max tokens per generation"),
     output_file: str | None = typer.Option(
-        None, "--output", "-o", help="Save markdown report to file"
+        None, "--output-file", "-o", help="Save markdown report to file"
     ),
 ) -> None:
     """Run statistical benchmark comparing modifier effectiveness.
@@ -753,7 +753,7 @@ def thermo_parity(
     ),
     temperature: float = typer.Option(1.0, "--temperature", "-t", help="Sampling temperature"),
     output_file: str | None = typer.Option(
-        None, "--output", "-o", help="Save markdown report to file"
+        None, "--output-file", "-o", help="Save markdown report to file"
     ),
 ) -> None:
     """Run cross-lingual parity test for modifier consistency.

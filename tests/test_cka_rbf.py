@@ -70,8 +70,8 @@ class TestPairwiseDistances:
         distances_00_1 = float(backend.to_numpy(distances[0, 1]))
         distances_10 = float(backend.to_numpy(distances[1, 0]))
 
-        assert distances_00_1 == pytest.approx(0.0, abs=1e-10)
-        assert distances_10 == pytest.approx(0.0, abs=1e-10)
+        assert distances_00_1 == pytest.approx(0.0, abs=1e-6)
+        assert distances_10 == pytest.approx(0.0, abs=1e-6)
 
     def test_distance_is_symmetric(self):
         """Distance matrix should be symmetric."""

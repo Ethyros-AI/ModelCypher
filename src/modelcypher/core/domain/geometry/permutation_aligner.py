@@ -711,20 +711,24 @@ class PermutationAligner:
     def rebasin_mlp_with_activations(
         source_weights: "dict[str, Array]",
         target_weights: "dict[str, Array]",
-        anchors: "Array",
+        anchors: "Array | None" = None,
         anchor_activations: AnchorActivationContext | None = None,
         config: Config = Config(),
         backend: "Backend | None" = None,
+        source_anchors: "Array | None" = None,
+        target_anchors: "Array | None" = None,
     ) -> "tuple[dict[str, Array], float, int]":
         """Performs MLP-only re-basin alignment with optional per-layer anchor activations.
 
         Args:
             source_weights: Source model weights by key.
             target_weights: Target model weights by key.
-            anchors: Semantic prime anchor embeddings [numAnchors, anchorDim].
+            anchors: Legacy single anchor set (deprecated, use source/target_anchors).
             anchor_activations: Optional per-layer anchor activation context.
             config: Alignment configuration.
             backend: Optional backend for array operations.
+            source_anchors: Source model anchor embeddings [numAnchors, anchorDim].
+            target_anchors: Target model anchor embeddings [numAnchors, anchorDim].
 
         Returns:
             Tuple of (aligned_weights, average_quality, mlp_blocks_aligned).
@@ -774,23 +778,37 @@ class PermutationAligner:
                 activations = anchor_activations.activations(layer_idx)
                 if activations is not None and len(activations[0]) > 0 and len(activations[1]) > 0:
                     logger.debug(f"Using anchor activations for layer {layer_idx}")
-                    source_anchors = PermutationAligner._array_from_matrix(
+                    src_act = PermutationAligner._array_from_matrix(
                         activations[0], backend=b
                     )
-                    target_anchors = PermutationAligner._array_from_matrix(
+                    tgt_act = PermutationAligner._array_from_matrix(
                         activations[1], backend=b
                     )
                     alignment = PermutationAligner.align_via_anchor_activations(
+                        source_up, target_up, src_act, tgt_act, config, backend=b
+                    )
+                elif source_anchors is not None and target_anchors is not None:
+                    # Use separate source/target anchors for proper cross-model alignment
+                    alignment = PermutationAligner.align_via_anchor_activations(
                         source_up, target_up, source_anchors, target_anchors, config, backend=b
                     )
-                else:
+                elif anchors is not None:
                     alignment = PermutationAligner.align_via_anchor_projection(
                         source_up, target_up, anchors, config, backend=b
                     )
-            else:
+                else:
+                    raise ValueError("No anchors provided for permutation alignment")
+            elif source_anchors is not None and target_anchors is not None:
+                # Use separate source/target anchors for proper cross-model alignment
+                alignment = PermutationAligner.align_via_anchor_activations(
+                    source_up, target_up, source_anchors, target_anchors, config, backend=b
+                )
+            elif anchors is not None:
                 alignment = PermutationAligner.align_via_anchor_projection(
                     source_up, target_up, anchors, config, backend=b
                 )
+            else:
+                raise ValueError("No anchors provided for permutation alignment")
 
             # Apply permutation (sparse or dense)
             if alignment.is_sparse_permutation and alignment.assignment_indices is not None:

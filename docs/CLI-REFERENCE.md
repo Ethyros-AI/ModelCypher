@@ -99,7 +99,7 @@ mc agent validate-action --action <json>    # Validate agent actions
 ### Dataset Commands
 ```bash
 mc dataset format-analyze <path>            # Detect dataset format (text/chat/instruction/etc)
-mc dataset chunk --file <path> --output <file> --size <n>   # Chunk documents for training
+mc dataset chunk --file <path> --output-file <file> --size <n>   # Chunk documents for training
 mc dataset template --model <family>        # Apply chat template
 ```
 

@@ -84,7 +84,7 @@ poetry install -E jax      # JAX backend for Linux/TPU
 
 ```bash
 # 1. Probe a Model for Semantic Primes (The "Skeleton" of Knowledge)
-mc geometry primes probe-model /path/to/Llama-3.2-3B-Instruct --output llama_primes.json
+mc geometry primes probe-model /path/to/Llama-3.2-3B-Instruct --output-file llama_primes.json
 
 # 2. Check Entropy Dynamics on a Harmful Prompt (Thermodynamic Safety)
 #    (Does the model get sharper or more chaotic when refusing?)
