@@ -1457,7 +1457,7 @@ def _select_shared_full_rank_indices(
             return float("inf")
         return max(values) / min(values)
 
-    max_condition = 1e5
+    max_condition = 1e3
     selected, basis_src, basis_tgt = _build_selection(target_count)
     while selected and len(selected) > 2:
         idx_arr = backend.array(selected)
