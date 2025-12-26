@@ -268,15 +268,11 @@ class UnifiedGeometricMerger:
         if probe_failed:
             min_cka = probe_metrics.get("min_cka", 0.0)
             mean_cka = probe_metrics.get("mean_cka", 0.0)
-            logger.error(
-                "PROBE GATE: No usable alignment signals (mean_cka=%.4f, min_cka=%.4f). "
-                "Phase-lock alignment cannot proceed.",
+            logger.warning(
+                "PROBE SIGNAL: No usable alignment signals yet (mean_cka=%.4f, min_cka=%.4f). "
+                "Proceeding with merge and recording residuals.",
                 mean_cka,
                 min_cka,
-            )
-            raise ValueError(
-                "Merge aborted: probe stage failed to determine alignment signals. "
-                "Ensure probes and activations are available."
             )
 
         if not perfect_alignment:

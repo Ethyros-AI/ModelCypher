@@ -117,12 +117,17 @@ def alignment_signal_from_matrices(
         divergence_pattern = "scale"
         suggested = "scale_normalization"
 
+    mean_divergence = sum(dist_list) / len(dist_list) if dist_list else 0.0
+    max_divergence = max(dist_list) if dist_list else 0.0
+    balance_ratio = max_divergence / (mean_divergence + 1e-12)
+
     metadata = {
         "rank_source": float(rank_source),
         "rank_target": float(rank_target),
         "scale_ratio": float(scale_ratio),
-        "max_divergence": max(dist_list) if dist_list else 0.0,
-        "mean_divergence": sum(dist_list) / len(dist_list) if dist_list else 0.0,
+        "max_divergence": max_divergence,
+        "mean_divergence": mean_divergence,
+        "balance_ratio": balance_ratio,
     }
 
     return AlignmentSignal(

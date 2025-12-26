@@ -543,12 +543,13 @@ class GeometricMergeOrchestrator:
 
         n = min(len(src_acts), len(tgt_acts))
         if n < 2:
-            logger.error(
-                "Layer %d: Phase lock requires >= 2 activation samples, got %d",
+            logger.warning(
+                "Layer %d: Phase lock needs >= 2 activation samples, got %d",
                 layer_geom.layer_idx,
                 n,
             )
-            raise ValueError("Phase lock failed: insufficient activation samples")
+            layer_geom.transform_requirements.append("PHASE_LOCK_INSUFFICIENT_SAMPLES")
+            return
 
         # Phase-lock alignment from activations (CKA = 1.0)
         try:
@@ -563,18 +564,12 @@ class GeometricMergeOrchestrator:
             transform = b.array(result.feature_transform)
             b.eval(transform)
 
-            if not result.is_perfect:
-                logger.error(
-                    "Layer %d: Phase lock failed (cka=%.8f, error=%.6f, iters=%d)",
-                    layer_geom.layer_idx,
-                    result.achieved_cka,
-                    result.alignment_error,
-                    result.iterations,
-                )
-                raise ValueError("Phase lock failed: CKA did not reach 1.0")
-
             layer_geom.procrustes_rotation = transform
             layer_geom.alignment_quality = result.achieved_cka
+            if result.diagnostic is not None:
+                layer_geom.transform_requirements.append(
+                    f"PHASE_LOCK_SIGNAL:{result.diagnostic.divergence_pattern}"
+                )
 
             logger.debug(
                 "Layer %d: phase_lock_cka=%.8f (iters=%d, error=%.6f)",
@@ -584,8 +579,9 @@ class GeometricMergeOrchestrator:
                 result.alignment_error,
             )
         except Exception as e:
-            logger.error("Phase lock failed for layer %d: %s", layer_geom.layer_idx, e)
-            raise
+            logger.error("Phase lock alignment failed for layer %d: %s", layer_geom.layer_idx, e)
+            layer_geom.transform_requirements.append("PHASE_LOCK_FAILED")
+            return
 
         # tangent_space_alignment - local alignment
         try:

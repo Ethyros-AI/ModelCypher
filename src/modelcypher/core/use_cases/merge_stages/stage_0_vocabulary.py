@@ -620,6 +620,34 @@ def _frechet_mean_vectors(
     return mean
 
 
+def _apply_alignment_correction(
+    embedding: "object",
+    signal: AlignmentSignal | None,
+    backend: "object",
+) -> "object":
+    if signal is None:
+        return embedding
+
+    transform = signal.suggested_transformation
+    if transform == "scale_normalization":
+        scale_ratio = signal.metadata.get("scale_ratio", 1.0)
+        if scale_ratio > 0:
+            scaled = embedding / float(scale_ratio)
+            backend.eval(scaled)
+            return scaled
+        return embedding
+
+    if transform == "rotation_refine":
+        mean = backend.mean(embedding, axis=0, keepdims=True)
+        centered = embedding - mean
+        norms = backend.norm(centered, axis=1, keepdims=True)
+        normalized = centered / (norms + 1e-12)
+        backend.eval(normalized)
+        return normalized
+
+    return embedding
+
+
 def _build_byte_embedding_map(
     tokenizer: Any,
     embedding: "object",
@@ -645,6 +673,9 @@ def _align_bytes(
     source_tokenizer: Any,
     target_tokenizer: Any,
     backend: "object",
+    max_iterations: int = 1000,
+    tolerance: float = 1e-6,
+    max_rounds: int = 1,
 ) -> dict[str, Any] | None:
     source_bytes = _build_byte_embedding_map(
         source_tokenizer,
@@ -660,14 +691,19 @@ def _align_bytes(
     )
     shared = sorted(set(source_bytes) & set(target_bytes))
     if len(shared) < 2:
-        raise ValueError(f"Binary alignment needs shared byte anchors; found {len(shared)}.")
+        return None
 
     source_matrix = backend.stack([source_bytes[b] for b in shared], axis=0)
     target_matrix = backend.stack([target_bytes[b] for b in shared], axis=0)
     backend.eval(source_matrix, target_matrix)
 
     cka_before = compute_cka(source_matrix, target_matrix, backend=backend).cka
-    aligner = GramAligner(backend=backend, max_iterations=5000, tolerance=1e-12)
+    aligner = GramAligner(
+        backend=backend,
+        max_iterations=max_iterations,
+        max_rounds=max_rounds,
+        tolerance=tolerance,
+    )
     result = aligner.find_perfect_alignment(source_matrix, target_matrix)
     transform = backend.array(result.feature_transform)
     aligned_source = backend.matmul(source_embed, transform)
@@ -679,6 +715,9 @@ def _align_bytes(
 
     return {
         "aligned_source": aligned_source,
+        "aligned_matrix": aligned_matrix,
+        "target_matrix": target_matrix,
+        "anchor_labels": [f"byte:{b}" for b in shared],
         "bytes_shared": len(shared),
         "cka_before": cka_before,
         "cka_after": cka_after,
@@ -694,22 +733,31 @@ def _build_atlas_anchor_map(
     embedding: "object",
     vocab_size: int,
     backend: "object",
+    use_all_support_texts: bool = False,
 ) -> dict[str, "object"]:
     anchor_map: dict[str, "object"] = {}
     probes = UnifiedAtlasInventory.all_probes()
 
     for probe in probes:
-        text = next(
-            (t for t in probe.support_texts if t and len(t.strip()) >= 2),
-            None,
-        )
-        if not text:
+        support_texts = [t for t in probe.support_texts if t and len(t.strip()) >= 2]
+        if not support_texts:
             continue
-        token_ids = _encode_ids(tokenizer, text)
-        valid = [tid for tid in token_ids if 0 <= tid < vocab_size]
-        vec = _frechet_mean_from_ids(valid, embedding, backend)
-        if vec is not None:
-            anchor_map[probe.probe_id] = vec
+
+        if not use_all_support_texts:
+            text = support_texts[0]
+            token_ids = _encode_ids(tokenizer, text)
+            valid = [tid for tid in token_ids if 0 <= tid < vocab_size]
+            vec = _frechet_mean_from_ids(valid, embedding, backend)
+            if vec is not None:
+                anchor_map[probe.probe_id] = vec
+            continue
+
+        for idx, text in enumerate(support_texts):
+            token_ids = _encode_ids(tokenizer, text)
+            valid = [tid for tid in token_ids if 0 <= tid < vocab_size]
+            vec = _frechet_mean_from_ids(valid, embedding, backend)
+            if vec is not None:
+                anchor_map[f"{probe.probe_id}:{idx}"] = vec
 
     return anchor_map
 
@@ -720,29 +768,40 @@ def _align_unified_atlas(
     source_tokenizer: Any,
     target_tokenizer: Any,
     backend: "object",
+    use_all_support_texts: bool = False,
+    max_iterations: int = 1000,
+    tolerance: float = 1e-6,
+    max_rounds: int = 1,
 ) -> dict[str, Any] | None:
     source_anchors = _build_atlas_anchor_map(
         source_tokenizer,
         source_embed,
         source_embed.shape[0],
         backend,
+        use_all_support_texts=use_all_support_texts,
     )
     target_anchors = _build_atlas_anchor_map(
         target_tokenizer,
         target_embed,
         target_embed.shape[0],
         backend,
+        use_all_support_texts=use_all_support_texts,
     )
     shared = sorted(set(source_anchors) & set(target_anchors))
     if len(shared) < 2:
-        raise ValueError(f"Vocabulary alignment needs shared atlas anchors; found {len(shared)}.")
+        return None
 
     source_matrix = backend.stack([source_anchors[k] for k in shared], axis=0)
     target_matrix = backend.stack([target_anchors[k] for k in shared], axis=0)
     backend.eval(source_matrix, target_matrix)
 
     cka_before = compute_cka(source_matrix, target_matrix, backend=backend).cka
-    aligner = GramAligner(backend=backend, max_iterations=5000, tolerance=1e-12)
+    aligner = GramAligner(
+        backend=backend,
+        max_iterations=max_iterations,
+        max_rounds=max_rounds,
+        tolerance=tolerance,
+    )
     result = aligner.find_perfect_alignment(source_matrix, target_matrix)
     transform = backend.array(result.feature_transform)
     aligned_source = backend.matmul(source_embed, transform)
@@ -754,6 +813,9 @@ def _align_unified_atlas(
 
     return {
         "aligned_source": aligned_source,
+        "aligned_matrix": aligned_matrix,
+        "target_matrix": target_matrix,
+        "anchor_labels": shared,
         "anchors_shared": len(shared),
         "cka_before": cka_before,
         "cka_after": cka_after,

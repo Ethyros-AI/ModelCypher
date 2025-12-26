@@ -409,6 +409,7 @@ def stage_rotate_blend_propagate(
     phase_lock_ckas: dict[int, float] = {}
     phase_lock_iterations: dict[int, int] = {}
     phase_lock_errors: dict[int, float] = {}
+    phase_lock_signals: dict[int, Any] = {}
 
     if source_activations and target_activations:
         logger.info(
@@ -429,12 +430,17 @@ def stage_rotate_blend_propagate(
 
             n_samples = min(len(src_acts), len(tgt_acts))
             if n_samples < 2:
-                logger.error(
-                    "LAYER %d: Phase lock requires >= 2 activation samples, got %d",
+                logger.warning(
+                    "LAYER %d: Phase lock needs >= 2 activation samples, got %d",
                     layer_idx,
                     n_samples,
                 )
-                raise ValueError("Phase lock failed: insufficient activation samples")
+                phase_lock_signals[layer_idx] = {
+                    "reason": "insufficient_samples",
+                    "required": 2,
+                    "available": n_samples,
+                }
+                continue
 
             try:
                 # Stack activations: [n_samples, hidden_dim]
@@ -446,20 +452,12 @@ def stage_rotate_blend_propagate(
                 transform = b.array(result.feature_transform)
                 b.eval(transform)
 
-                if not result.is_perfect:
-                    logger.error(
-                        "LAYER %d: Phase lock failed (cka=%.8f, error=%.6f, iters=%d)",
-                        layer_idx,
-                        result.achieved_cka,
-                        result.alignment_error,
-                        result.iterations,
-                    )
-                    raise ValueError("Phase lock failed: CKA did not reach 1.0")
-
                 layer_rotations[layer_idx] = transform
                 phase_lock_ckas[layer_idx] = result.achieved_cka
                 phase_lock_iterations[layer_idx] = result.iterations
                 phase_lock_errors[layer_idx] = result.alignment_error
+                if result.diagnostic is not None:
+                    phase_lock_signals[layer_idx] = result.diagnostic.to_dict()
 
                 logger.debug(
                     "LAYER %d: Phase lock CKA=%.8f (iters=%d, error=%.6f)",
@@ -470,7 +468,8 @@ def stage_rotate_blend_propagate(
                 )
             except Exception as e:
                 logger.error("LAYER %d: Phase lock alignment failed: %s", layer_idx, e)
-                raise
+                phase_lock_signals[layer_idx] = {"reason": str(e)}
+                continue
 
         if layer_rotations:
             logger.info(
@@ -518,6 +517,7 @@ def stage_rotate_blend_propagate(
         "phase_lock_ckas": phase_lock_ckas,
         "phase_lock_iterations": phase_lock_iterations,
         "phase_lock_errors": phase_lock_errors,
+        "phase_lock_signals": phase_lock_signals,
         "geometric_merges": 0,
         "task_svd_merges": 0,
         "frechet_svd_merges": 0,
@@ -593,6 +593,7 @@ def stage_rotate_blend_propagate(
     processed = 0
 
     # Log probe alignment quality
+    mean_conf = 0.0
     if layer_confidences:
         conf_vals = list(layer_confidences.values())
         mean_conf = sum(conf_vals) / len(conf_vals) if conf_vals else 0.0
