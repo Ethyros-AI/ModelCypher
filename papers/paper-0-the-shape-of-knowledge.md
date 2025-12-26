@@ -54,7 +54,7 @@ graph TD
 
 3. **The Operational Semantics Hypothesis**: Mathematical formulas are encoded as constraint surfaces. Pythagorean triples show 88.5% cross-model position similarity after Procrustes alignment; classification accuracy reaches 100% on Llama 3.2 3B.
 
-4. **The ModelCypher Toolkit**: 274 modules, 2,972 tests, implementing geometry from 46 foundational papers.
+4. **The ModelCypher Toolkit**: 274 modules, 3,000+ tests, implementing geometry from 46 foundational papers.
 
 ## 2. The Geometric Knowledge Thesis
 
@@ -80,7 +80,7 @@ Certain concepts—semantic primes from the Natural Semantic Metalanguage tradit
 
 Mathematical relationships are encoded as geometric constraints in latent space. The Pythagorean theorem a² + b² = c² is not stored as tokens—it is the shape of how number concepts relate. We call this the **Operational Semantics Hypothesis**: mathematical formulas define constraint surfaces that valid instances must satisfy.
 
-**Evidence**: Cross-model invariance testing on Pythagorean triples achieves 88.5% position similarity after Procrustes alignment across Llama, Mistral, and Qwen families. The triangle formed by (9, 16, 25) shows 99.4% shape similarity across architectures. Llama 3.2 3B achieves 100% classification accuracy separating valid Pythagorean triples from invalid ones using only embedding geometry—no fine-tuning, no prompting. (See [Experiment: Operational Semantics Hypothesis](../experiments/operational-semantics-hypothesis/results/SUMMARY.md) for full methodology and data.)
+**Evidence**: Cross-model invariance testing on Pythagorean triples achieves 88.5% position similarity after Procrustes alignment across Llama, Mistral, and Qwen families. The triangle formed by (9, 16, 25) shows 99.4% shape similarity across architectures. Llama 3.2 3B achieves 100% classification accuracy separating valid Pythagorean triples from invalid ones using only embedding geometry—no fine-tuning, no prompting. (See [Experiment: Operational Semantics Hypothesis](../experiments/operational-semantics-hypothesis/EXPERIMENT_LOG.md) for full methodology and data.)
 
 This validates Claims 1 and 3 with mathematical concepts as anchors. Numbers behave like semantic primes: they have invariant relational structure. The formula a² + b² = c² is the geometric constraint that positions 5 correctly relative to (3, 4) across all tested models.
 
@@ -127,7 +127,7 @@ Paper I tests Claim 3 directly. Claim 4 is tested via cross-model invariance exp
 
 ## 6. Conclusion
 
-Knowledge has shape. Inference is trajectory. Formulas are constraint surfaces. Safety is constraint. This is not speculation—it is the theoretical foundation for the empirical results in Papers I–III and the 2,972 tests in ModelCypher.
+Knowledge has shape. Inference is trajectory. Formulas are constraint surfaces. Safety is constraint. This is not speculation—it is the theoretical foundation for the empirical results in Papers I–III and the 3,000+ tests in ModelCypher.
 
 ## References
 

@@ -52,12 +52,23 @@ def _context(ctx: typer.Context) -> CLIContext:
 
 
 class BackboneActivationProvider:
-    def __init__(self, tokenizer, embed_tokens, layers, norm, backend) -> None:
+    def __init__(
+        self,
+        tokenizer,
+        embed_tokens,
+        layers,
+        norm,
+        backend,
+        frechet_k_neighbors: int | None = None,
+        frechet_max_k_neighbors: int | None = None,
+    ) -> None:
         self._tokenizer = tokenizer
         self._embed_tokens = embed_tokens
         self._layers = layers
         self._norm = norm
         self._backend = backend
+        self._frechet_k_neighbors = frechet_k_neighbors
+        self._frechet_max_k_neighbors = frechet_max_k_neighbors
 
     def get_activations(self, texts: list[str], layer: int) -> list[list[float]]:
         activations = []
@@ -79,7 +90,12 @@ class BackboneActivationProvider:
                     target_layer=layer,
                     backend=self._backend,
                 )
-                mean = frechet_mean(hidden[0], backend=self._backend)
+                mean = frechet_mean(
+                    hidden[0],
+                    backend=self._backend,
+                    k_neighbors=self._frechet_k_neighbors,
+                    max_k_neighbors=self._frechet_max_k_neighbors,
+                )
                 self._backend.async_eval(mean)
                 pending.append(mean)
                 activations.append(mean)
@@ -160,6 +176,8 @@ def _report_payload(report: ConceptDimensionalityReport) -> dict:
                 "reason": item.reason,
                 "supportTextCount": item.support_text_count,
                 "calibrationWeight": item.calibration_weight,
+                "activationCount": item.activation_count,
+                "invalidCounts": item.invalid_counts,
             }
             for item in report.skipped
         ],
@@ -237,7 +255,17 @@ def atlas_dimensionality(
     )
 
     backend = MLXBackend()
-    provider = BackboneActivationProvider(tokenizer, embed_tokens, layers, norm, backend)
+    # Allow Fréchet mean retries with a higher k if token graphs are disconnected.
+    frechet_max_k = max(k_neighbors, 20)
+    provider = BackboneActivationProvider(
+        tokenizer,
+        embed_tokens,
+        layers,
+        norm,
+        backend,
+        frechet_k_neighbors=k_neighbors,
+        frechet_max_k_neighbors=frechet_max_k,
+    )
     analyzer = ConceptDimensionalityAnalyzer(backend=backend)
     config = ConceptDimensionalityConfig(
         min_support_texts=min_support_texts,
@@ -396,7 +424,17 @@ def atlas_dimensionality_study(
     )
 
     backend = MLXBackend()
-    provider = BackboneActivationProvider(tokenizer, embed_tokens, layers_module, norm, backend)
+    # Allow Fréchet mean retries with a higher k if token graphs are disconnected.
+    frechet_max_k = max(k_neighbors, 20)
+    provider = BackboneActivationProvider(
+        tokenizer,
+        embed_tokens,
+        layers_module,
+        norm,
+        backend,
+        frechet_k_neighbors=k_neighbors,
+        frechet_max_k_neighbors=frechet_max_k,
+    )
     analyzer = ConceptDimensionalityAnalyzer(backend=backend)
     config = ConceptDimensionalityConfig(
         min_support_texts=min_support_texts,

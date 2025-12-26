@@ -152,7 +152,7 @@ class IntrinsicDimension:
         """
         N = points.shape[0]
         if N < 3:
-            raise EstimatorError(f"Insufficient samples: {N} < 3")
+            raise EstimatorError.insufficient_samples(N)
 
         # Compute geodesic distance matrix (curvature is inherent in HD space)
         dist_sq = self._geodesic_distance_matrix_squared(
@@ -297,7 +297,7 @@ class IntrinsicDimension:
             backend.eval(mean_log_mu_arr)
             mean_log_mu = float(backend.to_numpy(mean_log_mu_arr))
             if mean_log_mu < 1e-9:
-                raise EstimatorError("Regression degenerate: mean(log(mu)) ~ 0")
+                raise EstimatorError.regression_degenerate()
             return 1.0 / mean_log_mu
 
         # Regression variant (Facco et al.)
@@ -325,7 +325,7 @@ class IntrinsicDimension:
         sum_xy_val = float(backend.to_numpy(sum_xy))
 
         if sum_xx_val < 1e-9:
-            raise EstimatorError("Regression degenerate: sum(xx) ~ 0")
+            raise EstimatorError.regression_degenerate()
 
         d = sum_xy_val / sum_xx_val
         return d

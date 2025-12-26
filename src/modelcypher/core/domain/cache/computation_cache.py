@@ -246,11 +246,13 @@ class ComputationCache:
         arr: "Array",
         backend: "Backend",
         weights_key: str | None = None,
+        k_neighbors: int | None = None,
     ) -> str:
         """Create cache key for Fréchet mean computation."""
         base_key = self.make_array_key(arr, backend)
         weights_suffix = f"_w{weights_key}" if weights_key else ""
-        return f"frechet_{base_key}{weights_suffix}"
+        k_suffix = f"_k{k_neighbors}" if k_neighbors is not None else ""
+        return f"frechet_{base_key}{weights_suffix}{k_suffix}"
 
     # --- Gram Matrix Cache ---
 

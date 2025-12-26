@@ -68,11 +68,11 @@ mc geometry interference predict --source ./qwen --target ./llama --output text
 
 **Thesis:** The Geometric Knowledge Thesis can be made operational with reproducible measurement tools.
 
-**Key Result:** 274 domain modules, 2,972 tests, validated implementations of CKA, ΔH, and Procrustes alignment.
+**Key Result:** 274 domain modules, 3,000+ tests, validated implementations of CKA, ΔH, and Procrustes alignment.
 
 **Verify:**
 ```bash
-poetry run pytest  # 3030+ tests should pass
+poetry run pytest  # 3,000+ tests should pass
 mc --help          # 50+ commands available
 ```
 

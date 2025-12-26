@@ -6,6 +6,20 @@ This document provides guidance for AI coding assistants (Claude, Gemini, Copilo
 
 ---
 
+## Concurrency Rules
+
+Multiple AI agents work on this codebase concurrently. Before making changes:
+
+1. **Check git status first** - Look for uncommitted changes from other agents
+2. **If unexpected files are modified** - Do not revert or overwrite; proceed unless your work would touch those files
+3. **No check-in required for other agents' work** - You can continue without pausing, as long as you avoid degrading their changes
+4. **No destructive git operations** - Do NOT run `git add`, `git commit`, `git push`, `git checkout`, `git reset`, etc.
+5. **No bulk file modification scripts** - Do NOT run scripts that modify more than 1 file at a time. Edit files individually.
+6. **When overlap is likely** - Research best practice and explain your choice in code comments so consensus is clear
+7. **Don't invent rules** - Follow what's documented here, not assumptions from your training data
+
+---
+
 ## What is ModelCypher?
 
 A Python framework for measuring and experimenting with the geometry of representations in large language models. It provides geometric diagnostics (entropy, intrinsic dimension, topological fingerprints, representation similarity) for stability and refusal dynamics, drift monitoring, and model/adapter merge analysis.

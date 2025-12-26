@@ -167,6 +167,8 @@ class RiemannianGeometry:
         weights: "Array | None" = None,
         max_iterations: int = 100,
         tolerance: float = 1e-6,
+        k_neighbors: int | None = None,
+        max_k_neighbors: int | None = None,
     ) -> FrechetMeanResult:
         """
         Compute the Fréchet mean (Riemannian center of mass) of a point set.
@@ -191,6 +193,8 @@ class RiemannianGeometry:
             weights: Optional weights [n] (uniform if None)
             max_iterations: Maximum gradient descent iterations
             tolerance: Convergence threshold for mean position change
+            k_neighbors: Optional fixed k for geodesic graph connectivity
+            max_k_neighbors: Optional upper bound for adaptive k retries
 
         Returns:
             FrechetMeanResult with the computed mean
@@ -218,6 +222,18 @@ class RiemannianGeometry:
                 final_variance=0.0,
             )
 
+        k_start = None
+        if k_neighbors is not None:
+            k_start = max(1, min(int(k_neighbors), n - 1))
+
+        k_max = None
+        if max_k_neighbors is not None:
+            k_max = max(1, min(int(max_k_neighbors), n - 1))
+            if k_start is None:
+                k_start = min(10, n - 1)
+        else:
+            k_max = k_start
+
         # Initialize weights
         if weights is None:
             weights_arr = backend.ones((n,)) / n
@@ -229,66 +245,145 @@ class RiemannianGeometry:
             weights_arr = weights_arr / weight_sum
             weights_key = _cache.make_array_key(weights_arr, backend)
 
-        # Check cache
-        cache_key = _cache.make_frechet_key(points, backend, weights_key)
-        cached = _cache.get_frechet(cache_key)
-        if cached is not None:
-            return cached
+        attempt_k = k_start
+        while True:
+            cache_key = _cache.make_frechet_key(points, backend, weights_key, attempt_k)
+            cached = _cache.get_frechet(cache_key)
+            if cached is not None:
+                return cached
 
-        start = time.perf_counter()
+            start = time.perf_counter()
 
-        # Initialize at weighted Euclidean mean (reasonable starting point for iteration)
-        weights_col = backend.reshape(weights_arr, (n, 1))
-        mu = backend.sum(points * weights_col, axis=0)
+            # Initialize at weighted Euclidean mean (reasonable starting point for iteration)
+            weights_col = backend.reshape(weights_arr, (n, 1))
+            mu = backend.sum(points * weights_col, axis=0)
 
-        # Compute geodesic distance matrix once (expensive but reusable, now cached)
-        geo_result = self.geodesic_distances(points)
+            # Compute geodesic distance matrix once (expensive but reusable, now cached)
+            try:
+                geo_result = (
+                    self.geodesic_distances(points, k_neighbors=attempt_k)
+                    if attempt_k is not None
+                    else self.geodesic_distances(points)
+                )
+            except ValueError as exc:
+                if self._should_retry_k(exc, attempt_k, k_max):
+                    prev_k = attempt_k
+                    attempt_k = self._next_k(attempt_k, k_max)
+                    logger.warning(
+                        "Frechet mean retry after geodesic failure (k=%s -> %s)",
+                        prev_k,
+                        attempt_k,
+                    )
+                    continue
+                raise
 
-        # Gradient descent for Fréchet mean
-        converged = False
-        iterations = 0
+            if attempt_k is not None and k_max is not None and not geo_result.connected:
+                if self._should_retry_k(ValueError("disconnected"), attempt_k, k_max):
+                    next_k = self._next_k(attempt_k, k_max)
+                    if next_k is not None and next_k != attempt_k:
+                        logger.warning(
+                            "Frechet mean retry after disconnected graph (k=%s -> %s)",
+                            attempt_k,
+                            next_k,
+                        )
+                        attempt_k = next_k
+                        continue
 
-        for it in range(max_iterations):
-            iterations = it + 1
+            # Gradient descent for Fréchet mean
+            converged = False
+            iterations = 0
 
-            # Attach mu to the k-NN graph and compute geodesic distances exactly
-            geo_from_mu = self._geodesic_distances_from_query(
-                points, mu, geo_result=geo_result
+            try:
+                for it in range(max_iterations):
+                    iterations = it + 1
+
+                    # Attach mu to the k-NN graph and compute geodesic distances exactly
+                    geo_from_mu = self._geodesic_distances_from_query(
+                        points, mu, geo_result=geo_result
+                    )
+
+                    # Compute weighted sum of log maps (gradient direction)
+                    # On the discrete manifold, log maps are defined by geodesic scaling.
+                    new_mu = self._frechet_mean_step(points, mu, geo_from_mu, weights_arr)
+
+                    # Check convergence
+                    diff = backend.sqrt(backend.sum((new_mu - mu) ** 2))
+                    backend.eval(diff)
+                    diff_val = float(backend.to_numpy(diff))
+
+                    if diff_val < tolerance:
+                        converged = True
+                        mu = new_mu
+                        break
+
+                    mu = new_mu
+            except ValueError as exc:
+                if self._should_retry_k(exc, attempt_k, k_max):
+                    next_k = self._next_k(attempt_k, k_max)
+                    logger.warning(
+                        "Frechet mean retry after log-map failure (k=%s -> %s)",
+                        attempt_k,
+                        next_k,
+                    )
+                    attempt_k = next_k
+                    continue
+                raise
+
+            backend.eval(mu)
+            mu_np = backend.to_numpy(mu).flatten()
+            non_finite = sum(1 for v in mu_np if not math.isfinite(float(v)))
+            if non_finite > 0:
+                exc = ValueError(
+                    f"Frechet mean contains {non_finite} non-finite values."
+                )
+                if self._should_retry_k(exc, attempt_k, k_max):
+                    next_k = self._next_k(attempt_k, k_max)
+                    logger.warning(
+                        "Frechet mean retry after non-finite mean (k=%s -> %s)",
+                        attempt_k,
+                        next_k,
+                    )
+                    attempt_k = next_k
+                    continue
+                raise exc
+
+            # Compute final variance (sum of squared geodesic distances)
+            final_variance = self._compute_weighted_variance_geodesic(
+                points, mu, geo_result, weights_arr
             )
 
-            # Compute weighted sum of log maps (gradient direction)
-            # On the discrete manifold, log maps are defined by geodesic scaling.
-            new_mu = self._frechet_mean_step(points, mu, geo_from_mu, weights_arr)
+            result = FrechetMeanResult(
+                mean=mu,
+                iterations=iterations,
+                converged=converged,
+                final_variance=final_variance,
+            )
 
-            # Check convergence
-            diff = backend.sqrt(backend.sum((new_mu - mu) ** 2))
-            backend.eval(diff)
-            diff_val = float(backend.to_numpy(diff))
+            # Cache result
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            _cache.set_frechet(cache_key, result, elapsed_ms)
 
-            if diff_val < tolerance:
-                converged = True
-                mu = new_mu
-                break
+            return result
 
-            mu = new_mu
+    @staticmethod
+    def _should_retry_k(
+        exc: Exception,
+        current_k: int | None,
+        max_k: int | None,
+    ) -> bool:
+        if current_k is None or max_k is None:
+            return False
+        if current_k >= max_k:
+            return False
+        message = str(exc)
+        return "Log map scale contains" in message or "non-finite" in message or "disconnected" in message
 
-        # Compute final variance (sum of squared geodesic distances)
-        final_variance = self._compute_weighted_variance_geodesic(
-            points, mu, geo_result, weights_arr
-        )
-
-        result = FrechetMeanResult(
-            mean=mu,
-            iterations=iterations,
-            converged=converged,
-            final_variance=final_variance,
-        )
-
-        # Cache result
-        elapsed_ms = (time.perf_counter() - start) * 1000
-        _cache.set_frechet(cache_key, result, elapsed_ms)
-
-        return result
+    @staticmethod
+    def _next_k(current_k: int | None, max_k: int | None) -> int | None:
+        if current_k is None or max_k is None:
+            return None
+        next_k = max(current_k + 1, current_k * 2)
+        return min(next_k, max_k)
 
     def geodesic_distances(
         self,
@@ -1149,6 +1244,8 @@ def frechet_mean(
     points: "Array",
     weights: "Array | None" = None,
     backend: "Backend | None" = None,
+    k_neighbors: int | None = None,
+    max_k_neighbors: int | None = None,
 ) -> "Array":
     """
     Compute the Fréchet mean of a point set.
@@ -1159,6 +1256,8 @@ def frechet_mean(
         points: Point cloud [n, d]
         weights: Optional weights [n]
         backend: Backend to use
+        k_neighbors: Optional fixed k for geodesic graph connectivity
+        max_k_neighbors: Optional upper bound for adaptive k retries
 
     Returns:
         Fréchet mean point [d]
@@ -1167,7 +1266,12 @@ def frechet_mean(
         backend = get_default_backend()
 
     rg = RiemannianGeometry(backend)
-    result = rg.frechet_mean(points, weights)
+    result = rg.frechet_mean(
+        points,
+        weights,
+        k_neighbors=k_neighbors,
+        max_k_neighbors=max_k_neighbors,
+    )
     return result.mean
 
 

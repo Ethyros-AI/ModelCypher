@@ -81,6 +81,8 @@ class SkippedProbe:
     reason: str
     support_text_count: int
     calibration_weight: float | None
+    activation_count: int | None = None
+    invalid_counts: dict[str, int] | None = None
 
 
 @dataclass(frozen=True)
@@ -198,7 +200,7 @@ class ConceptDimensionalityAnalyzer:
                 )
                 continue
 
-            vectors = self._filter_vectors(activations)
+            vectors, invalid_counts = self._filter_vectors(activations)
             if len(vectors) < resolved.min_support_texts:
                 skipped.append(
                     SkippedProbe(
@@ -207,6 +209,8 @@ class ConceptDimensionalityAnalyzer:
                         reason="insufficient_valid_vectors",
                         support_text_count=len(vectors),
                         calibration_weight=weight,
+                        activation_count=len(activations),
+                        invalid_counts=invalid_counts,
                     )
                 )
                 continue
@@ -298,20 +302,28 @@ class ConceptDimensionalityAnalyzer:
         return texts
 
     @staticmethod
-    def _filter_vectors(vectors: list[list[float]]) -> list[list[float]]:
+    def _filter_vectors(vectors: list[list[float]]) -> tuple[list[list[float]], dict[str, int]]:
         cleaned: list[list[float]] = []
+        invalid_counts = {
+            "empty": 0,
+            "length_mismatch": 0,
+            "non_finite": 0,
+        }
         expected_dim = None
         for vec in vectors:
             if not vec:
+                invalid_counts["empty"] += 1
                 continue
             if expected_dim is None:
                 expected_dim = len(vec)
             if len(vec) != expected_dim:
+                invalid_counts["length_mismatch"] += 1
                 continue
             if any(not math.isfinite(float(v)) for v in vec):
+                invalid_counts["non_finite"] += 1
                 continue
             cleaned.append([float(v) for v in vec])
-        return cleaned
+        return cleaned, invalid_counts
 
     def _compute_intrinsic_dimension(
         self,
