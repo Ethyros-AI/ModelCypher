@@ -251,6 +251,7 @@ def _probe_precise(
     # Build IntersectionMap
     intersection_map_obj: IntersectionMap | None = None
     dimension_correlations: dict = {}
+    layer_cka_scores: dict[int, float] = {}
 
     if source_fingerprints and target_fingerprints:
         try:
@@ -271,14 +272,36 @@ def _probe_precise(
             logger.warning("Failed to build IntersectionMap: %s", e)
             intersection_map_obj = None
 
-    # Extract layer confidences from IntersectionMap
-    # No fallbacks - if we don't have precise alignment, we don't merge
+    # Compute per-layer CKA directly from activation stacks
+    if source_layer_activations and target_layer_activations:
+        for layer_idx in sorted(source_layer_activations.keys()):
+            if layer_idx not in target_layer_activations:
+                continue
+            src_list = source_layer_activations[layer_idx]
+            tgt_list = target_layer_activations[layer_idx]
+            n_samples = min(len(src_list), len(tgt_list))
+            if n_samples < 2:
+                continue
+            try:
+                src_stacked = b.stack(src_list[:n_samples], axis=0)
+                tgt_stacked = b.stack(tgt_list[:n_samples], axis=0)
+                b.eval(src_stacked, tgt_stacked)
+                cka_result = compute_cka(src_stacked, tgt_stacked, backend=b)
+                if cka_result.is_valid:
+                    layer_cka_scores[layer_idx] = cka_result.cka
+            except Exception as e:
+                logger.debug("LAYER %d: CKA computation failed: %s", layer_idx, e)
+
+    # Extract layer confidences (CKA-first, IntersectionMap as fallback)
+    # No fallbacks beyond geometric signals - if we don't have alignment, we don't merge
     layer_confidences: dict[int, float] = {}
-    layer_cka_scores: dict[int, float] = {}
+    if layer_cka_scores:
+        layer_confidences.update(layer_cka_scores)
 
     if intersection_map_obj is not None:
         for lc in intersection_map_obj.layer_confidences:
-            layer_confidences[lc.layer] = lc.confidence
+            if lc.layer not in layer_confidences:
+                layer_confidences[lc.layer] = lc.confidence
 
     if not layer_confidences:
         logger.error(
@@ -326,6 +349,7 @@ def _probe_precise(
         "probes_failed": probes_failed,
         "fingerprints_built": len(source_fingerprints),
         "layers_analyzed": len(layer_confidences),
+        "layers_with_cka": len(layer_cka_scores),
         "layer_confidences": layer_confidences,
         "layer_cka_scores": layer_cka_scores,
         "mean_confidence": mean_confidence,

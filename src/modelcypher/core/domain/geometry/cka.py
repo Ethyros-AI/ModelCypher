@@ -46,6 +46,7 @@ import logging
 import math
 import time
 from dataclasses import dataclass
+from enum import Enum
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -62,6 +63,27 @@ logger = logging.getLogger(__name__)
 
 # Session-scoped cache for Gram matrices and centered Gram matrices
 _cache = ComputationCache.shared()
+
+
+class HSICEstimator(str, Enum):
+    """HSIC estimator type for CKA computation.
+
+    BIASED: Standard (1/(n-1)^2) * tr(K_c @ L_c). Works with n >= 2.
+            This is the original estimator from Gretton et al. (2005).
+            Has O(1/n) bias that inflates CKA in high P>>N settings.
+
+    UNBIASED: Song et al. (2012) debiased estimator. Requires n >= 4.
+              Corrects for finite-sample bias through combinatorial adjustments.
+              Use this when features >> samples to avoid false-positive similarity.
+
+    AUTO: Automatically select based on feature/sample ratio.
+          Uses UNBIASED when max(features) > samples AND n >= 4.
+          Falls back to BIASED otherwise.
+    """
+
+    BIASED = "biased"
+    UNBIASED = "unbiased"
+    AUTO = "auto"
 
 
 @dataclass(frozen=True)
@@ -267,11 +289,121 @@ def _compute_hsic(
     return hsic
 
 
+def _compute_hsic_unbiased(
+    gram_x: "Array",
+    gram_y: "Array",
+    backend: "Backend",
+) -> float:
+    """
+    Compute unbiased HSIC using Song et al. (2012) estimator.
+
+    This estimator corrects for finite-sample bias that causes the standard
+    HSIC to inflate in high P>>N (features >> samples) settings.
+
+    Formula (Song et al. 2012, Equation 5):
+        HSIC_u = 1/(n(n-3)) * [
+            tr(K_tilde @ L_tilde) +
+            (1^T K_tilde 1 * 1^T L_tilde 1) / ((n-1)(n-2)) -
+            (2/(n-2)) * 1^T K_tilde L_tilde 1
+        ]
+
+    Where K_tilde, L_tilde are Gram matrices with diagonal set to 0.
+
+    Requires n >= 4 (returns 0.0 for smaller samples).
+
+    Args:
+        gram_x: Gram matrix for X [n, n]
+        gram_y: Gram matrix for Y [n, n]
+        backend: Backend protocol implementation
+
+    Returns:
+        Unbiased HSIC estimate (non-negative)
+    """
+    n = gram_x.shape[0]
+    if n < 4:
+        # Unbiased estimator requires n >= 4 (denominator n*(n-3))
+        return 0.0
+
+    # Zero out diagonals: K_tilde[i,i] = 0
+    diag_mask = 1.0 - backend.eye(n)
+    k_tilde = gram_x * diag_mask
+    l_tilde = gram_y * diag_mask
+    backend.eval(k_tilde, l_tilde)
+
+    # Term 1: tr(K_tilde @ L_tilde)
+    # Efficient via element-wise product: tr(A @ B) = sum(A * B^T)
+    # For symmetric matrices: sum(K_tilde * L_tilde)
+    term1 = backend.sum(k_tilde * l_tilde)
+
+    # Term 2: (1^T K_tilde 1 * 1^T L_tilde 1) / ((n-1)(n-2))
+    # 1^T K_tilde 1 = sum of all elements
+    k_sum = backend.sum(k_tilde)
+    l_sum = backend.sum(l_tilde)
+    term2 = (k_sum * l_sum) / ((n - 1) * (n - 2))
+
+    # Term 3: (2/(n-2)) * 1^T K_tilde L_tilde 1
+    # = (2/(n-2)) * sum of all elements of K_tilde @ L_tilde
+    kl_product = backend.matmul(k_tilde, l_tilde)
+    term3 = (2.0 / (n - 2)) * backend.sum(kl_product)
+
+    # Combine: HSIC_u = (term1 + term2 - term3) / (n * (n-3))
+    hsic = (term1 + term2 - term3) / (n * (n - 3))
+    backend.eval(hsic)
+
+    result = float(backend.to_numpy(hsic))
+
+    # HSIC should be non-negative; clamp to avoid numerical issues
+    return max(0.0, result) if math.isfinite(result) else 0.0
+
+
+def _compute_hsic_dispatch(
+    gram_x: "Array",
+    gram_y: "Array",
+    backend: "Backend",
+    estimator: HSICEstimator,
+    n_features_x: int | None = None,
+    n_features_y: int | None = None,
+    centered_x: "Array | None" = None,
+    centered_y: "Array | None" = None,
+) -> float:
+    """
+    Dispatch to appropriate HSIC estimator based on configuration.
+
+    Args:
+        gram_x, gram_y: Gram matrices
+        backend: Backend protocol implementation
+        estimator: Which HSIC estimator to use
+        n_features_x, n_features_y: Feature dimensions (for AUTO mode)
+        centered_x, centered_y: Pre-centered Gram matrices (for biased mode)
+
+    Returns:
+        HSIC estimate
+    """
+    n = gram_x.shape[0]
+
+    if estimator == HSICEstimator.AUTO:
+        # Use unbiased when max(features) > samples (high-dimensional)
+        max_features = max(n_features_x or 0, n_features_y or 0)
+        if max_features > n and n >= 4:
+            estimator = HSICEstimator.UNBIASED
+        else:
+            estimator = HSICEstimator.BIASED
+
+    if estimator == HSICEstimator.UNBIASED:
+        if n < 4:
+            # Fall back to biased for insufficient samples
+            return _compute_hsic(gram_x, gram_y, backend, centered_x, centered_y)
+        return _compute_hsic_unbiased(gram_x, gram_y, backend)
+    else:
+        return _compute_hsic(gram_x, gram_y, backend, centered_x, centered_y)
+
+
 def compute_cka(
     activations_x: "Array",
     activations_y: "Array",
     backend: "Backend | None" = None,
     use_linear_kernel: bool = True,
+    estimator: HSICEstimator = HSICEstimator.BIASED,
 ) -> CKAResult:
     """
     Compute CKA between two activation matrices.
@@ -286,6 +418,9 @@ def compute_cka(
         backend: Backend protocol implementation. If None, uses default.
         use_linear_kernel: If True, use linear kernel (X @ X^T).
                           If False, use RBF kernel.
+        estimator: Which HSIC estimator to use (BIASED, UNBIASED, or AUTO).
+                   BIASED is the default for backward compatibility.
+                   Use UNBIASED or AUTO when features >> samples.
 
     Returns:
         CKAResult with CKA similarity and HSIC values
@@ -342,14 +477,27 @@ def compute_cka(
         gram_x = _rbf_gram_matrix(activations_x, backend)
         gram_y = _rbf_gram_matrix(activations_y, backend)
 
-    # Center Gram matrices (with caching)
+    # Center Gram matrices (with caching) - needed for biased estimator
     centered_x = _center_gram_matrix(gram_x, backend, gram_key_x)
     centered_y = _center_gram_matrix(gram_y, backend, gram_key_y)
 
-    # Compute HSIC values
-    hsic_xy = _compute_hsic(gram_x, gram_y, backend, centered_x, centered_y)
-    hsic_xx = _compute_hsic(gram_x, gram_x, backend, centered_x, centered_x)
-    hsic_yy = _compute_hsic(gram_y, gram_y, backend, centered_y, centered_y)
+    # Get feature dimensions for AUTO mode
+    n_features_x = activations_x.shape[1] if len(activations_x.shape) > 1 else 1
+    n_features_y = activations_y.shape[1] if len(activations_y.shape) > 1 else 1
+
+    # Compute HSIC values using selected estimator
+    hsic_xy = _compute_hsic_dispatch(
+        gram_x, gram_y, backend, estimator,
+        n_features_x, n_features_y, centered_x, centered_y
+    )
+    hsic_xx = _compute_hsic_dispatch(
+        gram_x, gram_x, backend, estimator,
+        n_features_x, n_features_x, centered_x, centered_x
+    )
+    hsic_yy = _compute_hsic_dispatch(
+        gram_y, gram_y, backend, estimator,
+        n_features_y, n_features_y, centered_y, centered_y
+    )
 
     # CKA = HSIC(X,Y) / sqrt(HSIC(X,X) * HSIC(Y,Y))
     denominator = math.sqrt(hsic_xx * hsic_yy)
@@ -550,6 +698,7 @@ def compute_cka_from_grams(
     gram_b: list[float] | "Array",
     n: int | None = None,
     backend: "Backend | None" = None,
+    estimator: HSICEstimator = HSICEstimator.BIASED,
 ) -> float:
     """
     Compute CKA from pre-computed Gram matrices.
@@ -557,11 +706,16 @@ def compute_cka_from_grams(
     This is the canonical implementation for working with pre-computed Gram matrices.
     Supports both flattened lists (n*n elements) and 2D arrays.
 
+    IMPORTANT: This is THE method for cross-dimensional comparison.
+    Gram matrices are [n,n] regardless of original feature dimension,
+    making this work across ANY dimensions.
+
     Args:
         gram_a: Gram matrix for representation A. Either flattened [n*n] or [n, n].
         gram_b: Gram matrix for representation B. Either flattened [n*n] or [n, n].
         n: Matrix dimension (required if gram matrices are flattened lists).
         backend: Backend protocol implementation. If None, uses default.
+        estimator: Which HSIC estimator to use (BIASED, UNBIASED, or AUTO).
 
     Returns:
         CKA similarity value in [0, 1]
@@ -603,14 +757,16 @@ def compute_cka_from_grams(
     if n <= 1:
         return 0.0
 
-    # Center gram matrices
+    # Center gram matrices (needed for biased estimator)
     centered_a = _center_gram_matrix(arr_a, backend)
     centered_b = _center_gram_matrix(arr_b, backend)
 
-    # Compute HSIC values
-    hsic_ab = _compute_hsic(arr_a, arr_b, backend, centered_a, centered_b)
-    hsic_aa = _compute_hsic(arr_a, arr_a, backend, centered_a, centered_a)
-    hsic_bb = _compute_hsic(arr_b, arr_b, backend, centered_b, centered_b)
+    # Compute HSIC values using selected estimator
+    # Note: For Gram matrices, we don't know original feature dims, so AUTO
+    # will use the same as BIASED unless explicitly set to UNBIASED
+    hsic_ab = _compute_hsic_dispatch(arr_a, arr_b, backend, estimator, None, None, centered_a, centered_b)
+    hsic_aa = _compute_hsic_dispatch(arr_a, arr_a, backend, estimator, None, None, centered_a, centered_a)
+    hsic_bb = _compute_hsic_dispatch(arr_b, arr_b, backend, estimator, None, None, centered_b, centered_b)
 
     # CKA = HSIC(A,B) / sqrt(HSIC(A,A) * HSIC(B,B))
     denom = math.sqrt(hsic_aa * hsic_bb)
@@ -660,3 +816,117 @@ def ensemble_similarity(
     max_score = jaccard_weight + cka_weight + 1.0
 
     return score / max_score
+
+
+class CKAComputer:
+    """Configurable CKA computation with HSIC estimator selection.
+
+    Use this class when you need:
+    - Consistent estimator selection across multiple computations
+    - Object-oriented interface for CKA operations
+    - Integration with services that expect a stateful computer
+
+    Example:
+        >>> cka = CKAComputer(backend, estimator=HSICEstimator.AUTO)
+        >>> similarity = cka.linear_cka(activations_x, activations_y)
+        >>> print(f"CKA: {similarity:.4f}")
+
+    For most use cases, the module-level functions (compute_cka, compute_cka_backend)
+    are sufficient. This class is primarily for service integration patterns.
+    """
+
+    def __init__(
+        self,
+        backend: "Backend | None" = None,
+        estimator: HSICEstimator = HSICEstimator.BIASED,
+    ) -> None:
+        """Initialize CKA computer with configuration.
+
+        Args:
+            backend: Backend protocol implementation. If None, uses default.
+            estimator: Which HSIC estimator to use. BIASED is default for
+                      backward compatibility; use UNBIASED or AUTO for
+                      high-dimensional (P>>N) settings.
+        """
+        self._backend = backend or get_default_backend()
+        self._estimator = estimator
+
+    @property
+    def backend(self) -> "Backend":
+        """Get the backend protocol implementation."""
+        return self._backend
+
+    @property
+    def estimator(self) -> HSICEstimator:
+        """Get the HSIC estimator type."""
+        return self._estimator
+
+    def linear_cka(self, x: "Array", y: "Array") -> float:
+        """Compute linear kernel CKA between activation matrices.
+
+        Args:
+            x: Activation matrix [n_samples, n_features_x]
+            y: Activation matrix [n_samples, n_features_y]
+
+        Returns:
+            CKA similarity value in [0, 1]
+        """
+        result = compute_cka(
+            x, y, self._backend,
+            use_linear_kernel=True,
+            estimator=self._estimator,
+        )
+        return result.cka
+
+    def rbf_cka(self, x: "Array", y: "Array") -> float:
+        """Compute RBF kernel CKA between activation matrices.
+
+        Args:
+            x: Activation matrix [n_samples, n_features_x]
+            y: Activation matrix [n_samples, n_features_y]
+
+        Returns:
+            CKA similarity value in [0, 1]
+        """
+        result = compute_cka(
+            x, y, self._backend,
+            use_linear_kernel=False,
+            estimator=self._estimator,
+        )
+        return result.cka
+
+    def full(self, x: "Array", y: "Array", use_linear: bool = True) -> CKAResult:
+        """Full CKA computation returning CKAResult with all HSIC values.
+
+        Args:
+            x: Activation matrix [n_samples, n_features_x]
+            y: Activation matrix [n_samples, n_features_y]
+            use_linear: If True, use linear kernel; if False, use RBF kernel.
+
+        Returns:
+            CKAResult with CKA similarity and HSIC values
+        """
+        return compute_cka(
+            x, y, self._backend,
+            use_linear_kernel=use_linear,
+            estimator=self._estimator,
+        )
+
+    def from_grams(self, gram_a: "Array", gram_b: "Array") -> float:
+        """Compute CKA from pre-computed Gram matrices.
+
+        This is useful for cross-dimensional comparison where you have
+        Gram matrices but not the original activations.
+
+        Args:
+            gram_a: Gram matrix for representation A [n, n]
+            gram_b: Gram matrix for representation B [n, n]
+
+        Returns:
+            CKA similarity value in [0, 1]
+        """
+        return compute_cka_from_grams(
+            gram_a, gram_b,
+            backend=self._backend,
+            estimator=self._estimator,
+        )

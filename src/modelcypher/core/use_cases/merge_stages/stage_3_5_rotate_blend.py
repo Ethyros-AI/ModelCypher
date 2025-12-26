@@ -529,6 +529,26 @@ def stage_rotate_blend_propagate(
         "per_layer_rotation_layers": len(layer_rotations),
     }
 
+    if not layer_confidences and dimension_correlations:
+        derived_confidences: dict[int, float] = {}
+        for layer_key, correlations in dimension_correlations.items():
+            if not correlations:
+                continue
+            corr_vals: list[float] = []
+            for corr in correlations:
+                if hasattr(corr, "correlation"):
+                    corr_vals.append(float(corr.correlation))
+                elif isinstance(corr, dict) and "correlation" in corr:
+                    corr_vals.append(float(corr["correlation"]))
+            if corr_vals:
+                layer_idx = int(layer_key) if not isinstance(layer_key, int) else layer_key
+                mean_corr = sum(corr_vals) / len(corr_vals)
+                derived_confidences[layer_idx] = max(0.0, min(1.0, mean_corr))
+        if derived_confidences:
+            layer_confidences = derived_confidences
+            metrics["layer_confidences_used"] = derived_confidences.copy()
+            metrics["layer_confidences_from_dimension_correlations"] = True
+
     layer_alphas: dict[int, float] = {}
     if layer_confidences:
         for layer_idx, confidence in layer_confidences.items():

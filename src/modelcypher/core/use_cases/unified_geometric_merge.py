@@ -248,6 +248,7 @@ class UnifiedGeometricMerger:
 
         layer_confidences: dict[int, float] = probe_result.get("confidences", {})
         dimension_correlations: dict = probe_result.get("dimension_correlations", {})
+        intersection_map_obj = probe_result.get("intersection_map")
 
         # Log activation collection results
         if source_activations and target_activations:
@@ -269,7 +270,7 @@ class UnifiedGeometricMerger:
         # =================================================================
         logger.info("STAGE 2: PERMUTE")
         permuted_source, permute_metrics = self._stage_permute(
-            source_weights, target_weights, layer_confidences
+            source_weights, target_weights, layer_confidences, intersection_map_obj
         )
 
         # =================================================================
@@ -282,6 +283,7 @@ class UnifiedGeometricMerger:
             layer_indices,
             layer_confidences,
             dimension_correlations,
+            intersection_map_obj=intersection_map_obj,
             source_activations=source_activations,
             target_activations=target_activations,
         )
@@ -612,6 +614,7 @@ class UnifiedGeometricMerger:
             "correlations": result.correlations,
             "confidences": result.confidences,
             "dimension_correlations": result.dimension_correlations,
+            "intersection_map": result.intersection_map,
         }, result.metrics, result.source_activations, result.target_activations
 
     def _stage_permute(
@@ -619,6 +622,7 @@ class UnifiedGeometricMerger:
         source_weights: dict[str, "Array"],
         target_weights: dict[str, "Array"],
         layer_confidences: dict[int, float],
+        intersection_map_obj: Any | None,
     ) -> tuple[dict[str, "Array"], dict[str, Any]]:
         """Stage 2: Re-Basin neuron permutation alignment."""
         from .merge_stages.stage_2_permute import (
@@ -632,7 +636,7 @@ class UnifiedGeometricMerger:
         result = stage_permute(
             source_weights=source_weights,
             target_weights=target_weights,
-            intersection_map_obj=None,
+            intersection_map_obj=intersection_map_obj,
             layer_confidences=layer_confidences,
             config=config,
             infer_hidden_dim_fn=infer_hidden_dim,
@@ -647,6 +651,7 @@ class UnifiedGeometricMerger:
         layer_indices: list[int],
         layer_confidences: dict[int, float],
         dimension_correlations: dict,
+        intersection_map_obj: Any | None,
         source_activations: dict | None = None,
         target_activations: dict | None = None,
     ) -> tuple[dict[str, "Array"], dict[str, Any], dict[str, Any]]:
@@ -670,7 +675,7 @@ class UnifiedGeometricMerger:
         result = stage_rotate_blend_propagate(
             source_weights=source_weights,
             target_weights=target_weights,
-            intersection_map_obj=None,
+            intersection_map_obj=intersection_map_obj,
             layer_confidences=layer_confidences,
             dimension_correlations=dimension_correlations,
             layer_indices=layer_indices,
