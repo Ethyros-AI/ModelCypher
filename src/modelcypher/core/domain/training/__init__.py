@@ -42,19 +42,14 @@ from .checkpoint_persistence import CheckpointPersistence
 from .checkpoint_recovery import CheckpointRecovery
 from .checkpoint_retention import CheckpointRetention
 from .checkpoint_validation import CheckpointValidation
-from .checkpoints_mlx import CheckpointManager
-from .engine_mlx import TrainingEngine, TrainingError
 
 # Additional training modules (previously not exported)
-from .evaluation_mlx import *  # noqa: F401,F403
 from .exceptions import CheckpointError
 from .geometric_metrics_collector import *  # noqa: F401,F403
 from .geometric_training_metrics import *  # noqa: F401,F403
 from .gradient_smoothness_estimator import *  # noqa: F401,F403
 from .hessian_estimator import *  # noqa: F401,F403
 from .idle_training_scheduler import *  # noqa: F401,F403
-from .lora_mlx import *  # noqa: F401,F403
-from .loss_landscape_mlx import *  # noqa: F401,F403
 from .model_architecture_heuristics import ModelArchitectureHeuristics
 from .resources import ResourceIntensiveOperation, TrainingResourceGuard
 from .scheduling import *  # noqa: F401,F403
@@ -82,3 +77,41 @@ from .types import (
     TrainingStatus,
 )
 from .validation import TrainingHyperparameterValidator
+
+_training_platform = get_training_platform()
+
+if _training_platform == "mlx":
+    from .checkpoints_mlx import CheckpointManager
+    from .engine_mlx import TrainingEngine, TrainingError
+    from .evaluation_mlx import *  # noqa: F401,F403
+    from .evaluation_mlx import EvaluationEngine
+    from .lora_mlx import *  # noqa: F401,F403
+    from .lora_mlx import LoRAConfig as LoRAConfig
+    from .loss_landscape_mlx import *  # noqa: F401,F403
+    from .loss_landscape_mlx import LossLandscapeComputer
+elif _training_platform == "cuda":
+    from .checkpoints_cuda import CheckpointManagerCUDA as CheckpointManager
+    from .engine_cuda import TrainingEngineCUDA as TrainingEngine
+    from .engine_cuda import TrainingErrorCUDA as TrainingError
+    from .evaluation_cuda import *  # noqa: F401,F403
+    from .evaluation_cuda import EvaluationEngineCUDA as EvaluationEngine
+    from .lora_cuda import *  # noqa: F401,F403
+    from .lora_cuda import LoRAConfigCUDA as LoRAConfig
+    from .loss_landscape_cuda import *  # noqa: F401,F403
+    from .loss_landscape_cuda import LossLandscapeComputerCUDA as LossLandscapeComputer
+elif _training_platform == "jax":
+    from .checkpoints_jax import CheckpointManagerJAX as CheckpointManager
+    from .engine_jax import TrainingEngineJAX as TrainingEngine
+    from .engine_jax import TrainingErrorJAX as TrainingError
+    from .evaluation_jax import *  # noqa: F401,F403
+    from .evaluation_jax import EvaluationEngineJAX as EvaluationEngine
+    from .lora_jax import *  # noqa: F401,F403
+    from .lora_jax import LoRAConfigJAX as LoRAConfig
+    from .loss_landscape_jax import *  # noqa: F401,F403
+    from .loss_landscape_jax import LossLandscapeComputerJAX as LossLandscapeComputer
+else:
+    CheckpointManager = None
+    TrainingEngine = None
+    TrainingError = None
+    EvaluationEngine = None
+    LossLandscapeComputer = None

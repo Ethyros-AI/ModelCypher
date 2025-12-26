@@ -25,9 +25,9 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, AsyncGenerator, Protocol
 
-from modelcypher.core.domain.inference.dual_path_mlx import (
-    DualPathGenerator,
-    DualPathGeneratorConfiguration,
+from modelcypher.core.domain.inference._platform import (
+    get_dual_path_config_class,
+    get_dual_path_generator_class,
 )
 
 logger = logging.getLogger("modelcypher.comparison")
@@ -86,7 +86,7 @@ class CheckpointComparisonCoordinator:
         self,
         checkpoints: list[str],
         prompt: str,
-        config: DualPathGeneratorConfiguration,  # Reuse config
+        config: Any,  # Platform-specific configuration
     ) -> AsyncGenerator[ComparisonEvent, None]:
         uuid.uuid4()
         # Prefetch logic (stubbed as simple log for now, since python models might just load on demand)
@@ -108,7 +108,8 @@ class CheckpointComparisonCoordinator:
                     # But verifying imports is easier if we just use our existing DualPathGenerator class for now as a "Service".
 
                     # Create a specific config for this checkpoint
-                    current_config = DualPathGeneratorConfiguration(
+                    config_class = get_dual_path_config_class()
+                    current_config = config_class(
                         base_model_path=ckpt,
                         adapter_path=None,  # Comparison usually implies base weights, or we'd need adapter config
                         max_tokens=config.max_tokens,
@@ -117,7 +118,8 @@ class CheckpointComparisonCoordinator:
 
                     # Instantiate generator (which loads model)
                     # In a real app, this load happens in the service layer with caching.
-                    generator = DualPathGenerator(current_config)
+                    generator_class = get_dual_path_generator_class()
+                    generator = generator_class(current_config)
 
                     response_text = ""
                     metrics = None

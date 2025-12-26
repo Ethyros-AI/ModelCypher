@@ -62,7 +62,7 @@ src/modelcypher/
 │   └── use_cases/        # Service orchestration
 ├── ports/                # Abstract interfaces (Protocols)
 ├── adapters/             # Concrete implementations
-├── backends/             # MLX (macOS) and CUDA (stub)
+├── backends/             # MLX (macOS), JAX (TPU/GPU), CUDA (NVIDIA)
 ├── cli/                  # Typer CLI commands
 └── mcp/                  # MCP server
 ```

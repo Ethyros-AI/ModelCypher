@@ -78,9 +78,10 @@ If you prefer, call it "representation structure analysis." The math is the same
 | Backend | Platform | Install |
 |---------|----------|---------|
 | MLX | macOS (Apple Silicon) | Default, no extra install |
-| JAX | Linux, TPU, CUDA | `poetry install -E jax` |
+| CUDA | Linux (NVIDIA GPU) | `poetry install -E cuda` |
+| JAX | Linux/TPU/GPU | `poetry install -E jax` |
 
-Set explicitly: `MC_BACKEND=jax mc geometry ...`
+Set explicitly: `MC_BACKEND=cuda mc geometry ...` or `MC_BACKEND=jax mc geometry ...`
 
 ### "How long do probes take?"
 

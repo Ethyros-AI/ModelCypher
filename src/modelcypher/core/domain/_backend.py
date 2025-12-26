@@ -22,8 +22,8 @@ without directly importing MLX or other platform-specific implementations.
 
 Supported backends:
     - mlx: Apple MLX for macOS (default on Darwin)
+    - cuda: PyTorch CUDA for NVIDIA GPUs
     - jax: JAX for TPU/GPU/CPU (Google/Anthropic infrastructure)
-    - cuda: PyTorch CUDA for NVIDIA GPUs (stub, not yet implemented)
 
 Usage in domain classes:
 
@@ -86,7 +86,7 @@ def _detect_default_backend_type() -> BackendType:
     """Detect the best available backend for the current platform.
 
     Priority:
-        1. MC_BACKEND environment variable
+        1. MC_BACKEND (or MODELCYPHER_BACKEND) environment variable
         2. MLX on macOS (Darwin)
         3. JAX if available
 
@@ -95,6 +95,8 @@ def _detect_default_backend_type() -> BackendType:
     """
     # Check environment variable override
     env_backend = os.environ.get("MC_BACKEND", "").lower()
+    if not env_backend:
+        env_backend = os.environ.get("MODELCYPHER_BACKEND", "").lower()
     if env_backend in ("mlx", "jax", "cuda"):
         return env_backend  # type: ignore
 
@@ -107,6 +109,15 @@ def _detect_default_backend_type() -> BackendType:
         except ImportError:
             pass
 
+    # Try CUDA (NVIDIA GPU)
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return "cuda"
+    except ImportError:
+        pass
+
     # Try JAX (works on TPU, GPU, CPU)
     try:
         import jax  # noqa: F401
@@ -116,8 +127,9 @@ def _detect_default_backend_type() -> BackendType:
         pass
 
     raise RuntimeError(
-        "No GPU backend available. ModelCypher requires MLX (macOS) or JAX (Linux/TPU). "
-        "Install with: poetry install (macOS) or poetry install -E jax (Linux)"
+        "No GPU backend available. ModelCypher requires MLX (macOS), CUDA (Linux/NVIDIA), "
+        "or JAX (Linux/TPU). Install with: poetry install (macOS), "
+        "poetry install -E cuda (Linux/NVIDIA), or poetry install -E jax (Linux/TPU)"
     )
 
 
@@ -129,7 +141,7 @@ def get_default_backend() -> Backend:
 
     Note:
         On first call, this detects the best available backend.
-        Use MC_BACKEND environment variable to override:
+        Use MC_BACKEND (or MODELCYPHER_BACKEND) environment variable to override:
             MC_BACKEND=jax python script.py
         Or call set_default_backend() programmatically.
     """

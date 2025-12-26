@@ -233,7 +233,7 @@ flowchart TB
 | `MC_MCP_AUTH_JWKS_URI` | - | JWKS endpoint for token verification |
 | `MC_LOG_LEVEL` | `info` | Logging level (debug, info, warning, error) |
 | `MODELCYPHER_CACHE_DIR` | `~/.modelcypher` | Cache directory location |
-| `MODELCYPHER_BACKEND` | `mlx` | Default compute backend |
+| `MC_BACKEND` | `mlx` | Default compute backend (alias: `MODELCYPHER_BACKEND`) |
 
 ## Troubleshooting
 

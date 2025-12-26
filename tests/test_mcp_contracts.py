@@ -218,6 +218,8 @@ def test_mc_inventory_schema(mcp_env: dict[str, str]):
     assert "jobs" in payload
     assert "workspace" in payload
     assert "mlxVersion" in payload
+    assert "cudaVersion" in payload
+    assert "jaxVersion" in payload
     assert "policies" in payload
 
 
@@ -230,6 +232,12 @@ def test_mc_system_status_schema(mcp_env: dict[str, str]):
     assert payload["_schema"] == "mc.system.status.v1"
     assert "machineName" in payload
     assert "unifiedMemoryGB" in payload
+    assert "mlxVersion" in payload
+    assert "cudaVersion" in payload
+    assert "jaxVersion" in payload
+    assert "preferredBackend" in payload
+    assert "cudaAvailable" in payload
+    assert "jaxAvailable" in payload
     assert "readinessScore" in payload
     assert "scoreBreakdown" in payload
     assert "blockers" in payload

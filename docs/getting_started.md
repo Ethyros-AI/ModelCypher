@@ -5,7 +5,8 @@ ModelCypher is a high-dimensional geometry engine for Large Language Models. It 
 | Platform | Backend | Notes |
 | :--- | :--- | :--- |
 | **macOS** (Apple Silicon) | MLX | Default. Unified memory, fast local inference. |
-| **Linux/Cloud** (TPU/GPU) | JAX | Google TPU pods, Anthropic infrastructure, CUDA GPUs. |
+| **Linux** (NVIDIA GPU) | CUDA | PyTorch CUDA backend for NVIDIA GPUs. |
+| **Linux/Cloud** (TPU/GPU) | JAX | Google TPU pods, JAX GPU backends. |
 | **Any** | NumPy | Testing and CI (no GPU required). |
 
 ## Prerequisites
@@ -15,8 +16,13 @@ ModelCypher is a high-dimensional geometry engine for Large Language Models. It 
 - **OS**: macOS 14.0+ (Sonoma or later).
 - **Python**: 3.11+
 
+### Linux (CUDA Backend)
+- **Hardware**: Linux with NVIDIA GPU.
+- **Python**: 3.11+
+- **Note**: Install with `poetry install -E cuda` and set `MC_BACKEND=cuda`.
+
 ### Linux/Cloud (JAX Backend)
-- **Hardware**: Any Linux system with TPU or NVIDIA GPU.
+- **Hardware**: Any Linux system with TPU or GPU.
 - **Python**: 3.11+
 - **Note**: Install with `poetry install -E jax` and set `MC_BACKEND=jax`.
 
@@ -32,6 +38,9 @@ ModelCypher is a high-dimensional geometry engine for Large Language Models. It 
    ```bash
    # macOS (MLX backend - default)
    poetry install
+
+   # Linux (CUDA backend)
+   poetry install -E cuda
 
    # Linux/Cloud (JAX backend)
    poetry install -E jax

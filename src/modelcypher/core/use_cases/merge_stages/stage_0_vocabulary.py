@@ -342,6 +342,29 @@ def stage_vocabulary_align(
                 else:
                     source_byte_matrix = source_byte_matrix_full
                     target_byte_matrix = target_byte_matrix_full
+
+                # Ensure full-row-rank anchors for exact phase lock.
+                rank_indices, rank_meta = _select_full_rank_indices(
+                    target_byte_matrix,
+                    int(source_byte_matrix.shape[0]),
+                    backend,
+                )
+                if len(rank_indices) < int(source_byte_matrix.shape[0]):
+                    idx_arr = backend.array(rank_indices)
+                    source_byte_matrix = backend.take(source_byte_matrix, idx_arr, axis=0)
+                    target_byte_matrix = backend.take(target_byte_matrix, idx_arr, axis=0)
+                    shared_bytes = [shared_bytes[idx] for idx in rank_indices]
+                    backend.eval(source_byte_matrix, target_byte_matrix)
+
+                if coverage_meta is None:
+                    coverage_meta = {}
+                coverage_meta.update(rank_meta)
+
+                if len(shared_bytes) < 2:
+                    raise RuntimeError(
+                        f"Binary phase lock failed: rank-deficient anchors ({len(shared_bytes)})."
+                    )
+
                 byte_labels = [f"byte:{b}" for b in shared_bytes]
 
                 best_alignment: dict[str, Any] | None = None
@@ -471,6 +494,14 @@ def stage_vocabulary_align(
                 shared_atlas = sorted(set(source_atlas_map) & set(target_atlas_map))
 
             coverage_meta: dict[str, float] | None = None
+            candidate_atlas: list[str] = []
+            selected_indices: list[int] = []
+            available_indices: list[int] = []
+            target_atlas_matrix = None
+            source_atlas_matrix = None
+            target_atlas_matrix_full = None
+            source_atlas_matrix_full = None
+
             if len(shared_atlas) >= 2:
                 max_anchor_count = min(len(shared_atlas), int(source_embed.shape[1]))
                 candidate_atlas = shared_atlas
@@ -483,11 +514,10 @@ def stage_vocabulary_align(
                 target_atlas_matrix_full = backend.stack(
                     [target_atlas_map[k] for k in candidate_atlas], axis=0
                 )
-                backend.eval(target_atlas_matrix_full)
                 source_atlas_matrix_full = backend.stack(
                     [source_atlas_map[k] for k in candidate_atlas], axis=0
                 )
-                backend.eval(source_atlas_matrix_full)
+                backend.eval(target_atlas_matrix_full, source_atlas_matrix_full)
 
                 if len(candidate_atlas) > max_anchor_count:
                     if use_coverage_anchor_selection:
@@ -497,7 +527,37 @@ def stage_vocabulary_align(
                             backend,
                             k_neighbors=coverage_k_neighbors,
                         )
-                        shared_atlas = [candidate_atlas[idx] for idx in selected_indices]
+                    else:
+                        if balance_anchor_weights:
+                            selected_atlas = _balanced_anchor_subset(
+                                candidate_atlas, max_anchor_count
+                            )
+                        else:
+                            selected_atlas = candidate_atlas[:max_anchor_count]
+                        atlas_index = {anchor: idx for idx, anchor in enumerate(candidate_atlas)}
+                        selected_indices = [
+                            atlas_index[a] for a in selected_atlas if a in atlas_index
+                        ]
+                else:
+                    selected_indices = list(range(len(candidate_atlas)))
+
+                if selected_indices:
+                    idx_arr = backend.array(selected_indices)
+                    target_atlas_matrix = backend.take(
+                        target_atlas_matrix_full, idx_arr, axis=0
+                    )
+                    source_atlas_matrix = backend.take(
+                        source_atlas_matrix_full, idx_arr, axis=0
+                    )
+                    backend.eval(target_atlas_matrix, source_atlas_matrix)
+
+                    rank_indices, rank_meta = _select_full_rank_indices(
+                        target_atlas_matrix,
+                        int(source_atlas_matrix.shape[0]),
+                        backend,
+                    )
+                    if len(rank_indices) < int(source_atlas_matrix.shape[0]):
+                        selected_indices = [selected_indices[idx] for idx in rank_indices]
                         idx_arr = backend.array(selected_indices)
                         target_atlas_matrix = backend.take(
                             target_atlas_matrix_full, idx_arr, axis=0
@@ -506,27 +566,29 @@ def stage_vocabulary_align(
                             source_atlas_matrix_full, idx_arr, axis=0
                         )
                         backend.eval(target_atlas_matrix, source_atlas_matrix)
-                    else:
-                        if balance_anchor_weights:
-                            shared_atlas = _balanced_anchor_subset(
-                                candidate_atlas, max_anchor_count
-                            )
-                        else:
-                            shared_atlas = candidate_atlas[:max_anchor_count]
-                        target_atlas_matrix = backend.stack(
-                            [target_atlas_map[k] for k in shared_atlas], axis=0
-                        )
-                        backend.eval(target_atlas_matrix)
-                        source_atlas_matrix = backend.stack(
-                            [source_atlas_map[k] for k in shared_atlas], axis=0
-                        )
-                        backend.eval(source_atlas_matrix)
-                else:
-                    target_atlas_matrix = target_atlas_matrix_full
-                    source_atlas_matrix = source_atlas_matrix_full
-                    shared_atlas = candidate_atlas
+
+                    if coverage_meta is None:
+                        coverage_meta = {}
+                    coverage_meta.update(rank_meta)
+
+                selected_set = set(selected_indices)
+                available_indices = [
+                    idx for idx in range(len(candidate_atlas)) if idx not in selected_set
+                ]
+
+            if (
+                target_atlas_matrix is not None
+                and source_atlas_matrix is not None
+                and len(selected_indices) >= 2
+            ):
+                shared_atlas = [candidate_atlas[idx] for idx in selected_indices]
+                if len(shared_atlas) < 2:
+                    raise RuntimeError(
+                        f"Vocabulary phase lock failed: rank-deficient anchors ({len(shared_atlas)})."
+                    )
             else:
                 target_atlas_matrix = None
+                source_atlas_matrix = None
 
             if len(shared_atlas) < 2 or target_atlas_matrix is None:
                 raise RuntimeError(
@@ -1061,6 +1123,83 @@ def _select_coverage_indices(
         "coverage_radius": float(fps_result.coverage_radius),
         "k_neighbors": float(k_neighbors),
     }
+
+
+def _select_full_rank_indices(
+    points: "object",
+    max_count: int,
+    backend: "object",
+) -> tuple[list[int], dict[str, float]]:
+    n = int(points.shape[0])
+    if max_count <= 0 or n == 0:
+        return [], {"rank": 0.0, "selected_count": 0.0}
+    if n <= max_count:
+        rank = _matrix_rank_for_alignment(points, backend)
+        return list(range(n)), {"rank": float(rank), "selected_count": float(n)}
+
+    U, s, _ = backend.svd(points)
+    backend.eval(U, s)
+    s_vals = backend.to_numpy(s).tolist()
+    if not s_vals:
+        return list(range(min(n, max_count))), {
+            "rank": 0.0,
+            "selected_count": float(min(n, max_count)),
+        }
+
+    max_sigma = max(float(val) for val in s_vals)
+    eps = max(machine_epsilon(backend, points), 1e-8)
+    threshold = max_sigma * eps
+    rank = sum(1 for val in s_vals if float(val) > threshold)
+    target_count = min(max_count, rank)
+    if target_count <= 0:
+        return [], {"rank": float(rank), "selected_count": 0.0}
+    if target_count >= n:
+        return list(range(n)), {"rank": float(rank), "selected_count": float(n)}
+
+    U_np = backend.to_numpy(U)
+    leverage_scores: list[float] = []
+    for row in U_np:
+        score = 0.0
+        for val in row[:rank]:
+            score += float(val) * float(val)
+        leverage_scores.append(score)
+
+    ranked = sorted(
+        range(n),
+        key=lambda idx: leverage_scores[idx],
+        reverse=True,
+    )
+
+    eps = max(machine_epsilon(backend, points), 1e-8)
+    selected: list[int] = []
+    basis: list["object"] = []
+
+    for idx in ranked:
+        vec = points[idx]
+        if basis:
+            basis_matrix = backend.stack(basis, axis=0)
+            vec_col = backend.reshape(vec, (-1, 1))
+            proj_coeffs = backend.matmul(basis_matrix, vec_col)
+            proj = backend.matmul(backend.transpose(basis_matrix), proj_coeffs)
+            residual = vec_col - proj
+            res_norm = backend.norm(residual)
+            backend.eval(res_norm)
+            if float(backend.to_numpy(res_norm)) <= eps:
+                continue
+            vec = backend.reshape(residual / res_norm, (-1,))
+        else:
+            res_norm = backend.norm(vec)
+            backend.eval(res_norm)
+            if float(backend.to_numpy(res_norm)) <= eps:
+                continue
+            vec = vec / res_norm
+
+        basis.append(vec)
+        selected.append(idx)
+        if len(selected) >= target_count:
+            break
+
+    return selected, {"rank": float(rank), "selected_count": float(len(selected))}
 
 
 def _balanced_anchor_subset(anchor_ids: list[str], max_count: int) -> list[str]:

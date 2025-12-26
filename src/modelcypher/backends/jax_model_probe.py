@@ -15,14 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""JAX model probe implementation (stub).
+"""JAX model probe implementation.
 
-This is a stub for future JAX/TPU support. Uses JAX for weight loading
-which handles bfloat16 via jax.numpy.bfloat16 dtype.
-
-To implement:
-1. Install jax: pip install jax jaxlib
-2. Use flax/orbax for checkpoint loading
+Uses JAX + safetensors for weight loading with bfloat16 support.
+Orbax checkpoint loading is not yet implemented.
 """
 
 from __future__ import annotations
@@ -46,14 +42,12 @@ logger = logging.getLogger(__name__)
 
 class JAXModelProbe(BaseModelProbe):
     """
-    JAX model probe (stub implementation).
+    JAX model probe implementation.
 
-    When fully implemented, will use:
-    - orbax.checkpoint for checkpoint loading
-    - safetensors with framework="jax" or "flax"
-    - jax.numpy.bfloat16 dtype support
+    Supports safetensors with framework="flax" and bfloat16 tensors.
+    Orbax checkpoints are planned but not yet supported.
 
-    Requires: pip install jax jaxlib flax orbax-checkpoint safetensors
+    Requires: pip install jax jaxlib safetensors
     """
 
     def __init__(self) -> None:

@@ -19,7 +19,7 @@ ModelCypher supports multiple compute backends for different platforms. This gui
 | Quantization (4/8-bit) | Full | Partial | No |
 | Training | Yes | Yes | Yes |
 | Inference | Yes | Yes | Yes |
-| SOTA Performance APIs | Yes | Partial | No |
+| SOTA Performance APIs | Yes | Yes | Yes |
 
 ## Performance Characteristics
 
@@ -144,15 +144,15 @@ numpy_array = backend.to_numpy(tensor)  # Moves to CPU
 
 ## Selecting a Backend at Runtime
 
-The backend is typically selected based on environment:
+The backend is typically selected based on environment (`MC_BACKEND`, alias: `MODELCYPHER_BACKEND`):
 
 ```python
 import os
 
-if os.environ.get("MODELCYPHER_BACKEND") == "cuda":
+if os.environ.get("MC_BACKEND") == "cuda":
     from modelcypher.backends.cuda_backend import CUDABackend
     backend = CUDABackend()
-elif os.environ.get("MODELCYPHER_BACKEND") == "jax":
+elif os.environ.get("MC_BACKEND") == "jax":
     from modelcypher.backends.jax_backend import JAXBackend
     backend = JAXBackend()
 else:

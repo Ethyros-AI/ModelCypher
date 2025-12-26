@@ -15,14 +15,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""CUDA/PyTorch model probe implementation (stub).
+"""CUDA/PyTorch model probe implementation.
 
-This is a stub for future Linux/CUDA support. Uses PyTorch for weight loading
-which handles bfloat16 via torch.bfloat16 dtype.
-
-To implement:
-1. Install torch: pip install torch
-2. Use torch.load() or safetensors with framework="pt"
+Uses PyTorch + safetensors for weight loading with bfloat16 support.
 """
 
 from __future__ import annotations
@@ -46,12 +41,10 @@ logger = logging.getLogger(__name__)
 
 class CUDAModelProbe(BaseModelProbe):
     """
-    CUDA/PyTorch model probe (stub implementation).
+    CUDA/PyTorch model probe implementation.
 
-    When fully implemented, will use:
-    - torch.load() for .pt/.pth files
-    - safetensors with framework="pt" for .safetensors files
-    - torch.bfloat16 dtype support
+    Supports safetensors with framework="pt" and bfloat16 tensors.
+    Native torch.load() checkpoints are not yet supported here.
 
     Requires: pip install torch safetensors
     """
