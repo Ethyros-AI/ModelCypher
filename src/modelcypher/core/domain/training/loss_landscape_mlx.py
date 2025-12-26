@@ -342,7 +342,7 @@ class LossLandscapeComputer:
             for i in range(param_flat.size):
                 # Create perturbation
                 perturb_flat = mx.zeros_like(param_flat)
-                perturb_flat = mx.scatter(perturb_flat, mx.array([i]), mx.array([step]))
+                perturb_flat[i] = step
                 perturb = mx.reshape(perturb_flat, param.shape)
 
                 params_plus = dict(params)

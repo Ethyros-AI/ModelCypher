@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from dataclasses import dataclass
@@ -78,6 +79,7 @@ TOOL_PROFILES = {
         "mc_inventory",
         "mc_settings_snapshot",
         "mc_train_start",
+        "mc_dataset_validate",
         "mc_job_status",
         "mc_job_list",
         "mc_job_detail",
@@ -230,6 +232,7 @@ TOOL_PROFILES = {
         "mc_inventory",
         "mc_settings_snapshot",
         "mc_train_start",
+        "mc_dataset_validate",
         "mc_job_status",
         "mc_job_list",
         "mc_job_detail",
@@ -527,6 +530,77 @@ def build_server() -> FastMCP:
                 "workspace": inventory.get("workspace", {}),
                 "mlxVersion": inventory.get("mlxVersion"),
                 "policies": inventory.get("policies", {}),
+            }
+
+    if "mc_dataset_validate" in tool_set:
+
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_dataset_validate(path: str, maxSamples: int | None = None) -> dict:
+            dataset_path = _require_existing_path(path)
+            example_count = 0
+            token_counts: list[int] = []
+            warnings: list[str] = []
+            errors: list[str] = []
+
+            def extract_text(payload: object) -> str | None:
+                if isinstance(payload, dict):
+                    for key in ("text", "prompt", "completion", "content"):
+                        value = payload.get(key)
+                        if isinstance(value, str) and value.strip():
+                            return value.strip()
+                    messages = payload.get("messages")
+                    if isinstance(messages, list):
+                        return " ".join(
+                            msg.get("content", "")
+                            for msg in messages
+                            if isinstance(msg, dict) and msg.get("content")
+                        ).strip()
+                return None
+
+            try:
+                with open(dataset_path, "r", encoding="utf-8") as handle:
+                    for line_number, line in enumerate(handle, start=1):
+                        if maxSamples is not None and example_count >= maxSamples:
+                            break
+                        trimmed = line.strip()
+                        if not trimmed:
+                            continue
+                        try:
+                            payload = json.loads(trimmed)
+                        except json.JSONDecodeError:
+                            warnings.append(f"line {line_number}: invalid JSON")
+                            continue
+                        text = extract_text(payload)
+                        if not text:
+                            warnings.append(f"line {line_number}: missing text field")
+                            continue
+                        example_count += 1
+                        token_counts.append(len(text.split()))
+            except Exception as exc:
+                errors.append(str(exc))
+
+            token_stats = {
+                "minTokens": min(token_counts) if token_counts else 0,
+                "maxTokens": max(token_counts) if token_counts else 0,
+                "meanTokens": (sum(token_counts) / len(token_counts)) if token_counts else 0.0,
+                "totalTokens": sum(token_counts),
+            }
+
+            if errors:
+                next_actions = ["mc_doc_convert to normalize dataset", "mc_dataset_validate to retry"]
+            elif warnings:
+                next_actions = ["mc_doc_convert to normalize dataset", "mc_train_start with dataset"]
+            else:
+                next_actions = ["mc_train_start with dataset", "mc_train_preflight for fit check"]
+
+            return {
+                "_schema": "mc.dataset.validate.v1",
+                "path": str(Path(dataset_path).resolve()),
+                "exampleCount": example_count,
+                "tokenStats": token_stats,
+                "warnings": warnings,
+                "errors": errors,
+                "nextActions": next_actions,
             }
 
     if "mc_train_start" in tool_set:

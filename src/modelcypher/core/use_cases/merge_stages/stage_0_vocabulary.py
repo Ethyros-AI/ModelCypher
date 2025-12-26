@@ -344,7 +344,8 @@ def stage_vocabulary_align(
                     target_byte_matrix = target_byte_matrix_full
 
                 # Ensure full-row-rank anchors for exact phase lock.
-                rank_indices, rank_meta = _select_full_rank_indices(
+                rank_indices, rank_meta = _select_shared_full_rank_indices(
+                    source_byte_matrix,
                     target_byte_matrix,
                     int(source_byte_matrix.shape[0]),
                     backend,
@@ -449,6 +450,50 @@ def stage_vocabulary_align(
                 "binary_alignment_ms"
             ] = (time.perf_counter() - binary_start) * 1000
 
+            # Refresh cache key after binary alignment (embedding changed).
+            source_cache_key = _make_embedding_cache_key(source_embed, backend)
+
+            # Pre-project shared vocabulary anchors to stabilize 2D alignment.
+            if overlap:
+                try:
+                    from modelcypher.core.domain.vocabulary.embedding_projector import (
+                        EmbeddingProjector,
+                        ProjectionConfig,
+                    )
+
+                    shared_tokens = sorted(overlap)
+                    source_indices = []
+                    target_indices = []
+                    for token in shared_tokens:
+                        src_idx = source_vocab.get(token)
+                        tgt_idx = target_vocab.get(token)
+                        if src_idx is None or tgt_idx is None:
+                            continue
+                        if src_idx >= source_embed.shape[0] or tgt_idx >= target_embed.shape[0]:
+                            continue
+                        source_indices.append(src_idx)
+                        target_indices.append(tgt_idx)
+
+                    if source_indices and target_indices:
+                        projection_config = ProjectionConfig(
+                            strategy=projection_strategy,
+                            anchor_count=min(config.anchor_count, len(source_indices)),
+                        )
+                        projector = EmbeddingProjector(projection_config, backend=backend)
+                        projection_result = projector.project(
+                            source_embed,
+                            target_embed,
+                            shared_token_indices=(source_indices, target_indices),
+                        )
+                        source_embed = projection_result.projected_embeddings
+                        backend.eval(source_embed)
+                        source_cache_key = _make_embedding_cache_key(source_embed, backend)
+                        metrics.setdefault("vocab_preprojection", {})[embed_key] = (
+                            projection_result.to_dict()
+                        )
+                except Exception as e:
+                    logger.debug("Pre-projection skipped for %s: %s", embed_key, e)
+
             # Vocabulary (2D) alignment: phase-lock on UnifiedAtlas anchors.
             # Pre-compute atlas anchor maps ONCE (may rebuild if use_all_support_texts changes)
             vocab_metrics = metrics.setdefault("vocab_phase_lock", {})
@@ -551,7 +596,8 @@ def stage_vocabulary_align(
                     )
                     backend.eval(target_atlas_matrix, source_atlas_matrix)
 
-                    rank_indices, rank_meta = _select_full_rank_indices(
+                    rank_indices, rank_meta = _select_shared_full_rank_indices(
+                        source_atlas_matrix,
                         target_atlas_matrix,
                         int(source_atlas_matrix.shape[0]),
                         backend,
@@ -669,7 +715,8 @@ def stage_vocabulary_align(
                         )
                         backend.eval(target_atlas_matrix, source_atlas_matrix)
 
-                        rank_indices, rank_meta = _select_full_rank_indices(
+                        rank_indices, rank_meta = _select_shared_full_rank_indices(
+                            source_atlas_matrix,
                             target_atlas_matrix,
                             int(source_atlas_matrix.shape[0]),
                             backend,
@@ -787,7 +834,8 @@ def stage_vocabulary_align(
                             )
                             backend.eval(target_atlas_matrix, source_atlas_matrix)
 
-                            rank_indices, rank_meta = _select_full_rank_indices(
+                            rank_indices, rank_meta = _select_shared_full_rank_indices(
+                                source_atlas_matrix,
                                 target_atlas_matrix,
                                 int(source_atlas_matrix.shape[0]),
                                 backend,
@@ -821,10 +869,6 @@ def stage_vocabulary_align(
                         "Vocabulary phase lock not reached; expanding search to %d solver iterations",
                         solver_iterations,
                     )
-                        logger.info(
-                            "Vocabulary phase lock not reached; expanding search to %d solver iterations",
-                            solver_iterations,
-                        )
 
                 source_embed = best_source
                 backend.eval(source_embed)
@@ -1285,6 +1329,98 @@ def _select_full_rank_indices(
             break
 
     return selected, {"rank": float(rank), "selected_count": float(len(selected))}
+
+
+def _select_shared_full_rank_indices(
+    source_points: "object",
+    target_points: "object",
+    max_count: int,
+    backend: "object",
+) -> tuple[list[int], dict[str, float]]:
+    n = int(source_points.shape[0])
+    if max_count <= 0 or n == 0:
+        return [], {"rank_source": 0.0, "rank_target": 0.0, "selected_count": 0.0}
+    if n <= max_count:
+        rank_source = _matrix_rank_for_alignment(source_points, backend)
+        rank_target = _matrix_rank_for_alignment(target_points, backend)
+        return list(range(n)), {
+            "rank_source": float(rank_source),
+            "rank_target": float(rank_target),
+            "selected_count": float(n),
+        }
+
+    combined = backend.concatenate([source_points, target_points], axis=1)
+    U, s, _ = backend.svd(combined)
+    backend.eval(U, s)
+    s_vals = backend.to_numpy(s).tolist()
+    if not s_vals:
+        return [], {"rank_source": 0.0, "rank_target": 0.0, "selected_count": 0.0}
+
+    max_sigma = max(float(val) for val in s_vals)
+    eps = max(machine_epsilon(backend, combined), 1e-8)
+    threshold = max_sigma * eps
+    rank_combined = sum(1 for val in s_vals if float(val) > threshold)
+    target_count = min(max_count, max(1, rank_combined))
+
+    U_np = backend.to_numpy(U)
+    leverage_scores: list[float] = []
+    for row in U_np:
+        score = 0.0
+        for val in row[:rank_combined]:
+            score += float(val) * float(val)
+        leverage_scores.append(score)
+
+    ranked = sorted(
+        range(n),
+        key=lambda idx: leverage_scores[idx],
+        reverse=True,
+    )
+
+    def _orthonormalize(
+        vec: "object",
+        basis: list["object"],
+    ) -> tuple[bool, "object"]:
+        if not basis:
+            res_norm = backend.norm(vec)
+            backend.eval(res_norm)
+            if float(backend.to_numpy(res_norm)) <= eps:
+                return False, vec
+            return True, vec / res_norm
+
+        basis_matrix = backend.stack(basis, axis=0)
+        vec_col = backend.reshape(vec, (-1, 1))
+        proj_coeffs = backend.matmul(basis_matrix, vec_col)
+        proj = backend.matmul(backend.transpose(basis_matrix), proj_coeffs)
+        residual = vec_col - proj
+        res_norm = backend.norm(residual)
+        backend.eval(res_norm)
+        if float(backend.to_numpy(res_norm)) <= eps:
+            return False, vec
+        return True, backend.reshape(residual / res_norm, (-1,))
+
+    selected: list[int] = []
+    basis_src: list["object"] = []
+    basis_tgt: list["object"] = []
+
+    for idx in ranked:
+        vec_src = source_points[idx]
+        vec_tgt = target_points[idx]
+        ok_src, norm_src = _orthonormalize(vec_src, basis_src)
+        ok_tgt, norm_tgt = _orthonormalize(vec_tgt, basis_tgt)
+        if not (ok_src and ok_tgt):
+            continue
+
+        basis_src.append(norm_src)
+        basis_tgt.append(norm_tgt)
+        selected.append(idx)
+        if len(selected) >= target_count:
+            break
+
+    return selected, {
+        "rank_source": float(len(basis_src)),
+        "rank_target": float(len(basis_tgt)),
+        "selected_count": float(len(selected)),
+    }
 
 
 def _balanced_anchor_subset(anchor_ids: list[str], max_count: int) -> list[str]:

@@ -37,6 +37,16 @@ class ModelInfo:
 
 
 @dataclass(frozen=True)
+class DatasetInfo:
+    id: str
+    name: str
+    path: str
+    size_bytes: int
+    example_count: int | None
+    created_at: datetime
+
+
+@dataclass(frozen=True)
 class CheckpointRecord:
     job_id: str
     step: int
