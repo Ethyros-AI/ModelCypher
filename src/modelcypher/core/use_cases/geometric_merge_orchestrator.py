@@ -298,6 +298,12 @@ class GeometricMergeOrchestrator:
         # numerical_stability - compute data-driven epsilons
         # These functions compute appropriate epsilon based on dtype
         self._epsilon = 1e-6  # Default for float32
+        self._avoid_svd = False
+        try:
+            from modelcypher.backends.mlx_backend import MLXBackend
+            self._avoid_svd = isinstance(self._backend, MLXBackend)
+        except Exception:
+            self._avoid_svd = False
 
         # geometry_metrics_cache - available for caching
         try:
@@ -309,6 +315,8 @@ class GeometricMergeOrchestrator:
             self._metrics_cache = None
 
         logger.debug("Infrastructure: epsilon=%e", self._epsilon)
+        if self._avoid_svd:
+            logger.info("SVD disabled for MLX backend to avoid instability in mx.linalg.svd.")
 
     def _select_anchor_indices_by_coverage(
         self,
@@ -479,81 +487,91 @@ class GeometricMergeOrchestrator:
         n = min(len(src_acts), len(tgt_acts))
 
         # shared_subspace_projector - CCA-based
-        try:
-            from modelcypher.core.domain.geometry.shared_subspace_projector import (
-                SharedSubspaceProjector,
-                Config as SSPConfig,
-                AlignmentMethod,
-            )
-
-            # Convert activations to lists for CRM-style input
-            src_stacked = b.stack(src_acts[:n], axis=0)
-            tgt_stacked = b.stack(tgt_acts[:n], axis=0)
-            b.eval(src_stacked, tgt_stacked)
-
-            # Use the CCA-based discovery
-            # This identifies WHICH dimensions are shared
-            src_list = b.to_numpy(src_stacked).tolist()
-            tgt_list = b.to_numpy(tgt_stacked).tolist()
-
-            result = SharedSubspaceProjector._discover_with_cca(
-                source_activations=src_list,
-                target_activations=tgt_list,
-                weights=None,
-                n=n,
-                d_source=len(src_list[0]),
-                d_target=len(tgt_list[0]),
-                config=SSPConfig(alignment_method=AlignmentMethod.cca),
-                backend=b,
-            )
-
-            if result and result.is_valid:
-                layer_geom.shared_dimension = result.shared_dimension
-                layer_geom.alignment_strengths = result.alignment_strengths
-                layer_geom.source_projection = b.array(result.source_projection)
-                layer_geom.target_projection = b.array(result.target_projection)
-                logger.debug(
-                    "Layer %d: shared_dim=%d, top_corr=%.3f",
-                    layer_geom.layer_idx,
-                    layer_geom.shared_dimension,
-                    layer_geom.alignment_strengths[0] if layer_geom.alignment_strengths else 0,
+        if not self._avoid_svd:
+            try:
+                from modelcypher.core.domain.geometry.shared_subspace_projector import (
+                    SharedSubspaceProjector,
+                    Config as SSPConfig,
+                    AlignmentMethod,
                 )
-        except Exception as e:
-            logger.debug("shared_subspace_projector failed for layer %d: %s", layer_geom.layer_idx, e)
+
+                # Convert activations to lists for CRM-style input
+                src_stacked = b.stack(src_acts[:n], axis=0)
+                tgt_stacked = b.stack(tgt_acts[:n], axis=0)
+                b.eval(src_stacked, tgt_stacked)
+
+                # Use the CCA-based discovery
+                # This identifies WHICH dimensions are shared
+                src_list = b.to_numpy(src_stacked).tolist()
+                tgt_list = b.to_numpy(tgt_stacked).tolist()
+
+                result = SharedSubspaceProjector._discover_with_cca(
+                    source_activations=src_list,
+                    target_activations=tgt_list,
+                    weights=None,
+                    n=n,
+                    d_source=len(src_list[0]),
+                    d_target=len(tgt_list[0]),
+                    config=SSPConfig(alignment_method=AlignmentMethod.cca),
+                    backend=b,
+                )
+
+                if result and result.is_valid:
+                    layer_geom.shared_dimension = result.shared_dimension
+                    layer_geom.alignment_strengths = result.alignment_strengths
+                    layer_geom.source_projection = b.array(result.source_projection)
+                    layer_geom.target_projection = b.array(result.target_projection)
+                    logger.debug(
+                        "Layer %d: shared_dim=%d, top_corr=%.3f",
+                        layer_geom.layer_idx,
+                        layer_geom.shared_dimension,
+                        layer_geom.alignment_strengths[0] if layer_geom.alignment_strengths else 0,
+                    )
+            except Exception as e:
+                logger.debug(
+                    "shared_subspace_projector failed for layer %d: %s",
+                    layer_geom.layer_idx,
+                    e,
+                )
 
         # relative_representation - anchor-based alignment
-        try:
-            from modelcypher.core.domain.geometry.relative_representation import (
-                compute_relative_representation,
-                align_relative_representations,
-            )
+        if not self._avoid_svd:
+            try:
+                from modelcypher.core.domain.geometry.relative_representation import (
+                    compute_relative_representation,
+                    align_relative_representations,
+                )
 
-            # Need anchor embeddings - use first N activations as anchors
-            n_anchors = min(32, n)
-            src_stacked = b.stack(src_acts[:n], axis=0)
-            tgt_stacked = b.stack(tgt_acts[:n], axis=0)
-            b.eval(src_stacked, tgt_stacked)
+                # Need anchor embeddings - use first N activations as anchors
+                n_anchors = min(32, n)
+                src_stacked = b.stack(src_acts[:n], axis=0)
+                tgt_stacked = b.stack(tgt_acts[:n], axis=0)
+                b.eval(src_stacked, tgt_stacked)
 
-            # Use coverage-selected target activations as anchors (balanced manifold coverage).
-            anchor_indices = self._select_anchor_indices_by_coverage(tgt_stacked, n_anchors)
-            anchors = b.take(tgt_stacked, b.array(anchor_indices), axis=0)
-            b.eval(anchors)
+                # Use coverage-selected target activations as anchors (balanced manifold coverage).
+                anchor_indices = self._select_anchor_indices_by_coverage(tgt_stacked, n_anchors)
+                anchors = b.take(tgt_stacked, b.array(anchor_indices), axis=0)
+                b.eval(anchors)
 
-            # Compute relative representations
-            src_rel = compute_relative_representation(src_stacked, anchors)
-            tgt_rel = compute_relative_representation(tgt_stacked, anchors)
-            b.eval(src_rel, tgt_rel)
+                # Compute relative representations
+                src_rel = compute_relative_representation(src_stacked, anchors)
+                tgt_rel = compute_relative_representation(tgt_stacked, anchors)
+                b.eval(src_rel, tgt_rel)
 
-            # Align in anchor space
-            rotation, error = align_relative_representations(src_rel, tgt_rel)
-            layer_geom.relative_rep_error = error
-            logger.debug(
-                "Layer %d: relative_rep_error=%.4f",
-                layer_geom.layer_idx,
-                error,
-            )
-        except Exception as e:
-            logger.debug("relative_representation failed for layer %d: %s", layer_geom.layer_idx, e)
+                # Align in anchor space
+                rotation, error = align_relative_representations(src_rel, tgt_rel)
+                layer_geom.relative_rep_error = error
+                logger.debug(
+                    "Layer %d: relative_rep_error=%.4f",
+                    layer_geom.layer_idx,
+                    error,
+                )
+            except Exception as e:
+                logger.debug(
+                    "relative_representation failed for layer %d: %s",
+                    layer_geom.layer_idx,
+                    e,
+                )
 
     def _stage_compute_alignment(
         self,
@@ -646,28 +664,33 @@ class GeometricMergeOrchestrator:
             logger.debug("interference_predictor failed for layer %d: %s", layer_geom.layer_idx, e)
 
         # spectral_analysis - condition number etc
-        try:
-            from modelcypher.core.domain.geometry.spectral_analysis import (
-                SpectralConfig,
-                compute_spectral_metrics,
-            )
+        if not self._avoid_svd:
+            try:
+                from modelcypher.core.domain.geometry.spectral_analysis import (
+                    SpectralConfig,
+                    compute_spectral_metrics,
+                )
 
-            # Find a representative weight matrix for this layer
-            for key in tgt_weights:
-                tgt_w = tgt_weights[key]
-                if key in src_weights and tgt_w.ndim == 2:
-                    src_w = src_weights[key]
-                    if src_w.shape == tgt_w.shape:
-                        result = compute_spectral_metrics(
-                            src_w, tgt_w, SpectralConfig(), backend=b
-                        )
-                        layer_geom.spectral_condition = result.condition_ratio
-                        break
-        except Exception as e:
-            logger.debug("spectral_analysis failed for layer %d: %s", layer_geom.layer_idx, e)
+                # Find a representative weight matrix for this layer
+                for key in tgt_weights:
+                    tgt_w = tgt_weights[key]
+                    if key in src_weights and tgt_w.ndim == 2:
+                        src_w = src_weights[key]
+                        if src_w.shape == tgt_w.shape:
+                            result = compute_spectral_metrics(
+                                src_w, tgt_w, SpectralConfig(), backend=b
+                            )
+                            layer_geom.spectral_condition = result.condition_ratio
+                            break
+            except Exception as e:
+                logger.debug(
+                    "spectral_analysis failed for layer %d: %s",
+                    layer_geom.layer_idx,
+                    e,
+                )
 
         # null_space_filter - compute null space for this layer
-        if tgt_acts and len(tgt_acts) >= 5:
+        if tgt_acts and len(tgt_acts) >= 5 and not self._avoid_svd:
             try:
                 from modelcypher.core.domain.geometry.null_space_filter import (
                     NullSpaceFilter,
@@ -1062,6 +1085,7 @@ class GeometricMergeOrchestrator:
             "verb_noun_applied": 0,
             "gw_transport_used": 0,
             "embedding_frechet_blends": 0,
+            "slerp_merges": 0,
             # Cross-architecture metrics
             "cross_arch_layer_mappings": 0,
             "cross_arch_dim_projections": 0,
@@ -1096,10 +1120,13 @@ class GeometricMergeOrchestrator:
                 len(layer_correspondence) if layer_correspondence else 0,
             )
 
-        from modelcypher.core.domain.geometry.task_singular_vectors import (
-            SVDBlendConfig,
-            blend_with_svd_awareness,
-        )
+        avoid_svd = bool(getattr(self, "_avoid_svd", False))
+        metrics["svd_disabled"] = avoid_svd
+        if not avoid_svd:
+            from modelcypher.core.domain.geometry.task_singular_vectors import (
+                SVDBlendConfig,
+                blend_with_svd_awareness,
+            )
         from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
 
         def _apply_phase_lock_transform(
@@ -1166,7 +1193,10 @@ class GeometricMergeOrchestrator:
 
                 if source_key not in source_weights:
                     # No source weight found - use target as-is
-                    merged[key] = target_weights[key]
+                    target_value = dequantize_if_needed(
+                        target_weights[key], key, target_weights, b
+                    )
+                    merged[key] = b.astype(target_value, "float32")
                     _write_checkpoint(
                         {
                             "status": "skipped",
@@ -1307,9 +1337,9 @@ class GeometricMergeOrchestrator:
                                 # Blend in shared space
                                 blended_shared = alpha * target_in_shared + (1 - alpha) * source_in_shared
 
-                                # Project back to target space using pseudo-inverse (transpose for orthogonal)
-                                tgt_proj_pinv = b.transpose(tgt_proj)
-                                merged_w = b.matmul(blended_shared, tgt_proj_pinv)
+                                # Project back to target space using transpose for orthogonal projections.
+                                tgt_proj_t = b.transpose(tgt_proj)
+                                merged_w = b.matmul(blended_shared, tgt_proj_t)
                                 b.eval(merged_w)
                                 metrics["shared_subspace_blends"] += 1
                             except Exception:
@@ -1391,8 +1421,20 @@ class GeometricMergeOrchestrator:
                             merged_w = target_weight * target_f32 + (1.0 - target_weight) * source_f32
                             metrics["dimension_weights_used"] += 1
 
-                    # Fallback to SVD-aware blending if nothing else worked
-                    if merged_w is None:
+                    # Fallback to SLERP when SVD is disabled.
+                    if merged_w is None and avoid_svd:
+                        from modelcypher.core.domain.geometry.vector_math import (
+                            BackendVectorMath,
+                        )
+
+                        vm = BackendVectorMath(b)
+                        slerp_result = vm.slerp_matrix(source_f32, target_f32, alpha)
+                        if slerp_result is not None:
+                            merged_w, _ = slerp_result
+                            metrics["slerp_merges"] += 1
+
+                    # Fallback to SVD-aware blending if nothing else worked.
+                    if merged_w is None and not avoid_svd:
                         merged_w = blend_with_svd_awareness(
                             source_f32, target_f32, alpha, SVDBlendConfig()
                         )
@@ -1460,7 +1502,11 @@ class GeometricMergeOrchestrator:
                 # Preserve target dtype
                 target_dtype = target_w.dtype
                 dtype_str = target_dtype.name if hasattr(target_dtype, "name") else str(target_dtype).replace("mlx.core.", "")
-                merged[key] = b.astype(merged_w, dtype_str)
+                dtype_lower = dtype_str.lower()
+                if "int" in dtype_lower or "uint" in dtype_lower:
+                    merged[key] = b.astype(merged_w, "float32")
+                else:
+                    merged[key] = b.astype(merged_w, dtype_str)
                 _write_checkpoint(
                     {
                         "status": "done",
@@ -1492,7 +1538,10 @@ class GeometricMergeOrchestrator:
         # Copy target-only keys
         for key in target_weights:
             if key not in merged and not key.endswith(".scales") and not key.endswith(".biases"):
-                merged[key] = target_weights[key]
+                target_value = dequantize_if_needed(
+                    target_weights[key], key, target_weights, b
+                )
+                merged[key] = b.astype(target_value, "float32")
 
         logger.info(
             "MERGE: %d weights, %d rotations, %d Fisher, %d dimension, %d DARE | "
