@@ -520,6 +520,194 @@ def solve_via_truncated_svd(
     return F, diagnostics
 
 
+def solve_via_gram_alignment(
+    backend: Backend,
+    source: Array,
+    target: Array,
+) -> tuple[Array | None, dict]:
+    """Solve for F such that Gram(source @ F) = Gram(target) via SVD alignment.
+
+    The key insight: both source and target represent the same n_samples concepts.
+    Their relational geometry (Gram matrices) should be identical. We find F by
+    aligning the left singular vectors (sample structure) via Procrustes.
+
+    Mathematical derivation:
+    - source_c = U_s @ S_s @ V_s^T  (centered, SVD)
+    - target_c = U_t @ S_t @ V_t^T  (centered, SVD)
+    - U_s and U_t span the SAME sample space (invariant concept geometry)
+    - Find R (orthogonal) such that U_s @ R ≈ U_t
+    - Then F = V_s @ S_s^{-1} @ R @ S_t @ V_t^T achieves:
+      source_c @ F = U_s @ R @ S_t @ V_t^T ≈ target_c
+      => Gram(source @ F) ≈ Gram(target)
+      => CKA ≈ 1.0
+
+    This works for ANY dimension combination because we're aligning in sample
+    space [n, n], not feature space [d_s, d_t].
+    """
+    b = backend
+    source = b.astype(source, "float32")
+    target = b.astype(target, "float32")
+    b.eval(source, target)
+
+    shape_s = b.shape(source)
+    shape_t = b.shape(target)
+    n = int(shape_s[0])
+    d_s = int(shape_s[1])
+    d_t = int(shape_t[1])
+
+    eps = machine_epsilon(b, source)
+
+    diagnostics: dict = {
+        "method": "gram_alignment",
+        "n_samples": n,
+        "d_source": d_s,
+        "d_target": d_t,
+        "procrustes_error": float("inf"),
+        "rank_source": 0,
+        "rank_target": 0,
+    }
+
+    if n < 2 or d_s == 0 or d_t == 0:
+        return None, diagnostics
+
+    # Center both matrices
+    source_mean = b.mean(source, axis=0, keepdims=True)
+    target_mean = b.mean(target, axis=0, keepdims=True)
+    source_c = source - source_mean
+    target_c = target - target_mean
+    b.eval(source_c, target_c)
+
+    # SVD of centered matrices using our stable eigh-based implementation
+    U_s, S_s, Vt_s = svd_via_eigh(b, source_c, full_matrices=False)
+    U_t, S_t, Vt_t = svd_via_eigh(b, target_c, full_matrices=False)
+    b.eval(U_s, S_s, Vt_s, U_t, S_t, Vt_t)
+
+    # Determine effective ranks
+    S_s_np = [float(v) for v in b.to_numpy(S_s)]
+    S_t_np = [float(v) for v in b.to_numpy(S_t)]
+
+    if not S_s_np or not S_t_np or max(S_s_np) == 0 or max(S_t_np) == 0:
+        return None, diagnostics
+
+    thresh_s = eps * max(S_s_np) * max(n, d_s)
+    thresh_t = eps * max(S_t_np) * max(n, d_t)
+
+    rank_s = sum(1 for s in S_s_np if s > thresh_s)
+    rank_t = sum(1 for s in S_t_np if s > thresh_t)
+    diagnostics["rank_source"] = rank_s
+    diagnostics["rank_target"] = rank_t
+
+    if rank_s == 0 or rank_t == 0:
+        return None, diagnostics
+
+    # Truncate to shared rank for Procrustes alignment
+    shared_rank = min(rank_s, rank_t)
+
+    U_s_k = U_s[:, :shared_rank]  # [n, k]
+    U_t_k = U_t[:, :shared_rank]  # [n, k]
+    b.eval(U_s_k, U_t_k)
+
+    # Orthogonal Procrustes: find R such that U_s @ R ≈ U_t
+    # Solve: min ||U_s @ R - U_t||_F  s.t. R^T @ R = I
+    # Solution: R = U @ V^T where M = U_s^T @ U_t = U @ S @ V^T
+    M = b.matmul(b.transpose(U_s_k), U_t_k)  # [k, k]
+    b.eval(M)
+
+    U_proc, S_proc, Vt_proc = b.svd(M)
+    b.eval(U_proc, S_proc, Vt_proc)
+
+    R = b.matmul(U_proc, Vt_proc)  # [k, k]
+    b.eval(R)
+
+    # Check for reflection and correct
+    R_det = _determinant_sign(b, R)
+    if R_det < 0:
+        # Flip sign of last column of U_proc
+        U_proc_np = b.to_numpy(U_proc)
+        U_proc_np[:, -1] = -U_proc_np[:, -1]
+        U_proc = b.array(U_proc_np)
+        b.eval(U_proc)
+        R = b.matmul(U_proc, Vt_proc)
+        b.eval(R)
+
+    # Compute Procrustes error: ||U_s @ R - U_t||_F / ||U_t||_F
+    U_s_rotated = b.matmul(U_s_k, R)
+    b.eval(U_s_rotated)
+    diff = U_s_rotated - U_t_k
+    diff_norm = float(b.to_numpy(b.norm(diff)))
+    U_t_norm = float(b.to_numpy(b.norm(U_t_k)))
+    procrustes_error = diff_norm / (U_t_norm + eps)
+    diagnostics["procrustes_error"] = procrustes_error
+
+    # Build the full transform F = V_s @ S_s^{-1} @ R @ S_t @ V_t^T
+    # But we need to handle rank truncation carefully
+
+    # S_s^{-1} for the k dimensions we're using
+    S_s_inv = b.array([1.0 / S_s_np[i] if S_s_np[i] > thresh_s else 0.0
+                       for i in range(shared_rank)])
+    S_t_k = b.array([S_t_np[i] for i in range(shared_rank)])
+    b.eval(S_s_inv, S_t_k)
+
+    V_s_k = b.transpose(Vt_s[:shared_rank, :])  # [d_s, k]
+    V_t_k = b.transpose(Vt_t[:shared_rank, :])  # [d_t, k]
+    b.eval(V_s_k, V_t_k)
+
+    # F = V_s @ diag(S_s^{-1}) @ R @ diag(S_t) @ V_t^T
+    # Step by step to avoid large intermediate matrices
+
+    # Step 1: V_s @ diag(S_s^{-1}) -> [d_s, k]
+    V_s_scaled = V_s_k * b.reshape(S_s_inv, (1, -1))
+    b.eval(V_s_scaled)
+
+    # Step 2: (V_s @ S_s^{-1}) @ R -> [d_s, k]
+    V_s_R = b.matmul(V_s_scaled, R)
+    b.eval(V_s_R)
+
+    # Step 3: (V_s @ S_s^{-1} @ R) @ diag(S_t) -> [d_s, k]
+    V_s_R_S = V_s_R * b.reshape(S_t_k, (1, -1))
+    b.eval(V_s_R_S)
+
+    # Step 4: (V_s @ S_s^{-1} @ R @ S_t) @ V_t^T -> [d_s, d_t]
+    F = b.matmul(V_s_R_S, b.transpose(V_t_k))
+    b.eval(F)
+
+    return F, diagnostics
+
+
+def _determinant_sign(backend: Backend, R: Array) -> float:
+    """Compute sign of determinant for small matrix."""
+    R_np = backend.to_numpy(R)
+    k = int(backend.shape(R)[0])
+
+    # LU-based sign computation
+    work = R_np.copy()
+    det_sign = 1.0
+
+    for col in range(k):
+        # Find pivot
+        max_row = col
+        for row in range(col + 1, k):
+            if abs(work[row, col]) > abs(work[max_row, col]):
+                max_row = row
+
+        if abs(work[max_row, col]) < 1e-15:
+            return 0.0  # Singular
+
+        if max_row != col:
+            work[[col, max_row]] = work[[max_row, col]]
+            det_sign = -det_sign
+
+        # Eliminate below
+        pivot = work[col, col]
+        for row in range(col + 1, k):
+            factor = work[row, col] / pivot
+            work[row, col:] -= factor * work[col, col:]
+
+        det_sign *= (1.0 if work[col, col] > 0 else -1.0)
+
+    return det_sign
+
+
 def solve_via_cca_procrustes(
     backend: Backend,
     source: Array,
@@ -531,6 +719,10 @@ def solve_via_cca_procrustes(
     min_correlation: float = 0.1,
 ) -> tuple[Array | None, dict]:
     """Solve source @ F = target via SVCCA + Procrustes for perfect alignment.
+
+    NOTE: This approach has issues - it projects through a low-dimensional
+    bottleneck which can destroy CKA. Prefer solve_via_gram_alignment() which
+    aligns in sample space and preserves the full relational structure.
 
     Uses SVCCA (Singular Vector CCA) approach:
     1. PCA reduce source and target to high-variance subspaces
