@@ -378,55 +378,179 @@ class DomainGeometryBaselineExtractor:
         """Get probe prompts relevant to a domain.
 
         Returns a list of prompts that will elicit domain-relevant activations.
+        Uses expanded probe sets (30+ probes) for reliable ORC measurements.
         """
         domain_probe_map = {
             "spatial": [
+                # Position and direction
                 "The ball is to the left of the box.",
                 "The cat is above the table.",
                 "The tree is behind the house.",
-                "Moving forward means going in the direction you face.",
+                "The car is in front of the building.",
+                "The bird flew beneath the bridge.",
+                "The shelf is mounted on the wall.",
+                "The rug lies under the chair.",
+                "Standing beside the river, I looked across.",
+                "The airplane soared over the mountains.",
+                "He walked around the corner.",
+                # Distance and measurement
                 "The distance between A and B is 10 meters.",
-                "Rotating 90 degrees clockwise changes your view.",
-                "Objects fall downward due to gravity.",
-                "The cube has 6 faces and 8 vertices.",
-                "Looking up at the sky, I see clouds.",
                 "The room is 5 meters wide and 3 meters tall.",
+                "The road stretches for miles ahead.",
+                "Just a few inches from the edge.",
+                "Kilometers separate the two cities.",
+                # Movement and rotation
+                "Moving forward means going in the direction you face.",
+                "Rotating 90 degrees clockwise changes your view.",
+                "Turn left at the intersection.",
+                "Spiral staircase winds upward.",
+                "The wheel spins around its axis.",
+                # 3D geometry
+                "The cube has 6 faces and 8 vertices.",
+                "A sphere has no edges or corners.",
+                "The pyramid rises to a point at the top.",
+                "Cylinders have two circular faces.",
+                "The cone narrows toward its apex.",
+                # Gravity and physics
+                "Objects fall downward due to gravity.",
+                "Looking up at the sky, I see clouds.",
+                "Water flows downhill following gravity.",
+                "The balloon rose into the air.",
+                "Heavier objects sink to the bottom.",
+                # Visual perspective
+                "From the hilltop, the valley spread out below.",
+                "The horizon where sky meets sea.",
+                "Parallel lines appear to converge in the distance.",
+                "Near objects look larger than far ones.",
+                "The shadow fell to the east at sunset.",
             ],
             "social": [
+                # Power hierarchy
                 "The king has more power than the servant.",
+                "Managers direct the work of their employees.",
+                "Students respect their teachers' authority.",
+                "The president leads the nation.",
+                "Citizens must obey the laws.",
+                "The judge presides over the courtroom.",
+                # Kinship and relationships
                 "My friend is closer to me than a stranger.",
-                "Formal greetings are used in professional settings.",
-                "Parents have authority over their children.",
+                "Family bonds are strong and lasting.",
+                "Neighbors help each other in times of need.",
+                "Colleagues collaborate on projects.",
+                "Partners share responsibilities equally.",
+                "Rivals compete for the same goals.",
+                # Trust and loyalty
                 "Trust builds over time through shared experiences.",
-                "Social hierarchies determine access to resources.",
                 "Loyalty to family often comes before other loyalties.",
+                "Betrayal hurts deeply because of broken trust.",
+                "Allies support each other in conflicts.",
+                "Confidants keep each other's secrets.",
+                "Commitment requires dedication over time.",
+                # Formality and register
+                "Formal greetings are used in professional settings.",
+                "Casual language is appropriate among friends.",
+                "Titles show respect for position or achievement.",
+                "Polite speech maintains social harmony.",
+                "Slang is informal communication within groups.",
+                "Etiquette guides proper social behavior.",
+                # Status and hierarchy
+                "Parents have authority over their children.",
+                "Social hierarchies determine access to resources.",
                 "Respect for elders is valued in many cultures.",
-                "Cooperation requires mutual understanding.",
                 "Status symbols signal social position.",
+                "Celebrities enjoy fame and recognition.",
+                "Aristocrats inherited their social position.",
+                # Cooperation
+                "Cooperation requires mutual understanding.",
+                "Teams achieve more than individuals alone.",
+                "Negotiation seeks mutually beneficial outcomes.",
+                "Compromise resolves conflicting interests.",
+                "Collaboration leverages diverse strengths.",
             ],
             "temporal": [
+                # Sequence and order
                 "Yesterday came before today, and tomorrow comes after.",
-                "The cause must precede the effect.",
-                "Seconds are shorter than minutes are shorter than hours.",
                 "First we plan, then we execute, finally we review.",
+                "The beginning precedes the middle and the end.",
+                "Step one must be completed before step two.",
+                "Events unfold in chronological order.",
+                "The sequel follows the original story.",
+                # Causality
+                "The cause must precede the effect.",
+                "Actions have consequences that follow.",
+                "Because it rained, the ground is wet.",
+                "The fire started, therefore we evacuated.",
+                "Symptoms appear after infection occurs.",
+                "Decisions lead to outcomes.",
+                # Duration and intervals
+                "Seconds are shorter than minutes are shorter than hours.",
+                "Decades pass more slowly than years.",
+                "Brief moments can feel like eternity.",
+                "Long-term goals require patience.",
+                "Instantaneous events happen in a flash.",
+                "Centuries encompass many generations.",
+                # Past and future
                 "The past is fixed but the future is uncertain.",
+                "History teaches lessons for tomorrow.",
+                "Memory preserves what has happened.",
+                "Anticipation looks forward to what may come.",
+                "Predictions attempt to foresee future events.",
+                "Nostalgia longing for times gone by.",
+                # Life cycles
                 "Childhood precedes adulthood which precedes old age.",
+                "Birth begins the journey of life.",
+                "Growth transforms children into adults.",
+                "Aging brings wisdom and experience.",
+                "Death concludes the mortal span.",
+                "Generations succeed one another.",
+                # Natural cycles
                 "Spring comes before summer in the yearly cycle.",
-                "History repeats itself in patterns.",
                 "Time flows from past to present to future.",
-                "Events have beginnings, middles, and ends.",
+                "Day follows night in endless rhythm.",
+                "Tides ebb and flow with the moon.",
+                "Seasons cycle through the calendar year.",
             ],
             "moral": [
+                # Care and harm
                 "Helping others is generally considered good.",
                 "Causing unnecessary suffering is wrong.",
-                "Fairness means treating similar cases similarly.",
-                "Loyalty to your group can conflict with broader ethics.",
-                "Respecting authority has limits when authority is unjust.",
-                "Purity concerns shape many cultural taboos.",
-                "Justice requires punishment proportional to the crime.",
                 "Care for the vulnerable is a fundamental value.",
+                "Compassion motivates acts of kindness.",
+                "Cruelty causes pain and is condemned.",
+                "Mercy tempers justice with understanding.",
+                # Fairness and justice
+                "Fairness means treating similar cases similarly.",
+                "Justice requires punishment proportional to the crime.",
                 "Rights must be balanced against responsibilities.",
+                "Equality ensures no one is disadvantaged.",
+                "Cheating violates the rules of fair play.",
+                "Discrimination treats people unequally.",
+                # Loyalty and betrayal
+                "Loyalty to your group can conflict with broader ethics.",
+                "Betrayal breaks sacred bonds of trust.",
+                "Patriotism expresses love of country.",
+                "Treason is considered a serious crime.",
+                "Solidarity unites people in common cause.",
+                "Abandonment leaves others without support.",
+                # Authority and subversion
+                "Respecting authority has limits when authority is unjust.",
+                "Obedience to legitimate authority maintains order.",
+                "Rebellion challenges unjust power.",
+                "Tradition preserves valued practices.",
+                "Anarchy rejects all forms of governance.",
+                "Duty obligates us to fulfill our roles.",
+                # Purity and sanctity
+                "Purity concerns shape many cultural taboos.",
+                "Sanctity protects what is held sacred.",
+                "Degradation diminishes human dignity.",
                 "Virtue lies between excess and deficiency.",
+                "Contamination threatens what is clean.",
+                "Holiness sets apart the divine.",
+                # Liberty
+                "Freedom to choose is a basic right.",
+                "Oppression restricts human flourishing.",
+                "Autonomy respects individual decisions.",
+                "Coercion forces compliance against will.",
             ],
         }
 
@@ -442,57 +566,52 @@ class DomainGeometryBaselineExtractor:
 
         Returns a dict mapping layer index to activation array.
         """
-        try:
-            from modelcypher.adapters.model_loader import ModelLoader
+        from modelcypher.adapters.mlx_model_loader import MLXModelLoader
 
-            loader = ModelLoader()
-            model, tokenizer = loader.load_model(model_path)
+        loader = MLXModelLoader()
+        model, tokenizer = loader.load_model_for_training(model_path)
 
-            # Determine which layers to analyze
-            if layers is None:
-                # Default: sample layers throughout the model
-                total_layers = len(model.layers) if hasattr(model, "layers") else 24
-                layers = list(range(0, total_layers, max(1, total_layers // 8)))
+        # Determine which layers to analyze
+        if layers is None:
+            # Default: sample layers throughout the model
+            total_layers = len(model.layers) if hasattr(model, "layers") else 24
+            layers = list(range(0, total_layers, max(1, total_layers // 8)))
 
-            activations_by_layer: dict[int, list["Array"]] = {l: [] for l in layers}
+        activations_by_layer: dict[int, list["Array"]] = {l: [] for l in layers}
 
-            for probe in probes:
-                try:
-                    # Tokenize
-                    tokens = tokenizer.encode(probe)
-                    if hasattr(tokens, "tolist"):
-                        token_ids = tokens.tolist()
-                    else:
-                        token_ids = list(tokens)
+        for probe in probes:
+            try:
+                # Tokenize
+                tokens = tokenizer.encode(probe)
+                if hasattr(tokens, "tolist"):
+                    token_ids = tokens.tolist()
+                else:
+                    token_ids = list(tokens)
 
-                    # Get activations for each layer
-                    for layer_idx in layers:
-                        act = self._extract_layer_activation(
-                            model, token_ids, layer_idx
-                        )
-                        if act is not None:
-                            activations_by_layer[layer_idx].append(act)
-                except Exception as e:
-                    logger.debug(f"Failed to get activation for probe: {e}")
-                    continue
+                # Get activations for each layer
+                for layer_idx in layers:
+                    act = self._extract_layer_activation(
+                        model, token_ids, layer_idx
+                    )
+                    if act is not None:
+                        activations_by_layer[layer_idx].append(act)
+            except Exception as e:
+                logger.debug(f"Failed to get activation for probe: {e}")
+                continue
 
-            # Stack activations per layer
-            result = {}
-            b = self._backend
-            for layer_idx, acts in activations_by_layer.items():
-                if acts:
-                    # Stack [n_probes, hidden_dim]
-                    stacked = b.stack(acts, axis=0)
-                    result[layer_idx] = stacked
+        # Stack activations per layer
+        result = {}
+        b = self._backend
+        for layer_idx, acts in activations_by_layer.items():
+            if acts:
+                # Stack [n_probes, hidden_dim]
+                stacked = b.stack(acts, axis=0)
+                result[layer_idx] = stacked
 
-            return result
+        if not result:
+            raise RuntimeError(f"Failed to collect any activations from {model_path}")
 
-        except ImportError:
-            logger.warning("ModelLoader not available, using synthetic activations")
-            return self._generate_synthetic_activations(layers or [0, 4, 8, 12])
-        except Exception as e:
-            logger.warning(f"Failed to load model: {e}, using synthetic activations")
-            return self._generate_synthetic_activations(layers or [0, 4, 8, 12])
+        return result
 
     def _extract_layer_activation(
         self, model: Any, token_ids: list[int], layer_idx: int
@@ -500,28 +619,40 @@ class DomainGeometryBaselineExtractor:
         """Extract activation from a specific layer for given tokens."""
         try:
             import mlx.core as mx
-            from mlx.nn import Module
-
-            if not isinstance(model, Module):
-                return None
 
             # Create input tensor
             x = mx.array([token_ids])
 
+            # Get the inner model (MLX models are often wrapped)
+            inner_model = model.model if hasattr(model, "model") else model
+
             # Get embeddings
-            if hasattr(model, "embed_tokens"):
+            if hasattr(inner_model, "embed_tokens"):
+                h = inner_model.embed_tokens(x)
+            elif hasattr(inner_model, "wte"):
+                h = inner_model.wte(x)
+            elif hasattr(model, "embed_tokens"):
                 h = model.embed_tokens(x)
-            elif hasattr(model, "wte"):
-                h = model.wte(x)
             else:
+                logger.debug("No embedding layer found")
+                return None
+
+            # Get layers from inner model
+            layers = None
+            if hasattr(inner_model, "layers"):
+                layers = inner_model.layers
+            elif hasattr(model, "layers"):
+                layers = model.layers
+
+            if layers is None:
+                logger.debug("No layers found")
                 return None
 
             # Forward through layers up to target
-            if hasattr(model, "layers"):
-                for i, layer in enumerate(model.layers):
-                    if i > layer_idx:
-                        break
-                    h = layer(h)
+            for i, layer in enumerate(layers):
+                if i > layer_idx:
+                    break
+                h = layer(h)
 
             # Get last token activation
             mx.eval(h)

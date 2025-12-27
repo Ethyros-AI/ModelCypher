@@ -53,6 +53,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import svd_via_eigh
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -125,7 +126,7 @@ def _get_epsilon(config: SVDBlendConfig, backend: "Backend", array: "Array") -> 
     """Get epsilon from config or derive from dtype."""
     if config.epsilon is not None:
         return config.epsilon
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon, svd_via_eigh
+    from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
     return machine_epsilon(backend, array)
 
