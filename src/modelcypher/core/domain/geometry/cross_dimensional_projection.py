@@ -576,9 +576,10 @@ def _project_svd(
     residual_k = source_k_aligned - target_k
     residual_norm = float(b.to_numpy(b.sqrt(b.sum(residual_k ** 2))))
     target_k_norm = float(b.to_numpy(b.sqrt(b.sum(target_k ** 2))))
+    div_eps = division_epsilon(b, target_k)
     logger.debug(
         "Subspace Procrustes: k=%d, residual_norm=%.4f, target_norm=%.4f, ratio=%.4f",
-        k, residual_norm, target_k_norm, residual_norm / (target_k_norm + 1e-10)
+        k, residual_norm, target_k_norm, residual_norm / (target_k_norm + div_eps)
     )
 
     # =========================================================================
@@ -595,7 +596,8 @@ def _project_svd(
     target_fro = b.sqrt(b.sum(target ** 2))
     proj_fro = b.sqrt(b.sum(projected ** 2))
     b.eval(target_fro, proj_fro)
-    scale_factor = target_fro / (proj_fro + 1e-10)
+    scale_eps = division_epsilon(b, projected)
+    scale_factor = target_fro / (proj_fro + scale_eps)
     projected = projected * scale_factor
     b.eval(projected)
     logger.debug(
@@ -614,7 +616,8 @@ def _project_svd(
     total_var_t = float(b.to_numpy(b.sum(S_t ** 2)))
     kept_var_t = float(b.to_numpy(b.sum(S_t[:k] ** 2)))
 
-    score = 0.5 * (kept_var_s / (total_var_s + 1e-10) + kept_var_t / (total_var_t + 1e-10))
+    var_eps = float(division_epsilon(b, S_s))
+    score = 0.5 * (kept_var_s / (total_var_s + var_eps) + kept_var_t / (total_var_t + var_eps))
 
     return ProjectionResult(
         projected=projected,

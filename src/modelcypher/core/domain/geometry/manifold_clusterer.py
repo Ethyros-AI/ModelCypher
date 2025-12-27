@@ -474,7 +474,7 @@ class ManifoldClusterer:
                 nearest_region=None,
                 distance=float("inf"),
                 is_within_region=False,
-                suggested_type=ManifoldRegion.classify(point),
+                suggested_character=ManifoldRegion.classify(point),
                 confidence=0.0,
             )
 
@@ -500,6 +500,6 @@ class ManifoldClusterer:
             nearest_region=nearest_region,
             distance=nearest_distance,
             is_within_region=is_within,
-            suggested_type=ManifoldRegion.classify(point),
+            suggested_character=ManifoldRegion.classify(point),
             confidence=confidence,
         )

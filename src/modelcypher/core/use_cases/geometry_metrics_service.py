@@ -134,15 +134,21 @@ class GeometryMetricsService:
             return self._gw_result_from_cached(cached)
 
         # Compute the expensive operation
+        from modelcypher.core.domain._backend import get_default_backend
+
+        backend = get_default_backend()
+        gw = GromovWassersteinDistance(backend=backend)
         config = GWConfig(
             epsilon=epsilon,
             max_outer_iterations=max_iterations,
         )
 
-        source_distances = GromovWassersteinDistance.compute_pairwise_distances(source_points)
-        target_distances = GromovWassersteinDistance.compute_pairwise_distances(target_points)
+        pts_source = backend.array(source_points)
+        pts_target = backend.array(target_points)
+        source_distances = gw.compute_pairwise_distances(pts_source)
+        target_distances = gw.compute_pairwise_distances(pts_target)
 
-        result = GromovWassersteinDistance.compute(
+        result = gw.compute(
             source_distances=source_distances,
             target_distances=target_distances,
             config=config,
@@ -220,14 +226,19 @@ class GeometryMetricsService:
             return self._id_result_from_cached(cached, points)
 
         # Compute the expensive operation
-        config = TwoNNConfiguration(
-            use_regression=use_regression,
-            bootstrap=BootstrapConfiguration(resamples=bootstrap_samples)
+        from modelcypher.core.domain._backend import get_default_backend
+
+        backend = get_default_backend()
+        config = TwoNNConfiguration(use_regression=use_regression)
+        bootstrap_config = (
+            BootstrapConfiguration(resamples=bootstrap_samples)
             if bootstrap_samples > 0
-            else None,
+            else None
         )
 
-        estimate = IntrinsicDimension.compute_two_nn(points, config)
+        computer = IntrinsicDimension(backend)
+        pts = backend.array(points)
+        estimate = computer.compute(pts, config, bootstrap=bootstrap_config)
 
         # Extract confidence intervals if available
         if estimate.ci is not None:
@@ -377,7 +388,7 @@ class GeometryMetricsService:
     def intrinsic_dimension_payload(result: IntrinsicDimensionResult) -> dict:
         """Convert ID result to CLI/MCP payload."""
         return {
-            "dimension": result.dimension,
+            "intrinsicDimension": result.dimension,
             "confidenceLower": result.confidence_lower,
             "confidenceUpper": result.confidence_upper,
             "sampleCount": result.sample_count,

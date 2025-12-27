@@ -66,6 +66,9 @@ def _make_crm(model_id: str, layer_vectors: dict[int, list[float]]) -> ConceptRe
 class TestPhase9Geometry(unittest.TestCase):
     def test_transport_synthesis_simple(self):
         """Test deterministic weight synthesis given a known plan."""
+        backend = get_default_backend()
+        merger = TransportGuidedMerger(backend=backend)
+
         # 3 source neurons, 2 target neurons
         # Plan: source 0 -> target 0 (1.0), source 1 -> target 1 (1.0), source 2 -> both (50/50)
         # Actually plan is N x M (source x target)
@@ -73,26 +76,26 @@ class TestPhase9Geometry(unittest.TestCase):
         # S1 -> T1
         # S2 -> T0 (0.5), T1 (0.5)
 
-        source_weights = [
+        source_weights = backend.array([
             [1.0, 1.0],  # S0
             [2.0, 2.0],  # S1
             [3.0, 3.0],  # S2
-        ]
+        ])
 
-        target_weights = [
+        target_weights = backend.array([
             [10.0, 10.0],  # T0
             [20.0, 20.0],  # T1
-        ]
+        ])
 
         # Transport Plan (Source rows sum to 1? Wait, plan usually coupling. NormalizeRows does that.)
         # If we manually provide plan:
         # S0, S1, S2 rows.
         # T0, T1 cols.
-        plan = [
+        plan = backend.array([
             [1.0, 0.0],  # S0 -> T0
             [0.0, 1.0],  # S1 -> T1
             [0.5, 0.5],  # S2 split
-        ]
+        ])
 
         # Config blend_alpha=0 means pure transport
         config = TransportGuidedMerger.Config(
@@ -103,27 +106,32 @@ class TestPhase9Geometry(unittest.TestCase):
         # T0 = 1.0*S0 + 0.0*S1 + 0.5*S2 = [1,1] + [1.5,1.5] = [2.5, 2.5]
         # T1 = 0.0*S0 + 1.0*S1 + 0.5*S2 = [2,2] + [1.5,1.5] = [3.5, 3.5]
 
-        merged = TransportGuidedMerger.synthesize(source_weights, target_weights, plan, config)
+        merged = merger.synthesize(source_weights, target_weights, plan, config)
 
         self.assertIsNotNone(merged)
-        self.assertEqual(len(merged), 2)
+        backend.eval(merged)
+        merged_np = backend.to_numpy(merged)
+        self.assertEqual(merged_np.shape[0], 2)
         # Check values using standard Python assertions
-        self.assertAlmostEqual(merged[0][0], 2.5, places=5)
-        self.assertAlmostEqual(merged[0][1], 2.5, places=5)
-        self.assertAlmostEqual(merged[1][0], 3.5, places=5)
-        self.assertAlmostEqual(merged[1][1], 3.5, places=5)
+        self.assertAlmostEqual(float(merged_np[0, 0]), 2.5, places=5)
+        self.assertAlmostEqual(float(merged_np[0, 1]), 2.5, places=5)
+        self.assertAlmostEqual(float(merged_np[1, 0]), 3.5, places=5)
+        self.assertAlmostEqual(float(merged_np[1, 1]), 3.5, places=5)
 
     def test_gw_computation(self):
         """Verify standard GW computation flow on isomorphic structures."""
+        backend = get_default_backend()
+        merger = TransportGuidedMerger(backend=backend)
+
         # Create two identical triangles in 2D space
-        points_s = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]
-        points_t = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]
+        points_s = backend.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
+        points_t = backend.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
 
         # Activations = points
         # weights = same
 
         # Just use synthesize_with_gw directly
-        result = TransportGuidedMerger.synthesize_with_gw(
+        result = merger.synthesize_with_gw(
             source_activations=points_s,
             target_activations=points_t,
             source_weights=points_s,
@@ -151,22 +159,22 @@ class TestPhase9Geometry(unittest.TestCase):
 
         # X_s = z + noise in 2D
         noise_s = backend.random_normal((n, 2))
-        noise_s = backend.multiply(noise_s, 0.1)
+        noise_s = noise_s * 0.1
         backend.eval(noise_s)
         z_arr = backend.array(z)
-        z_2x = backend.multiply(z_arr, 2.0)
+        z_2x = z_arr * 2.0
         X_s_base = backend.stack([z_arr, z_2x], axis=1)
-        X_s = backend.add(X_s_base, noise_s)
+        X_s = X_s_base + noise_s
         backend.eval(X_s)
 
         # X_t = -z + noise in 3D (different dimension)
         noise_t = backend.random_normal((n, 3))
-        noise_t = backend.multiply(noise_t, 0.1)
+        noise_t = noise_t * 0.1
         backend.eval(noise_t)
-        z_neg = backend.multiply(z_arr, -1.0)
-        z_half = backend.multiply(z_arr, 0.5)
+        z_neg = z_arr * -1.0
+        z_half = z_arr * 0.5
         X_t_base = backend.stack([z_neg, z_arr, z_half], axis=1)
-        X_t = backend.add(X_t_base, noise_t)
+        X_t = X_t_base + noise_t
         backend.eval(X_t)
 
         X_s_np = backend.to_numpy(X_s)

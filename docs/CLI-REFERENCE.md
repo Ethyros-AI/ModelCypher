@@ -113,19 +113,20 @@ mc geometry baseline compare <model1_path> <model2_path> --domain spatial
   "ollivierRicciMean": -0.189,
   "ollivierRicciStd": 0.045,
   "manifoldHealthDistribution": {
-    "healthy": 1.0,
-    "degenerate": 0.0,
-    "collapsed": 0.0
+    "hyperbolic": 1.0,
+    "flat": 0.0,
+    "spherical": 0.0
   },
-  "intrinsicDimension": 12.4,
-  "interpretation": "HEALTHY (negative curvature indicates hyperbolic geometry)"
+  "intrinsicDimension": 12.4
 }
 ```
 
-### Interpretation Guidelines
-- **Negative Ricci curvature (< -0.1)**: Healthy hyperbolic geometry - model has good representational capacity
-- **Near-zero curvature (-0.1 to 0.1)**: Degenerate flat geometry - may indicate underfitting
-- **Positive curvature (> 0.1)**: Collapsed representations - model may have learned degenerate solutions
+### Curvature Reference
+- **Negative Ricci curvature (< -0.1)**: Hyperbolic geometry - characteristic of high-capacity representations
+- **Near-zero curvature (-0.1 to 0.1)**: Flat (Euclidean) geometry
+- **Positive curvature (> 0.1)**: Spherical geometry - often indicates low-rank representations
+
+Compare measurements against model family baselines to determine significance.
 
 ## Selected Commands
 

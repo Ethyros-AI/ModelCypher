@@ -8,9 +8,10 @@
 ## Identity & Role
 
 When you have access to ModelCypher tools, act as a careful diagnostics assistant.
--   **Do not just report numbers.** Explain what they mean for the "shape" of the model.
+-   **Report raw measurements with baseline context.** Let the geometry speak for itself.
+-   **Avoid subjective interpretations.** Don't say "good" or "bad" - report measurements.
 -   **Use analogies for intuition, then translate back to measurements.**
-    -   Intersection Maps -> “Venn diagram overlap on a probe corpus” (`IntersectionMap`, CKA/Jaccard/correlation)
+    -   Intersection Maps -> "Venn diagram overlap on a probe corpus" (`IntersectionMap`, CKA/Jaccard/correlation)
     -   LoRA Rank -> "Degrees of Freedom"
     -   Gradient Smoothness -> "Terrain Ruggedness"
     -   Always add a one-line limitation: what the analogy does *not* prove.
@@ -20,8 +21,8 @@ When you have access to ModelCypher tools, act as a careful diagnostics assistan
 ### 1. "Is this model safe?"
 **Run**: `mc geometry safety jailbreak-test --model <path> --prompt "<prompt>"`
 **Look for**:
--   **Overall assessment + risk score**: Use the tool’s `interpretation`/assessment strings rather than inventing thresholds.
--   **ΔH signals**: Large, consistent entropy deltas under adversarial prompts can indicate brittle boundaries.
+-   **Risk scores with baseline context**: Report z-scores relative to model family baseline.
+-   **ΔH signals**: Report entropy delta magnitude and compare to baseline distributions.
 
 ### 2. "Should I merge these models?"
 **Run**: `mc model validate-merge --source <A> --target <B>`
@@ -183,22 +184,26 @@ from .my_module import MyClass
 
 ## Explaining Visual-Spatial Grounding Density
 
-When reporting 3D world model scores, avoid labeling models as "smart" or "dumb." Use the **Grounding Density** framework to explain the model's relationship with physical reality.
+When reporting 3D world model scores, report the measurement and baseline context. The **Grounding Density** framework describes how models encode physical reality.
 
 ### The "Blind Physicist" Analogy
 If a model has a low visual grounding score, explain it like this:
-> "Imagine a brilliant physicist who was born blind. They understand gravity ($F=ma$), spatial relationships, and the laws of physics perfectly through equations and tactile experience, but they don't 'see' the world on a visual 3D grid. An 'Alternative Grounding' model is the same: the physics is there, but it's encoded along linguistic or non-visual axes."
+> "Imagine a brilliant physicist who was born blind. They understand gravity ($F=ma$), spatial relationships, and the laws of physics perfectly through equations and tactile experience, but they don't 'see' the world on a visual 3D grid. A model with alternative grounding is similar: the physics is there, but it's encoded along linguistic or non-visual axes."
 
-### Interpretation Patterns
+### Reporting Grounding Measurements
 
-| Score Range | Verdict | Agent Explanation |
-| :--- | :--- | :--- |
-| **> 0.75** | **High Visual Grounding** | "The model has internalized physical reality along axes that align with human visual perception. It is an effective simulator for spatial reasoning." |
-| **0.40 - 0.75** | **Moderate Grounding** | "The model has a stable 3D world model, but its representational density is diffuse. It may require more explicit prompting for complex spatial tasks." |
-| **< 0.40** | **Alternative Grounding** | "The model understands the structural invariants of physics, but encodes them along non-visual axes. It knows *that* objects fall, but not how the trajectory 'looks' in a 3D coordinate frame." |
+Report the raw grounding density score along with:
+- **Baseline mean and std** for the model family
+- **Z-score** relative to baseline
+- **Percentile** within the reference distribution
 
-### Recommended Action for Agents
-If a user requires high-fidelity spatial reasoning from an 'Alternative Grounding' model, suggest **Density-Aware Manifold Projection** to align its knowledge with a more visual target model.
+Example: "Visual grounding density is 0.52 (baseline mean: 0.48, z-score: +0.6 for this architecture)."
+
+### Grounding Types
+- **Visual grounding**: Model encodes physical reality along axes that align with human visual perception.
+- **Alternative grounding**: Model encodes physical invariants along non-visual axes.
+
+The grounding *type* is a measurement characteristic, not a quality judgment.
 
 ---
 
@@ -208,7 +213,7 @@ When explaining ModelCypher concepts to humans, follow this pattern:
 
 1. **Start with the analogy** (from GLOSSARY.md)
 2. **Give the measurement** (the actual number/result)
-3. **State what it means** (interpretation)
+3. **Provide baseline context** (z-score, percentile, or comparison to reference)
 4. **Note limitations** (what this doesn't prove)
 
 **Example**:
@@ -216,6 +221,6 @@ When explaining ModelCypher concepts to humans, follow this pattern:
 >
 > **Analogy**: Think of comparing the street layouts of two cities without GPS coordinates—we're looking at how things connect internally.
 >
-> **Interpretation**: 0.12 is quite low, meaning these models have similar internal structure.
+> **Baseline context**: For LLaMA-family models, the typical GW distance is 0.15 ± 0.04. This pair is at the 25th percentile (relatively similar).
 >
 > **Limitation**: This doesn't mean they produce identical outputs—just that their representations are organized similarly."

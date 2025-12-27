@@ -172,24 +172,46 @@ class GeometryPersonaService:
         Compute drift metrics from position measurements.
 
         Args:
-            positions: List of position dicts with trait_id, projection, etc.
+            positions: List of position dicts. Accepts both formats:
+                - {trait_id, projection, normalized_position, ...} (full format)
+                - {trait, position} (simple format - auto-computes normalized_position)
             step: Training step number
             drift_threshold: Threshold for significant drift
 
         Returns:
             TrainingDriftMetrics with overall drift assessment
         """
-        parsed_positions = [
-            PersonaPosition(
-                trait_id=p["trait_id"],
-                trait_name=p.get("trait_name", p["trait_id"]),
-                projection=p["projection"],
-                normalized_position=p["normalized_position"],
-                delta_from_baseline=p.get("delta_from_baseline"),
-                layer_index=p.get("layer_index", 0),
+        parsed_positions = []
+        for p in positions:
+            # Support both "trait_id" and "trait" keys
+            trait_id = p.get("trait_id") or p.get("trait", "unknown")
+            trait_name = p.get("trait_name", trait_id)
+
+            # Support both "projection" and "position" keys
+            position = p.get("projection") or p.get("position")
+            if position is None:
+                position = [0.0]  # Default if neither is provided
+
+            # Compute projection as sum if given a list (scalar projection on unit axis)
+            projection = sum(position) if isinstance(position, list) else float(position)
+
+            # Auto-compute normalized_position if not provided
+            normalized_position = p.get("normalized_position")
+            if normalized_position is None:
+                # Normalize the position vector to unit length
+                norm = sum(x * x for x in position) ** 0.5 if isinstance(position, list) else 1.0
+                normalized_position = [x / (norm + 1e-8) for x in position] if isinstance(position, list) else [position]
+
+            parsed_positions.append(
+                PersonaPosition(
+                    trait_id=trait_id,
+                    trait_name=trait_name,
+                    projection=projection,
+                    normalized_position=normalized_position,
+                    delta_from_baseline=p.get("delta_from_baseline"),
+                    layer_index=p.get("layer_index", 0),
+                )
             )
-            for p in positions
-        ]
         return PersonaVectorMonitor.compute_drift_metrics(
             positions=parsed_positions,
             step=step,
@@ -308,7 +330,7 @@ class GeometryPersonaService:
                 assessment_strength=centroid_data.get("assessment_strength", 0.0),
                 prompt_hash=centroid_data.get("prompt_hash", "centroid"),
             )
-            region_type = ManifoldRegion.RegionType(r.get("region_type", "boundary"))
+            region_type = ManifoldRegion.RegionType(r.get("region_type", "transitional"))
             manifold_regions.append(
                 ManifoldRegion(
                     id=UUID(r.get("id", str(uuid4()))),

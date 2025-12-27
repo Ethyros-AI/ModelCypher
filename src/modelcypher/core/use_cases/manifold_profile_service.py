@@ -149,7 +149,7 @@ class ManifoldProfileService:
                 nearest_region=None,
                 distance=float("inf"),
                 is_within_region=False,
-                suggested_type=ManifoldRegion.classify(point),
+                suggested_character=ManifoldRegion.classify(point),
                 confidence=0.0,
             )
         return self.clusterer.find_nearest_region(point=point, regions=profile.regions)

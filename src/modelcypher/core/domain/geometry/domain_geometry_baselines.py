@@ -118,9 +118,6 @@ class DomainGeometryBaseline:
     layer_ricci_values: list[float] = field(default_factory=list)
     layers_analyzed: int = 0
 
-    # Validation thresholds
-    acceptable_deviation: float = 0.2  # 20% deviation from baseline is acceptable
-
     # Metadata
     extraction_date: str = ""
     extraction_config: dict[str, Any] = field(default_factory=dict)
@@ -142,7 +139,6 @@ class DomainGeometryBaseline:
             "intrinsic_dimension_std": self.intrinsic_dimension_std,
             "layer_ricci_values": self.layer_ricci_values,
             "layers_analyzed": self.layers_analyzed,
-            "acceptable_deviation": self.acceptable_deviation,
             "extraction_date": self.extraction_date,
             "extraction_config": self.extraction_config,
         }
@@ -167,7 +163,6 @@ class DomainGeometryBaseline:
             intrinsic_dimension_std=d.get("intrinsic_dimension_std", 0.0),
             layer_ricci_values=d.get("layer_ricci_values", []),
             layers_analyzed=d.get("layers_analyzed", 0),
-            acceptable_deviation=d.get("acceptable_deviation", 0.2),
             extraction_date=d.get("extraction_date", ""),
             extraction_config=d.get("extraction_config", {}),
         )
@@ -190,14 +185,13 @@ class DomainGeometryBaseline:
 
 @dataclass
 class BaselineValidationResult:
-    """Result of validating a model against baselines."""
+    """Baseline-relative geometry metrics for a domain."""
 
     domain: str
-    passed: bool
-    overall_deviation: float  # Aggregate deviation score (0 = perfect match)
-    deviation_scores: dict[str, float]  # metric_name -> deviation from baseline
-    warnings: list[str] = field(default_factory=list)
-    recommendations: list[str] = field(default_factory=list)
+    metrics: dict[str, "BaselineMetricDelta"]  # metric_name -> baseline-relative deltas
+    baseline_found: bool = False
+    missing_metrics: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
     # Reference to baselines used
     baseline_model: str = ""  # e.g., "qwen-0.5B"
@@ -207,13 +201,36 @@ class BaselineValidationResult:
         """Convert to dictionary for serialization."""
         return {
             "domain": self.domain,
-            "passed": self.passed,
-            "overall_deviation": self.overall_deviation,
-            "deviation_scores": self.deviation_scores,
-            "warnings": self.warnings,
-            "recommendations": self.recommendations,
+            "metrics": {name: metric.to_dict() for name, metric in self.metrics.items()},
+            "baseline_found": self.baseline_found,
+            "missing_metrics": self.missing_metrics,
+            "notes": self.notes,
             "baseline_model": self.baseline_model,
             "current_model": self.current_model,
+        }
+
+
+@dataclass(frozen=True)
+class BaselineMetricDelta:
+    """Baseline-relative deltas for a single metric."""
+
+    current: float | None
+    baseline: float | None
+    baseline_std: float | None
+    delta: float | None
+    relative_delta: float | None
+    z_score: float | None
+    percentile: float | None = None
+
+    def to_dict(self) -> dict[str, float | None]:
+        return {
+            "current": self.current,
+            "baseline": self.baseline,
+            "baseline_std": self.baseline_std,
+            "delta": self.delta,
+            "relative_delta": self.relative_delta,
+            "z_score": self.z_score,
+            "percentile": self.percentile,
         }
 
 

@@ -49,7 +49,7 @@ ALTERNATIVE GROUNDING - Physics encoded geometrically along non-visual axes.
 **What you just measured:**
 - This 0.5B model knows physics (gravity, distance) but encodes it along *linguistic* axes, not visual ones
 - We call this the "Blind Physicist" — it knows the math of 3D space without seeing it
-- Axis Orthogonality of 94.58% means concepts are cleanly separated (good)
+- Axis Orthogonality of 94.58% means concepts are cleanly separated (compare to baseline)
 
 If you got different numbers, that's real data about your model. If the command failed, [file an issue](https://github.com/Ethyros-AI/ModelCypher/issues).
 
@@ -64,7 +64,7 @@ A toolkit for measuring the geometric structure of LLM representations.
 | "The merge feels off" | "Layer 12 has 3x higher curvature than baseline" |
 | "It refuses too much" | "Refusal boundary expanded 40% after fine-tuning" |
 | "The models are similar-ish" | "94.2% structural alignment via Procrustes analysis" |
-| "Training seems stable" | "Entropy gradient: -0.003/step (healthy convergence)" |
+| "Training seems stable" | "Entropy gradient: -0.003/step (baseline: -0.002 ± 0.001)" |
 
 **The insight:** Inside every language model is a high-dimensional space where concepts live as points. That space has *shape*—curves, boundaries, distances. That shape *is* the model's knowledge. ModelCypher gives you a ruler and a map.
 

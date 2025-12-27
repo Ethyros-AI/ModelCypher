@@ -226,7 +226,7 @@ Instead:
 - `--ai` or `MC_AI_MODE=1` forces JSON output and suppresses prompts/logs
 - `--output {text,json,yaml}` controls format
 - Structured output goes to stdout; diagnostics/logs go to stderr
-- For geometry metrics, use the `interpretation` and `recommendedAction` fields
+- Return raw measurements; avoid interpretation strings (see "No Vibes" section below)
 
 ---
 
@@ -318,6 +318,92 @@ poetry run mc geometry validate /path/to/model --output json
 
 ---
 
+## CRITICAL: No Vibes - Let Geometry Speak
+
+**Return raw measurements. Never insert human judgment for the judgment of the geometry itself.**
+
+ModelCypher measures geometric properties of neural network representations. The geometry IS the truth - our job is to measure it accurately, not to interpret what it "means" or whether it's "good."
+
+### Prohibited Patterns
+
+```python
+# WRONG - hardcoded thresholds with no geometric basis
+if similarity > 0.8:
+    return "excellent"
+elif similarity > 0.5:
+    return "good"
+else:
+    return "poor"
+
+# WRONG - interpretation strings in output
+return {
+    "value": 0.73,
+    "interpretation": "Good alignment detected",
+    "recommendation": "Consider proceeding with merge"
+}
+
+# WRONG - qualitative labels
+status = "healthy" if entropy < 2.0 else "concerning"
+```
+
+### Correct Patterns
+
+```python
+# CORRECT - raw measurement only
+return {"similarity": 0.73}
+
+# CORRECT - baseline-relative comparison (if threshold needed)
+baseline = load_baseline(model_family)
+z_score = (measured - baseline.mean) / baseline.std
+return {"similarity": 0.73, "z_score": z_score, "baseline_mean": baseline.mean}
+
+# CORRECT - percentile within distribution
+percentile = compute_percentile(measured, reference_distribution)
+return {"entropy": 1.8, "percentile": percentile}
+```
+
+### Why This Matters
+
+1. **Thresholds are model-specific** - What's "good" for GPT-2 is different from LLaMA
+2. **Baselines change** - A 2024 model has different geometry than a 2025 model
+3. **Context matters** - 0.8 CKA might be great for cross-architecture, poor for same-architecture
+4. **We're not the user** - Researchers know their domain; we provide measurements, they decide meaning
+
+### When Thresholds Are Unavoidable
+
+Some operations (alerts, circuit breakers) genuinely need thresholds. When they do:
+
+1. **Derive from baselines** - Use measured distributions, not magic numbers
+2. **Make configurable** - Let users override defaults
+3. **Document the source** - Explain where the threshold came from
+4. **Express in relative terms** - "3σ from baseline" not "entropy > 2.0"
+
+```python
+# ACCEPTABLE - threshold derived from baseline with clear provenance
+class SafetyMonitor:
+    def __init__(self, baseline: BaselineProfile, sigma_threshold: float = 3.0):
+        self.alert_threshold = baseline.mean + sigma_threshold * baseline.std
+
+    def check(self, value: float) -> dict:
+        sigma_distance = (value - self.baseline.mean) / self.baseline.std
+        return {
+            "value": value,
+            "sigma_from_baseline": sigma_distance,
+            "exceeds_threshold": sigma_distance > self.sigma_threshold
+        }
+```
+
+### The Baseline Philosophy
+
+Every measurement should be interpretable relative to:
+- **Same model's baseline** - How does this compare to typical behavior?
+- **Model family baseline** - How does this compare to other LLaMA models?
+- **Cross-family reference** - How does this compare to all models?
+
+This is how scientists work. We don't say "2.3 is good" - we say "2.3 is 1.5σ above the mean for this architecture."
+
+---
+
 ## What NOT To Do
 
 1. **Don't import numpy. ANYWHERE.** - Use the Backend protocol. Tests included. No exceptions.
@@ -331,3 +417,4 @@ poetry run mc geometry validate /path/to/model --output json
 9. **Don't guess at external APIs** - Research current documentation before implementing
 10. **Don't run full test suite casually** - Run domain-specific batches (e.g., `pytest tests/test_geometry.py -q`). Full suite takes 20+ minutes.
 11. **Don't write custom scripts** - Use CLI (`mc`) or MCP tools. If a capability doesn't exist, build it into CLI/MCP.
+12. **Don't add vibes** - No hardcoded thresholds, interpretation strings, or qualitative labels. Return raw measurements only.
