@@ -182,12 +182,19 @@ class GramAligner:
 
         values = [float(v) for v in b.to_numpy(eigvals).tolist()]
         max_eig = max(values) if values else 1.0
+        min_eig = min(values) if values else 0.0
         eps = reg if reg is not None else max(self._regularization, machine_epsilon(b, gram))
 
-        # Use Tikhonov regularization instead of zeroing small eigenvalues.
-        # Zeroing causes rank loss and prevents CKA = 1.0 for cross-dimensional alignment.
-        # Regularization: inv(λ + ε) instead of zeroing λ when λ < threshold
-        reg_value = max_eig * max(eps, machine_epsilon(b, gram))
+        # Use minimal regularization to preserve accuracy while avoiding division by zero.
+        # The regularization should be small relative to eigenvalues to minimize distortion.
+        # Use min_eig * eps if min_eig > 0, else fall back to max_eig * eps^2
+        if min_eig > 0:
+            # Tiny regularization relative to smallest eigenvalue for full-rank matrices
+            reg_value = min_eig * eps
+        else:
+            # Fallback for near-singular matrices
+            reg_value = max_eig * eps * eps
+
         inv_vals = 1.0 / (eigvals + reg_value)
         b.eval(inv_vals)
 
