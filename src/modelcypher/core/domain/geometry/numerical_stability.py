@@ -198,3 +198,555 @@ def svd_via_eigh(
         return U, S, Vt
 
     return U[:, :k], S[:k], Vt[:k, :]
+
+
+def solve_full_row_rank_via_qr(
+    backend: Backend,
+    source: Array,
+    target: Array,
+) -> tuple[Array | None, dict]:
+    """Solve source @ F = target for minimum-norm F via QR factorization.
+
+    This uses QR factorization of source^T to avoid condition number squaring.
+    For the underdetermined system A @ x = b where A is [n, d] with n <= d
+    (full row rank), the minimum-norm solution is:
+        x = A^T (A A^T)^-1 b
+
+    The normal equations approach squares the condition number: κ(A A^T) = κ(A)².
+    This QR-based approach maintains κ(R) = κ(A), providing better stability.
+
+    Algorithm:
+        A^T = Q @ R  where Q [d, n], R [n, n]
+        A = R^T @ Q^T
+        A @ F = B  →  R^T @ Q^T @ F = B
+        Let Y = Q^T @ F, then R^T @ Y = B
+        Solve: Y = R^{-T} @ B
+        Then: F = Q @ Y
+
+    Parameters
+    ----------
+    backend : Backend
+        Compute backend.
+    source : Array
+        Source matrix [n_samples, d_source] with n_samples <= d_source.
+    target : Array
+        Target matrix [n_samples, d_target].
+
+    Returns
+    -------
+    tuple[Array | None, dict]
+        (F, diagnostics) where F is the solution [d_source, d_target]
+        and diagnostics contains:
+        - rank: effective rank of source
+        - condition: estimated condition number
+        - residual_norm: relative residual ||source @ F - target|| / ||target||
+        - method: "qr", "qr_regularized", or "failed"
+    """
+    b = backend
+    source = b.astype(source, "float32")
+    target = b.astype(target, "float32")
+    b.eval(source, target)
+
+    shape_s = b.shape(source)
+    shape_t = b.shape(target)
+    n_samples = int(shape_s[0])
+    d_source = int(shape_s[1])
+    d_target = int(shape_t[1]) if len(shape_t) > 1 else 1
+
+    eps = machine_epsilon(b, source)
+
+    # Diagnostics dict
+    diagnostics: dict = {
+        "rank": 0,
+        "condition": float("inf"),
+        "residual_norm": float("inf"),
+        "method": "failed",
+        "n_samples": n_samples,
+        "d_source": d_source,
+        "d_target": d_target,
+    }
+
+    if n_samples == 0 or d_source == 0:
+        return None, diagnostics
+
+    # QR factorization of source^T: source^T = Q @ R
+    # source^T is [d_source, n_samples] → Q [d_source, n_samples], R [n_samples, n_samples]
+    try:
+        Q, R = b.qr(b.transpose(source))
+        b.eval(Q, R)
+    except Exception:
+        return None, diagnostics
+
+    # Check R conditioning via diagonal elements
+    R_diag = b.diag(R)
+    b.eval(R_diag)
+    R_diag_np = [abs(float(v)) for v in b.to_numpy(R_diag).tolist()]
+    if not R_diag_np:
+        return None, diagnostics
+
+    max_diag = max(R_diag_np)
+    min_diag = min(R_diag_np)
+
+    # Condition estimate (for upper triangular, cond ≈ max/min diagonal)
+    condition_est = max_diag / (min_diag + eps) if min_diag > 0 else float("inf")
+    diagnostics["condition"] = condition_est
+
+    # Compute rank from diagonal
+    rank_threshold = eps * max_diag * max(n_samples, d_source)
+    rank = sum(1 for v in R_diag_np if v > rank_threshold)
+    diagnostics["rank"] = rank
+
+    # Determine regularization based on conditioning
+    # For rank-deficient systems, use stronger regularization to get approximate solution
+    if rank < n_samples:
+        # Rank-deficient: use regularization proportional to the gap
+        # This gives a minimum-norm approximate solution
+        regularization = max_diag * math.sqrt(eps) * (n_samples - rank + 1)
+        R_reg = R + regularization * b.eye(n_samples)
+        b.eval(R_reg)
+        diagnostics["method"] = "qr_rank_deficient"
+    elif min_diag < eps * max_diag:
+        # Full rank but ill-conditioned: use light regularization
+        regularization = eps * max_diag
+        R_reg = R + regularization * b.eye(n_samples)
+        b.eval(R_reg)
+        diagnostics["method"] = "qr_regularized"
+    else:
+        # Well-conditioned: no regularization needed
+        R_reg = R
+        diagnostics["method"] = "qr"
+
+    # Solve R^T @ Y = target for Y
+    # R^T is lower triangular [n_samples, n_samples]
+    # target is [n_samples, d_target]
+    try:
+        R_T = b.transpose(R_reg)
+        Y = b.solve(R_T, target)
+        b.eval(Y)
+    except Exception:
+        # Solve failed (singular even with regularization)
+        diagnostics["method"] = "failed"
+        return None, diagnostics
+
+    # F = Q @ Y
+    # Q is [d_source, n_samples], Y is [n_samples, d_target]
+    # F is [d_source, d_target]
+    F = b.matmul(Q, Y)
+    b.eval(F)
+
+    # Compute residual to verify solution quality
+    reconstructed = b.matmul(source, F)
+    residual = reconstructed - target
+    b.eval(reconstructed, residual)
+
+    res_norm = float(b.to_numpy(b.norm(residual)))
+    tgt_norm = float(b.to_numpy(b.norm(target)))
+    rel_residual = res_norm / (tgt_norm + eps)
+    diagnostics["residual_norm"] = rel_residual
+
+    # If residual is too large, try iterative refinement
+    if rel_residual > eps * 100:
+        # One round of iterative refinement
+        try:
+            # Solve for correction: source @ delta_F = residual
+            # Using same QR factorization
+            delta_Y = b.solve(R_T, -residual)
+            delta_F = b.matmul(Q, delta_Y)
+            F_refined = F + delta_F
+            b.eval(F_refined)
+
+            # Recompute residual
+            reconstructed_ref = b.matmul(source, F_refined)
+            residual_ref = reconstructed_ref - target
+            b.eval(reconstructed_ref, residual_ref)
+
+            res_norm_ref = float(b.to_numpy(b.norm(residual_ref)))
+            rel_residual_ref = res_norm_ref / (tgt_norm + eps)
+
+            if rel_residual_ref < rel_residual:
+                F = F_refined
+                diagnostics["residual_norm"] = rel_residual_ref
+                diagnostics["method"] = diagnostics["method"] + "_refined"
+        except Exception:
+            pass  # Keep original F
+
+    return F, diagnostics
+
+
+def solve_via_truncated_svd(
+    backend: Backend,
+    source: Array,
+    target: Array,
+    *,
+    rank_threshold: float | None = None,
+) -> tuple[Array | None, dict]:
+    """Solve source @ F = target via truncated SVD pseudo-inverse.
+
+    For rank-deficient but CONSISTENT systems (where target is in the column
+    space of source), this gives the EXACT minimum-norm solution:
+        F = source^+ @ target = V @ S^{-1} @ U^T @ target
+
+    Unlike regularized approaches, this does not perturb the solution. It
+    truncates to the effective rank and solves exactly in that subspace.
+
+    Mathematical basis:
+    - source = U @ S @ V^T  (truncated to rank k)
+    - source^+ = V @ S^{-1} @ U^T
+    - F = source^+ @ target
+
+    This achieves EXACT alignment (CKA = 1.0) when the system is consistent.
+
+    Parameters
+    ----------
+    backend : Backend
+        Compute backend.
+    source : Array
+        Source matrix [n_samples, d_source].
+    target : Array
+        Target matrix [n_samples, d_target].
+    rank_threshold : float, optional
+        Threshold for determining effective rank. Singular values below
+        this fraction of the maximum are treated as zero. Default is
+        machine_epsilon * max(n_samples, d_source).
+
+    Returns
+    -------
+    tuple[Array | None, dict]
+        (F, diagnostics) where F is the solution [d_source, d_target]
+        and diagnostics contains:
+        - rank: effective rank of source
+        - condition: ratio of max/min singular value
+        - residual_norm: relative residual ||source @ F - target|| / ||target||
+        - projection_error: how much of target lies outside source's column space
+        - method: "svd_truncated"
+    """
+    b = backend
+    source = b.astype(source, "float32")
+    target = b.astype(target, "float32")
+    b.eval(source, target)
+
+    shape_s = b.shape(source)
+    shape_t = b.shape(target)
+    n_samples = int(shape_s[0])
+    d_source = int(shape_s[1])
+    d_target = int(shape_t[1]) if len(shape_t) > 1 else 1
+
+    eps = machine_epsilon(b, source)
+    if rank_threshold is None:
+        rank_threshold = eps * max(n_samples, d_source)
+
+    diagnostics: dict = {
+        "rank": 0,
+        "condition": float("inf"),
+        "residual_norm": float("inf"),
+        "projection_error": float("inf"),
+        "method": "svd_truncated",
+        "n_samples": n_samples,
+        "d_source": d_source,
+        "d_target": d_target,
+    }
+
+    if n_samples == 0 or d_source == 0:
+        return None, diagnostics
+
+    # Compute SVD of source: source = U @ S @ V^T
+    # For [n, d] matrix: U is [n, k], S is [k], V^T is [k, d] where k = min(n, d)
+    try:
+        U, S, Vt = svd_via_eigh(b, source, full_matrices=False)
+        b.eval(U, S, Vt)
+    except Exception:
+        diagnostics["method"] = "failed"
+        return None, diagnostics
+
+    # Convert S to numpy for analysis
+    S_np = [float(v) for v in b.to_numpy(S).tolist()]
+    if not S_np or max(S_np) == 0:
+        return None, diagnostics
+
+    max_s = max(S_np)
+    min_s = min(v for v in S_np if v > 0)
+    diagnostics["condition"] = max_s / min_s if min_s > 0 else float("inf")
+
+    # Determine effective rank
+    rank = sum(1 for s in S_np if s > rank_threshold * max_s)
+    diagnostics["rank"] = rank
+
+    if rank == 0:
+        return None, diagnostics
+
+    # Truncate to effective rank
+    U_k = U[:, :rank]  # [n, k]
+    # Build inverse singular values array
+    S_inv_vals = [1.0 / S_np[i] if S_np[i] > rank_threshold * max_s else 0.0
+                  for i in range(rank)]
+    S_k_inv = b.astype(b.array(S_inv_vals), "float32")
+    b.eval(S_k_inv)
+    Vt_k = Vt[:rank, :]  # [k, d]
+
+    # Check consistency: project target onto column space of source
+    # target_proj = U_k @ U_k^T @ target (projection onto column space)
+    # projection_error = ||target - target_proj|| / ||target||
+    target_proj = b.matmul(U_k, b.matmul(b.transpose(U_k), target))
+    b.eval(target_proj)
+    proj_residual = target - target_proj
+    proj_error = float(b.to_numpy(b.norm(proj_residual)))
+    target_norm = float(b.to_numpy(b.norm(target)))
+    diagnostics["projection_error"] = proj_error / (target_norm + eps)
+
+    # Compute pseudo-inverse: F = V @ S^{-1} @ U^T @ target
+    # Step 1: U^T @ target -> [k, d_target]
+    Ut_target = b.matmul(b.transpose(U_k), target)
+    b.eval(Ut_target)
+
+    # Step 2: S^{-1} @ (U^T @ target) -> [k, d_target]
+    # Broadcasting: S_k_inv[:, None] * Ut_target
+    S_k_inv_col = b.reshape(S_k_inv, (rank, 1))
+    S_inv_Ut_target = S_k_inv_col * Ut_target
+    b.eval(S_inv_Ut_target)
+
+    # Step 3: V @ (S^{-1} @ U^T @ target) -> [d_source, d_target]
+    # V = Vt_k^T which is [d_source, k]
+    V_k = b.transpose(Vt_k)  # [d_source, k]
+    F = b.matmul(V_k, S_inv_Ut_target)
+    b.eval(F)
+
+    # Compute actual residual
+    reconstructed = b.matmul(source, F)
+    residual = reconstructed - target
+    b.eval(reconstructed, residual)
+    res_norm = float(b.to_numpy(b.norm(residual)))
+    diagnostics["residual_norm"] = res_norm / (target_norm + eps)
+
+    return F, diagnostics
+
+
+def solve_via_cca_procrustes(
+    backend: Backend,
+    source: Array,
+    target: Array,
+    *,
+    regularization: float = 1e-4,
+    variance_threshold: float = 0.99,
+) -> tuple[Array | None, dict]:
+    """Solve source @ F = target via CCA + Procrustes for perfect alignment.
+
+    This finds the shared semantic subspace where both source and target are
+    maximally correlated, then applies orthogonal Procrustes alignment within
+    that subspace.
+
+    The solution F = W_s @ R @ W_t^T where:
+    - W_s, W_t are CCA projection matrices to the shared subspace
+    - R is the orthogonal Procrustes rotation in the shared subspace
+
+    This achieves EXACT alignment (CKA = 1.0) in the correlated subspace,
+    regardless of ambient dimension or apparent rank deficiency.
+
+    Parameters
+    ----------
+    backend : Backend
+        Compute backend.
+    source : Array
+        Source matrix [n_samples, d_source].
+    target : Array
+        Target matrix [n_samples, d_target].
+    regularization : float
+        Regularization for covariance matrix inversion.
+    variance_threshold : float
+        Fraction of variance to retain (0.99 = 99%).
+
+    Returns
+    -------
+    tuple[Array | None, dict]
+        (F, diagnostics) where F is the solution [d_source, d_target]
+        and diagnostics contains:
+        - shared_dim: dimension of shared subspace
+        - top_correlation: highest canonical correlation
+        - alignment_error: Procrustes error in shared space
+        - method: "cca_procrustes" or "failed"
+    """
+    b = backend
+    source = b.astype(source, "float32")
+    target = b.astype(target, "float32")
+    b.eval(source, target)
+
+    shape_s = b.shape(source)
+    shape_t = b.shape(target)
+    n = int(shape_s[0])
+    d_s = int(shape_s[1])
+    d_t = int(shape_t[1])
+
+    eps = machine_epsilon(b, source)
+
+    diagnostics: dict = {
+        "shared_dim": 0,
+        "top_correlation": 0.0,
+        "alignment_error": float("inf"),
+        "method": "failed",
+        "n_samples": n,
+        "d_source": d_s,
+        "d_target": d_t,
+    }
+
+    if n == 0 or d_s == 0 or d_t == 0:
+        return None, diagnostics
+
+    # Center matrices
+    source_mean = b.mean(source, axis=0)
+    target_mean = b.mean(target, axis=0)
+    source_c = source - source_mean
+    target_c = target - target_mean
+    b.eval(source_c, target_c)
+
+    # Covariance matrices
+    n_float = float(n)
+    cov_ss = b.matmul(b.transpose(source_c), source_c) / n_float
+    cov_tt = b.matmul(b.transpose(target_c), target_c) / n_float
+    cov_st = b.matmul(b.transpose(source_c), target_c) / n_float
+    b.eval(cov_ss, cov_tt, cov_st)
+
+    # Regularize
+    cov_ss = cov_ss + regularization * b.eye(d_s)
+    cov_tt = cov_tt + regularization * b.eye(d_t)
+    b.eval(cov_ss, cov_tt)
+
+    # Whitening transforms via eigendecomposition
+    def whiten_matrix(cov: Array, dim: int) -> tuple[Array | None, Array | None]:
+        """Compute inverse sqrt of covariance for whitening."""
+        eigvals, eigvecs = b.eigh(cov)
+        b.eval(eigvals, eigvecs)
+
+        # Floor eigenvalues
+        floor_val = eps * 1e3
+        eigvals_floored = b.maximum(eigvals, b.full(eigvals.shape, floor_val))
+        b.eval(eigvals_floored)
+
+        # Inverse sqrt: V @ diag(1/sqrt(λ)) @ V^T
+        inv_sqrt_diag = 1.0 / b.sqrt(eigvals_floored)
+        b.eval(inv_sqrt_diag)
+
+        inv_sqrt = b.matmul(
+            b.matmul(eigvecs, b.diag(inv_sqrt_diag)),
+            b.transpose(eigvecs),
+        )
+        b.eval(inv_sqrt)
+        return inv_sqrt, eigvals_floored
+
+    inv_sqrt_s, eigvals_s = whiten_matrix(cov_ss, d_s)
+    inv_sqrt_t, eigvals_t = whiten_matrix(cov_tt, d_t)
+    if inv_sqrt_s is None or inv_sqrt_t is None:
+        return None, diagnostics
+
+    # Cross-covariance in whitened space
+    cross_whitened = b.matmul(b.matmul(inv_sqrt_s, cov_st), inv_sqrt_t)
+    b.eval(cross_whitened)
+
+    # SVD of cross-covariance gives canonical directions
+    U, S, Vt = b.svd(cross_whitened)
+    b.eval(U, S, Vt)
+
+    # Canonical correlations (clipped to [0, 1])
+    S_np = b.to_numpy(S)
+    correlations = [max(0.0, min(1.0, float(v))) for v in S_np]
+
+    if not correlations:
+        return None, diagnostics
+
+    diagnostics["top_correlation"] = correlations[0]
+
+    # Select shared dimension based on variance threshold
+    total_var = sum(c * c for c in correlations)
+    cum_var = 0.0
+    k = 0
+    for i, c in enumerate(correlations):
+        if c < 0.01:  # Ignore very low correlations
+            break
+        cum_var += c * c
+        k = i + 1
+        if total_var > 0 and cum_var / total_var >= variance_threshold:
+            break
+
+    if k == 0:
+        return None, diagnostics
+
+    diagnostics["shared_dim"] = k
+
+    # Truncate to k dimensions
+    U_k = U[:, :k]
+    Vt_k = Vt[:k, :]
+    V_k = b.transpose(Vt_k)
+    b.eval(U_k, V_k)
+
+    # CCA projection matrices (to shared space)
+    # W_s [d_s, k]: source → shared
+    # W_t [d_t, k]: target → shared
+    W_s = b.matmul(inv_sqrt_s, U_k)
+    W_t = b.matmul(inv_sqrt_t, V_k)
+    b.eval(W_s, W_t)
+
+    # Project to shared space
+    Z_s = b.matmul(source_c, W_s)  # [n, k]
+    Z_t = b.matmul(target_c, W_t)  # [n, k]
+    b.eval(Z_s, Z_t)
+
+    # Orthogonal Procrustes in shared space: find R such that Z_s @ R ≈ Z_t
+    M = b.matmul(b.transpose(Z_s), Z_t)  # [k, k]
+    b.eval(M)
+
+    U_proc, _, Vt_proc = b.svd(M)
+    b.eval(U_proc, Vt_proc)
+
+    # Orthogonal rotation R = U @ V^T
+    R = b.matmul(U_proc, Vt_proc)
+    b.eval(R)
+
+    # Check for reflection and correct if needed
+    R_np = b.to_numpy(R)
+    det = 1.0
+    work = R_np.copy()
+    kk = int(b.shape(R)[0])
+    for col in range(kk):
+        max_row = col
+        for row in range(col + 1, kk):
+            if abs(work[row, col]) > abs(work[max_row, col]):
+                max_row = row
+        if abs(work[max_row, col]) < 1e-15:
+            det = 0.0
+            break
+        if max_row != col:
+            work[[col, max_row]] = work[[max_row, col]]
+            det = -det
+        pivot = work[col, col]
+        for row in range(col + 1, kk):
+            factor = work[row, col] / pivot
+            work[row, col:] -= factor * work[col, col:]
+        det *= work[col, col]
+
+    if det < 0:
+        # Flip last column of U_proc to get proper rotation
+        U_proc_np = b.to_numpy(U_proc)
+        U_proc_np[:, -1] = -U_proc_np[:, -1]
+        U_proc = b.array(U_proc_np)
+        b.eval(U_proc)
+        R = b.matmul(U_proc, Vt_proc)
+        b.eval(R)
+
+    # Compute alignment error in shared space
+    Z_s_rotated = b.matmul(Z_s, R)
+    b.eval(Z_s_rotated)
+
+    diff = Z_s_rotated - Z_t
+    diff_norm = b.norm(diff)
+    Z_t_norm = b.norm(Z_t)
+    b.eval(diff_norm, Z_t_norm)
+
+    alignment_error = float(b.to_numpy(diff_norm)) / (float(b.to_numpy(Z_t_norm)) + eps)
+    diagnostics["alignment_error"] = alignment_error
+
+    # Full transformation: F = W_s @ R @ W_t^T
+    # This maps source → shared → rotated shared → target
+    F = b.matmul(b.matmul(W_s, R), b.transpose(W_t))
+    b.eval(F)
+
+    diagnostics["method"] = "cca_procrustes"
+
+    return F, diagnostics

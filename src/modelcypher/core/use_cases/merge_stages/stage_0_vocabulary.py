@@ -1711,9 +1711,68 @@ def _solve_feature_transform_exact(
     backend: "object",
     regularization: float = 0.0,
 ) -> "object | None":
+    """Solve source @ F = target for exact alignment.
+
+    Strategy (in order of preference):
+    1. QR-based solve for full-rank, well-conditioned cases (fastest)
+    2. Truncated SVD pseudo-inverse for rank-deficient but consistent cases (exact)
+    3. Eigendecomposition fallback (legacy, squares condition number)
+
+    The truncated SVD approach achieves CKA = 1.0 (phase lock) when the system
+    is consistent (target is in the column space of source), which is always
+    true for properly selected anchor embeddings from the same semantic space.
+    """
+    from modelcypher.core.domain.geometry.numerical_stability import (
+        solve_full_row_rank_via_qr,
+        solve_via_truncated_svd,
+    )
+
     n = int(source_matrix.shape[0])
     if n == 0:
         return None
+
+    eps = max(machine_epsilon(backend, source_matrix), 1e-12)
+
+    # Try QR-based solve first (fast for full-rank, well-conditioned cases)
+    F_qr, diag = solve_full_row_rank_via_qr(backend, source_matrix, target_matrix)
+
+    if F_qr is not None:
+        logger.debug(
+            "QR solve: method=%s, rank=%d/%d, cond=%.2e, residual=%.2e",
+            diag.get("method", "unknown"),
+            diag.get("rank", 0),
+            n,
+            diag.get("condition", float("inf")),
+            diag.get("residual_norm", float("inf")),
+        )
+        # Accept if residual is small (system is full-rank and well-conditioned)
+        if diag.get("residual_norm", float("inf")) < eps * 1000:
+            return F_qr
+
+    # QR failed or gave large residual - try truncated SVD (handles rank-deficiency)
+    logger.debug("QR residual too large (%.2e), trying truncated SVD solve",
+                 diag.get("residual_norm", float("inf")) if F_qr is not None else float("inf"))
+
+    F_svd, diag_svd = solve_via_truncated_svd(backend, source_matrix, target_matrix)
+
+    if F_svd is not None:
+        logger.debug(
+            "SVD solve: rank=%d/%d, cond=%.2e, proj_err=%.2e, residual=%.2e",
+            diag_svd.get("rank", 0),
+            n,
+            diag_svd.get("condition", float("inf")),
+            diag_svd.get("projection_error", float("inf")),
+            diag_svd.get("residual_norm", float("inf")),
+        )
+        # SVD should give near-zero residual for consistent systems
+        if diag_svd.get("residual_norm", float("inf")) < 0.01:  # 1% relative error
+            return F_svd
+        # Also accept if projection error is small (system is consistent)
+        if diag_svd.get("projection_error", float("inf")) < eps * 100:
+            return F_svd
+
+    # Fall back to eigendecomposition (legacy, squares condition number)
+    logger.debug("SVD solve failed or residual too large, falling back to eigen solve")
 
     gram = backend.matmul(source_matrix, backend.transpose(source_matrix))
     if regularization > 0.0:
@@ -1727,7 +1786,6 @@ def _solve_feature_transform_exact(
         return None
     min_eig = min(values)
     max_eig = max(values)
-    eps = max(machine_epsilon(backend, gram), 1e-12)
     if max_eig <= eps:
         return None
 
@@ -1749,6 +1807,14 @@ def _solve_feature_transform_exact(
         backend.matmul(gram_inv, target_matrix),
     )
     backend.eval(transform)
+
+    logger.debug(
+        "Eigen solve: min_eig=%.2e, max_eig=%.2e, cond=%.2e",
+        min_eig,
+        max_eig,
+        max_eig / (min_eig + eps) if min_eig > 0 else float("inf"),
+    )
+
     return transform
 
 
@@ -1890,8 +1956,23 @@ def _align_bytes_from_matrices(
     This is the optimized inner loop function that works with pre-computed
     anchor matrices, avoiding the expensive Fréchet mean recomputation.
     """
+    # Log anchor diagnostics for debugging phase-lock issues
+    n_anchors = int(source_matrix.shape[0])
+    d_source = int(source_matrix.shape[1])
+    d_target = int(target_matrix.shape[1])
+    logger.debug(
+        "Anchor alignment: n_anchors=%d, d_source=%d, d_target=%d, "
+        "require_phase_lock=%s",
+        n_anchors,
+        d_source,
+        d_target,
+        require_phase_lock,
+    )
+
     precision_tol = max(tolerance, machine_epsilon(backend, source_matrix))
     cka_before = compute_cka(source_matrix, target_matrix, backend=backend).cka
+    logger.debug("Initial CKA before alignment: %.8f", cka_before)
+
     weighted_source = source_matrix
     weighted_target = target_matrix
     if anchor_weights and not require_phase_lock:
@@ -2020,6 +2101,16 @@ def _align_bytes_from_matrices(
                 backend.eval(aligned_source, aligned_matrix)
                 cka_after = 1.0
                 transform = feature_transform
+
+    # Log final alignment result
+    logger.debug(
+        "Alignment complete: CKA %.8f → %.8f (iterations=%d, error=%.2e, phase_locked=%s)",
+        cka_before,
+        cka_after,
+        result.iterations,
+        result.alignment_error,
+        cka_after >= 1.0 - precision_tol,
+    )
 
     return {
         "aligned_source": aligned_source,

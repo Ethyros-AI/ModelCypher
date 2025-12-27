@@ -168,11 +168,36 @@ class GramAligner:
         target_centered: "Array",
         reg: float | None = None,
     ) -> "Array | None":
-        """Solve F = A_s^T (A_s A_s^T)^-1 A_t using a rank-aware inverse."""
+        """Solve F = A_s^T (A_s A_s^T)^-1 A_t using QR (primary) or eigendecomposition.
+
+        QR-based solve avoids condition number squaring: κ(R) = κ(A), not κ(A)².
+        Falls back to eigendecomposition for rank-deficient cases.
+        """
+        from modelcypher.core.domain.geometry.numerical_stability import (
+            machine_epsilon,
+            solve_full_row_rank_via_qr,
+        )
+
         b = self._backend
         n_samples = b.shape(source_centered)[0]
         if n_samples == 0:
             return None
+
+        eps = machine_epsilon(b, source_centered)
+
+        # Try QR-based solve first (most numerically stable)
+        F_qr, diag = solve_full_row_rank_via_qr(b, source_centered, target_centered)
+        if F_qr is not None and diag.get("residual_norm", float("inf")) < eps * 1000:
+            self._logger.debug(
+                "QR solve: method=%s, cond=%.2e, residual=%.2e",
+                diag.get("method", "unknown"),
+                diag.get("condition", float("inf")),
+                diag.get("residual_norm", float("inf")),
+            )
+            return F_qr
+
+        # Fall back to eigendecomposition
+        self._logger.debug("Falling back to eigendecomposition solve")
 
         gram = b.matmul(source_centered, b.transpose(source_centered))
         b.eval(gram)
@@ -206,11 +231,25 @@ class GramAligner:
         source: "Array",
         target: "Array",
     ) -> "Array | None":
+        """Solve F for uncentered data using QR (primary) or eigendecomposition."""
+        from modelcypher.core.domain.geometry.numerical_stability import (
+            machine_epsilon,
+            solve_full_row_rank_via_qr,
+        )
+
         b = self._backend
         n_samples = b.shape(source)[0]
         if n_samples == 0:
             return None
 
+        eps = machine_epsilon(b, source)
+
+        # Try QR-based solve first
+        F_qr, diag = solve_full_row_rank_via_qr(b, source, target)
+        if F_qr is not None and diag.get("residual_norm", float("inf")) < eps * 1000:
+            return F_qr
+
+        # Fall back to eigendecomposition (requires positive definite gram)
         gram = b.matmul(source, b.transpose(source))
         b.eval(gram)
 
