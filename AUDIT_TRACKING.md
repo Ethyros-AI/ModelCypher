@@ -15,16 +15,16 @@
 | Directory | Count | Status |
 |-----------|-------|--------|
 | src/modelcypher/core/ | 316 | Pending |
-| src/modelcypher/cli/ | 53 | Pending |
-| src/modelcypher/ports/ | 15 | Pending |
-| src/modelcypher/adapters/ | 15 | Pending |
-| src/modelcypher/infrastructure/ | 11 | Pending |
-| src/modelcypher/mcp/ | 11 | Pending |
-| src/modelcypher/utils/ | 8 | Pending |
-| src/modelcypher/backends/ | 8 | Pending |
+| src/modelcypher/cli/ | 53 | **AUDITED** |
+| src/modelcypher/ports/ | 15 | **AUDITED** |
+| src/modelcypher/adapters/ | 15 | **AUDITED** |
+| src/modelcypher/infrastructure/ | 11 | **AUDITED** |
+| src/modelcypher/mcp/ | 11 | **AUDITED** |
+| src/modelcypher/utils/ | 8 | **AUDITED** |
+| src/modelcypher/backends/ | 8 | **AUDITED** |
 | tests/ | 156 | Pending |
-| examples/ | 5 | Pending |
-| scripts/ | 7 | Pending |
+| examples/ | 5 | **AUDITED** |
+| scripts/ | 7 | **AUDITED** |
 
 ---
 
@@ -236,6 +236,87 @@
 
 ---
 
+## 9. src/modelcypher/cli/ (53 files)
+
+### Root CLI Files (7 files)
+
+| File | Purpose | Wired? | Duplicates? | Status |
+|------|---------|--------|-------------|--------|
+| __init__.py | Module init (28 lines) | Yes | No | **AUDITED** |
+| app.py | Main CLI app entry point (440 lines) - Registers all commands | Yes (pyproject.toml) | No | **AUDITED** |
+| composition.py | DI helpers get_*_service() | Yes (commands) | No | **AUDITED** |
+| context.py | CLIContext dataclass for global state | Yes (all commands) | No | **AUDITED** |
+| output.py | write_output(), write_error() helpers | Yes (all commands) | No | **AUDITED** |
+| presenters.py | Output formatting utilities | Yes (commands) | No | **AUDITED** |
+| typer_compat.py | Typer compatibility patches | Yes (app.py) | No | **AUDITED** |
+
+### Top-Level Commands (18 files)
+
+| File | Purpose | Wired? | Duplicates? | Status |
+|------|---------|--------|-------------|--------|
+| commands/__init__.py | Package init | Yes | No | **AUDITED** |
+| adapter.py | Adapter inspect/merge/project commands | Yes (app.py) | No | **AUDITED** |
+| agent.py | Agent trace import/inspect | Yes (app.py) | No | **AUDITED** |
+| agent_eval.py | Agent evaluation suite | Yes (app.py) | No | **AUDITED** |
+| dashboard.py | Dashboard commands | Yes (app.py) | No | **AUDITED** |
+| ensemble.py | Ensemble routing commands | Yes (app.py) | No | **AUDITED** |
+| entropy.py | Entropy analysis commands | Yes (app.py) | No | **AUDITED** |
+| eval.py | Model evaluation commands | Yes (app.py) | No | **AUDITED** |
+| help_cmd.py | Help/completions/schema | Yes (app.py) | No | **AUDITED** |
+| infer.py | Inference commands | Yes (app.py) | No | **AUDITED** |
+| job.py | Job management commands | Yes (app.py) | No | **AUDITED** |
+| model.py | Model list/probe/merge commands (450 lines) | Yes (app.py) | No | **AUDITED** |
+| research.py | Research taxonomy/sparse-region/afm | Yes (app.py) | No | **AUDITED** |
+| safety.py | Safety adapter-probe | Yes (app.py) | No | **AUDITED** |
+| stability.py | Stability analysis | Yes (app.py) | No | **AUDITED** |
+| storage.py | Storage status/cleanup | Yes (app.py) | No | **AUDITED** |
+| system.py | System status/probe | Yes (app.py) | No | **AUDITED** |
+| thermo.py | Thermodynamic analysis (855 lines) | Yes (app.py) | No | **AUDITED** |
+| train.py | Training commands | Yes (app.py) | No | **AUDITED** |
+
+### Geometry Sub-Commands (27 files)
+
+| File | Purpose | Wired? | Duplicates? | Status |
+|------|---------|--------|-------------|--------|
+| geometry/__init__.py | Package init - imports all sub-modules | Yes (app.py) | No | **AUDITED** |
+| geometry/helpers.py | Shared backbone resolution + forward pass (317 lines) | Yes (geometry commands) | No | **AUDITED** |
+| geometry/atlas.py | Unified atlas probe commands | Yes | No | **AUDITED** |
+| geometry/crm.py | Concept Response Matrix | Yes | No | **AUDITED** |
+| geometry/emotion.py | Emotion concept analysis | Yes | No | **AUDITED** |
+| geometry/geom_adapter.py | Adapter geometry analysis | Yes | No | **AUDITED** |
+| geometry/interference.py | Interference prediction | Yes | No | **AUDITED** |
+| geometry/invariant.py | Invariant layer mapping | Yes | No | **AUDITED** |
+| geometry/manifold.py | Manifold clustering/dimension | Yes | No | **AUDITED** |
+| geometry/merge_entropy.py | Merge entropy analysis | Yes | No | **AUDITED** |
+| geometry/metrics.py | GW distance, intrinsic dimension | Yes | No | **AUDITED** |
+| geometry/moral.py | Moral foundations geometry | Yes | No | **AUDITED** |
+| geometry/path.py | Path integration | Yes | No | **AUDITED** |
+| geometry/persona.py | Persona vector extraction | Yes | No | **AUDITED** |
+| geometry/primes.py | Semantic primes | Yes | No | **AUDITED** |
+| geometry/refinement.py | Refinement density | Yes | No | **AUDITED** |
+| geometry/refusal.py | Refusal direction detection | Yes | No | **AUDITED** |
+| geometry/safety.py | Geometry safety analysis | Yes | No | **AUDITED** |
+| geometry/social.py | Social geometry (power, kinship) | Yes | No | **AUDITED** |
+| geometry/sparse.py | Sparse region analysis | Yes | No | **AUDITED** |
+| geometry/spatial.py | 3D world model metrology (930 lines) | Yes | No | **AUDITED** |
+| geometry/stitch.py | Manifold stitching | Yes | No | **AUDITED** |
+| geometry/temporal.py | Temporal topology | Yes | No | **AUDITED** |
+| geometry/training.py | Training geometry | Yes | No | **AUDITED** |
+| geometry/transfer.py | Cross-architecture transfer | Yes | No | **AUDITED** |
+| geometry/transport.py | Transport-guided merging | Yes | No | **AUDITED** |
+| geometry/waypoint.py | Domain geometry waypoints | Yes | No | **AUDITED** |
+
+### Notes for cli/:
+- **app.py** is the main entry point (registered in pyproject.toml as `mc` and `modelcypher`)
+- All 53 files properly wired via `add_typer()` in app.py
+- **`_context()` helper appears in 44 files** - NOT a duplicate issue; standard Typer pattern where each command file defines its own local `_context(ctx) -> CLIContext` helper
+- **geometry/helpers.py** provides canonical implementations (resolve_model_backbone, forward_through_backbone) used by multiple geometry commands
+- Hierarchical structure: app.py → commands/* → commands/geometry/*
+- Largest files: spatial.py (930 lines), thermo.py (855 lines), model.py (450 lines)
+- No orphaned files, no true duplicates
+
+---
+
 ## DUPLICATE FUNCTION TRACKER
 
 Functions that appear in multiple files:
@@ -266,7 +347,9 @@ Files that are not imported or used anywhere:
 
 ## PROGRESS SUMMARY
 
-- Files audited: 69/607 (examples/, scripts/, backends/, adapters/, ports/, utils/, infrastructure/)
+- Files audited: 133/607 (examples/, scripts/, backends/, adapters/, ports/, utils/, infrastructure/, mcp/, cli/)
 - Issues found: 1
 - Duplicates found: 0
 - Orphans found: 0
+
+### Next: core/ (316 files) - The largest directory

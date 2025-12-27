@@ -44,7 +44,6 @@ _SUBPACKAGES = {
     "safety",
     "semantics",
     "thermo",
-    "thermodynamics",
     "training",
     "validation",
 }
@@ -144,7 +143,6 @@ if TYPE_CHECKING:
         safety,
         semantics,
         thermo,
-        thermodynamics,
         training,
         validation,
     )

@@ -327,12 +327,9 @@ class GeometricMergeOrchestrator:
         # numerical_stability - compute data-driven epsilons
         # These functions compute appropriate epsilon based on dtype
         self._epsilon = 1e-6  # Default for float32
+        # SVD is NEVER disabled. We use svd_via_eigh from numerical_stability.py
+        # which computes SVD via eigendecomposition - stable on all backends.
         self._avoid_svd = False
-        try:
-            from modelcypher.backends.mlx_backend import MLXBackend
-            self._avoid_svd = isinstance(self._backend, MLXBackend)
-        except Exception:
-            self._avoid_svd = False
 
         # geometry_metrics_cache - available for caching
         try:
@@ -344,8 +341,6 @@ class GeometricMergeOrchestrator:
             self._metrics_cache = None
 
         logger.debug("Infrastructure: epsilon=%e", self._epsilon)
-        if self._avoid_svd:
-            logger.info("SVD disabled for MLX backend to avoid instability in mx.linalg.svd.")
 
     def _select_anchor_indices_by_coverage(
         self,

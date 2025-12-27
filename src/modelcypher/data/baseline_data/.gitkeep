@@ -1,0 +1,20 @@
+# Domain Geometry Baselines
+#
+# This directory contains empirically-extracted geometry baselines
+# for LLM representation validation.
+#
+# File naming convention: {domain}_{model_family}_{model_size}.json
+# Example: spatial_qwen_0.5B.json
+#
+# Generate baselines using:
+#   mc geometry baseline extract /path/to/model --domain spatial
+#
+# Or programmatically:
+#   from modelcypher.core.domain.geometry.domain_geometry_baselines import (
+#       DomainGeometryBaselineExtractor,
+#       BaselineRepository,
+#   )
+#   extractor = DomainGeometryBaselineExtractor()
+#   baseline = extractor.extract_baseline(model_path, "spatial")
+#   repo = BaselineRepository()
+#   repo.save_baseline(baseline)
