@@ -116,6 +116,9 @@ def geometry_path_compare(
     model_a: str | None = typer.Option(None, "--model-a"),
     model_b: str | None = typer.Option(None, "--model-b"),
     prompt: str | None = typer.Option(None, "--prompt"),
+    comprehensive: bool = typer.Option(
+        False, "--comprehensive", help="Include Frechet/DTW/signature similarity metrics"
+    ),
     file: str | None = typer.Option(None, "--file"),
 ) -> None:
     """Compare gate sequence paths between two texts or models.
@@ -170,6 +173,7 @@ def geometry_path_compare(
         model_b=model_id_b,
         prompt_id="compare",
         threshold=None,  # Let the detector derive from confidence distribution
+        comprehensive=comprehensive,
     )
 
     payload = service.path_comparison_payload(result)
@@ -202,6 +206,18 @@ def geometry_path_compare(
             else:
                 label = f"DELETE {step.node_a.gate_id if step.node_a else '?'}"
             lines.append(f"  {label}")
+        if result.comprehensive:
+            comp = result.comprehensive
+            lines.extend(
+                [
+                    "",
+                    "Comprehensive Metrics:",
+                    f"  Frechet Distance: {comp.frechet.distance:.3f}",
+                    f"  DTW Normalized Cost: {comp.dtw.normalized_cost:.3f}",
+                    f"  Signature Similarity: {comp.signature_similarity:.3f}",
+                    f"  Overall Similarity: {comp.overall_similarity:.3f}",
+                ]
+            )
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

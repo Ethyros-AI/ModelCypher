@@ -18,13 +18,19 @@
 """Geometry invariant layer mapping CLI commands.
 
 Provides commands for invariant-based layer mapping between models using
-multi-atlas triangulation scoring across 237 probes.
+multi-atlas triangulation scoring across 402 probes.
 
 Atlases:
 - Sequence Invariants: 68 probes (mathematical/logical)
 - Semantic Primes: 65 probes (linguistic/mental)
-- Computational Gates: 72 probes (computational/structural)
+- Computational Gates: 76 probes (computational/structural)
 - Emotion Concepts: 32 probes (affective/relational)
+- Temporal Concepts: 25 probes (temporal/logical)
+- Social Concepts: 25 probes (relational/linguistic)
+- Moral Concepts: 30 probes (moral/relational)
+- Compositional: 22 probes (semantic prime compositions)
+- Philosophical: 30 probes (philosophical/logical)
+- Conceptual Genealogy: 29 probes (etymology/lineage)
 
 Commands:
     mc geometry invariant map-layers --source <path> --target <path>
@@ -71,17 +77,25 @@ def geometry_invariant_map_layers(
     scope: str = typer.Option(
         "sequenceInvariants",
         "--scope",
-        help="Invariant scope: invariants, logicOnly, sequenceInvariants, multiAtlas (237 probes)",
+        help="Invariant scope: invariants, logicOnly, sequenceInvariants, multiAtlas (402 probes)",
     ),
     atlas_sources: str | None = typer.Option(
         None,
         "--atlas-sources",
-        help="Comma-separated atlas sources for multiAtlas scope: sequence, semantic, gate, emotion (default: all)",
+        help=(
+            "Comma-separated atlas sources for multiAtlas scope: sequence, semantic, gate, "
+            "emotion, temporal, social, moral, compositional, philosophical, genealogy "
+            "(default: all)"
+        ),
     ),
     atlas_domains: str | None = typer.Option(
         None,
         "--atlas-domains",
-        help="Comma-separated domains: mathematical, logical, linguistic, mental, computational, structural, affective, relational, temporal, spatial",
+        help=(
+            "Comma-separated domains: mathematical, logical, linguistic, mental, "
+            "computational, structural, affective, relational, temporal, spatial, "
+            "moral, philosophical"
+        ),
     ),
     triangulation: bool = typer.Option(
         True,
@@ -101,14 +115,14 @@ def geometry_invariant_map_layers(
 ) -> None:
     """Map layers between models using multi-atlas triangulation.
 
-    Uses up to 237 probes across 4 atlases with cross-domain
+    Uses up to 402 probes across 10 atlases with cross-domain
     triangulation scoring to find corresponding layers between models.
 
     Scopes:
         invariants        - Default sequence families
         logicOnly         - Logic family only
         sequenceInvariants - All 68 sequence invariants
-        multiAtlas        - All 237 probes from all 4 atlases
+        multiAtlas        - All 402 probes from all atlases
 
     Example:
         mc geometry invariant map-layers --source ./model-a --target ./model-b
@@ -302,21 +316,33 @@ def geometry_invariant_atlas_inventory(
     source: str | None = typer.Option(
         None,
         "--source",
-        help="Filter by atlas source: sequence, semantic, gate, emotion",
+        help=(
+            "Filter by atlas source: sequence, semantic, gate, emotion, temporal, social, "
+            "moral, compositional, philosophical, genealogy"
+        ),
     ),
     domain: str | None = typer.Option(
         None,
         "--domain",
-        help="Filter by domain: mathematical, logical, linguistic, mental, computational, structural, affective, relational, temporal, spatial",
+        help=(
+            "Filter by domain: mathematical, logical, linguistic, mental, computational, "
+            "structural, affective, relational, temporal, spatial, moral, philosophical"
+        ),
     ),
 ) -> None:
     """Show inventory of available probes across all atlases.
 
-    Displays the 237 probes available for multi-atlas layer mapping:
+    Displays the 402 probes available for multi-atlas layer mapping:
     - Sequence Invariants: 68 probes (mathematical/logical)
     - Semantic Primes: 65 probes (linguistic/mental)
-    - Computational Gates: 72 probes (computational/structural)
+    - Computational Gates: 76 probes (computational/structural)
     - Emotion Concepts: 32 probes (affective/relational)
+    - Temporal Concepts: 25 probes (temporal/logical)
+    - Social Concepts: 25 probes (relational/linguistic)
+    - Moral Concepts: 30 probes (moral/relational)
+    - Compositional: 22 probes (semantic prime compositions)
+    - Philosophical: 30 probes (philosophical/logical)
+    - Conceptual Genealogy: 29 probes (philosophical/mathematical/moral)
 
     Example:
         mc geometry invariant atlas-inventory
@@ -343,6 +369,12 @@ def geometry_invariant_atlas_inventory(
                 "semantic": AtlasSource.SEMANTIC_PRIME,
                 "gate": AtlasSource.COMPUTATIONAL_GATE,
                 "emotion": AtlasSource.EMOTION_CONCEPT,
+                "temporal": AtlasSource.TEMPORAL_CONCEPT,
+                "social": AtlasSource.SOCIAL_CONCEPT,
+                "moral": AtlasSource.MORAL_CONCEPT,
+                "compositional": AtlasSource.COMPOSITIONAL,
+                "philosophical": AtlasSource.PHILOSOPHICAL_CONCEPT,
+                "genealogy": AtlasSource.CONCEPTUAL_GENEALOGY,
             }
             if source.lower() in source_map:
                 sources_filter = {source_map[source.lower()]}
@@ -359,6 +391,8 @@ def geometry_invariant_atlas_inventory(
                 "relational": AtlasDomain.RELATIONAL,
                 "temporal": AtlasDomain.TEMPORAL,
                 "spatial": AtlasDomain.SPATIAL,
+                "moral": AtlasDomain.MORAL,
+                "philosophical": AtlasDomain.PHILOSOPHICAL,
             }
             if domain.lower() in domain_map:
                 domains_filter = {domain_map[domain.lower()]}
@@ -394,10 +428,16 @@ def geometry_invariant_atlas_inventory(
                 f"  Semantic Primes:     {counts.get(AtlasSource.SEMANTIC_PRIME, 0):3d} probes  (linguistic, mental, relational)",
                 f"  Computational Gates: {counts.get(AtlasSource.COMPUTATIONAL_GATE, 0):3d} probes  (computational, structural)",
                 f"  Emotion Concepts:    {counts.get(AtlasSource.EMOTION_CONCEPT, 0):3d} probes  (affective, relational)",
+                f"  Temporal Concepts:   {counts.get(AtlasSource.TEMPORAL_CONCEPT, 0):3d} probes  (temporal, logical)",
+                f"  Social Concepts:     {counts.get(AtlasSource.SOCIAL_CONCEPT, 0):3d} probes  (relational, linguistic)",
+                f"  Moral Concepts:      {counts.get(AtlasSource.MORAL_CONCEPT, 0):3d} probes  (moral, relational)",
+                f"  Compositional:       {counts.get(AtlasSource.COMPOSITIONAL, 0):3d} probes  (linguistic, mental)",
+                f"  Philosophical:       {counts.get(AtlasSource.PHILOSOPHICAL_CONCEPT, 0):3d} probes  (philosophical, logical)",
+                f"  Conceptual Genealogy: {counts.get(AtlasSource.CONCEPTUAL_GENEALOGY, 0):3d} probes  (philosophical, moral, relational)",
                 "",
                 "Triangulation Domains:",
                 "  mathematical, logical, linguistic, mental, computational,",
-                "  structural, affective, relational, temporal, spatial",
+                "  structural, affective, relational, temporal, spatial, moral, philosophical",
                 "",
                 "Usage:",
                 "  Full multi-atlas:    mc geometry invariant map-layers --scope multiAtlas ...",
@@ -442,6 +482,36 @@ def geometry_invariant_atlas_inventory(
                 "description": "Plutchik emotion wheel with VAD coordinates",
                 "domains": ["affective", "relational", "mental"],
             },
+            "temporalConcept": {
+                "count": counts.get(AtlasSource.TEMPORAL_CONCEPT, 0),
+                "description": "Temporal anchors for direction, duration, causality",
+                "domains": ["temporal", "logical"],
+            },
+            "socialConcept": {
+                "count": counts.get(AtlasSource.SOCIAL_CONCEPT, 0),
+                "description": "Social structure probes (power, kinship, formality)",
+                "domains": ["relational", "linguistic"],
+            },
+            "moralConcept": {
+                "count": counts.get(AtlasSource.MORAL_CONCEPT, 0),
+                "description": "Moral foundations and ethical valence",
+                "domains": ["moral", "relational"],
+            },
+            "compositional": {
+                "count": counts.get(AtlasSource.COMPOSITIONAL, 0),
+                "description": "Semantic prime compositions (multi-prime probes)",
+                "domains": ["linguistic", "mental"],
+            },
+            "philosophicalConcept": {
+                "count": counts.get(AtlasSource.PHILOSOPHICAL_CONCEPT, 0),
+                "description": "Fundamental categories of thought",
+                "domains": ["philosophical", "logical"],
+            },
+            "conceptualGenealogy": {
+                "count": counts.get(AtlasSource.CONCEPTUAL_GENEALOGY, 0),
+                "description": "Etymology and lineage probes for concept drift",
+                "domains": ["philosophical", "moral", "relational", "mathematical", "affective"],
+            },
         },
         "domains": [
             "mathematical",
@@ -454,6 +524,8 @@ def geometry_invariant_atlas_inventory(
             "relational",
             "temporal",
             "spatial",
+            "moral",
+            "philosophical",
         ],
     }
 

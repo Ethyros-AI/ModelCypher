@@ -760,6 +760,7 @@ class TriangulatedProbeBuilder:
     - MORAL_CONCEPT: 30 probes
     - COMPOSITIONAL: 22 probes
     - PHILOSOPHICAL_CONCEPT: 30 probes
+    - CONCEPTUAL_GENEALOGY: 29 probes
     """
 
     @staticmethod

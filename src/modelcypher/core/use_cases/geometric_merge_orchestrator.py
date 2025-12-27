@@ -1551,38 +1551,46 @@ class GeometricMergeOrchestrator:
                     if applied:
                         metrics["rotations_applied"] += 1
 
-                # Handle shape mismatch using SVD-based projection
-                # CRITICAL: Use SVD_PROJECT, NOT GRAM_TRANSPORT for cross-architecture.
-                # GW on weight Gram matrices fails because different architectures have
-                # completely different weight structures - there's no structural correspondence.
-                # SVD preserves principal components without requiring structural similarity.
+                # Handle shape mismatch for cross-architecture merging.
+                # CRITICAL: SVD projection does NOT preserve functional behavior of weights.
+                # It produces weights with correct magnitude but wrong direction (cosine_sim ≈ 0).
+                #
+                # For now, we use a conservative approach:
+                # - 1D weights (biases, layer norms): truncate/pad to match
+                # - 2D weights with mismatched dimensions: use target weights only
+                #
+                # This preserves model coherence at the cost of not transferring source
+                # knowledge for incompatible weight matrices. Proper cross-architecture
+                # weight transfer requires activation-based alignment at all boundaries.
+                cross_dim_use_target_only = False
                 if source_w.shape != target_w.shape:
-                    from modelcypher.core.domain.geometry.cross_dimensional_projection import (
-                        project_cross_dimensional,
-                        ProjectionMethod,
-                    )
-
                     if source_w.ndim == 1 and target_w.ndim == 1:
-                        # Vector weights need a 2D view for cross-dimensional projection.
-                        source_view = b.reshape(source_w, (1, source_w.shape[0]))
-                        target_view = b.reshape(target_w, (1, target_w.shape[0]))
-                        result = project_cross_dimensional(
-                            source_view, target_view,
-                            method=ProjectionMethod.SVD_PROJECT,
-                            backend=b,
-                        )
-                        source_w = b.reshape(result.projected, target_w.shape)
+                        # 1D weights: simple truncation/padding is reasonable
+                        d_s = source_w.shape[0]
+                        d_t = target_w.shape[0]
+                        if d_s > d_t:
+                            # Truncate source
+                            source_w = source_w[:d_t]
+                        else:
+                            # Pad source with target values (maintains target structure)
+                            padding = target_w[d_s:]
+                            source_w = b.concatenate([source_w, padding], axis=0)
                         b.eval(source_w)
                         metrics["cross_arch_dim_projections"] += 1
+                        logger.debug(
+                            "1D weight %s: truncate/pad %d -> %d",
+                            key, d_s, d_t
+                        )
                     else:
-                        result = project_cross_dimensional(
-                            source_w, target_w,
-                            method=ProjectionMethod.SVD_PROJECT,
-                            backend=b,
+                        # 2D weights with dimension mismatch: use target weights only.
+                        # SVD projection produces functionally incorrect weights.
+                        logger.info(
+                            "CROSS-DIM SKIP %s: source=%s, target=%s - using target only",
+                            key, source_w.shape, target_w.shape
                         )
-                        source_w = result.projected
-                        b.eval(source_w)
-                        metrics["cross_arch_dim_projections"] += 1
+                        cross_dim_use_target_only = True
+                        source_w = target_w  # Will be blended with alpha=0 below
+                        metrics["cross_arch_target_only"] = metrics.get("cross_arch_target_only", 0) + 1
 
                 # ============================================================
                 # A.2: Check transform_requirements and set dispatch flags
@@ -1649,6 +1657,14 @@ class GeometricMergeOrchestrator:
                         # Nearly flat manifold - moderate conservatism
                         alpha = alpha * 0.7
                         metrics["manifold_health_scaled"] = metrics.get("manifold_health_scaled", 0) + 1
+
+                # Override alpha for cross-dimensional weights that couldn't be aligned
+                if cross_dim_use_target_only:
+                    alpha = 0.0  # Use target weights only
+                    logger.debug(
+                        "Weight %s: cross-dim incompatible, alpha=0 (target only)",
+                        key,
+                    )
 
                 # Apply SVD-aware blending for 2D weights
                 if source_w.ndim == 2 and target_w.ndim == 2 and min(source_w.shape) >= 2:

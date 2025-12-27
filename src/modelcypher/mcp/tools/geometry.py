@@ -787,6 +787,12 @@ def register_geometry_invariant_tools(ctx: ServiceContext) -> None:
                         "semantic": AtlasSource.SEMANTIC_PRIME,
                         "gate": AtlasSource.COMPUTATIONAL_GATE,
                         "emotion": AtlasSource.EMOTION_CONCEPT,
+                        "temporal": AtlasSource.TEMPORAL_CONCEPT,
+                        "social": AtlasSource.SOCIAL_CONCEPT,
+                        "moral": AtlasSource.MORAL_CONCEPT,
+                        "compositional": AtlasSource.COMPOSITIONAL,
+                        "philosophical": AtlasSource.PHILOSOPHICAL_CONCEPT,
+                        "genealogy": AtlasSource.CONCEPTUAL_GENEALOGY,
                     }
                     if source.lower() in source_map:
                         sources_filter = {source_map[source.lower()]}
@@ -802,6 +808,8 @@ def register_geometry_invariant_tools(ctx: ServiceContext) -> None:
                         "relational": AtlasDomain.RELATIONAL,
                         "temporal": AtlasDomain.TEMPORAL,
                         "spatial": AtlasDomain.SPATIAL,
+                        "moral": AtlasDomain.MORAL,
+                        "philosophical": AtlasDomain.PHILOSOPHICAL,
                     }
                     if domain.lower() in domain_map:
                         domains_filter = {domain_map[domain.lower()]}
@@ -833,6 +841,30 @@ def register_geometry_invariant_tools(ctx: ServiceContext) -> None:
                     "emotionConcept": {
                         "count": counts.get(AtlasSource.EMOTION_CONCEPT, 0),
                         "description": "Plutchik emotion wheel",
+                    },
+                    "temporalConcept": {
+                        "count": counts.get(AtlasSource.TEMPORAL_CONCEPT, 0),
+                        "description": "Temporal anchors (direction, duration, causality)",
+                    },
+                    "socialConcept": {
+                        "count": counts.get(AtlasSource.SOCIAL_CONCEPT, 0),
+                        "description": "Social structure probes (power, kinship, formality)",
+                    },
+                    "moralConcept": {
+                        "count": counts.get(AtlasSource.MORAL_CONCEPT, 0),
+                        "description": "Moral foundations and ethical valence",
+                    },
+                    "compositional": {
+                        "count": counts.get(AtlasSource.COMPOSITIONAL, 0),
+                        "description": "Semantic prime compositions",
+                    },
+                    "philosophicalConcept": {
+                        "count": counts.get(AtlasSource.PHILOSOPHICAL_CONCEPT, 0),
+                        "description": "Fundamental categories of thought",
+                    },
+                    "conceptualGenealogy": {
+                        "count": counts.get(AtlasSource.CONCEPTUAL_GENEALOGY, 0),
+                        "description": "Etymology and lineage probes",
                     },
                 },
                 "nextActions": [

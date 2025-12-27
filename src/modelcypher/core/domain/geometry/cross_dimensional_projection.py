@@ -533,9 +533,58 @@ def _project_svd(
             b.eval(source_k)
 
     # =========================================================================
+    # STEP 4.5: Procrustes alignment in shared k-dimensional subspace
+    # =========================================================================
+    # source_k and target_k are both in k-dimensional subspace, but the
+    # basis vectors V_s_k and V_t_k may represent different directions.
+    # We need to find the optimal rotation R such that source_k @ R ≈ target_k.
+    #
+    # This is the critical step that was missing - without it, SVD projection
+    # produces weights with similar magnitude but wrong direction (cosine sim ≈ 0).
+    target_k = b.matmul(target, V_t_k)  # [m_t, k]
+    b.eval(target_k)
+
+    # Center both for Procrustes (improves alignment stability)
+    source_k_mean = b.mean(source_k, axis=0, keepdims=True)
+    target_k_mean = b.mean(target_k, axis=0, keepdims=True)
+    source_k_centered = source_k - source_k_mean
+    target_k_centered = target_k - target_k_mean
+    b.eval(source_k_centered, target_k_centered)
+
+    # Compute cross-covariance matrix: M = source_k.T @ target_k [k, k]
+    M = b.matmul(b.transpose(source_k_centered), target_k_centered)
+    b.eval(M)
+
+    # SVD of M to find optimal rotation: M = U @ S @ V.T, R = V @ U.T
+    U_m, S_m, Vt_m = svd_via_eigh(b, M, full_matrices=False)
+    b.eval(U_m, Vt_m)
+
+    # R = V @ U.T is the optimal orthogonal matrix (Procrustes solution)
+    R = b.matmul(b.transpose(Vt_m), b.transpose(U_m))
+    b.eval(R)
+
+    # Ensure R is orthogonal (correct for numerical errors)
+    # det(R) should be +1 for proper rotation. If -1, flip the sign of one column.
+    # For weight alignment, we allow reflections (det = -1) as they still preserve
+    # distances and can represent valid transformations.
+
+    # Apply rotation to source_k
+    source_k_aligned = b.matmul(source_k, R)
+    b.eval(source_k_aligned)
+
+    # Log alignment quality in k-space
+    residual_k = source_k_aligned - target_k
+    residual_norm = float(b.to_numpy(b.sqrt(b.sum(residual_k ** 2))))
+    target_k_norm = float(b.to_numpy(b.sqrt(b.sum(target_k ** 2))))
+    logger.debug(
+        "Subspace Procrustes: k=%d, residual_norm=%.4f, target_norm=%.4f, ratio=%.4f",
+        k, residual_norm, target_k_norm, residual_norm / (target_k_norm + 1e-10)
+    )
+
+    # =========================================================================
     # STEP 5: Project to target's column space
     # =========================================================================
-    projected = b.matmul(source_k, b.transpose(V_t_k))  # [m_t, d_t]
+    projected = b.matmul(source_k_aligned, b.transpose(V_t_k))  # [m_t, d_t]
     b.eval(projected)
 
     # =========================================================================

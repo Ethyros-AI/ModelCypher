@@ -24,10 +24,16 @@ the enhanced InvariantLayerMapper with multi-atlas triangulation scoring.
 Supports:
 - Sequence Invariants: 68 probes (mathematical/logical)
 - Semantic Primes: 65 probes (linguistic/mental)
-- Computational Gates: 72 probes (computational/structural)
+- Computational Gates: 76 probes (computational/structural)
 - Emotion Concepts: 32 probes (affective/relational)
+- Temporal Concepts: 25 probes (temporal/logical)
+- Social Concepts: 25 probes (relational/linguistic)
+- Moral Concepts: 30 probes (moral/relational)
+- Compositional: 22 probes (semantic prime compositions)
+- Philosophical: 30 probes (philosophical/logical)
+- Conceptual Genealogy: 29 probes (etymology/lineage)
 
-Total: 237 probes for cross-domain triangulation.
+Total: 402 probes for cross-domain triangulation.
 """
 
 from __future__ import annotations
@@ -94,7 +100,7 @@ class LayerMappingConfig:
     sample_layer_count: int = 12
     # Multi-atlas configuration (only used when invariant_scope="multiAtlas")
     atlas_sources: list[str] | None = (
-        None  # sequence_invariant, semantic_prime, computational_gate, emotion_concept
+        None  # sequence_invariant, semantic_prime, computational_gate, emotion_concept, ...
     )
     atlas_domains: list[str] | None = None  # mathematical, logical, linguistic, etc.
 
@@ -169,6 +175,24 @@ def _parse_atlas_sources(sources: list[str] | None) -> frozenset[AtlasSource] | 
         "emotion_concept": AtlasSource.EMOTION_CONCEPT,
         "emotionconcept": AtlasSource.EMOTION_CONCEPT,
         "emotion": AtlasSource.EMOTION_CONCEPT,
+        "temporal_concept": AtlasSource.TEMPORAL_CONCEPT,
+        "temporalconcept": AtlasSource.TEMPORAL_CONCEPT,
+        "temporal": AtlasSource.TEMPORAL_CONCEPT,
+        "social_concept": AtlasSource.SOCIAL_CONCEPT,
+        "socialconcept": AtlasSource.SOCIAL_CONCEPT,
+        "social": AtlasSource.SOCIAL_CONCEPT,
+        "moral_concept": AtlasSource.MORAL_CONCEPT,
+        "moralconcept": AtlasSource.MORAL_CONCEPT,
+        "moral": AtlasSource.MORAL_CONCEPT,
+        "compositional": AtlasSource.COMPOSITIONAL,
+        "philosophical_concept": AtlasSource.PHILOSOPHICAL_CONCEPT,
+        "philosophicalconcept": AtlasSource.PHILOSOPHICAL_CONCEPT,
+        "philosophical": AtlasSource.PHILOSOPHICAL_CONCEPT,
+        "philosophy": AtlasSource.PHILOSOPHICAL_CONCEPT,
+        "conceptual_genealogy": AtlasSource.CONCEPTUAL_GENEALOGY,
+        "conceptualgenealogy": AtlasSource.CONCEPTUAL_GENEALOGY,
+        "genealogy": AtlasSource.CONCEPTUAL_GENEALOGY,
+        "etymology": AtlasSource.CONCEPTUAL_GENEALOGY,
     }
 
     result: set[AtlasSource] = set()
@@ -239,10 +263,16 @@ class InvariantLayerMappingService:
     scoring for robust layer alignment. Supports:
     - 68 sequence invariants (mathematical/logical)
     - 65 semantic primes (linguistic/mental)
-    - 72 computational gates (computational/structural)
+    - 76 computational gates (computational/structural)
     - 32 emotion concepts (affective/relational)
+    - 25 temporal concepts (temporal/logical)
+    - 25 social concepts (relational/linguistic)
+    - 30 moral concepts (moral/relational)
+    - 22 compositional probes (semantic prime compositions)
+    - 30 philosophical concepts (philosophical/logical)
+    - 29 conceptual genealogy probes (etymology/lineage)
 
-    Total: 237 probes for cross-domain triangulation.
+    Total: 402 probes for cross-domain triangulation.
 
     Fingerprint extraction is cached to ~/Library/Caches/ModelCypher/fingerprints/
     to avoid expensive MLX inference on repeated calls.
@@ -684,7 +714,7 @@ class InvariantLayerMappingService:
         if summary.alignment_quality < 0.3:
             # If not using multi-atlas, suggest upgrading
             if report.config.invariant_scope != InvariantScope.MULTI_ATLAS:
-                return "Consider using multiAtlas scope for 237 probes across all atlases; current coverage is too sparse."
+                return "Consider using multiAtlas scope for 402 probes across all atlases; current coverage is too sparse."
             return (
                 "Consider using CKA-based layer matching instead; invariant coverage is too sparse."
             )
@@ -723,7 +753,7 @@ class InvariantLayerMappingService:
         """Generate recommended action for collapse risk level."""
         actions = {
             "low": "Collapse risk is acceptable. Proceed with layer mapping.",
-            "medium": "Consider using multiAtlas scope for 237 probes across all atlases.",
+            "medium": "Consider using multiAtlas scope for 402 probes across all atlases.",
             "high": "High collapse risk. Use multiAtlas scope for maximum anchor density.",
             "critical": "Critical collapse risk. Use multiAtlas scope or consider alternative alignment methods.",
         }

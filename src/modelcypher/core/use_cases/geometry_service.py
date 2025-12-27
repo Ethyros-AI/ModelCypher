@@ -161,7 +161,7 @@ class GeometryService:
 
     @staticmethod
     def path_comparison_payload(result: PathComparisonResult) -> dict:
-        return {
+        payload = {
             "modelA": result.model_a,
             "modelB": result.model_b,
             "pathA": result.detection_a.gate_sequence,
@@ -169,6 +169,32 @@ class GeometryService:
             "rawDistance": result.comparison.total_distance,
             "normalizedDistance": result.comparison.normalized_distance,
             "alignmentCount": len(result.comparison.alignment),
+        }
+        if result.comprehensive:
+            payload["comprehensive"] = GeometryService._comprehensive_payload(result.comprehensive)
+        return payload
+
+    @staticmethod
+    def _comprehensive_payload(comparison: ComprehensiveComparison) -> dict:
+        """Serialize comprehensive path comparison metrics."""
+        return {
+            "levenshtein": {
+                "totalDistance": comparison.levenshtein.total_distance,
+                "normalizedDistance": comparison.levenshtein.normalized_distance,
+                "alignmentCount": len(comparison.levenshtein.alignment),
+            },
+            "frechet": {
+                "distance": comparison.frechet.distance,
+                "optimalCoupling": [list(pair) for pair in comparison.frechet.optimal_coupling],
+            },
+            "dtw": {
+                "totalCost": comparison.dtw.total_cost,
+                "normalizedCost": comparison.dtw.normalized_cost,
+                "warpingPath": [list(pair) for pair in comparison.dtw.warping_path],
+                "compressionRatio": comparison.dtw.compression_ratio,
+            },
+            "signatureSimilarity": comparison.signature_similarity,
+            "overallSimilarity": comparison.overall_similarity,
         }
 
     @staticmethod

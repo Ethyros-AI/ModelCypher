@@ -48,6 +48,8 @@ from modelcypher.cli.commands import thermo as thermo_commands
 from modelcypher.cli.commands import train as train_commands
 from modelcypher.cli.commands.geometry import crm as geometry_crm_commands
 from modelcypher.cli.commands.geometry import atlas as geometry_atlas_commands
+from modelcypher.cli.commands.geometry import concept as geometry_concept_commands
+from modelcypher.cli.commands.geometry import cross_cultural as geometry_cross_cultural_commands
 from modelcypher.cli.commands.geometry import emotion as geometry_emotion_commands
 from modelcypher.cli.commands.geometry import geom_adapter as geometry_adapter_commands
 from modelcypher.cli.commands.geometry import interference as geometry_interference_commands
@@ -171,6 +173,8 @@ geometry_app.add_typer(geometry_primes_commands.app, name="primes")
 geometry_app.add_typer(geometry_stitch_commands.app, name="stitch")
 geometry_app.add_typer(geometry_crm_commands.app, name="crm")
 geometry_app.add_typer(geometry_metrics_commands.app, name="metrics")
+geometry_app.add_typer(geometry_concept_commands.app, name="concept")
+geometry_app.add_typer(geometry_cross_cultural_commands.app, name="cross-cultural")
 geometry_app.add_typer(geometry_sparse_commands.app, name="sparse")
 geometry_app.add_typer(geometry_refusal_commands.app, name="refusal")
 geometry_app.add_typer(geometry_persona_commands.app, name="persona")

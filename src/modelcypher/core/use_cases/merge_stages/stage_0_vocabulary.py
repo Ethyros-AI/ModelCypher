@@ -2348,7 +2348,7 @@ def _build_atlas_anchor_map(
 ) -> dict[str, "object"]:
     """Build UnifiedAtlas anchor map with session caching.
 
-    This is expensive (373+ Fréchet mean computations) so we cache the result
+    This is expensive (hundreds of Fréchet mean computations) so we cache the result
     based on the embedding matrix hash, tokenizer signature, and support_texts flag.
     """
     global _anchor_map_cache

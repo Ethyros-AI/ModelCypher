@@ -479,10 +479,10 @@ def test_triangulation_scorer_used_in_mapper():
 
 
 def test_unified_atlas_inventory_total_probes():
-    """Test that UnifiedAtlasInventory returns 237 probes from all atlases."""
+    """Test that UnifiedAtlasInventory returns 402 probes from all atlases."""
     all_probes = UnifiedAtlasInventory.all_probes()
 
-    # Total should be 68 + 65 + 72 + 32 = 237
+    # Total should include all atlas sources
     assert len(all_probes) >= 200  # Allow some flexibility
 
     # Check probe structure
@@ -502,12 +502,14 @@ def test_unified_atlas_inventory_probe_counts_by_source():
     assert AtlasSource.SEMANTIC_PRIME in counts
     assert AtlasSource.COMPUTATIONAL_GATE in counts
     assert AtlasSource.EMOTION_CONCEPT in counts
+    assert AtlasSource.CONCEPTUAL_GENEALOGY in counts
 
     # Check expected ranges
     assert counts[AtlasSource.SEQUENCE_INVARIANT] == 68
     assert counts[AtlasSource.SEMANTIC_PRIME] == 65
     assert counts[AtlasSource.COMPUTATIONAL_GATE] >= 60  # 66 core + composites
     assert counts[AtlasSource.EMOTION_CONCEPT] >= 30  # 24 emotions + 8 dyads
+    assert counts[AtlasSource.CONCEPTUAL_GENEALOGY] == 29
 
 
 def test_unified_atlas_filter_by_source():
@@ -610,12 +612,12 @@ def test_summary_has_multi_atlas_metrics():
         target_collapsed_layers=1,
         atlas_sources_detected=4,
         atlas_domains_detected=8,
-        total_probes_used=237,
+        total_probes_used=402,
     )
 
     assert summary.atlas_sources_detected == 4
     assert summary.atlas_domains_detected == 8
-    assert summary.total_probes_used == 237
+    assert summary.total_probes_used == 402
 
 
 def test_service_multi_atlas_config_parsing():
@@ -635,6 +637,11 @@ def test_service_multi_atlas_config_parsing():
     assert sources is not None
     assert AtlasSource.SEQUENCE_INVARIANT in sources
     assert AtlasSource.SEMANTIC_PRIME in sources
+
+    extra_sources = _parse_atlas_sources(["genealogy", "philosophical"])
+    assert extra_sources is not None
+    assert AtlasSource.CONCEPTUAL_GENEALOGY in extra_sources
+    assert AtlasSource.PHILOSOPHICAL_CONCEPT in extra_sources
 
     # Domain parsing
     domains = _parse_atlas_domains(["mathematical", "logical"])

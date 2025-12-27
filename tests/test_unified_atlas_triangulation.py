@@ -68,10 +68,10 @@ def make_probe(
 class TestUnifiedAtlasInventory:
     """Tests for UnifiedAtlasInventory probe loading."""
 
-    def test_total_probe_count_343(self) -> None:
-        """Should have exactly 343 probes across all sources."""
+    def test_total_probe_count_402(self) -> None:
+        """Should have exactly 402 probes across all sources."""
         probes = UnifiedAtlasInventory.all_probes()
-        assert len(probes) == 343
+        assert len(probes) == 402
 
     def test_probes_by_source_returns_correct_counts(self) -> None:
         """Each source should have expected probe count."""
@@ -83,6 +83,9 @@ class TestUnifiedAtlasInventory:
             AtlasSource.TEMPORAL_CONCEPT: 25,
             AtlasSource.SOCIAL_CONCEPT: 25,
             AtlasSource.MORAL_CONCEPT: 30,
+            AtlasSource.COMPOSITIONAL: 22,
+            AtlasSource.PHILOSOPHICAL_CONCEPT: 30,
+            AtlasSource.CONCEPTUAL_GENEALOGY: 29,
         }
 
         for source, expected in expected_counts.items():
@@ -294,9 +297,9 @@ class TestGetProbeIds:
     """Tests for get_probe_ids utility function."""
 
     def test_get_all_probe_ids(self) -> None:
-        """Should return all 343 probe IDs."""
+        """Should return all 402 probe IDs."""
         ids = get_probe_ids(None)
-        assert len(ids) == 343
+        assert len(ids) == 402
 
     def test_get_probe_ids_for_single_source(self) -> None:
         """Should filter probe IDs by source."""

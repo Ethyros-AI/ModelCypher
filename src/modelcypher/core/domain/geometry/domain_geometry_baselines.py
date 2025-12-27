@@ -388,7 +388,7 @@ class DomainGeometryBaselineExtractor:
         Intrinsic dimension estimation (MLE) needs ~100+ samples for tight
         confidence intervals.
 
-        Therefore, we use ALL 373 probes from UnifiedAtlas for geometry measurement.
+        Therefore, we use ALL probes from UnifiedAtlas for geometry measurement.
         The manifold structure is domain-agnostic - any activation contributes to
         understanding the representation geometry. Domain-specific filtering is
         only applied to semantic metrics, not geometric measurement.
@@ -420,9 +420,10 @@ class DomainGeometryBaselineExtractor:
                 seen.add(p)
                 unique_prompts.append(p)
 
+        total_probes = UnifiedAtlasInventory.total_probe_count()
         logger.info(
             f"Using {len(unique_prompts)} probes from UnifiedAtlas for {domain} "
-            f"(all 373 probes required for stable ORC/ID estimation)"
+            f"(all {total_probes} probes required for stable ORC/ID estimation)"
         )
         return unique_prompts
 

@@ -790,7 +790,7 @@ class InvariantLayerMapper:
 
                 # Coherence bonus: fraction of possible domains detected (0 to 1 scale)
                 # This is a ratio, not an arbitrary coefficient
-                max_domains = 4  # Known atlas domain count
+                max_domains = len(AtlasDomain)
                 coherence = (domain_count - 1) / max(1, max_domains - 1) if domain_count > 1 else 0.0
 
                 scores[layer] = TriangulatedScore(
