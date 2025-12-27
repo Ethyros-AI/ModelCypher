@@ -359,13 +359,18 @@ class GeometricMergeOrchestrator:
         source_points: "Array",
         target_points: "Array",
         max_count: int,
+        *,
+        center: bool = True,
     ) -> list[int]:
         from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
         b = self._backend
-        source_centered = source_points - b.mean(source_points, axis=0, keepdims=True)
-        target_centered = target_points - b.mean(target_points, axis=0, keepdims=True)
-        b.eval(source_centered, target_centered)
+        source_data = source_points
+        target_data = target_points
+        if center:
+            source_data = source_points - b.mean(source_points, axis=0, keepdims=True)
+            target_data = target_points - b.mean(target_points, axis=0, keepdims=True)
+        b.eval(source_data, target_data)
 
         n = int(source_points.shape[0])
         if max_count <= 0 or n == 0:
@@ -373,13 +378,13 @@ class GeometricMergeOrchestrator:
         if n <= max_count:
             return list(range(n))
 
-        combined = b.concatenate([source_centered, target_centered], axis=1)
+        combined = b.concatenate([source_data, target_data], axis=1)
         norms = b.norm(combined, axis=1)
         b.eval(norms)
         norm_list = b.to_numpy(norms).tolist()
         ranked = sorted(range(n), key=lambda idx: norm_list[idx], reverse=True)
 
-        eps = max(machine_epsilon(b, combined), 1e-12)
+        eps = max(machine_epsilon(b, combined) * 100.0, 1e-6)
 
         def _orthonormalize(
             vec: "Array",
@@ -408,8 +413,8 @@ class GeometricMergeOrchestrator:
         basis_tgt: list["Array"] = []
 
         for idx in ranked:
-            vec_src = source_centered[idx]
-            vec_tgt = target_centered[idx]
+            vec_src = source_data[idx]
+            vec_tgt = target_data[idx]
             ok_src, norm_src = _orthonormalize(vec_src, basis_src)
             ok_tgt, norm_tgt = _orthonormalize(vec_tgt, basis_tgt)
             if not (ok_src and ok_tgt):
@@ -745,9 +750,11 @@ class GeometricMergeOrchestrator:
                 int(src_stacked.shape[1]),
                 int(tgt_stacked.shape[1]),
             )
-            rank_indices = self._select_full_rank_indices(
+            rank_indices = self._select_shared_full_rank_indices(
                 src_stacked,
+                tgt_stacked,
                 max_samples,
+                center=False,
             )
             if len(rank_indices) < 2:
                 raise RuntimeError(

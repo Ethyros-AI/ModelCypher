@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import svd_via_eigh
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -568,7 +569,7 @@ def _compute_layer_condition_number(
             # Use backend for SVD
             val_arr = b.astype(b.array(val), "float32")
             b.eval(val_arr)
-            _, s, _ = b.svd(val_arr)
+            _, s, _ = svd_via_eigh(b, val_arr, full_matrices=False)
             b.eval(s)
             s_np = b.to_numpy(s)
             s_nz = s_np[s_np > 1e-10]
@@ -608,7 +609,7 @@ def _estimate_layer_intrinsic_dim(
             # Use backend for SVD
             val_arr = b.astype(b.array(val), "float32")
             b.eval(val_arr)
-            _, s, _ = b.svd(val_arr)
+            _, s, _ = svd_via_eigh(b, val_arr, full_matrices=False)
             b.eval(s)
             s_np = b.to_numpy(s)
             threshold = s_np[0] * 0.01

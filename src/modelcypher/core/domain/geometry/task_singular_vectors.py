@@ -125,7 +125,7 @@ def _get_epsilon(config: SVDBlendConfig, backend: "Backend", array: "Array") -> 
     """Get epsilon from config or derive from dtype."""
     if config.epsilon is not None:
         return config.epsilon
-    from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon, svd_via_eigh
 
     return machine_epsilon(backend, array)
 
@@ -230,9 +230,9 @@ def decompose_task_vector(
     delta = source_f32 - target_f32
 
     try:
-        U, S, Vt = backend.svd(delta, full_matrices=False)
+        U, S, Vt = svd_via_eigh(backend, delta, full_matrices=False)
     except Exception:
-        logger.warning("SVD failed, returning zero decomposition")
+        logger.warning("Eigendecomposition SVD failed, returning zero decomposition")
         return TaskVectorDecomposition(
             U=backend.zeros((delta.shape[0], 1)),
             S=backend.array([0.0]),
@@ -430,7 +430,7 @@ def compute_task_vector_similarity(
     # Cosines of principal angles are singular values of this product
     try:
         product = backend.transpose(U1) @ U2
-        _, cosines, _ = backend.svd(product, full_matrices=False)
+        _, cosines, _ = svd_via_eigh(backend, product, full_matrices=False)
         # Mean cosine as similarity
         cosines_np = backend.to_numpy(cosines)
         cosines_clipped = [max(0.0, min(1.0, float(c))) for c in cosines_np]

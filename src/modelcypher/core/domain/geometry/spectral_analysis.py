@@ -51,6 +51,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import svd_via_eigh
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -213,8 +214,8 @@ def compute_spectral_metrics(
 
     # SVD - compute only singular values (not U or Vt) to avoid 92GB allocation
     # For (vocab_size, hidden_dim) matrices, full U would be vocab_size^2
-    source_s = b.svd(source_f32, compute_uv=False)
-    target_s = b.svd(target_f32, compute_uv=False)
+    _, source_s, _ = svd_via_eigh(b, source_f32, full_matrices=False)
+    _, target_s, _ = svd_via_eigh(b, target_f32, full_matrices=False)
 
     # Limit to top_k if not using full SVD
     if not config.use_full_svd:

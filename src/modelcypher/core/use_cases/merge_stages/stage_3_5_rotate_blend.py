@@ -45,6 +45,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import svd_via_eigh
 from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
 
 if TYPE_CHECKING:
@@ -196,7 +197,7 @@ def geometric_merge_weights(
         # Tall matrix (e.g., embeddings): align columns
         # M = [n, m] @ [m, n] = [n, n] - SMALL!
         M = b.matmul(b.transpose(target_f32), source_f32)
-        U_M, _, Vt_M = b.svd(M, compute_uv=True)
+        U_M, _, Vt_M = svd_via_eigh(b, M, full_matrices=False)
         R = b.matmul(U_M, Vt_M)
         b.eval(R)
 
@@ -218,7 +219,7 @@ def geometric_merge_weights(
         # Wide/square matrix: align rows (original approach)
         # M = [m, n] @ [n, m] = [m, m]
         M = b.matmul(target_f32, b.transpose(source_f32))
-        U_M, _, Vt_M = b.svd(M, compute_uv=True)
+        U_M, _, Vt_M = svd_via_eigh(b, M, full_matrices=False)
         R = b.matmul(U_M, Vt_M)
         b.eval(R)
 
@@ -301,8 +302,8 @@ def geometric_merge_weights(
     # W = UΣV^T where U, V are geometry (singular vectors), Σ is magnitude
     # ==========================================================================
 
-    U_s, sigma_s, Vt_s = b.svd(source_aligned, compute_uv=True)
-    U_t, sigma_t, Vt_t = b.svd(target_f32, compute_uv=True)
+    U_s, sigma_s, Vt_s = svd_via_eigh(b, source_aligned, full_matrices=False)
+    U_t, sigma_t, Vt_t = svd_via_eigh(b, target_f32, full_matrices=False)
     b.eval(U_s, sigma_s, U_t, sigma_t, Vt_t)
 
     # ==========================================================================

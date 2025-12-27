@@ -46,6 +46,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, TypeVar
 
 from modelcypher.core.domain.cache import ComputationCache
+from modelcypher.core.domain.geometry.numerical_stability import svd_via_eigh
 from modelcypher.core.domain.geometry.types import PairwiseProcrustesResult
 
 if TYPE_CHECKING:
@@ -267,7 +268,7 @@ class BackendMatrixUtils:
         M = self.backend.matmul(source_T, target)
 
         # SVD: M = U @ S @ Vt
-        U, S, Vt = self.backend.svd(M, compute_uv=True)
+        U, S, Vt = svd_via_eigh(self.backend, M, full_matrices=False)
 
         # Optimal orthogonal rotation: R = U @ Vt
         R = self.backend.matmul(U, Vt)
