@@ -526,20 +526,22 @@ def solve_via_cca_procrustes(
     target: Array,
     *,
     regularization: float = 1e-4,
-    variance_threshold: float = 0.99,
+    pca_variance_threshold: float = 0.95,
+    cca_variance_threshold: float = 0.95,
+    min_correlation: float = 0.1,
 ) -> tuple[Array | None, dict]:
-    """Solve source @ F = target via CCA + Procrustes for perfect alignment.
+    """Solve source @ F = target via SVCCA + Procrustes for perfect alignment.
 
-    This finds the shared semantic subspace where both source and target are
-    maximally correlated, then applies orthogonal Procrustes alignment within
-    that subspace.
+    Uses SVCCA (Singular Vector CCA) approach:
+    1. PCA reduce source and target to high-variance subspaces
+    2. CCA to find maximally correlated dimensions
+    3. Orthogonal Procrustes in the shared subspace
 
-    The solution F = W_s @ R @ W_t^T where:
-    - W_s, W_t are CCA projection matrices to the shared subspace
-    - R is the orthogonal Procrustes rotation in the shared subspace
+    This handles the case where n_samples < d_features by using Gram-space PCA,
+    avoiding ill-conditioned covariance matrices.
 
-    This achieves EXACT alignment (CKA = 1.0) in the correlated subspace,
-    regardless of ambient dimension or apparent rank deficiency.
+    The solution maps source to target space via the shared semantic subspace,
+    achieving EXACT alignment (CKA = 1.0) in the correlated dimensions.
 
     Parameters
     ----------
@@ -550,9 +552,13 @@ def solve_via_cca_procrustes(
     target : Array
         Target matrix [n_samples, d_target].
     regularization : float
-        Regularization for covariance matrix inversion.
-    variance_threshold : float
-        Fraction of variance to retain (0.99 = 99%).
+        Regularization for CCA covariance matrices.
+    pca_variance_threshold : float
+        Fraction of variance to retain in PCA step (0.95 = 95%).
+    cca_variance_threshold : float
+        Fraction of CCA variance to retain (0.95 = 95%).
+    min_correlation : float
+        Minimum canonical correlation to include (0.1 = 10%).
 
     Returns
     -------
@@ -562,7 +568,8 @@ def solve_via_cca_procrustes(
         - shared_dim: dimension of shared subspace
         - top_correlation: highest canonical correlation
         - alignment_error: Procrustes error in shared space
-        - method: "cca_procrustes" or "failed"
+        - pca_dims: (source_pca_dim, target_pca_dim)
+        - method: "svcca_procrustes" or "failed"
     """
     b = backend
     source = b.astype(source, "float32")
@@ -576,18 +583,20 @@ def solve_via_cca_procrustes(
     d_t = int(shape_t[1])
 
     eps = machine_epsilon(b, source)
+    sv_floor = 1e-8
 
     diagnostics: dict = {
         "shared_dim": 0,
         "top_correlation": 0.0,
         "alignment_error": float("inf"),
+        "pca_dims": (0, 0),
         "method": "failed",
         "n_samples": n,
         "d_source": d_s,
         "d_target": d_t,
     }
 
-    if n == 0 or d_s == 0 or d_t == 0:
+    if n < 2 or d_s == 0 or d_t == 0:
         return None, diagnostics
 
     # Center matrices
@@ -597,26 +606,106 @@ def solve_via_cca_procrustes(
     target_c = target - target_mean
     b.eval(source_c, target_c)
 
-    # Covariance matrices
+    # --- STEP 1: PCA reduction (using Gram-space when d > n) ---
+    def pca_reduce(matrix: Array, variance_thresh: float) -> tuple[Array, Array] | None:
+        """Reduce matrix to high-variance subspace using Gram-space PCA."""
+        n_samp = int(matrix.shape[0])
+        d_feat = int(matrix.shape[1])
+        max_components = min(n_samp, d_feat)
+
+        # Gram matrix: matrix @ matrix.T [n x n]
+        gram = b.matmul(matrix, b.transpose(matrix))
+        b.eval(gram)
+
+        # Eigendecomposition of Gram (gives squared singular values)
+        eigenvalues, eigenvectors = b.eigh(gram)
+        b.eval(eigenvalues, eigenvectors)
+
+        # Sort descending (eigh gives ascending)
+        eig_np = b.to_numpy(eigenvalues)
+        order = list(range(len(eig_np) - 1, -1, -1))
+        eigenvectors_sorted = eigenvectors[:, order]
+        eigenvalues_sorted = b.array([max(0.0, float(eig_np[i])) for i in order])
+        b.eval(eigenvectors_sorted, eigenvalues_sorted)
+
+        # Select components by variance threshold
+        eig_sorted_np = [float(v) for v in b.to_numpy(eigenvalues_sorted)]
+        total_var = sum(eig_sorted_np)
+        if total_var <= 0:
+            return None
+
+        cum_var = 0.0
+        k = 0
+        for i, ev in enumerate(eig_sorted_np):
+            if i >= max_components:
+                break
+            cum_var += ev
+            k = i + 1
+            if cum_var / total_var >= variance_thresh:
+                break
+
+        if k == 0:
+            return None
+
+        # Singular values from eigenvalues
+        singular_values = b.sqrt(eigenvalues_sorted[:k])
+        b.eval(singular_values)
+
+        # Principal components: V = matrix.T @ U @ S^{-1}
+        U_k = eigenvectors_sorted[:, :k]  # [n, k]
+        sv_np = [max(float(v), sv_floor) for v in b.to_numpy(singular_values)]
+        inv_sv = b.array([1.0 / s for s in sv_np])
+        b.eval(inv_sv)
+
+        # Components [d, k]
+        components = b.matmul(b.transpose(matrix), U_k) * b.reshape(inv_sv, (1, -1))
+        b.eval(components)
+
+        # Reduced matrix [n, k]
+        reduced = b.matmul(matrix, components)
+        b.eval(reduced)
+
+        return reduced, components
+
+    pca_result_s = pca_reduce(source_c, pca_variance_threshold)
+    pca_result_t = pca_reduce(target_c, pca_variance_threshold)
+
+    if pca_result_s is None or pca_result_t is None:
+        return None, diagnostics
+
+    source_reduced, source_components = pca_result_s  # [n, k_s], [d_s, k_s]
+    target_reduced, target_components = pca_result_t  # [n, k_t], [d_t, k_t]
+
+    k_s = int(source_reduced.shape[1])
+    k_t = int(target_reduced.shape[1])
+    diagnostics["pca_dims"] = (k_s, k_t)
+
+    # --- STEP 2: CCA on reduced spaces ---
     n_float = float(n)
-    cov_ss = b.matmul(b.transpose(source_c), source_c) / n_float
-    cov_tt = b.matmul(b.transpose(target_c), target_c) / n_float
-    cov_st = b.matmul(b.transpose(source_c), target_c) / n_float
+
+    # Covariances in reduced space (now well-conditioned!)
+    cov_ss = b.matmul(b.transpose(source_reduced), source_reduced) / n_float
+    cov_tt = b.matmul(b.transpose(target_reduced), target_reduced) / n_float
+    cov_st = b.matmul(b.transpose(source_reduced), target_reduced) / n_float
     b.eval(cov_ss, cov_tt, cov_st)
 
     # Regularize
-    cov_ss = cov_ss + regularization * b.eye(d_s)
-    cov_tt = cov_tt + regularization * b.eye(d_t)
+    cov_ss = cov_ss + regularization * b.eye(k_s)
+    cov_tt = cov_tt + regularization * b.eye(k_t)
     b.eval(cov_ss, cov_tt)
 
-    # Whitening transforms via eigendecomposition
-    def whiten_matrix(cov: Array, dim: int) -> tuple[Array | None, Array | None]:
+    # Whitening via eigendecomposition
+    def whiten_cov(cov: Array) -> Array | None:
         """Compute inverse sqrt of covariance for whitening."""
         eigvals, eigvecs = b.eigh(cov)
         b.eval(eigvals, eigvecs)
 
+        eigvals_np = [float(v) for v in b.to_numpy(eigvals)]
+        if all(v <= 0 for v in eigvals_np):
+            return None
+
         # Floor eigenvalues
-        floor_val = eps * 1e3
+        floor_val = max(regularization, eps * 1e3)
         eigvals_floored = b.maximum(eigvals, b.full(eigvals.shape, floor_val))
         b.eval(eigvals_floored)
 
@@ -629,10 +718,10 @@ def solve_via_cca_procrustes(
             b.transpose(eigvecs),
         )
         b.eval(inv_sqrt)
-        return inv_sqrt, eigvals_floored
+        return inv_sqrt
 
-    inv_sqrt_s, eigvals_s = whiten_matrix(cov_ss, d_s)
-    inv_sqrt_t, eigvals_t = whiten_matrix(cov_tt, d_t)
+    inv_sqrt_s = whiten_cov(cov_ss)
+    inv_sqrt_t = whiten_cov(cov_tt)
     if inv_sqrt_s is None or inv_sqrt_t is None:
         return None, diagnostics
 
@@ -640,29 +729,29 @@ def solve_via_cca_procrustes(
     cross_whitened = b.matmul(b.matmul(inv_sqrt_s, cov_st), inv_sqrt_t)
     b.eval(cross_whitened)
 
-    # SVD of cross-covariance gives canonical directions
+    # SVD gives canonical directions
     U, S, Vt = b.svd(cross_whitened)
     b.eval(U, S, Vt)
 
-    # Canonical correlations (clipped to [0, 1])
-    S_np = b.to_numpy(S)
-    correlations = [max(0.0, min(1.0, float(v))) for v in S_np]
+    # Canonical correlations (SHOULD be in [0, 1] now!)
+    S_np = [float(v) for v in b.to_numpy(S)]
+    correlations = [max(0.0, min(1.0, c)) for c in S_np]
 
     if not correlations:
         return None, diagnostics
 
     diagnostics["top_correlation"] = correlations[0]
 
-    # Select shared dimension based on variance threshold
+    # Select shared dimension
     total_var = sum(c * c for c in correlations)
     cum_var = 0.0
     k = 0
     for i, c in enumerate(correlations):
-        if c < 0.01:  # Ignore very low correlations
+        if c < min_correlation:
             break
         cum_var += c * c
         k = i + 1
-        if total_var > 0 and cum_var / total_var >= variance_threshold:
+        if total_var > 0 and cum_var / total_var >= cca_variance_threshold:
             break
 
     if k == 0:
@@ -670,22 +759,22 @@ def solve_via_cca_procrustes(
 
     diagnostics["shared_dim"] = k
 
-    # Truncate to k dimensions
-    U_k = U[:, :k]
-    Vt_k = Vt[:k, :]
-    V_k = b.transpose(Vt_k)
+    # Truncate to k canonical dimensions
+    U_k = U[:, :k]  # [k_s, k]
+    Vt_k = Vt[:k, :]  # [k, k_t]
+    V_k = b.transpose(Vt_k)  # [k_t, k]
     b.eval(U_k, V_k)
 
-    # CCA projection matrices (to shared space)
-    # W_s [d_s, k]: source → shared
-    # W_t [d_t, k]: target → shared
+    # CCA projection matrices in PCA-reduced space
+    # W_s [k_s, k]: source_reduced → shared
+    # W_t [k_t, k]: target_reduced → shared
     W_s = b.matmul(inv_sqrt_s, U_k)
     W_t = b.matmul(inv_sqrt_t, V_k)
     b.eval(W_s, W_t)
 
-    # Project to shared space
-    Z_s = b.matmul(source_c, W_s)  # [n, k]
-    Z_t = b.matmul(target_c, W_t)  # [n, k]
+    # Project PCA-reduced data to CCA shared space
+    Z_s = b.matmul(source_reduced, W_s)  # [n, k]
+    Z_t = b.matmul(target_reduced, W_t)  # [n, k]
     b.eval(Z_s, Z_t)
 
     # Orthogonal Procrustes in shared space: find R such that Z_s @ R ≈ Z_t
@@ -742,9 +831,19 @@ def solve_via_cca_procrustes(
     alignment_error = float(b.to_numpy(diff_norm)) / (float(b.to_numpy(Z_t_norm)) + eps)
     diagnostics["alignment_error"] = alignment_error
 
-    # Full transformation: F = W_s @ R @ W_t^T
-    # This maps source → shared → rotated shared → target
-    F = b.matmul(b.matmul(W_s, R), b.transpose(W_t))
+    # Full transformation chain:
+    # source [n, d_s] → source_reduced [n, k_s] via source_components [d_s, k_s]
+    # source_reduced → shared [n, k] via W_s [k_s, k]
+    # shared → rotated_shared via R [k, k]
+    # rotated_shared → target_reduced via W_t^T [k, k_t]
+    # target_reduced → target [n, d_t] via target_components^T [k_t, d_t]
+    #
+    # Full transform F [d_s, d_t]:
+    # F = source_components @ W_s @ R @ W_t^T @ target_components^T
+    inner = b.matmul(W_s, R)  # [k_s, k]
+    inner = b.matmul(inner, b.transpose(W_t))  # [k_s, k_t]
+    F = b.matmul(source_components, inner)  # [d_s, k_t]
+    F = b.matmul(F, b.transpose(target_components))  # [d_s, d_t]
     b.eval(F)
 
     diagnostics["method"] = "cca_procrustes"

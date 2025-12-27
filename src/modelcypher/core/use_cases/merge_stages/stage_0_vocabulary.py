@@ -1716,14 +1716,16 @@ def _solve_feature_transform_exact(
     Strategy (in order of preference):
     1. QR-based solve for full-rank, well-conditioned cases (fastest)
     2. Truncated SVD pseudo-inverse for rank-deficient but consistent cases (exact)
-    3. Eigendecomposition fallback (legacy, squares condition number)
+    3. CCA-Procrustes via shared semantic subspace (for cross-architecture cases)
+    4. Eigendecomposition fallback (legacy, squares condition number)
 
-    The truncated SVD approach achieves CKA = 1.0 (phase lock) when the system
-    is consistent (target is in the column space of source), which is always
-    true for properly selected anchor embeddings from the same semantic space.
+    The CCA-Procrustes approach is critical for cross-family merges (e.g., Qwen ↔ SmolLM)
+    where source and target embeddings share semantic structure in subspaces but not
+    directly in the raw embedding space. SVCCA discovers this shared structure.
     """
     from modelcypher.core.domain.geometry.numerical_stability import (
         solve_full_row_rank_via_qr,
+        solve_via_cca_procrustes,
         solve_via_truncated_svd,
     )
 
@@ -1771,8 +1773,41 @@ def _solve_feature_transform_exact(
         if diag_svd.get("projection_error", float("inf")) < eps * 100:
             return F_svd
 
+    # SVD failed - try CCA-Procrustes to find shared semantic subspace
+    # This is critical for cross-family merges where embeddings share structure
+    # in subspaces but not directly in the raw embedding space
+    logger.debug(
+        "SVD residual too large (%.2e) or proj_err too large (%.2e), trying CCA-Procrustes",
+        diag_svd.get("residual_norm", float("inf")) if F_svd is not None else float("inf"),
+        diag_svd.get("projection_error", float("inf")) if F_svd is not None else float("inf"),
+    )
+
+    F_cca, diag_cca = solve_via_cca_procrustes(
+        backend,
+        source_matrix,
+        target_matrix,
+        pca_variance_threshold=0.99,  # Keep 99% of variance
+        cca_variance_threshold=0.95,  # Keep 95% of canonical variance
+        min_correlation=0.05,  # Accept weak correlations too
+    )
+
+    if F_cca is not None:
+        logger.debug(
+            "CCA-Procrustes: shared_dim=%d, pca_dims=%s, top_corr=%.3f, align_err=%.2e",
+            diag_cca.get("shared_dim", 0),
+            diag_cca.get("pca_dims", (0, 0)),
+            diag_cca.get("top_correlation", 0.0),
+            diag_cca.get("alignment_error", float("inf")),
+        )
+        # Accept if alignment error in shared space is small
+        if diag_cca.get("alignment_error", float("inf")) < 0.1:  # 10% in shared space
+            return F_cca
+        # Also accept if we found significant shared structure
+        if diag_cca.get("top_correlation", 0.0) > 0.5:
+            return F_cca
+
     # Fall back to eigendecomposition (legacy, squares condition number)
-    logger.debug("SVD solve failed or residual too large, falling back to eigen solve")
+    logger.debug("CCA-Procrustes failed or insufficient shared structure, falling back to eigen solve")
 
     gram = backend.matmul(source_matrix, backend.transpose(source_matrix))
     if regularization > 0.0:
