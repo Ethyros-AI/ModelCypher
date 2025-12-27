@@ -58,15 +58,10 @@ class AlignmentSignal:
 
     @property
     def is_phase_locked(self) -> bool:
-        # For binary (1D) alignment across different models, accept CKA >= 0.98
-        # because different models may have genuinely different byte relationships.
-        # For higher dimensions (token/atlas), require tighter alignment.
-        if self.dimension == 1:
-            return self.gap <= 0.02  # CKA >= 0.98 for binary alignment
-        elif self.dimension == 2:
-            return self.gap <= 0.01  # CKA >= 0.99 for vocabulary alignment
-        else:
-            return self.gap <= 1e-6  # Near-exact for conceptual alignment
+        phase_tol = self.metadata.get("phase_tol")
+        if phase_tol is None:
+            return self.gap <= 1e-12
+        return self.gap <= float(phase_tol)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -96,7 +91,7 @@ def alignment_signal_from_matrices(
 ) -> AlignmentSignal:
     """Build an AlignmentSignal from paired anchor matrices."""
     b = backend or get_default_backend()
-    phase_tol = b.finfo(source_matrix.dtype).eps * 1e3
+    phase_tol = machine_epsilon(b, source_matrix)
     if cka_achieved >= 1.0 - phase_tol:
         return AlignmentSignal(
             dimension=dimension,
@@ -165,6 +160,7 @@ def alignment_signal_from_matrices(
         "mean_divergence": mean_divergence,
         "balance_ratio": balance_ratio,
         "shape_mismatch": 1.0 if shape_mismatch else 0.0,
+        "phase_tol": float(phase_tol),
     }
 
     return AlignmentSignal(

@@ -42,6 +42,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     svd_rank_threshold,
+    svd_via_eigh,
 )
 
 if TYPE_CHECKING:
@@ -339,7 +340,7 @@ def _project_procrustes(
         # Use SVD on column space
         if d_s > d_t:
             # Truncate: use top d_t components via SVD
-            _, S, Vt = b.svd(source, compute_uv=True)
+            _, S, Vt = svd_via_eigh(b, source, full_matrices=False)
             b.eval(S, Vt)
 
             # Project to top d_t dimensions
@@ -348,7 +349,7 @@ def _project_procrustes(
 
             # Align to target via Procrustes
             M = b.matmul(b.transpose(target), projected)
-            U, _, Vt_proc = b.svd(M, compute_uv=True)
+            U, _, Vt_proc = svd_via_eigh(b, M, full_matrices=False)
             R = b.matmul(U, Vt_proc)
             b.eval(R)
 
@@ -375,7 +376,7 @@ def _project_procrustes(
             target_shared = target[:, :d_s]
 
             M = b.matmul(b.transpose(target_shared), source_shared)
-            U, _, Vt_proc = b.svd(M, compute_uv=True)
+            U, _, Vt_proc = svd_via_eigh(b, M, full_matrices=False)
             R = b.matmul(U, Vt_proc)
             b.eval(R)
 
@@ -439,17 +440,17 @@ def _project_svd(
     if m_s > 4 * d_s:
         # Column Gram: G = X^T @ X [d_s, d_s]
         G_source = b.matmul(b.transpose(source), source)
-        _, S_s, Vt_s = b.svd(G_source, compute_uv=True)
+        _, S_s, Vt_s = svd_via_eigh(b, G_source, full_matrices=False)
         S_s = b.sqrt(S_s + eps_s)
     else:
-        _, S_s, Vt_s = b.svd(source, compute_uv=True)
+        _, S_s, Vt_s = svd_via_eigh(b, source, full_matrices=False)
 
     if m_t > 4 * d_t:
         G_target = b.matmul(b.transpose(target), target)
-        _, S_t, Vt_t = b.svd(G_target, compute_uv=True)
+        _, S_t, Vt_t = svd_via_eigh(b, G_target, full_matrices=False)
         S_t = b.sqrt(S_t + eps_t)
     else:
-        _, S_t, Vt_t = b.svd(target, compute_uv=True)
+        _, S_t, Vt_t = svd_via_eigh(b, target, full_matrices=False)
 
     b.eval(S_s, Vt_s, S_t, Vt_t)
 

@@ -41,6 +41,7 @@ from enum import Enum
 from typing import Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import svd_via_eigh
 from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger(__name__)
@@ -231,7 +232,7 @@ class NullSpaceFilter:
         # SVD: A = U @ S @ Vh
         # Null space of A is spanned by rows of Vh with small singular values
         try:
-            U, S, Vh = backend.svd(A, full_matrices=True)
+            U, S, Vh = svd_via_eigh(backend, A, full_matrices=True)
             backend.eval(U, S, Vh)
         except Exception:
             logger.warning("SVD failed, returning identity projection")
@@ -329,7 +330,7 @@ class NullSpaceFilter:
 
         # For consistency, compute SVD for singular values
         try:
-            S = backend.svd(A, compute_uv=False)
+            _, S, _ = svd_via_eigh(backend, A, full_matrices=False)
             backend.eval(S)
         except Exception:
             S = backend.zeros((min(n_samples, d),))
@@ -527,7 +528,7 @@ class NullSpaceFilter:
         if return_direction_analysis and projection.null_dim > 0:
             # Compute how much of each principal direction is preserved
             try:
-                _, _, Vh = backend.svd(prior_activations, full_matrices=False)
+                _, _, Vh = svd_via_eigh(backend, prior_activations, full_matrices=False)
                 backend.eval(Vh)
 
                 n_dirs = min(10, int(Vh.shape[0]))

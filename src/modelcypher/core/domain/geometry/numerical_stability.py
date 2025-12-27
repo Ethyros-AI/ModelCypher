@@ -127,13 +127,13 @@ def svd_via_eigh(
         return U, S, Vt
 
     cov_r = b.matmul(b.transpose(A), A)
-    eigvals_r, V = b.eigh(cov_r)
-    b.eval(cov_r, eigvals_r, V)
+    eigvals_r, V_full = b.eigh(cov_r)
+    b.eval(cov_r, eigvals_r, V_full)
 
     order_r = b.argsort(-eigvals_r)
     eigvals_r = b.take(eigvals_r, order_r, axis=0)
-    V = b.take(V, order_r, axis=1)
-    b.eval(eigvals_r, V)
+    V_full = b.take(V_full, order_r, axis=1)
+    b.eval(eigvals_r, V_full)
 
     s = b.sqrt(b.maximum(eigvals_r, b.zeros_like(eigvals_r)))
     b.eval(s)
@@ -159,26 +159,34 @@ def svd_via_eigh(
         Vt = b.zeros((k, n))
         return U, S, Vt
 
-    V_pos = V[:, :rank]
+    V_pos = V_full[:, :rank]
     s_pos = s[:rank]
     inv_s = 1.0 / s_pos
     U_pos = b.matmul(A, V_pos) * b.reshape(inv_s, (1, -1))
     b.eval(U_pos)
 
-    if rank < k:
+    need_full_u = full_matrices or rank < k
+    if need_full_u:
         cov_l = b.matmul(A, b.transpose(A))
         eigvals_l, U_full = b.eigh(cov_l)
         b.eval(cov_l, eigvals_l, U_full)
 
         order_l = b.argsort(-eigvals_l)
         U_full = b.take(U_full, order_l, axis=1)
-        U_null = U_full[:, rank:k]
-        U = b.concatenate([U_pos, U_null], axis=1)
+    if full_matrices:
+        if rank < m:
+            U_null = U_full[:, rank:m]
+            U = b.concatenate([U_pos, U_null], axis=1)
+        else:
+            U = U_full
+        Vt = b.transpose(V_full)
     else:
-        U = U_pos
-
-    V_full = V[:, :k]
-    Vt = b.transpose(V_full)
+        if rank < k:
+            U_null = U_full[:, rank:k]
+            U = b.concatenate([U_pos, U_null], axis=1)
+        else:
+            U = U_pos
+        Vt = b.transpose(V_full[:, :k])
 
     S = s[:k]
     if threshold > 0.0:

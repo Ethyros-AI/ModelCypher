@@ -180,13 +180,8 @@ class GramAligner:
         eigvals, eigvecs = b.eigh(gram)
         b.eval(eigvals, eigvecs)
 
-        values = [float(v) for v in b.to_numpy(eigvals).tolist()]
-        max_eig = max(values) if values else 1.0
-        eps = reg if reg is not None else max(self._regularization, machine_epsilon(b, gram))
-        threshold = max_eig * max(eps, machine_epsilon(b, gram))
-
         inv_vals = b.where(
-            eigvals > threshold,
+            eigvals > 0.0,
             1.0 / eigvals,
             b.zeros_like(eigvals),
         )
@@ -225,18 +220,12 @@ class GramAligner:
         values = [float(v) for v in b.to_numpy(eigvals).tolist()]
         if not values:
             return None
-        max_eig = max(values)
         min_eig = min(values)
         if min_eig <= 0.0:
             return None
 
-        eps = max(self._regularization, machine_epsilon(b, gram))
-        threshold = max_eig * eps
-        if min_eig <= threshold:
-            return None
-
         inv_vals = b.where(
-            eigvals > threshold,
+            eigvals > 0.0,
             1.0 / eigvals,
             b.zeros_like(eigvals),
         )
@@ -455,10 +444,8 @@ class GramAligner:
             machine_epsilon(b, K_s_c),
             machine_epsilon(b, K_t_c),
         )
-        max_s = float(b.to_numpy(b.max(eig_s))) if b.shape(eig_s)[0] > 0 else 1.0
-        max_t = float(b.to_numpy(b.max(eig_t))) if b.shape(eig_t)[0] > 0 else 1.0
-        threshold_s = max_s * eps
-        threshold_t = max_t * eps
+        threshold_s = eps
+        threshold_t = eps
 
         inv_s_vals = b.where(
             eig_s > threshold_s,

@@ -372,6 +372,7 @@ def stage_vocabulary_align(
                     target_byte_matrix,
                     int(source_byte_matrix.shape[0]),
                     backend,
+                    center=False,
                 )
                 if len(rank_indices) < int(source_byte_matrix.shape[0]):
                     idx_arr = backend.array(rank_indices)
@@ -531,6 +532,7 @@ def stage_vocabulary_align(
                         target_token_matrix_full,
                         max_anchor_count,
                         backend,
+                        center=False,
                     )
                     if len(token_indices) >= 2:
                         idx_arr = backend.array(token_indices)
@@ -722,6 +724,7 @@ def stage_vocabulary_align(
                         target_atlas_matrix,
                         int(source_atlas_matrix.shape[0]),
                         backend,
+                        center=False,
                     )
                     if len(rank_indices) < int(source_atlas_matrix.shape[0]):
                         selected_indices = [selected_indices[idx] for idx in rank_indices]
@@ -860,6 +863,7 @@ def stage_vocabulary_align(
                                 target_atlas_matrix,
                                 int(source_atlas_matrix.shape[0]),
                                 backend,
+                                center=False,
                             )
                             if len(rank_indices) < int(source_atlas_matrix.shape[0]):
                                 selected_indices = [
@@ -1006,6 +1010,7 @@ def stage_vocabulary_align(
                                     target_atlas_matrix,
                                     int(source_atlas_matrix.shape[0]),
                                     backend,
+                                    center=False,
                                 )
                                 if len(rank_indices) < int(source_atlas_matrix.shape[0]):
                                     selected_indices = [
@@ -1527,29 +1532,34 @@ def _select_shared_full_rank_indices(
     target_points: "object",
     max_count: int,
     backend: "object",
+    *,
+    center: bool = True,
 ) -> tuple[list[int], dict[str, float]]:
-    source_centered = source_points - backend.mean(source_points, axis=0, keepdims=True)
-    target_centered = target_points - backend.mean(target_points, axis=0, keepdims=True)
-    backend.eval(source_centered, target_centered)
+    source_data = source_points
+    target_data = target_points
+    if center:
+        source_data = source_points - backend.mean(source_points, axis=0, keepdims=True)
+        target_data = target_points - backend.mean(target_points, axis=0, keepdims=True)
+    backend.eval(source_data, target_data)
     n = int(source_points.shape[0])
     if max_count <= 0 or n == 0:
         return [], {"rank_source": 0.0, "rank_target": 0.0, "selected_count": 0.0}
     if n <= max_count:
-        rank_source = _matrix_rank_for_alignment(source_centered, backend)
-        rank_target = _matrix_rank_for_alignment(target_centered, backend)
+        rank_source = _matrix_rank_for_alignment(source_data, backend)
+        rank_target = _matrix_rank_for_alignment(target_data, backend)
         return list(range(n)), {
             "rank_source": float(rank_source),
             "rank_target": float(rank_target),
             "selected_count": float(n),
         }
 
-    combined = backend.concatenate([source_centered, target_centered], axis=1)
+    combined = backend.concatenate([source_data, target_data], axis=1)
     norms = backend.norm(combined, axis=1)
     backend.eval(norms)
     norm_list = backend.to_numpy(norms).tolist()
     ranked = sorted(range(n), key=lambda idx: norm_list[idx], reverse=True)
 
-    eps = max(machine_epsilon(backend, combined), 1e-12)
+    eps = max(machine_epsilon(backend, combined) * 1e3, 1e-4)
 
     def _orthonormalize(
         vec: "object",
@@ -1578,8 +1588,8 @@ def _select_shared_full_rank_indices(
     basis_tgt: list["object"] = []
 
     for idx in ranked:
-        vec_src = source_centered[idx]
-        vec_tgt = target_centered[idx]
+        vec_src = source_data[idx]
+        vec_tgt = target_data[idx]
         ok_src, norm_src = _orthonormalize(vec_src, basis_src)
         ok_tgt, norm_tgt = _orthonormalize(vec_tgt, basis_tgt)
         if not (ok_src and ok_tgt):
@@ -1709,6 +1719,7 @@ def _solve_feature_transform_exact(
     if regularization > 0.0:
         gram = gram + regularization * backend.eye(n)
     backend.eval(gram)
+
     eigvals, eigvecs = backend.eigh(gram)
     backend.eval(eigvals, eigvecs)
     values = [float(v) for v in backend.to_numpy(eigvals).tolist()]
@@ -1716,13 +1727,11 @@ def _solve_feature_transform_exact(
         return None
     min_eig = min(values)
     max_eig = max(values)
-    if min_eig <= 0.0:
-        return None
-    condition = max_eig / min_eig
-    max_condition = _dynamic_condition_threshold(gram, backend)
-    if condition > max_condition:
+    eps = max(machine_epsilon(backend, gram), 1e-12)
+    if max_eig <= eps:
         return None
 
+    eigvals = backend.maximum(eigvals, backend.zeros_like(eigvals))
     inv_vals = backend.where(
         eigvals > 0.0,
         1.0 / eigvals,
@@ -1883,15 +1892,25 @@ def _align_bytes_from_matrices(
     """
     precision_tol = max(tolerance, machine_epsilon(backend, source_matrix))
     cka_before = compute_cka(source_matrix, target_matrix, backend=backend).cka
-    weighted_source = _apply_anchor_weights(source_matrix, anchor_weights, backend)
-    weighted_target = _apply_anchor_weights(target_matrix, anchor_weights, backend)
+    weighted_source = source_matrix
+    weighted_target = target_matrix
+    if anchor_weights and not require_phase_lock:
+        weighted_source = _apply_anchor_weights(source_matrix, anchor_weights, backend)
+        weighted_target = _apply_anchor_weights(target_matrix, anchor_weights, backend)
 
     transform = _solve_feature_transform_exact(source_matrix, target_matrix, backend)
     if transform is not None:
         aligned_matrix = backend.matmul(source_matrix, transform)
         backend.eval(aligned_matrix)
         cka_after_direct = compute_cka(aligned_matrix, target_matrix, backend=backend).cka
-        if cka_after_direct >= 1.0 - precision_tol:
+        residual = aligned_matrix - target_matrix
+        res_norm = backend.norm(residual)
+        tgt_norm = backend.norm(target_matrix)
+        backend.eval(res_norm, tgt_norm)
+        rel_error = float(backend.to_numpy(res_norm)) / (
+            float(backend.to_numpy(tgt_norm)) + precision_tol
+        )
+        if cka_after_direct >= 1.0 - precision_tol or rel_error <= precision_tol:
             cka_after_direct = 1.0
             aligned_source = backend.matmul(source_embed, transform)
             backend.eval(aligned_source)
@@ -1905,6 +1924,48 @@ def _align_bytes_from_matrices(
                 "alignment_error": 0.0,
                 "iterations": 0,
             }
+
+    if require_phase_lock:
+        try:
+            source_f64 = backend.astype(source_matrix, "float64")
+            target_f64 = backend.astype(target_matrix, "float64")
+            backend.eval(source_f64, target_f64)
+            transform_f64 = _solve_feature_transform_exact(
+                source_f64,
+                target_f64,
+                backend,
+            )
+        except Exception:
+            transform_f64 = None
+
+        if transform_f64 is not None:
+            transform_f32 = backend.astype(transform_f64, source_matrix.dtype)
+            aligned_matrix = backend.matmul(source_matrix, transform_f32)
+            backend.eval(aligned_matrix)
+            cka_after_direct = compute_cka(
+                aligned_matrix, target_matrix, backend=backend
+            ).cka
+            residual = aligned_matrix - target_matrix
+            res_norm = backend.norm(residual)
+            tgt_norm = backend.norm(target_matrix)
+            backend.eval(res_norm, tgt_norm)
+            rel_error = float(backend.to_numpy(res_norm)) / (
+                float(backend.to_numpy(tgt_norm)) + precision_tol
+            )
+            if cka_after_direct >= 1.0 - precision_tol or rel_error <= precision_tol:
+                cka_after_direct = 1.0
+                aligned_source = backend.matmul(source_embed, transform_f32)
+                backend.eval(aligned_source)
+                return {
+                    "aligned_source": aligned_source,
+                    "aligned_matrix": aligned_matrix,
+                    "anchor_labels": anchor_labels,
+                    "feature_transform": transform_f32,
+                    "cka_before": cka_before,
+                    "cka_after": cka_after_direct,
+                    "alignment_error": 0.0,
+                    "iterations": 0,
+                }
     # When exact solve fails, always fall through to GramAligner iterative method.
     # The iterative approach handles ill-conditioned matrices and cross-dimensional
     # alignment that the exact solve cannot.
