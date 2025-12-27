@@ -248,15 +248,25 @@ class GeometricMergeOrchestrator:
                 geometry, source_activations, target_activations, b
             )
 
+        reverse_correspondence: dict[int, int] = {}
+        if geometry.layer_correspondence:
+            for src_layer, tgt_layer in geometry.layer_correspondence.items():
+                reverse_correspondence[tgt_layer] = src_layer
+
         # STAGE 2-8: Per-layer analysis
         for layer_idx in layer_indices:
             layer_geom = LayerGeometry(layer_idx=layer_idx)
 
-            src_acts = source_activations.get(layer_idx) if source_activations else None
+            source_layer_idx = reverse_correspondence.get(layer_idx, layer_idx)
+            src_acts = (
+                source_activations.get(source_layer_idx)
+                if source_activations
+                else None
+            )
             tgt_acts = target_activations.get(layer_idx) if target_activations else None
 
             # Get layer weights
-            src_layer_weights = self._get_layer_weights(source_weights, layer_idx)
+            src_layer_weights = self._get_layer_weights(source_weights, source_layer_idx)
             tgt_layer_weights = self._get_layer_weights(target_weights, layer_idx)
 
             # STAGE 2: Analyze geometry
@@ -343,6 +353,131 @@ class GeometricMergeOrchestrator:
             k_neighbors=k_neighbors,
         )
         return fps_result.selected_indices
+
+    def _select_shared_full_rank_indices(
+        self,
+        source_points: "Array",
+        target_points: "Array",
+        max_count: int,
+    ) -> list[int]:
+        from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
+        b = self._backend
+        source_centered = source_points - b.mean(source_points, axis=0, keepdims=True)
+        target_centered = target_points - b.mean(target_points, axis=0, keepdims=True)
+        b.eval(source_centered, target_centered)
+
+        n = int(source_points.shape[0])
+        if max_count <= 0 or n == 0:
+            return []
+        if n <= max_count:
+            return list(range(n))
+
+        combined = b.concatenate([source_centered, target_centered], axis=1)
+        norms = b.norm(combined, axis=1)
+        b.eval(norms)
+        norm_list = b.to_numpy(norms).tolist()
+        ranked = sorted(range(n), key=lambda idx: norm_list[idx], reverse=True)
+
+        eps = max(machine_epsilon(b, combined), 1e-12)
+
+        def _orthonormalize(
+            vec: "Array",
+            basis: list["Array"],
+        ) -> tuple[bool, "Array"]:
+            if not basis:
+                res_norm = b.norm(vec)
+                b.eval(res_norm)
+                if float(b.to_numpy(res_norm)) <= eps:
+                    return False, vec
+                return True, vec / res_norm
+
+            basis_matrix = b.stack(basis, axis=0)
+            vec_col = b.reshape(vec, (-1, 1))
+            proj_coeffs = b.matmul(basis_matrix, vec_col)
+            proj = b.matmul(b.transpose(basis_matrix), proj_coeffs)
+            residual = vec_col - proj
+            res_norm = b.norm(residual)
+            b.eval(res_norm)
+            if float(b.to_numpy(res_norm)) <= eps:
+                return False, vec
+            return True, b.reshape(residual / res_norm, (-1,))
+
+        selected: list[int] = []
+        basis_src: list["Array"] = []
+        basis_tgt: list["Array"] = []
+
+        for idx in ranked:
+            vec_src = source_centered[idx]
+            vec_tgt = target_centered[idx]
+            ok_src, norm_src = _orthonormalize(vec_src, basis_src)
+            ok_tgt, norm_tgt = _orthonormalize(vec_tgt, basis_tgt)
+            if not (ok_src and ok_tgt):
+                continue
+            basis_src.append(norm_src)
+            basis_tgt.append(norm_tgt)
+            selected.append(idx)
+            if len(selected) >= max_count:
+                break
+
+        return selected
+
+    def _select_full_rank_indices(
+        self,
+        points: "Array",
+        max_count: int,
+        *,
+        center: bool = True,
+    ) -> list[int]:
+        from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
+        b = self._backend
+        data = points
+        if center:
+            data = points - b.mean(points, axis=0, keepdims=True)
+            b.eval(data)
+
+        n = int(points.shape[0])
+        if max_count <= 0 or n == 0:
+            return []
+        if n <= max_count:
+            return list(range(n))
+
+        norms = b.norm(data, axis=1)
+        b.eval(norms)
+        norm_list = b.to_numpy(norms).tolist()
+        ranked = sorted(range(n), key=lambda idx: norm_list[idx], reverse=True)
+
+        eps = max(machine_epsilon(b, data) * 100.0, 1e-6)
+        selected: list[int] = []
+        basis: list["Array"] = []
+
+        for idx in ranked:
+            vec = data[idx]
+            if basis:
+                basis_matrix = b.stack(basis, axis=0)
+                vec_col = b.reshape(vec, (-1, 1))
+                proj_coeffs = b.matmul(basis_matrix, vec_col)
+                proj = b.matmul(b.transpose(basis_matrix), proj_coeffs)
+                residual = vec_col - proj
+                res_norm = b.norm(residual)
+                b.eval(res_norm)
+                if float(b.to_numpy(res_norm)) <= eps:
+                    continue
+                vec = b.reshape(residual / res_norm, (-1,))
+            else:
+                res_norm = b.norm(vec)
+                b.eval(res_norm)
+                if float(b.to_numpy(res_norm)) <= eps:
+                    continue
+                vec = vec / res_norm
+
+            basis.append(vec)
+            selected.append(idx)
+            if len(selected) >= max_count:
+                break
+
+        return selected
 
     def _stage_probe_fingerprint(
         self,
@@ -610,12 +745,17 @@ class GeometricMergeOrchestrator:
                 int(src_stacked.shape[1]),
                 int(tgt_stacked.shape[1]),
             )
-            if max_samples < int(src_stacked.shape[0]):
-                anchor_indices = self._select_anchor_indices_by_coverage(
-                    tgt_stacked,
-                    max_samples,
+            rank_indices = self._select_full_rank_indices(
+                src_stacked,
+                max_samples,
+            )
+            if len(rank_indices) < 2:
+                raise RuntimeError(
+                    "Layer %d phase lock failed: rank-deficient activations (%d)."
+                    % (layer_geom.layer_idx, len(rank_indices))
                 )
-                idx_arr = b.array(anchor_indices)
+            if len(rank_indices) != int(src_stacked.shape[0]):
+                idx_arr = b.array(rank_indices)
                 src_stacked = b.take(src_stacked, idx_arr, axis=0)
                 tgt_stacked = b.take(tgt_stacked, idx_arr, axis=0)
                 b.eval(src_stacked, tgt_stacked)
@@ -626,6 +766,7 @@ class GeometricMergeOrchestrator:
                 max_iterations=5000,
                 max_rounds=3,
                 tolerance=precision_tol,
+                regularization=0.0,
             )
             result = aligner.find_perfect_alignment(src_stacked, tgt_stacked)
             transform = b.array(result.feature_transform)
@@ -1026,8 +1167,17 @@ class GeometricMergeOrchestrator:
                 if src_pos < len(src_layers) and tgt_pos < len(tgt_layers):
                     correspondence[src_layers[src_pos]] = tgt_layers[tgt_pos]
 
+            if not correspondence:
+                raise RuntimeError("Cross-architecture alignment produced no mappings.")
+
             geometry.layer_correspondence = correspondence
             geometry.alignment_quality = alignment_score / len(dp_path) if dp_path else 0.0
+
+            if geometry.alignment_quality < 0.5:
+                raise RuntimeError(
+                    "Cross-architecture alignment quality too low (%.4f)."
+                    % geometry.alignment_quality
+                )
 
             logger.info(
                 "STAGE 1.5: Cross-architecture layer correspondence: %d -> %d layers, quality=%.4f",
