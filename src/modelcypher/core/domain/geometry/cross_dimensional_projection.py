@@ -460,15 +460,17 @@ def _project_svd(
     # Compute numerical rank for each matrix to avoid projecting onto null space
     max_dim_s = max(m_s, d_s)
     max_dim_t = max(m_t, d_t)
-    rank_thresh_s = svd_rank_threshold(b, source, max_dim_s)
-    rank_thresh_t = svd_rank_threshold(b, target, max_dim_t)
-    b.eval(rank_thresh_s, rank_thresh_t)
+    rank_thresh_s = svd_rank_threshold(b, source, max_dim_s)  # returns float
+    rank_thresh_t = svd_rank_threshold(b, target, max_dim_t)  # returns float
 
     # Count singular values above threshold (numerical rank)
     S_s_np = b.to_numpy(S_s)
     S_t_np = b.to_numpy(S_t)
-    rank_s = int((S_s_np > float(b.to_numpy(rank_thresh_s))).sum())
-    rank_t = int((S_t_np > float(b.to_numpy(rank_thresh_t))).sum())
+    # Multiply threshold by max singular value for proper scaling
+    thresh_s = rank_thresh_s * (float(S_s_np[0]) if len(S_s_np) > 0 else 1.0)
+    thresh_t = rank_thresh_t * (float(S_t_np[0]) if len(S_t_np) > 0 else 1.0)
+    rank_s = int((S_s_np > thresh_s).sum())
+    rank_t = int((S_t_np > thresh_t).sum())
 
     # Use minimum of ranks and dimensions for safe truncation
     k = min(rank_s, rank_t, d_s, d_t, int(S_s.shape[0]), int(S_t.shape[0]))
@@ -535,6 +537,24 @@ def _project_svd(
     # =========================================================================
     projected = b.matmul(source_k, b.transpose(V_t_k))  # [m_t, d_t]
     b.eval(projected)
+
+    # =========================================================================
+    # STEP 5.5: Scale projected weights to match target's Frobenius norm
+    # =========================================================================
+    # Without scaling, SVD projection can produce weights with very different
+    # magnitude than the target, causing activation explosion during inference.
+    target_fro = b.sqrt(b.sum(target ** 2))
+    proj_fro = b.sqrt(b.sum(projected ** 2))
+    b.eval(target_fro, proj_fro)
+    scale_factor = target_fro / (proj_fro + 1e-10)
+    projected = projected * scale_factor
+    b.eval(projected)
+    logger.debug(
+        "SVD projection scale: target_fro=%.4f, proj_fro=%.4f, scale_factor=%.4f",
+        float(b.to_numpy(target_fro)),
+        float(b.to_numpy(proj_fro)),
+        float(b.to_numpy(scale_factor)),
+    )
 
     # =========================================================================
     # STEP 6: Compute alignment score from variance preserved

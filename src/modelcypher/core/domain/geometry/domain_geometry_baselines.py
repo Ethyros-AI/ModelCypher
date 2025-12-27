@@ -381,33 +381,25 @@ class DomainGeometryBaselineExtractor:
         return family, size
 
     def _get_domain_probes(self, domain: str) -> list[str]:
-        """Get probe prompts relevant to a domain using UnifiedAtlas.
+        """Get probe prompts for manifold geometry measurement.
 
-        Uses the full 373-probe UnifiedAtlas system for comprehensive coverage.
-        Each domain maps to one or more AtlasDomain values to gather
-        relevant probes.
+        MATHEMATICAL REQUIREMENT: Ollivier-Ricci curvature with k=10 neighbors
+        requires at least 50-100 samples for stable optimal transport estimation.
+        Intrinsic dimension estimation (MLE) needs ~100+ samples for tight
+        confidence intervals.
 
-        Returns a list of prompts that will elicit domain-relevant activations.
+        Therefore, we use ALL 373 probes from UnifiedAtlas for geometry measurement.
+        The manifold structure is domain-agnostic - any activation contributes to
+        understanding the representation geometry. Domain-specific filtering is
+        only applied to semantic metrics, not geometric measurement.
+
+        Returns a list of prompts that will elicit activations for geometry analysis.
         """
-        from modelcypher.core.domain.agents.unified_atlas import (
-            UnifiedAtlasInventory,
-            AtlasDomain,
-        )
+        from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
 
-        # Map our domain names to AtlasDomain values
-        domain_mapping: dict[str, set[AtlasDomain]] = {
-            "spatial": {AtlasDomain.SPATIAL, AtlasDomain.STRUCTURAL},
-            "social": {AtlasDomain.RELATIONAL, AtlasDomain.AFFECTIVE},
-            "temporal": {AtlasDomain.TEMPORAL, AtlasDomain.LOGICAL},
-            "moral": {AtlasDomain.MORAL, AtlasDomain.PHILOSOPHICAL},
-        }
-
-        atlas_domains = domain_mapping.get(domain, set())
-        if not atlas_domains:
-            logger.warning(f"Unknown domain: {domain}, using all probes")
-            probes = UnifiedAtlasInventory.all_probes()
-        else:
-            probes = UnifiedAtlasInventory.probes_by_domain(atlas_domains)
+        # Use ALL probes for geometry measurement - manifold structure requires
+        # sufficient samples regardless of semantic domain
+        probes = UnifiedAtlasInventory.all_probes()
 
         # Extract support texts from probes as prompts
         prompts: list[str] = []
@@ -428,7 +420,10 @@ class DomainGeometryBaselineExtractor:
                 seen.add(p)
                 unique_prompts.append(p)
 
-        logger.info(f"Using {len(unique_prompts)} probes from UnifiedAtlas for {domain}")
+        logger.info(
+            f"Using {len(unique_prompts)} probes from UnifiedAtlas for {domain} "
+            f"(all 373 probes required for stable ORC/ID estimation)"
+        )
         return unique_prompts
 
     def _collect_activations(

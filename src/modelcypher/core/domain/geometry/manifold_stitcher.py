@@ -749,7 +749,7 @@ class TriangulatedProbeBuilder:
     """
     Builds triangulated probe sets for enhanced fingerprinting.
 
-    Now uses UnifiedAtlasInventory (373 probes across 9 atlas sources)
+    Now uses UnifiedAtlasInventory (402 probes across 10 atlas sources)
     instead of hardcoded probe lists. This provides:
     - SEQUENCE_INVARIANT: 68 probes
     - SEMANTIC_PRIME: 65 probes
@@ -767,7 +767,7 @@ class TriangulatedProbeBuilder:
         config: TriangulatedProbingConfig | None = None,
     ) -> list[Any]:
         """
-        Build probe set from UnifiedAtlasInventory (373 probes).
+        Build probe set from UnifiedAtlasInventory (402 probes).
 
         Returns list of AtlasProbe objects with:
         - probe_id: Unique identifier
@@ -801,7 +801,8 @@ class TriangulatedProbeBuilder:
             sources.add(AtlasSource.TEMPORAL_CONCEPT)
 
         if config.include_conceptual_genealogy:
-            # Conceptual genealogy maps to moral/social concepts
+            # Conceptual genealogy probes plus moral/social foundations for lineage anchoring
+            sources.add(AtlasSource.CONCEPTUAL_GENEALOGY)
             sources.add(AtlasSource.MORAL_CONCEPT)
             sources.add(AtlasSource.SOCIAL_CONCEPT)
 
@@ -812,7 +813,7 @@ class TriangulatedProbeBuilder:
 
     @staticmethod
     def build_all_probes() -> list[Any]:
-        """Get all 373 probes for full triangulation."""
+        """Get all 402 probes for full triangulation."""
         # Lazy import to avoid circular dependency
         from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
 

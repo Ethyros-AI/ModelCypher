@@ -3,14 +3,14 @@
   "model_family": "qwen",
   "model_size": "0.5B",
   "model_path": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-0.5B-Instruct-bf16",
-  "ollivier_ricci_mean": 0.09582516551017761,
-  "ollivier_ricci_std": 0.03391324356198311,
-  "ollivier_ricci_min": 0.056644879281520844,
-  "ollivier_ricci_max": 0.1635584682226181,
+  "ollivier_ricci_mean": -0.16322201490402222,
+  "ollivier_ricci_std": 0.06604717671871185,
+  "ollivier_ricci_min": -0.22637169063091278,
+  "ollivier_ricci_max": -0.05248624458909035,
   "manifold_health_distribution": {
-    "healthy": 0.0,
-    "degenerate": 0.5714285714285714,
-    "collapsed": 0.42857142857142855
+    "healthy": 0.75,
+    "degenerate": 0.25,
+    "collapsed": 0.0
   },
   "domain_metrics": {
     "representation_coherence": 0.0,
@@ -23,20 +23,21 @@
   "intrinsic_dimension_mean": 0.0,
   "intrinsic_dimension_std": 0.0,
   "layer_ricci_values": [
-    0.16355846783757638,
-    0.11475125139440344,
-    0.0923818062009082,
-    0.06337708905963374,
-    0.056644881136648575,
-    0.07523617993173957,
-    0.10482651637096699
+    -0.05248624396186378,
+    -0.06733779708019376,
+    -0.13152880974359443,
+    -0.226371685719182,
+    -0.20871805604551652,
+    -0.22569048690550045,
+    -0.20729167229040638,
+    -0.1863513630366101
   ],
-  "layers_analyzed": 7,
+  "layers_analyzed": 8,
   "acceptable_deviation": 0.2,
-  "extraction_date": "2025-12-27T11:18:59.668377",
+  "extraction_date": "2025-12-27T11:44:14.241524",
   "extraction_config": {
     "k_neighbors": 10,
-    "num_probes": 62,
+    "num_probes": 1398,
     "layers": null
   }
 }

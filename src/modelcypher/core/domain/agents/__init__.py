@@ -82,6 +82,12 @@ from .agent_trace_value import (
     ImportOptions,
 )
 from .computational_gate_atlas import ComputationalGateAtlas
+from .conceptual_genealogy_atlas import (
+    ConceptDomain,
+    ConceptualGenealogyInventory,
+    GenealogyConcept,
+    LineageAnchor,
+)
 
 # Additional atlas modules (previously not exported)
 from .emotion_concept_atlas import *  # noqa: F401,F403

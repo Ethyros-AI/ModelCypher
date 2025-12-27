@@ -19,14 +19,15 @@
 Unified Atlas.
 
 Combines all atlas sources (sequence invariants, semantic primes, computational gates,
-emotion concepts, temporal, social, moral, compositional, philosophical) into a single
+emotion concepts, temporal, social, moral, compositional, philosophical, conceptual
+genealogy) into a single
 unified probe system for cross-domain triangulation in layer mapping operations.
 
 Philosophy IS conceptual math. These probes measure the fundamental categories of
 thought - the structural preconditions for coherent reasoning that are INVARIANT
 across all models. Knowledge occupies fixed probability clouds in hyperspace.
 
-Total probe count: 373
+Total probe count: 402
 - Sequence Invariants: 68 probes (10 families)
 - Semantic Primes: 65 probes (17 categories)
 - Computational Gates: 76 probes (14 categories)
@@ -36,6 +37,7 @@ Total probe count: 373
 - Moral Concepts: 30 probes (Haidt Moral Foundations Theory)
 - Compositional: 22 probes (semantic prime compositions)
 - Philosophical: 30 probes (ontological, epistemological, logical, modal, mereological)
+- Conceptual Genealogy: 29 probes (etymology + lineage)
 """
 
 from __future__ import annotations
@@ -43,6 +45,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from modelcypher.core.domain.agents.conceptual_genealogy_atlas import (
+    ConceptDomain,
+    ConceptualGenealogyInventory,
+)
 from modelcypher.core.domain.agents.computational_gate_atlas import (
     ComputationalGateCategory,
     ComputationalGateInventory,
@@ -89,6 +95,7 @@ class AtlasSource(str, Enum):
     MORAL_CONCEPT = "moral_concept"
     COMPOSITIONAL = "compositional"  # Semantic prime compositions (I THINK, GOOD THINGS, etc.)
     PHILOSOPHICAL_CONCEPT = "philosophical_concept"  # Fundamental categories of thought
+    CONCEPTUAL_GENEALOGY = "conceptual_genealogy"
 
 
 class AtlasDomain(str, Enum):
@@ -236,6 +243,15 @@ _PHILOSOPHICAL_DOMAIN_MAP: dict[PhilosophicalCategory, AtlasDomain] = {
     PhilosophicalCategory.MEREOLOGICAL: AtlasDomain.PHILOSOPHICAL,
 }
 
+_GENEALOGY_DOMAIN_MAP: dict[ConceptDomain, AtlasDomain] = {
+    ConceptDomain.PHILOSOPHY: AtlasDomain.PHILOSOPHICAL,
+    ConceptDomain.SCIENCE: AtlasDomain.MATHEMATICAL,
+    ConceptDomain.MATHEMATICS: AtlasDomain.MATHEMATICAL,
+    ConceptDomain.POLITICS: AtlasDomain.RELATIONAL,
+    ConceptDomain.ETHICS: AtlasDomain.MORAL,
+    ConceptDomain.AESTHETICS: AtlasDomain.AFFECTIVE,
+}
+
 
 @dataclass(frozen=True)
 class AtlasProbe:
@@ -275,6 +291,7 @@ _DEFAULT_WEIGHTS: dict[AtlasSource, float] = {
     AtlasSource.MORAL_CONCEPT: 1.0,
     AtlasSource.COMPOSITIONAL: 1.0,
     AtlasSource.PHILOSOPHICAL_CONCEPT: 1.0,
+    AtlasSource.CONCEPTUAL_GENEALOGY: 1.0,
 }
 
 
@@ -292,8 +309,9 @@ class UnifiedAtlasInventory:
     - 30 moral concepts (Haidt Moral Foundations Theory)
     - 22 compositional probes (semantic prime compositions)
     - 30 philosophical concepts (ontological, epistemological, logical, modal, mereological)
+    - 29 conceptual genealogy probes (etymology + lineage)
 
-    Total: 373 probes for cross-domain triangulation
+    Total: 402 probes for cross-domain triangulation
     """
 
     _cached_probes: list[AtlasProbe] | None = None
@@ -314,6 +332,7 @@ class UnifiedAtlasInventory:
         probes.extend(cls._moral_concept_probes())
         probes.extend(cls._compositional_probes())
         probes.extend(cls._philosophical_concept_probes())
+        probes.extend(cls._conceptual_genealogy_probes())
 
         cls._cached_probes = probes
         return list(probes)
@@ -634,6 +653,31 @@ class UnifiedAtlasInventory:
 
         return probes
 
+    @classmethod
+    def _conceptual_genealogy_probes(cls) -> list[AtlasProbe]:
+        """Convert conceptual genealogy probes to unified probes."""
+        concepts = ConceptualGenealogyInventory.all_concepts()
+        probes: list[AtlasProbe] = []
+
+        base_weight = _DEFAULT_WEIGHTS[AtlasSource.CONCEPTUAL_GENEALOGY]
+
+        for concept in concepts:
+            domain = _GENEALOGY_DOMAIN_MAP.get(concept.domain, AtlasDomain.PHILOSOPHICAL)
+            probes.append(
+                AtlasProbe(
+                    id=concept.id,
+                    source=AtlasSource.CONCEPTUAL_GENEALOGY,
+                    domain=domain,
+                    name=concept.name,
+                    description=concept.description,
+                    cross_domain_weight=concept.cross_domain_weight * base_weight,
+                    category_name=concept.domain.value,
+                    support_texts=concept.support_texts,
+                )
+            )
+
+        return probes
+
 
 # Convenience constants
 ALL_ATLAS_SOURCES = frozenset(AtlasSource)
@@ -657,6 +701,7 @@ DEFAULT_ATLAS_SOURCES = frozenset(
         AtlasSource.MORAL_CONCEPT,
         AtlasSource.COMPOSITIONAL,
         AtlasSource.PHILOSOPHICAL_CONCEPT,
+        AtlasSource.CONCEPTUAL_GENEALOGY,
     ]
 )
 

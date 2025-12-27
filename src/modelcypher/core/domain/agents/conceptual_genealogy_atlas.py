@@ -16,15 +16,11 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Conceptual Genealogy for Extended Probing.
+Conceptual Genealogy Atlas.
 
-Provides probe texts based on etymology and concept lineage,
-testing whether models understand how concepts evolved and relate historically.
-
-These probes test the model's understanding of:
-- Word etymology and semantic drift
-- Concept borrowing across languages/cultures
-- Historical development of abstract ideas
+Multi-domain probes that encode etymology and concept lineage. These probes
+capture how ideas evolve across time and culture, providing cross-domain
+anchors for triangulation beyond surface semantics.
 """
 
 from __future__ import annotations
@@ -67,23 +63,82 @@ class EtymologyEntry:
 
 
 @dataclass(frozen=True)
-class ConceptualGenealogyProbe:
-    """A probe text derived from conceptual genealogy."""
+class GenealogyConcept:
+    """A genealogy probe for triangulating historical concept structure."""
 
+    id: str
     domain: ConceptDomain
-    concept: str
-    etymology: EtymologyEntry
-    probe_text: str
-    probe_id: str
-    tests_semantic_drift: bool  # Whether probe tests meaning change
+    name: str
+    description: str
+    support_texts: tuple[str, ...]
+    cross_domain_weight: float = 1.0
 
     @property
-    def category(self) -> str:
-        return f"genealogy_{self.domain.value}"
+    def canonical_name(self) -> str:
+        return self.name
+
+
+@dataclass(frozen=True)
+class LineageAnchor:
+    """Anchor testing concept relationships across historical development."""
+
+    ancestor_concept: str
+    descendant_concept: str
+    relationship: str
+    domain: ConceptDomain
+    probe_text: str
+
+
+def _slugify(value: str) -> str:
+    """Normalize identifiers for probe IDs."""
+    cleaned: list[str] = []
+    for char in value.lower():
+        if char.isalnum():
+            cleaned.append(char)
+        elif char in {" ", "-", "_"}:
+            cleaned.append("_")
+    slug = "".join(cleaned).strip("_")
+    return "_".join(part for part in slug.split("_") if part)
+
+
+def _etymology_support_texts(entry: EtymologyEntry) -> tuple[str, ...]:
+    return (
+        f"The word '{entry.modern_word}' comes from {entry.origin_language.value} "
+        f"'{entry.origin_word}', meaning '{entry.original_meaning}'.",
+        f"'{entry.modern_word}' originally meant '{entry.original_meaning}' "
+        f"but now refers to something broader.",
+        f"When we use '{entry.modern_word}', we echo its {entry.origin_language.value} "
+        f"roots in '{entry.origin_word}'.",
+        f"The concept of {entry.modern_word} evolved from {entry.original_meaning} "
+        f"to its modern meaning.",
+    )
+
+
+def _build_etymology_probes(
+    domain: ConceptDomain,
+    entries: list[EtymologyEntry],
+) -> list[GenealogyConcept]:
+    probes: list[GenealogyConcept] = []
+    for entry in entries:
+        slug = _slugify(entry.modern_word)
+        probes.append(
+            GenealogyConcept(
+                id=f"etymology_{domain.value}_{slug}",
+                domain=domain,
+                name=entry.modern_word,
+                description=(
+                    f"Etymology: {entry.origin_word} ({entry.origin_language.value}), "
+                    f"{entry.original_meaning}; shift: {entry.semantic_shift}"
+                ),
+                support_texts=_etymology_support_texts(entry),
+                cross_domain_weight=1.0,
+            )
+        )
+    return probes
 
 
 # =============================================================================
-# Etymology Database
+# Etymology Inventory
 # =============================================================================
 
 PHILOSOPHY_ETYMOLOGIES = [
@@ -242,117 +297,9 @@ ETHICS_ETYMOLOGIES = [
 ]
 
 
-# =============================================================================
-# Probe Text Generation
-# =============================================================================
+def _lineage_anchors() -> list[LineageAnchor]:
+    anchors: list[LineageAnchor] = []
 
-
-def generate_etymology_probe(
-    etymology: EtymologyEntry,
-    domain: ConceptDomain,
-    probe_index: int,
-) -> ConceptualGenealogyProbe:
-    """Generate a probe from an etymology entry."""
-
-    templates = [
-        # Direct etymology statement
-        f"The word '{etymology.modern_word}' comes from {etymology.origin_language.value} "
-        f"'{etymology.origin_word}', meaning '{etymology.original_meaning}'.",
-        # Semantic shift focus
-        f"'{etymology.modern_word}' originally meant '{etymology.original_meaning}' "
-        f"but now refers to something broader.",
-        # Connection statement
-        f"When we use '{etymology.modern_word}', we echo its {etymology.origin_language.value} "
-        f"roots in '{etymology.origin_word}'.",
-        # Evolution statement
-        f"The concept of {etymology.modern_word} evolved from {etymology.original_meaning} "
-        f"to its modern meaning.",
-    ]
-
-    probe_text = templates[probe_index % len(templates)]
-    tests_drift = probe_index % 2 == 1  # Alternate probes test semantic drift
-
-    return ConceptualGenealogyProbe(
-        domain=domain,
-        concept=etymology.modern_word,
-        etymology=etymology,
-        probe_text=probe_text,
-        probe_id=f"genealogy_{domain.value}_{etymology.modern_word}_{probe_index}",
-        tests_semantic_drift=tests_drift,
-    )
-
-
-def generate_domain_probes(domain: ConceptDomain) -> list[ConceptualGenealogyProbe]:
-    """Generate all probes for a specific domain."""
-
-    etymologies = {
-        ConceptDomain.PHILOSOPHY: PHILOSOPHY_ETYMOLOGIES,
-        ConceptDomain.SCIENCE: SCIENCE_ETYMOLOGIES,
-        ConceptDomain.MATHEMATICS: MATHEMATICS_ETYMOLOGIES,
-        ConceptDomain.POLITICS: POLITICS_ETYMOLOGIES,
-        ConceptDomain.ETHICS: ETHICS_ETYMOLOGIES,
-        ConceptDomain.AESTHETICS: [],  # Can be extended
-    }
-
-    probes = []
-    for i, etymology in enumerate(etymologies.get(domain, [])):
-        # Generate multiple probes per etymology
-        for j in range(2):
-            probe = generate_etymology_probe(etymology, domain, i * 2 + j)
-            probes.append(probe)
-
-    return probes
-
-
-def generate_all_genealogy_probes(
-    domains: set[ConceptDomain] | None = None,
-) -> list[ConceptualGenealogyProbe]:
-    """
-    Generate all conceptual genealogy probes.
-
-    Args:
-        domains: Set of domains to include (None = all)
-
-    Returns:
-        List of all genealogy probes
-    """
-    if domains is None:
-        domains = set(ConceptDomain)
-
-    all_probes = []
-    for domain in domains:
-        probes = generate_domain_probes(domain)
-        all_probes.extend(probes)
-
-    return all_probes
-
-
-# =============================================================================
-# Concept Lineage Anchors
-# =============================================================================
-
-
-@dataclass(frozen=True)
-class ConceptLineageAnchor:
-    """
-    An anchor testing concept relationships across historical development.
-
-    These test whether models understand how concepts evolved and influenced each other.
-    """
-
-    ancestor_concept: str
-    descendant_concept: str
-    relationship: str  # e.g., "evolved_into", "split_from", "merged_with"
-    domain: ConceptDomain
-    probe_text: str
-    anchor_id: str
-
-
-def generate_concept_lineage_anchors() -> list[ConceptLineageAnchor]:
-    """Generate anchors testing concept lineage relationships."""
-    anchors = []
-
-    # Philosophy lineages
     philosophy_lineages = [
         (
             "natural philosophy",
@@ -380,19 +327,17 @@ def generate_concept_lineage_anchors() -> list[ConceptLineageAnchor]:
         ),
     ]
 
-    for i, (ancestor, descendant, rel, text) in enumerate(philosophy_lineages):
+    for ancestor, descendant, rel, text in philosophy_lineages:
         anchors.append(
-            ConceptLineageAnchor(
+            LineageAnchor(
                 ancestor_concept=ancestor,
                 descendant_concept=descendant,
                 relationship=rel,
                 domain=ConceptDomain.PHILOSOPHY,
                 probe_text=text,
-                anchor_id=f"lineage_philosophy_{i}",
             )
         )
 
-    # Science lineages
     science_lineages = [
         (
             "phlogiston theory",
@@ -409,19 +354,17 @@ def generate_concept_lineage_anchors() -> list[ConceptLineageAnchor]:
         ("vitalism", "biochemistry", "replaced_by", "Vitalism gave way to biochemistry."),
     ]
 
-    for i, (ancestor, descendant, rel, text) in enumerate(science_lineages):
+    for ancestor, descendant, rel, text in science_lineages:
         anchors.append(
-            ConceptLineageAnchor(
+            LineageAnchor(
                 ancestor_concept=ancestor,
                 descendant_concept=descendant,
                 relationship=rel,
                 domain=ConceptDomain.SCIENCE,
                 probe_text=text,
-                anchor_id=f"lineage_science_{i}",
             )
         )
 
-    # Mathematics lineages
     math_lineages = [
         (
             "Euclidean geometry",
@@ -437,26 +380,72 @@ def generate_concept_lineage_anchors() -> list[ConceptLineageAnchor]:
         ),
     ]
 
-    for i, (ancestor, descendant, rel, text) in enumerate(math_lineages):
+    for ancestor, descendant, rel, text in math_lineages:
         anchors.append(
-            ConceptLineageAnchor(
+            LineageAnchor(
                 ancestor_concept=ancestor,
                 descendant_concept=descendant,
                 relationship=rel,
                 domain=ConceptDomain.MATHEMATICS,
                 probe_text=text,
-                anchor_id=f"lineage_math_{i}",
             )
         )
 
     return anchors
 
 
-@dataclass
-class ConceptualGenealogyConfig:
-    """Configuration for conceptual genealogy probing."""
+def _build_lineage_probes() -> list[GenealogyConcept]:
+    probes: list[GenealogyConcept] = []
+    for anchor in _lineage_anchors():
+        ancestor_slug = _slugify(anchor.ancestor_concept)
+        descendant_slug = _slugify(anchor.descendant_concept)
+        probes.append(
+            GenealogyConcept(
+                id=f"lineage_{anchor.domain.value}_{ancestor_slug}_{descendant_slug}",
+                domain=anchor.domain,
+                name=f"{anchor.ancestor_concept} -> {anchor.descendant_concept}",
+                description=f"Lineage: {anchor.ancestor_concept} {anchor.relationship} {anchor.descendant_concept}",
+                support_texts=(anchor.probe_text,),
+                cross_domain_weight=1.0,
+            )
+        )
+    return probes
 
-    domains: set[ConceptDomain] | None = None  # None = all
-    include_lineage_anchors: bool = True
-    languages: set[LanguageOrigin] | None = None  # None = all
-    genealogy_weight: float = 0.25  # Weight in intersection correlation
+
+ALL_PROBES: tuple[GenealogyConcept, ...] = tuple(
+    _build_etymology_probes(ConceptDomain.PHILOSOPHY, PHILOSOPHY_ETYMOLOGIES)
+    + _build_etymology_probes(ConceptDomain.SCIENCE, SCIENCE_ETYMOLOGIES)
+    + _build_etymology_probes(ConceptDomain.MATHEMATICS, MATHEMATICS_ETYMOLOGIES)
+    + _build_etymology_probes(ConceptDomain.POLITICS, POLITICS_ETYMOLOGIES)
+    + _build_etymology_probes(ConceptDomain.ETHICS, ETHICS_ETYMOLOGIES)
+    + _build_lineage_probes()
+)
+
+
+class ConceptualGenealogyInventory:
+    """Static inventory of conceptual genealogy probes."""
+
+    @staticmethod
+    def all_concepts() -> tuple[GenealogyConcept, ...]:
+        return ALL_PROBES
+
+    @staticmethod
+    def concepts_by_domain(domain: ConceptDomain) -> list[GenealogyConcept]:
+        return [probe for probe in ALL_PROBES if probe.domain == domain]
+
+    @staticmethod
+    def probe_count_by_domain() -> dict[ConceptDomain, int]:
+        counts: dict[ConceptDomain, int] = {}
+        for probe in ALL_PROBES:
+            counts[probe.domain] = counts.get(probe.domain, 0) + 1
+        return counts
+
+
+__all__ = [
+    "ConceptDomain",
+    "LanguageOrigin",
+    "EtymologyEntry",
+    "GenealogyConcept",
+    "LineageAnchor",
+    "ConceptualGenealogyInventory",
+]

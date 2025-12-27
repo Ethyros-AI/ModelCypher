@@ -23,7 +23,7 @@ for optimal layer alignment between models.
 
 Notes
 -----
-Supported atlases for cross-domain triangulation (237 total probes):
+Supported atlases for cross-domain triangulation (402 total probes):
 
 - Sequence Invariants: 68 probes (mathematical/logical)
 - Semantic Primes: 65 probes (linguistic/mental)
@@ -120,7 +120,7 @@ class InvariantScope(str, Enum):
     INVARIANTS = "invariants"
     LOGIC_ONLY = "logicOnly"
     SEQUENCE_INVARIANTS = "sequenceInvariants"  # Full 68-probe system with triangulation
-    MULTI_ATLAS = "multiAtlas"  # Full 237-probe system across all atlases
+    MULTI_ATLAS = "multiAtlas"  # Full 402-probe system across all atlases
 
 
 # ConfidenceLevel enum removed - use raw similarity values directly.

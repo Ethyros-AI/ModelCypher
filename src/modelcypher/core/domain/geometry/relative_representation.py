@@ -27,9 +27,9 @@ across models, regardless of their hidden dimension. This enables transfer
 between models of different sizes (e.g., 2048-dim to 896-dim) by working in
 anchor-relative space.
 
-The 373 anchors from UnifiedAtlasInventory serve as the universal bridge:
-- Any hidden state h in R^d maps to s in R^373 via cosine similarities
-- Alignment happens in R^373 (dimension-agnostic)
+The UnifiedAtlasInventory anchors serve as the universal bridge:
+- Any hidden state h in R^d maps to s in R^N via cosine similarities
+- Alignment happens in R^N (dimension-agnostic)
 - Transfer back to target space uses pseudo-inverse projection
 """
 
@@ -227,7 +227,7 @@ def transfer_via_relative_space(
     """Transfer hidden states from source to target space via anchors.
 
     This is the core transfer algorithm:
-    1. Map source hidden states to relative space (R^373)
+    1. Map source hidden states to relative space (R^N)
     2. Optionally compute alignment rotation from paired samples
     3. Project back to target space using pseudo-inverse
 
@@ -334,9 +334,11 @@ def cross_dimension_transfer(
     # Find common anchors
     common_ids = set(source_ids) & set(target_ids)
     if len(common_ids) < 100:
+        expected_count = max(len(source_ids), len(target_ids))
         logger.warning(
-            "Only %d common anchors found (expected ~373). Transfer may be unreliable.",
+            "Only %d common anchors found (expected ~%d). Transfer may be unreliable.",
             len(common_ids),
+            expected_count,
         )
 
     # Filter to common anchors
