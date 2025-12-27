@@ -747,14 +747,14 @@ class GeometricMergeOrchestrator:
 
             max_samples = min(
                 int(src_stacked.shape[0]),
-                int(src_stacked.shape[1]),
-                int(tgt_stacked.shape[1]),
+                max(2, int(src_stacked.shape[1]) - 1),
+                max(2, int(tgt_stacked.shape[1]) - 1),
             )
             rank_indices = self._select_shared_full_rank_indices(
                 src_stacked,
                 tgt_stacked,
                 max_samples,
-                center=False,
+                center=True,
             )
             if len(rank_indices) < 2:
                 raise RuntimeError(
@@ -1156,8 +1156,8 @@ class GeometricMergeOrchestrator:
 
             # Use dynamic programming to find optimal monotonic alignment
             config = Configuration.with_thresholds(
-                high_confidence_threshold=0.75,
-                medium_confidence_threshold=0.5,
+                high_confidence_threshold=0.999999,  # Phase lock requires CKA ~= 1.0
+                medium_confidence_threshold=0.999999,
                 max_skip=3,
             )
 
@@ -1177,12 +1177,27 @@ class GeometricMergeOrchestrator:
             if not correspondence:
                 raise RuntimeError("Cross-architecture alignment produced no mappings.")
 
+            from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
+            sample_act = source_activations[src_layers[0]][0]
+            phase_tol = machine_epsilon(b, sample_act)
+            for src_pos, tgt_pos in dp_path:
+                if src_pos >= len(src_layers) or tgt_pos >= len(tgt_layers):
+                    continue
+                cka_val = cka_matrix[src_pos][tgt_pos]
+                if cka_val < 1.0 - phase_tol:
+                    raise RuntimeError(
+                        "Cross-architecture alignment not phase-locked "
+                        f"(src_layer={src_layers[src_pos]}, tgt_layer={tgt_layers[tgt_pos]}, "
+                        f"cka={cka_val:.6f})."
+                    )
+
             geometry.layer_correspondence = correspondence
             geometry.alignment_quality = alignment_score / len(dp_path) if dp_path else 0.0
 
-            if geometry.alignment_quality < 0.5:
+            if geometry.alignment_quality < 1.0 - phase_tol:
                 raise RuntimeError(
-                    "Cross-architecture alignment quality too low (%.4f)."
+                    "Cross-architecture alignment quality too low (%.6f)."
                     % geometry.alignment_quality
                 )
 
@@ -1194,14 +1209,8 @@ class GeometricMergeOrchestrator:
             )
 
         except Exception as e:
-            logger.warning("Cross-architecture layer matching failed: %s", e)
-            # Fallback: simple linear interpolation of layer indices
-            ratio = len(tgt_layers) / len(src_layers) if src_layers else 1.0
-            geometry.layer_correspondence = {
-                src_layers[i]: tgt_layers[min(int(i * ratio), len(tgt_layers) - 1)]
-                for i in range(len(src_layers))
-            }
-            geometry.alignment_quality = 0.5
+            logger.error("Cross-architecture layer matching failed: %s", e)
+            raise
 
     def _compute_global_metrics(self, geometry: MergeGeometry) -> None:
         """Compute global summary metrics."""

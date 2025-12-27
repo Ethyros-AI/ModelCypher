@@ -179,6 +179,8 @@ def build_alignment_from_vocabs(
     similarity_threshold: float = 0.8,
     max_prefix_length: int = 8,
     max_prefix_matches: int = 3,
+    *,
+    exact_only: bool = False,
 ) -> VocabularyAlignmentMap:
     """
     Build alignment map from source and target vocabulary dictionaries.
@@ -190,6 +192,7 @@ def build_alignment_from_vocabs(
         source_vocab: Source token -> id mapping
         target_vocab: Target token -> id mapping
         similarity_threshold: Minimum similarity for approximate matches
+        exact_only: If True, only exact string matches are accepted
 
     Returns:
         VocabularyAlignmentMap with token alignments
@@ -208,12 +211,13 @@ def build_alignment_from_vocabs(
         max_prefix_length = 0
 
     for token, tid in target_vocab.items():
-        normalized = token.lower().strip()
-        existing = normalized_target.get(normalized)
-        if existing is None or tid < existing[1]:
-            normalized_target[normalized] = (token, tid)
+        if not exact_only:
+            normalized = token.lower().strip()
+            existing = normalized_target.get(normalized)
+            if existing is None or tid < existing[1]:
+                normalized_target[normalized] = (token, tid)
 
-        if max_prefix_length > 0:
+        if not exact_only and max_prefix_length > 0:
             for i in range(1, min(max_prefix_length, len(token)) + 1):
                 prefix = token[:i]
                 prefix_map.setdefault(prefix, []).append((token, tid))
@@ -235,6 +239,19 @@ def build_alignment_from_vocabs(
                 confidence=1.0,
             )
         else:
+            if exact_only:
+                alignment = TokenAlignment(
+                    source_id=source_id,
+                    source_token=source_token,
+                    target_ids=[],
+                    target_tokens=[],
+                    weights=[],
+                    quality=AlignmentQuality.UNMAPPED,
+                    confidence=0.0,
+                )
+                alignment_map.add_alignment(alignment)
+                continue
+
             # Try normalized matching (lowercase, strip whitespace)
             normalized = source_token.lower().strip()
             normalized_match = normalized_target.get(normalized)

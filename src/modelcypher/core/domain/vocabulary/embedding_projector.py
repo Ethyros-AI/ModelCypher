@@ -350,7 +350,7 @@ class EmbeddingProjector:
             X = b.stack([source[i] for i in source_idx[:n_shared]])
             Y = b.stack([target[i] for i in target_idx[:n_shared]])
         else:
-            # Use first N tokens as pseudo-shared
+            # Use first N tokens as proxy shared set
             n_shared = min(source_vocab, target_vocab, self.config.anchor_count)
             X = source[:n_shared]
             Y = target[:n_shared]

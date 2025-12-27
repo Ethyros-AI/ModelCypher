@@ -400,7 +400,6 @@ def stage_vocabulary_align(
                 iteration = 0
                 iteration_budget = alignment_iterations
                 stall_count = 0
-                cross_family_accepted = False  # Track high-CKA acceptance for cross-family
 
                 while True:
                     prev_best = best_cka
@@ -445,18 +444,12 @@ def stage_vocabulary_align(
                     if not improved:
                         stall_count += 1
                         if stall_count >= 2:
-                            # For cross-family models (different embedding dimensions), CKA=1.0
-                            # may not be achievable. Accept high CKA (>0.95) as optimal alignment.
-                            if best_cka > 0.95:
-                                logger.info(
-                                    "Cross-family alignment optimal (CKA=%.4f). "
-                                    "Phase lock not possible due to dimension mismatch.",
-                                    best_cka,
-                                )
-                                cross_family_accepted = True
-                                break
+                            # CKA=1.0 is ALWAYS achievable with full-rank anchors.
+                            # If we stall at <1.0, the anchor selection or solve is wrong.
                             raise RuntimeError(
-                                "Binary phase lock stalled: no improvement with fixed byte anchors."
+                                f"Binary phase lock stalled at CKA={best_cka:.6f}. "
+                                f"Expected 1.0 with full-rank anchors. "
+                                f"Check anchor selection and numerical stability."
                             )
                     else:
                         stall_count = 0
@@ -496,10 +489,8 @@ def stage_vocabulary_align(
                         "target_dim": target_byte_matrix.shape[1],
                         "coverage": coverage_meta,
                         "signals": binary_signals,
-                        # Accept cross-family high-CKA as phase-locked
-                        "phase_locked": bool(
-                            (last_signal and last_signal.is_phase_locked) or cross_family_accepted
-                        ),
+                        # CKA=1.0 required for phase lock - no exceptions
+                        "phase_locked": bool(last_signal and last_signal.is_phase_locked),
                         "balance_ratio": (
                             last_signal.metadata.get("balance_ratio")
                             if last_signal is not None
@@ -603,11 +594,19 @@ def stage_vocabulary_align(
                             "phase_locked": bool(token_phase_locked),
                         }
 
-            source_byte_map_for_atlas = source_bytes
-            target_byte_map_for_atlas = target_bytes
-            if not use_byte_anchors_for_atlas:
-                source_byte_map_for_atlas = {}
-                target_byte_map_for_atlas = {}
+            target_byte_map_for_atlas: dict[int, Any] = {}
+            source_byte_map_for_atlas: dict[int, Any] = {}
+            if use_byte_anchors_for_atlas:
+                target_byte_map_for_atlas = target_bytes
+                # Rebuild byte anchors from the CURRENT source embed; Frechet means are non-linear.
+                source_byte_map_for_atlas = _build_byte_embedding_map(
+                    source_tokenizer,
+                    source_embed,
+                    source_embed.shape[0],
+                    backend,
+                    cache_key=source_cache_key,
+                    tokenizer_key=source_tokenizer_key,
+                )
 
             # Vocabulary (2D) alignment: phase-lock on UnifiedAtlas anchors.
             # Pre-compute atlas anchor maps ONCE (may rebuild if use_all_support_texts changes)
@@ -626,21 +625,17 @@ def stage_vocabulary_align(
                 cache_key=target_cache_key_original,
                 tokenizer_key=target_tokenizer_key,
             )
-            source_atlas_map_raw = _build_atlas_anchor_map(
+            # Recompute atlas anchors from the CURRENT source embed to preserve exact geometry.
+            source_atlas_map = _build_atlas_anchor_map(
                 source_tokenizer,
-                source_embed_original,
-                source_embed_original.shape[0],
+                source_embed,
+                source_embed.shape[0],
                 backend,
                 use_all_support_texts=use_all_support_texts,
                 byte_map=source_byte_map_for_atlas,
                 use_byte_anchors=use_byte_anchors_for_atlas,
-                cache_key=source_cache_key_original,
+                cache_key=source_cache_key,
                 tokenizer_key=source_tokenizer_key,
-            )
-            source_atlas_map = _apply_feature_transform_to_anchor_map(
-                source_atlas_map_raw,
-                accumulated_transform,
-                backend,
             )
             shared_atlas = sorted(set(source_atlas_map) & set(target_atlas_map))
 
@@ -657,21 +652,16 @@ def stage_vocabulary_align(
                     cache_key=target_cache_key_original,
                     tokenizer_key=target_tokenizer_key,
                 )
-                source_atlas_map_raw = _build_atlas_anchor_map(
+                source_atlas_map = _build_atlas_anchor_map(
                     source_tokenizer,
-                    source_embed_original,
-                    source_embed_original.shape[0],
+                    source_embed,
+                    source_embed.shape[0],
                     backend,
                     use_all_support_texts=True,
                     byte_map=source_byte_map_for_atlas,
                     use_byte_anchors=use_byte_anchors_for_atlas,
-                    cache_key=source_cache_key_original,
+                    cache_key=source_cache_key,
                     tokenizer_key=source_tokenizer_key,
-                )
-                source_atlas_map = _apply_feature_transform_to_anchor_map(
-                    source_atlas_map_raw,
-                    accumulated_transform,
-                    backend,
                 )
                 shared_atlas = sorted(set(source_atlas_map) & set(target_atlas_map))
 
@@ -789,7 +779,6 @@ def stage_vocabulary_align(
                 iteration = 0
                 iteration_budget = alignment_iterations
                 stall_count = 0
-                cross_family_vocab_accepted = False  # Track high-CKA acceptance for cross-family
 
                 while True:
                     prev_best = best_cka
@@ -833,27 +822,17 @@ def stage_vocabulary_align(
 
                     improved = best_cka > prev_best + precision_tol
 
-                    # For cross-family models with high CKA, accept as optimal
-                    # This prevents infinite anchor swapping when CKA has plateaued
-                    if not improved and best_cka > 0.95:
+                    # CKA=1.0 is ALWAYS achievable with full-rank anchors
+                    if not improved:
                         stall_count += 1
-                        if stall_count >= 3:
-                            logger.info(
-                                "Cross-family vocab alignment optimal (CKA=%.4f). "
-                                "Accepting high-quality alignment.",
-                                best_cka,
+                        if stall_count >= 2 and not available_indices:
+                            raise RuntimeError(
+                                f"Vocabulary phase lock stalled at CKA={best_cka:.6f}. "
+                                f"Expected 1.0 with full-rank anchors. "
+                                f"Check anchor selection and numerical stability."
                             )
-                            cross_family_vocab_accepted = True
-                            break
-                    elif improved:
+                    else:
                         stall_count = 0
-
-                    # If no improvement and no more anchors to try, fail if CKA is low
-                    if not improved and not available_indices and best_cka < 0.95:
-                        raise RuntimeError(
-                            f"Vocabulary phase lock stalled (CKA={best_cka:.4f}): "
-                            "no additional anchors to improve fit."
-                        )
 
                     if available_indices and target_atlas_matrix_full is not None:
                         refresh_count = min(
@@ -949,21 +928,16 @@ def stage_vocabulary_align(
                                 cache_key=target_cache_key_original,
                                 tokenizer_key=target_tokenizer_key,
                             )
-                            source_atlas_map_raw = _build_atlas_anchor_map(
+                            source_atlas_map = _build_atlas_anchor_map(
                                 source_tokenizer,
-                                source_embed_original,
-                                source_embed_original.shape[0],
+                                source_embed,
+                                source_embed.shape[0],
                                 backend,
                                 use_all_support_texts=True,
                                 byte_map=source_byte_map_for_atlas,
                                 use_byte_anchors=use_byte_anchors_for_atlas,
-                                cache_key=source_cache_key_original,
+                                cache_key=source_cache_key,
                                 tokenizer_key=source_tokenizer_key,
-                            )
-                            source_atlas_map = _apply_feature_transform_to_anchor_map(
-                                source_atlas_map_raw,
-                                accumulated_transform,
-                                backend,
                             )
                             shared_atlas = sorted(
                                 set(source_atlas_map) & set(target_atlas_map)
@@ -1085,11 +1059,8 @@ def stage_vocabulary_align(
                         "alignment_error": best_alignment["alignment_error"],
                         "iterations": best_alignment["iterations"],
                         "signals": vocab_signals,
-                        # Accept cross-family high-CKA as phase-locked
-                        "phase_locked": bool(
-                            (last_signal and last_signal.is_phase_locked)
-                            or cross_family_vocab_accepted
-                        ),
+                        # CKA=1.0 required for phase lock - no exceptions
+                        "phase_locked": bool(last_signal and last_signal.is_phase_locked),
                         "support_texts": "all" if use_all_support_texts else "first",
                         "coverage": coverage_meta,
                         "balance_ratio": (
@@ -1116,10 +1087,25 @@ def stage_vocabulary_align(
                 "vocab_alignment_ms"
             ] = (time.perf_counter() - vocab_start) * 1000
 
+            token_phase_locked = True
+            if overlap:
+                token_phase_locked = bool(
+                    token_metrics.get(embed_key, {}).get("phase_locked")
+                )
+
             phase_locked = (
                 bool(binary_metrics.get(embed_key, {}).get("phase_locked"))
                 and bool(vocab_metrics.get(embed_key, {}).get("phase_locked"))
+                and token_phase_locked
             )
+            if not phase_locked:
+                raise RuntimeError(
+                    "Vocabulary alignment did not phase-lock across dimensions. "
+                    f"binary={bool(binary_metrics.get(embed_key, {}).get('phase_locked'))}, "
+                    f"token={token_phase_locked}, "
+                    f"atlas={bool(vocab_metrics.get(embed_key, {}).get('phase_locked'))}."
+                )
+
             strict_token_alignment = bool(config.strict_token_alignment and phase_locked)
             effective_strategy = projection_strategy
             if phase_locked:
@@ -1149,6 +1135,7 @@ def stage_vocabulary_align(
                 blend_alpha=merge_blend_alpha,
                 preserve_special_tokens=config.preserve_special_tokens,
                 use_embedding_similarity=merge_use_embedding_similarity,
+                exact_match_only=strict_token_alignment,
                 anchor_count=config.anchor_count,
                 max_similarity_pairs=config.max_similarity_pairs,
                 max_unmapped_similarity=config.max_unmapped_similarity,
@@ -1568,6 +1555,13 @@ def _select_shared_full_rank_indices(
     *,
     center: bool = True,
 ) -> tuple[list[int], dict[str, float]]:
+    """Select indices where BOTH source and target are linearly independent.
+
+    CRITICAL: Always filter for linear independence. CKA=1.0 requires full-rank
+    matrices for the closed-form solve F = A_s^T (A_s A_s^T)^-1 A_t.
+    If we pass rank-deficient matrices, the support-space inverse loses information
+    and CKA < 1.0.
+    """
     source_data = source_points
     target_data = target_points
     if center:
@@ -1577,14 +1571,10 @@ def _select_shared_full_rank_indices(
     n = int(source_points.shape[0])
     if max_count <= 0 or n == 0:
         return [], {"rank_source": 0.0, "rank_target": 0.0, "selected_count": 0.0}
-    if n <= max_count:
-        rank_source = _matrix_rank_for_alignment(source_data, backend)
-        rank_target = _matrix_rank_for_alignment(target_data, backend)
-        return list(range(n)), {
-            "rank_source": float(rank_source),
-            "rank_target": float(rank_target),
-            "selected_count": float(n),
-        }
+
+    # ALWAYS filter for linear independence - never skip this step!
+    # The old code had: if n <= max_count: return all indices
+    # This was WRONG - it passed rank-deficient matrices to GramAligner
 
     combined = backend.concatenate([source_data, target_data], axis=1)
     norms = backend.norm(combined, axis=1)
@@ -1656,8 +1646,52 @@ def _select_shared_full_rank_indices(
         drop_count = max(1, len(selected) // 10)
         selected = selected[:-drop_count]
 
+    # CRITICAL: Verify numerical rank via SVD and drop anchors until rank = n_selected
+    # Gram-Schmidt eps=1e-4 is too loose - SVD gives the true numerical rank
+    def _numerical_rank_svd(matrix: "object", rtol: float = 1e-3) -> int:
+        """Compute numerical rank via SVD singular value ratio."""
+        try:
+            _, s, _ = backend.svd(matrix, full_matrices=False)
+            backend.eval(s)
+            s_vals = backend.to_numpy(s)
+            if len(s_vals) == 0:
+                return 0
+            max_s = float(s_vals[0])
+            if max_s < 1e-12:
+                return 0
+            threshold = max_s * rtol
+            return int(sum(1 for sv in s_vals if float(sv) > threshold))
+        except Exception:
+            return len(selected)  # Fallback to full count if SVD fails
+
+    # Drop anchors until BOTH matrices have numerical rank >= n_selected
+    while selected and len(selected) > 2:
+        idx_arr = backend.array(selected)
+        src_sel = backend.take(source_points, idx_arr, axis=0)
+        tgt_sel = backend.take(target_points, idx_arr, axis=0)
+        backend.eval(src_sel, tgt_sel)
+
+        rank_src = _numerical_rank_svd(src_sel)
+        rank_tgt = _numerical_rank_svd(tgt_sel)
+        min_rank = min(rank_src, rank_tgt)
+
+        if min_rank >= len(selected):
+            # Both matrices are full-rank for the closed-form solve
+            break
+
+        # Drop to match numerical rank (cannot exceed actual rank)
+        if min_rank < len(selected):
+            # Drop extra anchors - keep only min_rank indices
+            drop_to = max(2, min_rank)
+            if drop_to < len(selected):
+                selected = selected[:drop_to]
+        else:
+            break
+
     cond_src = float("inf")
     cond_tgt = float("inf")
+    rank_src_final = 0
+    rank_tgt_final = 0
     if selected:
         idx_arr = backend.array(selected)
         src_sel = backend.take(source_points, idx_arr, axis=0)
@@ -1665,6 +1699,8 @@ def _select_shared_full_rank_indices(
         backend.eval(src_sel, tgt_sel)
         cond_src = float(_condition_number(src_sel))
         cond_tgt = float(_condition_number(tgt_sel))
+        rank_src_final = _numerical_rank_svd(src_sel)
+        rank_tgt_final = _numerical_rank_svd(tgt_sel)
 
     return selected, {
         "rank_source": float(len(basis_src)),
@@ -1672,6 +1708,8 @@ def _select_shared_full_rank_indices(
         "selected_count": float(len(selected)),
         "cond_source": cond_src,
         "cond_target": cond_tgt,
+        "svd_rank_source": float(rank_src_final),
+        "svd_rank_target": float(rank_tgt_final),
     }
 
 
@@ -1748,13 +1786,12 @@ def _solve_feature_transform_exact(
 
     Strategy (in order of preference):
     1. QR-based solve for full-rank, well-conditioned cases (fastest)
-    2. Truncated SVD pseudo-inverse for rank-deficient but consistent cases (exact)
-    3. CCA-Procrustes via shared semantic subspace (for cross-architecture cases)
-    4. Eigendecomposition fallback (legacy, squares condition number)
+    2. Rank-truncated spectral inverse (exact on the support space)
+    3. Gram alignment in sample space (relational geometry)
+    4. Eigendecomposition in sample space (legacy, squares condition number)
 
-    The CCA-Procrustes approach is critical for cross-family merges (e.g., Qwen ↔ SmolLM)
-    where source and target embeddings share semantic structure in subspaces but not
-    directly in the raw embedding space. SVCCA discovers this shared structure.
+    The caller verifies phase lock (CKA = 1.0). This function only proposes
+    candidate transforms; it does not accept approximate alignment.
     """
     from modelcypher.core.domain.geometry.numerical_stability import (
         solve_full_row_rank_via_qr,
@@ -1771,6 +1808,10 @@ def _solve_feature_transform_exact(
     # Try QR-based solve first (fast for full-rank, well-conditioned cases)
     F_qr, diag = solve_full_row_rank_via_qr(backend, source_matrix, target_matrix)
 
+    best_transform: "object | None" = None
+    best_residual = float("inf")
+    best_label = "none"
+
     if F_qr is not None:
         logger.debug(
             "QR solve: method=%s, rank=%d/%d, cond=%.2e, residual=%.2e",
@@ -1781,42 +1822,47 @@ def _solve_feature_transform_exact(
             diag.get("residual_norm", float("inf")),
         )
         # Accept if residual is small (system is full-rank and well-conditioned)
-        if diag.get("residual_norm", float("inf")) < eps * 1000:
+        qr_residual = float(diag.get("residual_norm", float("inf")))
+        if qr_residual < best_residual:
+            best_transform = F_qr
+            best_residual = qr_residual
+            best_label = "qr"
+        if qr_residual < eps * 1000:
             return F_qr
 
-    # QR failed or gave large residual - try truncated SVD (handles rank-deficiency)
-    logger.debug("QR residual too large (%.2e), trying truncated SVD solve",
-                 diag.get("residual_norm", float("inf")) if F_qr is not None else float("inf"))
+    # QR residual too large - try rank-truncated spectral inverse (handles rank-deficiency)
+    logger.debug(
+        "QR residual too large (%.2e), trying spectral inverse",
+        diag.get("residual_norm", float("inf")) if F_qr is not None else float("inf"),
+    )
 
     F_svd, diag_svd = solve_via_truncated_svd(backend, source_matrix, target_matrix)
 
     if F_svd is not None:
         logger.debug(
-            "SVD solve: rank=%d/%d, cond=%.2e, proj_err=%.2e, residual=%.2e",
+            "Spectral inverse: rank=%d/%d, cond=%.2e, proj_err=%.2e, residual=%.2e",
             diag_svd.get("rank", 0),
             n,
             diag_svd.get("condition", float("inf")),
             diag_svd.get("projection_error", float("inf")),
             diag_svd.get("residual_norm", float("inf")),
         )
-        # SVD should give near-zero residual for consistent systems
-        if diag_svd.get("residual_norm", float("inf")) < 0.01:  # 1% relative error
-            return F_svd
-        # Also accept if projection error is small (system is consistent)
-        if diag_svd.get("projection_error", float("inf")) < eps * 100:
+        svd_residual = float(diag_svd.get("residual_norm", float("inf")))
+        if svd_residual < best_residual:
+            best_transform = F_svd
+            best_residual = svd_residual
+            best_label = "spectral_inverse"
+        # Exact alignment only if residual is at precision scale.
+        if svd_residual < eps * 100:
             return F_svd
 
-    # SVD failed - try CCA-Procrustes to find shared semantic subspace
-    # This is critical for cross-family merges where embeddings share structure
-    # in subspaces but not directly in the raw embedding space
+    # Spectral inverse insufficient - try Gram alignment in sample space.
     logger.debug(
-        "SVD residual too large (%.2e) or proj_err too large (%.2e), trying CCA-Procrustes",
+        "Spectral inverse residual too large (%.2e), trying Gram alignment",
         diag_svd.get("residual_norm", float("inf")) if F_svd is not None else float("inf"),
-        diag_svd.get("projection_error", float("inf")) if F_svd is not None else float("inf"),
     )
 
-    # Gram alignment: align left singular vectors (sample structure) via Procrustes
-    # This preserves the relational geometry (Gram matrices) and should achieve CKA ≈ 1.0
+    # Gram alignment: align sample structure (relational geometry).
     F_gram, diag_gram = solve_via_gram_alignment(backend, source_matrix, target_matrix)
 
     if F_gram is not None:
@@ -1826,34 +1872,29 @@ def _solve_feature_transform_exact(
             diag_gram.get("rank_target", 0),
             diag_gram.get("procrustes_error", float("inf")),
         )
-        # Verify CKA after gram alignment
         aligned_gram = backend.matmul(source_matrix, F_gram)
         backend.eval(aligned_gram)
-        cka_after_gram = compute_cka(aligned_gram, target_matrix, backend=backend).cka
-
-        # Compute baseline CKA
-        cka_baseline = compute_cka(source_matrix, target_matrix, backend=backend).cka
-
-        logger.debug(
-            "Gram alignment CKA: baseline=%.4f, after=%.4f",
-            cka_baseline, cka_after_gram,
+        residual = aligned_gram - target_matrix
+        res_norm = backend.norm(residual)
+        tgt_norm = backend.norm(target_matrix)
+        backend.eval(res_norm, tgt_norm)
+        gram_residual = float(backend.to_numpy(res_norm)) / (
+            float(backend.to_numpy(tgt_norm)) + eps
         )
-
-        # Accept if CKA improved or stayed high
-        if cka_after_gram >= cka_baseline * 0.95 or cka_after_gram > 0.99:
-            logger.debug("Accepting Gram alignment (CKA=%.4f)", cka_after_gram)
+        if gram_residual < best_residual:
+            best_transform = F_gram
+            best_residual = gram_residual
+            best_label = "gram_alignment"
+        if gram_residual < eps * 100:
             return F_gram
 
-    # Gram alignment failed. Try truncated SVD as fallback.
-    if F_svd is not None and diag_svd.get("projection_error", float("inf")) < 0.5:
-        logger.debug(
-            "Falling back to truncated SVD (proj_err=%.2e, residual=%.2e)",
-            diag_svd.get("projection_error", 0), diag_svd.get("residual_norm", 0),
-        )
-        return F_svd
-
     # Fall back to eigendecomposition (legacy, squares condition number)
-    logger.debug("All methods failed, falling back to eigen solve")
+    if best_transform is not None:
+        logger.debug("Returning best candidate transform (%s) with residual %.2e",
+                     best_label, best_residual)
+        return best_transform
+
+    logger.debug("All direct methods failed, trying eigen solve")
 
     gram = backend.matmul(source_matrix, backend.transpose(source_matrix))
     if regularization > 0.0:
@@ -2073,17 +2114,12 @@ def _align_bytes_from_matrices(
             float(backend.to_numpy(tgt_norm)) + precision_tol
         )
 
-        # For cross-family merges, models may not share 100% of their structure.
-        # Accept the transform if:
-        # 1. Perfect alignment (CKA >= 1.0), or
-        # 2. CKA improved significantly (this is the optimal alignment for shared structure)
-        cka_improved = cka_after_direct > cka_before * 0.95  # Allow 5% tolerance for numerical noise
         is_perfect = cka_after_direct >= 1.0 - precision_tol or rel_error <= precision_tol
 
         logger.debug(
             "Direct solve result: cka_before=%.4f, cka_after=%.4f, rel_error=%.2e, "
-            "improved=%s, perfect=%s",
-            cka_before, cka_after_direct, rel_error, cka_improved, is_perfect,
+            "perfect=%s",
+            cka_before, cka_after_direct, rel_error, is_perfect,
         )
 
         if is_perfect:
@@ -2098,28 +2134,6 @@ def _align_bytes_from_matrices(
                 "cka_before": cka_before,
                 "cka_after": cka_after_direct,
                 "alignment_error": 0.0,
-                "iterations": 0,
-            }
-
-        # For cross-family merges: if CKA didn't drop significantly, this is likely
-        # the optimal alignment via shared subspace. Accept it instead of falling
-        # through to GramAligner which can make things worse.
-        if cka_improved and cka_after_direct > 0.5:
-            logger.debug(
-                "Accepting shared-subspace alignment (CKA=%.4f). "
-                "This is optimal for cross-family models that don't share 100%% structure.",
-                cka_after_direct,
-            )
-            aligned_source = backend.matmul(source_embed, transform)
-            backend.eval(aligned_source)
-            return {
-                "aligned_source": aligned_source,
-                "aligned_matrix": aligned_matrix,
-                "anchor_labels": anchor_labels,
-                "feature_transform": transform,
-                "cka_before": cka_before,
-                "cka_after": cka_after_direct,
-                "alignment_error": rel_error,
                 "iterations": 0,
             }
 
@@ -2164,9 +2178,9 @@ def _align_bytes_from_matrices(
                     "alignment_error": 0.0,
                     "iterations": 0,
                 }
-    # When exact solve fails, always fall through to GramAligner iterative method.
+    # When the direct solve is not exact, continue with GramAligner.
     # The iterative approach handles ill-conditioned matrices and cross-dimensional
-    # alignment that the exact solve cannot.
+    # alignment that the direct solve cannot.
 
     rank = _matrix_rank_for_alignment(source_matrix, backend, eps=precision_tol)
 
@@ -2194,18 +2208,7 @@ def _align_bytes_from_matrices(
 
     cka_after = compute_cka(aligned_matrix, target_matrix, backend=backend).cka
 
-    # Trust GramAligner's CKA when our recomputation gives lower values
-    # (can happen due to space mismatches in centered vs uncentered matrices)
-    if result.achieved_cka > cka_after:
-        logger.debug(
-            "Using GramAligner CKA (%.4f) over recomputed CKA (%.4f)",
-            result.achieved_cka, cka_after,
-        )
-        cka_after = result.achieved_cka
-
-    if result.achieved_cka >= 1.0 - precision_tol:
-        cka_after = 1.0
-    elif cka_after >= 1.0 - precision_tol:
+    if cka_after >= 1.0 - precision_tol:
         cka_after = 1.0
     elif require_phase_lock and rank == source_matrix.shape[0]:
         sample_transform = backend.array(result.sample_transform)

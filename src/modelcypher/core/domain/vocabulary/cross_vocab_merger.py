@@ -78,6 +78,7 @@ class CrossVocabMergeConfig:
 
     # Advanced options
     use_embedding_similarity: bool = True  # Use embedding cosine for alignment
+    exact_match_only: bool = False  # Force exact token matches only
     max_alignments_per_token: int = 3  # Max target tokens per source token
     anchor_count: int = 1000  # Anchors for projection alignment
     regularization: float = 1e-6
@@ -328,9 +329,10 @@ class CrossVocabMerger:
             self.config.similarity_threshold,
             max_prefix_length=self.config.max_prefix_length,
             max_prefix_matches=self.config.max_prefix_matches,
+            exact_only=self.config.exact_match_only,
         )
 
-        if not self.config.use_embedding_similarity:
+        if self.config.exact_match_only or not self.config.use_embedding_similarity:
             return alignment_map
 
         target_vocab_size = alignment_map.target_vocab_size

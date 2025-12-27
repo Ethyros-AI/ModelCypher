@@ -547,11 +547,17 @@ class UnifiedGeometricMerger:
             time.perf_counter() - analyze_start,
         )
 
-        if geometry.overall_cka != 1.0:
-            logger.info(
-                "PROBE BAROMETER: Overall CKA=%.4f. "
-                "Phase-lock alignment will resolve per-layer alignment before merging.",
-                geometry.overall_cka,
+        from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
+        sample_array = next(iter(source_weights.values()), None)
+        phase_tol = (
+            machine_epsilon(self._backend, sample_array) if sample_array is not None else 1e-7
+        )
+        if geometry.overall_cka < 1.0 - phase_tol:
+            raise RuntimeError(
+                "PROBE BAROMETER: Overall CKA=%.6f < 1.0. "
+                "Phase lock is required before merging."
+                % geometry.overall_cka
             )
 
         # Execute merge using geometry

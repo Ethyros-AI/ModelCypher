@@ -380,11 +380,11 @@ def solve_via_truncated_svd(
     *,
     rank_threshold: float | None = None,
 ) -> tuple[Array | None, dict]:
-    """Solve source @ F = target via truncated SVD pseudo-inverse.
+    """Solve source @ F = target via rank-truncated spectral inverse.
 
     For rank-deficient but CONSISTENT systems (where target is in the column
     space of source), this gives the EXACT minimum-norm solution:
-        F = source^+ @ target = V @ S^{-1} @ U^T @ target
+        F = V @ S^{-1} @ U^T @ target
 
     Unlike regularized approaches, this does not perturb the solution. It
     truncates to the effective rank and solves exactly in that subspace.
@@ -493,7 +493,7 @@ def solve_via_truncated_svd(
     target_norm = float(b.to_numpy(b.norm(target)))
     diagnostics["projection_error"] = proj_error / (target_norm + eps)
 
-    # Compute pseudo-inverse: F = V @ S^{-1} @ U^T @ target
+    # Compute support-space inverse: F = V @ S^{-1} @ U^T @ target
     # Step 1: U^T @ target -> [k, d_target]
     Ut_target = b.matmul(b.transpose(U_k), target)
     b.eval(Ut_target)
@@ -613,7 +613,7 @@ def solve_via_gram_alignment(
     M = b.matmul(b.transpose(U_s_k), U_t_k)  # [k, k]
     b.eval(M)
 
-    U_proc, S_proc, Vt_proc = b.svd(M)
+    U_proc, S_proc, Vt_proc = svd_via_eigh(b, M, full_matrices=False)
     b.eval(U_proc, S_proc, Vt_proc)
 
     R = b.matmul(U_proc, Vt_proc)  # [k, k]
