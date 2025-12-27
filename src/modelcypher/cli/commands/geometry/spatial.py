@@ -66,7 +66,7 @@ def _extract_activations_from_model(
     """
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.backends.mlx_backend import MLXBackend
-    from modelcypher.core.domain.geometry.spatial_3d import SPATIAL_PRIME_ATLAS
+    from modelcypher.core.domain.agents.spatial_atlas import SpatialConceptInventory
 
     typer.echo(f"Loading model from {model_path}...")
     model, tokenizer = load_model_for_training(model_path)
@@ -86,9 +86,10 @@ def _extract_activations_from_model(
     anchor_activations = {}
     pending_activations = []
 
-    typer.echo(f"Probing {len(SPATIAL_PRIME_ATLAS)} spatial anchors...")
+    anchors = SpatialConceptInventory.all_concepts()
+    typer.echo(f"Probing {len(anchors)} spatial anchors...")
 
-    for anchor in SPATIAL_PRIME_ATLAS:
+    for anchor in anchors:
         try:
             tokens = tokenizer.encode(anchor.prompt)
             input_ids = backend.array([tokens])
@@ -104,11 +105,11 @@ def _extract_activations_from_model(
 
             activation = backend.mean(hidden[0], axis=0)
             backend.async_eval(activation)
-            anchor_activations[anchor.name] = activation
+            anchor_activations[anchor.id] = activation
             pending_activations.append(activation)
 
         except Exception as e:
-            typer.echo(f"  Warning: Failed anchor {anchor.name}: {e}", err=True)
+            typer.echo(f"  Warning: Failed anchor {anchor.id}: {e}", err=True)
 
     # Sync all pending activations
     if pending_activations:
@@ -144,8 +145,11 @@ def spatial_anchors(
     """
     context = _context(ctx)
 
+    from modelcypher.core.domain.agents.spatial_atlas import (
+        SpatialCategory,
+        SpatialConceptInventory,
+    )
     from modelcypher.core.domain.geometry.spatial_3d import (
-        SPATIAL_PRIME_ATLAS,
         SpatialAxis,
         get_spatial_anchors_by_axis,
     )
@@ -159,10 +163,18 @@ def spatial_anchors(
             typer.echo(f"Invalid axis: {axis}. Use: x_lateral, y_vertical, z_depth", err=True)
             raise typer.Exit(1)
     else:
-        anchors = SPATIAL_PRIME_ATLAS
+        anchors = SpatialConceptInventory.all_concepts()
 
     if category:
-        anchors = [a for a in anchors if a.category == category]
+        try:
+            category_enum = SpatialCategory(category)
+        except ValueError:
+            typer.echo(
+                f"Invalid category: {category}. Use: vertical, lateral, depth, mass, furniture",
+                err=True,
+            )
+            raise typer.Exit(1)
+        anchors = [a for a in anchors if a.category == category_enum]
 
     payload = {
         "_schema": "mc.geometry.spatial.anchors.v1",
@@ -173,12 +185,12 @@ def spatial_anchors(
                 "expected_x": a.expected_x,
                 "expected_y": a.expected_y,
                 "expected_z": a.expected_z,
-                "category": a.category,
+                "category": a.category.value,
             }
             for a in anchors
         ],
         "count": len(anchors),
-        "categories": list(set(a.category for a in anchors)),
+        "categories": list(set(a.category.value for a in anchors)),
     }
 
     if context.output_format == "text":
@@ -191,7 +203,7 @@ def spatial_anchors(
         ]
         for a in anchors:
             lines.append(
-                f"{a.name:<15} {a.expected_x:>6.2f} {a.expected_y:>6.2f} {a.expected_z:>6.2f} {a.category:<12} {a.prompt[:40]}"
+                f"{a.name:<15} {a.expected_x:>6.2f} {a.expected_y:>6.2f} {a.expected_z:>6.2f} {a.category.value:<12} {a.prompt[:40]}"
             )
 
         lines.extend(
@@ -580,10 +592,8 @@ def spatial_probe_model(
 
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.backends.mlx_backend import MLXBackend
-    from modelcypher.core.domain.geometry.spatial_3d import (
-        SPATIAL_PRIME_ATLAS,
-        Spatial3DAnalyzer,
-    )
+    from modelcypher.core.domain.agents.spatial_atlas import SpatialConceptInventory
+    from modelcypher.core.domain.geometry.spatial_3d import Spatial3DAnalyzer
 
     typer.echo(f"Loading model from {model_path}...")
     model, tokenizer = load_model_for_training(model_path)
@@ -604,9 +614,10 @@ def spatial_probe_model(
     anchor_activations = {}
     pending_activations = []
 
-    typer.echo(f"Probing {len(SPATIAL_PRIME_ATLAS)} spatial anchors...")
+    anchors = SpatialConceptInventory.all_concepts()
+    typer.echo(f"Probing {len(anchors)} spatial anchors...")
 
-    for anchor in SPATIAL_PRIME_ATLAS:
+    for anchor in anchors:
         try:
             tokens = tokenizer.encode(anchor.prompt)
             input_ids = backend.array([tokens])
@@ -623,11 +634,11 @@ def spatial_probe_model(
             activation = backend.mean(hidden[0], axis=0)
             # Use async_eval for pipeline parallelism - overlap CPU tokenization with GPU compute
             backend.async_eval(activation)
-            anchor_activations[anchor.name] = activation
+            anchor_activations[anchor.id] = activation
             pending_activations.append(activation)
 
         except Exception as e:
-            typer.echo(f"  Warning: Failed anchor {anchor.name}: {e}", err=True)
+            typer.echo(f"  Warning: Failed anchor {anchor.id}: {e}", err=True)
 
     # Final sync - materialize all pending activations
     if pending_activations:

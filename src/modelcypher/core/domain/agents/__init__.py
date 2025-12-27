@@ -136,5 +136,11 @@ from .sequence_invariant_atlas import (
     TriangulatedScore,
     TriangulationScorer,
 )
+from .spatial_atlas import (
+    SpatialAxis,
+    SpatialCategory,
+    SpatialConcept,
+    SpatialConceptInventory,
+)
 from .task_diversion_detector import TaskDiversionDetector
 from .unified_atlas import *  # noqa: F401,F403

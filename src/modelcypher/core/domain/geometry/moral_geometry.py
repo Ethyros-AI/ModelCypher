@@ -541,20 +541,3 @@ class MoralGeometryAnalyzer:
             opposition_detected=mean_opp > 0.5,
         )
 
-
-# Convenience probes list matching anchor format
-MORAL_PRIME_ATLAS = [
-    type(
-        "MoralAnchor",
-        (),
-        {
-            "concept": c.id,
-            "name": c.name,
-            "prompt": f"The word {c.name.lower()} represents",
-            "foundation": c.foundation,
-            "axis": c.axis,
-            "level": c.level,
-        },
-    )()
-    for c in ALL_MORAL_PROBES
-]

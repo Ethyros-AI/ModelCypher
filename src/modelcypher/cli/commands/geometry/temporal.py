@@ -56,22 +56,23 @@ def temporal_anchors(
     """
     List the Temporal Prime Atlas anchors.
 
-    Shows the 23 temporal anchors with their axis assignments and ordering levels.
+    Shows the 25 temporal anchors with their axis assignments and ordering levels.
     These anchors probe the model's temporal geometry.
 
     Axes:
     - direction: past → yesterday → today → tomorrow → future
     - duration: moment → hour → day → year → century
-    - causality: because → causes → leads → therefore → results
+    - causality: because → causes → leads to → therefore → results in
     """
     context = _context(ctx)
 
-    from modelcypher.core.domain.geometry.temporal_topology import (
-        TEMPORAL_PRIME_ATLAS,
+    from modelcypher.core.domain.agents.temporal_atlas import (
         TemporalAxis,
+        TemporalCategory,
+        TemporalConceptInventory,
     )
 
-    anchors = TEMPORAL_PRIME_ATLAS
+    anchors = TemporalConceptInventory.all_concepts()
 
     if axis:
         try:
@@ -82,7 +83,15 @@ def temporal_anchors(
             raise typer.Exit(1)
 
     if category:
-        anchors = [a for a in anchors if a.category.value == category]
+        try:
+            category_enum = TemporalCategory(category)
+        except ValueError:
+            typer.echo(
+                f"Invalid category: {category}. Use: tense, duration, causality, lifecycle, sequence",
+                err=True,
+            )
+            raise typer.Exit(1)
+        anchors = [a for a in anchors if a.category == category_enum]
 
     if context.output_format == "text":
         lines = [
@@ -94,7 +103,7 @@ def temporal_anchors(
             "-" * 70,
         ]
         for a in anchors:
-            lines.append(f"{a.concept:<15} {a.axis.value:<12} {a.level:<6} {a.category.value:<25}")
+            lines.append(f"{a.id:<15} {a.axis.value:<12} {a.level:<6} {a.category.value:<25}")
         lines.append("")
         lines.append(f"Total: {len(anchors)} anchors")
         write_output("\n".join(lines), context.output_format, context.pretty)
@@ -104,7 +113,7 @@ def temporal_anchors(
         "_schema": "mc.geometry.temporal.anchors.v1",
         "anchors": [
             {
-                "concept": a.concept,
+                "concept": a.id,
                 "axis": a.axis.value,
                 "level": a.level,
                 "category": a.category.value,
@@ -137,10 +146,8 @@ def temporal_probe_model(
 
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.backends.mlx_backend import MLXBackend
-    from modelcypher.core.domain.geometry.temporal_topology import (
-        TEMPORAL_PRIME_ATLAS,
-        TemporalTopologyAnalyzer,
-    )
+    from modelcypher.core.domain.agents.temporal_atlas import TemporalConceptInventory
+    from modelcypher.core.domain.geometry.temporal_topology import TemporalTopologyAnalyzer
 
     typer.echo(f"Loading model from {model_path}...")
     model, tokenizer = load_model_for_training(model_path)
@@ -164,9 +171,10 @@ def temporal_probe_model(
     backend = MLXBackend()
     anchor_activations = {}
 
-    typer.echo(f"Probing {len(TEMPORAL_PRIME_ATLAS)} temporal anchors...")
+    anchors = TemporalConceptInventory.all_concepts()
+    typer.echo(f"Probing {len(anchors)} temporal anchors...")
 
-    for anchor in TEMPORAL_PRIME_ATLAS:
+    for anchor in anchors:
         try:
             tokens = tokenizer.encode(anchor.prompt)
             input_ids = backend.array([tokens])
@@ -182,10 +190,10 @@ def temporal_probe_model(
 
             activation = backend.mean(hidden[0], axis=0)
             backend.eval(activation)
-            anchor_activations[anchor.concept] = backend.to_numpy(activation)
+            anchor_activations[anchor.id] = backend.to_numpy(activation)
 
         except Exception as e:
-            typer.echo(f"  Warning: Failed anchor {anchor.concept}: {e}", err=True)
+            typer.echo(f"  Warning: Failed anchor {anchor.id}: {e}", err=True)
 
     if not anchor_activations:
         typer.echo("Error: No activations extracted.", err=True)

@@ -205,30 +205,21 @@ def solve_full_row_rank_via_qr(
     source: Array,
     target: Array,
 ) -> tuple[Array | None, dict]:
-    """Solve source @ F = target for minimum-norm F via QR factorization.
+    """Solve source @ F = target via QR factorization.
 
-    This uses QR factorization of source^T to avoid condition number squaring.
-    For the underdetermined system A @ x = b where A is [n, d] with n <= d
-    (full row rank), the minimum-norm solution is:
-        x = A^T (A A^T)^-1 b
+    Handles both:
+    - Underdetermined (n_samples <= d_source): minimum-norm solution
+    - Overdetermined (n_samples > d_source): least-squares solution
 
-    The normal equations approach squares the condition number: κ(A A^T) = κ(A)².
-    This QR-based approach maintains κ(R) = κ(A), providing better stability.
-
-    Algorithm:
-        A^T = Q @ R  where Q [d, n], R [n, n]
-        A = R^T @ Q^T
-        A @ F = B  →  R^T @ Q^T @ F = B
-        Let Y = Q^T @ F, then R^T @ Y = B
-        Solve: Y = R^{-T} @ B
-        Then: F = Q @ Y
+    Uses QR factorization to avoid condition number squaring that occurs
+    with normal equations. Maintains κ(R) = κ(source), not κ(source)².
 
     Parameters
     ----------
     backend : Backend
         Compute backend.
     source : Array
-        Source matrix [n_samples, d_source] with n_samples <= d_source.
+        Source matrix [n_samples, d_source].
     target : Array
         Target matrix [n_samples, d_target].
 
@@ -241,6 +232,7 @@ def solve_full_row_rank_via_qr(
         - condition: estimated condition number
         - residual_norm: relative residual ||source @ F - target|| / ||target||
         - method: "qr", "qr_regularized", or "failed"
+        - system_type: "underdetermined" or "overdetermined"
     """
     b = backend
     source = b.astype(source, "float32")
@@ -264,20 +256,51 @@ def solve_full_row_rank_via_qr(
         "n_samples": n_samples,
         "d_source": d_source,
         "d_target": d_target,
+        "system_type": "underdetermined" if n_samples <= d_source else "overdetermined",
     }
 
     if n_samples == 0 or d_source == 0:
         return None, diagnostics
 
-    # QR factorization of source^T: source^T = Q @ R
-    # source^T is [d_source, n_samples] → Q [d_source, n_samples], R [n_samples, n_samples]
+    # Branch based on system type
+    if n_samples <= d_source:
+        # UNDERDETERMINED: more unknowns than equations
+        # Minimum-norm solution via QR of source^T
+        return _solve_underdetermined_qr(b, source, target, eps, diagnostics)
+    else:
+        # OVERDETERMINED: more equations than unknowns
+        # Least-squares solution via QR of source
+        return _solve_overdetermined_qr(b, source, target, eps, diagnostics)
+
+
+def _solve_underdetermined_qr(
+    b: Backend,
+    source: Array,
+    target: Array,
+    eps: float,
+    diagnostics: dict,
+) -> tuple[Array | None, dict]:
+    """Solve underdetermined system (n_samples <= d_source) via QR of source^T.
+
+    Algorithm:
+        source^T = Q @ R  where Q [d_source, n_samples], R [n_samples, n_samples]
+        source = R^T @ Q^T
+        source @ F = target  →  R^T @ Q^T @ F = target
+        Let Y = Q^T @ F, then R^T @ Y = target
+        Solve: Y = R^{-T} @ target (lower triangular solve)
+        Then: F = Q @ Y (minimum-norm solution)
+    """
+    n_samples = diagnostics["n_samples"]
+    d_source = diagnostics["d_source"]
+
+    # QR of source^T: [d_source, n_samples] → Q [d_source, n_samples], R [n_samples, n_samples]
     try:
         Q, R = b.qr(b.transpose(source))
         b.eval(Q, R)
     except Exception:
         return None, diagnostics
 
-    # Check R conditioning via diagonal elements
+    # R is [n_samples, n_samples] - square upper triangular
     R_diag = b.diag(R)
     b.eval(R_diag)
     R_diag_np = [abs(float(v)) for v in b.to_numpy(R_diag).tolist()]
@@ -287,54 +310,129 @@ def solve_full_row_rank_via_qr(
     max_diag = max(R_diag_np)
     min_diag = min(R_diag_np)
 
-    # Condition estimate (for upper triangular, cond ≈ max/min diagonal)
     condition_est = max_diag / (min_diag + eps) if min_diag > 0 else float("inf")
     diagnostics["condition"] = condition_est
 
-    # Compute rank from diagonal
     rank_threshold = eps * max_diag * max(n_samples, d_source)
     rank = sum(1 for v in R_diag_np if v > rank_threshold)
     diagnostics["rank"] = rank
 
-    # Determine regularization based on conditioning
-    # For rank-deficient systems, use stronger regularization to get approximate solution
+    # Apply regularization if needed
     if rank < n_samples:
-        # Rank-deficient: use regularization proportional to the gap
-        # This gives a minimum-norm approximate solution
         regularization = max_diag * math.sqrt(eps) * (n_samples - rank + 1)
         R_reg = R + regularization * b.eye(n_samples)
         b.eval(R_reg)
         diagnostics["method"] = "qr_rank_deficient"
     elif min_diag < eps * max_diag:
-        # Full rank but ill-conditioned: use light regularization
         regularization = eps * max_diag
         R_reg = R + regularization * b.eye(n_samples)
         b.eval(R_reg)
         diagnostics["method"] = "qr_regularized"
     else:
-        # Well-conditioned: no regularization needed
         R_reg = R
         diagnostics["method"] = "qr"
 
-    # Solve R^T @ Y = target for Y
-    # R^T is lower triangular [n_samples, n_samples]
-    # target is [n_samples, d_target]
+    # Solve R^T @ Y = target (lower triangular)
     try:
         R_T = b.transpose(R_reg)
         Y = b.solve(R_T, target)
         b.eval(Y)
     except Exception:
-        # Solve failed (singular even with regularization)
         diagnostics["method"] = "failed"
         return None, diagnostics
 
     # F = Q @ Y
-    # Q is [d_source, n_samples], Y is [n_samples, d_target]
-    # F is [d_source, d_target]
     F = b.matmul(Q, Y)
     b.eval(F)
 
-    # Compute residual to verify solution quality
+    return _compute_residual_and_refine(b, source, target, F, Q, R_reg, eps, diagnostics)
+
+
+def _solve_overdetermined_qr(
+    b: Backend,
+    source: Array,
+    target: Array,
+    eps: float,
+    diagnostics: dict,
+) -> tuple[Array | None, dict]:
+    """Solve overdetermined system (n_samples > d_source) via QR of source.
+
+    Algorithm:
+        source = Q @ R  where Q [n_samples, d_source], R [d_source, d_source]
+        source @ F = target
+        Q @ R @ F = target
+        R @ F = Q^T @ target (since Q is orthonormal)
+        Solve: F = R^{-1} @ Q^T @ target (upper triangular solve)
+    """
+    n_samples = diagnostics["n_samples"]
+    d_source = diagnostics["d_source"]
+
+    # QR of source: [n_samples, d_source] → Q [n_samples, d_source], R [d_source, d_source]
+    try:
+        Q, R = b.qr(source)
+        b.eval(Q, R)
+    except Exception:
+        return None, diagnostics
+
+    # R is [d_source, d_source] - square upper triangular
+    R_diag = b.diag(R)
+    b.eval(R_diag)
+    R_diag_np = [abs(float(v)) for v in b.to_numpy(R_diag).tolist()]
+    if not R_diag_np:
+        return None, diagnostics
+
+    max_diag = max(R_diag_np)
+    min_diag = min(R_diag_np)
+
+    condition_est = max_diag / (min_diag + eps) if min_diag > 0 else float("inf")
+    diagnostics["condition"] = condition_est
+
+    rank_threshold = eps * max_diag * max(n_samples, d_source)
+    rank = sum(1 for v in R_diag_np if v > rank_threshold)
+    diagnostics["rank"] = rank
+
+    # Apply regularization if needed
+    if rank < d_source:
+        regularization = max_diag * math.sqrt(eps) * (d_source - rank + 1)
+        R_reg = R + regularization * b.eye(d_source)
+        b.eval(R_reg)
+        diagnostics["method"] = "qr_rank_deficient"
+    elif min_diag < eps * max_diag:
+        regularization = eps * max_diag
+        R_reg = R + regularization * b.eye(d_source)
+        b.eval(R_reg)
+        diagnostics["method"] = "qr_regularized"
+    else:
+        R_reg = R
+        diagnostics["method"] = "qr"
+
+    # Compute Q^T @ target
+    Qt_target = b.matmul(b.transpose(Q), target)
+    b.eval(Qt_target)
+
+    # Solve R @ F = Q^T @ target (upper triangular)
+    try:
+        F = b.solve(R_reg, Qt_target)
+        b.eval(F)
+    except Exception:
+        diagnostics["method"] = "failed"
+        return None, diagnostics
+
+    return _compute_residual_and_refine(b, source, target, F, Q, R_reg, eps, diagnostics)
+
+
+def _compute_residual_and_refine(
+    b: Backend,
+    source: Array,
+    target: Array,
+    F: Array,
+    Q: Array,
+    R_reg: Array,
+    eps: float,
+    diagnostics: dict,
+) -> tuple[Array, dict]:
+    """Compute residual and optionally apply iterative refinement."""
+    # Compute residual
     reconstructed = b.matmul(source, F)
     residual = reconstructed - target
     b.eval(reconstructed, residual)
@@ -344,14 +442,22 @@ def solve_full_row_rank_via_qr(
     rel_residual = res_norm / (tgt_norm + eps)
     diagnostics["residual_norm"] = rel_residual
 
-    # If residual is too large, try iterative refinement
+    # Iterative refinement if residual is large
     if rel_residual > eps * 100:
-        # One round of iterative refinement
         try:
-            # Solve for correction: source @ delta_F = residual
-            # Using same QR factorization
-            delta_Y = b.solve(R_T, -residual)
-            delta_F = b.matmul(Q, delta_Y)
+            n_samples = diagnostics["n_samples"]
+            d_source = diagnostics["d_source"]
+
+            if n_samples <= d_source:
+                # Underdetermined: use transpose solve
+                R_T = b.transpose(R_reg)
+                delta_Y = b.solve(R_T, -residual)
+                delta_F = b.matmul(Q, delta_Y)
+            else:
+                # Overdetermined: use direct solve
+                Qt_residual = b.matmul(b.transpose(Q), -residual)
+                delta_F = b.solve(R_reg, Qt_residual)
+
             F_refined = F + delta_F
             b.eval(F_refined)
 

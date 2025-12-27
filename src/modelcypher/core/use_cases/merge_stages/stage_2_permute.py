@@ -298,10 +298,16 @@ def stage_permute(
 
 
 def infer_hidden_dim(weights: dict[str, Any]) -> int:
-    """Infer hidden dimension from weight shapes."""
+    """Infer hidden dimension from weight shapes.
+
+    Must find a valid projection layer - no arbitrary defaults.
+    """
     for key, val in weights.items():
         if "q_proj" in key or "k_proj" in key:
             return val.shape[1]
         if "up_proj" in key or "gate_proj" in key:
             return val.shape[1]
-    return 4096
+    raise ValueError(
+        "Cannot infer hidden dimension: no q_proj, k_proj, up_proj, or gate_proj "
+        "found in weights. Available keys: " + ", ".join(list(weights.keys())[:10])
+    )

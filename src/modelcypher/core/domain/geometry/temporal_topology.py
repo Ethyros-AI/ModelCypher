@@ -36,167 +36,18 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from enum import Enum
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.agents.temporal_atlas import (
+    TemporalAxis,
+    TemporalConceptInventory,
+)
 
 if TYPE_CHECKING:
     import mlx.core as mx
 
 logger = logging.getLogger(__name__)
-
-
-class TemporalCategory(str, Enum):
-    """Categories of temporal anchors."""
-
-    TENSE = "tense"  # yesterday, today, tomorrow
-    DURATION = "duration"  # moment, hour, day, year, century
-    CAUSALITY = "causality"  # because, therefore, causes
-    LIFECYCLE = "lifecycle"  # birth, childhood, adulthood, death
-    SEQUENCE = "sequence"  # first, then, next, finally, last
-
-
-class TemporalAxis(str, Enum):
-    """Axes of the temporal manifold."""
-
-    DIRECTION = "direction"  # Past (-1) to Future (+1)
-    DURATION = "duration"  # Short (-1) to Long (+1)
-    CAUSALITY = "causality"  # Cause (-1) to Effect (+1)
-
-
-@dataclass(frozen=True)
-class TemporalAnchor:
-    """A probe anchor for temporal structure."""
-
-    concept: str
-    prompt: str
-    category: TemporalCategory
-    axis: TemporalAxis
-    level: int  # 1-5 ordering within axis (1=lowest, 5=highest)
-
-
-# The Temporal Prime Atlas: 23 anchors across 5 categories
-TEMPORAL_PRIME_ATLAS: list[TemporalAnchor] = [
-    # Tense (Past → Future) - Direction axis
-    TemporalAnchor(
-        "yesterday",
-        "The word yesterday represents",
-        TemporalCategory.TENSE,
-        TemporalAxis.DIRECTION,
-        1,
-    ),
-    TemporalAnchor(
-        "today", "The word today represents", TemporalCategory.TENSE, TemporalAxis.DIRECTION, 3
-    ),
-    TemporalAnchor(
-        "tomorrow",
-        "The word tomorrow represents",
-        TemporalCategory.TENSE,
-        TemporalAxis.DIRECTION,
-        5,
-    ),
-    TemporalAnchor(
-        "past", "The word past represents", TemporalCategory.TENSE, TemporalAxis.DIRECTION, 1
-    ),
-    TemporalAnchor(
-        "future", "The word future represents", TemporalCategory.TENSE, TemporalAxis.DIRECTION, 5
-    ),
-    # Duration (Short → Long) - Duration axis
-    TemporalAnchor(
-        "moment", "The word moment represents", TemporalCategory.DURATION, TemporalAxis.DURATION, 1
-    ),
-    TemporalAnchor(
-        "hour", "The word hour represents", TemporalCategory.DURATION, TemporalAxis.DURATION, 2
-    ),
-    TemporalAnchor(
-        "day", "The word day represents", TemporalCategory.DURATION, TemporalAxis.DURATION, 3
-    ),
-    TemporalAnchor(
-        "year", "The word year represents", TemporalCategory.DURATION, TemporalAxis.DURATION, 4
-    ),
-    TemporalAnchor(
-        "century",
-        "The word century represents",
-        TemporalCategory.DURATION,
-        TemporalAxis.DURATION,
-        5,
-    ),
-    # Causality (Cause → Effect) - Causality axis
-    TemporalAnchor(
-        "because",
-        "The word because represents",
-        TemporalCategory.CAUSALITY,
-        TemporalAxis.CAUSALITY,
-        1,
-    ),
-    TemporalAnchor(
-        "causes",
-        "The word causes represents",
-        TemporalCategory.CAUSALITY,
-        TemporalAxis.CAUSALITY,
-        2,
-    ),
-    TemporalAnchor(
-        "leads", "The word leads represents", TemporalCategory.CAUSALITY, TemporalAxis.CAUSALITY, 3
-    ),
-    TemporalAnchor(
-        "therefore",
-        "The word therefore represents",
-        TemporalCategory.CAUSALITY,
-        TemporalAxis.CAUSALITY,
-        4,
-    ),
-    TemporalAnchor(
-        "results",
-        "The word results represents",
-        TemporalCategory.CAUSALITY,
-        TemporalAxis.CAUSALITY,
-        5,
-    ),
-    # Lifecycle (Beginning → End) - Direction axis
-    TemporalAnchor(
-        "birth", "The word birth represents", TemporalCategory.LIFECYCLE, TemporalAxis.DIRECTION, 1
-    ),
-    TemporalAnchor(
-        "childhood",
-        "The word childhood represents",
-        TemporalCategory.LIFECYCLE,
-        TemporalAxis.DIRECTION,
-        2,
-    ),
-    TemporalAnchor(
-        "adulthood",
-        "The word adulthood represents",
-        TemporalCategory.LIFECYCLE,
-        TemporalAxis.DIRECTION,
-        3,
-    ),
-    TemporalAnchor(
-        "elderly",
-        "The word elderly represents",
-        TemporalCategory.LIFECYCLE,
-        TemporalAxis.DIRECTION,
-        4,
-    ),
-    TemporalAnchor(
-        "death", "The word death represents", TemporalCategory.LIFECYCLE, TemporalAxis.DIRECTION, 5
-    ),
-    # Sequence (First → Last) - Direction axis
-    TemporalAnchor(
-        "beginning",
-        "The word beginning represents",
-        TemporalCategory.SEQUENCE,
-        TemporalAxis.DIRECTION,
-        1,
-    ),
-    TemporalAnchor(
-        "middle", "The word middle represents", TemporalCategory.SEQUENCE, TemporalAxis.DIRECTION, 3
-    ),
-    TemporalAnchor(
-        "ending", "The word ending represents", TemporalCategory.SEQUENCE, TemporalAxis.DIRECTION, 5
-    ),
-]
 
 
 @dataclass
@@ -282,7 +133,7 @@ class TemporalTopologyAnalyzer:
     """Analyzer for temporal structure in LLM representations.
 
     Implements the scientific method for testing the Latent Chronologist hypothesis:
-    1. Extract activations for 23 temporal anchors
+    1. Extract activations for 25 temporal concepts
     2. Measure axis orthogonality (Direction ⊥ Duration ⊥ Causality)
     3. Test gradient consistency (monotonic orderings)
     4. Detect Arrow of Time (past→future direction)
@@ -296,7 +147,8 @@ class TemporalTopologyAnalyzer:
             activations: Dict mapping anchor concept to activation vector (as list)
         """
         self.activations = activations
-        self._anchor_lookup = {a.concept: a for a in TEMPORAL_PRIME_ATLAS}
+        anchors = TemporalConceptInventory.all_concepts()
+        self._anchor_lookup = {a.id: a for a in anchors}
 
     def analyze(self) -> TemporalTopologyReport:
         """Run complete temporal topology analysis.
@@ -305,7 +157,8 @@ class TemporalTopologyAnalyzer:
             TemporalTopologyReport with all measurements
         """
         # Build activation matrix
-        concepts = [a.concept for a in TEMPORAL_PRIME_ATLAS if a.concept in self.activations]
+        anchors = TemporalConceptInventory.all_concepts()
+        concepts = [a.id for a in anchors if a.id in self.activations]
         if len(concepts) < 10:
             raise ValueError(f"Insufficient anchors: {len(concepts)} < 10 required")
 
@@ -603,7 +456,7 @@ def extract_temporal_activations(
 
     activations = {}
 
-    for anchor in TEMPORAL_PRIME_ATLAS:
+    for anchor in TemporalConceptInventory.all_concepts():
         # Tokenize prompt
         tokens = tokenizer.encode(anchor.prompt)
         input_ids = mx.array([tokens])
@@ -647,10 +500,10 @@ def extract_temporal_activations(
 
             # Get last token's activation
             act = hidden[0, -1, :].tolist()
-            activations[anchor.concept] = act
+            activations[anchor.id] = act
 
         except Exception as e:
-            logger.warning(f"Failed to extract activation for {anchor.concept}: {e}")
+            logger.warning(f"Failed to extract activation for {anchor.id}: {e}")
             continue
 
     return activations

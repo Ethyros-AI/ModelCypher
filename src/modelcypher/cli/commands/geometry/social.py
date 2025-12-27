@@ -54,7 +54,7 @@ def social_anchors(
     """
     List the Social Prime Atlas anchors.
 
-    Shows the 23 social anchors with their axis assignments and hierarchy levels.
+    Shows the 25 social anchors with their axis assignments and hierarchy levels.
     These anchors probe the model's social geometry.
 
     Axes:
@@ -64,12 +64,13 @@ def social_anchors(
     """
     context = _context(ctx)
 
-    from modelcypher.core.domain.geometry.social_geometry import (
-        SOCIAL_PRIME_ATLAS,
+    from modelcypher.core.domain.agents.social_atlas import (
         SocialAxis,
+        SocialCategory,
+        SocialConceptInventory,
     )
 
-    anchors = SOCIAL_PRIME_ATLAS
+    anchors = SocialConceptInventory.all_concepts()
 
     if axis:
         try:
@@ -80,7 +81,15 @@ def social_anchors(
             raise typer.Exit(1)
 
     if category:
-        anchors = [a for a in anchors if a.category.value == category]
+        try:
+            category_enum = SocialCategory(category)
+        except ValueError:
+            typer.echo(
+                f"Invalid category: {category}. Use: power_hierarchy, formality, kinship, status_markers, age",
+                err=True,
+            )
+            raise typer.Exit(1)
+        anchors = [a for a in anchors if a.category == category_enum]
 
     if context.output_format == "text":
         lines = [
@@ -92,7 +101,7 @@ def social_anchors(
             "-" * 70,
         ]
         for a in anchors:
-            lines.append(f"{a.name:<15} {a.axis.value:<12} {a.level:<6} {a.category.value:<25}")
+            lines.append(f"{a.id:<15} {a.axis.value:<12} {a.level:<6} {a.category.value:<25}")
         lines.append("")
         lines.append(f"Total: {len(anchors)} anchors")
         write_output("\n".join(lines), context.output_format, context.pretty)
@@ -102,7 +111,7 @@ def social_anchors(
         "_schema": "mc.geometry.social.anchors.v1",
         "anchors": [
             {
-                "name": a.name,
+                "name": a.id,
                 "axis": a.axis.value,
                 "level": a.level,
                 "category": a.category.value,
@@ -127,10 +136,8 @@ def social_probe_model(
 
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.backends.mlx_backend import MLXBackend
-    from modelcypher.core.domain.geometry.social_geometry import (
-        SOCIAL_PRIME_ATLAS,
-        SocialGeometryAnalyzer,
-    )
+    from modelcypher.core.domain.agents.social_atlas import SocialConceptInventory
+    from modelcypher.core.domain.geometry.social_geometry import SocialGeometryAnalyzer
 
     typer.echo(f"Loading model from {model_path}...")
     model, tokenizer = load_model_for_training(model_path)
@@ -154,9 +161,10 @@ def social_probe_model(
     backend = MLXBackend()
     anchor_activations = {}
 
-    typer.echo(f"Probing {len(SOCIAL_PRIME_ATLAS)} social anchors...")
+    anchors = SocialConceptInventory.all_concepts()
+    typer.echo(f"Probing {len(anchors)} social anchors...")
 
-    for anchor in SOCIAL_PRIME_ATLAS:
+    for anchor in anchors:
         try:
             tokens = tokenizer.encode(anchor.prompt)
             input_ids = backend.array([tokens])
@@ -172,10 +180,10 @@ def social_probe_model(
 
             activation = backend.mean(hidden[0], axis=0)
             backend.eval(activation)
-            anchor_activations[anchor.name] = activation
+            anchor_activations[anchor.id] = activation
 
         except Exception as e:
-            typer.echo(f"  Warning: Failed anchor {anchor.name}: {e}", err=True)
+            typer.echo(f"  Warning: Failed anchor {anchor.id}: {e}", err=True)
 
     if not anchor_activations:
         typer.echo("Error: No activations extracted.", err=True)

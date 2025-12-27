@@ -36,12 +36,17 @@ Usage:
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import svd_via_eigh
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    regularization_epsilon,
+    svd_via_eigh,
+)
 from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger(__name__)
@@ -57,27 +62,37 @@ class NullSpaceMethod(str, Enum):
 
 @dataclass(frozen=True)
 class NullSpaceFilterConfig:
-    """Configuration for null-space filtering."""
+    """Configuration for null-space filtering.
 
-    # Threshold for considering singular values as "null"
-    rank_threshold: float = 0.01
+    All thresholds are derived from the data's dtype and spectral properties
+    unless explicitly overridden. This ensures deterministic, geometry-driven
+    behavior without arbitrary "vibes" values.
+    """
+
+    # Threshold for considering singular values as "null".
+    # If None, derived from spectral gap: σ_i / σ_max where gap occurs.
+    # The spectral gap naturally separates signal from numerical noise.
+    rank_threshold: float | None = None
 
     # Maximum dimension of null space to use (memory bound)
     max_null_dim: int | None = None
 
-    # Minimum samples needed for reliable null space estimation
-    min_samples: int = 10
+    # Minimum samples needed for reliable null space estimation.
+    # If None, derived from dimension: max(2, ceil(log2(d))).
+    min_samples: int | None = None
 
     # Method for computing null space
     method: NullSpaceMethod = NullSpaceMethod.SVD
 
-    # Regularization for numerical stability
-    regularization: float = 1e-8
+    # Regularization for numerical stability.
+    # If None, uses regularization_epsilon(backend, array) - sqrt(machine_epsilon).
+    regularization: float | None = None
 
     # Whether to normalize activations before computing null space
     normalize_activations: bool = True
 
-    # Fraction of variance to preserve in null space (alternative to rank_threshold)
+    # Fraction of variance to preserve in null space (alternative to spectral gap).
+    # If set, overrides spectral-gap-based rank_threshold.
     variance_threshold: float | None = None
 
 
@@ -159,6 +174,68 @@ class ModelNullSpaceProfile:
     graftable_layers: list[int]  # Layers with significant null space
 
 
+def _compute_spectral_gap_threshold(
+    singular_values: list[float],
+    eps: float,
+) -> tuple[float, int]:
+    """Compute rank threshold from spectral gap.
+
+    The spectral gap is the largest relative drop between consecutive singular values.
+    This naturally separates signal (large singular values) from noise (small ones).
+
+    Args:
+        singular_values: List of singular values in descending order.
+        eps: Machine epsilon for the dtype.
+
+    Returns:
+        (threshold, row_space_dim) where threshold is the cutoff value
+        and row_space_dim is the number of singular values above it.
+    """
+    if not singular_values or singular_values[0] <= 0:
+        return 0.0, 0
+
+    n = len(singular_values)
+    if n == 1:
+        # Single singular value - it's either signal or noise based on magnitude
+        if singular_values[0] > eps:
+            return eps * singular_values[0], 1
+        return 0.0, 0
+
+    # Find largest spectral gap: max_i (σ_i / σ_{i+1})
+    # The gap indicates where signal ends and noise begins.
+    max_gap_ratio = 0.0
+    gap_idx = n  # Default: all are signal
+
+    for i in range(n - 1):
+        if singular_values[i + 1] > eps:
+            ratio = singular_values[i] / singular_values[i + 1]
+            if ratio > max_gap_ratio:
+                max_gap_ratio = ratio
+                gap_idx = i + 1  # Row space is [0, gap_idx)
+
+    # Threshold is geometric mean of values around the gap
+    if 0 < gap_idx < n and singular_values[gap_idx] > eps:
+        threshold = math.sqrt(singular_values[gap_idx - 1] * singular_values[gap_idx])
+    elif gap_idx == n:
+        # No significant gap found - use dtype-derived threshold
+        threshold = eps * singular_values[0]
+        # Count values above this threshold
+        gap_idx = sum(1 for s in singular_values if s > threshold)
+    else:
+        threshold = eps * singular_values[0]
+
+    return threshold, gap_idx
+
+
+def _derive_min_samples(d: int) -> int:
+    """Derive minimum samples from dimension.
+
+    Uses log2(d) as the minimum - this is the information-theoretic
+    minimum needed to distinguish d dimensions from random noise.
+    """
+    return max(2, int(math.ceil(math.log2(max(2, d)))))
+
+
 class NullSpaceFilter:
     """
     Filters weight updates to the null space of prior activations.
@@ -191,13 +268,20 @@ class NullSpaceFilter:
         backend = self._backend
         activation_matrix = backend.array(activation_matrix)
         backend.eval(activation_matrix)
-        
+
         n_samples = int(activation_matrix.shape[0])
         d = int(activation_matrix.shape[1])
 
-        if n_samples < self.config.min_samples:
+        # Derive min_samples from dimension if not specified
+        min_samples = (
+            self.config.min_samples
+            if self.config.min_samples is not None
+            else _derive_min_samples(d)
+        )
+
+        if n_samples < min_samples:
             logger.warning(
-                f"Only {n_samples} samples, need {self.config.min_samples} for reliable null space. "
+                f"Only {n_samples} samples, need {min_samples} for reliable null space. "
                 "Returning identity (no filtering)."
             )
             return NullSpaceProjection(
@@ -212,10 +296,18 @@ class NullSpaceFilter:
         # Normalize activations if configured
         if self.config.normalize_activations:
             norms = backend.norm(activation_matrix, axis=1, keepdims=True)
-            norms = backend.maximum(norms, backend.full(norms.shape, self.config.regularization))
+            backend.eval(norms)
+            # Use dtype-derived regularization
+            reg = (
+                self.config.regularization
+                if self.config.regularization is not None
+                else regularization_epsilon(backend, activation_matrix)
+            )
+            norms = backend.maximum(norms, backend.full(norms.shape, reg))
             activation_matrix = activation_matrix / norms
+            backend.eval(activation_matrix)
 
-        # Compute SVD
+        # Compute null space using the specified method
         if self.config.method == NullSpaceMethod.SVD:
             return self._compute_via_svd(activation_matrix)
         elif self.config.method == NullSpaceMethod.QR:
@@ -246,7 +338,9 @@ class NullSpaceFilter:
             )
 
         # Determine threshold
-        S_np = backend.to_numpy(S)
+        S_np = list(backend.to_numpy(S).tolist())
+        eps = machine_epsilon(backend, A)
+
         if self.config.variance_threshold is not None:
             # Keep enough singular values to explain (1 - variance_threshold) of variance
             total_var = float(sum(s**2 for s in S_np))
@@ -254,16 +348,19 @@ class NullSpaceFilter:
             row_space_dim = 0
             for i, s in enumerate(S_np):
                 cumvar += s**2
-                if cumvar / total_var >= (1 - self.config.variance_threshold):
+                if cumvar / (total_var + eps) >= (1 - self.config.variance_threshold):
                     row_space_dim = i + 1
                     break
             else:
                 row_space_dim = len(S_np)
             effective_threshold = float(S_np[row_space_dim - 1]) if row_space_dim <= len(S_np) else 0.0
-        else:
-            # Use relative threshold
-            effective_threshold = self.config.rank_threshold * float(S_np[0]) if len(S_np) > 0 else 0.0
+        elif self.config.rank_threshold is not None:
+            # User-specified relative threshold
+            effective_threshold = self.config.rank_threshold * float(S_np[0]) if S_np else 0.0
             row_space_dim = sum(1 for s in S_np if s > effective_threshold)
+        else:
+            # Derive threshold from spectral gap - the geometry tells us where signal ends
+            effective_threshold, row_space_dim = _compute_spectral_gap_threshold(S_np, eps)
 
         # Null space vectors are rows of Vh beyond row_space_dim
         null_vectors = Vh[row_space_dim:]  # Shape: [null_dim, d]
@@ -306,14 +403,20 @@ class NullSpaceFilter:
         # Find rank by looking at diagonal of R
         diag_R = backend.abs(backend.diag(R[: min(n_samples, d), : min(n_samples, d)]))
         backend.eval(diag_R)
-        diag_R_np = backend.to_numpy(diag_R)
+        diag_R_np = list(backend.to_numpy(diag_R).tolist())
+        eps = machine_epsilon(backend, A)
 
-        if len(diag_R_np) == 0:
+        if not diag_R_np:
             threshold = 0.0
             row_space_dim = 0
-        else:
+        elif self.config.rank_threshold is not None:
+            # User-specified relative threshold
             threshold = self.config.rank_threshold * float(diag_R_np[0])
             row_space_dim = int(sum(1 for val in diag_R_np if val > threshold))
+        else:
+            # Derive threshold from spectral gap of R diagonal
+            # For QR, diagonal of R behaves like singular values
+            threshold, row_space_dim = _compute_spectral_gap_threshold(diag_R_np, eps)
 
         # Null space vectors are columns of Q beyond row_space_dim
         null_vectors = backend.transpose(Q[:, row_space_dim:])  # Shape: [null_dim, d]
@@ -384,16 +487,26 @@ class NullSpaceFilter:
         eigenvalues_np = backend.to_numpy(eigenvalues)
         singular_values = backend.sqrt(backend.maximum(eigenvalues, backend.zeros(eigenvalues.shape)))
         backend.eval(singular_values)
-        singular_values_np = backend.to_numpy(singular_values)
+        singular_values_np = list(backend.to_numpy(singular_values).tolist())
+        eps = machine_epsilon(backend, A)
 
-        if len(singular_values_np) > 0 and singular_values_np[-1] > 0:
-            threshold = self.config.rank_threshold * float(singular_values_np[-1])
+        # Singular values from eigh are in ascending order - reverse for descending
+        singular_values_desc = singular_values_np[::-1]
+
+        if self.config.rank_threshold is not None:
+            # User-specified relative threshold
+            if singular_values_desc and singular_values_desc[0] > 0:
+                threshold = self.config.rank_threshold * float(singular_values_desc[0])
+            else:
+                threshold = 0.0
+            row_space_dim = sum(1 for s in singular_values_desc if s > threshold)
         else:
-            threshold = 0.0
+            # Derive threshold from spectral gap
+            threshold, row_space_dim = _compute_spectral_gap_threshold(singular_values_desc, eps)
 
-        null_mask = [val < threshold for val in singular_values_np]
-        null_dim = sum(null_mask)
-        row_space_dim = d - null_dim
+        null_dim = d - row_space_dim
+        # For eigenvalue method, null space corresponds to smallest eigenvalues (first in ascending order)
+        null_mask = [i < null_dim for i in range(d)]
 
         if self.config.max_null_dim is not None and null_dim > self.config.max_null_dim:
             # Take only the smallest eigenvalue directions
@@ -562,7 +675,7 @@ class NullSpaceFilter:
     def compute_model_null_space_profile(
         self,
         layer_activations: dict[int, Any],
-        graft_threshold: float = 0.1,
+        graft_threshold: float | None = None,
     ) -> ModelNullSpaceProfile:
         """
         Compute null space profile across all layers.
@@ -570,6 +683,8 @@ class NullSpaceFilter:
         Args:
             layer_activations: Dict mapping layer index to activation matrix.
             graft_threshold: Minimum null fraction for a layer to be "graftable".
+                If None, derived from mean null fraction across layers (layers
+                with above-average null space are graftable).
 
         Returns:
             ModelNullSpaceProfile with per-layer and aggregate statistics.
@@ -611,10 +726,18 @@ class NullSpaceFilter:
             total_null_dim += projection.null_dim
             total_dim += d
 
-            if null_fraction >= graft_threshold:
-                graftable_layers.append(layer_idx)
-
         mean_null_fraction = total_null_dim / total_dim if total_dim > 0 else 0.0
+
+        # Derive graft_threshold from geometry if not specified
+        # Layers with above-mean null fraction are naturally graftable
+        effective_graft_threshold = (
+            graft_threshold if graft_threshold is not None else mean_null_fraction
+        )
+
+        # Identify graftable layers
+        for layer_idx, profile in per_layer.items():
+            if profile.null_fraction >= effective_graft_threshold:
+                graftable_layers.append(layer_idx)
 
         return ModelNullSpaceProfile(
             per_layer=per_layer,
@@ -674,4 +797,7 @@ __all__ = [
     "LayerNullSpaceProfile",
     "ModelNullSpaceProfile",
     "filter_merge_delta_to_null_space",
+    # Helper functions for threshold derivation (exposed for testing)
+    "_compute_spectral_gap_threshold",
+    "_derive_min_samples",
 ]

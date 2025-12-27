@@ -1972,8 +1972,11 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             Returns:
                 List of spatial anchors with 3D coordinates
             """
+            from modelcypher.core.domain.agents.spatial_atlas import (
+                SpatialCategory,
+                SpatialConceptInventory,
+            )
             from modelcypher.core.domain.geometry.spatial_3d import (
-                SPATIAL_PRIME_ATLAS,
                 SpatialAxis,
                 get_spatial_anchors_by_axis,
             )
@@ -1985,10 +1988,16 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
                 except ValueError:
                     raise ValueError(f"Invalid axis: {axis}. Use: x_lateral, y_vertical, z_depth")
             else:
-                anchors = SPATIAL_PRIME_ATLAS
+                anchors = SpatialConceptInventory.all_concepts()
 
             if category:
-                anchors = [a for a in anchors if a.category == category]
+                try:
+                    category_enum = SpatialCategory(category)
+                except ValueError as exc:
+                    raise ValueError(
+                        f"Invalid category: {category}. Use: vertical, lateral, depth, mass, furniture"
+                    ) from exc
+                anchors = [a for a in anchors if a.category == category_enum]
 
             return {
                 "_schema": "mc.geometry.spatial.anchors.v1",
@@ -1999,7 +2008,7 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
                         "expectedX": a.expected_x,
                         "expectedY": a.expected_y,
                         "expectedZ": a.expected_z,
-                        "category": a.category,
+                        "category": a.category.value,
                     }
                     for a in anchors
                 ],
@@ -2226,10 +2235,8 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
 
             from modelcypher.adapters.model_loader import load_model_for_training
             from modelcypher.backends.mlx_backend import MLXBackend
-            from modelcypher.core.domain.geometry.spatial_3d import (
-                SPATIAL_PRIME_ATLAS,
-                Spatial3DAnalyzer,
-            )
+            from modelcypher.core.domain.agents.spatial_atlas import SpatialConceptInventory
+            from modelcypher.core.domain.geometry.spatial_3d import Spatial3DAnalyzer
 
             model_path = require_existing_directory(modelPath)
             model, tokenizer = load_model_for_training(str(model_path))
@@ -2237,7 +2244,7 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             backend = MLXBackend()
             anchor_activations = {}
 
-            for anchor in SPATIAL_PRIME_ATLAS:
+            for anchor in SpatialConceptInventory.all_concepts():
                 tokens = tokenizer.encode(anchor.prompt)
                 input_ids = mx.array([tokens])
 
@@ -2251,7 +2258,7 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
 
                     activation = mx.mean(hidden[0], axis=0)
                     mx.eval(activation)
-                    anchor_activations[anchor.name] = activation
+                    anchor_activations[anchor.id] = activation
                 except Exception:
                     pass  # Skip anchors that fail
 

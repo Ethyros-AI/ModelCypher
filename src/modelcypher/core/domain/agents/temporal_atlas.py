@@ -77,6 +77,10 @@ class TemporalConcept:
     def canonical_name(self) -> str:
         return self.name
 
+    @property
+    def prompt(self) -> str:
+        return f"The word {self.name.lower()} represents"
+
 
 # Tense Category (Direction Axis) - 5 probes
 TENSE_PROBES: tuple[TemporalConcept, ...] = (

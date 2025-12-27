@@ -36,7 +36,7 @@ from modelcypher.core.domain.geometry.permutation_aligner import Config as MLXAl
 from modelcypher.core.domain.geometry.permutation_aligner import (
     PermutationAligner as MLXPermutationAligner,
 )
-from modelcypher.core.domain.geometry.probes import CompositionalProbes
+from modelcypher.core.domain.geometry.compositional_probes import CompositionalProbes
 from modelcypher.core.domain.geometry.types import (
     AlignmentConfig,
     BatchMergerResult,

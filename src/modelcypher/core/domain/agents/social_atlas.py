@@ -80,6 +80,12 @@ class SocialConcept:
     def canonical_name(self) -> str:
         return self.name
 
+    @property
+    def prompt(self) -> str:
+        if self.category == SocialCategory.FORMALITY:
+            return f"The greeting {self.name.lower()} represents"
+        return f"The word {self.name.lower()} represents"
+
 
 # Power Hierarchy Category (Power Axis) - 5 probes
 POWER_HIERARCHY_PROBES: tuple[SocialConcept, ...] = (

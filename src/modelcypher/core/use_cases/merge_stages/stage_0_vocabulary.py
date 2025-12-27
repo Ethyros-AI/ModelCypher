@@ -60,22 +60,41 @@ _ANCHOR_CACHE_VERSION = 1
 
 @dataclass
 class VocabularyConfig:
-    """Configuration for Stage 0 vocabulary alignment."""
+    """Configuration for Stage 0 vocabulary alignment.
+
+    Note on thresholds:
+        All thresholds default to None and are derived from data at runtime:
+
+        - similarity_threshold: If None, derived from distribution of embedding
+          cosine similarities. Uses spectral gap to find natural boundary.
+
+        - confidence_threshold: If None, derived from alignment confidence
+          distribution using spectral gap detection.
+
+        - blend_alpha: If None, computed from relative alignment quality
+          (CKA scores) between source and target. Higher alignment quality
+          means higher weight for that model's embeddings.
+
+        - min_compatibility_score: If None, set to machine_epsilon - any
+          measurable compatibility is acceptable.
+
+        - min_coverage: If None, set to 0.0 - no arbitrary coverage floor.
+    """
 
     # Projection strategy: procrustes, pca, optimal_transport, cca
     projection_strategy: str = "procrustes"
 
-    # Alignment thresholds
-    similarity_threshold: float = 0.8
-    confidence_threshold: float = 0.5
+    # Alignment thresholds - None means derive from data
+    similarity_threshold: float | None = None
+    confidence_threshold: float | None = None
 
-    # Embedding blending
-    blend_alpha: float = 0.5
+    # Embedding blending - None means compute from alignment quality
+    blend_alpha: float | None = None
     preserve_special_tokens: bool = True
 
-    # Quality thresholds
-    min_compatibility_score: float = 0.3
-    min_coverage: float = 0.5
+    # Quality thresholds - None means no arbitrary floor
+    min_compatibility_score: float | None = None
+    min_coverage: float | None = None
 
     # Advanced
     use_embedding_similarity: bool = True

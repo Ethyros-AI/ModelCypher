@@ -83,6 +83,10 @@ class MoralConcept:
     def canonical_name(self) -> str:
         return self.name
 
+    @property
+    def prompt(self) -> str:
+        return f"The word {self.name.lower()} represents"
+
 
 # Care/Harm Foundation - Valence Axis (5 probes)
 CARE_HARM_PROBES: tuple[MoralConcept, ...] = (

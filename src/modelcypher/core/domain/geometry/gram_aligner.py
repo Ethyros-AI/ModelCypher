@@ -67,7 +67,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+    regularization_epsilon,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -435,7 +439,7 @@ class GramAligner:
         diff = K_s_t_c - K_t_c
         error = float(b.to_numpy(b.sqrt(b.sum(diff * diff))))
         norm_t = float(b.to_numpy(b.sqrt(b.sum(K_t_c * K_t_c))))
-        alignment_error = error / (norm_t + 1e-10)
+        alignment_error = error / (norm_t + division_epsilon(b, K_t_c))
 
         diagnostic = self._diagnose_alignment(source_transformed, target_centered, final_cka)
 
@@ -596,43 +600,41 @@ class GramAligner:
         eig_t, V_t = b.eigh(K_t_c)
         b.eval(eig_s, V_s, eig_t, V_t)
 
-        # Try different regularization levels for sample-space approach
-        for reg in [1e-6, 1e-8, 1e-10, 1e-12, 1e-14]:
-            eig_s_reg = b.maximum(eig_s, b.array(reg))
-            eig_t_reg = b.maximum(eig_t, b.array(reg))
+        # Sample-space approach with dtype-derived regularization (no cascade)
+        reg = regularization_epsilon(b, K_s_c_local)
+        eig_s_reg = b.maximum(eig_s, b.array(reg))
+        eig_t_reg = b.maximum(eig_t, b.array(reg))
 
-            # K_s^{-1/2} = V_s @ diag(1/sqrt(eig_s)) @ V_s^T
-            inv_sqrt_s = b.matmul(
-                V_s * b.reshape(1.0 / b.sqrt(eig_s_reg), (1, -1)),
-                b.transpose(V_s)
-            )
+        # K_s^{-1/2} = V_s @ diag(1/sqrt(eig_s)) @ V_s^T
+        inv_sqrt_s = b.matmul(
+            V_s * b.reshape(1.0 / b.sqrt(eig_s_reg), (1, -1)),
+            b.transpose(V_s)
+        )
 
-            # K_t^{1/2} = V_t @ diag(sqrt(eig_t)) @ V_t^T
-            sqrt_t = b.matmul(
-                V_t * b.reshape(b.sqrt(eig_t_reg), (1, -1)),
-                b.transpose(V_t)
-            )
-            b.eval(inv_sqrt_s, sqrt_t)
+        # K_t^{1/2} = V_t @ diag(sqrt(eig_t)) @ V_t^T
+        sqrt_t = b.matmul(
+            V_t * b.reshape(b.sqrt(eig_t_reg), (1, -1)),
+            b.transpose(V_t)
+        )
+        b.eval(inv_sqrt_s, sqrt_t)
 
-            # T = K_t^{1/2} @ K_s^{-1/2}
-            T = b.matmul(sqrt_t, inv_sqrt_s)
-            b.eval(T)
+        # T = K_t^{1/2} @ K_s^{-1/2}
+        T = b.matmul(sqrt_t, inv_sqrt_s)
+        b.eval(T)
 
-            # Transform source in sample space: A_s' = T @ A_s
-            # Result: A_s' @ A_s'^T = T @ K_s @ T^T = K_t
-            source_transformed_sample = b.matmul(T, source_centered)
-            b.eval(source_transformed_sample)
+        # Transform source in sample space: A_s' = T @ A_s
+        # Result: A_s' @ A_s'^T = T @ K_s @ T^T = K_t
+        source_transformed_sample = b.matmul(T, source_centered)
+        b.eval(source_transformed_sample)
 
-            # Compute feature transform F that achieves this: A_s @ F = A_s'
-            # F = A_s^T (A_s A_s^T)^-1 @ A_s' = A_s^T (A_s A_s^T)^-1 @ T @ A_s
-            F_sample = self._solve_feature_transform(
-                source_centered,
-                source_transformed_sample,
-                reg=reg,
-            )
-            if F_sample is None:
-                continue
-
+        # Compute feature transform F that achieves this: A_s @ F = A_s'
+        # F = A_s^T (A_s A_s^T)^-1 @ A_s' = A_s^T (A_s A_s^T)^-1 @ T @ A_s
+        F_sample = self._solve_feature_transform(
+            source_centered,
+            source_transformed_sample,
+            reg=reg,
+        )
+        if F_sample is not None:
             # Verify CKA
             source_aligned = b.matmul(source_centered, F_sample)
             K_aligned = b.matmul(source_aligned, b.transpose(source_aligned))
@@ -651,6 +653,10 @@ class GramAligner:
         max_iters = max_iterations or self._max_iterations
         best_F = F
         best_cka = 0.0
+
+        # dtype-derived thresholds for gradient descent
+        eps = machine_epsilon(b, source_centered)
+        div_eps = division_epsilon(b, source_centered)
 
         for iteration in range(max_iters):
             source_transformed = b.matmul(source_centered, F)
@@ -679,12 +685,12 @@ class GramAligner:
             grad_norm = b.sqrt(b.sum(grad * grad))
             b.eval(grad_norm)
             grad_norm_val = float(b.to_numpy(grad_norm))
-            if grad_norm_val < 1e-14:
+            if grad_norm_val < eps:
                 break
 
-            # Aggressive learning rate for faster convergence
-            lr = 1.0 / (1.0 + 0.001 * iteration)
-            F = F + lr * (grad / (grad_norm_val + 1e-12))
+            # Learning rate decay: 1/(1 + sqrt(eps)*iteration) derived from precision
+            lr = 1.0 / (1.0 + math.sqrt(eps) * iteration)
+            F = F + lr * (grad / (grad_norm_val + div_eps))
             b.eval(F)
 
         # Return best result
@@ -723,7 +729,9 @@ class GramAligner:
         hsic_yy = float(b.to_numpy(b.sum(K_y_c * K_y_c))) / ((n - 1) ** 2)
 
         denominator = math.sqrt(hsic_xx * hsic_yy)
-        if denominator < 1e-12:
+        # Use dtype-derived epsilon for denominator floor
+        div_eps = division_epsilon(b, K_x_c)
+        if denominator < div_eps:
             return 0.0
 
         cka = hsic_xy / denominator

@@ -17,89 +17,18 @@
 
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass
-from enum import Enum
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.types import (
+    CompositionAnalysis,
+    CompositionCategory,
+    CompositionProbe,
+    ConsistencyResult,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
-
-
-class CompositionCategory(str, Enum):
-    mental_predicate = "mentalPredicate"
-    action = "action"
-    evaluative = "evaluative"
-    temporal = "temporal"
-    spatial = "spatial"
-    quantified = "quantified"
-    relational = "relational"
-
-    MENTAL_PREDICATE = mental_predicate
-    ACTION = action
-    EVALUATIVE = evaluative
-    TEMPORAL = temporal
-    SPATIAL = spatial
-    QUANTIFIED = quantified
-    RELATIONAL = relational
-
-
-@dataclass
-class CompositionProbe:
-    """
-    A compositional probe: a phrase and its component primes.
-    """
-
-    phrase: str
-    components: list[str]
-    category: CompositionCategory
-
-
-@dataclass
-class CompositionAnalysis:
-    """
-    Result of compositional structure analysis.
-    """
-
-    probe: CompositionProbe
-    barycentric_weights: list[float]
-    residual_norm: float
-    centroid_similarity: float
-    component_angles: list[float]
-
-    @property
-    def is_compositional(self) -> bool:
-        return self.residual_norm < 0.5 and self.centroid_similarity > 0.3
-
-
-@dataclass
-class ConsistencyResult:
-    """Cross-model compositional consistency.
-
-    Attributes
-    ----------
-    probe_count : int
-        Number of probes compared.
-    analyses_a : list of CompositionAnalysis
-        Analyses from model A.
-    analyses_b : list of CompositionAnalysis
-        Analyses from model B.
-    barycentric_correlation : float
-        Pearson correlation of barycentric weights.
-    angular_correlation : float
-        Pearson correlation of component angles.
-    consistency_score : float
-        Composite consistency score.
-    """
-
-    probe_count: int
-    analyses_a: list[CompositionAnalysis]
-    analyses_b: list[CompositionAnalysis]
-    barycentric_correlation: float
-    angular_correlation: float
-    consistency_score: float
 
 
 class CompositionalProbes:
@@ -151,114 +80,85 @@ class CompositionalProbes:
 
     @staticmethod
     def analyze_composition(
-        composition_embedding: list[float],
-        component_embeddings: list[list[float]],
+        composition_embedding: "Array",
+        component_embeddings: "Array",
         probe: CompositionProbe,
         backend: "Backend | None" = None,
     ) -> CompositionAnalysis:
-        n = len(component_embeddings)
-        d = len(composition_embedding)
+        b = backend or get_default_backend()
+
+        comp = b.array(composition_embedding)
+        comps = b.array(component_embeddings)
+        b.eval(comp, comps)
+
+        # Ensure 1D comp
+        if comp.ndim == 2 and comp.shape[0] == 1:
+            comp = comp[0]
+
+        d = comp.shape[0]
+        n = comps.shape[0]
 
         if n == 0 or d == 0:
             return CompositionAnalysis(probe, [], float("inf"), 0.0, [])
 
-        b = backend or get_default_backend()
-        # Vectors using backend for speed
-        target = b.array(composition_embedding)
-        basis = b.array(component_embeddings)
+        # Centroid via Frechet mean (geodesic-only on curved manifolds)
+        from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 
-        # Centroid
-        centroid = b.mean(basis, axis=0)
+        rg = RiemannianGeometry(b)
+        centroid_result = rg.frechet_mean(comps, max_iterations=50, tolerance=b.finfo().eps)
+        centroid = centroid_result.mean
+        b.eval(centroid)
 
         # Centroid similarity
-        centroid_sim = CompositionalProbes.cosine_similarity(target, centroid, b)
+        centroid_sim_arr = CompositionalProbes._cosine_similarity(comp, centroid, b)
+        b.eval(centroid_sim_arr)
+        centroid_sim = float(b.to_numpy(centroid_sim_arr).item())
 
         # Component angles
         angles = []
         for i in range(n):
-            sim = CompositionalProbes.cosine_similarity(target, basis[i], b)
-            angles.append(sim)
+            sim_arr = CompositionalProbes._cosine_similarity(comp, comps[i], b)
+            b.eval(sim_arr)
+            angles.append(float(b.to_numpy(sim_arr).item()))
 
-        # Barycentric weights
-        weights, residual = CompositionalProbes.compute_barycentric_weights(target, basis, b)
+        # Barycentric weights via normal equations
+        # G = component_embeddings @ component_embeddings.T [N, N]
+        # rhs = component_embeddings @ composition_embedding [N]
+        G = b.matmul(comps, b.transpose(comps))  # [N, N]
+        rhs = b.matmul(comps, comp)  # [N]
+
+        # Regularize diagonal for stability
+        eps = b.finfo().eps
+        G = G + b.eye(n) * eps
+
+        weights_arr = b.solve(G, rhs)  # [N]
+        b.eval(weights_arr)
+        weights = b.to_numpy(weights_arr).tolist()
+
+        # Calc residual
+        reconstructed = b.matmul(weights_arr, comps)  # [D]
+        diff = comp - reconstructed
+        residual_norm_arr = b.norm(diff)
+        b.eval(residual_norm_arr)
+        residual_norm = float(b.to_numpy(residual_norm_arr).item())
 
         return CompositionAnalysis(
             probe=probe,
             barycentric_weights=weights,
-            residual_norm=residual,
+            residual_norm=residual_norm,
             centroid_similarity=centroid_sim,
             component_angles=angles,
         )
 
     @staticmethod
-    def compute_barycentric_weights(
-        target: "Array", basis: "Array", backend: "Backend"
-    ) -> tuple[list[float], float]:
-        # Use Moore-Penrose Pseudo-Inverse for robust least squares solution.
-        # target (d,) approx weights (n,) @ basis (n,d)
-        # target = basis.T @ weights
-        # weights = pinv(basis.T) @ target
-
-        try:
-            basis_t = backend.transpose(basis)
-            pinv_basis_t = backend.pinv(basis_t)
-            weights_vec = backend.matmul(pinv_basis_t, target)
-            backend.eval(weights_vec)
-            weights = backend.to_numpy(weights_vec).tolist()
-            reconstructed = backend.matmul(weights_vec, basis)
-            diff = target - reconstructed
-            residual_arr = backend.norm(diff)
-            backend.eval(residual_arr)
-            residual = float(backend.to_numpy(residual_arr).item())
-            return (weights, residual)
-        except Exception:
-            # Fallback to slower but more compatible method
-            basis_np = backend.to_numpy(basis)
-            target_np = backend.to_numpy(target)
-            # Manually compute pseudo-inverse using SVD
-            # basis is (n, d), basis.T is (d, n)
-            # For pinv(basis.T), we need SVD of (d, n) matrix
-            basis_t_arr = backend.transpose(backend.array(basis_np))
-            u, s, vt = backend.svd(basis_t_arr, compute_uv=True)
-            backend.eval(u, s, vt)
-            # pinv(basis.T) = V @ diag(1/s) @ U.T where SVD(basis.T) = U @ diag(s) @ V.T
-            # u shape is (d, d), but we only need first k columns where k = len(s)
-            # vt shape is (k, n), s shape is (k,)
-            s_np = backend.to_numpy(s)
-            k = len(s_np)
-            s_inv = backend.array([1.0 / si if si > 1e-10 else 0.0 for si in s_np])
-            backend.eval(s_inv)
-            # Take only first k columns of u: (d, k)
-            u_k = u[:, :k]
-            backend.eval(u_k)
-            # pinv_basis_t shape should be (n, d)
-            v = backend.transpose(vt)  # (k, n) -> (n, k)
-            u_k_t = backend.transpose(u_k)  # (d, k) -> (k, d)
-            pinv_basis_t = backend.matmul(v, backend.matmul(backend.diag(s_inv), u_k_t))
-            backend.eval(pinv_basis_t)
-            weights_vec = backend.matmul(pinv_basis_t, backend.array(target_np))
-            backend.eval(weights_vec)
-            weights = backend.to_numpy(weights_vec).tolist()
-            reconstructed = backend.matmul(weights_vec, backend.array(basis_np))
-            backend.eval(reconstructed)
-            diff = backend.array(target_np) - reconstructed
-            residual_arr = backend.norm(diff)
-            backend.eval(residual_arr)
-            residual = float(backend.to_numpy(residual_arr).item())
-            return (weights, residual)
-
-    @staticmethod
-    def cosine_similarity(a: "Array", b_vec: "Array", backend: "Backend") -> float:
-        dot_arr = backend.sum(a * b_vec)
-        norm_a_arr = backend.norm(a)
-        norm_b_arr = backend.norm(b_vec)
-        backend.eval(dot_arr, norm_a_arr, norm_b_arr)
-        dot = float(backend.to_numpy(dot_arr).item())
-        norm_a = float(backend.to_numpy(norm_a_arr).item())
-        norm_b = float(backend.to_numpy(norm_b_arr).item())
-        if norm_a < 1e-9 or norm_b < 1e-9:
-            return 0.0
-        return dot / (norm_a * norm_b)
+    def _cosine_similarity(a: "Array", b_vec: "Array", backend: "Backend") -> "Array":
+        # Returns scalar array
+        dot = backend.dot(a, b_vec)
+        norm_a = backend.norm(a)
+        norm_b = backend.norm(b_vec)
+        denom = norm_a * norm_b
+        eps = backend.finfo().eps
+        return backend.where(denom > eps, dot / denom, backend.array(0.0))
 
     @staticmethod
     def check_consistency(
@@ -270,20 +170,24 @@ class CompositionalProbes:
 
         n = len(analyses_a)
 
-        all_weights_a = []
-        all_weights_b = []
+        # Collect weights
+        weights_a: list[float] = []
+        weights_b: list[float] = []
         for i in range(n):
-            all_weights_a.extend(analyses_a[i].barycentric_weights)
-            all_weights_b.extend(analyses_b[i].barycentric_weights)
+            if len(analyses_a[i].barycentric_weights) == len(analyses_b[i].barycentric_weights):
+                weights_a.extend(analyses_a[i].barycentric_weights)
+                weights_b.extend(analyses_b[i].barycentric_weights)
 
-        all_angles_a = []
-        all_angles_b = []
+        # Collect angles
+        angles_a: list[float] = []
+        angles_b: list[float] = []
         for i in range(n):
-            all_angles_a.extend(analyses_a[i].component_angles)
-            all_angles_b.extend(analyses_b[i].component_angles)
+            if len(analyses_a[i].component_angles) == len(analyses_b[i].component_angles):
+                angles_a.extend(analyses_a[i].component_angles)
+                angles_b.extend(analyses_b[i].component_angles)
 
-        bary_corr = CompositionalProbes.pearson_correlation(all_weights_a, all_weights_b)
-        ang_corr = CompositionalProbes.pearson_correlation(all_angles_a, all_angles_b)
+        bary_corr = CompositionalProbes._pearson(weights_a, weights_b)
+        ang_corr = CompositionalProbes._pearson(angles_a, angles_b)
         score = 0.4 * max(0.0, bary_corr) + 0.6 * max(0.0, ang_corr)
 
         return ConsistencyResult(
@@ -296,64 +200,64 @@ class CompositionalProbes:
         )
 
     @staticmethod
-    def pearson_correlation(
-        a: list[float], b_list: list[float], backend: "Backend | None" = None
-    ) -> float:
-        if len(a) != len(b_list) or len(a) < 2:
+    def _pearson(a: list[float], b_list: list[float], backend: "Backend | None" = None) -> float:
+        if len(a) < 2 or len(b_list) < 2:
             return 0.0
 
         bk = backend or get_default_backend()
-        arr_a = bk.array(a)
-        arr_b = bk.array(b_list)
+        va = bk.array(a)
+        vb = bk.array(b_list)
 
-        mean_a = bk.mean(arr_a)
-        mean_b = bk.mean(arr_b)
+        ma = bk.mean(va)
+        mb = bk.mean(vb)
 
-        da = arr_a - mean_a
-        db = arr_b - mean_b
+        da = va - ma
+        db = vb - mb
 
-        sum_ab = bk.sum(da * db)
-        sum_a2 = bk.sum(da * da)
-        sum_b2 = bk.sum(db * db)
-        bk.eval(sum_ab, sum_a2, sum_b2)
+        num = bk.sum(da * db)
+        den = bk.sqrt(bk.sum(da**2) * bk.sum(db**2))
+        bk.eval(num, den)
 
-        sum_ab_val = float(bk.to_numpy(sum_ab).item())
-        sum_a2_val = float(bk.to_numpy(sum_a2).item())
-        sum_b2_val = float(bk.to_numpy(sum_b2).item())
-
-        denom = math.sqrt(sum_a2_val * sum_b2_val)
-        if denom > 1e-10:
-            return sum_ab_val / denom
-        if sum_a2_val == 0.0 and sum_b2_val == 0.0:
-            return 1.0
+        den_val = float(bk.to_numpy(den).item())
+        eps = bk.finfo().eps
+        if den_val > eps:
+            return float(bk.to_numpy(num).item()) / den_val
         return 0.0
 
     @staticmethod
     def analyze_all_probes(
-        prime_embeddings: dict[str, list[float]],
-        composition_embeddings: dict[str, list[float]],
-        probes: list[CompositionProbe] = STANDARD_PROBES,
+        prime_embeddings: dict[str, list[float] | "Array"],
+        composition_embeddings: dict[str, list[float] | "Array"],
+        probes: list[CompositionProbe] | None = None,
+        backend: "Backend | None" = None,
     ) -> list[CompositionAnalysis]:
         analyses = []
-        for probe in probes:
+        selected = probes or CompositionalProbes.STANDARD_PROBES
+        b = backend or get_default_backend()
+
+        for probe in selected:
             if probe.phrase not in composition_embeddings:
                 continue
 
             comp_embed = composition_embeddings[probe.phrase]
 
             component_embeds = []
-            all_found = True
-            for c in probe.components:
-                if c in prime_embeddings:
-                    component_embeds.append(prime_embeddings[c])
+            for component in probe.components:
+                if component in prime_embeddings:
+                    component_embeds.append(prime_embeddings[component])
                 else:
-                    all_found = False
+                    component_embeds = []
                     break
 
-            if not all_found:
+            if not component_embeds:
                 continue
 
-            analysis = CompositionalProbes.analyze_composition(comp_embed, component_embeds, probe)
+            analysis = CompositionalProbes.analyze_composition(
+                b.array(comp_embed),
+                b.array(component_embeds),
+                probe,
+                backend=b,
+            )
             analyses.append(analysis)
 
         return analyses

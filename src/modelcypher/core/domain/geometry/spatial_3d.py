@@ -47,10 +47,15 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.agents.spatial_atlas import (
+    SpatialAxis,
+    SpatialCategory,
+    SpatialConcept,
+    SpatialConceptInventory,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -220,74 +225,20 @@ def _scalar_isinf(x: float) -> bool:
 
 
 # =============================================================================
-# Spatial Prime Atlas: 3D Basis Vectors
-# =============================================================================
-
-
-class SpatialAxis(str, Enum):
-    """The three primitive axes of 3D space."""
-
-    X_LATERAL = "x_lateral"  # Left <-> Right
-    Y_VERTICAL = "y_vertical"  # Up <-> Down (Gravity)
-    Z_DEPTH = "z_depth"  # Forward <-> Backward (Perspective)
-
-
-@dataclass(frozen=True)
-class SpatialAnchor:
-    """A spatial concept with expected 3D coordinates."""
-
-    name: str
-    prompt: str
-    expected_x: float  # -1 (left) to +1 (right)
-    expected_y: float  # -1 (down) to +1 (up)
-    expected_z: float  # -1 (far) to +1 (near)
-    category: str = "general"
-
-
-# The Spatial Prime Atlas: Concepts with known 3D positions
-SPATIAL_PRIME_ATLAS: list[SpatialAnchor] = [
-    # Vertical axis (Y) - Gravity gradient
-    SpatialAnchor("ceiling", "The ceiling is above.", 0.0, 1.0, 0.0, "vertical"),
-    SpatialAnchor("floor", "The floor is below.", 0.0, -1.0, 0.0, "vertical"),
-    SpatialAnchor("sky", "The sky stretches overhead.", 0.0, 1.0, 0.5, "vertical"),
-    SpatialAnchor("ground", "The ground beneath our feet.", 0.0, -1.0, 0.0, "vertical"),
-    SpatialAnchor("cloud", "A cloud floats high above.", 0.0, 0.8, 0.3, "vertical"),
-    SpatialAnchor("basement", "The basement is underground.", 0.0, -0.9, 0.0, "vertical"),
-    # Lateral axis (X) - Sidedness
-    SpatialAnchor("left_hand", "My left hand is on my left side.", -1.0, 0.0, 0.5, "lateral"),
-    SpatialAnchor("right_hand", "My right hand is on my right side.", 1.0, 0.0, 0.5, "lateral"),
-    SpatialAnchor("west", "The sun sets in the west.", -0.8, 0.0, 0.0, "lateral"),
-    SpatialAnchor("east", "The sun rises in the east.", 0.8, 0.0, 0.0, "lateral"),
-    # Depth axis (Z) - Perspective
-    SpatialAnchor("foreground", "The object in the foreground is close.", 0.0, 0.0, 1.0, "depth"),
-    SpatialAnchor(
-        "background", "The mountains in the background are distant.", 0.0, 0.0, -1.0, "depth"
-    ),
-    SpatialAnchor("horizon", "The horizon line marks the far distance.", 0.0, 0.0, -0.9, "depth"),
-    SpatialAnchor("here", "I am standing right here.", 0.0, 0.0, 1.0, "depth"),
-    SpatialAnchor("there", "The building is over there.", 0.0, 0.0, -0.5, "depth"),
-    # Physical objects with mass (Gravity test)
-    SpatialAnchor("balloon", "A helium balloon floats upward.", 0.0, 0.7, 0.5, "mass"),
-    SpatialAnchor("stone", "A heavy stone falls downward.", 0.0, -0.7, 0.5, "mass"),
-    SpatialAnchor("feather", "A light feather drifts slowly.", 0.0, 0.3, 0.5, "mass"),
-    SpatialAnchor("anvil", "The anvil sinks like a rock.", 0.0, -0.9, 0.5, "mass"),
-    # Furniture (Virtual room test)
-    SpatialAnchor("chair", "A chair sits on the floor.", 0.0, -0.5, 0.5, "furniture"),
-    SpatialAnchor("table", "A table stands in the room.", 0.0, -0.3, 0.5, "furniture"),
-    SpatialAnchor("lamp", "A lamp hangs from the ceiling.", 0.0, 0.7, 0.5, "furniture"),
-    SpatialAnchor("rug", "A rug lies flat on the floor.", 0.0, -0.9, 0.5, "furniture"),
-]
-
-
-def get_spatial_anchors_by_axis(axis: SpatialAxis) -> list[SpatialAnchor]:
+def get_spatial_anchors_by_axis(axis: SpatialAxis) -> list[SpatialConcept]:
     """Get anchors that primarily vary along a given axis."""
+    anchors = SpatialConceptInventory.all_concepts()
     if axis == SpatialAxis.Y_VERTICAL:
-        return [a for a in SPATIAL_PRIME_ATLAS if a.category in ("vertical", "mass")]
-    elif axis == SpatialAxis.X_LATERAL:
-        return [a for a in SPATIAL_PRIME_ATLAS if a.category == "lateral"]
-    elif axis == SpatialAxis.Z_DEPTH:
-        return [a for a in SPATIAL_PRIME_ATLAS if a.category == "depth"]
-    return SPATIAL_PRIME_ATLAS
+        return [
+            a
+            for a in anchors
+            if a.category in (SpatialCategory.VERTICAL, SpatialCategory.MASS)
+        ]
+    if axis == SpatialAxis.X_LATERAL:
+        return [a for a in anchors if a.category == SpatialCategory.LATERAL]
+    if axis == SpatialAxis.Z_DEPTH:
+        return [a for a in anchors if a.category == SpatialCategory.DEPTH]
+    return anchors
 
 
 # =============================================================================
@@ -337,20 +288,20 @@ class EuclideanConsistencyAnalyzer:
     def analyze(
         self,
         anchor_activations: dict[str, "Array"],
-        anchors: list[SpatialAnchor] | None = None,
+        anchors: list[SpatialConcept] | None = None,
     ) -> EuclideanConsistencyResult:
         """
         Analyze Euclidean consistency of spatial anchor representations.
 
         Args:
             anchor_activations: Map from anchor name to activation vector
-            anchors: Spatial anchors (uses SPATIAL_PRIME_ATLAS if None)
+            anchors: Spatial anchors (uses SpatialConceptInventory if None)
 
         Returns:
             EuclideanConsistencyResult with consistency metrics
         """
         b = self._backend
-        anchors = anchors or SPATIAL_PRIME_ATLAS
+        anchors = anchors or SpatialConceptInventory.all_concepts()
 
         # Filter to anchors we have activations for
         available = [a for a in anchors if a.name in anchor_activations]
@@ -532,7 +483,7 @@ class EuclideanConsistencyAnalyzer:
     def _compute_axis_orthogonality(
         self,
         activations: "Array",
-        anchors: list[SpatialAnchor],
+        anchors: list[SpatialConcept],
     ) -> dict[str, float]:
         """Compute orthogonality between inferred X, Y, Z axes.
 
@@ -956,7 +907,7 @@ class GravityGradientAnalyzer:
     def _compute_layer_gravity(
         self,
         layer_acts: dict[str, "Array"],
-        anchors: list[SpatialAnchor],
+        anchors: list[SpatialConcept],
     ) -> float:
         """Compute gravity correlation for a single layer."""
         b = self._backend
@@ -1024,7 +975,7 @@ class VolumetricDensityProber:
     def analyze(
         self,
         anchor_activations: dict[str, "Array"],
-        anchors: list[SpatialAnchor] | None = None,
+        anchors: list[SpatialConcept] | None = None,
     ) -> VolumetricDensityResult:
         """
         Analyze volumetric density of anchor representations.
@@ -1039,7 +990,11 @@ class VolumetricDensityProber:
         b = self._backend
 
         if anchors is None:
-            anchors = [a for a in SPATIAL_PRIME_ATLAS if a.category in ("mass", "furniture")]
+            anchors = [
+                a
+                for a in SpatialConceptInventory.all_concepts()
+                if a.category in (SpatialCategory.MASS, SpatialCategory.FURNITURE)
+            ]
 
         available = [a for a in anchors if a.name in anchor_activations]
 
@@ -1403,8 +1358,7 @@ class Spatial3DAnalyzer:
 __all__ = [
     # Data structures
     "SpatialAxis",
-    "SpatialAnchor",
-    "SPATIAL_PRIME_ATLAS",
+    "SpatialConcept",
     "get_spatial_anchors_by_axis",
     # Euclidean consistency
     "EuclideanConsistencyResult",

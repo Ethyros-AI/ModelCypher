@@ -300,10 +300,8 @@ class DomainGeometryWaypointService:
         backend: "Backend",
     ) -> DomainGeometryScore:
         """Compute spatial geometry score (Blind Physicist hypothesis)."""
-        from modelcypher.core.domain.geometry.spatial_3d import (
-            SPATIAL_PRIME_ATLAS,
-            Spatial3DAnalyzer,
-        )
+        from modelcypher.core.domain.agents.spatial_atlas import SpatialConceptInventory
+        from modelcypher.core.domain.geometry.spatial_3d import Spatial3DAnalyzer
 
         model, tokenizer = self._model_loader.load_model_for_training(model_path)
 
@@ -312,7 +310,7 @@ class DomainGeometryWaypointService:
             model,
             tokenizer,
             layer,
-            [(p.name, p.prompt) for p in SPATIAL_PRIME_ATLAS],
+            [(p.id, p.prompt) for p in SpatialConceptInventory.all_concepts()],
             backend,
         )
 

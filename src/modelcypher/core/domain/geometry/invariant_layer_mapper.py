@@ -205,9 +205,17 @@ class CRMMappingConfig:
 
 @dataclass(frozen=True)
 class InvariantCollapseMappingConfig:
-    """Invariant-collapse layer mapping."""
+    """Invariant-collapse layer mapping.
 
-    collapse_threshold: float = 0.5
+    Note on collapse_threshold:
+        If None, derived from confidence distribution using the spectral gap
+        (the largest drop between consecutive confidence values). This naturally
+        separates "healthy" from "collapsed" layers.
+    """
+
+    # Threshold for marking layers as collapsed.
+    # If None, derived from spectral gap in confidence distribution.
+    collapse_threshold: float | None = None
     min_invariant_coverage: float = 0.0
     collapse_mismatch_penalty: float = 1.0
     allow_many_to_one: bool = False
@@ -219,9 +227,16 @@ class InvariantCollapseMappingConfig:
 class Config:
     """Configuration for invariant layer mapping.
 
-    Confidence thresholds classify mapping quality (HIGH/MEDIUM/LOW).
-    Use from_similarity_distribution() to derive thresholds from actual
-    CKA/similarity measurements rather than using arbitrary defaults.
+    Note on thresholds:
+        All thresholds default to None and are derived from data:
+
+        - collapse_threshold: If None, derived from spectral gap in confidence
+          distribution (the largest drop between consecutive confidence values).
+          This naturally separates "healthy" from "collapsed" layers.
+
+        - high_confidence_threshold, medium_confidence_threshold: If None,
+          use from_similarity_distribution() to derive from observed CKA/similarity
+          values. The distribution itself determines the cutoffs.
     """
 
     strategy: LayerMappingStrategy = LayerMappingStrategy.INVARIANT_COLLAPSE
@@ -234,12 +249,12 @@ class Config:
     min_similarity: float = 0.0
     max_skip: int = 0
     skip_penalty: float = 1.0
-    collapse_threshold: float = 0.5
+    collapse_threshold: float | None = None
     collapse_mismatch_penalty: float = 1.0
     strength_weight: float = 1.0
     coverage_weight: float = 1.0
-    high_confidence_threshold: float = 0.75
-    medium_confidence_threshold: float = 0.5
+    high_confidence_threshold: float | None = None
+    medium_confidence_threshold: float | None = None
     layer_match_category_weights: LayerMatchCategoryWeights | None = None
     use_cross_domain_weighting: bool = False
     triangulation_threshold: float = 0.0
@@ -552,9 +567,24 @@ class InvariantLayerMapper:
         if all_triangulation:
             multipliers = [ts.cross_domain_multiplier for ts in all_triangulation.values()]
             mean_triangulation_mult = sum(multipliers) / len(multipliers)
-            if mean_triangulation_mult >= 1.5:
+
+            # Derive quality thresholds from log-based multiplier formula:
+            # multiplier = log(count+1)/log(2), so:
+            #   count=1: log(2)/log(2) = 1.0 (single domain)
+            #   count=2: log(3)/log(2) ≈ 1.585 (two domains)
+            #   count=3: log(4)/log(2) = 2.0 (three domains)
+            #   count=4: log(5)/log(2) ≈ 2.322 (four domains)
+            #
+            # Thresholds derived from geometric mean of consecutive values:
+            #   high = sqrt(1.585 * 2.0) ≈ 1.78 (reliably 3+ domains)
+            #   medium = sqrt(1.0 * 1.585) ≈ 1.26 (reliably 2+ domains)
+            #   low = anything above 1.0 (at least some cross-domain signal)
+            high_threshold = math.sqrt(math.log(3) / math.log(2) * math.log(4) / math.log(2))
+            medium_threshold = math.sqrt(1.0 * math.log(3) / math.log(2))
+
+            if mean_triangulation_mult >= high_threshold:
                 tri_quality = "high"
-            elif mean_triangulation_mult >= 1.2:
+            elif mean_triangulation_mult >= medium_threshold:
                 tri_quality = "medium"
             elif mean_triangulation_mult > 1.0:
                 tri_quality = "low"
@@ -927,6 +957,7 @@ class InvariantLayerMapper:
 
         has_signal = False
 
+        # First pass: compute all confidence values
         for layer in range(fingerprints.layer_count):
             strength = strength_sums.get(layer, 0.0)
             normalized_strength = strength / max_strength if max_strength > 0 else 0.0
@@ -944,7 +975,18 @@ class InvariantLayerMapper:
             if clamped_confidence > 0:
                 has_signal = True
 
-            if clamped_confidence < max(0, config.collapse_threshold):
+        # Derive collapse threshold from spectral gap if not provided
+        if config.collapse_threshold is not None:
+            collapse_thresh = max(0.0, config.collapse_threshold)
+        else:
+            # Compute spectral gap threshold from confidence distribution
+            collapse_thresh = InvariantLayerMapper._derive_collapse_threshold(
+                list(confidence_by_layer.values())
+            )
+
+        # Second pass: mark collapsed layers
+        for layer, confidence in confidence_by_layer.items():
+            if confidence < collapse_thresh:
                 collapsed_layers.add(layer)
 
         return _ProfileData(
@@ -1005,6 +1047,61 @@ class InvariantLayerMapper:
             return 0.0
         total = sum(abs(d.activation) for d in dims)
         return total / len(dims)
+
+    @staticmethod
+    def _derive_collapse_threshold(confidence_values: list[float]) -> float:
+        """Derive collapse threshold from spectral gap in confidence distribution.
+
+        Finds the largest gap between consecutive confidence values (when sorted).
+        The threshold is set at the geometric mean of the values around this gap,
+        naturally separating "healthy" from "collapsed" layers.
+
+        A gap is considered significant if it exceeds mean + 2*stddev of all gaps
+        (a standard statistical threshold for outlier detection).
+
+        Returns 0.0 if no meaningful gap is found (all layers are similar).
+        """
+        if len(confidence_values) < 2:
+            return 0.0
+
+        sorted_conf = sorted(confidence_values)
+
+        # Compute all gaps
+        gaps = [
+            sorted_conf[i + 1] - sorted_conf[i] for i in range(len(sorted_conf) - 1)
+        ]
+
+        if not gaps:
+            return 0.0
+
+        # Find largest gap and its index
+        max_gap = max(gaps)
+        gap_index = gaps.index(max_gap)
+
+        # Significance threshold: mean + 2*stddev (standard outlier detection)
+        # A gap is only meaningful if it's statistically significant
+        mean_gap = sum(gaps) / len(gaps)
+        if len(gaps) > 1:
+            variance = sum((g - mean_gap) ** 2 for g in gaps) / len(gaps)
+            stddev = math.sqrt(variance)
+            significance_threshold = mean_gap + 2.0 * stddev
+        else:
+            # Only one gap - it's significant by definition if it exists
+            significance_threshold = 0.0
+
+        # If largest gap isn't significant, no natural boundary exists
+        if max_gap <= significance_threshold:
+            return 0.0
+
+        # Threshold is geometric mean of values around the gap
+        # This places the threshold exactly at the natural boundary
+        lower_val = sorted_conf[gap_index]
+        upper_val = sorted_conf[gap_index + 1]
+
+        # Geometric mean (handles case where lower_val is 0)
+        if lower_val <= 0:
+            return upper_val / 2.0  # Midpoint when geometric mean undefined
+        return math.sqrt(lower_val * upper_val)
 
     @staticmethod
     def _sample_layers(layer_count: int, sample_count: int | None) -> list[int]:

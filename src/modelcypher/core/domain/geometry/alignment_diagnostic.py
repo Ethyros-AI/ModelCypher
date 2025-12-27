@@ -28,7 +28,11 @@ from dataclasses import dataclass, field
 from typing import Any, Sequence
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+    regularization_epsilon,
+)
 
 
 @dataclass(frozen=True)
@@ -58,9 +62,16 @@ class AlignmentSignal:
 
     @property
     def is_phase_locked(self) -> bool:
+        """Check if alignment gap is within precision tolerance.
+
+        Requires phase_tol in metadata - no arbitrary fallbacks.
+        """
         phase_tol = self.metadata.get("phase_tol")
         if phase_tol is None:
-            return self.gap <= 1e-12
+            raise ValueError(
+                "AlignmentSignal.is_phase_locked requires 'phase_tol' in metadata. "
+                "Ensure phase_tol is set when creating the signal."
+            )
         return self.gap <= float(phase_tol)
 
     def to_dict(self) -> dict[str, Any]:
@@ -128,20 +139,24 @@ def alignment_signal_from_matrices(
     rank_target = _matrix_rank(target_matrix, b)
     min_rank = min(b.shape(source_matrix)[0], b.shape(source_matrix)[1])
 
-    # Scale diagnostics
+    # Scale diagnostics with dtype-derived thresholds
+    div_eps = division_epsilon(b, source_matrix)
+    reg_eps = regularization_epsilon(b, source_matrix)
+
     src_norm = b.mean(b.norm(source_matrix, axis=1))
     tgt_norm = b.mean(b.norm(target_matrix, axis=1))
     b.eval(src_norm, tgt_norm)
     src_norm_val = float(b.to_numpy(src_norm))
     tgt_norm_val = float(b.to_numpy(tgt_norm))
-    scale_ratio = src_norm_val / (tgt_norm_val + 1e-12)
+    scale_ratio = src_norm_val / (tgt_norm_val + div_eps)
 
     divergence_pattern = "rotation"
     suggested = "rotation_refine"
     if rank_source < min_rank or rank_target < min_rank or rank_source != rank_target:
         divergence_pattern = "rank_deficient"
         suggested = "expand_anchors"
-    elif abs(scale_ratio - 1.0) > 0.05:
+    elif abs(scale_ratio - 1.0) > reg_eps:
+        # Scale mismatch threshold: sqrt(eps) is the standard numerical tolerance
         divergence_pattern = "scale"
         suggested = "scale_normalization"
     if shape_mismatch:
@@ -150,7 +165,7 @@ def alignment_signal_from_matrices(
 
     mean_divergence = sum(dist_list) / len(dist_list) if dist_list else 0.0
     max_divergence = max(dist_list) if dist_list else 0.0
-    balance_ratio = max_divergence / (mean_divergence + 1e-12)
+    balance_ratio = max_divergence / (mean_divergence + div_eps)
 
     metadata = {
         "rank_source": float(rank_source),
@@ -178,6 +193,7 @@ def alignment_signal_from_matrices(
 
 
 def _matrix_rank(matrix: "object", backend: "object", eps: float | None = None) -> int:
+    """Compute effective rank using dtype-derived threshold."""
     gram = backend.matmul(matrix, backend.transpose(matrix))
     eigvals, _ = backend.eigh(gram)
     backend.eval(eigvals)
@@ -186,6 +202,7 @@ def _matrix_rank(matrix: "object", backend: "object", eps: float | None = None) 
         return 0
     max_val = max(values)
     if eps is None:
-        eps = max(machine_epsilon(backend, gram), 1e-12)
+        # Use dtype-derived epsilon - no arbitrary floor
+        eps = machine_epsilon(backend, gram)
     threshold = max_val * eps
     return sum(1 for val in values if val > threshold)

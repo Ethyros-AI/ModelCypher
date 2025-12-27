@@ -27,17 +27,19 @@ Philosophy IS conceptual math. These probes measure the fundamental categories o
 thought - the structural preconditions for coherent reasoning that are INVARIANT
 across all models. Knowledge occupies fixed probability clouds in hyperspace.
 
-Total probe count: 402
+Total probe count: 439
 - Sequence Invariants: 68 probes (10 families)
 - Semantic Primes: 65 probes (17 categories)
 - Computational Gates: 76 probes (14 categories)
 - Emotion Concepts: 32 probes (8 categories + 8 dyads)
 - Temporal Concepts: 25 probes (tense, duration, causality, lifecycle, sequence)
+- Spatial Concepts: 23 probes (vertical, lateral, depth, mass, furniture)
 - Social Concepts: 25 probes (power, formality, kinship, status, age)
 - Moral Concepts: 30 probes (Haidt Moral Foundations Theory)
 - Compositional: 22 probes (semantic prime compositions)
 - Philosophical: 30 probes (ontological, epistemological, logical, modal, mereological)
 - Conceptual Genealogy: 29 probes (etymology + lineage)
+- Metaphor Invariants: 14 probes (cross-cultural semantic anchors)
 """
 
 from __future__ import annotations
@@ -61,6 +63,10 @@ from modelcypher.core.domain.agents.moral_atlas import (
     MoralConceptInventory,
     MoralFoundation,
 )
+from modelcypher.core.domain.agents.metaphor_invariant_atlas import (
+    MetaphorFamily,
+    MetaphorInvariantInventory,
+)
 from modelcypher.core.domain.agents.philosophical_atlas import (
     PhilosophicalCategory,
     PhilosophicalConceptInventory,
@@ -77,6 +83,7 @@ from modelcypher.core.domain.agents.social_atlas import (
     SocialCategory,
     SocialConceptInventory,
 )
+from modelcypher.core.domain.agents.spatial_atlas import SpatialConceptInventory
 from modelcypher.core.domain.agents.temporal_atlas import (
     TemporalCategory,
     TemporalConceptInventory,
@@ -91,11 +98,13 @@ class AtlasSource(str, Enum):
     COMPUTATIONAL_GATE = "computational_gate"
     EMOTION_CONCEPT = "emotion_concept"
     TEMPORAL_CONCEPT = "temporal_concept"
+    SPATIAL_CONCEPT = "spatial_concept"
     SOCIAL_CONCEPT = "social_concept"
     MORAL_CONCEPT = "moral_concept"
     COMPOSITIONAL = "compositional"  # Semantic prime compositions (I THINK, GOOD THINGS, etc.)
     PHILOSOPHICAL_CONCEPT = "philosophical_concept"  # Fundamental categories of thought
     CONCEPTUAL_GENEALOGY = "conceptual_genealogy"
+    METAPHOR_INVARIANT = "metaphor_invariant"
 
 
 class AtlasDomain(str, Enum):
@@ -252,6 +261,16 @@ _GENEALOGY_DOMAIN_MAP: dict[ConceptDomain, AtlasDomain] = {
     ConceptDomain.AESTHETICS: AtlasDomain.AFFECTIVE,
 }
 
+_METAPHOR_DOMAIN_MAP: dict[MetaphorFamily, AtlasDomain] = {
+    MetaphorFamily.FUTILITY: AtlasDomain.LINGUISTIC,
+    MetaphorFamily.IMPOSSIBILITY: AtlasDomain.LINGUISTIC,
+    MetaphorFamily.OBVIOUSNESS: AtlasDomain.LINGUISTIC,
+    MetaphorFamily.CONSEQUENCE: AtlasDomain.LINGUISTIC,
+    MetaphorFamily.FRAGILITY: AtlasDomain.LINGUISTIC,
+    MetaphorFamily.DECEPTION: AtlasDomain.LINGUISTIC,
+    MetaphorFamily.RESILIENCE: AtlasDomain.LINGUISTIC,
+}
+
 
 @dataclass(frozen=True)
 class AtlasProbe:
@@ -287,11 +306,13 @@ _DEFAULT_WEIGHTS: dict[AtlasSource, float] = {
     AtlasSource.COMPUTATIONAL_GATE: 1.0,
     AtlasSource.EMOTION_CONCEPT: 1.0,
     AtlasSource.TEMPORAL_CONCEPT: 1.0,
+    AtlasSource.SPATIAL_CONCEPT: 1.0,
     AtlasSource.SOCIAL_CONCEPT: 1.0,
     AtlasSource.MORAL_CONCEPT: 1.0,
     AtlasSource.COMPOSITIONAL: 1.0,
     AtlasSource.PHILOSOPHICAL_CONCEPT: 1.0,
     AtlasSource.CONCEPTUAL_GENEALOGY: 1.0,
+    AtlasSource.METAPHOR_INVARIANT: 1.0,
 }
 
 
@@ -305,13 +326,15 @@ class UnifiedAtlasInventory:
     - 76 computational gates
     - 32 emotion concepts
     - 25 temporal concepts (validated 2025-12-23)
+    - 23 spatial concepts (validated 2025-12-23)
     - 25 social concepts (validated 2025-12-23, SMS=0.53)
     - 30 moral concepts (Haidt Moral Foundations Theory)
     - 22 compositional probes (semantic prime compositions)
     - 30 philosophical concepts (ontological, epistemological, logical, modal, mereological)
     - 29 conceptual genealogy probes (etymology + lineage)
+    - 14 metaphor invariants (cross-cultural semantic anchors)
 
-    Total: 402 probes for cross-domain triangulation
+    Total: 439 probes for cross-domain triangulation
     """
 
     _cached_probes: list[AtlasProbe] | None = None
@@ -328,11 +351,13 @@ class UnifiedAtlasInventory:
         probes.extend(cls._computational_gate_probes())
         probes.extend(cls._emotion_concept_probes())
         probes.extend(cls._temporal_concept_probes())
+        probes.extend(cls._spatial_concept_probes())
         probes.extend(cls._social_concept_probes())
         probes.extend(cls._moral_concept_probes())
         probes.extend(cls._compositional_probes())
         probes.extend(cls._philosophical_concept_probes())
         probes.extend(cls._conceptual_genealogy_probes())
+        probes.extend(cls._metaphor_invariant_probes())
 
         cls._cached_probes = probes
         return list(probes)
@@ -513,6 +538,30 @@ class UnifiedAtlasInventory:
         return probes
 
     @classmethod
+    def _spatial_concept_probes(cls) -> list[AtlasProbe]:
+        """Convert spatial concepts to unified probes."""
+        concepts = SpatialConceptInventory.all_concepts()
+        probes: list[AtlasProbe] = []
+
+        base_weight = _DEFAULT_WEIGHTS[AtlasSource.SPATIAL_CONCEPT]
+
+        for concept in concepts:
+            probes.append(
+                AtlasProbe(
+                    id=concept.id,
+                    source=AtlasSource.SPATIAL_CONCEPT,
+                    domain=AtlasDomain.SPATIAL,
+                    name=concept.name,
+                    description=f"Spatial anchor: {concept.name}",
+                    cross_domain_weight=base_weight,
+                    category_name=concept.category.value,
+                    support_texts=(concept.prompt,),
+                )
+            )
+
+        return probes
+
+    @classmethod
     def _social_concept_probes(cls) -> list[AtlasProbe]:
         """Convert social concepts to unified probes.
 
@@ -590,7 +639,7 @@ class UnifiedAtlasInventory:
 
         Total: 22 probes testing compositional semantics
         """
-        from modelcypher.core.domain.geometry.probes import CompositionalProbes
+        from modelcypher.core.domain.geometry.compositional_probes import CompositionalProbes
 
         probes: list[AtlasProbe] = []
         base_weight = _DEFAULT_WEIGHTS[AtlasSource.COMPOSITIONAL]
@@ -673,6 +722,30 @@ class UnifiedAtlasInventory:
                     cross_domain_weight=concept.cross_domain_weight * base_weight,
                     category_name=concept.domain.value,
                     support_texts=concept.support_texts,
+                )
+            )
+
+        return probes
+
+    @classmethod
+    def _metaphor_invariant_probes(cls) -> list[AtlasProbe]:
+        """Convert metaphor invariants to unified probes."""
+        probes: list[AtlasProbe] = []
+        base_weight = _DEFAULT_WEIGHTS[AtlasSource.METAPHOR_INVARIANT]
+
+        for invariant in MetaphorInvariantInventory.ALL_PROBES:
+            domain = _METAPHOR_DOMAIN_MAP.get(invariant.family, AtlasDomain.LINGUISTIC)
+            support_texts = tuple(variation.phrase for variation in invariant.variations)
+            probes.append(
+                AtlasProbe(
+                    id=invariant.id,
+                    source=AtlasSource.METAPHOR_INVARIANT,
+                    domain=domain,
+                    name=invariant.universal_concept,
+                    description=invariant.universal_concept,
+                    cross_domain_weight=base_weight,
+                    category_name=invariant.family.value,
+                    support_texts=support_texts,
                 )
             )
 

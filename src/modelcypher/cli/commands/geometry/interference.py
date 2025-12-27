@@ -308,21 +308,21 @@ def _extract_domain_activations(
 
     # Get probes for this domain
     if domain == GeometryDomain.SPATIAL:
-        from modelcypher.core.domain.geometry.spatial_3d import SPATIAL_PRIME_ATLAS
+        from modelcypher.core.domain.agents.spatial_atlas import SpatialConceptInventory
 
-        probes = [(p.name, p.prompt) for p in SPATIAL_PRIME_ATLAS]
+        probes = [(p.id, p.prompt) for p in SpatialConceptInventory.all_concepts()]
     elif domain == GeometryDomain.SOCIAL:
-        from modelcypher.core.domain.agents.social_atlas import ALL_SOCIAL_PROBES
+        from modelcypher.core.domain.agents.social_atlas import SocialConceptInventory
 
-        probes = [(p.id, f"The word {p.name.lower()} represents") for p in ALL_SOCIAL_PROBES]
+        probes = [(p.id, p.prompt) for p in SocialConceptInventory.all_concepts()]
     elif domain == GeometryDomain.TEMPORAL:
-        from modelcypher.core.domain.geometry.temporal_topology import TEMPORAL_PRIME_ATLAS
+        from modelcypher.core.domain.agents.temporal_atlas import TemporalConceptInventory
 
-        probes = [(a.concept, a.prompt) for a in TEMPORAL_PRIME_ATLAS]
+        probes = [(p.id, p.prompt) for p in TemporalConceptInventory.all_concepts()]
     elif domain == GeometryDomain.MORAL:
-        from modelcypher.core.domain.agents.moral_atlas import ALL_MORAL_PROBES
+        from modelcypher.core.domain.agents.moral_atlas import MoralConceptInventory
 
-        probes = [(p.id, f"The word {p.name.lower()} represents") for p in ALL_MORAL_PROBES]
+        probes = [(p.id, p.prompt) for p in MoralConceptInventory.all_concepts()]
     else:
         return {}
 
