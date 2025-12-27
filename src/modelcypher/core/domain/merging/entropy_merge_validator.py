@@ -770,7 +770,17 @@ class EntropyMergeValidator:
         model_loader: "ModelLoaderPort",
         num_layers: int | None = None,
     ) -> ModelEntropyProfile:
-        """Create a real model entropy profile by measuring actual layer entropy.
+        """Create a real model entropy profile using Entropy-Lens approach.
+
+        Projects hidden states at each layer through the unembedding matrix
+        to compute per-layer Shannon entropy. This gives REAL layer-wise
+        entropy measurements, not fabricated data.
+
+        Algorithm (per layer L):
+            1. Capture hidden state h_L during forward pass
+            2. Project through unembedding matrix: logits_L = h_L @ W_unembed.T
+            3. Apply softmax: p = softmax(logits_L)
+            4. Compute Shannon entropy: H_L = -sum(p * log(p))
 
         Args:
             model_path: Path to the model directory.
@@ -779,17 +789,86 @@ class EntropyMergeValidator:
 
         Returns:
             ModelEntropyProfile with measured entropy values.
+
+        References:
+            Ali et al. (2025) "Entropy-Lens: The Information Signature of
+            Transformer Computations" arXiv:2502.16570
         """
         from pathlib import Path
 
-        from modelcypher.core.domain.thermo.linguistic_calorimeter import LinguisticCalorimeter
+        from modelcypher.core.domain._backend import get_default_backend
+        from modelcypher.core.domain.entropy.layer_entropy_projector import (
+            LayerEntropyProjector,
+        )
 
         model_dir = Path(model_path)
         model_name = model_dir.name
 
-        # Load model to get layer count
+        # Load model
         model, tokenizer = model_loader.load_model_for_training(model_path)
 
+        # Create Entropy-Lens projector
+        backend = get_default_backend()
+        projector = LayerEntropyProjector(backend=backend)
+
+        # Set up unembedding matrix for projection
+        try:
+            projector.set_unembedding_matrix(model)
+        except ValueError as e:
+            logger.warning(f"Could not set unembedding matrix: {e}. Using simulated mode.")
+            return self._create_simulated_profile(model, model_name, num_layers)
+
+        # Probe prompts for entropy measurement
+        probe_prompts = [
+            "What is the capital of France?",
+            "Explain photosynthesis briefly.",
+            "Calculate 15 * 23.",
+            "The quick brown fox jumps over the lazy dog.",
+            "In a world where technology advances rapidly,",
+        ]
+
+        # Target layers - if num_layers specified, use that subset
+        target_layers: set[int] | None = None
+        if num_layers is not None:
+            base_model = getattr(model, "model", model)
+            actual_layers = len(getattr(base_model, "layers", []))
+            if num_layers < actual_layers:
+                # Sample every nth layer to get num_layers
+                step = max(1, actual_layers // num_layers)
+                target_layers = set(range(0, actual_layers, step))
+
+        # Profile model using Entropy-Lens
+        profile_result = projector.profile_model(
+            model=model,
+            tokenizer=tokenizer,
+            prompts=probe_prompts,
+            target_layers=target_layers,
+        )
+
+        # Convert to ModelEntropyProfile format
+        layer_profiles = {}
+        for layer_idx, result in profile_result.layer_results.items():
+            phase = self.classify_phase(result.mean_entropy)
+            layer_profiles[result.layer_name] = LayerEntropyProfile(
+                layer_name=result.layer_name,
+                mean_entropy=result.mean_entropy,
+                entropy_variance=result.entropy_variance,
+                phase=phase,
+            )
+
+        return ModelEntropyProfile.from_layer_profiles(model_name, layer_profiles)
+
+    def _create_simulated_profile(
+        self,
+        model: Any,
+        model_name: str,
+        num_layers: int | None,
+    ) -> ModelEntropyProfile:
+        """Create a simulated profile as fallback when real measurement fails.
+
+        This is only used when the unembedding matrix cannot be extracted.
+        The simulated profile uses a typical entropy curve based on research.
+        """
         # Detect number of layers
         if num_layers is None:
             if hasattr(model, "model") and hasattr(model.model, "layers"):
@@ -797,44 +876,25 @@ class EntropyMergeValidator:
             elif hasattr(model, "layers"):
                 num_layers = len(model.layers)
             else:
-                num_layers = 32  # Fallback
+                num_layers = 32
 
-        # Create calorimeter for entropy measurement
-        calorimeter = LinguisticCalorimeter(model_path=model_path, simulated=False)
-
-        # Measure entropy at different depths using probe prompts
         layer_profiles = {}
-        probe_prompts = [
-            "What is the capital of France?",
-            "Explain photosynthesis briefly.",
-            "Calculate 15 * 23.",
-        ]
-
         for i in range(num_layers):
-            # Measure entropy for this layer by probing at different depths
-            entropies = []
-            for prompt in probe_prompts:
-                try:
-                    # Use early stopping to simulate layer-specific measurement
-                    measurement = calorimeter.measure_entropy(prompt)
-                    # Estimate layer-specific entropy based on depth ratio
-                    depth_ratio = (i + 1) / num_layers
-                    layer_entropy = measurement.mean_entropy * (0.8 + 0.4 * depth_ratio)
-                    entropies.append(layer_entropy)
-                except Exception:
-                    pass
-
-            if entropies:
-                mean_entropy = sum(entropies) / len(entropies)
-                variance = (
-                    sum((e - mean_entropy) ** 2 for e in entropies) / len(entropies)
-                    if len(entropies) > 1
-                    else 0.1
-                )
+            # Simulate typical entropy curve: high early, valley mid, rise late
+            # Based on findings from Entropy-Lens paper
+            depth_ratio = (i + 1) / num_layers
+            if depth_ratio < 0.3:
+                # Early layers: high entropy (exploration)
+                mean_entropy = 8.0 - depth_ratio * 10.0
+            elif depth_ratio < 0.7:
+                # Middle layers: entropy valley (compression)
+                mean_entropy = 5.0 + (depth_ratio - 0.3) * 2.0
             else:
-                # Fallback to estimation if measurement fails
-                mean_entropy = 2.0 + i * 0.05
-                variance = 0.1 + (i / num_layers) * 0.2
+                # Late layers: entropy rises then drops
+                mean_entropy = 6.0 - (depth_ratio - 0.7) * 10.0
+
+            # Add some variance based on depth
+            variance = 0.5 + abs(depth_ratio - 0.5) * 1.0
 
             layer_name = f"layers.{i}"
             phase = self.classify_phase(mean_entropy)
@@ -846,6 +906,10 @@ class EntropyMergeValidator:
                 phase=phase,
             )
 
+        logger.warning(
+            f"Using SIMULATED entropy profile for {model_name}. "
+            "Real measurement failed - results are estimates only."
+        )
         return ModelEntropyProfile.from_layer_profiles(model_name, layer_profiles)
 
     def compute_alpha_adjustments(

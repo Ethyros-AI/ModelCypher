@@ -31,10 +31,12 @@ Reference: Moschella et al. (2023) "Relative Representations Enable Zero-Shot Tr
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Literal
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.vocabulary.alignment_map import (
     AlignmentQuality,
     VocabularyAlignmentMap,
@@ -99,10 +101,40 @@ def _encode_probe_ids(
 
 def build_token_id_map(
     alignment_map: VocabularyAlignmentMap,
-    min_confidence: float = 0.95,
-    min_size: int = 1000,
+    min_confidence: float | None = None,
+    min_size: int | None = None,
     allowed_qualities: set[AlignmentQuality] | None = None,
 ) -> dict[int, int]:
+    """Build token ID mapping from vocabulary alignment.
+
+    Args:
+        alignment_map: The vocabulary alignment map.
+        min_confidence: Minimum confidence threshold. If None, derived from
+            spectral gap in confidence distribution.
+        min_size: Minimum mapping size before expanding to SIMILAR quality.
+            If None, derived as sqrt(vocab_size) - covers representative sample.
+        allowed_qualities: Explicit quality filter. If provided, min_size is ignored.
+
+    Returns:
+        Mapping from source token IDs to target token IDs.
+    """
+    # Derive min_confidence from spectral gap if not provided
+    if min_confidence is None:
+        confidence_values = [
+            a.confidence for a in alignment_map.iter_alignments() if a.confidence > 0
+        ]
+        if len(confidence_values) >= 2:
+            min_confidence = _derive_confidence_threshold(confidence_values)
+        else:
+            # With insufficient data, require exact confidence
+            min_confidence = 1.0
+
+    # Derive min_size from vocabulary coverage if not provided
+    if min_size is None:
+        vocab_size = sum(1 for _ in alignment_map.iter_alignments())
+        # sqrt(n) gives statistically representative sample
+        min_size = max(1, int(math.sqrt(vocab_size)))
+
     def _build_map(qualities: set[AlignmentQuality]) -> dict[int, int]:
         mapping: dict[int, int] = {}
         for alignment in alignment_map.iter_alignments():
@@ -126,6 +158,53 @@ def build_token_id_map(
         return mapping
 
     return _build_map(allowed_qualities)
+
+
+def _derive_confidence_threshold(confidence_values: list[float]) -> float:
+    """Derive confidence threshold from spectral gap in distribution.
+
+    Uses the largest gap between consecutive sorted values that exceeds
+    the mean + 2*stddev significance threshold. The threshold is placed
+    at the geometric mean of values around the gap.
+
+    If no significant gap exists, returns median (natural split point).
+    """
+    if len(confidence_values) < 2:
+        return 1.0
+
+    sorted_vals = sorted(confidence_values)
+    n = len(sorted_vals)
+
+    # Compute gaps between consecutive values
+    gaps = [sorted_vals[i + 1] - sorted_vals[i] for i in range(n - 1)]
+    if not gaps:
+        return sorted_vals[n // 2]
+
+    mean_gap = sum(gaps) / len(gaps)
+    variance = sum((g - mean_gap) ** 2 for g in gaps) / len(gaps)
+    stddev = math.sqrt(variance) if variance > 0 else 0.0
+
+    # Significance threshold: gap must be larger than mean + 2*stddev
+    significance_threshold = mean_gap + 2.0 * stddev
+
+    # Find largest significant gap (>= for boundary case)
+    max_gap = 0.0
+    gap_idx = -1
+    for i, g in enumerate(gaps):
+        if g >= significance_threshold and g > max_gap:
+            max_gap = g
+            gap_idx = i
+
+    if gap_idx >= 0:
+        # Threshold at geometric mean of values around the gap
+        below = sorted_vals[gap_idx]
+        above = sorted_vals[gap_idx + 1]
+        if below > 0 and above > 0:
+            return math.sqrt(below * above)
+        return (below + above) / 2.0
+
+    # No significant gap - use median
+    return sorted_vals[n // 2]
 
 
 def map_token_ids(
@@ -318,13 +397,13 @@ def _probe_precise(
             target_activated: dict[int, list[ActivatedDimension]] = {}
 
             for layer_idx, act in source_acts.items():
-                source_activated[layer_idx] = _extract_top_k_dims(act, k=32, backend=b)
+                source_activated[layer_idx] = _extract_top_k_dims(act, backend=b)
                 if layer_idx not in source_layer_activations:
                     source_layer_activations[layer_idx] = []
                 source_layer_activations[layer_idx].append(act)
 
             for layer_idx, act in target_acts.items():
-                target_activated[layer_idx] = _extract_top_k_dims(act, k=32, backend=b)
+                target_activated[layer_idx] = _extract_top_k_dims(act, backend=b)
                 if layer_idx not in target_layer_activations:
                     target_layer_activations[layer_idx] = []
                 target_layer_activations[layer_idx].append(act)
@@ -625,15 +704,43 @@ def _probe_fast(
 
 def _extract_top_k_dims(
     activation_vector: "Array",
-    k: int = 32,
-    threshold: float = 0.01,
+    k: int | None = None,
+    threshold: float | None = None,
     backend: "Backend | None" = None,
 ) -> list:
-    """Extract top-k activated dimensions by magnitude."""
+    """Extract top-k activated dimensions by magnitude.
+
+    Args:
+        activation_vector: The activation vector to analyze.
+        k: Number of top dimensions to extract. If None, derived as
+           ceil(log2(dimensionality)) which captures intrinsic complexity.
+        threshold: Minimum magnitude threshold. If None, derived from
+           machine_epsilon * max_magnitude - filters numerical noise.
+        backend: Backend to use for computation.
+
+    Returns:
+        List of ActivatedDimension objects for significant dimensions.
+    """
     from modelcypher.core.domain.geometry.manifold_stitcher import ActivatedDimension
 
     b = backend or get_default_backend()
     abs_vals = b.abs(activation_vector)
+    b.eval(abs_vals)
+
+    dim = b.shape(activation_vector)[0]
+
+    # Derive k from dimensionality: ceil(log2(d)) captures information-theoretic complexity
+    if k is None:
+        k = max(1, int(math.ceil(math.log2(dim + 1))))
+
+    # Derive threshold from dtype precision scaled by max magnitude
+    abs_np = b.to_numpy(abs_vals)
+    max_magnitude = float(max(abs_np)) if len(abs_np) > 0 else 0.0
+    if threshold is None:
+        eps = machine_epsilon(b, activation_vector)
+        # Threshold at sqrt(eps) * max - standard numerical tolerance
+        threshold = math.sqrt(eps) * max_magnitude
+
     # Negate for descending argsort
     neg_abs = -abs_vals
     b.eval(neg_abs)
@@ -642,7 +749,6 @@ def _extract_top_k_dims(
     top_indices = b.to_numpy(top_indices_arr).tolist()
 
     # Get values from array
-    abs_np = b.to_numpy(abs_vals)
     act_np = b.to_numpy(activation_vector)
 
     return [

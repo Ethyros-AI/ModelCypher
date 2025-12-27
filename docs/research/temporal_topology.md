@@ -159,6 +159,6 @@ from modelcypher.core.domain.agents.unified_atlas import (
 temporal = UnifiedAtlasInventory.probes_by_source({AtlasSource.TEMPORAL_CONCEPT})
 print(f"Temporal probes: {len(temporal)}")  # 25
 
-# Total atlas now has 402 probes
-print(f"Total probes: {UnifiedAtlasInventory.total_probe_count()}")  # 402
+# Total atlas now has 439 probes
+print(f"Total probes: {UnifiedAtlasInventory.total_probe_count()}")  # 439
 ```

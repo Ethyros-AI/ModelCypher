@@ -125,7 +125,7 @@ A measure of the "ruggedness" of the activation manifold.
 
 ### Ghost Anchor (Synthesis)
 A relational coordinate in a Target Model synthesized from a Source Model's relational footprint.
--   **Analogy**: Placing a "Virtual Flag" in a new city by knowing its exact distance from 402 probes in an old city.
+-   **Analogy**: Placing a "Virtual Flag" in a new city by knowing its exact distance from 439 probes in an old city.
 -   **ML Equivalent**: Zero-shot weight synthesis. We "print" a new feature footprint into a model that was never trained on that data.
 
 ### Relational Stress

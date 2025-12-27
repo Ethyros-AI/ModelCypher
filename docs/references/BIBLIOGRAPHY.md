@@ -46,6 +46,19 @@ All arXiv and OpenReview papers are downloaded to `arxiv/` with `Author_Year_Sho
 | [Zou_2023_Representation_Engineering.pdf](arxiv/Zou_2023_Representation_Engineering.pdf) | Zou et al. - Representation Engineering | 2310.01405 |
 | [Zou_2024_Circuit_Breakers.pdf](arxiv/Zou_2024_Circuit_Breakers.pdf) | Zou et al. - Circuit Breakers (NeurIPS 2024) | 2406.04313 |
 
+### 2025 Entropy & Interpretability Research
+
+Recent papers on layer-wise entropy measurement and transformer interpretability:
+
+| File | Citation | arXiv |
+|------|----------|-------|
+| [Ali_2025_Entropy_Lens.pdf](arxiv/Ali_2025_Entropy_Lens.pdf) | Ali, Caso, Irwin, Liò - Entropy-Lens: The Information Signature of Transformer Computations | 2502.16570 |
+
+**Implementation Notes:**
+- Entropy-Lens is implemented in `layer_entropy_projector.py` for real per-layer entropy measurement
+- Key algorithm: Project hidden states through unembedding matrix → softmax → Shannon entropy
+- Replaces fabricated entropy in `entropy_merge_validator.py` (see commit history for details)
+
 ### 2025 Model Merging Research
 
 Recent papers referenced in [merge_algorithm_synthesis.md](../research/merge_algorithm_synthesis.md):
@@ -171,7 +184,7 @@ Papers cited in the Geometric Knowledge Thesis and Dimensional Hierarchy framewo
 
 | Category | Count | Status |
 |----------|-------|--------|
-| arXiv/OpenReview PDFs | 51 | ✅ Downloaded |
+| arXiv/OpenReview PDFs | 52 | ✅ Downloaded |
 | Books | 15 | 📚 Copyright (links provided) |
 | Distill/TC | 6 | 🔗 URLs provided |
 | Conference | ~20 | 🔗 Venue info provided |

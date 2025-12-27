@@ -23,14 +23,45 @@ Neural networks have N! permutation symmetries per layer. If Model A has Neuron[
 and Model B has Neuron[5]="CAT", naive weight averaging fails because it mixes unrelated
 features. This aligner finds the optimal permutation P that "un-spins" the neurons.
 
-Based on: Ainsworth et al. (2022) "Git Re-Basin" and Yadav et al. (2023) "TIES-Merging"
+SCOPE
+-----
+- MLP blocks (up_proj, gate_proj, down_proj): FULLY RE-BASINED
+- Attention blocks: NOT re-basined (multi-head structure makes generic
+  permutation unsafe without head-aware alignment - see is_attention_weight())
+- Embeddings/norms: Passed through unchanged
 
-Algorithm:
-    1. Use semantic prime anchors to probe each model's neuron responses
-    2. Compute cosine similarity between source and target neuron activations
-    3. Hungarian algorithm for optimal bipartite matching (O(N³))
-    4. Sign correction: handle ±1 symmetry per neuron
-    5. Return: P (permutation), S (signs) such that W_aligned = S @ P @ W @ P^T @ S^T
+DIMENSION HANDLING
+------------------
+For transformer MLP triplets (up_proj, gate_proj, down_proj):
+- up_proj/gate_proj: Permute OUTPUT dimension (intermediate_dim, align_output=True)
+- down_proj: Permute INPUT dimension (same permutation, align_input=True)
+
+This maintains functional equivalence through the MLP:
+    output = down_proj(gate_proj(x) * up_proj(x))
+
+The SAME permutation P is applied consistently:
+    up_proj:   P @ W (permute rows)
+    gate_proj: P @ W (permute rows, same P)
+    down_proj: W @ P^T (permute columns, same P)
+
+ASSUMPTIONS
+-----------
+- Neuron identity lives on the INTERMEDIATE dimension
+- Hidden dimension identity is preserved across layers
+- LoRA adapters follow standard PEFT conventions (B @ A decomposition)
+
+ALGORITHM
+---------
+1. Use semantic prime anchors to probe each model's neuron responses
+2. Compute cosine similarity between source and target neuron activations
+3. Hungarian algorithm for optimal bipartite matching (O(N³))
+4. Sign correction: handle ±1 symmetry per neuron
+5. Return: P (permutation), S (signs) such that W_aligned = S @ P @ W @ P^T @ S^T
+
+REFERENCES
+----------
+- Ainsworth et al. (2022) "Git Re-Basin" arXiv:2209.04836
+- Yadav et al. (2023) "TIES-Merging" arXiv:2306.01708
 """
 
 from __future__ import annotations
@@ -667,6 +698,21 @@ class PermutationAligner:
             ):
                 continue
 
+            # MLP Re-Basin Strategy:
+            # ----------------------
+            # For transformer MLPs: hidden → up_proj → intermediate → gate → down_proj → hidden
+            #
+            # The intermediate dimension has permutation symmetry.
+            # We find permutation P on up_proj, then apply consistently:
+            #   up_proj:   P @ W (permute output rows)
+            #   gate_proj: P @ W (permute output rows, same P)
+            #   down_proj: W @ P^T (permute input columns, same P)
+            #
+            # This preserves: down_proj(gate_proj(x) * up_proj(x)) functional equivalence
+            #
+            # NOTE: Attention is NOT re-basined here - multi-head structure requires
+            # head-aware alignment which is not implemented (see is_attention_weight()).
+
             # Align based on up_proj
             # up_proj: [intermediate, hidden] => align rows (dim 0)
             alignment = PermutationAligner.align_via_anchor_projection(
@@ -674,17 +720,18 @@ class PermutationAligner:
             )
 
             # Apply to source
-            # up_proj: align output
+            # up_proj: align output (permute rows = intermediate dimension)
             aligned_up = PermutationAligner.apply(
                 source_up, alignment, align_output=True, align_input=False, backend=b
             )
 
-            # gate_proj: align output (same permutation)
+            # gate_proj: align output (same permutation as up_proj)
             aligned_gate = PermutationAligner.apply(
                 source_gate, alignment, align_output=True, align_input=False, backend=b
             )
 
-            # down_proj: align input (dim 1)
+            # down_proj: align input (permute COLUMNS = intermediate dimension)
+            # NOTE: This is NOT "rows only" - we DO permute columns here!
             aligned_down = PermutationAligner.apply(
                 source_down, alignment, align_output=False, align_input=True, backend=b
             )

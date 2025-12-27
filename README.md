@@ -48,7 +48,7 @@ mc geometry interference safety-polytope 0.3 0.4 0.2 0.3
 ## Key Capabilities
 
 1.  **Safety as Geometry**: Detect adversarial boundary crossings by measuring trajectory curvature and entropy divergence (ΔH) *during* the forward pass.
-2.  **Relational Manifold Projection**: Map concepts between models using a universal basis of 373 probes, enabling dimension-agnostic alignment and transfer.
+2.  **Relational Manifold Projection**: Map concepts between models using a universal basis of 439 probes, enabling dimension-agnostic alignment and transfer.
 3.  **Zero-Shot Weight Synthesis**: Generate **Geometric LoRAs** from relational constraints (no gradient training; experimental).
 4.  **Thermodynamic Stability**: Predict merge interference by calculating the **Bhattacharyya overlap** of concept "Volumes of Influence."
 5.  **Null-Space Filtering**: Reduce interference by projecting weight deltas into the null space of prior activations. If Δw ∈ null(A), then A(W+Δw) = AW for the measured activation subspace.

@@ -8,7 +8,7 @@
 
 ## Abstract
 
-Across three transformer language models (Qwen2.5-0.5B-Instruct, Llama-3.2-3B-Instruct, Mistral-7B-Instruct-v0.3), we observe a consistent pattern in intrinsic dimension (ID) profiles measured with TwoNN on a 373-probe semantic corpus: (1) a sharp early-layer drop in ID ("dimensionality cliff"), and (2) a mid-layer plateau in the range 1.3–1.5. The magnitude and layer index of the cliff vary by architecture (40–79% drop across the tested models). Using Qwen with broader layer coverage, we also observe that domains with higher initial ID compress more strongly (Spearman ρ = 0.832). We present these results as an observation, not a universal law, and propose a working hypothesis: early transformer layers rapidly project tokenized representations onto a low-dimensional conceptual manifold, after which representations evolve primarily within that manifold. We outline follow-up tests needed to determine how broadly this pattern holds across architectures, scales, languages, and training regimes.
+Across three transformer language models (Qwen2.5-0.5B-Instruct, Llama-3.2-3B-Instruct, Mistral-7B-Instruct-v0.3), we observe a consistent pattern in intrinsic dimension (ID) profiles measured with TwoNN on a 439-probe semantic corpus: (1) a sharp early-layer drop in ID ("dimensionality cliff"), and (2) a mid-layer plateau in the range 1.3–1.5. The magnitude and layer index of the cliff vary by architecture (40–79% drop across the tested models). Using Qwen with broader layer coverage, we also observe that domains with higher initial ID compress more strongly (Spearman ρ = 0.832). We present these results as an observation, not a universal law, and propose a working hypothesis: early transformer layers rapidly project tokenized representations onto a low-dimensional conceptual manifold, after which representations evolve primarily within that manifold. We outline follow-up tests needed to determine how broadly this pattern holds across architectures, scales, languages, and training regimes.
 
 ## 1. Introduction
 
@@ -46,22 +46,22 @@ Distances $r_{i,1}, r_{i,2}$ are computed via geodesic path lengths on a k-NN gr
 
 ### 2.2 Semantic Probe Corpus
 
-We analyze 373 probes from the UnifiedAtlas spanning 12 semantic domains:
+We analyze 439 probes from the UnifiedAtlas spanning 12 semantic domains:
 
 | Domain | Probe Count | Examples |
 |--------|-------------|----------|
-| Mathematical | 51 | Fibonacci, primes, Catalan |
+| Mathematical | 65 | Fibonacci, primes, Catalan |
 | Logical | 41 | Modus ponens, De Morgan |
 | Computational | 73 | Gates, algorithms |
-| Spatial | 15 | Left/right, near/far |
+| Spatial | 38 | Left/right, near/far |
 | Temporal | 33 | Past/future, duration |
-| Moral | 20 | Right/wrong, virtue |
+| Moral | 23 | Right/wrong, virtue |
 | Affective | 28 | Joy, fear, anger |
-| Relational | 37 | Kinship, social roles |
+| Relational | 40 | Kinship, social roles |
 | Mental | 20 | Think, know, believe |
-| Linguistic | 21 | Syntax, semantics |
+| Linguistic | 35 | Syntax, semantics |
 | Structural | 10 | Part/whole, containment |
-| Philosophical | 24 | Existence, causation |
+| Philosophical | 33 | Existence, causation |
 
 Each probe has 3-8 support texts. Per-probe ID is computed by:
 1. Extracting activations for all support texts at target layer
@@ -218,7 +218,7 @@ This document reports a pattern observed in **three** models. That is enough to 
 Key limitations:
 - **Model coverage**: Only three instruction-tuned transformer models; broader coverage (base models, multilingual, different training data, more scales) is required.
 - **Quantization mismatch**: Two models are 4-bit while one is bf16; quantization can affect distances and therefore ID estimates.
-- **Small per-probe sample sizes**: Probes use 3–8 support texts; TwoNN is valid at small N but can be high-variance, especially per-probe. The mean across 373 probes may be stable, but this should be verified with confidence intervals and repeated runs.
+- **Small per-probe sample sizes**: Probes use 3–8 support texts; TwoNN is valid at small N but can be high-variance, especially per-probe. The mean across 439 probes may be stable, but this should be verified with confidence intervals and repeated runs.
 - **Estimator + distance sensitivity**: Results may depend on TwoNN configuration (regression vs MLE), k-NN geodesic parameters, and probe construction choices.
 
 Follow-up experiments to test generality:

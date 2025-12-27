@@ -471,4 +471,4 @@ InterferencePrediction (existing)
 | `manifold_curvature.py` | Sectional curvature → extend to Ricci |
 | `fisher_blending.py` | Stub → complete with CAMEx insights |
 | `unified_manifold_merger.py` | Integration point for all algorithms |
-| `domain_geometry_waypoints.py` | Validation anchors (402 probes) |
+| `domain_geometry_waypoints.py` | Validation anchors (439 probes) |

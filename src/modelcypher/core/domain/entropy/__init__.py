@@ -80,6 +80,11 @@ from .hidden_state_extractor import (
     ExtractorConfig,
     HiddenStateExtractor,
 )
+from .layer_entropy_projector import (
+    LayerEntropyProjector,
+    LayerEntropyResult,
+    ModelLayerEntropyProfile,
+)
 from .logit_entropy_calculator import (
     EntropyThresholds,
     LogitEntropySample,
