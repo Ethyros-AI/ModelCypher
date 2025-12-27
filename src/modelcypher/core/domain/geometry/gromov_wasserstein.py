@@ -69,6 +69,7 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    machine_epsilon,
     tiny_value,
 )
 
@@ -97,14 +98,16 @@ class Config:
     # Frank-Wolfe parameters
     max_outer_iterations: int = 100
     min_outer_iterations: int = 5
-    convergence_threshold: float = 1e-7
-    relative_objective_threshold: float = 1e-7
+    # Convergence thresholds - None means derive from dtype at runtime
+    convergence_threshold: float | None = None
+    relative_objective_threshold: float | None = None
 
     # Linear OT subproblem (Sinkhorn)
     # Small epsilon approximates exact EMD better
     sinkhorn_epsilon: float = 0.001
     sinkhorn_iterations: int = 200
-    sinkhorn_threshold: float = 1e-8
+    # Sinkhorn convergence threshold - None means derive from dtype at runtime
+    sinkhorn_threshold: float | None = None
 
     # Loss function
     use_squared_loss: bool = True
@@ -220,7 +223,9 @@ class GromovWassersteinDistance:
                 best_result = result
 
             # Early termination if we found near-zero distance
-            if result.distance < 1e-8:
+            # Use dtype-derived epsilon for precision-aware comparison
+            zero_dist_eps = float(machine_epsilon(backend, C1))
+            if result.distance < zero_dist_eps:
                 break
 
         assert best_result is not None
@@ -568,6 +573,13 @@ class GromovWassersteinDistance:
         # Initialize loss decomposition matrices
         constC, hC1, hC2 = self._init_loss_matrices(C1, C2, p, q)
 
+        # Derive convergence thresholds from dtype if not specified
+        # Using sqrt(eps) as standard numerical tolerance for convergence
+        dtype_eps = float(machine_epsilon(backend, T0))
+        conv_threshold = config.convergence_threshold if config.convergence_threshold is not None else dtype_eps ** 0.5
+        rel_threshold = config.relative_objective_threshold if config.relative_objective_threshold is not None else dtype_eps ** 0.5
+        sink_threshold = config.sinkhorn_threshold if config.sinkhorn_threshold is not None else dtype_eps
+
         T = T0
         prev_loss = float("inf")
         converged = False
@@ -586,7 +598,7 @@ class GromovWassersteinDistance:
                 eps = division_epsilon(backend, T)
                 rel_change = abs_change / max(abs(prev_loss), eps) if math.isfinite(prev_loss) else float("inf")
 
-                if abs_change < config.convergence_threshold or rel_change < config.relative_objective_threshold:
+                if abs_change < conv_threshold or rel_change < rel_threshold:
                     converged = True
                     break
 
@@ -603,7 +615,7 @@ class GromovWassersteinDistance:
                 q,
                 epsilon=config.sinkhorn_epsilon,
                 max_iterations=config.sinkhorn_iterations,
-                threshold=config.sinkhorn_threshold,
+                threshold=sink_threshold,
             )
 
             # Step 3: Line search for optimal step size

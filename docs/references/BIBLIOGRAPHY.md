@@ -46,6 +46,35 @@ All arXiv and OpenReview papers are downloaded to `arxiv/` with `Author_Year_Sho
 | [Zou_2023_Representation_Engineering.pdf](arxiv/Zou_2023_Representation_Engineering.pdf) | Zou et al. - Representation Engineering | 2310.01405 |
 | [Zou_2024_Circuit_Breakers.pdf](arxiv/Zou_2024_Circuit_Breakers.pdf) | Zou et al. - Circuit Breakers (NeurIPS 2024) | 2406.04313 |
 
+### 2024 Embedding Theory & Foundations
+
+Foundational work on embedding structure and the distributional hypothesis:
+
+| File | Citation | Venue |
+|------|----------|-------|
+| [Bertolotti_2024_Tying_Embeddings.pdf](arxiv/Bertolotti_2024_Tying_Embeddings.pdf) | Bertolotti & Cazzola - By Tying Embeddings You Are Assuming the Distributional Hypothesis | ICML 2024, PMLR 235:3584-3610 |
+
+**Implementation Notes:**
+- **Key finding**: Input embeddings encode *semantic similarity*; output embeddings encode *contextual similarity*
+- Tied embeddings (using same matrix for input/output) assumes the distributional hypothesis holds
+- When `layer_entropy_projector.py` falls back to `embed_tokens` (input embeddings) as unembedding matrix, this assumption is implicitly made
+- Affects model merging strategies: cross-architecture merging may violate distributional hypothesis alignment
+
+**BibTeX:**
+```bibtex
+@InProceedings{pmlr-v235-bertolotti24a,
+  title     = {By Tying Embeddings You Are Assuming the Distributional Hypothesis},
+  author    = {Bertolotti, Francesco and Cazzola, Walter},
+  booktitle = {Proceedings of the 41st International Conference on Machine Learning},
+  pages     = {3584--3610},
+  year      = {2024},
+  volume    = {235},
+  series    = {Proceedings of Machine Learning Research},
+  publisher = {PMLR},
+  url       = {https://proceedings.mlr.press/v235/bertolotti24a.html},
+}
+```
+
 ### 2025 Entropy & Interpretability Research
 
 Recent papers on layer-wise entropy measurement and transformer interpretability:
@@ -58,6 +87,7 @@ Recent papers on layer-wise entropy measurement and transformer interpretability
 - Entropy-Lens is implemented in `layer_entropy_projector.py` for real per-layer entropy measurement
 - Key algorithm: Project hidden states through unembedding matrix → softmax → Shannon entropy
 - Replaces fabricated entropy in `entropy_merge_validator.py` (see commit history for details)
+- When using tied embeddings (embed_tokens as unembedding), see Bertolotti & Cazzola (2024) for theoretical justification
 
 ### 2025 Model Merging Research
 

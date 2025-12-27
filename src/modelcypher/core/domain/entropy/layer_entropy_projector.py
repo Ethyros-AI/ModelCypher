@@ -30,10 +30,25 @@ Algorithm (per layer L):
 This gives one real entropy value per layer showing how uncertainty evolves
 through the model - NOT fabricated data like the previous implementation.
 
+Theoretical Foundation
+----------------------
+The projection through the unembedding matrix measures entropy in the *output
+embedding space*. Per Bertolotti & Cazzola (2024), output embeddings encode
+*contextual similarity* (words appearing in similar contexts → similar vectors),
+while input embeddings encode *semantic similarity* (words with similar meanings).
+
+When using tied embeddings (same matrix for input/output), this assumes the
+*distributional hypothesis* holds: that contextual and semantic similarity align.
+This assumption is generally valid for language models trained on natural text.
+
 References
 ----------
 Ali et al. (2025) "Entropy-Lens: The Information Signature of Transformer Computations"
-arXiv:2502.16570 - Key finding: entropy profiles reveal family-specific computation patterns
+    arXiv:2502.16570 - Key finding: entropy profiles reveal family-specific computation patterns
+
+Bertolotti & Cazzola (2024) "By Tying Embeddings You Are Assuming the Distributional Hypothesis"
+    ICML 2024, PMLR 235:3584-3610 - Theoretical foundation for tied embedding interpretation
+    https://proceedings.mlr.press/v235/bertolotti24a.html
 """
 
 from __future__ import annotations
@@ -234,6 +249,10 @@ class LayerEntropyProjector:
             return self._unembedding_source
 
         # Strategy 3: Tied weights via model.model.embed_tokens
+        # NOTE: Using input embeddings as output embeddings assumes the distributional
+        # hypothesis holds (Bertolotti & Cazzola, ICML 2024). This is valid for most
+        # language models trained on natural text, where semantic similarity (encoded
+        # in input embeddings) aligns with contextual similarity (output embeddings).
         if hasattr(model, "model") and hasattr(model.model, "embed_tokens"):
             embed = model.model.embed_tokens
             if hasattr(embed, "weight"):
@@ -247,9 +266,12 @@ class LayerEntropyProjector:
                 logger.info(
                     f"Using embed_tokens (tied): vocab={self._vocab_size}, hidden={self._hidden_dim}"
                 )
+                logger.debug(
+                    "Tied embeddings assume distributional hypothesis (Bertolotti & Cazzola 2024)"
+                )
                 return self._unembedding_source
 
-        # Strategy 4: Direct embed_tokens
+        # Strategy 4: Direct embed_tokens (same distributional hypothesis caveat)
         if hasattr(model, "embed_tokens") and hasattr(model.embed_tokens, "weight"):
             weight = model.embed_tokens.weight
             self._unembedding_matrix = b.astype(weight, "float32")
@@ -258,6 +280,9 @@ class LayerEntropyProjector:
             self._unembedding_source = "embed_tokens_transposed"
             logger.info(
                 f"Using embed_tokens (tied): vocab={self._vocab_size}, hidden={self._hidden_dim}"
+            )
+            logger.debug(
+                "Tied embeddings assume distributional hypothesis (Bertolotti & Cazzola 2024)"
             )
             return self._unembedding_source
 

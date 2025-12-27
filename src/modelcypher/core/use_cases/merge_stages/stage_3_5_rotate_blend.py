@@ -45,7 +45,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import svd_via_eigh
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    svd_via_eigh,
+)
 from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
 
 if TYPE_CHECKING:
@@ -152,10 +155,13 @@ def geometric_merge_weights(
     # SPECIAL CASE: Very tall matrices (embeddings, m >> n)
     # For embeddings, tokens are aligned by ID. Full SVD would allocate
     # O(m^2) memory which is prohibitive. Use direct Fréchet mean instead.
+    #
+    # Threshold: aspect ratio > 4 AND m² > 16 × m × n (SVD would need 4× more memory)
+    # This is geometric: when Gram matrix [m,m] is much larger than weight [m,n]
     # ==========================================================================
-    if m > 4 * n and m > 10000:
+    if m > 4 * n and m * m > 16 * m * n:
         # Direct element-wise Fréchet mean: √(s × t) per element
-        eps = 1e-10
+        eps = float(machine_epsilon(b, source_f32))
         source_abs = b.abs(source_f32)
         target_abs = b.abs(target_f32)
         merged_magnitude = b.sqrt((source_abs + eps) * (target_abs + eps))
@@ -172,7 +178,7 @@ def geometric_merge_weights(
         diff_norm_val = float(diff_norm.item()) if hasattr(diff_norm, 'item') else float(b.to_numpy(diff_norm))
 
         metrics = {
-            "procrustes_error": diff_norm_val / (target_norm_val + 1e-10),
+            "procrustes_error": diff_norm_val / (target_norm_val + eps),
             "spectral_preservation": 1.0,  # Direct merge preserves spectrum
             "merge_quality": 1.0,
             "effective_rank": min(m, n),
@@ -276,7 +282,7 @@ def geometric_merge_weights(
         diff_to_target = b.norm(b.reshape(merged - target_f32, (-1,)))
         b.eval(diff_to_source, diff_to_target)
 
-        eps = 1e-10
+        eps = float(machine_epsilon(b, source_aligned))
         procrustes_error = to_scalar(error_norm) / (target_norm_val + eps)
         spectral_preservation = to_scalar(energy_merged) / (
             0.5 * (to_scalar(energy_source) + to_scalar(energy_target)) + eps
@@ -318,8 +324,8 @@ def geometric_merge_weights(
     sigma_t_k = sigma_t[:k]
 
     # Geometric mean - the mathematically correct merge for positive magnitudes
-    # Add small epsilon to avoid sqrt(0) issues
-    eps = 1e-10
+    # Add small epsilon (dtype-derived) to avoid sqrt(0) issues
+    eps = float(machine_epsilon(b, sigma_s_k))
     sigma_merged = b.sqrt((sigma_s_k + eps) * (sigma_t_k + eps))
     b.eval(sigma_merged)
 
@@ -489,13 +495,14 @@ def stage_rotate_blend_propagate(
             NullSpaceFilterConfig,
         )
 
-        null_space_filter = NullSpaceFilter(
-            NullSpaceFilterConfig(rank_threshold=0.01, min_samples=5),
-            backend=b,
-        )
+        # Use default config with dtype-derived thresholds
+        null_space_filter = NullSpaceFilter(NullSpaceFilterConfig(), backend=b)
+
+        # Minimum samples derived from log2(num_layers) + 1 for statistical stability
+        min_samples = max(2, int(math.ceil(math.log2(len(target_activations) + 1))))
 
         for layer_idx, act_list in target_activations.items():
-            if act_list and len(act_list) >= 5:
+            if act_list and len(act_list) >= min_samples:
                 stacked = b.stack(act_list, axis=0)
                 b.eval(stacked)
                 try:
@@ -582,9 +589,13 @@ def stage_rotate_blend_propagate(
             layer_alphas = gaussian_smooth_alpha_profile(layer_alphas, smooth_config)
             metrics["alpha_smoothing"] = {"window": window, "sigma": sigma}
 
-    mean_alpha = sum(layer_alphas.values()) / len(layer_alphas) if layer_alphas else 0.5
-    metrics["mean_layer_alpha"] = mean_alpha
-    task_blend_enabled = bool(layer_alphas)
+    # Mean alpha from geometric data - no arbitrary fallback
+    # If no layer alphas available, pure geometric merge (no task blending)
+    mean_alpha: float | None = None
+    if layer_alphas:
+        mean_alpha = sum(layer_alphas.values()) / len(layer_alphas)
+        metrics["mean_layer_alpha"] = mean_alpha
+    task_blend_enabled = bool(layer_alphas) and mean_alpha is not None
 
     from modelcypher.core.domain.geometry.spectral_analysis import (
         SpectralConfig,
@@ -651,7 +662,9 @@ def stage_rotate_blend_propagate(
 
         layer_idx = extract_layer_index_fn(key)
         base_alpha = layer_alphas.get(layer_idx, mean_alpha) if task_blend_enabled else None
-        layer_confidence = 0.5 if base_alpha is None else max(0.0, min(1.0, 1.0 - base_alpha))
+        # Layer confidence derived from alpha - no arbitrary fallback
+        # If no alpha, spectral penalty disabled for this weight
+        layer_confidence = max(0.0, min(1.0, 1.0 - base_alpha)) if base_alpha is not None else None
 
         # Apply exact kernel alignment transform before shape normalization if available
         if layer_idx is not None and layer_idx in layer_rotations and source_w.ndim == 2:
@@ -709,7 +722,8 @@ def stage_rotate_blend_propagate(
         # Apply geometric merge for 2D weight matrices
         if source_w.ndim == 2 and target_w.ndim == 2 and min(source_w.shape) >= 2:
             spectral_confidence = None
-            if base_alpha is not None and source_w.shape == target_w.shape:
+            # Only apply spectral penalty if we have layer confidence from geometry
+            if base_alpha is not None and layer_confidence is not None and source_w.shape == target_w.shape:
                 spectral = compute_spectral_metrics(
                     source_w, target_w, spectral_config, backend=b
                 )
@@ -784,7 +798,8 @@ def stage_rotate_blend_propagate(
                     orig_norm = b.norm(b.reshape(delta, (-1,)))
                     filt_norm = b.norm(b.reshape(filtered_delta, (-1,)))
                     b.eval(orig_norm, filt_norm)
-                    preservation = float(filt_norm.item()) / (float(orig_norm.item()) + 1e-10)
+                    div_eps = float(machine_epsilon(b, orig_norm))
+                    preservation = float(filt_norm.item()) / (float(orig_norm.item()) + div_eps)
 
                     # Apply filtered delta
                     merged_w = target_f32 + filtered_delta
@@ -818,7 +833,8 @@ def stage_rotate_blend_propagate(
                 )
         else:
             # For 1D tensors (biases, norms) - geometric mean of magnitudes
-            merged_w = b.sqrt((source_w + 1e-10) * (target_w + 1e-10)) * b.sign(target_w)
+            eps_1d = float(machine_epsilon(b, source_w))
+            merged_w = b.sqrt((source_w + eps_1d) * (target_w + eps_1d)) * b.sign(target_w)
             b.eval(merged_w)
             metrics["identity_copies"] += 1
 

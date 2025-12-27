@@ -66,6 +66,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    machine_epsilon,
     regularization_epsilon,
 )
 
@@ -194,7 +195,7 @@ class RiemannianGeometry:
         points: "Array",
         weights: "Array | None" = None,
         max_iterations: int = 100,
-        tolerance: float = 1e-6,
+        tolerance: float | None = None,
         k_neighbors: int | None = None,
         max_k_neighbors: int | None = None,
     ) -> FrechetMeanResult:
@@ -321,6 +322,12 @@ class RiemannianGeometry:
             converged = False
             iterations = 0
 
+            # Derive tolerance from dtype if not specified - use sqrt(eps) as standard
+            if tolerance is None:
+                tol = float(machine_epsilon(backend, mu)) ** 0.5
+            else:
+                tol = tolerance
+
             try:
                 for it in range(max_iterations):
                     iterations = it + 1
@@ -339,7 +346,7 @@ class RiemannianGeometry:
                     backend.eval(diff)
                     diff_val = float(backend.to_numpy(diff))
 
-                    if diff_val < tolerance:
+                    if diff_val < tol:
                         converged = True
                         mu = new_mu
                         break
@@ -523,12 +530,15 @@ class RiemannianGeometry:
         # Convert to numpy for connectivity check
         geo_np = backend.to_numpy(geo_dist_arr)
 
+        # Derive near-zero threshold from dtype
+        near_zero_eps = float(machine_epsilon(backend, geo_dist_arr))
+
         # Mark distances >= inf_val as true infinity (disconnected)
         for i in range(n):
             for j in range(n):
                 if geo_np[i, j] >= inf_val * 0.9:  # Near our pseudo-infinity
                     geo_np[i, j] = float("inf")
-                elif geo_np[i, j] < 1e-8:  # Near-zero distances are truly zero
+                elif geo_np[i, j] < near_zero_eps:  # Near-zero distances are truly zero
                     geo_np[i, j] = 0.0
 
         # Check connectivity - inf values represent genuinely infinite geodesic distance

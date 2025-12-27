@@ -152,12 +152,26 @@ class AnchorExtractor:
 
     @staticmethod
     def token_embedding_matrix(weights: dict[str, Any]) -> tuple[str, np.ndarray]:
+        """Extract the token embedding matrix from model weights.
+
+        Prefers input embeddings (embed_tokens) over output embeddings (lm_head)
+        because input embeddings encode *semantic similarity* while output embeddings
+        encode *contextual similarity* (Bertolotti & Cazzola, ICML 2024). For semantic
+        anchor extraction, input embeddings produce more meaningful clusters.
+
+        Args:
+            weights: Model weights dictionary.
+
+        Returns:
+            Tuple of (key_name, embedding_matrix).
+        """
+        # Priority order: input embeddings encode semantic similarity (Bertolotti 2024)
         preferred_suffixes = [
             "embed_tokens.weight",
             "tok_embeddings.weight",
             "token_embedding.weight",
             "wte.weight",
-            "lm_head.weight",
+            "lm_head.weight",  # Fallback: contextual similarity, less ideal for anchors
         ]
         for suffix in preferred_suffixes:
             for key, value in weights.items():
