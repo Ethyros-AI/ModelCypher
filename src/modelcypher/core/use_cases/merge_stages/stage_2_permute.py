@@ -93,6 +93,8 @@ def stage_permute(
     from modelcypher.core.domain.geometry.permutation_aligner import (
         PermutationAligner,
     )
+    from modelcypher.core.domain.geometry.cka import compute_cka
+    from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
     if not config.enable_permutation:
         logger.info("PERMUTE: Disabled")
@@ -143,12 +145,12 @@ def stage_permute(
 
     source_anchors = None
     target_anchors = None
-    num_anchors = 128
+    num_anchors: int | None = None
 
     if source_anchor_key is not None:
         embed = source_weights[source_anchor_key]
         embed = dequantize_if_needed(embed, source_anchor_key, source_weights, b)
-        num_anchors = min(128, embed.shape[0])
+        num_anchors = min(embed.shape[0], embed.shape[1])
         source_anchors = b.astype(b.array(embed[:num_anchors]), "float32")
         b.eval(source_anchors)
         logger.info("PERMUTE: Source anchors from %s (%d tokens)", source_anchor_key, num_anchors)
@@ -156,68 +158,36 @@ def stage_permute(
     if target_anchor_key is not None:
         embed = target_weights[target_anchor_key]
         embed = dequantize_if_needed(embed, target_anchor_key, target_weights, b)
-        num_anchors = min(num_anchors, embed.shape[0])
+        target_count = min(embed.shape[0], embed.shape[1])
+        num_anchors = target_count if num_anchors is None else min(num_anchors, target_count)
         target_anchors = b.astype(b.array(embed[:num_anchors]), "float32")
         b.eval(target_anchors)
         logger.info("PERMUTE: Target anchors from %s (%d tokens)", target_anchor_key, num_anchors)
 
-    # Fallback to random anchors if embeddings not found
     if source_anchors is None or target_anchors is None:
-        hidden_dim = infer_hidden_dim_fn(target_weights)
-        b.random_seed(42)
-        anchors = b.random_normal((64, hidden_dim)) * 0.1
-        b.eval(anchors)
-        source_anchors = anchors
-        target_anchors = anchors
-        logger.warning("PERMUTE: No embedding found, using random anchors (dim=%d)", hidden_dim)
-        embedding_rotation = None
-    else:
-        # Find Procrustes rotation from source embedding space to target embedding space
-        # This aligns the representations so neuron signatures become comparable
-        # R = argmin ||target - source @ R||_F  =>  R = V @ U.T from SVD(source.T @ target)
-        M = b.matmul(b.transpose(source_anchors), target_anchors)  # [hidden, hidden]
-        U, _, Vt = b.svd(M, compute_uv=True)
-        embedding_rotation = b.matmul(U, Vt)  # Orthogonal rotation matrix
+        raise RuntimeError("PERMUTE: Embedding anchors missing; cannot phase-lock permutation.")
 
-        # Handle reflection (ensure det(R) = 1)
-        det_R = b.det(embedding_rotation)
-        b.eval(det_R)
-        det_val = float(det_R.item()) if hasattr(det_R, 'item') else float(b.to_numpy(det_R))
-        if det_val < 0:
-            # Flip sign of last column of U
-            n = U.shape[1]
-            U_cols = [U[:, i:i+1] for i in range(n-1)]
-            U_cols.append(U[:, -1:] * -1.0)
-            U_fixed = b.concatenate(U_cols, axis=1)
-            embedding_rotation = b.matmul(U_fixed, Vt)
-        b.eval(embedding_rotation)
+    if source_anchors.shape[1] != target_anchors.shape[1]:
+        logger.info(
+            "PERMUTE: Hidden dimension mismatch (source=%d, target=%d); skipping permutation stage.",
+            source_anchors.shape[1],
+            target_anchors.shape[1],
+        )
+        return PermuteResult(source_weights, {"skipped": True, "reason": "hidden_dim_mismatch"})
 
-        # Measure embedding alignment quality
-        source_rotated = b.matmul(source_anchors, embedding_rotation)
-        embed_error = b.norm(b.reshape(target_anchors - source_rotated, (-1,)))
-        embed_target_norm = b.norm(b.reshape(target_anchors, (-1,)))
-        b.eval(embed_error, embed_target_norm)
-        align_quality = 1.0 - float(embed_error.item()) / (float(embed_target_norm.item()) + 1e-10)
-        logger.info("PERMUTE: Embedding Procrustes alignment quality=%.3f", align_quality)
+    precision_tol = max(machine_epsilon(b, source_anchors), 1e-12)
+    embed_cka = compute_cka(source_anchors, target_anchors, backend=b).cka
+    if embed_cka < 1.0 - precision_tol:
+        raise RuntimeError(
+            "PERMUTE: Embedding anchors not phase-locked (CKA=%.8f). "
+            "Complete 1D/2D alignment before permutation."
+            % embed_cka
+        )
 
-        # Apply rotation to all source weights that operate on hidden dimension
-        for key in list(source_arr.keys()):
-            w = source_arr[key]
-            if w.ndim == 2:
-                out_dim, in_dim = w.shape
-                hidden_dim = source_anchors.shape[1]
-                # Weights with hidden_dim as input dimension: W @ R
-                if in_dim == hidden_dim:
-                    source_arr[key] = b.matmul(w, embedding_rotation)
-                    b.eval(source_arr[key])
-                # Weights with hidden_dim as output dimension: R.T @ W
-                elif out_dim == hidden_dim:
-                    source_arr[key] = b.matmul(b.transpose(embedding_rotation), w)
-                    b.eval(source_arr[key])
-
-        # After rotation, use target anchors for both (they're now in same space)
-        source_anchors = target_anchors
-        logger.info("PERMUTE: Applied Procrustes rotation to source weights")
+    logger.info(
+        "PERMUTE: Embedding anchors phase-locked (CKA=%.8f). Skipping Procrustes rotation.",
+        embed_cka,
+    )
 
     # Configure aligner - no arbitrary thresholds
     pa_config = PAConfig(use_anchor_grounding=True)

@@ -390,6 +390,7 @@ def stage_vocabulary_align(
                 best_cka = -1.0
                 last_signal: AlignmentSignal | None = None
                 previous_transform: Any | None = None
+                anchor_weights: list[float] | None = None
                 iteration = 0
                 iteration_budget = alignment_iterations
                 stall_count = 0
@@ -405,7 +406,7 @@ def stage_vocabulary_align(
                         max_iterations=solver_iterations,
                         tolerance=precision_tol,
                         max_rounds=solver_rounds,
-                        anchor_weights=None,
+                        anchor_weights=anchor_weights,
                         initial_transform=previous_transform,
                         require_phase_lock=True,
                     )
@@ -425,6 +426,10 @@ def stage_vocabulary_align(
                         iteration=iteration,
                     )
                     binary_signals.append(last_signal.to_dict())
+                    if balance_anchor_weights:
+                        anchor_weights = _compute_anchor_weights(last_signal)
+                    else:
+                        anchor_weights = None
 
                     if last_signal.is_phase_locked:
                         break
@@ -738,6 +743,7 @@ def stage_vocabulary_align(
                 best_cka = -1.0
                 last_signal: AlignmentSignal | None = None
                 previous_transform: Any | None = None
+                anchor_weights: list[float] | None = None
                 iteration = 0
                 iteration_budget = alignment_iterations
                 stall_count = 0
@@ -753,7 +759,7 @@ def stage_vocabulary_align(
                         max_iterations=solver_iterations,
                         tolerance=precision_tol,
                         max_rounds=solver_rounds,
-                        anchor_weights=None,
+                        anchor_weights=anchor_weights,
                         initial_transform=previous_transform,
                         require_phase_lock=True,
                     )
@@ -774,6 +780,10 @@ def stage_vocabulary_align(
                         iteration=iteration,
                     )
                     vocab_signals.append(last_signal.to_dict())
+                    if balance_anchor_weights:
+                        anchor_weights = _compute_anchor_weights(last_signal)
+                    else:
+                        anchor_weights = None
 
                     if last_signal.is_phase_locked:
                         break
@@ -843,6 +853,7 @@ def stage_vocabulary_align(
                                 candidate_atlas[idx] for idx in selected_indices
                             ]
                             atlas_labels = list(shared_atlas)
+                            anchor_weights = None
 
                             if coverage_meta is None:
                                 coverage_meta = {}
@@ -993,6 +1004,7 @@ def stage_vocabulary_align(
                                 candidate_atlas[idx] for idx in selected_indices
                             ]
                             atlas_labels = list(shared_atlas)
+                            anchor_weights = None
                         logger.info(
                             "Vocabulary phase lock not reached; expanding search to %d solver iterations",
                             solver_iterations,
@@ -1044,9 +1056,11 @@ def stage_vocabulary_align(
             effective_strategy = projection_strategy
             if phase_locked:
                 if source_embed.shape[1] != target_embed.shape[1]:
-                    raise RuntimeError(
-                        f"Phase lock produced mismatched embedding dims: "
-                        f"source={source_embed.shape[1]}, target={target_embed.shape[1]}"
+                    logger.warning(
+                        "Phase lock produced mismatched embedding dims: source=%s, target=%s. "
+                        "Continuing with aligned embeddings.",
+                        source_embed.shape[1],
+                        target_embed.shape[1],
                     )
                 effective_strategy = ProjectionStrategy.TRUNCATE
 
