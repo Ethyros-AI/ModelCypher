@@ -165,7 +165,9 @@ def stage_permute(
         logger.info("PERMUTE: Target anchors from %s (%d tokens)", target_anchor_key, num_anchors)
 
     if source_anchors is None or target_anchors is None:
-        raise RuntimeError("PERMUTE: Embedding anchors missing; cannot phase-lock permutation.")
+        raise RuntimeError(
+            "PERMUTE: Embedding anchors missing; cannot reach exact kernel alignment for permutation."
+        )
 
     if source_anchors.shape[1] != target_anchors.shape[1]:
         logger.info(
@@ -236,16 +238,18 @@ def stage_permute(
         embed_cka = compute_cka(source_rotated, target_anchors, backend=b).cka
         if embed_cka < 1.0 - precision_tol:
             raise RuntimeError(
-                "PERMUTE: Embedding rotation failed to phase-lock (CKA=%.8f)." % embed_cka
+                "PERMUTE: Embedding rotation failed to reach exact kernel alignment (CKA=%.8f)."
+                % embed_cka
             )
         source_anchors = source_rotated
         logger.info(
-            "PERMUTE: Embedding rotation phase-locked (CKA=%.8f).",
+            "PERMUTE: Embedding rotation exact kernel alignment achieved (CKA=%.8f).",
             embed_cka,
         )
     else:
         logger.info(
-            "PERMUTE: Embedding anchors phase-locked (CKA=%.8f). Skipping rotation.",
+            "PERMUTE: Embedding anchors exact kernel alignment achieved (CKA=%.8f). "
+            "Skipping rotation.",
             embed_cka,
         )
 

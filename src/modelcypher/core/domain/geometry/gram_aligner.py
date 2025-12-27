@@ -35,9 +35,9 @@ ALWAYS have a way to fit together perfectly. The relational structure
 is preserved - we just need to find the coordinate transformation that
 reveals this alignment.
 
-CKA is a PHASE LOCK DETECTOR:
+CKA is an exact kernel alignment detector:
 - CKA < 1: We haven't found the right transformation yet. Keep searching.
-- CKA = 1: Phase locked. The legos fit. NOW we merge.
+- CKA = 1: Exact kernel alignment. The legos fit. NOW we merge.
 
 The algorithm doesn't ask "can these models be merged?" - the answer is
 ALWAYS yes. It asks "what transformation achieves CKA = 1?" and keeps
@@ -91,7 +91,7 @@ class AlignmentResult:
     # This is the "true" alignment: T @ K_s @ T^T = K_t
     sample_transform: list[list[float]]
 
-    # CKA achieved (1.0 is phase lock)
+    # CKA achieved (1.0 is exact kernel alignment)
     achieved_cka: float
 
     # Number of iterations taken to find the fit
@@ -148,8 +148,8 @@ class GramAligner:
             Maximum iterations for optimization. We should converge
             well before this - if we hit max, something is wrong.
         max_rounds : int
-            Maximum search rounds to reach phase lock. Each round increases
-            the iteration budget and returns a diagnostic if still unlocked.
+            Maximum search rounds to reach exact kernel alignment. Each round
+            increases the iteration budget and returns a diagnostic if still unlocked.
         tolerance : float
             Convergence tolerance for CKA.
         regularization : float
@@ -419,7 +419,8 @@ class GramAligner:
 
             max_iterations *= 2
             logger.info(
-                "GramAligner: Phase lock not reached (cka=%.8f). Expanding search to %d iterations.",
+                "GramAligner: Exact kernel alignment not reached (cka=%.8f). "
+                "Expanding search to %d iterations.",
                 final_cka,
                 max_iterations,
             )

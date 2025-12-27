@@ -200,7 +200,7 @@ print(f"Proposed fills: {len(analysis.proposed_fills)}")
 
 ### Connection to CKA Alignment
 
-The phase-lock alignment (CKA = 1.0) ensures Gram matrix preservation across dimensions. This is the "upward" direction of the hierarchy - 1D → 2D → high-D.
+Exact kernel alignment (CKA = 1.0) ensures Gram matrix preservation across dimensions. This is the "upward" direction of the hierarchy - 1D → 2D → high-D.
 
 Coverage analysis provides the "downward" reading - detecting where lower-D structure surfaces in high-D.
 

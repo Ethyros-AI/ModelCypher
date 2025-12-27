@@ -210,7 +210,8 @@ def stage_vocabulary_align(
 
     if overlap_ratio > 0.95:
         logger.info(
-            "Vocabulary overlap %.1f%% - vocabularies compatible, still phase-locking",
+            "Vocabulary overlap %.1f%% - vocabularies compatible, "
+            "still seeking exact kernel alignment",
             overlap_ratio * 100,
         )
         metrics["compatible_vocabulary"] = True
@@ -312,7 +313,8 @@ def stage_vocabulary_align(
 
             if len(shared_bytes) < 2:
                 raise RuntimeError(
-                    f"Binary phase lock failed: only {len(shared_bytes)} shared byte anchors."
+                    "Binary exact kernel alignment failed: "
+                    f"only {len(shared_bytes)} shared byte anchors."
                 )
             else:
                 # Stack anchor matrices ONCE (full set, then coverage-select if needed)
@@ -387,7 +389,8 @@ def stage_vocabulary_align(
 
                 if len(shared_bytes) < 2:
                     raise RuntimeError(
-                        f"Binary phase lock failed: rank-deficient anchors ({len(shared_bytes)})."
+                        "Binary exact kernel alignment failed: "
+                        f"rank-deficient anchors ({len(shared_bytes)})."
                     )
 
                 byte_labels = [f"byte:{b}" for b in shared_bytes]
@@ -447,7 +450,7 @@ def stage_vocabulary_align(
                             # CKA=1.0 is ALWAYS achievable with full-rank anchors.
                             # If we stall at <1.0, the anchor selection or solve is wrong.
                             raise RuntimeError(
-                                f"Binary phase lock stalled at CKA={best_cka:.6f}. "
+                                f"Binary exact kernel alignment stalled at CKA={best_cka:.6f}. "
                                 f"Expected 1.0 with full-rank anchors. "
                                 f"Check anchor selection and numerical stability."
                             )
@@ -457,14 +460,15 @@ def stage_vocabulary_align(
                     iteration += 1
                     if phase_lock_max_iterations > 0 and iteration >= phase_lock_max_iterations:
                         raise RuntimeError(
-                            f"Binary phase lock failed after {iteration} iterations."
+                            f"Binary exact kernel alignment failed after {iteration} iterations."
                         )
                     if iteration >= iteration_budget:
                         iteration_budget *= 2
                         solver_iterations = int(solver_iterations * 1.5)
                         solver_rounds = max(solver_rounds + 1, solver_rounds)
                         logger.info(
-                            "Binary phase lock not reached; expanding search to %d solver iterations",
+                            "Binary exact kernel alignment not reached; "
+                            "expanding search to %d solver iterations",
                             solver_iterations,
                         )
 
@@ -489,7 +493,7 @@ def stage_vocabulary_align(
                         "target_dim": target_byte_matrix.shape[1],
                         "coverage": coverage_meta,
                         "signals": binary_signals,
-                        # CKA=1.0 required for phase lock - no exceptions
+                        # CKA=1.0 required for exact kernel alignment - no exceptions
                         "phase_locked": bool(last_signal and last_signal.is_phase_locked),
                         "balance_ratio": (
                             last_signal.metadata.get("balance_ratio")
@@ -758,7 +762,8 @@ def stage_vocabulary_align(
                 shared_atlas = [candidate_atlas[idx] for idx in selected_indices]
                 if len(shared_atlas) < 2:
                     raise RuntimeError(
-                        f"Vocabulary phase lock failed: rank-deficient anchors ({len(shared_atlas)})."
+                        "Vocabulary exact kernel alignment failed: "
+                        f"rank-deficient anchors ({len(shared_atlas)})."
                     )
             else:
                 target_atlas_matrix = None
@@ -766,7 +771,8 @@ def stage_vocabulary_align(
 
             if len(shared_atlas) < 2 or target_atlas_matrix is None:
                 raise RuntimeError(
-                    f"Vocabulary phase lock failed: only {len(shared_atlas)} shared anchors."
+                    "Vocabulary exact kernel alignment failed: "
+                    f"only {len(shared_atlas)} shared anchors."
                 )
             else:
                 atlas_labels = list(shared_atlas)
@@ -827,7 +833,7 @@ def stage_vocabulary_align(
                         stall_count += 1
                         if stall_count >= 2 and not available_indices:
                             raise RuntimeError(
-                                f"Vocabulary phase lock stalled at CKA={best_cka:.6f}. "
+                                f"Vocabulary exact kernel alignment stalled at CKA={best_cka:.6f}. "
                                 f"Expected 1.0 with full-rank anchors. "
                                 f"Check anchor selection and numerical stability."
                             )
@@ -909,7 +915,7 @@ def stage_vocabulary_align(
                         and iteration >= phase_lock_max_iterations
                     ):
                         raise RuntimeError(
-                            f"Vocabulary phase lock failed after {iteration} iterations."
+                            f"Vocabulary exact kernel alignment failed after {iteration} iterations."
                         )
                     if iteration >= iteration_budget:
                         iteration_budget *= 2
@@ -1044,7 +1050,8 @@ def stage_vocabulary_align(
                             atlas_labels = list(shared_atlas)
                             anchor_weights = None
                         logger.info(
-                            "Vocabulary phase lock not reached; expanding search to %d solver iterations",
+                            "Vocabulary exact kernel alignment not reached; "
+                            "expanding search to %d solver iterations",
                             solver_iterations,
                         )
 
@@ -1059,7 +1066,7 @@ def stage_vocabulary_align(
                         "alignment_error": best_alignment["alignment_error"],
                         "iterations": best_alignment["iterations"],
                         "signals": vocab_signals,
-                        # CKA=1.0 required for phase lock - no exceptions
+                        # CKA=1.0 required for exact kernel alignment - no exceptions
                         "phase_locked": bool(last_signal and last_signal.is_phase_locked),
                         "support_texts": "all" if use_all_support_texts else "first",
                         "coverage": coverage_meta,
@@ -1100,7 +1107,8 @@ def stage_vocabulary_align(
             )
             if not phase_locked:
                 raise RuntimeError(
-                    "Vocabulary alignment did not phase-lock across dimensions. "
+                    "Vocabulary alignment did not reach exact kernel alignment "
+                    "across dimensions. "
                     f"binary={bool(binary_metrics.get(embed_key, {}).get('phase_locked'))}, "
                     f"token={token_phase_locked}, "
                     f"atlas={bool(vocab_metrics.get(embed_key, {}).get('phase_locked'))}."
@@ -1111,8 +1119,8 @@ def stage_vocabulary_align(
             if phase_locked:
                 if source_embed.shape[1] != target_embed.shape[1]:
                     logger.warning(
-                        "Phase lock produced mismatched embedding dims: source=%s, target=%s. "
-                        "Continuing with aligned embeddings.",
+                        "Exact kernel alignment produced mismatched embedding dims: "
+                        "source=%s, target=%s. Continuing with aligned embeddings.",
                         source_embed.shape[1],
                         target_embed.shape[1],
                     )
@@ -1790,8 +1798,8 @@ def _solve_feature_transform_exact(
     3. Gram alignment in sample space (relational geometry)
     4. Eigendecomposition in sample space (legacy, squares condition number)
 
-    The caller verifies phase lock (CKA = 1.0). This function only proposes
-    candidate transforms; it does not accept approximate alignment.
+    The caller verifies exact kernel alignment (CKA = 1.0). This function only
+    proposes candidate transforms; it does not accept approximate alignment.
     """
     from modelcypher.core.domain.geometry.numerical_stability import (
         solve_full_row_rank_via_qr,

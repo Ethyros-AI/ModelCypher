@@ -19,7 +19,7 @@
 Stages 3-5: ROTATE + BLEND + PROPAGATE
 
 For each layer:
-1. ROTATE: Phase-lock alignment to CKA=1.0 (GramAligner)
+1. ROTATE: Exact kernel alignment to CKA=1.0 (GramAligner)
 2. BLEND: Compute multi-layer alpha with all adjustments
 3. PROPAGATE: Carry rotation to next layer (zipper)
 
@@ -403,7 +403,7 @@ def stage_rotate_blend_propagate(
     if hasattr(b, "clear_cache"):
         b.clear_cache()
 
-    # Initialize per-layer phase-lock transforms from activations
+    # Initialize per-layer exact kernel alignment transforms from activations
     # CKA is the barometer: we search for the transform that locks to CKA=1.0
     layer_rotations: dict[int, "Array"] = {}
     layer_null_projections: dict[int, Any] = {}
@@ -414,7 +414,7 @@ def stage_rotate_blend_propagate(
 
     if source_activations and target_activations:
         logger.info(
-            "PHASE LOCK: Searching per-layer transforms from %d layer activations",
+            "EXACT KERNEL ALIGNMENT: Searching per-layer transforms from %d layer activations",
             len(target_activations),
         )
 
@@ -432,7 +432,7 @@ def stage_rotate_blend_propagate(
             n_samples = min(len(src_acts), len(tgt_acts))
             if n_samples < 2:
                 logger.warning(
-                    "LAYER %d: Phase lock needs >= 2 activation samples, got %d",
+                    "LAYER %d: Exact kernel alignment needs >= 2 activation samples, got %d",
                     layer_idx,
                     n_samples,
                 )
@@ -461,20 +461,24 @@ def stage_rotate_blend_propagate(
                     phase_lock_signals[layer_idx] = result.diagnostic.to_dict()
 
                 logger.debug(
-                    "LAYER %d: Phase lock CKA=%.8f (iters=%d, error=%.6f)",
+                    "LAYER %d: Exact kernel alignment CKA=%.8f (iters=%d, error=%.6f)",
                     layer_idx,
                     result.achieved_cka,
                     result.iterations,
                     result.alignment_error,
                 )
             except Exception as e:
-                logger.error("LAYER %d: Phase lock alignment failed: %s", layer_idx, e)
+                logger.error(
+                    "LAYER %d: Exact kernel alignment failed: %s",
+                    layer_idx,
+                    e,
+                )
                 phase_lock_signals[layer_idx] = {"reason": str(e)}
                 continue
 
         if layer_rotations:
             logger.info(
-                "PHASE LOCK: Computed %d per-layer transforms",
+                "EXACT KERNEL ALIGNMENT: Computed %d per-layer transforms",
                 len(layer_rotations),
             )
 
@@ -608,7 +612,7 @@ def stage_rotate_blend_propagate(
         weight: "Array",
         transform: "Array",
     ) -> tuple["Array", bool]:
-        """Apply phase-lock transform to weight if dimensions match."""
+        """Apply exact kernel alignment transform to weight if dimensions match."""
         if weight.ndim != 2:
             return weight, False
 
@@ -649,7 +653,7 @@ def stage_rotate_blend_propagate(
         base_alpha = layer_alphas.get(layer_idx, mean_alpha) if task_blend_enabled else None
         layer_confidence = 0.5 if base_alpha is None else max(0.0, min(1.0, 1.0 - base_alpha))
 
-        # Apply phase-lock transform before shape normalization if available
+        # Apply exact kernel alignment transform before shape normalization if available
         if layer_idx is not None and layer_idx in layer_rotations and source_w.ndim == 2:
             transform = layer_rotations[layer_idx]
             source_w, applied = _apply_phase_lock_transform(source_w, transform)
@@ -849,7 +853,7 @@ def stage_rotate_blend_propagate(
     # Add per-layer rotation summary
     if metrics["per_layer_rotations_applied"] > 0:
         logger.info(
-            "PHASE LOCK: Applied %d transforms from %d layers",
+            "EXACT KERNEL ALIGNMENT: Applied %d transforms from %d layers",
             metrics["per_layer_rotations_applied"],
             metrics["per_layer_rotation_layers"],
         )

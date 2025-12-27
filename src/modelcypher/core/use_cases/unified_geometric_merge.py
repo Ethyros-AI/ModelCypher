@@ -273,7 +273,7 @@ class UnifiedGeometricMerger:
             mean_cka = probe_metrics.get("mean_cka", 0.0)
             raise RuntimeError(
                 "PROBE SIGNAL: Alignment signals missing (mean_cka=%.4f, min_cka=%.4f). "
-                "Phase lock is required before merge."
+                "Exact kernel alignment is required before merge."
                 % (mean_cka, min_cka)
             )
 
@@ -281,8 +281,8 @@ class UnifiedGeometricMerger:
             min_cka = probe_metrics.get("min_cka", 0.0)
             mean_cka = probe_metrics.get("mean_cka", 0.0)
             raise RuntimeError(
-                "PROBE BAROMETER: Alignment not phase-locked (mean_cka=%.4f, min_cka=%.4f). "
-                "Resolve alignment before merge."
+                "PROBE BAROMETER: Alignment not exact kernel aligned "
+                "(mean_cka=%.4f, min_cka=%.4f). Resolve alignment before merge."
                 % (mean_cka, min_cka)
             )
 
@@ -556,7 +556,7 @@ class UnifiedGeometricMerger:
         if geometry.overall_cka < 1.0 - phase_tol:
             raise RuntimeError(
                 "PROBE BAROMETER: Overall CKA=%.6f < 1.0. "
-                "Phase lock is required before merging."
+                "Exact kernel alignment is required before merging."
                 % geometry.overall_cka
             )
 
@@ -885,23 +885,24 @@ class UnifiedGeometricMerger:
     ) -> None:
         if not vocab_aligned:
             raise RuntimeError(
-                "Vocabulary alignment was not applied. Phase lock is required before merge."
+                "Vocabulary alignment was not applied. "
+                "Exact kernel alignment is required before merge."
             )
         binary = vocab_metrics.get("binary_alignment", {})
         vocab = vocab_metrics.get("vocab_phase_lock", {})
         if not binary or not vocab:
             raise RuntimeError(
-                "Vocabulary alignment metrics missing; cannot confirm phase lock."
+                "Vocabulary alignment metrics missing; cannot confirm exact kernel alignment."
             )
         for key, entry in binary.items():
             if not entry.get("phase_locked"):
                 raise RuntimeError(
-                    f"Binary phase lock missing for {key}; aborting merge."
+                    f"Binary exact kernel alignment missing for {key}; aborting merge."
                 )
         for key, entry in vocab.items():
             if not entry.get("phase_locked"):
                 raise RuntimeError(
-                    f"Vocabulary phase lock missing for {key}; aborting merge."
+                    f"Vocabulary exact kernel alignment missing for {key}; aborting merge."
                 )
 
     def _save_weights(

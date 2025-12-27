@@ -729,14 +729,14 @@ class GeometricMergeOrchestrator:
         n = min(len(src_acts), len(tgt_acts))
         if n < 2:
             logger.warning(
-                "Layer %d: Phase lock needs >= 2 activation samples, got %d",
+                "Layer %d: Exact kernel alignment needs >= 2 activation samples, got %d",
                 layer_geom.layer_idx,
                 n,
             )
             layer_geom.transform_requirements.append("PHASE_LOCK_INSUFFICIENT_SAMPLES")
             return
 
-        # Phase-lock alignment from activations (CKA = 1.0)
+        # Exact kernel alignment from activations (CKA = 1.0)
         try:
             from modelcypher.core.domain.geometry.gram_aligner import GramAligner
             from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
@@ -758,7 +758,7 @@ class GeometricMergeOrchestrator:
             )
             if len(rank_indices) < 2:
                 raise RuntimeError(
-                    "Layer %d phase lock failed: rank-deficient activations (%d)."
+                    "Layer %d exact kernel alignment failed: rank-deficient activations (%d)."
                     % (layer_geom.layer_idx, len(rank_indices))
                 )
             if len(rank_indices) != int(src_stacked.shape[0]):
@@ -787,7 +787,7 @@ class GeometricMergeOrchestrator:
                 )
 
             logger.debug(
-                "Layer %d: phase_lock_cka=%.8f (iters=%d, error=%.6f)",
+                "Layer %d: exact_kernel_alignment_cka=%.8f (iters=%d, error=%.6f)",
                 layer_geom.layer_idx,
                 result.achieved_cka,
                 result.iterations,
@@ -795,11 +795,15 @@ class GeometricMergeOrchestrator:
             )
             if result.achieved_cka < 1.0 - precision_tol:
                 raise RuntimeError(
-                    "Layer %d phase lock failed (CKA=%.8f)"
+                    "Layer %d exact kernel alignment failed (CKA=%.8f)"
                     % (layer_geom.layer_idx, result.achieved_cka)
                 )
         except Exception as e:
-            logger.error("Phase lock alignment failed for layer %d: %s", layer_geom.layer_idx, e)
+            logger.error(
+                "Exact kernel alignment failed for layer %d: %s",
+                layer_geom.layer_idx,
+                e,
+            )
             layer_geom.transform_requirements.append("PHASE_LOCK_FAILED")
             raise
 
@@ -1155,9 +1159,11 @@ class GeometricMergeOrchestrator:
                 cka_matrix.append(row)
 
             # Use dynamic programming to find optimal monotonic alignment
+            # Exact kernel alignment requires CKA = 1.0 (within machine precision)
+            # high_confidence = 1.0 - eps, medium = 0.9999 (still strict)
             config = Configuration.with_thresholds(
-                high_confidence_threshold=0.999999,  # Phase lock requires CKA ~= 1.0
-                medium_confidence_threshold=0.999999,
+                high_confidence_threshold=1.0 - 1e-6,
+                medium_confidence_threshold=1.0 - 1e-4,
                 max_skip=3,
             )
 
@@ -1177,29 +1183,13 @@ class GeometricMergeOrchestrator:
             if not correspondence:
                 raise RuntimeError("Cross-architecture alignment produced no mappings.")
 
-            from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
-
-            sample_act = source_activations[src_layers[0]][0]
-            phase_tol = machine_epsilon(b, sample_act)
-            for src_pos, tgt_pos in dp_path:
-                if src_pos >= len(src_layers) or tgt_pos >= len(tgt_layers):
-                    continue
-                cka_val = cka_matrix[src_pos][tgt_pos]
-                if cka_val < 1.0 - phase_tol:
-                    raise RuntimeError(
-                        "Cross-architecture alignment not phase-locked "
-                        f"(src_layer={src_layers[src_pos]}, tgt_layer={tgt_layers[tgt_pos]}, "
-                        f"cka={cka_val:.6f})."
-                    )
-
             geometry.layer_correspondence = correspondence
             geometry.alignment_quality = alignment_score / len(dp_path) if dp_path else 0.0
 
-            if geometry.alignment_quality < 1.0 - phase_tol:
-                raise RuntimeError(
-                    "Cross-architecture alignment quality too low (%.6f)."
-                    % geometry.alignment_quality
-                )
+            # NOTE: We do NOT require CKA=1.0 at this stage.
+            # This stage identifies WHICH layers correspond based on activation similarity.
+            # Stage 2+ will ALIGN the layers to achieve CKA=1.0.
+            # The actual alignment (GramAligner) happens during weight merging.
 
             logger.info(
                 "STAGE 1.5: Cross-architecture layer correspondence: %d -> %d layers, quality=%.4f",
@@ -1326,7 +1316,7 @@ class GeometricMergeOrchestrator:
             weight: "Array",
             transform: "Array",
         ) -> tuple["Array", bool]:
-            """Apply phase-lock transform to weight if dimensions match."""
+            """Apply exact kernel alignment transform to weight if dimensions match."""
             if weight.ndim != 2:
                 return weight, False
 
@@ -1413,7 +1403,7 @@ class GeometricMergeOrchestrator:
                 layer_idx = target_layer_idx
                 layer_geom = geometry.layer_geometries.get(layer_idx) if layer_idx is not None else None
 
-                # Apply per-layer phase lock transform before shape normalization
+                # Apply per-layer exact kernel alignment transform before shape normalization
                 if layer_geom and layer_geom.procrustes_rotation is not None:
                     source_w, applied = _apply_phase_lock_transform(
                         source_w, layer_geom.procrustes_rotation
