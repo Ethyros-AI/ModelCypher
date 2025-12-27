@@ -39,7 +39,7 @@ import logging
 import math
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
@@ -57,6 +57,102 @@ class CurvatureSign(str, Enum):
     NEGATIVE = "negative"  # Hyperbolic, diverging
     FLAT = "flat"  # Euclidean
     MIXED = "mixed"  # Variable sign in neighborhood
+
+
+class ManifoldHealth(str, Enum):
+    """Health classification of a representation manifold based on Ricci curvature.
+
+    For neural network representation spaces:
+    - HEALTHY: Negative Ricci curvature (hyperbolic geometry) - normal for LLMs
+    - DEGENERATE: Near-flat curvature - loss of geometric structure
+    - COLLAPSED: Positive Ricci curvature - potential representation collapse
+    """
+
+    HEALTHY = "healthy"  # mean_ricci < -0.1 (hyperbolic, expected for LLMs)
+    DEGENERATE = "degenerate"  # -0.1 <= mean_ricci <= 0.1 (nearly flat)
+    COLLAPSED = "collapsed"  # mean_ricci > 0.1 (spherical, representation collapse)
+
+
+@dataclass(frozen=True)
+class OllivierRicciConfig:
+    """Configuration for Ollivier-Ricci curvature computation.
+
+    The Ollivier-Ricci curvature uses optimal transport (Wasserstein-1 distance)
+    between lazy random walk distributions to measure discrete curvature.
+
+    Adaptive alpha: When enabled, alpha varies per node based on degree.
+    High-degree nodes get lower alpha (rely more on self, neighborhood is crowded).
+    Low-degree nodes get higher alpha (spread mass to sparse neighborhood).
+    """
+
+    # Base lazy random walk parameter from Ollivier (2009)
+    base_alpha: float = 0.5
+
+    # Adaptive alpha: varies per node based on degree
+    adaptive_alpha: bool = True
+
+    # How much degree affects alpha: alpha = base * (1 - degree/max_degree * strength)
+    adaptive_strength: float = 0.3
+
+    # Sinkhorn regularization for W_1 approximation
+    sinkhorn_epsilon: float = 0.001
+    sinkhorn_iterations: int = 100
+    sinkhorn_threshold: float = 1e-8
+
+    # Number of neighbors for k-NN graph
+    k_neighbors: int = 10
+
+    # Whether to symmetrize curvature: kappa(x,y) = (kappa(x,y) + kappa(y,x)) / 2
+    # Ollivier-Ricci is naturally asymmetric; averaging symmetrizes
+    symmetrize: bool = True
+
+
+@dataclass(frozen=True)
+class EdgeCurvature:
+    """Ollivier-Ricci curvature for a single edge in the k-NN graph."""
+
+    source_idx: int
+    target_idx: int
+    curvature: float  # kappa(x, y) = 1 - W_1(m_x, m_y) / d(x, y)
+    wasserstein_distance: float  # W_1(m_x, m_y)
+    edge_weight: float  # d(x, y) from geodesic distance
+
+
+@dataclass(frozen=True)
+class NodeRicciCurvature:
+    """Aggregated Ollivier-Ricci curvature at a node."""
+
+    node_idx: int
+    mean_curvature: float  # Average over incident edges
+    min_curvature: float
+    max_curvature: float
+    num_edges: int
+
+
+@dataclass(frozen=True)
+class OllivierRicciResult:
+    """Complete Ollivier-Ricci curvature analysis of a manifold."""
+
+    # Per-edge curvatures
+    edge_curvatures: list[EdgeCurvature]
+
+    # Per-node curvatures (aggregated from edges)
+    node_curvatures: list[NodeRicciCurvature]
+
+    # Global edge statistics
+    mean_edge_curvature: float
+    std_edge_curvature: float
+
+    # Global node statistics
+    mean_node_curvature: float
+
+    # Health classification
+    health: ManifoldHealth
+
+    # Configuration used
+    config: OllivierRicciConfig
+    k_neighbors: int
+    n_points: int
 
 
 @dataclass(frozen=True)
@@ -98,13 +194,12 @@ class LocalCurvature:
     sign: CurvatureSign
     # Scalar curvature (trace of Ricci tensor, sum of sectional)
     scalar_curvature: float
-    # Principal curvature proxy - NOT true Ricci curvature
-    # This stores the principal curvatures as a proxy for Ricci-like information.
-    # True Ricci curvature requires computing the Ricci tensor via contractions
-    # of the Riemann tensor, which is computationally expensive for discrete manifolds.
-    # For interference prediction, this proxy is sufficient.
-    # TODO: Implement Ollivier-Ricci curvature for true discrete Ricci curvature.
-    principal_curvature_proxy: "Array | None"
+    # True Ollivier-Ricci curvature at this point (aggregated from incident edges)
+    # Computed via optimal transport: kappa = 1 - W_1(m_x, m_y) / d(x, y)
+    # None if not yet computed (use OllivierRicciCurvature.compute() to populate)
+    ollivier_ricci: float | None = None
+    # Legacy: Principal curvature proxy (deprecated, use ollivier_ricci instead)
+    principal_curvature_proxy: "Array | None" = None
 
     @property
     def is_positively_curved(self) -> bool:
@@ -870,3 +965,425 @@ def compute_curvature_divergence(
     divergence = mean_diff + 0.5 * var_diff + 0.25 * sign_diff
 
     return divergence
+
+
+class OllivierRicciCurvature:
+    """Compute Ollivier-Ricci curvature on the discrete k-NN manifold.
+
+    Ollivier-Ricci curvature measures how probability mass from neighboring
+    nodes overlaps, providing a discrete analog of Ricci curvature.
+
+    For each edge (x, y) in the k-NN graph:
+        kappa(x, y) = 1 - W_1(m_x, m_y) / d(x, y)
+
+    where m_x is a lazy random walk distribution centered at x:
+        m_x = (1-alpha) * delta_x + alpha * uniform(neighbors(x))
+
+    With adaptive alpha (default), alpha varies per node based on degree:
+        alpha(node) = base_alpha * (1 - degree/max_degree * adaptive_strength)
+
+    High-degree nodes get lower alpha (rely more on self, neighborhood is crowded).
+    Low-degree nodes get higher alpha (spread mass to sparse neighborhood).
+
+    Mathematical background:
+    - Ollivier (2009) "Ricci curvature of Markov chains on metric spaces"
+    - Curvature for graphs provides structural information:
+      - Positive: clustered/spherical regions
+      - Negative: bridges/bottlenecks between clusters
+      - Flat: uniform connectivity
+
+    For neural network representations:
+    - Healthy manifolds have negative Ricci curvature (hyperbolic)
+    - Near-zero indicates degenerate (flat) representations
+    - Positive indicates potential representation collapse
+
+    References:
+        - Ollivier (2009): Original formulation
+        - GraphRicciCurvature library: github.com/saibalmars/GraphRicciCurvature
+        - NeurIPS 2024: "Exploring Geometric Representational Alignment
+          through Ollivier-Ricci Curvature"
+    """
+
+    def __init__(
+        self,
+        config: OllivierRicciConfig | None = None,
+        backend: "Backend | None" = None,
+    ) -> None:
+        self.config = config or OllivierRicciConfig()
+        self._backend = backend or get_default_backend()
+
+    def compute(
+        self,
+        points: "Array",
+        k_neighbors: int | None = None,
+    ) -> OllivierRicciResult:
+        """Compute Ollivier-Ricci curvature for all edges in the k-NN graph.
+
+        Args:
+            points: Point cloud [n, d] on the manifold
+            k_neighbors: Override config k_neighbors if provided
+
+        Returns:
+            OllivierRicciResult with edge/node curvatures and health classification
+        """
+        from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+        from modelcypher.core.domain.geometry.numerical_stability import tiny_value
+
+        backend = self._backend
+        points = backend.array(points)
+        backend.eval(points)
+
+        n = int(points.shape[0])
+        k = k_neighbors or self.config.k_neighbors
+        k = min(k, n - 1)
+
+        if n < 2:
+            # Trivial case: no edges
+            return OllivierRicciResult(
+                edge_curvatures=[],
+                node_curvatures=[],
+                mean_edge_curvature=0.0,
+                std_edge_curvature=0.0,
+                mean_node_curvature=0.0,
+                health=ManifoldHealth.DEGENERATE,
+                config=self.config,
+                k_neighbors=k,
+                n_points=n,
+            )
+
+        # 1. Compute geodesic distances using existing infrastructure
+        rg = RiemannianGeometry(backend)
+        geo_result = rg.geodesic_distances(points, k_neighbors=k)
+        backend.eval(geo_result.distances)
+
+        # 2. Build adjacency list from k-NN graph
+        adjacency_list = self._build_adjacency_list(geo_result, k, n)
+
+        # Compute max degree for adaptive alpha
+        max_degree = max(len(neighbors) for neighbors in adjacency_list.values()) if adjacency_list else 1
+
+        # 3. Compute edge curvatures
+        edge_curvatures: list[EdgeCurvature] = []
+        processed_edges: set[tuple[int, int]] = set()
+
+        geo_np = backend.to_numpy(geo_result.distances)
+
+        for source_idx in range(n):
+            for target_idx in adjacency_list.get(source_idx, []):
+                # Track edges to avoid duplicates (for symmetrized curvature)
+                edge_key = (min(source_idx, target_idx), max(source_idx, target_idx))
+                if edge_key in processed_edges and self.config.symmetrize:
+                    continue
+                processed_edges.add(edge_key)
+
+                ec = self._compute_edge_curvature(
+                    source_idx,
+                    target_idx,
+                    geo_result,
+                    geo_np,
+                    adjacency_list,
+                    max_degree,
+                    n,
+                )
+                if ec is not None:
+                    edge_curvatures.append(ec)
+
+        # 4. Aggregate to nodes
+        node_curvatures = self._aggregate_to_nodes(edge_curvatures, n)
+
+        # 5. Compute global statistics
+        if edge_curvatures:
+            edge_kappas = [ec.curvature for ec in edge_curvatures]
+            mean_edge = sum(edge_kappas) / len(edge_kappas)
+            variance = sum((kappa - mean_edge) ** 2 for kappa in edge_kappas) / len(edge_kappas)
+            std_edge = math.sqrt(variance)
+        else:
+            mean_edge = 0.0
+            std_edge = 0.0
+
+        if node_curvatures:
+            node_means = [nc.mean_curvature for nc in node_curvatures]
+            mean_node = sum(node_means) / len(node_means)
+        else:
+            mean_node = 0.0
+
+        # 6. Classify health
+        health = self._classify_health(mean_node)
+
+        return OllivierRicciResult(
+            edge_curvatures=edge_curvatures,
+            node_curvatures=node_curvatures,
+            mean_edge_curvature=mean_edge,
+            std_edge_curvature=std_edge,
+            mean_node_curvature=mean_node,
+            health=health,
+            config=self.config,
+            k_neighbors=k,
+            n_points=n,
+        )
+
+    def _build_adjacency_list(
+        self,
+        geo_result: "Any",
+        k: int,
+        n: int,
+    ) -> dict[int, list[int]]:
+        """Build adjacency list from geodesic distance result.
+
+        Uses the k nearest neighbors for each point based on geodesic distances.
+        """
+        backend = self._backend
+        geo_np = backend.to_numpy(geo_result.distances)
+
+        adjacency: dict[int, list[int]] = {}
+
+        for i in range(n):
+            # Get distances from node i to all other nodes
+            distances = [(j, geo_np[i, j]) for j in range(n) if j != i]
+
+            # Filter out infinite distances (disconnected)
+            finite_distances = [(j, d) for j, d in distances if math.isfinite(d)]
+
+            # Sort by distance and take k nearest
+            finite_distances.sort(key=lambda x: x[1])
+            neighbors = [j for j, _ in finite_distances[:k]]
+
+            adjacency[i] = neighbors
+
+        return adjacency
+
+    def _compute_edge_curvature(
+        self,
+        source_idx: int,
+        target_idx: int,
+        geo_result: "Any",
+        geo_np: "Any",
+        adjacency_list: dict[int, list[int]],
+        max_degree: int,
+        n: int,
+    ) -> EdgeCurvature | None:
+        """Compute Ollivier-Ricci curvature for a single edge.
+
+        kappa(x, y) = 1 - W_1(m_x, m_y) / d(x, y)
+        """
+        backend = self._backend
+
+        # Edge weight from geodesic distance matrix
+        edge_weight = float(geo_np[source_idx, target_idx])
+
+        # Skip infinite or zero edge weights
+        eps = division_epsilon(backend, geo_result.distances)
+        if not math.isfinite(edge_weight) or edge_weight < eps:
+            return None
+
+        # Build lazy random walk measures with adaptive alpha
+        mu = self._build_lazy_measure(source_idx, adjacency_list, max_degree, n)
+        nu = self._build_lazy_measure(target_idx, adjacency_list, max_degree, n)
+
+        # Cost matrix is the geodesic distance matrix
+        cost_matrix = geo_result.distances
+
+        # Compute W_1 distance
+        w1 = self._compute_wasserstein_1(mu, nu, cost_matrix)
+
+        # Ollivier-Ricci curvature
+        curvature = 1.0 - w1 / edge_weight
+
+        return EdgeCurvature(
+            source_idx=source_idx,
+            target_idx=target_idx,
+            curvature=curvature,
+            wasserstein_distance=w1,
+            edge_weight=edge_weight,
+        )
+
+    def _build_lazy_measure(
+        self,
+        node_idx: int,
+        adjacency_list: dict[int, list[int]],
+        max_degree: int,
+        n_points: int,
+    ) -> "Array":
+        """Build lazy random walk probability measure at a node.
+
+        m_x = (1-alpha) * delta_x + alpha * uniform(neighbors(x))
+
+        With adaptive alpha:
+            degree = len(neighbors)
+            alpha = base_alpha * (1 - degree/max_degree * adaptive_strength)
+
+        High-degree nodes get lower alpha (rely more on self).
+        Low-degree nodes get higher alpha (spread mass to sparse neighborhood).
+
+        Args:
+            node_idx: Index of the node
+            adjacency_list: Mapping from node to its neighbors
+            max_degree: Maximum degree in the graph (for normalization)
+            n_points: Total number of points
+
+        Returns:
+            Probability distribution over all nodes [n_points]
+        """
+        backend = self._backend
+
+        neighbors = adjacency_list.get(node_idx, [])
+        degree = len(neighbors)
+
+        # Compute adaptive alpha
+        if self.config.adaptive_alpha and max_degree > 0:
+            alpha = self.config.base_alpha * (
+                1.0 - (degree / max_degree) * self.config.adaptive_strength
+            )
+        else:
+            alpha = self.config.base_alpha
+
+        # Clamp alpha to [0, 1]
+        alpha = max(0.0, min(1.0, alpha))
+
+        # Initialize measure as zeros
+        measure_list = [0.0] * n_points
+
+        # Lazy component: (1-alpha) at node itself
+        measure_list[node_idx] = 1.0 - alpha
+
+        # Uniform over neighbors: alpha / degree each
+        if degree > 0:
+            neighbor_weight = alpha / degree
+            for neighbor_idx in neighbors:
+                measure_list[neighbor_idx] += neighbor_weight
+        else:
+            # Isolated node: all mass at self
+            measure_list[node_idx] = 1.0
+
+        return backend.array(measure_list)
+
+    def _compute_wasserstein_1(
+        self,
+        mu: "Array",
+        nu: "Array",
+        cost_matrix: "Array",
+    ) -> float:
+        """Compute Wasserstein-1 distance using Sinkhorn algorithm.
+
+        W_1(mu, nu) = min_gamma <cost, gamma>
+        subject to: gamma @ 1 = mu, gamma^T @ 1 = nu
+
+        With entropic regularization:
+        W_1^eps(mu, nu) = min_gamma <cost, gamma> + eps * H(gamma)
+
+        This follows the same pattern as gromov_wasserstein.py:_solve_linear_ot()
+        """
+        from modelcypher.core.domain.geometry.numerical_stability import tiny_value
+
+        backend = self._backend
+        n = int(mu.shape[0])
+
+        epsilon = self.config.sinkhorn_epsilon
+        max_iter = self.config.sinkhorn_iterations
+        threshold = self.config.sinkhorn_threshold
+
+        # Get precision-aware values
+        eps = division_epsilon(backend, cost_matrix)
+        floor = tiny_value(backend, cost_matrix)
+
+        # Stabilized Sinkhorn: K = exp(-cost / epsilon)
+        cost_min = backend.min(cost_matrix, axis=1, keepdims=True)
+        cost_centered = cost_matrix - cost_min
+        log_K = -cost_centered / max(epsilon, eps)
+
+        # Clamp to avoid underflow
+        log_K = backend.maximum(log_K, backend.full(log_K.shape, -80.0))
+        K = backend.exp(log_K)
+        K = backend.maximum(K, backend.full(K.shape, floor))
+
+        # Sinkhorn iterations
+        u = backend.ones((n,))
+        v = backend.ones((n,))
+
+        for _ in range(max_iter):
+            Kv = backend.matmul(K, v)
+            Kv = backend.maximum(Kv, backend.full(Kv.shape, floor))
+            u_new = mu / Kv
+
+            Ktu = backend.matmul(backend.transpose(K), u_new)
+            Ktu = backend.maximum(Ktu, backend.full(Ktu.shape, floor))
+            v_new = nu / Ktu
+
+            # Convergence check
+            if threshold > 0:
+                u_diff = backend.max(backend.abs(u_new - u))
+                v_diff = backend.max(backend.abs(v_new - v))
+                backend.eval(u_diff, v_diff)
+                if max(float(backend.to_numpy(u_diff)), float(backend.to_numpy(v_diff))) < threshold:
+                    u, v = u_new, v_new
+                    break
+
+            u, v = u_new, v_new
+
+        # Recover transport plan: gamma = diag(u) @ K @ diag(v)
+        gamma = K * backend.reshape(u, (n, 1)) * backend.reshape(v, (1, n))
+
+        # W_1 = <cost, gamma>
+        w1 = backend.sum(cost_matrix * gamma)
+        backend.eval(w1)
+
+        return float(backend.to_numpy(w1))
+
+    def _aggregate_to_nodes(
+        self,
+        edge_curvatures: list[EdgeCurvature],
+        n_points: int,
+    ) -> list[NodeRicciCurvature]:
+        """Aggregate edge curvatures to node curvatures.
+
+        For each node, compute mean, min, max over all incident edges.
+        """
+        # Collect curvatures per node
+        node_curvatures_map: dict[int, list[float]] = {i: [] for i in range(n_points)}
+
+        for ec in edge_curvatures:
+            node_curvatures_map[ec.source_idx].append(ec.curvature)
+            node_curvatures_map[ec.target_idx].append(ec.curvature)
+
+        # Build node curvature objects
+        result: list[NodeRicciCurvature] = []
+        for node_idx in range(n_points):
+            curvatures = node_curvatures_map[node_idx]
+            if curvatures:
+                result.append(
+                    NodeRicciCurvature(
+                        node_idx=node_idx,
+                        mean_curvature=sum(curvatures) / len(curvatures),
+                        min_curvature=min(curvatures),
+                        max_curvature=max(curvatures),
+                        num_edges=len(curvatures),
+                    )
+                )
+            else:
+                # Isolated node
+                result.append(
+                    NodeRicciCurvature(
+                        node_idx=node_idx,
+                        mean_curvature=0.0,
+                        min_curvature=0.0,
+                        max_curvature=0.0,
+                        num_edges=0,
+                    )
+                )
+
+        return result
+
+    def _classify_health(self, mean_ricci: float) -> ManifoldHealth:
+        """Classify manifold health based on mean Ricci curvature.
+
+        For LLM representation manifolds:
+        - HEALTHY: mean_ricci < -0.1 (hyperbolic, expected geometry)
+        - DEGENERATE: -0.1 <= mean_ricci <= 0.1 (nearly flat, loss of structure)
+        - COLLAPSED: mean_ricci > 0.1 (spherical, representation collapse)
+        """
+        if mean_ricci < -0.1:
+            return ManifoldHealth.HEALTHY
+        elif mean_ricci > 0.1:
+            return ManifoldHealth.COLLAPSED
+        else:
+            return ManifoldHealth.DEGENERATE

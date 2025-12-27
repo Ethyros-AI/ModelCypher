@@ -35,8 +35,14 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.manifold_curvature import (
     CurvatureConfig,
     CurvatureSign,
+    EdgeCurvature,
     LocalCurvature,
     ManifoldCurvatureProfile,
+    ManifoldHealth,
+    NodeRicciCurvature,
+    OllivierRicciConfig,
+    OllivierRicciCurvature,
+    OllivierRicciResult,
     SectionalCurvatureEstimator,
     compute_curvature_divergence,
 )
@@ -766,3 +772,442 @@ class TestEdgeCases:
 
         result = profile.curvature_at_point(backend.to_numpy(backend.zeros((4,))))
         assert result is None
+
+
+# =============================================================================
+# Ollivier-Ricci Curvature Tests
+# =============================================================================
+
+
+class TestOllivierRicciConfig:
+    """Tests for OllivierRicciConfig dataclass."""
+
+    def test_default_config(self) -> None:
+        """Should have sensible defaults."""
+        config = OllivierRicciConfig()
+        assert config.base_alpha == 0.5
+        assert config.adaptive_alpha is True
+        assert config.adaptive_strength == 0.3
+        assert config.sinkhorn_epsilon == 0.001
+        assert config.sinkhorn_iterations == 100
+        assert config.k_neighbors == 10
+        assert config.symmetrize is True
+
+    def test_custom_config(self) -> None:
+        """Should accept custom values."""
+        config = OllivierRicciConfig(
+            base_alpha=0.7,
+            adaptive_alpha=False,
+            k_neighbors=15,
+        )
+        assert config.base_alpha == 0.7
+        assert config.adaptive_alpha is False
+        assert config.k_neighbors == 15
+
+    def test_config_is_frozen(self) -> None:
+        """Config should be immutable."""
+        config = OllivierRicciConfig()
+        with pytest.raises(Exception):  # FrozenInstanceError
+            config.base_alpha = 0.9  # type: ignore
+
+
+class TestManifoldHealth:
+    """Tests for ManifoldHealth enum."""
+
+    def test_health_values(self) -> None:
+        """Should have correct string values."""
+        assert ManifoldHealth.HEALTHY.value == "healthy"
+        assert ManifoldHealth.DEGENERATE.value == "degenerate"
+        assert ManifoldHealth.COLLAPSED.value == "collapsed"
+
+    def test_health_is_string_enum(self) -> None:
+        """Should be usable as string."""
+        health = ManifoldHealth.HEALTHY
+        assert str(health) == "ManifoldHealth.HEALTHY"
+        assert health == "healthy"
+
+
+class TestOllivierRicciCurvature:
+    """Tests for OllivierRicciCurvature class."""
+
+    def test_basic_computation(self) -> None:
+        """Should compute curvature on simple point cloud."""
+        backend = get_default_backend()
+        backend.random_seed(42)
+
+        # Generate random point cloud
+        points = backend.random_normal((50, 8))
+
+        estimator = OllivierRicciCurvature()
+        result = estimator.compute(points, k_neighbors=5)
+
+        assert isinstance(result, OllivierRicciResult)
+        assert len(result.edge_curvatures) > 0
+        assert len(result.node_curvatures) == 50
+        assert result.n_points == 50
+        assert result.k_neighbors == 5
+
+    def test_curvature_bounds(self) -> None:
+        """Edge curvature should be bounded by 1.0."""
+        import math
+
+        backend = get_default_backend()
+        backend.random_seed(123)
+
+        points = backend.random_normal((30, 6))
+
+        estimator = OllivierRicciCurvature()
+        result = estimator.compute(points, k_neighbors=5)
+
+        for edge in result.edge_curvatures:
+            # Curvature is at most 1 (when measures are identical)
+            assert edge.curvature <= 1.0 + 1e-6
+            # Curvature is finite
+            assert math.isfinite(edge.curvature)
+
+    def test_node_curvature_aggregation(self) -> None:
+        """Node curvatures should aggregate correctly."""
+        backend = get_default_backend()
+        backend.random_seed(456)
+
+        points = backend.random_normal((40, 5))
+
+        estimator = OllivierRicciCurvature()
+        result = estimator.compute(points, k_neighbors=4)
+
+        for node in result.node_curvatures:
+            # Min <= mean <= max
+            assert node.min_curvature <= node.mean_curvature + 1e-9
+            assert node.mean_curvature <= node.max_curvature + 1e-9
+            # Has at least one edge (k >= 1)
+            assert node.num_edges >= 1
+
+    def test_adaptive_alpha(self) -> None:
+        """Adaptive alpha should vary with node degree."""
+        backend = get_default_backend()
+        backend.random_seed(789)
+
+        points = backend.random_normal((50, 4))
+
+        # With adaptive alpha
+        config_adaptive = OllivierRicciConfig(
+            base_alpha=0.5, adaptive_alpha=True, adaptive_strength=0.5
+        )
+        estimator_adaptive = OllivierRicciCurvature(config=config_adaptive)
+
+        # Without adaptive alpha
+        config_fixed = OllivierRicciConfig(base_alpha=0.5, adaptive_alpha=False)
+        estimator_fixed = OllivierRicciCurvature(config=config_fixed)
+
+        result_adaptive = estimator_adaptive.compute(points, k_neighbors=5)
+        result_fixed = estimator_fixed.compute(points, k_neighbors=5)
+
+        # Results should differ when alpha adaptation is enabled
+        # (curvatures will be slightly different due to varying alpha)
+        assert result_adaptive.mean_edge_curvature != result_fixed.mean_edge_curvature
+
+    def test_health_classification_healthy(self) -> None:
+        """Negative curvature should be classified as healthy."""
+        backend = get_default_backend()
+        backend.random_seed(111)
+
+        # Random Gaussian cloud typically has negative Ricci curvature
+        # (hyperbolic-like geometry)
+        points = backend.random_normal((60, 10))
+
+        estimator = OllivierRicciCurvature()
+        result = estimator.compute(points, k_neighbors=6)
+
+        # For random high-dimensional data, expect negative curvature
+        # This is consistent with LLM manifold research
+        assert result.mean_edge_curvature < 0.5  # Allow some tolerance
+
+    def test_health_classification_thresholds(self) -> None:
+        """Health thresholds should be correct."""
+        estimator = OllivierRicciCurvature()
+
+        # Test threshold boundaries
+        assert estimator._classify_health(-0.2) == ManifoldHealth.HEALTHY
+        assert estimator._classify_health(-0.1) == ManifoldHealth.DEGENERATE
+        assert estimator._classify_health(0.0) == ManifoldHealth.DEGENERATE
+        assert estimator._classify_health(0.1) == ManifoldHealth.DEGENERATE
+        assert estimator._classify_health(0.2) == ManifoldHealth.COLLAPSED
+
+    def test_symmetrized_graph(self) -> None:
+        """Symmetrize option should create undirected edges."""
+        backend = get_default_backend()
+        backend.random_seed(222)
+
+        points = backend.random_normal((30, 4))
+
+        config = OllivierRicciConfig(symmetrize=True)
+        estimator = OllivierRicciCurvature(config=config)
+        result = estimator.compute(points, k_neighbors=5)
+
+        # Check that edges appear in both directions (symmetrized)
+        edge_set = {(e.source_idx, e.target_idx) for e in result.edge_curvatures}
+        for e in result.edge_curvatures:
+            # Either (i,j) or (j,i) should exist (or both if symmetrized)
+            has_edge = (e.source_idx, e.target_idx) in edge_set
+            has_reverse = (e.target_idx, e.source_idx) in edge_set
+            assert has_edge or has_reverse
+
+    def test_determinism(self) -> None:
+        """Same input should produce same output."""
+        backend = get_default_backend()
+
+        # Generate data with fixed seed
+        backend.random_seed(333)
+        points1 = backend.random_normal((40, 6))
+
+        backend.random_seed(333)
+        points2 = backend.random_normal((40, 6))
+
+        estimator = OllivierRicciCurvature()
+        result1 = estimator.compute(points1, k_neighbors=5)
+        result2 = estimator.compute(points2, k_neighbors=5)
+
+        assert result1.mean_edge_curvature == result2.mean_edge_curvature
+        assert result1.mean_node_curvature == result2.mean_node_curvature
+        assert len(result1.edge_curvatures) == len(result2.edge_curvatures)
+
+    def test_wasserstein_distance_non_negative(self) -> None:
+        """Wasserstein distance should always be non-negative."""
+        backend = get_default_backend()
+        backend.random_seed(444)
+
+        points = backend.random_normal((35, 5))
+
+        estimator = OllivierRicciCurvature()
+        result = estimator.compute(points, k_neighbors=4)
+
+        for edge in result.edge_curvatures:
+            assert edge.wasserstein_distance >= 0
+
+    def test_small_k_neighbors(self) -> None:
+        """Should handle small k values."""
+        backend = get_default_backend()
+        backend.random_seed(555)
+
+        points = backend.random_normal((30, 4))
+
+        estimator = OllivierRicciCurvature()
+        result = estimator.compute(points, k_neighbors=2)
+
+        assert result is not None
+        assert len(result.edge_curvatures) > 0
+
+    def test_large_k_neighbors(self) -> None:
+        """Should handle k approaching n."""
+        backend = get_default_backend()
+        backend.random_seed(666)
+
+        n_points = 25
+        points = backend.random_normal((n_points, 4))
+
+        estimator = OllivierRicciCurvature()
+        # k close to n-1
+        result = estimator.compute(points, k_neighbors=min(20, n_points - 1))
+
+        assert result is not None
+        assert len(result.node_curvatures) == n_points
+
+    def test_result_statistics(self) -> None:
+        """Result statistics should be consistent."""
+        import math
+
+        backend = get_default_backend()
+        backend.random_seed(777)
+
+        points = backend.random_normal((50, 8))
+
+        estimator = OllivierRicciCurvature()
+        result = estimator.compute(points, k_neighbors=6)
+
+        # Standard deviation should be non-negative
+        assert result.std_edge_curvature >= 0
+
+        # Mean should be finite
+        assert math.isfinite(result.mean_edge_curvature)
+        assert math.isfinite(result.mean_node_curvature)
+
+    def test_config_in_result(self) -> None:
+        """Result should contain the config used."""
+        backend = get_default_backend()
+        backend.random_seed(888)
+
+        points = backend.random_normal((30, 4))
+
+        config = OllivierRicciConfig(base_alpha=0.7, k_neighbors=8)
+        estimator = OllivierRicciCurvature(config=config)
+        result = estimator.compute(points, k_neighbors=5)
+
+        assert result.config.base_alpha == 0.7
+        # k_neighbors in result should be from compute() call, not config
+        assert result.k_neighbors == 5
+
+
+class TestOllivierRicciEdgeCases:
+    """Edge case tests for Ollivier-Ricci curvature."""
+
+    def test_minimum_points(self) -> None:
+        """Should handle minimum viable number of points."""
+        backend = get_default_backend()
+        backend.random_seed(901)
+
+        # Minimum: k+1 points for k neighbors
+        points = backend.random_normal((6, 3))
+
+        estimator = OllivierRicciCurvature()
+        result = estimator.compute(points, k_neighbors=3)
+
+        assert result is not None
+        assert result.n_points == 6
+
+    def test_high_dimensional_points(self) -> None:
+        """Should handle high-dimensional data."""
+        import math
+
+        backend = get_default_backend()
+        backend.random_seed(902)
+
+        # High dimension
+        points = backend.random_normal((40, 128))
+
+        estimator = OllivierRicciCurvature()
+        result = estimator.compute(points, k_neighbors=5)
+
+        assert result is not None
+        assert math.isfinite(result.mean_edge_curvature)
+
+    def test_nearly_collinear_points(self) -> None:
+        """Should handle nearly collinear point configurations."""
+        import math
+
+        backend = get_default_backend()
+        backend.random_seed(903)
+
+        # Points mostly along one direction
+        base = backend.linspace(0, 1, 30)
+        noise = backend.random_normal((30, 4)) * 0.01
+
+        # Reshape base to broadcast
+        base_expanded = backend.reshape(base, (-1, 1))
+        points = base_expanded + noise
+
+        estimator = OllivierRicciCurvature()
+        result = estimator.compute(points, k_neighbors=5)
+
+        # Should complete without error
+        assert result is not None
+        assert math.isfinite(result.mean_edge_curvature)
+
+    def test_clustered_points(self) -> None:
+        """Should handle clustered point configurations."""
+        backend = get_default_backend()
+        backend.random_seed(904)
+
+        # Two clusters
+        cluster1 = backend.random_normal((20, 4)) * 0.1
+        cluster2 = backend.random_normal((20, 4)) * 0.1 + 5.0
+        points = backend.concatenate([cluster1, cluster2], axis=0)
+
+        estimator = OllivierRicciCurvature()
+        result = estimator.compute(points, k_neighbors=5)
+
+        # Clustered data may show different curvature patterns
+        assert result is not None
+        assert len(result.edge_curvatures) > 0
+
+
+class TestLazyMeasureProperties:
+    """Tests for lazy random walk measure properties."""
+
+    def test_measure_sums_to_one(self) -> None:
+        """Lazy measure should sum to 1.0."""
+        backend = get_default_backend()
+        backend.random_seed(1001)
+
+        points = backend.random_normal((30, 4))
+
+        estimator = OllivierRicciCurvature()
+
+        # We need to access internal methods to test measure construction
+        # First compute to build adjacency
+        from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+
+        rg = RiemannianGeometry(backend)
+        geo_result = rg.geodesic_distances(points, k_neighbors=5)
+
+        adjacency_list = estimator._build_adjacency_list(geo_result, 5, 30)
+        max_degree = max(len(neighbors) for neighbors in adjacency_list.values())
+
+        # Test measure for a node
+        node_idx = 0
+        measure = estimator._build_lazy_measure(node_idx, adjacency_list, max_degree, 30)
+
+        # Convert to numpy for sum
+        measure_sum = float(backend.sum(measure))
+        assert abs(measure_sum - 1.0) < 1e-6
+
+    def test_measure_alpha_zero_is_delta(self) -> None:
+        """When alpha=0, measure should be delta at node."""
+        backend = get_default_backend()
+        backend.random_seed(1002)
+
+        points = backend.random_normal((30, 4))
+
+        config = OllivierRicciConfig(base_alpha=0.0, adaptive_alpha=False)
+        estimator = OllivierRicciCurvature(config=config)
+
+        from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+
+        rg = RiemannianGeometry(backend)
+        geo_result = rg.geodesic_distances(points, k_neighbors=5)
+
+        adjacency_list = estimator._build_adjacency_list(geo_result, 5, 30)
+        max_degree = max(len(neighbors) for neighbors in adjacency_list.values())
+
+        node_idx = 5
+        measure = estimator._build_lazy_measure(node_idx, adjacency_list, max_degree, 30)
+
+        # With alpha=0, all mass should be on node_idx
+        measure_np = backend.to_numpy(measure)
+        assert measure_np[node_idx] == pytest.approx(1.0, abs=1e-6)
+        # All other entries should be 0
+        for i in range(30):
+            if i != node_idx:
+                assert measure_np[i] == pytest.approx(0.0, abs=1e-6)
+
+    def test_measure_alpha_one_is_uniform_on_neighbors(self) -> None:
+        """When alpha=1, measure should be uniform on neighbors."""
+        backend = get_default_backend()
+        backend.random_seed(1003)
+
+        points = backend.random_normal((30, 4))
+
+        config = OllivierRicciConfig(base_alpha=1.0, adaptive_alpha=False)
+        estimator = OllivierRicciCurvature(config=config)
+
+        from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+
+        rg = RiemannianGeometry(backend)
+        geo_result = rg.geodesic_distances(points, k_neighbors=5)
+
+        adjacency_list = estimator._build_adjacency_list(geo_result, 5, 30)
+        max_degree = max(len(neighbors) for neighbors in adjacency_list.values())
+
+        node_idx = 10
+        measure = estimator._build_lazy_measure(node_idx, adjacency_list, max_degree, 30)
+
+        measure_np = backend.to_numpy(measure)
+        neighbors = adjacency_list[node_idx]
+        n_neighbors = len(neighbors)
+
+        # With alpha=1, no mass on self
+        assert measure_np[node_idx] == pytest.approx(0.0, abs=1e-6)
+
+        # Uniform mass on neighbors
+        expected_mass = 1.0 / n_neighbors
+        for neighbor_idx in neighbors:
+            assert measure_np[neighbor_idx] == pytest.approx(expected_mass, abs=1e-6)

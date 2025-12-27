@@ -122,7 +122,12 @@ class LayerGeometry:
     # Dimension analysis (Stage 2)
     intrinsic_dimension: float = 0.0
     manifold_dimension: int = 0
-    curvature: float = 0.0
+    curvature: float = 0.0  # Sectional curvature
+
+    # Ollivier-Ricci curvature (Stage 2) - for manifold health
+    ollivier_ricci_mean: float = 0.0  # Mean edge curvature
+    ollivier_ricci_std: float = 0.0  # Std deviation of edge curvatures
+    manifold_health: str = "unknown"  # healthy, degenerate, collapsed
 
     # Shared structure (Stage 3)
     shared_dimension: int = 0
@@ -180,6 +185,10 @@ class MergeGeometry:
     # Safety
     refusal_preserved: bool = True
     safety_score: float = 1.0
+
+    # Manifold health (from Ollivier-Ricci curvature)
+    overall_manifold_health: str = "unknown"  # healthy, degenerate, collapsed
+    mean_ollivier_ricci: float = 0.0
 
 
 class GeometricMergeOrchestrator:
@@ -248,10 +257,14 @@ class GeometricMergeOrchestrator:
                 geometry, source_activations, target_activations, b
             )
 
+        # Build reverse correspondence: target_layer -> source_layer
+        # Keep the FIRST (earliest) source layer for each target to maintain monotonicity
         reverse_correspondence: dict[int, int] = {}
         if geometry.layer_correspondence:
-            for src_layer, tgt_layer in geometry.layer_correspondence.items():
-                reverse_correspondence[tgt_layer] = src_layer
+            for src_layer in sorted(geometry.layer_correspondence.keys()):
+                tgt_layer = geometry.layer_correspondence[src_layer]
+                if tgt_layer not in reverse_correspondence:
+                    reverse_correspondence[tgt_layer] = src_layer
 
         # STAGE 2-8: Per-layer analysis
         for layer_idx in layer_indices:
@@ -581,6 +594,37 @@ class GeometricMergeOrchestrator:
             )
         except Exception as e:
             logger.debug("manifold_curvature failed for layer %d: %s", layer_geom.layer_idx, e)
+
+        # Ollivier-Ricci curvature - discrete Ricci for manifold health
+        try:
+            from modelcypher.core.domain.geometry.manifold_curvature import (
+                OllivierRicciCurvature,
+                OllivierRicciConfig,
+            )
+            stacked = b.stack(tgt_acts, axis=0)
+            b.eval(stacked)
+
+            # Use adaptive alpha for varying-density manifolds
+            config = OllivierRicciConfig(
+                adaptive_alpha=True,
+                k_neighbors=min(10, len(tgt_acts) - 1),
+            )
+            estimator = OllivierRicciCurvature(config=config, backend=b)
+            result = estimator.compute(stacked, k_neighbors=config.k_neighbors)
+
+            layer_geom.ollivier_ricci_mean = result.mean_edge_curvature
+            layer_geom.ollivier_ricci_std = result.std_edge_curvature
+            layer_geom.manifold_health = result.health.value
+
+            logger.debug(
+                "Layer %d: Ollivier-Ricci=%.4f (std=%.4f), health=%s",
+                layer_geom.layer_idx,
+                layer_geom.ollivier_ricci_mean,
+                layer_geom.ollivier_ricci_std,
+                layer_geom.manifold_health,
+            )
+        except Exception as e:
+            logger.debug("Ollivier-Ricci failed for layer %d: %s", layer_geom.layer_idx, e)
 
         # gromov_wasserstein - distance between source and target representations
         # A.5: Store both distance AND coupling matrix for transport-guided merge
@@ -1216,12 +1260,52 @@ class GeometricMergeOrchestrator:
         shared = [lg.shared_dimension for lg in layer_geoms if lg.shared_dimension > 0]
         geometry.mean_shared_dimension = sum(shared) / len(shared) if shared else 0.0
 
+        # Update overall_cka from per-layer alignment quality (POST-alignment CKA)
+        # This replaces the pre-alignment CKA with the actual achieved alignment
+        aligned_ckas = [lg.alignment_quality for lg in layer_geoms if lg.alignment_quality > 0]
+        if aligned_ckas:
+            geometry.overall_cka = min(aligned_ckas)  # Use min to ensure ALL layers are aligned
+            logger.debug(
+                "Updated overall_cka from per-layer alignment: min=%.8f, mean=%.8f",
+                min(aligned_ckas),
+                sum(aligned_ckas) / len(aligned_ckas),
+            )
+
+        # Aggregate Ollivier-Ricci curvature and manifold health
+        ricci_values = [lg.ollivier_ricci_mean for lg in layer_geoms if lg.manifold_health != "unknown"]
+        if ricci_values:
+            geometry.mean_ollivier_ricci = sum(ricci_values) / len(ricci_values)
+
+            # Overall health is determined by the worst layer
+            # Collapsed > Degenerate > Healthy (ordered by severity)
+            health_counts = {"collapsed": 0, "degenerate": 0, "healthy": 0}
+            for lg in layer_geoms:
+                if lg.manifold_health in health_counts:
+                    health_counts[lg.manifold_health] += 1
+
+            if health_counts["collapsed"] > 0:
+                geometry.overall_manifold_health = "collapsed"
+            elif health_counts["degenerate"] > len(layer_geoms) // 2:
+                geometry.overall_manifold_health = "degenerate"
+            else:
+                geometry.overall_manifold_health = "healthy"
+
+            logger.info(
+                "MANIFOLD HEALTH: %s (mean_ricci=%.4f, healthy=%d, degenerate=%d, collapsed=%d)",
+                geometry.overall_manifold_health,
+                geometry.mean_ollivier_ricci,
+                health_counts["healthy"],
+                health_counts["degenerate"],
+                health_counts["collapsed"],
+            )
+
         logger.info(
-            "MERGE GEOMETRY: %d layers, mean_intrinsic_dim=%.1f, mean_shared_dim=%.1f, CKA=%.4f",
+            "MERGE GEOMETRY: %d layers, mean_intrinsic_dim=%.1f, mean_shared_dim=%.1f, CKA=%.4f, health=%s",
             len(layer_geoms),
             geometry.mean_intrinsic_dimension,
             geometry.mean_shared_dimension,
             geometry.overall_cka,
+            geometry.overall_manifold_health,
         )
 
     def merge_weights(
@@ -1272,6 +1356,8 @@ class GeometricMergeOrchestrator:
             # Cross-architecture metrics
             "cross_arch_layer_mappings": 0,
             "cross_arch_dim_projections": 0,
+            # Manifold health metrics
+            "manifold_health_scaled": 0,
         }
         checkpoint_path = None
         weight_keys = [
@@ -1291,11 +1377,17 @@ class GeometricMergeOrchestrator:
             checkpoint_path.write_text(json.dumps(payload, sort_keys=True))
 
         # Build reverse correspondence: target_layer -> source_layer
+        # IMPORTANT: Keep the FIRST (earliest) source layer for each target layer.
+        # Multiple source layers may map to the same target (due to DP skips).
+        # Using the earliest source layer maintains monotonicity.
         layer_correspondence = geometry.layer_correspondence
         reverse_correspondence: dict[int, int] = {}
         if layer_correspondence:
-            for src_layer, tgt_layer in layer_correspondence.items():
-                reverse_correspondence[tgt_layer] = src_layer
+            # Sort by source layer to ensure we keep the earliest
+            for src_layer in sorted(layer_correspondence.keys()):
+                tgt_layer = layer_correspondence[src_layer]
+                if tgt_layer not in reverse_correspondence:
+                    reverse_correspondence[tgt_layer] = src_layer
 
         if geometry.is_cross_architecture:
             logger.info(
@@ -1483,6 +1575,24 @@ class GeometricMergeOrchestrator:
                     if "ALPHA_SCALING" in layer_geom.transform_requirements:
                         alpha = alpha * (1.0 - layer_geom.interference_score)
                         metrics["alpha_scaled_by_interference"] += 1
+
+                    # ============================================================
+                    # A.7: Scale alpha by manifold health (Ollivier-Ricci)
+                    # ============================================================
+                    # Collapsed/degenerate manifolds need more conservative blending
+                    if layer_geom.manifold_health == "collapsed":
+                        # Representation collapse detected - heavily trust target
+                        alpha = alpha * 0.3
+                        metrics["manifold_health_scaled"] = metrics.get("manifold_health_scaled", 0) + 1
+                        logger.debug(
+                            "Layer %d: collapsed manifold, reducing alpha to %.3f",
+                            layer_geom.layer_idx,
+                            alpha,
+                        )
+                    elif layer_geom.manifold_health == "degenerate":
+                        # Nearly flat manifold - moderate conservatism
+                        alpha = alpha * 0.7
+                        metrics["manifold_health_scaled"] = metrics.get("manifold_health_scaled", 0) + 1
 
                 # Apply SVD-aware blending for 2D weights
                 if source_w.ndim == 2 and target_w.ndim == 2 and min(source_w.shape) >= 2:
@@ -1729,7 +1839,7 @@ class GeometricMergeOrchestrator:
         logger.info(
             "MERGE: %d weights, %d rotations, %d Fisher, %d dimension, %d DARE | "
             "NEW: %d shared_subspace, %d curvature, %d verb_noun, %d intrinsic_scaled, %d embed_frechet | "
-            "CROSS-ARCH: %d layer_maps, %d dim_projects",
+            "CROSS-ARCH: %d layer_maps, %d dim_projects | HEALTH: %d scaled",
             metrics["weights_merged"],
             metrics["rotations_applied"],
             metrics["fisher_weights_used"],
@@ -1742,6 +1852,7 @@ class GeometricMergeOrchestrator:
             metrics["embedding_frechet_blends"],
             metrics["cross_arch_layer_mappings"],
             metrics["cross_arch_dim_projections"],
+            metrics["manifold_health_scaled"],
         )
 
         return merged, metrics
