@@ -477,48 +477,60 @@ def _project_svd(
     # =========================================================================
     # Project source columns to top-k right singular vectors
     V_s_k = b.transpose(Vt_s[:k, :])  # [d_s, k]
+    V_t_k = b.transpose(Vt_t[:k, :])  # [d_t, k] - defined early for row mismatch handling
     source_k = b.matmul(source, V_s_k)  # [m_s, k]
-    b.eval(source_k)
+    b.eval(source_k, V_t_k)
 
     # =========================================================================
-    # STEP 4: Handle row dimension mismatch
+    # STEP 4: Handle row dimension mismatch via SVD-based scaling
     # =========================================================================
+    # For cross-architecture merges, row mismatches can be large (different
+    # intermediate_size, different num_kv_heads, etc.). We handle ALL mismatches
+    # via SVD truncation/padding - NEVER fall back to GW on weights.
+    #
+    # Embedding layers (vocab_size mismatch) should be handled by stage 0
+    # vocabulary alignment BEFORE we get here.
     if m_s != m_t:
-        # For small mismatches (< 1000 rows), truncation/padding is acceptable
-        # as this is likely attention/MLP weights, not embeddings.
-        #
-        # For large mismatches (embeddings), require explicit vocabulary alignment.
-        max_tractable_mismatch = 1000
         mismatch = abs(m_s - m_t)
+        logger.debug(
+            "Row dimension mismatch: %d -> %d (delta=%d), using SVD scaling",
+            m_s, m_t, mismatch
+        )
 
-        if mismatch > max_tractable_mismatch:
-            # Large row mismatch indicates embedding layers with different vocab.
-            # Fall back to gram transport to preserve geometry without truncation.
-            logger.warning(
-                "Row mismatch (%s -> %s, delta=%s) exceeds SVD limit (%s); "
-                "falling back to gram_transport.",
-                m_s,
-                m_t,
-                mismatch,
-                max_tractable_mismatch,
-            )
-            return _project_gram_transport(source, target, b)
-
-        # Small mismatch: use truncation/padding (acceptable for MLP/attention weights)
         if m_s > m_t:
-            # Truncate rows (keep first m_t)
-            source_k = source_k[:m_t, :]
+            # Truncate: keep top m_t rows by magnitude in SVD subspace
+            # This preserves the most important components
+            row_norms = b.sqrt(b.sum(source_k ** 2, axis=1))
+            b.eval(row_norms)
+            # Sort by negative norms (descending order) and keep top m_t
+            neg_norms = -row_norms
+            indices = b.argsort(neg_norms)[:m_t]
+            b.eval(indices)
+            source_k = b.take(source_k, indices, axis=0)
+            b.eval(source_k)
         else:
-            # Expand rows with zeros - geometrically exact
-            # Zeros introduce no spurious correlations
-            padding = b.zeros((m_t - m_s, k))
-            source_k = b.concatenate([source_k, padding], axis=0)
-        b.eval(source_k)
+            # Expand: add rows initialized to scaled target values
+            # Using zeros would create dead neurons. Instead, use a small
+            # fraction of target's SVD components for the new rows.
+            n_new = m_t - m_s
+            # Get target's projection to the shared subspace
+            target_k = b.matmul(target, V_t_k)
+            b.eval(target_k)
+            # Use the first n_new rows of target (scaled down) for expansion
+            if n_new <= m_t:
+                expansion = target_k[:n_new, :] * 0.1  # Small contribution from target
+            else:
+                # Need more rows than target has - tile and truncate
+                repeats = (n_new // m_t) + 1
+                tiled = b.concatenate([target_k] * repeats, axis=0)
+                expansion = tiled[:n_new, :] * 0.1
+            b.eval(expansion)
+            source_k = b.concatenate([source_k, expansion], axis=0)
+            b.eval(source_k)
 
     # =========================================================================
     # STEP 5: Project to target's column space
     # =========================================================================
-    V_t_k = b.transpose(Vt_t[:k, :])  # [d_t, k]
     projected = b.matmul(source_k, b.transpose(V_t_k))  # [m_t, d_t]
     b.eval(projected)
 

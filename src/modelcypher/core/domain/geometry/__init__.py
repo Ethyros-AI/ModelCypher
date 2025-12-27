@@ -92,6 +92,7 @@ _SUBMODULES = {
     "verb_noun_classifier",
     "dimension_blender",
     "relative_representation",
+    "wudi_interference",
 }
 
 # Attribute to submodule mapping for commonly used classes

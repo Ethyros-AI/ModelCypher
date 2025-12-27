@@ -147,6 +147,9 @@ class LayerGeometry:
 
     # Interference (Stage 5)
     interference_score: float = 0.0
+    wudi_loss: float = 0.0
+    wudi_mean_overlap: float = 0.0
+    wudi_max_overlap: float = 0.0
     transform_requirements: list[str] = field(default_factory=list)
     null_space_dim: int = 0
     spectral_condition: float = 0.0
@@ -154,6 +157,9 @@ class LayerGeometry:
     # Dimension weights (Stage 6)
     dimension_alphas: "Array | None" = None
     fisher_weights: "Array | None" = None
+    source_fisher: "Array | None" = None
+    target_fisher: "Array | None" = None
+    fisher_method: str = ""
     verb_noun_mask: "Array | None" = None
     refinement_score: float = 0.0
 
@@ -886,6 +892,50 @@ class GeometricMergeOrchestrator:
         except Exception as e:
             logger.debug("interference_predictor failed for layer %d: %s", layer_geom.layer_idx, e)
 
+        # WUDI interference - data-free subspace overlap without SVD
+        try:
+            from modelcypher.core.domain.geometry.interference_predictor import (
+                TransformationType,
+            )
+            from modelcypher.core.domain.geometry.wudi_interference import (
+                compute_wudi_interference,
+                group_task_vectors_by_shape,
+            )
+
+            cache_key = (
+                f"wudi:{layer_geom.layer_idx}:{len(src_weights)}:{len(tgt_weights)}"
+            )
+            cached = self._cache.get(cache_key)
+            if cached is None:
+                groups = group_task_vectors_by_shape(src_weights, tgt_weights, backend=b)
+                if groups:
+                    cached = compute_wudi_interference(groups, backend=b)
+                else:
+                    cached = None
+                self._cache[cache_key] = cached
+
+            if cached is not None:
+                layer_geom.wudi_loss = cached.mean_loss
+                layer_geom.wudi_mean_overlap = cached.mean_overlap
+                layer_geom.wudi_max_overlap = cached.max_overlap
+                layer_geom.interference_score = max(
+                    layer_geom.interference_score,
+                    cached.normalized_loss,
+                )
+                if cached.mean_loss > 0.0:
+                    layer_geom.transform_requirements.append(
+                        TransformationType.ALPHA_SCALING.value
+                    )
+                logger.debug(
+                    "Layer %d: WUDI loss=%.6f overlap=%.4f max=%.4f",
+                    layer_geom.layer_idx,
+                    cached.mean_loss,
+                    cached.mean_overlap,
+                    cached.max_overlap,
+                )
+        except Exception as e:
+            logger.debug("WUDI interference failed for layer %d: %s", layer_geom.layer_idx, e)
+
         # spectral_analysis - condition number etc
         if not self._avoid_svd:
             try:
@@ -985,6 +1035,9 @@ class GeometricMergeOrchestrator:
                 # Combined weights: normalize and store
                 total_fisher = src_fisher + tgt_fisher
                 layer_geom.fisher_weights = tgt_fisher / (total_fisher + epsilon)
+                layer_geom.source_fisher = src_fisher
+                layer_geom.target_fisher = tgt_fisher
+                layer_geom.fisher_method = "activation_variance"
                 b.eval(layer_geom.fisher_weights)
 
                 logger.debug(
@@ -1503,7 +1556,11 @@ class GeometricMergeOrchestrator:
                     if applied:
                         metrics["rotations_applied"] += 1
 
-                # Handle shape mismatch using cross_dimensional_projection
+                # Handle shape mismatch using SVD-based projection
+                # CRITICAL: Use SVD_PROJECT, NOT GRAM_TRANSPORT for cross-architecture.
+                # GW on weight Gram matrices fails because different architectures have
+                # completely different weight structures - there's no structural correspondence.
+                # SVD preserves principal components without requiring structural similarity.
                 if source_w.shape != target_w.shape:
                     from modelcypher.core.domain.geometry.cross_dimensional_projection import (
                         project_cross_dimensional,
@@ -1516,7 +1573,7 @@ class GeometricMergeOrchestrator:
                         target_view = b.reshape(target_w, (1, target_w.shape[0]))
                         result = project_cross_dimensional(
                             source_view, target_view,
-                            method=ProjectionMethod.GRAM_TRANSPORT,
+                            method=ProjectionMethod.SVD_PROJECT,
                             backend=b,
                         )
                         source_w = b.reshape(result.projected, target_w.shape)
@@ -1525,7 +1582,7 @@ class GeometricMergeOrchestrator:
                     else:
                         result = project_cross_dimensional(
                             source_w, target_w,
-                            method=ProjectionMethod.GRAM_TRANSPORT,
+                            method=ProjectionMethod.SVD_PROJECT,
                             backend=b,
                         )
                         source_w = result.projected
@@ -1539,12 +1596,13 @@ class GeometricMergeOrchestrator:
                 apply_boundary_smoothing = False
                 if layer_geom and layer_geom.transform_requirements:
                     for transform in layer_geom.transform_requirements:
-                        if transform == "CURVATURE_CORRECTION":
+                        tag = transform.upper()
+                        if tag == "CURVATURE_CORRECTION":
                             use_geodesic_blend = True
-                        elif transform == "ALPHA_SCALING":
+                        elif tag == "ALPHA_SCALING":
                             # Reduce alpha in high-interference regions
                             pass  # Will be applied below with interference_score
-                        elif transform == "BOUNDARY_SMOOTHING":
+                        elif tag == "BOUNDARY_SMOOTHING":
                             apply_boundary_smoothing = True
                     metrics["transform_requirements_checked"] += 1
 
@@ -1572,7 +1630,10 @@ class GeometricMergeOrchestrator:
                                 metrics["intrinsic_dim_scaled"] += 1
 
                     # Apply interference-based alpha scaling (from A.2 transform requirements)
-                    if "ALPHA_SCALING" in layer_geom.transform_requirements:
+                    if any(
+                        t.upper() == "ALPHA_SCALING"
+                        for t in layer_geom.transform_requirements
+                    ):
                         alpha = alpha * (1.0 - layer_geom.interference_score)
                         metrics["alpha_scaled_by_interference"] += 1
 
@@ -1680,6 +1741,39 @@ class GeometricMergeOrchestrator:
                             merged_w = None  # Fall back to linear blending
 
                     # Use Fisher weights if available for dimension-specific blending
+                    if merged_w is None and layer_geom and layer_geom.source_fisher is not None and layer_geom.target_fisher is not None:
+                        try:
+                            from modelcypher.core.domain.geometry.fisher_blending import (
+                                FisherBlendingConfig,
+                                FisherNormalization,
+                                apply_fisher_blending,
+                            )
+
+                            src_fisher = self._align_fisher_to_weight(
+                                layer_geom.source_fisher, source_f32, b
+                            )
+                            tgt_fisher = self._align_fisher_to_weight(
+                                layer_geom.target_fisher, target_f32, b
+                            )
+                            if src_fisher is not None and tgt_fisher is not None:
+                                config = FisherBlendingConfig(
+                                    normalization=FisherNormalization.LAYER,
+                                    strength=0.5,
+                                )
+                                merged_w, _ = apply_fisher_blending(
+                                    source_weight=source_f32,
+                                    target_weight=target_f32,
+                                    base_alpha=alpha,
+                                    source_fisher=src_fisher,
+                                    target_fisher=tgt_fisher,
+                                    config=config,
+                                    backend=b,
+                                )
+                                metrics["fisher_weights_used"] += 1
+                        except Exception:
+                            merged_w = None
+
+                    # Backward-compatible Fisher ratio blending
                     if merged_w is None and layer_geom and layer_geom.fisher_weights is not None:
                         hidden_dim = layer_geom.fisher_weights.shape[0]
                         # Apply Fisher-weighted blending per dimension
@@ -1873,3 +1967,18 @@ class GeometricMergeOrchestrator:
         """Get weights for a specific layer."""
         pattern = f"layers.{layer_idx}."
         return {k: v for k, v in weights.items() if pattern in k}
+
+    def _align_fisher_to_weight(
+        self, fisher: "Array", weight: "Array", backend: "Backend"
+    ) -> "Array | None":
+        """Align a Fisher vector/tensor to a weight matrix shape."""
+        if fisher is None:
+            return None
+        if fisher.shape == weight.shape:
+            return fisher
+        if fisher.ndim == 1 and weight.ndim == 2:
+            if fisher.shape[0] == weight.shape[1]:
+                return backend.reshape(fisher, (1, -1))
+            if fisher.shape[0] == weight.shape[0]:
+                return backend.reshape(fisher, (-1, 1))
+        return None
