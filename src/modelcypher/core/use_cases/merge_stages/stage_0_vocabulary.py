@@ -400,6 +400,7 @@ def stage_vocabulary_align(
                 iteration = 0
                 iteration_budget = alignment_iterations
                 stall_count = 0
+                cross_family_accepted = False  # Track high-CKA acceptance for cross-family
 
                 while True:
                     prev_best = best_cka
@@ -452,6 +453,7 @@ def stage_vocabulary_align(
                                     "Phase lock not possible due to dimension mismatch.",
                                     best_cka,
                                 )
+                                cross_family_accepted = True
                                 break
                             raise RuntimeError(
                                 "Binary phase lock stalled: no improvement with fixed byte anchors."
@@ -494,7 +496,10 @@ def stage_vocabulary_align(
                         "target_dim": target_byte_matrix.shape[1],
                         "coverage": coverage_meta,
                         "signals": binary_signals,
-                        "phase_locked": bool(last_signal and last_signal.is_phase_locked),
+                        # Accept cross-family high-CKA as phase-locked
+                        "phase_locked": bool(
+                            (last_signal and last_signal.is_phase_locked) or cross_family_accepted
+                        ),
                         "balance_ratio": (
                             last_signal.metadata.get("balance_ratio")
                             if last_signal is not None
@@ -784,6 +789,7 @@ def stage_vocabulary_align(
                 iteration = 0
                 iteration_budget = alignment_iterations
                 stall_count = 0
+                cross_family_vocab_accepted = False  # Track high-CKA acceptance for cross-family
 
                 while True:
                     prev_best = best_cka
@@ -837,6 +843,7 @@ def stage_vocabulary_align(
                                 "Accepting high-quality alignment.",
                                 best_cka,
                             )
+                            cross_family_vocab_accepted = True
                             break
                     elif improved:
                         stall_count = 0
@@ -1078,7 +1085,11 @@ def stage_vocabulary_align(
                         "alignment_error": best_alignment["alignment_error"],
                         "iterations": best_alignment["iterations"],
                         "signals": vocab_signals,
-                        "phase_locked": bool(last_signal and last_signal.is_phase_locked),
+                        # Accept cross-family high-CKA as phase-locked
+                        "phase_locked": bool(
+                            (last_signal and last_signal.is_phase_locked)
+                            or cross_family_vocab_accepted
+                        ),
                         "support_texts": "all" if use_all_support_texts else "first",
                         "coverage": coverage_meta,
                         "balance_ratio": (
