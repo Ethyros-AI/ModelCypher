@@ -749,18 +749,20 @@ class TriangulatedProbeBuilder:
     """
     Builds triangulated probe sets for enhanced fingerprinting.
 
-    Now uses UnifiedAtlasInventory (402 probes across 10 atlas sources)
+    Now uses UnifiedAtlasInventory (439 probes across 12 atlas sources)
     instead of hardcoded probe lists. This provides:
     - SEQUENCE_INVARIANT: 68 probes
     - SEMANTIC_PRIME: 65 probes
     - COMPUTATIONAL_GATE: 76 probes
     - EMOTION_CONCEPT: 32 probes
     - TEMPORAL_CONCEPT: 25 probes
+    - SPATIAL_CONCEPT: 23 probes
     - SOCIAL_CONCEPT: 25 probes
     - MORAL_CONCEPT: 30 probes
     - COMPOSITIONAL: 22 probes
     - PHILOSOPHICAL_CONCEPT: 30 probes
     - CONCEPTUAL_GENEALOGY: 29 probes
+    - METAPHOR_INVARIANT: 14 probes
     """
 
     @staticmethod
@@ -768,7 +770,7 @@ class TriangulatedProbeBuilder:
         config: TriangulatedProbingConfig | None = None,
     ) -> list[Any]:
         """
-        Build probe set from UnifiedAtlasInventory (402 probes).
+        Build probe set from UnifiedAtlasInventory (439 probes).
 
         Returns list of AtlasProbe objects with:
         - probe_id: Unique identifier
@@ -797,9 +799,7 @@ class TriangulatedProbeBuilder:
 
         # Add other sources based on config
         if config.include_metaphor_invariants:
-            # Metaphor invariants map to emotion/temporal/moral concepts
-            sources.add(AtlasSource.EMOTION_CONCEPT)
-            sources.add(AtlasSource.TEMPORAL_CONCEPT)
+            sources.add(AtlasSource.METAPHOR_INVARIANT)
 
         if config.include_conceptual_genealogy:
             # Conceptual genealogy probes plus moral/social foundations for lineage anchoring
@@ -814,7 +814,7 @@ class TriangulatedProbeBuilder:
 
     @staticmethod
     def build_all_probes() -> list[Any]:
-        """Get all 402 probes for full triangulation."""
+        """Get all 439 probes for full triangulation."""
         # Lazy import to avoid circular dependency
         from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
 

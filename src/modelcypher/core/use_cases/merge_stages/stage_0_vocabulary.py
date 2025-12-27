@@ -1155,10 +1155,44 @@ def stage_vocabulary_align(
                 merge_max_prefix_length = 0
                 merge_max_prefix_matches = 0
 
+            # Derive thresholds from embedding data if not provided
+            effective_similarity = config.similarity_threshold
+            effective_confidence = config.confidence_threshold
+
+            if effective_similarity is None or effective_confidence is None:
+                # Sample embedding similarities to derive thresholds via spectral gap
+                sample_sims = _sample_embedding_similarities(
+                    source_embed, target_embed, backend, sample_size=min(500, source_embed.shape[0])
+                )
+                if sample_sims:
+                    derived = _derive_thresholds_from_similarities(sample_sims)
+                    if effective_similarity is None:
+                        effective_similarity = derived["similarity_threshold"]
+                    if effective_confidence is None:
+                        effective_confidence = derived["confidence_threshold"]
+                else:
+                    # No similarities computed - use dtype-derived minimum
+                    eps = machine_epsilon(backend, source_embed)
+                    if effective_similarity is None:
+                        effective_similarity = eps
+                    if effective_confidence is None:
+                        effective_confidence = eps
+
+            # For blend_alpha, if None, compute from CKA alignment quality
+            # Higher source CKA → higher alpha (more weight to source)
+            if merge_blend_alpha is None:
+                source_cka_score = compute_cka(source_embed, source_embed, backend=backend).cka
+                target_cka_score = compute_cka(target_embed, target_embed, backend=backend).cka
+                total = source_cka_score + target_cka_score
+                if total > 0:
+                    merge_blend_alpha = source_cka_score / total
+                else:
+                    merge_blend_alpha = 0.5  # Equal self-CKA means equal weight
+
             merge_config = CrossVocabMergeConfig(
                 projection_strategy=effective_strategy,
-                similarity_threshold=config.similarity_threshold,
-                confidence_threshold=config.confidence_threshold,
+                similarity_threshold=effective_similarity,
+                confidence_threshold=effective_confidence,
                 blend_alpha=merge_blend_alpha,
                 preserve_special_tokens=config.preserve_special_tokens,
                 use_embedding_similarity=merge_use_embedding_similarity,
@@ -1189,7 +1223,12 @@ def stage_vocabulary_align(
             # Check quality
             quality_metrics = merger.analyze_merge_quality(result)
 
-            if result.compatibility.compatibility_score < config.min_compatibility_score:
+            # Warn on low compatibility/coverage only if thresholds were specified
+            # If None, no arbitrary floor was set - we accept any measurable value
+            if (
+                config.min_compatibility_score is not None
+                and result.compatibility.compatibility_score < config.min_compatibility_score
+            ):
                 logger.warning(
                     "Low compatibility score %.2f for %s (continuing alignment)",
                     result.compatibility.compatibility_score,
@@ -1197,7 +1236,10 @@ def stage_vocabulary_align(
                 )
                 metrics[f"{embed_key}_warning"] = "low_compatibility"
 
-            if result.alignment_map.coverage < config.min_coverage:
+            if (
+                config.min_coverage is not None
+                and result.alignment_map.coverage < config.min_coverage
+            ):
                 logger.warning(
                     "Low coverage %.2f for %s (continuing alignment)",
                     result.alignment_map.coverage,
@@ -1345,6 +1387,116 @@ def _ensure_vocab_axis(
         vocab_size,
     )
     return embedding
+
+
+def _sample_embedding_similarities(
+    source_embed: "object",
+    target_embed: "object",
+    backend: "object",
+    sample_size: int = 500,
+) -> list[float]:
+    """Sample cosine similarities between source and target embeddings.
+
+    Returns a list of similarity values that can be used to derive
+    thresholds via spectral gap detection.
+    """
+    import math as _math
+
+    n_source = source_embed.shape[0]
+    n_target = target_embed.shape[0]
+
+    if n_source == 0 or n_target == 0:
+        return []
+
+    # Sample indices uniformly
+    sample_size = min(sample_size, n_source, n_target)
+    step_source = max(1, n_source // sample_size)
+    step_target = max(1, n_target // sample_size)
+
+    source_indices = list(range(0, n_source, step_source))[:sample_size]
+    target_indices = list(range(0, n_target, step_target))[:sample_size]
+
+    if not source_indices or not target_indices:
+        return []
+
+    # Get sample embeddings
+    source_sample = backend.take(source_embed, backend.array(source_indices), axis=0)
+    target_sample = backend.take(target_embed, backend.array(target_indices), axis=0)
+
+    # Normalize for cosine similarity
+    eps = machine_epsilon(backend, source_sample)
+    source_norms = backend.norm(source_sample, axis=1, keepdims=True)
+    target_norms = backend.norm(target_sample, axis=1, keepdims=True)
+
+    source_normed = source_sample / (source_norms + eps)
+    target_normed = target_sample / (target_norms + eps)
+
+    # Compute pairwise cosine similarities (sample × sample matrix)
+    sim_matrix = backend.matmul(source_normed, backend.transpose(target_normed))
+    backend.eval(sim_matrix)
+
+    # Flatten and convert to list
+    sim_flat = backend.reshape(sim_matrix, (-1,))
+    return list(backend.to_numpy(sim_flat).tolist())
+
+
+def _derive_thresholds_from_similarities(
+    similarities: list[float],
+) -> dict[str, float]:
+    """Derive similarity and confidence thresholds from spectral gap.
+
+    Finds natural boundaries in the similarity distribution using
+    the largest gap between consecutive sorted values.
+
+    Returns dict with 'similarity_threshold' and 'confidence_threshold'.
+    """
+    import math as _math
+
+    if len(similarities) < 2:
+        return {"similarity_threshold": 0.0, "confidence_threshold": 0.0}
+
+    sorted_sims = sorted(similarities)
+
+    # Compute gaps between consecutive values
+    gaps = [sorted_sims[i + 1] - sorted_sims[i] for i in range(len(sorted_sims) - 1)]
+
+    if not gaps:
+        return {"similarity_threshold": 0.0, "confidence_threshold": 0.0}
+
+    # Find the gap that separates "low" from "high" similarity
+    # Use mean + 2*stddev as significance threshold
+    mean_gap = sum(gaps) / len(gaps)
+    if len(gaps) > 1:
+        variance = sum((g - mean_gap) ** 2 for g in gaps) / len(gaps)
+        stddev = _math.sqrt(variance)
+        significance_threshold = mean_gap + 2.0 * stddev
+    else:
+        significance_threshold = 0.0
+
+    # Find largest significant gap
+    max_gap = max(gaps)
+    max_gap_idx = gaps.index(max_gap)
+
+    if max_gap <= significance_threshold:
+        # No significant gap - use median as threshold
+        mid_idx = len(sorted_sims) // 2
+        threshold = sorted_sims[mid_idx]
+    else:
+        # Threshold at geometric mean of values around the gap
+        lower_val = sorted_sims[max_gap_idx]
+        upper_val = sorted_sims[max_gap_idx + 1]
+        if lower_val <= 0:
+            threshold = upper_val / 2.0
+        else:
+            threshold = _math.sqrt(lower_val * upper_val)
+
+    # similarity_threshold is for "high quality" alignment
+    # confidence_threshold is for "acceptable" alignment
+    # Use spectral gap for similarity, and half that for confidence
+    return {
+        "similarity_threshold": threshold,
+        "confidence_threshold": threshold / 2.0 if threshold > 0 else 0.0,
+    }
 
 
 def _frechet_mean_from_ids(
@@ -1674,9 +1826,9 @@ def _select_shared_full_rank_indices(
         selected = selected[:-drop_count]
 
     # CRITICAL: Verify numerical rank via SVD and drop anchors until rank = n_selected
-    # Gram-Schmidt eps=1e-4 is too loose - SVD gives the true numerical rank
-    def _numerical_rank_svd(matrix: "object", rtol: float = 1e-3) -> int:
-        """Compute numerical rank via SVD singular value ratio."""
+    # Use dtype-derived threshold: max_s * max(m,n) * machine_epsilon
+    def _numerical_rank_svd(matrix: "object") -> int:
+        """Compute numerical rank via SVD with dtype-derived threshold."""
         try:
             _, s, _ = backend.svd(matrix, full_matrices=False)
             backend.eval(s)
@@ -1684,9 +1836,12 @@ def _select_shared_full_rank_indices(
             if len(s_vals) == 0:
                 return 0
             max_s = float(s_vals[0])
-            if max_s < 1e-12:
+            eps_matrix = machine_epsilon(backend, matrix)
+            if max_s < eps_matrix:
                 return 0
-            threshold = max_s * rtol
+            # Standard numerical rank threshold: max_s * max(m,n) * eps
+            max_dim = max(matrix.shape[0], matrix.shape[1])
+            threshold = max_s * max_dim * eps_matrix
             return int(sum(1 for sv in s_vals if float(sv) > threshold))
         except Exception:
             return len(selected)  # Fallback to full count if SVD fails
@@ -1778,6 +1933,7 @@ def _matrix_rank_for_alignment(
     backend: "object",
     eps: float | None = None,
 ) -> int:
+    """Compute effective rank using dtype-derived threshold."""
     n = int(matrix.shape[0])
     if n == 0:
         return 0
@@ -1790,7 +1946,7 @@ def _matrix_rank_for_alignment(
         return 0
     max_val = max(values)
     if eps is None:
-        eps = max(machine_epsilon(backend, matrix), 1e-12)
+        eps = machine_epsilon(backend, matrix)
     threshold = max_val * eps
     return sum(1 for val in values if val > threshold)
 
@@ -1799,8 +1955,16 @@ def _dynamic_condition_threshold(
     matrix: "object",
     backend: "object",
 ) -> float:
-    eps = max(machine_epsilon(backend, matrix), 1e-12)
-    return min(1e4, 1.0 / (eps ** 0.5))
+    """Compute condition number threshold from dtype.
+
+    The condition number threshold is 1/sqrt(eps), which represents
+    the boundary where numerical operations become unreliable.
+    No arbitrary cap - the dtype determines the threshold.
+    """
+    eps = machine_epsilon(backend, matrix)
+    # 1/sqrt(eps) is the natural condition number threshold
+    # Beyond this, matrix operations lose significant precision
+    return 1.0 / (eps ** 0.5)
 
 
 def _solve_feature_transform_exact(
@@ -2094,7 +2258,7 @@ def _align_bytes_from_matrices(
     anchor_labels: list[str],
     backend: "object",
     max_iterations: int = 1000,
-    tolerance: float = 1e-6,
+    tolerance: float | None = None,
     max_rounds: int = 1,
     anchor_weights: list[float] | None = None,
     initial_transform: "object | None" = None,
@@ -2104,6 +2268,9 @@ def _align_bytes_from_matrices(
 
     This is the optimized inner loop function that works with pre-computed
     anchor matrices, avoiding the expensive Fréchet mean recomputation.
+
+    Args:
+        tolerance: Alignment tolerance. If None, uses machine_epsilon.
     """
     # Log anchor diagnostics for debugging phase-lock issues
     n_anchors = int(source_matrix.shape[0])
@@ -2118,7 +2285,9 @@ def _align_bytes_from_matrices(
         require_phase_lock,
     )
 
-    precision_tol = max(tolerance, machine_epsilon(backend, source_matrix))
+    # Derive tolerance from dtype if not specified
+    eps = machine_epsilon(backend, source_matrix)
+    precision_tol = tolerance if tolerance is not None else eps
     cka_before = compute_cka(source_matrix, target_matrix, backend=backend).cka
     logger.debug("Initial CKA before alignment: %.8f", cka_before)
 
@@ -2288,11 +2457,16 @@ def _align_bytes(
     target_tokenizer: Any,
     backend: "object",
     max_iterations: int = 1000,
-    tolerance: float = 1e-6,
+    tolerance: float | None = None,
     max_rounds: int = 1,
     anchor_weights: list[float] | None = None,
     initial_transform: "object | None" = None,
 ) -> dict[str, Any] | None:
+    """Align embeddings using byte-level anchors.
+
+    Args:
+        tolerance: Alignment tolerance. If None, uses machine_epsilon.
+    """
     source_bytes = _build_byte_embedding_map(
         source_tokenizer,
         source_embed,
@@ -2471,11 +2645,16 @@ def _align_unified_atlas(
     backend: "object",
     use_all_support_texts: bool = False,
     max_iterations: int = 1000,
-    tolerance: float = 1e-6,
+    tolerance: float | None = None,
     max_rounds: int = 1,
     anchor_weights: list[float] | None = None,
     initial_transform: "object | None" = None,
 ) -> dict[str, Any] | None:
+    """Align embeddings using unified atlas anchors.
+
+    Args:
+        tolerance: Alignment tolerance. If None, uses machine_epsilon.
+    """
     source_anchors = _build_atlas_anchor_map(
         source_tokenizer,
         source_embed,

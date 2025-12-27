@@ -338,7 +338,7 @@ class DomainGeometryWaypointService:
         backend: "Backend",
     ) -> DomainGeometryScore:
         """Compute social geometry score (Latent Sociologist hypothesis)."""
-        from modelcypher.core.domain.agents.social_atlas import ALL_SOCIAL_PROBES
+        from modelcypher.core.domain.agents.social_atlas import SocialConceptInventory
         from modelcypher.core.domain.geometry.social_geometry import (
             SocialGeometryAnalyzer,
         )
@@ -350,7 +350,7 @@ class DomainGeometryWaypointService:
             model,
             tokenizer,
             layer,
-            [(p.id, f"The word {p.name.lower()} represents") for p in ALL_SOCIAL_PROBES],
+            [(p.id, p.prompt) for p in SocialConceptInventory.all_concepts()],
             backend,
         )
 
@@ -402,7 +402,7 @@ class DomainGeometryWaypointService:
         backend: "Backend",
     ) -> DomainGeometryScore:
         """Compute moral geometry score (Latent Ethicist hypothesis)."""
-        from modelcypher.core.domain.agents.moral_atlas import ALL_MORAL_PROBES
+        from modelcypher.core.domain.agents.moral_atlas import MoralConceptInventory
         from modelcypher.core.domain.geometry.moral_geometry import (
             MoralGeometryAnalyzer,
         )
@@ -414,7 +414,7 @@ class DomainGeometryWaypointService:
             model,
             tokenizer,
             layer,
-            [(p.id, f"The word {p.name.lower()} represents") for p in ALL_MORAL_PROBES],
+            [(p.id, p.prompt) for p in MoralConceptInventory.all_concepts()],
             backend,
         )
 

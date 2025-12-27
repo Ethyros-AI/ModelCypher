@@ -19,7 +19,7 @@
 Metaphor Convergence Analyzer.
 
 Computes layer-wise convergence for metaphor invariants across two models.
-Analyzes how different models represent universal metaphors (e.g. "Time is Money")
+Analyzes how different models represent universal metaphors (e.g. futility, impossibility)
 across their layers to find deep semantic alignment.
 
 Ported 1:1 from the reference Swift implementation.
@@ -30,57 +30,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from modelcypher.core.domain.agents.metaphor_invariant_atlas import (
+    MetaphorFamily,
+    MetaphorInvariantInventory,
+)
 from modelcypher.core.domain.geometry.manifold_stitcher import (
     ModelFingerprints,
     ProbeSpace,
     output_layer_marker,
 )
 from modelcypher.core.domain.geometry.vector_math import SparseVectorMath
-
-# =============================================================================
-# Metaphor Invariant Inventory
-# =============================================================================
-
-
-class MetaphorFamily(str, Enum):
-    TIME_IS_MONEY = "TimeIsMoney"
-    IDEAS_ARE_OBJECTS = "IdeasAreObjects"
-    ARGUMENT_IS_WAR = "ArgumentIsWar"
-    LOVE_IS_JOURNEY = "LoveIsJourney"
-    # LIFE_IS_GAMBLE = "LifeIsGamble"
-
-
-@dataclass(frozen=True)
-class MetaphorInvariant:
-    id: str
-    family: MetaphorFamily
-    prompt: str
-
-
-class MetaphorInvariantInventory:
-    """Inventory of cross-cultural metaphor invariants."""
-
-    @staticmethod
-    def all_probes() -> list[MetaphorInvariant]:
-        # Minimal set for demonstration/parity
-        return [
-            MetaphorInvariant(
-                "metaphor:spend_time", MetaphorFamily.TIME_IS_MONEY, "You can spend time."
-            ),
-            MetaphorInvariant(
-                "metaphor:save_time", MetaphorFamily.TIME_IS_MONEY, "You can save time."
-            ),
-            MetaphorInvariant(
-                "metaphor:grasp_idea", MetaphorFamily.IDEAS_ARE_OBJECTS, "I grasp the idea."
-            ),
-            MetaphorInvariant(
-                "metaphor:attack_point", MetaphorFamily.ARGUMENT_IS_WAR, "He attacked my point."
-            ),
-            MetaphorInvariant(
-                "metaphor:crossroads", MetaphorFamily.LOVE_IS_JOURNEY, "We are at a crossroads."
-            ),
-        ]
-
 
 # =============================================================================
 # Helper: Dimension Alignment Builder (Simplified)
@@ -205,7 +164,7 @@ class MetaphorConvergenceAnalyzer:
         target: ModelFingerprints,
         align_mode: AlignMode = AlignMode.LAYER,
     ) -> Report:
-        inventory = MetaphorInvariantInventory.all_probes()
+        inventory = list(MetaphorInvariantInventory.ALL_PROBES)
         family_set = {inv.family.value for inv in inventory}
         ordered_families = [f.value for f in MetaphorFamily if f.value in family_set]
 
@@ -266,7 +225,7 @@ class MetaphorConvergenceAnalyzer:
             aligned_pairs = mapped
 
         # 3. Build Dimension Alignment
-        holdout_prefixes = ["metaphor:"]
+        holdout_prefixes = ["metaphor_invariant:"]
         dimension_alignment = DimensionAlignmentBuilder.build(
             source, target, aligned_pairs, holdout_prefixes
         )
@@ -277,9 +236,7 @@ class MetaphorConvergenceAnalyzer:
         layers_union: list[int] = []
 
         for family in ordered_families:
-            anchor_ids = [
-                inv.id[len("metaphor:") :] for inv in inventory if inv.family.value == family
-            ]
+            anchor_ids = [inv.id for inv in inventory if inv.family.value == family]
 
             # Collect vectors for this family
             source_layer_vecs: dict[int, list[dict[int, float]]] = {}
@@ -433,8 +390,9 @@ class MetaphorConvergenceAnalyzer:
         vectors: dict[str, dict[int, dict[int, float]]] = {}
         for fp in fingerprints.fingerprints:
             print_id = fp.prime_id
-            if print_id.startswith("metaphor:"):
-                anchor_id = print_id[len("metaphor:") :]
+            prefix = "metaphor_invariant:"
+            if print_id.startswith(prefix):
+                anchor_id = print_id[len(prefix) :]
             else:
                 continue
 

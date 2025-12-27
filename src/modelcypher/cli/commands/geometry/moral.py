@@ -78,12 +78,12 @@ def moral_anchors(
     context = _context(ctx)
 
     from modelcypher.core.domain.agents.moral_atlas import (
-        ALL_MORAL_PROBES,
         MoralAxis,
+        MoralConceptInventory,
         MoralFoundation,
     )
 
-    anchors = list(ALL_MORAL_PROBES)
+    anchors = MoralConceptInventory.all_concepts()
 
     if foundation:
         try:
@@ -158,7 +158,7 @@ def moral_probe_model(
 
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.backends.mlx_backend import MLXBackend
-    from modelcypher.core.domain.agents.moral_atlas import ALL_MORAL_PROBES
+    from modelcypher.core.domain.agents.moral_atlas import MoralConceptInventory
     from modelcypher.core.domain.geometry.moral_geometry import MoralGeometryAnalyzer
 
     typer.echo(f"Loading model from {model_path}...")
@@ -183,12 +183,12 @@ def moral_probe_model(
     backend = MLXBackend()
     anchor_activations = {}
 
-    typer.echo(f"Probing {len(ALL_MORAL_PROBES)} moral anchors...")
+    anchors = MoralConceptInventory.all_concepts()
+    typer.echo(f"Probing {len(anchors)} moral anchors...")
 
-    for concept in ALL_MORAL_PROBES:
+    for concept in anchors:
         try:
-            prompt = f"The word {concept.name.lower()} represents"
-            tokens = tokenizer.encode(prompt)
+            tokens = tokenizer.encode(concept.prompt)
             input_ids = backend.array([tokens])
 
             hidden = forward_through_backbone(
@@ -202,10 +202,10 @@ def moral_probe_model(
 
             activation = backend.mean(hidden[0], axis=0)
             backend.eval(activation)
-            anchor_activations[concept.name] = backend.to_numpy(activation)
+            anchor_activations[concept.id] = backend.to_numpy(activation)
 
         except Exception as e:
-            typer.echo(f"  Warning: Failed anchor {concept.name}: {e}", err=True)
+            typer.echo(f"  Warning: Failed anchor {concept.id}: {e}", err=True)
 
     if len(anchor_activations) < 15:
         typer.echo(

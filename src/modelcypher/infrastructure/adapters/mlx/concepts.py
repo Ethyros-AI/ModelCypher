@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 def _load_unified_atlas_concepts() -> list[tuple[str, list[str]]]:
-    """Load concepts from the UnifiedAtlas (402 probes across 10 atlas sources).
+    """Load concepts from the UnifiedAtlas (439 probes across 12 atlas sources).
 
     The UnifiedAtlas triangulates across:
     - Computational Gates (76): Programming concept primitives
@@ -43,10 +43,12 @@ def _load_unified_atlas_concepts() -> list[tuple[str, list[str]]]:
     - Emotion Concepts (32): Plutchik's wheel with VAD dimensions
     - Moral Concepts (30): Haidt's Moral Foundations Theory
     - Temporal Concepts (25): Arrow of time, duration, causality
+    - Spatial Concepts (23): Vertical, lateral, depth, mass, furniture
     - Social Concepts (25): Power hierarchy, kinship, formality
     - Compositional (22): Semantic prime compositions
     - Philosophical (30): Ontology, epistemology, logic, modality, mereology
     - Conceptual Genealogy (29): Etymology and lineage anchors
+    - Metaphor Invariants (14): Cross-cultural semantic anchors
 
     Returns:
         List of (concept_id, [support_texts]) tuples for embedding triangulation.
@@ -198,9 +200,10 @@ class MLXConceptAdapter(ConceptDiscoveryPort):
 
     Uses sliding window embedding similarity against a multi-atlas concept
     inventory for cross-domain triangulation. The UnifiedAtlas provides
-    402 probes across 10 atlas sources: computational gates, sequence invariants,
-    semantic primes, emotions, moral foundations, temporal concepts, social concepts,
-    compositional probes, philosophical concepts, and conceptual genealogy.
+    439 probes across 12 atlas sources: computational gates, sequence invariants,
+    semantic primes, emotions, moral foundations, temporal concepts, spatial concepts,
+    social concepts, compositional probes, philosophical concepts, conceptual genealogy,
+    and metaphor invariants.
     """
 
     def __init__(self, embedder: EmbedderPort, concepts: list[tuple[str, list[str]]] | None = None):

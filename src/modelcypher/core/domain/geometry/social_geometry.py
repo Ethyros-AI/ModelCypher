@@ -23,7 +23,7 @@ structure encoding power hierarchies, kinship relations, and formality gradients
 
 Key insight: Language models trained on human text absorb implicit social structures.
 These structures manifest as geometric relationships in latent space:
-- Power axis: slave → servant → citizen → noble → king
+- Power axis: slave → servant → citizen → noble → emperor
 - Kinship axis: enemy → stranger → acquaintance → friend → family
 - Formality axis: hey → hi → hello → greetings → salutations
 

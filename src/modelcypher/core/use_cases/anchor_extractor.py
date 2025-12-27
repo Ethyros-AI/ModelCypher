@@ -400,11 +400,14 @@ class AnchorExtractor:
         - COMPUTATIONAL_GATE: 76 probes (control flow, data types, functions)
         - EMOTION_CONCEPT: 32 probes (Plutchik wheel + dyads)
         - TEMPORAL_CONCEPT: 25 probes (tense, duration, causality, lifecycle)
+        - SPATIAL_CONCEPT: 23 probes (vertical, lateral, depth, mass, furniture)
         - SOCIAL_CONCEPT: 25 probes (power, kinship, formality, status)
         - MORAL_CONCEPT: 30 probes (Haidt's Moral Foundations Theory)
         - CONCEPTUAL_GENEALOGY: 29 probes (etymology + lineage)
 
-        Total: 402 probes for cross-domain triangulation.
+        - METAPHOR_INVARIANT: 14 probes (cross-cultural semantic anchors)
+
+        Total: 439 probes for cross-domain triangulation.
         """
         probes = UnifiedAtlasInventory.all_probes()
         anchors: dict[str, np.ndarray] = {}

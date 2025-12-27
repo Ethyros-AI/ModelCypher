@@ -18,7 +18,7 @@
 """Geometry invariant layer mapping CLI commands.
 
 Provides commands for invariant-based layer mapping between models using
-multi-atlas triangulation scoring across 402 probes.
+multi-atlas triangulation scoring across 439 probes.
 
 Atlases:
 - Sequence Invariants: 68 probes (mathematical/logical)
@@ -26,11 +26,13 @@ Atlases:
 - Computational Gates: 76 probes (computational/structural)
 - Emotion Concepts: 32 probes (affective/relational)
 - Temporal Concepts: 25 probes (temporal/logical)
+- Spatial Concepts: 23 probes (spatial grounding)
 - Social Concepts: 25 probes (relational/linguistic)
 - Moral Concepts: 30 probes (moral/relational)
 - Compositional: 22 probes (semantic prime compositions)
 - Philosophical: 30 probes (philosophical/logical)
 - Conceptual Genealogy: 29 probes (etymology/lineage)
+- Metaphor Invariants: 14 probes (cross-cultural semantics)
 
 Commands:
     mc geometry invariant map-layers --source <path> --target <path>
@@ -77,14 +79,15 @@ def geometry_invariant_map_layers(
     scope: str = typer.Option(
         "sequenceInvariants",
         "--scope",
-        help="Invariant scope: invariants, logicOnly, sequenceInvariants, multiAtlas (402 probes)",
+        help="Invariant scope: invariants, logicOnly, sequenceInvariants, multiAtlas (439 probes)",
     ),
     atlas_sources: str | None = typer.Option(
         None,
         "--atlas-sources",
         help=(
             "Comma-separated atlas sources for multiAtlas scope: sequence, semantic, gate, "
-            "emotion, temporal, social, moral, compositional, philosophical, genealogy "
+            "emotion, temporal, spatial, social, moral, compositional, philosophical, genealogy, "
+            "metaphor "
             "(default: all)"
         ),
     ),
@@ -115,14 +118,14 @@ def geometry_invariant_map_layers(
 ) -> None:
     """Map layers between models using multi-atlas triangulation.
 
-    Uses up to 402 probes across 10 atlases with cross-domain
+    Uses up to 439 probes across 12 atlases with cross-domain
     triangulation scoring to find corresponding layers between models.
 
     Scopes:
         invariants        - Default sequence families
         logicOnly         - Logic family only
         sequenceInvariants - All 68 sequence invariants
-        multiAtlas        - All 402 probes from all atlases
+        multiAtlas        - All 439 probes from all atlases
 
     Example:
         mc geometry invariant map-layers --source ./model-a --target ./model-b
@@ -332,7 +335,7 @@ def geometry_invariant_atlas_inventory(
 ) -> None:
     """Show inventory of available probes across all atlases.
 
-    Displays the 402 probes available for multi-atlas layer mapping:
+    Displays the 439 probes available for multi-atlas layer mapping:
     - Sequence Invariants: 68 probes (mathematical/logical)
     - Semantic Primes: 65 probes (linguistic/mental)
     - Computational Gates: 76 probes (computational/structural)

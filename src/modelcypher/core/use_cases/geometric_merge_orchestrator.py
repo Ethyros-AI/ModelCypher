@@ -36,7 +36,7 @@ STAGE 0: INFRASTRUCTURE
     - geometry_metrics_cache: Set up caching
 
 STAGE 1: PROBE & FINGERPRINT
-    - probes, compositional_probes: Generate probe texts
+    - compositional_probes: Generate probe texts
     - cka: Compute activation similarity
     - probe_calibration: Calibrate per-probe reliability
     - concept_response_matrix: Build CRM

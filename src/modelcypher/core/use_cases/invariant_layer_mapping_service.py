@@ -27,13 +27,15 @@ Supports:
 - Computational Gates: 76 probes (computational/structural)
 - Emotion Concepts: 32 probes (affective/relational)
 - Temporal Concepts: 25 probes (temporal/logical)
+- Spatial Concepts: 23 probes (spatial grounding)
 - Social Concepts: 25 probes (relational/linguistic)
 - Moral Concepts: 30 probes (moral/relational)
 - Compositional: 22 probes (semantic prime compositions)
 - Philosophical: 30 probes (philosophical/logical)
 - Conceptual Genealogy: 29 probes (etymology/lineage)
+- Metaphor Invariants: 14 probes (cross-cultural semantics)
 
-Total: 402 probes for cross-domain triangulation.
+Total: 439 probes for cross-domain triangulation.
 """
 
 from __future__ import annotations
@@ -100,7 +102,7 @@ class LayerMappingConfig:
     sample_layer_count: int = 12
     # Multi-atlas configuration (only used when invariant_scope="multiAtlas")
     atlas_sources: list[str] | None = (
-        None  # sequence_invariant, semantic_prime, computational_gate, emotion_concept, ...
+        None  # sequence_invariant, semantic_prime, computational_gate, emotion_concept, spatial_concept, metaphor_invariant, ...
     )
     atlas_domains: list[str] | None = None  # mathematical, logical, linguistic, etc.
 
@@ -178,6 +180,9 @@ def _parse_atlas_sources(sources: list[str] | None) -> frozenset[AtlasSource] | 
         "temporal_concept": AtlasSource.TEMPORAL_CONCEPT,
         "temporalconcept": AtlasSource.TEMPORAL_CONCEPT,
         "temporal": AtlasSource.TEMPORAL_CONCEPT,
+        "spatial_concept": AtlasSource.SPATIAL_CONCEPT,
+        "spatialconcept": AtlasSource.SPATIAL_CONCEPT,
+        "spatial": AtlasSource.SPATIAL_CONCEPT,
         "social_concept": AtlasSource.SOCIAL_CONCEPT,
         "socialconcept": AtlasSource.SOCIAL_CONCEPT,
         "social": AtlasSource.SOCIAL_CONCEPT,
@@ -193,6 +198,9 @@ def _parse_atlas_sources(sources: list[str] | None) -> frozenset[AtlasSource] | 
         "conceptualgenealogy": AtlasSource.CONCEPTUAL_GENEALOGY,
         "genealogy": AtlasSource.CONCEPTUAL_GENEALOGY,
         "etymology": AtlasSource.CONCEPTUAL_GENEALOGY,
+        "metaphor_invariant": AtlasSource.METAPHOR_INVARIANT,
+        "metaphorinvariant": AtlasSource.METAPHOR_INVARIANT,
+        "metaphor": AtlasSource.METAPHOR_INVARIANT,
     }
 
     result: set[AtlasSource] = set()
@@ -272,7 +280,7 @@ class InvariantLayerMappingService:
     - 30 philosophical concepts (philosophical/logical)
     - 29 conceptual genealogy probes (etymology/lineage)
 
-    Total: 402 probes for cross-domain triangulation.
+    Total: 439 probes for cross-domain triangulation.
 
     Fingerprint extraction is cached to ~/Library/Caches/ModelCypher/fingerprints/
     to avoid expensive MLX inference on repeated calls.
@@ -714,7 +722,7 @@ class InvariantLayerMappingService:
         if summary.alignment_quality < 0.3:
             # If not using multi-atlas, suggest upgrading
             if report.config.invariant_scope != InvariantScope.MULTI_ATLAS:
-                return "Consider using multiAtlas scope for 402 probes across all atlases; current coverage is too sparse."
+                return "Consider using multiAtlas scope for 439 probes across all atlases; current coverage is too sparse."
             return (
                 "Consider using CKA-based layer matching instead; invariant coverage is too sparse."
             )
@@ -753,7 +761,7 @@ class InvariantLayerMappingService:
         """Generate recommended action for collapse risk level."""
         actions = {
             "low": "Collapse risk is acceptable. Proceed with layer mapping.",
-            "medium": "Consider using multiAtlas scope for 402 probes across all atlases.",
+            "medium": "Consider using multiAtlas scope for 439 probes across all atlases.",
             "high": "High collapse risk. Use multiAtlas scope for maximum anchor density.",
             "critical": "Critical collapse risk. Use multiAtlas scope or consider alternative alignment methods.",
         }

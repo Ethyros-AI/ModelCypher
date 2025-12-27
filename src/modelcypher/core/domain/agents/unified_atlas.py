@@ -770,11 +770,13 @@ DEFAULT_ATLAS_SOURCES = frozenset(
         AtlasSource.COMPUTATIONAL_GATE,
         AtlasSource.EMOTION_CONCEPT,
         AtlasSource.TEMPORAL_CONCEPT,
+        AtlasSource.SPATIAL_CONCEPT,
         AtlasSource.SOCIAL_CONCEPT,
         AtlasSource.MORAL_CONCEPT,
         AtlasSource.COMPOSITIONAL,
         AtlasSource.PHILOSOPHICAL_CONCEPT,
         AtlasSource.CONCEPTUAL_GENEALOGY,
+        AtlasSource.METAPHOR_INVARIANT,
     ]
 )
 
