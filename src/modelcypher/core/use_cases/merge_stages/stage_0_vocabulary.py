@@ -234,6 +234,7 @@ def stage_vocabulary_align(
     for embed_key in embed_keys:
         embed_start = time.perf_counter()
         use_all_support_texts = config.use_all_support_texts
+        accumulated_transform: "object | None" = None
         source_embed = source_weights.get(embed_key)
         target_embed = target_weights.get(embed_key)
 
@@ -278,8 +279,12 @@ def stage_vocabulary_align(
                 "target",
             )
             backend.eval(source_embed, target_embed)
+            source_embed_original = source_embed
+            target_embed_original = target_embed
             source_cache_key = _make_embedding_cache_key(source_embed, backend)
             target_cache_key = _make_embedding_cache_key(target_embed, backend)
+            source_cache_key_original = source_cache_key
+            target_cache_key_original = target_cache_key
 
             # Binary (1D) alignment: align byte-level anchors before vocabulary blending.
             # Pre-compute byte maps ONCE to avoid repeated Fréchet mean computation.
@@ -460,6 +465,13 @@ def stage_vocabulary_align(
 
                 source_embed = byte_alignment["aligned_source"]
                 backend.eval(source_embed)
+                if byte_alignment.get("feature_transform") is not None:
+                    transform = byte_alignment["feature_transform"]
+                    if accumulated_transform is None:
+                        accumulated_transform = transform
+                    else:
+                        accumulated_transform = backend.matmul(accumulated_transform, transform)
+                        backend.eval(accumulated_transform)
 
                 if best_alignment is not None:
                     binary_metrics[embed_key] = {
@@ -554,6 +566,15 @@ def stage_vocabulary_align(
                             source_cache_key = _make_embedding_cache_key(
                                 source_embed, backend
                             )
+                            if token_alignment.get("feature_transform") is not None:
+                                transform = token_alignment["feature_transform"]
+                                if accumulated_transform is None:
+                                    accumulated_transform = transform
+                                else:
+                                    accumulated_transform = backend.matmul(
+                                        accumulated_transform, transform
+                                    )
+                                    backend.eval(accumulated_transform)
                         token_metrics[embed_key] = {
                             "tokens_shared": len(source_indices),
                             "anchors_used": len(token_indices),
@@ -568,15 +589,9 @@ def stage_vocabulary_align(
 
             source_byte_map_for_atlas = source_bytes
             target_byte_map_for_atlas = target_bytes
-            if use_byte_anchors_for_atlas:
-                source_byte_map_for_atlas = _build_byte_embedding_map(
-                    source_tokenizer,
-                    source_embed,
-                    source_embed.shape[0],
-                    backend,
-                    cache_key=source_cache_key,
-                    tokenizer_key=source_tokenizer_key,
-                )
+            if not use_byte_anchors_for_atlas:
+                source_byte_map_for_atlas = {}
+                target_byte_map_for_atlas = {}
 
             # Vocabulary (2D) alignment: phase-lock on UnifiedAtlas anchors.
             # Pre-compute atlas anchor maps ONCE (may rebuild if use_all_support_texts changes)
@@ -586,25 +601,30 @@ def stage_vocabulary_align(
 
             target_atlas_map = _build_atlas_anchor_map(
                 target_tokenizer,
-                target_embed,
-                target_embed.shape[0],
+                target_embed_original,
+                target_embed_original.shape[0],
                 backend,
                 use_all_support_texts=use_all_support_texts,
                 byte_map=target_byte_map_for_atlas,
                 use_byte_anchors=use_byte_anchors_for_atlas,
-                cache_key=target_cache_key,
+                cache_key=target_cache_key_original,
                 tokenizer_key=target_tokenizer_key,
             )
-            source_atlas_map = _build_atlas_anchor_map(
+            source_atlas_map_raw = _build_atlas_anchor_map(
                 source_tokenizer,
-                source_embed,
-                source_embed.shape[0],
+                source_embed_original,
+                source_embed_original.shape[0],
                 backend,
                 use_all_support_texts=use_all_support_texts,
                 byte_map=source_byte_map_for_atlas,
                 use_byte_anchors=use_byte_anchors_for_atlas,
-                cache_key=source_cache_key,
+                cache_key=source_cache_key_original,
                 tokenizer_key=source_tokenizer_key,
+            )
+            source_atlas_map = _apply_feature_transform_to_anchor_map(
+                source_atlas_map_raw,
+                accumulated_transform,
+                backend,
             )
             shared_atlas = sorted(set(source_atlas_map) & set(target_atlas_map))
 
@@ -612,25 +632,30 @@ def stage_vocabulary_align(
                 use_all_support_texts = True
                 target_atlas_map = _build_atlas_anchor_map(
                     target_tokenizer,
-                    target_embed,
-                    target_embed.shape[0],
+                    target_embed_original,
+                    target_embed_original.shape[0],
                     backend,
                     use_all_support_texts=True,
                     byte_map=target_byte_map_for_atlas,
                     use_byte_anchors=use_byte_anchors_for_atlas,
-                    cache_key=target_cache_key,
+                    cache_key=target_cache_key_original,
                     tokenizer_key=target_tokenizer_key,
                 )
-                source_atlas_map = _build_atlas_anchor_map(
+                source_atlas_map_raw = _build_atlas_anchor_map(
                     source_tokenizer,
-                    source_embed,
-                    source_embed.shape[0],
+                    source_embed_original,
+                    source_embed_original.shape[0],
                     backend,
                     use_all_support_texts=True,
                     byte_map=source_byte_map_for_atlas,
                     use_byte_anchors=use_byte_anchors_for_atlas,
-                    cache_key=source_cache_key,
+                    cache_key=source_cache_key_original,
                     tokenizer_key=source_tokenizer_key,
+                )
+                source_atlas_map = _apply_feature_transform_to_anchor_map(
+                    source_atlas_map_raw,
+                    accumulated_transform,
+                    backend,
                 )
                 shared_atlas = sorted(set(source_atlas_map) & set(target_atlas_map))
 
@@ -882,25 +907,30 @@ def stage_vocabulary_align(
                             use_all_support_texts = True
                             target_atlas_map = _build_atlas_anchor_map(
                                 target_tokenizer,
-                                target_embed,
-                                target_embed.shape[0],
+                                target_embed_original,
+                                target_embed_original.shape[0],
                                 backend,
                                 use_all_support_texts=True,
                                 byte_map=target_byte_map_for_atlas,
                                 use_byte_anchors=use_byte_anchors_for_atlas,
-                                cache_key=target_cache_key,
+                                cache_key=target_cache_key_original,
                                 tokenizer_key=target_tokenizer_key,
                             )
-                            source_atlas_map = _build_atlas_anchor_map(
+                            source_atlas_map_raw = _build_atlas_anchor_map(
                                 source_tokenizer,
-                                source_embed,
-                                source_embed.shape[0],
+                                source_embed_original,
+                                source_embed_original.shape[0],
                                 backend,
                                 use_all_support_texts=True,
                                 byte_map=source_byte_map_for_atlas,
                                 use_byte_anchors=use_byte_anchors_for_atlas,
-                                cache_key=source_cache_key,
+                                cache_key=source_cache_key_original,
                                 tokenizer_key=source_tokenizer_key,
+                            )
+                            source_atlas_map = _apply_feature_transform_to_anchor_map(
+                                source_atlas_map_raw,
+                                accumulated_transform,
+                                backend,
                             )
                             shared_atlas = sorted(
                                 set(source_atlas_map) & set(target_atlas_map)
@@ -2107,6 +2137,21 @@ def _build_atlas_anchor_map(
     logger.debug("Cached atlas map with %d entries", len(anchor_map))
 
     return anchor_map
+
+
+def _apply_feature_transform_to_anchor_map(
+    anchor_map: dict[str | int, "object"],
+    transform: "object | None",
+    backend: "object",
+) -> dict[str | int, "object"]:
+    if not anchor_map or transform is None:
+        return anchor_map
+
+    labels = list(anchor_map.keys())
+    matrix = backend.stack([anchor_map[label] for label in labels], axis=0)
+    transformed = backend.matmul(matrix, transform)
+    backend.eval(transformed)
+    return {label: transformed[idx] for idx, label in enumerate(labels)}
 
 
 def _align_unified_atlas(

@@ -182,26 +182,14 @@ class GramAligner:
 
         values = [float(v) for v in b.to_numpy(eigvals).tolist()]
         max_eig = max(values) if values else 1.0
-        min_eig = min(values) if values else 0.0
-        mach_eps = machine_epsilon(b, gram)
+        eps = reg if reg is not None else max(self._regularization, machine_epsilon(b, gram))
+        threshold = max_eig * max(eps, machine_epsilon(b, gram))
 
-        # For CKA = 1.0, we need EXACT inverse, not regularized.
-        # Only zero out eigenvalues that are truly numerical noise (< max_eig * mach_eps).
-        # Use direct inverse for eigenvalues above threshold.
-        threshold = max_eig * mach_eps
-
-        # Count how many eigenvalues are above threshold
-        above_threshold = sum(1 for v in values if v > threshold)
-        if above_threshold == len(values):
-            # Full rank - use direct inverse, no regularization
-            inv_vals = 1.0 / eigvals
-        else:
-            # Rank deficient - zero out small eigenvalues
-            inv_vals = b.where(
-                eigvals > threshold,
-                1.0 / eigvals,
-                b.zeros_like(eigvals),
-            )
+        inv_vals = b.where(
+            eigvals > threshold,
+            1.0 / eigvals,
+            b.zeros_like(eigvals),
+        )
         b.eval(inv_vals)
 
         inv_diag = b.reshape(inv_vals, (1, -1))

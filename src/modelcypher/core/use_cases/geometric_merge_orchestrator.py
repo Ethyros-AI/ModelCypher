@@ -599,12 +599,34 @@ class GeometricMergeOrchestrator:
         # Phase-lock alignment from activations (CKA = 1.0)
         try:
             from modelcypher.core.domain.geometry.gram_aligner import GramAligner
+            from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
             src_stacked = b.stack(src_acts[:n], axis=0)
             tgt_stacked = b.stack(tgt_acts[:n], axis=0)
             b.eval(src_stacked, tgt_stacked)
 
-            aligner = GramAligner(backend=b)
+            max_samples = min(
+                int(src_stacked.shape[0]),
+                int(src_stacked.shape[1]),
+                int(tgt_stacked.shape[1]),
+            )
+            if max_samples < int(src_stacked.shape[0]):
+                anchor_indices = self._select_anchor_indices_by_coverage(
+                    tgt_stacked,
+                    max_samples,
+                )
+                idx_arr = b.array(anchor_indices)
+                src_stacked = b.take(src_stacked, idx_arr, axis=0)
+                tgt_stacked = b.take(tgt_stacked, idx_arr, axis=0)
+                b.eval(src_stacked, tgt_stacked)
+
+            precision_tol = max(machine_epsilon(b, src_stacked), 1e-12)
+            aligner = GramAligner(
+                backend=b,
+                max_iterations=5000,
+                max_rounds=3,
+                tolerance=precision_tol,
+            )
             result = aligner.find_perfect_alignment(src_stacked, tgt_stacked)
             transform = b.array(result.feature_transform)
             b.eval(transform)
@@ -623,10 +645,15 @@ class GeometricMergeOrchestrator:
                 result.iterations,
                 result.alignment_error,
             )
+            if result.achieved_cka < 1.0 - precision_tol:
+                raise RuntimeError(
+                    "Layer %d phase lock failed (CKA=%.8f)"
+                    % (layer_geom.layer_idx, result.achieved_cka)
+                )
         except Exception as e:
             logger.error("Phase lock alignment failed for layer %d: %s", layer_geom.layer_idx, e)
             layer_geom.transform_requirements.append("PHASE_LOCK_FAILED")
-            return
+            raise
 
         # tangent_space_alignment - local alignment
         try:

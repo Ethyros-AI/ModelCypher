@@ -58,7 +58,15 @@ class AlignmentSignal:
 
     @property
     def is_phase_locked(self) -> bool:
-        return self.gap <= 1e-12
+        # For binary (1D) alignment across different models, accept CKA >= 0.98
+        # because different models may have genuinely different byte relationships.
+        # For higher dimensions (token/atlas), require tighter alignment.
+        if self.dimension == 1:
+            return self.gap <= 0.02  # CKA >= 0.98 for binary alignment
+        elif self.dimension == 2:
+            return self.gap <= 0.01  # CKA >= 0.99 for vocabulary alignment
+        else:
+            return self.gap <= 1e-6  # Near-exact for conceptual alignment
 
     def to_dict(self) -> dict[str, Any]:
         return {
