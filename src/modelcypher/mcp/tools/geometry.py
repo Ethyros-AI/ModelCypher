@@ -2677,7 +2677,8 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
             importanceScore: float,
             instabilityScore: float,
             complexityScore: float,
-            baseAlpha: float = 0.5,
+            baselineDiagnostics: dict[str, dict[str, float]] | list[dict[str, float]] | None = None,
+            baseAlpha: float | None = None,
         ) -> dict:
             """
             Check if a layer's diagnostics fall within the safety polytope.
@@ -2693,17 +2694,43 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                 importanceScore: Layer importance [0, 1]
                 instabilityScore: Numerical instability risk [0, 1]
                 complexityScore: Manifold complexity [0, 1]
+                baselineDiagnostics: Reference layer diagnostics used to derive bounds
                 baseAlpha: Base merge coefficient
 
             Returns:
-                Safety verdict with recommended mitigations and adjusted alpha
+                Geometry-derived diagnostics with recommended transformations
             """
             from modelcypher.core.domain.geometry.safety_polytope import (
                 DiagnosticVector,
+                PolytopeBounds,
                 SafetyPolytope,
             )
 
-            polytope = SafetyPolytope()
+            if not baselineDiagnostics:
+                raise ValueError("baselineDiagnostics required to derive polytope bounds")
+            if isinstance(baselineDiagnostics, dict):
+                baseline_items = list(baselineDiagnostics.values())
+            else:
+                baseline_items = list(baselineDiagnostics)
+            if not baseline_items:
+                raise ValueError("baselineDiagnostics must be non-empty")
+            baseline_vectors = [
+                DiagnosticVector(
+                    interference_score=item.get("interference", 0.0),
+                    importance_score=item.get("importance", 0.0),
+                    instability_score=item.get("instability", 0.0),
+                    complexity_score=item.get("complexity", 0.0),
+                )
+                for item in baseline_items
+            ]
+            bounds = PolytopeBounds.from_baseline_metrics(
+                interference_samples=[diag.interference_score for diag in baseline_vectors],
+                importance_samples=[diag.importance_score for diag in baseline_vectors],
+                instability_samples=[diag.instability_score for diag in baseline_vectors],
+                complexity_samples=[diag.complexity_score for diag in baseline_vectors],
+                magnitude_samples=[diag.magnitude for diag in baseline_vectors],
+            )
+            polytope = SafetyPolytope(bounds=bounds)
             diagnostics = DiagnosticVector(
                 interference_score=interferenceScore,
                 importance_score=importanceScore,
@@ -2713,23 +2740,8 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
 
             result = polytope.analyze_layer(diagnostics, base_alpha=baseAlpha)
 
-            violations_info = [
-                {
-                    "dimension": v.dimension,
-                    "value": v.value,
-                    "threshold": v.threshold,
-                    "severity": v.severity,
-                    "mitigation": v.mitigation.value,
-                }
-                for v in result.violations
-            ]
-
             return {
                 "_schema": "mc.geometry.safety_polytope.check.v1",
-                "verdict": result.verdict.value,
-                "isSafe": result.is_safe,
-                "needsMitigation": result.needs_mitigation,
-                "isCritical": result.is_critical,
                 "diagnostics": {
                     "interference": interferenceScore,
                     "importance": importanceScore,
@@ -2738,21 +2750,40 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                     "magnitude": diagnostics.magnitude,
                     "maxDimension": diagnostics.max_dimension,
                 },
-                "violations": violations_info,
-                "mitigations": [m.value for m in result.mitigations],
+                "bounds": {
+                    "interference": bounds.interference_threshold,
+                    "importance": bounds.importance_threshold,
+                    "instability": bounds.instability_threshold,
+                    "complexity": bounds.complexity_threshold,
+                    "magnitude": bounds.magnitude_threshold,
+                    "highInstability": bounds.high_instability_threshold,
+                    "highInterference": bounds.high_interference_threshold,
+                },
+                "triggers": [
+                    {
+                        "dimension": trigger.dimension,
+                        "value": trigger.value,
+                        "threshold": trigger.threshold,
+                        "intensity": trigger.intensity,
+                        "transformation": trigger.transformation.value,
+                    }
+                    for trigger in result.triggers
+                ],
+                "transformations": [t.value for t in result.transformations],
                 "recommendedAlpha": result.recommended_alpha,
                 "confidence": result.confidence,
+                "transformationEffort": result.transformation_effort,
                 "interpretation": (
-                    "SAFE: All diagnostics within bounds."
-                    if result.is_safe
-                    else f"{result.verdict.value.upper()}: {len(result.violations)} violation(s) detected. "
-                    f"Apply mitigations: {', '.join(m.value for m in result.mitigations)}."
+                    "All diagnostics within bounds - direct merge possible."
+                    if not result.triggers
+                    else f"{len(result.triggers)} trigger(s) detected. "
+                    f"Apply transformations: {', '.join(t.value for t in result.transformations)}."
                 ),
                 "nextActions": [
                     "mc_geometry_null_space_filter for interference mitigation",
                     "mc_geometry_safety_polytope_model for full model profile",
                 ]
-                if result.needs_mitigation
+                if result.transformations
                 else [
                     "Proceed with merge using recommendedAlpha",
                 ],
@@ -2763,7 +2794,7 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_safety_polytope_model(
             layerDiagnostics: dict[str, dict[str, float]],
-            baseAlpha: float = 0.5,
+            baseAlpha: float | None = None,
         ) -> dict:
             """
             Analyze safety polytope across all model layers.
@@ -2775,14 +2806,13 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                 baseAlpha: Base merge coefficient
 
             Returns:
-                Full model safety profile with per-layer verdicts
+                Full model transformation profile with per-layer recommendations
             """
             from modelcypher.core.domain.geometry.safety_polytope import (
                 DiagnosticVector,
+                PolytopeBounds,
                 SafetyPolytope,
             )
-
-            polytope = SafetyPolytope()
 
             layer_diagnostics = {}
             for layer_str, diag_dict in layerDiagnostics.items():
@@ -2794,45 +2824,57 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                     complexity_score=diag_dict.get("complexity", 0.0),
                 )
 
+            bounds = PolytopeBounds.from_baseline_metrics(
+                interference_samples=[diag.interference_score for diag in layer_diagnostics.values()],
+                importance_samples=[diag.importance_score for diag in layer_diagnostics.values()],
+                instability_samples=[diag.instability_score for diag in layer_diagnostics.values()],
+                complexity_samples=[diag.complexity_score for diag in layer_diagnostics.values()],
+                magnitude_samples=[diag.magnitude for diag in layer_diagnostics.values()],
+            )
+            polytope = SafetyPolytope(bounds=bounds)
             profile = polytope.analyze_model_pair(layer_diagnostics, base_alpha=baseAlpha)
 
             per_layer_info = {}
+            layers_by_transform_count: dict[str, list[int]] = {}
             for layer_idx, result in profile.per_layer.items():
+                count = len(result.transformations)
+                layers_by_transform_count.setdefault(str(count), []).append(layer_idx)
                 per_layer_info[str(layer_idx)] = {
-                    "verdict": result.verdict.value,
                     "recommendedAlpha": result.recommended_alpha,
-                    "violationCount": len(result.violations),
-                    "mitigations": [m.value for m in result.mitigations],
+                    "transformationCount": count,
+                    "transformations": [t.value for t in result.transformations],
+                    "transformationEffort": result.transformation_effort,
                 }
 
             return {
                 "_schema": "mc.geometry.safety_polytope.model.v1",
-                "overallVerdict": profile.overall_verdict.value,
-                "mergeable": profile.mergeable,
-                "safeLayers": profile.safe_layers,
-                "cautionLayers": profile.caution_layers,
-                "unsafeLayers": profile.unsafe_layers,
-                "criticalLayers": profile.critical_layers,
-                "globalMitigations": [m.value for m in profile.global_mitigations],
+                "layersByTransformationCount": layers_by_transform_count,
+                "globalTransformations": [t.value for t in profile.all_transformations],
                 "meanDiagnostics": {
                     "interference": profile.mean_interference,
                     "importance": profile.mean_importance,
                     "instability": profile.mean_instability,
                     "complexity": profile.mean_complexity,
                 },
+                "bounds": {
+                    "interference": bounds.interference_threshold,
+                    "importance": bounds.importance_threshold,
+                    "instability": bounds.instability_threshold,
+                    "complexity": bounds.complexity_threshold,
+                    "magnitude": bounds.magnitude_threshold,
+                    "highInstability": bounds.high_instability_threshold,
+                    "highInterference": bounds.high_interference_threshold,
+                },
+                "totalTransformationEffort": profile.total_transformation_effort,
                 "perLayer": per_layer_info,
                 "interpretation": (
-                    f"{profile.overall_verdict.value.upper()}: "
-                    f"{len(profile.safe_layers)} safe, {len(profile.caution_layers)} caution, "
-                    f"{len(profile.unsafe_layers)} unsafe, {len(profile.critical_layers)} critical."
+                    f"{len(profile.per_layer)} layers analyzed; "
+                    f"{len(profile.all_transformations)} unique transformations suggested."
                 ),
-                "nextActions": (
-                    ["Do not merge - critical issues detected."]
-                    if not profile.mergeable
-                    else ["Apply globalMitigations before merge."]
-                    if profile.global_mitigations
-                    else ["Proceed with merge using per-layer recommendedAlpha values."]
-                ),
+                "nextActions": [
+                    "mc_geometry_null_space_filter for interference mitigation",
+                    "mc_geometry_safety_polytope_check for per-layer analysis",
+                ],
             }
 
 

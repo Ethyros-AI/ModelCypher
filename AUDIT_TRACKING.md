@@ -417,25 +417,21 @@ Files that are not imported or used anywhere:
 - Fingerprinting: topological_fingerprint, geometry_fingerprint, fingerprints (3 orthogonal approaches)
 - **NO REDUNDANCY** - Proper delegation patterns, single canonical implementations
 
-### ORPHANED CODE IN GEOMETRY (157 items)
+### ORPHANED CODE IN GEOMETRY (Partial - in progress)
 
 **Files with significant unused public API:**
 | File | Orphaned Items | Notes |
 |------|----------------|-------|
-| conceptual_genealogy.py | 10 | Probe generators never called |
-| sequence_invariants.py | 12 | All probe generators unused |
-| path_geometry.py | 10 | DTW, Frechet, signature analysis unused |
-| cross_grounding_transfer.py | 7 | Ghost anchor system unused |
 | spatial_3d.py | 11 | Occlusion, stereoscopy probers unused |
-| verb_noun_classifier.py | 9 | Classification system unused |
-| safety_polytope.py | 7 | Transformation polytope unused |
-| domain_signal_profile.py | 6 | Domain scoring system unused |
-| domain_geometry_waypoints.py | 5 | Pre/post merge validation unused |
-| moral_geometry.py | 5 | Report classes unused |
-| temporal_topology.py | 4 | Report classes unused |
-| thermo_path_integration.py | 4 | Path assessment unused |
-| cross_cultural_geometry.py | 4 | Alignment analysis unused |
-| concept_detector.py | 3 | ConceptDetector never instantiated |
+
+**Resolved since this audit:**
+- `conceptual_genealogy.py`, `sequence_invariants.py` removed (merged into unified atlas).
+- `path_geometry.py` comprehensive metrics wired into CLI/MCP path compare.
+- `cross_cultural_geometry.py` wired via CLI/MCP (`mc geometry cross-cultural analyze`).
+- `concept_detector.py` wired via CLI/MCP (`mc geometry concept detect/compare`).
+- `thermo_path_integration.py` wired via CLI/MCP (`mc thermo path-integration`).
+- `safety_polytope.py` wired via CLI/MCP safety polytope analysis.
+- `cross_grounding_transfer.py`, `domain_signal_profile.py`, `domain_geometry_waypoints.py`, `moral_geometry.py`, `temporal_topology.py`, `verb_noun_classifier.py` wired through CLI/MCP or merge orchestration.
 
 **Recommendation:** These are likely scaffolding for future features. Either:
 1. **Wire them in** - Connect to CLI/MCP if ready for use

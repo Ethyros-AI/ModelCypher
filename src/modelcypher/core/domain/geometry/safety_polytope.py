@@ -251,7 +251,7 @@ class SafetyPolytope:
         self,
         diagnostics: DiagnosticVector,
         layer: int | None = None,
-        base_alpha: float = 0.5,
+        base_alpha: float | None = None,
     ) -> LayerTransformationResult:
         """
         Analyze what transformations a layer needs.
@@ -318,8 +318,12 @@ class SafetyPolytope:
             if TransformationType.LAYER_SKIP not in transformations:
                 transformations.append(TransformationType.LAYER_SKIP)
 
-        # Compute recommended alpha
-        recommended_alpha = self._compute_adjusted_alpha(base_alpha, diagnostics, triggers)
+        # Compute recommended alpha only when a base alpha is provided
+        recommended_alpha = (
+            self._compute_adjusted_alpha(base_alpha, diagnostics, triggers)
+            if base_alpha is not None
+            else None
+        )
 
         # Compute confidence based on how close to boundaries
         confidence = self._compute_confidence(diagnostics)
@@ -385,7 +389,7 @@ class SafetyPolytope:
     def analyze_model_pair(
         self,
         layer_diagnostics: dict[int, DiagnosticVector],
-        base_alpha: float = 0.5,
+        base_alpha: float | None = None,
     ) -> ModelTransformationProfile:
         """
         Analyze transformations needed across all layers.

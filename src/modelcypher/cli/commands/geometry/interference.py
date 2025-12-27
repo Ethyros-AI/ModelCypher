@@ -639,26 +639,11 @@ def safety_polytope_check(
     importance: float = typer.Argument(..., help="Importance score [0-1]"),
     instability: float = typer.Argument(..., help="Instability score [0-1]"),
     complexity: float = typer.Argument(..., help="Complexity score [0-1]"),
-    interference_threshold: float = typer.Option(
-        0.6, "--interference-threshold", help="Interference threshold"
+    baseline_file: str = typer.Option(
+        ..., "--baseline-file", help="JSON file with layer diagnostics for bound derivation"
     ),
-    importance_threshold: float = typer.Option(
-        0.7, "--importance-threshold", help="Importance threshold"
-    ),
-    instability_threshold: float = typer.Option(
-        0.5, "--instability-threshold", help="Instability threshold"
-    ),
-    complexity_threshold: float = typer.Option(
-        0.8, "--complexity-threshold", help="Complexity threshold"
-    ),
-    magnitude_threshold: float = typer.Option(
-        1.2, "--magnitude-threshold", help="Magnitude threshold"
-    ),
-    high_instability_threshold: float = typer.Option(
-        0.9, "--high-instability-threshold", help="High instability threshold"
-    ),
-    high_interference_threshold: float = typer.Option(
-        0.9, "--high-interference-threshold", help="High interference threshold"
+    base_alpha: float | None = typer.Option(
+        None, "--base-alpha", help="Base merge alpha used for recommendations"
     ),
 ) -> None:
     """
@@ -670,7 +655,7 @@ def safety_polytope_check(
     - Instability: Numerical conditioning
     - Complexity: Manifold dimensionality
 
-    Alpha is computed from the diagnostics - not user-specified.
+    Bounds are derived from the baseline diagnostics file (no fixed thresholds).
     """
     context = _context(ctx)
 
@@ -680,14 +665,32 @@ def safety_polytope_check(
         SafetyPolytope,
     )
 
-    bounds = PolytopeBounds(
-        interference_threshold=interference_threshold,
-        importance_threshold=importance_threshold,
-        instability_threshold=instability_threshold,
-        complexity_threshold=complexity_threshold,
-        magnitude_threshold=magnitude_threshold,
-        high_instability_threshold=high_instability_threshold,
-        high_interference_threshold=high_interference_threshold,
+    baseline_path = Path(baseline_file)
+    baseline_data = json.loads(baseline_path.read_text(encoding="utf-8"))
+    if isinstance(baseline_data, dict) and "layerDiagnostics" in baseline_data:
+        baseline_data = baseline_data["layerDiagnostics"]
+    if isinstance(baseline_data, dict):
+        baseline_items = list(baseline_data.values())
+    else:
+        baseline_items = list(baseline_data or [])
+    if not baseline_items:
+        raise typer.BadParameter("baseline-file must contain layer diagnostics")
+
+    baseline_diagnostics = [
+        DiagnosticVector(
+            interference_score=item.get("interference", 0.0),
+            importance_score=item.get("importance", 0.0),
+            instability_score=item.get("instability", 0.0),
+            complexity_score=item.get("complexity", 0.0),
+        )
+        for item in baseline_items
+    ]
+    bounds = PolytopeBounds.from_baseline_metrics(
+        interference_samples=[diag.interference_score for diag in baseline_diagnostics],
+        importance_samples=[diag.importance_score for diag in baseline_diagnostics],
+        instability_samples=[diag.instability_score for diag in baseline_diagnostics],
+        complexity_samples=[diag.complexity_score for diag in baseline_diagnostics],
+        magnitude_samples=[diag.magnitude for diag in baseline_diagnostics],
     )
     polytope = SafetyPolytope(bounds=bounds)
     diagnostics = DiagnosticVector(
@@ -697,8 +700,8 @@ def safety_polytope_check(
         complexity_score=complexity,
     )
 
-    # Alpha derived from diagnostics, not user-specified
-    result = polytope.analyze_layer(diagnostics, base_alpha=0.5)
+    # Alpha derived from diagnostics + base alpha (if provided)
+    result = polytope.analyze_layer(diagnostics, base_alpha=base_alpha)
 
     payload = {
         "_schema": "mc.geometry.interference.safety_polytope.v1",
@@ -711,13 +714,13 @@ def safety_polytope_check(
             "maxDimension": diagnostics.max_dimension,
         },
         "bounds": {
-            "interference": interference_threshold,
-            "importance": importance_threshold,
-            "instability": instability_threshold,
-            "complexity": complexity_threshold,
-            "magnitude": magnitude_threshold,
-            "highInstability": high_instability_threshold,
-            "highInterference": high_interference_threshold,
+            "interference": bounds.interference_threshold,
+            "importance": bounds.importance_threshold,
+            "instability": bounds.instability_threshold,
+            "complexity": bounds.complexity_threshold,
+            "magnitude": bounds.magnitude_threshold,
+            "highInstability": bounds.high_instability_threshold,
+            "highInterference": bounds.high_interference_threshold,
         },
         "triggers": [
             {
@@ -741,10 +744,6 @@ def safety_polytope_check(
             "SAFETY POLYTOPE CHECK",
             "=" * 60,
             "",
-            "-" * 40,
-            f"VERDICT: {result.verdict.value.upper()}",
-            "-" * 40,
-            "",
             "Diagnostics:",
             f"  Interference: {interference:.3f}",
             f"  Importance:   {importance:.3f}",
@@ -752,35 +751,36 @@ def safety_polytope_check(
             f"  Complexity:   {complexity:.3f}",
             f"  Magnitude:    {diagnostics.magnitude:.3f}",
             "",
-            f"Recommended Alpha: {result.recommended_alpha:.3f}",
             f"Confidence: {result.confidence:.1%}",
         ]
+        if result.recommended_alpha is not None:
+            lines.append(f"Recommended Alpha: {result.recommended_alpha:.3f}")
 
-        if result.violations:
+        if result.triggers:
             lines.extend(
                 [
                     "",
                     "-" * 40,
-                    "Violations",
+                    "Triggers",
                     "-" * 40,
                 ]
             )
-            for v in result.violations:
+            for v in result.triggers:
                 lines.append(
-                    f"  {v.dimension}: {v.value:.3f} > {v.threshold:.3f} (severity: {v.severity:.2f})"
+                    f"  {v.dimension}: {v.value:.3f} > {v.threshold:.3f} (intensity: {v.intensity:.2f})"
                 )
-                lines.append(f"    Mitigation: {v.mitigation.value}")
+                lines.append(f"    Transformation: {v.transformation.value}")
 
-        if result.mitigations:
+        if result.transformations:
             lines.extend(
                 [
                     "",
                     "-" * 40,
-                    "Recommended Mitigations",
+                    "Recommended Transformations",
                     "-" * 40,
                 ]
             )
-            for m in result.mitigations:
+            for m in result.transformations:
                 lines.append(f"  • {m.value}")
 
         lines.append("")
