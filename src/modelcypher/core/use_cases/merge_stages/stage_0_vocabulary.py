@@ -1676,9 +1676,11 @@ def _solve_feature_transform_exact(
         return None
 
     gram = backend.matmul(source_matrix, backend.transpose(source_matrix))
+    if regularization > 0.0:
+        gram = gram + regularization * backend.eye(n)
     backend.eval(gram)
-    eigvals, _ = backend.eigh(gram)
-    backend.eval(eigvals)
+    eigvals, eigvecs = backend.eigh(gram)
+    backend.eval(eigvals, eigvecs)
     values = [float(v) for v in backend.to_numpy(eigvals).tolist()]
     if not values:
         return None
@@ -1691,16 +1693,22 @@ def _solve_feature_transform_exact(
     if condition > max_condition:
         return None
 
-    if regularization > 0.0:
-        gram = gram + regularization * backend.eye(n)
-        backend.eval(gram)
+    inv_vals = backend.where(
+        eigvals > 0.0,
+        1.0 / eigvals,
+        backend.zeros_like(eigvals),
+    )
+    backend.eval(inv_vals)
+    gram_inv = backend.matmul(
+        eigvecs * backend.reshape(inv_vals, (1, -1)),
+        backend.transpose(eigvecs),
+    )
+    backend.eval(gram_inv)
 
-    try:
-        solution = backend.solve(gram, target_matrix)
-    except Exception:
-        return None
-
-    transform = backend.matmul(backend.transpose(source_matrix), solution)
+    transform = backend.matmul(
+        backend.transpose(source_matrix),
+        backend.matmul(gram_inv, target_matrix),
+    )
     backend.eval(transform)
     return transform
 

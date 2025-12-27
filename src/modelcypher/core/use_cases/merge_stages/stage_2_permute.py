@@ -178,16 +178,76 @@ def stage_permute(
     precision_tol = max(machine_epsilon(b, source_anchors), 1e-12)
     embed_cka = compute_cka(source_anchors, target_anchors, backend=b).cka
     if embed_cka < 1.0 - precision_tol:
-        raise RuntimeError(
-            "PERMUTE: Embedding anchors not phase-locked (CKA=%.8f). "
-            "Complete 1D/2D alignment before permutation."
-            % embed_cka
-        )
+        # Polar decomposition via eigendecomposition (no SVD).
+        M = b.matmul(b.transpose(source_anchors), target_anchors)
+        mtm = b.matmul(b.transpose(M), M)
+        eigvals, eigvecs = b.eigh(mtm)
+        b.eval(eigvals, eigvecs)
 
-    logger.info(
-        "PERMUTE: Embedding anchors phase-locked (CKA=%.8f). Skipping Procrustes rotation.",
-        embed_cka,
-    )
+        eigvals_list = [float(v) for v in b.to_numpy(eigvals).tolist()]
+        max_eig = max(eigvals_list) if eigvals_list else 0.0
+        threshold = max_eig * precision_tol
+        min_eig = min(eigvals_list) if eigvals_list else 0.0
+        if min_eig <= threshold:
+            raise RuntimeError(
+                "PERMUTE: Anchor covariance is rank-deficient; "
+                "expand anchor selection before permutation."
+            )
+
+        inv_sqrt_vals = 1.0 / b.sqrt(eigvals)
+        inv_sqrt = b.matmul(
+            eigvecs * b.reshape(inv_sqrt_vals, (1, -1)),
+            b.transpose(eigvecs),
+        )
+        embedding_rotation = b.matmul(M, inv_sqrt)
+        b.eval(embedding_rotation)
+
+        # Ensure det(R) = 1 to avoid reflection.
+        det_R = b.det(embedding_rotation)
+        b.eval(det_R)
+        det_val = (
+            float(det_R.item())
+            if hasattr(det_R, "item")
+            else float(b.to_numpy(det_R))
+        )
+        if det_val < 0:
+            n = embedding_rotation.shape[1]
+            rot_cols = [embedding_rotation[:, i : i + 1] for i in range(n - 1)]
+            rot_cols.append(embedding_rotation[:, -1:] * -1.0)
+            embedding_rotation = b.concatenate(rot_cols, axis=1)
+            b.eval(embedding_rotation)
+
+        # Apply rotation to all source weights that operate on hidden dimension.
+        hidden_dim = source_anchors.shape[1]
+        for key in list(source_arr.keys()):
+            w = source_arr[key]
+            if w.ndim != 2:
+                continue
+            out_dim, in_dim = w.shape
+            if in_dim == hidden_dim:
+                source_arr[key] = b.matmul(w, embedding_rotation)
+                b.eval(source_arr[key])
+            elif out_dim == hidden_dim:
+                source_arr[key] = b.matmul(b.transpose(embedding_rotation), w)
+                b.eval(source_arr[key])
+
+        source_rotated = b.matmul(source_anchors, embedding_rotation)
+        b.eval(source_rotated)
+        embed_cka = compute_cka(source_rotated, target_anchors, backend=b).cka
+        if embed_cka < 1.0 - precision_tol:
+            raise RuntimeError(
+                "PERMUTE: Embedding rotation failed to phase-lock (CKA=%.8f)." % embed_cka
+            )
+        source_anchors = source_rotated
+        logger.info(
+            "PERMUTE: Embedding rotation phase-locked (CKA=%.8f).",
+            embed_cka,
+        )
+    else:
+        logger.info(
+            "PERMUTE: Embedding anchors phase-locked (CKA=%.8f). Skipping rotation.",
+            embed_cka,
+        )
 
     # Configure aligner - no arbitrary thresholds
     pa_config = PAConfig(use_anchor_grounding=True)

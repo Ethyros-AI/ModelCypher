@@ -183,13 +183,12 @@ class GramAligner:
         values = [float(v) for v in b.to_numpy(eigvals).tolist()]
         max_eig = max(values) if values else 1.0
         eps = reg if reg is not None else max(self._regularization, machine_epsilon(b, gram))
-        threshold = max_eig * max(eps, machine_epsilon(b, gram))
 
-        inv_vals = b.where(
-            eigvals > threshold,
-            1.0 / eigvals,
-            b.zeros_like(eigvals),
-        )
+        # Use Tikhonov regularization instead of zeroing small eigenvalues.
+        # Zeroing causes rank loss and prevents CKA = 1.0 for cross-dimensional alignment.
+        # Regularization: inv(λ + ε) instead of zeroing λ when λ < threshold
+        reg_value = max_eig * max(eps, machine_epsilon(b, gram))
+        inv_vals = 1.0 / (eigvals + reg_value)
         b.eval(inv_vals)
 
         inv_diag = b.reshape(inv_vals, (1, -1))
@@ -219,12 +218,39 @@ class GramAligner:
         gram = b.matmul(source, b.transpose(source))
         b.eval(gram)
 
-        try:
-            solution = b.solve(gram, target)
-        except Exception:
+        eigvals, eigvecs = b.eigh(gram)
+        b.eval(eigvals, eigvecs)
+
+        values = [float(v) for v in b.to_numpy(eigvals).tolist()]
+        if not values:
+            return None
+        max_eig = max(values)
+        min_eig = min(values)
+        if min_eig <= 0.0:
             return None
 
-        transform = b.matmul(b.transpose(source), solution)
+        eps = max(self._regularization, machine_epsilon(b, gram))
+        threshold = max_eig * eps
+        if min_eig <= threshold:
+            return None
+
+        inv_vals = b.where(
+            eigvals > threshold,
+            1.0 / eigvals,
+            b.zeros_like(eigvals),
+        )
+        b.eval(inv_vals)
+
+        gram_inv = b.matmul(
+            eigvecs * b.reshape(inv_vals, (1, -1)),
+            b.transpose(eigvecs),
+        )
+        b.eval(gram_inv)
+
+        transform = b.matmul(
+            b.transpose(source),
+            b.matmul(gram_inv, target),
+        )
         b.eval(transform)
         return transform
 

@@ -238,6 +238,7 @@ class UnifiedGeometricMerger:
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
         )
+        self._require_vocab_phase_lock(vocab_metrics, vocab_aligned)
 
         # Load models for probe stage
         source_model = None
@@ -270,30 +271,20 @@ class UnifiedGeometricMerger:
         if probe_failed:
             min_cka = probe_metrics.get("min_cka", 0.0)
             mean_cka = probe_metrics.get("mean_cka", 0.0)
-            logger.warning(
-                "PROBE SIGNAL: No usable alignment signals yet (mean_cka=%.4f, min_cka=%.4f). "
-                "Proceeding with merge and recording residuals.",
-                mean_cka,
-                min_cka,
+            raise RuntimeError(
+                "PROBE SIGNAL: Alignment signals missing (mean_cka=%.4f, min_cka=%.4f). "
+                "Phase lock is required before merge."
+                % (mean_cka, min_cka)
             )
 
         if not perfect_alignment:
             min_cka = probe_metrics.get("min_cka", 0.0)
             mean_cka = probe_metrics.get("mean_cka", 0.0)
-            if source_activations and target_activations:
-                logger.info(
-                    "PROBE BAROMETER: Alignment not locked yet (mean_cka=%.4f, min_cka=%.4f). "
-                    "Phase-lock alignment will search for CKA=1.0 before blending.",
-                    mean_cka,
-                    min_cka,
-                )
-            else:
-                logger.warning(
-                    "PROBE BAROMETER: Alignment not locked yet (mean_cka=%.4f, min_cka=%.4f) "
-                    "but no activations were collected. Phase-lock alignment is unavailable.",
-                    mean_cka,
-                    min_cka,
-                )
+            raise RuntimeError(
+                "PROBE BAROMETER: Alignment not phase-locked (mean_cka=%.4f, min_cka=%.4f). "
+                "Resolve alignment before merge."
+                % (mean_cka, min_cka)
+            )
 
         # Log activation collection results
         if source_activations and target_activations:
@@ -423,6 +414,7 @@ class UnifiedGeometricMerger:
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
         )
+        self._require_vocab_phase_lock(vocab_metrics, vocab_aligned)
         logger.info(
             "STAGE 0: VOCABULARY ALIGNMENT completed in %.2fs",
             time.perf_counter() - stage_start,
@@ -881,6 +873,30 @@ class UnifiedGeometricMerger:
         """Load model weights as backend Arrays."""
         weights = self._model_loader.load_weights(model_path)
         return weights, "safetensors"
+
+    def _require_vocab_phase_lock(
+        self, vocab_metrics: dict[str, Any], vocab_aligned: bool
+    ) -> None:
+        if not vocab_aligned:
+            raise RuntimeError(
+                "Vocabulary alignment was not applied. Phase lock is required before merge."
+            )
+        binary = vocab_metrics.get("binary_alignment", {})
+        vocab = vocab_metrics.get("vocab_phase_lock", {})
+        if not binary or not vocab:
+            raise RuntimeError(
+                "Vocabulary alignment metrics missing; cannot confirm phase lock."
+            )
+        for key, entry in binary.items():
+            if not entry.get("phase_locked"):
+                raise RuntimeError(
+                    f"Binary phase lock missing for {key}; aborting merge."
+                )
+        for key, entry in vocab.items():
+            if not entry.get("phase_locked"):
+                raise RuntimeError(
+                    f"Vocabulary phase lock missing for {key}; aborting merge."
+                )
 
     def _save_weights(
         self,
