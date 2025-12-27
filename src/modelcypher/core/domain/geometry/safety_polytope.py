@@ -114,6 +114,7 @@ class PolytopeBounds:
     def from_baseline_metrics(
         cls,
         interference_samples: list[float],
+        importance_samples: list[float] | None = None,
         instability_samples: list[float],
         complexity_samples: list[float],
         magnitude_samples: list[float],
@@ -132,7 +133,9 @@ class PolytopeBounds:
 
         return cls(
             interference_threshold=percentile(interference_samples, threshold_percentile),
-            importance_threshold=percentile(interference_samples, threshold_percentile),
+            importance_threshold=percentile(
+                importance_samples or interference_samples, threshold_percentile
+            ),
             instability_threshold=percentile(instability_samples, threshold_percentile),
             complexity_threshold=percentile(complexity_samples, threshold_percentile),
             magnitude_threshold=percentile(magnitude_samples, threshold_percentile),

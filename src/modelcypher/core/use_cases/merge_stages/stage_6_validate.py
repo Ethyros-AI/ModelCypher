@@ -231,6 +231,7 @@ def stage_validate(
     else:
         bounds = PolytopeBounds.from_baseline_metrics(
             interference_samples=interference_samples,
+            importance_samples=[entry[1] for entry in layer_raw_measurements.values()],
             instability_samples=instability_samples,
             complexity_samples=complexity_samples,
             magnitude_samples=magnitude_samples,

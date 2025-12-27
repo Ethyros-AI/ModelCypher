@@ -639,6 +639,27 @@ def safety_polytope_check(
     importance: float = typer.Argument(..., help="Importance score [0-1]"),
     instability: float = typer.Argument(..., help="Instability score [0-1]"),
     complexity: float = typer.Argument(..., help="Complexity score [0-1]"),
+    interference_threshold: float = typer.Option(
+        0.6, "--interference-threshold", help="Interference threshold"
+    ),
+    importance_threshold: float = typer.Option(
+        0.7, "--importance-threshold", help="Importance threshold"
+    ),
+    instability_threshold: float = typer.Option(
+        0.5, "--instability-threshold", help="Instability threshold"
+    ),
+    complexity_threshold: float = typer.Option(
+        0.8, "--complexity-threshold", help="Complexity threshold"
+    ),
+    magnitude_threshold: float = typer.Option(
+        1.2, "--magnitude-threshold", help="Magnitude threshold"
+    ),
+    high_instability_threshold: float = typer.Option(
+        0.9, "--high-instability-threshold", help="High instability threshold"
+    ),
+    high_interference_threshold: float = typer.Option(
+        0.9, "--high-interference-threshold", help="High interference threshold"
+    ),
 ) -> None:
     """
     Check if diagnostics fall within the safety polytope.
@@ -655,10 +676,20 @@ def safety_polytope_check(
 
     from modelcypher.core.domain.geometry.safety_polytope import (
         DiagnosticVector,
+        PolytopeBounds,
         SafetyPolytope,
     )
 
-    polytope = SafetyPolytope()
+    bounds = PolytopeBounds(
+        interference_threshold=interference_threshold,
+        importance_threshold=importance_threshold,
+        instability_threshold=instability_threshold,
+        complexity_threshold=complexity_threshold,
+        magnitude_threshold=magnitude_threshold,
+        high_instability_threshold=high_instability_threshold,
+        high_interference_threshold=high_interference_threshold,
+    )
+    polytope = SafetyPolytope(bounds=bounds)
     diagnostics = DiagnosticVector(
         interference_score=interference,
         importance_score=importance,
@@ -667,14 +698,10 @@ def safety_polytope_check(
     )
 
     # Alpha derived from diagnostics, not user-specified
-    result = polytope.analyze_layer(diagnostics, base_alpha=None)
+    result = polytope.analyze_layer(diagnostics, base_alpha=0.5)
 
     payload = {
         "_schema": "mc.geometry.interference.safety_polytope.v1",
-        "verdict": result.verdict.value,
-        "isSafe": result.is_safe,
-        "needsMitigation": result.needs_mitigation,
-        "isCritical": result.is_critical,
         "diagnostics": {
             "interference": interference,
             "importance": importance,
@@ -683,19 +710,29 @@ def safety_polytope_check(
             "magnitude": diagnostics.magnitude,
             "maxDimension": diagnostics.max_dimension,
         },
-        "violations": [
+        "bounds": {
+            "interference": interference_threshold,
+            "importance": importance_threshold,
+            "instability": instability_threshold,
+            "complexity": complexity_threshold,
+            "magnitude": magnitude_threshold,
+            "highInstability": high_instability_threshold,
+            "highInterference": high_interference_threshold,
+        },
+        "triggers": [
             {
-                "dimension": v.dimension,
-                "value": v.value,
-                "threshold": v.threshold,
-                "severity": v.severity,
-                "mitigation": v.mitigation.value,
+                "dimension": trigger.dimension,
+                "value": trigger.value,
+                "threshold": trigger.threshold,
+                "intensity": trigger.intensity,
+                "transformation": trigger.transformation.value,
             }
-            for v in result.violations
+            for trigger in result.triggers
         ],
-        "mitigations": [m.value for m in result.mitigations],
+        "transformations": [t.value for t in result.transformations],
         "recommendedAlpha": result.recommended_alpha,
         "confidence": result.confidence,
+        "transformationEffort": result.transformation_effort,
     }
 
     if context.output_format == "text":
