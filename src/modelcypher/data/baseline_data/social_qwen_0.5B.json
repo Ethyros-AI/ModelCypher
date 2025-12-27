@@ -1,0 +1,43 @@
+{
+  "domain": "social",
+  "model_family": "qwen",
+  "model_size": "0.5B",
+  "model_path": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-0.5B-Instruct-bf16",
+  "ollivier_ricci_mean": -0.09532325714826584,
+  "ollivier_ricci_std": 0.052563995122909546,
+  "ollivier_ricci_min": -0.171610489487648,
+  "ollivier_ricci_max": -0.0028855265118181705,
+  "manifold_health_distribution": {
+    "healthy": 0.5,
+    "degenerate": 0.5,
+    "collapsed": 0.0
+  },
+  "domain_metrics": {
+    "representation_coherence": 0.0,
+    "axis_orthogonality": 0.0,
+    "social_manifold_score": 0.0,
+    "power_axis_strength": 0.0,
+    "kinship_coherence": 0.5,
+    "formality_gradient": 0.5
+  },
+  "intrinsic_dimension_mean": 0.0,
+  "intrinsic_dimension_std": 0.0,
+  "layer_ricci_values": [
+    -0.035061756002236856,
+    -0.002885526498402888,
+    -0.06773924550735862,
+    -0.17161049561048866,
+    -0.13206562421539136,
+    -0.13195745713576915,
+    -0.12028043787647552,
+    -0.10098553456856756
+  ],
+  "layers_analyzed": 8,
+  "acceptable_deviation": 0.2,
+  "extraction_date": "2025-12-27T11:20:35.256220",
+  "extraction_config": {
+    "k_neighbors": 10,
+    "num_probes": 289,
+    "layers": null
+  }
+}

@@ -458,8 +458,10 @@ def _project_svd(
     # STEP 2: Find shared subspace dimension (rank-aware)
     # =========================================================================
     # Compute numerical rank for each matrix to avoid projecting onto null space
-    rank_thresh_s = svd_rank_threshold(b, source)
-    rank_thresh_t = svd_rank_threshold(b, target)
+    max_dim_s = max(m_s, d_s)
+    max_dim_t = max(m_t, d_t)
+    rank_thresh_s = svd_rank_threshold(b, source, max_dim_s)
+    rank_thresh_t = svd_rank_threshold(b, target, max_dim_t)
     b.eval(rank_thresh_s, rank_thresh_t)
 
     # Count singular values above threshold (numerical rank)

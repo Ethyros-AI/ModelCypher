@@ -1,0 +1,42 @@
+{
+  "domain": "spatial",
+  "model_family": "qwen",
+  "model_size": "0.5B",
+  "model_path": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-0.5B-Instruct-bf16",
+  "ollivier_ricci_mean": 0.09582516551017761,
+  "ollivier_ricci_std": 0.03391324356198311,
+  "ollivier_ricci_min": 0.056644879281520844,
+  "ollivier_ricci_max": 0.1635584682226181,
+  "manifold_health_distribution": {
+    "healthy": 0.0,
+    "degenerate": 0.5714285714285714,
+    "collapsed": 0.42857142857142855
+  },
+  "domain_metrics": {
+    "representation_coherence": 0.0,
+    "axis_orthogonality": 0.0,
+    "euclidean_consistency": 0.0,
+    "gravity_alignment": 0.5,
+    "volumetric_density": 0.5,
+    "3d_grounding_score": 0.25
+  },
+  "intrinsic_dimension_mean": 0.0,
+  "intrinsic_dimension_std": 0.0,
+  "layer_ricci_values": [
+    0.16355846783757638,
+    0.11475125139440344,
+    0.0923818062009082,
+    0.06337708905963374,
+    0.056644881136648575,
+    0.07523617993173957,
+    0.10482651637096699
+  ],
+  "layers_analyzed": 7,
+  "acceptable_deviation": 0.2,
+  "extraction_date": "2025-12-27T11:18:59.668377",
+  "extraction_config": {
+    "k_neighbors": 10,
+    "num_probes": 62,
+    "layers": null
+  }
+}

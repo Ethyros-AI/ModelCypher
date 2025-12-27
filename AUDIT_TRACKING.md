@@ -347,9 +347,10 @@ Files that are not imported or used anywhere:
 
 ## ISSUES FOUND
 
-| Issue # | File | Description | Severity |
-|---------|------|-------------|----------|
-| 1 | examples/05_model_merge.py | Imports non-existent `ModelMergeService` from `model_merge_service.py` | High - Example broken |
+| Issue # | File | Description | Severity | Status |
+|---------|------|-------------|----------|--------|
+| 1 | examples/05_model_merge.py | Imports non-existent `ModelMergeService` from `model_merge_service.py` | High | ✅ FIXED |
+| 2 | geometry/*.py | ~157 orphaned public items (scaffolding for future features) | Low | Documented |
 
 ---
 
@@ -398,22 +399,76 @@ Files that are not imported or used anywhere:
 
 ---
 
+## DEEP GEOMETRY SWEEP - 2025-12-27
+
+### Geometry Subsystem Architecture
+
+**MERGE Subsystem** (16 files) - WELL ORGANIZED:
+- Layer 1 (Alignment): generalized_procrustes, gram_aligner, permutation_aligner, shared_subspace_projector
+- Layer 2 (Transport): gromov_wasserstein, transport_guided_merger, manifold_stitcher
+- Layer 3 (Weighting): fisher_blending, dare_sparsity, dora_decomposition, dimension_blender, null_space_filter
+- Layer 4 (Analysis): cross_architecture_layer_matcher, interference_predictor, tangent_space_alignment, affine_stitching_layer
+- **NO REDUNDANCY** - Each file solves distinct problem in pipeline
+
+**MEASURE Subsystem** (16 files) - WELL ORGANIZED:
+- Foundation: riemannian_utils (geodesic), numerical_stability (epsilons)
+- Metrics: cka (similarity), intrinsic_dimension (TwoNN), manifold_curvature (sectional/Ricci)
+- Analysis: manifold_coverage, riemannian_density, manifold_dimensionality
+- Fingerprinting: topological_fingerprint, geometry_fingerprint, fingerprints (3 orthogonal approaches)
+- **NO REDUNDANCY** - Proper delegation patterns, single canonical implementations
+
+### ORPHANED CODE IN GEOMETRY (157 items)
+
+**Files with significant unused public API:**
+| File | Orphaned Items | Notes |
+|------|----------------|-------|
+| conceptual_genealogy.py | 10 | Probe generators never called |
+| sequence_invariants.py | 12 | All probe generators unused |
+| path_geometry.py | 10 | DTW, Frechet, signature analysis unused |
+| cross_grounding_transfer.py | 7 | Ghost anchor system unused |
+| spatial_3d.py | 11 | Occlusion, stereoscopy probers unused |
+| verb_noun_classifier.py | 9 | Classification system unused |
+| safety_polytope.py | 7 | Transformation polytope unused |
+| domain_signal_profile.py | 6 | Domain scoring system unused |
+| domain_geometry_waypoints.py | 5 | Pre/post merge validation unused |
+| moral_geometry.py | 5 | Report classes unused |
+| temporal_topology.py | 4 | Report classes unused |
+| thermo_path_integration.py | 4 | Path assessment unused |
+| cross_cultural_geometry.py | 4 | Alignment analysis unused |
+| concept_detector.py | 3 | ConceptDetector never instantiated |
+
+**Recommendation:** These are likely scaffolding for future features. Either:
+1. **Wire them in** - Connect to CLI/MCP if ready for use
+2. **Mark experimental** - Add `# EXPERIMENTAL: Not yet integrated` comments
+3. **Remove** - If not planned for near-term use
+
+### Unused Functions in Core Files
+
+| File | Function | Status |
+|------|----------|--------|
+| riemannian_utils.py | `propose_in_sparse_direction()` | Only in docs |
+| riemannian_utils.py | `geodesic_interpolation()` | Only in docs |
+
+---
+
 ## FINAL AUDIT CONCLUSIONS
 
-### Codebase Health: ✅ EXCELLENT
+### Codebase Health: ✅ GOOD (with cleanup opportunities)
 
 1. **No duplicate functions** - All same-named items are intentional (backend implementations, platform abstractions, or different semantic contexts)
 
 2. **Clean hexagonal architecture** - Ports define interfaces, adapters implement them, no architecture violations
 
-3. **Proper wiring** - All 610 files are either:
+3. **Core wiring** - All 610 files are either:
    - Imported directly (via app.py, container.py, __init__.py lazy loading)
    - Used by tests
    - Standalone scripts (examples/, scripts/)
 
 4. **Dead code removed** - Backward compatibility shims and empty directories cleaned up
 
-5. **One known issue** - examples/05_model_merge.py needs update to use current merge API
+5. **Known issues**:
+   - ~~examples/05_model_merge.py broken import~~ **FIXED**
+   - ~157 orphaned public items in geometry/ (scaffolding for future features)
 
 ### Architecture Patterns Verified:
 - Hexagonal (Ports & Adapters)
@@ -422,3 +477,8 @@ Files that are not imported or used anywhere:
 - Lazy loading via `__getattr__` in `__init__.py`
 - Dependency injection via PortRegistry + ServiceFactory
 - MCP tools with ServiceContext for DI
+
+### Geometry System Quality:
+- **Merge pipeline**: Excellent - clean layer architecture
+- **Measure system**: Excellent - proper centralization
+- **Probe/domain modules**: Fair - many unused scaffolding items

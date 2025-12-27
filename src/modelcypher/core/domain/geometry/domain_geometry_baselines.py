@@ -283,11 +283,17 @@ class DomainGeometryBaselineExtractor:
 
         ricci_values = []
         health_counts = {"healthy": 0, "degenerate": 0, "collapsed": 0}
+        import math
 
         for layer_idx, activations in activations_by_layer.items():
             try:
                 result = orc.compute(activations, k_neighbors=k_neighbors)
-                ricci_values.append(result.mean_edge_curvature)
+                curvature = result.mean_edge_curvature
+                # Skip NaN values
+                if math.isnan(curvature):
+                    logger.debug(f"Layer {layer_idx} returned NaN curvature, skipping")
+                    continue
+                ricci_values.append(curvature)
                 health_counts[result.health.value] += 1
             except Exception as e:
                 logger.warning(f"Failed to compute ORC for layer {layer_idx}: {e}")
@@ -297,7 +303,7 @@ class DomainGeometryBaselineExtractor:
             logger.warning("No valid Ricci curvature values computed")
             return self._create_empty_baseline(domain, model_family, model_size, model_path)
 
-        # Compute statistics
+        # Compute statistics (NaN values already filtered)
         total_layers = len(ricci_values)
         health_dist = ManifoldHealthDistribution(
             healthy=health_counts["healthy"] / total_layers,
@@ -375,186 +381,55 @@ class DomainGeometryBaselineExtractor:
         return family, size
 
     def _get_domain_probes(self, domain: str) -> list[str]:
-        """Get probe prompts relevant to a domain.
+        """Get probe prompts relevant to a domain using UnifiedAtlas.
+
+        Uses the full 373-probe UnifiedAtlas system for comprehensive coverage.
+        Each domain maps to one or more AtlasDomain values to gather
+        relevant probes.
 
         Returns a list of prompts that will elicit domain-relevant activations.
-        Uses expanded probe sets (30+ probes) for reliable ORC measurements.
         """
-        domain_probe_map = {
-            "spatial": [
-                # Position and direction
-                "The ball is to the left of the box.",
-                "The cat is above the table.",
-                "The tree is behind the house.",
-                "The car is in front of the building.",
-                "The bird flew beneath the bridge.",
-                "The shelf is mounted on the wall.",
-                "The rug lies under the chair.",
-                "Standing beside the river, I looked across.",
-                "The airplane soared over the mountains.",
-                "He walked around the corner.",
-                # Distance and measurement
-                "The distance between A and B is 10 meters.",
-                "The room is 5 meters wide and 3 meters tall.",
-                "The road stretches for miles ahead.",
-                "Just a few inches from the edge.",
-                "Kilometers separate the two cities.",
-                # Movement and rotation
-                "Moving forward means going in the direction you face.",
-                "Rotating 90 degrees clockwise changes your view.",
-                "Turn left at the intersection.",
-                "Spiral staircase winds upward.",
-                "The wheel spins around its axis.",
-                # 3D geometry
-                "The cube has 6 faces and 8 vertices.",
-                "A sphere has no edges or corners.",
-                "The pyramid rises to a point at the top.",
-                "Cylinders have two circular faces.",
-                "The cone narrows toward its apex.",
-                # Gravity and physics
-                "Objects fall downward due to gravity.",
-                "Looking up at the sky, I see clouds.",
-                "Water flows downhill following gravity.",
-                "The balloon rose into the air.",
-                "Heavier objects sink to the bottom.",
-                # Visual perspective
-                "From the hilltop, the valley spread out below.",
-                "The horizon where sky meets sea.",
-                "Parallel lines appear to converge in the distance.",
-                "Near objects look larger than far ones.",
-                "The shadow fell to the east at sunset.",
-            ],
-            "social": [
-                # Power hierarchy
-                "The king has more power than the servant.",
-                "Managers direct the work of their employees.",
-                "Students respect their teachers' authority.",
-                "The president leads the nation.",
-                "Citizens must obey the laws.",
-                "The judge presides over the courtroom.",
-                # Kinship and relationships
-                "My friend is closer to me than a stranger.",
-                "Family bonds are strong and lasting.",
-                "Neighbors help each other in times of need.",
-                "Colleagues collaborate on projects.",
-                "Partners share responsibilities equally.",
-                "Rivals compete for the same goals.",
-                # Trust and loyalty
-                "Trust builds over time through shared experiences.",
-                "Loyalty to family often comes before other loyalties.",
-                "Betrayal hurts deeply because of broken trust.",
-                "Allies support each other in conflicts.",
-                "Confidants keep each other's secrets.",
-                "Commitment requires dedication over time.",
-                # Formality and register
-                "Formal greetings are used in professional settings.",
-                "Casual language is appropriate among friends.",
-                "Titles show respect for position or achievement.",
-                "Polite speech maintains social harmony.",
-                "Slang is informal communication within groups.",
-                "Etiquette guides proper social behavior.",
-                # Status and hierarchy
-                "Parents have authority over their children.",
-                "Social hierarchies determine access to resources.",
-                "Respect for elders is valued in many cultures.",
-                "Status symbols signal social position.",
-                "Celebrities enjoy fame and recognition.",
-                "Aristocrats inherited their social position.",
-                # Cooperation
-                "Cooperation requires mutual understanding.",
-                "Teams achieve more than individuals alone.",
-                "Negotiation seeks mutually beneficial outcomes.",
-                "Compromise resolves conflicting interests.",
-                "Collaboration leverages diverse strengths.",
-            ],
-            "temporal": [
-                # Sequence and order
-                "Yesterday came before today, and tomorrow comes after.",
-                "First we plan, then we execute, finally we review.",
-                "The beginning precedes the middle and the end.",
-                "Step one must be completed before step two.",
-                "Events unfold in chronological order.",
-                "The sequel follows the original story.",
-                # Causality
-                "The cause must precede the effect.",
-                "Actions have consequences that follow.",
-                "Because it rained, the ground is wet.",
-                "The fire started, therefore we evacuated.",
-                "Symptoms appear after infection occurs.",
-                "Decisions lead to outcomes.",
-                # Duration and intervals
-                "Seconds are shorter than minutes are shorter than hours.",
-                "Decades pass more slowly than years.",
-                "Brief moments can feel like eternity.",
-                "Long-term goals require patience.",
-                "Instantaneous events happen in a flash.",
-                "Centuries encompass many generations.",
-                # Past and future
-                "The past is fixed but the future is uncertain.",
-                "History teaches lessons for tomorrow.",
-                "Memory preserves what has happened.",
-                "Anticipation looks forward to what may come.",
-                "Predictions attempt to foresee future events.",
-                "Nostalgia longing for times gone by.",
-                # Life cycles
-                "Childhood precedes adulthood which precedes old age.",
-                "Birth begins the journey of life.",
-                "Growth transforms children into adults.",
-                "Aging brings wisdom and experience.",
-                "Death concludes the mortal span.",
-                "Generations succeed one another.",
-                # Natural cycles
-                "Spring comes before summer in the yearly cycle.",
-                "Time flows from past to present to future.",
-                "Day follows night in endless rhythm.",
-                "Tides ebb and flow with the moon.",
-                "Seasons cycle through the calendar year.",
-            ],
-            "moral": [
-                # Care and harm
-                "Helping others is generally considered good.",
-                "Causing unnecessary suffering is wrong.",
-                "Care for the vulnerable is a fundamental value.",
-                "Compassion motivates acts of kindness.",
-                "Cruelty causes pain and is condemned.",
-                "Mercy tempers justice with understanding.",
-                # Fairness and justice
-                "Fairness means treating similar cases similarly.",
-                "Justice requires punishment proportional to the crime.",
-                "Rights must be balanced against responsibilities.",
-                "Equality ensures no one is disadvantaged.",
-                "Cheating violates the rules of fair play.",
-                "Discrimination treats people unequally.",
-                # Loyalty and betrayal
-                "Loyalty to your group can conflict with broader ethics.",
-                "Betrayal breaks sacred bonds of trust.",
-                "Patriotism expresses love of country.",
-                "Treason is considered a serious crime.",
-                "Solidarity unites people in common cause.",
-                "Abandonment leaves others without support.",
-                # Authority and subversion
-                "Respecting authority has limits when authority is unjust.",
-                "Obedience to legitimate authority maintains order.",
-                "Rebellion challenges unjust power.",
-                "Tradition preserves valued practices.",
-                "Anarchy rejects all forms of governance.",
-                "Duty obligates us to fulfill our roles.",
-                # Purity and sanctity
-                "Purity concerns shape many cultural taboos.",
-                "Sanctity protects what is held sacred.",
-                "Degradation diminishes human dignity.",
-                "Virtue lies between excess and deficiency.",
-                "Contamination threatens what is clean.",
-                "Holiness sets apart the divine.",
-                # Liberty
-                "Freedom to choose is a basic right.",
-                "Oppression restricts human flourishing.",
-                "Autonomy respects individual decisions.",
-                "Coercion forces compliance against will.",
-            ],
+        from modelcypher.core.domain.agents.unified_atlas import (
+            UnifiedAtlasInventory,
+            AtlasDomain,
+        )
+
+        # Map our domain names to AtlasDomain values
+        domain_mapping: dict[str, set[AtlasDomain]] = {
+            "spatial": {AtlasDomain.SPATIAL, AtlasDomain.STRUCTURAL},
+            "social": {AtlasDomain.RELATIONAL, AtlasDomain.AFFECTIVE},
+            "temporal": {AtlasDomain.TEMPORAL, AtlasDomain.LOGICAL},
+            "moral": {AtlasDomain.MORAL, AtlasDomain.PHILOSOPHICAL},
         }
 
-        return domain_probe_map.get(domain, [])
+        atlas_domains = domain_mapping.get(domain, set())
+        if not atlas_domains:
+            logger.warning(f"Unknown domain: {domain}, using all probes")
+            probes = UnifiedAtlasInventory.all_probes()
+        else:
+            probes = UnifiedAtlasInventory.probes_by_domain(atlas_domains)
+
+        # Extract support texts from probes as prompts
+        prompts: list[str] = []
+        for probe in probes:
+            # Add the probe name as a prompt
+            prompts.append(f"The concept of {probe.name}.")
+
+            # Add support texts if available
+            for text in probe.support_texts:
+                if text and len(text) > 3:  # Skip very short texts
+                    prompts.append(text)
+
+        # Deduplicate while preserving order
+        seen: set[str] = set()
+        unique_prompts: list[str] = []
+        for p in prompts:
+            if p not in seen:
+                seen.add(p)
+                unique_prompts.append(p)
+
+        logger.info(f"Using {len(unique_prompts)} probes from UnifiedAtlas for {domain}")
+        return unique_prompts
 
     def _collect_activations(
         self,

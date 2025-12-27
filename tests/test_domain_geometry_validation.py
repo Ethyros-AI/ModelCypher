@@ -258,21 +258,25 @@ class TestBaselineRepository:
 class TestDomainGeometryBaselineExtractor:
     """Tests for DomainGeometryBaselineExtractor."""
 
-    def test_extractor_creates_baseline_with_synthetic_data(self, backend: "Backend"):
-        """Extractor produces a baseline even with synthetic activations."""
+    @pytest.mark.real_model
+    def test_extractor_creates_baseline_with_real_model(self, backend: "Backend"):
+        """Extractor produces a baseline from real model activations."""
+        model_path = "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-0.5B-Instruct-bf16"
+        if not Path(model_path).exists():
+            pytest.skip(f"Model not found: {model_path}")
+
         extractor = DomainGeometryBaselineExtractor(backend=backend)
 
-        # Use a fake path - extractor will fall back to synthetic data
         baseline = extractor.extract_baseline(
-            "/nonexistent/fake-model-0.5B",
+            model_path,
             "spatial",
             layers=[0, 4, 8],
         )
 
         assert baseline.domain == "spatial"
-        assert baseline.model_size != ""
-        # Synthetic data should produce some layers
-        assert baseline.layers_analyzed > 0 or baseline.extraction_config.get("error")
+        assert baseline.model_family == "qwen"
+        assert baseline.model_size == "0.5B"
+        assert baseline.layers_analyzed > 0
 
     def test_extractor_parses_model_info(self, backend: "Backend"):
         """Extractor correctly parses model family and size from path."""
@@ -386,8 +390,13 @@ class TestBaselineSanity:
 class TestDomainGeometryValidator:
     """Tests for DomainGeometryValidator."""
 
+    @pytest.mark.real_model
     def test_validator_uses_heuristics_when_no_baseline(self, backend: "Backend"):
         """Validator falls back to heuristics when no baseline available."""
+        model_path = "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-0.5B-Instruct-bf16"
+        if not Path(model_path).exists():
+            pytest.skip(f"Model not found: {model_path}")
+
         with tempfile.TemporaryDirectory() as tmpdir:
             # Empty baseline directory
             validator = DomainGeometryValidator(
@@ -396,9 +405,9 @@ class TestDomainGeometryValidator:
                 backend=backend,
             )
 
-            # Validate with fake model (will use synthetic data)
+            # Validate with real model and empty baseline dir (will use heuristics)
             results = validator.validate_model(
-                "/fake/qwen-0.5B",
+                model_path,
                 domains=["spatial"],
             )
 
@@ -612,20 +621,26 @@ class TestIntegrationWithRealActivations:
             assert acts.shape[0] > 0  # Has samples
             assert acts.shape[1] > 0  # Has features
 
+    @pytest.mark.real_model
     def test_full_extraction_pipeline(self, backend: "Backend"):
         """Full extraction pipeline runs without errors."""
+        model_path = "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-0.5B-Instruct-bf16"
+        if not Path(model_path).exists():
+            pytest.skip(f"Model not found: {model_path}")
+
         extractor = DomainGeometryBaselineExtractor(backend=backend)
 
-        # Run extraction with fake model (uses synthetic data)
+        # Run extraction with real model
         baseline = extractor.extract_baseline(
-            "/fake/test-model-0.5B",
+            model_path,
             "spatial",
         )
 
-        # Should have valid structure even with synthetic data
+        # Should have valid structure from real activations
         assert baseline.domain == "spatial"
         assert isinstance(baseline.ollivier_ricci_mean, float)
         assert isinstance(baseline.manifold_health_distribution, ManifoldHealthDistribution)
+        assert baseline.layers_analyzed > 0
 
 
 # =============================================================================

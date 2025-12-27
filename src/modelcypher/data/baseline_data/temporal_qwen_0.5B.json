@@ -1,0 +1,41 @@
+{
+  "domain": "temporal",
+  "model_family": "qwen",
+  "model_size": "0.5B",
+  "model_path": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-0.5B-Instruct-bf16",
+  "ollivier_ricci_mean": -0.10080613195896149,
+  "ollivier_ricci_std": 0.03317474201321602,
+  "ollivier_ricci_min": -0.1288192868232727,
+  "ollivier_ricci_max": -0.028708266094326973,
+  "manifold_health_distribution": {
+    "healthy": 0.8333333333333334,
+    "degenerate": 0.16666666666666666,
+    "collapsed": 0.0
+  },
+  "domain_metrics": {
+    "representation_coherence": 0.0,
+    "axis_orthogonality": 0.0,
+    "direction_monotonicity": 0.5,
+    "duration_correlation": 0.5,
+    "causality_strength": 0.0,
+    "temporal_manifold_score": 0.0
+  },
+  "intrinsic_dimension_mean": 0.0,
+  "intrinsic_dimension_std": 0.0,
+  "layer_ricci_values": [
+    -0.02870826665128281,
+    -0.12166158061562983,
+    -0.10828425618425153,
+    -0.12881928068241108,
+    -0.10700539098976221,
+    -0.11035797173327368
+  ],
+  "layers_analyzed": 6,
+  "acceptable_deviation": 0.2,
+  "extraction_date": "2025-12-27T11:22:27.259899",
+  "extraction_config": {
+    "k_neighbors": 10,
+    "num_probes": 303,
+    "layers": null
+  }
+}

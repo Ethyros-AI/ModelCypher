@@ -21,24 +21,24 @@
 Model Merge Example
 
 This example demonstrates how to merge two models using geometric alignment.
-The geometric merge uses Procrustes analysis and spectral penalties to
-preserve important representations from both models.
+The geometric merge uses Procrustes analysis to align representations and
+Fréchet mean to blend singular values along the geodesic.
+
+Pipeline: VOCAB → PROBE → PERMUTE → ROTATE → BLEND → PROPAGATE → VALIDATE
 
 Usage:
-    python examples/05_model_merge.py base_model model_a model_b -o merged_output
+    python examples/05_model_merge.py source_model target_model -o merged_output
 
 Requirements:
-    - Compatible model weights (same architecture)
+    - Two model directories with weights
     - Sufficient disk space for output
     - macOS with Apple Silicon for MLX backend
 """
 import argparse
 from pathlib import Path
 
-from modelcypher.core.use_cases.model_merge_service import (
-    ModelMergeService,
-    GeometricMergeConfig,
-)
+from modelcypher.cli.composition import get_geometric_merger
+from modelcypher.core.use_cases.unified_geometric_merge import UnifiedMergeConfig
 
 
 def main():
@@ -46,13 +46,12 @@ def main():
         description="Merge models using geometric alignment"
     )
     parser.add_argument(
-        "base",
-        help="Path to base model (provides architecture)",
+        "source",
+        help="Path to source model (capabilities to transfer)",
     )
     parser.add_argument(
-        "models",
-        nargs="+",
-        help="Paths to models to merge",
+        "target",
+        help="Path to target model (base architecture)",
     )
     parser.add_argument(
         "-o", "--output",
@@ -60,86 +59,87 @@ def main():
         help="Output directory for merged model",
     )
     parser.add_argument(
-        "--alpha",
-        type=float,
-        default=0.5,
-        help="Blend alpha (0=first model, 1=second model). Default: 0.5",
+        "--dry-run",
+        action="store_true",
+        help="Analyze without saving (shows what would happen)",
     )
     parser.add_argument(
-        "--method",
-        choices=["linear", "geometric"],
-        default="geometric",
-        help="Merge method. Default: geometric",
+        "--probe-mode",
+        choices=["precise", "fast"],
+        default="precise",
+        help="Probe mode: precise (CKA on activations) or fast (weight-level). Default: precise",
+    )
+    parser.add_argument(
+        "--transport-guided",
+        action="store_true",
+        help="Use Gromov-Wasserstein instead of Procrustes for alignment",
     )
     args = parser.parse_args()
 
     # Validate paths
-    base_path = Path(args.base)
-    if not base_path.exists():
-        print(f"Error: Base model not found: {base_path}")
+    source_path = Path(args.source)
+    target_path = Path(args.target)
+
+    if not source_path.exists():
+        print(f"Error: Source model not found: {source_path}")
         return 1
 
-    model_paths = [Path(p) for p in args.models]
-    for path in model_paths:
-        if not path.exists():
-            print(f"Error: Model not found: {path}")
-            return 1
+    if not target_path.exists():
+        print(f"Error: Target model not found: {target_path}")
+        return 1
 
-    print("Model Merge")
+    print("Model Merge - Pure Geometry")
     print("=" * 60)
-    print(f"Base model: {base_path}")
-    print(f"Models to merge: {len(model_paths)}")
-    for p in model_paths:
-        print(f"  - {p}")
-    print(f"Method: {args.method}")
-    print(f"Alpha: {args.alpha}")
+    print(f"Source model: {source_path}")
+    print(f"Target model: {target_path}")
     print(f"Output: {args.output}")
+    print(f"Probe mode: {args.probe_mode}")
+    print(f"Transport-guided: {args.transport_guided}")
+    print(f"Dry run: {args.dry_run}")
+    print()
+    print("Pipeline: VOCAB → PROBE → PERMUTE → ROTATE → BLEND → PROPAGATE → VALIDATE")
     print()
 
-    # Initialize service
-    service = ModelMergeService()
+    # Initialize merger with dependency injection
+    merger = get_geometric_merger()
 
-    if args.method == "geometric":
-        # Configure geometric merge
-        config = GeometricMergeConfig(
-            alpha=args.alpha,
-            gaussian_sigma=2.0,  # Smooth alpha across layers
-            spectral_penalty=0.01,  # Penalize ill-conditioned weights
-            svd_blend=True,  # Use SVD-aware blending
-        )
+    # Configure merge (optional - defaults are sensible)
+    merger.config = UnifiedMergeConfig(
+        probe_mode=args.probe_mode,
+        use_transport_guided=args.transport_guided,
+    )
 
-        print("Running geometric merge...")
-        print("  This uses Procrustes alignment and spectral regularization.")
-        result = service.geometric_merge(
-            base_model=str(base_path),
-            models=[str(p) for p in model_paths],
-            output=args.output,
-            config=config,
-        )
-    else:
-        # Linear interpolation (simpler, faster)
-        print("Running linear merge...")
-        result = service.linear_merge(
-            base_model=str(base_path),
-            models=[str(p) for p in model_paths],
-            output=args.output,
-            alpha=args.alpha,
-        )
+    print("Running geometric merge...")
+    print("  Using Procrustes alignment and Fréchet mean blending.")
+    print()
+
+    result = merger.merge(
+        source_path=str(source_path),
+        target_path=str(target_path),
+        output_dir=args.output if not args.dry_run else None,
+        dry_run=args.dry_run,
+    )
 
     print("\nMerge complete!")
     print("-" * 40)
-    print(f"Output path: {result.output_path}")
-    print(f"Total parameters: {result.parameter_count:,}")
     print(f"Layers merged: {result.layer_count}")
+    print(f"Weights merged: {result.weight_count}")
+    print(f"Mean confidence: {result.mean_confidence:.4f}")
+    print(f"Mean Procrustes error: {result.mean_procrustes_error:.6f}")
 
-    if hasattr(result, "alignment_score"):
-        print(f"Alignment score: {result.alignment_score:.4f}")
-    if hasattr(result, "spectral_condition"):
-        print(f"Spectral condition: {result.spectral_condition:.4f}")
+    if result.vocab_aligned:
+        print(f"Vocabulary aligned: Yes")
+    if result.validation_metrics:
+        print(f"Safety verdict: {result.safety_verdict}")
+        print(f"Refusal preserved: {result.refusal_preserved}")
 
-    print("\nNext steps:")
-    print(f"  1. Test the merged model: mc model probe {args.output}")
-    print(f"  2. Run inference: mc infer run {args.output} --prompt 'Hello'")
+    if result.output_path:
+        print(f"\nOutput path: {result.output_path}")
+        print("\nNext steps:")
+        print(f"  1. Test the merged model: mc model probe {result.output_path}")
+        print(f"  2. Run inference: mc infer run {result.output_path} --prompt 'Hello'")
+    elif args.dry_run:
+        print("\n[Dry run - no output saved]")
 
 
 if __name__ == "__main__":

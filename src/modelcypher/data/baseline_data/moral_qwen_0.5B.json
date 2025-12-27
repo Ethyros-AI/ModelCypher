@@ -1,0 +1,43 @@
+{
+  "domain": "moral",
+  "model_family": "qwen",
+  "model_size": "0.5B",
+  "model_path": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-0.5B-Instruct-bf16",
+  "ollivier_ricci_mean": -0.10733035206794739,
+  "ollivier_ricci_std": 0.03049164079129696,
+  "ollivier_ricci_min": -0.1628972291946411,
+  "ollivier_ricci_max": -0.055255334824323654,
+  "manifold_health_distribution": {
+    "healthy": 0.625,
+    "degenerate": 0.375,
+    "collapsed": 0.0
+  },
+  "domain_metrics": {
+    "representation_coherence": 0.0,
+    "axis_orthogonality": 0.0,
+    "valence_gradient": 0.5,
+    "moral_foundations_clustering": 0.0,
+    "virtue_vice_opposition": 0.5,
+    "moral_manifold_score": 0.0
+  },
+  "intrinsic_dimension_mean": 0.0,
+  "intrinsic_dimension_std": 0.0,
+  "layer_ricci_values": [
+    -0.08345265104495156,
+    -0.055255336683120514,
+    -0.08909604455376179,
+    -0.16289723228590156,
+    -0.12646102268904713,
+    -0.12493495485535985,
+    -0.1136635228165476,
+    -0.10288202104826025
+  ],
+  "layers_analyzed": 8,
+  "acceptable_deviation": 0.2,
+  "extraction_date": "2025-12-27T11:23:42.599330",
+  "extraction_config": {
+    "k_neighbors": 10,
+    "num_probes": 230,
+    "layers": null
+  }
+}
