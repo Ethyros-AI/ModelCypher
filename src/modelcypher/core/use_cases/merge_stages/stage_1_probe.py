@@ -35,6 +35,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Literal
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.vocabulary.alignment_map import (
+    AlignmentQuality,
+    VocabularyAlignmentMap,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -74,6 +78,69 @@ class ProbeResult:
     target_activations: dict[int, list[Any]] | None = None
 
 
+def _encode_probe_ids(
+    tokenizer: Any,
+    text: str,
+    add_special_tokens: bool = False,
+) -> list[int]:
+    try:
+        encoded = tokenizer.encode(text, add_special_tokens=add_special_tokens)
+    except TypeError:
+        encoded = tokenizer.encode(text)
+
+    if isinstance(encoded, list):
+        return encoded
+    if hasattr(encoded, "ids"):
+        return list(encoded.ids)
+    if hasattr(encoded, "input_ids"):
+        return list(encoded.input_ids)
+    return []
+
+
+def build_token_id_map(
+    alignment_map: VocabularyAlignmentMap,
+    min_confidence: float = 0.95,
+    min_size: int = 1000,
+    allowed_qualities: set[AlignmentQuality] | None = None,
+) -> dict[int, int]:
+    def _build_map(qualities: set[AlignmentQuality]) -> dict[int, int]:
+        mapping: dict[int, int] = {}
+        for alignment in alignment_map.iter_alignments():
+            if alignment.confidence < min_confidence:
+                continue
+            if alignment.quality not in qualities:
+                continue
+            if not alignment.target_ids:
+                continue
+            best_idx = max(
+                range(len(alignment.target_ids)),
+                key=lambda i: alignment.weights[i],
+            )
+            mapping[alignment.source_id] = alignment.target_ids[best_idx]
+        return mapping
+
+    if allowed_qualities is None:
+        mapping = _build_map({AlignmentQuality.EXACT})
+        if len(mapping) < min_size:
+            mapping = _build_map({AlignmentQuality.EXACT, AlignmentQuality.SIMILAR})
+        return mapping
+
+    return _build_map(allowed_qualities)
+
+
+def map_token_ids(
+    token_ids: list[int],
+    token_map: dict[int, int],
+) -> list[int] | None:
+    mapped: list[int] = []
+    for token_id in token_ids:
+        mapped_id = token_map.get(token_id)
+        if mapped_id is None:
+            return None
+        mapped.append(mapped_id)
+    return mapped
+
+
 def stage_probe(
     source_weights: dict[str, Any],
     target_weights: dict[str, Any],
@@ -85,6 +152,7 @@ def stage_probe(
     target_tokenizer: Any | None = None,
     tokenizer: Any | None = None,
     collect_activations_fn: Callable | None = None,
+    alignment_map: VocabularyAlignmentMap | None = None,
     backend: "Backend | None" = None,
 ) -> ProbeResult:
     """
@@ -123,6 +191,7 @@ def stage_probe(
             config=config,
             extract_layer_index_fn=extract_layer_index_fn,
             collect_activations_fn=collect_activations_fn,
+            alignment_map=alignment_map,
         )
     else:
         if config.probe_mode == "precise":
@@ -148,6 +217,7 @@ def _probe_precise(
     config: ProbeConfig,
     extract_layer_index_fn: Callable[[str], int | None],
     collect_activations_fn: Callable,
+    alignment_map: VocabularyAlignmentMap | None = None,
     source_path: str = "",
     target_path: str = "",
     backend: "Backend | None" = None,
@@ -190,6 +260,15 @@ def _probe_precise(
     probes_processed = 0
     probes_failed = 0
 
+    token_id_map: dict[int, int] | None = None
+    if alignment_map is not None:
+        token_id_map = build_token_id_map(alignment_map)
+        if token_id_map:
+            logger.info(
+                "PROBE PRECISE: Using aligned token map (%d tokens).",
+                len(token_id_map),
+            )
+
     for probe in probes:
         probe_texts = probe.support_texts
         if not probe_texts:
@@ -202,8 +281,29 @@ def _probe_precise(
             continue
 
         try:
-            source_acts = collect_activations_fn(source_model, source_tokenizer, probe_text)
-            target_acts = collect_activations_fn(target_model, target_tokenizer, probe_text)
+            source_ids: list[int] | None = None
+            target_ids: list[int] | None = None
+            if token_id_map is not None:
+                source_ids = _encode_probe_ids(
+                    source_tokenizer, probe_text, add_special_tokens=False
+                )
+                target_ids = map_token_ids(source_ids, token_id_map)
+                if target_ids is None:
+                    probes_failed += 1
+                    continue
+
+            source_acts = collect_activations_fn(
+                source_model,
+                source_tokenizer,
+                probe_text,
+                token_ids=source_ids,
+            )
+            target_acts = collect_activations_fn(
+                target_model,
+                target_tokenizer,
+                probe_text,
+                token_ids=target_ids,
+            )
 
             source_activated: dict[int, list[ActivatedDimension]] = {}
             target_activated: dict[int, list[ActivatedDimension]] = {}
@@ -550,6 +650,7 @@ def collect_layer_activations_mlx(
     model: Any,
     tokenizer: Any,
     text: str,
+    token_ids: list[int] | None = None,
 ) -> dict[int, "Array"]:
     """
     Collect per-layer hidden state activations for a text input (MLX backend).
@@ -561,11 +662,13 @@ def collect_layer_activations_mlx(
     """
     import mlx.core as mx
 
-    tokens = tokenizer.encode(text, add_special_tokens=True)
-    if isinstance(tokens, list):
-        input_ids = mx.array([tokens])
-    else:
-        input_ids = mx.array([tokens.ids])
+    if token_ids is None:
+        tokens = tokenizer.encode(text, add_special_tokens=True)
+        if isinstance(tokens, list):
+            token_ids = tokens
+        else:
+            token_ids = list(tokens.ids)
+    input_ids = mx.array([token_ids])
 
     activations: dict[int, "Array"] = {}
 

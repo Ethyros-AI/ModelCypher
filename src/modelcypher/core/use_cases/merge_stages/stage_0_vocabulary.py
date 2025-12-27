@@ -107,6 +107,7 @@ class VocabularyResult:
     modified_weights: dict[str, "object"]
     metrics: dict[str, Any]
     was_aligned: bool
+    alignment_map: Any | None = None
 
 
 def stage_vocabulary_align(
@@ -154,7 +155,7 @@ def stage_vocabulary_align(
         logger.info("No embedding layer found, skipping vocabulary alignment")
         metrics["skipped"] = True
         metrics["reason"] = "no_embedding_layer"
-        return VocabularyResult(source_weights, metrics, False)
+        return VocabularyResult(source_weights, metrics, False, None)
 
     # Import CrossVocabMerger
     try:
@@ -169,7 +170,7 @@ def stage_vocabulary_align(
         logger.warning("CrossVocabMerger not available: %s", e)
         metrics["skipped"] = True
         metrics["reason"] = f"import_error: {e}"
-        return VocabularyResult(source_weights, metrics, False)
+        return VocabularyResult(source_weights, metrics, False, None)
 
     # Map config string to ProjectionStrategy enum
     strategy_map = {
@@ -192,7 +193,7 @@ def stage_vocabulary_align(
         logger.warning("Could not extract vocabulary from tokenizers")
         metrics["skipped"] = True
         metrics["reason"] = "vocab_extraction_failed"
-        return VocabularyResult(source_weights, metrics, False)
+        return VocabularyResult(source_weights, metrics, False, None)
 
     source_tokenizer_key = _make_tokenizer_cache_key(source_tokenizer, source_vocab)
     target_tokenizer_key = _make_tokenizer_cache_key(target_tokenizer, target_vocab)
@@ -227,6 +228,7 @@ def stage_vocabulary_align(
     coverage_k_neighbors = config.coverage_k_neighbors
     coverage_candidate_multiplier = max(1, config.coverage_candidate_multiplier)
     use_byte_anchors_for_atlas = config.use_byte_anchors_for_atlas
+    alignment_map_for_probe: Any | None = None
 
     for embed_key in embed_keys:
         embed_start = time.perf_counter()
@@ -1065,6 +1067,8 @@ def stage_vocabulary_align(
                 source_vocab=source_vocab,
                 target_vocab=target_vocab,
             )
+            if alignment_map_for_probe is None:
+                alignment_map_for_probe = result.alignment_map
             metrics["timing_ms"].setdefault(embed_key, {})[
                 "cross_vocab_merge_ms"
             ] = (time.perf_counter() - merge_start) * 1000
@@ -1152,7 +1156,12 @@ def stage_vocabulary_align(
     else:
         logger.info("No vocabulary alignment applied")
 
-    return VocabularyResult(modified_weights, metrics, aligned_layers > 0)
+    return VocabularyResult(
+        modified_weights,
+        metrics,
+        aligned_layers > 0,
+        alignment_map_for_probe,
+    )
 
 
 def _extract_vocab(tokenizer: Any) -> dict[str, int] | None:

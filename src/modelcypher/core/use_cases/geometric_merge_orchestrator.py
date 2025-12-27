@@ -764,29 +764,20 @@ class GeometricMergeOrchestrator:
                 # Compute per-dimension correlation between source and target
                 # High correlation = safe to blend evenly
                 # Low correlation = trust target for stability
-                src_np = b.to_numpy(src_stacked)
-                tgt_np = b.to_numpy(tgt_stacked)
+                dot = b.sum(src_stacked * tgt_stacked, axis=0)
+                norm_src = b.sqrt(b.sum(src_stacked * src_stacked, axis=0))
+                norm_tgt = b.sqrt(b.sum(tgt_stacked * tgt_stacked, axis=0))
+                corr = dot / (norm_src * norm_tgt + 1e-10)
+                corr = b.maximum(0.0, b.minimum(1.0, corr))
+                b.eval(corr)
 
-                # Correlation per dimension
-                hidden_dim = src_np.shape[1]
-                dim_correlations = []
-                for d in range(hidden_dim):
-                    src_col = src_np[:, d]
-                    tgt_col = tgt_np[:, d]
-                    # Cosine similarity
-                    dot = float((src_col * tgt_col).sum())
-                    norm_src = float((src_col ** 2).sum() ** 0.5)
-                    norm_tgt = float((tgt_col ** 2).sum() ** 0.5)
-                    corr = dot / (norm_src * norm_tgt + 1e-10)
-                    dim_correlations.append(max(0.0, min(1.0, corr)))
-
-                layer_geom.dimension_alphas = b.array(dim_correlations)
+                layer_geom.dimension_alphas = corr
                 b.eval(layer_geom.dimension_alphas)
 
                 logger.debug(
                     "Layer %d: dimension correlations computed, mean=%.4f",
                     layer_geom.layer_idx,
-                    sum(dim_correlations) / len(dim_correlations),
+                    float(b.mean(corr).item()),
                 )
         except Exception as e:
             logger.debug("dimension_blender failed for layer %d: %s", layer_geom.layer_idx, e)

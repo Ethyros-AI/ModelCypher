@@ -232,7 +232,7 @@ class UnifiedGeometricMerger:
         # STAGE 0: VOCABULARY (Cross-vocabulary alignment for embedding layers)
         # =================================================================
         logger.info("STAGE 0: VOCABULARY ALIGNMENT")
-        source_weights, vocab_metrics, vocab_aligned = self._stage_vocabulary(
+        source_weights, vocab_metrics, vocab_aligned, vocab_alignment_map = self._stage_vocabulary(
             source_weights=source_weights,
             target_weights=target_weights,
             source_tokenizer=source_tokenizer,
@@ -258,6 +258,7 @@ class UnifiedGeometricMerger:
             target_model=target_model,
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
+            alignment_map=vocab_alignment_map,
         )
 
         layer_confidences: dict[int, float] = probe_result.get("confidences", {})
@@ -416,7 +417,7 @@ class UnifiedGeometricMerger:
         # Stage 0: Vocabulary alignment
         logger.info("STAGE 0: VOCABULARY ALIGNMENT")
         stage_start = time.perf_counter()
-        source_weights, vocab_metrics, vocab_aligned = self._stage_vocabulary(
+        source_weights, vocab_metrics, vocab_aligned, vocab_alignment_map = self._stage_vocabulary(
             source_weights=source_weights,
             target_weights=target_weights,
             source_tokenizer=source_tokenizer,
@@ -445,13 +446,26 @@ class UnifiedGeometricMerger:
 
             if source_model and target_model and source_tokenizer and target_tokenizer:
                 from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
-                from .merge_stages.stage_1_probe import collect_layer_activations_mlx
+                from .merge_stages.stage_1_probe import (
+                    _encode_probe_ids,
+                    build_token_id_map,
+                    collect_layer_activations_mlx,
+                    map_token_ids,
+                )
 
                 probes = UnifiedAtlasInventory.all_probes()
                 max_probes = self.config.max_probes if self.config.max_probes > 0 else len(probes)
 
                 source_activations = {}
                 target_activations = {}
+                token_id_map = None
+                if vocab_alignment_map is not None:
+                    token_id_map = build_token_id_map(vocab_alignment_map)
+                    if token_id_map:
+                        logger.info(
+                            "STAGE 1: Using aligned token map for probes (%d tokens).",
+                            len(token_id_map),
+                        )
 
                 for i, probe in enumerate(probes[:max_probes]):
                     if not probe.support_texts:
@@ -461,8 +475,28 @@ class UnifiedGeometricMerger:
                         continue
 
                     try:
-                        src_acts = collect_layer_activations_mlx(source_model, source_tokenizer, text)
-                        tgt_acts = collect_layer_activations_mlx(target_model, target_tokenizer, text)
+                        source_ids: list[int] | None = None
+                        target_ids: list[int] | None = None
+                        if token_id_map is not None:
+                            source_ids = _encode_probe_ids(
+                                source_tokenizer, text, add_special_tokens=False
+                            )
+                            target_ids = map_token_ids(source_ids, token_id_map)
+                            if target_ids is None:
+                                continue
+
+                        src_acts = collect_layer_activations_mlx(
+                            source_model,
+                            source_tokenizer,
+                            text,
+                            token_ids=source_ids,
+                        )
+                        tgt_acts = collect_layer_activations_mlx(
+                            target_model,
+                            target_tokenizer,
+                            text,
+                            token_ids=target_ids,
+                        )
 
                         for layer_idx, act in src_acts.items():
                             if layer_idx not in source_activations:
@@ -621,7 +655,7 @@ class UnifiedGeometricMerger:
         target_weights: dict[str, "Array"],
         source_tokenizer: Any | None,
         target_tokenizer: Any | None,
-    ) -> tuple[dict[str, "Array"], dict[str, Any], bool]:
+    ) -> tuple[dict[str, "Array"], dict[str, Any], bool, Any | None]:
         """Stage 0: Align source vocabulary to target vocabulary."""
         from .merge_stages.stage_0_vocabulary import (
             VocabularyConfig,
@@ -644,7 +678,12 @@ class UnifiedGeometricMerger:
             reason = result.metrics.get("reason", "unknown")
             logger.info("Vocabulary alignment skipped: %s", reason)
 
-        return result.modified_weights, result.metrics, result.was_aligned
+        return (
+            result.modified_weights,
+            result.metrics,
+            result.was_aligned,
+            result.alignment_map,
+        )
 
     def _stage_probe(
         self,
@@ -654,6 +693,7 @@ class UnifiedGeometricMerger:
         target_model: Any | None,
         source_tokenizer: Any | None,
         target_tokenizer: Any | None,
+        alignment_map: Any | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any], dict | None, dict | None]:
         """Stage 1: Compute layer correspondences via CKA.
 
@@ -687,6 +727,7 @@ class UnifiedGeometricMerger:
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
             collect_activations_fn=collect_fn,
+            alignment_map=alignment_map,
         )
 
         return {

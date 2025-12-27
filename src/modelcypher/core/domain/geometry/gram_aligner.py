@@ -206,6 +206,28 @@ class GramAligner:
         b.eval(F)
         return F
 
+    def _solve_feature_transform_uncentered(
+        self,
+        source: "Array",
+        target: "Array",
+    ) -> "Array | None":
+        b = self._backend
+        n_samples = b.shape(source)[0]
+        if n_samples == 0:
+            return None
+
+        gram = b.matmul(source, b.transpose(source))
+        b.eval(gram)
+
+        try:
+            solution = b.solve(gram, target)
+        except Exception:
+            return None
+
+        transform = b.matmul(b.transpose(source), solution)
+        b.eval(transform)
+        return transform
+
     def find_perfect_alignment(
         self,
         source_activations: "Array",
@@ -251,6 +273,37 @@ class GramAligner:
         source_activations = b.astype(source_activations, "float32")
         target_activations = b.astype(target_activations, "float32")
         b.eval(source_activations, target_activations)
+
+        # Try uncentered direct solve first (fast path for exact alignment)
+        uncentered_transform = self._solve_feature_transform_uncentered(
+            source_activations,
+            target_activations,
+        )
+        if uncentered_transform is not None:
+            aligned_uncentered = b.matmul(source_activations, uncentered_transform)
+            K_s = b.matmul(source_activations, b.transpose(source_activations))
+            K_t = b.matmul(target_activations, b.transpose(target_activations))
+            H = self._centering_matrix(n_samples)
+            K_s_c = b.matmul(b.matmul(H, K_s), H)
+            K_t_c = b.matmul(b.matmul(H, K_t), H)
+            K_a = b.matmul(aligned_uncentered, b.transpose(aligned_uncentered))
+            K_a_c = b.matmul(b.matmul(H, K_a), H)
+            b.eval(K_s_c, K_t_c, K_a_c)
+
+            cka_uncentered = self._compute_cka_from_centered_grams(K_a_c, K_t_c)
+            if cka_uncentered >= 1.0 - self._tolerance:
+                sample_transform = self._compute_sample_transform(K_s_c, K_t_c)
+                b.eval(sample_transform)
+                return AlignmentResult(
+                    feature_transform=b.to_numpy(uncentered_transform).tolist(),
+                    sample_transform=b.to_numpy(sample_transform).tolist(),
+                    achieved_cka=1.0,
+                    iterations=0,
+                    alignment_error=0.0,
+                    diagnostic=self._diagnose_alignment(
+                        aligned_uncentered, target_activations, cka_uncentered
+                    ),
+                )
 
         # Center the activations
         source_centered = self._center(source_activations)
