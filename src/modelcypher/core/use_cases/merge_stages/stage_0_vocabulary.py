@@ -1848,17 +1848,9 @@ def _align_bytes_from_matrices(
                 "alignment_error": abs(1.0 - cka_after_direct),
                 "iterations": 0,
             }
-    elif require_phase_lock:
-        return {
-            "aligned_source": source_embed,
-            "aligned_matrix": source_matrix,
-            "anchor_labels": anchor_labels,
-            "feature_transform": None,
-            "cka_before": cka_before,
-            "cka_after": cka_before,
-            "alignment_error": abs(1.0 - cka_before),
-            "iterations": 0,
-        }
+    # When exact solve fails, always fall through to GramAligner iterative method.
+    # The iterative approach handles ill-conditioned matrices and cross-dimensional
+    # alignment that the exact solve cannot.
 
     rank = _matrix_rank_for_alignment(source_matrix, backend, eps=precision_tol)
 
