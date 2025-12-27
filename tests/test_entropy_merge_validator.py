@@ -38,6 +38,15 @@ from modelcypher.core.domain.merging.entropy_merge_validator import (
 # MergeStability enum removed - tests now verify raw entropy_ratio values
 from modelcypher.core.domain.thermo.phase_transition_theory import Phase
 
+STANDARD_ADJUSTMENTS = PhaseAdjustments(
+    ordered_alpha=1.0,
+    critical_alpha=0.7,
+    disordered_alpha=0.85,
+    ordered_sigma=1.0,
+    critical_sigma=2.0,
+    disordered_sigma=1.5,
+)
+
 
 def _create_test_profile(name: str, num_layers: int) -> ModelEntropyProfile:
     """Create a test ModelEntropyProfile with deterministic entropy values.
@@ -83,8 +92,8 @@ class TestLayerEntropyProfile:
 
         assert profile.is_stable
         assert not profile.is_critical
-        assert profile.recommended_alpha_adjustment == 1.0
-        assert profile.recommended_smoothing_sigma == 1.0
+        assert profile.alpha_adjustment(STANDARD_ADJUSTMENTS) == 1.0
+        assert profile.smoothing_sigma(STANDARD_ADJUSTMENTS) == 1.0
 
     def test_critical_phase_properties(self) -> None:
         """Critical phase should have conservative properties."""
@@ -97,8 +106,8 @@ class TestLayerEntropyProfile:
 
         assert not profile.is_stable
         assert profile.is_critical
-        assert profile.recommended_alpha_adjustment == 0.7
-        assert profile.recommended_smoothing_sigma == 2.0
+        assert profile.alpha_adjustment(STANDARD_ADJUSTMENTS) == 0.7
+        assert profile.smoothing_sigma(STANDARD_ADJUSTMENTS) == 2.0
 
     def test_disordered_phase_properties(self) -> None:
         """Disordered phase should have moderate properties."""
@@ -111,8 +120,8 @@ class TestLayerEntropyProfile:
 
         assert not profile.is_stable
         assert not profile.is_critical
-        assert profile.recommended_alpha_adjustment == 0.85
-        assert profile.recommended_smoothing_sigma == 1.5
+        assert profile.alpha_adjustment(STANDARD_ADJUSTMENTS) == 0.85
+        assert profile.smoothing_sigma(STANDARD_ADJUSTMENTS) == 1.5
 
 
 class TestModelEntropyProfile:
@@ -155,35 +164,6 @@ class TestModelEntropyProfile:
         assert profile.mean_entropy == 0.0
         assert profile.dominant_phase == Phase.ORDERED
         assert profile.critical_layer_count == 0
-
-    def test_merge_risk_level_low(self) -> None:
-        """Low risk when all ordered and no critical layers."""
-        layers = {
-            "layers.0": LayerEntropyProfile(
-                layer_name="layers.0",
-                mean_entropy=1.0,
-                entropy_variance=0.1,
-                phase=Phase.ORDERED,
-            ),
-        }
-        profile = ModelEntropyProfile.from_layer_profiles("test", layers)
-
-        assert profile.merge_risk_level == "low"
-
-    def test_merge_risk_level_high(self) -> None:
-        """High risk when many critical layers."""
-        layers = {
-            f"layers.{i}": LayerEntropyProfile(
-                layer_name=f"layers.{i}",
-                mean_entropy=2.25,
-                entropy_variance=0.2,
-                phase=Phase.CRITICAL,
-            )
-            for i in range(5)
-        }
-        profile = ModelEntropyProfile.from_layer_profiles("test", layers)
-
-        assert profile.merge_risk_level == "high"
 
 
 class TestLayerMergeValidation:
@@ -439,9 +419,9 @@ class TestEntropyMergeValidator:
 
         guidance = validator.generate_merge_guidance(source, target)
 
-        assert "# Entropy-Guided Merge Recommendations" in guidance
-        assert "## Model Analysis" in guidance
-        assert "## Per-Layer Recommendations" in guidance
+        assert "# Entropy-Guided Merge Metrics" in guidance
+        assert "## Model Summary" in guidance
+        assert "## Per-Layer Adjustments" in guidance
         assert "source" in guidance
         assert "target" in guidance
 

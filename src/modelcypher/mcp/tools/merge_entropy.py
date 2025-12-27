@@ -17,9 +17,9 @@
 
 """Merge entropy validation MCP tools.
 
-Provides entropy-aware guidance for model merging:
+Provides entropy-aware metrics for model merging:
 - Pre-merge: Profile models to identify critical layers
-- Guidance: Get per-layer alpha/sigma recommendations
+- Guidance: Get per-layer alpha/sigma adjustments
 - Validation: Check knowledge retention after merge
 """
 
@@ -36,6 +36,27 @@ if TYPE_CHECKING:
     pass
 
 
+def _percentile(sorted_values: list[float], pct: float) -> float:
+    if not sorted_values:
+        return 0.0
+    index = int(round((len(sorted_values) - 1) * pct))
+    return sorted_values[index]
+
+
+def _compute_stats(values: list[float]) -> dict[str, float]:
+    if not values:
+        return {"mean": 0.0, "min": 0.0, "max": 0.0, "p50": 0.0, "p90": 0.0}
+    sorted_vals = sorted(values)
+    mean = sum(values) / len(values)
+    return {
+        "mean": mean,
+        "min": sorted_vals[0],
+        "max": sorted_vals[-1],
+        "p50": _percentile(sorted_vals, 0.5),
+        "p90": _percentile(sorted_vals, 0.9),
+    }
+
+
 def register_merge_entropy_tools(ctx: ServiceContext) -> None:
     """Register merge entropy validation MCP tools."""
     mcp = ctx.mcp
@@ -50,17 +71,17 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Profile model entropy characteristics for merge planning.
 
-            Analyzes a model's per-layer entropy to identify:
-            - Critical layers near phase boundaries (need careful blending)
-            - Dominant thermodynamic phase (ordered/critical/disordered)
-            - Overall merge risk level
+            Analyzes a model's per-layer entropy to report:
+            - Phase distribution (ordered/critical/disordered)
+            - Raw entropy statistics
+            - Critical-layer counts
 
             Args:
                 model: Model name or path to profile
                 numLayers: Number of layers in the model (default: 32)
 
             Returns:
-                Profile with entropy stats, phase classification, and merge risk
+                Profile with entropy stats and phase classification
             """
             from pathlib import Path
 
@@ -102,16 +123,6 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
                 "dominantPhase": profile.dominant_phase.value,
                 "criticalLayerCount": profile.critical_layer_count,
                 "topCriticalLayers": critical_layers,
-                "mergeRisk": profile.merge_risk_level,
-                "interpretation": (
-                    f"{profile.model_name}: {profile.dominant_phase.value} phase, "
-                    f"{profile.critical_layer_count} critical layers, "
-                    f"{profile.merge_risk_level} merge risk"
-                ),
-                "nextActions": [
-                    "mc_merge_entropy_guide to compare with target model",
-                    "mc_model_merge with alpha adjusted for critical layers",
-                ],
             }
 
     if "mc_merge_entropy_guide" in tool_set:
@@ -122,12 +133,11 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
             target: str,
             numLayers: int = 32,
         ) -> dict:
-            """Generate entropy-aware merge recommendations.
+            """Generate entropy-aware merge guidance.
 
             Compares source and target models to compute:
             - Per-layer alpha adjustments based on phase
-            - Per-layer smoothing sigma recommendations
-            - Critical layer warnings
+            - Per-layer smoothing sigma values
 
             Args:
                 source: Source model name/path
@@ -135,7 +145,7 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
                 numLayers: Number of layers (must match for both)
 
             Returns:
-                Recommendations with alpha adjustments and smoothing sigmas
+                Adjustments with alpha and smoothing sigma values
             """
             from pathlib import Path
 
@@ -182,47 +192,23 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
             alpha_adj = validator.compute_alpha_adjustments(source_profile, target_profile)
             sigmas = validator.compute_smoothing_sigmas(source_profile, target_profile)
 
-            # Only include non-default adjustments (compact response)
-            recommendations = {}
-            for layer_name in alpha_adj:
-                adj = alpha_adj[layer_name]
-                sigma = sigmas.get(layer_name, 1.0)
-                if adj < 1.0 or sigma > 1.0:  # Non-default values
-                    recommendations[layer_name] = {
-                        "alphaAdjust": round(adj, 2),
-                        "smoothingSigma": round(sigma, 1),
-                    }
+            alpha_values = list(alpha_adj.values())
+            sigma_values = list(sigmas.values())
+            alpha_stats = _compute_stats(alpha_values)
+            sigma_stats = _compute_stats(sigma_values)
 
-            # Limit to top 5 for compact response
-            top_recommendations = dict(list(recommendations.items())[:5])
-
-            # Compute global recommendation
-            if alpha_adj:
-                global_alpha = sum(alpha_adj.values()) / len(alpha_adj)
-            else:
-                global_alpha = 1.0
-
-            critical_count = (
-                source_profile.critical_layer_count + target_profile.critical_layer_count
-            )
+            sorted_alpha = sorted(alpha_adj.items(), key=lambda item: item[0])
+            sorted_sigmas = sorted(sigmas.items(), key=lambda item: item[0])
 
             return {
                 "_schema": "mc.merge.entropy.guide.v1",
-                "sourceRisk": source_profile.merge_risk_level,
-                "targetRisk": target_profile.merge_risk_level,
-                "criticalLayerCount": critical_count,
-                "globalAlphaAdjust": round(global_alpha, 2),
-                "recommendations": top_recommendations,
-                "interpretation": (
-                    f"Source: {source_profile.merge_risk_level} risk, "
-                    f"Target: {target_profile.merge_risk_level} risk. "
-                    f"{len(recommendations)} layers need adjustment. "
-                    f"Suggested global alpha: {global_alpha:.2f}"
-                ),
-                "nextActions": [
-                    f"mc_model_merge --alpha {global_alpha:.2f} for basic merge",
-                    "mc_merge_entropy_validate after merge to check stability",
-                ],
+                "sourceModel": source,
+                "targetModel": target,
+                "layerCount": len(alpha_adj),
+                "alphaAdjustments": {name: round(value, 4) for name, value in sorted_alpha},
+                "smoothingSigmas": {name: round(value, 4) for name, value in sorted_sigmas},
+                "alphaStats": {k: round(v, 4) for k, v in alpha_stats.items()},
+                "sigmaStats": {k: round(v, 4) for k, v in sigma_stats.items()},
             }
 
     if "mc_merge_entropy_validate" in tool_set:
@@ -237,10 +223,9 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Validate merge stability via entropy comparison.
 
-            Compares entropy characteristics before/after merge to assess:
+            Compares entropy characteristics before/after merge to report:
             - Knowledge retention score (0-1)
-            - Layer stability (stable/marginal/unstable/critical)
-            - Critical/unstable layer identification
+            - Entropy ratio statistics
 
             Args:
                 sourceEntropies: Dict of layer_name -> entropy for source model
@@ -250,7 +235,7 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
                 targetModel: Name of target model (for reporting)
 
             Returns:
-                Validation result with stability assessment and recommendations
+                Validation result with raw entropy metrics
             """
             from modelcypher.core.domain.merging.entropy_merge_validator import (
                 EntropyMergeValidator,
@@ -265,45 +250,29 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
                 target_model=targetModel,
             )
 
-            # Identify high-entropy-ratio layers (entropy ratio > 1.5)
-            high_ratio_layers = [
-                name for name, v in validation.layer_validations.items()
-                if v.entropy_ratio > 1.5
-            ][:5]
-
-            # Derive stability description from raw measurements
-            if validation.max_entropy_ratio <= 1.2:
-                stability_desc = "stable"
-            elif validation.max_entropy_ratio <= 1.5:
-                stability_desc = "marginal"
-            elif validation.max_entropy_ratio <= 2.0:
-                stability_desc = "unstable"
-            else:
-                stability_desc = "critical"
+            sorted_layers = sorted(
+                validation.layer_validations.values(),
+                key=lambda v: v.entropy_ratio,
+                reverse=True,
+            )
+            top_layers = [
+                {
+                    "layerName": v.layer_name,
+                    "entropyRatio": round(v.entropy_ratio, 4),
+                    "entropyDelta": round(v.entropy_delta, 4),
+                    "knowledgeRetentionScore": round(v.knowledge_retention_score, 4),
+                }
+                for v in sorted_layers[:5]
+            ]
 
             return {
                 "_schema": "mc.merge.entropy.validate.v1",
-                "overallStability": stability_desc,
                 "knowledgeRetention": round(validation.mean_knowledge_retention, 3),
-                "isSafe": validation.is_safe,
                 "meanEntropyRatio": round(validation.mean_entropy_ratio, 3),
                 "maxEntropyRatio": round(validation.max_entropy_ratio, 3),
-                "highRatioLayers": high_ratio_layers,
+                "entropyRatioStd": round(validation.entropy_ratio_std, 3),
                 "totalLayersValidated": len(validation.layer_validations),
-                "interpretation": (
-                    f"Merge {stability_desc}: "
-                    f"{validation.mean_knowledge_retention:.0%} knowledge retention. "
-                    f"Mean entropy ratio: {validation.mean_entropy_ratio:.2f}, "
-                    f"max: {validation.max_entropy_ratio:.2f}."
-                ),
-                "nextActions": (
-                    ["mc_merge_perplexity to verify model quality"]
-                    if validation.is_safe
-                    else [
-                        "mc_merge_diagnose to investigate layer issues",
-                        "mc_model_merge with lower alpha for high-ratio layers",
-                    ]
-                ),
+                "topEntropyRatioLayers": top_layers,
             }
 
     if "mc_model_validate_knowledge" in tool_set:
@@ -428,17 +397,14 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Compare vocabularies between two models for cross-vocabulary merging.
 
-            Analyzes tokenizer overlap to determine merge strategy:
-            - High overlap (>90%): FVT (Fast Vocabulary Transfer) only
-            - Medium overlap (50-90%): FVT + Procrustes verification
-            - Low overlap (<50%): Procrustes + Affine transformation
+            Analyzes tokenizer overlap and reports raw alignment statistics.
 
             Args:
                 modelA: Path to first model
                 modelB: Path to second model
 
             Returns:
-                Vocabulary alignment report with overlap stats and merge recommendations
+                Vocabulary alignment report with overlap statistics
             """
             try:
                 from transformers import AutoTokenizer
@@ -473,9 +439,8 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
             # Compare vocabularies
             result = compare_tokenizers(tokenizer_a, tokenizer_b)
 
-            # Determine if cross-vocab merging is needed
-            needs_bridge = result.overlap_ratio < 0.95
-            method = result.recommended_method
+            # Determine if exact token IDs fully match
+            needs_bridge = result.overlap_ratio < 1.0
 
             return {
                 "_schema": "mc.model.vocab_compare.v1",
@@ -488,21 +453,5 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
                 "approximateCount": result.approximate_count,
                 "unmappedCount": result.unmapped_count,
                 "coverage": round(result.coverage, 4),
-                "recommendedMethod": method,
-                "mergeFeasibility": result.merge_feasibility,
                 "needsBridge": needs_bridge,
-                "interpretation": (
-                    f"Vocabulary overlap: {result.overlap_ratio:.1%}. "
-                    f"Coverage: {result.coverage:.1%}. "
-                    f"Recommended method: {method}. "
-                    f"Feasibility: {result.merge_feasibility}."
-                ),
-                "nextActions": (
-                    ["mc_model_merge to merge with same-vocabulary pipeline"]
-                    if not needs_bridge
-                    else [
-                        f"mc_unified_merge with vocab bridge ({method})",
-                        "mc_model_vocab_compare with different model pair",
-                    ]
-                ),
             }

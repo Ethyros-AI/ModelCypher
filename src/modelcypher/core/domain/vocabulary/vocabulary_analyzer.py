@@ -87,7 +87,6 @@ class VocabularyCompatibility:
     dimension_ratio: float  # hidden_dim ratio
     requires_projection: bool  # Needs embedding projection
     requires_vocab_mapping: bool  # Needs token ID remapping
-    recommendation: str
 
     # Detailed analysis
     shared_token_count: int = 0
@@ -102,7 +101,6 @@ class VocabularyCompatibility:
             "dimension_ratio": self.dimension_ratio,
             "requires_projection": self.requires_projection,
             "requires_vocab_mapping": self.requires_vocab_mapping,
-            "recommendation": self.recommendation,
             "shared_token_count": self.shared_token_count,
             "source_only_tokens": self.source_only_tokens,
             "target_only_tokens": self.target_only_tokens,
@@ -223,31 +221,11 @@ class VocabularyAnalyzer:
             vocab_overlap = min_size / max_size if max_size > 0 else 0.0
 
         requires_mapping = (
-            source_stats.vocab_size != target_stats.vocab_size or vocab_overlap < 0.99
+            source_stats.vocab_size != target_stats.vocab_size or vocab_overlap < 1.0
         )
 
         # Dimension ratio and overlap ratio provide compatibility information.
-        # These geometric measurements specify the alignment method.
         compatibility_score = vocab_overlap
-
-        # Recommend alignment method based on geometric properties
-        if not requires_projection and vocab_overlap > 0.99:
-            recommendation = "Direct merge: vocabularies aligned, dimensions match."
-        elif not requires_projection:
-            recommendation = (
-                f"Vocabulary mapping required ({shared_count} shared tokens). "
-                "Use token ID remapping with shared anchor alignment."
-            )
-        elif vocab_overlap > 0.5:
-            recommendation = (
-                f"Dimension projection required (ratio {dim_ratio:.2f}). "
-                "Use PCA or Procrustes to align embedding spaces."
-            )
-        else:
-            recommendation = (
-                f"Cross-space alignment required (dim ratio {dim_ratio:.2f}, "
-                f"overlap {vocab_overlap:.2%}). Use optimal transport for embedding alignment."
-            )
 
         return VocabularyCompatibility(
             compatibility_score=compatibility_score,
@@ -255,7 +233,6 @@ class VocabularyAnalyzer:
             dimension_ratio=dim_ratio,
             requires_projection=requires_projection,
             requires_vocab_mapping=requires_mapping,
-            recommendation=recommendation,
             shared_token_count=shared_count,
             source_only_tokens=source_only,
             target_only_tokens=target_only,

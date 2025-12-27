@@ -19,7 +19,7 @@
 
 Provides:
 - Pre-merge entropy profiling per layer
-- Entropy-aware smoothing recommendations
+- Entropy-aware smoothing adjustments
 - Post-merge stability validation
 
 Notes
@@ -300,41 +300,6 @@ class LayerEntropyProfile:
         """
         return adjustments.sigma_for_phase(self.phase)
 
-    # Backward compatibility properties - use explicit config for new code
-    @property
-    def recommended_alpha_adjustment(self) -> float:
-        """Deprecated: Use alpha_adjustment(adjustments) instead.
-
-        Returns adjustment using standard calibration values.
-        """
-        # Standard values derived from typical entropy distributions
-        # (coefficient of variation ~0.3 for well-behaved models)
-        standard = PhaseAdjustments(
-            ordered_alpha=1.0,
-            critical_alpha=0.7,
-            disordered_alpha=0.85,
-            ordered_sigma=1.0,
-            critical_sigma=2.0,
-            disordered_sigma=1.5,
-        )
-        return self.alpha_adjustment(standard)
-
-    @property
-    def recommended_smoothing_sigma(self) -> float:
-        """Deprecated: Use smoothing_sigma(adjustments) instead.
-
-        Returns sigma using standard calibration values.
-        """
-        standard = PhaseAdjustments(
-            ordered_alpha=1.0,
-            critical_alpha=0.7,
-            disordered_alpha=0.85,
-            ordered_sigma=1.0,
-            critical_sigma=2.0,
-            disordered_sigma=1.5,
-        )
-        return self.smoothing_sigma(standard)
-
 
 @dataclass(frozen=True)
 class ModelEntropyProfile:
@@ -388,34 +353,6 @@ class ModelEntropyProfile:
             dominant_phase=dominant_phase,
             critical_layer_count=critical_count,
         )
-
-    def compute_risk_level(self, high_risk_fraction: float) -> str:
-        """Compute risk assessment for merging this model.
-
-        Args:
-            high_risk_fraction: Fraction of critical layers above which is high risk.
-
-        Returns:
-            Risk level string: "low", "medium", "high"
-        """
-        if self.critical_layer_count == 0 and self.dominant_phase == Phase.ORDERED:
-            return "low"
-        elif self.critical_layer_count > len(self.layer_profiles) * high_risk_fraction:
-            return "high"
-        else:
-            return "medium"
-
-    @property
-    def merge_risk_level(self) -> str:
-        """Risk assessment for merging this model.
-
-        Deprecated: Use compute_risk_level(high_risk_fraction) instead.
-
-        Returns:
-            Risk level string: "low", "medium", "high"
-        """
-        # Standard high_risk_fraction derived from typical entropy CV of 0.3
-        return self.compute_risk_level(high_risk_fraction=0.3)
 
 
 @dataclass(frozen=True)
@@ -512,19 +449,6 @@ class MergeEntropyValidation:
     """Standard deviation of entropy ratios. Uniformity of stability."""
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
-    @property
-    def is_safe(self) -> bool:
-        """Derived safety indicator based on entropy ratios.
-
-        Returns True if max_entropy_ratio <= 2.0 (merged entropy at most 2x source).
-        This threshold is derived from empirical observation: ratios > 2.0 typically
-        indicate significant knowledge disruption during merge.
-
-        Note: This is a convenience property. Use raw measurements (mean_entropy_ratio,
-        max_entropy_ratio) for more nuanced analysis.
-        """
-        return self.max_entropy_ratio <= 2.0
-
     @classmethod
     def from_layer_validations(
         cls,
@@ -615,7 +539,7 @@ class EntropyMergeValidator:
 
     This class bridges thermodynamics concepts with the merge pipeline:
     1. Pre-merge: Profile models to identify critical layers
-    2. During merge: Provide entropy-aware alpha recommendations
+    2. During merge: Provide entropy-aware alpha adjustments
     3. Post-merge: Validate that knowledge was preserved
 
     Example (with config):
@@ -957,7 +881,7 @@ class EntropyMergeValidator:
             target_profile: Entropy profile of target model.
 
         Returns:
-            Dict mapping layer names to recommended smoothing sigmas.
+            Dict mapping layer names to smoothing sigmas.
         """
         sigmas = {}
         phase_adj = self.config.phase_adjustments
@@ -1050,23 +974,21 @@ class EntropyMergeValidator:
         ]
 
         lines = [
-            "# Entropy-Guided Merge Recommendations",
+            "# Entropy-Guided Merge Metrics",
             "",
-            "## Model Analysis",
+            "## Model Summary",
             "",
             f"**Source**: {source_profile.model_name}",
             f"  - Mean entropy: {source_profile.mean_entropy:.3f}",
             f"  - Dominant phase: {source_profile.dominant_phase.value}",
             f"  - Critical layers: {len(source_critical)}",
-            f"  - Merge risk: {source_profile.merge_risk_level}",
             "",
             f"**Target**: {target_profile.model_name}",
             f"  - Mean entropy: {target_profile.mean_entropy:.3f}",
             f"  - Dominant phase: {target_profile.dominant_phase.value}",
             f"  - Critical layers: {len(target_critical)}",
-            f"  - Merge risk: {target_profile.merge_risk_level}",
             "",
-            "## Per-Layer Recommendations",
+            "## Per-Layer Adjustments",
             "",
             "| Layer | Alpha Adjust | Smoothing σ | Phase |",
             "|-------|-------------|-------------|-------|",
@@ -1084,13 +1006,11 @@ class EntropyMergeValidator:
             lines.extend(
                 [
                     "",
-                    "## ⚠️ Critical Layers",
-                    "",
-                    "These layers are near the phase boundary and require careful handling:",
+                    "## Phase-Boundary Layers",
                     "",
                 ]
             )
-            for name in set(source_critical + target_critical):
+            for name in sorted(set(source_critical + target_critical)):
                 lines.append(f"- `{name}`")
 
         return "\n".join(lines)

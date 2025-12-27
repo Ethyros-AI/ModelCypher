@@ -259,7 +259,6 @@ class CrossVocabMerger:
         # Note: is_compatible is always True. Add warnings based on effort score instead.
         if compatibility.compatibility_score < 0.5:
             warnings.append(f"High transformation effort needed (score: {compatibility.compatibility_score:.2f})")
-            warnings.append(compatibility.recommendation)
 
         # Step 3: Build alignment map
         logger.info("Building alignment map...")
@@ -667,17 +666,5 @@ class CrossVocabMerger:
             + 0.2 * result.compatibility.compatibility_score
         )
         metrics["overall_quality_score"] = quality_score
-
-        # Recommendation
-        if quality_score >= 0.8:
-            recommendation = "High quality merge. Safe for production use."
-        elif quality_score >= 0.6:
-            recommendation = "Acceptable merge. Recommend validation testing."
-        elif quality_score >= 0.4:
-            recommendation = "Low quality merge. Extensive testing required."
-        else:
-            recommendation = "Poor quality merge. Consider alternative strategies."
-
-        metrics["recommendation"] = recommendation
 
         return metrics

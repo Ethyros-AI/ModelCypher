@@ -336,8 +336,6 @@ class TokenizerComparisonResult:
     approximate_count: int  # Tokens matched via normalization/prefix
     unmapped_count: int  # Tokens with no mapping
     coverage: float  # Fraction of source tokens with any mapping
-    recommended_method: str
-    merge_feasibility: str
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -349,8 +347,6 @@ class TokenizerComparisonResult:
             "approximateCount": self.approximate_count,
             "unmappedCount": self.unmapped_count,
             "coverage": round(self.coverage, 4),
-            "recommendedMethod": self.recommended_method,
-            "mergeFeasibility": self.merge_feasibility,
         }
 
 
@@ -362,14 +358,14 @@ def compare_tokenizers(
     Compare two tokenizers' vocabularies for merge compatibility.
 
     This is the canonical tokenizer comparison function. It analyzes
-    vocabulary overlap and recommends merge strategies.
+    vocabulary overlap and reports alignment statistics.
 
     Args:
         source_tokenizer: Source model's tokenizer (HuggingFace or tokenizers)
         target_tokenizer: Target model's tokenizer
 
     Returns:
-        TokenizerComparisonResult with comparison metrics and recommendations
+        TokenizerComparisonResult with comparison metrics
     """
     # Extract vocabularies
     source_vocab = _extract_vocab(source_tokenizer)
@@ -381,24 +377,6 @@ def compare_tokenizers(
     # Compute overlap ratio
     overlap_ratio = alignment_map.exact_matches / max(len(source_vocab), 1)
 
-    # Determine recommended method based on overlap
-    if overlap_ratio > 0.9:
-        recommended_method = "fvt"  # Fast Vocabulary Transfer
-    elif overlap_ratio > 0.5:
-        recommended_method = "procrustes"  # Need projection
-    else:
-        recommended_method = "optimal_transport"  # Need full alignment
-
-    # Determine merge feasibility
-    if alignment_map.coverage > 0.95:
-        feasibility = "high"
-    elif alignment_map.coverage > 0.8:
-        feasibility = "medium"
-    elif alignment_map.coverage > 0.5:
-        feasibility = "low"
-    else:
-        feasibility = "infeasible"
-
     return TokenizerComparisonResult(
         source_vocab_size=len(source_vocab),
         target_vocab_size=len(target_vocab),
@@ -407,8 +385,6 @@ def compare_tokenizers(
         approximate_count=alignment_map.similar_matches + alignment_map.approximate_matches,
         unmapped_count=alignment_map.unmapped_count,
         coverage=alignment_map.coverage,
-        recommended_method=recommended_method,
-        merge_feasibility=feasibility,
     )
 
 
@@ -425,9 +401,6 @@ def format_comparison_report(result: TokenizerComparisonResult) -> str:
         f"  Approximate:     {result.approximate_count:,}",
         f"  Unmapped:        {result.unmapped_count:,}",
         f"  Total coverage:  {result.coverage:.1%}",
-        "",
-        f"Recommended method: {result.recommended_method}",
-        f"Merge feasibility:  {result.merge_feasibility}",
     ]
     return "\n".join(lines)
 

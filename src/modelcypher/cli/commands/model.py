@@ -571,33 +571,50 @@ def model_analyze_alignment(
 
     payload = {
         "driftMagnitude": result.drift_magnitude,
-        "assessment": result.assessment,
-        "interpretation": result.interpretation,
+        "driftStd": result.drift_std,
+        "driftMin": result.drift_min,
+        "driftMax": result.drift_max,
+        "driftP50": result.drift_p50,
+        "driftP90": result.drift_p90,
+        "commonLayerCount": result.common_layer_count,
+        "comparableLayerCount": result.comparable_layer_count,
+        "missingLayerCount": result.missing_layer_count,
         "layerDrifts": [
             {
                 "layerName": drift.layer_name,
                 "driftMagnitude": drift.drift_magnitude,
-                "direction": drift.direction,
+                "driftZScore": drift.drift_z_score,
+                "comparable": drift.comparable,
             }
             for drift in result.layer_drifts[:20]  # Limit to first 20 layers
         ],
     }
 
     if context.output_format == "text":
+        def _fmt(value: float | None) -> str:
+            if value is None:
+                return "n/a"
+            return f"{value:.4f}"
+
         lines = [
             "ALIGNMENT ANALYSIS",
-            f"Drift Magnitude: {result.drift_magnitude:.4f}",
-            f"Assessment: {result.assessment}",
-            f"Interpretation: {result.interpretation}",
+            f"Drift Magnitude: {_fmt(result.drift_magnitude)}",
+            f"Drift Std: {_fmt(result.drift_std)}",
+            f"Drift Min: {_fmt(result.drift_min)}",
+            f"Drift Max: {_fmt(result.drift_max)}",
+            f"Drift P50: {_fmt(result.drift_p50)}",
+            f"Drift P90: {_fmt(result.drift_p90)}",
+            f"Common Layers: {result.common_layer_count}",
+            f"Comparable Layers: {result.comparable_layer_count}",
+            f"Missing Layers: {result.missing_layer_count}",
         ]
         if result.layer_drifts:
             lines.append("")
             lines.append("Layer Drifts (top 10):")
-            for drift in sorted(result.layer_drifts, key=lambda d: d.drift_magnitude, reverse=True)[
-                :10
-            ]:
+            comparable_drifts = [d for d in result.layer_drifts if d.drift_magnitude is not None]
+            for drift in sorted(comparable_drifts, key=lambda d: d.drift_magnitude, reverse=True)[:10]:
                 lines.append(
-                    f"  {drift.layer_name}: {drift.drift_magnitude:.4f} ({drift.direction})"
+                    f"  {drift.layer_name}: {drift.drift_magnitude:.4f} (z={_fmt(drift.drift_z_score)})"
                 )
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
@@ -613,10 +630,7 @@ def model_vocab_compare(
 ) -> None:
     """Compare vocabularies between two models for cross-vocabulary merging.
 
-    Analyzes tokenizer overlap and recommends merge strategies:
-    - High overlap (>90%): FVT (Fast Vocabulary Transfer) only
-    - Medium overlap (50-90%): FVT + Procrustes verification
-    - Low overlap (<50%): Procrustes + Affine transformation
+    Analyzes tokenizer overlap and reports alignment statistics.
 
     Examples:
         mc model vocab-compare --model-a ./llama-3-8b --model-b ./qwen-2-7b

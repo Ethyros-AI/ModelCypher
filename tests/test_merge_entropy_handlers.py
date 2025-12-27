@@ -26,8 +26,7 @@ Validates that:
 
 All responses must include:
 - `_schema`: Version string for forward compatibility
-- `interpretation`: Human-readable summary
-- `nextActions`: Suggested follow-up tools/commands
+- Raw metric fields for the tool (no interpretation/nextActions fields)
 
 ## Mathematical Foundation
 
@@ -81,6 +80,7 @@ from modelcypher.core.domain.merging.entropy_merge_validator import (
     EntropyMergeValidator,
     LayerEntropyProfile,
     ModelEntropyProfile,
+    PhaseAdjustments,
 )
 from modelcypher.core.domain.thermo.phase_transition_theory import Phase
 # EntropyLevel enum removed - using raw entropy values with Phase classification
@@ -138,7 +138,6 @@ class TestMCPProfileResponseSchema:
 
     def test_profile_schema_version(self) -> None:
         """Response must include schema version for forward compatibility."""
-        validator = EntropyMergeValidator()
         profile = _create_test_profile("test-model", num_layers=32)
 
         # Build response as MCP tool would
@@ -146,15 +145,15 @@ class TestMCPProfileResponseSchema:
             "_schema": "mc.merge.entropy.profile.v1",
             "modelName": profile.model_name,
             "meanEntropy": round(profile.mean_entropy, 3),
+            "entropyVariance": round(profile.entropy_variance, 4),
             "dominantPhase": profile.dominant_phase.value,
             "criticalLayerCount": profile.critical_layer_count,
-            "mergeRisk": profile.merge_risk_level,
         }
 
         assert response["_schema"] == "mc.merge.entropy.profile.v1"
         assert isinstance(response["meanEntropy"], float)
+        assert response["entropyVariance"] >= 0.0
         assert response["dominantPhase"] in ("ordered", "critical", "disordered")
-        assert response["mergeRisk"] in ("low", "medium", "high")
 
     def test_profile_compact_response(self) -> None:
         """Response should limit critical layers to top 5 for context efficiency."""
@@ -174,21 +173,19 @@ class TestMCPProfileResponseSchema:
         assert len(critical_layers) <= 5
 
     def test_profile_includes_next_actions(self) -> None:
-        """Response must suggest logical next steps for AI agents."""
-        next_actions = [
-            "mc_merge_entropy_guide to compare with target model",
-            "mc_model_merge with alpha adjusted for critical layers",
+        """Profile response should include compact critical layer context."""
+        profile = _create_test_profile("test-model", num_layers=32)
+        critical_layers = [name for name, lp in profile.layer_profiles.items() if lp.is_critical][
+            :5
         ]
-
-        # Verify next actions are actionable tool references
-        assert all("mc_" in action or "mc " in action for action in next_actions)
+        assert len(critical_layers) <= 5
 
 
 class TestMCPGuideResponseSchema:
     """Test mc_merge_entropy_guide response format."""
 
-    def test_guide_recommendations_compact(self) -> None:
-        """Recommendations should only include non-default values."""
+    def test_guide_adjustments_cover_common_layers(self) -> None:
+        """Alpha and sigma maps should cover common layers."""
         validator = EntropyMergeValidator()
         source = _create_test_profile("source", 10)
         target = _create_test_profile("target", 10)
@@ -196,23 +193,10 @@ class TestMCPGuideResponseSchema:
         alpha_adj = validator.compute_alpha_adjustments(source, target)
         sigmas = validator.compute_smoothing_sigmas(source, target)
 
-        # Filter to non-default only
-        recommendations = {}
-        for layer_name in alpha_adj:
-            adj = alpha_adj[layer_name]
-            sigma = sigmas.get(layer_name, 1.0)
-            if adj < 1.0 or sigma > 1.0:  # Non-default values
-                recommendations[layer_name] = {
-                    "alphaAdjust": round(adj, 2),
-                    "smoothingSigma": round(sigma, 1),
-                }
+        assert set(alpha_adj.keys()) == set(sigmas.keys())
 
-        # All included recommendations should have adjustments
-        for rec in recommendations.values():
-            assert rec["alphaAdjust"] <= 1.0 or rec["smoothingSigma"] >= 1.0
-
-    def test_guide_global_alpha_computed(self) -> None:
-        """Response should include global alpha for simple merge command."""
+    def test_guide_alpha_stats_computed(self) -> None:
+        """Alpha stats should be computable from adjustments."""
         validator = EntropyMergeValidator()
         source = _create_test_profile("source", 8)
         target = _create_test_profile("target", 8)
@@ -220,14 +204,14 @@ class TestMCPGuideResponseSchema:
         alpha_adj = validator.compute_alpha_adjustments(source, target)
         global_alpha = sum(alpha_adj.values()) / len(alpha_adj)
 
-        assert 0.0 < global_alpha <= 1.0
+        assert global_alpha > 0.0
 
 
 class TestMCPValidateResponseSchema:
     """Test mc_merge_entropy_validate response format."""
 
-    def test_validate_stability_enum(self) -> None:
-        """Stability should be valid enum value."""
+    def test_validate_entropy_ratios_non_negative(self) -> None:
+        """Entropy ratio metrics should be non-negative."""
         validator = EntropyMergeValidator()
         validation = validator.validate_merge(
             source_entropies={"layers.0": 2.0},
@@ -235,9 +219,9 @@ class TestMCPValidateResponseSchema:
             merged_entropies={"layers.0": 2.05},
         )
 
-        # Check raw metrics instead of removed classification
-        assert validation.is_safe in (True, False)
-        assert validation.max_entropy_ratio >= 0
+        assert validation.mean_entropy_ratio >= 0.0
+        assert validation.max_entropy_ratio >= 0.0
+        assert validation.entropy_ratio_std >= 0.0
 
     def test_validate_knowledge_retention_bounded(self) -> None:
         """Knowledge retention should be in [0, 1]."""
@@ -250,26 +234,22 @@ class TestMCPValidateResponseSchema:
 
         assert 0.0 <= validation.mean_knowledge_retention <= 1.0
 
-    def test_validate_is_safe_boolean(self) -> None:
-        """is_safe should be boolean for simple AI decision-making."""
+    def test_validate_extreme_deviation_increases_ratio(self) -> None:
+        """Extreme deviations should yield large entropy ratios."""
         validator = EntropyMergeValidator()
 
-        # Safe merge
-        safe_validation = validator.validate_merge(
+        baseline = validator.validate_merge(
             source_entropies={"layers.0": 2.0},
             target_entropies={"layers.0": 2.0},
             merged_entropies={"layers.0": 2.0},
         )
-        assert isinstance(safe_validation.is_safe, bool)
-        assert safe_validation.is_safe is True
-
-        # Unsafe merge (extreme deviation)
-        unsafe_validation = validator.validate_merge(
+        extreme = validator.validate_merge(
             source_entropies={"layers.0": 2.0},
             target_entropies={"layers.0": 2.0},
-            merged_entropies={"layers.0": 8.0},  # Massive deviation
+            merged_entropies={"layers.0": 8.0},
         )
-        assert unsafe_validation.is_safe is False
+
+        assert extreme.max_entropy_ratio > baseline.max_entropy_ratio
 
 
 # =============================================================================
@@ -304,9 +284,8 @@ class TestCLIProfileCommand:
         assert "modelName" in data
         assert isinstance(data["meanEntropy"], float)
         assert data["dominantPhase"] in ("ordered", "critical", "disordered")
-        assert data["mergeRisk"] in ("low", "medium", "high")
-        assert "interpretation" in data
-        assert "nextActions" in data
+        assert "entropyVariance" in data
+        assert "criticalLayerCount" in data
 
     def test_profile_text_output(self) -> None:
         """Text output should be human-readable."""
@@ -379,10 +358,10 @@ class TestCLIGuideCommand:
         assert data["_schema"] == "mc.merge.entropy.guide.v1"
         assert "sourceModel" in data
         assert "targetModel" in data
-        assert data["sourceRisk"] in ("low", "medium", "high")
-        assert data["targetRisk"] in ("low", "medium", "high")
-        assert isinstance(data["globalAlphaAdjust"], float)
-        assert isinstance(data["recommendations"], dict)
+        assert isinstance(data["alphaAdjustments"], dict)
+        assert isinstance(data["smoothingSigmas"], dict)
+        assert isinstance(data["alphaStats"], dict)
+        assert isinstance(data["sigmaStats"], dict)
 
     def test_guide_text_output(self) -> None:
         """Text output should be human-readable."""
@@ -405,7 +384,7 @@ class TestCLIGuideCommand:
         assert "MERGE ENTROPY GUIDE" in result.stdout
         assert "Source:" in result.stdout
         assert "Target:" in result.stdout
-        assert "Recommended Global Alpha:" in result.stdout
+        assert "Alpha Mean:" in result.stdout
 
     def test_guide_with_short_options(self) -> None:
         """Command should work with short option flags (-s, -t)."""
@@ -456,9 +435,10 @@ class TestCLIValidateCommand:
         data = json.loads(result.stdout)
 
         assert data["_schema"] == "mc.merge.entropy.validate.v1"
-        assert data["overallStability"] in ("stable", "marginal", "unstable", "critical")
         assert isinstance(data["knowledgeRetention"], float)
-        assert isinstance(data["isSafe"], bool)
+        assert isinstance(data["meanEntropyRatio"], float)
+        assert isinstance(data["maxEntropyRatio"], float)
+        assert isinstance(data["entropyRatioStd"], float)
 
     def test_validate_from_files(self, tmp_path) -> None:
         """Should accept JSON files for entropy values."""
@@ -489,7 +469,7 @@ class TestCLIValidateCommand:
 
         assert result.exit_code == 0
         data = json.loads(result.stdout)
-        assert data["isSafe"] is True
+        assert data["maxEntropyRatio"] >= data["meanEntropyRatio"]
 
     def test_validate_text_output(self) -> None:
         """Text output should show SAFE/UNSAFE status."""
@@ -511,7 +491,7 @@ class TestCLIValidateCommand:
         )
 
         assert result.exit_code == 0
-        assert "MERGE VALIDATION:" in result.stdout
+        assert "MERGE VALIDATION" in result.stdout
         assert "Knowledge Retention:" in result.stdout
 
     def test_validate_invalid_json(self) -> None:
@@ -559,8 +539,7 @@ class TestCLIValidateCommand:
 
         assert result.exit_code == 0
         data = json.loads(result.stdout)
-        assert data["isSafe"] is False
-        assert data["overallStability"] in ("unstable", "critical")
+        assert data["maxEntropyRatio"] >= 3.0
 
 
 # =============================================================================
@@ -657,8 +636,16 @@ class TestEntropyMathematics:
         # ORDERED gets full alpha (1.0)
         # DISORDERED gets moderate reduction (0.85)
         # CRITICAL gets most conservative (0.7)
-        assert ordered.recommended_alpha_adjustment > disordered.recommended_alpha_adjustment
-        assert disordered.recommended_alpha_adjustment > critical.recommended_alpha_adjustment
+        adjustments = PhaseAdjustments(
+            ordered_alpha=1.0,
+            critical_alpha=0.7,
+            disordered_alpha=0.85,
+            ordered_sigma=1.0,
+            critical_sigma=2.0,
+            disordered_sigma=1.5,
+        )
+        assert ordered.alpha_adjustment(adjustments) > disordered.alpha_adjustment(adjustments)
+        assert disordered.alpha_adjustment(adjustments) > critical.alpha_adjustment(adjustments)
 
 
 # =============================================================================
@@ -678,7 +665,8 @@ class TestEdgeCases:
             merged_entropies={},
         )
 
-        assert validation.is_safe is True
+        assert validation.mean_entropy_ratio == 0.0
+        assert validation.max_entropy_ratio == 0.0
         assert validation.mean_knowledge_retention == 1.0
         assert len(validation.layer_validations) == 0
 

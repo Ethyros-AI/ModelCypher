@@ -159,8 +159,8 @@ class TestMergeEntropyProfileTool:
         assert "modelName" in payload
         assert "meanEntropy" in payload
         assert "dominantPhase" in payload
-        assert "mergeRisk" in payload
-        assert "nextActions" in payload
+        assert "entropyVariance" in payload
+        assert "criticalLayerCount" in payload
 
     def test_entropy_profile_phase_valid(self, mcp_env: dict[str, str], test_model_path: str) -> None:
         """Dominant phase should be a valid phase value."""
@@ -178,23 +178,6 @@ class TestMergeEntropyProfileTool:
 
         valid_phases = {"ordered", "critical", "disordered"}
         assert payload["dominantPhase"] in valid_phases
-
-    def test_entropy_profile_risk_valid(self, mcp_env: dict[str, str], test_model_path: str) -> None:
-        """Merge risk should be a valid risk level."""
-
-        async def runner(session: ClientSession):
-            return await _await_with_timeout(
-                session.call_tool(
-                    "mc_merge_entropy_profile",
-                    arguments={"model": test_model_path, "numLayers": 24},
-                )
-            )
-
-        result = _run_mcp(mcp_env, runner)
-        payload = _extract_structured(result)
-
-        valid_risks = {"low", "medium", "high"}
-        assert payload["mergeRisk"] in valid_risks
 
     @pytest.mark.parametrize("num_layers", [8, 16, 32, 64])
     def test_entropy_profile_various_layer_counts(
@@ -244,11 +227,10 @@ class TestMergeEntropyGuideTool:
         payload = _extract_structured(result)
 
         assert payload["_schema"] == "mc.merge.entropy.guide.v1"
-        assert "sourceRisk" in payload
-        assert "targetRisk" in payload
-        assert "globalAlphaAdjust" in payload
-        assert "recommendations" in payload
-        assert "nextActions" in payload
+        assert "alphaAdjustments" in payload
+        assert "smoothingSigmas" in payload
+        assert "alphaStats" in payload
+        assert "sigmaStats" in payload
 
     def test_entropy_guide_alpha_in_bounds(self, mcp_env: dict[str, str], test_model_path: str) -> None:
         """Global alpha adjustment should be in reasonable bounds."""
@@ -268,8 +250,9 @@ class TestMergeEntropyGuideTool:
         result = _run_mcp(mcp_env, runner)
         payload = _extract_structured(result)
 
-        # Alpha should be a reasonable value (typically 0.1 to 1.5)
-        assert 0.0 <= payload["globalAlphaAdjust"] <= 2.0
+        # Alpha adjustments should be reasonable values
+        for value in payload.get("alphaAdjustments", {}).values():
+            assert 0.0 < value <= 2.0
 
 
 # =============================================================================
@@ -304,13 +287,13 @@ class TestMergeEntropyValidateTool:
         payload = _extract_structured(result)
 
         assert payload["_schema"] == "mc.merge.entropy.validate.v1"
-        assert "overallStability" in payload
         assert "knowledgeRetention" in payload
-        assert "isSafe" in payload
-        assert "nextActions" in payload
+        assert "meanEntropyRatio" in payload
+        assert "maxEntropyRatio" in payload
+        assert "entropyRatioStd" in payload
 
-    def test_entropy_validate_stability_valid(self, mcp_env: dict[str, str]) -> None:
-        """Overall stability should be a valid stability level."""
+    def test_entropy_validate_ratio_ordering(self, mcp_env: dict[str, str]) -> None:
+        """Max entropy ratio should be >= mean entropy ratio."""
         source_entropies = {"layer.0": 1.5, "layer.1": 1.6}
         target_entropies = {"layer.0": 1.6, "layer.1": 1.7}
         merged_entropies = {"layer.0": 1.55, "layer.1": 1.65}
@@ -330,8 +313,7 @@ class TestMergeEntropyValidateTool:
         result = _run_mcp(mcp_env, runner)
         payload = _extract_structured(result)
 
-        valid_stability = {"stable", "marginal", "unstable", "critical"}
-        assert payload["overallStability"] in valid_stability
+        assert payload["maxEntropyRatio"] >= payload["meanEntropyRatio"]
 
     def test_entropy_validate_retention_bounded(self, mcp_env: dict[str, str]) -> None:
         """Knowledge retention should be in [0, 1]."""
@@ -464,13 +446,10 @@ class TestMergeEntropyInvariants:
         result = _run_mcp(mcp_env, runner)
         payload = _extract_structured(result)
 
-        for layer_name, rec in payload.get("recommendations", {}).items():
-            if "alphaAdjust" in rec:
-                # Alpha adjustments should be positive and reasonable
-                assert 0.0 < rec["alphaAdjust"] <= 2.0
-            if "smoothingSigma" in rec:
-                # Smoothing sigma should be positive
-                assert rec["smoothingSigma"] > 0
+        for value in payload.get("alphaAdjustments", {}).values():
+            assert 0.0 < value <= 2.0
+        for value in payload.get("smoothingSigmas", {}).values():
+            assert value > 0
 
 
 # =============================================================================
@@ -516,9 +495,8 @@ class TestMergeWorkflowIntegration:
         assert profile_payload["_schema"] == "mc.merge.entropy.profile.v1"
         assert guide_payload["_schema"] == "mc.merge.entropy.guide.v1"
 
-        # Source risk from guide should be valid
-        valid_risks = {"low", "medium", "high"}
-        assert guide_payload["sourceRisk"] in valid_risks
+        assert guide_payload["layerCount"] >= 0
+        assert isinstance(guide_payload.get("alphaAdjustments", {}), dict)
 
     def test_guide_then_validate_workflow(self, mcp_env: dict[str, str], test_model_path: str) -> None:
         """Workflow: guide → merge (simulated) → validate should work."""

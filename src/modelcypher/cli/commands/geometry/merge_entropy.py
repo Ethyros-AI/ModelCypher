@@ -46,6 +46,27 @@ def _context(ctx: typer.Context) -> CLIContext:
     return ctx.obj
 
 
+def _percentile(sorted_values: list[float], pct: float) -> float:
+    if not sorted_values:
+        return 0.0
+    index = int(round((len(sorted_values) - 1) * pct))
+    return sorted_values[index]
+
+
+def _compute_stats(values: list[float]) -> dict[str, float]:
+    if not values:
+        return {"mean": 0.0, "min": 0.0, "max": 0.0, "p50": 0.0, "p90": 0.0}
+    sorted_vals = sorted(values)
+    mean = sum(values) / len(values)
+    return {
+        "mean": mean,
+        "min": sorted_vals[0],
+        "max": sorted_vals[-1],
+        "p50": _percentile(sorted_vals, 0.5),
+        "p90": _percentile(sorted_vals, 0.9),
+    }
+
+
 @app.command("profile")
 def entropy_profile(
     ctx: typer.Context,
@@ -57,7 +78,7 @@ def entropy_profile(
     """Profile model entropy characteristics for merge planning.
 
     Measures actual layer entropy using the LinguisticCalorimeter
-    and produces phase distribution and merge risk assessment.
+    and produces phase distribution and raw entropy statistics.
 
     Example:
         mc geometry merge-entropy profile ./my-model
@@ -79,18 +100,10 @@ def entropy_profile(
             "_schema": "mc.merge.entropy.profile.v1",
             "modelName": profile.model_name,
             "meanEntropy": round(profile.mean_entropy, 3),
+            "entropyVariance": round(profile.entropy_variance, 4),
             "dominantPhase": profile.dominant_phase.value,
             "criticalLayerCount": profile.critical_layer_count,
-            "mergeRisk": profile.merge_risk_level,
-            "criticalLayers": critical_layers[:5],  # Top 5 only
-            "interpretation": (
-                f"Model has {profile.critical_layer_count} critical layers "
-                f"({profile.merge_risk_level} risk) in {profile.dominant_phase.value} dominant phase"
-            ),
-            "nextActions": [
-                f"mc geometry merge-entropy guide --source {model} --target <other>",
-                "mc model merge with recommended alpha adjustments",
-            ],
+            "topCriticalLayers": critical_layers[:5],  # Top 5 only
         }
 
         if context.output_format == "text":
@@ -100,15 +113,13 @@ def entropy_profile(
                 f"Layers: {layers}",
                 "",
                 f"Mean Entropy: {profile.mean_entropy:.3f}",
+                f"Entropy Variance: {profile.entropy_variance:.4f}",
                 f"Dominant Phase: {profile.dominant_phase.value}",
                 f"Critical Layers: {profile.critical_layer_count}",
-                f"Merge Risk: {profile.merge_risk_level}",
             ]
 
             if critical_layers:
                 lines.append(f"\nCritical Layer Names: {', '.join(critical_layers[:5])}")
-
-            lines.append(f"\nInterpretation: {payload['interpretation']}")
 
             write_output("\n".join(lines), context.output_format, context.pretty)
             return
@@ -128,10 +139,10 @@ def entropy_guide(
     target: str = typer.Option(..., "--target", "-t", help="Path to target model directory"),
     layers: int = typer.Option(None, "--layers", "-n", help="Number of layers (auto-detected)"),
 ) -> None:
-    """Generate entropy-aware merge recommendations.
+    """Generate entropy-aware merge guidance.
 
     Analyzes both models by measuring actual layer entropy and provides
-    per-layer alpha adjustments and smoothing recommendations for stable merging.
+    per-layer alpha adjustments and smoothing sigmas for merging.
 
     Example:
         mc geometry merge-entropy guide --source ./model-a --target ./model-b
@@ -154,62 +165,54 @@ def entropy_guide(
         alpha_adjustments = validator.compute_alpha_adjustments(source_profile, target_profile)
         smoothing_sigmas = validator.compute_smoothing_sigmas(source_profile, target_profile)
 
-        # Find critical layers needing adjustment
-        critical_recommendations = {}
-        for name in alpha_adjustments:
-            alpha = alpha_adjustments[name]
-            sigma = smoothing_sigmas.get(name, 1.0)
-            if alpha < 1.0 or sigma > 1.0:
-                critical_recommendations[name] = {
-                    "alphaAdjust": round(alpha, 2),
-                    "smoothingSigma": round(sigma, 2),
-                }
+        alpha_values = list(alpha_adjustments.values())
+        sigma_values = list(smoothing_sigmas.values())
+        alpha_stats = _compute_stats(alpha_values)
+        sigma_stats = _compute_stats(sigma_values)
 
-        # Limit to top 5 critical
-        top_critical = dict(list(critical_recommendations.items())[:5])
-
-        # Global recommendation
-        mean_alpha = (
-            sum(alpha_adjustments.values()) / len(alpha_adjustments) if alpha_adjustments else 1.0
-        )
+        sorted_alpha = sorted(alpha_adjustments.items(), key=lambda item: item[0])
+        sorted_sigma = sorted(smoothing_sigmas.items(), key=lambda item: item[0])
 
         payload = {
             "_schema": "mc.merge.entropy.guide.v1",
             "sourceModel": source,
             "targetModel": target,
-            "sourceRisk": source_profile.merge_risk_level,
-            "targetRisk": target_profile.merge_risk_level,
-            "criticalLayerCount": len(critical_recommendations),
-            "globalAlphaAdjust": round(mean_alpha, 2),
-            "recommendations": top_critical,
-            "interpretation": (
-                f"{len(critical_recommendations)} layers need conservative blending. "
-                f"Recommended global alpha: {mean_alpha:.2f}"
-            ),
-            "nextActions": [
-                f"mc model merge --alpha {mean_alpha:.2f}",
-                "mc geometry merge-entropy validate after merge",
-            ],
+            "layerCount": len(alpha_adjustments),
+            "alphaAdjustments": {name: round(value, 4) for name, value in sorted_alpha},
+            "smoothingSigmas": {name: round(value, 4) for name, value in sorted_sigma},
+            "alphaStats": {k: round(v, 4) for k, v in alpha_stats.items()},
+            "sigmaStats": {k: round(v, 4) for k, v in sigma_stats.items()},
         }
 
         if context.output_format == "text":
-            lines = [
-                "MERGE ENTROPY GUIDE",
-                f"Source: {source} (risk: {source_profile.merge_risk_level})",
-                f"Target: {target} (risk: {target_profile.merge_risk_level})",
-                "",
-                f"Critical Layers: {len(critical_recommendations)}",
-                f"Recommended Global Alpha: {mean_alpha:.2f}",
+            lowest_alpha = sorted(alpha_adjustments.items(), key=lambda item: item[1])[:5]
+            highest_sigma = sorted(smoothing_sigmas.items(), key=lambda item: item[1], reverse=True)[
+                :5
             ]
 
-            if top_critical:
-                lines.append("\nPer-Layer Recommendations:")
-                for name, rec in top_critical.items():
-                    lines.append(
-                        f"  {name}: alpha={rec['alphaAdjust']}, sigma={rec['smoothingSigma']}"
-                    )
+            lines = [
+                "MERGE ENTROPY GUIDE",
+                f"Source: {source}",
+                f"Target: {target}",
+                "",
+                f"Layers Compared: {len(alpha_adjustments)}",
+                f"Alpha Mean: {alpha_stats['mean']:.4f}",
+                f"Alpha Min/Max: {alpha_stats['min']:.4f}/{alpha_stats['max']:.4f}",
+                f"Alpha P50/P90: {alpha_stats['p50']:.4f}/{alpha_stats['p90']:.4f}",
+                f"Sigma Mean: {sigma_stats['mean']:.4f}",
+                f"Sigma Min/Max: {sigma_stats['min']:.4f}/{sigma_stats['max']:.4f}",
+                f"Sigma P50/P90: {sigma_stats['p50']:.4f}/{sigma_stats['p90']:.4f}",
+            ]
 
-            lines.append(f"\nInterpretation: {payload['interpretation']}")
+            if lowest_alpha:
+                lines.append("\nLowest Alpha Layers:")
+                for name, value in lowest_alpha:
+                    lines.append(f"  {name}: alpha={value:.4f}")
+
+            if highest_sigma:
+                lines.append("\nHighest Sigma Layers:")
+                for name, value in highest_sigma:
+                    lines.append(f"  {name}: sigma={value:.4f}")
 
             write_output("\n".join(lines), context.output_format, context.pretty)
             return
@@ -239,8 +242,8 @@ def entropy_validate(
 ) -> None:
     """Validate merge stability via entropy comparison.
 
-    Compares entropy before and after merge to detect knowledge loss
-    or instability. Entropy values should be dict[layer_name, entropy_value].
+    Compares entropy before and after merge to report raw delta statistics.
+    Entropy values should be dict[layer_name, entropy_value].
 
     Example:
         mc geometry merge-entropy validate \\
@@ -276,62 +279,54 @@ def entropy_validate(
             target_model=target_model,
         )
 
-        # Identify high-entropy-ratio layers (entropy ratio > 1.5)
-        high_ratio_layers = [
-            name for name, v in validation.layer_validations.items()
-            if v.entropy_ratio > 1.5
-        ][:5]
-
-        # Derive stability description from raw measurements
-        if validation.max_entropy_ratio <= 1.2:
-            stability_desc = "stable"
-        elif validation.max_entropy_ratio <= 1.5:
-            stability_desc = "marginal"
-        elif validation.max_entropy_ratio <= 2.0:
-            stability_desc = "unstable"
-        else:
-            stability_desc = "critical"
+        sorted_layers = sorted(
+            validation.layer_validations.values(),
+            key=lambda v: v.entropy_ratio,
+            reverse=True,
+        )
+        top_layers = [
+            {
+                "layerName": v.layer_name,
+                "entropyRatio": round(v.entropy_ratio, 4),
+                "entropyDelta": round(v.entropy_delta, 4),
+                "knowledgeRetentionScore": round(v.knowledge_retention_score, 4),
+            }
+            for v in sorted_layers[:5]
+        ]
 
         payload = {
             "_schema": "mc.merge.entropy.validate.v1",
             "sourceModel": validation.source_model,
             "targetModel": validation.target_model,
-            "overallStability": stability_desc,
             "knowledgeRetention": round(validation.mean_knowledge_retention, 3),
             "meanEntropyRatio": round(validation.mean_entropy_ratio, 3),
             "maxEntropyRatio": round(validation.max_entropy_ratio, 3),
-            "highRatioLayers": high_ratio_layers,
-            "isSafe": validation.is_safe,
-            "interpretation": (
-                f"Merge {'is safe' if validation.is_safe else 'has issues'}. "
-                f"Knowledge retention: {validation.mean_knowledge_retention:.1%}. "
-                f"Stability: {stability_desc}"
-            ),
-            "nextActions": (
-                ["mc merge perplexity to verify quality"]
-                if validation.is_safe
-                else ["Review high-ratio layers", "Consider reducing alpha for unstable layers"]
-            ),
+            "entropyRatioStd": round(validation.entropy_ratio_std, 3),
+            "totalLayersValidated": len(validation.layer_validations),
+            "topEntropyRatioLayers": top_layers,
         }
 
         if context.output_format == "text":
-            status = "SAFE" if validation.is_safe else "UNSAFE"
             lines = [
-                f"MERGE VALIDATION: {status}",
+                "MERGE VALIDATION",
                 f"Source: {validation.source_model}",
                 f"Target: {validation.target_model}",
                 "",
-                f"Overall Stability: {stability_desc}",
                 f"Knowledge Retention: {validation.mean_knowledge_retention:.1%}",
                 f"Mean Entropy Ratio: {validation.mean_entropy_ratio:.2f}",
                 f"Max Entropy Ratio: {validation.max_entropy_ratio:.2f}",
+                f"Entropy Ratio Std: {validation.entropy_ratio_std:.2f}",
                 f"Layers Validated: {len(validation.layer_validations)}",
             ]
 
-            if high_ratio_layers:
-                lines.append(f"\nHigh-Ratio Layers: {', '.join(high_ratio_layers)}")
-
-            lines.append(f"\nInterpretation: {payload['interpretation']}")
+            if top_layers:
+                lines.append("\nTop Entropy Ratio Layers:")
+                for layer in top_layers:
+                    lines.append(
+                        f"  {layer['layerName']}: ratio={layer['entropyRatio']:.2f} "
+                        f"delta={layer['entropyDelta']:.2f} "
+                        f"retention={layer['knowledgeRetentionScore']:.2f}"
+                    )
 
             write_output("\n".join(lines), context.output_format, context.pretty)
             return

@@ -132,66 +132,93 @@ class MLXModelProbe(BaseModelProbe):
         weights_a = self._load_weight_tensors(path_a)
         weights_b = self._load_weight_tensors(path_b)
 
-        common_layers = set(weights_a.keys()) & set(weights_b.keys())
+        set_a = set(weights_a.keys())
+        set_b = set(weights_b.keys())
+        common_layers = set_a & set_b
+        missing_layer_count = len(set_a - set_b) + len(set_b - set_a)
         if not common_layers:
             return AlignmentAnalysisResult(
-                drift_magnitude=1.0,
+                drift_magnitude=None,
+                drift_std=None,
+                drift_min=None,
+                drift_max=None,
+                drift_p50=None,
+                drift_p90=None,
+                common_layer_count=0,
+                comparable_layer_count=0,
+                missing_layer_count=missing_layer_count,
                 layer_drifts=[],
-                assessment="needs_layer_mapping",
-                interpretation="No common layer names - use invariant layer mapping to find corresponding layers.",
             )
 
-        layer_drifts: list[LayerDrift] = []
-        total_drift = 0.0
+        raw_drifts: list[tuple[str, float | None, bool]] = []
 
         for layer_name in sorted(common_layers):
             tensor_a = weights_a[layer_name]
             tensor_b = weights_b[layer_name]
 
             if tensor_a.shape != tensor_b.shape:
-                layer_drifts.append(
-                    LayerDrift(
-                        layer_name=layer_name,
-                        drift_magnitude=1.0,
-                        direction="shape_mismatch",
-                    )
-                )
-                total_drift += 1.0
+                raw_drifts.append((layer_name, None, False))
                 continue
 
             drift = self._compute_layer_drift(tensor_a, tensor_b)
-            direction = "divergent" if drift > 0.5 else "aligned"
+            raw_drifts.append((layer_name, drift, True))
 
+        computed_drifts = [d for _, d, comparable in raw_drifts if comparable and d is not None]
+        if computed_drifts:
+            mean_drift = sum(computed_drifts) / len(computed_drifts)
+            variance = sum((d - mean_drift) ** 2 for d in computed_drifts) / len(computed_drifts)
+            std_drift = math.sqrt(variance)
+            sorted_drifts = sorted(computed_drifts)
+            drift_min = sorted_drifts[0]
+            drift_max = sorted_drifts[-1]
+            idx_p50 = int(0.5 * (len(sorted_drifts) - 1))
+            idx_p90 = int(0.9 * (len(sorted_drifts) - 1))
+            drift_p50 = sorted_drifts[idx_p50]
+            drift_p90 = sorted_drifts[idx_p90]
+        else:
+            mean_drift = None
+            std_drift = None
+            drift_min = None
+            drift_max = None
+            drift_p50 = None
+            drift_p90 = None
+
+        layer_drifts: list[LayerDrift] = []
+        for layer_name, drift, comparable in raw_drifts:
+            if drift is None:
+                layer_drifts.append(
+                    LayerDrift(
+                        layer_name=layer_name,
+                        drift_magnitude=None,
+                        drift_z_score=None,
+                        comparable=False,
+                    )
+                )
+                continue
+            if std_drift is None or std_drift == 0.0:
+                z_score = 0.0
+            else:
+                z_score = (drift - mean_drift) / std_drift
             layer_drifts.append(
                 LayerDrift(
                     layer_name=layer_name,
                     drift_magnitude=drift,
-                    direction=direction,
+                    drift_z_score=z_score,
+                    comparable=True,
                 )
             )
-            total_drift += drift
-
-        avg_drift = total_drift / len(common_layers) if common_layers else 1.0
-        drift_magnitude = min(1.0, max(0.0, avg_drift))
-
-        if drift_magnitude < 0.1:
-            assessment = "highly_aligned"
-            interpretation = "Models are highly aligned with minimal drift."
-        elif drift_magnitude < 0.3:
-            assessment = "moderately_aligned"
-            interpretation = "Models show moderate alignment with some drift."
-        elif drift_magnitude < 0.6:
-            assessment = "divergent"
-            interpretation = "Models have diverged significantly."
-        else:
-            assessment = "highly_divergent"
-            interpretation = "Models are highly divergent and may not be compatible."
 
         return AlignmentAnalysisResult(
-            drift_magnitude=drift_magnitude,
+            drift_magnitude=mean_drift,
+            drift_std=std_drift,
+            drift_min=drift_min,
+            drift_max=drift_max,
+            drift_p50=drift_p50,
+            drift_p90=drift_p90,
+            common_layer_count=len(common_layers),
+            comparable_layer_count=len(computed_drifts),
+            missing_layer_count=missing_layer_count,
             layer_drifts=layer_drifts,
-            assessment=assessment,
-            interpretation=interpretation,
         )
 
     def _analyze_weights(self, model_path: Path) -> tuple[list[LayerInfo], int]:

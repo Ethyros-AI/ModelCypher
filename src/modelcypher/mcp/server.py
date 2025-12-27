@@ -1173,13 +1173,20 @@ def build_server() -> FastMCP:
             return {
                 "_schema": "mc.model.analyze_alignment.v1",
                 "driftMagnitude": result.drift_magnitude,
-                "assessment": result.assessment,
-                "interpretation": result.interpretation,
+                "driftStd": result.drift_std,
+                "driftMin": result.drift_min,
+                "driftMax": result.drift_max,
+                "driftP50": result.drift_p50,
+                "driftP90": result.drift_p90,
+                "commonLayerCount": result.common_layer_count,
+                "comparableLayerCount": result.comparable_layer_count,
+                "missingLayerCount": result.missing_layer_count,
                 "layerDrifts": [
                     {
                         "layerName": drift.layer_name,
                         "driftMagnitude": drift.drift_magnitude,
-                        "direction": drift.direction,
+                        "driftZScore": drift.drift_z_score,
+                        "comparable": drift.comparable,
                     }
                     for drift in result.layer_drifts[:20]
                 ],

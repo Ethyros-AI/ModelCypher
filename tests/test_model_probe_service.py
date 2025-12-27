@@ -270,8 +270,10 @@ def test_analyze_alignment_identical_models(tmp_path):
     result = service.analyze_alignment(str(model_a), str(model_a))
 
     assert result.drift_magnitude == 0.0
-    assert result.assessment == "highly_aligned"
     assert 0.0 <= result.drift_magnitude <= 1.0
+    assert result.drift_std == 0.0
+    assert result.common_layer_count > 0
+    assert result.comparable_layer_count == result.common_layer_count
 
 
 def test_analyze_alignment_different_models(tmp_path):
@@ -296,12 +298,7 @@ def test_analyze_alignment_different_models(tmp_path):
 
     # Drift should be bounded in [0.0, 1.0]
     assert 0.0 <= result.drift_magnitude <= 1.0
-    assert result.assessment in [
-        "highly_aligned",
-        "moderately_aligned",
-        "divergent",
-        "highly_divergent",
-    ]
+    assert result.drift_std is not None
     assert len(result.layer_drifts) > 0
 
 
@@ -345,13 +342,5 @@ def test_alignment_analysis_bounded_drift(
 
     # All layer drifts should also be bounded
     for layer_drift in result.layer_drifts:
-        assert 0.0 <= layer_drift.drift_magnitude <= 1.0
-
-    # Assessment should be one of the valid values
-    assert result.assessment in [
-        "highly_aligned",
-        "moderately_aligned",
-        "divergent",
-        "highly_divergent",
-        "incompatible",
-    ]
+        if layer_drift.drift_magnitude is not None:
+            assert 0.0 <= layer_drift.drift_magnitude <= 1.0

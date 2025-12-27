@@ -2925,10 +2925,6 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
                     }
                     for b in baselines
                 ],
-                "nextActions": [
-                    "mc_geometry_baseline_validate to validate a model",
-                    "mc_geometry_baseline_extract to create a new baseline",
-                ],
             }
 
     if "mc_geometry_baseline_extract" in tool_set:
@@ -2988,10 +2984,6 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
                 "intrinsicDimension": baseline.intrinsic_dimension_mean,
                 "domainMetrics": baseline.domain_metrics,
                 "savedPath": str(saved_path),
-                "nextActions": [
-                    "mc_geometry_baseline_validate to validate other models against this baseline",
-                    "mc_geometry_baseline_compare to compare two models",
-                ],
             }
 
     if "mc_geometry_baseline_validate" in tool_set:
@@ -3116,16 +3108,6 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
                 v2 = baseline2.domain_metrics[metric]
                 domain_divergence[metric] = abs(v1 - v2)
 
-            # Interpret divergence
-            if ricci_divergence < 0.05:
-                interpretation = "HIGHLY SIMILAR: Models have nearly identical geometry."
-            elif ricci_divergence < 0.15:
-                interpretation = "COMPATIBLE: Models have similar geometry, merge is safe."
-            elif ricci_divergence < 0.3:
-                interpretation = "MODERATE DIVERGENCE: Proceed with caution during merge."
-            else:
-                interpretation = "HIGH DIVERGENCE: Models have very different geometry. Merge may require careful alpha tuning."
-
             return {
                 "_schema": "mc.geometry.baseline.compare.v1",
                 "domain": domain,
@@ -3148,9 +3130,4 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
                     "intrinsicDimension": id_divergence,
                     "domainMetrics": domain_divergence,
                 },
-                "interpretation": interpretation,
-                "nextActions": [
-                    "mc_geometry_waypoint_audit for pre-merge compatibility assessment",
-                    "mc_model_merge to proceed with merge",
-                ],
             }

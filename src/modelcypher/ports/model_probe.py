@@ -72,18 +72,25 @@ class LayerDrift:
     """Drift information for a single layer."""
 
     layer_name: str
-    drift_magnitude: float
-    direction: str
+    drift_magnitude: float | None
+    drift_z_score: float | None = None
+    comparable: bool = True
 
 
 @dataclass(frozen=True)
 class AlignmentAnalysisResult:
     """Result of analyzing alignment drift between two models."""
 
-    drift_magnitude: float
+    drift_magnitude: float | None
+    drift_std: float | None
+    drift_min: float | None
+    drift_max: float | None
+    drift_p50: float | None
+    drift_p90: float | None
+    common_layer_count: int
+    comparable_layer_count: int
+    missing_layer_count: int
     layer_drifts: list[LayerDrift]
-    assessment: str
-    interpretation: str
 
 
 @runtime_checkable

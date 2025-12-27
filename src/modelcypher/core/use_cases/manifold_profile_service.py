@@ -182,10 +182,10 @@ class ManifoldProfileService:
 
         if query_result.nearest_region:
             region = query_result.nearest_region
-            if region.region_type == ManifoldRegion.RegionType.safe:
+            if region.region_type == ManifoldRegion.RegionType.DENSE:
                 suggested_level = 0
-                reason = f"Point falls within safe region '{str(region.id)[:8]}'"
-            elif region.region_type == ManifoldRegion.RegionType.sparse:
+                reason = f"Point falls within dense region '{str(region.id)[:8]}'"
+            elif region.region_type == ManifoldRegion.RegionType.SPARSE:
                 suggested_level = max(historical_levels) if historical_levels else 1
                 reason = "Point falls within sparse region - historically uncertain behavior"
             else:
@@ -197,7 +197,7 @@ class ManifoldProfileService:
                 reason = f"No matching region, but similar points triggered level {suggested_level}"
             else:
                 suggested_level = (
-                    0 if ManifoldRegion.classify(point) == ManifoldRegion.RegionType.safe else 1
+                    0 if ManifoldRegion.classify(point) == ManifoldRegion.RegionType.DENSE else 1
                 )
                 reason = "No historical data - suggestion based on point features"
 
