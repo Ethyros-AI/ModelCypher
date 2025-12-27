@@ -196,11 +196,12 @@ class GeometryPersonaService:
             projection = sum(position) if isinstance(position, list) else float(position)
 
             # Auto-compute normalized_position if not provided
+            # normalized_position is a float in [-1, 1] representing position on persona direction
             normalized_position = p.get("normalized_position")
             if normalized_position is None:
-                # Normalize the position vector to unit length
-                norm = sum(x * x for x in position) ** 0.5 if isinstance(position, list) else 1.0
-                normalized_position = [x / (norm + 1e-8) for x in position] if isinstance(position, list) else [position]
+                # Use projection magnitude normalized to unit scale
+                norm = (sum(x * x for x in position) ** 0.5) if isinstance(position, list) else abs(position)
+                normalized_position = projection / (norm + 1e-8) if norm > 0 else 0.0
 
             parsed_positions.append(
                 PersonaPosition(
@@ -396,7 +397,7 @@ class GeometryPersonaService:
                     "projection": p.projection,
                     "normalizedPosition": p.normalized_position,
                     "deltaFromBaseline": p.delta_from_baseline,
-                    "assessment": p.assessment.value,
+                    "layerIndex": p.layer_index,
                 }
                 for p in metrics.positions
             ],

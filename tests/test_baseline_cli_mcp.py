@@ -328,15 +328,6 @@ class TestBaselineCLIValidate:
         assert result.exit_code == 0
         assert "--domains" in result.stdout
 
-    def test_validate_strict_flag_exists(self):
-        """Validate has --strict flag."""
-        result = runner.invoke(
-            app,
-            ["geometry", "baseline", "validate", "--help"],
-        )
-        assert result.exit_code == 0
-        assert "--strict" in result.stdout
-
 
 # =============================================================================
 # CLI Compare Command Tests
@@ -740,23 +731,21 @@ class TestDomainGeometryValidator:
         # Check that repository was created with custom path
         assert validator._repository._baseline_dir == temp_baseline_dir
 
-    def test_validator_compute_deviation(self, backend: "Backend"):
-        """Validator computes deviation scores correctly."""
+    def test_validator_metric_delta(self, backend: "Backend"):
+        """Validator computes baseline-relative deltas correctly."""
         from modelcypher.core.domain.geometry.domain_geometry_validator import (
             DomainGeometryValidator,
         )
 
         validator = DomainGeometryValidator(backend=backend)
 
-        # Test deviation computation for a single metric
         current_value = -0.20
         baseline_value = -0.22
-        dev = validator._compute_deviation(current_value, baseline_value)
+        delta = validator._metric_delta(current_value, baseline_value, baseline_std=0.01)
 
-        # Should return a non-negative deviation
-        assert dev >= 0
-        # Deviation should be reasonable (not too large for similar values)
-        assert dev < 0.5
+        assert delta.delta == pytest.approx(0.02)
+        assert delta.relative_delta == pytest.approx(0.02 / 0.22)
+        assert delta.z_score == pytest.approx(2.0)
 
 
 # =============================================================================

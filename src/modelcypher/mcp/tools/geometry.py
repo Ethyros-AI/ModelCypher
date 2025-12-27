@@ -2925,11 +2925,6 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
                     }
                     for b in baselines
                 ],
-                "interpretation": (
-                    f"Found {len(baselines)} baselines"
-                    + (f" for domain '{domain}'" if domain else "")
-                    + ". Use mc_geometry_baseline_validate to check model health."
-                ),
                 "nextActions": [
                     "mc_geometry_baseline_validate to validate a model",
                     "mc_geometry_baseline_extract to create a new baseline",
@@ -2982,14 +2977,6 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
             repo = BaselineRepository()
             saved_path = repo.save_baseline(baseline)
 
-            # Determine health interpretation
-            if baseline.ollivier_ricci_mean < -0.1:
-                health = "HEALTHY (negative curvature indicates hyperbolic geometry)"
-            elif baseline.ollivier_ricci_mean > 0.1:
-                health = "COLLAPSED (positive curvature indicates representation collapse)"
-            else:
-                health = "DEGENERATE (near-zero curvature indicates flat geometry)"
-
             return {
                 "_schema": "mc.geometry.baseline.extract.v1",
                 "domain": baseline.domain,
@@ -3001,7 +2988,6 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
                 "intrinsicDimension": baseline.intrinsic_dimension_mean,
                 "domainMetrics": baseline.domain_metrics,
                 "savedPath": str(saved_path),
-                "interpretation": health,
                 "nextActions": [
                     "mc_geometry_baseline_validate to validate other models against this baseline",
                     "mc_geometry_baseline_compare to compare two models",
@@ -3043,35 +3029,32 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
                 layer=layer,
             )
 
-            all_passed = all(r.passed for r in results)
-
             return {
                 "_schema": "mc.geometry.baseline.validate.v1",
                 "modelPath": model_path,
-                "overallPassed": all_passed,
                 "results": [
                     {
                         "domain": r.domain,
-                        "passed": r.passed,
-                        "deviationScores": r.deviation_scores,
-                        "warnings": r.warnings,
-                        "recommendations": r.recommendations,
+                        "baselineFound": r.baseline_found,
+                        "baselineModel": r.baseline_model,
+                        "currentModel": r.current_model,
+                        "missingMetrics": r.missing_metrics,
+                        "notes": r.notes,
+                        "metrics": {
+                            name: {
+                                "current": metric.current,
+                                "baseline": metric.baseline,
+                                "baselineStd": metric.baseline_std,
+                                "delta": metric.delta,
+                                "relativeDelta": metric.relative_delta,
+                                "zScore": metric.z_score,
+                                "percentile": metric.percentile,
+                            }
+                            for name, metric in r.metrics.items()
+                        },
                     }
                     for r in results
                 ],
-                "interpretation": (
-                    "PASSED: Model geometry is healthy across all validated domains."
-                    if all_passed
-                    else f"FAILED: {sum(1 for r in results if not r.passed)} domain(s) show geometry deviation."
-                ),
-                "nextActions": (
-                    ["Model is healthy - proceed with operations."]
-                    if all_passed
-                    else [
-                        "Review domain-specific warnings and recommendations",
-                        "mc_geometry_baseline_compare for detailed comparison",
-                    ]
-                ),
             }
 
     if "mc_geometry_baseline_compare" in tool_set:

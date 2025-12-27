@@ -31,7 +31,6 @@
     -0.0963393471362049
   ],
   "layers_analyzed": 6,
-  "acceptable_deviation": 0.2,
   "extraction_date": "2025-12-27T13:44:50.811682",
   "extraction_config": {
     "k_neighbors": 10,

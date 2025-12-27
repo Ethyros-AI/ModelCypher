@@ -164,15 +164,12 @@ def baseline_validate(
     layer: int = typer.Option(
         -1, "--layer", "-l", help="Layer to analyze (-1 for last)"
     ),
-    strict: bool = typer.Option(
-        False, "--strict", help="Fail on any geometry deviation"
-    ),
 ) -> None:
     """
     Validate model geometry against established baselines.
 
     Compares model's Ollivier-Ricci curvature and domain metrics against
-    known-good baselines. Useful for:
+    known-good baselines, returning baseline-relative deltas. Useful for:
 
     - Post-merge validation (did the merge preserve geometry?)
     - Model health checks (is the model collapsed?)
@@ -209,67 +206,60 @@ def baseline_validate(
         typer.echo(f"Error validating model: {e}", err=True)
         raise typer.Exit(1)
 
-    # Check overall pass/fail
-    all_passed = all(r.passed for r in results)
-
     payload = {
         "_schema": "mc.geometry.baseline.validate.v1",
         "model_path": model_path,
-        "overall_passed": all_passed,
-        "results": [
-            {
-                "domain": r.domain,
-                "passed": r.passed,
-                "deviation_scores": r.deviation_scores,
-                "warnings": r.warnings,
-                "recommendations": r.recommendations,
-            }
-            for r in results
-        ],
+        "results": [r.to_dict() for r in results],
     }
 
     if context.output_format == "text":
+        def _fmt(value: float | None, *, percent: bool = False) -> str:
+            if value is None:
+                return "n/a"
+            return f"{value:.1%}" if percent else f"{value:.4f}"
+
         lines = [
             "=" * 70,
-            "GEOMETRY VALIDATION RESULTS",
+            "GEOMETRY BASELINE COMPARISON",
             "=" * 70,
             "",
             f"Model: {Path(model_path).name}",
-            f"Overall: {'PASSED' if all_passed else 'FAILED'}",
             "",
         ]
         for result in results:
-            status = "PASS" if result.passed else "FAIL"
             lines.append("-" * 50)
-            lines.append(f"{result.domain.upper()}: {status}")
+            lines.append(f"{result.domain.upper()}")
+            baseline_label = result.baseline_model if result.baseline_found else "none"
+            lines.append(f"  Baseline: {baseline_label}")
 
-            if result.deviation_scores:
-                lines.append("  Deviations:")
-                for metric, dev in result.deviation_scores.items():
-                    flag = "" if dev < 0.2 else " [HIGH]"
-                    lines.append(f"    {metric}: {dev:.1%}{flag}")
+            if result.notes:
+                lines.append("  Notes:")
+                for note in result.notes:
+                    lines.append(f"    - {note}")
 
-            if result.warnings:
-                lines.append("  Warnings:")
-                for warn in result.warnings:
-                    lines.append(f"    - {warn}")
+            if result.missing_metrics:
+                lines.append("  Missing metrics:")
+                for metric in result.missing_metrics:
+                    lines.append(f"    - {metric}")
 
-            if result.recommendations:
-                lines.append("  Recommendations:")
-                for rec in result.recommendations:
-                    lines.append(f"    - {rec}")
+            if result.metrics:
+                lines.append("  Metrics:")
+                for metric, delta in result.metrics.items():
+                    lines.append(
+                        "    "
+                        f"{metric}: current={_fmt(delta.current)} "
+                        f"baseline={_fmt(delta.baseline)} "
+                        f"delta={_fmt(delta.delta)} "
+                        f"rel={_fmt(delta.relative_delta, percent=True)} "
+                        f"z={_fmt(delta.z_score)} "
+                        f"pct={_fmt(delta.percentile, percent=True)}"
+                    )
 
         lines.append("")
         write_output("\n".join(lines), context.output_format, context.pretty)
-
-        if strict and not all_passed:
-            raise typer.Exit(1)
         return
 
     write_output(payload, context.output_format, context.pretty)
-
-    if strict and not all_passed:
-        raise typer.Exit(1)
 
 
 @app.command("compare")

@@ -95,9 +95,9 @@ mc geometry baseline list --domain spatial
 mc geometry baseline extract <model_path> --domain spatial
 mc geometry baseline extract <model_path> --domain social --layer -1 --k-neighbors 10
 
-# Validate model against baselines
+# Compare model against baselines (baseline-relative deltas)
 mc geometry baseline validate <model_path>
-mc geometry baseline validate <model_path> --domains spatial,social --strict
+mc geometry baseline validate <model_path> --domains spatial,social
 
 # Compare two models
 mc geometry baseline compare <model1_path> <model2_path> --domain spatial
@@ -113,11 +113,40 @@ mc geometry baseline compare <model1_path> <model2_path> --domain spatial
   "ollivierRicciMean": -0.189,
   "ollivierRicciStd": 0.045,
   "manifoldHealthDistribution": {
-    "hyperbolic": 1.0,
-    "flat": 0.0,
-    "spherical": 0.0
+    "healthy": 1.0,
+    "degenerate": 0.0,
+    "collapsed": 0.0
   },
   "intrinsicDimension": 12.4
+}
+```
+
+### Baseline Validation Output Schema
+```json
+{
+  "_schema": "mc.geometry.baseline.validate.v1",
+  "model_path": "/path/to/model",
+  "results": [
+    {
+      "domain": "spatial",
+      "baseline_found": true,
+      "baseline_model": "qwen-0.5B",
+      "current_model": "/path/to/model",
+      "missing_metrics": [],
+      "notes": [],
+      "metrics": {
+        "ollivier_ricci_mean": {
+          "current": -0.18,
+          "baseline": -0.23,
+          "baseline_std": 0.08,
+          "delta": 0.05,
+          "relative_delta": 0.217,
+          "z_score": 0.62,
+          "percentile": 0.5
+        }
+      }
+    }
+  ]
 }
 ```
 

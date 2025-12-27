@@ -15,35 +15,28 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Domain Geometry Validator: Validate model geometry against established baselines.
+"""Domain Geometry Validator: Compare model geometry against established baselines.
 
-This module provides validation of LLM representation geometry by comparing
-measured metrics against empirically-established baselines from known-good models.
-
-Key validation criteria (from SOTA research):
-1. Ollivier-Ricci curvature should be negative (healthy hyperbolic geometry)
-2. Majority of layers should be classified as "healthy"
-3. Domain-specific metrics should fall within acceptable deviation of baselines
-4. Intrinsic dimension should be consistent with model family
+This module provides baseline-relative measurements of LLM representation geometry
+by comparing metrics against empirically-established baselines from known-good models.
 
 Usage:
     validator = DomainGeometryValidator()
     results = validator.validate_model("/path/to/model", domains=["spatial", "moral"])
 
     for result in results:
-        if not result.passed:
-            print(f"{result.domain} validation failed: {result.warnings}")
+        print(result.metrics["ollivier_ricci_mean"].z_score)
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.domain_geometry_baselines import (
+    BaselineMetricDelta,
     BaselineRepository,
     BaselineValidationResult,
     DomainGeometryBaseline,
@@ -57,50 +50,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class ValidationConfig:
-    """Configuration for validation behavior."""
-
-    # Deviation thresholds (fraction of baseline value)
-    ricci_deviation_threshold: float = 0.3  # 30% deviation in Ricci curvature
-    metric_deviation_threshold: float = 0.25  # 25% deviation in domain metrics
-    id_deviation_threshold: float = 0.4  # 40% deviation in intrinsic dimension
-
-    # Hard limits (absolute values)
-    max_acceptable_ricci: float = 0.05  # Curvature above this is concerning
-    min_healthy_layer_fraction: float = 0.4  # At least 40% healthy layers
-    max_collapsed_layer_fraction: float = 0.2  # No more than 20% collapsed
-
-    # Behavior
-    require_baseline_match: bool = False  # If True, fail when no baseline found
-    fallback_to_heuristics: bool = True  # Use hard limits when no baseline
-
-
 class DomainGeometryValidator:
-    """Validate model geometry against established baselines.
+    """Compare model geometry against established baselines.
 
     This validator compares a model's geometry profile against empirically-
-    established baselines to detect:
-    - Representation collapse (positive Ricci curvature)
-    - Loss of geometric structure (degenerate curvature)
-    - Domain-specific degradation (poor axis alignment, etc.)
+    established baselines and returns baseline-relative measurements.
     """
 
     def __init__(
         self,
         baseline_dir: str | Path | None = None,
-        config: ValidationConfig | None = None,
         backend: "Backend | None" = None,
     ):
-        """Initialize the validator.
-
-        Args:
-            baseline_dir: Directory containing baseline JSON files
-            config: Validation configuration
-            backend: Compute backend (defaults to MLX/JAX)
-        """
+        """Initialize the validator."""
         self._backend = backend or get_default_backend()
-        self._config = config or ValidationConfig()
         self._repository = BaselineRepository(baseline_dir)
         self._extractor = DomainGeometryBaselineExtractor(backend=self._backend)
 
@@ -147,10 +110,10 @@ class DomainGeometryValidator:
                 results.append(
                     BaselineValidationResult(
                         domain=domain,
-                        passed=False,
-                        overall_deviation=1.0,
-                        deviation_scores={},
-                        warnings=[f"Validation error: {e}"],
+                        metrics={},
+                        baseline_found=False,
+                        missing_metrics=[],
+                        notes=[f"Validation error: {e}"],
                         current_model=model_path,
                     )
                 )
@@ -168,9 +131,7 @@ class DomainGeometryValidator:
         This method:
         1. Extracts current model geometry
         2. Finds matching baseline
-        3. Computes deviations
-        4. Applies hard limits if no baseline
-        5. Returns validation result
+        3. Computes baseline-relative deltas (no hardcoded thresholds)
         """
         logger.info(f"Validating {domain} geometry for {model_path}")
 
@@ -182,310 +143,169 @@ class DomainGeometryValidator:
             domain, current.model_family, current.model_size
         )
 
-        if baseline:
-            return self._validate_against_baseline(current, baseline)
-        elif self._config.require_baseline_match:
-            return BaselineValidationResult(
-                domain=domain,
-                passed=False,
-                overall_deviation=1.0,
-                deviation_scores={},
-                warnings=[f"No matching baseline found for {current.model_family}-{current.model_size}"],
-                current_model=model_path,
-            )
-        elif self._config.fallback_to_heuristics:
-            return self._validate_with_heuristics(current)
+        metrics, missing = self._build_metric_deltas(current, baseline)
+        notes: list[str] = []
+        baseline_model = ""
+        if baseline is None:
+            notes.append("No matching baseline found; returning raw measurements only.")
         else:
-            return BaselineValidationResult(
-                domain=domain,
-                passed=True,
-                overall_deviation=0.0,
-                deviation_scores={},
-                warnings=["No baseline available, validation skipped"],
-                current_model=model_path,
-            )
+            baseline_model = f"{baseline.model_family}-{baseline.model_size}"
+
+        return BaselineValidationResult(
+            domain=current.domain,
+            metrics=metrics,
+            baseline_found=baseline is not None,
+            missing_metrics=missing,
+            notes=notes,
+            baseline_model=baseline_model,
+            current_model=current.model_path,
+        )
 
     def _validate_against_baseline(
         self,
         current: DomainGeometryBaseline,
         baseline: DomainGeometryBaseline,
     ) -> BaselineValidationResult:
-        """Validate current geometry against a baseline.
-
-        Computes normalized deviations for each metric and determines
-        pass/fail based on thresholds.
-        """
-        deviations: dict[str, float] = {}
-        warnings: list[str] = []
-        recommendations: list[str] = []
-
-        # 1. Ollivier-Ricci curvature deviation
-        ricci_dev = self._compute_deviation(
-            current.ollivier_ricci_mean,
-            baseline.ollivier_ricci_mean,
-            min_denominator=0.01,
-        )
-        deviations["ollivier_ricci_mean"] = ricci_dev
-
-        if ricci_dev > self._config.ricci_deviation_threshold:
-            warnings.append(
-                f"Ricci curvature deviation {ricci_dev:.2f} exceeds threshold "
-                f"({self._config.ricci_deviation_threshold})"
-            )
-
-        # Check for positive curvature (bad sign)
-        if current.ollivier_ricci_mean > self._config.max_acceptable_ricci:
-            warnings.append(
-                f"Positive Ricci curvature ({current.ollivier_ricci_mean:.3f}) "
-                "indicates potential representation collapse"
-            )
-            recommendations.append(
-                "Consider reducing training intensity or checking for data issues"
-            )
-
-        # 2. Manifold health distribution
-        health = current.manifold_health_distribution
-        baseline_health = baseline.manifold_health_distribution
-
-        healthy_dev = abs(health.healthy - baseline_health.healthy)
-        deviations["healthy_layer_fraction"] = healthy_dev
-
-        if health.healthy < self._config.min_healthy_layer_fraction:
-            warnings.append(
-                f"Only {health.healthy:.0%} healthy layers "
-                f"(minimum: {self._config.min_healthy_layer_fraction:.0%})"
-            )
-
-        if health.collapsed > self._config.max_collapsed_layer_fraction:
-            warnings.append(
-                f"{health.collapsed:.0%} collapsed layers "
-                f"(maximum: {self._config.max_collapsed_layer_fraction:.0%})"
-            )
-            recommendations.append(
-                "High collapse rate may indicate over-training or architecture issues"
-            )
-
-        # 3. Intrinsic dimension deviation
-        if baseline.intrinsic_dimension_mean > 0:
-            id_dev = self._compute_deviation(
-                current.intrinsic_dimension_mean,
-                baseline.intrinsic_dimension_mean,
-            )
-            deviations["intrinsic_dimension"] = id_dev
-
-            if id_dev > self._config.id_deviation_threshold:
-                warnings.append(
-                    f"Intrinsic dimension deviation {id_dev:.2f} exceeds threshold"
-                )
-
-        # 4. Domain-specific metrics
-        for metric, value in current.domain_metrics.items():
-            if metric in baseline.domain_metrics:
-                baseline_value = baseline.domain_metrics[metric]
-                if baseline_value != 0:
-                    dev = self._compute_deviation(value, baseline_value)
-                    deviations[f"domain_{metric}"] = dev
-
-                    if dev > self._config.metric_deviation_threshold:
-                        warnings.append(
-                            f"Domain metric '{metric}' deviation {dev:.2f} exceeds threshold"
-                        )
-
-        # Compute overall deviation (weighted average)
-        overall_deviation = self._compute_overall_deviation(deviations)
-
-        # Determine pass/fail
-        # Pass if: no critical warnings AND overall deviation acceptable
-        critical_conditions = [
-            current.ollivier_ricci_mean > self._config.max_acceptable_ricci,
-            health.healthy < self._config.min_healthy_layer_fraction,
-            health.collapsed > self._config.max_collapsed_layer_fraction,
-        ]
-
-        passed = not any(critical_conditions) and overall_deviation < 0.5
-
+        """Baseline-relative deltas for current geometry."""
+        metrics, missing = self._build_metric_deltas(current, baseline)
         return BaselineValidationResult(
             domain=current.domain,
-            passed=passed,
-            overall_deviation=overall_deviation,
-            deviation_scores=deviations,
-            warnings=warnings,
-            recommendations=recommendations,
+            metrics=metrics,
+            baseline_found=True,
+            missing_metrics=missing,
+            notes=[],
             baseline_model=f"{baseline.model_family}-{baseline.model_size}",
             current_model=current.model_path,
         )
 
-    def _validate_with_heuristics(
+    def _build_metric_deltas(
         self,
         current: DomainGeometryBaseline,
-    ) -> BaselineValidationResult:
-        """Validate using hard-coded heuristics when no baseline available.
+        baseline: DomainGeometryBaseline | None,
+    ) -> tuple[dict[str, BaselineMetricDelta], list[str]]:
+        metrics: dict[str, BaselineMetricDelta] = {}
+        missing: list[str] = []
 
-        Based on SOTA research:
-        - Healthy LLMs have negative Ricci curvature
-        - Most layers should be "healthy"
-        - Collapsed fraction should be low
-        """
-        warnings: list[str] = []
-        recommendations: list[str] = []
-        deviations: dict[str, float] = {}
-
-        # Check Ricci curvature
-        if current.ollivier_ricci_mean > self._config.max_acceptable_ricci:
-            warnings.append(
-                f"Positive Ricci curvature ({current.ollivier_ricci_mean:.3f}) "
-                "suggests representation collapse"
-            )
-            deviations["ollivier_ricci"] = current.ollivier_ricci_mean + 0.5
-
-        # Expected range for healthy models: -0.4 to -0.1
-        if current.ollivier_ricci_mean < -0.5:
-            # Very negative might indicate over-dispersion
-            warnings.append(
-                f"Very negative Ricci curvature ({current.ollivier_ricci_mean:.3f}) "
-                "may indicate excessive dispersion"
-            )
-        elif current.ollivier_ricci_mean > -0.05:
-            # Near-flat or positive
-            warnings.append(
-                f"Near-flat/positive Ricci curvature ({current.ollivier_ricci_mean:.3f}) "
-                "may indicate geometric structure loss"
-            )
-
-        # Check health distribution
-        health = current.manifold_health_distribution
-
-        if health.healthy < self._config.min_healthy_layer_fraction:
-            warnings.append(
-                f"Low healthy layer fraction ({health.healthy:.0%})"
-            )
-            recommendations.append(
-                "Consider investigating layer-wise geometry for degradation patterns"
-            )
-
-        if health.collapsed > self._config.max_collapsed_layer_fraction:
-            warnings.append(
-                f"High collapsed layer fraction ({health.collapsed:.0%})"
-            )
-            recommendations.append(
-                "Representation collapse detected - review training process"
-            )
-
-        # Heuristic-based deviation (no baseline to compare)
-        # Use distance from ideal values
-        ideal_ricci = -0.2  # Healthy hyperbolic
-        ricci_deviation = abs(current.ollivier_ricci_mean - ideal_ricci) / 0.3
-        deviations["ricci_from_ideal"] = ricci_deviation
-
-        ideal_healthy = 0.7
-        healthy_deviation = max(0, ideal_healthy - health.healthy) / 0.3
-        deviations["healthy_from_ideal"] = healthy_deviation
-
-        overall_deviation = (ricci_deviation + healthy_deviation) / 2
-
-        # Pass if no critical issues
-        passed = len([w for w in warnings if "collapse" in w.lower()]) == 0
-
-        return BaselineValidationResult(
-            domain=current.domain,
-            passed=passed,
-            overall_deviation=overall_deviation,
-            deviation_scores=deviations,
-            warnings=warnings,
-            recommendations=recommendations if not passed else [],
-            baseline_model="heuristic",
-            current_model=current.model_path,
+        baseline_ricci_values = baseline.layer_ricci_values if baseline else None
+        metrics["ollivier_ricci_mean"] = self._metric_delta(
+            current.ollivier_ricci_mean,
+            baseline.ollivier_ricci_mean if baseline else None,
+            baseline_std=baseline.ollivier_ricci_std if baseline else None,
+            baseline_distribution=baseline_ricci_values,
+        )
+        metrics["ollivier_ricci_std"] = self._metric_delta(
+            current.ollivier_ricci_std,
+            baseline.ollivier_ricci_std if baseline else None,
+        )
+        metrics["ollivier_ricci_min"] = self._metric_delta(
+            current.ollivier_ricci_min,
+            baseline.ollivier_ricci_min if baseline else None,
+        )
+        metrics["ollivier_ricci_max"] = self._metric_delta(
+            current.ollivier_ricci_max,
+            baseline.ollivier_ricci_max if baseline else None,
         )
 
-    def _compute_deviation(
+        health = current.manifold_health_distribution
+        baseline_health = baseline.manifold_health_distribution if baseline else None
+        metrics["healthy_layer_fraction"] = self._metric_delta(
+            health.healthy,
+            baseline_health.healthy if baseline_health else None,
+        )
+        metrics["degenerate_layer_fraction"] = self._metric_delta(
+            health.degenerate,
+            baseline_health.degenerate if baseline_health else None,
+        )
+        metrics["collapsed_layer_fraction"] = self._metric_delta(
+            health.collapsed,
+            baseline_health.collapsed if baseline_health else None,
+        )
+
+        metrics["intrinsic_dimension_mean"] = self._metric_delta(
+            current.intrinsic_dimension_mean,
+            baseline.intrinsic_dimension_mean if baseline else None,
+            baseline_std=baseline.intrinsic_dimension_std if baseline else None,
+        )
+        metrics["intrinsic_dimension_std"] = self._metric_delta(
+            current.intrinsic_dimension_std,
+            baseline.intrinsic_dimension_std if baseline else None,
+        )
+
+        baseline_domain_metrics = baseline.domain_metrics if baseline else {}
+        if baseline is None:
+            all_domain_metrics = set(current.domain_metrics.keys())
+        else:
+            all_domain_metrics = set(current.domain_metrics.keys()) | set(baseline_domain_metrics.keys())
+        for metric in sorted(all_domain_metrics):
+            current_value = current.domain_metrics.get(metric)
+            baseline_value = baseline_domain_metrics.get(metric)
+            if baseline is not None:
+                if metric not in baseline_domain_metrics:
+                    missing.append(f"baseline:{metric}")
+                if metric not in current.domain_metrics:
+                    missing.append(f"current:{metric}")
+            metrics[f"domain_{metric}"] = self._metric_delta(
+                current_value,
+                baseline_value,
+            )
+
+        return metrics, missing
+
+    def _metric_delta(
         self,
-        current: float,
-        baseline: float,
-        min_denominator: float = 0.01,
-    ) -> float:
-        """Compute normalized deviation between current and baseline values.
+        current: float | None,
+        baseline: float | None,
+        *,
+        baseline_std: float | None = None,
+        baseline_distribution: list[float] | None = None,
+    ) -> BaselineMetricDelta:
+        delta = None
+        relative_delta = None
+        z_score = None
+        percentile = None
 
-        Returns a value where 0 = perfect match, 1 = 100% deviation.
-        """
-        denominator = max(abs(baseline), min_denominator)
-        return abs(current - baseline) / denominator
+        if current is not None and baseline is not None:
+            delta = current - baseline
+            if baseline != 0:
+                relative_delta = delta / abs(baseline)
+            if baseline_std:
+                z_score = delta / baseline_std
+            if baseline_distribution:
+                percentile = self._percentile_rank(baseline_distribution, current)
 
-    def _compute_overall_deviation(
-        self,
-        deviations: dict[str, float],
-    ) -> float:
-        """Compute weighted overall deviation score.
+        return BaselineMetricDelta(
+            current=current,
+            baseline=baseline,
+            baseline_std=baseline_std,
+            delta=delta,
+            relative_delta=relative_delta,
+            z_score=z_score,
+            percentile=percentile,
+        )
 
-        Weights:
-        - Ricci curvature: 40%
-        - Health distribution: 30%
-        - Domain metrics: 20%
-        - Intrinsic dimension: 10%
-        """
-        if not deviations:
-            return 0.0
+    def _percentile_rank(self, values: list[float], value: float) -> float | None:
+        if not values:
+            return None
+        if len(values) == 1:
+            return 1.0
+        sorted_vals = sorted(values)
+        import bisect
 
-        weights = {
-            "ollivier_ricci_mean": 0.4,
-            "healthy_layer_fraction": 0.3,
-            "intrinsic_dimension": 0.1,
-        }
-
-        # Domain metrics get equal share of remaining 20%
-        domain_metrics = [k for k in deviations if k.startswith("domain_")]
-        if domain_metrics:
-            domain_weight = 0.2 / len(domain_metrics)
-            for metric in domain_metrics:
-                weights[metric] = domain_weight
-
-        total_weight = 0.0
-        weighted_sum = 0.0
-
-        for metric, dev in deviations.items():
-            weight = weights.get(metric, 0.05)  # Default small weight
-            weighted_sum += dev * weight
-            total_weight += weight
-
-        if total_weight == 0:
-            return 0.0
-
-        return weighted_sum / total_weight
+        idx = bisect.bisect_left(sorted_vals, value)
+        rank = idx / float(len(sorted_vals) - 1)
+        return max(0.0, min(1.0, rank))
 
     def validate_baseline_sanity(
         self,
         baseline: DomainGeometryBaseline,
     ) -> tuple[bool, list[str]]:
-        """Check if a baseline itself appears healthy.
-
-        Used to validate newly-extracted baselines before saving.
-
-        Returns:
-            (is_valid, list_of_issues)
-        """
+        """Check that a baseline has usable measurement data."""
         issues: list[str] = []
 
-        # Check Ricci curvature is negative (healthy)
-        if baseline.ollivier_ricci_mean >= 0:
-            issues.append(
-                f"Non-negative Ricci curvature ({baseline.ollivier_ricci_mean:.3f}) - "
-                "baseline model may be unhealthy"
-            )
-
-        # Check majority healthy layers
-        if baseline.manifold_health_distribution.healthy < 0.5:
-            issues.append(
-                f"Less than 50% healthy layers ({baseline.manifold_health_distribution.healthy:.0%})"
-            )
-
-        # Check low collapsed fraction
-        if baseline.manifold_health_distribution.collapsed > 0.3:
-            issues.append(
-                f"High collapsed fraction ({baseline.manifold_health_distribution.collapsed:.0%})"
-            )
-
-        # Check we have some data
         if baseline.layers_analyzed == 0:
             issues.append("No layers were analyzed")
+        if not baseline.layer_ricci_values:
+            issues.append("No Ricci curvature values recorded")
 
         return len(issues) == 0, issues
 

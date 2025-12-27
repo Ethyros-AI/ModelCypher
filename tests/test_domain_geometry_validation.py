@@ -49,7 +49,6 @@ from modelcypher.core.domain.geometry.domain_geometry_baselines import (
 )
 from modelcypher.core.domain.geometry.domain_geometry_validator import (
     DomainGeometryValidator,
-    ValidationConfig,
 )
 from modelcypher.core.domain.geometry.manifold_curvature import (
     ManifoldHealth,
@@ -96,6 +95,7 @@ def sample_healthy_baseline() -> DomainGeometryBaseline:
         },
         intrinsic_dimension_mean=12.4,
         intrinsic_dimension_std=2.1,
+        layer_ricci_values=[-0.31, -0.26, -0.22, -0.19, -0.12],
         layers_analyzed=24,
         extraction_date="2025-12-27",
     )
@@ -381,6 +381,49 @@ class TestBaselineSanity:
             "Collapsed baseline should have positive curvature"
         )
 
+    def test_validate_baseline_sanity_rejects_empty(
+        self,
+        sample_collapsed_baseline: DomainGeometryBaseline,
+        backend: "Backend",
+    ):
+        """validate_baseline_sanity flags baselines with no measurements."""
+        validator = DomainGeometryValidator(backend=backend)
+        empty = DomainGeometryBaseline(
+            domain=sample_collapsed_baseline.domain,
+            model_family=sample_collapsed_baseline.model_family,
+            model_size=sample_collapsed_baseline.model_size,
+            model_path=sample_collapsed_baseline.model_path,
+            ollivier_ricci_mean=0.0,
+            ollivier_ricci_std=0.0,
+            ollivier_ricci_min=0.0,
+            ollivier_ricci_max=0.0,
+            manifold_health_distribution=sample_collapsed_baseline.manifold_health_distribution,
+            domain_metrics={},
+            intrinsic_dimension_mean=0.0,
+            intrinsic_dimension_std=0.0,
+            layer_ricci_values=[],
+            layers_analyzed=0,
+        )
+
+        is_valid, issues = validator.validate_baseline_sanity(empty)
+
+        assert not is_valid
+        assert "No layers were analyzed" in issues
+        assert "No Ricci curvature values recorded" in issues
+
+    def test_validate_baseline_sanity_accepts_with_measurements(
+        self,
+        sample_healthy_baseline: DomainGeometryBaseline,
+        backend: "Backend",
+    ):
+        """validate_baseline_sanity accepts baselines with measurements."""
+        validator = DomainGeometryValidator(backend=backend)
+
+        is_valid, issues = validator.validate_baseline_sanity(sample_healthy_baseline)
+
+        assert is_valid, f"Baseline should be valid: {issues}"
+        assert issues == []
+
 
 # =============================================================================
 # Validation Logic Tests
@@ -390,41 +433,14 @@ class TestBaselineSanity:
 class TestDomainGeometryValidator:
     """Tests for DomainGeometryValidator."""
 
-    @pytest.mark.real_model
-    def test_validator_uses_heuristics_when_no_baseline(self, backend: "Backend"):
-        """Validator falls back to heuristics when no baseline available."""
-        model_path = "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-0.5B-Instruct-bf16"
-        if not Path(model_path).exists():
-            pytest.skip(f"Model not found: {model_path}")
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Empty baseline directory
-            validator = DomainGeometryValidator(
-                baseline_dir=tmpdir,
-                config=ValidationConfig(fallback_to_heuristics=True),
-                backend=backend,
-            )
-
-            # Validate with real model and empty baseline dir (will use heuristics)
-            results = validator.validate_model(
-                model_path,
-                domains=["spatial"],
-            )
-
-            assert len(results) == 1
-            result = results[0]
-            assert result.domain == "spatial"
-            assert result.baseline_model == "heuristic"
-
-    def test_validator_detects_collapsed_model(
+    def test_validator_computes_metric_deltas(
         self,
         sample_healthy_baseline: DomainGeometryBaseline,
         sample_collapsed_baseline: DomainGeometryBaseline,
         backend: "Backend",
     ):
-        """Validator correctly identifies collapsed geometry as failing."""
-        config = ValidationConfig()
-        validator = DomainGeometryValidator(config=config, backend=backend)
+        """Validator computes baseline-relative deltas and z-scores."""
+        validator = DomainGeometryValidator(backend=backend)
 
         # Validate collapsed baseline against healthy baseline
         result = validator._validate_against_baseline(
@@ -432,68 +448,42 @@ class TestDomainGeometryValidator:
             baseline=sample_healthy_baseline,
         )
 
-        assert not result.passed, "Collapsed model should fail validation"
-        assert any("collapse" in w.lower() or "positive" in w.lower()
-                   for w in result.warnings), (
-            f"Expected collapse warning, got: {result.warnings}"
-        )
+        ricci = result.metrics["ollivier_ricci_mean"]
+        expected_delta = sample_collapsed_baseline.ollivier_ricci_mean - sample_healthy_baseline.ollivier_ricci_mean
+        assert ricci.delta == pytest.approx(expected_delta)
+        assert ricci.z_score == pytest.approx(expected_delta / sample_healthy_baseline.ollivier_ricci_std)
+        assert result.baseline_found is True
+        assert result.baseline_model == "qwen-0.5B"
 
-    def test_validator_passes_healthy_model(
+    def test_validator_percentile_from_baseline(
         self,
         sample_healthy_baseline: DomainGeometryBaseline,
         backend: "Backend",
     ):
-        """Validator passes a healthy model against itself."""
-        config = ValidationConfig()
-        validator = DomainGeometryValidator(config=config, backend=backend)
+        """Validator derives percentile rank from baseline distributions."""
+        validator = DomainGeometryValidator(backend=backend)
 
-        # Validate healthy baseline against itself (should pass)
         result = validator._validate_against_baseline(
             current=sample_healthy_baseline,
             baseline=sample_healthy_baseline,
         )
 
-        assert result.passed, f"Healthy model should pass: {result.warnings}"
-        assert result.overall_deviation < 0.1
+        ricci = result.metrics["ollivier_ricci_mean"]
+        assert ricci.percentile == pytest.approx(0.5)
 
-    def test_validator_computes_deviations(self, backend: "Backend"):
-        """Validator correctly computes deviation metrics."""
-        validator = DomainGeometryValidator(backend=backend)
-
-        # Test deviation computation
-        dev = validator._compute_deviation(current=0.8, baseline=1.0)
-        assert dev == pytest.approx(0.2)  # 20% deviation
-
-        dev = validator._compute_deviation(current=-0.15, baseline=-0.25)
-        assert dev == pytest.approx(0.4)  # 40% deviation
-
-    def test_validate_baseline_sanity_rejects_collapsed(
-        self,
-        sample_collapsed_baseline: DomainGeometryBaseline,
-        backend: "Backend",
-    ):
-        """validate_baseline_sanity correctly rejects collapsed baselines."""
-        validator = DomainGeometryValidator(backend=backend)
-
-        is_valid, issues = validator.validate_baseline_sanity(sample_collapsed_baseline)
-
-        assert not is_valid, "Collapsed baseline should be invalid"
-        assert len(issues) > 0
-        assert any("negative" in i.lower() or "curvature" in i.lower()
-                   for i in issues)
-
-    def test_validate_baseline_sanity_accepts_healthy(
+    def test_build_metric_deltas_without_baseline(
         self,
         sample_healthy_baseline: DomainGeometryBaseline,
         backend: "Backend",
     ):
-        """validate_baseline_sanity correctly accepts healthy baselines."""
+        """Validator returns baseline-free metrics when no baseline is provided."""
         validator = DomainGeometryValidator(backend=backend)
 
-        is_valid, issues = validator.validate_baseline_sanity(sample_healthy_baseline)
-
-        assert is_valid, f"Healthy baseline should be valid: {issues}"
-        assert len(issues) == 0
+        metrics, missing = validator._build_metric_deltas(sample_healthy_baseline, None)
+        ricci = metrics["ollivier_ricci_mean"]
+        assert ricci.baseline is None
+        assert ricci.delta is None
+        assert missing == []
 
 
 # =============================================================================
@@ -654,13 +644,13 @@ class TestRealModelValidation:
     """Tests that run on actual models - skipped by default."""
 
     def test_real_qwen_model_passes_validation(self):
-        """A real Qwen model should pass geometry validation."""
+        """A real Qwen model should return baseline-relative metrics."""
         model_path = "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-0.5B-Instruct-bf16"
 
         validator = DomainGeometryValidator()
         results = validator.validate_model(model_path, domains=["spatial"])
 
         for result in results:
-            assert result.passed, (
-                f"{result.domain} validation failed: {result.warnings}"
-            )
+            assert "ollivier_ricci_mean" in result.metrics
+            ricci = result.metrics["ollivier_ricci_mean"]
+            assert ricci.current is not None
