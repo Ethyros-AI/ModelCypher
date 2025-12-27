@@ -262,7 +262,12 @@ def _probe_precise(
 
     token_id_map: dict[int, int] | None = None
     if alignment_map is not None:
-        token_id_map = build_token_id_map(alignment_map)
+        token_id_map = build_token_id_map(
+            alignment_map,
+            min_confidence=1.0,
+            min_size=0,
+            allowed_qualities={AlignmentQuality.EXACT},
+        )
         if token_id_map:
             logger.info(
                 "PROBE PRECISE: Using aligned token map (%d tokens).",
@@ -270,27 +275,31 @@ def _probe_precise(
             )
 
     for probe in probes:
-        probe_texts = probe.support_texts
-        if not probe_texts:
-            probes_failed += 1
-            continue
-
-        probe_text = probe_texts[0]
-        if not probe_text or len(probe_text.strip()) < 2:
-            probes_failed += 1
-            continue
-
         try:
+            probe_text = None
             source_ids: list[int] | None = None
             target_ids: list[int] | None = None
-            if token_id_map is not None:
-                source_ids = _encode_probe_ids(
-                    source_tokenizer, probe_text, add_special_tokens=False
-                )
-                target_ids = map_token_ids(source_ids, token_id_map)
-                if target_ids is None:
-                    probes_failed += 1
+
+            for candidate in probe.support_texts or []:
+                if not candidate or len(candidate.strip()) < 2:
                     continue
+                if token_id_map is None:
+                    probe_text = candidate
+                    break
+                candidate_source_ids = _encode_probe_ids(
+                    source_tokenizer, candidate, add_special_tokens=False
+                )
+                candidate_target_ids = map_token_ids(candidate_source_ids, token_id_map)
+                if candidate_target_ids is None:
+                    continue
+                probe_text = candidate
+                source_ids = candidate_source_ids
+                target_ids = candidate_target_ids
+                break
+
+            if probe_text is None:
+                probes_failed += 1
+                continue
 
             source_acts = collect_activations_fn(
                 source_model,

@@ -92,12 +92,13 @@ class VocabularyConfig:
     alignment_solver_rounds: int = 1
     alignment_tolerance: float = 1e-12
     phase_lock_max_iterations: int = 0
-    use_all_support_texts: bool = False
+    use_all_support_texts: bool = True
     use_byte_anchors_for_atlas: bool = True
     balance_anchor_weights: bool = True
     use_coverage_anchor_selection: bool = True
     coverage_k_neighbors: int | None = None
     coverage_candidate_multiplier: int = 3
+    strict_token_alignment: bool = True
 
 
 @dataclass
@@ -1039,22 +1040,38 @@ def stage_vocabulary_align(
                 bool(binary_metrics.get(embed_key, {}).get("phase_locked"))
                 and bool(vocab_metrics.get(embed_key, {}).get("phase_locked"))
             )
+            strict_token_alignment = bool(config.strict_token_alignment and phase_locked)
             effective_strategy = projection_strategy
-            if phase_locked and source_embed.shape[1] == target_embed.shape[1]:
+            if phase_locked:
+                if source_embed.shape[1] != target_embed.shape[1]:
+                    raise RuntimeError(
+                        f"Phase lock produced mismatched embedding dims: "
+                        f"source={source_embed.shape[1]}, target={target_embed.shape[1]}"
+                    )
                 effective_strategy = ProjectionStrategy.TRUNCATE
+
+            merge_blend_alpha = config.blend_alpha
+            merge_use_embedding_similarity = config.use_embedding_similarity
+            merge_max_prefix_length = config.max_prefix_length
+            merge_max_prefix_matches = config.max_prefix_matches
+            if strict_token_alignment:
+                merge_blend_alpha = 1.0
+                merge_use_embedding_similarity = False
+                merge_max_prefix_length = 0
+                merge_max_prefix_matches = 0
 
             merge_config = CrossVocabMergeConfig(
                 projection_strategy=effective_strategy,
                 similarity_threshold=config.similarity_threshold,
                 confidence_threshold=config.confidence_threshold,
-                blend_alpha=config.blend_alpha,
+                blend_alpha=merge_blend_alpha,
                 preserve_special_tokens=config.preserve_special_tokens,
-                use_embedding_similarity=config.use_embedding_similarity,
+                use_embedding_similarity=merge_use_embedding_similarity,
                 anchor_count=config.anchor_count,
                 max_similarity_pairs=config.max_similarity_pairs,
                 max_unmapped_similarity=config.max_unmapped_similarity,
-                max_prefix_length=config.max_prefix_length,
-                max_prefix_matches=config.max_prefix_matches,
+                max_prefix_length=merge_max_prefix_length,
+                max_prefix_matches=merge_max_prefix_matches,
                 similarity_batch_size=config.similarity_batch_size,
             )
             merger = CrossVocabMerger(merge_config)
@@ -1120,6 +1137,7 @@ def stage_vocabulary_align(
             metrics[f"{embed_key}_overall_quality"] = quality_metrics["overall_quality_score"]
             metrics[f"{embed_key}_recommendation"] = quality_metrics["recommendation"]
             metrics[f"{embed_key}_warnings"] = result.warnings
+            metrics[f"{embed_key}_strict_token_alignment"] = strict_token_alignment
 
             logger.info(
                 "Aligned %s: coverage=%.2f, quality=%.2f, %s",
@@ -1833,19 +1851,6 @@ def _align_bytes_from_matrices(
                 "cka_before": cka_before,
                 "cka_after": cka_after_direct,
                 "alignment_error": 0.0,
-                "iterations": 0,
-            }
-        if require_phase_lock:
-            aligned_source = backend.matmul(source_embed, transform)
-            backend.eval(aligned_source)
-            return {
-                "aligned_source": aligned_source,
-                "aligned_matrix": aligned_matrix,
-                "anchor_labels": anchor_labels,
-                "feature_transform": transform,
-                "cka_before": cka_before,
-                "cka_after": cka_after_direct,
-                "alignment_error": abs(1.0 - cka_after_direct),
                 "iterations": 0,
             }
     # When exact solve fails, always fall through to GramAligner iterative method.
