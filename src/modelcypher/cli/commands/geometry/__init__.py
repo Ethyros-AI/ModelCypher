@@ -42,6 +42,7 @@ Each module exports a Typer app that is registered as a sub-command of `mc geome
 
 from modelcypher.cli.commands.geometry import (
     atlas,
+    baseline,
     concept,
     cross_cultural,
     emotion,
@@ -64,6 +65,7 @@ from modelcypher.cli.commands.geometry import (
 
 __all__ = [
     "atlas",
+    "baseline",
     "concept",
     "cross_cultural",
     "emotion",

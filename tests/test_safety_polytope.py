@@ -31,12 +31,11 @@ from hypothesis import strategies as st
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.safety_polytope import (
     DiagnosticVector,
-    MitigationType,
     PolytopeBounds,
     SafetyPolytope,
     TransformationType,
     create_diagnostic_vector,
-    format_safety_report,
+    format_transformation_report,
 )
 
 
@@ -124,9 +123,7 @@ class TestSafetyPolytopeBasic:
             complexity_score=0.2,
         )
 
-        result = polytope.check_layer(diag)
-
-        assert result.verdict == "proceed"
+        result = polytope.analyze_layer(diag)
         assert len(result.triggers) == 0
         assert len(result.transformations) == 0
         assert result.confidence > 0.5
@@ -143,10 +140,9 @@ class TestSafetyPolytopeBasic:
             complexity_score=0.2,
         )
 
-        result = polytope.check_layer(diag)
+        result = polytope.analyze_layer(diag)
 
-        # At boundary, confidence reduced but still proceeds
-        assert result.verdict == "proceed"
+        # At boundary, confidence reduced but still returns a valid result
         assert result.confidence < 0.8
 
     def test_point_outside_triggers_transformation(self):
@@ -161,9 +157,7 @@ class TestSafetyPolytopeBasic:
             complexity_score=0.2,
         )
 
-        result = polytope.check_layer(diag)
-
-        assert result.verdict == "proceed"
+        result = polytope.analyze_layer(diag)
         assert len(result.triggers) >= 1
         assert TransformationType.NULL_SPACE_FILTER in result.transformations
 
@@ -178,9 +172,7 @@ class TestSafetyPolytopeBasic:
             complexity_score=0.2,
         )
 
-        result = polytope.check_layer(diag)
-
-        assert result.verdict == "proceed"
+        result = polytope.analyze_layer(diag)
         assert TransformationType.SPECTRAL_CLAMP in result.transformations
 
     def test_recommended_alpha_adjustment(self):
@@ -194,7 +186,7 @@ class TestSafetyPolytopeBasic:
             complexity_score=0.2,
         )
 
-        result = polytope.check_layer(diag, base_alpha=0.5)
+        result = polytope.analyze_layer(diag, base_alpha=0.5)
 
         assert result.recommended_alpha is not None
         assert result.recommended_alpha < 0.5  # Reduced due to interference
@@ -209,7 +201,7 @@ class TestTransformations:
         polytope = SafetyPolytope(bounds)
 
         diag = DiagnosticVector(0.7, 0.3, 0.2, 0.2)
-        result = polytope.check_layer(diag)
+        result = polytope.analyze_layer(diag)
 
         assert TransformationType.NULL_SPACE_FILTER in result.transformations
 
@@ -219,7 +211,7 @@ class TestTransformations:
         polytope = SafetyPolytope(bounds)
 
         diag = DiagnosticVector(0.2, 0.8, 0.2, 0.2)
-        result = polytope.check_layer(diag)
+        result = polytope.analyze_layer(diag)
 
         assert TransformationType.REDUCE_ALPHA in result.transformations
 
@@ -229,7 +221,7 @@ class TestTransformations:
         polytope = SafetyPolytope(bounds)
 
         diag = DiagnosticVector(0.2, 0.3, 0.6, 0.2)
-        result = polytope.check_layer(diag)
+        result = polytope.analyze_layer(diag)
 
         assert TransformationType.SPECTRAL_CLAMP in result.transformations
 
@@ -239,7 +231,7 @@ class TestTransformations:
         polytope = SafetyPolytope(bounds)
 
         diag = DiagnosticVector(0.2, 0.3, 0.2, 0.7)
-        result = polytope.check_layer(diag)
+        result = polytope.analyze_layer(diag)
 
         assert TransformationType.TSV_PRUNE in result.transformations
 
@@ -250,7 +242,7 @@ class TestTransformations:
 
         # All dimensions high
         diag = DiagnosticVector(0.8, 0.8, 0.8, 0.8)
-        result = polytope.check_layer(diag)
+        result = polytope.analyze_layer(diag)
 
         assert TransformationType.LAYER_SKIP in result.transformations
 
@@ -388,7 +380,7 @@ class TestFormatReport:
         layer_diagnostics = {i: DiagnosticVector(0.2, 0.3, 0.1, 0.2) for i in range(5)}
 
         profile = polytope.analyze_model_pair(layer_diagnostics)
-        report = format_safety_report(profile)
+        report = format_transformation_report(profile)
 
         assert "MERGE TRANSFORMATION ANALYSIS" in report
         assert "Direct Merge:       5 layers" in report
@@ -402,7 +394,7 @@ class TestFormatReport:
         }
 
         profile = polytope.analyze_model_pair(layer_diagnostics)
-        report = format_safety_report(profile)
+        report = format_transformation_report(profile)
 
         assert "Transformations Needed" in report
         assert "Layers Needing Multiple Transformations" in report
@@ -418,13 +410,13 @@ class TestPropertyBased:
         c=st.floats(0.0, 1.0),
     )
     @settings(max_examples=50)
-    def test_verdict_always_proceed(self, i, p, s, c):
-        """Verdict is always 'proceed'."""
+    def test_result_always_available(self, i, p, s, c):
+        """Analysis always returns a result with stable fields."""
         polytope = SafetyPolytope(_test_bounds())
         diag = DiagnosticVector(i, p, s, c)
-        result = polytope.check_layer(diag)
+        result = polytope.analyze_layer(diag)
 
-        assert result.verdict == "proceed"
+        assert isinstance(result.transformations, list)
 
     @given(
         i=st.floats(0.0, 1.0),
@@ -437,7 +429,7 @@ class TestPropertyBased:
         """Recommended alpha should always be in [0.1, 0.95]."""
         polytope = SafetyPolytope(_test_bounds())
         diag = DiagnosticVector(i, p, s, c)
-        result = polytope.check_layer(diag, base_alpha=0.5)
+        result = polytope.analyze_layer(diag, base_alpha=0.5)
 
         if result.recommended_alpha is not None:
             assert 0.1 <= result.recommended_alpha <= 0.95
@@ -453,7 +445,7 @@ class TestPropertyBased:
         """Confidence should be in [0, 1]."""
         polytope = SafetyPolytope(_test_bounds())
         diag = DiagnosticVector(i, p, s, c)
-        result = polytope.check_layer(diag)
+        result = polytope.analyze_layer(diag)
 
         assert 0.0 <= result.confidence <= 1.0
 
@@ -484,6 +476,5 @@ class TestEdgeCases:
         diag = DiagnosticVector(float("nan"), 0.3, 0.2, 0.2)
 
         # Should not crash
-        result = polytope.check_layer(diag)
-        # Verdict is always proceed
-        assert result.verdict == "proceed"
+        result = polytope.analyze_layer(diag)
+        assert 0.0 <= result.confidence <= 1.0

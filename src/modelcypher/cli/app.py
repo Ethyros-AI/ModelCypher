@@ -48,6 +48,7 @@ from modelcypher.cli.commands import thermo as thermo_commands
 from modelcypher.cli.commands import train as train_commands
 from modelcypher.cli.commands.geometry import crm as geometry_crm_commands
 from modelcypher.cli.commands.geometry import atlas as geometry_atlas_commands
+from modelcypher.cli.commands.geometry import baseline as geometry_baseline_commands
 from modelcypher.cli.commands.geometry import concept as geometry_concept_commands
 from modelcypher.cli.commands.geometry import cross_cultural as geometry_cross_cultural_commands
 from modelcypher.cli.commands.geometry import emotion as geometry_emotion_commands
@@ -169,6 +170,7 @@ geometry_app.add_typer(geometry_training_commands.app, name="training")
 geometry_app.add_typer(geometry_safety_commands.app, name="safety")
 geometry_app.add_typer(geometry_adapter_commands.app, name="adapter")
 geometry_app.add_typer(geometry_atlas_commands.app, name="atlas")
+geometry_app.add_typer(geometry_baseline_commands.app, name="baseline")
 geometry_app.add_typer(geometry_primes_commands.app, name="primes")
 geometry_app.add_typer(geometry_stitch_commands.app, name="stitch")
 geometry_app.add_typer(geometry_crm_commands.app, name="crm")

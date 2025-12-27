@@ -270,6 +270,54 @@ Instead:
 
 ---
 
+## CRITICAL: CLI/MCP-First Principle
+
+**All operations MUST use the CLI (`mc`) or MCP tools. Never write custom Python scripts for one-off tasks.**
+
+We are simultaneously building the tools we use AND making them available to everyone else. If we write custom scripts to accomplish something, so will every other user of this repository. That's unacceptable duplication of effort.
+
+### The Rule
+
+1. **Use existing tools first** - Check `mc --help` and `docs/MCP.md` before writing any code
+2. **If a capability doesn't exist, build it** - Add a new CLI command or MCP tool, not a script
+3. **No throwaway scripts** - Every capability should be reusable via CLI/MCP
+
+### Examples
+
+```bash
+# WRONG - custom script for baseline extraction
+python scripts/extract_baselines.py /path/to/model --domain spatial
+
+# CORRECT - CLI command that anyone can use
+poetry run mc geometry baseline extract /path/to/model --domain spatial
+
+# WRONG - custom script for model validation
+python validate_geometry.py /path/to/model
+
+# CORRECT - CLI command with structured output
+poetry run mc geometry validate /path/to/model --output json
+```
+
+### Why This Matters
+
+- **Reproducibility**: CLI commands are documented and versioned
+- **Discoverability**: Users find capabilities via `--help`, not by reading scripts
+- **Testing**: CLI/MCP tools have tests; scripts often don't
+- **Consistency**: Same interface for humans and AI agents (MCP)
+
+### When Adding New Capabilities
+
+1. Check if the capability exists in CLI (`mc --help`) or MCP (`docs/MCP.md`)
+2. If not, implement it as:
+   - CLI command in `src/modelcypher/cli/commands/`
+   - MCP tool in `src/modelcypher/mcp/tools/`
+3. Add documentation to `docs/CLI-REFERENCE.md` or `docs/MCP.md`
+4. Add tests
+
+**Never write a script that you wouldn't want to maintain forever.**
+
+---
+
 ## What NOT To Do
 
 1. **Don't import numpy. ANYWHERE.** - Use the Backend protocol. Tests included. No exceptions.
@@ -282,3 +330,4 @@ Instead:
 8. **Don't over-engineer** - The codebase works; 3060 tests prove it
 9. **Don't guess at external APIs** - Research current documentation before implementing
 10. **Don't run full test suite casually** - Run domain-specific batches (e.g., `pytest tests/test_geometry.py -q`). Full suite takes 20+ minutes.
+11. **Don't write custom scripts** - Use CLI (`mc`) or MCP tools. If a capability doesn't exist, build it into CLI/MCP.

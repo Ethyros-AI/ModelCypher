@@ -891,6 +891,136 @@ Call mc_inventory first to see what models are available before starting trainin
 
 ---
 
+### mc_geometry_concept_detect
+
+**Purpose:** Detect semantic concept activations in a response.
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "text": { "type": "string" },
+    "model": { "type": ["string", "null"] },
+    "threshold": { "type": "number", "default": 0.3 },
+    "windowSizes": { "type": ["array", "null"], "items": { "type": "integer" } },
+    "stride": { "type": "integer", "default": 5 },
+    "maxConcepts": { "type": "integer", "default": 30 },
+    "collapse": { "type": "boolean", "default": true }
+  },
+  "required": ["text"]
+}
+```
+
+**Output:**
+```json
+{
+  "_schema": "mc.geometry.concept.detect.v1",
+  "modelId": "input-text",
+  "promptId": "mcp-concept-detect",
+  "responseText": "Example response",
+  "conceptSequence": ["recurrence", "symmetry"],
+  "detectedConcepts": [
+    {
+      "conceptId": "recurrence",
+      "category": "structural",
+      "confidence": 0.62,
+      "characterSpan": { "lowerBound": 12, "upperBound": 42 },
+      "triggerText": "repeats every cycle",
+      "crossModalConfidence": 0.58
+    }
+  ],
+  "meanConfidence": 0.62,
+  "meanCrossModalConfidence": 0.58
+}
+```
+
+---
+
+### mc_geometry_concept_compare
+
+**Purpose:** Compare concept sequences between two texts or models.
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "textA": { "type": ["string", "null"] },
+    "textB": { "type": ["string", "null"] },
+    "modelA": { "type": ["string", "null"] },
+    "modelB": { "type": ["string", "null"] },
+    "prompt": { "type": ["string", "null"] },
+    "threshold": { "type": "number", "default": 0.3 },
+    "windowSizes": { "type": ["array", "null"], "items": { "type": "integer" } },
+    "stride": { "type": "integer", "default": 5 },
+    "maxConcepts": { "type": "integer", "default": 30 },
+    "collapse": { "type": "boolean", "default": true }
+  }
+}
+```
+
+**Output:**
+```json
+{
+  "_schema": "mc.geometry.concept.compare.v1",
+  "modelA": "text-a",
+  "modelB": "text-b",
+  "conceptPathA": ["recurrence", "symmetry"],
+  "conceptPathB": ["symmetry"],
+  "alignedConcepts": ["symmetry"],
+  "uniqueToA": ["recurrence"],
+  "uniqueToB": [],
+  "alignmentRatio": 0.5,
+  "cka": null,
+  "cosineSimilarity": null
+}
+```
+
+---
+
+### mc_geometry_cross_cultural_analyze
+
+**Purpose:** Analyze cross-cultural alignment between two Gram matrices.
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "gramA": { "type": "array" },
+    "gramB": { "type": "array" },
+    "primeIds": { "type": "array", "items": { "type": "string" } },
+    "primeCategories": { "type": ["object", "null"] }
+  },
+  "required": ["gramA", "gramB", "primeIds"]
+}
+```
+
+**Output:**
+```json
+{
+  "_schema": "mc.geometry.cross_cultural.analyze.v1",
+  "gramRoughnessA": 0.42,
+  "gramRoughnessB": 0.51,
+  "mergedGramRoughness": 0.39,
+  "roughnessReduction": 0.18,
+  "complementarityScore": 0.62,
+  "convergentPrimes": ["axiom_a"],
+  "divergentPrimes": ["axiom_b"],
+  "mergeQualityScore": 0.73,
+  "alignment": { "cka": 0.66, "rawPearson": 0.52, "alignmentGap": 0.14 }
+}
+```
+
+---
+
 ### mc_geometry_crm_build
 
 **Purpose:** Build a concept response matrix (CRM) for a model.
@@ -1389,6 +1519,9 @@ These tools never modify state and are safe to call whenever context is needed:
 - `mc_model_list` – Registered models with metadata.
 - `mc_system_status` – System readiness (Metal, memory fit, storage, MLX health).
 - `mc_geometry_validate` – Deterministic geometry validation suite.
+- `mc_geometry_concept_detect` – Detect semantic concept activations in text or model responses.
+- `mc_geometry_concept_compare` – Compare concept paths between two responses.
+- `mc_geometry_cross_cultural_analyze` – Gram-level alignment analysis across cultures.
 - `mc_geometry_crm_compare` – Compare concept response matrices and compute CKA correspondence.
 - `mc_geometry_training_status` – Current geometric training metrics for a job.
 - `mc_geometry_training_history` – Historical geometric metrics for a job.

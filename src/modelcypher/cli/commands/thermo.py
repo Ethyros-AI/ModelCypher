@@ -23,6 +23,7 @@ including entropy measurement, path integration, and unsafe pattern detection.
 Commands:
     mc thermo analyze <job_id>
     mc thermo path --checkpoint <path> ...
+    mc thermo path-integration <prompt> --model <path>
     mc thermo entropy <job_id>
     mc thermo measure <prompt> --model <path>
     mc thermo detect <prompt> --model <path>
@@ -108,6 +109,104 @@ def thermo_path(
         "curvature": result.curvature,
         "interpretation": result.interpretation,
     }
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("path-integration")
+def thermo_path_integration(
+    ctx: typer.Context,
+    prompt: str = typer.Argument(..., help="Prompt to analyze"),
+    model: str = typer.Option(..., "--model", help="Path to model directory"),
+    gate_threshold: float = typer.Option(
+        0.55, "--gate-threshold", help="Gate detection threshold"
+    ),
+    max_tokens: int = typer.Option(200, "--max-tokens", help="Max tokens for response"),
+    temperature: float = typer.Option(0.0, "--temperature", help="Sampling temperature"),
+    capture_trajectory: bool = typer.Option(
+        True,
+        "--capture-trajectory/--no-capture-trajectory",
+        help="Include entropy trajectory in output",
+    ),
+) -> None:
+    """Integrate entropy trajectories with gate detections."""
+    context = _context(ctx)
+    from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
+    from modelcypher.core.use_cases.thermo_service import ThermoService
+
+    service = ThermoService(embedder=EmbeddingDefaults.make_default_embedder())
+    result = service.path_integration(
+        prompt=prompt,
+        model_path=model,
+        gate_threshold=gate_threshold,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        capture_trajectory=capture_trajectory,
+    )
+
+    measurement = result.measurement
+    assessment = measurement.assessment
+
+    payload = {
+        "_schema": "mc.thermo.path_integration.v1",
+        "modelId": result.model_id,
+        "prompt": result.prompt,
+        "responseText": result.response_text,
+        "meanEntropy": measurement.mean_entropy,
+        "entropyVariance": measurement.entropy_variance,
+        "firstTokenEntropy": measurement.first_token_entropy,
+        "entropyTrajectory": measurement.entropy_trajectory,
+        "gateSequence": measurement.gate_sequence,
+        "gateCount": measurement.gate_count,
+        "gateDetails": [
+            {
+                "gateId": gate.gate_id,
+                "gateName": gate.gate_name,
+                "localEntropy": gate.local_entropy,
+                "confidence": gate.confidence,
+            }
+            for gate in measurement.gate_details
+        ],
+        "entropyPathCorrelation": measurement.entropy_path_correlation,
+        "gateTransitionEntropies": [
+            {
+                "fromGate": item.from_gate,
+                "toGate": item.to_gate,
+                "entropyDelta": item.entropy_delta,
+                "isSpike": item.is_spike,
+            }
+            for item in measurement.gate_transition_entropies
+        ],
+        "assessment": {
+            "h3Supported": assessment.h3_supported,
+            "correlation": assessment.correlation,
+            "spikeRate": assessment.spike_rate,
+            "measurementCount": assessment.measurement_count,
+            "strength": assessment.strength_for_thresholds(),
+            "rationale": assessment.rationale,
+        },
+    }
+
+    if context.output_format == "text":
+        sequence = " -> ".join(measurement.gate_sequence) if measurement.gate_sequence else "(none)"
+        corr_text = (
+            f"{assessment.correlation:.3f}" if assessment.correlation is not None else "N/A"
+        )
+        lines = [
+            "THERMO PATH INTEGRATION",
+            f"Model: {result.model_id}",
+            f"Mean Entropy: {measurement.mean_entropy:.3f}",
+            f"Entropy Variance: {measurement.entropy_variance:.3f}",
+            f"Gate Count: {measurement.gate_count}",
+            f"Gate Sequence: {sequence}",
+            f"Entropy-Gate Correlation: {corr_text}",
+            f"Spike Rate: {assessment.spike_rate:.3f}",
+            f"Assessment Strength: {assessment.strength_for_thresholds()}",
+            "",
+            assessment.rationale,
+        ]
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
 
     write_output(payload, context.output_format, context.pretty)
 

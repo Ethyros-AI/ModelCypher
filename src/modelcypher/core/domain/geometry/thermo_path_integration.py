@@ -326,6 +326,3 @@ class ThermoPathIntegration:
             rationale=rationale,
         )
 
-
-# Compatibility alias for legacy naming.
-ThermoPathIntegrator = ThermoPathIntegration

@@ -44,10 +44,6 @@ class TransformationType(str, Enum):
     CURVATURE_CORRECT = "curvature_correct"  # Apply Riemannian correction
 
 
-# Backward compatibility alias
-MitigationType = TransformationType
-
-
 @dataclass(frozen=True)
 class DiagnosticVector:
     """
@@ -144,36 +140,6 @@ class PolytopeBounds:
             high_interference_threshold=percentile(interference_samples, high_percentile),
         )
 
-    # Backward compatibility aliases
-    @property
-    def max_interference(self) -> float:
-        return self.interference_threshold
-
-    @property
-    def max_importance_for_blend(self) -> float:
-        return self.importance_threshold
-
-    @property
-    def max_instability(self) -> float:
-        return self.instability_threshold
-
-    @property
-    def max_complexity(self) -> float:
-        return self.complexity_threshold
-
-    @property
-    def max_magnitude(self) -> float:
-        return self.magnitude_threshold
-
-    @property
-    def critical_instability(self) -> float:
-        return self.high_instability_threshold
-
-    @property
-    def critical_interference(self) -> float:
-        return self.high_interference_threshold
-
-
 @dataclass
 class TransformationTrigger:
     """A single transformation trigger from exceeding a threshold."""
@@ -183,10 +149,6 @@ class TransformationTrigger:
     threshold: float
     intensity: float  # How far beyond threshold (0 = at threshold)
     transformation: TransformationType
-
-
-# Backward compatibility alias
-PolytopeViolation = TransformationTrigger
 
 
 @dataclass
@@ -231,34 +193,6 @@ class LayerTransformationResult:
         return TransformationType.REDUCE_ALPHA in self.transformations
 
 
-# Backward compatibility
-@dataclass
-class SafetyPolytopeResult(LayerTransformationResult):
-    """Backward compatibility alias."""
-
-    verdict: str = "proceed"  # Always proceed - models are compatible
-
-    @property
-    def violations(self) -> list[TransformationTrigger]:
-        return self.triggers
-
-    @property
-    def mitigations(self) -> list[TransformationType]:
-        return self.transformations
-
-    @property
-    def is_safe(self) -> bool:
-        return True  # Models are always compatible
-
-    @property
-    def needs_mitigation(self) -> bool:
-        return len(self.transformations) > 0
-
-    @property
-    def is_critical(self) -> bool:
-        return False  # No such thing as "critical" - just apply transformations
-
-
 @dataclass
 class ModelTransformationProfile:
     """
@@ -287,41 +221,7 @@ class ModelTransformationProfile:
         return sum(r.transformation_effort for r in self.per_layer.values())
 
 
-# Backward compatibility alias
-@dataclass
-class ModelSafetyProfile(ModelTransformationProfile):
-    """Backward compatibility alias."""
-
-    @property
-    def safe_layers(self) -> list[int]:
-        return self.direct_merge_layers
-
-    @property
-    def caution_layers(self) -> list[int]:
-        return self.light_transform_layers
-
-    @property
-    def unsafe_layers(self) -> list[int]:
-        return self.heavy_transform_layers
-
-    @property
-    def critical_layers(self) -> list[int]:
-        return []  # No such thing
-
-    @property
-    def overall_verdict(self) -> str:
-        return "proceed"  # Always proceed
-
-    @property
-    def global_mitigations(self) -> list[TransformationType]:
-        return self.all_transformations
-
-    @property
-    def mergeable(self) -> bool:
-        return True  # Always mergeable
-
-
-class TransformationPolytope:
+class SafetyPolytope:
     """Determines transformations needed for model merging."""
 
     def __init__(self, bounds: PolytopeBounds) -> None:
@@ -428,24 +328,6 @@ class TransformationPolytope:
             recommended_alpha=recommended_alpha,
             confidence=confidence,
             layer=layer,
-        )
-
-    # Backward compatibility alias
-    def check_layer(
-        self,
-        diagnostics: DiagnosticVector,
-        layer: int | None = None,
-        base_alpha: float = 0.5,
-    ) -> SafetyPolytopeResult:
-        """Backward compatibility alias for analyze_layer."""
-        result = self.analyze_layer(diagnostics, layer, base_alpha)
-        return SafetyPolytopeResult(
-            diagnostics=result.diagnostics,
-            transformations=result.transformations,
-            triggers=result.triggers,
-            recommended_alpha=result.recommended_alpha,
-            confidence=result.confidence,
-            layer=result.layer,
         )
 
     def _compute_adjusted_alpha(
@@ -560,10 +442,6 @@ class TransformationPolytope:
         )
 
 
-# Backward compatibility alias
-SafetyPolytope = TransformationPolytope
-
-
 def create_diagnostic_vector(
     interference: float,
     refinement_density: float,
@@ -663,13 +541,8 @@ def format_transformation_report(profile: ModelTransformationProfile) -> str:
     return "\n".join(lines)
 
 
-# Backward compatibility
-format_safety_report = format_transformation_report
-
-
-# Backward compatibility enum - always returns "proceed"
 class SafetyVerdict(str, Enum):
-    """Backward compatibility - deprecated."""
+    """Safety verdict classification for numerical stability."""
 
     SAFE = "safe"
     CAUTION = "caution"
@@ -678,20 +551,14 @@ class SafetyVerdict(str, Enum):
 
 
 __all__ = [
-    "SafetyVerdict",  # Deprecated but kept for compatibility
+    "SafetyVerdict",
     "TransformationType",
-    "MitigationType",
     "DiagnosticVector",
     "PolytopeBounds",
     "TransformationTrigger",
-    "PolytopeViolation",
     "LayerTransformationResult",
-    "SafetyPolytopeResult",
     "ModelTransformationProfile",
-    "ModelSafetyProfile",
-    "TransformationPolytope",
     "SafetyPolytope",
     "create_diagnostic_vector",
     "format_transformation_report",
-    "format_safety_report",
 ]

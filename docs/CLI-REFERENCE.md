@@ -36,8 +36,8 @@ Primary workflows:
 - `mc inventory`, `mc system`
 
 Research + diagnostics:
-- `mc geometry` (path/training/safety/adapter/atlas/primes/stitch/crm/metrics/sparse/refusal/persona/manifold/transport/refinement/invariant/emotion/merge-entropy/transfer/spatial/social/temporal/moral/waypoint/interference)
-- `mc thermo` (analyze/path/entropy/measure/detect/detect-batch/ridge-detect/phase/sweep/benchmark/parity)
+- `mc geometry` (path/training/safety/adapter/atlas/baseline/concept/cross-cultural/primes/stitch/crm/metrics/sparse/refusal/persona/manifold/transport/refinement/invariant/emotion/merge-entropy/transfer/spatial/social/temporal/moral/waypoint/interference)
+- `mc thermo` (analyze/path/path-integration/entropy/measure/detect/detect-batch/ridge-detect/phase/sweep/benchmark/parity)
 - `mc entropy` (analyze/detect-distress/verify-baseline/window/conversation-track/dual-path/calibrate)
 - `mc safety` (adapter-probe)
 - `mc agent` (trace-import/trace-analyze/validate-action)
@@ -60,6 +60,19 @@ mc geometry atlas dimensionality <model_path> --layer <n>
 mc geometry atlas dimensionality-study <model_path> --layer <n> [-l ...]
 ```
 
+## Geometry Concept Commands
+```bash
+mc geometry concept detect "Text to analyze"
+mc geometry concept detect "Prompt" --model <path>
+mc geometry concept compare --text-a "First" --text-b "Second"
+mc geometry concept compare --model-a <path> --model-b <path> --prompt "Test input"
+```
+
+## Geometry Cross-Cultural Commands
+```bash
+mc geometry cross-cultural analyze <input_json>
+```
+
 ## Geometry Spatial Commands
 ```bash
 mc geometry spatial anchors
@@ -71,6 +84,48 @@ mc geometry spatial density <activations_file>
 mc geometry spatial cross-grounding-feasibility <source_activations> <target_activations>
 mc geometry spatial cross-grounding-transfer <source_activations> <target_activations> --concepts <file>
 ```
+
+## Geometry Baseline Commands
+```bash
+# List available baselines
+mc geometry baseline list
+mc geometry baseline list --domain spatial
+
+# Extract baseline from a reference model
+mc geometry baseline extract <model_path> --domain spatial
+mc geometry baseline extract <model_path> --domain social --layer -1 --k-neighbors 10
+
+# Validate model against baselines
+mc geometry baseline validate <model_path>
+mc geometry baseline validate <model_path> --domains spatial,social --strict
+
+# Compare two models
+mc geometry baseline compare <model1_path> <model2_path> --domain spatial
+```
+
+### Baseline Output Schema
+```json
+{
+  "_schema": "mc.geometry.baseline.extract.v1",
+  "domain": "spatial",
+  "modelFamily": "qwen",
+  "modelSize": "0.5B",
+  "ollivierRicciMean": -0.189,
+  "ollivierRicciStd": 0.045,
+  "manifoldHealthDistribution": {
+    "healthy": 1.0,
+    "degenerate": 0.0,
+    "collapsed": 0.0
+  },
+  "intrinsicDimension": 12.4,
+  "interpretation": "HEALTHY (negative curvature indicates hyperbolic geometry)"
+}
+```
+
+### Interpretation Guidelines
+- **Negative Ricci curvature (< -0.1)**: Healthy hyperbolic geometry - model has good representational capacity
+- **Near-zero curvature (-0.1 to 0.1)**: Degenerate flat geometry - may indicate underfitting
+- **Positive curvature (> 0.1)**: Collapsed representations - model may have learned degenerate solutions
 
 ## Selected Commands
 

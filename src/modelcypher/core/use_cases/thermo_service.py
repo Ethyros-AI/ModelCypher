@@ -28,8 +28,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 from modelcypher.core.domain.geometry.thermo_path_integration import (
-    ThermoPathIntegrator,
+    CombinedMeasurement,
+    Configuration as ThermoPathConfig,
+    ThermoPathIntegration,
 )
+from modelcypher.ports.embedding import EmbeddingProvider
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.thermo.linguistic_calorimeter import LinguisticCalorimeter
@@ -56,6 +59,16 @@ class ThermoPathResult:
     path_length: float
     curvature: float
     interpretation: str
+
+
+@dataclass(frozen=True)
+class ThermoPathIntegrationResult:
+    """Result of thermo-path integration analysis."""
+
+    model_id: str
+    prompt: str
+    response_text: str
+    measurement: CombinedMeasurement
 
 
 @dataclass(frozen=True)
@@ -201,8 +214,9 @@ DEFAULT_MODIFIERS: list[LinguisticModifier] = [
 class ThermoService:
     """Service for thermodynamic analysis of training."""
 
-    def __init__(self) -> None:
-        self._integration = ThermoPathIntegrator()
+    def __init__(self, embedder: EmbeddingProvider | None = None) -> None:
+        self._embedder = embedder
+        self._integration = ThermoPathIntegration()
         self._modifiers_by_name = {m.name: m for m in DEFAULT_MODIFIERS}
         self._calorimeter: "LinguisticCalorimeter" | None = None
         self._calorimeter_model_path: str | None = None
@@ -356,6 +370,72 @@ class ThermoService:
             path_length=path_length,
             curvature=curvature,
             interpretation=interpretation,
+        )
+
+    def path_integration(
+        self,
+        prompt: str,
+        model_path: str,
+        gate_threshold: float | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+        capture_trajectory: bool | None = None,
+    ) -> ThermoPathIntegrationResult:
+        """Integrate entropy trajectories with gate detections for a response."""
+        base_config = ThermoPathConfig()
+        config = ThermoPathConfig(
+            gate_detection_threshold=(
+                gate_threshold
+                if gate_threshold is not None
+                else base_config.gate_detection_threshold
+            ),
+            capture_trajectory=(
+                capture_trajectory
+                if capture_trajectory is not None
+                else base_config.capture_trajectory
+            ),
+            max_tokens=max_tokens if max_tokens is not None else base_config.max_tokens,
+            temperature=temperature if temperature is not None else base_config.temperature,
+        )
+
+        if self._embedder is None:
+            raise ValueError("Embedding provider required for thermo-path integration")
+
+        from modelcypher.core.domain.geometry.gate_detector import (
+            Configuration as GateConfig,
+            GateDetector,
+        )
+
+        calorimeter = self._get_calorimeter(model_path)
+        measurement = calorimeter.measure_entropy(
+            prompt,
+            temperature=config.temperature,
+            max_tokens=config.max_tokens,
+        )
+        detector = GateDetector(
+            configuration=GateConfig(detection_threshold=config.gate_detection_threshold),
+            embedder=self._embedder,
+        )
+        model_id = Path(model_path).name if Path(model_path).exists() else model_path
+        detection = detector.detect(
+            text=measurement.generated_text,
+            model_id=model_id,
+            prompt_id="thermo-path-integration",
+            entropy_trace=measurement.entropy_trajectory,
+        )
+
+        integration = ThermoPathIntegration(configuration=config)
+        combined = integration.analyze_response(
+            response_text=measurement.generated_text,
+            entropy_trajectory=measurement.entropy_trajectory,
+            gate_detection_result=detection,
+        )
+
+        return ThermoPathIntegrationResult(
+            model_id=model_id,
+            prompt=prompt,
+            response_text=measurement.generated_text,
+            measurement=combined,
         )
 
     def entropy(self, job_id: str, model_path: str | None = None) -> ThermoEntropyResult:

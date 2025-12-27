@@ -124,6 +124,9 @@ TOOL_PROFILES = {
         "mc_geometry_stitch_apply",
         "mc_geometry_path_detect",  # New
         "mc_geometry_path_compare",  # New
+        "mc_geometry_concept_detect",  # New
+        "mc_geometry_concept_compare",  # New
+        "mc_geometry_cross_cultural_analyze",  # New
         "mc_geometry_gromov_wasserstein",  # New
         "mc_geometry_intrinsic_dimension",  # New
         "mc_geometry_topological_fingerprint",  # New
@@ -164,6 +167,7 @@ TOOL_PROFILES = {
         "mc_thermo_detect_batch",
         "mc_thermo_analyze",  # New
         "mc_thermo_path",  # New
+        "mc_thermo_path_integration",  # New
         "mc_thermo_entropy",  # New
         # Storage tools
         "mc_storage_usage",
@@ -218,6 +222,11 @@ TOOL_PROFILES = {
         "mc_geometry_spatial_density",  # New - Volumetric density probe
         "mc_geometry_spatial_analyze",  # New - Full 3D world model analysis
         "mc_geometry_spatial_probe_model",  # New - End-to-end model probing
+        # Domain Geometry Baselines
+        "mc_geometry_baseline_list",  # New - List available baselines
+        "mc_geometry_baseline_extract",  # New - Extract baseline from model
+        "mc_geometry_baseline_validate",  # New - Validate model against baselines
+        "mc_geometry_baseline_compare",  # New - Compare two models
         # Task management (MCP 2025 Tasks framework)
         "mc_task_list",  # New - List async tasks
         "mc_task_status",  # New - Get task status
@@ -293,6 +302,9 @@ TOOL_PROFILES = {
         "mc_geometry_spatial_anchors",
         "mc_geometry_spatial_analyze",
         "mc_geometry_spatial_probe_model",
+        # Domain Geometry Baselines (for merge validation)
+        "mc_geometry_baseline_list",
+        "mc_geometry_baseline_validate",
         # Task management (async training jobs)
         "mc_task_list",
         "mc_task_status",
@@ -348,6 +360,9 @@ TOOL_PROFILES = {
         # 3D Spatial Metrology (model quality monitoring)
         "mc_geometry_spatial_anchors",
         "mc_geometry_spatial_analyze",
+        # Domain Geometry Baselines (model health monitoring)
+        "mc_geometry_baseline_list",
+        "mc_geometry_baseline_validate",
         # Task monitoring (read-only status checks)
         "mc_task_list",
         "mc_task_status",
@@ -419,7 +434,7 @@ def build_server() -> FastMCP:
     from modelcypher.core.use_cases.doc_service import DocService
     from modelcypher.core.use_cases.thermo_service import ThermoService
 
-    thermo_service = ThermoService()
+    thermo_service = ThermoService(embedder=embedder)
     adapter_service = AdapterService()
     doc_service = DocService()
 
@@ -2290,6 +2305,72 @@ def build_server() -> FastMCP:
                 ],
             }
 
+    if "mc_thermo_path_integration" in tool_set:
+
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_thermo_path_integration(
+            prompt: str,
+            model: str,
+            gateThreshold: float = 0.55,
+            maxTokens: int = 200,
+            temperature: float = 0.0,
+            captureTrajectory: bool = True,
+        ) -> dict:
+            model_path = _require_existing_directory(model)
+            result = thermo_service.path_integration(
+                prompt=prompt,
+                model_path=model_path,
+                gate_threshold=gateThreshold,
+                max_tokens=maxTokens,
+                temperature=temperature,
+                capture_trajectory=captureTrajectory,
+            )
+            measurement = result.measurement
+            assessment = measurement.assessment
+            return {
+                "_schema": "mc.thermo.path_integration.v1",
+                "modelId": result.model_id,
+                "prompt": result.prompt,
+                "responseText": result.response_text,
+                "meanEntropy": measurement.mean_entropy,
+                "entropyVariance": measurement.entropy_variance,
+                "firstTokenEntropy": measurement.first_token_entropy,
+                "entropyTrajectory": measurement.entropy_trajectory,
+                "gateSequence": measurement.gate_sequence,
+                "gateCount": measurement.gate_count,
+                "gateDetails": [
+                    {
+                        "gateId": gate.gate_id,
+                        "gateName": gate.gate_name,
+                        "localEntropy": gate.local_entropy,
+                        "confidence": gate.confidence,
+                    }
+                    for gate in measurement.gate_details
+                ],
+                "entropyPathCorrelation": measurement.entropy_path_correlation,
+                "gateTransitionEntropies": [
+                    {
+                        "fromGate": item.from_gate,
+                        "toGate": item.to_gate,
+                        "entropyDelta": item.entropy_delta,
+                        "isSpike": item.is_spike,
+                    }
+                    for item in measurement.gate_transition_entropies
+                ],
+                "assessment": {
+                    "h3Supported": assessment.h3_supported,
+                    "correlation": assessment.correlation,
+                    "spikeRate": assessment.spike_rate,
+                    "measurementCount": assessment.measurement_count,
+                    "strength": assessment.strength_for_thresholds(),
+                    "rationale": assessment.rationale,
+                },
+                "nextActions": [
+                    "mc_geometry_path_compare to compare gate trajectories",
+                    "mc_thermo_measure for modifier sweeps",
+                ],
+            }
+
     if "mc_thermo_entropy" in tool_set:
 
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
@@ -2768,6 +2849,7 @@ def build_server() -> FastMCP:
     from modelcypher.mcp.tools.agent import register_agent_tools
     from modelcypher.mcp.tools.common import ServiceContext
     from modelcypher.mcp.tools.geometry import (
+        register_geometry_baseline_tools,
         register_geometry_crm_tools,
         register_geometry_interference_tools,
         register_geometry_invariant_tools,
@@ -2800,6 +2882,7 @@ def build_server() -> FastMCP:
     register_geometry_stitch_tools(service_context)
     register_geometry_spatial_tools(service_context)
     register_geometry_interference_tools(service_context)
+    register_geometry_baseline_tools(service_context)
     register_merge_entropy_tools(service_context)
     register_task_tools(service_context)
 

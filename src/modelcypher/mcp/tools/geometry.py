@@ -159,6 +159,231 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             ]
             return payload
 
+    if "mc_geometry_concept_detect" in tool_set:
+
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_concept_detect(
+            text: str,
+            model: str | None = None,
+            threshold: float = 0.3,
+            windowSizes: list[int] | None = None,
+            stride: int = 5,
+            maxConcepts: int = 30,
+            collapse: bool = True,
+        ) -> dict:
+            from modelcypher.core.domain.geometry.concept_detector import (
+                ConceptDetector,
+                Configuration,
+            )
+
+            config = Configuration(
+                detection_threshold=threshold,
+                window_sizes=tuple(windowSizes) if windowSizes else Configuration().window_sizes,
+                stride=stride,
+                collapse_consecutive=collapse,
+                max_concepts_per_response=maxConcepts,
+            )
+            detector = ConceptDetector(config)
+
+            if model:
+                response = ctx.inference_engine.infer(
+                    model,
+                    text,
+                    max_tokens=DEFAULT_PATH_MAX_TOKENS,
+                    temperature=0.0,
+                    top_p=1.0,
+                )
+                text_to_analyze = response.get("response", "")
+                model_id = Path(model).name if Path(model).exists() else model
+            else:
+                text_to_analyze = text
+                model_id = "input-text"
+
+            detection = detector.detect(
+                response=text_to_analyze,
+                model_id=model_id,
+                prompt_id="mcp-concept-detect",
+            )
+
+            payload = {
+                "_schema": "mc.geometry.concept.detect.v1",
+                "modelId": detection.model_id,
+                "promptId": detection.prompt_id,
+                "responseText": detection.response_text,
+                "conceptSequence": detection.concept_sequence,
+                "detectedConcepts": [
+                    {
+                        "conceptId": concept.concept_id,
+                        "category": concept.category.value,
+                        "confidence": concept.confidence,
+                        "characterSpan": {
+                            "lowerBound": concept.character_span[0],
+                            "upperBound": concept.character_span[1],
+                        },
+                        "triggerText": concept.trigger_text,
+                        "crossModalConfidence": concept.cross_modal_confidence,
+                    }
+                    for concept in detection.detected_concepts
+                ],
+                "meanConfidence": detection.mean_confidence,
+                "meanCrossModalConfidence": detection.mean_cross_modal_confidence,
+                "nextActions": [
+                    "mc_geometry_concept_compare to compare concept paths",
+                    "mc_geometry_path_compare to compare gate paths",
+                ],
+            }
+            return payload
+
+    if "mc_geometry_concept_compare" in tool_set:
+
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_concept_compare(
+            textA: str | None = None,
+            textB: str | None = None,
+            modelA: str | None = None,
+            modelB: str | None = None,
+            prompt: str | None = None,
+            threshold: float = 0.3,
+            windowSizes: list[int] | None = None,
+            stride: int = 5,
+            maxConcepts: int = 30,
+            collapse: bool = True,
+        ) -> dict:
+            from modelcypher.core.domain.geometry.concept_detector import (
+                ConceptDetector,
+                Configuration,
+            )
+
+            config = Configuration(
+                detection_threshold=threshold,
+                window_sizes=tuple(windowSizes) if windowSizes else Configuration().window_sizes,
+                stride=stride,
+                collapse_consecutive=collapse,
+                max_concepts_per_response=maxConcepts,
+            )
+            detector = ConceptDetector(config)
+
+            if textA and textB:
+                text_to_analyze_a = textA
+                text_to_analyze_b = textB
+                model_id_a = "text-a"
+                model_id_b = "text-b"
+            elif modelA and modelB and prompt:
+                response_a = ctx.inference_engine.infer(
+                    modelA,
+                    prompt,
+                    max_tokens=DEFAULT_PATH_MAX_TOKENS,
+                    temperature=0.0,
+                    top_p=1.0,
+                )
+                response_b = ctx.inference_engine.infer(
+                    modelB,
+                    prompt,
+                    max_tokens=DEFAULT_PATH_MAX_TOKENS,
+                    temperature=0.0,
+                    top_p=1.0,
+                )
+                text_to_analyze_a = response_a.get("response", "")
+                text_to_analyze_b = response_b.get("response", "")
+                model_id_a = Path(modelA).name if Path(modelA).exists() else modelA
+                model_id_b = Path(modelB).name if Path(modelB).exists() else modelB
+            else:
+                raise ValueError("Provide textA/textB or modelA/modelB with prompt.")
+
+            result_a = detector.detect(text_to_analyze_a, model_id_a, prompt_id="mcp-concept-a")
+            result_b = detector.detect(text_to_analyze_b, model_id_b, prompt_id="mcp-concept-b")
+            comparison = ConceptDetector.compare_results(result_a, result_b)
+
+            payload = {
+                "_schema": "mc.geometry.concept.compare.v1",
+                "modelA": comparison.model_a,
+                "modelB": comparison.model_b,
+                "conceptPathA": list(comparison.concept_path_a),
+                "conceptPathB": list(comparison.concept_path_b),
+                "alignedConcepts": list(comparison.aligned_concepts),
+                "uniqueToA": list(comparison.unique_to_a),
+                "uniqueToB": list(comparison.unique_to_b),
+                "alignmentRatio": comparison.alignment_ratio,
+                "cka": comparison.cka,
+                "cosineSimilarity": comparison.cosine_similarity,
+                "nextActions": [
+                    "mc_geometry_concept_detect to inspect a single response",
+                    "mc_geometry_cross_cultural_analyze for gram-level alignment",
+                ],
+            }
+            return payload
+
+    if "mc_geometry_cross_cultural_analyze" in tool_set:
+
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_cross_cultural_analyze(
+            gramA: list,
+            gramB: list,
+            primeIds: list[str],
+            primeCategories: dict[str, str] | None = None,
+        ) -> dict:
+            from modelcypher.core.domain.geometry.cross_cultural_geometry import (
+                CrossCulturalGeometry,
+            )
+
+            def _flatten_gram(matrix: list) -> list[float]:
+                if not matrix:
+                    return []
+                if isinstance(matrix[0], list):
+                    return [float(value) for row in matrix for value in row]
+                return [float(value) for value in matrix]
+
+            flat_a = _flatten_gram(gramA)
+            flat_b = _flatten_gram(gramB)
+            prime_categories = primeCategories or {}
+
+            if not primeIds:
+                raise ValueError("primeIds is required and must be non-empty")
+            n = len(primeIds)
+            if len(flat_a) != n * n or len(flat_b) != n * n:
+                raise ValueError(
+                    f"Gram sizes must match primeIds length (expected {n*n}, got {len(flat_a)} and {len(flat_b)})"
+                )
+
+            result = CrossCulturalGeometry.analyze(flat_a, flat_b, primeIds, prime_categories)
+            if result is None:
+                raise ValueError("Cross-cultural analysis failed; check gram sizes and inputs.")
+
+            alignment = CrossCulturalGeometry.analyze_alignment(flat_a, flat_b, n)
+
+            return {
+                "_schema": "mc.geometry.cross_cultural.analyze.v1",
+                "gramRoughnessA": result.gram_roughness_a,
+                "gramRoughnessB": result.gram_roughness_b,
+                "mergedGramRoughness": result.merged_gram_roughness,
+                "roughnessReduction": result.roughness_reduction,
+                "complementarityScore": result.complementarity_score,
+                "convergentPrimes": result.convergent_primes,
+                "divergentPrimes": result.divergent_primes,
+                "complementaryPrimes": [
+                    {
+                        "primeId": item.prime_id,
+                        "sharperModel": item.sharper_model.value,
+                        "sharpnessRatio": item.sharpness_ratio,
+                    }
+                    for item in result.complementary_primes
+                ],
+                "categoryDivergence": result.category_divergence,
+                "mergeQualityScore": result.merge_quality_score,
+                "rationale": result.rationale,
+                "alignment": {
+                    "cka": alignment.cka,
+                    "rawPearson": alignment.raw_pearson,
+                    "alignmentGap": alignment.alignment_gap,
+                }
+                if alignment
+                else None,
+                "nextActions": [
+                    "mc_geometry_primes_compare to generate prime grams",
+                    "mc_geometry_concept_compare to compare concept paths",
+                ],
+            }
+
     # Metrics tools
     if "mc_geometry_gromov_wasserstein" in tool_set:
 
@@ -2486,7 +2711,7 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                 complexity_score=complexityScore,
             )
 
-            result = polytope.check_layer(diagnostics, base_alpha=baseAlpha)
+            result = polytope.analyze_layer(diagnostics, base_alpha=baseAlpha)
 
             violations_info = [
                 {
@@ -2608,4 +2833,292 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                     if profile.global_mitigations
                     else ["Proceed with merge using per-layer recommendedAlpha values."]
                 ),
+            }
+
+
+def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
+    """Register geometry baseline tools for domain geometry validation."""
+    mcp = ctx.mcp
+    tool_set = ctx.tool_set
+
+    if "mc_geometry_baseline_list" in tool_set:
+
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_baseline_list(domain: str | None = None) -> dict:
+            """
+            List available domain geometry baselines.
+
+            Args:
+                domain: Optional domain filter (spatial, social, temporal, moral)
+
+            Returns:
+                List of available baselines with their metadata
+            """
+            from modelcypher.core.domain.geometry.domain_geometry_baselines import (
+                BaselineRepository,
+            )
+
+            repo = BaselineRepository()
+            if domain:
+                baselines = repo.get_baselines_for_domain(domain)
+            else:
+                baselines = repo.get_all_baselines()
+
+            return {
+                "_schema": "mc.geometry.baseline.list.v1",
+                "baselines": [
+                    {
+                        "domain": b.domain,
+                        "modelFamily": b.model_family,
+                        "modelSize": b.model_size,
+                        "ollivierRicciMean": b.ollivier_ricci_mean,
+                        "extractionDate": b.extraction_date,
+                    }
+                    for b in baselines
+                ],
+                "interpretation": (
+                    f"Found {len(baselines)} baselines"
+                    + (f" for domain '{domain}'" if domain else "")
+                    + ". Use mc_geometry_baseline_validate to check model health."
+                ),
+                "nextActions": [
+                    "mc_geometry_baseline_validate to validate a model",
+                    "mc_geometry_baseline_extract to create a new baseline",
+                ],
+            }
+
+    if "mc_geometry_baseline_extract" in tool_set:
+
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_baseline_extract(
+            modelPath: str,
+            domain: str = "spatial",
+            layer: int = -1,
+            kNeighbors: int = 10,
+        ) -> dict:
+            """
+            Extract geometry baseline from a reference model.
+
+            Uses Ollivier-Ricci curvature and domain-specific analyzers to create
+            an empirical baseline for healthy LLM geometry.
+
+            Args:
+                modelPath: Path to the model directory
+                domain: Domain to extract (spatial, social, temporal, moral)
+                layer: Layer to analyze (-1 for all layers sampled)
+                kNeighbors: k for k-NN graph in Ollivier-Ricci computation
+
+            Returns:
+                Extracted baseline with curvature and domain metrics
+            """
+            from modelcypher.core.domain.geometry.domain_geometry_baselines import (
+                BaselineRepository,
+                DomainGeometryBaselineExtractor,
+            )
+
+            model_path = require_existing_directory(modelPath)
+            valid_domains = ["spatial", "social", "temporal", "moral"]
+            if domain.lower() not in valid_domains:
+                raise ValueError(f"Invalid domain: {domain}. Valid: {', '.join(valid_domains)}")
+
+            extractor = DomainGeometryBaselineExtractor()
+            baseline = extractor.extract_baseline(
+                model_path=model_path,
+                domain=domain.lower(),
+                layers=[layer] if layer != -1 else None,
+                k_neighbors=kNeighbors,
+            )
+
+            # Save baseline
+            repo = BaselineRepository()
+            saved_path = repo.save_baseline(baseline)
+
+            # Determine health interpretation
+            if baseline.ollivier_ricci_mean < -0.1:
+                health = "HEALTHY (negative curvature indicates hyperbolic geometry)"
+            elif baseline.ollivier_ricci_mean > 0.1:
+                health = "COLLAPSED (positive curvature indicates representation collapse)"
+            else:
+                health = "DEGENERATE (near-zero curvature indicates flat geometry)"
+
+            return {
+                "_schema": "mc.geometry.baseline.extract.v1",
+                "domain": baseline.domain,
+                "modelFamily": baseline.model_family,
+                "modelSize": baseline.model_size,
+                "ollivierRicciMean": baseline.ollivier_ricci_mean,
+                "ollivierRicciStd": baseline.ollivier_ricci_std,
+                "manifoldHealthDistribution": baseline.manifold_health_distribution.to_dict(),
+                "intrinsicDimension": baseline.intrinsic_dimension_mean,
+                "domainMetrics": baseline.domain_metrics,
+                "savedPath": str(saved_path),
+                "interpretation": health,
+                "nextActions": [
+                    "mc_geometry_baseline_validate to validate other models against this baseline",
+                    "mc_geometry_baseline_compare to compare two models",
+                ],
+            }
+
+    if "mc_geometry_baseline_validate" in tool_set:
+
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_baseline_validate(
+            modelPath: str,
+            domains: list[str] | None = None,
+            layer: int = -1,
+        ) -> dict:
+            """
+            Validate model geometry against established baselines.
+
+            Compares model's Ollivier-Ricci curvature and domain metrics against
+            known-good baselines. Useful for post-merge validation and health checks.
+
+            Args:
+                modelPath: Path to the model to validate
+                domains: List of domains to validate (default: all)
+                layer: Layer to analyze (-1 for all layers sampled)
+
+            Returns:
+                Validation results with pass/fail status and deviations
+            """
+            from modelcypher.core.domain.geometry.domain_geometry_validator import (
+                DomainGeometryValidator,
+            )
+
+            model_path = require_existing_directory(modelPath)
+
+            validator = DomainGeometryValidator()
+            results = validator.validate_model(
+                model_path=model_path,
+                domains=domains,
+                layer=layer,
+            )
+
+            all_passed = all(r.passed for r in results)
+
+            return {
+                "_schema": "mc.geometry.baseline.validate.v1",
+                "modelPath": model_path,
+                "overallPassed": all_passed,
+                "results": [
+                    {
+                        "domain": r.domain,
+                        "passed": r.passed,
+                        "deviationScores": r.deviation_scores,
+                        "warnings": r.warnings,
+                        "recommendations": r.recommendations,
+                    }
+                    for r in results
+                ],
+                "interpretation": (
+                    "PASSED: Model geometry is healthy across all validated domains."
+                    if all_passed
+                    else f"FAILED: {sum(1 for r in results if not r.passed)} domain(s) show geometry deviation."
+                ),
+                "nextActions": (
+                    ["Model is healthy - proceed with operations."]
+                    if all_passed
+                    else [
+                        "Review domain-specific warnings and recommendations",
+                        "mc_geometry_baseline_compare for detailed comparison",
+                    ]
+                ),
+            }
+
+    if "mc_geometry_baseline_compare" in tool_set:
+
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_baseline_compare(
+            model1Path: str,
+            model2Path: str,
+            domain: str = "spatial",
+            layer: int = -1,
+        ) -> dict:
+            """
+            Compare geometry profiles of two models.
+
+            Extracts baselines from both models and computes divergence metrics.
+            Useful for pre-merge compatibility assessment.
+
+            Args:
+                model1Path: Path to first model
+                model2Path: Path to second model
+                domain: Domain to compare (spatial, social, temporal, moral)
+                layer: Layer to analyze (-1 for all layers sampled)
+
+            Returns:
+                Comparison results with divergence metrics
+            """
+            from modelcypher.core.domain.geometry.domain_geometry_baselines import (
+                DomainGeometryBaselineExtractor,
+            )
+
+            model1_path = require_existing_directory(model1Path)
+            model2_path = require_existing_directory(model2Path)
+
+            valid_domains = ["spatial", "social", "temporal", "moral"]
+            if domain.lower() not in valid_domains:
+                raise ValueError(f"Invalid domain: {domain}. Valid: {', '.join(valid_domains)}")
+
+            extractor = DomainGeometryBaselineExtractor()
+            baseline1 = extractor.extract_baseline(
+                model_path=model1_path,
+                domain=domain.lower(),
+                layers=[layer] if layer != -1 else None,
+            )
+            baseline2 = extractor.extract_baseline(
+                model_path=model2_path,
+                domain=domain.lower(),
+                layers=[layer] if layer != -1 else None,
+            )
+
+            # Compute divergence
+            ricci_divergence = abs(baseline1.ollivier_ricci_mean - baseline2.ollivier_ricci_mean)
+            id_divergence = abs(baseline1.intrinsic_dimension_mean - baseline2.intrinsic_dimension_mean)
+
+            # Compute domain metric divergence
+            domain_divergence = {}
+            common_metrics = set(baseline1.domain_metrics.keys()) & set(baseline2.domain_metrics.keys())
+            for metric in common_metrics:
+                v1 = baseline1.domain_metrics[metric]
+                v2 = baseline2.domain_metrics[metric]
+                domain_divergence[metric] = abs(v1 - v2)
+
+            # Interpret divergence
+            if ricci_divergence < 0.05:
+                interpretation = "HIGHLY SIMILAR: Models have nearly identical geometry."
+            elif ricci_divergence < 0.15:
+                interpretation = "COMPATIBLE: Models have similar geometry, merge is safe."
+            elif ricci_divergence < 0.3:
+                interpretation = "MODERATE DIVERGENCE: Proceed with caution during merge."
+            else:
+                interpretation = "HIGH DIVERGENCE: Models have very different geometry. Merge may require careful alpha tuning."
+
+            return {
+                "_schema": "mc.geometry.baseline.compare.v1",
+                "domain": domain,
+                "model1": {
+                    "path": model1_path,
+                    "family": baseline1.model_family,
+                    "size": baseline1.model_size,
+                    "ollivierRicciMean": baseline1.ollivier_ricci_mean,
+                    "intrinsicDimension": baseline1.intrinsic_dimension_mean,
+                },
+                "model2": {
+                    "path": model2_path,
+                    "family": baseline2.model_family,
+                    "size": baseline2.model_size,
+                    "ollivierRicciMean": baseline2.ollivier_ricci_mean,
+                    "intrinsicDimension": baseline2.intrinsic_dimension_mean,
+                },
+                "divergence": {
+                    "ollivierRicci": ricci_divergence,
+                    "intrinsicDimension": id_divergence,
+                    "domainMetrics": domain_divergence,
+                },
+                "interpretation": interpretation,
+                "nextActions": [
+                    "mc_geometry_waypoint_audit for pre-merge compatibility assessment",
+                    "mc_model_merge to proceed with merge",
+                ],
             }

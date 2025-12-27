@@ -667,7 +667,7 @@ def safety_polytope_check(
     )
 
     # Alpha derived from diagnostics, not user-specified
-    result = polytope.check_layer(diagnostics, base_alpha=None)
+    result = polytope.analyze_layer(diagnostics, base_alpha=None)
 
     payload = {
         "_schema": "mc.geometry.interference.safety_polytope.v1",
