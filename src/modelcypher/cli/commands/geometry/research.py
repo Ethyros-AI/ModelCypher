@@ -641,3 +641,323 @@ def sparse_regions(
         return
 
     write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("graft-boundary")
+def graft_boundary(
+    ctx: typer.Context,
+    source_path: str = typer.Argument(..., help="Path to source model directory"),
+    target_path: str = typer.Argument(..., help="Path to target model directory"),
+    layers: list[int] | None = typer.Option(
+        None, "--layer", "-l", help="Layers to analyze (repeatable)"
+    ),
+    density_brackets: str = typer.Option(
+        "0.3,0.5,0.7,0.9",
+        "--density-brackets",
+        help="Comma-separated density thresholds for binning",
+    ),
+    max_probes: int = typer.Option(50, "--max-probes", help="Limit probes (0 = all)"),
+    k_neighbors: int = typer.Option(
+        10, "--k-neighbors", help="k for geodesic distance graph"
+    ),
+    output_path: str | None = typer.Option(
+        None, "--output-path", "-o", help="Save results to JSON file"
+    ),
+) -> None:
+    """Analyze graft boundary by correlating density with null space.
+
+    Identifies the density threshold where grafting is likely safe vs harmful
+    by analyzing the relationship between concept density and null space
+    availability.
+
+    Key insight: Sparse concepts (low density) should have more null space
+    available, making grafting safer. Dense concepts have less null space,
+    making grafting risky.
+
+    Outputs:
+    - Per-density-bracket analysis
+    - Null space correlation per layer
+    - Recommended graft mask (which layers/concepts to graft)
+    """
+    context = _context(ctx)
+
+    from modelcypher.core.domain.geometry.knowledge_density import (
+        KnowledgeDensityAnalyzer,
+        KnowledgeDensityConfig,
+        ModelDensityProfile,
+    )
+    from modelcypher.core.domain.geometry.knowledge_diff import (
+        KnowledgeDiffer,
+        compute_graft_mask,
+    )
+    from modelcypher.core.domain.geometry.null_space_filter import NullSpaceFilter
+
+    # Parse density brackets
+    brackets = [float(b.strip()) for b in density_brackets.split(",")]
+    brackets = sorted(brackets)
+
+    # Load target model (primary model for null space analysis)
+    logger.info("Loading target model: %s", target_path)
+    target_model, target_tokenizer, target_backend, target_provider, target_num_layers = (
+        _load_model_and_provider(target_path, k_neighbors)
+    )
+
+    # Load source model
+    logger.info("Loading source model: %s", source_path)
+    _, _, source_backend, source_provider, source_num_layers = _load_model_and_provider(
+        source_path, k_neighbors
+    )
+
+    # Resolve layers
+    num_layers = min(source_num_layers, target_num_layers)
+    if not layers:
+        # Analyze more layers for boundary detection
+        layers = [0, num_layers // 4, num_layers // 2, 3 * num_layers // 4, num_layers - 1]
+
+    resolved_layers: list[int] = []
+    for layer in layers:
+        layer_idx = layer if layer >= 0 else num_layers + layer
+        if 0 <= layer_idx < num_layers:
+            resolved_layers.append(layer_idx)
+    resolved_layers = sorted(set(resolved_layers))
+
+    probes = UnifiedAtlasInventory.all_probes()
+    if max_probes > 0 and max_probes < len(probes):
+        probes = probes[:max_probes]
+
+    config = KnowledgeDensityConfig()
+
+    # Step 1: Compute knowledge diff
+    logger.info("Computing knowledge diff...")
+    source_analyzer = KnowledgeDensityAnalyzer(backend=source_backend)
+    source_profile = source_analyzer.analyze_model(probes, source_provider, resolved_layers, config)
+    source_profile = ModelDensityProfile(
+        model_path=source_path,
+        layers=source_profile.layers,
+        layer_profiles=source_profile.layer_profiles,
+        domain_densities=source_profile.domain_densities,
+        overall_density=source_profile.overall_density,
+        sparse_concepts=source_profile.sparse_concepts,
+        dense_concepts=source_profile.dense_concepts,
+    )
+
+    target_analyzer = KnowledgeDensityAnalyzer(backend=target_backend)
+    target_profile = target_analyzer.analyze_model(probes, target_provider, resolved_layers, config)
+    target_profile = ModelDensityProfile(
+        model_path=target_path,
+        layers=target_profile.layers,
+        layer_profiles=target_profile.layer_profiles,
+        domain_densities=target_profile.domain_densities,
+        overall_density=target_profile.overall_density,
+        sparse_concepts=target_profile.sparse_concepts,
+        dense_concepts=target_profile.dense_concepts,
+    )
+
+    differ = KnowledgeDiffer()
+    diff = differ.diff(source_profile, target_profile)
+
+    # Step 2: Compute null space profile for target model
+    logger.info("Computing null space profile for target...")
+    null_filter = NullSpaceFilter(backend=target_backend)
+
+    # Collect activations for null space analysis
+    layer_activations: dict[int, list] = {}
+    for layer_idx in resolved_layers:
+        activations = []
+        for probe in probes[:20]:  # Sample of probes for null space
+            texts = list(probe.support_texts or [])[:3]
+            if texts:
+                acts = target_provider.get_activations(texts, layer_idx)
+                activations.extend(acts)
+        if activations:
+            act_array = target_backend.stack(
+                [target_backend.array(a) for a in activations], axis=0
+            )
+            target_backend.eval(act_array)
+            layer_activations[layer_idx] = act_array
+
+    null_profile = null_filter.compute_model_null_space_profile(layer_activations)
+
+    # Step 3: Bin concepts by density and analyze
+    def get_bracket_idx(density: float) -> int:
+        for i, threshold in enumerate(brackets):
+            if density < threshold:
+                return i
+        return len(brackets)
+
+    bracket_labels = []
+    prev = 0.0
+    for b in brackets:
+        bracket_labels.append(f"{prev:.1f}-{b:.1f}")
+        prev = b
+    bracket_labels.append(f"{prev:.1f}-1.0")
+
+    # Analyze each bracket
+    bracket_analysis = []
+    for bracket_idx, label in enumerate(bracket_labels):
+        # Find concepts in this bracket
+        concepts_in_bracket = [
+            opp for opp in diff.ranked_opportunities
+            if get_bracket_idx(opp.target_density) == bracket_idx
+        ]
+
+        if not concepts_in_bracket:
+            bracket_analysis.append({
+                "bracket": label,
+                "bracketIdx": bracket_idx,
+                "conceptCount": 0,
+                "meanOpportunity": 0.0,
+                "meanTargetDensity": 0.0,
+                "meanSourceDensity": 0.0,
+                "layerDistribution": {},
+                "graftRecommendation": "skip",
+            })
+            continue
+
+        mean_opp = sum(c.opportunity_score for c in concepts_in_bracket) / len(concepts_in_bracket)
+        mean_target = sum(c.target_density for c in concepts_in_bracket) / len(concepts_in_bracket)
+        mean_source = sum(c.source_density for c in concepts_in_bracket) / len(concepts_in_bracket)
+
+        # Layer distribution
+        layer_dist: dict[int, int] = {}
+        for c in concepts_in_bracket:
+            layer_dist[c.layer] = layer_dist.get(c.layer, 0) + 1
+
+        # Graft recommendation based on opportunity score
+        if mean_opp > 0.2:
+            recommendation = "high_priority_graft"
+        elif mean_opp > 0.05:
+            recommendation = "consider_graft"
+        elif mean_opp > -0.05:
+            recommendation = "neutral"
+        else:
+            recommendation = "do_not_graft"
+
+        bracket_analysis.append({
+            "bracket": label,
+            "bracketIdx": bracket_idx,
+            "conceptCount": len(concepts_in_bracket),
+            "meanOpportunity": mean_opp,
+            "meanTargetDensity": mean_target,
+            "meanSourceDensity": mean_source,
+            "layerDistribution": layer_dist,
+            "graftRecommendation": recommendation,
+        })
+
+    # Step 4: Correlate null space with density
+    layer_null_density_correlation = []
+    for layer_idx in resolved_layers:
+        if layer_idx not in null_profile.per_layer:
+            continue
+
+        null_info = null_profile.per_layer[layer_idx]
+
+        # Get concepts at this layer
+        layer_concepts = [
+            opp for opp in diff.ranked_opportunities
+            if opp.layer == layer_idx
+        ]
+
+        if not layer_concepts:
+            continue
+
+        mean_density = sum(c.target_density for c in layer_concepts) / len(layer_concepts)
+        mean_opp = sum(c.opportunity_score for c in layer_concepts) / len(layer_concepts)
+
+        layer_null_density_correlation.append({
+            "layer": layer_idx,
+            "nullFraction": null_info.null_fraction,
+            "nullDim": null_info.null_dim,
+            "totalDim": null_info.total_dim,
+            "meanTargetDensity": mean_density,
+            "meanOpportunity": mean_opp,
+            "conceptCount": len(layer_concepts),
+            "isGraftable": layer_idx in null_profile.graftable_layers,
+        })
+
+    # Step 5: Generate graft mask for recommended threshold
+    # Find the boundary - first bracket where recommendation is NOT high_priority_graft
+    graft_boundary_density = None
+    for ba in bracket_analysis:
+        if ba["graftRecommendation"] in ["neutral", "do_not_graft"]:
+            graft_boundary_density = float(ba["bracket"].split("-")[0])
+            break
+
+    if graft_boundary_density is None:
+        graft_boundary_density = brackets[-1] if brackets else 0.5
+
+    # Generate graft mask
+    graft_mask = compute_graft_mask(diff, include_low_opportunity=False)
+
+    # Build payload
+    payload = {
+        "_schema": "mc.geometry.research.graft_boundary.v1",
+        "sourcePath": source_path,
+        "targetPath": target_path,
+        "layers": resolved_layers,
+        "densityBrackets": brackets,
+        "graftBoundaryDensity": graft_boundary_density,
+        "bracketAnalysis": bracket_analysis,
+        "nullSpaceCorrelation": layer_null_density_correlation,
+        "graftableLayers": null_profile.graftable_layers,
+        "meanNullFraction": null_profile.mean_null_fraction,
+        "totalConcepts": diff.total_concepts,
+        "highOpportunityCount": diff.high_opportunity_count,
+        "graftMaskSummary": {
+            "totalProbes": len(graft_mask),
+            "probesWithGraft": sum(
+                1 for probe_layers in graft_mask.values()
+                if any(probe_layers.values())
+            ),
+        },
+    }
+
+    if output_path:
+        Path(output_path).write_text(json.dumps(payload, indent=2))
+        logger.info("Results saved to %s", output_path)
+
+    if context.output_format == "text":
+        lines = [
+            "GRAFT BOUNDARY ANALYSIS",
+            f"Source: {source_path}",
+            f"Target: {target_path}",
+            f"Layers: {', '.join(str(l) for l in resolved_layers)}",
+            "",
+            f"Estimated Graft Boundary: density < {graft_boundary_density:.2f}",
+            f"Graftable Layers (by null space): {null_profile.graftable_layers}",
+            f"Mean Null Fraction: {null_profile.mean_null_fraction:.3f}",
+            "",
+            "DENSITY BRACKET ANALYSIS:",
+            "-" * 60,
+        ]
+
+        for ba in bracket_analysis:
+            lines.append(
+                f"  [{ba['bracket']}] "
+                f"concepts={ba['conceptCount']}, "
+                f"opportunity={ba['meanOpportunity']:.3f}, "
+                f"recommendation={ba['graftRecommendation']}"
+            )
+
+        lines.append("")
+        lines.append("NULL SPACE / DENSITY CORRELATION BY LAYER:")
+        lines.append("-" * 60)
+        for corr in layer_null_density_correlation:
+            graftable = "GRAFTABLE" if corr["isGraftable"] else "limited"
+            lines.append(
+                f"  L{corr['layer']}: null_frac={corr['nullFraction']:.3f}, "
+                f"density={corr['meanTargetDensity']:.3f}, "
+                f"opportunity={corr['meanOpportunity']:.3f} [{graftable}]"
+            )
+
+        lines.append("")
+        lines.append("RECOMMENDATIONS:")
+        lines.append("-" * 60)
+        lines.append(f"  1. Graft concepts with target density < {graft_boundary_density:.2f}")
+        lines.append(f"  2. Focus on layers: {null_profile.graftable_layers}")
+        lines.append(f"  3. High-opportunity concepts to graft: {diff.high_opportunity_count}")
+
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
