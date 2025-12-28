@@ -264,6 +264,16 @@ class HelpService:
                 "usage": "mc geometry validate --output json",
                 "required": [],
             },
+            "geometry_primes_probe_model": {
+                "description": "Probe a model for semantic prime activations",
+                "usage": "mc geometry primes probe-model <model_path>",
+                "required": ["<model_path>"],
+            },
+            "geometry_primes_compare": {
+                "description": "Compare semantic prime activations between two models",
+                "usage": "mc geometry primes compare <activations_a.json> <activations_b.json>",
+                "required": ["<activations_a.json>", "<activations_b.json>"],
+            },
             "model_list": {
                 "description": "List registered models",
                 "usage": "mc model list --output json",
@@ -278,7 +288,7 @@ class HelpService:
 
     def _get_schemas(self) -> dict[str, dict[str, Any]]:
         """Get JSON schemas for command outputs."""
-        return {
+        schemas = {
             "train_start": {
                 "$schema": "http://json-schema.org/draft-07/schema#",
                 "type": "object",
@@ -314,6 +324,84 @@ class HelpService:
                     "gromovWasserstein": {"type": ["number", "null"]},
                     "traversalCoherence": {"type": ["number", "null"]},
                     "pathSignature": {"type": ["array", "null"]},
+                },
+                "required": [],
+            },
+            "geometry_primes_probe_model": {
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "type": "object",
+                "properties": {
+                    "_schema": {"type": "string"},
+                    "model_path": {"type": "string"},
+                    "layer": {"type": "integer"},
+                    "primes_probed": {"type": "integer"},
+                    "total_primes": {"type": "integer"},
+                    "overall_coherence": {"type": "number"},
+                    "overall_coherence_raw": {"type": "number"},
+                    "category_coherence": {
+                        "type": "object",
+                        "additionalProperties": {"type": "number"},
+                    },
+                },
+                "required": [],
+            },
+            "geometryprimesprobemodel": {
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "type": "object",
+                "properties": {
+                    "_schema": {"type": "string"},
+                    "model_path": {"type": "string"},
+                    "layer": {"type": "integer"},
+                    "primes_probed": {"type": "integer"},
+                    "total_primes": {"type": "integer"},
+                    "overall_coherence": {"type": "number"},
+                    "overall_coherence_raw": {"type": "number"},
+                    "category_coherence": {
+                        "type": "object",
+                        "additionalProperties": {"type": "number"},
+                    },
+                },
+                "required": [],
+            },
+            "geometry_primes_compare": {
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "type": "object",
+                "properties": {
+                    "_schema": {"type": "string"},
+                    "model_a": {"type": "string"},
+                    "model_b": {"type": "string"},
+                    "common_primes": {"type": "integer"},
+                    "cka_similarity": {"type": "number"},
+                    "cka_raw": {"type": "number"},
+                    "most_similar_primes": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "most_divergent_primes": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                },
+                "required": [],
+            },
+            "geometryprimescompare": {
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "type": "object",
+                "properties": {
+                    "_schema": {"type": "string"},
+                    "model_a": {"type": "string"},
+                    "model_b": {"type": "string"},
+                    "common_primes": {"type": "integer"},
+                    "cka_similarity": {"type": "number"},
+                    "cka_raw": {"type": "number"},
+                    "most_similar_primes": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "most_divergent_primes": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
                 },
                 "required": [],
             },
@@ -362,6 +450,117 @@ class HelpService:
                 "required": ["models", "checkpoints", "jobs"],
             },
         }
+
+        geometry_schema_ids: dict[str, str | None] = {
+            "geometry_atlas_dimensionality": "mc.geometry.atlas.dimensionality.v1",
+            "geometry_atlas_dimensionality_study": "mc.geometry.atlas.dimensionality_study.v1",
+            "geometry_baseline_compare": "mc.geometry.baseline.compare.v1",
+            "geometry_baseline_extract": "mc.geometry.baseline.extract.v1",
+            "geometry_baseline_list": "mc.geometry.baseline.list.v1",
+            "geometry_baseline_validate": "mc.geometry.baseline.validate.v1",
+            "geometry_concept_compare": "mc.geometry.concept.compare.v1",
+            "geometry_concept_detect": "mc.geometry.concept.detect.v1",
+            "geometry_crm_build": None,
+            "geometry_crm_compare": None,
+            "geometry_crm_delta_mask": "mc.geometry.crm.delta_mask.v1",
+            "geometry_crm_sequence_inventory": None,
+            "geometry_cross_cultural_analyze": "mc.geometry.cross_cultural.analyze.v1",
+            "geometry_emotion_analyze": None,
+            "geometry_emotion_inventory": None,
+            "geometry_emotion_opposition": None,
+            "geometry_geom_adapter_decomposition": None,
+            "geometry_geom_adapter_sparsity": None,
+            "geometry_interference_null_space": "mc.geometry.interference.null_space.v1",
+            "geometry_interference_predict": "mc.geometry.merge_analysis.v1",
+            "geometry_interference_safety_polytope": "mc.geometry.interference.safety_polytope.v1",
+            "geometry_interference_volume": "mc.geometry.interference.volume.v1",
+            "geometry_invariant_atlas_inventory": "mc.geometry.atlas.inventory.v1",
+            "geometry_invariant_collapse_risk": None,
+            "geometry_invariant_map_layers": None,
+            "geometry_manifold_cluster": None,
+            "geometry_manifold_dimension": None,
+            "geometry_manifold_query": None,
+            "geometry_merge_entropy_guide": "mc.merge.entropy.guide.v1",
+            "geometry_merge_entropy_profile": "mc.merge.entropy.profile.v1",
+            "geometry_merge_entropy_validate": "mc.merge.entropy.validate.v1",
+            "geometry_metrics_gromov_wasserstein": None,
+            "geometry_metrics_intrinsic_dimension": None,
+            "geometry_metrics_topological_fingerprint": None,
+            "geometry_moral_analyze": "mc.geometry.moral.analyze.v1",
+            "geometry_moral_anchors": "mc.geometry.moral.anchors.v1",
+            "geometry_moral_probe_model": "mc.geometry.moral.probe_model.v1",
+            "geometry_path_compare": None,
+            "geometry_path_detect": None,
+            "geometry_persona_drift": None,
+            "geometry_persona_extract": None,
+            "geometry_persona_traits": None,
+            "geometry_primes_compare": "mc.geometry.primes.compare.v1",
+            "geometry_primes_list": "mc.geometry.primes.list.v1",
+            "geometry_primes_probe_model": "mc.geometry.primes.probe.v1",
+            "geometry_refinement_analyze": None,
+            "geometry_refinement_summary": None,
+            "geometry_refusal_detect": None,
+            "geometry_refusal_pairs": None,
+            "geometry_research_build_eval_dataset": "mc.geometry.research.build_eval_dataset.v1",
+            "geometry_research_concept_density": "mc.geometry.research.concept_density.v1",
+            "geometry_research_graft_boundary": "mc.geometry.research.graft_boundary.v1",
+            "geometry_research_knowledge_diff": "mc.geometry.research.knowledge_diff.v1",
+            "geometry_research_sparse_regions": "mc.geometry.research.sparse_regions.v1",
+            "geometry_research_zero_shot_transfer": "mc.geometry.research.zero_shot_transfer.v1",
+            "geometry_safety_circuit_breaker": None,
+            "geometry_safety_jailbreak_test": None,
+            "geometry_safety_persona": None,
+            "geometry_safety_probe_behavioral": None,
+            "geometry_safety_probe_redteam": None,
+            "geometry_social_analyze": "mc.geometry.social.analyze.v1",
+            "geometry_social_anchors": "mc.geometry.social.anchors.v1",
+            "geometry_social_probe_model": "mc.geometry.social.probe_model.v1",
+            "geometry_sparse_domains": None,
+            "geometry_sparse_locate": None,
+            "geometry_sparse_neurons": None,
+            "geometry_spatial_analyze": "mc.geometry.spatial.full_analysis.v1",
+            "geometry_spatial_anchors": "mc.geometry.spatial.anchors.v1",
+            "geometry_spatial_cross_grounding_feasibility": "mc.geometry.spatial.cross_grounding_feasibility.v1",
+            "geometry_spatial_cross_grounding_transfer": "mc.geometry.spatial.cross_grounding_transfer.v1",
+            "geometry_spatial_density": "mc.geometry.spatial.density.v1",
+            "geometry_spatial_euclidean": "mc.geometry.spatial.euclidean.v1",
+            "geometry_spatial_gravity": "mc.geometry.spatial.gravity.v1",
+            "geometry_spatial_probe_model": "mc.geometry.spatial.probe_model.v1",
+            "geometry_stitch_analyze": None,
+            "geometry_stitch_apply": None,
+            "geometry_temporal_analyze": "mc.geometry.temporal.analyze.v1",
+            "geometry_temporal_anchors": "mc.geometry.temporal.anchors.v1",
+            "geometry_temporal_probe_model": "mc.geometry.temporal.probe_model.v1",
+            "geometry_training_history": None,
+            "geometry_training_levels": None,
+            "geometry_training_status": None,
+            "geometry_transfer_compare": None,
+            "geometry_transfer_profile": None,
+            "geometry_transfer_project": None,
+            "geometry_transport_merge": None,
+            "geometry_transport_synthesize": None,
+            "geometry_waypoint_alpha_profile": "mc.geometry.waypoint.alpha_profile.v1",
+            "geometry_waypoint_audit": "mc.geometry.waypoint.audit.v1",
+            "geometry_waypoint_profile": "mc.geometry.waypoint.profile.v1",
+            "geometry_waypoint_validate": "mc.geometry.waypoint.validate.v1",
+        }
+
+        for command_key, schema_id in geometry_schema_ids.items():
+            if command_key in schemas:
+                continue
+            schema: dict[str, Any] = {
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "type": "object",
+                "properties": {
+                    "_schema": {"type": "string"},
+                },
+                "required": [],
+            }
+            if schema_id:
+                schema["properties"]["_schema"] = {"const": schema_id}
+            schemas[command_key] = schema
+
+        return schemas
 
     def _bash_completions(self) -> str:
         """Generate bash completion script."""

@@ -14,6 +14,7 @@ Each experiment lives in its own directory with:
 | Experiment | Paper | Key Finding |
 |------------|-------|-------------|
 | [Operational Semantics Hypothesis](operational-semantics-hypothesis/) | Paper 0, Claim 4 | Pythagorean theorem encoded as geometric constraint; 88.5% cross-model invariance |
+| [Knowledge Density Grafting](knowledge-density-grafting/) | In Progress | Uniform blending destroys coherence; graft boundary at density=0.5; merge direction is asymmetric |
 
 ## Reproducibility
 
