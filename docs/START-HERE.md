@@ -104,6 +104,7 @@ mc model merge --source ./model-A --target ./model-B --output-dir ./merged
 
 ### Theory
 - [**Geometry Guide**](GEOMETRY-GUIDE.md) — How to interpret metrics
+- [**ELIF: Conceptual Map**](ELIF.md) — One narrative, analogy-driven overview (technically precise)
 - [**Mental Models**](geometry/mental_model.md) — Visual diagrams
 - [**Linguistic Thermodynamics**](research/linguistic_thermodynamics.md) — Entropy and stability
 
