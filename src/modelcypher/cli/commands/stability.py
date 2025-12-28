@@ -110,8 +110,6 @@ def stability_report(
         "config": result.config,
         "metrics": result.metrics,
         "perPromptResults": result.per_prompt_results,
-        "interpretation": result.interpretation,
-        "recommendations": result.recommendations,
     }
 
     write_output(payload, context.output_format, context.pretty)

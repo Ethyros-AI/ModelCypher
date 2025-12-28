@@ -122,7 +122,6 @@ def agent_eval_results(
         "config": result.config,
         "metrics": result.metrics,
         "taskResults": result.task_results,
-        "interpretation": result.interpretation,
         "overallScore": result.overall_score,
     }
 

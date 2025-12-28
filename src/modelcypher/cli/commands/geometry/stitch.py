@@ -83,7 +83,6 @@ def geometry_stitch_analyze(
             for sp in result.stitching_points
         ],
         "recommendedConfig": result.recommended_config,
-        "interpretation": result.interpretation,
     }
 
     if context.output_format == "text":
@@ -92,8 +91,6 @@ def geometry_stitch_analyze(
             f"Checkpoints: {len(checkpoints)}",
             f"Manifold Distance: {result.manifold_distance:.3f}",
             f"Stitching Points: {len(result.stitching_points)}",
-            "",
-            result.interpretation,
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return

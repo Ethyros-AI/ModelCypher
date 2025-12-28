@@ -390,7 +390,6 @@ class ConceptResponseMatrixService:
             "highConfidenceProportion": matcher.h2_validation.high_confidence_proportion,
             "positionCorrelation": matcher.h2_validation.position_correlation,
             "isValidated": matcher.h2_validation.is_validated,
-            "interpretation": matcher.h2_validation.interpretation,
         }
 
         return CRMSharedSubspaceSummary(

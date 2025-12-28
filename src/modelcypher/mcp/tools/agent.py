@@ -99,7 +99,6 @@ def register_agent_tools(ctx: ServiceContext) -> None:
                 "config": result.config,
                 "metrics": result.metrics,
                 "taskResults": result.task_results,
-                "interpretation": result.interpretation,
                 "overallScore": result.overall_score,
                 "nextActions": [
                     "mc_agent_eval_run to run another evaluation",

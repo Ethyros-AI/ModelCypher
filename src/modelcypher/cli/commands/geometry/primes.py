@@ -232,13 +232,6 @@ def primes_probe_model(
         "total_primes": len(primes),
         "overall_coherence": overall_result.cka,
         "category_coherence": {k: v for k, v in category_coherence.items() if v is not None},
-        "interpretation": (
-            "Strong semantic structure - primes form coherent clusters."
-            if overall_result.cka > 0.7
-            else "Moderate semantic structure - some prime clustering detected."
-            if overall_result.cka > 0.4
-            else "Weak semantic structure - primes are diffusely represented."
-        ),
     }
 
     if context.output_format == "text":
@@ -257,14 +250,6 @@ def primes_probe_model(
         for cat, score in sorted(category_coherence.items()):
             if score is not None:
                 lines.append(f"  {cat}: {score:.3f}")
-        lines.extend(
-            [
-                "",
-                "=" * 60,
-                payload["interpretation"],
-                "=" * 60,
-            ]
-        )
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -357,13 +342,6 @@ def primes_compare(
         "cka_similarity": result.cka,
         "most_similar_primes": most_similar,
         "most_divergent_primes": most_divergent,
-        "interpretation": (
-            "Models have highly similar semantic prime structure."
-            if result.cka > 0.8
-            else "Models have moderately similar semantic structure."
-            if result.cka > 0.5
-            else "Models have divergent semantic prime representations."
-        ),
     }
 
     if context.output_format == "text":
@@ -384,10 +362,6 @@ def primes_compare(
             "",
             "Most Divergent Primes:",
             *[f"  - {p}" for p in most_divergent],
-            "",
-            "=" * 60,
-            payload["interpretation"],
-            "=" * 60,
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return

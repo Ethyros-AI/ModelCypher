@@ -128,7 +128,12 @@ def geometry_training_history(
     payload = service.training_history_payload(job_id)
 
     if context.output_format == "text":
-        lines = ["GEOMETRIC TRAINING HISTORY", payload["interpretation"]]
+        lines = [
+            "GEOMETRIC TRAINING HISTORY",
+            f"Job: {payload['jobId']}",
+            f"Steps: {payload['startStep']} -> {payload['endStep']}",
+            f"Samples: {payload['sampleCount']}",
+        ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

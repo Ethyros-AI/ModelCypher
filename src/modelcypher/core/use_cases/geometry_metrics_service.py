@@ -59,7 +59,6 @@ class GromovWassersteinResult:
     converged: bool
     iterations: int
     coupling_shape: tuple[int, int]
-    interpretation: str
 
 
 @dataclass(frozen=True)
@@ -71,7 +70,6 @@ class IntrinsicDimensionResult:
     confidence_upper: float
     sample_count: int
     method: str
-    interpretation: str
 
 
 @dataclass(frozen=True)
@@ -82,7 +80,6 @@ class TopologicalFingerprintResult:
     betti_1: int  # Loops/holes
     persistence_entropy: float
     total_persistence: float
-    interpretation: str
 
 
 class GeometryMetricsService:
@@ -126,7 +123,7 @@ class GeometryMetricsService:
             max_iterations: Maximum outer iterations
 
         Returns:
-            GromovWassersteinResult with distance and interpretation
+            GromovWassersteinResult with distance metrics
         """
         # Check cache first
         cached = self._cache.get_gw_result(source_points, target_points, epsilon, max_iterations)
@@ -170,24 +167,7 @@ class GeometryMetricsService:
         return self._gw_result_from_cached(cached_result)
 
     def _gw_result_from_cached(self, cached: CachedGWResult) -> GromovWassersteinResult:
-        """Convert cached GW result to full result with interpretation."""
-        # Generate interpretation
-        if cached.normalized_distance < 0.1:
-            interpretation = (
-                "Highly similar structure. Representation spaces are nearly isomorphic."
-            )
-        elif cached.normalized_distance < 0.3:
-            interpretation = "Moderately similar. Core structure preserved with some divergence."
-        elif cached.normalized_distance < 0.5:
-            interpretation = (
-                "Significant structural differences. Careful alignment needed before merging."
-            )
-        else:
-            interpretation = "Very different structures. Merging may cause capability loss."
-
-        if not cached.converged:
-            interpretation += " Warning: solver did not converge; results may be approximate."
-
+        """Convert cached GW result to full result."""
         return GromovWassersteinResult(
             distance=cached.distance,
             normalized_distance=cached.normalized_distance,
@@ -195,7 +175,6 @@ class GeometryMetricsService:
             converged=cached.converged,
             iterations=cached.iterations,
             coupling_shape=cached.coupling_shape,
-            interpretation=interpretation,
         )
 
     def estimate_intrinsic_dimension(
@@ -263,22 +242,8 @@ class GeometryMetricsService:
     def _id_result_from_cached(
         self, cached: CachedIDResult, points: list[list[float]]
     ) -> IntrinsicDimensionResult:
-        """Convert cached ID result to full result with interpretation."""
+        """Convert cached ID result to full result."""
         dimension = cached.dimension
-        ambient_dim = len(points[0]) if points else 0
-        ratio = dimension / ambient_dim if ambient_dim > 0 else 0
-
-        if ratio < 0.1:
-            interpretation = f"Low intrinsic dimension ({dimension:.1f}). Representations are highly structured/compressed."
-        elif ratio < 0.3:
-            interpretation = (
-                f"Moderate intrinsic dimension ({dimension:.1f}). Balanced capacity utilization."
-            )
-        elif ratio < 0.6:
-            interpretation = f"High intrinsic dimension ({dimension:.1f}). Rich representations with many degrees of freedom."
-        else:
-            interpretation = f"Very high intrinsic dimension ({dimension:.1f}). May indicate noise or overfitting."
-
         return IntrinsicDimensionResult(
             dimension=dimension,
             confidence_lower=cached.confidence_lower,
@@ -286,7 +251,6 @@ class GeometryMetricsService:
             sample_count=cached.sample_count,
             method="TwoNN"
             + (" (regression)" if cached.use_regression else " (maximum likelihood)"),
-            interpretation=interpretation,
         )
 
     def compute_topological_fingerprint(
@@ -344,31 +308,14 @@ class GeometryMetricsService:
         return self._topo_result_from_cached(cached_result)
 
     def _topo_result_from_cached(self, cached: CachedTopoResult) -> TopologicalFingerprintResult:
-        """Convert cached topological result to full result with interpretation."""
+        """Convert cached topological result to full result."""
         betti_0 = cached.betti_0
         betti_1 = cached.betti_1
-
-        # Generate interpretation
-        if betti_0 == 1 and betti_1 == 0:
-            interpretation = "Simple connected topology. Single coherent representation cluster."
-        elif betti_0 > 1 and betti_1 == 0:
-            interpretation = f"Fragmented topology ({betti_0} components). Multiple distinct representation clusters."
-        elif betti_1 > 0:
-            interpretation = f"Complex topology with {betti_1} loop(s). May indicate cyclic or periodic structure."
-        else:
-            interpretation = "Standard topology with moderate complexity."
-
-        if cached.persistence_entropy > 0.8:
-            interpretation += " High persistence entropy suggests stable features."
-        elif cached.persistence_entropy < 0.3:
-            interpretation += " Low persistence entropy indicates transient features."
-
         return TopologicalFingerprintResult(
             betti_0=betti_0,
             betti_1=betti_1,
             persistence_entropy=cached.persistence_entropy,
             total_persistence=cached.total_persistence,
-            interpretation=interpretation,
         )
 
     @staticmethod
@@ -381,7 +328,6 @@ class GeometryMetricsService:
             "converged": result.converged,
             "iterations": result.iterations,
             "couplingShape": list(result.coupling_shape),
-            "interpretation": result.interpretation,
         }
 
     @staticmethod
@@ -393,7 +339,6 @@ class GeometryMetricsService:
             "confidenceUpper": result.confidence_upper,
             "sampleCount": result.sample_count,
             "method": result.method,
-            "interpretation": result.interpretation,
         }
 
     @staticmethod
@@ -404,5 +349,4 @@ class GeometryMetricsService:
             "betti1": result.betti_1,
             "persistenceEntropy": result.persistence_entropy,
             "totalPersistence": result.total_persistence,
-            "interpretation": result.interpretation,
         }

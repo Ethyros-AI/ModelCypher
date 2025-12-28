@@ -172,14 +172,19 @@ class GramAligner:
         target_centered: "Array",
         reg: float | None = None,
     ) -> "Array | None":
-        """Solve F = A_s^T (A_s A_s^T)^-1 A_t using QR (primary) or eigendecomposition.
+        """Solve for F such that Gram(source @ F) = Gram(target).
 
-        QR-based solve avoids condition number squaring: κ(R) = κ(A), not κ(A)².
-        Falls back to eigendecomposition for rank-deficient cases.
+        PRIMARY approach: Use Gram-space alignment via SVD + Procrustes.
+        This directly targets Gram equality (CKA = 1.0) rather than feature
+        equality (source @ F = target), which only implies Gram equality
+        when the solve is exact.
+
+        FALLBACK: QR-based least-squares for feature alignment.
         """
         from modelcypher.core.domain.geometry.numerical_stability import (
             machine_epsilon,
             solve_full_row_rank_via_qr,
+            solve_via_gram_alignment,
         )
 
         b = self._backend
@@ -189,7 +194,26 @@ class GramAligner:
 
         eps = machine_epsilon(b, source_centered)
 
-        # Try QR-based solve first (most numerically stable)
+        # PRIMARY: Gram-space alignment via SVD + Procrustes
+        # This directly targets Gram(source @ F) = Gram(target)
+        F_gram, gram_diag = solve_via_gram_alignment(b, source_centered, target_centered)
+        if F_gram is not None:
+            procrustes_err = gram_diag.get("procrustes_error", float("inf"))
+            if procrustes_err < eps * 1e6:  # Procrustes worked well
+                self._logger.debug(
+                    "Gram alignment: procrustes_error=%.2e, rank_s=%d, rank_t=%d",
+                    procrustes_err,
+                    gram_diag.get("rank_source", 0),
+                    gram_diag.get("rank_target", 0),
+                )
+                return F_gram
+            self._logger.debug(
+                "Gram alignment had high Procrustes error (%.2e), trying QR",
+                procrustes_err,
+            )
+
+        # FALLBACK: QR-based solve for feature alignment
+        # Only use if Gram alignment failed or had high error
         F_qr, diag = solve_full_row_rank_via_qr(b, source_centered, target_centered)
         if F_qr is not None and diag.get("residual_norm", float("inf")) < eps * 1000:
             self._logger.debug(
@@ -200,7 +224,7 @@ class GramAligner:
             )
             return F_qr
 
-        # Fall back to eigendecomposition
+        # Last resort: eigendecomposition
         self._logger.debug("Falling back to eigendecomposition solve")
 
         gram = b.matmul(source_centered, b.transpose(source_centered))
@@ -235,10 +259,15 @@ class GramAligner:
         source: "Array",
         target: "Array",
     ) -> "Array | None":
-        """Solve F for uncentered data using QR (primary) or eigendecomposition."""
+        """Solve for F such that Gram(source @ F) = Gram(target) on uncentered data.
+
+        PRIMARY: Gram-space alignment via SVD + Procrustes.
+        FALLBACK: QR-based least-squares, then eigendecomposition.
+        """
         from modelcypher.core.domain.geometry.numerical_stability import (
             machine_epsilon,
             solve_full_row_rank_via_qr,
+            solve_via_gram_alignment,
         )
 
         b = self._backend
@@ -248,12 +277,19 @@ class GramAligner:
 
         eps = machine_epsilon(b, source)
 
-        # Try QR-based solve first
+        # PRIMARY: Gram-space alignment via SVD + Procrustes
+        F_gram, gram_diag = solve_via_gram_alignment(b, source, target)
+        if F_gram is not None:
+            procrustes_err = gram_diag.get("procrustes_error", float("inf"))
+            if procrustes_err < eps * 1e6:
+                return F_gram
+
+        # FALLBACK: QR-based solve
         F_qr, diag = solve_full_row_rank_via_qr(b, source, target)
         if F_qr is not None and diag.get("residual_norm", float("inf")) < eps * 1000:
             return F_qr
 
-        # Fall back to eigendecomposition (requires positive definite gram)
+        # Last resort: eigendecomposition (requires positive definite gram)
         gram = b.matmul(source, b.transpose(source))
         b.eval(gram)
 
@@ -328,9 +364,10 @@ class GramAligner:
             if shape[0] != d_s or shape[1] != d_t:
                 initial_transform = None
 
-        # MLX linear algebra requires float32/float64; keep alignment math stable.
-        source_activations = b.astype(source_activations, "float32")
-        target_activations = b.astype(target_activations, "float32")
+        # Use float64 for alignment math - float32 precision is insufficient
+        # for achieving CKA = 1.0 (eps ~1e-7 vs ~1e-16 for float64)
+        source_activations = b.astype(source_activations, "float64")
+        target_activations = b.astype(target_activations, "float64")
         b.eval(source_activations, target_activations)
 
         # Try uncentered direct solve first (fast path for exact alignment)

@@ -258,11 +258,6 @@ def spatial_euclidean(
     payload = {
         "_schema": "mc.geometry.spatial.euclidean.v1",
         **result.to_dict(),
-        "interpretation": (
-            "The model has a 3D Euclidean world model."
-            if result.is_euclidean
-            else "The model's spatial representation is non-Euclidean."
-        ),
         "nextActions": [
             "mc geometry spatial gravity <model> to test gravity gradient",
             "mc geometry spatial analyze <model> for full 3D analysis",
@@ -284,13 +279,6 @@ def spatial_euclidean(
         for axis, score in result.axis_orthogonality.items():
             lines.append(f"  {axis}: {score:.2%}")
 
-        lines.extend(
-            [
-                "",
-                "Interpretation:",
-                payload["interpretation"],
-            ]
-        )
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -351,11 +339,6 @@ def spatial_gravity(
     payload = {
         "_schema": "mc.geometry.spatial.gravity.v1",
         **result.to_dict(),
-        "interpretation": (
-            "Gravity gradient detected - the model has a physics engine for mass."
-            if result.gravity_axis_detected
-            else "No gravity gradient - spatial reasoning may be surface-level."
-        ),
         "nextActions": [
             "mc geometry spatial euclidean <file> to verify Euclidean structure",
             "mc geometry spatial analyze <model> for full 3D analysis",
@@ -381,13 +364,6 @@ def spatial_gravity(
                 ]
             )
 
-        lines.extend(
-            [
-                "",
-                "Interpretation:",
-                payload["interpretation"],
-            ]
-        )
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -433,15 +409,6 @@ def spatial_density(
     payload = {
         "_schema": "mc.geometry.spatial.density.v1",
         **result.to_dict(),
-        "interpretation": (
-            f"Density-mass correlation: {result.density_mass_correlation:.2f}. "
-            f"Inverse-square compliance: {result.inverse_square_compliance:.2f}. "
-            + (
-                "Physical mass is encoded geometrically."
-                if abs(result.density_mass_correlation) > 0.3
-                else "Mass encoding is weak."
-            )
-        ),
     }
 
     if context.output_format == "text":
@@ -457,13 +424,6 @@ def spatial_density(
         for name, density in sorted(result.anchor_densities.items(), key=lambda x: -x[1])[:10]:
             lines.append(f"  {name}: {density:.2f}")
 
-        lines.extend(
-            [
-                "",
-                "Interpretation:",
-                payload["interpretation"],
-            ]
-        )
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -529,13 +489,6 @@ def spatial_analyze(
     payload = {
         "_schema": "mc.geometry.spatial.full_analysis.v1",
         **report.to_dict(),
-        "verdict": (
-            "HIGH VISUAL GROUNDING - Probability concentrated on human-perceptual 3D axes."
-            if report.has_3d_world_model and report.physics_engine_detected
-            else "MODERATE GROUNDING - 3D structure present, probability more diffuse."
-            if report.has_3d_world_model
-            else "ALTERNATIVE GROUNDING - Physics encoded geometrically along non-visual axes."
-        ),
     }
 
     if context.output_format == "text":
@@ -569,10 +522,6 @@ def spatial_analyze(
             f"  Density-Mass Correlation: {report.volumetric_density.density_mass_correlation:.2f}",
             f"  Inverse-Square Compliance: {report.volumetric_density.inverse_square_compliance:.2f}",
             "",
-            "=" * 60,
-            "VERDICT",
-            "=" * 60,
-            payload["verdict"],
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
@@ -669,13 +618,6 @@ def spatial_probe_model(
         "anchors_probed": len(anchor_activations),
         "layer": layer,
         **report.to_dict(),
-        "verdict": (
-            "HIGH VISUAL GROUNDING - Physics probability concentrated on 3D visual axes."
-            if report.has_3d_world_model and report.physics_engine_detected
-            else "MODERATE GROUNDING - 3D structure detected, probability diffuse."
-            if report.has_3d_world_model
-            else "ALTERNATIVE GROUNDING - Physics encoded geometrically along non-visual axes."
-        ),
     }
 
     if context.output_format == "text":
@@ -699,9 +641,6 @@ def spatial_probe_model(
             if report.euclidean_consistency.axis_orthogonality
             else "  Axis Orthogonality: N/A",
             "",
-            "=" * 60,
-            payload["verdict"],
-            "=" * 60,
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return

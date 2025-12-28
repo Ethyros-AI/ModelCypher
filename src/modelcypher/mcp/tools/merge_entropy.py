@@ -373,19 +373,6 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
                 "perDomain": per_domain_summary,
                 "failedDomains": [d.value for d in failed_domains],
                 "probesTested": sum(r.probes_tested for r in report.per_domain.values()),
-                "interpretation": (
-                    f"Knowledge retention: {report.overall_retention:.0%}. "
-                    f"Status: {report.status.value}. "
-                    f"{len(failed_domains)} domains below threshold."
-                ),
-                "nextActions": (
-                    ["mc_infer to test specific capabilities"]
-                    if report.status.value in ("excellent", "acceptable")
-                    else [
-                        "mc_model_merge with higher source alpha",
-                        "mc_merge_diagnose to identify degraded layers",
-                    ]
-                ),
             }
 
     if "mc_model_vocab_compare" in tool_set:

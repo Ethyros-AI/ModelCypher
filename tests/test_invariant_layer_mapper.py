@@ -319,9 +319,7 @@ def test_service_analyze_collapse_risk(tmp_path):
     assert result is not None
     assert result.model_path == str(model)
     assert result.layer_count == 32
-    assert result.risk_level in ["low", "medium", "high", "critical"]
-    assert result.interpretation is not None
-    assert result.recommended_action is not None
+    assert 0.0 <= result.collapse_ratio <= 1.0
 
 
 def test_service_collapse_risk_payload_schema():
@@ -333,9 +331,6 @@ def test_service_collapse_risk_payload_schema():
         layer_count=32,
         collapsed_layers=5,
         collapse_ratio=0.156,
-        risk_level="medium",
-        interpretation="Test interpretation",
-        recommended_action="Test action",
     )
 
     payload = InvariantLayerMappingService.collapse_risk_payload(collapse_result)
@@ -344,9 +339,6 @@ def test_service_collapse_risk_payload_schema():
     assert payload["modelPath"] == "/tmp/model"
     assert payload["layerCount"] == 32
     assert payload["collapsedLayers"] == 5
-    assert payload["riskLevel"] == "medium"
-    assert payload["interpretation"] == "Test interpretation"
-    assert payload["recommendedAction"] == "Test action"
 
 
 def test_service_family_parsing():
@@ -385,49 +377,6 @@ def test_service_scope_parsing():
 
     # Default for unknown
     assert _parse_scope("unknown") == InvariantScope.SEQUENCE_INVARIANTS
-
-
-# ===========================================================================
-# Risk Level Classification Tests
-# ===========================================================================
-
-
-def test_collapse_risk_levels():
-    """Test that collapse risk levels are classified correctly."""
-    InvariantLayerMappingService()
-
-    # Verify risk level thresholds through interpretation
-    # Low: < 15% collapse
-    # Medium: 15-30% collapse
-    # High: 30-50% collapse
-    # Critical: >= 50% collapse
-
-    # Test classification logic indirectly
-    from modelcypher.core.use_cases.invariant_layer_mapping_service import CollapseRiskResult
-
-    # Low risk
-    result_low = CollapseRiskResult(
-        model_path="/test",
-        layer_count=100,
-        collapsed_layers=10,  # 10%
-        collapse_ratio=0.10,
-        risk_level="low",
-        interpretation="",
-        recommended_action="",
-    )
-    assert result_low.risk_level == "low"
-
-    # Medium risk
-    result_medium = CollapseRiskResult(
-        model_path="/test",
-        layer_count=100,
-        collapsed_layers=20,  # 20%
-        collapse_ratio=0.20,
-        risk_level="medium",
-        interpretation="",
-        recommended_action="",
-    )
-    assert result_medium.risk_level == "medium"
 
 
 # ===========================================================================

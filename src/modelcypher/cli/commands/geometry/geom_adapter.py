@@ -60,15 +60,10 @@ def geometry_adapter_sparsity(
     service = GeometryAdapterService(model_loader=model_loader)
     analysis = service.analyze_dare(checkpoint_path, base_path)
 
-    interpretation = (
-        f"Effective sparsity {analysis.effective_sparsity:.2%}. "
-        f"Recommended drop rate {analysis.recommended_drop_rate:.2f}."
-    )
     output = {
         "checkpointPath": checkpoint_path,
         "baseModelPath": base_path,
         "effectiveSparsity": analysis.effective_sparsity,
-        "interpretation": interpretation,
         "nextActions": [
             f"mc geometry adapter decomposition --checkpoint '{checkpoint_path}'",
             f"mc checkpoint export --path '{checkpoint_path}'",
@@ -84,8 +79,6 @@ def geometry_adapter_sparsity(
             lines.append(f"Base Model: {base_path}")
         lines.append(f"Effective Sparsity: {analysis.effective_sparsity:.3f}")
         lines.append(f"Recommended Drop Rate: {analysis.recommended_drop_rate:.2f}")
-        lines.append("")
-        lines.append(interpretation)
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -111,15 +104,12 @@ def geometry_adapter_decomposition(
     service = GeometryAdapterService(model_loader=model_loader)
     result = service.analyze_dora(checkpoint_path, base_path)
     learning_type = service.dora_learning_type(result)
-    interpretation = service.dora_interpretation(result)
-
     output = {
         "checkpointPath": checkpoint_path,
         "baseModelPath": base_path,
         "magnitudeChangeRatio": result.overall_magnitude_change,
         "directionalDrift": result.overall_directional_drift,
         "learningType": learning_type,
-        "interpretation": interpretation,
         "nextActions": [
             f"mc geometry adapter sparsity --checkpoint '{checkpoint_path}'",
             f"mc checkpoint export --path '{checkpoint_path}'",
@@ -136,8 +126,6 @@ def geometry_adapter_decomposition(
         lines.append(f"Magnitude Change Ratio: {result.overall_magnitude_change:.3f}")
         lines.append(f"Directional Drift: {result.overall_directional_drift:.3f}")
         lines.append(f"Learning Type: {learning_type}")
-        lines.append("")
-        lines.append(interpretation)
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

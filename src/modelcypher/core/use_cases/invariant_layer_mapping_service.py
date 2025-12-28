@@ -126,8 +126,6 @@ class LayerMappingResult:
     """Result of layer mapping operation."""
 
     report: Report
-    interpretation: str
-    recommended_action: str
 
 
 @dataclass(frozen=True)
@@ -138,9 +136,6 @@ class CollapseRiskResult:
     layer_count: int
     collapsed_layers: int
     collapse_ratio: float
-    risk_level: str  # "low", "medium", "high", "critical"
-    interpretation: str
-    recommended_action: str
 
 
 def _parse_scope(scope_str: str) -> InvariantScope:
@@ -304,7 +299,7 @@ class InvariantLayerMappingService:
             config: Layer mapping configuration
 
         Returns:
-            LayerMappingResult with report, interpretation, and recommended action
+            LayerMappingResult with raw mapping report
 
         Raises:
             ValueError: If models cannot be loaded or probe extraction fails
@@ -342,14 +337,8 @@ class InvariantLayerMappingService:
             source_fingerprints, target_fingerprints, mapper_config
         )
 
-        # Generate interpretation
-        interpretation = self._interpret_mapping(report)
-        recommended_action = self._recommend_action(report)
-
         return LayerMappingResult(
             report=report,
-            interpretation=interpretation,
-            recommended_action=recommended_action,
         )
 
     def analyze_collapse_risk(self, config: CollapseRiskConfig) -> CollapseRiskResult:
@@ -388,27 +377,11 @@ class InvariantLayerMappingService:
         layer_count = fingerprints.layer_count
         collapse_ratio = collapsed_count / max(1, layer_count)
 
-        # Determine risk level
-        if collapse_ratio >= 0.5:
-            risk_level = "critical"
-        elif collapse_ratio >= 0.3:
-            risk_level = "high"
-        elif collapse_ratio >= 0.15:
-            risk_level = "medium"
-        else:
-            risk_level = "low"
-
-        interpretation = self._interpret_collapse(collapse_ratio, collapsed_count, layer_count)
-        recommended_action = self._recommend_collapse_action(risk_level)
-
         return CollapseRiskResult(
             model_path=config.model_path,
             layer_count=layer_count,
             collapsed_layers=collapsed_count,
             collapse_ratio=collapse_ratio,
-            risk_level=risk_level,
-            interpretation=interpretation,
-            recommended_action=recommended_action,
         )
 
     def _load_fingerprints(
@@ -677,96 +650,6 @@ class InvariantLayerMappingService:
         logger.info("Extracted %d fingerprints from %d probes", len(fingerprints), total_probes)
         return fingerprints
 
-    def _interpret_mapping(self, report: Report) -> str:
-        """Generate interpretation of mapping results."""
-        summary = report.summary
-
-        if summary.alignment_quality >= 0.7:
-            quality = "excellent"
-        elif summary.alignment_quality >= 0.5:
-            quality = "good"
-        elif summary.alignment_quality >= 0.3:
-            quality = "moderate"
-        else:
-            quality = "poor"
-
-        collapsed_total = summary.source_collapsed_layers + summary.target_collapsed_layers
-
-        lines = [
-            f"Layer mapping quality: {quality} (alignment {summary.alignment_quality:.3f})",
-            f"Mapped {summary.mapped_layers} layers, skipped {summary.skipped_layers}",
-        ]
-
-        if collapsed_total > 0:
-            lines.append(
-                f"Collapsed layers: {collapsed_total} (source: {summary.source_collapsed_layers}, target: {summary.target_collapsed_layers})"
-            )
-
-        if summary.triangulation_quality != "none":
-            lines.append(
-                f"Triangulation quality: {summary.triangulation_quality} (multiplier {summary.mean_triangulation_multiplier:.2f})"
-            )
-
-        # Add multi-atlas metrics if available
-        if summary.total_probes_used > 68:  # More than just sequence invariants
-            lines.append(
-                f"Multi-atlas: {summary.atlas_sources_detected} sources, {summary.atlas_domains_detected} domains, {summary.total_probes_used} probes"
-            )
-
-        return " | ".join(lines)
-
-    def _recommend_action(self, report: Report) -> str:
-        """Generate recommended action based on mapping results."""
-        summary = report.summary
-
-        if summary.alignment_quality < 0.3:
-            # If not using multi-atlas, suggest upgrading
-            if report.config.invariant_scope != InvariantScope.MULTI_ATLAS:
-                return "Consider using multiAtlas scope for 439 probes across all atlases; current coverage is too sparse."
-            return (
-                "Consider using CKA-based layer matching instead; invariant coverage is too sparse."
-            )
-
-        if (
-            summary.source_collapsed_layers + summary.target_collapsed_layers
-            > summary.mapped_layers * 0.3
-        ):
-            if report.config.invariant_scope != InvariantScope.MULTI_ATLAS:
-                return (
-                    "High collapse rate. Consider using multiAtlas scope for higher anchor density."
-                )
-            return "High collapse rate detected. Try lowering collapse threshold or reviewing model compatibility."
-
-        if summary.triangulation_quality == "none" and report.config.invariant_scope in (
-            InvariantScope.SEQUENCE_INVARIANTS,
-            InvariantScope.MULTI_ATLAS,
-        ):
-            return "Enable multi_domain_bonus in config for improved triangulation scoring."
-
-        if summary.alignment_quality >= 0.7:
-            return (
-                "Proceed with merge using the layer correspondence. High confidence in alignment."
-            )
-
-        return "Layer mapping complete. Review correspondence before merge."
-
-    def _interpret_collapse(self, ratio: float, collapsed: int, total: int) -> str:
-        """Generate interpretation of collapse risk."""
-        return (
-            f"{collapsed}/{total} layers ({ratio * 100:.1f}%) have insufficient invariant coverage. "
-            f"Layers below collapse threshold may produce unreliable mappings."
-        )
-
-    def _recommend_collapse_action(self, risk_level: str) -> str:
-        """Generate recommended action for collapse risk level."""
-        actions = {
-            "low": "Collapse risk is acceptable. Proceed with layer mapping.",
-            "medium": "Consider using multiAtlas scope for 439 probes across all atlases.",
-            "high": "High collapse risk. Use multiAtlas scope for maximum anchor density.",
-            "critical": "Critical collapse risk. Use multiAtlas scope or consider alternative alignment methods.",
-        }
-        return actions.get(risk_level, "Unknown risk level.")
-
     @staticmethod
     def result_payload(result: LayerMappingResult) -> dict:
         """Convert LayerMappingResult to CLI/MCP payload."""
@@ -801,8 +684,6 @@ class InvariantLayerMappingService:
                 }
                 for m in report.mappings
             ],
-            "interpretation": result.interpretation,
-            "recommendedAction": result.recommended_action,
         }
 
         return payload
@@ -816,9 +697,6 @@ class InvariantLayerMappingService:
             "layerCount": result.layer_count,
             "collapsedLayers": result.collapsed_layers,
             "collapseRatio": result.collapse_ratio,
-            "riskLevel": result.risk_level,
-            "interpretation": result.interpretation,
-            "recommendedAction": result.recommended_action,
         }
 
     # -------------------------------------------------------------------------

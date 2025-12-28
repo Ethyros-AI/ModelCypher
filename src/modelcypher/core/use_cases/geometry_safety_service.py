@@ -467,18 +467,6 @@ class GeometrySafetyService:
             is_approaching_refusal=metrics.is_approaching_refusal,
         )
 
-    @staticmethod
-    def persona_interpretation(info: PersonaDriftInfo) -> str:
-        if info.assessment == "minimal":
-            return "Persona alignment stable. Training is not significantly affecting character traits."
-        if info.assessment == "moderate":
-            return "Moderate persona drift detected. Monitor closely for alignment degradation."
-        if info.assessment == "significant":
-            return "Significant persona drift. Consider pausing training to evaluate alignment."
-        if info.assessment == "critical":
-            return "Critical persona drift. Recommend immediate training intervention."
-        return f"Persona drift magnitude: {info.overall_drift_magnitude:.3f}"
-
     def jailbreak_test(
         self,
         model_path: str,

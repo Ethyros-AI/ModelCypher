@@ -89,7 +89,6 @@ class AgentEvalResults:
     config: dict[str, Any]
     metrics: dict[str, float]
     task_results: list[dict[str, Any]]
-    interpretation: str
     overall_score: float
 
 
@@ -195,16 +194,6 @@ class AgentEvalService:
             + metrics.get("response_quality", 0.0) * 0.3
         )
 
-        # Generate interpretation
-        if overall_score >= 0.9:
-            interpretation = "Agent demonstrates excellent performance across all metrics."
-        elif overall_score >= 0.7:
-            interpretation = "Agent shows good performance with room for improvement."
-        elif overall_score >= 0.5:
-            interpretation = "Agent shows moderate performance. Consider additional training."
-        else:
-            interpretation = "Agent shows poor performance. Significant improvements needed."
-
         return AgentEvalResults(
             eval_id=eval_id,
             model_path=evaluation["model_path"],
@@ -215,7 +204,6 @@ class AgentEvalService:
             config=evaluation["config"],
             metrics=metrics,
             task_results=evaluation["task_results"],
-            interpretation=interpretation,
             overall_score=overall_score,
         )
 

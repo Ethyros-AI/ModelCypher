@@ -92,7 +92,6 @@ class CircuitBreakerResult:
     severity: float
     trigger_source: str | None
     recommended_action: str
-    interpretation: str
 
 
 @dataclass
@@ -859,7 +858,6 @@ def _evaluate_circuit_breaker(
             severity=state.severity,
             trigger_source=state.trigger_source.value if state.trigger_source else None,
             recommended_action=state.recommended_action.value,
-            interpretation=state.interpretation,
         )
 
     except Exception as e:
@@ -869,7 +867,6 @@ def _evaluate_circuit_breaker(
             severity=0.0,
             trigger_source=None,
             recommended_action="continue",
-            interpretation=f"Evaluation error: {e}",
         )
 
 

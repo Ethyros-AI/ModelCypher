@@ -678,21 +678,3 @@ class GeometryAdapterService:
         if fraction >= 0.2:
             return "medium"
         return "low"
-
-    @staticmethod
-    def dora_interpretation(result: DoRADecomposition.DecompositionResult) -> str:
-        if result.dominant_change_type == ChangeType.MAGNITUDE_DOMINATED:
-            if result.overall_magnitude_change > 0:
-                return (
-                    "Adapter primarily amplifies existing features "
-                    f"(magnitude +{int(result.overall_magnitude_change * 100)}%)"
-                )
-            return (
-                "Adapter primarily attenuates existing features "
-                f"(magnitude {int(result.overall_magnitude_change * 100)}%)"
-            )
-        if result.dominant_change_type == ChangeType.DIRECTION_DOMINATED:
-            return f"Adapter primarily rotates feature space (drift: {result.overall_directional_drift:.2f})"
-        if result.dominant_change_type == ChangeType.MINIMAL:
-            return "Adapter has minimal impact on weight geometry"
-        return "Adapter combines scaling and rotation (balanced change)"

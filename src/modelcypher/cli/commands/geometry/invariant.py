@@ -204,14 +204,6 @@ def geometry_invariant_map_layers(
                     ]
                 )
 
-            lines.extend(
-                [
-                    "",
-                    f"Interpretation: {result.interpretation}",
-                    f"Recommended Action: {result.recommended_action}",
-                ]
-            )
-
             if result.report.mappings:
                 lines.append("")
                 lines.append("Layer Mappings (first 10):")
@@ -283,24 +275,13 @@ def geometry_invariant_collapse_risk(
         payload = InvariantLayerMappingService.collapse_risk_payload(result)
 
         if context.output_format == "text":
-            risk_emoji = {
-                "low": "[OK]",
-                "medium": "[WARN]",
-                "high": "[HIGH]",
-                "critical": "[CRIT]",
-            }.get(result.risk_level, "[?]")
-
             lines = [
                 "COLLAPSE RISK ANALYSIS",
                 f"Model: {result.model_path}",
                 "",
-                f"Risk Level: {risk_emoji} {result.risk_level.upper()}",
                 f"Layer Count: {result.layer_count}",
                 f"Collapsed Layers: {result.collapsed_layers}",
                 f"Collapse Ratio: {result.collapse_ratio * 100:.1f}%",
-                "",
-                f"Interpretation: {result.interpretation}",
-                f"Recommended Action: {result.recommended_action}",
             ]
             write_output("\n".join(lines), context.output_format, context.pretty)
             return

@@ -61,7 +61,6 @@ class StitchAnalysisResult:
     manifold_distance: float
     stitching_points: list[StitchPoint]
     recommended_config: dict
-    interpretation: str
 
 
 @dataclass(frozen=True)
@@ -126,7 +125,6 @@ class GeometryStitchService:
                 manifold_distance=1.0,
                 stitching_points=[],
                 recommended_config={},
-                interpretation="No common layers found between checkpoints.",
             )
 
         # Analyze each layer for stitching potential
@@ -171,22 +169,10 @@ class GeometryStitchService:
             "use_procrustes_warm_start": manifold_distance < 0.5,
         }
 
-        if manifold_distance < 0.2:
-            interpretation = "Checkpoints are closely aligned. Stitching should be straightforward."
-        elif manifold_distance < 0.5:
-            interpretation = (
-                "Checkpoints show moderate divergence. Stitching is feasible with care."
-            )
-        else:
-            interpretation = (
-                "Checkpoints are significantly divergent. Stitching may be challenging."
-            )
-
         return StitchAnalysisResult(
             manifold_distance=manifold_distance,
             stitching_points=stitching_points,
             recommended_config=recommended_config,
-            interpretation=interpretation,
         )
 
     def apply(

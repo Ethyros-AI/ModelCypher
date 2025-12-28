@@ -92,9 +92,6 @@ def geometry_metrics_gromov_wasserstein(
             f"Converged: {'Yes' if result.converged else 'No'}",
             f"Iterations: {result.iterations}",
             f"Coupling Shape: {result.coupling_shape[0]} x {result.coupling_shape[1]}",
-            "",
-            "Interpretation:",
-            result.interpretation,
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
@@ -146,9 +143,6 @@ def geometry_metrics_intrinsic_dimension(
             f"95% CI: [{result.confidence_lower:.2f}, {result.confidence_upper:.2f}]",
             f"Sample Count: {result.sample_count}",
             f"Method: {result.method}",
-            "",
-            "Interpretation:",
-            result.interpretation,
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
@@ -196,9 +190,6 @@ def geometry_metrics_topological_fingerprint(
             f"Betti-1 (Loops): {result.betti_1}",
             f"Persistence Entropy: {result.persistence_entropy:.4f}",
             f"Total Persistence: {result.total_persistence:.4f}",
-            "",
-            "Interpretation:",
-            result.interpretation,
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return

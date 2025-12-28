@@ -67,8 +67,6 @@ class StabilityReport:
     config: dict[str, Any]
     metrics: dict[str, float]
     per_prompt_results: list[dict[str, Any]]
-    interpretation: str
-    recommendations: list[str]
 
 
 class StabilityService:
@@ -167,28 +165,6 @@ class StabilityService:
         suite = self._suites[suite_id]
         metrics = suite["metrics"]
 
-        # Generate interpretation
-        consistency = metrics.get("consistency_score", 0.0)
-        if consistency >= 0.9:
-            interpretation = "Model shows excellent stability across test conditions."
-        elif consistency >= 0.7:
-            interpretation = "Model shows good stability with minor variations."
-        elif consistency >= 0.5:
-            interpretation = "Model shows moderate stability. Some inconsistencies detected."
-        else:
-            interpretation = "Model shows poor stability. Significant inconsistencies detected."
-
-        # Generate recommendations
-        recommendations = []
-        if consistency < 0.9:
-            recommendations.append("Consider fine-tuning with more diverse data")
-        if metrics.get("temperature_sensitivity", 0.0) > 0.3:
-            recommendations.append("Model is sensitive to temperature changes")
-        if metrics.get("prompt_sensitivity", 0.0) > 0.3:
-            recommendations.append("Model is sensitive to prompt variations")
-        if not recommendations:
-            recommendations.append("Model is stable and ready for deployment")
-
         return StabilityReport(
             suite_id=suite_id,
             model_path=suite["model_path"],
@@ -198,8 +174,6 @@ class StabilityService:
             config=suite["config"],
             metrics=metrics,
             per_prompt_results=suite["per_prompt_results"],
-            interpretation=interpretation,
-            recommendations=recommendations,
         )
 
     def _run_stability_tests(

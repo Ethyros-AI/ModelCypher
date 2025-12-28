@@ -123,23 +123,6 @@ class GeometryTrainingService:
                 "circuitBreakerThreshold": 0.75,
             }
 
-        interpretation_parts: list[str] = []
-        if metrics.flatness_score is not None:
-            interpretation_parts.append(
-                f"Flatness: {metrics.flatness_assessment} ({metrics.flatness_score:.2f})"
-            )
-        if metrics.gradient_snr is not None:
-            interpretation_parts.append(
-                f"SNR: {metrics.snr_assessment} ({metrics.gradient_snr:.1f})"
-            )
-        if metrics.circuit_breaker_tripped:
-            interpretation_parts.append("WARNING: Circuit breaker tripped")
-        interpretation = (
-            "No geometric metrics available"
-            if not interpretation_parts
-            else ". ".join(interpretation_parts)
-        )
-
         return {
             "_schema": "mc.geometry.training_status.v1",
             "jobId": job_id,
@@ -170,7 +153,6 @@ class GeometryTrainingService:
             "circuitBreakerSeverity": metrics.circuit_breaker_severity,
             "circuitBreakerTripped": metrics.circuit_breaker_tripped,
             "refusalDistance": metrics.refusal_distance,
-            "interpretation": interpretation,
             "thresholds": thresholds,
             "nextActions": [
                 "mc_geometry_training_history for trend analysis",
@@ -190,17 +172,6 @@ class GeometryTrainingService:
             {"step": step, "value": value} for step, value in history.divergence_history
         ]
 
-        if history.entries:
-            interpretation = (
-                f"History contains {len(history.entries)} entries from step "
-                f"{history.entries[0].step} to {history.entries[-1].step}"
-            )
-        else:
-            interpretation = (
-                "No history available. Geometric metrics are captured in real-time during training. "
-                "Use mc_geometry_training_status for current metrics."
-            )
-
         return {
             "_schema": "mc.geometry.training_history.v1",
             "jobId": job_id,
@@ -212,7 +183,6 @@ class GeometryTrainingService:
             "circuitBreakerHistory": None,
             "parameterDivergenceHistory": divergence_history or None,
             "trendAnalysis": None,
-            "interpretation": interpretation,
             "nextActions": [
                 "mc_geometry_training_status for current metrics",
                 "mc_job_detail for full job information",

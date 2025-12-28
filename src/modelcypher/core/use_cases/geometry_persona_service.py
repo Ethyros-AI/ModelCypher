@@ -389,7 +389,6 @@ class GeometryPersonaService:
             "overallDriftMagnitude": metrics.overall_drift_magnitude,
             "hasSignificantDrift": metrics.has_significant_drift,
             "driftingTraits": metrics.drifting_traits,
-            "interpretation": metrics.interpretation,
             "positions": [
                 {
                     "traitId": p.trait_id,

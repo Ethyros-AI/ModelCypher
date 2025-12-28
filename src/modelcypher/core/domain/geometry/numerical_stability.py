@@ -105,6 +105,7 @@ def svd_via_eigh(
     array: Array,
     *,
     full_matrices: bool = False,
+    dtype: str | None = None,
 ) -> tuple[Array, Array, Array]:
     """Compute SVD via symmetric eigendecomposition (GPU-stable, no SVD calls).
 
@@ -112,9 +113,21 @@ def svd_via_eigh(
     singular values, and completes the left basis if needed. For rank-deficient
     matrices, the null-space basis is filled from A A^T eigenvectors so that
     U and V remain orthonormal.
+
+    Parameters
+    ----------
+    dtype : str, optional
+        Override dtype. If None, preserves input dtype (float32 or float64).
+        Use float64 for high-precision alignment computations.
     """
     b = backend
-    A = b.astype(array, "float32")
+    # Preserve input precision by default; override with dtype param
+    target_dtype = dtype if dtype is not None else str(array.dtype)
+    # MLX eigh requires float32 or float64 - ensure we have one of those
+    if "64" in target_dtype or target_dtype == "float64":
+        A = b.astype(array, "float64")
+    else:
+        A = b.astype(array, "float32")
     shape = b.shape(A)
     m = int(shape[0])
     n = int(shape[1]) if len(shape) > 1 else 0
@@ -651,8 +664,12 @@ def solve_via_gram_alignment(
     space [n, n], not feature space [d_s, d_t].
     """
     b = backend
-    source = b.astype(source, "float32")
-    target = b.astype(target, "float32")
+    # Use the highest precision available on the hardware
+    # MLX on Apple Silicon: float32 is native GPU, float64 is CPU fallback
+    # The algorithm should achieve CKA = 1.0 at any precision
+    native_dtype = _get_native_precision(b, source)
+    source = b.astype(source, native_dtype)
+    target = b.astype(target, native_dtype)
     b.eval(source, target)
 
     shape_s = b.shape(source)

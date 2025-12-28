@@ -62,7 +62,6 @@ def thermo_analyze(
         "entropy": result.entropy,
         "temperature": result.temperature,
         "freeEnergy": result.free_energy,
-        "interpretation": result.interpretation,
     }
 
     if context.output_format == "text":
@@ -72,8 +71,6 @@ def thermo_analyze(
             f"Entropy: {result.entropy:.4f}",
             f"Temperature: {result.temperature:.4f}",
             f"Free Energy: {result.free_energy:.4f}",
-            "",
-            result.interpretation,
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
@@ -107,7 +104,6 @@ def thermo_path(
         "checkpoints": result.checkpoints,
         "pathLength": result.path_length,
         "curvature": result.curvature,
-        "interpretation": result.interpretation,
     }
 
     write_output(payload, context.output_format, context.pretty)
@@ -819,7 +815,6 @@ def thermo_benchmark(
                         "cohensD": s.effect_size.cohens_d,
                         "ciLower": s.effect_size.ci_lower,
                         "ciUpper": s.effect_size.ci_upper,
-                        "interpretation": s.effect_size.interpretation,
                     }
                     if s.effect_size
                     else None

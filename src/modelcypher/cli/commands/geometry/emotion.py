@@ -283,11 +283,6 @@ def emotion_opposition(
         payload = {
             "pairCount": len(OPPOSITION_PAIRS),
             "pairs": pairs,
-            "interpretation": (
-                "Opposite emotions should have low co-activation. "
-                "When merging models, opposition structure should be preserved - "
-                "if joy > sadness in model A, the same should hold in merged model."
-            ),
             "scoringMethod": "OppositionPreservationScorer.compute_score()",
         }
 

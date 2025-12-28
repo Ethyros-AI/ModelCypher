@@ -153,17 +153,12 @@ def transfer_project(
         "sourceModel": str(source_path),
         "targetModel": str(target_path),
         "stress": transfer.stress,
-        "quality": transfer.quality.value,
-        "confidence": transfer.confidence,
         "curvatureMismatch": transfer.curvature_mismatch,
         "numAnchors": profile.num_anchors,
         "coordinates": transfer.coordinates[:10].tolist(),
-        "isReliable": transfer.is_reliable,
-        "interpretation": (
-            f"Cross-manifold projection for '{concept}' completed with "
-            f"{transfer.quality.value} quality (stress: {transfer.stress:.3f}). "
-            f"{'Reliable for downstream use.' if transfer.is_reliable else 'Use with caution.'}"
-        ),
+        "stressFactor": transfer.confidence_components.stress_factor,
+        "anchorFactor": transfer.confidence_components.anchor_factor,
+        "curvatureFactor": transfer.confidence_components.curvature_factor,
     }
 
     if generate_lora:
@@ -212,11 +207,11 @@ def transfer_project(
             f"Source: {source_path.name}",
             f"Target: {target_path.name}",
             "",
-            f"Quality: {transfer.quality.value.upper()}",
             f"Stress: {transfer.stress:.4f}",
-            f"Confidence: {transfer.confidence:.2%}",
             f"Anchors Used: {profile.num_anchors}",
-            f"Reliable: {'Yes' if transfer.is_reliable else 'No'}",
+            f"Stress Factor: {transfer.confidence_components.stress_factor:.4f}",
+            f"Anchor Factor: {transfer.confidence_components.anchor_factor:.4f}",
+            f"Curvature Factor: {transfer.confidence_components.curvature_factor:.4f}",
         ]
 
         if generate_lora and "lora" in result:
@@ -384,10 +379,6 @@ def transfer_compare(
         "commonAnchors": len(common_anchors),
         "distanceCorrelation": float(correlation),
         "meanAbsoluteDiff": float(mean_diff),
-        "interpretation": (
-            f"Profiles have {correlation:.1%} correlation. "
-            f"{'High similarity.' if correlation > 0.8 else 'Moderate similarity.' if correlation > 0.5 else 'Low similarity.'}"
-        ),
     }
 
     if context.output_format == "text":
@@ -399,8 +390,6 @@ def transfer_compare(
             f"Common Anchors: {len(common_anchors)}",
             f"Distance Correlation: {correlation:.4f}",
             f"Mean Absolute Difference: {mean_diff:.4f}",
-            "",
-            result["interpretation"],
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return

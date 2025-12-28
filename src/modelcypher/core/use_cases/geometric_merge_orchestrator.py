@@ -1586,17 +1586,8 @@ class GeometricMergeOrchestrator:
                         metrics["rotations_applied"] += 1
 
                 # Handle shape mismatch for cross-architecture merging.
-                # CRITICAL: SVD projection does NOT preserve functional behavior of weights.
-                # It produces weights with correct magnitude but wrong direction (cosine_sim ≈ 0).
-                #
-                # For now, we use a conservative approach:
-                # - 1D weights (biases, layer norms): truncate/pad to match
-                # - 2D weights with mismatched dimensions: use target weights only
-                #
-                # This preserves model coherence at the cost of not transferring source
-                # knowledge for incompatible weight matrices. Proper cross-architecture
-                # weight transfer requires activation-based alignment at all boundaries.
-                cross_dim_use_target_only = False
+                # Use geometry-preserving projection (Gram transport) instead of
+                # target-only fallbacks. Models are always compatible.
                 if source_w.shape != target_w.shape:
                     if source_w.ndim == 1 and target_w.ndim == 1:
                         # 1D weights: simple truncation/padding is reasonable
@@ -1616,15 +1607,33 @@ class GeometricMergeOrchestrator:
                             key, d_s, d_t
                         )
                     else:
-                        # 2D weights with dimension mismatch: use target weights only.
-                        # SVD projection produces functionally incorrect weights.
-                        logger.info(
-                            "CROSS-DIM SKIP %s: source=%s, target=%s - using target only",
-                            key, source_w.shape, target_w.shape
+                        from modelcypher.core.domain.geometry.cross_dimensional_projection import (
+                            ProjectionMethod,
+                            project_cross_dimensional,
                         )
-                        cross_dim_use_target_only = True
-                        source_w = target_w  # Will be blended with alpha=0 below
-                        metrics["cross_arch_target_only"] = metrics.get("cross_arch_target_only", 0) + 1
+
+                        source_rows = source_w.shape[0] if source_w.ndim > 1 else 1
+                        target_rows = target_w.shape[0] if target_w.ndim > 1 else 1
+                        source_matrix = b.reshape(source_w, (source_rows, -1))
+                        target_matrix = b.reshape(target_w, (target_rows, -1))
+                        projection = project_cross_dimensional(
+                            source_matrix,
+                            target_matrix,
+                            method=ProjectionMethod.GRAM_TRANSPORT,
+                            backend=b,
+                        )
+                        source_w = b.reshape(projection.projected, target_w.shape)
+                        b.eval(source_w)
+                        metrics["cross_arch_dim_projections"] += 1
+                        metrics["gw_transport_used"] += 1
+                        logger.info(
+                            "CROSS-DIM PROJECT %s: source=%s, target=%s, method=%s, alignment=%.4f",
+                            key,
+                            tuple(source_matrix.shape),
+                            tuple(target_matrix.shape),
+                            projection.method_used.value,
+                            projection.alignment_score,
+                        )
 
                 # Null-space filter (MINGLE, 2025): preserve target activations by removing
                 # source deltas that lie in the target activation row space.
@@ -1632,7 +1641,6 @@ class GeometricMergeOrchestrator:
                     layer_geom
                     and layer_geom.null_space_projection is not None
                     and source_w.ndim == 2
-                    and not cross_dim_use_target_only
                 ):
                     projection = layer_geom.null_space_projection
                     if source_w.shape[1] == projection.shape[0]:

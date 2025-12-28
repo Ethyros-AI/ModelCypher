@@ -349,7 +349,6 @@ def research_sparse_region(
             }
             for r in result.regions
         ],
-        "interpretation": result.interpretation,
     }
 
     if context.output_format == "text":
@@ -367,9 +366,6 @@ def research_sparse_region(
             lines.append(f"    Pattern: {r.activation_pattern}")
         if len(result.regions) > 10:
             lines.append(f"  ... and {len(result.regions) - 10} more regions")
-        lines.append("")
-        lines.append("Interpretation:")
-        lines.append(result.interpretation)
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -417,7 +413,6 @@ def research_afm(
             k: v[:5]
             for k, v in result.activation_maps.items()
         },
-        "interpretation": result.interpretation,
     }
 
     if context.output_format == "text":
@@ -435,9 +430,6 @@ def research_afm(
             lines.append(f"    Max Activation: {s.max_activation:.4f}")
         if len(result.layer_summaries) > 10:
             lines.append(f"  ... and {len(result.layer_summaries) - 10} more layers")
-        lines.append("")
-        lines.append("Interpretation:")
-        lines.append(result.interpretation)
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

@@ -183,8 +183,6 @@ def geometry_persona_drift(
             f"Step: {metrics.step}",
             f"Overall Drift: {metrics.overall_drift_magnitude:.4f}",
             f"Significant Drift: {'Yes' if metrics.has_significant_drift else 'No'}",
-            "",
-            metrics.interpretation,
         ]
         if metrics.drifting_traits:
             lines.append(f"Drifting Traits: {', '.join(metrics.drifting_traits)}")

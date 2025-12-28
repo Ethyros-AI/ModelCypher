@@ -399,7 +399,10 @@ class ConceptVolume:
 
         # If no geodesic context or raw activations, use Euclidean
         if self._geodesic_context is None or self.raw_activations is None:
-            return diff
+            raise ValueError(
+                "Geodesic context required for Riemannian log map. "
+                "Build volumes with store_raw_activations=True."
+            )
 
         backend.eval(points_arr)
         n_points = int(points_arr.shape[0])

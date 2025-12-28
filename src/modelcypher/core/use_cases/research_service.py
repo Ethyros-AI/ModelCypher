@@ -45,7 +45,6 @@ class SparseRegionResult:
     regions: list[SparseRegion]
     total_sparsity: float
     layer_count: int
-    interpretation: str
 
 
 @dataclass(frozen=True)
@@ -67,7 +66,6 @@ class AFMResult:
     activation_maps: dict[str, list[float]]
     dominant_patterns: list[str]
     layer_summaries: list[ActivationMap]
-    interpretation: str
 
 
 class ResearchService:
@@ -91,7 +89,7 @@ class ResearchService:
             model_path: Path to the model directory.
 
         Returns:
-            SparseRegionResult with identified sparse regions and interpretation.
+            SparseRegionResult with identified sparse regions.
 
         Raises:
             ValueError: If model path does not exist or is invalid.
@@ -118,15 +116,11 @@ class ResearchService:
         else:
             total_sparsity = 0.0
 
-        # Generate interpretation
-        interpretation = self._interpret_sparse_regions(regions, total_sparsity)
-
         return SparseRegionResult(
             model_path=str(resolved_path),
             regions=regions,
             total_sparsity=total_sparsity,
             layer_count=len(regions),
-            interpretation=interpretation,
         )
 
     def _analyze_sparse_regions(self, model_path: Path) -> list[SparseRegion]:
@@ -185,61 +179,6 @@ class ResearchService:
 
         return regions
 
-    def _interpret_sparse_regions(
-        self,
-        regions: list[SparseRegion],
-        total_sparsity: float,
-    ) -> str:
-        """Generate interpretation of sparse region analysis."""
-        if not regions:
-            return "No sparse regions detected. Model may be fully dense or analysis failed."
-
-        high_sparsity_count = sum(1 for r in regions if r.sparsity_ratio > 0.6)
-        mlp_regions = [r for r in regions if "mlp" in r.layer_name]
-        attn_regions = [r for r in regions if "attn" in r.layer_name]
-
-        interpretations = []
-
-        if total_sparsity > 0.6:
-            interpretations.append(
-                f"High overall sparsity ({total_sparsity:.1%}) suggests potential for "
-                "activation pruning or sparse computation optimization."
-            )
-        elif total_sparsity > 0.4:
-            interpretations.append(
-                f"Moderate sparsity ({total_sparsity:.1%}) indicates typical transformer "
-                "activation patterns with some optimization potential."
-            )
-        else:
-            interpretations.append(
-                f"Low sparsity ({total_sparsity:.1%}) suggests dense activations. "
-                "Model may benefit from sparsity-inducing training techniques."
-            )
-
-        if mlp_regions:
-            avg_mlp_sparsity = sum(r.sparsity_ratio for r in mlp_regions) / len(mlp_regions)
-            if avg_mlp_sparsity > 0.5:
-                interpretations.append(
-                    f"MLP layers show high sparsity ({avg_mlp_sparsity:.1%}), "
-                    "typical of ReLU/GELU activation functions."
-                )
-
-        if attn_regions:
-            avg_attn_sparsity = sum(r.sparsity_ratio for r in attn_regions) / len(attn_regions)
-            if avg_attn_sparsity > 0.4:
-                interpretations.append(
-                    f"Attention layers show moderate sparsity ({avg_attn_sparsity:.1%}), "
-                    "indicating focused attention patterns."
-                )
-
-        if high_sparsity_count > len(regions) * 0.5:
-            interpretations.append(
-                f"{high_sparsity_count} of {len(regions)} regions have high sparsity (>60%), "
-                "suggesting the model has learned efficient representations."
-            )
-
-        return " ".join(interpretations)
-
     def afm(self, model_path: str) -> AFMResult:
         """Run activation function mapping analysis.
 
@@ -250,7 +189,7 @@ class ResearchService:
             model_path: Path to the model directory.
 
         Returns:
-            AFMResult with activation maps and interpretation.
+            AFMResult with activation maps.
 
         Raises:
             ValueError: If model path does not exist or is invalid.
@@ -277,15 +216,11 @@ class ResearchService:
         # Extract dominant patterns
         dominant_patterns = list(set(s.dominant_pattern for s in layer_summaries))
 
-        # Generate interpretation
-        interpretation = self._interpret_activation_maps(layer_summaries, dominant_patterns)
-
         return AFMResult(
             model_path=str(resolved_path),
             activation_maps=activation_maps,
             dominant_patterns=dominant_patterns,
             layer_summaries=layer_summaries,
-            interpretation=interpretation,
         )
 
     def _analyze_activation_functions(self, model_path: Path) -> list[ActivationMap]:
@@ -352,70 +287,3 @@ class ResearchService:
             )
 
         return summaries
-
-    def _interpret_activation_maps(
-        self,
-        summaries: list[ActivationMap],
-        dominant_patterns: list[str],
-    ) -> str:
-        """Generate interpretation of activation function mapping."""
-        if not summaries:
-            return "No activation maps generated. Model analysis may have failed."
-
-        interpretations = []
-
-        # Analyze pattern distribution
-        pattern_counts: dict[str, int] = {}
-        for s in summaries:
-            pattern_counts[s.dominant_pattern] = pattern_counts.get(s.dominant_pattern, 0) + 1
-
-        most_common_pattern = max(pattern_counts.items(), key=lambda x: x[1])
-        interpretations.append(
-            f"Dominant activation pattern: {most_common_pattern[0]} "
-            f"({most_common_pattern[1]}/{len(summaries)} layers)."
-        )
-
-        # Analyze activation statistics
-        mean_activations = [s.mean_activation for s in summaries]
-        avg_mean = sum(mean_activations) / len(mean_activations)
-
-        if avg_mean > 0.5:
-            interpretations.append(
-                f"High average activation ({avg_mean:.2f}) suggests active feature extraction."
-            )
-        elif avg_mean > 0.3:
-            interpretations.append(
-                f"Moderate average activation ({avg_mean:.2f}) indicates balanced processing."
-            )
-        else:
-            interpretations.append(
-                f"Low average activation ({avg_mean:.2f}) may indicate sparse representations."
-            )
-
-        # Check for activation trends
-        early_mean = sum(s.mean_activation for s in summaries[: len(summaries) // 3]) / max(
-            1, len(summaries) // 3
-        )
-        late_mean = sum(s.mean_activation for s in summaries[-len(summaries) // 3 :]) / max(
-            1, len(summaries) // 3
-        )
-
-        if late_mean > early_mean * 1.2:
-            interpretations.append(
-                "Activation intensity increases with depth, typical of feature refinement."
-            )
-        elif early_mean > late_mean * 1.2:
-            interpretations.append(
-                "Activation intensity decreases with depth, suggesting information compression."
-            )
-        else:
-            interpretations.append("Activation intensity remains stable across layers.")
-
-        # Pattern diversity
-        if len(dominant_patterns) > 3:
-            interpretations.append(
-                f"High pattern diversity ({len(dominant_patterns)} patterns) indicates "
-                "varied processing strategies across layers."
-            )
-
-        return " ".join(interpretations)

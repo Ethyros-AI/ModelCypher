@@ -1693,15 +1693,6 @@ def build_server() -> FastMCP:
                 "model": model_path,
                 "promptCount": len(prompts),
                 "coherenceScore": score,
-                "interpretation": (
-                    "excellent"
-                    if score > 0.8
-                    else "good"
-                    if score > 0.6
-                    else "acceptable"
-                    if score > 0.4
-                    else "degraded"
-                ),
                 "nextActions": [
                     "mc_merge_probe for task-specific testing",
                     "mc_merge_validate for full validation suite",
@@ -1752,15 +1743,6 @@ def build_server() -> FastMCP:
                     }
                     for r in results
                 ],
-                "interpretation": (
-                    "all_passed"
-                    if pass_rate == 1.0
-                    else "mostly_passed"
-                    if pass_rate >= 0.7
-                    else "partial"
-                    if pass_rate >= 0.5
-                    else "mostly_failed"
-                ),
                 "nextActions": [
                     "mc_merge_diagnose for geometric analysis of failures",
                     "mc_merge_validate for full validation suite",
@@ -1966,8 +1948,6 @@ def build_server() -> FastMCP:
                 "config": result.config,
                 "metrics": result.metrics,
                 "perPromptResults": result.per_prompt_results,
-                "interpretation": result.interpretation,
-                "recommendations": result.recommendations,
                 "nextActions": [
                     "mc_stability_run to run another suite",
                 ],
@@ -2034,7 +2014,6 @@ def build_server() -> FastMCP:
                 "config": result.config,
                 "metrics": result.metrics,
                 "taskResults": result.task_results,
-                "interpretation": result.interpretation,
                 "overallScore": result.overall_score,
                 "nextActions": [
                     "mc_agent_eval_run to run another evaluation",
@@ -2287,7 +2266,6 @@ def build_server() -> FastMCP:
                 "entropy": result.entropy,
                 "temperature": result.temperature,
                 "freeEnergy": result.free_energy,
-                "interpretation": result.interpretation,
                 "nextActions": [
                     "mc_thermo_entropy for entropy history",
                     "mc_thermo_path for checkpoint path analysis",
@@ -2305,7 +2283,6 @@ def build_server() -> FastMCP:
                 "checkpoints": result.checkpoints,
                 "pathLength": result.path_length,
                 "curvature": result.curvature,
-                "interpretation": result.interpretation,
                 "nextActions": [
                     "mc_thermo_analyze for job-level metrics",
                     "mc_geometry_stitch_analyze for geometry stitching",
@@ -2745,7 +2722,6 @@ def build_server() -> FastMCP:
                     }
                     for r in result.regions[:20]  # Limit to first 20 for response size
                 ],
-                "interpretation": result.interpretation,
                 "nextActions": [
                     "mc_research_afm for activation function mapping",
                     "mc_model_probe for architecture details",
@@ -2778,7 +2754,6 @@ def build_server() -> FastMCP:
                     }
                     for s in result.layer_summaries[:20]  # Limit to first 20 for response size
                 ],
-                "interpretation": result.interpretation,
                 "nextActions": [
                     "mc_research_sparse_region for sparsity analysis",
                     "mc_model_probe for architecture details",

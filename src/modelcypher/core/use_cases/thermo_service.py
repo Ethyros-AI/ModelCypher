@@ -48,7 +48,6 @@ class ThermoAnalysisResult:
     entropy: float
     temperature: float
     free_energy: float
-    interpretation: str
 
 
 @dataclass(frozen=True)
@@ -58,7 +57,6 @@ class ThermoPathResult:
     checkpoints: list[str]
     path_length: float
     curvature: float
-    interpretation: str
 
 
 @dataclass(frozen=True)
@@ -287,21 +285,11 @@ class ThermoService:
         temperature = 1.0 + (entropy / 5.0)  # Scale entropy to temperature range
         free_energy = entropy * temperature
 
-        if entropy < 1.5:
-            interpretation = "Training is well-converged with low entropy (confident outputs)."
-        elif entropy < 3.0:
-            interpretation = "Training shows moderate entropy, model is still exploring."
-        else:
-            interpretation = (
-                "Training has high entropy, may need more iterations or regularization."
-            )
-
         return ThermoAnalysisResult(
             job_id=job_id,
             entropy=entropy,
             temperature=temperature,
             free_energy=free_energy,
-            interpretation=interpretation,
         )
 
     def _estimate_entropy_from_logs(self, job_dir: Path) -> float:
@@ -356,20 +344,10 @@ class ThermoService:
         mean_delta = sum(deltas) / len(deltas)
         curvature = (sum((d - mean_delta) ** 2 for d in deltas) / len(deltas)) ** 0.5
 
-        if curvature < 0.3:
-            interpretation = "Training path is smooth with consistent entropy descent."
-        elif curvature < 0.7:
-            interpretation = "Training path shows moderate curvature, some exploration phases."
-        else:
-            interpretation = (
-                "Training path is highly curved, indicating instability or mode switching."
-            )
-
         return ThermoPathResult(
             checkpoints=checkpoints,
             path_length=path_length,
             curvature=curvature,
-            interpretation=interpretation,
         )
 
     def path_integration(

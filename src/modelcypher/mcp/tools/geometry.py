@@ -612,12 +612,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                 "summary": summary,
                 "graftCandidates": sparsity_map.get_graft_candidates(),
                 "deadNeurons": sparsity_map.dead_neurons,
-                "interpretation": (
-                    f"Analyzed {summary.get('num_layers', 0)} layers with "
-                    f"{summary.get('total_neurons', 0)} neurons. "
-                    f"{summary.get('total_sparse', 0)} sparse ({summary.get('sparse_fraction', 0):.0%}), "
-                    f"{summary.get('total_dead', 0)} dead ({summary.get('dead_fraction', 0):.0%})."
-                ),
                 "nextActions": [
                     "mc_geometry_sparse_locate for layer-level analysis",
                     "mc_model_merge with neuron-level alpha masking",
@@ -1162,9 +1156,6 @@ def register_geometry_safety_tools(ctx: ServiceContext) -> None:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_dare_sparsity(checkpointPath: str, basePath: str | None = None) -> dict:
             analysis = ctx.geometry_adapter_service.analyze_dare(checkpointPath, basePath)
-            readiness = ctx.geometry_adapter_service.dare_merge_readiness(
-                analysis.effective_sparsity
-            )
             per_layer = []
             for name, metrics in analysis.per_layer_sparsity.items():
                 importance = max(0.0, min(1.0, metrics.essential_fraction))
@@ -1180,20 +1171,14 @@ def register_geometry_safety_tools(ctx: ServiceContext) -> None:
                 entry["layerName"]
                 for entry in sorted(per_layer, key=lambda x: x["importance"], reverse=True)
             ]
-            interpretation = (
-                f"Effective sparsity {analysis.effective_sparsity:.2%}. "
-                f"Recommended drop rate {analysis.recommended_drop_rate:.2f}."
-            )
             return {
                 "_schema": "mc.geometry.dare_sparsity.v1",
                 "checkpointPath": checkpointPath,
                 "baseModelPath": basePath,
                 "effectiveSparsity": analysis.effective_sparsity,
-                "mergeReadiness": readiness,
                 "perLayerSparsity": per_layer or None,
                 "layerRanking": layer_ranking or None,
                 "recommendedDropRate": analysis.recommended_drop_rate,
-                "interpretation": interpretation,
                 "nextActions": [
                     "mc_geometry_dora_decomposition for learning type",
                     "mc_checkpoint_score for quality assessment",
@@ -1208,39 +1193,27 @@ def register_geometry_safety_tools(ctx: ServiceContext) -> None:
             checkpointPath: str, basePath: str | None = None
         ) -> dict:
             result = ctx.geometry_adapter_service.analyze_dora(checkpointPath, basePath)
-            learning_type = ctx.geometry_adapter_service.dora_learning_type(result)
-            learning_confidence = ctx.geometry_adapter_service.dora_learning_type_confidence(result)
             stability_score = ctx.geometry_adapter_service.dora_stability_score(result)
-            overfit_risk = ctx.geometry_adapter_service.dora_overfit_risk(result)
             per_layer = []
             for name, metrics in result.per_layer_metrics.items():
-                if metrics.interpretation.value in {"amplification", "attenuation"}:
-                    dominant = "magnitude"
-                elif metrics.interpretation.value == "rotation":
-                    dominant = "direction"
-                else:
-                    dominant = "balanced"
                 per_layer.append(
                     {
                         "layerName": name,
                         "magnitudeChange": metrics.relative_magnitude_change,
                         "directionalDrift": metrics.directional_drift,
-                        "dominantType": dominant,
+                        "magnitudeRatio": metrics.magnitude_ratio,
+                        "directionCosine": metrics.direction_cosine,
                     }
                 )
-            learning_type_value = learning_type if learning_type != "minimal" else "balanced"
             return {
                 "_schema": "mc.geometry.dora_decomposition.v1",
                 "checkpointPath": checkpointPath,
                 "baseModelPath": basePath,
                 "magnitudeChangeRatio": result.overall_magnitude_change,
                 "directionalDrift": result.overall_directional_drift,
-                "learningType": learning_type_value,
-                "learningTypeConfidence": learning_confidence,
+                "magnitudeToDirectionRatio": result.magnitude_to_direction_ratio,
                 "perLayerDecomposition": per_layer or None,
                 "stabilityScore": stability_score,
-                "overfitRisk": overfit_risk,
-                "interpretation": ctx.geometry_adapter_service.dora_interpretation(result),
                 "nextActions": [
                     "mc_geometry_dare_sparsity for sparsity assessment",
                     "mc_checkpoint_export for deployment",
@@ -1422,13 +1395,6 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
                 "totalPrimes": len(primes),
                 "overallCoherence": result.cka,
                 "categoryCoherence": category_coherence,
-                "interpretation": (
-                    "Strong semantic structure - primes form coherent clusters."
-                    if result.cka > 0.7
-                    else "Moderate semantic structure - some prime clustering detected."
-                    if result.cka > 0.4
-                    else "Weak semantic structure - primes are diffusely represented."
-                ),
                 "nextActions": [
                     "mc_geometry_primes_compare to compare with another model",
                     "mc_model_probe for architecture details",
@@ -1478,13 +1444,6 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
                 "ckaSimilarity": result.cka,
                 "mostSimilarPrimes": [p for p, _ in sims[:5]],
                 "mostDivergentPrimes": [p for p, _ in sims[-5:]],
-                "interpretation": (
-                    "Models have highly similar semantic prime structure."
-                    if result.cka > 0.8
-                    else "Models have moderately similar semantic structure."
-                    if result.cka > 0.5
-                    else "Models have divergent semantic prime representations."
-                ),
                 "nextActions": [
                     "mc_model_analyze_alignment for layer-wise drift analysis",
                     "mc_geometry_primes_probe for individual model analysis",
@@ -1663,7 +1622,6 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
                     for sp in result.stitching_points
                 ],
                 "recommendedConfig": result.recommended_config,
-                "interpretation": result.interpretation,
                 "nextActions": ["mc_geometry_stitch_apply to perform the stitching"],
             }
 
@@ -1850,7 +1808,6 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
                     "hardSwapLayers": result_dict.get("hardSwapLayers"),
                     "alphaByLayer": result_dict.get("alphaByLayer"),
                     "layerScores": result_dict.get("layerScores"),
-                    "interpretation": result.interpretation,
                     "nextActions": [
                         "mc_model_merge with recommended alpha values",
                         "mc_geometry_dare_sparsity for detailed DARE analysis",
@@ -2057,11 +2014,6 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             return {
                 "_schema": "mc.geometry.spatial.euclidean.v1",
                 **result.to_dict(),
-                "interpretation": (
-                    "The model has a 3D Euclidean world model."
-                    if result.is_euclidean
-                    else "The model's spatial representation is non-Euclidean."
-                ),
                 "nextActions": [
                     "mc_geometry_spatial_gravity to test gravity gradient",
                     "mc_geometry_spatial_analyze for full 3D analysis",
@@ -2100,11 +2052,6 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             return {
                 "_schema": "mc.geometry.spatial.gravity.v1",
                 **result.to_dict(),
-                "interpretation": (
-                    "Gravity gradient detected - the model has a physics engine for mass."
-                    if result.gravity_axis_detected
-                    else "No gravity gradient - spatial reasoning may be surface-level."
-                ),
                 "nextActions": [
                     "mc_geometry_spatial_euclidean to verify Euclidean structure",
                     "mc_geometry_spatial_analyze for full 3D analysis",
@@ -2142,15 +2089,6 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             return {
                 "_schema": "mc.geometry.spatial.density.v1",
                 **result.to_dict(),
-                "interpretation": (
-                    f"Density-mass correlation: {result.density_mass_correlation:.2f}. "
-                    f"Inverse-square compliance: {result.inverse_square_compliance:.2f}. "
-                    + (
-                        "Physical mass is encoded geometrically."
-                        if abs(result.density_mass_correlation) > 0.3
-                        else "Mass encoding is weak."
-                    )
-                ),
                 "nextActions": [
                     "mc_geometry_spatial_analyze for full 3D analysis",
                     "mc_geometry_spatial_gravity for gravity gradient",
@@ -2193,13 +2131,6 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             return {
                 "_schema": "mc.geometry.spatial.full_analysis.v1",
                 **report.to_dict(),
-                "verdict": (
-                    "HIGH VISUAL GROUNDING - Probability concentrated on human-perceptual 3D axes."
-                    if report.has_3d_world_model and report.physics_engine_detected
-                    else "MODERATE GROUNDING - 3D structure present, probability more diffuse."
-                    if report.has_3d_world_model
-                    else "ALTERNATIVE GROUNDING - Physics encoded along non-visual axes (linguistic/formula-based)."
-                ),
                 "nextActions": [
                     "mc_geometry_spatial_probe_model to test another model",
                     "mc_model_merge to preserve 3D structure during merging",
@@ -2287,13 +2218,6 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
                 "anchorsProbed": len(anchor_activations),
                 "layer": layer if layer >= 0 else "last",
                 **report.to_dict(),
-                "verdict": (
-                    "HIGH VISUAL GROUNDING - Physics probability concentrated on 3D visual axes."
-                    if report.has_3d_world_model and report.physics_engine_detected
-                    else "MODERATE GROUNDING - 3D structure detected, probability diffuse."
-                    if report.has_3d_world_model
-                    else "ALTERNATIVE GROUNDING - Physics encoded geometrically along non-visual axes."
-                ),
                 "nextActions": [
                     "mc_geometry_spatial_analyze with custom activations",
                     "mc_model_merge to preserve spatial representations",
@@ -2596,12 +2520,6 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                 "originalNorm": result.original_norm,
                 "filteredNorm": result.filtered_norm,
                 "filteredDelta": filtered_list,
-                "interpretation": (
-                    f"Preserved {result.preserved_fraction:.1%} of delta, "
-                    f"eliminated {result.projection_loss:.1%} interference component."
-                    if result.filtering_applied
-                    else "No filtering applied (null space empty or dimension mismatch)."
-                ),
                 "nextActions": [
                     "Apply filteredDelta to weights for interference-free merge",
                     "mc_geometry_safety_polytope_check for comprehensive safety",
@@ -2666,10 +2584,6 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                 "meanNullFraction": profile.mean_null_fraction,
                 "graftableLayers": profile.graftable_layers,
                 "perLayer": per_layer_info,
-                "interpretation": (
-                    f"{len(profile.graftable_layers)} layers have ≥{graftThreshold:.0%} "
-                    f"null space available for knowledge grafting."
-                ),
                 "nextActions": [
                     "mc_geometry_null_space_filter to filter deltas for graftable layers",
                     "mc_geometry_safety_polytope_model for full model safety profile",
@@ -2780,12 +2694,6 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                 "recommendedAlpha": result.recommended_alpha,
                 "confidence": result.confidence,
                 "transformationEffort": result.transformation_effort,
-                "interpretation": (
-                    "All diagnostics within bounds - direct merge possible."
-                    if not result.triggers
-                    else f"{len(result.triggers)} trigger(s) detected. "
-                    f"Apply transformations: {', '.join(t.value for t in result.transformations)}."
-                ),
                 "nextActions": [
                     "mc_geometry_null_space_filter for interference mitigation",
                     "mc_geometry_safety_polytope_model for full model profile",
@@ -2874,10 +2782,6 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                 },
                 "totalTransformationEffort": profile.total_transformation_effort,
                 "perLayer": per_layer_info,
-                "interpretation": (
-                    f"{len(profile.per_layer)} layers analyzed; "
-                    f"{len(profile.all_transformations)} unique transformations suggested."
-                ),
                 "nextActions": [
                     "mc_geometry_null_space_filter for interference mitigation",
                     "mc_geometry_safety_polytope_check for per-layer analysis",

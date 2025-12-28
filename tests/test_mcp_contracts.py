@@ -384,8 +384,7 @@ def test_mc_geometry_dare_sparsity_schema(mcp_env: dict[str, str], tmp_path: Pat
     assert payload["_schema"] == "mc.geometry.dare_sparsity.v1"
     assert payload["checkpointPath"] == str(checkpoint_path)
     assert "effectiveSparsity" in payload
-    assert "mergeReadiness" in payload
-    assert "interpretation" in payload
+    assert "recommendedDropRate" in payload
     assert "layerRanking" in payload
 
 
@@ -406,7 +405,7 @@ def test_mc_geometry_dora_decomposition_schema(mcp_env: dict[str, str], tmp_path
     assert payload["checkpointPath"] == str(checkpoint_path)
     assert "magnitudeChangeRatio" in payload
     assert "directionalDrift" in payload
-    assert "learningTypeConfidence" in payload
+    assert "magnitudeToDirectionRatio" in payload
     assert "perLayerDecomposition" in payload
 
 
