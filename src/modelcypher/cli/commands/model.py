@@ -704,6 +704,7 @@ def model_vocab_compare(
     payload = result.to_dict()
     payload["modelA"] = model_a
     payload["modelB"] = model_b
+    payload["needsBridge"] = result.overlap_ratio < 1.0
 
     if context.output_format == "text":
         report = format_comparison_report(result)

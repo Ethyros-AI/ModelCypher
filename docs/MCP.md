@@ -891,6 +891,186 @@ Call mc_inventory first to see what models are available before starting trainin
 
 ---
 
+### mc_geometry_baseline_list
+
+**Purpose:** List available domain geometry baselines.
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "domain": { "type": ["string", "null"] }
+  }
+}
+```
+
+**Output:**
+```json
+{
+  "_schema": "mc.geometry.baseline.list.v1",
+  "baselines": [
+    {
+      "domain": "spatial",
+      "modelFamily": "qwen",
+      "modelSize": "0.5B",
+      "ollivierRicciMean": -0.189,
+      "extractionDate": "2025-12-27"
+    }
+  ]
+}
+```
+
+---
+
+### mc_geometry_baseline_extract
+
+**Purpose:** Extract a geometry baseline from a reference model.
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "modelPath": { "type": "string" },
+    "domain": { "type": "string", "default": "spatial" },
+    "layer": { "type": "integer", "default": -1 },
+    "kNeighbors": { "type": "integer", "default": 10 }
+  },
+  "required": ["modelPath"]
+}
+```
+
+**Output:**
+```json
+{
+  "_schema": "mc.geometry.baseline.extract.v1",
+  "domain": "spatial",
+  "modelFamily": "qwen",
+  "modelSize": "0.5B",
+  "ollivierRicciMean": -0.189,
+  "ollivierRicciStd": 0.045,
+  "manifoldHealthDistribution": {
+    "healthy": 1.0,
+    "degenerate": 0.0,
+    "collapsed": 0.0
+  },
+  "intrinsicDimension": 12.4,
+  "domainMetrics": {
+    "euclidean_consistency": 0.76,
+    "gravity_alignment": 0.89
+  },
+  "savedPath": "/path/to/baselines/spatial_qwen_0.5B.json"
+}
+```
+
+---
+
+### mc_geometry_baseline_validate
+
+**Purpose:** Validate model geometry against established baselines.
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "modelPath": { "type": "string" },
+    "domains": { "type": ["array", "null"], "items": { "type": "string" } },
+    "layer": { "type": "integer", "default": -1 }
+  },
+  "required": ["modelPath"]
+}
+```
+
+**Output:**
+```json
+{
+  "_schema": "mc.geometry.baseline.validate.v1",
+  "modelPath": "/models/qwen-0.5B",
+  "results": [
+    {
+      "domain": "spatial",
+      "baselineFound": true,
+      "baselineModel": "qwen-0.5B",
+      "currentModel": "/models/qwen-0.5B",
+      "missingMetrics": [],
+      "notes": [],
+      "metrics": {
+        "ollivier_ricci_mean": {
+          "current": -0.192,
+          "baseline": -0.189,
+          "baselineStd": 0.045,
+          "delta": -0.003,
+          "relativeDelta": -0.016,
+          "zScore": -0.067,
+          "percentile": 0.46
+        }
+      }
+    }
+  ]
+}
+```
+
+---
+
+### mc_geometry_baseline_compare
+
+**Purpose:** Compare geometry profiles of two models.
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "model1Path": { "type": "string" },
+    "model2Path": { "type": "string" },
+    "domain": { "type": "string", "default": "spatial" },
+    "layer": { "type": "integer", "default": -1 }
+  },
+  "required": ["model1Path", "model2Path"]
+}
+```
+
+**Output:**
+```json
+{
+  "_schema": "mc.geometry.baseline.compare.v1",
+  "domain": "spatial",
+  "model1": {
+    "path": "/models/model-a",
+    "family": "qwen",
+    "size": "0.5B",
+    "ollivierRicciMean": -0.189,
+    "intrinsicDimension": 12.4
+  },
+  "model2": {
+    "path": "/models/model-b",
+    "family": "qwen",
+    "size": "0.5B",
+    "ollivierRicciMean": -0.201,
+    "intrinsicDimension": 12.7
+  },
+  "divergence": {
+    "ollivierRicci": 0.012,
+    "intrinsicDimension": 0.3,
+    "domainMetrics": {
+      "euclidean_consistency": 0.05
+    }
+  }
+}
+```
+
+---
+
 ### mc_geometry_concept_detect
 
 **Purpose:** Detect semantic concept activations in a response.

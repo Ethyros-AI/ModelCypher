@@ -3006,7 +3006,7 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
                 layer: Layer to analyze (-1 for all layers sampled)
 
             Returns:
-                Validation results with pass/fail status and deviations
+                Validation results with baseline-relative deltas
             """
             from modelcypher.core.domain.geometry.domain_geometry_validator import (
                 DomainGeometryValidator,
