@@ -240,6 +240,9 @@ class JAXBackend(Backend):
     def inv(self, array: Array) -> Array:
         return self.jnp.linalg.inv(array)
 
+    def pinv(self, array: Array) -> Array:
+        return self.jnp.linalg.pinv(array)
+
     def cholesky(self, array: Array) -> Array:
         return self.jnp.linalg.cholesky(array)
 

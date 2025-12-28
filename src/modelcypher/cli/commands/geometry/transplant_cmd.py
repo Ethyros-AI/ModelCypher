@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
@@ -37,6 +38,72 @@ if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
+
+
+def validate_transplant_geometry(
+    weight_before: "Array",
+    weight_after: "Array",
+    weight_source: "Array",
+    activations_core: "Array",
+    activations_boundary: "Array",
+    backend: "Backend",
+) -> dict:
+    """Validate the geometric guarantees of null-space transplant.
+
+    Measures:
+    1. Boundary preservation error (should be ~0) - the mathematical guarantee
+    2. Core output shift direction (should be toward source)
+    3. Functional alignment gain (CKA improvement)
+
+    The geometry has rules. This function measures whether those rules were followed.
+    """
+    from modelcypher.core.domain.geometry.cka import compute_cka
+
+    # Metric 1: Boundary preservation (the mathematical guarantee)
+    # If A_boundary @ (W' - W_t) is not ~0, the null-space projection is wrong
+    delta_applied = weight_after - weight_before
+    boundary_output_change = backend.matmul(activations_boundary, backend.transpose(delta_applied))
+    boundary_baseline = backend.matmul(activations_boundary, backend.transpose(weight_before))
+    backend.eval(boundary_output_change, boundary_baseline)
+
+    boundary_error = float(backend.to_numpy(backend.norm(boundary_output_change)))
+    boundary_baseline_norm = float(backend.to_numpy(backend.norm(boundary_baseline)))
+    boundary_relative_error = boundary_error / max(boundary_baseline_norm, 1e-10)
+
+    # Metric 2: Core output shift direction
+    # Did the core outputs move toward source's outputs?
+    output_before = backend.matmul(activations_core, backend.transpose(weight_before))
+    output_after = backend.matmul(activations_core, backend.transpose(weight_after))
+    output_source = backend.matmul(activations_core, backend.transpose(weight_source))
+    backend.eval(output_before, output_after, output_source)
+
+    dist_before = float(backend.to_numpy(backend.norm(output_before - output_source)))
+    dist_after = float(backend.to_numpy(backend.norm(output_after - output_source)))
+
+    if dist_before > 1e-10:
+        alignment_improvement = (dist_before - dist_after) / dist_before
+    else:
+        alignment_improvement = 0.0  # Already at source
+
+    # Metric 3: Functional alignment (CKA)
+    # Did the core behavior become more similar to source?
+    cka_before = compute_cka(output_before, output_source, backend=backend)
+    cka_after = compute_cka(output_after, output_source, backend=backend)
+
+    functional_alignment_gain = cka_after.best - cka_before.best
+
+    return {
+        "boundary_preservation_error": boundary_relative_error,
+        "boundary_guarantee_holds": boundary_relative_error < 1e-4,
+        "core_dist_to_source_before": dist_before,
+        "core_dist_to_source_after": dist_after,
+        "alignment_improvement": alignment_improvement,
+        "moved_toward_source": alignment_improvement > 0,
+        "cka_before": cka_before.best,
+        "cka_after": cka_after.best,
+        "functional_alignment_gain": functional_alignment_gain,
+    }
+
 
 app = typer.Typer(
     name="transplant",
@@ -73,7 +140,12 @@ def transplant_run(
             --core-domain mathematical
     """
     from modelcypher.core.domain._backend import get_default_backend
+    from modelcypher.adapters.mlx_model_loader import MLXModelLoader
     from modelcypher.core.domain.agents.unified_atlas import AtlasDomain, UnifiedAtlasInventory
+    from modelcypher.core.domain.geometry.cross_dimensional_projection import (
+        ProjectionMethod,
+        project_cross_dimensional,
+    )
     from modelcypher.core.domain.geometry.null_space_filter import NullSpaceFilterConfig
     from modelcypher.core.domain.geometry.transplant import (
         compute_transplant_delta,
@@ -84,18 +156,7 @@ def transplant_run(
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    # Map domain string to AtlasDomain
-    domain_map = {
-        "mathematical": AtlasDomain.MATHEMATICAL,
-        "logical": AtlasDomain.LOGICAL,
-        "temporal": AtlasDomain.TEMPORAL,
-        "spatial": AtlasDomain.SPATIAL,
-        "mental": AtlasDomain.MENTAL,
-        "affective": AtlasDomain.AFFECTIVE,
-        "relational": AtlasDomain.RELATIONAL,
-        "structural": AtlasDomain.STRUCTURAL,
-        "linguistic": AtlasDomain.LINGUISTIC,
-    }
+    domain_map = {domain.value: domain for domain in AtlasDomain}
     core_atlas_domain = domain_map.get(core_domain.lower())
     if core_atlas_domain is None:
         typer.echo(f"Unknown domain: {core_domain}. Valid: {list(domain_map.keys())}")
@@ -103,12 +164,12 @@ def transplant_run(
 
     # Get core probe IDs from atlas
     core_probes = UnifiedAtlasInventory.probes_by_domain({core_atlas_domain})
-    core_probe_ids = {p.id for p in core_probes}
+    core_probe_ids = {p.probe_id for p in core_probes}
     typer.echo(f"Core probes ({core_domain}): {len(core_probe_ids)}")
 
     # Get all probes for boundary computation
     all_probes = UnifiedAtlasInventory.all_probes()
-    all_probe_ids = [p.id for p in all_probes]
+    all_probe_ids = [p.probe_id for p in all_probes]
     # Use first support text, or fallback to name + description
     all_probe_texts = [
         p.support_texts[0] if p.support_texts else f"{p.name}: {p.description}"
@@ -290,19 +351,16 @@ def transplant_run(
 
     # Check dimension compatibility
     if target_weight.shape != source_weight.shape:
-        typer.echo("Dimension mismatch - cross-architecture transplant requires projection")
-        typer.echo("Using simple truncation/padding for now...")
-        # For cross-arch: project source to target dimension
-        # This is a simplification - proper approach uses Procrustes alignment
-        min_out = min(target_weight.shape[0], source_weight.shape[0])
-        min_in = min(target_weight.shape[1], source_weight.shape[1])
-        source_weight_aligned = source_weight[:min_out, :min_in]
-        target_weight_matched = target_weight[:min_out, :min_in]
-        # Also need to truncate activations
-        core_target_acts = core_target_acts[:, :min_in]
-        boundary_target_acts = boundary_target_acts[:, :min_in]
+        typer.echo("Dimension mismatch - projecting source to target shape.")
+        projection = project_cross_dimensional(
+            source=source_weight,
+            target=target_weight,
+            method=ProjectionMethod.GRAM_TRANSPORT,
+            backend=backend,
+        )
+        source_weight_aligned = projection.projected
+        target_weight_matched = target_weight
         backend.eval(source_weight_aligned, target_weight_matched)
-        backend.eval(core_target_acts, boundary_target_acts)
     else:
         source_weight_aligned = source_weight
         target_weight_matched = target_weight
@@ -358,11 +416,16 @@ def transplant_run(
 
         # Update the target model's weight
         # For non-quantized models, directly update the weight parameter
-        if not hasattr(target_o_proj, "scales"):
+        is_quantized = hasattr(target_o_proj, "scales")
+        if not is_quantized:
+            try:
+                merged_weight = merged_weight.astype(target_o_proj.weight.dtype)
+            except Exception:
+                pass
             target_o_proj.weight = merged_weight
             typer.echo("Weight updated successfully.")
         else:
-            typer.echo("Note: Quantized model - would need re-quantization for full save.")
+            typer.echo("Note: Quantized model - re-quantization required to save weights.")
 
         # Quick inference test
         test_prompt = "What is the Fibonacci sequence? Answer briefly:"
@@ -395,6 +458,44 @@ def transplant_run(
         typer.echo(f"Response: {response}")
 
         result_dict["test_response"] = response
+
+        if not is_quantized:
+            try:
+                loader = MLXModelLoader()
+                weights = loader.load_weights(target)
+
+                layer_token = f"layers.{target_layer}."
+                candidates = [
+                    key for key in weights
+                    if layer_token in key and "mlp" in key and "down_proj" in key and key.endswith("weight")
+                ]
+                weight_key = candidates[0] if candidates else None
+
+                if weight_key is None:
+                    typer.echo("Could not locate down_proj weight key in safetensors; skipping save.")
+                else:
+                    try:
+                        merged_to_save = merged_weight.astype(weights[weight_key].dtype)
+                    except Exception:
+                        merged_to_save = merged_weight
+                    weights[weight_key] = merged_to_save
+                    output_weights_path = output_path / "model.safetensors"
+                    mx.save_safetensors(str(output_weights_path), weights)
+
+                    for config_file in [
+                        "config.json",
+                        "tokenizer.json",
+                        "tokenizer_config.json",
+                        "special_tokens_map.json",
+                    ]:
+                        src = Path(target) / config_file
+                        if src.exists():
+                            shutil.copy(src, output_path / config_file)
+
+                    result_dict["output_model"] = str(output_weights_path)
+                    typer.echo(f"Saved transplanted weights to: {output_weights_path}")
+            except Exception as e:
+                typer.echo(f"Failed to save transplanted model: {e}")
 
         # Save updated results
         with open(result_path, "w") as f:

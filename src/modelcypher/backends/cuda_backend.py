@@ -251,6 +251,9 @@ class CUDABackend(Backend):
     def inv(self, array: Array) -> Array:
         return self.torch.linalg.inv(array)
 
+    def pinv(self, array: Array) -> Array:
+        return self.torch.linalg.pinv(array)
+
     def cholesky(self, array: Array) -> Array:
         return self.torch.linalg.cholesky(array)
 

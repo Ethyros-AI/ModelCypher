@@ -36,7 +36,7 @@ Primary workflows:
 - `mc inventory`, `mc system`
 
 Research + diagnostics:
-- `mc geometry` (path/training/safety/adapter/atlas/baseline/concept/cross-cultural/primes/stitch/crm/metrics/sparse/refusal/persona/manifold/transport/refinement/invariant/emotion/merge-entropy/transfer/spatial/social/temporal/moral/waypoint/interference)
+- `mc geometry` (path/training/safety/adapter/atlas/baseline/concept/cross-cultural/primes/stitch/crm/metrics/sparse/refusal/persona/manifold/transport/refinement/invariant/emotion/merge-entropy/transfer/transplant/spatial/social/temporal/moral/waypoint/interference)
 - `mc thermo` (analyze/path/path-integration/entropy/measure/detect/detect-batch/ridge-detect/phase/sweep/benchmark/parity)
 - `mc entropy` (analyze/detect-distress/verify-baseline/window/conversation-track/dual-path/calibrate)
 - `mc safety` (adapter-probe)
@@ -78,6 +78,12 @@ mc geometry crm delta-mask --source <crm.json> --target <crm.json> --output-path
 ## Geometry Cross-Cultural Commands
 ```bash
 mc geometry cross-cultural analyze <input_json>
+```
+
+## Geometry Transplant Commands
+```bash
+mc geometry transplant run --source <path> --target <path> --output-dir <path> --core-domain <domain>
+mc geometry transplant run --source <path> --target <path> --output-dir <path> --core-domain <domain> --target-layer <n>
 ```
 
 ## Geometry Primes Commands
