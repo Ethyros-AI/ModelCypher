@@ -79,6 +79,8 @@ class ProbeResult:
     # Activations for downstream processing (null-space filtering, shared subspace)
     source_activations: dict[int, list[Any]] | None = None
     target_activations: dict[int, list[Any]] | None = None
+    probe_ids: list[str] | None = None
+    probe_domains: list[str] | None = None
 
 
 def _encode_probe_ids(
@@ -336,6 +338,8 @@ def _probe_precise(
 
     source_layer_activations: dict[int, list["Array"]] = {}
     target_layer_activations: dict[int, list["Array"]] = {}
+    probe_ids: list[str] = []
+    probe_domains: list[str] = []
 
     probes_processed = 0
     probes_failed = 0
@@ -423,6 +427,9 @@ def _probe_precise(
                     activated_dimensions=target_activated,
                 )
             )
+
+            probe_ids.append(probe.probe_id)
+            probe_domains.append(probe.domain.value)
 
             probes_processed += 1
 
@@ -608,6 +615,8 @@ def _probe_precise(
         metrics=metrics,
         source_activations=source_layer_activations,
         target_activations=target_layer_activations,
+        probe_ids=probe_ids,
+        probe_domains=probe_domains,
     )
 
 

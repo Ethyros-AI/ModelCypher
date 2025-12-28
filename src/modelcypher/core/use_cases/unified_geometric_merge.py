@@ -768,6 +768,8 @@ class UnifiedGeometricMerger:
             "confidences": result.confidences,
             "dimension_correlations": result.dimension_correlations,
             "intersection_map": result.intersection_map,
+            "probe_ids": result.probe_ids,
+            "probe_domains": result.probe_domains,
         }, result.metrics, result.source_activations, result.target_activations
 
     def _stage_permute(
