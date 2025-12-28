@@ -24,6 +24,7 @@ The UnifiedGeometricMerger orchestrates these stages in sequence.
 Stage 0: VOCABULARY - Cross-vocabulary embedding alignment
 Stage 1: PROBE - Build intersection map from probe responses
 Stage 2: PERMUTE - Permutation alignment for MLP neurons
+Stage 3: TRANSPLANT - Null-space constrained grafting (optional)
 Stage 3-5: ROTATE + BLEND + PROPAGATE - Geometric merge loop
 Stage 6: VALIDATE - Safety checks (numerical + content)
 """
@@ -50,6 +51,11 @@ from .stage_3_5_rotate_blend import (
     RotateBlendResult,
     stage_rotate_blend_propagate,
 )
+from .stage_3_transplant import (
+    TransplantStageConfig,
+    TransplantStageResult,
+    stage_transplant,
+)
 from .stage_6_validate import (
     ValidateConfig,
     ValidateResult,
@@ -75,6 +81,10 @@ __all__ = [
     "stage_rotate_blend_propagate",
     "RotateBlendConfig",
     "RotateBlendResult",
+    # Stage 3
+    "stage_transplant",
+    "TransplantStageConfig",
+    "TransplantStageResult",
     # Stage 6
     "stage_validate",
     "ValidateConfig",

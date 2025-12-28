@@ -220,6 +220,7 @@ mc safety adapter-probe --adapter <path>    # Run adapter safety probes
 ```bash
 mc model merge --source <path> --target <path> --output-dir <path>
 mc model merge --source <path> --target <path> --output-dir <path> --knowledge-delta-mask <mask.json>
+mc model merge --source <path> --target <path> --output-dir <path> --merge-strategy transplant --transplant-domains mathematical,logical
 ```
 
 ### Entropy Commands

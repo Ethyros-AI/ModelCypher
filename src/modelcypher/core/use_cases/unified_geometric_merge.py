@@ -20,7 +20,7 @@ Unified Geometric Merge Pipeline.
 
 Combines geometric merge techniques in the correct order:
 
-    VOCAB → PROBE → PERMUTE → ROTATE → BLEND → PROPAGATE → VALIDATE
+    VOCAB → PROBE → PERMUTE → (TRANSPLANT | ROTATE → BLEND → PROPAGATE) → VALIDATE
 
 The intersection map (from semantic probes) is the control signal
 that guides all downstream operations.
@@ -40,7 +40,7 @@ import logging
 import time
 import re
 import shutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -79,6 +79,14 @@ class UnifiedMergeConfig:
 
     # Use Gromov-Wasserstein instead of Procrustes for alignment
     use_transport_guided: bool = False
+
+    # Merge strategy: auto selects transplant when configured, otherwise rotate/blend
+    merge_strategy: Literal["auto", "rotate_blend", "transplant"] = "auto"
+
+    # Transplant settings (used when merge_strategy == "transplant")
+    transplant_domains: tuple[str, ...] = ()
+    transplant_boundary_k: int | None = None
+    transplant_geodesic_k_neighbors: int | None = None
 
     # Output quantization (None = preserve original dtype)
     output_quant: str | None = None
@@ -122,6 +130,9 @@ class UnifiedMergeResult:
     # Timing
     timestamp: datetime
 
+    # Merge strategy used
+    merge_strategy: str = "rotate_blend"
+
     # Optional fields (must come after required fields)
     # Output path (if saved)
     output_path: str | None = None
@@ -152,7 +163,7 @@ class UnifiedGeometricMerger:
     Unified geometric merge pipeline.
 
     Combines techniques in the correct order:
-    VOCAB → PROBE → PERMUTE → ROTATE → BLEND → PROPAGATE → VALIDATE
+    VOCAB → PROBE → PERMUTE → (TRANSPLANT | ROTATE → BLEND → PROPAGATE) → VALIDATE
 
     Stage implementations are in merge_stages/ for modularity.
     """
@@ -190,6 +201,10 @@ class UnifiedGeometricMerger:
         dry_run: bool = False,
         use_full_geometry: bool = True,
         knowledge_delta_mask_path: str | None = None,
+        merge_strategy: Literal["auto", "rotate_blend", "transplant"] | None = None,
+        transplant_domains: list[str] | None = None,
+        transplant_boundary_k: int | None = None,
+        transplant_geodesic_k_neighbors: int | None = None,
     ) -> UnifiedMergeResult:
         """
         Execute pure geometric merge.
@@ -205,6 +220,10 @@ class UnifiedGeometricMerger:
             dry_run: If True, don't save to disk
             use_full_geometry: If True, use GeometricMergeOrchestrator with ALL 84 geometry files
             knowledge_delta_mask_path: Optional delta mask JSON for layer gating
+            merge_strategy: Override merge strategy (auto, rotate_blend, transplant)
+            transplant_domains: Core domains to transplant when using transplant strategy
+            transplant_boundary_k: Boundary neighbors per core probe (optional)
+            transplant_geodesic_k_neighbors: k for geodesic graph (optional)
 
         Returns:
             UnifiedMergeResult with merged weights and metrics
@@ -212,6 +231,38 @@ class UnifiedGeometricMerger:
         logger.info("=== PURE GEOMETRIC MERGE ===")
         logger.info("Source: %s", source_path)
         logger.info("Target: %s", target_path)
+
+        config = self.config
+        if (
+            merge_strategy is not None
+            or transplant_domains is not None
+            or transplant_boundary_k is not None
+            or transplant_geodesic_k_neighbors is not None
+        ):
+            config = replace(
+                config,
+                merge_strategy=merge_strategy or config.merge_strategy,
+                transplant_domains=tuple(transplant_domains or config.transplant_domains),
+                transplant_boundary_k=(
+                    transplant_boundary_k
+                    if transplant_boundary_k is not None
+                    else config.transplant_boundary_k
+                ),
+                transplant_geodesic_k_neighbors=(
+                    transplant_geodesic_k_neighbors
+                    if transplant_geodesic_k_neighbors is not None
+                    else config.transplant_geodesic_k_neighbors
+                ),
+            )
+
+        if use_full_geometry:
+            if config.merge_strategy == "transplant" or (
+                config.merge_strategy == "auto" and config.transplant_domains
+            ):
+                logger.info(
+                    "Transplant strategy requested; bypassing full geometry merge."
+                )
+                use_full_geometry = False
 
         if use_full_geometry:
             return self._merge_with_full_geometry(
@@ -249,7 +300,7 @@ class UnifiedGeometricMerger:
         # Load models for probe stage
         source_model = None
         target_model = None
-        if self.config.probe_mode == "precise":
+        if config.probe_mode == "precise":
             logger.info("Loading models for precise probe execution...")
             source_model = self._load_model_for_probing(source_path)
             target_model = self._load_model_for_probing(target_path)
@@ -257,7 +308,7 @@ class UnifiedGeometricMerger:
         # =================================================================
         # STAGE 1: PROBE (Compute layer correspondences via CKA)
         # =================================================================
-        logger.info("STAGE 1: PROBE (%s mode)", self.config.probe_mode)
+        logger.info("STAGE 1: PROBE (%s mode)", config.probe_mode)
         probe_result, probe_metrics, source_activations, target_activations = self._stage_probe(
             source_weights=source_weights,
             target_weights=target_weights,
@@ -266,6 +317,7 @@ class UnifiedGeometricMerger:
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
             alignment_map=vocab_alignment_map,
+            config_override=config,
         )
 
         layer_confidences: dict[int, float] = probe_result.get("confidences", {})
@@ -316,19 +368,38 @@ class UnifiedGeometricMerger:
         )
 
         # =================================================================
-        # STAGES 3-5: PURE GEOMETRIC MERGE (with per-layer alignment)
+        # STAGE 3+: MERGE (strategy-specific)
         # =================================================================
-        logger.info("STAGES 3-5: GEOMETRIC MERGE")
-        merged_weights, rotate_metrics, blend_metrics = self._stage_rotate_blend_propagate(
-            permuted_source,
-            target_weights,
-            layer_indices,
-            layer_confidences,
-            dimension_correlations,
-            intersection_map_obj=intersection_map_obj,
-            source_activations=source_activations,
+        merge_strategy_resolved = self._resolve_merge_strategy(
+            config=config,
             target_activations=target_activations,
         )
+
+        if merge_strategy_resolved == "transplant":
+            logger.info("STAGE 3: TRANSPLANT")
+            merged_weights, rotate_metrics = self._stage_transplant(
+                source_weights=permuted_source,
+                target_weights=target_weights,
+                layer_indices=layer_indices,
+                probe_ids=probe_result.get("probe_ids"),
+                probe_domains=probe_result.get("probe_domains"),
+                target_activations=target_activations,
+                config=config,
+            )
+            blend_metrics = rotate_metrics
+        else:
+            logger.info("STAGES 3-5: GEOMETRIC MERGE")
+            merged_weights, rotate_metrics, blend_metrics = self._stage_rotate_blend_propagate(
+                permuted_source,
+                target_weights,
+                layer_indices,
+                layer_confidences,
+                dimension_correlations,
+                intersection_map_obj=intersection_map_obj,
+                source_activations=source_activations,
+                target_activations=target_activations,
+                config_override=config,
+            )
 
         # =================================================================
         # OUTPUT
@@ -342,8 +413,14 @@ class UnifiedGeometricMerger:
 
         # Compute metrics
         mean_confidence = probe_metrics.get("mean_confidence", 0.0)
-        procrustes_errors = rotate_metrics.get("procrustes_errors", [])
-        mean_error = sum(procrustes_errors) / len(procrustes_errors) if procrustes_errors else 0.0
+        if merge_strategy_resolved == "transplant":
+            projection_losses = rotate_metrics.get("projection_losses", [])
+            mean_error = (
+                sum(projection_losses) / len(projection_losses) if projection_losses else 0.0
+            )
+        else:
+            procrustes_errors = rotate_metrics.get("procrustes_errors", [])
+            mean_error = sum(procrustes_errors) / len(procrustes_errors) if procrustes_errors else 0.0
 
         result = UnifiedMergeResult(
             merged_weights=merged_weights,
@@ -358,6 +435,7 @@ class UnifiedGeometricMerger:
             layer_count=len(layer_indices),
             weight_count=len(merged_weights),
             timestamp=datetime.utcnow(),
+            merge_strategy=merge_strategy_resolved,
             output_path=output_path,
             vocab_aligned=vocab_aligned,
             safety_verdict="geometric",
@@ -663,6 +741,7 @@ class UnifiedGeometricMerger:
             layer_count=len(layer_indices),
             weight_count=len(merged_weights),
             timestamp=datetime.utcnow(),
+            merge_strategy="full_geometry",
             output_path=output_path,
             vocab_aligned=vocab_aligned,
             safety_verdict="geometric",
@@ -727,6 +806,7 @@ class UnifiedGeometricMerger:
         source_tokenizer: Any | None,
         target_tokenizer: Any | None,
         alignment_map: Any | None = None,
+        config_override: UnifiedMergeConfig | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any], dict | None, dict | None]:
         """Stage 1: Compute layer correspondences via CKA.
 
@@ -739,9 +819,10 @@ class UnifiedGeometricMerger:
             stage_probe,
         )
 
+        active_config = config_override or self.config
         config = ProbeConfig(
-            probe_mode=self.config.probe_mode,
-            max_probes=self.config.max_probes,
+            probe_mode=active_config.probe_mode,
+            max_probes=active_config.max_probes,
         )
 
         collect_fn = (
@@ -771,6 +852,66 @@ class UnifiedGeometricMerger:
             "probe_ids": result.probe_ids,
             "probe_domains": result.probe_domains,
         }, result.metrics, result.source_activations, result.target_activations
+
+    def _resolve_merge_strategy(
+        self,
+        config: UnifiedMergeConfig,
+        target_activations: dict | None,
+    ) -> Literal["rotate_blend", "transplant"]:
+        strategy = config.merge_strategy
+        if strategy == "auto":
+            if config.transplant_domains and target_activations:
+                return "transplant"
+            return "rotate_blend"
+        if strategy == "transplant":
+            if not config.transplant_domains:
+                raise RuntimeError(
+                    "Transplant strategy requires transplant_domains. "
+                    "Provide domains or use merge_strategy=auto."
+                )
+            if not target_activations:
+                raise RuntimeError(
+                    "Transplant strategy requires activations. "
+                    "Use probe_mode=precise to collect activations."
+                )
+            return "transplant"
+        return "rotate_blend"
+
+    def _stage_transplant(
+        self,
+        source_weights: dict[str, "Array"],
+        target_weights: dict[str, "Array"],
+        layer_indices: list[int],
+        probe_ids: list[str] | None,
+        probe_domains: list[str] | None,
+        target_activations: dict | None,
+        config: UnifiedMergeConfig,
+    ) -> tuple[dict[str, "Array"], dict[str, Any]]:
+        """Stage 3: Null-space constrained transplant."""
+        from .merge_stages.stage_3_transplant import (
+            TransplantStageConfig,
+            stage_transplant,
+        )
+
+        stage_config = TransplantStageConfig(
+            core_domains=tuple(config.transplant_domains),
+            boundary_k=config.transplant_boundary_k,
+            geodesic_k_neighbors=config.transplant_geodesic_k_neighbors,
+        )
+
+        result = stage_transplant(
+            source_weights=source_weights,
+            target_weights=target_weights,
+            layer_indices=layer_indices,
+            probe_ids=probe_ids,
+            probe_domains=probe_domains,
+            target_activations=target_activations,
+            config=stage_config,
+            extract_layer_index_fn=self._extract_layer_index,
+            backend=self._backend,
+        )
+
+        return result.merged_weights, result.metrics
 
     def _stage_permute(
         self,
@@ -809,6 +950,7 @@ class UnifiedGeometricMerger:
         intersection_map_obj: Any | None,
         source_activations: dict | None = None,
         target_activations: dict | None = None,
+        config_override: UnifiedMergeConfig | None = None,
     ) -> tuple[dict[str, "Array"], dict[str, Any], dict[str, Any]]:
         """Stages 3-5: PURE GEOMETRIC MERGE with per-layer alignment.
 
@@ -823,8 +965,9 @@ class UnifiedGeometricMerger:
             stage_rotate_blend_propagate,
         )
 
+        active_config = config_override or self.config
         config = RotateBlendConfig(
-            use_transport_guided=self.config.use_transport_guided,
+            use_transport_guided=active_config.use_transport_guided,
         )
 
         result = stage_rotate_blend_propagate(

@@ -171,6 +171,26 @@ def model_merge(
     source: str = typer.Option(..., "--source"),
     target: str = typer.Option(..., "--target"),
     output_dir: str = typer.Option(..., "--output-dir"),
+    merge_strategy: str = typer.Option(
+        "auto",
+        "--merge-strategy",
+        help="Merge strategy: auto, rotate_blend, transplant",
+    ),
+    transplant_domains: str | None = typer.Option(
+        None,
+        "--transplant-domains",
+        help="Comma-separated core domains for transplant (e.g., mathematical,logical)",
+    ),
+    transplant_boundary_k: int | None = typer.Option(
+        None,
+        "--transplant-boundary-k",
+        help="Boundary neighbors per core probe (optional)",
+    ),
+    transplant_geodesic_k: int | None = typer.Option(
+        None,
+        "--transplant-geodesic-k",
+        help="k for geodesic graph construction (optional)",
+    ),
     knowledge_delta_mask: str | None = typer.Option(
         None,
         "--knowledge-delta-mask",
@@ -182,14 +202,28 @@ def model_merge(
     The geometry determines everything - per-layer blend coefficients,
     alignment rotations, neuron permutations. No configuration needed.
 
-    Pipeline: VOCAB → PROBE → PERMUTE → ROTATE → BLEND → PROPAGATE → VALIDATE
+    Pipeline: VOCAB → PROBE → PERMUTE → (TRANSPLANT | ROTATE → BLEND → PROPAGATE) → VALIDATE
 
     Examples:
         mc model merge --source ./instruct --target ./coder --output-dir ./merged
+        mc model merge --source ./instruct --target ./coder --output-dir ./merged \
+            --merge-strategy transplant --transplant-domains mathematical,logical
     """
     from modelcypher.cli.composition import get_geometric_merger
 
     context = _context(ctx)
+
+    merge_strategy = merge_strategy.strip().lower()
+    allowed_strategies = {"auto", "rotate_blend", "transplant"}
+    if merge_strategy not in allowed_strategies:
+        raise typer.BadParameter(
+            f"Invalid merge strategy '{merge_strategy}'. "
+            f"Valid: {sorted(allowed_strategies)}"
+        )
+
+    domain_list = None
+    if transplant_domains:
+        domain_list = [d.strip() for d in transplant_domains.split(",") if d.strip()]
 
     merger = get_geometric_merger()
     try:
@@ -198,6 +232,10 @@ def model_merge(
             target_path=target,
             output_dir=output_dir,
             knowledge_delta_mask_path=knowledge_delta_mask,
+            merge_strategy=merge_strategy,
+            transplant_domains=domain_list,
+            transplant_boundary_k=transplant_boundary_k,
+            transplant_geodesic_k_neighbors=transplant_geodesic_k,
         )
         # Convert result to dict for output
         output = {
@@ -206,6 +244,7 @@ def model_merge(
             "layerCount": result.layer_count,
             "weightCount": result.weight_count,
             "meanConfidence": result.mean_confidence,
+            "mergeStrategy": result.merge_strategy,
             "vocabAligned": result.vocab_aligned,
             "metrics": {
                 "meanProcrustesError": result.mean_procrustes_error,

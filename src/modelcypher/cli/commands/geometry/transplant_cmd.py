@@ -300,9 +300,15 @@ def transplant_run(
         raise typer.Exit(1)
 
     # Extract core and boundary activations
-    core_target_acts = backend.take(target_stacked, backend.array(partition.core_indices), axis=0)
+    core_target_acts = backend.take(
+        target_stacked,
+        backend.array(partition.core_indices, dtype="int32"),
+        axis=0,
+    )
     boundary_target_acts = backend.take(
-        target_stacked, backend.array(partition.boundary_indices), axis=0
+        target_stacked,
+        backend.array(partition.boundary_indices, dtype="int32"),
+        axis=0,
     )
     backend.eval(core_target_acts, boundary_target_acts)
 
@@ -426,6 +432,52 @@ def transplant_run(
             typer.echo("Weight updated successfully.")
         else:
             typer.echo("Note: Quantized model - re-quantization required to save weights.")
+
+        # === GEOMETRIC VALIDATION ===
+        # Measure what the geometry actually did - no assumptions
+        typer.echo("\n=== Geometric Validation ===")
+        validation = validate_transplant_geometry(
+            weight_before=target_weight_matched,
+            weight_after=merged_weight,
+            weight_source=source_weight_aligned,
+            activations_core=core_target_acts,
+            activations_boundary=boundary_target_acts,
+            backend=backend,
+        )
+
+        # Metric 1: Boundary preservation (the mathematical guarantee)
+        typer.echo(f"Boundary preservation error: {validation['boundary_preservation_error']:.2e}")
+        if validation["boundary_guarantee_holds"]:
+            typer.echo("  [OK] Boundary guarantee holds (null-space projection correct)")
+        else:
+            typer.echo("  [FAIL] Boundary guarantee VIOLATED - check implementation")
+
+        # Metric 2: Core output shift direction
+        typer.echo(f"Core distance to source - before: {validation['core_dist_to_source_before']:.4f}")
+        typer.echo(f"Core distance to source - after:  {validation['core_dist_to_source_after']:.4f}")
+        typer.echo(f"Alignment improvement: {validation['alignment_improvement'] * 100:.1f}%")
+        if validation["moved_toward_source"]:
+            typer.echo("  [OK] Core outputs moved TOWARD source (transplant succeeded)")
+        else:
+            typer.echo("  [--] Core outputs did NOT move toward source")
+
+        # Metric 3: Functional alignment (CKA)
+        typer.echo(f"CKA with source - before: {validation['cka_before']:.4f}")
+        typer.echo(f"CKA with source - after:  {validation['cka_after']:.4f}")
+        typer.echo(f"Functional alignment gain: {validation['functional_alignment_gain']:.4f}")
+
+        # Update result_dict with validation metrics
+        result_dict.update({
+            "boundary_preservation_error": validation["boundary_preservation_error"],
+            "boundary_guarantee_holds": validation["boundary_guarantee_holds"],
+            "core_dist_to_source_before": validation["core_dist_to_source_before"],
+            "core_dist_to_source_after": validation["core_dist_to_source_after"],
+            "alignment_improvement": validation["alignment_improvement"],
+            "moved_toward_source": validation["moved_toward_source"],
+            "cka_before": validation["cka_before"],
+            "cka_after": validation["cka_after"],
+            "functional_alignment_gain": validation["functional_alignment_gain"],
+        })
 
         # Quick inference test
         test_prompt = "What is the Fibonacci sequence? Answer briefly:"

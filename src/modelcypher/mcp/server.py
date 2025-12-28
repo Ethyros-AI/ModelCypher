@@ -1110,11 +1110,15 @@ def build_server() -> FastMCP:
             source: str,
             target: str,
             output: str,
+            mergeStrategy: str | None = None,
+            transplantDomains: list[str] | None = None,
+            transplantBoundaryK: int | None = None,
+            transplantGeodesicK: int | None = None,
             idempotencyKey: str | None = None,
         ) -> dict:
             """Merge two models using pure geometric alignment.
 
-            Pipeline: VOCAB → PROBE → PERMUTE → ROTATE → BLEND → PROPAGATE → VALIDATE
+            Pipeline: VOCAB → PROBE → PERMUTE → (TRANSPLANT | ROTATE → BLEND → PROPAGATE) → VALIDATE
 
             The geometry determines everything - per-layer blend coefficients,
             alignment rotations, neuron permutations. No configuration needed.
@@ -1133,6 +1137,16 @@ def build_server() -> FastMCP:
             _require_existing_directory(target)
             output_path = Path(output).expanduser().resolve()
 
+            if mergeStrategy is not None:
+                mergeStrategy = mergeStrategy.strip().lower()
+                allowed = {"auto", "rotate_blend", "transplant"}
+                if mergeStrategy not in allowed:
+                    return {
+                        "_schema": "mc.model.merge.v1",
+                        "status": "error",
+                        "message": f"Invalid mergeStrategy '{mergeStrategy}'. Valid: {sorted(allowed)}",
+                    }
+
             merger = UnifiedGeometricMerger(
                 model_loader=registry.model_loader,
             )
@@ -1140,6 +1154,10 @@ def build_server() -> FastMCP:
                 source_path=source,
                 target_path=target,
                 output_dir=str(output_path),
+                merge_strategy=mergeStrategy,
+                transplant_domains=transplantDomains,
+                transplant_boundary_k=transplantBoundaryK,
+                transplant_geodesic_k_neighbors=transplantGeodesicK,
             )
 
             if idempotencyKey:
@@ -1153,6 +1171,7 @@ def build_server() -> FastMCP:
                 "weightCount": result.weight_count,
                 "meanConfidence": result.mean_confidence,
                 "vocabAligned": result.vocab_aligned,
+                "mergeStrategy": result.merge_strategy,
                 "metrics": {
                     "meanProcrustesError": result.mean_procrustes_error,
                 },
