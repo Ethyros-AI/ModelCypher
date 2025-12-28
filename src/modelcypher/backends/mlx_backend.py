@@ -416,6 +416,12 @@ class MLXBackend(Backend):
         self.safe.eval(arr)
         return arr
 
+    def pinv(self, array: Array) -> Array:
+        # MLX pinv requires CPU stream - must eval
+        arr = self.mx.linalg.pinv(array, stream=self.mx.cpu)
+        self.safe.eval(arr)
+        return arr
+
     def cholesky(self, array: Array) -> Array:
         # MLX cholesky requires CPU stream - must eval
         arr = self.mx.linalg.cholesky(array, stream=self.mx.cpu)

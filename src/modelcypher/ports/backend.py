@@ -146,6 +146,9 @@ class Backend(Protocol):
     def inv(self, array: Array) -> Array:
         """Compute the inverse of a square matrix."""
         ...
+    def pinv(self, array: Array) -> Array:
+        """Compute the Moore-Penrose pseudoinverse of a matrix."""
+        ...
     def cholesky(self, array: Array) -> Array:
         """Compute the Cholesky decomposition of a positive-definite matrix."""
         ...
