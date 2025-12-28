@@ -22,11 +22,12 @@ What you care about in this repo is the same thing science cares about: **repeat
 - If two models produce the *same* behavior across a probe set, we want a measurement that says “these two
   internal shapes match” even if their coordinates differ.
 - If a merge changes behavior, we want measurements that localize **where the geometry broke** (which layers,
-  which probes), not a story about why.
+  which probes), not a story about the aftermath. The focus is on geometric causes.
 
 **ELIF analogy (constellations):**
 - Stars can be labeled in any language (coordinates can change).
 - The constellation is the **pattern of relationships** between stars (the invariant).
+- The physical location of the stars changes in 3D space, but their relationship to each other does not. Likewise, in high dimensional space, the precise coordinates of "meaning" change - and even the pathways to get to that meaning can change without altering the outcome. But, the relationships between meaning - the geometry that differentiates the relationship between a green apple and a red apple - does not and cannot change. It is Einstein's theory of relativity scaled up to higher dimensional concepts.
 
 This is why ModelCypher leans on invariants like Gram structure and CKA: they capture relational shape rather
 than raw feature coordinates.
