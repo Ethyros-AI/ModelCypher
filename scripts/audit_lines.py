@@ -35,8 +35,7 @@ MAPPINGS = {
     # Safety
     "CircuitBreakerIntegration": ("CircuitBreakerIntegration.swift", "circuit_breaker_integration.py"),
     "RegexContentFilter": ("RegexContentFilter.swift", "regex_content_filter.py"),
-    "InterventionExecutor": ("InterventionExecutor.swift", "intervention_executor.py"),
-    
+
     # Dynamics (Thermodynamics)
     "LinguisticCalorimeter": ("LinguisticCalorimeter.swift", "optimization_metric_calculator.py"),
     "PhaseTransitionTheory": ("PhaseTransitionTheory.swift", "regime_state_detector.py"),

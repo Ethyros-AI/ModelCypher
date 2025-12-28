@@ -71,11 +71,11 @@ class TestGeometryIntegration:
 
     def test_intrinsic_dimension_import(self):
         """Intrinsic dimension estimator can be imported."""
-        from modelcypher.core.domain.geometry.intrinsic_dimension_estimator import (
-            IntrinsicDimensionEstimator,
+        from modelcypher.core.domain.geometry.intrinsic_dimension import (
+            IntrinsicDimension,
         )
 
-        assert IntrinsicDimensionEstimator is not None
+        assert IntrinsicDimension is not None
 
     def test_path_geometry_import(self):
         """PathGeometry types can be imported."""
@@ -97,12 +97,26 @@ class TestEntropyIntegration:
     """Integration tests for entropy analysis pipeline."""
 
     def test_entropy_tracker_import(self):
-        """EntropyTracker can be imported and created."""
+        """EntropyTracker can be imported and created with required baseline."""
         from modelcypher.core.domain.entropy.entropy_tracker import (
             EntropyTracker,
         )
+        from modelcypher.core.domain.entropy.model_state_classifier import (
+            CalibratedBaseline,
+        )
 
-        tracker = EntropyTracker()
+        # Create minimal baseline (real usage requires calibration service)
+        baseline = CalibratedBaseline(
+            mean=2.5,
+            std_dev=0.8,
+            percentile_25=1.8,
+            percentile_75=3.2,
+            percentile_95=4.5,
+            vocab_size=32000,
+            sample_count=100,
+            model_id="test-model",
+        )
+        tracker = EntropyTracker(baseline)
         assert tracker is not None
 
     def test_logit_entropy_calculator_import(self):

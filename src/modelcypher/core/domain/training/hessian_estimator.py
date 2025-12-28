@@ -273,7 +273,7 @@ def _generate_rademacher_direction(
     direction: dict[str, "Array"] = {}
     for key, value in params.items():
         shape = backend.shape(value)
-        samples = backend.random_uniform(shape)
+        samples = backend.random_uniform(low=0.0, high=1.0, shape=shape)
         # Rademacher: -1 or +1 with equal probability
         direction[key] = backend.where(samples < 0.5, backend.full(shape, -1.0), backend.full(shape, 1.0))
     return direction
@@ -301,7 +301,7 @@ def _normalize_direction(direction: dict[str, "Array"], backend) -> dict[str, "A
         return direction
     normalized: dict[str, "Array"] = {}
     for key, value in direction.items():
-        normalized[key] = backend.divide_scalar(value, norm)
+        normalized[key] = value / norm
     return normalized
 
 
@@ -326,8 +326,8 @@ def _hessian_vector_product(
             plus_params[key] = param
             minus_params[key] = param
             continue
-        plus_params[key] = param + backend.multiply_scalar(dir_vec, epsilon)
-        minus_params[key] = param - backend.multiply_scalar(dir_vec, epsilon)
+        plus_params[key] = param + dir_vec * epsilon
+        minus_params[key] = param - dir_vec * epsilon
 
     _, grad_plus = loss_and_grad_function(plus_params)
     _, grad_minus = loss_and_grad_function(minus_params)
@@ -338,6 +338,6 @@ def _hessian_vector_product(
         g_minus = grad_minus.get(key)
         if g_minus is None:
             continue
-        hvp[key] = backend.divide_scalar(g_plus - g_minus, denom)
+        hvp[key] = (g_plus - g_minus) / denom
 
     return hvp or None

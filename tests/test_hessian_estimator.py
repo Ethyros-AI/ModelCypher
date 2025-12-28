@@ -40,6 +40,15 @@ from modelcypher.core.domain.training.hessian_estimator import (
 )
 
 
+def _arrays_allclose(backend, a, b, atol=1e-6):
+    """Compare two backend arrays for approximate equality using backend ops."""
+    backend.eval(a)
+    backend.eval(b)
+    diff = backend.abs(a - b)
+    max_diff = float(backend.max(diff))
+    return max_diff < atol
+
+
 class TestConfig:
     """Tests for Config dataclass."""
 
@@ -427,17 +436,18 @@ class TestHelperFunctions:
             "z_layer": backend.array([1.0, 2.0]),
             "a_layer": backend.array([3.0, 4.0]),
         }
-        result = _flatten_parameters(params)
+        result = _flatten_parameters(params, backend)
 
         # Sorted order: a_layer, z_layer
         expected = backend.array([3.0, 4.0, 1.0, 2.0], dtype="float32")
-        assert backend.allclose(result, expected)
+        assert _arrays_allclose(backend, result, expected)
 
     def test_flatten_empty_params(self):
         """Empty params should return empty array."""
+        backend = get_default_backend()
         from modelcypher.core.domain.training.hessian_estimator import _flatten_parameters
 
-        result = _flatten_parameters({})
+        result = _flatten_parameters({}, backend)
         assert result.shape == (0,)
 
     def test_rademacher_direction_values(self):
@@ -448,7 +458,7 @@ class TestHelperFunctions:
         )
 
         params = {"layer1": backend.zeros((10, 10))}
-        direction = _generate_rademacher_direction(params, seed=42)
+        direction = _generate_rademacher_direction(params, backend, seed=42)
 
         values = backend.to_numpy(direction["layer1"]).flatten()
         assert all(v in [-1.0, 1.0] for v in values)
@@ -461,10 +471,10 @@ class TestHelperFunctions:
         )
 
         params = {"layer1": backend.zeros((5, 5))}
-        dir1 = _generate_rademacher_direction(params, seed=123)
-        dir2 = _generate_rademacher_direction(params, seed=123)
+        dir1 = _generate_rademacher_direction(params, backend, seed=123)
+        dir2 = _generate_rademacher_direction(params, backend, seed=123)
 
-        assert backend.allclose(dir1["layer1"], dir2["layer1"])
+        assert _arrays_allclose(backend, dir1["layer1"], dir2["layer1"])
 
     def test_normalize_direction_unit_norm(self):
         """Normalized direction should have unit norm."""
@@ -475,7 +485,7 @@ class TestHelperFunctions:
             "layer1": backend.array([3.0, 4.0]),
             "layer2": backend.array([0.0, 0.0, 12.0]),
         }
-        result = _normalize_direction(direction)
+        result = _normalize_direction(direction, backend)
 
         # Total norm = sqrt(9 + 16 + 144) = sqrt(169) = 13
         total_norm_sq = float(sum(backend.sum(v**2) for v in result.values()))
@@ -487,6 +497,6 @@ class TestHelperFunctions:
         from modelcypher.core.domain.training.hessian_estimator import _normalize_direction
 
         direction = {"layer1": backend.array([0.0, 0.0])}
-        result = _normalize_direction(direction)
+        result = _normalize_direction(direction, backend)
 
-        assert backend.allclose(result["layer1"], direction["layer1"])
+        assert _arrays_allclose(backend, result["layer1"], direction["layer1"])

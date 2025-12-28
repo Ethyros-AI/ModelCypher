@@ -1273,16 +1273,14 @@ def stage_vocabulary_align(
             metrics[f"{embed_key}_projection_score"] = result.projection_result.alignment_score
             metrics[f"{embed_key}_compatibility_score"] = result.compatibility.compatibility_score
             metrics[f"{embed_key}_overall_quality"] = quality_metrics["overall_quality_score"]
-            metrics[f"{embed_key}_recommendation"] = quality_metrics["recommendation"]
             metrics[f"{embed_key}_warnings"] = result.warnings
             metrics[f"{embed_key}_strict_token_alignment"] = strict_token_alignment
 
             logger.info(
-                "Aligned %s: coverage=%.2f, quality=%.2f, %s",
+                "Aligned %s: coverage=%.2f, quality=%.2f",
                 embed_key,
                 result.alignment_map.coverage,
                 quality_metrics["overall_quality_score"],
-                quality_metrics["recommendation"],
             )
             metrics["timing_ms"].setdefault(embed_key, {})[
                 "total_ms"
