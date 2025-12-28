@@ -187,7 +187,7 @@ def stage_permute(
         mtm = b.matmul(b.transpose(M), M)
         # Cast to float32 for eigendecomposition (MLX doesn't support bfloat16 for eigh)
         mtm_dtype = str(b.dtype(mtm))
-        if mtm_dtype == "bfloat16":
+        if "bfloat16" in mtm_dtype:
             mtm_f32 = b.astype(mtm, "float32")
             b.eval(mtm_f32)
             eigvals, eigvecs = b.eigh(mtm_f32)

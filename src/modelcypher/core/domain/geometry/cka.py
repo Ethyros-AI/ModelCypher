@@ -23,6 +23,7 @@ HSIC-based implementation for measuring neural network representation similarity
 References:
     - Kornblith et al. (2019) "Similarity of Neural Network Representations Revisited"
     - Cristianini et al. (2002) "On Kernel-Target Alignment"
+    - Chun et al. (2025) "Estimating Neural Representation Alignment from Sparsely Sampled Inputs and Features"
 
 Mathematical Foundation:
     CKA(K, L) = HSIC(K, L) / sqrt(HSIC(K, K) * HSIC(L, L))
@@ -38,6 +39,7 @@ Properties:
     - Scale invariant: CKA(alpha * X, Y) = CKA(X, Y)
     - Permutation invariant: CKA(P @ X, P @ Y) = CKA(X, Y)
     - Range: [0, 1]
+    - Feature-sampling bias: CKA can be underestimated when only a subset of features is observed.
 """
 
 from __future__ import annotations
@@ -95,6 +97,12 @@ class CKAResult:
     hsic_xx: float  # HSIC of X with itself
     hsic_yy: float  # HSIC of Y with itself
     sample_count: int
+    cka_corrected: float | None = None  # Feature-sampling bias corrected CKA
+    correction_factor: float | None = None  # Multiplicative correction factor applied to raw CKA
+    intrinsic_dim_x: float | None = None  # Participation-ratio intrinsic dimension for X
+    intrinsic_dim_y: float | None = None  # Participation-ratio intrinsic dimension for Y
+    feature_dim_x: int | None = None
+    feature_dim_y: int | None = None
 
     @property
     def is_valid(self) -> bool:
@@ -398,12 +406,67 @@ def _compute_hsic_dispatch(
         return _compute_hsic(gram_x, gram_y, backend, centered_x, centered_y)
 
 
+def _participation_ratio(
+    eigenvalues: "Array",
+    backend: "Backend",
+) -> float:
+    """Compute participation ratio (effective rank) from eigenvalues.
+
+    This is the intrinsic dimensionality proxy used in feature-sampling
+    bias correction for CKA (Chun et al., 2025).
+    """
+    zero = backend.zeros_like(eigenvalues)
+    eigvals = backend.maximum(eigenvalues, zero)
+    sum_vals = backend.sum(eigvals)
+    sum_sq = backend.sum(eigvals * eigvals)
+    backend.eval(sum_vals, sum_sq)
+
+    sum_val = float(backend.to_numpy(sum_vals))
+    sum_sq_val = float(backend.to_numpy(sum_sq))
+
+    if not math.isfinite(sum_val) or not math.isfinite(sum_sq_val):
+        return 0.0
+    if sum_sq_val <= 0.0:
+        return 0.0
+    return (sum_val * sum_val) / sum_sq_val
+
+
+def _feature_sampling_correction(
+    centered_gram: "Array",
+    feature_dim: int,
+    backend: "Backend",
+) -> tuple[float, float]:
+    """Compute feature-sampling correction factor and intrinsic dimension.
+
+    Approximates the bias correction from Chun et al. (2025):
+        CKA_true ≈ CKA_measured * sqrt((1 + (γ_x - 1)/Q_x) * (1 + (γ_y - 1)/Q_y))
+
+    where γ is the participation ratio of the centered Gram eigenvalues and
+    Q is the observed feature count.
+    """
+    if feature_dim <= 0:
+        return 1.0, 0.0
+
+    eigvals, _ = backend.eigh(centered_gram)
+    backend.eval(eigvals)
+    gamma = _participation_ratio(eigvals, backend)
+    if gamma <= 0.0:
+        return 1.0, gamma
+
+    gamma = max(gamma, 1.0)
+    correction = math.sqrt(1.0 + (gamma - 1.0) / float(feature_dim))
+    if not math.isfinite(correction) or correction <= 0.0:
+        return 1.0, gamma
+    return correction, gamma
+
+
 def compute_cka(
     activations_x: "Array",
     activations_y: "Array",
     backend: "Backend | None" = None,
     use_linear_kernel: bool = True,
     estimator: HSICEstimator = HSICEstimator.BIASED,
+    feature_bias_correction: bool = False,
 ) -> CKAResult:
     """
     Compute CKA between two activation matrices.
@@ -421,6 +484,10 @@ def compute_cka(
         estimator: Which HSIC estimator to use (BIASED, UNBIASED, or AUTO).
                    BIASED is the default for backward compatibility.
                    Use UNBIASED or AUTO when features >> samples.
+        feature_bias_correction: Apply feature-sampling correction for CKA
+                                 using participation-ratio intrinsic dimension.
+                                 This addresses underestimation when only a
+                                 subset of features is observed.
 
     Returns:
         CKAResult with CKA similarity and HSIC values
@@ -521,12 +588,36 @@ def compute_cka(
     if cka >= 1.0 - eps:
         cka = 1.0
 
+    cka_corrected: float | None = None
+    correction_factor: float | None = None
+    intrinsic_dim_x: float | None = None
+    intrinsic_dim_y: float | None = None
+
+    if feature_bias_correction:
+        correction_x, intrinsic_dim_x = _feature_sampling_correction(
+            centered_x, n_features_x, backend
+        )
+        correction_y, intrinsic_dim_y = _feature_sampling_correction(
+            centered_y, n_features_y, backend
+        )
+        correction_factor = correction_x * correction_y
+        if correction_factor > 0.0:
+            cka_corrected = min(1.0, cka * correction_factor)
+            if cka_corrected >= 1.0 - eps:
+                cka_corrected = 1.0
+
     return CKAResult(
         cka=cka,
         hsic_xy=hsic_xy,
         hsic_xx=hsic_xx,
         hsic_yy=hsic_yy,
         sample_count=n_samples,
+        cka_corrected=cka_corrected,
+        correction_factor=correction_factor,
+        intrinsic_dim_x=intrinsic_dim_x,
+        intrinsic_dim_y=intrinsic_dim_y,
+        feature_dim_x=n_features_x,
+        feature_dim_y=n_features_y,
     )
 
 
@@ -583,6 +674,8 @@ def compute_layer_cka(
     source_weights: "Array",
     target_weights: "Array",
     backend: "Backend | None" = None,
+    estimator: HSICEstimator = HSICEstimator.BIASED,
+    feature_bias_correction: bool = False,
 ) -> CKAResult:
     """
     Compute CKA between weight matrices directly.
@@ -609,7 +702,13 @@ def compute_layer_cka(
         source_weights = source_weights[:min_out, :min_in]
         target_weights = target_weights[:min_out, :min_in]
 
-    return compute_cka(source_weights, target_weights, backend)
+    return compute_cka(
+        source_weights,
+        target_weights,
+        backend,
+        estimator=estimator,
+        feature_bias_correction=feature_bias_correction,
+    )
 
 
 def compute_cka_backend(

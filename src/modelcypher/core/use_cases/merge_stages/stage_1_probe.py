@@ -25,6 +25,7 @@ Two modes:
 - "fast": Use weight-level CKA (faster but less accurate)
 
 Reference: Kornblith et al. (2019) "Similarity of Neural Network Representations"
+Reference: Chun et al. (2025) "Estimating Neural Representation Alignment from Sparsely Sampled Inputs and Features"
 Reference: Moschella et al. (2023) "Relative Representations Enable Zero-Shot Transfer"
 """
 
@@ -304,7 +305,7 @@ def _probe_precise(
     """Precise probe mode: Run probes through BOTH models."""
     b = backend or get_default_backend()
     from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
-    from modelcypher.core.domain.geometry.cka import compute_cka
+    from modelcypher.core.domain.geometry.cka import compute_cka, HSICEstimator
     from modelcypher.core.domain.geometry.manifold_stitcher import (
         ActivatedDimension,
         ActivationFingerprint,
@@ -448,6 +449,7 @@ def _probe_precise(
     intersection_map_obj: IntersectionMap | None = None
     dimension_correlations: dict = {}
     layer_cka_scores: dict[int, float] = {}
+    layer_cka_scores_raw: dict[int, float] = {}
 
     if source_fingerprints and target_fingerprints:
         try:
@@ -482,9 +484,20 @@ def _probe_precise(
                 src_stacked = b.stack(src_list[:n_samples], axis=0)
                 tgt_stacked = b.stack(tgt_list[:n_samples], axis=0)
                 b.eval(src_stacked, tgt_stacked)
-                cka_result = compute_cka(src_stacked, tgt_stacked, backend=b)
+                cka_result = compute_cka(
+                    src_stacked,
+                    tgt_stacked,
+                    backend=b,
+                    estimator=HSICEstimator.AUTO,
+                    feature_bias_correction=True,
+                )
                 if cka_result.is_valid:
-                    layer_cka_scores[layer_idx] = cka_result.cka
+                    layer_cka_scores_raw[layer_idx] = cka_result.cka
+                    layer_cka_scores[layer_idx] = (
+                        cka_result.cka_corrected
+                        if cka_result.cka_corrected is not None
+                        else cka_result.cka
+                    )
             except Exception as e:
                 logger.debug("LAYER %d: CKA computation failed: %s", layer_idx, e)
 
@@ -538,6 +551,9 @@ def _probe_precise(
     cka_vals = list(layer_cka_scores.values())
     mean_cka = sum(cka_vals) / len(cka_vals) if cka_vals else 0.0
     min_cka = min(cka_vals) if cka_vals else 0.0
+    raw_cka_vals = list(layer_cka_scores_raw.values())
+    mean_cka_raw = sum(raw_cka_vals) / len(raw_cka_vals) if raw_cka_vals else 0.0
+    min_cka_raw = min(raw_cka_vals) if raw_cka_vals else 0.0
     layers_with_data = set(source_layer_activations.keys()) & set(target_layer_activations.keys())
     missing_cka_layers = [layer for layer in layers_with_data if layer not in layer_cka_scores]
     perfect_alignment = (
@@ -558,9 +574,14 @@ def _probe_precise(
         "missing_cka_layers": len(missing_cka_layers),
         "layer_confidences": layer_confidences,
         "layer_cka_scores": layer_cka_scores,
+        "layer_cka_scores_raw": layer_cka_scores_raw,
         "mean_confidence": mean_confidence,
         "mean_cka": mean_cka,
         "min_cka": min_cka,
+        "mean_cka_raw": mean_cka_raw,
+        "min_cka_raw": min_cka_raw,
+        "cka_estimator": "auto",
+        "feature_bias_correction": True,
         "perfect_alignment": perfect_alignment,
         "min_confidence": min(layer_confidences.values()) if layer_confidences else 0.0,
         "max_confidence": max(layer_confidences.values()) if layer_confidences else 0.0,
@@ -604,7 +625,7 @@ def _probe_fast(
     and orthogonal transformations - exactly what we need for merge alignment.
     """
     b = backend or get_default_backend()
-    from modelcypher.core.domain.geometry.cka import compute_layer_cka
+    from modelcypher.core.domain.geometry.cka import compute_layer_cka, compute_cka, HSICEstimator
 
     weight_cka: dict[str, float] = {}
     layer_cka: dict[int, list[float]] = {}
@@ -633,8 +654,20 @@ def _probe_fast(
         cka_score = 0.0
         if source_w.ndim == 2 and source_w.shape[0] >= 2:
             try:
-                cka_result = compute_layer_cka(source_w, target_w)
-                cka_score = cka_result.cka if cka_result.is_valid else 0.0
+                cka_result = compute_layer_cka(
+                    source_w,
+                    target_w,
+                    estimator=HSICEstimator.AUTO,
+                    feature_bias_correction=True,
+                )
+                if cka_result.is_valid:
+                    cka_score = (
+                        cka_result.cka_corrected
+                        if cka_result.cka_corrected is not None
+                        else cka_result.cka
+                    )
+                else:
+                    cka_score = 0.0
             except Exception:
                 cka_score = 0.0
         elif source_w.ndim == 1 and source_w.shape[0] >= 2:
@@ -643,8 +676,21 @@ def _probe_fast(
                 tgt_vec = b.array(target_w)
                 src_mat = b.reshape(src_vec, (-1, 1))
                 tgt_mat = b.reshape(tgt_vec, (-1, 1))
-                cka_result = compute_cka(src_mat, tgt_mat, backend=b)
-                cka_score = cka_result.cka if cka_result.is_valid else 0.0
+                cka_result = compute_cka(
+                    src_mat,
+                    tgt_mat,
+                    backend=b,
+                    estimator=HSICEstimator.AUTO,
+                    feature_bias_correction=True,
+                )
+                if cka_result.is_valid:
+                    cka_score = (
+                        cka_result.cka_corrected
+                        if cka_result.cka_corrected is not None
+                        else cka_result.cka
+                    )
+                else:
+                    cka_score = 0.0
             except Exception:
                 cka_score = 0.0
         elif source_w.shape[0] < 2:
@@ -683,6 +729,8 @@ def _probe_fast(
         "mean_confidence": mean_cka,
         "mean_cka": mean_cka,
         "min_cka": min_cka,
+        "cka_estimator": "auto",
+        "feature_bias_correction": True,
         "perfect_alignment": perfect_alignment,
         "max_cka": max(all_cka) if all_cka else 0.0,
         "missing_keys": missing_keys,

@@ -33,20 +33,20 @@ graph LR
 
 ## Empirical Results: Geometry vs. Vibes
 
-### Experiment: Merging Two 7B Models
+### Experiment: Merging Two 7B Models (example output; replace with your run)
 
-| Method | GW Distance | MMLU Score | Trajectory |
+| Method | GW Distance | MMLU Score | Traversal Coherence |
 |--------|-------------|------------|------------|
-| **Naive Merge** (weight average) | 0.85 | 42.1% | Erratic |
-| **ModelCypher** (Procrustes) | **0.12** | **68.4%** | Smooth |
+| **Naive Merge** (weight average) | 0.85 | 42.1% | 0.21 |
+| **ModelCypher** (Procrustes) | **0.12** | **68.4%** | 0.74 |
 
-**What the numbers mean:**
+**How to read the numbers (no vibes):**
 
-- **GW Distance** (Gromov-Wasserstein): Measures how much the merged model's concept geometry differs from the originals. Lower = better preserved. 0.85 means severe distortion. 0.12 means near-perfect alignment.
+- **GW Distance** (Gromov-Wasserstein): Structural divergence between the merged geometry and the originals. Compare to baselines; do not use fixed thresholds.
 
-- **MMLU Score**: Standard benchmark. The naive merge *lost 26 percentage points* of capability. Geometric merge preserved it.
+- **MMLU Score**: Downstream behavior check. Use it to validate post-merge outcomes, not to explain geometry.
 
-- **Trajectory**: How the model's internal activations flow. "Erratic" means unstable representations. "Smooth" means coherent reasoning paths.
+- **Traversal Coherence**: Raw path consistency metric. Higher means more stable traversal on the probe set.
 
 ---
 
@@ -73,9 +73,8 @@ mc geometry interference predict --source model-A --target model-B
 
 Output:
 ```
-Bhattacharyya Distance: 0.15   # Low = safe
-Volume Overlap: 0.23           # Low = distinct concepts
-Verdict: LOW_INTERFERENCE
+Bhattacharyya Distance: 0.15
+Volume Overlap: 0.23
 ```
 
 If high interference is predicted, you can use **null-space projection** to merge only in directions that don't collide.
@@ -86,15 +85,14 @@ If high interference is predicted, you can use **null-space projection** to merg
 
 Traditional safety filters check *after* the model generates a token. ModelCypher detects distress *during* the forward pass.
 
-| Input | Baseline Entropy | Delta H (ΔH) | Verdict |
-|-------|------------------|--------------|---------|
-| "Explain math" | 0.25 | 0.02 | Safe |
-| "Adversarial Jailbreak" | 0.22 | **0.95** | **REFUSED** |
+| Input | Baseline Entropy | Delta H (ΔH) |
+|-------|------------------|--------------|
+| "Explain math" | 0.25 | 0.02 |
+| "Adversarial Jailbreak" | 0.22 | **0.95** |
 
 **What this means:**
-- Normal queries have low ΔH (entropy stays stable)
-- Adversarial queries cause entropy spikes (the model is "stressed")
-- You can detect this *before* the harmful token is emitted
+- ΔH is a raw instability signal; compare against baselines for the model family.
+- Use it to localize geometry stress during inference, not as a causal claim.
 
 ---
 
@@ -111,6 +109,21 @@ ModelCypher isn't inventing new math. It applies established theory:
 | Information Geometry | Fefferman (2016) | Manifold hypothesis for neural networks |
 
 See [papers/](../papers/) for the full research foundation.
+
+---
+
+## Recent SOTA (2025) that informs this framing
+
+- **Activation-Informed Merging (AIM)**: activation-space constraints for merging.
+  https://arxiv.org/abs/2502.02421
+- **FW-Merging (ICCV 2025)**: Frank-Wolfe optimization for scalable model merging.
+  https://openaccess.thecvf.com/content/ICCV2025/papers/Chen_FW-Merging_Scaling_Model_Merging_with_Frank-Wolfe_Optimization_ICCV_2025_paper.pdf
+- **SuperMerge (2025)**: gradient-based merging with learned layer contributions.
+  https://arxiv.org/abs/2412.10416
+- **GW-SMM (2025)**: Gromov-Wasserstein feature alignment for merge selection.
+  https://arxiv.org/abs/2503.09774
+- **NEig-OWM (2025)**: null-space orthogonal weight modification to preserve prior tasks.
+  https://doi.org/10.1016/j.eswa.2025.127468
 
 ---
 

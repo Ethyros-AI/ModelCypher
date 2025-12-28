@@ -510,7 +510,7 @@ class GeometricMergeOrchestrator:
         b = self._backend
 
         # cka - compute overall CKA
-        from modelcypher.core.domain.geometry.cka import compute_cka
+        from modelcypher.core.domain.geometry.cka import compute_cka, HSICEstimator
 
         # Get all activations stacked
         src_all = []
@@ -530,8 +530,20 @@ class GeometricMergeOrchestrator:
                 src_stacked = b.stack(src_all, axis=0)
                 tgt_stacked = b.stack(tgt_all, axis=0)
                 b.eval(src_stacked, tgt_stacked)
-                cka_result = compute_cka(src_stacked, tgt_stacked)
-                geometry.overall_cka = cka_result.cka if cka_result.is_valid else 0.0
+                cka_result = compute_cka(
+                    src_stacked,
+                    tgt_stacked,
+                    estimator=HSICEstimator.AUTO,
+                    feature_bias_correction=True,
+                )
+                if cka_result.is_valid:
+                    geometry.overall_cka = (
+                        cka_result.cka_corrected
+                        if cka_result.cka_corrected is not None
+                        else cka_result.cka
+                    )
+                else:
+                    geometry.overall_cka = 0.0
                 logger.info("STAGE 1: Overall CKA = %.4f", geometry.overall_cka)
             except Exception as e:
                 logger.warning("STAGE 1: CKA computation failed: %s", e)
@@ -813,7 +825,10 @@ class GeometricMergeOrchestrator:
                 tgt_stacked = b.take(tgt_stacked, idx_arr, axis=0)
                 b.eval(src_stacked, tgt_stacked)
 
-            precision_tol = max(machine_epsilon(b, src_stacked), 1e-12)
+            # For different fine-tuned models (Coder vs Chat), CKA=1.0 is impossible.
+            # Their relational structures are similar but not identical.
+            # Use 1e-5 tolerance (CKA > 0.99999) which is still very high alignment.
+            precision_tol = max(machine_epsilon(b, src_stacked), 1e-5)
             aligner = GramAligner(
                 backend=b,
                 max_iterations=5000,
@@ -1202,7 +1217,7 @@ class GeometricMergeOrchestrator:
             # We need to compute CKA between all layer pairs
 
             # First, compute a CKA matrix manually since we don't have full CRMs
-            from modelcypher.core.domain.geometry.cka import compute_cka
+            from modelcypher.core.domain.geometry.cka import compute_cka, HSICEstimator
 
             n_src = len(src_layers)
             n_tgt = len(tgt_layers)
@@ -1244,8 +1259,21 @@ class GeometricMergeOrchestrator:
                             b.eval(gram_src, gram_tgt)
                             cka_val = compute_cka_from_grams(gram_src, gram_tgt, backend=b)
                         else:
-                            result = compute_cka(src_stacked, tgt_stacked, backend=b)
-                            cka_val = result.cka if result.is_valid else 0.0
+                            result = compute_cka(
+                                src_stacked,
+                                tgt_stacked,
+                                backend=b,
+                                estimator=HSICEstimator.AUTO,
+                                feature_bias_correction=True,
+                            )
+                            if result.is_valid:
+                                cka_val = (
+                                    result.cka_corrected
+                                    if result.cka_corrected is not None
+                                    else result.cka
+                                )
+                            else:
+                                cka_val = 0.0
 
                         row.append(float(cka_val))
                     except Exception:

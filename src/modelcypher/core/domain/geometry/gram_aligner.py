@@ -232,7 +232,7 @@ class GramAligner:
 
         # Cast to float32 for eigendecomposition (MLX doesn't support bfloat16 for eigh)
         gram_dtype = str(b.dtype(gram))
-        if gram_dtype == "bfloat16":
+        if "bfloat16" in gram_dtype:
             gram_f32 = b.astype(gram, "float32")
             b.eval(gram_f32)
             eigvals, eigvecs = b.eigh(gram_f32)
@@ -302,7 +302,7 @@ class GramAligner:
 
         # Cast to float32 for eigendecomposition (MLX doesn't support bfloat16 for eigh)
         gram_dtype = str(b.dtype(gram))
-        if gram_dtype == "bfloat16":
+        if "bfloat16" in gram_dtype:
             gram_f32 = b.astype(gram, "float32")
             b.eval(gram_f32)
             eigvals, eigvecs = b.eigh(gram_f32)
@@ -624,7 +624,7 @@ class GramAligner:
 
         # Cast to float32 for eigendecomposition (MLX doesn't support bfloat16 for eigh)
         K_s_dtype = str(b.dtype(K_s_c))
-        if K_s_dtype == "bfloat16":
+        if "bfloat16" in K_s_dtype:
             K_s_f32 = b.astype(K_s_c, "float32")
             K_t_f32 = b.astype(K_t_c, "float32")
             b.eval(K_s_f32, K_t_f32)
@@ -750,7 +750,7 @@ class GramAligner:
         # Eigendecomposition for matrix square roots
         # Cast to float32 for eigendecomposition (MLX doesn't support bfloat16 for eigh)
         K_dtype = str(b.dtype(K_s_c_local))
-        if K_dtype == "bfloat16":
+        if "bfloat16" in K_dtype:
             K_s_f32 = b.astype(K_s_c_local, "float32")
             K_t_f32 = b.astype(K_t_c, "float32")
             b.eval(K_s_f32, K_t_f32)

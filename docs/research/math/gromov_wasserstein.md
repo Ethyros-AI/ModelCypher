@@ -169,12 +169,15 @@ where $D_\pi = \text{diag}(\pi^T \mathbf{1})$ normalizes the transport.
 6. **Sato, R., et al.** (2025). "Unsupervised alignment in neuroscience: Introducing a toolbox for Gromov-Wasserstein optimal transport." *Journal of Neuroscience Methods*, 419, 110443. [DOI:10.1016/j.jneumeth.2025.110443](https://doi.org/10.1016/j.jneumeth.2025.110443)
    - *GWOT for neural representation alignment*
 
+7. **Fang, L., et al.** (2025). "Efficient Multi-Task Inferencing: Model Merging with Gromov-Wasserstein Feature Alignment." [arXiv:2503.09774](https://arxiv.org/abs/2503.09774)
+   - *GW-based feature alignment for model merging*
+
 ### Computational Advances (2024-2025)
 
-7. **Carrasco, X.A., et al.** (2023). "Neural Gromov-Wasserstein Optimal Transport." [arXiv:2303.05978](https://arxiv.org/abs/2303.05978)
+8. **Carrasco, X.A., et al.** (2023). "Neural Gromov-Wasserstein Optimal Transport." [arXiv:2303.05978](https://arxiv.org/abs/2303.05978)
    - *Scalable neural method for GW*
 
-8. **Peyré, G., & Cuturi, M.** (2019). "Computational Optimal Transport." *Foundations and Trends in Machine Learning*, 11(5-6), 355-607. [arXiv:1803.00567](https://arxiv.org/abs/1803.00567)
+9. **Peyré, G., & Cuturi, M.** (2019). "Computational Optimal Transport." *Foundations and Trends in Machine Learning*, 11(5-6), 355-607. [arXiv:1803.00567](https://arxiv.org/abs/1803.00567)
    - *Comprehensive survey including GW*
 
 ---

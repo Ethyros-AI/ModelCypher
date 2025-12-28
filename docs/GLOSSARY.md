@@ -33,8 +33,9 @@ When two models (a Base Model and a Sidecar Adapter) process the same input in p
 ### CKA (Centered Kernel Alignment)
 A measure of similarity between two neural network layers that is robust to rotation.
 -   **Range**: 0.0 (Different) to 1.0 (Identical).
--   **Thresholds**:
-    -   These cutoffs are heuristic guidelines and should be calibrated per architecture, probe corpus, and layer.
+-   **Operational meaning**: CKA = 1.0 means identical centered Gram structure on the probe set.
+-   **Bias note**: Finite sampling can bias CKA (inflate or deflate). Use debiased HSIC and
+    feature-sampling correction when possible.
 -   **Used in**: [Paper 0](../papers/paper-0-the-shape-of-knowledge.md), [Paper 1](../papers/paper-1-invariant-semantic-structure.md), [Paper 3](../papers/paper-3-cross-architecture-transfer.md), [Paper 4](../papers/paper-4-modelcypher-toolkit.md), [Paper 5](../papers/paper-5-semantic-highway.md)
 -   **CLI**: `mc geometry cka compute`
 

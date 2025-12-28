@@ -1805,7 +1805,7 @@ def _select_shared_full_rank_indices(
         gram = backend.matmul(matrix, backend.transpose(matrix))
         # Cast to float32 for eigendecomposition (MLX doesn't support bfloat16 for eigh)
         gram_dtype = str(backend.dtype(gram))
-        if gram_dtype == "bfloat16":
+        if "bfloat16" in gram_dtype:
             gram_f32 = backend.astype(gram, "float32")
             backend.eval(gram_f32)
             eigvals, _ = backend.eigh(gram_f32)
@@ -1946,7 +1946,7 @@ def _matrix_rank_for_alignment(
     gram = backend.matmul(matrix, backend.transpose(matrix))
     # Cast to float32 for eigendecomposition (MLX doesn't support bfloat16 for eigh)
     gram_dtype = str(backend.dtype(gram))
-    if gram_dtype == "bfloat16":
+    if "bfloat16" in gram_dtype:
         gram_f32 = backend.astype(gram, "float32")
         backend.eval(gram_f32)
         eigvals, _ = backend.eigh(gram_f32)
@@ -2106,7 +2106,7 @@ def _solve_feature_transform_exact(
 
     # Cast to float32 for eigendecomposition (MLX doesn't support bfloat16 for eigh)
     gram_dtype = str(backend.dtype(gram))
-    if gram_dtype == "bfloat16":
+    if "bfloat16" in gram_dtype:
         gram_f32 = backend.astype(gram, "float32")
         backend.eval(gram_f32)
         eigvals, eigvecs = backend.eigh(gram_f32)

@@ -18,8 +18,10 @@
 """
 Alignment diagnostics.
 
-CKA < 1.0 is not a failure. It is a signal that we need more alignment work.
-This module converts residual gaps into actionable signals.
+CKA < 1.0 is a diagnostic signal, not an explanation.
+It can mean boundary conditions are misaligned or that CKA is biased by
+finite sampling (feature or input). This module turns the residual gap into
+actionable geometric signals.
 """
 
 from __future__ import annotations

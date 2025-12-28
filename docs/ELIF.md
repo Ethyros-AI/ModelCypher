@@ -79,24 +79,19 @@ next layer reads garbage.
 
 ## 3) What “compression” means here (and when it can be lossless)
 
-You’ve been using a powerful intuition:
+You have been using a powerful intuition:
 
-> “Each dimension is a lossless compression of the dimension above it.”
+> "Each dimension is a lossless compression of the dimension above it."
 
-Two different properties get called “lossless”, and mixing them causes confusion:
+ModelCypher treats that as **lossless on the active manifold**:
 
-- **Lossless in the dictionary sense (exact recoverability / invertibility)**: you can encode the
-  information in `ℝ^n` into `ℝ` without loss because there exist bijections `ℝ ↔ ℝ^n` for any finite `n`
-  (Cantor/Netto‑style constructions; they work like “digit interleaving” with a convention for non‑unique
-  expansions). Here, “dimension” does not limit *information*.
-- **Lossless as geometry (shape/locality preservation)**: if you additionally require the mapping to
-  preserve neighborhoods (continuous/smooth), then dimension does constrain you. A continuous injective map
-  from an open set in `ℝ^n` into `ℝ^m` forces `n ≤ m` (invariance of domain). In ML practice, this is why
-  exactly invertible architectures (e.g. normalizing flows) are typically `ℝ^d ↔ ℝ^d`; changing dimension
-  requires extra latent variables or becomes non‑invertible.
+- Models do not visit all of `ℝ^d`. Under a task/probe distribution, they occupy a structured subset.
+- If a lower-dimensional description preserves the **relational geometry** of that subset, then it is
+  lossless for the model's behavior, even if it discards states with ~zero probability mass.
+- In other words: we strip noise, we keep meaning. The states that never occur are not part of the system.
 
-ModelCypher uses a third, operational meaning: **lossless with respect to the states we actually visit**
-under a probe/task distribution.
+This is the operational meaning: **lossless with respect to the states we actually visit** under a
+probe/task distribution.
 
 **Manifold version (the precise claim):**
 - Activations do not fill all of `ℝ^d`. Under a probe/task distribution, they often lie near a
@@ -194,6 +189,8 @@ idea is: if two models “know the same shape”, that should show up as invaria
 - **What it ignores**: rotations (and some scalings) of the feature basis.
 - **What `CKA = 1.0` means** (precisely): on the chosen probe set, the two representations induce the same
   centered Gram structure (same kernel up to numerical exactness).
+- **Bias note**: finite sample/feature sampling can bias CKA; use debiased HSIC and feature corrections
+  when available.
 - **ELIF analogy**: two sketches trace the *same outline* even if one page is rotated.
 
 ### Gram matrices (dimension‑agnostic relational geometry)
@@ -268,6 +265,40 @@ So the merge pipeline should answer:
 **ELIF analogy (map repair):**
 - Don’t repaint the whole city.
 - Add missing roads only where the map is blank.
+
+---
+
+## 7.1) Boundary conditions, not full-space alignment (SOTA framing)
+
+What we preserve is the target's **boundary conditions** on its active manifold.
+We do not twist the whole space. We graft into the target's dark space and smooth
+the transition so traversal stays continuous.
+
+**Operational rule (null-space grafting):**
+
+If `A_t` are target activations for a probe corpus and `ΔW` is the donor update,
+we enforce:
+
+```
+A_t · ΔW_safe = 0
+```
+
+This keeps the target's active responses invariant while allowing new structure
+to be added off-manifold.
+
+This framing lines up with current 2025 work:
+
+- **Activation-Informed Merging (AIM, 2025)** preserves salient base weights
+  using activation statistics, treating activations as constraints rather than
+  just weight vectors. https://arxiv.org/abs/2502.02421
+- **Null-space Orthogonal Weight Modification (NEig-OWM, 2025)** explicitly
+  projects updates into the null space to retain prior knowledge. https://doi.org/10.1016/j.eswa.2025.127468
+- **Gromov-Wasserstein feature alignment (GW-SMM, 2025)** selects merges based on
+  relational structure in feature distributions rather than coordinate matching.
+  https://arxiv.org/abs/2503.09774
+
+These are boundary-condition methods: preserve what already works, graft only
+where the model is sparse.
 
 ---
 

@@ -52,7 +52,7 @@ where $\tilde{K} = HKH$ is the centered kernel matrix.
 **Biased estimator** (commonly used):
 $$\widehat{\text{HSIC}}_b = \frac{1}{n^2} \text{tr}(KHLH)$$
 
-**Unbiased estimator** (Murphy et al., 2024):
+**Unbiased estimator** (Song et al., 2012):
 $$\widehat{\text{HSIC}}_u = \frac{1}{n(n-3)} \left[ \text{tr}(\tilde{K}\tilde{L}) + \frac{\mathbf{1}^T \tilde{K} \mathbf{1} \cdot \mathbf{1}^T \tilde{L} \mathbf{1}}{(n-1)(n-2)} - \frac{2}{n-2} \mathbf{1}^T \tilde{K} \tilde{L} \mathbf{1} \right]$$
 
 ---
@@ -92,15 +92,23 @@ Y ∈ ℝⁿˣᵖ²  →  L = YY^T ∈ ℝⁿˣⁿ
 
 ### The Problem (Murphy et al., 2024; Chun et al., 2025)
 
-In high-dimensional, low-sample settings (P >> N), naive CKA is severely biased:
-- Tends toward 1.0 even for random, unaligned representations
-- False discovery rate increases with feature/sample ratio
+Two distinct biases matter:
+- **Finite-sample bias** can inflate CKA when samples are small (classic HSIC bias).
+- **Feature-sampling bias** can *underestimate* CKA when only a subset of features is observed,
+  and the underestimation grows with intrinsic dimensionality (Chun et al., 2025).
 
 ### The Solution
 
 Use **debiased CKA** with unbiased HSIC estimators:
 
 $$\text{CKA}_{debiased}(X, Y) = \frac{\widehat{\text{HSIC}}_u(K, L)}{\sqrt{\widehat{\text{HSIC}}_u(K, K) \cdot \widehat{\text{HSIC}}_u(L, L)}}$$
+
+And apply the **feature-sampling correction** (Chun et al., 2025):
+
+$$\text{CKA}_{true} \approx \text{CKA}_{measured} \cdot \sqrt{\left(1 + \frac{\gamma_x - 1}{Q_x}\right)\left(1 + \frac{\gamma_y - 1}{Q_y}\right)}$$
+
+where $\gamma$ is the participation-ratio intrinsic dimension of the centered Gram eigenvalues,
+and $Q$ is the observed feature count.
 
 ---
 
@@ -139,6 +147,7 @@ This unifies several representation comparison methods under one framework.
 1. **Backend-agnostic**: Works with MLX, JAX, or any backend
 2. **Geodesic-aware**: Uses geodesic Gram matrices when appropriate
 3. **Numerical stability**: Handles edge cases (zero variance, etc.)
+4. **Feature correction**: Optional participation-ratio correction for feature sampling bias (Chun et al., 2025)
 
 ---
 
@@ -155,31 +164,24 @@ This unifies several representation comparison methods under one framework.
 3. **Cortes, C., Mohri, M., & Rostamizadeh, A.** (2012). "Algorithms for Learning Kernels Based on Centered Alignment." *JMLR*, 13, 795-828. [JMLR](https://jmlr.org/papers/v13/cortes12a.html)
    - *Centered alignment framework*
 
-### Bias Correction (Critical 2024-2025 Work)
+### Bias Correction (Critical 2012-2025 Work)
 
-4. **Murphy, E., et al.** (2024). "Correcting Biased Centered Kernel Alignment Measures in Biological and Artificial Neural Networks." [arXiv:2405.01012](https://arxiv.org/abs/2405.01012)
+4. **Song, L., et al.** (2012). "Feature Selection via Dependence Maximization." *JMLR*, 13. [JMLR](https://jmlr.org/papers/v13/song12a.html)
+   - *Unbiased HSIC estimator used in debiased CKA*
+
+5. **Murphy, E., et al.** (2024). "Correcting Biased Centered Kernel Alignment Measures in Biological and Artificial Neural Networks." [arXiv:2405.01012](https://arxiv.org/abs/2405.01012)
    - *Identifies severe bias in high-P/low-N settings; proposes corrections*
 
-5. **Chun, S., et al.** (2025). "Estimating Neural Representation Alignment from Sparsely Sampled Inputs and Features." [arXiv:2502.15104](https://arxiv.org/abs/2502.15104)
+6. **Chun, S., et al.** (2025). "Estimating Neural Representation Alignment from Sparsely Sampled Inputs and Features." [arXiv:2502.15104](https://arxiv.org/abs/2502.15104)
    - *Joint input-and-feature-corrected estimator for CKA*
 
 ### Theoretical Connections
 
-6. **Williams, A.H.** (2024). "Equivalence between representational similarity analysis, centered kernel alignment, and canonical correlations analysis." *UniReps Workshop, NeurIPS 2024*. [OpenReview](https://openreview.net/forum?id=UniReps2024)
+7. **Williams, A.H.** (2024). "Equivalence between representational similarity analysis, centered kernel alignment, and canonical correlations analysis." *UniReps Workshop, NeurIPS 2024*. [OpenReview](https://openreview.net/forum?id=UniReps2024)
    - *Unifies CKA, RSA, and CCA under single framework*
 
-7. **Harvey, W., et al.** (2024). "On the Relationship Between CKA, Procrustes, and Other Similarity Measures." *NeurIPS 2024*.
+8. **Harvey, W., et al.** (2024). "On the Relationship Between CKA, Procrustes, and Other Similarity Measures." *NeurIPS 2024*.
    - *Relates CKA to Procrustes distance*
-
-### Applications
-
-8. **Nakai, H., et al.** (2025). "CKA Loss for Neural Network Alignment." [arXiv:2501.xxxxx](https://arxiv.org/search/?query=CKA+loss+neural+network+alignment&searchtype=all)
-   - *Using CKA as training objective*
-
-9. **Okatan, E., et al.** (2025). "Subspace-Level CKA for Fine-Grained Similarity." [arXiv](https://arxiv.org/search/?query=subspace+CKA+fine-grained&searchtype=all)
-   - *Task-discriminative subspace CKA*
-
----
 
 ## Related Concepts
 
