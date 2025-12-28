@@ -80,8 +80,6 @@ next layer reads garbage.
 
 ## 3) What “compression” means here (and when it can be lossless)
 
-You have been using a powerful intuition:
-
 > "Each dimension is a lossless compression of the dimension above it."
 
 ModelCypher treats that as **lossless on the active manifold**:
@@ -149,8 +147,6 @@ The important part is not the specific numbers; it’s the idea that alignment s
 ---
 
 ## 4) The “dream scratchpad”: dormant subspaces and activation
-
-Your “dream” framing is useful if we keep it mechanically grounded:
 
 > The model has a big scratchpad, but only some directions light up for a given prompt distribution.
 
