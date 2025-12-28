@@ -961,3 +961,320 @@ def graft_boundary(
         return
 
     write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("zero-shot-transfer")
+def zero_shot_transfer(
+    ctx: typer.Context,
+    source_path: str = typer.Argument(
+        ..., help="Path to source model directory (knowledge donor)"
+    ),
+    target_path: str = typer.Argument(
+        ..., help="Path to target model directory (graft recipient)"
+    ),
+    layers: list[int] | None = typer.Option(
+        None, "--layer", "-l", help="Specific layers to analyze"
+    ),
+    density_threshold: float = typer.Option(
+        0.5, "--density-threshold", help="Density threshold for sparse/dense classification"
+    ),
+    max_probes: int = typer.Option(
+        50, "--max-probes", help="Maximum probes to analyze"
+    ),
+    output_path: str | None = typer.Option(
+        None, "--output-path", "-o", help="Path to save results JSON"
+    ),
+) -> None:
+    """Validate zero-shot transfer by analyzing graft candidates.
+
+    Identifies sparse concepts in target that can receive knowledge from source.
+    Creates a validation plan for testing transfer without fine-tuning.
+
+    Success criteria:
+    - Sparse concept activations shift toward source after grafting
+    - Dense concept activations remain stable
+    """
+    context = _context(ctx)
+
+    from modelcypher.core.domain.geometry.knowledge_density import (
+        KnowledgeDensityAnalyzer,
+        KnowledgeDensityConfig,
+        ModelDensityProfile,
+    )
+    from modelcypher.core.domain.geometry.knowledge_diff import KnowledgeDiffer
+    from modelcypher.core.domain.geometry.cka import compute_cka
+
+    # Load models using helper
+    logger.info("Loading target model: %s", target_path)
+    target_model, target_tokenizer, b, target_provider, target_n_layers = (
+        _load_model_and_provider(target_path, k_neighbors=10)
+    )
+
+    logger.info("Loading source model: %s", source_path)
+    _, _, _, source_provider, source_n_layers = (
+        _load_model_and_provider(source_path, k_neighbors=10)
+    )
+
+    # Determine layers to analyze
+    num_layers = min(target_n_layers, source_n_layers)
+
+    if layers:
+        resolved_layers = [l for l in layers if l < num_layers]
+    else:
+        # Analyze key layers: early, middle, late
+        resolved_layers = [
+            0,
+            num_layers // 4,
+            num_layers // 2,
+            3 * num_layers // 4,
+            num_layers - 1,
+        ]
+        resolved_layers = sorted(set(resolved_layers))
+
+    logger.info("Analyzing layers: %s", resolved_layers)
+
+    # Load unified atlas probes
+    probes = UnifiedAtlasInventory.all_probes()[:max_probes]
+
+    # Analyze density for target
+    density_analyzer = KnowledgeDensityAnalyzer(backend=b)
+    differ = KnowledgeDiffer()
+
+    target_profile = density_analyzer.analyze_model(
+        probes=probes,
+        activation_provider=target_provider,
+        layers=resolved_layers,
+        config=KnowledgeDensityConfig(),
+    )
+
+    source_profile = density_analyzer.analyze_model(
+        probes=probes,
+        activation_provider=source_provider,
+        layers=resolved_layers,
+        config=KnowledgeDensityConfig(),
+    )
+
+    # Set model paths
+    target_profile = ModelDensityProfile(
+        model_path=target_path,
+        layers=target_profile.layers,
+        layer_profiles=target_profile.layer_profiles,
+        domain_densities=target_profile.domain_densities,
+        overall_density=target_profile.overall_density,
+        sparse_concepts=target_profile.sparse_concepts,
+        dense_concepts=target_profile.dense_concepts,
+    )
+    source_profile = ModelDensityProfile(
+        model_path=source_path,
+        layers=source_profile.layers,
+        layer_profiles=source_profile.layer_profiles,
+        domain_densities=source_profile.domain_densities,
+        overall_density=source_profile.overall_density,
+        sparse_concepts=source_profile.sparse_concepts,
+        dense_concepts=source_profile.dense_concepts,
+    )
+
+    # Compute knowledge diff
+    diff = differ.diff(source_profile, target_profile)
+
+    # Identify transfer candidates: high opportunity concepts
+    transfer_candidates = [
+        opp for opp in diff.ranked_opportunities
+        if opp.target_density < density_threshold
+        and opp.opportunity_score > 0.1
+    ]
+
+    # Identify stability checks: dense concepts (should not change)
+    stability_checks = [
+        opp for opp in diff.ranked_opportunities
+        if opp.target_density >= density_threshold
+    ]
+
+    # Group transfer candidates by layer
+    candidates_by_layer: dict[int, list] = {}
+    for cand in transfer_candidates:
+        if cand.layer not in candidates_by_layer:
+            candidates_by_layer[cand.layer] = []
+        candidates_by_layer[cand.layer].append({
+            "probeId": cand.probe_id,
+            "name": cand.name,
+            "domain": cand.domain,
+            "targetDensity": cand.target_density,
+            "sourceDensity": cand.source_density,
+            "opportunityScore": cand.opportunity_score,
+        })
+
+    # Group stability checks by layer
+    stability_by_layer: dict[int, list] = {}
+    for check in stability_checks:
+        if check.layer not in stability_by_layer:
+            stability_by_layer[check.layer] = []
+        stability_by_layer[check.layer].append({
+            "probeId": check.probe_id,
+            "name": check.name,
+            "domain": check.domain,
+            "targetDensity": check.target_density,
+            "sourceDensity": check.source_density,
+        })
+
+    # Compute CKA similarity between source and target at each layer
+    # This measures how similar the representations are currently
+    layer_cka: dict[int, float] = {}
+    for layer in resolved_layers:
+        # Get activations for a sample of probes
+        sample_probes = probes[:10]
+        sample_texts = []
+        for probe in sample_probes:
+            if probe.support_texts:
+                sample_texts.extend(list(probe.support_texts)[:2])
+
+        if sample_texts:
+            try:
+                target_acts = target_provider.get_activations(sample_texts, layer)
+                source_acts = source_provider.get_activations(sample_texts, layer)
+
+                if target_acts and source_acts:
+                    target_arr = b.stack([b.array(a) for a in target_acts], axis=0)
+                    source_arr = b.stack([b.array(a) for a in source_acts], axis=0)
+                    b.eval(target_arr)
+                    b.eval(source_arr)
+
+                    # Truncate to shared dimension
+                    min_dim = min(target_arr.shape[1], source_arr.shape[1])
+                    target_arr = target_arr[:, :min_dim]
+                    source_arr = source_arr[:, :min_dim]
+
+                    cka = compute_cka(target_arr, source_arr, b)
+                    layer_cka[layer] = float(cka)
+            except Exception as e:
+                logger.debug("CKA failed for layer %d: %s", layer, e)
+                layer_cka[layer] = 0.0
+        else:
+            layer_cka[layer] = 0.0
+
+    # Build validation plan
+    validation_plan = {
+        "preGraftChecks": [
+            "Measure baseline perplexity on sparse concept prompts",
+            "Measure baseline perplexity on dense concept prompts",
+            "Record activation norms for transfer candidates",
+        ],
+        "graftOperation": {
+            "targetLayers": list(candidates_by_layer.keys()),
+            "conceptsToGraft": len(transfer_candidates),
+            "expectedBehavior": "Sparse concept activations shift toward source pattern",
+        },
+        "postGraftChecks": [
+            "Measure post-graft perplexity on sparse concept prompts (should improve)",
+            "Measure post-graft perplexity on dense concept prompts (should be stable)",
+            "Compare activation shift magnitude for sparse vs dense concepts",
+        ],
+        "successCriteria": {
+            "sparseImprovementThreshold": 0.10,  # 10% perplexity improvement
+            "denseDegradationLimit": 0.02,  # 2% degradation limit
+        },
+    }
+
+    payload = {
+        "_schema": "mc.geometry.research.zero_shot_transfer.v1",
+        "sourcePath": source_path,
+        "targetPath": target_path,
+        "layers": resolved_layers,
+        "densityThreshold": density_threshold,
+        "transferCandidates": {
+            "total": len(transfer_candidates),
+            "byLayer": {str(k): v for k, v in candidates_by_layer.items()},
+            "topOpportunities": [
+                {
+                    "probeId": c.probe_id,
+                    "name": c.name,
+                    "domain": c.domain,
+                    "layer": c.layer,
+                    "targetDensity": c.target_density,
+                    "sourceDensity": c.source_density,
+                    "opportunityScore": c.opportunity_score,
+                }
+                for c in transfer_candidates[:10]
+            ],
+        },
+        "stabilityChecks": {
+            "total": len(stability_checks),
+            "byLayer": {str(k): len(v) for k, v in stability_by_layer.items()},
+        },
+        "layerCkaSimilarity": {str(k): v for k, v in layer_cka.items()},
+        "validationPlan": validation_plan,
+        "summary": {
+            "canTransfer": len(transfer_candidates) > 0,
+            "transferConfidence": (
+                "high" if len(transfer_candidates) > 20
+                else "medium" if len(transfer_candidates) > 5
+                else "low"
+            ),
+            "stabilityRisk": (
+                "low" if len(stability_checks) > len(transfer_candidates) * 2
+                else "medium" if len(stability_checks) > len(transfer_candidates)
+                else "high"
+            ),
+        },
+    }
+
+    if output_path:
+        Path(output_path).write_text(json.dumps(payload, indent=2))
+        logger.info("Results saved to %s", output_path)
+
+    if context.output_format == "text":
+        lines = [
+            "ZERO-SHOT TRANSFER VALIDATION PLAN",
+            f"Source (donor): {source_path}",
+            f"Target (recipient): {target_path}",
+            f"Density threshold: {density_threshold}",
+            "",
+            "TRANSFER CANDIDATES (sparse in target, dense in source):",
+            "-" * 60,
+            f"  Total candidates: {len(transfer_candidates)}",
+        ]
+
+        for layer, cands in sorted(candidates_by_layer.items()):
+            lines.append(f"  Layer {layer}: {len(cands)} concepts")
+
+        lines.append("")
+        lines.append("TOP 10 TRANSFER OPPORTUNITIES:")
+        lines.append("-" * 60)
+        for c in transfer_candidates[:10]:
+            lines.append(
+                f"  {c.name} (L{c.layer}): "
+                f"target={c.target_density:.3f}, source={c.source_density:.3f}, "
+                f"opportunity={c.opportunity_score:.3f}"
+            )
+
+        lines.append("")
+        lines.append("STABILITY CHECKS (should not change):")
+        lines.append("-" * 60)
+        lines.append(f"  Total dense concepts: {len(stability_checks)}")
+        for layer, checks in sorted(stability_by_layer.items()):
+            lines.append(f"  Layer {layer}: {len(checks)} concepts to protect")
+
+        lines.append("")
+        lines.append("LAYER CKA SIMILARITY (current alignment):")
+        lines.append("-" * 60)
+        for layer, cka in sorted(layer_cka.items()):
+            alignment = "high" if cka > 0.7 else "medium" if cka > 0.4 else "low"
+            lines.append(f"  Layer {layer}: CKA={cka:.3f} ({alignment} alignment)")
+
+        lines.append("")
+        lines.append("TRANSFER RECOMMENDATION:")
+        lines.append("-" * 60)
+        if len(transfer_candidates) > 20:
+            lines.append("  HIGH CONFIDENCE: Many transfer opportunities identified")
+            lines.append(f"  Focus layers: {list(candidates_by_layer.keys())}")
+        elif len(transfer_candidates) > 5:
+            lines.append("  MEDIUM CONFIDENCE: Some transfer opportunities")
+            lines.append("  Consider targeted grafting on highest-opportunity concepts")
+        else:
+            lines.append("  LOW CONFIDENCE: Few transfer opportunities")
+            lines.append("  Target may already be dense; grafting may not add value")
+
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
