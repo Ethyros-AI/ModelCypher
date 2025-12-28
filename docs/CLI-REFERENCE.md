@@ -68,6 +68,13 @@ mc geometry concept compare --text-a "First" --text-b "Second"
 mc geometry concept compare --model-a <path> --model-b <path> --prompt "Test input"
 ```
 
+## Geometry CRM Commands
+```bash
+mc geometry crm build --model <path> --output-path <path>
+mc geometry crm compare --source <crm.json> --target <crm.json>
+mc geometry crm delta-mask --source <crm.json> --target <crm.json> --output-path <mask.json>
+```
+
 ## Geometry Cross-Cultural Commands
 ```bash
 mc geometry cross-cultural analyze <input_json>
@@ -162,6 +169,12 @@ Compare measurements against model family baselines to determine significance.
 ### Safety Commands
 ```bash
 mc safety adapter-probe --adapter <path>    # Run adapter safety probes
+```
+
+### Model Merge Commands
+```bash
+mc model merge --source <path> --target <path> --output-dir <path>
+mc model merge --source <path> --target <path> --output-dir <path> --knowledge-delta-mask <mask.json>
 ```
 
 ### Entropy Commands

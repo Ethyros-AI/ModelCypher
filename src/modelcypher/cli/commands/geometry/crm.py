@@ -25,10 +25,13 @@ Provides commands for:
 Commands:
     mc geometry crm build --model <path> --output-path <path>
     mc geometry crm compare --source <path> --target <path>
+    mc geometry crm delta-mask --source <path> --target <path>
     mc geometry crm sequence-inventory
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 import typer
 
@@ -42,8 +45,10 @@ from modelcypher.core.domain.agents.sequence_invariant_atlas import (
 from modelcypher.core.use_cases.concept_response_matrix_service import (
     ConceptResponseMatrixService,
     CRMBuildConfig,
+    KnowledgeDeltaMaskConfig,
 )
 from modelcypher.utils.errors import ErrorDetail
+from modelcypher.utils.json import dump_json
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -241,6 +246,125 @@ def geometry_crm_compare(
                 lines.append(
                     f"  {match['sourceLayer']} -> {match['targetLayer']} (CKA {match['cka']:.4f})"
                 )
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("delta-mask")
+def geometry_crm_delta_mask(
+    ctx: typer.Context,
+    source: str = typer.Option(..., "--source", help="Source CRM JSON path"),
+    target: str = typer.Option(..., "--target", help="Target CRM JSON path"),
+    target_sparse_percentile: float = typer.Option(
+        0.25, "--target-sparse-percentile", help="Percentile for target sparsity cutoff"
+    ),
+    source_dense_percentile: float = typer.Option(
+        0.75, "--source-dense-percentile", help="Percentile for source density cutoff"
+    ),
+    density_ratio_percentile: float | None = typer.Option(
+        None,
+        "--density-ratio-percentile",
+        help="Percentile for density ratio cutoff (defaults to source dense percentile)",
+    ),
+    min_anchor_count: int = typer.Option(
+        1, "--min-anchor-count", help="Minimum anchors required per layer"
+    ),
+    output_path: str | None = typer.Option(
+        None, "--output-path", help="Write delta mask JSON to file"
+    ),
+) -> None:
+    """Build a knowledge delta mask from two CRM files.
+
+    Identifies layers where the source activation density exceeds the target
+    while the target appears sparse, using distribution-derived percentiles.
+    """
+    context = _context(ctx)
+    service = ConceptResponseMatrixService()
+
+    config = KnowledgeDeltaMaskConfig(
+        target_sparse_percentile=target_sparse_percentile,
+        source_dense_percentile=source_dense_percentile,
+        density_ratio_percentile=density_ratio_percentile,
+        min_anchor_count=min_anchor_count,
+    )
+
+    try:
+        summary = service.knowledge_delta_mask(source, target, config=config)
+    except (ValueError, OSError) as exc:
+        error = ErrorDetail(
+            code="MC-1052",
+            title="CRM delta mask failed",
+            detail=str(exc),
+            hint="Ensure both CRM paths exist and share common anchors.",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "_schema": "mc.geometry.crm.delta_mask.v1",
+        "sourcePath": summary.source_path,
+        "targetPath": summary.target_path,
+        "commonAnchorCount": summary.common_anchor_count,
+        "layerCount": summary.layer_count,
+        "config": {
+            "targetSparsePercentile": summary.config.target_sparse_percentile,
+            "sourceDensePercentile": summary.config.source_dense_percentile,
+            "densityRatioPercentile": (
+                summary.config.density_ratio_percentile
+                if summary.config.density_ratio_percentile is not None
+                else summary.config.source_dense_percentile
+            ),
+            "minAnchorCount": summary.config.min_anchor_count,
+        },
+        "thresholds": {
+            "targetSparseThreshold": summary.target_sparse_threshold,
+            "sourceDenseThreshold": summary.source_dense_threshold,
+            "densityRatioThreshold": summary.density_ratio_threshold,
+        },
+        "graftLayers": summary.graft_layers,
+        "alphaByLayer": {str(k): v for k, v in summary.alpha_by_layer.items()},
+        "skippedLayers": summary.skipped_layers,
+        "layerMetrics": [
+            {
+                "layer": entry.layer,
+                "anchorCount": entry.anchor_count,
+                "coverage": entry.coverage,
+                "sourceMeanNorm": entry.source_mean_norm,
+                "targetMeanNorm": entry.target_mean_norm,
+                "sourceStdNorm": entry.source_std_norm,
+                "targetStdNorm": entry.target_std_norm,
+                "deltaMeanNorm": entry.delta_mean_norm,
+                "densityRatio": entry.density_ratio,
+                "graftable": entry.graftable,
+            }
+            for entry in summary.layer_summaries
+        ],
+    }
+
+    if output_path:
+        Path(output_path).write_text(dump_json(payload))
+        payload["outputPath"] = output_path
+
+    if context.output_format == "text":
+        lines = [
+            "CRM DELTA MASK",
+            f"Source: {summary.source_path}",
+            f"Target: {summary.target_path}",
+            f"Common Anchors: {summary.common_anchor_count}",
+            f"Layers: {summary.layer_count}",
+            "",
+            "Thresholds:",
+            f"  Target sparse <= {summary.target_sparse_threshold:.6f}",
+            f"  Source dense >= {summary.source_dense_threshold:.6f}",
+            f"  Density ratio >= {summary.density_ratio_threshold:.6f}",
+            "",
+            f"Graft Layers: {summary.graft_layers}",
+        ]
+        if output_path:
+            lines.append(f"Output: {output_path}")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

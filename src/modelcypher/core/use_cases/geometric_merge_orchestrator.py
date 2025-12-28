@@ -1366,6 +1366,7 @@ class GeometricMergeOrchestrator:
         geometry: MergeGeometry,
         extract_layer_index_fn: Any,
         checkpoint_dir: str | None = None,
+        layer_alpha_scale: dict[int, float] | None = None,
     ) -> tuple[dict[str, "Array"], dict[str, Any]]:
         """
         Execute merge using the computed geometry.
@@ -1394,6 +1395,8 @@ class GeometricMergeOrchestrator:
             "dimension_weights_used": 0,
             "null_space_filtered": 0,
             "dare_sparsified": 0,
+            "delta_mask_scaled": 0,
+            "delta_mask_skipped": 0,
             # New metrics for connected geometry
             "transform_requirements_checked": 0,
             "intrinsic_dim_scaled": 0,
@@ -1546,6 +1549,34 @@ class GeometricMergeOrchestrator:
                 layer_idx = target_layer_idx
                 layer_geom = geometry.layer_geometries.get(layer_idx) if layer_idx is not None else None
 
+                layer_scale = 1.0
+                if layer_alpha_scale and layer_idx is not None:
+                    layer_scale = float(layer_alpha_scale.get(layer_idx, 1.0))
+
+                if layer_scale <= 0.0:
+                    merged_w = b.astype(target_w, "float32")
+                    target_dtype = target_w.dtype
+                    dtype_str = target_dtype.name if hasattr(target_dtype, "name") else str(target_dtype).replace("mlx.core.", "")
+                    dtype_lower = dtype_str.lower()
+                    if "int" in dtype_lower or "uint" in dtype_lower:
+                        merged[key] = b.astype(merged_w, "float32")
+                    else:
+                        merged[key] = b.astype(merged_w, dtype_str)
+                    _write_checkpoint(
+                        {
+                            "status": "done",
+                            "index": idx,
+                            "total": total_weights,
+                            "key": key,
+                            "source_key": source_key,
+                            "layer_idx": target_layer_idx,
+                            "timestamp": time.time(),
+                        }
+                    )
+                    metrics["weights_merged"] += 1
+                    metrics["delta_mask_skipped"] += 1
+                    continue
+
                 # Apply per-layer exact kernel alignment transform before shape normalization
                 if layer_geom and layer_geom.procrustes_rotation is not None:
                     source_w, applied = _apply_phase_lock_transform(
@@ -1678,6 +1709,10 @@ class GeometricMergeOrchestrator:
                         # Nearly flat manifold - moderate conservatism
                         alpha = alpha * 0.7
                         metrics["manifold_health_scaled"] = metrics.get("manifold_health_scaled", 0) + 1
+
+                if layer_scale != 1.0:
+                    alpha = alpha * layer_scale
+                    metrics["delta_mask_scaled"] += 1
 
                 # Override alpha for cross-dimensional weights that couldn't be aligned
                 if cross_dim_use_target_only:

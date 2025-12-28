@@ -74,6 +74,7 @@ from modelcypher.cli.commands.geometry import training as geometry_training_comm
 from modelcypher.cli.commands.geometry import transfer as geometry_transfer_cabe_commands
 from modelcypher.cli.commands.geometry import transport as geometry_transport_commands
 from modelcypher.cli.commands.geometry import waypoint as geometry_waypoint_commands
+from modelcypher.cli.commands.geometry import research as geometry_research_commands
 from modelcypher.cli.context import CLIContext, resolve_ai_mode, resolve_output_format
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.cli.composition import get_training_service
@@ -193,6 +194,7 @@ geometry_app.add_typer(geometry_temporal_commands.app, name="temporal")
 geometry_app.add_typer(geometry_moral_commands.app, name="moral")
 geometry_app.add_typer(geometry_waypoint_commands.app, name="waypoint")
 geometry_app.add_typer(geometry_interference_commands.app, name="interference")
+geometry_app.add_typer(geometry_research_commands.app, name="research")
 app.add_typer(entropy_commands.app, name="entropy")
 app.add_typer(adapter_commands.adapter_app, name="adapter")
 app.add_typer(adapter_commands.calibration_app, name="calibration")

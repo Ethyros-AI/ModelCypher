@@ -189,6 +189,7 @@ class UnifiedGeometricMerger:
         output_dir: str | None = None,
         dry_run: bool = False,
         use_full_geometry: bool = True,
+        knowledge_delta_mask_path: str | None = None,
     ) -> UnifiedMergeResult:
         """
         Execute pure geometric merge.
@@ -203,6 +204,7 @@ class UnifiedGeometricMerger:
             output_dir: Output directory for merged model
             dry_run: If True, don't save to disk
             use_full_geometry: If True, use GeometricMergeOrchestrator with ALL 84 geometry files
+            knowledge_delta_mask_path: Optional delta mask JSON for layer gating
 
         Returns:
             UnifiedMergeResult with merged weights and metrics
@@ -213,7 +215,11 @@ class UnifiedGeometricMerger:
 
         if use_full_geometry:
             return self._merge_with_full_geometry(
-                source_path, target_path, output_dir, dry_run
+                source_path,
+                target_path,
+                output_dir,
+                dry_run,
+                knowledge_delta_mask_path,
             )
 
         # Load weights (CPU first to reduce GPU memory pressure during merge)
@@ -372,6 +378,7 @@ class UnifiedGeometricMerger:
         target_path: str,
         output_dir: str | None = None,
         dry_run: bool = False,
+        knowledge_delta_mask_path: str | None = None,
     ) -> "UnifiedMergeResult":
         """
         Execute merge using GeometricMergeOrchestrator with ALL 84 geometry files.
@@ -563,12 +570,21 @@ class UnifiedGeometricMerger:
         # Execute merge using geometry
         logger.info("EXECUTING MERGE...")
         merge_start = time.perf_counter()
+        layer_alpha_scale = None
+        if knowledge_delta_mask_path:
+            layer_alpha_scale = self._load_knowledge_delta_mask(knowledge_delta_mask_path)
+            logger.info(
+                "Applying knowledge delta mask: %s (%d layers)",
+                knowledge_delta_mask_path,
+                len(layer_alpha_scale),
+            )
         merged_weights, merge_metrics = orchestrator.merge_weights(
             source_weights=source_weights,
             target_weights=target_weights,
             geometry=geometry,
             extract_layer_index_fn=self._extract_layer_index,
             checkpoint_dir=output_dir,
+            layer_alpha_scale=layer_alpha_scale,
         )
         logger.info(
             "EXECUTING MERGE completed in %.2fs",
@@ -879,6 +895,21 @@ class UnifiedGeometricMerger:
         """Load model weights as backend Arrays."""
         weights = self._model_loader.load_weights(model_path)
         return weights, "safetensors"
+
+    def _load_knowledge_delta_mask(self, mask_path: str) -> dict[int, float]:
+        """Load per-layer alpha scaling from a knowledge delta mask file."""
+        import json
+
+        payload = json.loads(Path(mask_path).read_text())
+        alpha_by_layer = payload.get("alphaByLayer") or payload.get("alpha_by_layer")
+        if isinstance(alpha_by_layer, dict):
+            return {int(layer): float(alpha) for layer, alpha in alpha_by_layer.items()}
+
+        graft_layers = payload.get("graftLayers") or payload.get("graft_layers")
+        if isinstance(graft_layers, list):
+            return {int(layer): 1.0 for layer in graft_layers}
+
+        raise ValueError("Invalid knowledge delta mask: missing alphaByLayer or graftLayers.")
 
     def _require_vocab_phase_lock(
         self, vocab_metrics: dict[str, Any], vocab_aligned: bool

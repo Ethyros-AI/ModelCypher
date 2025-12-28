@@ -171,6 +171,11 @@ def model_merge(
     source: str = typer.Option(..., "--source"),
     target: str = typer.Option(..., "--target"),
     output_dir: str = typer.Option(..., "--output-dir"),
+    knowledge_delta_mask: str | None = typer.Option(
+        None,
+        "--knowledge-delta-mask",
+        help="Path to knowledge delta mask JSON for layer gating",
+    ),
 ) -> None:
     """Merge two models using pure geometric alignment.
 
@@ -192,6 +197,7 @@ def model_merge(
             source_path=source,
             target_path=target,
             output_dir=output_dir,
+            knowledge_delta_mask_path=knowledge_delta_mask,
         )
         # Convert result to dict for output
         output = {

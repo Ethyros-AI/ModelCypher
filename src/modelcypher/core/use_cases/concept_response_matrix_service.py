@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -111,6 +112,47 @@ class CRMSharedSubspaceSummary:
     alignment_quality: float
     h2_validation: dict[str, float | bool | str]
     layer_metrics: list[dict[str, float | int | bool]]
+
+
+@dataclass(frozen=True)
+class KnowledgeDeltaMaskConfig:
+    """Configuration for knowledge delta mask extraction."""
+
+    target_sparse_percentile: float = 0.25
+    source_dense_percentile: float = 0.75
+    density_ratio_percentile: float | None = None
+    min_anchor_count: int = 1
+    epsilon: float = 1e-8
+
+
+@dataclass(frozen=True)
+class KnowledgeDeltaLayerSummary:
+    layer: int
+    anchor_count: int
+    coverage: float
+    source_mean_norm: float
+    target_mean_norm: float
+    source_std_norm: float
+    target_std_norm: float
+    delta_mean_norm: float
+    density_ratio: float
+    graftable: bool
+
+
+@dataclass(frozen=True)
+class KnowledgeDeltaMaskSummary:
+    source_path: str
+    target_path: str
+    common_anchor_count: int
+    layer_count: int
+    target_sparse_threshold: float
+    source_dense_threshold: float
+    density_ratio_threshold: float
+    graft_layers: list[int]
+    alpha_by_layer: dict[int, float]
+    skipped_layers: list[int]
+    layer_summaries: list[KnowledgeDeltaLayerSummary]
+    config: KnowledgeDeltaMaskConfig
 
 
 class ConceptResponseMatrixService:
@@ -367,6 +409,143 @@ class ConceptResponseMatrixService:
             layer_metrics=layer_metrics,
         )
 
+    def knowledge_delta_mask(
+        self,
+        source_path: str,
+        target_path: str,
+        config: KnowledgeDeltaMaskConfig | None = None,
+    ) -> KnowledgeDeltaMaskSummary:
+        """Build a knowledge delta mask from two CRMs.
+
+        The mask highlights layers where the source has higher activation
+        density while the target appears sparse, based on distribution-derived
+        percentiles of activation norms.
+        """
+        source = ConceptResponseMatrix.load(str(expand_path(source_path)))
+        target = ConceptResponseMatrix.load(str(expand_path(target_path)))
+        cfg = config or KnowledgeDeltaMaskConfig()
+
+        _validate_percentile("target_sparse_percentile", cfg.target_sparse_percentile)
+        _validate_percentile("source_dense_percentile", cfg.source_dense_percentile)
+        density_percentile = (
+            cfg.density_ratio_percentile
+            if cfg.density_ratio_percentile is not None
+            else cfg.source_dense_percentile
+        )
+        _validate_percentile("density_ratio_percentile", density_percentile)
+
+        common = source.common_anchor_ids(target)
+        if not common:
+            raise ValueError("No common anchors found between source and target CRMs.")
+
+        layer_count = min(source.layer_count, target.layer_count)
+        raw_layers: list[dict[str, float | int]] = []
+        skipped_layers: list[int] = []
+
+        for layer in range(layer_count):
+            source_layer = source.activations.get(layer, {})
+            target_layer = target.activations.get(layer, {})
+            if not source_layer or not target_layer:
+                skipped_layers.append(layer)
+                continue
+
+            source_norms: list[float] = []
+            target_norms: list[float] = []
+            for anchor_id in common:
+                source_act = source_layer.get(anchor_id)
+                target_act = target_layer.get(anchor_id)
+                if source_act is None or target_act is None:
+                    continue
+                source_norms.append(float(source_act.norm))
+                target_norms.append(float(target_act.norm))
+
+            anchor_count = len(source_norms)
+            if anchor_count < cfg.min_anchor_count:
+                skipped_layers.append(layer)
+                continue
+
+            source_mean, source_std = _mean_std(source_norms)
+            target_mean, target_std = _mean_std(target_norms)
+            delta_mean = source_mean - target_mean
+            density_ratio = source_mean / (target_mean + cfg.epsilon)
+            coverage = anchor_count / float(len(common)) if common else 0.0
+
+            raw_layers.append(
+                {
+                    "layer": layer,
+                    "anchor_count": anchor_count,
+                    "coverage": coverage,
+                    "source_mean_norm": source_mean,
+                    "target_mean_norm": target_mean,
+                    "source_std_norm": source_std,
+                    "target_std_norm": target_std,
+                    "delta_mean_norm": delta_mean,
+                    "density_ratio": density_ratio,
+                }
+            )
+
+        if not raw_layers:
+            raise ValueError("No layers met the minimum anchor count for delta mask.")
+
+        target_means = [float(entry["target_mean_norm"]) for entry in raw_layers]
+        source_means = [float(entry["source_mean_norm"]) for entry in raw_layers]
+        density_ratios = [float(entry["density_ratio"]) for entry in raw_layers]
+
+        target_sparse_threshold = _percentile(target_means, cfg.target_sparse_percentile)
+        source_dense_threshold = _percentile(source_means, cfg.source_dense_percentile)
+        density_ratio_threshold = _percentile(density_ratios, density_percentile)
+
+        graft_layers: list[int] = []
+        alpha_by_layer = {layer: 0.0 for layer in range(layer_count)}
+        layer_summaries: list[KnowledgeDeltaLayerSummary] = []
+
+        for entry in raw_layers:
+            layer = int(entry["layer"])
+            target_mean = float(entry["target_mean_norm"])
+            source_mean = float(entry["source_mean_norm"])
+            delta_mean = float(entry["delta_mean_norm"])
+            density_ratio = float(entry["density_ratio"])
+
+            is_sparse = target_mean <= target_sparse_threshold
+            is_dense = source_mean >= source_dense_threshold
+            ratio_ok = density_ratio >= density_ratio_threshold
+            delta_ok = delta_mean > 0.0
+
+            graftable = bool(is_sparse and is_dense and ratio_ok and delta_ok)
+            if graftable:
+                graft_layers.append(layer)
+                alpha_by_layer[layer] = 1.0
+
+            layer_summaries.append(
+                KnowledgeDeltaLayerSummary(
+                    layer=layer,
+                    anchor_count=int(entry["anchor_count"]),
+                    coverage=float(entry["coverage"]),
+                    source_mean_norm=source_mean,
+                    target_mean_norm=target_mean,
+                    source_std_norm=float(entry["source_std_norm"]),
+                    target_std_norm=float(entry["target_std_norm"]),
+                    delta_mean_norm=delta_mean,
+                    density_ratio=density_ratio,
+                    graftable=graftable,
+                )
+            )
+
+        return KnowledgeDeltaMaskSummary(
+            source_path=str(expand_path(source_path)),
+            target_path=str(expand_path(target_path)),
+            common_anchor_count=len(common),
+            layer_count=layer_count,
+            target_sparse_threshold=target_sparse_threshold,
+            source_dense_threshold=source_dense_threshold,
+            density_ratio_threshold=density_ratio_threshold,
+            graft_layers=graft_layers,
+            alpha_by_layer=alpha_by_layer,
+            skipped_layers=skipped_layers,
+            layer_summaries=layer_summaries,
+            config=cfg,
+        )
+
     def _resolve_model_shape(self, model_path: Path) -> tuple[int, int]:
         config_path = model_path / "config.json"
         if not config_path.exists():
@@ -499,6 +678,30 @@ def _limit_texts(texts: list[str], limit: int) -> list[str]:
         if len(unique) >= limit:
             break
     return unique
+
+
+def _mean_std(values: list[float]) -> tuple[float, float]:
+    if not values:
+        return 0.0, 0.0
+    mean = sum(values) / float(len(values))
+    variance = sum((value - mean) ** 2 for value in values) / float(len(values))
+    return float(mean), float(math.sqrt(max(0.0, variance)))
+
+
+def _validate_percentile(name: str, value: float) -> None:
+    if value < 0.0 or value > 1.0:
+        raise ValueError(f"{name} must be between 0.0 and 1.0 (got {value})")
+
+
+def _percentile(values: list[float], percentile: float) -> float:
+    if not values:
+        return 0.0
+    sorted_values = sorted(values)
+    if len(sorted_values) == 1:
+        return float(sorted_values[0])
+    idx = int(percentile * (len(sorted_values) - 1))
+    idx = max(0, min(idx, len(sorted_values) - 1))
+    return float(sorted_values[idx])
 
 
 def _normalize_prefixes(prefixes: list[str] | None) -> list[str]:
