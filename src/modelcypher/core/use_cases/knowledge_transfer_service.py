@@ -42,8 +42,8 @@ from modelcypher.core.domain.merging.knowledge_transfer_validator import (
     KnowledgeDomain,
     KnowledgeProbe,
     KnowledgeProbeCorpus,
+    KnowledgeValidationConfig,
     KnowledgeTransferReport,
-    ValidationStatus,
     compute_retention_by_domain,
     run_knowledge_probes,
 )
@@ -99,7 +99,7 @@ class KnowledgeTransferValidationResult:
     warnings: list[str] = field(default_factory=list)
 
     @property
-    def status(self) -> ValidationStatus:
+    def status(self) -> str:
         """Overall validation status."""
         return self.report.status
 
@@ -115,7 +115,7 @@ class KnowledgeTransferValidationResult:
             "mergedModel": self.merged_model,
             "sourceModel": self.source_model,
             "validatedAt": self.validated_at.isoformat(),
-            "status": self.status.value,
+            "status": self.status,
             "overallRetention": round(self.overall_retention, 4),
             "perDomainRetention": {
                 domain.value: {
@@ -168,7 +168,7 @@ class KnowledgeTransferService:
             inference_engine: Inference engine port implementation (REQUIRED).
         """
         self._inference_engine = inference_engine
-        self._corpus = KnowledgeProbeCorpus.default()
+        self._corpus = KnowledgeProbeCorpus()
 
     def validate(
         self,
@@ -199,7 +199,9 @@ class KnowledgeTransferService:
 
         # Build probe corpus
         corpus = self._build_corpus(config)
-        probes = corpus.get_probes_by_domains(config.domains)
+        probes: list[KnowledgeProbe] = []
+        for domain in config.domains:
+            probes.extend(corpus.get_probes(domain))
 
         if not probes:
             warnings.append("No probes found for specified domains")
@@ -215,17 +217,23 @@ class KnowledgeTransferService:
         # Create inference function
         self._create_inference_fn(config)
 
+        validation_config = KnowledgeValidationConfig.from_standard_testing(
+            domains=config.domains
+        )
+        validation_config.use_variations = config.include_variations
+        validation_config.max_response_length = config.max_tokens
+        validation_config.temperature = config.temperature
+
         # Run probes on source model first (for baseline)
-        source_results: dict[str, bool] = {}
+        source_probe_results: list = []
         if source_model and config.compare_to_source:
             logger.info(f"Running baseline probes on source model: {source_model}")
             try:
                 source_probe_results = run_knowledge_probes(
-                    probes,
                     self._create_model_infer_fn(source_model, config),
-                    include_variations=config.include_variations,
+                    probes,
+                    validation_config,
                 )
-                source_results = {r.probe_id: r.passed for r in source_probe_results}
             except Exception as e:
                 logger.warning(f"Source model probing failed: {e}")
                 warnings.append(f"Source model probing failed: {e}")
@@ -234,9 +242,9 @@ class KnowledgeTransferService:
         logger.info(f"Running knowledge probes on merged model: {merged_model}")
         try:
             merged_probe_results = run_knowledge_probes(
-                probes,
                 self._create_model_infer_fn(merged_model, config),
-                include_variations=config.include_variations,
+                probes,
+                validation_config,
             )
         except Exception as e:
             logger.error(f"Merged model probing failed: {e}")
@@ -250,17 +258,17 @@ class KnowledgeTransferService:
             )
 
         # Compute retention by domain
-        per_domain = compute_retention_by_domain(
-            merged_probe_results,
-            source_pass_rates=self._compute_source_pass_rates(source_results, probes)
-            if source_results
-            else None,
+        per_domain = (
+            compute_retention_by_domain(source_probe_results, merged_probe_results)
+            if source_probe_results
+            else {}
         )
 
         # Build report
         report = KnowledgeTransferReport(
             per_domain=per_domain,
             probe_results=merged_probe_results,
+            config=validation_config,
         )
 
         execution_time = time.time() - start_time
@@ -308,7 +316,7 @@ class KnowledgeTransferService:
 
     def _build_corpus(self, config: KnowledgeTransferConfig) -> KnowledgeProbeCorpus:
         """Build probe corpus with any custom probes."""
-        corpus = KnowledgeProbeCorpus.default()
+        corpus = KnowledgeProbeCorpus()
         if config.custom_probes:
             for probe in config.custom_probes:
                 corpus.add_probe(probe)

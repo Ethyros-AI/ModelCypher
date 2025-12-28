@@ -455,6 +455,7 @@ def model_validate_knowledge(
         KnowledgeTransferConfig,
         KnowledgeTransferService,
     )
+    from modelcypher.cli.composition import get_registry
 
     context = _context(ctx)
 
@@ -490,7 +491,8 @@ def model_validate_knowledge(
         typer.echo(f"  Source model: {source}", err=True)
     typer.echo(f"  Domains: {', '.join(d.value for d in config.domains)}", err=True)
 
-    service = KnowledgeTransferService()
+    registry = get_registry()
+    service = KnowledgeTransferService(inference_engine=registry.inference_engine)
     try:
         result = service.validate(
             merged_model=merged,
@@ -510,7 +512,7 @@ def model_validate_knowledge(
 
     # Display summary
     typer.echo("\nKnowledge Transfer Validation Complete!", err=True)
-    typer.echo(f"  Status: {result.status.value.upper()}", err=True)
+    typer.echo(f"  Status: {str(result.status).upper()}", err=True)
     typer.echo(f"  Overall Retention: {result.overall_retention:.1%}", err=True)
     typer.echo(f"  Probes Executed: {result.probes_executed}", err=True)
     typer.echo(f"  Time: {result.execution_time_seconds:.1f}s", err=True)
