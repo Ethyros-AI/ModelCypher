@@ -185,7 +185,14 @@ def stage_permute(
         # Polar decomposition via eigendecomposition (no SVD).
         M = b.matmul(b.transpose(source_anchors), target_anchors)
         mtm = b.matmul(b.transpose(M), M)
-        eigvals, eigvecs = b.eigh(mtm)
+        # Cast to float32 for eigendecomposition (MLX doesn't support bfloat16 for eigh)
+        mtm_dtype = str(b.dtype(mtm))
+        if mtm_dtype == "bfloat16":
+            mtm_f32 = b.astype(mtm, "float32")
+            b.eval(mtm_f32)
+            eigvals, eigvecs = b.eigh(mtm_f32)
+        else:
+            eigvals, eigvecs = b.eigh(mtm)
         b.eval(eigvals, eigvecs)
 
         eigvals_list = [float(v) for v in b.to_numpy(eigvals).tolist()]

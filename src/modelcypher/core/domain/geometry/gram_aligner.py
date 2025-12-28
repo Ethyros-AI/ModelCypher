@@ -230,7 +230,14 @@ class GramAligner:
         gram = b.matmul(source_centered, b.transpose(source_centered))
         b.eval(gram)
 
-        eigvals, eigvecs = b.eigh(gram)
+        # Cast to float32 for eigendecomposition (MLX doesn't support bfloat16 for eigh)
+        gram_dtype = str(b.dtype(gram))
+        if gram_dtype == "bfloat16":
+            gram_f32 = b.astype(gram, "float32")
+            b.eval(gram_f32)
+            eigvals, eigvecs = b.eigh(gram_f32)
+        else:
+            eigvals, eigvecs = b.eigh(gram)
         b.eval(eigvals, eigvecs)
 
         inv_vals = b.where(
@@ -293,7 +300,14 @@ class GramAligner:
         gram = b.matmul(source, b.transpose(source))
         b.eval(gram)
 
-        eigvals, eigvecs = b.eigh(gram)
+        # Cast to float32 for eigendecomposition (MLX doesn't support bfloat16 for eigh)
+        gram_dtype = str(b.dtype(gram))
+        if gram_dtype == "bfloat16":
+            gram_f32 = b.astype(gram, "float32")
+            b.eval(gram_f32)
+            eigvals, eigvecs = b.eigh(gram_f32)
+        else:
+            eigvals, eigvecs = b.eigh(gram)
         b.eval(eigvals, eigvecs)
 
         values = [float(v) for v in b.to_numpy(eigvals).tolist()]
@@ -607,13 +621,19 @@ class GramAligner:
         This transformation guarantees T @ K_s @ T^T = K_t.
         """
         b = self._backend
-        # Eigendecomposition of K_s_c
-        eig_s, V_s = b.eigh(K_s_c)
-        b.eval(eig_s, V_s)
 
-        # Eigendecomposition of K_t_c
-        eig_t, V_t = b.eigh(K_t_c)
-        b.eval(eig_t, V_t)
+        # Cast to float32 for eigendecomposition (MLX doesn't support bfloat16 for eigh)
+        K_s_dtype = str(b.dtype(K_s_c))
+        if K_s_dtype == "bfloat16":
+            K_s_f32 = b.astype(K_s_c, "float32")
+            K_t_f32 = b.astype(K_t_c, "float32")
+            b.eval(K_s_f32, K_t_f32)
+            eig_s, V_s = b.eigh(K_s_f32)
+            eig_t, V_t = b.eigh(K_t_f32)
+        else:
+            eig_s, V_s = b.eigh(K_s_c)
+            eig_t, V_t = b.eigh(K_t_c)
+        b.eval(eig_s, V_s, eig_t, V_t)
 
         eps = max(
             self._regularization,
@@ -728,8 +748,17 @@ class GramAligner:
         b.eval(K_s_c_local)
 
         # Eigendecomposition for matrix square roots
-        eig_s, V_s = b.eigh(K_s_c_local)
-        eig_t, V_t = b.eigh(K_t_c)
+        # Cast to float32 for eigendecomposition (MLX doesn't support bfloat16 for eigh)
+        K_dtype = str(b.dtype(K_s_c_local))
+        if K_dtype == "bfloat16":
+            K_s_f32 = b.astype(K_s_c_local, "float32")
+            K_t_f32 = b.astype(K_t_c, "float32")
+            b.eval(K_s_f32, K_t_f32)
+            eig_s, V_s = b.eigh(K_s_f32)
+            eig_t, V_t = b.eigh(K_t_f32)
+        else:
+            eig_s, V_s = b.eigh(K_s_c_local)
+            eig_t, V_t = b.eigh(K_t_c)
         b.eval(eig_s, V_s, eig_t, V_t)
 
         # Sample-space approach with dtype-derived regularization (no cascade)

@@ -1803,7 +1803,14 @@ def _select_shared_full_rank_indices(
 
     def _condition_number(matrix: "object") -> float:
         gram = backend.matmul(matrix, backend.transpose(matrix))
-        eigvals, _ = backend.eigh(gram)
+        # Cast to float32 for eigendecomposition (MLX doesn't support bfloat16 for eigh)
+        gram_dtype = str(backend.dtype(gram))
+        if gram_dtype == "bfloat16":
+            gram_f32 = backend.astype(gram, "float32")
+            backend.eval(gram_f32)
+            eigvals, _ = backend.eigh(gram_f32)
+        else:
+            eigvals, _ = backend.eigh(gram)
         backend.eval(eigvals)
         values = [float(v) for v in backend.to_numpy(eigvals).tolist() if float(v) > eps]
         if not values:
@@ -1937,7 +1944,14 @@ def _matrix_rank_for_alignment(
         return 0
 
     gram = backend.matmul(matrix, backend.transpose(matrix))
-    eigvals, _ = backend.eigh(gram)
+    # Cast to float32 for eigendecomposition (MLX doesn't support bfloat16 for eigh)
+    gram_dtype = str(backend.dtype(gram))
+    if gram_dtype == "bfloat16":
+        gram_f32 = backend.astype(gram, "float32")
+        backend.eval(gram_f32)
+        eigvals, _ = backend.eigh(gram_f32)
+    else:
+        eigvals, _ = backend.eigh(gram)
     backend.eval(eigvals)
     values = list(backend.to_numpy(eigvals).tolist())
     if not values:
@@ -2090,7 +2104,14 @@ def _solve_feature_transform_exact(
         gram = gram + regularization * backend.eye(n)
     backend.eval(gram)
 
-    eigvals, eigvecs = backend.eigh(gram)
+    # Cast to float32 for eigendecomposition (MLX doesn't support bfloat16 for eigh)
+    gram_dtype = str(backend.dtype(gram))
+    if gram_dtype == "bfloat16":
+        gram_f32 = backend.astype(gram, "float32")
+        backend.eval(gram_f32)
+        eigvals, eigvecs = backend.eigh(gram_f32)
+    else:
+        eigvals, eigvecs = backend.eigh(gram)
     backend.eval(eigvals, eigvecs)
     values = [float(v) for v in backend.to_numpy(eigvals).tolist()]
     if not values:

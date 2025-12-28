@@ -1070,7 +1070,14 @@ def solve_via_cca_procrustes(
         b.eval(gram)
 
         # Eigendecomposition of Gram (gives squared singular values)
-        eigenvalues, eigenvectors = b.eigh(gram)
+        # Cast to float32 for eigendecomposition (MLX doesn't support bfloat16 for eigh)
+        gram_dtype = str(b.dtype(gram))
+        if gram_dtype == "bfloat16":
+            gram_f32 = b.astype(gram, "float32")
+            b.eval(gram_f32)
+            eigenvalues, eigenvectors = b.eigh(gram_f32)
+        else:
+            eigenvalues, eigenvectors = b.eigh(gram)
         b.eval(eigenvalues, eigenvectors)
 
         # Sort descending (eigh gives ascending)
@@ -1149,7 +1156,14 @@ def solve_via_cca_procrustes(
     # Whitening via eigendecomposition
     def whiten_cov(cov: Array) -> Array | None:
         """Compute inverse sqrt of covariance for whitening."""
-        eigvals, eigvecs = b.eigh(cov)
+        # Cast to float32 for eigendecomposition (MLX doesn't support bfloat16 for eigh)
+        cov_dtype = str(b.dtype(cov))
+        if cov_dtype == "bfloat16":
+            cov_f32 = b.astype(cov, "float32")
+            b.eval(cov_f32)
+            eigvals, eigvecs = b.eigh(cov_f32)
+        else:
+            eigvals, eigvecs = b.eigh(cov)
         b.eval(eigvals, eigvecs)
 
         eigvals_np = [float(v) for v in b.to_numpy(eigvals)]
