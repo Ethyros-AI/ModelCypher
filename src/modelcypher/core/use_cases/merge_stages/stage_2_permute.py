@@ -93,7 +93,7 @@ def stage_permute(
     from modelcypher.core.domain.geometry.permutation_aligner import (
         PermutationAligner,
     )
-    from modelcypher.core.domain.geometry.cka import compute_cka
+    from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
     from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
     if not config.enable_permutation:
@@ -180,7 +180,14 @@ def stage_permute(
         return PermuteResult(source_weights, {"skipped": True, "reason": "hidden_dim_mismatch"})
 
     precision_tol = max(machine_epsilon(b, source_anchors), 1e-12)
-    embed_cka = compute_cka(source_anchors, target_anchors, backend=b).cka
+    # Use feature_bias_correction=True and .best to avoid false negatives from underestimation
+    embed_cka = compute_cka(
+        source_anchors,
+        target_anchors,
+        backend=b,
+        estimator=HSICEstimator.AUTO,
+        feature_bias_correction=True,
+    ).best
     if embed_cka < 1.0 - precision_tol:
         # Polar decomposition via eigendecomposition (no SVD).
         M = b.matmul(b.transpose(source_anchors), target_anchors)
@@ -244,7 +251,14 @@ def stage_permute(
 
         source_rotated = b.matmul(source_anchors, embedding_rotation)
         b.eval(source_rotated)
-        embed_cka = compute_cka(source_rotated, target_anchors, backend=b).cka
+        # Use feature_bias_correction=True and .best to avoid false negatives from underestimation
+        embed_cka = compute_cka(
+            source_rotated,
+            target_anchors,
+            backend=b,
+            estimator=HSICEstimator.AUTO,
+            feature_bias_correction=True,
+        ).best
         if embed_cka < 1.0 - precision_tol:
             raise RuntimeError(
                 "PERMUTE: Embedding rotation failed to reach exact kernel alignment (CKA=%.8f)."

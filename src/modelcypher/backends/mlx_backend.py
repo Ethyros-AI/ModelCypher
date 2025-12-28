@@ -396,8 +396,8 @@ class MLXBackend(Backend):
 
     def eigh(self, array: Array) -> tuple[Array, Array]:
         # MLX eigh requires CPU stream - must eval
-        # MLX eigh doesn't support bfloat16 - convert to float32
-        if array.dtype == self.mx.bfloat16:
+        # MLX eigh only supports float32, float64, complex64 - convert others to float32
+        if array.dtype in (self.mx.bfloat16, self.mx.float16):
             array = array.astype(self.mx.float32)
             self.safe.eval(array)
         eigenvalues, eigenvectors = self.mx.linalg.eigh(array, stream=self.mx.cpu)

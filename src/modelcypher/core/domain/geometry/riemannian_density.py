@@ -790,7 +790,7 @@ class RiemannianDensityEstimator:
         Returns:
             ConceptVolumeRelation with CKA-derived metrics
         """
-        from modelcypher.core.domain.geometry.cka import compute_cka_backend
+        from modelcypher.core.domain.geometry.cka import compute_cka_backend, HSICEstimator
 
         backend = get_default_backend()
 
@@ -809,6 +809,8 @@ class RiemannianDensityEstimator:
             volume_a.raw_activations,
             volume_b.raw_activations,
             backend=backend,
+            estimator=HSICEstimator.AUTO,
+            feature_bias_correction=True,
         )
 
         # CKA measures representational similarity:

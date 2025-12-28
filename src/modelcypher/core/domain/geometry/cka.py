@@ -109,6 +109,17 @@ class CKAResult:
         """Check if result is valid (not NaN/Inf)."""
         return math.isfinite(self.cka) and math.isfinite(self.hsic_xy) and 0.0 <= self.cka <= 1.0
 
+    @property
+    def best(self) -> float:
+        """Return the best available CKA: corrected if computed, else raw.
+
+        Use this for gates and decisions where feature-sampling bias could
+        cause false negatives (e.g., CKA=0.98 when true value is 1.0).
+        """
+        if self.cka_corrected is not None:
+            return self.cka_corrected
+        return self.cka
+
 
 def _compute_pairwise_squared_distances(
     X: "Array",
@@ -661,8 +672,16 @@ def compute_cka_matrix(
                 row.append(0.0)
                 continue
 
-            result = compute_cka(s_act[:min_samples], t_act[:min_samples], backend)
-            row.append(result.cka)
+            result = compute_cka(
+                s_act[:min_samples],
+                t_act[:min_samples],
+                backend,
+                estimator=HSICEstimator.AUTO,
+                feature_bias_correction=True,
+            )
+            row.append(
+                result.cka_corrected if result.cka_corrected is not None else result.cka
+            )
         matrix_list.append(row)
 
     # Convert to backend array
@@ -715,6 +734,8 @@ def compute_cka_backend(
     x: "Array",
     y: "Array",
     backend: "Backend",
+    estimator: HSICEstimator = HSICEstimator.BIASED,
+    feature_bias_correction: bool = False,
 ) -> float:
     """
     Compute linear CKA using the Backend protocol for MLX/JAX/CUDA.
@@ -737,11 +758,31 @@ def compute_cka_backend(
         y: Activation matrix [n_samples, n_features_y]
         backend: Backend protocol implementation (MLX, JAX, CUDA)
 
+    Args:
+        x: Activation matrix [n_samples, n_features_x]
+        y: Activation matrix [n_samples, n_features_y]
+        backend: Backend protocol implementation (MLX, JAX, CUDA)
+        estimator: Which HSIC estimator to use (BIASED, UNBIASED, or AUTO).
+        feature_bias_correction: Apply feature-sampling correction (Chun et al., 2025).
+
     Returns:
         CKA similarity value in [0, 1]
     """
     if x.shape[0] < 2 or y.shape[0] < 2:
         return 0.0
+
+    if feature_bias_correction or estimator != HSICEstimator.BIASED:
+        result = compute_cka(
+            x,
+            y,
+            backend,
+            use_linear_kernel=True,
+            estimator=estimator,
+            feature_bias_correction=feature_bias_correction,
+        )
+        if not result.is_valid:
+            return 0.0
+        return result.cka_corrected if result.cka_corrected is not None else result.cka
 
     gram_key_x = _cache.make_gram_key(x, backend, kernel_type="linear")
     gram_key_y = _cache.make_gram_key(y, backend, kernel_type="linear")
@@ -793,6 +834,8 @@ def compute_cka_from_lists(
     x: list[list[float]],
     y: list[list[float]],
     backend: "Backend | None" = None,
+    estimator: HSICEstimator = HSICEstimator.BIASED,
+    feature_bias_correction: bool = False,
 ) -> float:
     """
     Compute linear CKA from Python lists.
@@ -818,8 +861,17 @@ def compute_cka_from_lists(
     x_arr = backend.array(x[:n])
     y_arr = backend.array(y[:n])
 
-    result = compute_cka(x_arr, y_arr, backend, use_linear_kernel=True)
-    return result.cka if result.is_valid else 0.0
+    result = compute_cka(
+        x_arr,
+        y_arr,
+        backend,
+        use_linear_kernel=True,
+        estimator=estimator,
+        feature_bias_correction=feature_bias_correction,
+    )
+    if not result.is_valid:
+        return 0.0
+    return result.cka_corrected if result.cka_corrected is not None else result.cka
 
 
 def compute_cka_from_grams(
@@ -828,6 +880,9 @@ def compute_cka_from_grams(
     n: int | None = None,
     backend: "Backend | None" = None,
     estimator: HSICEstimator = HSICEstimator.BIASED,
+    feature_dim_a: int | None = None,
+    feature_dim_b: int | None = None,
+    feature_bias_correction: bool = False,
 ) -> float:
     """
     Compute CKA from pre-computed Gram matrices.
@@ -845,6 +900,10 @@ def compute_cka_from_grams(
         n: Matrix dimension (required if gram matrices are flattened lists).
         backend: Backend protocol implementation. If None, uses default.
         estimator: Which HSIC estimator to use (BIASED, UNBIASED, or AUTO).
+        feature_dim_a: Observed feature count for representation A.
+        feature_dim_b: Observed feature count for representation B.
+        feature_bias_correction: Apply feature-sampling correction when feature
+                                 dimensions are provided.
 
     Returns:
         CKA similarity value in [0, 1]
@@ -893,9 +952,36 @@ def compute_cka_from_grams(
     # Compute HSIC values using selected estimator
     # Note: For Gram matrices, we don't know original feature dims, so AUTO
     # will use the same as BIASED unless explicitly set to UNBIASED
-    hsic_ab = _compute_hsic_dispatch(arr_a, arr_b, backend, estimator, None, None, centered_a, centered_b)
-    hsic_aa = _compute_hsic_dispatch(arr_a, arr_a, backend, estimator, None, None, centered_a, centered_a)
-    hsic_bb = _compute_hsic_dispatch(arr_b, arr_b, backend, estimator, None, None, centered_b, centered_b)
+    hsic_ab = _compute_hsic_dispatch(
+        arr_a,
+        arr_b,
+        backend,
+        estimator,
+        feature_dim_a,
+        feature_dim_b,
+        centered_a,
+        centered_b,
+    )
+    hsic_aa = _compute_hsic_dispatch(
+        arr_a,
+        arr_a,
+        backend,
+        estimator,
+        feature_dim_a,
+        feature_dim_a,
+        centered_a,
+        centered_a,
+    )
+    hsic_bb = _compute_hsic_dispatch(
+        arr_b,
+        arr_b,
+        backend,
+        estimator,
+        feature_dim_b,
+        feature_dim_b,
+        centered_b,
+        centered_b,
+    )
 
     # CKA = HSIC(A,B) / sqrt(HSIC(A,A) * HSIC(B,B))
     denom = math.sqrt(hsic_aa * hsic_bb)
@@ -908,6 +994,15 @@ def compute_cka_from_grams(
     cka = max(0.0, min(1.0, cka))
     if cka >= 1.0 - eps:
         cka = 1.0
+
+    if feature_bias_correction and feature_dim_a and feature_dim_b:
+        correction_a, _ = _feature_sampling_correction(centered_a, feature_dim_a, backend)
+        correction_b, _ = _feature_sampling_correction(centered_b, feature_dim_b, backend)
+        correction = correction_a * correction_b
+        if correction > 0.0 and math.isfinite(correction):
+            cka = min(1.0, cka * correction)
+            if cka >= 1.0 - eps:
+                cka = 1.0
     return cka
 
 

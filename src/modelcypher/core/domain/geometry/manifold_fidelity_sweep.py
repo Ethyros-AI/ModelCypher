@@ -296,9 +296,15 @@ class ManifoldFidelitySweep:
 
         Delegates to the canonical Backend-aware CKA implementation in cka.py.
         """
-        from modelcypher.core.domain.geometry.cka import compute_cka_backend
+        from modelcypher.core.domain.geometry.cka import compute_cka_backend, HSICEstimator
 
-        return compute_cka_backend(x, y, self._backend)
+        return compute_cka_backend(
+            x,
+            y,
+            self._backend,
+            estimator=HSICEstimator.AUTO,
+            feature_bias_correction=True,
+        )
 
     def _compute_procrustes_error(self, x: "Array", y: "Array") -> float:
         """Procrustes distance (normalized reconstruction error)."""

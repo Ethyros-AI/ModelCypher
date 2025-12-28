@@ -297,7 +297,8 @@ class GeometricMergeOrchestrator:
 
             # STAGE 4: Compute alignment
             self._stage_compute_alignment(
-                layer_geom, src_acts, tgt_acts, src_layer_weights, tgt_layer_weights, b
+                layer_geom, src_acts, tgt_acts, src_layer_weights, tgt_layer_weights, b,
+                is_cross_architecture=geometry.is_cross_architecture,
             )
 
             # STAGE 5: Analyze interference
@@ -779,6 +780,8 @@ class GeometricMergeOrchestrator:
         src_weights: dict[str, "Array"],
         tgt_weights: dict[str, "Array"],
         b: "Backend",
+        *,
+        is_cross_architecture: bool = False,
     ) -> None:
         """STAGE 4: Compute alignment transformations."""
         if not src_acts or not tgt_acts:
@@ -825,10 +828,17 @@ class GeometricMergeOrchestrator:
                 tgt_stacked = b.take(tgt_stacked, idx_arr, axis=0)
                 b.eval(src_stacked, tgt_stacked)
 
-            # For different fine-tuned models (Coder vs Chat), CKA=1.0 is impossible.
-            # Their relational structures are similar but not identical.
-            # Use 1e-5 tolerance (CKA > 0.99999) which is still very high alignment.
-            precision_tol = max(machine_epsilon(b, src_stacked), 1e-5)
+            # Tolerance depends on architecture compatibility:
+            # - Same architecture, same fine-tuning: CKA=1.0 achievable, use machine epsilon
+            # - Same architecture, different fine-tuning: CKA~0.99999, use 1e-5
+            # - Cross-architecture: CKA~0.99-0.999, use 1e-2 (relational structures differ)
+            if is_cross_architecture:
+                # Cross-architecture: relational structures fundamentally differ
+                # Accept CKA > 0.99 as "aligned" - null-space grafting handles the rest
+                precision_tol = 1e-2
+            else:
+                # Same architecture: can achieve very high alignment
+                precision_tol = max(machine_epsilon(b, src_stacked), 1e-5)
             aligner = GramAligner(
                 backend=b,
                 max_iterations=5000,
@@ -1253,11 +1263,20 @@ class GeometricMergeOrchestrator:
                             # Use Gram matrices for cross-dimensional CKA
                             from modelcypher.core.domain.geometry.cka import (
                                 compute_cka_from_grams,
+                                HSICEstimator,
                             )
                             gram_src = b.matmul(src_stacked, b.transpose(src_stacked))
                             gram_tgt = b.matmul(tgt_stacked, b.transpose(tgt_stacked))
                             b.eval(gram_src, gram_tgt)
-                            cka_val = compute_cka_from_grams(gram_src, gram_tgt, backend=b)
+                            cka_val = compute_cka_from_grams(
+                                gram_src,
+                                gram_tgt,
+                                backend=b,
+                                estimator=HSICEstimator.AUTO,
+                                feature_dim_a=int(src_stacked.shape[1]),
+                                feature_dim_b=int(tgt_stacked.shape[1]),
+                                feature_bias_correction=True,
+                            )
                         else:
                             result = compute_cka(
                                 src_stacked,

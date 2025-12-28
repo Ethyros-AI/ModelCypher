@@ -153,14 +153,18 @@ class ConceptResponseMatrix:
         return matrix or None
 
     def compute_cka_matrix(self, other: ConceptResponseMatrix) -> list[list[float]]:
+        from modelcypher.core.domain.geometry.cka import _feature_sampling_correction
+        from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
         backend = get_default_backend()
+        feature_bias_correction = True
         cka_matrix = [[0.0 for _ in range(other.layer_count)] for _ in range(self.layer_count)]
         common = set(self.anchor_metadata.anchor_ids).intersection(other.anchor_metadata.anchor_ids)
         if not common:
             return cka_matrix
         sorted_anchors = sorted(common)
-        source_grams: dict[int, tuple["Array", float]] = {}
-        target_grams: dict[int, tuple["Array", float]] = {}
+        source_grams: dict[int, tuple["Array", float, float]] = {}
+        target_grams: dict[int, tuple["Array", float, float]] = {}
 
         for layer in range(self.layer_count):
             activations = self._extract_activations(layer, sorted_anchors)
@@ -172,7 +176,11 @@ class ConceptResponseMatrix:
             centered = array - backend.mean(array, axis=0, keepdims=True)
             gram = centered @ centered.T
             frob = float(backend.to_numpy(backend.sum(gram * gram)))
-            source_grams[layer] = (gram, frob)
+            correction = 1.0
+            if feature_bias_correction:
+                feature_dim = array.shape[1] if len(array.shape) > 1 else 1
+                correction, _ = _feature_sampling_correction(gram, feature_dim, backend)
+            source_grams[layer] = (gram, frob, correction)
 
         for layer in range(other.layer_count):
             activations = other._extract_activations(layer, sorted_anchors)
@@ -184,25 +192,40 @@ class ConceptResponseMatrix:
             centered = array - backend.mean(array, axis=0, keepdims=True)
             gram = centered @ centered.T
             frob = float(backend.to_numpy(backend.sum(gram * gram)))
-            target_grams[layer] = (gram, frob)
+            correction = 1.0
+            if feature_bias_correction:
+                feature_dim = array.shape[1] if len(array.shape) > 1 else 1
+                correction, _ = _feature_sampling_correction(gram, feature_dim, backend)
+            target_grams[layer] = (gram, frob, correction)
 
         for source_layer in range(self.layer_count):
             source_entry = source_grams.get(source_layer)
             if source_entry is None:
                 continue
-            source_gram, source_frob = source_entry
+            source_gram, source_frob, source_correction = source_entry
             if source_frob <= 1e-10:
                 continue
             for target_layer in range(other.layer_count):
                 target_entry = target_grams.get(target_layer)
                 if target_entry is None:
                     continue
-                target_gram, target_frob = target_entry
+                target_gram, target_frob, target_correction = target_entry
                 denom = math.sqrt(source_frob * target_frob)
-                if denom <= 1e-10:
+                eps = division_epsilon(backend, source_gram)
+                if denom < eps:
                     continue
                 hsic_xy = float(backend.to_numpy(backend.sum(source_gram * target_gram)))
-                cka_matrix[source_layer][target_layer] = float(hsic_xy / denom)
+                cka = hsic_xy / denom
+                cka = max(0.0, min(1.0, cka))
+                if cka >= 1.0 - eps:
+                    cka = 1.0
+                if feature_bias_correction:
+                    correction = source_correction * target_correction
+                    if correction > 0.0 and math.isfinite(correction):
+                        cka = min(1.0, cka * correction)
+                        if cka >= 1.0 - eps:
+                            cka = 1.0
+                cka_matrix[source_layer][target_layer] = float(cka)
         return cka_matrix
 
     def compute_layer_cka(
@@ -491,9 +514,17 @@ class ConceptResponseMatrix:
 
         Delegates to the canonical CKA implementation in cka.py.
         """
-        from modelcypher.core.domain.geometry.cka import compute_cka_from_lists
+        from modelcypher.core.domain.geometry.cka import (
+            HSICEstimator,
+            compute_cka_from_lists,
+        )
 
-        return compute_cka_from_lists(x, y)
+        return compute_cka_from_lists(
+            x,
+            y,
+            estimator=HSICEstimator.AUTO,
+            feature_bias_correction=True,
+        )
 
     @staticmethod
     def _compute_layer_delta(

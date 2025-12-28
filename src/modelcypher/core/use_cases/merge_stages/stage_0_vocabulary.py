@@ -45,7 +45,7 @@ from modelcypher.core.domain.geometry.alignment_diagnostic import (
     AlignmentSignal,
     alignment_signal_from_matrices,
 )
-from modelcypher.core.domain.geometry.cka import compute_cka
+from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
 from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
@@ -1181,8 +1181,21 @@ def stage_vocabulary_align(
             # For blend_alpha, if None, compute from CKA alignment quality
             # Higher source CKA → higher alpha (more weight to source)
             if merge_blend_alpha is None:
-                source_cka_score = compute_cka(source_embed, source_embed, backend=backend).cka
-                target_cka_score = compute_cka(target_embed, target_embed, backend=backend).cka
+                # Use corrected CKA to avoid feature-sampling underestimation
+                source_cka_score = compute_cka(
+                    source_embed,
+                    source_embed,
+                    backend=backend,
+                    estimator=HSICEstimator.AUTO,
+                    feature_bias_correction=True,
+                ).best
+                target_cka_score = compute_cka(
+                    target_embed,
+                    target_embed,
+                    backend=backend,
+                    estimator=HSICEstimator.AUTO,
+                    feature_bias_correction=True,
+                ).best
                 total = source_cka_score + target_cka_score
                 if total > 0:
                     merge_blend_alpha = source_cka_score / total
@@ -2307,7 +2320,14 @@ def _align_bytes_from_matrices(
     # Derive tolerance from dtype if not specified
     eps = machine_epsilon(backend, source_matrix)
     precision_tol = tolerance if tolerance is not None else eps
-    cka_before = compute_cka(source_matrix, target_matrix, backend=backend).cka
+    # Use corrected CKA to avoid feature-sampling underestimation
+    cka_before = compute_cka(
+        source_matrix,
+        target_matrix,
+        backend=backend,
+        estimator=HSICEstimator.AUTO,
+        feature_bias_correction=True,
+    ).best
     logger.debug("Initial CKA before alignment: %.8f", cka_before)
 
     weighted_source = source_matrix
@@ -2320,7 +2340,14 @@ def _align_bytes_from_matrices(
     if transform is not None:
         aligned_matrix = backend.matmul(source_matrix, transform)
         backend.eval(aligned_matrix)
-        cka_after_direct = compute_cka(aligned_matrix, target_matrix, backend=backend).cka
+        # Use corrected CKA to avoid feature-sampling underestimation
+        cka_after_direct = compute_cka(
+            aligned_matrix,
+            target_matrix,
+            backend=backend,
+            estimator=HSICEstimator.AUTO,
+            feature_bias_correction=True,
+        ).best
         residual = aligned_matrix - target_matrix
         res_norm = backend.norm(residual)
         tgt_norm = backend.norm(target_matrix)
@@ -2369,9 +2396,14 @@ def _align_bytes_from_matrices(
             transform_f32 = backend.astype(transform_f64, source_matrix.dtype)
             aligned_matrix = backend.matmul(source_matrix, transform_f32)
             backend.eval(aligned_matrix)
+            # Use corrected CKA to avoid feature-sampling underestimation
             cka_after_direct = compute_cka(
-                aligned_matrix, target_matrix, backend=backend
-            ).cka
+                aligned_matrix,
+                target_matrix,
+                backend=backend,
+                estimator=HSICEstimator.AUTO,
+                feature_bias_correction=True,
+            ).best
             residual = aligned_matrix - target_matrix
             res_norm = backend.norm(residual)
             tgt_norm = backend.norm(target_matrix)
@@ -2421,7 +2453,14 @@ def _align_bytes_from_matrices(
     aligned_matrix = backend.matmul(source_matrix, transform)
     backend.eval(aligned_source, aligned_matrix)
 
-    cka_after = compute_cka(aligned_matrix, target_matrix, backend=backend).cka
+    # Use corrected CKA to avoid feature-sampling underestimation
+    cka_after = compute_cka(
+        aligned_matrix,
+        target_matrix,
+        backend=backend,
+        estimator=HSICEstimator.AUTO,
+        feature_bias_correction=True,
+    ).best
 
     if cka_after >= 1.0 - precision_tol:
         cka_after = 1.0
@@ -2433,9 +2472,14 @@ def _align_bytes_from_matrices(
         target_centered = target_matrix - target_mean
         sample_aligned_matrix = backend.matmul(sample_transform, source_centered)
         backend.eval(sample_aligned_matrix, source_centered, target_centered)
+        # Use corrected CKA to avoid feature-sampling underestimation
         cka_after_sample = compute_cka(
-            sample_aligned_matrix, target_centered, backend=backend
-        ).cka
+            sample_aligned_matrix,
+            target_centered,
+            backend=backend,
+            estimator=HSICEstimator.AUTO,
+            feature_bias_correction=True,
+        ).best
         if cka_after_sample >= 1.0 - precision_tol:
             feature_transform = _solve_feature_transform_exact(
                 source_centered, sample_aligned_matrix, backend
@@ -2506,7 +2550,13 @@ def _align_bytes(
     target_matrix = backend.stack([target_bytes[b] for b in shared], axis=0)
     backend.eval(source_matrix, target_matrix)
 
-    cka_before = compute_cka(source_matrix, target_matrix, backend=backend).cka
+    cka_before = compute_cka(
+        source_matrix,
+        target_matrix,
+        backend=backend,
+        estimator=HSICEstimator.AUTO,
+        feature_bias_correction=True,
+    ).best
     weighted_source = _apply_anchor_weights(source_matrix, anchor_weights, backend)
     weighted_target = _apply_anchor_weights(target_matrix, anchor_weights, backend)
     aligner = GramAligner(
@@ -2529,7 +2579,13 @@ def _align_bytes(
 
     aligned_matrix = backend.matmul(source_matrix, transform)
     backend.eval(aligned_matrix)
-    cka_after = compute_cka(aligned_matrix, target_matrix, backend=backend).cka
+    cka_after = compute_cka(
+        aligned_matrix,
+        target_matrix,
+        backend=backend,
+        estimator=HSICEstimator.AUTO,
+        feature_bias_correction=True,
+    ).best
 
     return {
         "aligned_source": aligned_source,
@@ -2696,7 +2752,13 @@ def _align_unified_atlas(
     target_matrix = backend.stack([target_anchors[k] for k in shared], axis=0)
     backend.eval(source_matrix, target_matrix)
 
-    cka_before = compute_cka(source_matrix, target_matrix, backend=backend).cka
+    cka_before = compute_cka(
+        source_matrix,
+        target_matrix,
+        backend=backend,
+        estimator=HSICEstimator.AUTO,
+        feature_bias_correction=True,
+    ).best
     weighted_source = _apply_anchor_weights(source_matrix, anchor_weights, backend)
     weighted_target = _apply_anchor_weights(target_matrix, anchor_weights, backend)
     aligner = GramAligner(
@@ -2719,7 +2781,13 @@ def _align_unified_atlas(
 
     aligned_matrix = backend.matmul(source_matrix, transform)
     backend.eval(aligned_matrix)
-    cka_after = compute_cka(aligned_matrix, target_matrix, backend=backend).cka
+    cka_after = compute_cka(
+        aligned_matrix,
+        target_matrix,
+        backend=backend,
+        estimator=HSICEstimator.AUTO,
+        feature_bias_correction=True,
+    ).best
 
     return {
         "aligned_source": aligned_source,

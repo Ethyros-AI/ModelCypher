@@ -1323,7 +1323,7 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
             from modelcypher.adapters.model_loader import load_model_for_training
             from modelcypher.backends.mlx_backend import MLXBackend
             from modelcypher.core.domain.agents.semantic_prime_atlas import SemanticPrimeInventory
-            from modelcypher.core.domain.geometry.cka import compute_cka
+            from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
 
             model_path = require_existing_directory(modelPath)
             model, tokenizer = load_model_for_training(model_path)
@@ -1368,7 +1368,15 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
             all_acts = [a for a in activations.values()]
             X_all = backend.stack(all_acts)
             backend.eval(X_all)
-            result = compute_cka(backend.to_numpy(X_all), backend.to_numpy(X_all))
+            result = compute_cka(
+                backend.to_numpy(X_all),
+                backend.to_numpy(X_all),
+                estimator=HSICEstimator.AUTO,
+                feature_bias_correction=True,
+            )
+            overall_cka = (
+                result.cka_corrected if result.cka_corrected is not None else result.cka
+            )
 
             # Compute category coherence
             category_primes: dict[str, list] = {}
@@ -1384,8 +1392,17 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
                 if len(acts) >= 2:
                     X = backend.stack([backend.array(a) for a in acts])
                     backend.eval(X)
-                    cat_result = compute_cka(backend.to_numpy(X), backend.to_numpy(X))
-                    category_coherence[cat] = cat_result.cka
+                    cat_result = compute_cka(
+                        backend.to_numpy(X),
+                        backend.to_numpy(X),
+                        estimator=HSICEstimator.AUTO,
+                        feature_bias_correction=True,
+                    )
+                    category_coherence[cat] = (
+                        cat_result.cka_corrected
+                        if cat_result.cka_corrected is not None
+                        else cat_result.cka
+                    )
 
             return {
                 "_schema": "mc.geometry.primes.probe.v1",
@@ -1393,7 +1410,8 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
                 "layer": target_layer,
                 "primesProbed": len(activations),
                 "totalPrimes": len(primes),
-                "overallCoherence": result.cka,
+                "overallCoherence": overall_cka,
+                "overallCoherenceRaw": result.cka,
                 "categoryCoherence": category_coherence,
                 "nextActions": [
                     "mc_geometry_primes_compare to compare with another model",
@@ -1409,7 +1427,7 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
             import json
 
             from modelcypher.core.domain._backend import get_default_backend
-            from modelcypher.core.domain.geometry.cka import compute_cka
+            from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
             from modelcypher.core.domain.geometry.vector_math import VectorMath
 
             backend = get_default_backend()
@@ -1427,7 +1445,13 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
             Y = backend.stack([backend.array(acts_b[p]) for p in common])
             backend.eval(X)
             backend.eval(Y)
-            result = compute_cka(backend.to_numpy(X), backend.to_numpy(Y))
+            result = compute_cka(
+                backend.to_numpy(X),
+                backend.to_numpy(Y),
+                estimator=HSICEstimator.AUTO,
+                feature_bias_correction=True,
+            )
+            cka_val = result.cka_corrected if result.cka_corrected is not None else result.cka
 
             # Find most similar and divergent
             sims = []
@@ -1441,7 +1465,8 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
                 "modelA": path_a,
                 "modelB": path_b,
                 "commonPrimes": len(common),
-                "ckaSimilarity": result.cka,
+                "ckaSimilarity": cka_val,
+                "ckaRaw": result.cka,
                 "mostSimilarPrimes": [p for p, _ in sims[:5]],
                 "mostDivergentPrimes": [p for p, _ in sims[-5:]],
                 "nextActions": [

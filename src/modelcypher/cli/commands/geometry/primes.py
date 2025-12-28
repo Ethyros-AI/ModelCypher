@@ -143,7 +143,7 @@ def primes_probe_model(
     from modelcypher.core.domain.agents.semantic_prime_atlas import (
         SemanticPrimeInventory,
     )
-    from modelcypher.core.domain.geometry.cka import compute_cka
+    from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
 
     typer.echo(f"Loading model from {model_path}...")
     model, tokenizer = load_model_for_training(model_path)
@@ -214,15 +214,32 @@ def primes_probe_model(
         if len(acts) >= 2:
             # Stack into matrix using backend and compute self-CKA
             X = backend.to_numpy(backend.stack([backend.array(a) for a in acts]))
-            result = compute_cka(X, X)
-            category_coherence[cat] = result.cka
+            result = compute_cka(
+                X,
+                X,
+                estimator=HSICEstimator.AUTO,
+                feature_bias_correction=True,
+            )
+            category_coherence[cat] = (
+                result.cka_corrected if result.cka_corrected is not None else result.cka
+            )
         else:
             category_coherence[cat] = None
 
     # Compute overall structure score
     all_acts = [backend.to_numpy(a) for a in prime_activations.values()]
     X_all = backend.to_numpy(backend.stack([backend.array(a) for a in all_acts]))
-    overall_result = compute_cka(X_all, X_all)
+    overall_result = compute_cka(
+        X_all,
+        X_all,
+        estimator=HSICEstimator.AUTO,
+        feature_bias_correction=True,
+    )
+    overall_cka = (
+        overall_result.cka_corrected
+        if overall_result.cka_corrected is not None
+        else overall_result.cka
+    )
 
     payload = {
         "_schema": "mc.geometry.primes.probe.v1",
@@ -230,7 +247,7 @@ def primes_probe_model(
         "layer": target_layer,
         "primes_probed": len(prime_activations),
         "total_primes": len(primes),
-        "overall_coherence": overall_result.cka,
+        "overall_coherence": overall_cka,
         "category_coherence": {k: v for k, v in category_coherence.items() if v is not None},
     }
 
@@ -242,7 +259,7 @@ def primes_probe_model(
             "",
             f"Primes Probed: {len(prime_activations)}/{len(primes)}",
             f"Layer Analyzed: {target_layer}",
-            f"Overall Coherence (CKA): {overall_result.cka:.3f}",
+            f"Overall Coherence (CKA): {overall_cka:.3f}",
             "",
             "-" * 40,
             "Category Coherence:",
@@ -272,7 +289,7 @@ def primes_compare(
     """
     context = _context(ctx)
 
-    from modelcypher.core.domain.geometry.cka import compute_cka
+    from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
 
     # Load activations
     acts_a = json.loads(Path(activations_a).read_text())
@@ -291,7 +308,13 @@ def primes_compare(
     Y = backend.to_numpy(backend.stack([backend.array(acts_b[p]) for p in common_primes]))
 
     # Compute CKA
-    result = compute_cka(X, Y)
+    result = compute_cka(
+        X,
+        Y,
+        estimator=HSICEstimator.AUTO,
+        feature_bias_correction=True,
+    )
+    cka_val = result.cka_corrected if result.cka_corrected is not None else result.cka
 
     # Find most similar and divergent primes
     # Handle dimension mismatch by projecting to common space
@@ -339,7 +362,8 @@ def primes_compare(
         "model_a": activations_a,
         "model_b": activations_b,
         "common_primes": len(common_primes),
-        "cka_similarity": result.cka,
+        "cka_similarity": cka_val,
+        "cka_raw": result.cka,
         "most_similar_primes": most_similar,
         "most_divergent_primes": most_divergent,
     }
@@ -354,7 +378,7 @@ def primes_compare(
             f"Model B: {Path(activations_b).name}",
             f"Common Primes: {len(common_primes)}",
             "",
-            f"CKA Similarity: {result.cka:.3f}",
+            f"CKA Similarity: {cka_val:.3f}",
             "",
             "-" * 40,
             "Most Similar Primes:",

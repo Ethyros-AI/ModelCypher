@@ -823,16 +823,7 @@ def graft_boundary(
         for c in concepts_in_bracket:
             layer_dist[c.layer] = layer_dist.get(c.layer, 0) + 1
 
-        # Graft recommendation based on opportunity score
-        if mean_opp > 0.2:
-            recommendation = "high_priority_graft"
-        elif mean_opp > 0.05:
-            recommendation = "consider_graft"
-        elif mean_opp > -0.05:
-            recommendation = "neutral"
-        else:
-            recommendation = "do_not_graft"
-
+        # Raw measurements only - no interpretation strings (per CLAUDE.md "No Vibes")
         bracket_analysis.append({
             "bracket": label,
             "bracketIdx": bracket_idx,
@@ -841,7 +832,8 @@ def graft_boundary(
             "meanTargetDensity": mean_target,
             "meanSourceDensity": mean_source,
             "layerDistribution": layer_dist,
-            "graftRecommendation": recommendation,
+            # opportunityPositive indicates whether grafting adds value for this bracket
+            "opportunityPositive": mean_opp > 0,
         })
 
     # Step 4: Correlate null space with density
@@ -876,10 +868,10 @@ def graft_boundary(
         })
 
     # Step 5: Generate graft mask for recommended threshold
-    # Find the boundary - first bracket where recommendation is NOT high_priority_graft
+    # Find the boundary - first bracket where opportunity score is not positive
     graft_boundary_density = None
     for ba in bracket_analysis:
-        if ba["graftRecommendation"] in ["neutral", "do_not_graft"]:
+        if not ba["opportunityPositive"]:
             graft_boundary_density = float(ba["bracket"].split("-")[0])
             break
 
@@ -1002,7 +994,7 @@ def zero_shot_transfer(
         ModelDensityProfile,
     )
     from modelcypher.core.domain.geometry.knowledge_diff import KnowledgeDiffer
-    from modelcypher.core.domain.geometry.cka import compute_cka
+    from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
 
     # Load models using helper
     logger.info("Loading target model: %s", target_path)
@@ -1144,8 +1136,18 @@ def zero_shot_transfer(
                     target_arr = target_arr[:, :min_dim]
                     source_arr = source_arr[:, :min_dim]
 
-                    cka = compute_cka(target_arr, source_arr, b)
-                    layer_cka[layer] = float(cka)
+                    result = compute_cka(
+                        target_arr,
+                        source_arr,
+                        backend=b,
+                        estimator=HSICEstimator.AUTO,
+                        feature_bias_correction=True,
+                    )
+                    layer_cka[layer] = (
+                        float(result.cka_corrected)
+                        if result.cka_corrected is not None
+                        else float(result.cka)
+                    )
             except Exception as e:
                 logger.debug("CKA failed for layer %d: %s", layer, e)
                 layer_cka[layer] = 0.0
@@ -1204,16 +1206,18 @@ def zero_shot_transfer(
         "layerCkaSimilarity": {str(k): v for k, v in layer_cka.items()},
         "validationPlan": validation_plan,
         "summary": {
-            "canTransfer": len(transfer_candidates) > 0,
-            "transferConfidence": (
-                "high" if len(transfer_candidates) > 20
-                else "medium" if len(transfer_candidates) > 5
-                else "low"
+            # Raw measurements only - no interpretation strings (per CLAUDE.md "No Vibes")
+            "transferCandidateCount": len(transfer_candidates),
+            "stabilityCheckCount": len(stability_checks),
+            "stabilityToTransferRatio": (
+                len(stability_checks) / len(transfer_candidates)
+                if len(transfer_candidates) > 0
+                else float("inf")
             ),
-            "stabilityRisk": (
-                "low" if len(stability_checks) > len(transfer_candidates) * 2
-                else "medium" if len(stability_checks) > len(transfer_candidates)
-                else "high"
+            "meanLayerCka": (
+                sum(layer_cka.values()) / len(layer_cka)
+                if layer_cka
+                else 0.0
             ),
         },
     }
@@ -1255,24 +1259,26 @@ def zero_shot_transfer(
             lines.append(f"  Layer {layer}: {len(checks)} concepts to protect")
 
         lines.append("")
-        lines.append("LAYER CKA SIMILARITY (current alignment):")
+        lines.append("LAYER CKA SIMILARITY:")
         lines.append("-" * 60)
         for layer, cka in sorted(layer_cka.items()):
-            alignment = "high" if cka > 0.7 else "medium" if cka > 0.4 else "low"
-            lines.append(f"  Layer {layer}: CKA={cka:.3f} ({alignment} alignment)")
+            # Raw values only - no interpretation (per CLAUDE.md "No Vibes")
+            lines.append(f"  Layer {layer}: CKA={cka:.4f}")
 
         lines.append("")
-        lines.append("TRANSFER RECOMMENDATION:")
+        lines.append("SUMMARY STATISTICS:")
         lines.append("-" * 60)
-        if len(transfer_candidates) > 20:
-            lines.append("  HIGH CONFIDENCE: Many transfer opportunities identified")
-            lines.append(f"  Focus layers: {list(candidates_by_layer.keys())}")
-        elif len(transfer_candidates) > 5:
-            lines.append("  MEDIUM CONFIDENCE: Some transfer opportunities")
-            lines.append("  Consider targeted grafting on highest-opportunity concepts")
-        else:
-            lines.append("  LOW CONFIDENCE: Few transfer opportunities")
-            lines.append("  Target may already be dense; grafting may not add value")
+        mean_cka = sum(layer_cka.values()) / len(layer_cka) if layer_cka else 0.0
+        ratio = (
+            len(stability_checks) / len(transfer_candidates)
+            if len(transfer_candidates) > 0
+            else float("inf")
+        )
+        lines.append(f"  Transfer candidates: {len(transfer_candidates)}")
+        lines.append(f"  Stability checks: {len(stability_checks)}")
+        lines.append(f"  Stability/transfer ratio: {ratio:.2f}")
+        lines.append(f"  Mean layer CKA: {mean_cka:.4f}")
+        lines.append(f"  Target layers: {list(candidates_by_layer.keys())}")
 
         write_output("\n".join(lines), context.output_format, context.pretty)
         return

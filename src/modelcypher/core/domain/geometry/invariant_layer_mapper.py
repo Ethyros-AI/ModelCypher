@@ -1513,7 +1513,7 @@ class StrategyLayerMapper:
 
         if source_activations and target_activations:
             from modelcypher.core.domain._backend import get_default_backend
-            from modelcypher.core.domain.geometry.cka import compute_cka
+            from modelcypher.core.domain.geometry.cka import compute_cka, HSICEstimator
 
             backend = get_default_backend()
             source_layers = sorted(source_activations.keys())
@@ -1527,8 +1527,20 @@ class StrategyLayerMapper:
                     # Ensure same sample count
                     min_samples = min(backend.shape(src_act)[0], backend.shape(tgt_act)[0])
                     if min_samples >= 2:
-                        result = compute_cka(src_act[:min_samples], tgt_act[:min_samples])
-                        cka_matrix[i][j] = result.cka
+                        result = compute_cka(
+                            src_act[:min_samples],
+                            tgt_act[:min_samples],
+                            estimator=HSICEstimator.AUTO,
+                            feature_bias_correction=True,
+                        )
+                        if result.is_valid:
+                            cka_matrix[i][j] = (
+                                result.cka_corrected
+                                if result.cka_corrected is not None
+                                else result.cka
+                            )
+                        else:
+                            cka_matrix[i][j] = 0.0
 
             # Compute per-layer max CKA (best alignment with any layer in other model)
             for i, src_layer in enumerate(source_layers):
@@ -1601,9 +1613,14 @@ class StrategyLayerMapper:
 
         Delegates to the canonical CKA implementation in cka.py.
         """
-        from modelcypher.core.domain.geometry.cka import compute_cka_from_lists
+        from modelcypher.core.domain.geometry.cka import compute_cka_from_lists, HSICEstimator
 
-        return compute_cka_from_lists(x, y)
+        return compute_cka_from_lists(
+            x,
+            y,
+            estimator=HSICEstimator.AUTO,
+            feature_bias_correction=True,
+        )
 
     @staticmethod
     def _align_with_cka(

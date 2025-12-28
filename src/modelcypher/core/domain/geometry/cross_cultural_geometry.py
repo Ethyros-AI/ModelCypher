@@ -21,7 +21,7 @@ import math
 from dataclasses import dataclass
 from enum import Enum
 
-from modelcypher.core.domain.geometry.cka import compute_cka_from_grams
+from modelcypher.core.domain.geometry.cka import compute_cka_from_grams, HSICEstimator
 from modelcypher.core.domain.geometry.path_geometry import (
     PathComparison,
     PathGeometry,
@@ -203,14 +203,29 @@ class CrossCulturalGeometry:
         return PathGeometry.compare(path_a, path_b, gate_embeddings)
 
     @staticmethod
-    def compute_cka(gram_a: list[float], gram_b: list[float], n: int) -> float:
+    def compute_cka(
+        gram_a: list[float],
+        gram_b: list[float],
+        n: int,
+        feature_dim_a: int | None = None,
+        feature_dim_b: int | None = None,
+    ) -> float:
         """Compute CKA between two flattened gram matrices.
 
         Delegates to the canonical implementation in cka.py.
+        Uses feature_bias_correction when feature dimensions are provided.
         """
         if len(gram_a) != n * n or len(gram_b) != n * n or n <= 1:
             return 0.0
-        return compute_cka_from_grams(gram_a, gram_b, n)
+        return compute_cka_from_grams(
+            gram_a,
+            gram_b,
+            n,
+            estimator=HSICEstimator.AUTO,
+            feature_dim_a=feature_dim_a,
+            feature_dim_b=feature_dim_b,
+            feature_bias_correction=feature_dim_a is not None and feature_dim_b is not None,
+        )
 
     @staticmethod
     def analyze_alignment(

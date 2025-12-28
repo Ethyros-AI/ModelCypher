@@ -131,10 +131,18 @@ class ProbeCalibrator:
         if len(activations_a) != len(activations_b):
             raise ValueError("Activation matrices must have same number of samples")
 
-        from modelcypher.core.domain.geometry.cka import compute_cka
+        from modelcypher.core.domain.geometry.cka import compute_cka, HSICEstimator
 
-        result = compute_cka(activations_a, activations_b, backend=self.backend)
-        return result.cka if result.is_valid else 0.0
+        result = compute_cka(
+            activations_a,
+            activations_b,
+            backend=self.backend,
+            estimator=HSICEstimator.AUTO,
+            feature_bias_correction=True,
+        )
+        if not result.is_valid:
+            return 0.0
+        return result.cka_corrected if result.cka_corrected is not None else result.cka
 
     def calibrate_probe(
         self,
