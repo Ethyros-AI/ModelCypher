@@ -796,7 +796,7 @@ class InvariantLayerMappingService:
                     "sourceLayer": m.source_layer,
                     "targetLayer": m.target_layer,
                     "similarity": m.similarity,
-                    "confidence": m.confidence.value,
+                    "confidence": m.similarity,
                     "isSkipped": m.is_skipped,
                 }
                 for m in report.mappings
