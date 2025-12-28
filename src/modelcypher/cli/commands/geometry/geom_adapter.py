@@ -103,13 +103,12 @@ def geometry_adapter_decomposition(
     model_loader = MLXModelLoader()
     service = GeometryAdapterService(model_loader=model_loader)
     result = service.analyze_dora(checkpoint_path, base_path)
-    learning_type = service.dora_learning_type(result)
     output = {
         "checkpointPath": checkpoint_path,
         "baseModelPath": base_path,
         "magnitudeChangeRatio": result.overall_magnitude_change,
         "directionalDrift": result.overall_directional_drift,
-        "learningType": learning_type,
+        "magnitudeToDirectionRatio": result.magnitude_to_direction_ratio,
         "nextActions": [
             f"mc geometry adapter sparsity --checkpoint '{checkpoint_path}'",
             f"mc checkpoint export --path '{checkpoint_path}'",
@@ -125,7 +124,7 @@ def geometry_adapter_decomposition(
             lines.append(f"Base Model: {base_path}")
         lines.append(f"Magnitude Change Ratio: {result.overall_magnitude_change:.3f}")
         lines.append(f"Directional Drift: {result.overall_directional_drift:.3f}")
-        lines.append(f"Learning Type: {learning_type}")
+        lines.append(f"Magnitude/Direction Ratio: {result.magnitude_to_direction_ratio:.3f}")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

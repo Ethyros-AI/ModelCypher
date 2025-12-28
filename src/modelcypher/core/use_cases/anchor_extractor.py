@@ -59,9 +59,9 @@ class AnchorExtractorError(RuntimeError):
 class AnchorExtractor:
     def _frechet_mean_of_embeddings(
         self,
-        vectors: list[np.ndarray],
+        vectors: list[Array],
         backend: Backend | None = None,
-    ) -> np.ndarray:
+    ) -> Array:
         """Compute Fréchet mean of embedding vectors.
 
         Embeddings live in curved representation space. Fréchet (Karcher)
@@ -69,28 +69,27 @@ class AnchorExtractor:
 
         Parameters
         ----------
-        vectors : list[np.ndarray]
-            List of embedding vectors (numpy arrays)
+        vectors : list[Array]
+            List of embedding vectors (backend arrays)
         backend : Backend | None
             Backend for computation (uses default if None)
 
         Returns
         -------
-        np.ndarray
-            Fréchet mean as numpy array
+        Array
+            Fréchet mean as backend array
         """
         if not vectors:
             raise ValueError("Cannot compute Fréchet mean of empty vector list")
 
-        if len(vectors) == 1:
-            return vectors[0]
-
         b = backend or get_default_backend()
-        stacked = np.stack(vectors, axis=0)
-        points = b.array(stacked)
-        mean = frechet_mean(points, backend=b)
+        if len(vectors) == 1:
+            return b.array(vectors[0])
+
+        stacked = b.stack([b.array(vec) for vec in vectors], axis=0)
+        mean = frechet_mean(stacked, backend=b)
         b.eval(mean)
-        return b.to_numpy(mean)
+        return mean
 
     def extract(
         self,
@@ -99,20 +98,15 @@ class AnchorExtractor:
         config: AnchorExtractionConfig | None = None,
         quantization: QuantizationConfig | None = None,
         backend: Backend | None = None,
-    ) -> tuple[dict[str, np.ndarray], dict[str, float]]:
+    ) -> tuple[dict[str, Array], dict[str, float]]:
         cfg = config or AnchorExtractionConfig()
+        b = backend or get_default_backend()
         tokenizer = self._load_tokenizer(model_path)
-        embedding_key, embedding = self.token_embedding_matrix(weights)
-        if backend is not None:
-            hint = quantization_hint_for_key(embedding_key, quantization)
-            embedding = dequantize_if_needed(embedding, embedding_key, weights, backend, hint=hint)
-        else:
-            embedding = np.asarray(embedding)
-            if embedding.dtype not in (np.float16, np.float32, np.float64):
-                raise AnchorExtractorError(
-                    f"Token embedding weight is quantized; provide backend to dequantize ({embedding_key})."
-                )
-        embedding = np.asarray(embedding, dtype=np.float32)
+        embedding_key, embedding = self.token_embedding_matrix(weights, backend=b)
+        hint = quantization_hint_for_key(embedding_key, quantization)
+        embedding = dequantize_if_needed(embedding, embedding_key, weights, b, hint=hint)
+        embedding = b.astype(b.array(embedding), "float32")
+        b.eval(embedding)
 
         if embedding.ndim != 2:
             raise AnchorExtractorError(
@@ -120,27 +114,32 @@ class AnchorExtractor:
             )
 
         if embedding.shape[0] < embedding.shape[1]:
-            embedding = embedding.T
+            embedding = b.transpose(embedding)
+            b.eval(embedding)
 
-        vocab = embedding.shape[0]
-        anchors: dict[str, np.ndarray] = {}
+        vocab = int(embedding.shape[0])
+        anchors: dict[str, Array] = {}
         confidence: dict[str, float] = {}
 
         if cfg.use_unified_atlas:
             # Use all probes from the unified atlas (supersedes individual atlas calls)
-            anchors.update(self._unified_atlas_anchors(tokenizer, embedding, vocab, confidence))
+            anchors.update(
+                self._unified_atlas_anchors(tokenizer, embedding, vocab, confidence, b)
+            )
         else:
             # Legacy mode: use subset of atlas sources
             if cfg.use_enriched_primes:
                 anchors.update(
-                    self._enriched_prime_anchors(tokenizer, embedding, vocab, confidence, cfg)
+                    self._enriched_prime_anchors(tokenizer, embedding, vocab, confidence, cfg, b)
                 )
             else:
-                anchors.update(self._basic_prime_anchors(tokenizer, embedding, vocab, confidence))
+                anchors.update(
+                    self._basic_prime_anchors(tokenizer, embedding, vocab, confidence, b)
+                )
 
             if cfg.include_computational_gates:
                 anchors.update(
-                    self._computational_gate_anchors(tokenizer, embedding, vocab, confidence)
+                    self._computational_gate_anchors(tokenizer, embedding, vocab, confidence, b)
                 )
 
         if not anchors:
@@ -151,7 +150,10 @@ class AnchorExtractor:
         return anchors, confidence
 
     @staticmethod
-    def token_embedding_matrix(weights: dict[str, Any]) -> tuple[str, np.ndarray]:
+    def token_embedding_matrix(
+        weights: dict[str, Any],
+        backend: Backend | None = None,
+    ) -> tuple[str, Array]:
         """Extract the token embedding matrix from model weights.
 
         Prefers input embeddings (embed_tokens) over output embeddings (lm_head)
@@ -173,19 +175,32 @@ class AnchorExtractor:
             "wte.weight",
             "lm_head.weight",  # Fallback: contextual similarity, less ideal for anchors
         ]
+        b = backend or get_default_backend()
+
+        def _dtype_is_numeric(arr: Array) -> bool:
+            dtype_name = str(getattr(arr, "dtype", "")).lower()
+            return any(tag in dtype_name for tag in ("float", "int", "uint", "bfloat"))
+
         for suffix in preferred_suffixes:
             for key, value in weights.items():
-                if key.endswith(suffix):
-                    arr = np.asarray(value)
-                    if arr.dtype.kind in {"f", "i", "u"}:
-                        return key, arr
+                if not key.endswith(suffix):
+                    continue
+                try:
+                    arr = b.array(value)
+                except Exception:
+                    continue
+                if _dtype_is_numeric(arr):
+                    return key, arr
 
-        scored: list[tuple[str, np.ndarray, int]] = []
+        scored: list[tuple[str, Array, int, int]] = []
         for key, value in weights.items():
-            arr = np.asarray(value)
+            try:
+                arr = b.array(value)
+            except Exception:
+                continue
             if arr.ndim != 2:
                 continue
-            if arr.dtype.kind not in {"f", "i", "u"}:
+            if not _dtype_is_numeric(arr):
                 continue
             max_dim = max(arr.shape[0], arr.shape[1])
             min_dim = min(arr.shape[0], arr.shape[1])
@@ -206,25 +221,32 @@ class AnchorExtractor:
             if max_dim >= 100000:
                 score += 10
             score += min(30, max_dim // 4000)
-            scored.append((key, arr, score))
+            size = 1
+            for dim in arr.shape:
+                size *= int(dim)
+            scored.append((key, arr, score, size))
 
         if not scored:
             raise AnchorExtractorError(
                 "Unable to locate token embedding weights in the model parameters."
             )
 
-        scored.sort(key=lambda item: (item[2], item[1].size))
-        key, arr, _ = scored[-1]
+        scored.sort(key=lambda item: (item[2], item[3]))
+        key, arr, _, _ = scored[-1]
         return key, arr
 
     @staticmethod
-    def normalize_anchor_matrix(matrix: np.ndarray) -> np.ndarray:
+    def normalize_anchor_matrix(
+        matrix: Array,
+        backend: Backend | None = None,
+    ) -> Array:
         if matrix.ndim != 2:
             return matrix
-        mean = matrix.mean(axis=0, keepdims=True)
+        b = backend or get_default_backend()
+        mean = b.mean(matrix, axis=0, keepdims=True)
         centered = matrix - mean
-        norms = np.linalg.norm(centered, axis=1, keepdims=True)
-        norms = np.maximum(norms, 1e-6)
+        norms = b.norm(centered, axis=1, keepdims=True)
+        norms = b.maximum(norms, b.array(1e-6))
         return centered / norms
 
     @staticmethod
@@ -251,11 +273,12 @@ class AnchorExtractor:
     def _enriched_prime_anchors(
         self,
         tokenizer: Tokenizer,
-        embedding: np.ndarray,
+        embedding: Array,
         vocab: int,
         confidence: dict[str, float],
         cfg: AnchorExtractionConfig,
-    ) -> dict[str, np.ndarray]:
+        backend: Backend,
+    ) -> dict[str, Array]:
         primes = SemanticPrimeFrames.enriched()
         polyglot = SemanticPrimeMultilingualInventoryLoader.global_diverse()
         polyglot_by_id: dict[str, list[str]] = {}
@@ -265,7 +288,7 @@ class AnchorExtractor:
                 texts.extend(bucket.texts[: cfg.max_polyglot_texts_per_language])
             polyglot_by_id[prime.id] = texts
 
-        anchors: dict[str, np.ndarray] = {}
+        anchors: dict[str, Array] = {}
         for prime in primes:
             core_text = f" {prime.word}"
             core_ids = tokenizer.encode(core_text, add_special_tokens=False).ids
@@ -291,7 +314,7 @@ class AnchorExtractor:
             seen: set[str] = set()
             unique = [text for text in texts if not (text in seen or seen.add(text))]
 
-            vectors: list[np.ndarray] = []
+            vectors: list[Array] = []
             for text in unique:
                 ids = tokenizer.encode(text, add_special_tokens=False).ids
                 valid = [token_id for token_id in ids if 0 <= token_id < vocab]
@@ -299,14 +322,14 @@ class AnchorExtractor:
                     continue
                 # Use Fréchet mean for token embeddings (curvature is inherent)
                 token_vecs = [embedding[tid] for tid in valid]
-                vectors.append(self._frechet_mean_of_embeddings(token_vecs))
+                vectors.append(self._frechet_mean_of_embeddings(token_vecs, backend=backend))
 
             if not vectors:
                 continue
 
             anchor_id = f"prime:{prime.id}"
             # Fréchet mean of phrase embeddings (curvature is inherent in HD space)
-            anchors[anchor_id] = self._frechet_mean_of_embeddings(vectors)
+            anchors[anchor_id] = self._frechet_mean_of_embeddings(vectors, backend=backend)
             confidence[anchor_id] = self._confidence_for_token_count(len(core_valid))
 
         return anchors
@@ -314,12 +337,13 @@ class AnchorExtractor:
     def _basic_prime_anchors(
         self,
         tokenizer: Tokenizer,
-        embedding: np.ndarray,
+        embedding: Array,
         vocab: int,
         confidence: dict[str, float],
-    ) -> dict[str, np.ndarray]:
+        backend: Backend,
+    ) -> dict[str, Array]:
         primes = SemanticPrimeInventory.english2014()
-        anchors: dict[str, np.ndarray] = {}
+        anchors: dict[str, Array] = {}
 
         for prime in primes:
             text = f" {prime.canonical_english}"
@@ -338,7 +362,9 @@ class AnchorExtractor:
             anchor_id = f"prime:{prime.id}"
             # Fréchet mean of token embeddings (curvature is inherent)
             token_vecs = [embedding[tid] for tid in valid]
-            anchors[anchor_id] = self._frechet_mean_of_embeddings(token_vecs)
+            anchors[anchor_id] = self._frechet_mean_of_embeddings(
+                token_vecs, backend=backend
+            )
             confidence[anchor_id] = self._confidence_for_token_count(len(valid))
 
         return anchors
@@ -346,12 +372,13 @@ class AnchorExtractor:
     def _computational_gate_anchors(
         self,
         tokenizer: Tokenizer,
-        embedding: np.ndarray,
+        embedding: Array,
         vocab: int,
         confidence: dict[str, float],
-    ) -> dict[str, np.ndarray]:
+        backend: Backend,
+    ) -> dict[str, Array]:
         gates = ComputationalGateInventory.probe_gates()
-        anchors: dict[str, np.ndarray] = {}
+        anchors: dict[str, Array] = {}
 
         for gate in gates:
             texts: list[str] = []
@@ -366,7 +393,7 @@ class AnchorExtractor:
             seen: set[str] = set()
             unique = [text for text in texts if not (text in seen or seen.add(text))]
 
-            vectors: list[np.ndarray] = []
+            vectors: list[Array] = []
             token_counts: list[int] = []
             for text in unique:
                 ids = tokenizer.encode(text, add_special_tokens=False).ids
@@ -375,7 +402,7 @@ class AnchorExtractor:
                     continue
                 # Fréchet mean for token embeddings (curvature is inherent)
                 token_vecs = [embedding[tid] for tid in valid]
-                vectors.append(self._frechet_mean_of_embeddings(token_vecs))
+                vectors.append(self._frechet_mean_of_embeddings(token_vecs, backend=backend))
                 token_counts.append(len(valid))
 
             if not vectors:
@@ -383,7 +410,7 @@ class AnchorExtractor:
 
             anchor_id = f"gate:{gate.id}"
             # Fréchet mean of phrase embeddings (curvature is inherent in HD space)
-            anchors[anchor_id] = self._frechet_mean_of_embeddings(vectors)
+            anchors[anchor_id] = self._frechet_mean_of_embeddings(vectors, backend=backend)
 
             avg_tokens = float(sum(token_counts)) / float(max(1, len(token_counts)))
             if avg_tokens <= 5:
@@ -402,10 +429,11 @@ class AnchorExtractor:
     def _unified_atlas_anchors(
         self,
         tokenizer: Tokenizer,
-        embedding: np.ndarray,
+        embedding: Array,
         vocab: int,
         confidence: dict[str, float],
-    ) -> dict[str, np.ndarray]:
+        backend: Backend,
+    ) -> dict[str, Array]:
         """Extract anchors from all unified atlas probes.
 
         Uses the complete UnifiedAtlasInventory which includes:
@@ -424,10 +452,10 @@ class AnchorExtractor:
         Total: 439 probes for cross-domain triangulation.
         """
         probes = UnifiedAtlasInventory.all_probes()
-        anchors: dict[str, np.ndarray] = {}
+        anchors: dict[str, Array] = {}
 
         for probe in probes:
-            vectors: list[np.ndarray] = []
+            vectors: list[Array] = []
             for text in probe.support_texts:
                 if not text:
                     continue
@@ -436,11 +464,13 @@ class AnchorExtractor:
                 if valid:
                     # Fréchet mean for token embeddings (curvature is inherent)
                     token_vecs = [embedding[tid] for tid in valid]
-                    vectors.append(self._frechet_mean_of_embeddings(token_vecs))
+                    vectors.append(self._frechet_mean_of_embeddings(token_vecs, backend=backend))
 
             if vectors:
                 # Fréchet mean of phrase embeddings (curvature is inherent in HD space)
-                anchors[probe.probe_id] = self._frechet_mean_of_embeddings(vectors)
+                anchors[probe.probe_id] = self._frechet_mean_of_embeddings(
+                    vectors, backend=backend
+                )
                 confidence[probe.probe_id] = probe.cross_domain_weight
 
         logger.info(

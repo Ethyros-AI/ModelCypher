@@ -502,6 +502,7 @@ class MLXBackend(Backend):
                 dtype = dtype.replace("mlx.core.", "")
             dtype_map = {
                 "float32": self.mx.float32,
+                "float64": self.mx.float64,  # MLX supports float64 (CPU fallback)
                 "float16": self.mx.float16,
                 "bfloat16": self.mx.bfloat16,
                 "int32": self.mx.int32,

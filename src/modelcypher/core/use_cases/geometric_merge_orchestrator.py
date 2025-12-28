@@ -1722,14 +1722,6 @@ class GeometricMergeOrchestrator:
                     alpha = alpha * layer_scale
                     metrics["delta_mask_scaled"] += 1
 
-                # Override alpha for cross-dimensional weights that couldn't be aligned
-                if cross_dim_use_target_only:
-                    alpha = 0.0  # Use target weights only
-                    logger.debug(
-                        "Weight %s: cross-dim incompatible, alpha=0 (target only)",
-                        key,
-                    )
-
                 # Apply SVD-aware blending for 2D weights
                 if source_w.ndim == 2 and target_w.ndim == 2 and min(source_w.shape) >= 2:
                     source_f32 = b.astype(source_w, "float32")

@@ -362,16 +362,12 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
                     "probesTested": result.probes_tested,
                 }
 
-            failed_domains = report.get_failed_domains(threshold=0.8)
-
             return {
                 "_schema": "mc.model.validate_knowledge.v1",
                 "sourceModel": sourceModel,
                 "mergedModel": mergedModel,
                 "overallRetention": round(report.overall_retention, 3),
-                "status": report.status.value,
                 "perDomain": per_domain_summary,
-                "failedDomains": [d.value for d in failed_domains],
                 "probesTested": sum(r.probes_tested for r in report.per_domain.values()),
             }
 

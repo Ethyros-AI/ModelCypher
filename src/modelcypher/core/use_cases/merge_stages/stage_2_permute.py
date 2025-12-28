@@ -169,6 +169,8 @@ def stage_permute(
             "PERMUTE: Embedding anchors missing; cannot reach exact kernel alignment for permutation."
         )
 
+    # Permutation alignment is only defined in a shared hidden dimension.
+    # Cross-dimensional alignment is handled later via Gram-based projection.
     if source_anchors.shape[1] != target_anchors.shape[1]:
         logger.info(
             "PERMUTE: Hidden dimension mismatch (source=%d, target=%d); skipping permutation stage.",
