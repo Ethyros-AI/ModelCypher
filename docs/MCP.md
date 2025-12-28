@@ -1201,6 +1201,89 @@ Call mc_inventory first to see what models are available before starting trainin
 
 ---
 
+### mc_geometry_primes_probe
+
+**Purpose:** Probe a model for semantic prime activations and compute CKA coherence.
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "modelPath": { "type": "string" },
+    "layer": { "type": "integer", "default": -1 },
+    "outputFile": { "type": ["string", "null"] }
+  },
+  "required": ["modelPath"]
+}
+```
+
+**Output:**
+```json
+{
+  "_schema": "mc.geometry.primes.probe.v1",
+  "modelPath": "/path/to/model",
+  "layer": 23,
+  "primesProbed": 44,
+  "totalPrimes": 63,
+  "overallCoherence": 0.99,
+  "overallCoherenceRaw": 0.97,
+  "categoryCoherence": {
+    "structural": 0.97
+  },
+  "nextActions": [
+    "mc_geometry_primes_compare to compare with another model",
+    "mc_model_probe for architecture details"
+  ]
+}
+```
+
+**Notes:** `overallCoherence` is bias-corrected CKA (AUTO estimator); `overallCoherenceRaw` is uncorrected.
+
+---
+
+### mc_geometry_primes_compare
+
+**Purpose:** Compare prime representations between two saved activation files.
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "activationsA": { "type": "string" },
+    "activationsB": { "type": "string" }
+  },
+  "required": ["activationsA", "activationsB"]
+}
+```
+
+**Output:**
+```json
+{
+  "_schema": "mc.geometry.primes.compare.v1",
+  "modelA": "/path/to/activations_a.json",
+  "modelB": "/path/to/activations_b.json",
+  "commonPrimes": 42,
+  "ckaSimilarity": 0.98,
+  "ckaRaw": 0.96,
+  "mostSimilarPrimes": ["want", "know"],
+  "mostDivergentPrimes": ["before", "feel"],
+  "nextActions": [
+    "mc_model_analyze_alignment for layer-wise drift analysis",
+    "mc_geometry_primes_probe for individual model analysis"
+  ]
+}
+```
+
+**Notes:** `ckaSimilarity` is bias-corrected CKA (AUTO estimator); `ckaRaw` is uncorrected.
+
+---
+
 ### mc_geometry_crm_build
 
 **Purpose:** Build a concept response matrix (CRM) for a model.

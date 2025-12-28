@@ -248,6 +248,7 @@ def primes_probe_model(
         "primes_probed": len(prime_activations),
         "total_primes": len(primes),
         "overall_coherence": overall_cka,
+        "overall_coherence_raw": overall_result.cka,
         "category_coherence": {k: v for k, v in category_coherence.items() if v is not None},
     }
 

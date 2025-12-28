@@ -80,6 +80,45 @@ mc geometry crm delta-mask --source <crm.json> --target <crm.json> --output-path
 mc geometry cross-cultural analyze <input_json>
 ```
 
+## Geometry Primes Commands
+```bash
+mc geometry primes probe-model <model_path> --layer <n>
+mc geometry primes probe-model <model_path> --layer <n> --output-file <path>
+mc geometry primes compare <activations_a.json> <activations_b.json>
+```
+
+### Primes Probe Output Schema
+```json
+{
+  "_schema": "mc.geometry.primes.probe.v1",
+  "model_path": "/path/to/model",
+  "layer": 23,
+  "primes_probed": 44,
+  "total_primes": 63,
+  "overall_coherence": 0.99,
+  "overall_coherence_raw": 0.97,
+  "category_coherence": {
+    "structural": 0.97
+  }
+}
+```
+Note: `overall_coherence` uses bias-corrected CKA (AUTO estimator); `overall_coherence_raw` is uncorrected.
+
+### Primes Compare Output Schema
+```json
+{
+  "_schema": "mc.geometry.primes.compare.v1",
+  "model_a": "/path/to/activations_a.json",
+  "model_b": "/path/to/activations_b.json",
+  "common_primes": 42,
+  "cka_similarity": 0.98,
+  "cka_raw": 0.96,
+  "most_similar_primes": ["want", "know"],
+  "most_divergent_primes": ["before", "feel"]
+}
+```
+Note: `cka_similarity` uses bias-corrected CKA (AUTO estimator); `cka_raw` is uncorrected.
+
 ## Geometry Spatial Commands
 ```bash
 mc geometry spatial anchors

@@ -557,9 +557,13 @@ class UnifiedGeometricMerger:
         from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
         sample_array = next(iter(source_weights.values()), None)
-        phase_tol = (
+        # Use a tolerance of 1e-5 for CKA comparison, which accounts for numerical
+        # precision issues in Gram matrix computation, centering, and accumulation.
+        # Machine epsilon (~1e-7 for float32) is too tight for CKA comparisons.
+        base_eps = (
             machine_epsilon(self._backend, sample_array) if sample_array is not None else 1e-7
         )
+        phase_tol = max(base_eps * 100, 1e-5)  # At least 1e-5, or 100x machine epsilon
         if geometry.overall_cka < 1.0 - phase_tol:
             raise RuntimeError(
                 "PROBE BAROMETER: Overall CKA=%.6f < 1.0. "
