@@ -145,62 +145,6 @@ class LayerMatchCategory(str, Enum):
 
 
 @dataclass(frozen=True)
-class LayerMatchCategoryWeights:
-    """Weights for different layer matching criteria.
-
-    Used by INVARIANT_COLLAPSE strategy to combine multiple
-    similarity signals into a final layer match score.
-
-    IMPORTANT: Default weights are UNIFORM (equal contribution from each signal).
-    This is the only principled default - any non-uniform weighting should be
-    derived from:
-    1. Variance explained by each signal on calibration data
-    2. Fisher information contribution from each measurement
-    3. User-specified domain knowledge
-
-    Do NOT tune these arbitrarily. If a signal isn't useful, set it to 0.0
-    and rely on the ones that are.
-    """
-
-    # Uniform defaults: each signal contributes equally (sum = 1.0)
-    # Override with data-derived weights or explicit user preference
-    activation_pattern: float = 0.2
-    invariant_coverage: float = 0.2
-    collapse_state: float = 0.2
-    triangulation: float = 0.2
-    cka_alignment: float = 0.2
-
-    def normalized(self) -> "LayerMatchCategoryWeights":
-        """Return weights normalized to sum to 1.0."""
-        total = (
-            self.activation_pattern
-            + self.invariant_coverage
-            + self.collapse_state
-            + self.triangulation
-            + self.cka_alignment
-        )
-        if total <= 0:
-            return LayerMatchCategoryWeights()
-        return LayerMatchCategoryWeights(
-            activation_pattern=self.activation_pattern / total,
-            invariant_coverage=self.invariant_coverage / total,
-            collapse_state=self.collapse_state / total,
-            triangulation=self.triangulation / total,
-            cka_alignment=self.cka_alignment / total,
-        )
-
-    def as_dict(self) -> dict[LayerMatchCategory, float]:
-        """Return weights as dictionary keyed by category."""
-        return {
-            LayerMatchCategory.ACTIVATION_PATTERN: self.activation_pattern,
-            LayerMatchCategory.INVARIANT_COVERAGE: self.invariant_coverage,
-            LayerMatchCategory.COLLAPSE_STATE: self.collapse_state,
-            LayerMatchCategory.TRIANGULATION: self.triangulation,
-            LayerMatchCategory.CKA_ALIGNMENT: self.cka_alignment,
-        }
-
-
-@dataclass(frozen=True)
 class CRMMappingConfig:
     """CRM-based layer mapping using CKA."""
 
@@ -227,7 +171,6 @@ class InvariantCollapseMappingConfig:
     min_invariant_coverage: float = 0.0
     collapse_mismatch_penalty: float = 1.0
     allow_many_to_one: bool = False
-    category_weights: LayerMatchCategoryWeights | None = None
     use_triangulation_boost: bool = False
 
 
@@ -263,7 +206,6 @@ class Config:
     coverage_weight: float = 1.0
     high_confidence_threshold: float | None = None
     medium_confidence_threshold: float | None = None
-    layer_match_category_weights: LayerMatchCategoryWeights | None = None
     use_cross_domain_weighting: bool = False
     triangulation_threshold: float = 0.0
     multi_domain_bonus: bool = False
@@ -1384,7 +1326,11 @@ class InvariantLayerMapper:
 
 @dataclass(frozen=True)
 class LayerCategoryScores:
-    """Per-layer scores broken down by matching category."""
+    """Per-layer scores broken down by matching category.
+
+    Individual geometric measurements. No aggregation - consumers
+    use the measurements they need directly.
+    """
 
     layer_index: int
     activation_pattern: float
@@ -1392,7 +1338,6 @@ class LayerCategoryScores:
     collapse_state: float  # 1.0 if not collapsed, 0.0 if collapsed
     triangulation: float
     cka_alignment: float
-    combined: float  # Weighted combination
 
 
 @dataclass(frozen=True)
@@ -1557,13 +1502,6 @@ class StrategyLayerMapper:
         target_activations: dict[int, list[list[float]]] | None = None,
     ) -> StrategyMappingResult:
         """Map layers using invariant-collapse strategy."""
-        ic_cfg = config.invariant_collapse_config or InvariantCollapseMappingConfig()
-        weights = (
-            config.layer_match_category_weights
-            or ic_cfg.category_weights
-            or LayerMatchCategoryWeights()
-        ).normalized()
-
         # Use the existing InvariantLayerMapper for base mapping
         base_report = InvariantLayerMapper.map_layers(source, target, config)
 
@@ -1608,10 +1546,10 @@ class StrategyLayerMapper:
 
         # Compute per-layer category scores
         source_scores = StrategyLayerMapper._build_category_scores_invariant(
-            base_report.source_profiles, weights, source_cka_scores, config
+            base_report.source_profiles, source_cka_scores
         )
         target_scores = StrategyLayerMapper._build_category_scores_invariant(
-            base_report.target_profiles, weights, target_cka_scores, config
+            base_report.target_profiles, target_cka_scores
         )
 
         return StrategyMappingResult(
@@ -1740,7 +1678,6 @@ class StrategyLayerMapper:
                     collapse_state=1.0,  # Assumed not collapsed in CRM
                     triangulation=0.0,  # Not used in CRM
                     cka_alignment=max_cka,
-                    combined=max_cka,
                 )
             )
 
@@ -1749,20 +1686,18 @@ class StrategyLayerMapper:
     @staticmethod
     def _build_category_scores_invariant(
         profiles: tuple[LayerProfile, ...],
-        weights: LayerMatchCategoryWeights,
         cka_scores: dict[int, float],
-        config: Config,
     ) -> list[LayerCategoryScores]:
         """Build category scores for invariant-collapse strategy.
 
+        Returns individual geometric measurements. No weighted aggregation -
+        consumers use the measurements they need directly.
+
         Args:
             profiles: Layer profiles from invariant analysis.
-            weights: Category weights for score combination.
-            cka_scores: Pre-computed CKA scores per layer index (from compare with other model).
-            config: Mapping configuration.
+            cka_scores: Pre-computed CKA scores per layer index.
         """
         scores: list[LayerCategoryScores] = []
-        w = weights.as_dict()
 
         for profile in profiles:
             activation_score = profile.strength
@@ -1772,19 +1707,10 @@ class StrategyLayerMapper:
             tri_score = 0.0
             if profile.triangulation:
                 # Use raw cross_domain_multiplier - it's already a dimensionless ratio
-                # Typical values are ~1.0-2.0; the geometry determines the score
                 tri_score = profile.triangulation.cross_domain_multiplier
 
             # Use pre-computed CKA score, or 0.0 if not available for this layer
             cka_score = cka_scores.get(profile.layer_index, 0.0)
-
-            combined = (
-                w[LayerMatchCategory.ACTIVATION_PATTERN] * activation_score
-                + w[LayerMatchCategory.INVARIANT_COVERAGE] * coverage_score
-                + w[LayerMatchCategory.COLLAPSE_STATE] * collapse_score
-                + w[LayerMatchCategory.TRIANGULATION] * tri_score
-                + w[LayerMatchCategory.CKA_ALIGNMENT] * cka_score
-            )
 
             scores.append(
                 LayerCategoryScores(
@@ -1794,7 +1720,6 @@ class StrategyLayerMapper:
                     collapse_state=collapse_score,
                     triangulation=tri_score,
                     cka_alignment=cka_score,
-                    combined=combined,
                 )
             )
 

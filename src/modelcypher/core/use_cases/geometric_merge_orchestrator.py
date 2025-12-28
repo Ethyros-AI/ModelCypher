@@ -152,6 +152,7 @@ class LayerGeometry:
     wudi_max_overlap: float = 0.0
     transform_requirements: list[str] = field(default_factory=list)
     null_space_dim: int = 0
+    null_space_projection: "Array | None" = None
     spectral_condition: float = 0.0
 
     # Dimension weights (Stage 6)
@@ -970,6 +971,8 @@ class GeometricMergeOrchestrator:
                 nsf = NullSpaceFilter(NullSpaceFilterConfig(), backend=b)
                 projection = nsf.compute_null_space_projection(stacked)
                 layer_geom.null_space_dim = projection.null_dim
+                layer_geom.null_space_projection = projection.projection_matrix
+                b.eval(layer_geom.null_space_projection)
             except Exception as e:
                 logger.debug("null_space_filter failed for layer %d: %s", layer_geom.layer_idx, e)
 
@@ -1591,6 +1594,24 @@ class GeometricMergeOrchestrator:
                         cross_dim_use_target_only = True
                         source_w = target_w  # Will be blended with alpha=0 below
                         metrics["cross_arch_target_only"] = metrics.get("cross_arch_target_only", 0) + 1
+
+                # Null-space filter (MINGLE, 2025): preserve target activations by removing
+                # source deltas that lie in the target activation row space.
+                if (
+                    layer_geom
+                    and layer_geom.null_space_projection is not None
+                    and source_w.ndim == 2
+                    and not cross_dim_use_target_only
+                ):
+                    projection = layer_geom.null_space_projection
+                    if source_w.shape[1] == projection.shape[0]:
+                        source_f32 = b.astype(source_w, "float32")
+                        target_f32 = b.astype(target_w, "float32")
+                        delta = source_f32 - target_f32
+                        delta_safe = b.matmul(delta, projection)
+                        source_w = target_f32 + delta_safe
+                        b.eval(source_w)
+                        metrics["null_space_filtered"] += 1
 
                 # ============================================================
                 # A.2: Check transform_requirements and set dispatch flags
