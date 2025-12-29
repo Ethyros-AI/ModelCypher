@@ -44,6 +44,7 @@ Total probe count: 441
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import Enum
 
@@ -829,9 +830,11 @@ class MultiAtlasTriangulationScorer:
                 sources_detected.add(probe.source)
                 domains_detected.add(probe.domain)
 
-        source_multiplier = 1.0
-        domain_multiplier = 1.0
-        combined_multiplier = 1.0
+        source_count = len(sources_detected)
+        domain_count = len(domains_detected)
+        source_multiplier = 1.0 + max(0, source_count - 1) * 0.1
+        domain_multiplier = 1.0 + max(0, domain_count - 1) * 0.15
+        combined_multiplier = math.sqrt(source_multiplier * domain_multiplier)
 
         return MultiAtlasTriangulationScore(
             layer_index=-1,  # Set by caller

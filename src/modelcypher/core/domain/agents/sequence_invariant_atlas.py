@@ -25,6 +25,7 @@ ordering, arithmetic, and causality anchors for robust cross-domain alignment.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import Enum
 
@@ -1273,10 +1274,16 @@ class TriangulationScorer:
             )
 
         base_score = sum(detected_domains.values()) / len(detected_domains)
+        domain_count = len(detected_domains)
+        domain_multiplier = math.log(domain_count + 1) / math.log(2)
+        max_domains = len(ExpressionDomain)
+        coherence_bonus = (
+            (domain_count - 1) / max(1, max_domains - 1) if domain_count > 1 else 0.0
+        )
 
         return TriangulatedScore(
             base=base_score,
-            cross_domain_multiplier=1.0,
+            cross_domain_multiplier=domain_multiplier,
             relationship_bonus=0.0,
-            coherence_bonus=0.0,
+            coherence_bonus=coherence_bonus,
         )
