@@ -268,6 +268,7 @@ class TestResultConversion:
             merged_weights={},
             vocab_metrics={},
             probe_metrics={"mean_confidence": 0.8},
+            permute_metrics={"skipped": True, "reason": "test"},
             transplant_metrics={"layers_transplanted": 5, "weights_transplanted": 10},
             mean_confidence=0.8,
             mean_procrustes_error=0.05,

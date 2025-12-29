@@ -18,23 +18,24 @@
 """
 Unified Geometric Merge Pipeline.
 
-Current Pipeline:
-    VOCAB → PROBE → TRANSPLANT → VALIDATE
+Pipeline:
+    VOCAB → PROBE → PERMUTE → TRANSPLANT → VALIDATE
 
-Transplant uses null-space constrained projection to transfer knowledge
-while preserving boundary behavior. This is the only mathematically valid
-approach - alpha-blending was proven to produce gibberish even for
-same-architecture models (see research plan Phase 5-8).
+Stage 0: VOCABULARY - Cross-vocabulary embedding alignment
+Stage 1: PROBE - Build intersection map from probe responses
+Stage 2: PERMUTE - Git Re-Basin permutation alignment (same-arch only)
+Stage 3: TRANSPLANT - Null-space constrained knowledge grafting
+Stage 4: VALIDATE - Safety checks (numerical + content)
 
 Key Principles:
 1. Null-space projection guarantees: A_boundary @ W' = A_boundary @ W_target
 2. Layer targeting enables surgical transplants
 3. Cross-dimensional projection via GRAM_TRANSPORT
+4. Permutation alignment reduces delta magnitude before transplant (same-arch)
 
-NOT CURRENTLY IMPLEMENTED:
-- PERMUTE (Git Re-Basin): Valid geometry for same-architecture pre-alignment.
-  Could be reintegrated as optional step before TRANSPLANT for same-arch models.
-  See Ainsworth et al. (2023) arXiv:2209.04836
+References:
+- Git Re-Basin: Ainsworth et al. (2023) arXiv:2209.04836
+- AlphaEdit (null-space): Fang et al. (2025) ICLR Outstanding Paper
 
 REMOVED (proven broken):
 - rotate_blend: Alpha-blending has no constraint, destroys coherence
@@ -120,7 +121,8 @@ class UnifiedMergeResult:
 
     # Per-stage metrics
     vocab_metrics: dict[str, Any]  # Stage 0: Vocabulary alignment
-    probe_metrics: dict[str, Any]
+    probe_metrics: dict[str, Any]  # Stage 1: Probe
+    permute_metrics: dict[str, Any]  # Stage 2: Git Re-Basin permutation
     transplant_metrics: dict[str, Any]  # Stage 3: Transplant
 
     # Overall quality
@@ -164,11 +166,14 @@ class UnifiedGeometricMerger:
     """
     Unified geometric merge pipeline.
 
-    Pipeline: VOCAB → PROBE → TRANSPLANT → VALIDATE
+    Pipeline: VOCAB → PROBE → PERMUTE → TRANSPLANT → VALIDATE
 
-    Transplant uses null-space constrained projection to preserve
-    boundary behavior while transferring knowledge. Stage implementations
-    are in merge_stages/ for modularity.
+    - PERMUTE (Git Re-Basin): Solves permutation symmetry for same-architecture models.
+      Reduces delta magnitude before transplant by aligning neuron orderings.
+    - TRANSPLANT: Null-space constrained projection preserves boundary behavior
+      while transferring knowledge.
+
+    Stage implementations are in merge_stages/ for modularity.
     """
 
     def __init__(
@@ -384,9 +389,43 @@ class UnifiedGeometricMerger:
         logger.info("Cleared GPU cache after probe stage")
 
         # =================================================================
-        # STAGE 2: TRANSPLANT (Null-space constrained knowledge transfer)
+        # STAGE 2: PERMUTE (Git Re-Basin alignment for same-architecture)
         # =================================================================
-        # PERMUTE was removed - it changes gauge and breaks invariance guarantee.
+        # Permutation alignment reduces delta magnitude before transplant.
+        # Only enabled for same-architecture models (hidden dimensions must match).
+        source_hidden = self._infer_hidden_dim(source_weights)
+        target_hidden = self._infer_hidden_dim(target_weights)
+        enable_permutation = source_hidden == target_hidden
+
+        if enable_permutation:
+            logger.info("STAGE 2: PERMUTE (Git Re-Basin, hidden_dim=%d)", target_hidden)
+            permuted_weights, permute_metrics = self._stage_permute(
+                source_weights=source_weights,
+                target_weights=target_weights,
+                intersection_map_obj=intersection_map_obj,
+                layer_confidences=layer_confidences,
+                enable_permutation=True,
+            )
+            if not permute_metrics.get("skipped"):
+                source_weights = permuted_weights
+                logger.info(
+                    "PERMUTE: Aligned %d MLP blocks, mean_quality=%.3f",
+                    permute_metrics.get("layers_permuted", 0),
+                    permute_metrics.get("mean_quality", 0.0),
+                )
+            else:
+                logger.info("PERMUTE: Skipped (%s)", permute_metrics.get("reason", "unknown"))
+        else:
+            logger.info(
+                "STAGE 2: PERMUTE (skipped - hidden_dim mismatch: source=%d, target=%d)",
+                source_hidden,
+                target_hidden,
+            )
+            permute_metrics = {"skipped": True, "reason": "hidden_dim_mismatch"}
+
+        # =================================================================
+        # STAGE 3: TRANSPLANT (Null-space constrained knowledge transfer)
+        # =================================================================
         # ROTATE/BLEND was removed - alpha-blending produces gibberish.
         # Only null-space constrained transplant preserves boundary relationships.
         if not config.transplant_domains:
@@ -431,6 +470,7 @@ class UnifiedGeometricMerger:
             merged_weights=merged_weights,
             vocab_metrics=vocab_metrics,
             probe_metrics=probe_metrics,
+            permute_metrics=permute_metrics,
             transplant_metrics=transplant_metrics,
             mean_confidence=mean_confidence,
             mean_procrustes_error=float(mean_error),
@@ -734,6 +774,7 @@ class UnifiedGeometricMerger:
                 "mean_intrinsic_dim": geometry.mean_intrinsic_dimension,
                 "mean_shared_dim": geometry.mean_shared_dimension,
             },
+            permute_metrics={"skipped": True, "reason": "full_geometry_mode"},
             transplant_metrics=merge_metrics,
             mean_confidence=geometry.overall_cka,
             mean_procrustes_error=0.0,
@@ -852,6 +893,47 @@ class UnifiedGeometricMerger:
             "probe_domains": result.probe_domains,
         }, result.metrics, result.source_activations, result.target_activations
 
+    def _stage_permute(
+        self,
+        source_weights: dict[str, Any],
+        target_weights: dict[str, Any],
+        intersection_map_obj: Any | None,
+        layer_confidences: dict[int, float],
+        enable_permutation: bool = True,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Stage 2: Git Re-Basin permutation alignment.
+
+        Solves the permutation symmetry problem for MLP neurons.
+        Neural networks have N! permutation symmetries per MLP layer.
+        This stage finds the optimal permutation P that minimizes:
+            ||W_target - P @ W_source||_F
+
+        This runs BEFORE transplant to reduce the delta magnitude between
+        source and target weights. By aligning neuron orderings first, the
+        null-space projection in transplant has less work to do.
+
+        Reference: Ainsworth et al. (2023) arXiv:2209.04836 "Git Re-Basin"
+        """
+        from .merge_stages.stage_2_permute import (
+            PermuteConfig,
+            infer_hidden_dim,
+            stage_permute,
+        )
+
+        config = PermuteConfig(enable_permutation=enable_permutation)
+
+        result = stage_permute(
+            source_weights=source_weights,
+            target_weights=target_weights,
+            intersection_map_obj=intersection_map_obj,
+            layer_confidences=layer_confidences,
+            config=config,
+            infer_hidden_dim_fn=infer_hidden_dim,
+            backend=self._backend,
+        )
+
+        return result.weights, result.metrics
+
     def _stage_transplant(
         self,
         source_weights: dict[str, "Array"],
@@ -962,6 +1044,19 @@ class UnifiedGeometricMerger:
             return {int(layer): 1.0 for layer in graft_layers}
 
         raise ValueError("Invalid knowledge delta mask: missing alphaByLayer or graftLayers.")
+
+    def _infer_hidden_dim(self, weights: dict[str, Any]) -> int:
+        """Infer hidden dimension from weight shapes.
+
+        Used to determine if permutation alignment is applicable (same hidden dim).
+        """
+        for key, val in weights.items():
+            if "q_proj" in key or "k_proj" in key:
+                return val.shape[1]
+            if "up_proj" in key or "gate_proj" in key:
+                return val.shape[1]
+        # Return 0 for unknown (will disable permutation)
+        return 0
 
     def _require_vocab_phase_lock(
         self, vocab_metrics: dict[str, Any], vocab_aligned: bool

@@ -21,21 +21,21 @@ Merge pipeline stages.
 Each stage is a standalone module that can be imported and tested independently.
 The UnifiedGeometricMerger orchestrates these stages in sequence.
 
-Current Pipeline: VOCAB → PROBE → TRANSPLANT → VALIDATE
+Pipeline: VOCAB → PROBE → PERMUTE → TRANSPLANT → VALIDATE
 
 Stage 0: VOCABULARY - Cross-vocabulary embedding alignment
 Stage 1: PROBE - Build intersection map from probe responses
-Stage 2: TRANSPLANT - Null-space constrained knowledge grafting
-Stage 3: VALIDATE - Safety checks (numerical + content)
-
-NOT CURRENTLY IMPLEMENTED:
-- PERMUTE (Git Re-Basin): Valid geometry for same-architecture pre-alignment.
-  Could be reintegrated as optional step before TRANSPLANT for same-arch models.
-  See Ainsworth et al. (2023) arXiv:2209.04836
+Stage 2: PERMUTE - Git Re-Basin permutation alignment for MLP neurons (same-arch)
+Stage 3: TRANSPLANT - Null-space constrained knowledge grafting
+Stage 4: VALIDATE - Safety checks (numerical + content)
 
 REMOVED (proven broken):
 - ROTATE/BLEND/PROPAGATE: Alpha-blending produces gibberish even for same-arch models.
   No mathematical guarantee of boundary preservation.
+
+References:
+- Git Re-Basin: Ainsworth et al. (2023) arXiv:2209.04836
+- AlphaEdit (null-space transplant): Fang et al. (2025) ICLR Outstanding Paper
 """
 
 from .stage_0_vocabulary import (
@@ -49,6 +49,12 @@ from .stage_1_probe import (
     collect_layer_activations_mlx,
     stage_probe,
 )
+from .stage_2_permute import (
+    PermuteConfig,
+    PermuteResult,
+    infer_hidden_dim,
+    stage_permute,
+)
 from .stage_3_transplant import (
     TransplantStageConfig,
     TransplantStageResult,
@@ -61,20 +67,25 @@ from .stage_6_validate import (
 )
 
 __all__ = [
-    # Stage 0
+    # Stage 0: Vocabulary
     "stage_vocabulary_align",
     "VocabularyConfig",
     "VocabularyResult",
-    # Stage 1
+    # Stage 1: Probe
     "stage_probe",
     "ProbeConfig",
     "ProbeResult",
     "collect_layer_activations_mlx",
-    # Stage 2 (Transplant)
+    # Stage 2: Permute (Git Re-Basin)
+    "stage_permute",
+    "PermuteConfig",
+    "PermuteResult",
+    "infer_hidden_dim",
+    # Stage 3: Transplant
     "stage_transplant",
     "TransplantStageConfig",
     "TransplantStageResult",
-    # Stage 3 (Validate)
+    # Stage 4: Validate
     "stage_validate",
     "ValidateConfig",
     "ValidateResult",
