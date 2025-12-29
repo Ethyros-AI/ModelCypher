@@ -277,27 +277,76 @@ def _project_gram_transport(
                 current_rows, m_t, result.distance, result.compatibility_score
             )
         else:
-            # Row dimension is too large (embedding layer with different vocab)
-            # This MUST be handled by vocabulary alignment BEFORE projection.
+            # Row dimension exceeds standard GW tractability limit (20k).
+            # This is common for cross-architecture MLP projection:
+            #   - Llama 70B intermediate_size: 28,672
+            #   - Qwen 8B intermediate_size: 12,288
             #
-            # NO INTERPOLATION. NO APPROXIMATION. EXACT OR FAIL.
+            # Use Low-Rank GW which has O((n+m)r²) complexity instead of O(n²m + nm²).
+            # This preserves geometry EXACTLY within the low-rank approximation.
             #
-            # The geometry MUST be preserved. Row interpolation introduces:
-            # - Spurious correlations between non-adjacent tokens
-            # - Loss of discrete token identity
-            # - Gradient discontinuities at merge boundaries
-            #
-            # If you're seeing this error, your merge pipeline needs:
-            # 1. Vocabulary alignment in stage 0 (VocabularyAligner)
-            # 2. Explicit token mapping before cross-dim projection
-            # 3. Or use CKA/Gram comparison which doesn't require row alignment
-            raise ValueError(
-                f"Row dimension mismatch ({current_rows} -> {m_t}) is intractable "
-                f"for exact GW (limit: {max_tractable_dim}). "
-                f"Vocabulary alignment must be performed BEFORE cross-dimensional "
-                f"projection. Use stage 0 VocabularyAligner for embedding layers, "
-                f"or ensure token counts match before calling project_cross_dimensional. "
-                f"NO INTERPOLATION - geometry must be exact."
+            # For embedding layers (vocab_size mismatch), vocabulary alignment
+            # should still be performed in stage 0 for discrete token identity.
+            from modelcypher.core.domain.geometry.low_rank_gw import (
+                LowRankGromovWasserstein,
+                LowRankGWConfig,
+            )
+
+            logger.info(
+                "Row dimension (%d -> %d) exceeds GW limit (%d), using Low-Rank GW",
+                current_rows, m_t, max_tractable_dim
+            )
+
+            # Compute Gram matrices for large row dimensions
+            # For very large matrices (> 50k), we compute row Gram in chunks to avoid OOM
+            if current_rows > 50000 or m_t > 50000:
+                # Use sampling for extremely large dimensions
+                sample_size = 10000
+                idx_source = list(range(0, current_rows, max(1, current_rows // sample_size)))[:sample_size]
+                idx_target = list(range(0, m_t, max(1, m_t // sample_size)))[:sample_size]
+
+                projected_sample = b.take(projected, b.array(idx_source), axis=0)
+                target_sample = b.take(target, b.array(idx_target), axis=0)
+                b.eval(projected_sample, target_sample)
+
+                G_source_row = b.matmul(projected_sample, b.transpose(projected_sample))
+                G_target_row = b.matmul(target_sample, b.transpose(target_sample))
+            else:
+                # Compute full Gram matrices
+                G_source_row = b.matmul(projected, b.transpose(projected))  # [m_s, m_s]
+                G_target_row = b.matmul(target, b.transpose(target))  # [m_t, m_t]
+            b.eval(G_source_row, G_target_row)
+
+            logger.debug(
+                "Low-rank row GW: source Gram [%d, %d], target Gram [%d, %d]",
+                G_source_row.shape[0], G_source_row.shape[1],
+                G_target_row.shape[0], G_target_row.shape[1]
+            )
+
+            # Configure low-rank GW for cross-architecture projection
+            # Rank 100-200 is typically sufficient for preserving structure
+            lr_config = LowRankGWConfig(
+                rank=min(200, int(G_source_row.shape[0]), int(G_target_row.shape[0])),
+                reg=0.01,
+                max_iterations=100,
+                convergence_threshold=1e-5,
+            )
+
+            lr_solver = LowRankGromovWasserstein(b)
+            row_result = lr_solver.compute(G_source_row, G_target_row, lr_config)
+            row_coupling = row_result.coupling
+            b.eval(row_coupling.Q, row_coupling.g, row_coupling.R)
+
+            # Apply row coupling: P^T @ source = R @ diag(1/g) @ Q^T @ source
+            projected = row_coupling.apply_left(projected, b)
+            b.eval(projected)
+
+            total_score += (1.0 - row_result.distance) if row_result.distance < 1.0 else 0.0
+            score_count += 1
+
+            logger.info(
+                "Low-rank row projection: %d -> %d, iterations=%d, distance=%.4f",
+                current_rows, m_t, row_result.iterations, row_result.distance
             )
 
     # Compute alignment score

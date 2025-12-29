@@ -139,11 +139,10 @@ def eval_benchmark(
     limit: int | None = typer.Option(None, "--limit", help="Limit samples per task"),
     num_fewshot: int = typer.Option(0, "--num-fewshot", help="Number of few-shot examples"),
     output_path: str | None = typer.Option(None, "--output-path", help="Save results to file"),
-    port: int = typer.Option(8080, "--port", help="Port for MLX server"),
 ) -> None:
     """Run lm-eval-harness benchmarks on an MLX model.
 
-    Starts an MLX server, runs benchmarks via lm-eval, and returns results.
+    Uses native MLX inference for accurate benchmarking on Apple Silicon.
 
     Examples:
         mc eval benchmark --model ./model --tasks gsm8k,hellaswag
@@ -151,13 +150,9 @@ def eval_benchmark(
         mc eval benchmark --model ./model --tasks arc_challenge --num-fewshot 5
     """
     import json
-    import signal
-    import subprocess
-    import sys
-    import time
     from pathlib import Path
 
-    import requests
+    from modelcypher.core.use_cases.mlx_lm_eval import run_benchmark
 
     context = _context(ctx)
 
@@ -166,127 +161,44 @@ def eval_benchmark(
         typer.echo(f"Error: Model path does not exist: {model_path}", err=True)
         raise typer.Exit(1)
 
-    typer.echo(f"Starting MLX server for {model_path}...")
-
-    # Start MLX server in background
-    server_cmd = [
-        sys.executable,
-        "-m",
-        "mlx_lm",
-        "server",
-        "--model",
-        str(model_path),
-        "--port",
-        str(port),
-    ]
-
-    server_process = subprocess.Popen(
-        server_cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-
-    base_url = f"http://127.0.0.1:{port}/v1/completions"
-
-    # Wait for server to be ready
-    max_wait = 120  # seconds
-    start_time = time.time()
-    ready = False
-
-    health_check_url = f"http://127.0.0.1:{port}/v1/models"
-    while time.time() - start_time < max_wait:
-        try:
-            resp = requests.get(health_check_url, timeout=2)
-            if resp.status_code == 200:
-                ready = True
-                break
-        except requests.exceptions.ConnectionError:
-            pass
-        time.sleep(2)
-
-    if not ready:
-        server_process.terminate()
-        typer.echo("Error: MLX server failed to start within timeout", err=True)
-        raise typer.Exit(1)
-
-    typer.echo(f"MLX server ready at {base_url}")
-    typer.echo(f"Running benchmarks: {tasks}")
+    task_list = [t.strip() for t in tasks.split(",")]
+    typer.echo(f"Running benchmarks on {model_path}")
+    typer.echo(f"Tasks: {task_list}")
 
     try:
-        # Build lm-eval command
-        lm_eval_cmd = [
-            sys.executable,
-            "-m",
-            "lm_eval",
-            "--model",
-            "local-completions",
-            "--model_args",
-            f"base_url={base_url},tokenizer_backend=huggingface,tokenizer={model_path}",
-            "--tasks",
-            tasks,
-            "--batch_size",
-            "1",
-            "--num_fewshot",
-            str(num_fewshot),
-        ]
-
-        if limit:
-            lm_eval_cmd.extend(["--limit", str(limit)])
-
-        if output_path:
-            lm_eval_cmd.extend(["--output_path", output_path])
-
-        typer.echo(f"Running: {' '.join(lm_eval_cmd)}")
-
-        # Run lm-eval
-        result = subprocess.run(
-            lm_eval_cmd,
-            capture_output=True,
-            text=True,
-            timeout=7200,  # 2 hour timeout
+        results = run_benchmark(
+            model_path=str(model_path),
+            tasks=task_list,
+            limit=limit,
+            num_fewshot=num_fewshot,
+            output_path=output_path,
         )
 
-        if result.returncode != 0:
-            typer.echo(f"lm-eval stderr:\n{result.stderr}", err=True)
-            raise typer.Exit(1)
-
-        # Parse and output results
-        output = result.stdout
-
-        # Try to extract JSON results from output
-        payload = {
-            "model": str(model_path),
-            "tasks": tasks.split(","),
-            "output": output,
-        }
-
-        # Try to parse results if output_path was specified
-        if output_path:
-            results_file = Path(output_path)
-            if results_file.is_dir():
-                # lm-eval creates results in a subdirectory
-                json_files = list(results_file.glob("**/*.json"))
-                if json_files:
-                    with open(json_files[0]) as f:
-                        payload["results"] = json.load(f)
-            elif results_file.exists():
-                with open(results_file) as f:
-                    payload["results"] = json.load(f)
-
+        # Format output
         if context.output_format == "text":
             typer.echo("\n=== BENCHMARK RESULTS ===")
-            typer.echo(output)
+            typer.echo(f"Model: {model_path}")
+
+            if "results" in results:
+                for task_name, task_results in results["results"].items():
+                    typer.echo(f"\n{task_name}:")
+                    for metric, value in task_results.items():
+                        if isinstance(value, float):
+                            typer.echo(f"  {metric}: {value:.4f}")
+                        else:
+                            typer.echo(f"  {metric}: {value}")
         else:
+            payload = {
+                "model": str(model_path),
+                "tasks": task_list,
+                "results": results.get("results", {}),
+                "config": results.get("config", {}),
+            }
             write_output(payload, context.output_format, context.pretty)
 
-    finally:
-        # Clean up server
-        typer.echo("Stopping MLX server...")
-        server_process.terminate()
-        try:
-            server_process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            server_process.kill()
+    except Exception as e:
+        typer.echo(f"Benchmark failed: {e}", err=True)
+        raise typer.Exit(1)
 
 
 @compare_app.command("list")
