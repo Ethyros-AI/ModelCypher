@@ -118,30 +118,6 @@ class H3ValidationMetrics:
     alignment_error: float
     shared_variance_ratio: float
 
-    @property
-    def is_h3_validated(self) -> bool:
-        return (
-            self.shared_dimension >= 32
-            and self.top_canonical_correlation > 0.5
-            and self.alignment_error < 0.3
-            and self.shared_variance_ratio > 0.8
-        )
-
-    @property
-    def summary(self) -> str:
-        status = "PASS" if self.is_h3_validated else "FAIL"
-        dim_ok = "OK" if self.shared_dimension >= 32 else "FAIL"
-        corr_ok = "OK" if self.top_canonical_correlation > 0.5 else "FAIL"
-        err_ok = "OK" if self.alignment_error < 0.3 else "FAIL"
-        var_ok = "OK" if self.shared_variance_ratio > 0.8 else "FAIL"
-        return (
-            f"H3 Validation: {status}\n"
-            f"- Shared Dimension: {self.shared_dimension} (target: >=32) {dim_ok}\n"
-            f"- Top Correlation: {self.top_canonical_correlation:.3f} (target: >0.5) {corr_ok}\n"
-            f"- Alignment Error: {self.alignment_error:.3f} (target: <0.3) {err_ok}\n"
-            f"- Shared Variance: {self.shared_variance_ratio * 100:.1f}% (target: >80%) {var_ok}"
-        )
-
 
 @dataclass(frozen=True)
 class Result:

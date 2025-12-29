@@ -60,7 +60,6 @@ class DomainGeometryScore:
     manifold_score: float  # Domain-specific manifold score (SMS, SGS, TMS, MMS)
     axis_orthogonality: float  # Mean orthogonality of domain axes
     gradient_consistency: float  # Mean gradient correlation
-    has_manifold: bool  # Whether manifold threshold is met
     anchors_probed: int  # Number of concept anchors used
     layer_analyzed: int  # Which layer was analyzed
 
@@ -105,7 +104,6 @@ class ModelGeometryProfile:
                     "manifoldScore": s.manifold_score,
                     "axisOrthogonality": s.axis_orthogonality,
                     "gradientConsistency": s.gradient_consistency,
-                    "hasManifold": s.has_manifold,
                     "anchorsProbed": s.anchors_probed,
                 }
                 for d, s in self.domain_scores.items()
@@ -326,7 +324,6 @@ class DomainGeometryWaypointService:
             manifold_score=report.world_model_score,
             axis_orthogonality=mean_ortho,
             gradient_consistency=report.euclidean_consistency.consistency_score,
-            has_manifold=report.has_3d_world_model,
             anchors_probed=len(activations),
             layer_analyzed=layer,
         )
@@ -362,7 +359,6 @@ class DomainGeometryWaypointService:
             manifold_score=report.social_manifold_score,
             axis_orthogonality=report.axis_orthogonality.mean_orthogonality,
             gradient_consistency=abs(report.gradient_consistency.power_correlation),
-            has_manifold=report.has_social_manifold,
             anchors_probed=report.anchor_count,
             layer_analyzed=layer,
         )
@@ -390,7 +386,6 @@ class DomainGeometryWaypointService:
             manifold_score=report.temporal_manifold_score,
             axis_orthogonality=report.axis_orthogonality.mean_orthogonality,
             gradient_consistency=abs(report.gradient_consistency.direction_correlation),
-            has_manifold=report.has_temporal_manifold,
             anchors_probed=report.anchors_probed,
             layer_analyzed=layer,
         )
@@ -426,7 +421,6 @@ class DomainGeometryWaypointService:
             manifold_score=report.moral_manifold_score,
             axis_orthogonality=report.axis_orthogonality.mean_orthogonality,
             gradient_consistency=abs(report.gradient_consistency.valence_correlation),
-            has_manifold=report.has_moral_manifold,
             anchors_probed=report.anchors_probed,
             layer_analyzed=layer,
         )

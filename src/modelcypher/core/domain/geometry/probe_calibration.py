@@ -62,16 +62,6 @@ class ProbeCalibrationResult:
     min_cka: float
     max_cka: float
 
-    @property
-    def is_well_calibrated(self) -> bool:
-        """A probe is well-calibrated if CKA > 0.9 consistently."""
-        return self.measured_cka > 0.9 and self.cka_std < 0.1
-
-    @property
-    def needs_investigation(self) -> bool:
-        """Low CKA means the measurement is wrong, not the concept."""
-        return self.measured_cka < 0.8
-
 
 @dataclass(frozen=True)
 class CalibrationReport:
@@ -80,16 +70,6 @@ class CalibrationReport:
     per_probe_results: dict[str, ProbeCalibrationResult]
     model_pairs_used: list[tuple[str, str]]  # (model_a, model_b) pairs
     mean_cka: float  # Overall mean across all probes
-    well_calibrated_count: int
-    needs_investigation_count: int
-
-    def probes_needing_investigation(self) -> list[ProbeCalibrationResult]:
-        """Probes with low CKA need their measurement method investigated."""
-        return [r for r in self.per_probe_results.values() if r.needs_investigation]
-
-    def well_calibrated_probes(self) -> list[ProbeCalibrationResult]:
-        """Probes that consistently achieve high CKA."""
-        return [r for r in self.per_probe_results.values() if r.is_well_calibrated]
 
 
 class ActivationProvider(Protocol):
@@ -217,20 +197,14 @@ class ProbeCalibrator:
                 per_probe_results={},
                 model_pairs_used=model_pairs,
                 mean_cka=0.0,
-                well_calibrated_count=0,
-                needs_investigation_count=0,
             )
 
         mean_cka = sum(r.measured_cka for r in results) / len(results)
-        well_calibrated = sum(1 for r in results if r.is_well_calibrated)
-        needs_investigation = sum(1 for r in results if r.needs_investigation)
 
         return CalibrationReport(
             per_probe_results=per_probe,
             model_pairs_used=model_pairs,
             mean_cka=mean_cka,
-            well_calibrated_count=well_calibrated,
-            needs_investigation_count=needs_investigation,
         )
 
 
@@ -268,8 +242,6 @@ def save_calibration_weights(report: CalibrationReport, calibration_path: str) -
     data = {
         "model_pairs_used": report.model_pairs_used,
         "mean_cka": report.mean_cka,
-        "well_calibrated_count": report.well_calibrated_count,
-        "needs_investigation_count": report.needs_investigation_count,
         "per_probe_results": {
             probe_id: {
                 "measured_cka": result.measured_cka,
@@ -277,8 +249,6 @@ def save_calibration_weights(report: CalibrationReport, calibration_path: str) -
                 "n_model_pairs": result.n_model_pairs,
                 "min_cka": result.min_cka,
                 "max_cka": result.max_cka,
-                "is_well_calibrated": result.is_well_calibrated,
-                "needs_investigation": result.needs_investigation,
             }
             for probe_id, result in report.per_probe_results.items()
         },
@@ -289,5 +259,4 @@ def save_calibration_weights(report: CalibrationReport, calibration_path: str) -
 
     logger.info(f"Saved calibration to {calibration_path}")
     logger.info(f"  Mean CKA: {report.mean_cka:.3f}")
-    logger.info(f"  Well calibrated: {report.well_calibrated_count}")
-    logger.info(f"  Needs investigation: {report.needs_investigation_count}")
+    logger.info(f"  Probe count: {len(report.per_probe_results)}")

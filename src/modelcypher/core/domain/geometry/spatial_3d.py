@@ -1240,7 +1240,6 @@ class Spatial3DReport:
     occlusion_results: list[OcclusionResult]
 
     # Summary scores
-    has_3d_world_model: bool
     world_model_score: float  # 0-1 composite score
     physics_engine_detected: bool
 
@@ -1252,7 +1251,6 @@ class Spatial3DReport:
             "volumetric_density": self.volumetric_density.to_dict(),
             "stereoscopy_results": [s.to_dict() for s in self.stereoscopy_results],
             "occlusion_results": [o.to_dict() for o in self.occlusion_results],
-            "has_3d_world_model": self.has_3d_world_model,
             "world_model_score": self.world_model_score,
             "physics_engine_detected": self.physics_engine_detected,
         }
@@ -1340,7 +1338,6 @@ class Spatial3DAnalyzer:
             + 0.15 * occlusion_score
         )
 
-        has_3d = world_model_score > 0.5 and euclidean.is_euclidean
         physics_detected = gravity.gravity_axis_detected and density.density_mass_correlation > 0.3
 
         return Spatial3DReport(
@@ -1349,7 +1346,6 @@ class Spatial3DAnalyzer:
             volumetric_density=density,
             stereoscopy_results=stereo_results,
             occlusion_results=occlusion_results,
-            has_3d_world_model=has_3d,
             world_model_score=world_model_score,
             physics_engine_detected=physics_detected,
         )

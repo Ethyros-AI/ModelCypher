@@ -113,8 +113,6 @@ class MoralGeometryReport:
     virtue_vice_opposition: VirtueViceOpposition
     principal_components_variance: list[float]
     moral_manifold_score: float
-    has_moral_manifold: bool
-    verdict: str
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
@@ -158,8 +156,6 @@ class MoralGeometryReport:
             },
             "principal_components_variance": self.principal_components_variance,
             "moral_manifold_score": self.moral_manifold_score,
-            "has_moral_manifold": self.has_moral_manifold,
-            "verdict": self.verdict,
         }
 
 
@@ -278,15 +274,6 @@ class MoralGeometryAnalyzer:
             + 0.20 * opposition_score
         )
 
-        # Determine verdict
-        has_manifold = mms > 0.40
-        if mms > 0.55:
-            verdict = "STRONG MORAL MANIFOLD - Clear valence/agency/scope axes detected."
-        elif mms > 0.40:
-            verdict = "MODERATE MORAL MANIFOLD - Some ethical structure detected."
-        else:
-            verdict = "WEAK MORAL MANIFOLD - Limited moral geometry found."
-
         return MoralGeometryReport(
             model_path=model_path,
             layer=layer,
@@ -297,8 +284,6 @@ class MoralGeometryAnalyzer:
             virtue_vice_opposition=opposition,
             principal_components_variance=pc_variance,
             moral_manifold_score=mms,
-            has_moral_manifold=has_manifold,
-            verdict=verdict,
         )
 
     def _compute_axis_orthogonality(

@@ -240,7 +240,6 @@ def moral_probe_model(
             f"Anchors Probed: {report.anchors_probed}/30",
             f"Layer Analyzed: {layer if layer != -1 else 'last'}",
             "",
-            f"Has Moral Manifold: {'YES' if report.has_moral_manifold else 'NO'}",
             f"Moral Manifold Score: {report.moral_manifold_score:.4f}",
             "",
             "-" * 50,
@@ -267,8 +266,6 @@ def moral_probe_model(
             f"  Loyalty (betrayal↔devotion):        {report.virtue_vice_opposition.loyalty_opposition:.2f}",
             f"  Opposition Detected:                {'YES' if report.virtue_vice_opposition.opposition_detected else 'NO'}",
             "",
-            "=" * 70,
-            report.verdict,
             "=" * 70,
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)

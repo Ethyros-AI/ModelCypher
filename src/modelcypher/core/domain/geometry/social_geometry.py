@@ -86,7 +86,6 @@ class PowerGradientResult:
 class SocialGeometryReport:
     """Complete social geometry analysis report."""
 
-    has_social_manifold: bool
     social_manifold_score: float  # 0-1, overall quality
     axis_orthogonality: AxisOrthogonality
     gradient_consistency: GradientConsistency
@@ -97,7 +96,6 @@ class SocialGeometryReport:
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
         return {
-            "has_social_manifold": self.has_social_manifold,
             "social_manifold_score": self.social_manifold_score,
             "axis_orthogonality": {
                 "power_kinship": self.axis_orthogonality.power_kinship,
@@ -431,7 +429,6 @@ class SocialGeometryAnalyzer:
         social_score = 0.3 * ortho_score + 0.4 * gradient_score + 0.3 * power_score
 
         return SocialGeometryReport(
-            has_social_manifold=social_score > 0.4,
             social_manifold_score=social_score,
             axis_orthogonality=axis_ortho,
             gradient_consistency=gradient,

@@ -1534,10 +1534,6 @@ class AlignmentCluster:
             return "translatable"
         return "divergent"
 
-    @property
-    def is_well_aligned(self) -> bool:
-        """Quick check if cluster is well-aligned (procrustes_error < 0.3)."""
-        return self.procrustes_error < 0.3
 
 
 @dataclass
@@ -1569,35 +1565,6 @@ class ValidationResult:
     target_model: str
     layer_deltas: list[LayerDelta]
     overall_similarity: float
-
-    def status_for_thresholds(
-        self,
-        excellent_threshold: float = 0.7,
-        good_threshold: float = 0.5,
-        fair_threshold: float = 0.3,
-    ) -> str:
-        """Classify validation status using caller-provided thresholds.
-
-        Args:
-            excellent_threshold: Similarity above this is "excellent"
-            good_threshold: Similarity above this is "good"
-            fair_threshold: Similarity above this is "fair"
-
-        Returns:
-            Status label: "excellent", "good", "fair", or "poor"
-        """
-        if self.overall_similarity > excellent_threshold:
-            return "excellent"
-        if self.overall_similarity > good_threshold:
-            return "good"
-        if self.overall_similarity > fair_threshold:
-            return "fair"
-        return "poor"
-
-    @property
-    def is_acceptable(self) -> bool:
-        """Quick check if merge quality is acceptable (similarity > 0.5)."""
-        return self.overall_similarity > 0.5
 
 
 def intersection_map_from_dict(payload: dict[str, Any]) -> IntersectionMap:

@@ -1,0 +1,137 @@
+# Program D - Flagship Large Donors (128GB RAM)
+#
+# Maximum capability transplant using 70B-235B class donors.
+# Extracts knowledge from frontier-scale models into 8B targets.
+#
+# Requirements: 128GB unified memory (Apple Silicon) or equivalent GPU RAM
+# Peak memory: ~109GB (Qwen3-235B @ 4-bit)
+#
+# Theory: Gram matrices and null-space projection are dimension-agnostic.
+# Large model activations compress into smaller model's latent space
+# while preserving relational geometry via CKA alignment.
+#
+# Best for: Creating uber-dense 8B models with 70B+ level capabilities
+# in specific domains (math, reasoning, coding, science).
+
+_schema: "mc.program.transplant.v1"
+name: "Program D - Flagship Large Donors"
+description: |
+  Maximum capability transplant using 70B-235B class donors.
+  Compresses frontier-model geometry into 8B inference footprint.
+
+  Capability ceiling:
+    - Math: 235B-level (AIME ~85%)
+    - Reasoning: 120B-level (GPQA ~80%)
+    - Coding: 30B specialist level
+    - Instruction: 70B-level (IFEval leader)
+
+bases:
+  # Primary target - Qwen3-8B (Apache-2.0)
+  - id: "qwen3-8b"
+    source: "/Volumes/CodeCypher/models/mlx-community/Qwen3-8B-4bit"
+    alias: "qwen3"
+
+  # Secondary target - Granite (Apache-2.0)
+  - id: "granite-8b"
+    source: "/Volumes/CodeCypher/models/mlx-community/granite-3.3-8b-instruct-8bit"
+    alias: "granite"
+
+donors:
+  # TIER 1: Flagship donors (frontier-scale)
+
+  # Qwen3-235B-A22B (MoE) - ~109GB @ 4-bit
+  # AIME: 85.7%, near GPT-4o level math/reasoning
+  # Applied first for maximum geometric imprint
+  - id: "qwen3-235b"
+    source: "lmstudio-community/Qwen3-235B-A22B-Instruct-2507-MLX-4bit"
+    domains:
+      - "mathematical"
+      - "logical"
+      - "reasoning"
+    priority: 5
+    notes: "MoE: 235B total, 22B active. Peak memory ~109GB."
+
+  # GPT-OSS-120B (Dense) - ~56GB @ 8-bit
+  # GPQA Diamond: 80-81%, matches o4-mini on reasoning
+  - id: "gpt-oss-120b"
+    source: "/Volumes/CodeCypher/models/mlx-community/gpt-oss-120b-MLX-8bit"
+    domains:
+      - "factual"
+      - "scientific"
+    priority: 4
+    notes: "OpenAI's open-source reasoning model. Dense 120B."
+
+  # TIER 2: 70B class specialists
+
+  # Llama 3.3 70B (Dense) - ~35GB @ 4-bit
+  # IFEval leader, best instruction following
+  - id: "llama-3.3-70b"
+    source: "/Volumes/CodeCypher/models/mlx-community/Llama-3.3-70B-Instruct-4bit"
+    domains:
+      - "instruction"
+      - "agentic"
+    priority: 3
+    notes: "128K context, IFEval leader."
+
+  # Qwen 2.5 72B (Dense) - ~36GB @ 4-bit
+  # MATH, MMLU-Pro leader in 70B class
+  - id: "qwen2.5-72b"
+    source: "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-72B-Instruct-4bit"
+    domains:
+      - "mathematical"
+      - "knowledge"
+    priority: 2
+    notes: "Best MATH/MMLU-Pro in 70B class."
+
+  # TIER 3: Domain specialists (backup/augmentation)
+
+  # Qwen3-30B-A3B Coder (MoE) - ~14GB @ 4-bit
+  # Same tokenizer as Qwen bases, coding specialist
+  - id: "qwen-coder-30b"
+    source: "/Volumes/CodeCypher/models/mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit"
+    domains:
+      - "coding"
+    priority: 1
+    notes: "MoE coding specialist, same tokenizer as Qwen."
+
+  # Mathstral-7B (Dense) - ~7GB @ 8-bit
+  # Mistral's math specialist, fine-grained math coverage
+  - id: "mathstral-7b"
+    source: "/Volumes/CodeCypher/models/mlx-community/mathstral-7B-v0.1-8bit"
+    domains:
+      - "mathematical"
+    priority: 0
+    notes: "Mistral math specialist for fine-grained coverage."
+
+evaluation:
+  after_each_donor: true
+  after_program_complete: true
+  benchmarks:
+    - "mmlu_pro"
+    - "gpqa_diamond"
+    - "aime_2024"
+    - "humaneval"
+    - "ifeval"
+  smoke_test_prompts:
+    # Math reasoning (235B level)
+    - "Solve: If f(x) = x^3 - 3x^2 + 2x, find all values where f'(x) = 0."
+    - "What is the sum of all prime numbers less than 50?"
+
+    # Scientific reasoning (120B level)
+    - "Explain the relationship between entropy and the arrow of time."
+    - "Why does water expand when it freezes, unlike most substances?"
+
+    # Coding (30B specialist level)
+    - "Write a Python function that implements binary search on a sorted list."
+    - "Implement a simple LRU cache class in Python."
+
+    # Instruction following (70B level)
+    - "List exactly 5 benefits of exercise, numbered 1-5, with no additional text."
+    - "Call the search_web function with query 'weather in Tokyo'."
+
+    # General knowledge
+    - "What is 15 * 17?"
+    - "Explain the Fibonacci sequence in one sentence."
+
+output:
+  base_dir: "/Volumes/CodeCypher/experiments/program-D-flagship"

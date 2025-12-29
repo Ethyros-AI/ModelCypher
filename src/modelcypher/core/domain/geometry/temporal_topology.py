@@ -112,8 +112,6 @@ class TemporalTopologyReport:
     arrow_of_time: ArrowOfTime
     principal_components_variance: list[float]
     temporal_manifold_components: TemporalManifoldComponents
-    has_temporal_manifold: bool
-    verdict: str
 
     @property
     def temporal_manifold_score(self) -> float:
@@ -216,20 +214,6 @@ class TemporalTopologyAnalyzer:
             arrow_score=arrow_score,
         )
 
-        # Determine manifold presence based on individual components
-        # Strong manifold: all components individually strong
-        has_strong_ortho = ortho_score > 0.5
-        has_strong_gradient = gradient_score > 0.5
-        has_arrow = arrow.arrow_detected
-
-        has_manifold = has_strong_ortho and has_strong_gradient
-        if has_strong_ortho and has_strong_gradient and has_arrow:
-            verdict = "STRONG TEMPORAL MANIFOLD - Clear direction/duration/causality axes detected."
-        elif has_manifold:
-            verdict = "MODERATE TEMPORAL MANIFOLD - Some temporal structure detected."
-        else:
-            verdict = "WEAK TEMPORAL MANIFOLD - Limited temporal geometry found."
-
         return TemporalTopologyReport(
             model_path="",
             layer=-1,
@@ -239,8 +223,6 @@ class TemporalTopologyAnalyzer:
             arrow_of_time=arrow,
             principal_components_variance=pc_variance,
             temporal_manifold_components=components,
-            has_temporal_manifold=has_manifold,
-            verdict=verdict,
         )
 
     def _compute_axis_orthogonality(
