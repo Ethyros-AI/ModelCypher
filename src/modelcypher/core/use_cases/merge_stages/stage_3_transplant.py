@@ -107,6 +107,9 @@ def _synthesize_activations_from_weights(
     # These are the directions we want to PRESERVE (null-space constraint)
     boundary_activations = Vt[n_core:n_core + n_boundary, :]  # [n_boundary, in_dim]
 
+    # Ensure float32 for downstream pinv operations
+    core_activations = b.astype(core_activations, "float32")
+    boundary_activations = b.astype(boundary_activations, "float32")
     b.eval(core_activations, boundary_activations)
 
     logger.debug(

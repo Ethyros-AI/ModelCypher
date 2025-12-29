@@ -59,6 +59,9 @@ logs/
 
 # Private planning documents (not for public repo)
 plans/
+papers/ARXIV_SUBMISSION_PLAN.md
+papers/TEST_DATA_REQUIREMENTS.md
+papers/PUBLICATION_GUIDE.md
 
 # Generated artifacts
 *.svg

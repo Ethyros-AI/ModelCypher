@@ -128,10 +128,11 @@ def compute_transplant_delta(
 ) -> TransplantDeltaResult:
     """Compute boundary-preserving transplant update for a single weight matrix."""
     b = backend or get_default_backend()
-    weight_target = b.array(weight_target)
-    weight_source_aligned = b.array(weight_source_aligned)
-    activations_core = b.array(activations_core)
-    activations_boundary = b.array(activations_boundary)
+    # Convert all inputs to float32 - pinv requires float32 or float64
+    weight_target = b.astype(b.array(weight_target), "float32")
+    weight_source_aligned = b.astype(b.array(weight_source_aligned), "float32")
+    activations_core = b.astype(b.array(activations_core), "float32")
+    activations_boundary = b.astype(b.array(activations_boundary), "float32")
     b.eval(weight_target, weight_source_aligned, activations_core, activations_boundary)
 
     if len(weight_target.shape) != 2:
