@@ -134,8 +134,8 @@ def spectral_analysis(
     if output_file:
         raw_data = {
             **payload,
-            "prime_eigenvalues": backend.to_list(result.prime_eigenvalues.eigenvalues),
-            "random_eigenvalues": backend.to_list(result.random_eigenvalues.eigenvalues),
+            "prime_eigenvalues": backend.to_numpy(result.prime_eigenvalues.eigenvalues).tolist(),
+            "random_eigenvalues": backend.to_numpy(result.random_eigenvalues.eigenvalues).tolist(),
         }
         Path(output_file).write_text(json.dumps(raw_data, indent=2))
         typer.echo(f"Saved raw data to {output_file}")
@@ -446,3 +446,407 @@ def parameter_sweep(
             return
 
         write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("full-analysis")
+def full_analysis(
+    ctx: typer.Context,
+    n_primes: int = typer.Option(1000, help="Number of primes to analyze"),
+    embedding_dim: int = typer.Option(20, help="Time-delay embedding dimension"),
+    n_bootstrap: int = typer.Option(50, help="Bootstrap samples for confidence intervals"),
+    output_file: str = typer.Option(None, "--output-file", "-o", help="Save results to JSON"),
+    seed: int = typer.Option(42, help="Random seed"),
+) -> None:
+    """Run comprehensive prime geometry analysis with multiple baselines.
+
+    Tests primes against multiple random baselines (exponential, uniform,
+    shuffled) and runs formal hypothesis tests with effect sizes and
+    confidence intervals.
+
+    This is the main command for rigorous scientific analysis.
+
+    Examples:
+        mc geometry number-theory full-analysis
+        mc geometry number-theory full-analysis --n-primes 10000
+        mc geometry number-theory full-analysis --output-file results.json
+    """
+    context = _context(ctx)
+
+    from modelcypher.core.domain.geometry.prime_geometry import (
+        BaselineType,
+        format_comprehensive_result,
+        run_comprehensive_analysis,
+    )
+
+    typer.echo(f"Running comprehensive analysis on {n_primes} primes...")
+    typer.echo(f"Embedding dimension: {embedding_dim}")
+    typer.echo(f"Bootstrap samples: {n_bootstrap}")
+    typer.echo("")
+
+    backend = get_default_backend()
+
+    result = run_comprehensive_analysis(
+        n_primes=n_primes,
+        embedding_dim=embedding_dim,
+        delay=1,
+        baselines=[BaselineType.EXPONENTIAL, BaselineType.UNIFORM, BaselineType.SHUFFLED],
+        n_bootstrap=n_bootstrap,
+        backend=backend,
+        seed=seed,
+    )
+
+    # Build JSON payload
+    payload = {
+        "_schema": "mc.geometry.number_theory.full_analysis.v1",
+        "experiment_id": result.experiment_id,
+        "timestamp": result.timestamp,
+        "n_primes": result.n_primes,
+        "max_prime": result.max_prime,
+        "embedding_dim": result.embedding_dim,
+        "prime_metrics": {},
+        "baseline_metrics": {},
+        "hypothesis_tests": {},
+        "summary": result.summary,
+    }
+
+    # Prime metrics
+    if "prime_time_delay" in result.embedding_results:
+        ev = result.embedding_results["prime_time_delay"]
+        payload["prime_metrics"]["time_delay"] = {
+            "participation_ratio": ev.participation_ratio,
+            "spectral_entropy": ev.spectral_entropy,
+            "condition_number": ev.condition_number,
+            "top_k_ratio": ev.top_k_ratio,
+        }
+
+    # Baseline metrics
+    for name, ev in result.baseline_results.items():
+        payload["baseline_metrics"][name] = {
+            "participation_ratio": ev.participation_ratio,
+            "spectral_entropy": ev.spectral_entropy,
+            "condition_number": ev.condition_number,
+            "top_k_ratio": ev.top_k_ratio,
+        }
+
+    # Hypothesis tests
+    for name, test in result.hypothesis_tests.items():
+        payload["hypothesis_tests"][name] = {
+            "passed": test.passed,
+            "p_value": test.p_value,
+            "effect_size": test.effect_size.d,
+            "effect_magnitude": test.effect_size.magnitude,
+            "prime_value": test.prime_value,
+            "baseline_value": test.baseline_value,
+        }
+
+    # Save if requested
+    if output_file:
+        Path(output_file).write_text(json.dumps(payload, indent=2))
+        typer.echo(f"Saved results to {output_file}")
+
+    if context.output_format == "text":
+        write_output(format_comprehensive_result(result), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("scale-study")
+def scale_study(
+    ctx: typer.Context,
+    max_primes: int = typer.Option(10000, help="Maximum number of primes"),
+    output_file: str = typer.Option(None, "--output-file", "-o", help="Save results to JSON"),
+    seed: int = typer.Option(42, help="Random seed"),
+) -> None:
+    """Run scale analysis to test H7 (scale invariance).
+
+    Tests whether prime structure is consistent or strengthens as we
+    analyze larger ranges of primes. This validates that any detected
+    structure is not a small-sample artifact.
+
+    Scales tested: 100, 500, 1000, 5000, 10000 (up to max_primes)
+
+    Examples:
+        mc geometry number-theory scale-study
+        mc geometry number-theory scale-study --max-primes 50000
+    """
+    context = _context(ctx)
+
+    from modelcypher.core.domain.geometry.prime_geometry import run_scale_sweep
+
+    typer.echo(f"Running scale study up to {max_primes} primes...")
+    typer.echo("")
+
+    backend = get_default_backend()
+
+    # Define scales up to max_primes
+    all_scales = [100, 500, 1000, 5000, 10000, 50000, 100000]
+    scales = [s for s in all_scales if s <= max_primes]
+
+    result = run_scale_sweep(
+        scales=scales,
+        embedding_dim=20,
+        delay=1,
+        backend=backend,
+        seed=seed,
+    )
+
+    # Build payload
+    payload = {
+        "_schema": "mc.geometry.number_theory.scale_study.v1",
+        "scales": result.scales,
+        "n_successful": len(result.results),
+        "effect_size_trend": result.effect_size_trend,
+        "p_value_trend": result.p_value_trend,
+        "scale_invariance_passed": result.scale_invariance_passed,
+        "scale_results": [],
+    }
+
+    for analysis in result.results:
+        scale_data = {
+            "n_primes": analysis.n_primes,
+            "prime_participation_ratio": analysis.summary.get("prime_participation_ratio", 0.0),
+            "h1_pass_rate": analysis.summary.get("h1_pass_rate", 0.0),
+        }
+        payload["scale_results"].append(scale_data)
+
+    # Save if requested
+    if output_file:
+        Path(output_file).write_text(json.dumps(payload, indent=2))
+        typer.echo(f"Saved results to {output_file}")
+
+    if context.output_format == "text":
+        lines = [
+            "=" * 70,
+            "SCALE STUDY: PRIME GEOMETRY ACROSS SCALES",
+            "=" * 70,
+            "",
+            f"Scales tested: {result.scales}",
+            f"Successful runs: {len(result.results)}",
+            "",
+            "-" * 70,
+            "RESULTS BY SCALE",
+            "-" * 70,
+            "",
+            f"{'Scale':<12} | {'Participation':<15} | {'H1 Pass Rate':<15}",
+            "-" * 50,
+        ]
+
+        for analysis in result.results:
+            pr = analysis.summary.get("prime_participation_ratio", 0.0)
+            h1_rate = analysis.summary.get("h1_pass_rate", 0.0)
+            lines.append(f"{analysis.n_primes:<12} | {pr:<15.3f} | {h1_rate:<15.3f}")
+
+        lines.extend([
+            "",
+            "-" * 70,
+            "EFFECT SIZE TREND",
+            "-" * 70,
+            "",
+        ])
+
+        for i, (scale, effect) in enumerate(zip(result.scales, result.effect_size_trend)):
+            lines.append(f"  n={scale}: Cohen's d = {effect:.3f}")
+
+        lines.extend([
+            "",
+            "-" * 70,
+            "H7: SCALE INVARIANCE",
+            "-" * 70,
+            "",
+            f"  Status: {'✓ PASSED' if result.scale_invariance_passed else '✗ FAILED'}",
+            "",
+            "=" * 70,
+        ])
+
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("perturbation")
+def perturbation_study(
+    ctx: typer.Context,
+    n_primes: int = typer.Option(1000, help="Number of primes to analyze"),
+    noise_levels: str = typer.Option("0.0,0.1,0.2,0.5,1.0", help="Comma-separated noise levels"),
+    output_file: str = typer.Option(None, "--output-file", "-o", help="Save results to JSON"),
+    seed: int = typer.Option(42, help="Random seed"),
+) -> None:
+    """Test H8: Perturbation robustness of prime geometry.
+
+    Adds varying levels of noise to prime gaps and measures how much
+    the geometric structure degrades. If prime structure is robust,
+    it should maintain its spectral properties under moderate noise.
+
+    Noise levels are expressed as fractions of the mean gap size.
+
+    Examples:
+        mc geometry number-theory perturbation
+        mc geometry number-theory perturbation --noise-levels 0.0,0.1,0.3,0.5
+    """
+    context = _context(ctx)
+
+    from modelcypher.core.domain.geometry.prime_geometry import run_perturbation_study
+
+    # Parse noise levels
+    levels = [float(x.strip()) for x in noise_levels.split(",")]
+
+    typer.echo(f"Running perturbation study on {n_primes} primes...")
+    typer.echo(f"Noise levels: {levels}")
+    typer.echo("")
+
+    backend = get_default_backend()
+
+    results = run_perturbation_study(
+        n_primes=n_primes,
+        noise_levels=levels,
+        embedding_dim=20,
+        backend=backend,
+        seed=seed,
+    )
+
+    # Build payload
+    payload = {
+        "_schema": "mc.geometry.number_theory.perturbation.v1",
+        "n_primes": n_primes,
+        "noise_levels": levels,
+        "results": [],
+    }
+
+    for r in results:
+        payload["results"].append({
+            "noise_level": r.noise_level,
+            "original_participation_ratio": r.original_participation_ratio,
+            "perturbed_participation_ratio": r.perturbed_participation_ratio,
+            "stability_score": r.stability_score,
+        })
+
+    # Evaluate H8
+    # Primes should be more stable than random under noise
+    # Check if stability degrades gracefully
+    high_noise_stability = next(
+        (r.stability_score for r in results if r.noise_level >= 0.5), 0.0
+    )
+    h8_passed = high_noise_stability > 0.5  # At least 50% stable at high noise
+
+    payload["h8_perturbation_robustness"] = {
+        "passed": h8_passed,
+        "high_noise_stability": high_noise_stability,
+    }
+
+    # Save if requested
+    if output_file:
+        Path(output_file).write_text(json.dumps(payload, indent=2))
+        typer.echo(f"Saved results to {output_file}")
+
+    if context.output_format == "text":
+        lines = [
+            "=" * 70,
+            "PERTURBATION STUDY: PRIME GEOMETRY ROBUSTNESS",
+            "=" * 70,
+            "",
+            f"Primes analyzed: {n_primes}",
+            "",
+            "-" * 70,
+            "STABILITY BY NOISE LEVEL",
+            "-" * 70,
+            "",
+            f"{'Noise Level':<15} | {'Original PR':<15} | {'Perturbed PR':<15} | {'Stability':<10}",
+            "-" * 65,
+        ]
+
+        for r in results:
+            lines.append(
+                f"{r.noise_level:<15.2f} | {r.original_participation_ratio:<15.3f} | "
+                f"{r.perturbed_participation_ratio:<15.3f} | {r.stability_score:<10.3f}"
+            )
+
+        lines.extend([
+            "",
+            "-" * 70,
+            "H8: PERTURBATION ROBUSTNESS",
+            "-" * 70,
+            "",
+            f"  High noise stability (>0.5 noise): {high_noise_stability:.3f}",
+            f"  Status: {'✓ PASSED' if h8_passed else '✗ FAILED'}",
+            "",
+            "=" * 70,
+        ])
+
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("hypothesis-summary")
+def hypothesis_summary(
+    ctx: typer.Context,
+    results_file: str = typer.Argument(..., help="JSON file with analysis results"),
+) -> None:
+    """Summarize hypothesis test results from a saved analysis.
+
+    Takes a JSON results file from full-analysis and presents a summary
+    of which hypotheses passed or failed.
+
+    Examples:
+        mc geometry number-theory hypothesis-summary results.json
+    """
+    context = _context(ctx)
+
+    # Load results
+    data = json.loads(Path(results_file).read_text())
+
+    # Extract hypothesis tests
+    tests = data.get("hypothesis_tests", {})
+
+    payload = {
+        "_schema": "mc.geometry.number_theory.hypothesis_summary.v1",
+        "source_file": results_file,
+        "n_tests": len(tests),
+        "n_passed": sum(1 for t in tests.values() if t.get("passed", False)),
+        "tests": tests,
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "=" * 70,
+            "HYPOTHESIS TEST SUMMARY",
+            "=" * 70,
+            "",
+            f"Source: {results_file}",
+            f"Tests: {payload['n_tests']} total, {payload['n_passed']} passed",
+            "",
+            "-" * 70,
+            f"{'Hypothesis':<25} | {'Status':<10} | {'Effect Size':<12} | {'p-value':<10}",
+            "-" * 70,
+        ]
+
+        for name, test in tests.items():
+            status = "✓ PASS" if test.get("passed", False) else "✗ FAIL"
+            effect = test.get("effect_size", 0.0)
+            p_val = test.get("p_value", 1.0)
+            lines.append(f"{name:<25} | {status:<10} | {effect:<12.3f} | {p_val:<10.4f}")
+
+        lines.extend([
+            "",
+            "-" * 70,
+            "LEGEND",
+            "-" * 70,
+            "  H1: Spectral concentration (participation_ratio < baseline)",
+            "  H2: Lower spectral entropy",
+            "",
+            "Effect size interpretation (Cohen's d):",
+            "  |d| < 0.2: negligible",
+            "  0.2 ≤ |d| < 0.5: small",
+            "  0.5 ≤ |d| < 0.8: medium",
+            "  |d| ≥ 0.8: large",
+            "",
+            "=" * 70,
+        ])
+
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)

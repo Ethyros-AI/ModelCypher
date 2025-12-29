@@ -518,8 +518,8 @@ def compute_gram_matrix(X: "Array", backend: "Backend | None" = None) -> "Array"
         Gram matrix [n_samples, n_samples].
     """
     backend = backend or get_default_backend()
-    # Ensure float dtype for matmul
-    X_float = backend.array(backend.to_numpy(X).astype("float32"))
+    # Ensure float dtype for matmul by multiplying by 1.0
+    X_float = X * 1.0
     return backend.matmul(X_float, backend.transpose(X_float))
 
 
@@ -921,9 +921,9 @@ def analyze_prime_geometry(
 
     id_computer = IntrinsicDimension(backend)
 
-    # Convert to float for ID computation
-    prime_float = backend.array(backend.to_numpy(prime_embedded).astype("float32"))
-    random_float = backend.array(backend.to_numpy(random_embedded).astype("float32"))
+    # Convert to float for ID computation by multiplying by 1.0
+    prime_float = prime_embedded * 1.0
+    random_float = random_embedded * 1.0
 
     try:
         prime_id = id_computer.compute(prime_float)
@@ -944,11 +944,11 @@ def analyze_prime_geometry(
     from modelcypher.core.domain.geometry.cka import compute_cka
 
     # Create position embedding (prime positions, not gaps)
-    # Use primes[1:] to match gap count
-    primes_for_embed = primes.primes
-    prime_pos_list = backend.to_numpy(primes_for_embed)[1:]  # Skip first prime
-    if len(prime_pos_list) >= embedding_dim:
-        prime_pos = backend.array(prime_pos_list[: primes.gap_count].astype("float32"))
+    # Use primes[1:] to match gap count - slice using backend, convert to float
+    primes_for_embed = primes.primes[1:]  # Skip first prime
+    n_pos = int(backend.shape(primes_for_embed)[0])
+    if n_pos >= embedding_dim:
+        prime_pos = primes_for_embed[: primes.gap_count] * 1.0  # Convert to float
         pos_embedded = time_delay_embedding(prime_pos, embedding_dim, delay, backend)
 
         # Ensure same number of windows
@@ -956,13 +956,9 @@ def analyze_prime_geometry(
             int(backend.shape(prime_embedded)[0]),
             int(backend.shape(pos_embedded)[0]),
         )
-        # Convert to float for CKA
-        prime_for_cka = backend.array(
-            backend.to_numpy(prime_embedded[:min_windows]).astype("float32")
-        )
-        pos_for_cka = backend.array(
-            backend.to_numpy(pos_embedded[:min_windows]).astype("float32")
-        )
+        # Convert to float for CKA by multiplying by 1.0
+        prime_for_cka = prime_embedded[:min_windows] * 1.0
+        pos_for_cka = pos_embedded[:min_windows] * 1.0
 
         try:
             cka_result = compute_cka(prime_for_cka, pos_for_cka, backend)
