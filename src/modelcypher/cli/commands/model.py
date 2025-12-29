@@ -181,6 +181,11 @@ def model_merge(
         "--transplant-domains",
         help="Comma-separated core domains for transplant (e.g., mathematical,logical)",
     ),
+    transplant_layers: str | None = typer.Option(
+        None,
+        "--transplant-layers",
+        help="Comma-separated layer indices for transplant (e.g., 5,10,15)",
+    ),
     transplant_boundary_k: int | None = typer.Option(
         None,
         "--transplant-boundary-k",
@@ -225,6 +230,10 @@ def model_merge(
     if transplant_domains:
         domain_list = [d.strip() for d in transplant_domains.split(",") if d.strip()]
 
+    layer_list = None
+    if transplant_layers:
+        layer_list = [int(layer.strip()) for layer in transplant_layers.split(",") if layer.strip()]
+
     merger = get_geometric_merger()
     try:
         result = merger.merge(
@@ -234,6 +243,7 @@ def model_merge(
             knowledge_delta_mask_path=knowledge_delta_mask,
             merge_strategy=merge_strategy,
             transplant_domains=domain_list,
+            transplant_layers=layer_list,
             transplant_boundary_k=transplant_boundary_k,
             transplant_geodesic_k_neighbors=transplant_geodesic_k,
         )
@@ -250,6 +260,17 @@ def model_merge(
                 "meanProcrustesError": result.mean_procrustes_error,
             },
         }
+        if result.merge_strategy == "transplant":
+            transplant_metrics = {
+                "layersTransplanted": result.rotate_metrics.get("layers_transplanted"),
+                "weightsTransplanted": result.rotate_metrics.get("weights_transplanted"),
+                "meanPreservedFraction": result.rotate_metrics.get("mean_preserved_fraction"),
+                "meanProjectionLoss": result.rotate_metrics.get("mean_projection_loss"),
+                "meanBoundaryRelativeDiff": result.rotate_metrics.get("mean_boundary_relative_diff"),
+                "maxBoundaryRelativeDiff": result.rotate_metrics.get("max_boundary_relative_diff"),
+                "meanNullDim": result.rotate_metrics.get("mean_null_dim"),
+            }
+            output["transplantMetrics"] = transplant_metrics
         write_output(output, context.output_format, context.pretty)
     except Exception as e:
         error = ErrorDetail(

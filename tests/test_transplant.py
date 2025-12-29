@@ -26,6 +26,9 @@ Mathematical guarantees to verify:
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.constrained_transplant import (
+    verify_boundary_invariance,
+)
 from modelcypher.core.domain.geometry.null_space_filter import NullSpaceFilterConfig
 from modelcypher.core.domain.geometry.transplant import (
     CoreBoundaryPartition,
@@ -165,6 +168,39 @@ class TestComputeTransplantDelta:
 
         # Boundary output should be preserved (within numerical tolerance)
         assert diff_val < 1e-4, f"Boundary not preserved: diff={diff_val}"
+
+    def test_boundary_invariance_metric(self) -> None:
+        """Boundary invariance metric should report near-zero relative diff."""
+        backend = get_default_backend()
+        backend.random_seed(42)
+
+        in_dim, out_dim = 64, 32
+        n_core, n_boundary = 5, 10
+
+        weight_target = backend.random_normal((out_dim, in_dim))
+        weight_source = backend.random_normal((out_dim, in_dim))
+        activations_core = backend.random_normal((n_core, in_dim))
+        activations_boundary = backend.random_normal((n_boundary, in_dim))
+        backend.eval(weight_target, weight_source, activations_core, activations_boundary)
+
+        result = compute_transplant_delta(
+            weight_target=weight_target,
+            weight_source_aligned=weight_source,
+            activations_core=activations_core,
+            activations_boundary=activations_boundary,
+            backend=backend,
+        )
+
+        metrics = verify_boundary_invariance(
+            transplanted_weights=result.merged_weight,
+            target_weights=weight_target,
+            boundary_activations=activations_boundary,
+            tolerance=1e-4,
+            backend=backend,
+        )
+
+        assert metrics["passed"] is True
+        assert metrics["max_relative_diff"] < 1e-4
 
     def test_non_2d_weight_skipped(self) -> None:
         """Non-2D weights should be skipped (bias vectors, etc)."""

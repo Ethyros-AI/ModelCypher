@@ -221,6 +221,7 @@ mc safety adapter-probe --adapter <path>    # Run adapter safety probes
 mc model merge --source <path> --target <path> --output-dir <path>
 mc model merge --source <path> --target <path> --output-dir <path> --knowledge-delta-mask <mask.json>
 mc model merge --source <path> --target <path> --output-dir <path> --merge-strategy transplant --transplant-domains mathematical,logical
+mc model merge --source <path> --target <path> --output-dir <path> --merge-strategy transplant --transplant-domains <domains> --transplant-boundary-k <k> --transplant-geodesic-k <k>
 ```
 
 ### Entropy Commands

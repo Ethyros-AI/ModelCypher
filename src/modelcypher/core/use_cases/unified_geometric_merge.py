@@ -85,6 +85,7 @@ class UnifiedMergeConfig:
 
     # Transplant settings (used when merge_strategy == "transplant")
     transplant_domains: tuple[str, ...] = ()
+    transplant_layers: tuple[int, ...] | None = None  # None = all layers
     transplant_boundary_k: int | None = None
     transplant_geodesic_k_neighbors: int | None = None
 
@@ -203,6 +204,7 @@ class UnifiedGeometricMerger:
         knowledge_delta_mask_path: str | None = None,
         merge_strategy: Literal["auto", "rotate_blend", "transplant"] | None = None,
         transplant_domains: list[str] | None = None,
+        transplant_layers: list[int] | None = None,
         transplant_boundary_k: int | None = None,
         transplant_geodesic_k_neighbors: int | None = None,
     ) -> UnifiedMergeResult:
@@ -222,6 +224,7 @@ class UnifiedGeometricMerger:
             knowledge_delta_mask_path: Optional delta mask JSON for layer gating
             merge_strategy: Override merge strategy (auto, rotate_blend, transplant)
             transplant_domains: Core domains to transplant when using transplant strategy
+            transplant_layers: Limit transplant to specific layer indices (optional)
             transplant_boundary_k: Boundary neighbors per core probe (optional)
             transplant_geodesic_k_neighbors: k for geodesic graph (optional)
 
@@ -236,6 +239,7 @@ class UnifiedGeometricMerger:
         if (
             merge_strategy is not None
             or transplant_domains is not None
+            or transplant_layers is not None
             or transplant_boundary_k is not None
             or transplant_geodesic_k_neighbors is not None
         ):
@@ -243,6 +247,9 @@ class UnifiedGeometricMerger:
                 config,
                 merge_strategy=merge_strategy or config.merge_strategy,
                 transplant_domains=tuple(transplant_domains or config.transplant_domains),
+                transplant_layers=(
+                    tuple(transplant_layers) if transplant_layers else config.transplant_layers
+                ),
                 transplant_boundary_k=(
                     transplant_boundary_k
                     if transplant_boundary_k is not None
@@ -288,14 +295,26 @@ class UnifiedGeometricMerger:
         # =================================================================
         # STAGE 0: VOCABULARY (Cross-vocabulary alignment for embedding layers)
         # =================================================================
-        logger.info("STAGE 0: VOCABULARY ALIGNMENT")
-        source_weights, vocab_metrics, vocab_aligned, vocab_alignment_map = self._stage_vocabulary(
-            source_weights=source_weights,
-            target_weights=target_weights,
-            source_tokenizer=source_tokenizer,
-            target_tokenizer=target_tokenizer,
+        # Skip vocabulary alignment for transplant strategy since GRAM_TRANSPORT
+        # handles cross-dimensional projection at the weight level.
+        skip_vocab_for_transplant = (
+            config.merge_strategy == "transplant"
+            or (config.merge_strategy == "auto" and config.transplant_domains)
         )
-        self._require_vocab_phase_lock(vocab_metrics, vocab_aligned)
+        if skip_vocab_for_transplant:
+            logger.info("STAGE 0: VOCABULARY ALIGNMENT (skipped for transplant)")
+            vocab_metrics = {"skipped": True, "reason": "transplant_strategy"}
+            vocab_aligned = False
+            vocab_alignment_map = None
+        else:
+            logger.info("STAGE 0: VOCABULARY ALIGNMENT")
+            source_weights, vocab_metrics, vocab_aligned, vocab_alignment_map = self._stage_vocabulary(
+                source_weights=source_weights,
+                target_weights=target_weights,
+                source_tokenizer=source_tokenizer,
+                target_tokenizer=target_tokenizer,
+            )
+            self._require_vocab_phase_lock(vocab_metrics, vocab_aligned)
 
         # Load models for probe stage
         source_model = None
@@ -326,22 +345,32 @@ class UnifiedGeometricMerger:
         probe_failed = bool(probe_metrics.get("probe_failed"))
         perfect_alignment = bool(probe_metrics.get("perfect_alignment"))
 
-        if probe_failed:
-            min_cka = probe_metrics.get("min_cka", 0.0)
-            mean_cka = probe_metrics.get("mean_cka", 0.0)
-            raise RuntimeError(
-                "PROBE SIGNAL: Alignment signals missing (mean_cka=%.4f, min_cka=%.4f). "
-                "Exact kernel alignment is required before merge."
-                % (mean_cka, min_cka)
-            )
+        # Skip CKA alignment check for transplant strategy - cross-architecture models
+        # won't have high CKA, but transplant works via null-space projection which
+        # operates in target activation space regardless of CKA alignment.
+        if not skip_vocab_for_transplant:
+            if probe_failed:
+                min_cka = probe_metrics.get("min_cka", 0.0)
+                mean_cka = probe_metrics.get("mean_cka", 0.0)
+                raise RuntimeError(
+                    "PROBE SIGNAL: Alignment signals missing (mean_cka=%.4f, min_cka=%.4f). "
+                    "Exact kernel alignment is required before merge."
+                    % (mean_cka, min_cka)
+                )
 
-        if not perfect_alignment:
-            min_cka = probe_metrics.get("min_cka", 0.0)
+            if not perfect_alignment:
+                min_cka = probe_metrics.get("min_cka", 0.0)
+                mean_cka = probe_metrics.get("mean_cka", 0.0)
+                raise RuntimeError(
+                    "PROBE BAROMETER: Alignment not exact kernel aligned "
+                    "(mean_cka=%.4f, min_cka=%.4f). Resolve alignment before merge."
+                    % (mean_cka, min_cka)
+                )
+        else:
             mean_cka = probe_metrics.get("mean_cka", 0.0)
-            raise RuntimeError(
-                "PROBE BAROMETER: Alignment not exact kernel aligned "
-                "(mean_cka=%.4f, min_cka=%.4f). Resolve alignment before merge."
-                % (mean_cka, min_cka)
+            logger.info(
+                "PROBE BAROMETER: Skipped for transplant (mean_cka=%.4f - low CKA expected for cross-arch)",
+                mean_cka,
             )
 
         # Log activation collection results
@@ -362,10 +391,17 @@ class UnifiedGeometricMerger:
         # =================================================================
         # STAGE 2: PERMUTE (Re-Basin neuron alignment)
         # =================================================================
-        logger.info("STAGE 2: PERMUTE")
-        permuted_source, permute_metrics = self._stage_permute(
-            source_weights, target_weights, layer_confidences, intersection_map_obj
-        )
+        # Skip PERMUTE for transplant strategy - it handles weight projection via
+        # GRAM_TRANSPORT in the transplant stage itself.
+        if skip_vocab_for_transplant:
+            logger.info("STAGE 2: PERMUTE (skipped for transplant)")
+            permuted_source = source_weights
+            permute_metrics = {"skipped": True, "reason": "transplant_strategy"}
+        else:
+            logger.info("STAGE 2: PERMUTE")
+            permuted_source, permute_metrics = self._stage_permute(
+                source_weights, target_weights, layer_confidences, intersection_map_obj
+            )
 
         # =================================================================
         # STAGE 3+: MERGE (strategy-specific)
@@ -897,6 +933,7 @@ class UnifiedGeometricMerger:
             core_domains=tuple(config.transplant_domains),
             boundary_k=config.transplant_boundary_k,
             geodesic_k_neighbors=config.transplant_geodesic_k_neighbors,
+            transplant_layers=config.transplant_layers,
         )
 
         result = stage_transplant(

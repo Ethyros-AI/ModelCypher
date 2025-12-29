@@ -1175,6 +1175,23 @@ def build_server() -> FastMCP:
                 "metrics": {
                     "meanProcrustesError": result.mean_procrustes_error,
                 },
+                "transplantMetrics": (
+                    {
+                        "layersTransplanted": result.rotate_metrics.get("layers_transplanted"),
+                        "weightsTransplanted": result.rotate_metrics.get("weights_transplanted"),
+                        "meanPreservedFraction": result.rotate_metrics.get("mean_preserved_fraction"),
+                        "meanProjectionLoss": result.rotate_metrics.get("mean_projection_loss"),
+                        "meanBoundaryRelativeDiff": result.rotate_metrics.get(
+                            "mean_boundary_relative_diff"
+                        ),
+                        "maxBoundaryRelativeDiff": result.rotate_metrics.get(
+                            "max_boundary_relative_diff"
+                        ),
+                        "meanNullDim": result.rotate_metrics.get("mean_null_dim"),
+                    }
+                    if result.merge_strategy == "transplant"
+                    else None
+                ),
                 "nextActions": [
                     f"mc_eval_run using model={output}",
                     f"mc_infer using model={output}",

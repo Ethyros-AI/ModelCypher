@@ -164,6 +164,13 @@ def dequantize_if_needed(
         scales_arr = backend.array(scales)
         biases_arr = backend.array(biases) if biases is not None else None
 
+    # Ensure all arrays are evaluated before dequantization to avoid
+    # lazy evaluation issues that can cause std::bad_cast
+    if biases_arr is not None:
+        backend.eval(weight_arr, scales_arr, biases_arr)
+    else:
+        backend.eval(weight_arr, scales_arr)
+
     dequantized = backend.dequantize(
         weight_arr,
         scales_arr,
@@ -172,6 +179,7 @@ def dequantize_if_needed(
         bits=params.bits,
         mode=params.mode,
     )
+    backend.eval(dequantized)
     return backend.to_numpy(dequantized)
 
 
