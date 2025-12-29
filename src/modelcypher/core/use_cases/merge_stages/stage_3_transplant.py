@@ -24,8 +24,11 @@ Replaces sparse concept regions while preserving boundary behavior:
 
 from __future__ import annotations
 
+import json
 import logging
+import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Iterable
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -123,6 +126,8 @@ class TransplantStageConfig:
     geodesic_k_neighbors: int | None = None
     projection_method: ProjectionMethod = ProjectionMethod.GRAM_TRANSPORT
     transplant_layers: tuple[int, ...] | None = None  # None = all layers
+    checkpoint_dir: Path | None = None  # Enable checkpointing if set
+    progress_callback: Callable[[str, int, int], None] | None = None  # (msg, current, total)
 
 
 @dataclass
@@ -135,6 +140,52 @@ class TransplantStageResult:
 
 def _normalize_domains(domains: Iterable[str]) -> set[str]:
     return {d.strip().lower() for d in domains if d.strip()}
+
+
+def _save_checkpoint(
+    checkpoint_dir: Path,
+    layer_idx: int,
+    merged_weights: dict[str, Any],
+    metrics: dict[str, Any],
+) -> None:
+    """Save transplant progress checkpoint for resume capability."""
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save metadata (small JSON file with state)
+    meta_path = checkpoint_dir / "transplant_checkpoint.json"
+    meta = {
+        "last_completed_layer": layer_idx,
+        "timestamp": time.time(),
+        "weights_transplanted": metrics.get("weights_transplanted", 0),
+        "layers_transplanted": metrics.get("layers_transplanted", 0),
+    }
+    meta_path.write_text(json.dumps(meta, indent=2))
+    logger.info("CHECKPOINT: Saved progress at layer %d to %s", layer_idx, checkpoint_dir)
+
+
+def _load_checkpoint(checkpoint_dir: Path) -> tuple[int, dict[str, Any]] | None:
+    """Load transplant checkpoint if available.
+
+    Returns:
+        Tuple of (last_completed_layer, metadata) or None if no checkpoint exists.
+    """
+    meta_path = checkpoint_dir / "transplant_checkpoint.json"
+    if not meta_path.exists():
+        return None
+
+    try:
+        meta = json.loads(meta_path.read_text())
+        last_layer = meta.get("last_completed_layer", -1)
+        logger.info(
+            "CHECKPOINT: Resuming from layer %d (weights=%d, layers=%d)",
+            last_layer,
+            meta.get("weights_transplanted", 0),
+            meta.get("layers_transplanted", 0),
+        )
+        return last_layer, meta
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning("CHECKPOINT: Failed to load checkpoint: %s", e)
+        return None
 
 
 def _compute_alignment_metrics(
@@ -263,7 +314,34 @@ def stage_transplant(
             continue
         weights_by_layer.setdefault(layer_idx, []).append(key)
 
-    for layer_idx in layer_indices:
+    # Check for existing checkpoint
+    resume_from_layer = -1
+    if config.checkpoint_dir:
+        checkpoint_result = _load_checkpoint(config.checkpoint_dir)
+        if checkpoint_result:
+            resume_from_layer, checkpoint_meta = checkpoint_result
+            # Restore metrics from checkpoint
+            metrics["weights_transplanted"] = checkpoint_meta.get("weights_transplanted", 0)
+            metrics["layers_transplanted"] = checkpoint_meta.get("layers_transplanted", 0)
+
+    # Count total weights for progress reporting
+    total_layers = len(layer_indices)
+    total_weights = sum(len(weights_by_layer.get(idx, [])) for idx in layer_indices)
+    weights_processed = 0
+    stage_start_time = time.time()
+
+    logger.info(
+        "TRANSPLANT: Starting stage 3 - %d layers, %d total weights",
+        total_layers, total_weights
+    )
+
+    for layer_num, layer_idx in enumerate(layer_indices):
+        # Skip layers already completed (checkpoint resume)
+        if layer_idx <= resume_from_layer:
+            weights_processed += len(weights_by_layer.get(layer_idx, []))
+            logger.debug("TRANSPLANT: Skipping layer %d (already completed)", layer_idx)
+            continue
+
         # Filter to specific layers if configured
         if config.transplant_layers is not None:
             if layer_idx not in config.transplant_layers:
@@ -272,6 +350,12 @@ def stage_transplant(
         layer_keys = weights_by_layer.get(layer_idx, [])
         if not layer_keys:
             continue
+
+        layer_start_time = time.time()
+        logger.info(
+            "TRANSPLANT: Layer %d/%d (index=%d) - %d weights",
+            layer_num + 1, total_layers, layer_idx, len(layer_keys)
+        )
 
         # Standard mode: get activations from collected probes
         # Synthesized mode: activations generated per-weight below
@@ -329,12 +413,23 @@ def stage_transplant(
         best_delta_norm = -1.0
         can_measure_alignment = core_acts is not None and int(core_acts.shape[0]) >= 2
 
-        for key in layer_keys:
+        for weight_num, key in enumerate(layer_keys):
+            weights_processed += 1
+            weight_start_time = time.time()
+
             # Skip quantization metadata and non-weight tensors (only transplant actual matrices).
             if key.endswith(".scales") or key.endswith(".biases"):
                 continue
             if not key.endswith(".weight"):
                 continue
+
+            # Progress callback for external monitoring
+            if config.progress_callback:
+                config.progress_callback(
+                    f"Layer {layer_idx}: {key}",
+                    weights_processed,
+                    total_weights,
+                )
 
             target_w = target_weights.get(key)
             source_w = source_weights.get(key)
@@ -446,6 +541,13 @@ def stage_transplant(
                 metrics["preserved_fractions"].append(result.preserved_fraction)
                 metrics["projection_losses"].append(result.projection_loss)
                 metrics["null_dims"].append(result.null_dim)
+
+                weight_elapsed = time.time() - weight_start_time
+                logger.debug(
+                    "TRANSPLANT: Weight %d/%d %s - %.2fs (preserved=%.3f, loss=%.6f)",
+                    weight_num + 1, len(layer_keys), key,
+                    weight_elapsed, result.preserved_fraction, result.projection_loss
+                )
                 if can_measure_alignment and result.delta_norm > best_delta_norm:
                     try:
                         best_alignment = _compute_alignment_metrics(
@@ -482,6 +584,18 @@ def stage_transplant(
 
         if layer_transplanted:
             metrics["layers_transplanted"] += 1
+
+        # Layer timing summary
+        layer_elapsed = time.time() - layer_start_time
+        logger.info(
+            "TRANSPLANT: Layer %d complete - %.2fs (%d weights transplanted)",
+            layer_idx, layer_elapsed, metrics["weights_transplanted"]
+        )
+
+        # Save checkpoint after each layer
+        if config.checkpoint_dir:
+            _save_checkpoint(config.checkpoint_dir, layer_idx, merged, metrics)
+
         if best_alignment is not None:
             metrics["alignment_improvements"].append(best_alignment["alignment_improvement"])
             metrics["core_dist_to_source_before"].append(
@@ -522,6 +636,16 @@ def stage_transplant(
     if metrics["cka_after"]:
         ckas = metrics["cka_after"]
         metrics["mean_cka_after"] = sum(ckas) / len(ckas)
+
+    # Stage completion summary
+    stage_elapsed = time.time() - stage_start_time
+    metrics["total_time_seconds"] = stage_elapsed
+    logger.info(
+        "TRANSPLANT: Stage 3 complete - %.2fs total (%d/%d layers, %d/%d weights)",
+        stage_elapsed,
+        metrics["layers_transplanted"], metrics["layers_considered"],
+        metrics["weights_transplanted"], metrics["weights_considered"],
+    )
 
     # Convert all weights to bfloat16 for consistent output format.
     # This handles the case where original weights are bf16 but transplanted

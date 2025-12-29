@@ -35,9 +35,43 @@ Commands:
 from __future__ import annotations
 
 import json
-from typing import Any
+import subprocess
+import sys
+from contextlib import contextmanager
+from typing import Any, Generator
 
 import typer
+
+
+@contextmanager
+def prevent_sleep() -> Generator[None, None, None]:
+    """Context manager to prevent macOS from sleeping during long operations.
+
+    Uses caffeinate on macOS to prevent idle sleep (-i) and system sleep (-s).
+    On other platforms, this is a no-op.
+    """
+    caffeinate_proc = None
+    if sys.platform == "darwin":
+        try:
+            # -i: prevent idle sleep, -s: prevent system sleep, -d: prevent display sleep
+            caffeinate_proc = subprocess.Popen(
+                ["caffeinate", "-isd"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except (OSError, FileNotFoundError):
+            # caffeinate not available, continue without it
+            pass
+
+    try:
+        yield
+    finally:
+        if caffeinate_proc is not None:
+            caffeinate_proc.terminate()
+            try:
+                caffeinate_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                caffeinate_proc.kill()
 
 from modelcypher.cli.composition import (
     get_model_search_service,
@@ -224,16 +258,18 @@ def model_merge(
 
     merger = get_geometric_merger()
     try:
-        result = merger.merge(
-            source_path=source,
-            target_path=target,
-            output_dir=output_dir,
-            knowledge_delta_mask_path=knowledge_delta_mask,
-            transplant_domains=domain_list,
-            transplant_layers=layer_list,
-            transplant_boundary_k=transplant_boundary_k,
-            transplant_geodesic_k_neighbors=transplant_geodesic_k,
-        )
+        # Prevent sleep during long merge operations
+        with prevent_sleep():
+            result = merger.merge(
+                source_path=source,
+                target_path=target,
+                output_dir=output_dir,
+                knowledge_delta_mask_path=knowledge_delta_mask,
+                transplant_domains=domain_list,
+                transplant_layers=layer_list,
+                transplant_boundary_k=transplant_boundary_k,
+                transplant_geodesic_k_neighbors=transplant_geodesic_k,
+            )
         # Convert result to dict for output
         output = {
             "status": "success",
