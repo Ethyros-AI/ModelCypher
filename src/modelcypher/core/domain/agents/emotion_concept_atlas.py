@@ -1397,10 +1397,6 @@ class EmotionConceptAtlas:
             "geodesicDistance": float(relation.geodesic_centroid_distance),
             "subspaceAlignment": float(relation.subspace_alignment),
             "overlapCoefficient": float(relation.overlap_coefficient),
-            "interpretation": (
-                f"Emotions {name_a} and {name_b}: "
-                f"{'high' if relation.bhattacharyya_coefficient > 0.5 else 'low'} overlap, "
-                f"{'aligned' if relation.subspace_alignment > 0.7 else 'divergent'} subspaces"
-                f"{', opposite pair' if is_opposite else ''}"
-            ),
+            "isOppositePair": is_opposite,
+            # Note: interpretation removed per No Vibes rule - return raw measurements only
         }

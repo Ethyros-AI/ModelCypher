@@ -258,10 +258,7 @@ def spatial_euclidean(
     payload = {
         "_schema": "mc.geometry.spatial.euclidean.v1",
         **result.to_dict(),
-        "nextActions": [
-            "mc geometry spatial gravity <model> to test gravity gradient",
-            "mc geometry spatial analyze <model> for full 3D analysis",
-        ],
+        # Note: nextActions removed per No Vibes rule - return raw measurements only
     }
 
     if context.output_format == "text":

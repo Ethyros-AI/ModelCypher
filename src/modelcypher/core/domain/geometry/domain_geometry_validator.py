@@ -46,6 +46,7 @@ from modelcypher.core.domain.geometry.domain_geometry_baselines import (
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
+    from modelcypher.ports.model_loader import ModelLoaderPort
 
 logger = logging.getLogger(__name__)
 
@@ -61,11 +62,14 @@ class DomainGeometryValidator:
         self,
         baseline_dir: str | Path | None = None,
         backend: "Backend | None" = None,
+        model_loader: "ModelLoaderPort | None" = None,
     ):
         """Initialize the validator."""
         self._backend = backend or get_default_backend()
         self._repository = BaselineRepository(baseline_dir)
-        self._extractor = DomainGeometryBaselineExtractor(backend=self._backend)
+        self._extractor = DomainGeometryBaselineExtractor(
+            backend=self._backend, model_loader=model_loader
+        )
 
     @property
     def all_baselines(self) -> list[DomainGeometryBaseline]:
@@ -319,6 +323,7 @@ def validate_model_geometry(
     model_path: str,
     domains: list[str] | None = None,
     baseline_dir: str | Path | None = None,
+    model_loader: "ModelLoaderPort | None" = None,
 ) -> list[BaselineValidationResult]:
     """Convenience function to validate model geometry.
 
@@ -326,11 +331,12 @@ def validate_model_geometry(
         model_path: Path to the model to validate
         domains: Domains to validate (default: all)
         baseline_dir: Directory containing baselines
+        model_loader: Model loader implementation (required for extraction)
 
     Returns:
         List of validation results
     """
-    validator = DomainGeometryValidator(baseline_dir=baseline_dir)
+    validator = DomainGeometryValidator(baseline_dir=baseline_dir, model_loader=model_loader)
     return validator.validate_model(model_path, domains=domains)
 
 
@@ -338,6 +344,7 @@ def extract_and_save_baseline(
     model_path: str,
     domain: str,
     output_dir: str | Path | None = None,
+    model_loader: "ModelLoaderPort | None" = None,
 ) -> tuple[DomainGeometryBaseline, Path]:
     """Extract and save a baseline from a model.
 
@@ -345,11 +352,12 @@ def extract_and_save_baseline(
         model_path: Path to the reference model
         domain: Domain to extract baseline for
         output_dir: Where to save the baseline
+        model_loader: Model loader implementation (required for extraction)
 
     Returns:
         (baseline, save_path)
     """
-    extractor = DomainGeometryBaselineExtractor()
+    extractor = DomainGeometryBaselineExtractor(model_loader=model_loader)
     baseline = extractor.extract_baseline(model_path, domain)
 
     repository = BaselineRepository(output_dir)

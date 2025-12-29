@@ -210,13 +210,7 @@ def social_probe_model(
         "anchors_probed": len(anchor_activations),
         "layer": layer,
         **report.to_dict(),
-        "verdict": (
-            "STRONG SOCIAL MANIFOLD - Clear power/kinship/formality axes detected."
-            if report.has_social_manifold and report.social_manifold_score > 0.6
-            else "MODERATE SOCIAL MANIFOLD - Some social structure detected."
-            if report.has_social_manifold
-            else "WEAK SOCIAL MANIFOLD - Limited social geometry found."
-        ),
+        # Note: verdict removed per No Vibes rule - return raw social_manifold_score only
     }
 
     if context.output_format == "text":

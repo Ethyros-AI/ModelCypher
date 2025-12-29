@@ -109,9 +109,7 @@ class SystemService:
                 "jaxHealthScore": 100 if jax_version != "unavailable" else 0,
                 "storageScore": 100 if disk_free_gb > 100 else 50,
                 "preflightScore": readiness_score,
-                "band": "excellent"
-                if readiness_score >= 90
-                else ("good" if readiness_score >= 70 else "warning"),
+                # Note: band removed per No Vibes rule - return raw preflightScore only
             },
             "resources": {
                 "gpuMemoryBytes": system_memory // 2 if system_memory else 0,

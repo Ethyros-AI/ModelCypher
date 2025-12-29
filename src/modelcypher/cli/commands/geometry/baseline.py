@@ -78,6 +78,7 @@ def baseline_extract(
     """
     context = _context(ctx)
 
+    from modelcypher.adapters.mlx_model_loader import MLXModelLoader
     from modelcypher.core.domain.geometry.domain_geometry_baselines import (
         BaselineRepository,
         DomainGeometryBaselineExtractor,
@@ -93,7 +94,8 @@ def baseline_extract(
     typer.echo(f"  k-neighbors: {k_neighbors}")
 
     try:
-        extractor = DomainGeometryBaselineExtractor()
+        model_loader = MLXModelLoader()
+        extractor = DomainGeometryBaselineExtractor(model_loader=model_loader)
         baseline = extractor.extract_baseline(
             model_path=model_path,
             domain=domain.lower(),
@@ -180,6 +182,7 @@ def baseline_validate(
     """
     context = _context(ctx)
 
+    from modelcypher.adapters.mlx_model_loader import MLXModelLoader
     from modelcypher.core.domain.geometry.domain_geometry_validator import (
         DomainGeometryValidator,
     )
@@ -196,7 +199,8 @@ def baseline_validate(
     typer.echo(f"Validating geometry for {model_path}...")
 
     try:
-        validator = DomainGeometryValidator()
+        model_loader = MLXModelLoader()
+        validator = DomainGeometryValidator(model_loader=model_loader)
         results = validator.validate_model(
             model_path=model_path,
             domains=domain_list,
@@ -292,6 +296,7 @@ def baseline_compare(
     """
     context = _context(ctx)
 
+    from modelcypher.adapters.mlx_model_loader import MLXModelLoader
     from modelcypher.core.domain.geometry.domain_geometry_baselines import (
         DomainGeometryBaselineExtractor,
     )
@@ -306,7 +311,8 @@ def baseline_compare(
     typer.echo(f"  Model 2: {model2_path}")
 
     try:
-        extractor = DomainGeometryBaselineExtractor()
+        model_loader = MLXModelLoader()
+        extractor = DomainGeometryBaselineExtractor(model_loader=model_loader)
 
         typer.echo("Extracting baseline from model 1...")
         baseline1 = extractor.extract_baseline(

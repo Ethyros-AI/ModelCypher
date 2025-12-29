@@ -1004,9 +1004,5 @@ class ComputationalGateAtlas:
             "geodesicDistance": float(relation.geodesic_centroid_distance),
             "subspaceAlignment": float(relation.subspace_alignment),
             "overlapCoefficient": float(relation.overlap_coefficient),
-            "interpretation": (
-                f"Gates {name_a} and {name_b}: "
-                f"{'high' if relation.bhattacharyya_coefficient > 0.5 else 'low'} overlap, "
-                f"{'aligned' if relation.subspace_alignment > 0.7 else 'divergent'} subspaces"
-            ),
+            # Note: interpretation removed per No Vibes rule - return raw measurements only
         }

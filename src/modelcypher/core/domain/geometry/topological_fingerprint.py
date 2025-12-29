@@ -828,20 +828,13 @@ class BackendTopologicalFingerprint:
 
         betti_match = betti_diff == 0
 
-        if betti_diff == 0 and bottleneck < 1e-6:
-            interp = "Identical topological structure."
-        elif betti_diff == 0:
-            interp = f"Same topology, bottleneck distance {bottleneck:.4f} (scale {scale:.4f})."
-        else:
-            interp = f"Different Betti numbers (diff={betti_diff}), bottleneck {bottleneck:.4f}."
-
+        # Note: interpretation removed per No Vibes rule - return raw measurements only
         return ComparisonResult(
             bottleneck_distance=bottleneck,
             wasserstein_distance=wasserstein,
             betti_difference=betti_diff,
             similarity_score=score,
             betti_numbers_match=betti_match,
-            interpretation=interp,
         )
 
     def _compute_pairwise_distances(self, points: list[list[float]]) -> list[list[float]]:

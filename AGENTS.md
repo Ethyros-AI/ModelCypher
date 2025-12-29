@@ -70,14 +70,14 @@ src/modelcypher/
 │   │   ├── entropy/   # Shannon entropy calculations
 │   │   ├── merging/   # Model merge algorithms
 │   │   ├── thermo/    # LinguisticThermodynamics, RidgeCross
-│   │   ├── agents/    # UnifiedAtlas (439 probes), semantic primes
+│   │   ├── agents/    # UnifiedAtlas (441 probes), semantic primes
 │   │   └── validation/# DatasetQualityScorer, AutoFixEngine
-│   ├── ports/         # Abstract interfaces (Backend protocol = 58 methods)
+│   ├── ports/         # Abstract interfaces (Backend protocol = 79 methods)
 │   └── use_cases/     # Service orchestration
 ├── adapters/          # Concrete implementations (hf_hub, filesystem)
 ├── backends/          # MLX, JAX, CUDA (stub) - no numpy in core math
 ├── cli/               # Typer CLI (entry: mc / modelcypher)
-├── mcp/               # Model Context Protocol server (148 tools)
+├── mcp/               # Model Context Protocol server (155 tools)
 └── data/              # Static data (semantic_primes.json, etc.)
 ```
 
@@ -236,7 +236,7 @@ Instead:
 - `test_*_properties.py`: Hypothesis property-based tests
 - `test_mcp_*.py`: MCP server contract tests
 - `test_geometry_*.py`: Geometry validation tests
-- **3060 passing tests** - Don't break them
+- **3281 passing tests** - Don't break them
 
 ---
 
@@ -267,6 +267,60 @@ Instead:
 - Your training cutoff means you're guessing at APIs that may have changed
 
 **No exceptions.** Research first, code second.
+
+---
+
+## Web Research Tools (MCP)
+
+When researching external APIs, documentation, or current best practices, use the available MCP tools. **Prefer Firecrawl over Tavily** - it's more capable and returns richer data.
+
+### Firecrawl (Primary - Preferred)
+
+| Tool | Use Case |
+|------|----------|
+| `firecrawl_agent` | **Best for autonomous research** - describe what you need, it searches and extracts |
+| `firecrawl_search` | Web search with optional scraping of results |
+| `firecrawl_scrape` | Single URL extraction with actions (login, scroll, click) |
+| `firecrawl_map` | Discover all URLs on a site |
+| `firecrawl_crawl` | Multi-page content extraction |
+| `firecrawl_extract` | Structured data extraction with schema |
+
+**Firecrawl Agent** is particularly powerful - it autonomously searches, navigates, and returns structured data without needing specific URLs:
+
+```
+# Instead of manually searching and scraping multiple pages:
+firecrawl_agent(prompt="Find the latest PyTorch 2.5 training loop best practices")
+
+# Returns structured, comprehensive data from multiple sources
+```
+
+### Tavily (Secondary)
+
+| Tool | Use Case |
+|------|----------|
+| `tavily-search` | Quick web searches, news-specific queries |
+| `tavily-map` | URL discovery |
+
+Tavily's `crawl` and `extract` features are less reliable than Firecrawl equivalents.
+
+### Tool Selection Guide
+
+```
+# Autonomous research (don't know exact URLs)
+→ firecrawl_agent
+
+# Single page scraping
+→ firecrawl_scrape
+
+# Web search + content
+→ firecrawl_search
+
+# Quick search, news queries
+→ tavily-search
+
+# Site structure discovery
+→ firecrawl_map or tavily-map
+```
 
 ---
 
@@ -413,7 +467,7 @@ This is how scientists work. We don't say "2.3 is good" - we say "2.3 is 1.5σ a
 5. **Don't return "incompatible"** - Models are ALWAYS compatible. Return transformation effort, not rejections.
 6. **Don't hallucinate requirements** - If it's not documented here, don't invent it
 7. **Don't "fix" architecture** - The MLX imports in training/ are intentional
-8. **Don't over-engineer** - The codebase works; 3060 tests prove it
+8. **Don't over-engineer** - The codebase works; 3281 tests prove it
 9. **Don't guess at external APIs** - Research current documentation before implementing
 10. **Don't run full test suite casually** - Run domain-specific batches (e.g., `pytest tests/test_geometry.py -q`). Full suite takes 20+ minutes.
 11. **Don't write custom scripts** - Use CLI (`mc`) or MCP tools. If a capability doesn't exist, build it into CLI/MCP.

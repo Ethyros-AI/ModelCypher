@@ -49,6 +49,7 @@ from modelcypher.core.domain._backend import get_default_backend
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
+    from modelcypher.ports.model_loader import ModelLoaderPort
 
 logger = logging.getLogger(__name__)
 
@@ -249,8 +250,13 @@ class DomainGeometryBaselineExtractor:
     4. Aggregating results into a DomainGeometryBaseline
     """
 
-    def __init__(self, backend: "Backend | None" = None):
+    def __init__(
+        self,
+        backend: "Backend | None" = None,
+        model_loader: "ModelLoaderPort | None" = None,
+    ):
         self._backend = backend or get_default_backend()
+        self._model_loader = model_loader
 
     def extract_baseline(
         self,
@@ -453,11 +459,16 @@ class DomainGeometryBaselineExtractor:
         """Collect activations from a model for given probes.
 
         Returns a dict mapping layer index to activation array.
-        """
-        from modelcypher.adapters.mlx_model_loader import MLXModelLoader
 
-        loader = MLXModelLoader()
-        model, tokenizer = loader.load_model_for_training(model_path)
+        Requires model_loader to be injected via constructor.
+        """
+        if self._model_loader is None:
+            raise RuntimeError(
+                "DomainGeometryBaselineExtractor requires a model_loader. "
+                "Pass a ModelLoaderPort implementation to the constructor."
+            )
+
+        model, tokenizer = self._model_loader.load_model_for_training(model_path)
 
         # Determine which layers to analyze
         if layers is None:

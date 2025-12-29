@@ -2375,11 +2375,7 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
                 "successfulTransfers": result.successful_transfers,
                 "failedTransfers": result.failed_transfers,
                 "interpretabilityGap": result.interpretability_gap,
-                "recommendation": result.recommendation,
-                "nextActions": [
-                    "Use Ghost Anchor targetPositions for downstream tasks",
-                    "mc_geometry_spatial_analyze to verify target positions",
-                ],
+                # Note: recommendation and nextActions removed per No Vibes rule
             }
 
 
@@ -2878,6 +2874,7 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
             Returns:
                 Extracted baseline with curvature and domain metrics
             """
+            from modelcypher.adapters.mlx_model_loader import MLXModelLoader
             from modelcypher.core.domain.geometry.domain_geometry_baselines import (
                 BaselineRepository,
                 DomainGeometryBaselineExtractor,
@@ -2888,7 +2885,8 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
             if domain.lower() not in valid_domains:
                 raise ValueError(f"Invalid domain: {domain}. Valid: {', '.join(valid_domains)}")
 
-            extractor = DomainGeometryBaselineExtractor()
+            model_loader = MLXModelLoader()
+            extractor = DomainGeometryBaselineExtractor(model_loader=model_loader)
             baseline = extractor.extract_baseline(
                 model_path=model_path,
                 domain=domain.lower(),
@@ -2935,13 +2933,15 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
             Returns:
                 Validation results with baseline-relative deltas
             """
+            from modelcypher.adapters.mlx_model_loader import MLXModelLoader
             from modelcypher.core.domain.geometry.domain_geometry_validator import (
                 DomainGeometryValidator,
             )
 
             model_path = require_existing_directory(modelPath)
 
-            validator = DomainGeometryValidator()
+            model_loader = MLXModelLoader()
+            validator = DomainGeometryValidator(model_loader=model_loader)
             results = validator.validate_model(
                 model_path=model_path,
                 domains=domains,
@@ -3000,6 +3000,7 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
             Returns:
                 Comparison results with divergence metrics
             """
+            from modelcypher.adapters.mlx_model_loader import MLXModelLoader
             from modelcypher.core.domain.geometry.domain_geometry_baselines import (
                 DomainGeometryBaselineExtractor,
             )
@@ -3011,7 +3012,8 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
             if domain.lower() not in valid_domains:
                 raise ValueError(f"Invalid domain: {domain}. Valid: {', '.join(valid_domains)}")
 
-            extractor = DomainGeometryBaselineExtractor()
+            model_loader = MLXModelLoader()
+            extractor = DomainGeometryBaselineExtractor(model_loader=model_loader)
             baseline1 = extractor.extract_baseline(
                 model_path=model1_path,
                 domain=domain.lower(),

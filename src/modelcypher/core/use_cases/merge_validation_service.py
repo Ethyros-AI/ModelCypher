@@ -462,27 +462,14 @@ class MergeValidationService:
             mean_drift = sum(drift_values) / len(drift_values) if drift_values else 0.0
             max_drift = max(drift_values) if drift_values else 0.0
 
-            # Generate recommendations
-            recommendations = []
-            if high_drift_layers:
-                recommendations.append(
-                    f"High drift in layers {high_drift_layers} - consider reducing alpha for these layers"
-                )
-            if mean_drift > 0.5:
-                recommendations.append(
-                    "Overall high drift - reduce global alpha or use layer-wise adaptive alpha"
-                )
-            if result.has_sparsity_data and not result.has_directional_data:
-                recommendations.append(
-                    "Only sparsity data available - consider computing DoRA for better diagnosis"
-                )
-
+            # Note: recommendations removed per No Vibes rule - return raw measurements only
+            # Callers can interpret mean_drift, max_drift, high_drift_layers as needed
             return GeometricDiagnosis(
                 diverged_layers=diverged_layers,
                 high_drift_layers=high_drift_layers,
                 mean_drift=mean_drift,
                 max_drift=max_drift,
-                recommendations=recommendations,
+                recommendations=[],  # Empty per No Vibes rule
                 raw_analysis=result.to_dict(),
             )
 
