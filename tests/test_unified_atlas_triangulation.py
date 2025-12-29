@@ -68,24 +68,26 @@ def make_probe(
 class TestUnifiedAtlasInventory:
     """Tests for UnifiedAtlasInventory probe loading."""
 
-    def test_total_probe_count_402(self) -> None:
-        """Should have exactly 402 probes across all sources."""
+    def test_total_probe_count_441(self) -> None:
+        """Should have exactly 441 probes across all sources."""
         probes = UnifiedAtlasInventory.all_probes()
-        assert len(probes) == 402
+        assert len(probes) == 441
 
     def test_probes_by_source_returns_correct_counts(self) -> None:
         """Each source should have expected probe count."""
         expected_counts = {
-            AtlasSource.SEQUENCE_INVARIANT: 68,
+            AtlasSource.SEQUENCE_INVARIANT: 70,
             AtlasSource.SEMANTIC_PRIME: 65,
             AtlasSource.COMPUTATIONAL_GATE: 76,
             AtlasSource.EMOTION_CONCEPT: 32,
             AtlasSource.TEMPORAL_CONCEPT: 25,
+            AtlasSource.SPATIAL_CONCEPT: 23,
             AtlasSource.SOCIAL_CONCEPT: 25,
             AtlasSource.MORAL_CONCEPT: 30,
             AtlasSource.COMPOSITIONAL: 22,
             AtlasSource.PHILOSOPHICAL_CONCEPT: 30,
             AtlasSource.CONCEPTUAL_GENEALOGY: 29,
+            AtlasSource.METAPHOR_INVARIANT: 14,
         }
 
         for source, expected in expected_counts.items():
@@ -297,14 +299,14 @@ class TestGetProbeIds:
     """Tests for get_probe_ids utility function."""
 
     def test_get_all_probe_ids(self) -> None:
-        """Should return all 402 probe IDs."""
+        """Should return all 441 probe IDs."""
         ids = get_probe_ids(None)
-        assert len(ids) == 402
+        assert len(ids) == 441
 
     def test_get_probe_ids_for_single_source(self) -> None:
         """Should filter probe IDs by source."""
         ids = get_probe_ids({AtlasSource.SEQUENCE_INVARIANT})
-        assert len(ids) == 68
+        assert len(ids) == 70
         for id in ids:
             assert id.startswith("sequence_invariant:")
 
@@ -316,7 +318,7 @@ class TestGetProbeIds:
                 AtlasSource.SEMANTIC_PRIME,
             }
         )
-        assert len(ids) == 68 + 65  # 133
+        assert len(ids) == 70 + 65  # 135
 
 
 class TestDomainSets:

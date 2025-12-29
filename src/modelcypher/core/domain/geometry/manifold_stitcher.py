@@ -749,9 +749,9 @@ class TriangulatedProbeBuilder:
     """
     Builds triangulated probe sets for enhanced fingerprinting.
 
-    Now uses UnifiedAtlasInventory (439 probes across 12 atlas sources)
+    Now uses UnifiedAtlasInventory (441 probes across 12 atlas sources)
     instead of hardcoded probe lists. This provides:
-    - SEQUENCE_INVARIANT: 68 probes
+    - SEQUENCE_INVARIANT: 70 probes
     - SEMANTIC_PRIME: 65 probes
     - COMPUTATIONAL_GATE: 76 probes
     - EMOTION_CONCEPT: 32 probes
@@ -770,7 +770,7 @@ class TriangulatedProbeBuilder:
         config: TriangulatedProbingConfig | None = None,
     ) -> list[Any]:
         """
-        Build probe set from UnifiedAtlasInventory (439 probes).
+        Build probe set from UnifiedAtlasInventory (441 probes).
 
         Returns list of AtlasProbe objects with:
         - probe_id: Unique identifier
@@ -814,7 +814,7 @@ class TriangulatedProbeBuilder:
 
     @staticmethod
     def build_all_probes() -> list[Any]:
-        """Get all 439 probes for full triangulation."""
+        """Get all 441 probes for full triangulation."""
         # Lazy import to avoid circular dependency
         from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
 

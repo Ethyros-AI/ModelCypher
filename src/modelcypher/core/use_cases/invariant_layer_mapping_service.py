@@ -22,7 +22,7 @@ Service layer for invariant-based layer mapping between models using
 the enhanced InvariantLayerMapper with multi-atlas triangulation scoring.
 
 Supports:
-- Sequence Invariants: 68 probes (mathematical/logical)
+- Sequence Invariants: 70 probes (mathematical/logical)
 - Semantic Primes: 65 probes (linguistic/mental)
 - Computational Gates: 76 probes (computational/structural)
 - Emotion Concepts: 32 probes (affective/relational)
@@ -35,7 +35,7 @@ Supports:
 - Conceptual Genealogy: 29 probes (etymology/lineage)
 - Metaphor Invariants: 14 probes (cross-cultural semantics)
 
-Total: 439 probes for cross-domain triangulation.
+Total: 441 probes for cross-domain triangulation.
 """
 
 from __future__ import annotations
@@ -264,7 +264,7 @@ class InvariantLayerMappingService:
 
     Uses the enhanced InvariantLayerMapper with multi-atlas triangulation
     scoring for robust layer alignment. Supports:
-    - 68 sequence invariants (mathematical/logical)
+    - 70 sequence invariants (mathematical/logical)
     - 65 semantic primes (linguistic/mental)
     - 76 computational gates (computational/structural)
     - 32 emotion concepts (affective/relational)
@@ -275,7 +275,7 @@ class InvariantLayerMappingService:
     - 30 philosophical concepts (philosophical/logical)
     - 29 conceptual genealogy probes (etymology/lineage)
 
-    Total: 439 probes for cross-domain triangulation.
+    Total: 441 probes for cross-domain triangulation.
 
     Fingerprint extraction is cached to ~/Library/Caches/ModelCypher/fingerprints/
     to avoid expensive MLX inference on repeated calls.

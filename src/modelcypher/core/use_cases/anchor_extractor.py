@@ -437,7 +437,7 @@ class AnchorExtractor:
         """Extract anchors from all unified atlas probes.
 
         Uses the complete UnifiedAtlasInventory which includes:
-        - SEQUENCE_INVARIANT: 68 probes (Fibonacci, Lucas, Primes, Catalan, etc.)
+        - SEQUENCE_INVARIANT: 70 probes (Fibonacci, Lucas, Primes, Catalan, etc.)
         - SEMANTIC_PRIME: 65 probes (Wierzbicka's Natural Semantic Metalanguage)
         - COMPUTATIONAL_GATE: 76 probes (control flow, data types, functions)
         - EMOTION_CONCEPT: 32 probes (Plutchik wheel + dyads)
@@ -449,7 +449,7 @@ class AnchorExtractor:
 
         - METAPHOR_INVARIANT: 14 probes (cross-cultural semantic anchors)
 
-        Total: 439 probes for cross-domain triangulation.
+        Total: 441 probes for cross-domain triangulation.
         """
         probes = UnifiedAtlasInventory.all_probes()
         anchors: dict[str, Array] = {}

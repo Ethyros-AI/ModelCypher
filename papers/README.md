@@ -2,20 +2,26 @@
 
 This directory contains publication-quality research manuscripts.
 
-## arXiv Submission Plan
+## Publication Status
 
-**See [ARXIV_SUBMISSION_PLAN.md](ARXIV_SUBMISSION_PLAN.md)** for detailed submission timeline and checklist.
+**Platform**: GitHub Releases + Zenodo (DOI)
+
+| Document | Purpose |
+|----------|---------|
+| [PUBLICATION_GUIDE.md](PUBLICATION_GUIDE.md) | How to create release and get DOI |
+| [RELEASE_NOTES.md](RELEASE_NOTES.md) | Release notes template |
+| [NEGATIVE-RESULTS.md](NEGATIVE-RESULTS.md) | Key falsified hypothesis (semantic primes) |
 
 ## Paper Series
 
-| Paper | Title | arXiv Ready | Focus |
-|-------|-------|-------------|-------|
-| [Paper 0](paper-0-the-shape-of-knowledge.md) | The Shape of Knowledge | ✅ Yes | Geometric Knowledge Thesis (Framework) |
-| [Paper 1](paper-1-invariant-semantic-structure.md) | Invariant Semantic Structure | ✅ Yes | CKA > 0.9 cross-family (primes AND random) |
+| Paper | Title | Status | Focus |
+|-------|-------|--------|-------|
+| [Paper 0](paper-0-the-shape-of-knowledge.md) | The Shape of Knowledge | ✅ Ready | Geometric Knowledge Thesis (Framework) |
+| [Paper 1](paper-1-invariant-semantic-structure.md) | Invariant Semantic Structure | ✅ Ready | CKA > 0.9 cross-family (primes AND random) |
 | [Paper 2](paper-2-entropy-safety-signal.md) | Entropy Safety Signal | ⚠️ Preliminary | ΔH methodology + initial results |
 | [Paper 3](paper-3-cross-architecture-transfer.md) | Cross-Architecture Transfer | ⚠️ Preliminary | Methodology + initial 65-78% retention |
-| [Paper 4](paper-4-modelcypher-toolkit.md) | ModelCypher Toolkit | ✅ Yes | 274 modules, 3060 tests (Systems) |
-| [Paper 5](paper-5-semantic-highway.md) | The Semantic Highway | ✅ Yes | Early-layer ID cliff (3 models, properly hedged) |
+| [Paper 4](paper-4-modelcypher-toolkit.md) | ModelCypher Toolkit | ✅ Ready | 274 modules, 3060 tests (Systems) |
+| [Paper 5](paper-5-semantic-highway.md) | The Semantic Highway | ✅ Ready | Early-layer ID cliff (3 models, properly hedged) |
 
 ### Key Finding (2025-12-25)
 
@@ -63,6 +69,30 @@ See [TEST_DATA_REQUIREMENTS.md](TEST_DATA_REQUIREMENTS.md) for:
 - Required model IDs
 - Output format specifications
 - Human review requirements (safety prompts)
+
+## Quick Publish
+
+```bash
+# 1. Commit all changes
+git add papers/
+git commit -m "docs: prepare paper series for publication"
+
+# 2. Create release tag
+git tag -a v0.1.0-papers -m "ModelCypher Paper Series v0.1.0"
+git push origin v0.1.0-papers
+
+# 3. Create GitHub release (requires gh CLI)
+gh release create v0.1.0-papers \
+  --title "ModelCypher Paper Series v0.1.0" \
+  --notes-file papers/RELEASE_NOTES.md
+
+# 4. Connect Zenodo (one-time, in browser)
+# Visit: https://zenodo.org/account/settings/github/
+# Enable: Ethyros-AI/ModelCypher
+# DOI will be generated automatically
+```
+
+See [PUBLICATION_GUIDE.md](PUBLICATION_GUIDE.md) for detailed instructions.
 
 ## References
 

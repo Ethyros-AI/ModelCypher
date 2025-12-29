@@ -23,9 +23,9 @@ for optimal layer alignment between models.
 
 Notes
 -----
-Supported atlases for cross-domain triangulation (439 total probes):
+Supported atlases for cross-domain triangulation (441 total probes):
 
-- Sequence Invariants: 68 probes (mathematical/logical)
+- Sequence Invariants: 70 probes (mathematical/logical)
 - Semantic Primes: 65 probes (linguistic/mental)
 - Computational Gates: 76 probes (computational/structural)
 - Emotion Concepts: 32 probes (affective/relational)
@@ -127,8 +127,8 @@ class InvariantScope(str, Enum):
 
     INVARIANTS = "invariants"
     LOGIC_ONLY = "logicOnly"
-    SEQUENCE_INVARIANTS = "sequenceInvariants"  # Full 68-probe system with triangulation
-    MULTI_ATLAS = "multiAtlas"  # Full 439-probe system across all atlases
+    SEQUENCE_INVARIANTS = "sequenceInvariants"  # Full 70-probe system with triangulation
+    MULTI_ATLAS = "multiAtlas"  # Full 441-probe system across all atlases
 
 
 # ConfidenceLevel enum removed - use raw similarity values directly.
@@ -629,7 +629,7 @@ class InvariantLayerMapper:
         all_families = frozenset(SequenceFamily)
 
         if config.invariant_scope == InvariantScope.SEQUENCE_INVARIANTS:
-            # Full 68-probe system with all 10 families (including tribonacci)
+            # Full 70-probe system with all 10 families (including tribonacci)
             base_families = all_families
         elif config.invariant_scope == InvariantScope.LOGIC_ONLY:
             base_families = frozenset([SequenceFamily.LOGIC])

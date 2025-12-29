@@ -27,8 +27,8 @@ Philosophy IS conceptual math. These probes measure the fundamental categories o
 thought - the structural preconditions for coherent reasoning that are INVARIANT
 across all models. Knowledge occupies fixed probability clouds in hyperspace.
 
-Total probe count: 439
-- Sequence Invariants: 68 probes (10 families)
+Total probe count: 441
+- Sequence Invariants: 70 probes (10 families)
 - Semantic Primes: 65 probes (17 categories)
 - Computational Gates: 76 probes (14 categories)
 - Emotion Concepts: 32 probes (8 categories + 8 dyads)
@@ -321,7 +321,7 @@ class UnifiedAtlasInventory:
     Unified inventory of all atlas probes.
 
     Combines:
-    - 68 sequence invariants
+    - 70 sequence invariants
     - 65 semantic primes
     - 76 computational gates
     - 32 emotion concepts
@@ -334,7 +334,7 @@ class UnifiedAtlasInventory:
     - 29 conceptual genealogy probes (etymology + lineage)
     - 14 metaphor invariants (cross-cultural semantic anchors)
 
-    Total: 439 probes for cross-domain triangulation
+    Total: 441 probes for cross-domain triangulation
     """
 
     _cached_probes: list[AtlasProbe] | None = None

@@ -378,6 +378,33 @@ PRIME_PROBES: tuple[SequenceInvariant, ...] = (
         cross_domain_weight=1.0,
     ),
     SequenceInvariant(
+        id="prime_spectral_geometry",
+        family=SequenceFamily.PRIMES,
+        domain=ExpressionDomain.MATRIX,
+        name="Prime spectral geometry",
+        description="Gram matrix eigenvalues of prime gap embeddings show concentrated spectra.",
+        support_texts=(
+            "Time-delay embeddings of prime gaps produce Gram matrices with concentrated spectra.",
+            "Participation ratio and spectral entropy for prime gaps are lower than memoryless baselines.",
+            "Shuffling prime gaps preserves the spectrum, indicating distribution-level structure.",
+            "Spectral concentration remains stable across tested prime-count scales.",
+        ),
+        cross_domain_weight=1.0,
+    ),
+    SequenceInvariant(
+        id="prime_gap_invariance",
+        family=SequenceFamily.PRIMES,
+        domain=ExpressionDomain.RATIO,
+        name="Prime gap distribution geometry",
+        description="Prime gap distribution is the invariant signal, not gap ordering.",
+        support_texts=(
+            "Prime and shuffled gap distributions yield near-identical spectral metrics.",
+            "Gap distribution geometry remains stable across scale sweeps.",
+            "Perturbing gaps preserves the distribution-level spectral signature.",
+        ),
+        cross_domain_weight=1.0,
+    ),
+    SequenceInvariant(
         id="prime_nature",
         family=SequenceFamily.PRIMES,
         domain=ExpressionDomain.NATURE,

@@ -11,7 +11,7 @@ version: "1.0.0"
 core_domains:
   mathematical:
     atlas_domain: MATHEMATICAL
-    probe_count: 68
+    probe_count: 70
     description: "Numerical sequences, ratios, mathematical patterns (Fibonacci, primes, etc.)"
     aliases:
       - "math"

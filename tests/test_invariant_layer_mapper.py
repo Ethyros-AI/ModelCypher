@@ -17,7 +17,7 @@
 
 """Tests for enhanced InvariantLayerMapper with triangulation scoring.
 
-Tests the 68 sequence invariant integration with cross-domain triangulation
+Tests the 70 sequence invariant integration with cross-domain triangulation
 scoring for improved layer mapping between models.
 """
 
@@ -109,15 +109,15 @@ def test_triangulation_profile_dataclass():
 # ===========================================================================
 
 
-def test_get_invariants_with_sequence_scope_returns_all_68():
-    """Test that SEQUENCE_INVARIANTS scope returns all 68 probes."""
+def test_get_invariants_with_sequence_scope_returns_all_70():
+    """Test that SEQUENCE_INVARIANTS scope returns all 70 probes."""
     config = Config(invariant_scope=InvariantScope.SEQUENCE_INVARIANTS)
 
     ids, invariants, atlas_probes = InvariantLayerMapper._get_invariants(config)
 
-    # Should return all 68 sequence invariants
-    assert len(invariants) == 68
-    assert len(ids) == 68
+    # Should return all 70 sequence invariants
+    assert len(invariants) == 70
+    assert len(ids) == 70
     assert len(atlas_probes) == 0  # No atlas probes in SEQUENCE_INVARIANTS mode
 
     # Each ID should follow the expected format
@@ -388,7 +388,7 @@ def test_sequence_inventory_integration():
     """Test that sequence invariant inventory integrates with mapper."""
     # Get all probes
     probes = SequenceInvariantInventory.probes_for_families()
-    assert len(probes) == 68
+    assert len(probes) == 70
 
     # Get probes for specific families
     fib_probes = SequenceInvariantInventory.probes_for_families({SequenceFamily.FIBONACCI})
@@ -428,7 +428,7 @@ def test_triangulation_scorer_used_in_mapper():
 
 
 def test_unified_atlas_inventory_total_probes():
-    """Test that UnifiedAtlasInventory returns 402 probes from all atlases."""
+    """Test that UnifiedAtlasInventory returns 441 probes from all atlases."""
     all_probes = UnifiedAtlasInventory.all_probes()
 
     # Total should include all atlas sources
@@ -454,7 +454,7 @@ def test_unified_atlas_inventory_probe_counts_by_source():
     assert AtlasSource.CONCEPTUAL_GENEALOGY in counts
 
     # Check expected ranges
-    assert counts[AtlasSource.SEQUENCE_INVARIANT] == 68
+    assert counts[AtlasSource.SEQUENCE_INVARIANT] == 70
     assert counts[AtlasSource.SEMANTIC_PRIME] == 65
     assert counts[AtlasSource.COMPUTATIONAL_GATE] >= 60  # 66 core + composites
     assert counts[AtlasSource.EMOTION_CONCEPT] >= 30  # 24 emotions + 8 dyads
@@ -466,7 +466,7 @@ def test_unified_atlas_filter_by_source():
     sequence_probes = UnifiedAtlasInventory.probes_by_source({AtlasSource.SEQUENCE_INVARIANT})
     semantic_probes = UnifiedAtlasInventory.probes_by_source({AtlasSource.SEMANTIC_PRIME})
 
-    assert len(sequence_probes) == 68
+    assert len(sequence_probes) == 70
     assert len(semantic_probes) == 65
 
     # All should have correct source
@@ -514,7 +514,7 @@ def test_multi_atlas_scope_with_source_filter():
     # Should only have sequence invariants and semantic primes
     sources = {p.source for p in atlas_probes}
     assert sources == {AtlasSource.SEQUENCE_INVARIANT, AtlasSource.SEMANTIC_PRIME}
-    assert len(atlas_probes) == 68 + 65
+    assert len(atlas_probes) == 70 + 65
 
 
 def test_multi_atlas_scope_with_domain_filter():
@@ -561,12 +561,12 @@ def test_summary_has_multi_atlas_metrics():
         target_collapsed_layers=1,
         atlas_sources_detected=4,
         atlas_domains_detected=8,
-        total_probes_used=402,
+        total_probes_used=441,
     )
 
     assert summary.atlas_sources_detected == 4
     assert summary.atlas_domains_detected == 8
-    assert summary.total_probes_used == 402
+    assert summary.total_probes_used == 441
 
 
 def test_service_multi_atlas_config_parsing():

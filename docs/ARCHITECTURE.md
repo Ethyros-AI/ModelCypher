@@ -186,7 +186,7 @@ sequenceDiagram
     PROBE-->>SVC: weights, tokenizer
 
     SVC->>ATLAS: all_probes()
-    ATLAS-->>SVC: 439 AtlasProbe objects
+    ATLAS-->>SVC: 441 AtlasProbe objects
 
     loop For each probe batch
         SVC->>PROBE: get_activations(texts)
@@ -215,7 +215,7 @@ flowchart LR
     end
 
     subgraph STAGE1["Stage 1: Probe"]
-        FP["Fingerprint<br/>via 439 probes"]
+        FP["Fingerprint<br/>via 441 probes"]
         IM["Intersection<br/>Map"]
     end
 
