@@ -146,7 +146,6 @@ class RefusalDistanceMetrics:
     is_approaching: bool
     layer_index: int
     token_index: int
-    assessment: str  # "likely", "possible", "unlikely", "neutral"
 
 
 # --- Transport Guided Merger Types ---

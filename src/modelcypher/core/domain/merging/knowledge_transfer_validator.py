@@ -778,122 +778,6 @@ class KnowledgeTransferReport:
     crm_correlation: float = 0.0
     """CRM similarity between source and merged model."""
 
-    def status_for_thresholds(
-        self,
-        excellent_threshold: float,
-        acceptable_threshold: float,
-        degraded_threshold: float,
-    ) -> str:
-        """Classify validation status using caller-provided thresholds.
-
-        Parameters
-        ----------
-        excellent_threshold : float
-            Retention above this is "excellent".
-        acceptable_threshold : float
-            Retention above this is "acceptable".
-        degraded_threshold : float
-            Retention above this is "degraded".
-
-        Returns
-        -------
-        str
-            Status label: "excellent", "acceptable", "degraded", or "failed".
-
-        Notes
-        -----
-        Classifies overall_retention using explicit thresholds.
-        """
-        retention = self.overall_retention
-        if retention >= excellent_threshold:
-            return "excellent"
-        elif retention >= acceptable_threshold:
-            return "acceptable"
-        elif retention >= degraded_threshold:
-            return "degraded"
-        else:
-            return "failed"
-
-    def compute_status(self, config: KnowledgeValidationConfig) -> str:
-        """Compute validation status using config thresholds.
-
-        Parameters
-        ----------
-        config : KnowledgeValidationConfig
-            Configuration with retention thresholds.
-
-        Returns
-        -------
-        str
-            Status label based on overall retention vs thresholds.
-        """
-        return self.status_for_thresholds(
-            excellent_threshold=config.retention_threshold_excellent,
-            acceptable_threshold=config.retention_threshold_acceptable,
-            degraded_threshold=config.retention_threshold_degraded,
-        )
-
-    @property
-    def status(self) -> str:
-        """Overall validation status.
-
-        Uses stored config if available, otherwise falls back to standard thresholds.
-        Prefer status_for_thresholds() with explicit thresholds.
-        """
-        if self.config is not None:
-            return self.compute_status(self.config)
-        # Backward compatibility: use standard thresholds
-        return self.compute_status(KnowledgeValidationConfig.from_standard_testing())
-
-    def compute_recommendation(self, config: KnowledgeValidationConfig) -> str:
-        """Compute recommendation based on status.
-
-        Parameters
-        ----------
-        config : KnowledgeValidationConfig
-            Configuration with retention thresholds.
-
-        Returns
-        -------
-        str
-            Human-readable recommendation.
-        """
-        status = self.compute_status(config)
-        if status == "excellent":
-            return "Knowledge transfer is excellent. Merged model is production-ready."
-        elif status == "acceptable":
-            return (
-                "Knowledge transfer is acceptable. Minor degradation in some domains. "
-                "Review failed probes before deployment."
-            )
-        elif status == "degraded":
-            return (
-                "Knowledge transfer shows significant degradation. "
-                "Recommend adjusting merge parameters or using different alpha values."
-            )
-        else:
-            return (
-                "Knowledge transfer failed. Merged model has lost critical knowledge. "
-                "Do not deploy. Review merge strategy."
-            )
-
-    @property
-    def recommendation(self) -> str:
-        """Human-readable recommendation based on results.
-
-        Returns
-        -------
-        str
-            Human-readable recommendation.
-
-        Notes
-        -----
-        Deprecated: Use compute_recommendation(config) with explicit thresholds.
-        """
-        if self.config is not None:
-            return self.compute_recommendation(self.config)
-        return self.compute_recommendation(KnowledgeValidationConfig.from_standard_testing())
-
     def get_failed_domains(self, threshold: float) -> list[KnowledgeDomain]:
         """Get domains with retention below threshold.
 
@@ -913,22 +797,15 @@ class KnowledgeTransferReport:
             if result.retention_score < threshold
         ]
 
-    def summary(self, config: KnowledgeValidationConfig | None = None) -> dict[str, any]:
+    def summary(self) -> dict[str, any]:
         """Get summary dict for JSON output.
-
-        Parameters
-        ----------
-        config : KnowledgeValidationConfig, optional
-            Configuration with thresholds. Uses stored config if not provided.
 
         Returns
         -------
         dict
-            Summary dictionary with status, retention, and recommendations.
+            Summary dictionary with raw retention metrics.
         """
-        cfg = config or self.config or KnowledgeValidationConfig.from_standard_testing()
         return {
-            "status": self.compute_status(cfg),
             "overall_retention": round(self.overall_retention, 4),
             "overall_pass_rate": round(self.overall_pass_rate, 4),
             "compositional_consistency": round(self.compositional_consistency, 4),
@@ -940,7 +817,6 @@ class KnowledgeTransferReport:
             "total_probes": len(self.probe_results),
             "passed_probes": sum(1 for r in self.probe_results if r.passed),
             "failed_probes": sum(1 for r in self.probe_results if not r.passed),
-            "recommendation": self.compute_recommendation(cfg),
         }
 
 

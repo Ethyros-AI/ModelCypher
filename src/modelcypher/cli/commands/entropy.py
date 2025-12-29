@@ -529,26 +529,6 @@ def entropy_dual_path(
     max_anomaly = max(anomaly_scores) if anomaly_scores else 0.0
     anomaly_count = len(anomaly_indices)
 
-    # Determine assessment
-    if anomaly_count >= 3 or max_anomaly > 0.8:
-        assessment = "high_risk"
-        recommendation = "Halt inference and investigate adapter"
-    elif anomaly_count >= 1 or max_anomaly > 0.5:
-        assessment = "elevated"
-        recommendation = "Increase monitoring and log outputs"
-    else:
-        assessment = "nominal"
-        recommendation = "Continue normal operation"
-
-    # Detect patterns
-    suspicious_patterns: list[str] = []
-    if anomaly_count > 0:
-        suspicious_patterns.append(f"Detected {anomaly_count} high-anomaly tokens")
-    if max_anomaly > 0.7:
-        suspicious_patterns.append("Potential backdoor signature detected")
-    if avg_delta < -1.0:
-        suspicious_patterns.append("Adapter significantly reduces uncertainty")
-
     payload = {
         "sampleCount": len(sample_list),
         "averageDelta": avg_delta,
@@ -556,9 +536,6 @@ def entropy_dual_path(
         "anomalyCount": anomaly_count,
         "anomalyIndices": anomaly_indices,
         "anomalyThreshold": anomaly_threshold,
-        "assessment": assessment,
-        "suspiciousPatterns": suspicious_patterns,
-        "recommendation": recommendation,
     }
 
     if context.output_format == "text":
@@ -566,20 +543,13 @@ def entropy_dual_path(
             "DUAL-PATH ENTROPY ANALYSIS",
             f"Samples Analyzed: {len(sample_list)}",
             "",
-            f"Assessment: {assessment.upper()}",
             f"Average Delta: {avg_delta:.4f}",
             f"Max Anomaly Score: {max_anomaly:.4f}",
             f"Anomaly Count: {anomaly_count}",
+            f"Anomaly Threshold: {anomaly_threshold:.4f}",
         ]
         if anomaly_indices:
             lines.append(f"Anomaly Indices: {anomaly_indices}")
-        if suspicious_patterns:
-            lines.append("")
-            lines.append("Suspicious Patterns:")
-            for pattern in suspicious_patterns:
-                lines.append(f"  - {pattern}")
-        lines.append("")
-        lines.append(f"Recommendation: {recommendation}")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

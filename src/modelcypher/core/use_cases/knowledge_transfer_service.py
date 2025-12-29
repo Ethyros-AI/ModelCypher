@@ -99,11 +99,6 @@ class KnowledgeTransferValidationResult:
     warnings: list[str] = field(default_factory=list)
 
     @property
-    def status(self) -> str:
-        """Overall validation status."""
-        return self.report.status
-
-    @property
     def overall_retention(self) -> float:
         """Overall knowledge retention score."""
         return self.report.overall_retention
@@ -115,7 +110,6 @@ class KnowledgeTransferValidationResult:
             "mergedModel": self.merged_model,
             "sourceModel": self.source_model,
             "validatedAt": self.validated_at.isoformat(),
-            "status": self.status,
             "overallRetention": round(self.overall_retention, 4),
             "perDomainRetention": {
                 domain.value: {
@@ -140,7 +134,6 @@ class KnowledgeTransferValidationResult:
             "probesExecuted": self.probes_executed,
             "executionTimeSeconds": round(self.execution_time_seconds, 2),
             "warnings": self.warnings,
-            "recommendation": self.report.recommendation,
         }
 
 
@@ -158,7 +151,6 @@ class KnowledgeTransferService:
             source_model="/path/to/source",  # For baseline comparison
         )
         print(f"Retention: {result.overall_retention:.1%}")
-        print(f"Status: {result.status}")
     """
 
     def __init__(self, inference_engine: "InferenceEngine") -> None:

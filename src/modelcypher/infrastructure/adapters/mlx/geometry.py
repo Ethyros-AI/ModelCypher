@@ -216,15 +216,6 @@ class MLXGeometryAdapter(GeometryPort):
 
         dist = 1.0 - cos_sim
 
-        # Assessment
-        assessment = "neutral"
-        if proj > 0.5:
-            assessment = "likely"
-        elif proj > 0.2:
-            assessment = "possible"
-        elif proj < -0.2:
-            assessment = "unlikely"
-
         is_approaching = False
         if previous_projection is not None:
             is_approaching = proj > previous_projection
@@ -237,7 +228,6 @@ class MLXGeometryAdapter(GeometryPort):
             is_approaching=is_approaching,
             layer_index=direction.layer_index,
             token_index=token_index,
-            assessment=assessment,
         )
 
     async def merge_models_transport(
