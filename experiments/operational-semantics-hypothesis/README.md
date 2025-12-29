@@ -102,4 +102,13 @@ multipliers (3.0). Disabling triangulation yields much lower alignment
 (~0.64–0.66). A multi-atlas cross-check (sequence + semantic) remains strong.
 
 See `EXPERIMENT_LOG.md` (Run 4) and the raw outputs under `raw_output/` for
-full telemetry.
+full telemetry, including the full multi-atlas baselines (441 probes).
+
+### Tier Comparison (Small Models)
+
+| Tier | Probes | Triangulation | SmolLM→Qwen2 | Qwen1.5→Qwen2 | TinyLlama→Qwen2 | Mean Tri Mult |
+|------|--------|---------------|-------------|--------------|----------------|---------------|
+| Primes only | 8 | on | 0.962 | 0.981 | 0.901 | 3.000 |
+| Primes only | 8 | off | 0.640 | 0.664 | 0.644 | 1.000 |
+| Seq + semantic | 135 | on | 0.896 | — | — | 2.295 |
+| Full multi-atlas | 441 | on | 0.901 | 0.913 | 0.759 | 3.700 |

@@ -284,12 +284,21 @@ signal and improve alignment telemetry versus no-triangulation baselines.
 |------------|--------|-----------|---------|---------|---------------|
 | SmolLM-360M → Qwen2-0.5B | 135 | 0.896 | 2 | 9 | 2.295 (high) |
 
+#### Full Multi-Atlas Baseline (All Sources)
+
+| Model Pair | Probes | Alignment | Sources | Domains | Triangulation |
+|------------|--------|-----------|---------|---------|---------------|
+| SmolLM-360M → Qwen2-0.5B | 441 | 0.901 | 12 | 12 | 3.700 (high) |
+| Qwen1.5-0.5B → Qwen2-0.5B | 441 | 0.913 | 12 | 12 | 3.700 (high) |
+| TinyLlama-1.1B → Qwen2-0.5B | 441 | 0.759 | 12 | 12 | 3.700 (high) |
+
 **Key Observations**:
 
 1. **Prime probes now drive strong triangulation** (mean multiplier 3.0) even with
    only 8 prime-family probes, indicating multi-domain activation is being captured.
 2. **Alignment lifts sharply when triangulation is enabled** (+0.26–0.34 over baseline).
 3. **Multi-atlas (sequence+semantic) remains strong** with broader coverage (9 domains).
+4. **Full atlas yields strong alignment with maximal coverage** (12 sources, 12 domains).
 
 **Interpretation**: The prime spectral geometry probes are providing real signal
 amplification through cross-domain triangulation, consistent with the hypothesis
@@ -384,6 +393,11 @@ poetry run mc --ai geometry invariant map-layers --source /Volumes/CodeCypher/mo
 
 # [2025-12-29 09:XX] Multi-atlas cross-check (sequence + semantic)
 poetry run mc --ai geometry invariant map-layers --source /Volumes/CodeCypher/models/mlx-community/SmolLM-360M-Instruct-4bit --target /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B-Instruct-4bit --scope multiAtlas --atlas-sources sequence,semantic --sample-layers 8
+
+# [2025-12-29 09:XX] Full multi-atlas baselines (all sources)
+poetry run mc --ai geometry invariant map-layers --source /Volumes/CodeCypher/models/mlx-community/SmolLM-360M-Instruct-4bit --target /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B-Instruct-4bit --scope multiAtlas --sample-layers 8
+poetry run mc --ai geometry invariant map-layers --source /Volumes/CodeCypher/models/mlx-community/Qwen1.5-0.5B-Chat-4bit --target /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B-Instruct-4bit --scope multiAtlas --sample-layers 8
+poetry run mc --ai geometry invariant map-layers --source /Volumes/CodeCypher/models/mlx-community/TinyLlama-1.1B-Chat-v1.0-4bit --target /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B-Instruct-4bit --scope multiAtlas --sample-layers 8
 
 # [2025-12-25 08:XX] Tool inventory
 poetry run mc geometry --help
