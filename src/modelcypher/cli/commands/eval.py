@@ -201,6 +201,150 @@ def eval_benchmark(
         raise typer.Exit(1)
 
 
+@eval_app.command("domain")
+def eval_domain(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", help="Path to MLX model directory"),
+    domains: list[str] = typer.Option(
+        None,
+        "--domain",
+        "-d",
+        help="Knowledge domains to evaluate (repeatable)",
+    ),
+    suite: str = typer.Option(
+        None,
+        "--suite",
+        "-s",
+        help="Use a predefined suite: quick, standard, comprehensive, code, math, reasoning",
+    ),
+    limit: int | None = typer.Option(None, "--limit", help="Limit samples per task"),
+    num_fewshot: int = typer.Option(0, "--num-fewshot", help="Number of few-shot examples"),
+    output_path: str | None = typer.Option(None, "--output-path", help="Save results to file"),
+) -> None:
+    """Run domain-specific benchmarks mapped to industry standards.
+
+    Maps ModelCypher knowledge domains to industry benchmarks:
+    - computational: HumanEval, MBPP (code generation)
+    - mathematical: GSM8K, MathQA (math reasoning)
+    - logical: ARC-Challenge, LogiQA (logical reasoning)
+    - linguistic: HellaSwag, LAMBADA (language understanding)
+    - relational: WinoGrande (coreference/relations)
+    - moral: TruthfulQA (ethics/truthfulness)
+
+    Examples:
+        mc eval domain --model ./model --domain computational
+        mc eval domain --model ./model --domain mathematical --domain logical
+        mc eval domain --model ./model --suite standard
+        mc eval domain --model ./model --suite comprehensive --limit 100
+    """
+    import json
+    from pathlib import Path
+
+    from modelcypher.core.domain.geometry.domain_benchmark_map import (
+        BENCHMARK_SUITES,
+        DOMAIN_BENCHMARK_MAP,
+        EvalDomain,
+        get_benchmarks_for_domains,
+        get_suite,
+    )
+    from modelcypher.core.use_cases.mlx_lm_eval import run_benchmark
+
+    context = _context(ctx)
+
+    model_path = Path(model).resolve()
+    if not model_path.exists():
+        typer.echo(f"Error: Model path does not exist: {model_path}", err=True)
+        raise typer.Exit(1)
+
+    # Determine tasks to run
+    tasks: list[str] = []
+
+    if suite:
+        tasks = get_suite(suite)
+        if not tasks:
+            available = ", ".join(BENCHMARK_SUITES.keys())
+            typer.echo(f"Unknown suite: {suite}. Available: {available}", err=True)
+            raise typer.Exit(1)
+        typer.echo(f"Using suite '{suite}': {tasks}")
+
+    if domains:
+        # Validate domains
+        valid_domains = {d.value for d in EvalDomain}
+        for d in domains:
+            if d not in valid_domains:
+                typer.echo(f"Unknown domain: {d}. Available: {', '.join(sorted(valid_domains))}", err=True)
+                raise typer.Exit(1)
+        domain_tasks = get_benchmarks_for_domains(domains)
+        tasks = list(set(tasks) | set(domain_tasks))
+        typer.echo(f"Domains {domains} mapped to: {domain_tasks}")
+
+    if not tasks:
+        # Default to standard suite
+        tasks = get_suite("standard")
+        typer.echo(f"No domains/suite specified, using 'standard': {tasks}")
+
+    typer.echo(f"Running benchmarks on {model_path}")
+    typer.echo(f"Tasks: {tasks}")
+
+    try:
+        results = run_benchmark(
+            model_path=str(model_path),
+            tasks=tasks,
+            limit=limit,
+            num_fewshot=num_fewshot,
+            output_path=output_path,
+        )
+
+        # Format output with domain mappings
+        if context.output_format == "text":
+            typer.echo("\n=== DOMAIN EVALUATION RESULTS ===")
+            typer.echo(f"Model: {model_path}")
+
+            if "results" in results:
+                # Group results by domain
+                from modelcypher.core.domain.geometry.domain_benchmark_map import domain_from_benchmark
+
+                domain_scores: dict[str, list[tuple[str, float]]] = {}
+
+                for task_name, task_results in results["results"].items():
+                    # Get primary metric
+                    acc = task_results.get("acc,none", task_results.get("acc_norm,none", 0))
+                    if isinstance(acc, (int, float)):
+                        task_domains = domain_from_benchmark(task_name)
+                        for domain in task_domains:
+                            if domain.value not in domain_scores:
+                                domain_scores[domain.value] = []
+                            domain_scores[domain.value].append((task_name, float(acc)))
+
+                typer.echo("\n--- By Domain ---")
+                for domain in sorted(domain_scores.keys()):
+                    scores = domain_scores[domain]
+                    avg = sum(s for _, s in scores) / len(scores) if scores else 0
+                    typer.echo(f"\n{domain.upper()} (avg: {avg:.4f}):")
+                    for task, score in scores:
+                        typer.echo(f"  {task}: {score:.4f}")
+
+                typer.echo("\n--- All Results ---")
+                for task_name, task_results in results["results"].items():
+                    typer.echo(f"\n{task_name}:")
+                    for metric, value in task_results.items():
+                        if isinstance(value, float):
+                            typer.echo(f"  {metric}: {value:.4f}")
+        else:
+            payload = {
+                "model": str(model_path),
+                "tasks": tasks,
+                "domains": domains or [],
+                "suite": suite,
+                "results": results.get("results", {}),
+            }
+            write_output(payload, context.output_format, context.pretty)
+
+    except Exception as e:
+        typer.echo(f"Domain evaluation failed: {e}", err=True)
+        raise typer.Exit(1)
+
+
 @compare_app.command("list")
 def compare_list(
     ctx: typer.Context,
