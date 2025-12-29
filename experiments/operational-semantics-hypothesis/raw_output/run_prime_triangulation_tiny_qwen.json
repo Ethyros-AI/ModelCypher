@@ -1,0 +1,76 @@
+{
+  "_schema": "mc.geometry.invariant.map_layers.v1",
+  "alignmentQuality": 0.9012987956441203,
+  "atlasDomainsDetected": 0,
+  "atlasSourcesDetected": 0,
+  "invariantCount": 8,
+  "invariantScope": "sequenceInvariants",
+  "mappedLayers": 8,
+  "mappings": [
+    {
+      "confidence": 0.6816769734283559,
+      "isSkipped": false,
+      "similarity": 0.6816769734283559,
+      "sourceLayer": 0,
+      "targetLayer": 0
+    },
+    {
+      "confidence": 0.7043228420989452,
+      "isSkipped": false,
+      "similarity": 0.7043228420989452,
+      "sourceLayer": 3,
+      "targetLayer": 3
+    },
+    {
+      "confidence": 0.8243905496256606,
+      "isSkipped": false,
+      "similarity": 0.8243905496256606,
+      "sourceLayer": 6,
+      "targetLayer": 7
+    },
+    {
+      "confidence": 1.0,
+      "isSkipped": false,
+      "similarity": 1.0,
+      "sourceLayer": 9,
+      "targetLayer": 10
+    },
+    {
+      "confidence": 1.0,
+      "isSkipped": false,
+      "similarity": 1.0,
+      "sourceLayer": 12,
+      "targetLayer": 13
+    },
+    {
+      "confidence": 1.0,
+      "isSkipped": false,
+      "similarity": 1.0,
+      "sourceLayer": 15,
+      "targetLayer": 16
+    },
+    {
+      "confidence": 1.0,
+      "isSkipped": false,
+      "similarity": 1.0,
+      "sourceLayer": 18,
+      "targetLayer": 20
+    },
+    {
+      "confidence": 1.0,
+      "isSkipped": false,
+      "similarity": 1.0,
+      "sourceLayer": 21,
+      "targetLayer": 23
+    }
+  ],
+  "meanSimilarity": 0.9012987956441203,
+  "meanTriangulationMultiplier": 3.0,
+  "skippedLayers": 0,
+  "sourceCollapsedLayers": 0,
+  "sourceModel": "/Volumes/CodeCypher/models/mlx-community/TinyLlama-1.1B-Chat-v1.0-4bit",
+  "targetCollapsedLayers": 0,
+  "targetModel": "/Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B-Instruct-4bit",
+  "totalProbesUsed": 8,
+  "triangulationQuality": "high"
+}

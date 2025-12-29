@@ -1,0 +1,76 @@
+{
+  "_schema": "mc.geometry.invariant.map_layers.v1",
+  "alignmentQuality": 0.6641663950479365,
+  "atlasDomainsDetected": 0,
+  "atlasSourcesDetected": 0,
+  "invariantCount": 8,
+  "invariantScope": "sequenceInvariants",
+  "mappedLayers": 8,
+  "mappings": [
+    {
+      "confidence": 0.5239944767658035,
+      "isSkipped": false,
+      "similarity": 0.5239944767658035,
+      "sourceLayer": 0,
+      "targetLayer": 0
+    },
+    {
+      "confidence": 0.5472554971512984,
+      "isSkipped": false,
+      "similarity": 0.5472554971512984,
+      "sourceLayer": 3,
+      "targetLayer": 3
+    },
+    {
+      "confidence": 0.5709792387562183,
+      "isSkipped": false,
+      "similarity": 0.5709792387562183,
+      "sourceLayer": 7,
+      "targetLayer": 7
+    },
+    {
+      "confidence": 0.5904718712146522,
+      "isSkipped": false,
+      "similarity": 0.5904718712146522,
+      "sourceLayer": 10,
+      "targetLayer": 10
+    },
+    {
+      "confidence": 0.614878731797476,
+      "isSkipped": false,
+      "similarity": 0.614878731797476,
+      "sourceLayer": 13,
+      "targetLayer": 13
+    },
+    {
+      "confidence": 0.6772035378770104,
+      "isSkipped": false,
+      "similarity": 0.6772035378770104,
+      "sourceLayer": 16,
+      "targetLayer": 16
+    },
+    {
+      "confidence": 0.7987694421945181,
+      "isSkipped": false,
+      "similarity": 0.7987694421945181,
+      "sourceLayer": 20,
+      "targetLayer": 20
+    },
+    {
+      "confidence": 0.9897783646265148,
+      "isSkipped": false,
+      "similarity": 0.9897783646265148,
+      "sourceLayer": 23,
+      "targetLayer": 23
+    }
+  ],
+  "meanSimilarity": 0.6641663950479365,
+  "meanTriangulationMultiplier": 1.0,
+  "skippedLayers": 0,
+  "sourceCollapsedLayers": 0,
+  "sourceModel": "/Volumes/CodeCypher/models/mlx-community/Qwen1.5-0.5B-Chat-4bit",
+  "targetCollapsedLayers": 0,
+  "targetModel": "/Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B-Instruct-4bit",
+  "totalProbesUsed": 8,
+  "triangulationQuality": "none"
+}

@@ -38,12 +38,80 @@ from modelcypher.core.domain.geometry.transplant import (
     compute_transplant_delta,
     partition_core_boundary,
 )
+from modelcypher.core.domain.geometry.numerical_stability import svd_via_eigh
 from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
+
+
+def _synthesize_activations_from_weights(
+    weight: "Array",
+    core_fraction: float = 0.6,
+    backend: "Backend | None" = None,
+) -> tuple["Array", "Array"]:
+    """Synthesize core/boundary activations from weight geometry via SVD.
+
+    When real activations aren't available (e.g., cross-architecture merge where
+    model loading fails), we can use the weight's own geometric structure as a
+    proxy for activation patterns.
+
+    The insight: SVD decomposes W = U @ S @ V^T where:
+    - V^T rows are the input principal directions (what inputs activate most)
+    - S values indicate importance (variance explained)
+    - Top-k singular vectors = "core" directions (high knowledge density)
+    - Bottom singular vectors = "boundary" directions (preserve these)
+
+    This preserves the key invariant: transplant happens in null-space of boundary,
+    where boundary is now defined geometrically from the weight structure itself.
+
+    The Gram matrix K = W @ W^T has size [n_out, n_out] regardless of input dim,
+    making this work across ANY dimensions.
+
+    Args:
+        weight: Weight matrix [out_dim, in_dim]
+        core_fraction: Fraction of singular vectors to use as core (default 0.6)
+        backend: Backend protocol implementation
+
+    Returns:
+        Tuple of (core_activations, boundary_activations) where each is [n_vectors, in_dim]
+    """
+    b = backend or get_default_backend()
+
+    # Ensure float32 for numerical stability
+    weight_f32 = b.astype(b.array(weight), "float32")
+    b.eval(weight_f32)
+
+    out_dim, in_dim = weight_f32.shape
+
+    # SVD: W = U @ S @ V^T
+    # V^T rows are principal input directions [k, in_dim]
+    _, S, Vt = svd_via_eigh(b, weight_f32, full_matrices=False)
+    b.eval(S, Vt)
+
+    # Number of singular values available
+    k = int(S.shape[0])
+    n_core = max(1, int(k * core_fraction))
+    n_boundary = max(1, k - n_core)
+
+    # Core: top singular vectors (highest variance = most important knowledge)
+    # These are the directions we WANT to transplant
+    core_activations = Vt[:n_core, :]  # [n_core, in_dim]
+
+    # Boundary: bottom singular vectors (lowest variance = least important)
+    # These are the directions we want to PRESERVE (null-space constraint)
+    boundary_activations = Vt[n_core:n_core + n_boundary, :]  # [n_boundary, in_dim]
+
+    b.eval(core_activations, boundary_activations)
+
+    logger.debug(
+        "Synthesized activations from weight [%d, %d]: core=%d, boundary=%d",
+        out_dim, in_dim, n_core, n_boundary
+    )
+
+    return core_activations, boundary_activations
 
 
 @dataclass(frozen=True)
@@ -144,29 +212,49 @@ def stage_transplant(
         "geodesic_k_neighbors": config.geodesic_k_neighbors,
     }
 
-    if not probe_ids or not probe_domains:
-        metrics["transplant_skipped"] = "missing_probe_metadata"
-        return TransplantStageResult(merged_weights=merged, metrics=metrics)
-
-    if len(probe_ids) != len(probe_domains):
-        metrics["transplant_skipped"] = "probe_metadata_mismatch"
-        return TransplantStageResult(merged_weights=merged, metrics=metrics)
+    # Determine if we're using real activations or synthesized from weights
+    use_synthesized_activations = False
 
     if not target_activations:
-        metrics["transplant_skipped"] = "missing_activations"
-        return TransplantStageResult(merged_weights=merged, metrics=metrics)
+        # Cross-dimensional transplant: synthesize activations from weight geometry.
+        # This is the key insight: Gram matrices capture invariant structure regardless
+        # of embedding dimension. When we can't collect activations (model load fails),
+        # we use the weights themselves to define core/boundary partitions.
+        use_synthesized_activations = True
+        logger.info(
+            "TRANSPLANT: No activations available, using weight-geometry synthesis "
+            "(cross-dimensional mode)"
+        )
+        metrics["activation_source"] = "synthesized_from_weights"
+    else:
+        metrics["activation_source"] = "collected_from_model"
 
-    core_domains = _normalize_domains(config.core_domains)
-    core_probe_ids = {
-        probe_id
-        for probe_id, domain in zip(probe_ids, probe_domains)
-        if domain and domain.lower() in core_domains
-    }
+    if not use_synthesized_activations:
+        # Standard probe-based transplant requires metadata
+        if not probe_ids or not probe_domains:
+            metrics["transplant_skipped"] = "missing_probe_metadata"
+            return TransplantStageResult(merged_weights=merged, metrics=metrics)
 
-    metrics["core_probes"] = len(core_probe_ids)
-    if not core_probe_ids:
-        metrics["transplant_skipped"] = "no_core_probes"
-        return TransplantStageResult(merged_weights=merged, metrics=metrics)
+        if len(probe_ids) != len(probe_domains):
+            metrics["transplant_skipped"] = "probe_metadata_mismatch"
+            return TransplantStageResult(merged_weights=merged, metrics=metrics)
+
+        core_domains = _normalize_domains(config.core_domains)
+        core_probe_ids = {
+            probe_id
+            for probe_id, domain in zip(probe_ids, probe_domains)
+            if domain and domain.lower() in core_domains
+        }
+
+        metrics["core_probes"] = len(core_probe_ids)
+        if not core_probe_ids:
+            metrics["transplant_skipped"] = "no_core_probes"
+            return TransplantStageResult(merged_weights=merged, metrics=metrics)
+    else:
+        # Cross-dimensional mode: core/boundary come from weight SVD, not probes
+        core_domains = _normalize_domains(config.core_domains)
+        core_probe_ids = set()  # Not used in synthesized mode
+        metrics["core_probes"] = 0  # Will be set per-layer based on SVD
 
     weights_by_layer: dict[int, list[str]] = {}
     for key in target_weights:
@@ -181,56 +269,65 @@ def stage_transplant(
             if layer_idx not in config.transplant_layers:
                 continue
 
-        act_list = target_activations.get(layer_idx)
-        if not act_list:
-            continue
-
-        if len(act_list) != len(probe_ids):
-            logger.debug(
-                "LAYER %d: probe count mismatch (acts=%d, probes=%d); skipping",
-                layer_idx,
-                len(act_list),
-                len(probe_ids),
-            )
-            continue
-
-        metrics["layers_considered"] += 1
-
-        stacked = b.stack(act_list, axis=0)
-        b.eval(stacked)
-
-        partition = partition_core_boundary(
-            activations=stacked,
-            probe_ids=probe_ids,
-            core_probe_ids=core_probe_ids,
-            boundary_k=config.boundary_k,
-            geodesic_k_neighbors=config.geodesic_k_neighbors,
-            backend=b,
-        )
-
-        if not partition.core_indices:
-            continue
-
-        core_indices = b.array(partition.core_indices, dtype="int32")
-        core_acts = b.take(stacked, core_indices, axis=0)
-        b.eval(core_acts)
-
-        if partition.boundary_indices:
-            boundary_indices = b.array(partition.boundary_indices, dtype="int32")
-            boundary_acts = b.take(stacked, boundary_indices, axis=0)
-            b.eval(boundary_acts)
-        else:
-            boundary_acts = b.zeros((0, int(stacked.shape[1])))
-            b.eval(boundary_acts)
-
         layer_keys = weights_by_layer.get(layer_idx, [])
         if not layer_keys:
             continue
 
+        # Standard mode: get activations from collected probes
+        # Synthesized mode: activations generated per-weight below
+        core_acts = None
+        boundary_acts = None
+
+        if not use_synthesized_activations:
+            act_list = target_activations.get(layer_idx)
+            if not act_list:
+                continue
+
+            if len(act_list) != len(probe_ids):
+                logger.debug(
+                    "LAYER %d: probe count mismatch (acts=%d, probes=%d); skipping",
+                    layer_idx,
+                    len(act_list),
+                    len(probe_ids),
+                )
+                continue
+
+            metrics["layers_considered"] += 1
+
+            stacked = b.stack(act_list, axis=0)
+            b.eval(stacked)
+
+            partition = partition_core_boundary(
+                activations=stacked,
+                probe_ids=probe_ids,
+                core_probe_ids=core_probe_ids,
+                boundary_k=config.boundary_k,
+                geodesic_k_neighbors=config.geodesic_k_neighbors,
+                backend=b,
+            )
+
+            if not partition.core_indices:
+                continue
+
+            core_indices = b.array(partition.core_indices, dtype="int32")
+            core_acts = b.take(stacked, core_indices, axis=0)
+            b.eval(core_acts)
+
+            if partition.boundary_indices:
+                boundary_indices = b.array(partition.boundary_indices, dtype="int32")
+                boundary_acts = b.take(stacked, boundary_indices, axis=0)
+                b.eval(boundary_acts)
+            else:
+                boundary_acts = b.zeros((0, int(stacked.shape[1])))
+                b.eval(boundary_acts)
+        else:
+            # Synthesized mode: count this layer, activations generated per-weight
+            metrics["layers_considered"] += 1
+
         layer_transplanted = False
         best_alignment: dict[str, float] | None = None
         best_delta_norm = -1.0
-        can_measure_alignment = int(core_acts.shape[0]) >= 2
+        can_measure_alignment = core_acts is not None and int(core_acts.shape[0]) >= 2
 
         for key in layer_keys:
             # Skip quantization metadata and non-weight tensors (only transplant actual matrices).
@@ -311,6 +408,23 @@ def stage_transplant(
                     continue
             else:
                 source_aligned = source_w
+
+            # Synthesized mode: generate core/boundary activations from weight geometry
+            # This is the cross-dimensional fallback when model loading fails
+            if use_synthesized_activations:
+                try:
+                    core_acts, boundary_acts = _synthesize_activations_from_weights(
+                        target_w,
+                        core_fraction=0.6,
+                        backend=b,
+                    )
+                    logger.debug(
+                        "Synthesized activations for %s: core=%s, boundary=%s",
+                        key, core_acts.shape, boundary_acts.shape
+                    )
+                except Exception as e:
+                    logger.warning("Failed to synthesize activations for %s: %s", key, e)
+                    continue
 
             try:
                 logger.debug("Computing transplant delta for %s", key)

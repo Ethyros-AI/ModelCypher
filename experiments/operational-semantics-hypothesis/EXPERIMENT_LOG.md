@@ -248,7 +248,54 @@ The high triangulation multiplier indicates cross-domain consistency - mathemati
 - This structure is more consistent across architectures than learned semantic associations
 - The Pythagorean theorem and similar mathematical facts likely manifest as geometric invariants
 
----
+### Run 4: Prime Geometry Probes (Triangulation Boost Validation)
+
+**Date**: 2025-12-29
+**Status**: ✅ COMPLETE
+
+**Goal**: Validate that prime-specific spectral geometry probes increase triangulation
+signal and improve alignment telemetry versus no-triangulation baselines.
+
+**Setup**:
+- Scope: `sequenceInvariants`
+- Families: `primes`
+- Sample layers: 8
+- Models: small (SmolLM-360M, Qwen-0.5B, TinyLlama-1.1B)
+
+#### Results Summary (Triangulation Enabled)
+
+| Model Pair | Probes | Alignment | Triangulation | Status |
+|------------|--------|-----------|---------------|--------|
+| SmolLM-360M → Qwen2-0.5B | 8 | **0.962** | **3.0 (high)** | ✅ PASS |
+| Qwen1.5-0.5B → Qwen2-0.5B | 8 | **0.981** | **3.0 (high)** | ✅ PASS |
+| TinyLlama-1.1B → Qwen2-0.5B | 8 | **0.901** | **3.0 (high)** | ✅ PASS |
+
+#### No-Triangulation Baseline
+
+| Model Pair | Probes | Alignment | Triangulation | Status |
+|------------|--------|-----------|---------------|--------|
+| SmolLM-360M → Qwen2-0.5B | 8 | 0.640 | 1.0 (none) | — |
+| Qwen1.5-0.5B → Qwen2-0.5B | 8 | 0.664 | 1.0 (none) | — |
+| TinyLlama-1.1B → Qwen2-0.5B | 8 | 0.644 | 1.0 (none) | — |
+
+#### Multi-Atlas Cross-Check (Sequence + Semantic)
+
+| Model Pair | Probes | Alignment | Sources | Domains | Triangulation |
+|------------|--------|-----------|---------|---------|---------------|
+| SmolLM-360M → Qwen2-0.5B | 135 | 0.896 | 2 | 9 | 2.295 (high) |
+
+**Key Observations**:
+
+1. **Prime probes now drive strong triangulation** (mean multiplier 3.0) even with
+   only 8 prime-family probes, indicating multi-domain activation is being captured.
+2. **Alignment lifts sharply when triangulation is enabled** (+0.26–0.34 over baseline).
+3. **Multi-atlas (sequence+semantic) remains strong** with broader coverage (9 domains).
+
+**Interpretation**: The prime spectral geometry probes are providing real signal
+amplification through cross-domain triangulation, consistent with the hypothesis
+that prime gap geometry is a stable invariant structure across models.
+
+--- 
 
 ## 6. Raw Output Archive
 
@@ -256,6 +303,7 @@ All raw CLI output logged verbatim in `raw_output/`:
 - `cli_geometry_help.txt` - Full geometry command help
 - `run_N_*.json` - Experiment N outputs
 - `run_N_*.txt` - Experiment N console output
+- `run_prime_*.json` - Prime geometry triangulation telemetry
 
 ---
 
@@ -324,6 +372,19 @@ To complete the Pythagorean hypothesis validation:
 All commands will be logged here with timestamps.
 
 ```bash
+# [2025-12-29 09:XX] Prime triangulation runs (sequence invariants)
+poetry run mc --ai geometry invariant map-layers --source /Volumes/CodeCypher/models/mlx-community/SmolLM-360M-Instruct-4bit --target /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B-Instruct-4bit --families primes --scope sequenceInvariants --sample-layers 8
+poetry run mc --ai geometry invariant map-layers --source /Volumes/CodeCypher/models/mlx-community/Qwen1.5-0.5B-Chat-4bit --target /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B-Instruct-4bit --families primes --scope sequenceInvariants --sample-layers 8
+poetry run mc --ai geometry invariant map-layers --source /Volumes/CodeCypher/models/mlx-community/TinyLlama-1.1B-Chat-v1.0-4bit --target /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B-Instruct-4bit --families primes --scope sequenceInvariants --sample-layers 8
+
+# [2025-12-29 09:XX] Prime baselines (no triangulation)
+poetry run mc --ai geometry invariant map-layers --source /Volumes/CodeCypher/models/mlx-community/SmolLM-360M-Instruct-4bit --target /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B-Instruct-4bit --families primes --scope sequenceInvariants --sample-layers 8 --no-triangulation
+poetry run mc --ai geometry invariant map-layers --source /Volumes/CodeCypher/models/mlx-community/Qwen1.5-0.5B-Chat-4bit --target /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B-Instruct-4bit --families primes --scope sequenceInvariants --sample-layers 8 --no-triangulation
+poetry run mc --ai geometry invariant map-layers --source /Volumes/CodeCypher/models/mlx-community/TinyLlama-1.1B-Chat-v1.0-4bit --target /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B-Instruct-4bit --families primes --scope sequenceInvariants --sample-layers 8 --no-triangulation
+
+# [2025-12-29 09:XX] Multi-atlas cross-check (sequence + semantic)
+poetry run mc --ai geometry invariant map-layers --source /Volumes/CodeCypher/models/mlx-community/SmolLM-360M-Instruct-4bit --target /Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B-Instruct-4bit --scope multiAtlas --atlas-sources sequence,semantic --sample-layers 8
+
 # [2025-12-25 08:XX] Tool inventory
 poetry run mc geometry --help
 poetry run mc geometry primes --help

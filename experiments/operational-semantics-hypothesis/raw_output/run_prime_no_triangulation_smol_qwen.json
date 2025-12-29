@@ -1,0 +1,76 @@
+{
+  "_schema": "mc.geometry.invariant.map_layers.v1",
+  "alignmentQuality": 0.6397802819795577,
+  "atlasDomainsDetected": 0,
+  "atlasSourcesDetected": 0,
+  "invariantCount": 8,
+  "invariantScope": "sequenceInvariants",
+  "mappedLayers": 8,
+  "mappings": [
+    {
+      "confidence": 0.48960804761982196,
+      "isSkipped": false,
+      "similarity": 0.48960804761982196,
+      "sourceLayer": 0,
+      "targetLayer": 0
+    },
+    {
+      "confidence": 0.5289017651286837,
+      "isSkipped": false,
+      "similarity": 0.5289017651286837,
+      "sourceLayer": 4,
+      "targetLayer": 3
+    },
+    {
+      "confidence": 0.549541969388736,
+      "isSkipped": false,
+      "similarity": 0.549541969388736,
+      "sourceLayer": 9,
+      "targetLayer": 7
+    },
+    {
+      "confidence": 0.5646265817232803,
+      "isSkipped": false,
+      "similarity": 0.5646265817232803,
+      "sourceLayer": 13,
+      "targetLayer": 10
+    },
+    {
+      "confidence": 0.597439973037247,
+      "isSkipped": false,
+      "similarity": 0.597439973037247,
+      "sourceLayer": 18,
+      "targetLayer": 13
+    },
+    {
+      "confidence": 0.6428239395611085,
+      "isSkipped": false,
+      "similarity": 0.6428239395611085,
+      "sourceLayer": 22,
+      "targetLayer": 16
+    },
+    {
+      "confidence": 0.7529246940281809,
+      "isSkipped": false,
+      "similarity": 0.7529246940281809,
+      "sourceLayer": 27,
+      "targetLayer": 20
+    },
+    {
+      "confidence": 0.9923752853494041,
+      "isSkipped": false,
+      "similarity": 0.9923752853494041,
+      "sourceLayer": 31,
+      "targetLayer": 23
+    }
+  ],
+  "meanSimilarity": 0.6397802819795577,
+  "meanTriangulationMultiplier": 1.0,
+  "skippedLayers": 0,
+  "sourceCollapsedLayers": 0,
+  "sourceModel": "/Volumes/CodeCypher/models/mlx-community/SmolLM-360M-Instruct-4bit",
+  "targetCollapsedLayers": 0,
+  "targetModel": "/Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B-Instruct-4bit",
+  "totalProbesUsed": 8,
+  "triangulationQuality": "none"
+}

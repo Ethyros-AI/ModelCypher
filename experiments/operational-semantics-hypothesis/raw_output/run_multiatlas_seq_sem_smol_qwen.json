@@ -1,0 +1,76 @@
+{
+  "_schema": "mc.geometry.invariant.map_layers.v1",
+  "alignmentQuality": 0.895896254459197,
+  "atlasDomainsDetected": 9,
+  "atlasSourcesDetected": 2,
+  "invariantCount": 135,
+  "invariantScope": "multiAtlas",
+  "mappedLayers": 8,
+  "mappings": [
+    {
+      "confidence": 0.7809498963379299,
+      "isSkipped": false,
+      "similarity": 0.7809498963379299,
+      "sourceLayer": 0,
+      "targetLayer": 0
+    },
+    {
+      "confidence": 0.8213203362146645,
+      "isSkipped": false,
+      "similarity": 0.8213203362146645,
+      "sourceLayer": 4,
+      "targetLayer": 3
+    },
+    {
+      "confidence": 0.8522772815429588,
+      "isSkipped": false,
+      "similarity": 0.8522772815429588,
+      "sourceLayer": 9,
+      "targetLayer": 7
+    },
+    {
+      "confidence": 0.8504366246650414,
+      "isSkipped": false,
+      "similarity": 0.8504366246650414,
+      "sourceLayer": 13,
+      "targetLayer": 10
+    },
+    {
+      "confidence": 0.8993560520457274,
+      "isSkipped": false,
+      "similarity": 0.8993560520457274,
+      "sourceLayer": 18,
+      "targetLayer": 13
+    },
+    {
+      "confidence": 0.9628298448672533,
+      "isSkipped": false,
+      "similarity": 0.9628298448672533,
+      "sourceLayer": 22,
+      "targetLayer": 16
+    },
+    {
+      "confidence": 1.0,
+      "isSkipped": false,
+      "similarity": 1.0,
+      "sourceLayer": 27,
+      "targetLayer": 20
+    },
+    {
+      "confidence": 1.0,
+      "isSkipped": false,
+      "similarity": 1.0,
+      "sourceLayer": 31,
+      "targetLayer": 23
+    }
+  ],
+  "meanSimilarity": 0.895896254459197,
+  "meanTriangulationMultiplier": 2.294587427074537,
+  "skippedLayers": 0,
+  "sourceCollapsedLayers": 0,
+  "sourceModel": "/Volumes/CodeCypher/models/mlx-community/SmolLM-360M-Instruct-4bit",
+  "targetCollapsedLayers": 0,
+  "targetModel": "/Volumes/CodeCypher/models/mlx-community/Qwen2-0.5B-Instruct-4bit",
+  "totalProbesUsed": 135,
+  "triangulationQuality": "high"
+}

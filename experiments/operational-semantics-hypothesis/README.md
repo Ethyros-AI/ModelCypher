@@ -91,3 +91,15 @@ operational-semantics-hypothesis/
 
 **Validated** - Results support the Operational Semantics Hypothesis.
 Integrated into Paper 0, Claim 4: "Formulas Are Constraint Surfaces".
+
+## Recent Prime Geometry Telemetry
+
+Prime spectral geometry probes were added to the sequence invariant atlas and
+validated on small models using `mc geometry invariant map-layers` with
+`--families primes`. With triangulation enabled, prime probes show strong
+cross-model alignment (mean similarity ~0.90–0.98) and high triangulation
+multipliers (3.0). Disabling triangulation yields much lower alignment
+(~0.64–0.66). A multi-atlas cross-check (sequence + semantic) remains strong.
+
+See `EXPERIMENT_LOG.md` (Run 4) and the raw outputs under `raw_output/` for
+full telemetry.
