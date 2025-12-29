@@ -62,15 +62,23 @@ class CurvatureSign(str, Enum):
 class ManifoldHealth(str, Enum):
     """Health classification of a representation manifold based on Ricci curvature.
 
-    For neural network representation spaces:
-    - HEALTHY: Negative Ricci curvature (hyperbolic geometry) - normal for LLMs
-    - DEGENERATE: Near-flat curvature - loss of geometric structure
-    - COLLAPSED: Positive Ricci curvature - potential representation collapse
+    DEPRECATED: Use raw mean_edge_curvature values instead. This enum uses hardcoded
+    thresholds (-0.1, 0.1) that are not model-family specific. Per the No Vibes rule,
+    callers should interpret raw curvature values relative to baselines.
+
+    Example: Instead of checking `result.health == ManifoldHealth.HEALTHY`, use:
+        z_score = (result.mean_edge_curvature - baseline.mean) / baseline.std
+        is_healthy = z_score < 3.0  # Within 3 standard deviations
+
+    For neural network representation spaces (reference only):
+    - Negative curvature (hyperbolic geometry) is typical for healthy LLMs
+    - Near-flat curvature may indicate loss of geometric structure
+    - Positive curvature may indicate representation collapse
     """
 
-    HEALTHY = "healthy"  # mean_ricci < -0.1 (hyperbolic, expected for LLMs)
-    DEGENERATE = "degenerate"  # -0.1 <= mean_ricci <= 0.1 (nearly flat)
-    COLLAPSED = "collapsed"  # mean_ricci > 0.1 (spherical, representation collapse)
+    HEALTHY = "healthy"  # DEPRECATED: mean_ricci < -0.1
+    DEGENERATE = "degenerate"  # DEPRECATED: -0.1 <= mean_ricci <= 0.1
+    COLLAPSED = "collapsed"  # DEPRECATED: mean_ricci > 0.1
 
 
 @dataclass(frozen=True)
@@ -136,7 +144,15 @@ class NodeRicciCurvature:
 
 @dataclass(frozen=True)
 class OllivierRicciResult:
-    """Complete Ollivier-Ricci curvature analysis of a manifold."""
+    """Complete Ollivier-Ricci curvature analysis of a manifold.
+
+    Primary measurements (use these):
+    - mean_edge_curvature: Raw curvature value (negative = hyperbolic, positive = spherical)
+    - std_edge_curvature: Standard deviation for uncertainty estimation
+
+    Deprecated (use raw measurements instead):
+    - health: Qualitative classification with hardcoded thresholds
+    """
 
     # Per-edge curvatures
     edge_curvatures: list[EdgeCurvature]
@@ -144,14 +160,14 @@ class OllivierRicciResult:
     # Per-node curvatures (aggregated from edges)
     node_curvatures: list[NodeRicciCurvature]
 
-    # Global edge statistics
+    # Global edge statistics - USE THESE for analysis
     mean_edge_curvature: float
     std_edge_curvature: float
 
     # Global node statistics
     mean_node_curvature: float
 
-    # Health classification
+    # DEPRECATED: Use mean_edge_curvature instead. See ManifoldHealth docstring.
     health: ManifoldHealth
 
     # Configuration used

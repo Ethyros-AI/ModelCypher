@@ -323,6 +323,234 @@ def validate_train(
     write_output(payload, context.output_format, context.pretty)
 
 
+@validate_app.command("suite")
+def validate_suite(
+    ctx: typer.Context,
+    output_dir: str = typer.Option(
+        None,
+        "--output-dir",
+        "-o",
+        help="Directory to save results (default: temp directory)",
+    ),
+    category: str | None = typer.Option(
+        None,
+        "--category",
+        "-c",
+        help="Run only specific category (A=introspection, B=geometry, D=safety, G=inference)",
+    ),
+    model_filter: str | None = typer.Option(
+        None,
+        "--model",
+        "-m",
+        help="Run only on specific model (M1, M2, M3, M4)",
+    ),
+    timeout: int = typer.Option(
+        300,
+        "--timeout",
+        "-t",
+        help="Timeout in seconds per command",
+    ),
+) -> None:
+    """Run comprehensive CLI validation suite.
+
+    Tests CLI commands against multiple models and generates a validation report.
+    Model paths are configured in the test definitions.
+
+    Categories:
+        A: Model introspection (probe, vocab-compare, validate-merge)
+        B: Geometry metrics (gromov-wasserstein, intrinsic-dimension, spatial)
+        D: Safety & entropy (circuit-breaker, thermo)
+        G: Inference (run prompts)
+
+    Examples:
+        mc validate suite
+        mc validate suite --category B
+        mc validate suite --model M1 --output-dir /path/to/results
+    """
+    import json
+    import subprocess
+    import tempfile
+    from dataclasses import dataclass, field
+    from datetime import datetime
+
+    context = _context(ctx)
+
+    @dataclass
+    class TestResult:
+        test_id: str
+        category: str
+        command: str
+        model: str | None
+        status: str
+        output: dict | None
+        error: str | None
+        duration_seconds: float
+        timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+
+    # Model definitions
+    MODELS = {
+        "M1": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-0.5B-Instruct-bf16",
+        "M2": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-3B-Instruct-bf16",
+        "M3": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-Coder-3B-Instruct-bf16",
+        "M4": "/Volumes/CodeCypher/models/mlx-community/Mistral-7B-Instruct-v0.3-4bit",
+    }
+
+    # Test definitions
+    TESTS = {
+        "A": {
+            "A1": {"name": "Model Probe", "command": "poetry run mc model probe {model}", "per_model": True},
+            "A2": {"name": "Vocab Compare Same Family", "command": "poetry run mc model vocab-compare {M1} {M2}", "per_model": False},
+            "A3": {"name": "Vocab Compare Cross Family", "command": "poetry run mc model vocab-compare {M1} {M4}", "per_model": False},
+        },
+        "B": {
+            "B1": {"name": "Gromov-Wasserstein", "command": "poetry run mc geometry metrics gromov-wasserstein {M1} {M2}", "per_model": False},
+            "B2": {"name": "Intrinsic Dimension", "command": "poetry run mc geometry metrics intrinsic-dimension {model}", "per_model": True},
+            "B4": {"name": "Spatial Probe", "command": "poetry run mc geometry spatial probe-model {model}", "per_model": True},
+        },
+        "D": {
+            "D1": {"name": "Circuit Breaker", "command": 'poetry run mc geometry safety circuit-breaker --model {model} --prompt "Hello"', "per_model": True},
+            "D2": {"name": "Thermo Measure", "command": 'poetry run mc thermo measure --model {model} --prompt "Hello"', "per_model": True},
+        },
+        "G": {
+            "G1": {"name": "Basic Math", "command": 'poetry run mc infer run --model {model} --prompt "What is 2+2?"', "per_model": True},
+        },
+    }
+
+    def run_cli_command(cmd: str, cmd_timeout: int) -> tuple[dict | None, str | None, float]:
+        import time
+        start = time.time()
+        try:
+            if "--output" not in cmd and "--ai" not in cmd:
+                cmd = cmd + " --ai"
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=cmd_timeout)
+            duration = time.time() - start
+            if result.returncode == 0:
+                try:
+                    return json.loads(result.stdout), None, duration
+                except json.JSONDecodeError:
+                    return {"raw": result.stdout}, None, duration
+            return None, result.stderr or result.stdout, duration
+        except subprocess.TimeoutExpired:
+            return None, f"Timeout after {cmd_timeout}s", time.time() - start
+        except Exception as e:
+            return None, str(e), time.time() - start
+
+    # Determine output directory
+    if output_dir:
+        out_path = Path(output_dir)
+    else:
+        out_path = Path(tempfile.mkdtemp(prefix="mc-validate-"))
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    results: list[TestResult] = []
+    categories = [category] if category else list(TESTS.keys())
+    models_filter = [model_filter] if model_filter else None
+
+    # Check model availability
+    available_models = {k: v for k, v in MODELS.items() if Path(v).exists()}
+
+    for cat in categories:
+        if cat not in TESTS:
+            continue
+        cat_dir = out_path / cat.lower()
+        cat_dir.mkdir(exist_ok=True)
+
+        for test_id, test_def in TESTS[cat].items():
+            if test_def.get("per_model", False):
+                for model_id, model_path in MODELS.items():
+                    if models_filter and model_id not in models_filter:
+                        continue
+                    if model_id not in available_models:
+                        results.append(TestResult(
+                            test_id=f"{test_id}_{model_id}",
+                            category=cat,
+                            command="",
+                            model=model_id,
+                            status="skip",
+                            output=None,
+                            error="Model not found",
+                            duration_seconds=0,
+                        ))
+                        continue
+
+                    cmd = test_def["command"].format(model=model_path)
+                    output, error, duration = run_cli_command(cmd, timeout)
+                    status = "pass" if output else "error"
+
+                    results.append(TestResult(
+                        test_id=f"{test_id}_{model_id}",
+                        category=cat,
+                        command=cmd,
+                        model=model_id,
+                        status=status,
+                        output=output,
+                        error=error,
+                        duration_seconds=duration,
+                    ))
+            else:
+                cmd = test_def["command"]
+                for key, path in MODELS.items():
+                    cmd = cmd.replace(f"{{{key}}}", path)
+
+                output, error, duration = run_cli_command(cmd, timeout)
+                status = "pass" if output else "error"
+
+                results.append(TestResult(
+                    test_id=test_id,
+                    category=cat,
+                    command=cmd,
+                    model=None,
+                    status=status,
+                    output=output,
+                    error=error,
+                    duration_seconds=duration,
+                ))
+
+    # Generate summary
+    total = len(results)
+    passed = sum(1 for r in results if r.status == "pass")
+    failed = sum(1 for r in results if r.status == "fail")
+    errors = sum(1 for r in results if r.status == "error")
+    skipped = sum(1 for r in results if r.status == "skip")
+    total_duration = sum(r.duration_seconds for r in results)
+
+    summary = {
+        "_schema": "mc.validate.suite.v1",
+        "outputDir": str(out_path),
+        "total": total,
+        "passed": passed,
+        "failed": failed,
+        "errors": errors,
+        "skipped": skipped,
+        "passRate": round(passed / total * 100, 1) if total > 0 else 0,
+        "totalDurationSeconds": round(total_duration, 1),
+        "availableModels": list(available_models.keys()),
+        "categoriesRun": categories,
+        "timestamp": datetime.now().isoformat(),
+    }
+
+    # Save summary
+    summary_file = out_path / "summary.json"
+    summary_file.write_text(dump_json(summary, pretty=True))
+
+    # Save all results
+    all_results = [
+        {
+            "testId": r.test_id,
+            "category": r.category,
+            "command": r.command,
+            "model": r.model,
+            "status": r.status,
+            "error": r.error,
+            "durationSeconds": round(r.duration_seconds, 2),
+        }
+        for r in results
+    ]
+    (out_path / "all_results.json").write_text(dump_json(all_results, pretty=True))
+
+    write_output(summary, context.output_format, context.pretty)
+
+
 @estimate_app.command("train")
 def estimate_train(
     ctx: typer.Context,
