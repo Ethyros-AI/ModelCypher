@@ -35,22 +35,38 @@ Mathematical Motivation:
 
 Approach:
     - Embed prime gaps/positions into high-dimensional space via time-delay
+    - Use multiple embedding strategies: time-delay, residue classes, digit patterns
     - Compute Gram matrices (relational structure independent of coordinates)
     - Analyze eigenvalue distributions
-    - Compare to random baselines
+    - Compare to multiple baselines: exponential, uniform, Poisson, Cramér model
     - Use intrinsic dimension, topological fingerprinting, and curvature
+    - Apply statistical testing with bootstrap CIs and effect sizes
+
+Hypotheses (H1-H8):
+    H1: Spectral Concentration - participation_ratio(primes) < participation_ratio(random)
+    H2: Lower Spectral Entropy - spectral_entropy(primes) < spectral_entropy(random)
+    H3: Distinct Intrinsic Dimension - |ID(primes) - ID(random)| > 1.0
+    H4: Topological Distinctiveness - betti_diff > 0 OR bottleneck/scale > 0.1
+    H5: Curvature Signature - mean_ricci differs significantly
+    H6: Cross-Representation Coherence - CKA(prime embeds) > CKA(random embeds)
+    H7: Scale Invariance - Effect sizes stable/increase with n
+    H8: Perturbation Robustness - Primes more stable under noise
 
 References:
     - Montgomery (1973): Pair correlation of zeros of the zeta function
     - Berry & Keating (1999): The Riemann zeros and eigenvalue asymptotics
     - Facco et al. (2017): TwoNN intrinsic dimension estimation
+    - Cramér (1936): Prime number theorem, probabilistic model
 """
 
 from __future__ import annotations
 
 import logging
 import math
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -59,6 +75,25 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
+
+
+class EmbeddingType(Enum):
+    """Types of embeddings for prime sequence analysis."""
+
+    TIME_DELAY = "time_delay"
+    RESIDUE = "residue"
+    DIGIT = "digit"
+    POSITION = "position"
+
+
+class BaselineType(Enum):
+    """Types of random baselines for comparison."""
+
+    EXPONENTIAL = "exponential"  # Gaps between Poisson events
+    UNIFORM = "uniform"  # Uniform distribution
+    POISSON = "poisson"  # Poisson-distributed gaps
+    CRAMER = "cramer"  # Cramér probabilistic model
+    SHUFFLED = "shuffled"  # Shuffled prime gaps
 
 
 @dataclass(frozen=True)
@@ -121,6 +156,105 @@ class PrimeGeometryResult:
     # Raw data for further analysis
     prime_gram: "Array"
     random_gram: "Array"
+
+
+@dataclass(frozen=True)
+class ConfidenceInterval:
+    """95% confidence interval from bootstrap sampling."""
+
+    lower: float
+    upper: float
+    mean: float
+    std: float
+    n_bootstrap: int
+
+
+@dataclass(frozen=True)
+class EffectSize:
+    """Cohen's d effect size with interpretation."""
+
+    d: float  # Cohen's d: (mean1 - mean2) / pooled_std
+    magnitude: str  # "negligible", "small", "medium", "large"
+
+    @staticmethod
+    def from_cohens_d(d: float) -> "EffectSize":
+        """Create EffectSize from Cohen's d value."""
+        abs_d = abs(d)
+        if abs_d < 0.2:
+            magnitude = "negligible"
+        elif abs_d < 0.5:
+            magnitude = "small"
+        elif abs_d < 0.8:
+            magnitude = "medium"
+        else:
+            magnitude = "large"
+        return EffectSize(d=d, magnitude=magnitude)
+
+
+@dataclass(frozen=True)
+class HypothesisTest:
+    """Result of a single hypothesis test."""
+
+    hypothesis_id: str  # H1-H8
+    description: str
+    passed: bool
+    p_value: float
+    effect_size: EffectSize
+    prime_value: float
+    baseline_value: float
+    confidence_interval: ConfidenceInterval | None = None
+
+
+@dataclass
+class ComprehensiveResult:
+    """Complete results from comprehensive prime geometry analysis."""
+
+    # Metadata
+    experiment_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
+    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+
+    # Scale info
+    n_primes: int = 0
+    max_prime: int = 0
+    embedding_dim: int = 20
+
+    # Results by embedding type
+    embedding_results: dict[str, EigenvalueDistribution] = field(default_factory=dict)
+
+    # Results by baseline type
+    baseline_results: dict[str, EigenvalueDistribution] = field(default_factory=dict)
+
+    # Pairwise comparisons
+    comparisons: dict[str, SpectralComparison] = field(default_factory=dict)
+
+    # Hypothesis tests
+    hypothesis_tests: dict[str, HypothesisTest] = field(default_factory=dict)
+
+    # Summary statistics
+    summary: dict[str, float] = field(default_factory=dict)
+
+
+@dataclass
+class ScaleSweepResult:
+    """Results from testing across multiple scales."""
+
+    scales: list[int] = field(default_factory=list)  # n_primes values tested
+    results: list[ComprehensiveResult] = field(default_factory=list)
+
+    # Trend analysis
+    effect_size_trend: list[float] = field(default_factory=list)
+    p_value_trend: list[float] = field(default_factory=list)
+    scale_invariance_passed: bool = False
+
+
+@dataclass
+class PerturbationResult:
+    """Results from perturbation robustness testing."""
+
+    noise_level: float
+    original_participation_ratio: float
+    perturbed_participation_ratio: float
+    stability_score: float  # 1 - relative change
 
 
 def generate_primes(n: int, backend: "Backend | None" = None) -> PrimeSequence:
@@ -222,6 +356,151 @@ def time_delay_embedding(
         rows.append(window)
 
     return backend.stack(rows, axis=0)
+
+
+def residue_embedding(
+    primes: "Array",
+    moduli: list[int] | None = None,
+    backend: "Backend | None" = None,
+) -> "Array":
+    """Create residue class embedding of primes.
+
+    Embeds each prime as a vector of its residues modulo various moduli.
+    Uses primorials (2, 6, 30, 210) by default since primes distribute
+    non-uniformly across residue classes of primorials.
+
+    Args:
+        primes: Array of prime numbers [n_primes].
+        moduli: List of moduli for residue computation.
+                Default: [2, 6, 30, 210] (primorial sequence).
+        backend: Compute backend.
+
+    Returns:
+        Residue embedding matrix [n_primes, len(moduli)].
+
+    Note:
+        For p > 2, p ≡ 1 or 5 (mod 6) - primes only hit 2 of 6 residue classes.
+        This non-uniform distribution encodes prime structure.
+    """
+    backend = backend or get_default_backend()
+
+    if moduli is None:
+        moduli = [2, 6, 30, 210]  # Primorials: 2, 2*3, 2*3*5, 2*3*5*7
+
+    primes_list = backend.to_numpy(primes).tolist()
+    rows = []
+
+    for p in primes_list:
+        residues = [float(int(p) % m) for m in moduli]
+        rows.append(backend.array(residues))
+
+    return backend.stack(rows, axis=0)
+
+
+def digit_embedding(
+    sequence: "Array",
+    base: int = 10,
+    max_digits: int = 10,
+    backend: "Backend | None" = None,
+) -> "Array":
+    """Create digit pattern embedding of a sequence.
+
+    Embeds each number as a vector of its digits in the specified base.
+    Useful for detecting digit-based patterns (e.g., Benford's law).
+
+    Args:
+        sequence: Array of numbers [n].
+        base: Number base for digit representation (default 10).
+        max_digits: Maximum number of digits to consider.
+        backend: Compute backend.
+
+    Returns:
+        Digit embedding matrix [n, max_digits].
+
+    Note:
+        Numbers are padded with leading zeros to ensure uniform dimension.
+        The digit sequence is from most significant to least significant.
+    """
+    backend = backend or get_default_backend()
+
+    seq_list = backend.to_numpy(sequence).tolist()
+    rows = []
+
+    for num in seq_list:
+        n = int(num)
+        digits = []
+
+        if n == 0:
+            digits = [0.0] * max_digits
+        else:
+            while n > 0 and len(digits) < max_digits:
+                digits.append(float(n % base))
+                n //= base
+            # Pad with zeros
+            while len(digits) < max_digits:
+                digits.append(0.0)
+            # Reverse to get MSB first
+            digits = digits[::-1]
+
+        rows.append(backend.array(digits))
+
+    return backend.stack(rows, axis=0)
+
+
+def binary_digit_embedding(
+    sequence: "Array",
+    max_bits: int = 20,
+    backend: "Backend | None" = None,
+) -> "Array":
+    """Create binary representation embedding.
+
+    Args:
+        sequence: Array of numbers [n].
+        max_bits: Maximum number of bits to consider.
+        backend: Compute backend.
+
+    Returns:
+        Binary embedding matrix [n, max_bits].
+    """
+    return digit_embedding(sequence, base=2, max_digits=max_bits, backend=backend)
+
+
+def shuffled_gaps(
+    gaps: "Array",
+    backend: "Backend | None" = None,
+    seed: int = 42,
+) -> "Array":
+    """Create shuffled version of gaps as a baseline.
+
+    Preserves the marginal distribution of gaps but destroys
+    sequential structure. If primes have structure beyond their
+    gap distribution, shuffled gaps should differ.
+
+    Args:
+        gaps: Array of prime gaps [n].
+        backend: Compute backend.
+        seed: Random seed for reproducibility.
+
+    Returns:
+        Shuffled gap sequence [n].
+    """
+    backend = backend or get_default_backend()
+    backend.random_seed(seed)
+
+    gaps_list = backend.to_numpy(gaps).tolist()
+    n = len(gaps_list)
+
+    # Fisher-Yates shuffle using backend random
+    indices = list(range(n))
+    for i in range(n - 1, 0, -1):
+        # Generate random index from 0 to i
+        u = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
+        j = int(float(backend.to_numpy(u)[0]) * (i + 1))
+        j = min(j, i)  # Safety clamp
+        indices[i], indices[j] = indices[j], indices[i]
+
+    shuffled = [gaps_list[idx] for idx in indices]
+    return backend.array(shuffled)
 
 
 def compute_gram_matrix(X: "Array", backend: "Backend | None" = None) -> "Array":
@@ -413,6 +692,172 @@ def generate_random_gaps(
     return backend.array(gaps_list)
 
 
+def generate_uniform_gaps(
+    n: int,
+    min_gap: float,
+    max_gap: float,
+    backend: "Backend | None" = None,
+    seed: int = 42,
+) -> "Array":
+    """Generate uniformly distributed gaps.
+
+    Args:
+        n: Number of gaps to generate.
+        min_gap: Minimum gap value.
+        max_gap: Maximum gap value.
+        backend: Compute backend.
+        seed: Random seed for reproducibility.
+
+    Returns:
+        Uniform gap sequence [n].
+    """
+    backend = backend or get_default_backend()
+    backend.random_seed(seed)
+
+    uniform = backend.random_uniform(low=min_gap, high=max_gap, shape=(n,))
+    gaps_list = [max(2.0, round(float(g))) for g in backend.to_numpy(uniform)]
+    return backend.array(gaps_list)
+
+
+def generate_poisson_gaps(
+    n: int,
+    rate: float,
+    backend: "Backend | None" = None,
+    seed: int = 42,
+) -> "Array":
+    """Generate Poisson-distributed gaps (counts, not inter-arrival times).
+
+    Uses the Poisson distribution directly for gap counts, which is
+    different from exponential inter-arrival times.
+
+    Args:
+        n: Number of gaps to generate.
+        rate: Poisson rate parameter (lambda).
+        backend: Compute backend.
+        seed: Random seed for reproducibility.
+
+    Returns:
+        Poisson gap sequence [n].
+    """
+    backend = backend or get_default_backend()
+    backend.random_seed(seed)
+
+    # Generate Poisson samples using inverse transform
+    # For Poisson, we use the iterative method
+    gaps_list = []
+    for _ in range(n):
+        # Generate a single Poisson sample
+        u = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
+        u_val = float(backend.to_numpy(u)[0])
+
+        L = math.exp(-rate)
+        k = 0
+        p = 1.0
+
+        while p > L:
+            k += 1
+            u2 = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
+            p *= float(backend.to_numpy(u2)[0])
+
+        gaps_list.append(max(2.0, float(k)))
+
+    return backend.array(gaps_list)
+
+
+def generate_cramer_model(
+    n_values: int,
+    backend: "Backend | None" = None,
+    seed: int = 42,
+) -> tuple["Array", "Array"]:
+    """Generate pseudo-primes using Cramér's probabilistic model.
+
+    In Cramér's model, each integer m is "prime" with probability 1/ln(m).
+    This captures the average density of primes but not their fine structure.
+
+    Args:
+        n_values: Number of pseudo-primes to generate.
+        backend: Compute backend.
+        seed: Random seed for reproducibility.
+
+    Returns:
+        Tuple of (pseudo_primes array, gaps array).
+    """
+    backend = backend or get_default_backend()
+    backend.random_seed(seed)
+
+    pseudo_primes = [2]  # Start with 2
+    current = 3
+
+    while len(pseudo_primes) < n_values:
+        # P(m is "prime") = 1/ln(m)
+        prob = 1.0 / math.log(current) if current > 1 else 1.0
+        u = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
+        u_val = float(backend.to_numpy(u)[0])
+
+        if u_val < prob:
+            pseudo_primes.append(current)
+
+        current += 1
+
+        # Safety: don't run forever
+        if current > n_values * 100:
+            break
+
+    # Compute gaps
+    gaps = [pseudo_primes[i + 1] - pseudo_primes[i] for i in range(len(pseudo_primes) - 1)]
+
+    return backend.array(pseudo_primes), backend.array(gaps)
+
+
+def generate_baseline(
+    baseline_type: BaselineType,
+    n: int,
+    mean_gap: float,
+    prime_gaps: "Array | None" = None,
+    backend: "Backend | None" = None,
+    seed: int = 42,
+) -> "Array":
+    """Generate a baseline gap sequence of the specified type.
+
+    Args:
+        baseline_type: Type of baseline to generate.
+        n: Number of gaps to generate.
+        mean_gap: Mean gap size for calibration.
+        prime_gaps: Original prime gaps (for shuffled baseline).
+        backend: Compute backend.
+        seed: Random seed for reproducibility.
+
+    Returns:
+        Baseline gap sequence [n].
+    """
+    backend = backend or get_default_backend()
+
+    if baseline_type == BaselineType.EXPONENTIAL:
+        return generate_random_gaps(n, mean_gap, backend, seed)
+
+    elif baseline_type == BaselineType.UNIFORM:
+        # Use mean ± 50% as range
+        return generate_uniform_gaps(n, mean_gap * 0.5, mean_gap * 1.5, backend, seed)
+
+    elif baseline_type == BaselineType.POISSON:
+        return generate_poisson_gaps(n, mean_gap, backend, seed)
+
+    elif baseline_type == BaselineType.CRAMER:
+        # For Cramér model, we need enough pseudo-primes
+        _, gaps = generate_cramer_model(n + 1, backend, seed)
+        # Trim to requested size
+        gaps_list = backend.to_numpy(gaps).tolist()[:n]
+        return backend.array(gaps_list)
+
+    elif baseline_type == BaselineType.SHUFFLED:
+        if prime_gaps is None:
+            raise ValueError("prime_gaps required for shuffled baseline")
+        return shuffled_gaps(prime_gaps, backend, seed)
+
+    else:
+        raise ValueError(f"Unknown baseline type: {baseline_type}")
+
+
 def analyze_prime_geometry(
     n_primes: int = 1000,
     embedding_dim: int = 20,
@@ -595,5 +1040,578 @@ def format_result(result: PrimeGeometryResult) -> str:
     if abs(result.prime_intrinsic_dim - result.random_intrinsic_dim) > 1.0:
         lines.append("")
         lines.append("NOTE: Intrinsic dimension differs by >1, suggesting structural difference.")
+
+    return "\n".join(lines)
+
+
+# =============================================================================
+# Statistical Testing Utilities
+# =============================================================================
+
+
+def bootstrap_confidence_interval(
+    values: list[float],
+    n_bootstrap: int = 200,
+    confidence: float = 0.95,
+    backend: "Backend | None" = None,
+) -> ConfidenceInterval:
+    """Compute bootstrap confidence interval for a statistic.
+
+    Args:
+        values: List of observed values.
+        n_bootstrap: Number of bootstrap samples.
+        confidence: Confidence level (default 0.95 for 95% CI).
+        backend: Compute backend.
+
+    Returns:
+        ConfidenceInterval with lower, upper bounds and statistics.
+    """
+    backend = backend or get_default_backend()
+
+    n = len(values)
+    if n < 2:
+        mean_val = values[0] if values else 0.0
+        return ConfidenceInterval(
+            lower=mean_val,
+            upper=mean_val,
+            mean=mean_val,
+            std=0.0,
+            n_bootstrap=0,
+        )
+
+    # Generate bootstrap samples
+    bootstrap_means = []
+    for _ in range(n_bootstrap):
+        # Sample with replacement
+        indices = []
+        for _ in range(n):
+            u = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
+            idx = int(float(backend.to_numpy(u)[0]) * n)
+            idx = min(idx, n - 1)
+            indices.append(idx)
+
+        sample = [values[i] for i in indices]
+        bootstrap_means.append(sum(sample) / len(sample))
+
+    # Sort for percentiles
+    bootstrap_means.sort()
+
+    alpha = 1 - confidence
+    lower_idx = int(alpha / 2 * n_bootstrap)
+    upper_idx = int((1 - alpha / 2) * n_bootstrap) - 1
+
+    mean_val = sum(values) / len(values)
+    std_val = math.sqrt(sum((v - mean_val) ** 2 for v in values) / (len(values) - 1))
+
+    return ConfidenceInterval(
+        lower=bootstrap_means[lower_idx],
+        upper=bootstrap_means[upper_idx],
+        mean=mean_val,
+        std=std_val,
+        n_bootstrap=n_bootstrap,
+    )
+
+
+def compute_cohens_d(
+    values1: list[float],
+    values2: list[float],
+) -> EffectSize:
+    """Compute Cohen's d effect size between two groups.
+
+    Args:
+        values1: First group of values.
+        values2: Second group of values.
+
+    Returns:
+        EffectSize with Cohen's d and magnitude interpretation.
+    """
+    n1, n2 = len(values1), len(values2)
+
+    if n1 < 2 or n2 < 2:
+        return EffectSize(d=0.0, magnitude="negligible")
+
+    mean1 = sum(values1) / n1
+    mean2 = sum(values2) / n2
+
+    var1 = sum((v - mean1) ** 2 for v in values1) / (n1 - 1)
+    var2 = sum((v - mean2) ** 2 for v in values2) / (n2 - 1)
+
+    # Pooled standard deviation
+    pooled_std = math.sqrt(((n1 - 1) * var1 + (n2 - 1) * var2) / (n1 + n2 - 2))
+
+    if pooled_std < 1e-10:
+        d = 0.0
+    else:
+        d = (mean1 - mean2) / pooled_std
+
+    return EffectSize.from_cohens_d(d)
+
+
+def permutation_test(
+    values1: list[float],
+    values2: list[float],
+    n_permutations: int = 1000,
+    backend: "Backend | None" = None,
+) -> float:
+    """Compute p-value via permutation test.
+
+    Tests the null hypothesis that the two groups come from the same
+    distribution, specifically testing if the difference in means is
+    significant.
+
+    Args:
+        values1: First group of values.
+        values2: Second group of values.
+        n_permutations: Number of permutations.
+        backend: Compute backend.
+
+    Returns:
+        Two-tailed p-value.
+    """
+    backend = backend or get_default_backend()
+
+    observed_diff = abs(sum(values1) / len(values1) - sum(values2) / len(values2))
+    combined = values1 + values2
+    n1 = len(values1)
+    n_total = len(combined)
+
+    count_extreme = 0
+
+    for _ in range(n_permutations):
+        # Shuffle combined data
+        shuffled = combined.copy()
+        for i in range(n_total - 1, 0, -1):
+            u = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
+            j = int(float(backend.to_numpy(u)[0]) * (i + 1))
+            j = min(j, i)
+            shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+
+        # Split and compute difference
+        perm_mean1 = sum(shuffled[:n1]) / n1
+        perm_mean2 = sum(shuffled[n1:]) / (n_total - n1)
+        perm_diff = abs(perm_mean1 - perm_mean2)
+
+        if perm_diff >= observed_diff:
+            count_extreme += 1
+
+    return (count_extreme + 1) / (n_permutations + 1)
+
+
+def test_hypothesis(
+    hypothesis_id: str,
+    description: str,
+    prime_value: float,
+    baseline_value: float,
+    prime_samples: list[float] | None = None,
+    baseline_samples: list[float] | None = None,
+    one_sided: bool = True,
+    backend: "Backend | None" = None,
+) -> HypothesisTest:
+    """Run a single hypothesis test.
+
+    Args:
+        hypothesis_id: Identifier (H1-H8).
+        description: Human-readable description.
+        prime_value: Observed value for primes.
+        baseline_value: Observed value for baseline.
+        prime_samples: Bootstrap samples for primes (if available).
+        baseline_samples: Bootstrap samples for baseline (if available).
+        one_sided: If True, test if prime < baseline (for concentration metrics).
+        backend: Compute backend.
+
+    Returns:
+        HypothesisTest with results.
+    """
+    backend = backend or get_default_backend()
+
+    # Compute effect size
+    if prime_samples and baseline_samples:
+        effect = compute_cohens_d(prime_samples, baseline_samples)
+        p_value = permutation_test(prime_samples, baseline_samples, backend=backend)
+        ci = bootstrap_confidence_interval(
+            [p - b for p, b in zip(prime_samples, baseline_samples)],
+            backend=backend,
+        )
+    else:
+        # Single-value comparison
+        diff = prime_value - baseline_value
+        effect = EffectSize.from_cohens_d(diff / (abs(baseline_value) + 1e-10))
+        p_value = 0.05  # Placeholder without samples
+        ci = None
+
+    # Determine pass/fail
+    if one_sided:
+        # For H1, H2: pass if prime < baseline
+        passed = prime_value < baseline_value and p_value < 0.05
+    else:
+        # For H3, etc: pass if significantly different
+        passed = abs(prime_value - baseline_value) > 0.1 and p_value < 0.05
+
+    return HypothesisTest(
+        hypothesis_id=hypothesis_id,
+        description=description,
+        passed=passed,
+        p_value=p_value,
+        effect_size=effect,
+        prime_value=prime_value,
+        baseline_value=baseline_value,
+        confidence_interval=ci,
+    )
+
+
+# =============================================================================
+# Comprehensive Experiment Runners
+# =============================================================================
+
+
+def run_comprehensive_analysis(
+    n_primes: int = 1000,
+    embedding_dim: int = 20,
+    delay: int = 1,
+    baselines: list[BaselineType] | None = None,
+    n_bootstrap: int = 50,
+    backend: "Backend | None" = None,
+    seed: int = 42,
+) -> ComprehensiveResult:
+    """Run comprehensive prime geometry analysis with multiple baselines.
+
+    Args:
+        n_primes: Number of primes to analyze.
+        embedding_dim: Dimension of time-delay embedding.
+        delay: Time delay for embedding.
+        baselines: List of baseline types to test against.
+        n_bootstrap: Number of bootstrap samples for CIs.
+        backend: Compute backend.
+        seed: Random seed.
+
+    Returns:
+        ComprehensiveResult with all analyses.
+    """
+    backend = backend or get_default_backend()
+
+    if baselines is None:
+        baselines = [
+            BaselineType.EXPONENTIAL,
+            BaselineType.UNIFORM,
+            BaselineType.SHUFFLED,
+        ]
+
+    result = ComprehensiveResult(
+        n_primes=n_primes,
+        embedding_dim=embedding_dim,
+    )
+
+    # Generate primes
+    logger.info(f"Generating {n_primes} primes for comprehensive analysis...")
+    primes = generate_primes(n_primes, backend)
+    result.max_prime = primes.max_prime
+    mean_gap = float(backend.mean(primes.gaps))
+
+    # Prime embeddings and eigenvalue analysis
+    prime_embedded = time_delay_embedding(primes.gaps, embedding_dim, delay, backend)
+    prime_gram = compute_gram_matrix(prime_embedded, backend)
+    prime_ev = analyze_eigenvalues(prime_gram, backend)
+    result.embedding_results["prime_time_delay"] = prime_ev
+
+    # Collect bootstrap samples for primes
+    prime_participation_samples = []
+    for i in range(n_bootstrap):
+        # Subsample and re-analyze
+        n_subsample = int(primes.gap_count * 0.8)
+        indices = []
+        for _ in range(n_subsample):
+            u = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
+            idx = int(float(backend.to_numpy(u)[0]) * primes.gap_count)
+            idx = min(idx, primes.gap_count - 1)
+            indices.append(idx)
+
+        gaps_list = backend.to_numpy(primes.gaps).tolist()
+        subsample = backend.array([gaps_list[idx] for idx in indices])
+
+        if n_subsample >= embedding_dim + 1:
+            sub_embedded = time_delay_embedding(subsample, embedding_dim, delay, backend)
+            sub_gram = compute_gram_matrix(sub_embedded, backend)
+            sub_ev = analyze_eigenvalues(sub_gram, backend)
+            prime_participation_samples.append(sub_ev.participation_ratio)
+
+    # Analyze each baseline
+    for baseline_type in baselines:
+        logger.info(f"Analyzing baseline: {baseline_type.value}")
+
+        baseline_gaps = generate_baseline(
+            baseline_type,
+            primes.gap_count,
+            mean_gap,
+            prime_gaps=primes.gaps,
+            backend=backend,
+            seed=seed,
+        )
+
+        baseline_embedded = time_delay_embedding(baseline_gaps, embedding_dim, delay, backend)
+        baseline_gram = compute_gram_matrix(baseline_embedded, backend)
+        baseline_ev = analyze_eigenvalues(baseline_gram, backend)
+
+        result.baseline_results[baseline_type.value] = baseline_ev
+
+        # Compare to primes
+        comparison = compare_distributions(
+            prime_ev, baseline_ev, "primes", baseline_type.value, backend
+        )
+        result.comparisons[f"primes_vs_{baseline_type.value}"] = comparison
+
+    # Run hypothesis tests
+    # H1: Spectral Concentration
+    for baseline_type in baselines:
+        baseline_ev = result.baseline_results[baseline_type.value]
+        h1 = test_hypothesis(
+            f"H1_{baseline_type.value}",
+            f"Spectral concentration vs {baseline_type.value}",
+            prime_ev.participation_ratio,
+            baseline_ev.participation_ratio,
+            prime_samples=prime_participation_samples if prime_participation_samples else None,
+            one_sided=True,
+            backend=backend,
+        )
+        result.hypothesis_tests[f"H1_{baseline_type.value}"] = h1
+
+    # H2: Lower Spectral Entropy
+    for baseline_type in baselines:
+        baseline_ev = result.baseline_results[baseline_type.value]
+        h2 = test_hypothesis(
+            f"H2_{baseline_type.value}",
+            f"Lower spectral entropy vs {baseline_type.value}",
+            prime_ev.spectral_entropy,
+            baseline_ev.spectral_entropy,
+            one_sided=True,
+            backend=backend,
+        )
+        result.hypothesis_tests[f"H2_{baseline_type.value}"] = h2
+
+    # Summary statistics
+    result.summary["prime_participation_ratio"] = prime_ev.participation_ratio
+    result.summary["prime_spectral_entropy"] = prime_ev.spectral_entropy
+    result.summary["n_baselines_tested"] = float(len(baselines))
+    result.summary["h1_pass_rate"] = sum(
+        1 for k, v in result.hypothesis_tests.items() if k.startswith("H1") and v.passed
+    ) / len(baselines)
+
+    logger.info("Comprehensive analysis complete.")
+    return result
+
+
+def run_scale_sweep(
+    scales: list[int] | None = None,
+    embedding_dim: int = 20,
+    delay: int = 1,
+    backend: "Backend | None" = None,
+    seed: int = 42,
+) -> ScaleSweepResult:
+    """Run analysis across multiple scales to test scale invariance.
+
+    Args:
+        scales: List of n_primes values to test.
+        embedding_dim: Dimension of time-delay embedding.
+        delay: Time delay for embedding.
+        backend: Compute backend.
+        seed: Random seed.
+
+    Returns:
+        ScaleSweepResult with all scale analyses.
+    """
+    backend = backend or get_default_backend()
+
+    if scales is None:
+        scales = [100, 500, 1000, 5000, 10000]
+
+    result = ScaleSweepResult(scales=scales)
+
+    for n_primes in scales:
+        logger.info(f"Scale sweep: n_primes = {n_primes}")
+
+        # Adjust embedding dim for small scales
+        effective_dim = min(embedding_dim, n_primes // 10)
+        if effective_dim < 5:
+            effective_dim = 5
+
+        try:
+            analysis = run_comprehensive_analysis(
+                n_primes=n_primes,
+                embedding_dim=effective_dim,
+                delay=delay,
+                baselines=[BaselineType.EXPONENTIAL],  # Just one for speed
+                n_bootstrap=20,  # Fewer for speed
+                backend=backend,
+                seed=seed,
+            )
+            result.results.append(analysis)
+
+            # Extract effect sizes and p-values
+            h1_key = "H1_exponential"
+            if h1_key in analysis.hypothesis_tests:
+                h1 = analysis.hypothesis_tests[h1_key]
+                result.effect_size_trend.append(h1.effect_size.d)
+                result.p_value_trend.append(h1.p_value)
+
+        except Exception as e:
+            logger.warning(f"Scale {n_primes} failed: {e}")
+            continue
+
+    # Evaluate scale invariance (H7)
+    # Effect should be stable or increase with scale
+    if len(result.effect_size_trend) >= 3:
+        # Check if effect sizes are consistently negative (primes more concentrated)
+        negative_effects = sum(1 for e in result.effect_size_trend if e < 0)
+        result.scale_invariance_passed = negative_effects >= len(result.effect_size_trend) * 0.8
+
+    return result
+
+
+def run_perturbation_study(
+    n_primes: int = 1000,
+    noise_levels: list[float] | None = None,
+    embedding_dim: int = 20,
+    backend: "Backend | None" = None,
+    seed: int = 42,
+) -> list[PerturbationResult]:
+    """Test robustness of prime geometry to perturbations.
+
+    Args:
+        n_primes: Number of primes to analyze.
+        noise_levels: List of noise levels (as fraction of mean gap).
+        embedding_dim: Dimension of time-delay embedding.
+        backend: Compute backend.
+        seed: Random seed.
+
+    Returns:
+        List of PerturbationResult for each noise level.
+    """
+    backend = backend or get_default_backend()
+
+    if noise_levels is None:
+        noise_levels = [0.0, 0.1, 0.2, 0.5, 1.0]
+
+    results = []
+
+    # Generate primes and compute baseline
+    primes = generate_primes(n_primes, backend)
+    mean_gap = float(backend.mean(primes.gaps))
+
+    prime_embedded = time_delay_embedding(primes.gaps, embedding_dim, 1, backend)
+    prime_gram = compute_gram_matrix(prime_embedded, backend)
+    original_ev = analyze_eigenvalues(prime_gram, backend)
+    original_pr = original_ev.participation_ratio
+
+    for noise_level in noise_levels:
+        logger.info(f"Perturbation study: noise_level = {noise_level}")
+
+        if noise_level == 0.0:
+            perturbed_pr = original_pr
+        else:
+            # Add Gaussian noise scaled to noise_level * mean_gap
+            gaps_list = backend.to_numpy(primes.gaps).tolist()
+            perturbed_gaps = []
+
+            for g in gaps_list:
+                # Box-Muller for Gaussian noise
+                u1 = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
+                u2 = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
+                u1_val = max(float(backend.to_numpy(u1)[0]), 1e-10)
+                u2_val = float(backend.to_numpy(u2)[0])
+
+                z = math.sqrt(-2 * math.log(u1_val)) * math.cos(2 * math.pi * u2_val)
+                noise = z * noise_level * mean_gap
+                perturbed = max(2.0, g + noise)
+                perturbed_gaps.append(perturbed)
+
+            perturbed_arr = backend.array(perturbed_gaps)
+            perturbed_embedded = time_delay_embedding(perturbed_arr, embedding_dim, 1, backend)
+            perturbed_gram = compute_gram_matrix(perturbed_embedded, backend)
+            perturbed_ev = analyze_eigenvalues(perturbed_gram, backend)
+            perturbed_pr = perturbed_ev.participation_ratio
+
+        # Compute stability score
+        if original_pr > 0:
+            relative_change = abs(perturbed_pr - original_pr) / original_pr
+            stability = 1.0 - min(relative_change, 1.0)
+        else:
+            stability = 0.0
+
+        results.append(
+            PerturbationResult(
+                noise_level=noise_level,
+                original_participation_ratio=original_pr,
+                perturbed_participation_ratio=perturbed_pr,
+                stability_score=stability,
+            )
+        )
+
+    return results
+
+
+def format_comprehensive_result(result: ComprehensiveResult) -> str:
+    """Format comprehensive result for display.
+
+    Args:
+        result: Comprehensive analysis result.
+
+    Returns:
+        Formatted string for terminal output.
+    """
+    lines = [
+        "=" * 70,
+        "COMPREHENSIVE PRIME GEOMETRY ANALYSIS",
+        "=" * 70,
+        "",
+        f"Experiment ID: {result.experiment_id}",
+        f"Timestamp: {result.timestamp}",
+        f"Primes: {result.n_primes} (max: {result.max_prime})",
+        f"Embedding dimension: {result.embedding_dim}",
+        "",
+        "-" * 70,
+        "SPECTRAL METRICS",
+        "-" * 70,
+        "",
+    ]
+
+    # Prime results
+    if "prime_time_delay" in result.embedding_results:
+        ev = result.embedding_results["prime_time_delay"]
+        lines.append(f"Prime gaps (time-delay embedding):")
+        lines.append(f"  Participation ratio: {ev.participation_ratio:.3f}")
+        lines.append(f"  Spectral entropy:    {ev.spectral_entropy:.3f}")
+        lines.append(f"  Top-10 ratio:        {ev.top_k_ratio:.3f}")
+        lines.append("")
+
+    # Baseline comparisons
+    for name, ev in result.baseline_results.items():
+        lines.append(f"Baseline [{name}]:")
+        lines.append(f"  Participation ratio: {ev.participation_ratio:.3f}")
+        lines.append(f"  Spectral entropy:    {ev.spectral_entropy:.3f}")
+        lines.append("")
+
+    # Hypothesis tests
+    lines.append("-" * 70)
+    lines.append("HYPOTHESIS TESTS")
+    lines.append("-" * 70)
+    lines.append("")
+
+    for name, test in result.hypothesis_tests.items():
+        status = "✓ PASS" if test.passed else "✗ FAIL"
+        lines.append(f"{name}: {status}")
+        lines.append(f"  {test.description}")
+        lines.append(f"  Prime: {test.prime_value:.3f}, Baseline: {test.baseline_value:.3f}")
+        lines.append(f"  Effect size: {test.effect_size.d:.3f} ({test.effect_size.magnitude})")
+        lines.append(f"  p-value: {test.p_value:.4f}")
+        lines.append("")
+
+    # Summary
+    lines.append("-" * 70)
+    lines.append("SUMMARY")
+    lines.append("-" * 70)
+    for key, value in result.summary.items():
+        lines.append(f"  {key}: {value:.3f}")
+
+    lines.append("")
+    lines.append("=" * 70)
 
     return "\n".join(lines)
