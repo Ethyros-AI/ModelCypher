@@ -1,7 +1,7 @@
 # ModelCypher MCP Server Documentation
 
-**Version:** 1.2.0
-**Last Updated:** 2025-12-25
+**Version:** 1.3.0
+**Last Updated:** 2025-12-28
 **MCP SDK:** Python `mcp` FastMCP
 **Protocol:** MCP Specification 2024-11-05
 
@@ -677,6 +677,170 @@ Call mc_inventory first to see what models are available before starting trainin
       "memoryFitStatus": "fits"
     }
   ]
+}
+```
+
+---
+
+### mc_program_run
+
+**Purpose:** Execute a multi-donor transplant program.
+
+**Category:** MUTATING - creates merged models
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "config_path": {
+      "type": "string",
+      "description": "Path to program YAML config file"
+    },
+    "parallel": {
+      "type": "boolean",
+      "default": false,
+      "description": "Process base models in parallel"
+    },
+    "max_workers": {
+      "type": "integer",
+      "default": 2,
+      "description": "Max parallel workers (requires parallel=true)"
+    },
+    "dry_run": {
+      "type": "boolean",
+      "default": false,
+      "description": "Validate without execution"
+    },
+    "base_filter": {
+      "type": "string",
+      "description": "Only process specific base model (by ID)"
+    }
+  },
+  "required": ["config_path"]
+}
+```
+
+**Output:**
+```json
+{
+  "_schema": "mc.result.multi_donor.v1",
+  "program_id": "abc123",
+  "program_name": "Program A",
+  "base_results": [...],
+  "total_duration_seconds": 3600.0,
+  "status": "completed"
+}
+```
+
+---
+
+### mc_program_status
+
+**Purpose:** Get status of a running or completed program.
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "program_id": {
+      "type": "string",
+      "description": "Program ID to check status"
+    }
+  },
+  "required": ["program_id"]
+}
+```
+
+**Output:**
+```json
+{
+  "program_id": "abc123",
+  "program_name": "Program A",
+  "status": "in_progress",
+  "started_at": "2025-01-01T12:00:00",
+  "updated_at": "2025-01-01T12:30:00",
+  "base_progress": [
+    {
+      "base_index": 0,
+      "base_id": "qwen3-8b",
+      "completed_donors": 2,
+      "total_donors": 5,
+      "status": "in_progress"
+    }
+  ]
+}
+```
+
+---
+
+### mc_program_list
+
+**Purpose:** List all programs (running, completed, failed).
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+**Output:**
+```json
+[
+  {
+    "program_id": "abc123",
+    "program_name": "Program A",
+    "status": "completed",
+    "started_at": "2025-01-01T12:00:00",
+    "updated_at": "2025-01-01T13:00:00"
+  }
+]
+```
+
+---
+
+### mc_program_show
+
+**Purpose:** Show details of a program configuration.
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "config_path": {
+      "type": "string",
+      "description": "Path to program YAML config file"
+    }
+  },
+  "required": ["config_path"]
+}
+```
+
+**Output:**
+```json
+{
+  "name": "Program A - Permissive Multi-Specialist",
+  "description": "Multi-donor transplant...",
+  "bases": [
+    {"id": "qwen3-8b", "source": "Qwen/Qwen3-8B", "alias": "qwen3"}
+  ],
+  "donors": [
+    {"id": "deepseek-v3", "source": "deepseek-ai/DeepSeek-V3.2", "domains": ["reasoning", "logical"], "priority": 3}
+  ],
+  "evaluation": {
+    "after_each_donor": true,
+    "benchmarks": ["mmlu_pro"]
+  }
 }
 ```
 

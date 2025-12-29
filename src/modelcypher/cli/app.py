@@ -39,6 +39,7 @@ from modelcypher.cli.commands import help_cmd as help_commands
 from modelcypher.cli.commands import infer as infer_commands
 from modelcypher.cli.commands import job as job_commands
 from modelcypher.cli.commands import model as model_commands
+from modelcypher.cli.commands import program as program_commands
 from modelcypher.cli.commands import research as research_commands
 from modelcypher.cli.commands import safety as safety_commands
 from modelcypher.cli.commands import stability as stability_commands
@@ -161,6 +162,7 @@ app.add_typer(train_commands.train_app, name="train")
 app.add_typer(job_commands.app, name="job")
 app.add_typer(train_commands.checkpoint_app, name="checkpoint")
 app.add_typer(model_commands.app, name="model")
+app.add_typer(program_commands.app, name="program")
 app.add_typer(system_commands.app, name="system")
 app.add_typer(eval_commands.eval_app, name="eval")
 app.add_typer(eval_commands.compare_app, name="compare")

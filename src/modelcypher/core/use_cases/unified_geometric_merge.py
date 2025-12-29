@@ -206,6 +206,7 @@ class UnifiedGeometricMerger:
         source_path: str,
         target_path: str,
         output_dir: str | None = None,
+        output_path: str | None = None,
         dry_run: bool = False,
         use_full_geometry: bool = True,
         knowledge_delta_mask_path: str | None = None,
@@ -213,6 +214,8 @@ class UnifiedGeometricMerger:
         transplant_layers: list[int] | None = None,
         transplant_boundary_k: int | None = None,
         transplant_geodesic_k_neighbors: int | None = None,
+        target_weights: dict[str, "Array"] | None = None,
+        config: "UnifiedMergeConfig | None" = None,
     ) -> UnifiedMergeResult:
         """
         Execute null-space constrained transplant merge.
@@ -226,7 +229,8 @@ class UnifiedGeometricMerger:
         Args:
             source_path: Path to source model (skill donor)
             target_path: Path to target model (knowledge base)
-            output_dir: Output directory for merged model
+            output_dir: Output directory for merged model (deprecated, use output_path)
+            output_path: Output path for merged model (preferred over output_dir)
             dry_run: If True, don't save to disk
             use_full_geometry: If True, use GeometricMergeOrchestrator
             knowledge_delta_mask_path: Optional delta mask JSON for layer gating
@@ -234,6 +238,10 @@ class UnifiedGeometricMerger:
             transplant_layers: Limit transplant to specific layer indices (optional)
             transplant_boundary_k: Boundary neighbors per core probe (optional)
             transplant_geodesic_k_neighbors: k for geodesic graph (optional)
+            target_weights: Pre-loaded target weights (avoids reloading from disk).
+                           Used by multi-donor pipeline to pass merged weights from
+                           previous donor without reloading.
+            config: Override merge configuration (optional)
 
         Returns:
             UnifiedMergeResult with merged weights and metrics
@@ -242,33 +250,37 @@ class UnifiedGeometricMerger:
         logger.info("Source: %s", source_path)
         logger.info("Target: %s", target_path)
 
-        config = self.config
+        # Use passed config or fall back to instance config
+        merge_config = config if config is not None else self.config
+
+        # Resolve output path (prefer output_path over output_dir)
+        effective_output = output_path or output_dir
         if (
             transplant_domains is not None
             or transplant_layers is not None
             or transplant_boundary_k is not None
             or transplant_geodesic_k_neighbors is not None
         ):
-            config = replace(
-                config,
-                transplant_domains=tuple(transplant_domains or config.transplant_domains),
+            merge_config = replace(
+                merge_config,
+                transplant_domains=tuple(transplant_domains or merge_config.transplant_domains),
                 transplant_layers=(
-                    tuple(transplant_layers) if transplant_layers else config.transplant_layers
+                    tuple(transplant_layers) if transplant_layers else merge_config.transplant_layers
                 ),
                 transplant_boundary_k=(
                     transplant_boundary_k
                     if transplant_boundary_k is not None
-                    else config.transplant_boundary_k
+                    else merge_config.transplant_boundary_k
                 ),
                 transplant_geodesic_k_neighbors=(
                     transplant_geodesic_k_neighbors
                     if transplant_geodesic_k_neighbors is not None
-                    else config.transplant_geodesic_k_neighbors
+                    else merge_config.transplant_geodesic_k_neighbors
                 ),
             )
 
         # Transplant strategy bypasses full geometry merge (uses null-space projection)
-        if use_full_geometry and config.transplant_domains:
+        if use_full_geometry and merge_config.transplant_domains:
             logger.info(
                 "Transplant domains specified; using null-space constrained transplant."
             )
@@ -285,10 +297,17 @@ class UnifiedGeometricMerger:
 
         # Load weights (CPU first to reduce GPU memory pressure during merge)
         source_weights, _ = self._load_weights_cpu(source_path)
-        target_weights, target_format = self._load_weights_cpu(target_path)
+
+        # Use pre-loaded target weights if provided (multi-donor optimization)
+        if target_weights is not None:
+            logger.info("Using pre-loaded target weights (multi-donor mode)")
+            loaded_target_weights = target_weights
+            target_format = "safetensors"  # Assume safetensors for pre-loaded weights
+        else:
+            loaded_target_weights, target_format = self._load_weights_cpu(target_path)
 
         # Identify layers
-        layer_indices = self._extract_layer_indices(target_weights)
+        layer_indices = self._extract_layer_indices(loaded_target_weights)
         logger.info("Found %d layers", len(layer_indices))
 
         # Load tokenizers for vocabulary alignment
@@ -300,7 +319,7 @@ class UnifiedGeometricMerger:
         # =================================================================
         # Skip vocabulary alignment for transplant since GRAM_TRANSPORT
         # handles cross-dimensional projection at the weight level.
-        skip_vocab_for_transplant = bool(config.transplant_domains)
+        skip_vocab_for_transplant = bool(merge_config.transplant_domains)
         if skip_vocab_for_transplant:
             logger.info("STAGE 0: VOCABULARY ALIGNMENT (skipped for transplant)")
             vocab_metrics = {"skipped": True, "reason": "transplant_strategy"}
@@ -310,7 +329,7 @@ class UnifiedGeometricMerger:
             logger.info("STAGE 0: VOCABULARY ALIGNMENT")
             source_weights, vocab_metrics, vocab_aligned, vocab_alignment_map = self._stage_vocabulary(
                 source_weights=source_weights,
-                target_weights=target_weights,
+                target_weights=loaded_target_weights,
                 source_tokenizer=source_tokenizer,
                 target_tokenizer=target_tokenizer,
             )
@@ -319,7 +338,7 @@ class UnifiedGeometricMerger:
         # Load models for probe stage
         source_model = None
         target_model = None
-        if config.probe_mode == "precise":
+        if merge_config.probe_mode == "precise":
             logger.info("Loading models for precise probe execution...")
             source_model = self._load_model_for_probing(source_path)
             target_model = self._load_model_for_probing(target_path)
@@ -327,16 +346,16 @@ class UnifiedGeometricMerger:
         # =================================================================
         # STAGE 1: PROBE (Compute layer correspondences via CKA)
         # =================================================================
-        logger.info("STAGE 1: PROBE (%s mode)", config.probe_mode)
+        logger.info("STAGE 1: PROBE (%s mode)", merge_config.probe_mode)
         probe_result, probe_metrics, source_activations, target_activations = self._stage_probe(
             source_weights=source_weights,
-            target_weights=target_weights,
+            target_weights=loaded_target_weights,
             source_model=source_model,
             target_model=target_model,
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
             alignment_map=vocab_alignment_map,
-            config_override=config,
+            config_override=merge_config,
         )
 
         layer_confidences: dict[int, float] = probe_result.get("confidences", {})
@@ -394,14 +413,14 @@ class UnifiedGeometricMerger:
         # Permutation alignment reduces delta magnitude before transplant.
         # Only enabled for same-architecture models (hidden dimensions must match).
         source_hidden = self._infer_hidden_dim(source_weights)
-        target_hidden = self._infer_hidden_dim(target_weights)
+        target_hidden = self._infer_hidden_dim(loaded_target_weights)
         enable_permutation = source_hidden == target_hidden
 
         if enable_permutation:
             logger.info("STAGE 2: PERMUTE (Git Re-Basin, hidden_dim=%d)", target_hidden)
             permuted_weights, permute_metrics = self._stage_permute(
                 source_weights=source_weights,
-                target_weights=target_weights,
+                target_weights=loaded_target_weights,
                 intersection_map_obj=intersection_map_obj,
                 layer_confidences=layer_confidences,
                 enable_permutation=True,
@@ -428,7 +447,7 @@ class UnifiedGeometricMerger:
         # =================================================================
         # ROTATE/BLEND was removed - alpha-blending produces gibberish.
         # Only null-space constrained transplant preserves boundary relationships.
-        if not config.transplant_domains:
+        if not merge_config.transplant_domains:
             raise RuntimeError(
                 "Transplant requires transplant_domains. "
                 "Specify domains like ['mathematical', 'logical'] for knowledge transfer."
@@ -438,26 +457,25 @@ class UnifiedGeometricMerger:
                 "Transplant requires activations. Use probe_mode=precise."
             )
 
-        logger.info("STAGE 2: TRANSPLANT (null-space constrained)")
+        logger.info("STAGE 3: TRANSPLANT (null-space constrained)")
         merged_weights, transplant_metrics = self._stage_transplant(
             source_weights=source_weights,
-            target_weights=target_weights,
+            target_weights=loaded_target_weights,
             layer_indices=layer_indices,
             probe_ids=probe_result.get("probe_ids"),
             probe_domains=probe_result.get("probe_domains"),
             target_activations=target_activations,
-            config=config,
+            config=merge_config,
         )
 
         # =================================================================
         # OUTPUT
         # =================================================================
-        if output_dir and not dry_run:
-            self._save_weights(output_dir, merged_weights, target_format)
-            self._copy_config_files(target_path, output_dir)
-            output_path = output_dir
-        else:
-            output_path = None
+        final_output_path: str | None = None
+        if effective_output and not dry_run:
+            self._save_weights(effective_output, merged_weights, target_format)
+            self._copy_config_files(target_path, effective_output)
+            final_output_path = effective_output
 
         # Compute metrics
         mean_confidence = probe_metrics.get("mean_confidence", 0.0)
@@ -478,7 +496,7 @@ class UnifiedGeometricMerger:
             weight_count=len(merged_weights),
             timestamp=datetime.utcnow(),
             merge_strategy="transplant",
-            output_path=output_path,
+            output_path=final_output_path,
             vocab_aligned=vocab_aligned,
             safety_verdict="geometric",
             refusal_preserved=True,

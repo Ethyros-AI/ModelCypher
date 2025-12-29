@@ -98,6 +98,10 @@ TOOL_PROFILES = {
         "mc_model_merge",  # New
         "mc_model_register",  # New
         "mc_model_delete",  # New
+        "mc_program_run",  # Multi-donor transplant
+        "mc_program_status",
+        "mc_program_list",
+        "mc_program_show",
         "mc_checkpoint_export",
         "mc_checkpoint_list",  # New
         "mc_checkpoint_delete",  # New
@@ -2885,6 +2889,7 @@ def build_server() -> FastMCP:
         register_geometry_tools,
     )
     from modelcypher.mcp.tools.merge_entropy import register_merge_entropy_tools
+    from modelcypher.mcp.tools.program import register_program_tools
     from modelcypher.mcp.tools.safety_entropy import register_entropy_tools, register_safety_tools
     from modelcypher.mcp.tools.tasks import register_task_tools
 
@@ -2909,6 +2914,7 @@ def build_server() -> FastMCP:
     register_geometry_interference_tools(service_context)
     register_geometry_baseline_tools(service_context)
     register_merge_entropy_tools(service_context)
+    register_program_tools(service_context)
     register_task_tools(service_context)
 
     return mcp

@@ -1,0 +1,156 @@
+# Domain Taxonomy for Multi-Donor Transplant Programs
+#
+# Maps program configuration domain names to UnifiedAtlas domains and probe categories.
+# This file is the authoritative reference for domain→probe mappings.
+
+_schema: "mc.domain.taxonomy.v1"
+version: "1.0.0"
+
+# Core domains from UnifiedAtlas (AtlasDomain enum)
+# These map directly to probe categories in the atlas.
+core_domains:
+  mathematical:
+    atlas_domain: MATHEMATICAL
+    probe_count: 68
+    description: "Numerical sequences, ratios, mathematical patterns (Fibonacci, primes, etc.)"
+    aliases:
+      - "math"
+      - "numeric"
+      - "quantitative"
+
+  logical:
+    atlas_domain: LOGICAL
+    probe_count: 40
+    description: "Boolean logic, conditionals, inference, causality"
+    aliases:
+      - "logic"
+      - "boolean"
+      - "inference"
+
+  computational:
+    atlas_domain: COMPUTATIONAL
+    probe_count: 76
+    description: "Code gates, algorithms, control flow"
+    aliases:
+      - "coding"
+      - "code"
+      - "programming"
+
+  linguistic:
+    atlas_domain: LINGUISTIC
+    probe_count: 65
+    description: "Semantic primes, speech acts, language fundamentals"
+    aliases:
+      - "language"
+      - "semantics"
+
+  affective:
+    atlas_domain: AFFECTIVE
+    probe_count: 32
+    description: "Emotions, valence, sentiment"
+    aliases:
+      - "emotional"
+      - "sentiment"
+
+  relational:
+    atlas_domain: RELATIONAL
+    probe_count: 50
+    description: "Social relationships, interpersonal, kinship"
+    aliases:
+      - "social"
+      - "interpersonal"
+
+  temporal:
+    atlas_domain: TEMPORAL
+    probe_count: 25
+    description: "Time concepts, tense, duration, causality"
+    aliases:
+      - "time"
+      - "temporal"
+
+  spatial:
+    atlas_domain: SPATIAL
+    probe_count: 23
+    description: "Place, location, direction, physical space"
+    aliases:
+      - "space"
+      - "location"
+
+  moral:
+    atlas_domain: MORAL
+    probe_count: 30
+    description: "Ethics, Haidt Moral Foundations Theory"
+    aliases:
+      - "ethical"
+      - "ethics"
+
+  philosophical:
+    atlas_domain: PHILOSOPHICAL
+    probe_count: 30
+    description: "Ontology, epistemology, modality, mereology"
+    aliases:
+      - "philosophy"
+      - "ontological"
+
+  factual:
+    atlas_domain: FACTUAL
+    probe_count: 0
+    description: "Factual knowledge (uses LINGUISTIC + PHILOSOPHICAL probes)"
+    aliases:
+      - "knowledge"
+      - "facts"
+
+# Composite domains (combine multiple AtlasDomains)
+# These are useful for transplant operations that span multiple categories.
+composite_domains:
+  reasoning:
+    components:
+      - LOGICAL
+      - PHILOSOPHICAL
+    description: "General reasoning capability (logic + philosophy)"
+    aliases:
+      - "reason"
+      - "thinking"
+
+  agentic:
+    components:
+      - COMPUTATIONAL
+      - LOGICAL
+    description: "Tool use, planning, execution (code + logic)"
+    aliases:
+      - "agent"
+      - "tool-use"
+
+  coding:
+    components:
+      - COMPUTATIONAL
+    description: "Programming and code generation"
+    aliases:
+      - "code"
+      - "programming"
+
+  medical:
+    components:
+      - LINGUISTIC
+      - FACTUAL
+    description: "Medical domain knowledge"
+    custom_probes_path: "~/.modelcypher/probes/medical.json"
+    aliases:
+      - "health"
+      - "clinical"
+
+  legal:
+    components:
+      - LOGICAL
+      - LINGUISTIC
+    description: "Legal reasoning and knowledge"
+    custom_probes_path: "~/.modelcypher/probes/legal.json"
+    aliases:
+      - "law"
+      - "jurisprudence"
+
+# User-defined domain paths
+# These directories are searched for custom probe definitions.
+user_domain_paths:
+  - "~/.modelcypher/probes/"
+  - "./configs/probes/"
