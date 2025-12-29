@@ -57,6 +57,14 @@ This directory contains rigorous mathematical documentation for every geometric 
 
 ---
 
+## Number Theory & Universal Anchors
+
+| File | Concept | Primary Use in ModelCypher |
+|------|---------|---------------------------|
+| [prime_spectral_geometry.md](prime_spectral_geometry.md) | Prime Spectral Geometry | Universal alignment anchors via invariant structure |
+
+---
+
 ## The Geometric Thesis
 
 ModelCypher is built on a fundamental observation:
@@ -162,7 +170,7 @@ And the many researchers advancing these fields in 2024-2025.
 
 ---
 
-## File Count: 20 Reference Documents
+## File Count: 21 Reference Documents
 
 | Category | Count | Files |
 |----------|-------|-------|
@@ -170,7 +178,8 @@ And the many researchers advancing these fields in 2024-2025.
 | Similarity | 5 | cka, hsic, gromov_wasserstein, procrustes, relative_representations |
 | Merging | 6 | slerp, ties_merge, dare_sparsity, task_singular_vectors, fisher_information, permutation_alignment |
 | Weight Analysis | 2 | dora_decomposition, spectral_analysis |
+| Number Theory | 1 | prime_spectral_geometry |
 
 ---
 
-*Last updated: 2025-12-25*
+*Last updated: 2025-12-29*
