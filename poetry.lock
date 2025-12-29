@@ -2133,8 +2133,8 @@ files = [
 
 [package.dependencies]
 numpy = [
-    {version = ">=1.23.3", markers = "python_version >= \"3.11\""},
     {version = ">=1.26.0", markers = "python_version == \"3.12\""},
+    {version = ">=1.23.3", markers = "python_version == \"3.11\""},
 ]
 
 [package.extras]
@@ -2934,8 +2934,8 @@ files = [
 
 [package.dependencies]
 numpy = [
-    {version = ">=1.23.5", markers = "python_version >= \"3.11\""},
     {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
+    {version = ">=1.23.5", markers = "python_version >= \"3.11\""},
 ]
 
 [[package]]
@@ -3144,8 +3144,8 @@ files = [
 
 [package.dependencies]
 numpy = [
-    {version = ">=1.23.2", markers = "python_version == \"3.11\""},
     {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
+    {version = ">=1.23.2", markers = "python_version == \"3.11\""},
 ]
 python-dateutil = ">=2.8.2"
 pytz = ">=2020.1"
@@ -5190,6 +5190,22 @@ files = [
 test = ["pytest (>=6.0.1)", "pytest-md-report (>=0.6.2)"]
 
 [[package]]
+name = "tenacity"
+version = "9.1.2"
+description = "Retry code until it succeeds"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "tenacity-9.1.2-py3-none-any.whl", hash = "sha256:f77bf36710d8b73a50b2dd155c97b870017ad21afe6ab300326b0371b3b05138"},
+    {file = "tenacity-9.1.2.tar.gz", hash = "sha256:1169d376c297e7de388d18b4481760d478b0e99a777cad3a9c86e556f4b697cb"},
+]
+
+[package.extras]
+doc = ["reno", "sphinx"]
+test = ["pytest", "tornado (>=4.5)", "typeguard"]
+
+[[package]]
 name = "threadpoolctl"
 version = "3.6.0"
 description = "threadpoolctl"
@@ -6089,4 +6105,4 @@ jax = ["jax", "jaxlib"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.11"
-content-hash = "e67edaffc6331fd79419b08c6b64c4e17fa0b38b09275edd6c574099188f142d"
+content-hash = "2b4f9b35d674912050c6bafb254eda58116a8164a4f78a15e9dc5d86e449a5e2"

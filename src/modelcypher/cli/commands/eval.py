@@ -18,13 +18,14 @@
 """Evaluation and comparison CLI commands.
 
 Provides commands for:
-- Evaluation management: list, show, run
+- Evaluation management: list, show, run, benchmark
 - Model comparison: list, show, run, checkpoints, baseline, score
 
 Commands:
     mc eval list
     mc eval show <id>
     mc eval run --model <path> --dataset <path>
+    mc eval benchmark --model <path> --tasks gsm8k,hellaswag
     mc compare list
     mc compare run --checkpoint <path1> --checkpoint <path2>
 """
@@ -124,6 +125,168 @@ def eval_run(
         return
 
     write_output(payload, context.output_format, context.pretty)
+
+
+@eval_app.command("benchmark")
+def eval_benchmark(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", help="Path to MLX model directory"),
+    tasks: str = typer.Option(
+        "gsm8k,hellaswag,arc_easy,arc_challenge,winogrande",
+        "--tasks",
+        help="Comma-separated benchmark tasks",
+    ),
+    limit: int | None = typer.Option(None, "--limit", help="Limit samples per task"),
+    num_fewshot: int = typer.Option(0, "--num-fewshot", help="Number of few-shot examples"),
+    output_path: str | None = typer.Option(None, "--output-path", help="Save results to file"),
+    port: int = typer.Option(8080, "--port", help="Port for MLX server"),
+) -> None:
+    """Run lm-eval-harness benchmarks on an MLX model.
+
+    Starts an MLX server, runs benchmarks via lm-eval, and returns results.
+
+    Examples:
+        mc eval benchmark --model ./model --tasks gsm8k,hellaswag
+        mc eval benchmark --model ./model --tasks mmlu --limit 100
+        mc eval benchmark --model ./model --tasks arc_challenge --num-fewshot 5
+    """
+    import json
+    import signal
+    import subprocess
+    import sys
+    import time
+    from pathlib import Path
+
+    import requests
+
+    context = _context(ctx)
+
+    model_path = Path(model).resolve()
+    if not model_path.exists():
+        typer.echo(f"Error: Model path does not exist: {model_path}", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"Starting MLX server for {model_path}...")
+
+    # Start MLX server in background
+    server_cmd = [
+        sys.executable,
+        "-m",
+        "mlx_lm",
+        "server",
+        "--model",
+        str(model_path),
+        "--port",
+        str(port),
+    ]
+
+    server_process = subprocess.Popen(
+        server_cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    base_url = f"http://127.0.0.1:{port}/v1/completions"
+
+    # Wait for server to be ready
+    max_wait = 120  # seconds
+    start_time = time.time()
+    ready = False
+
+    health_check_url = f"http://127.0.0.1:{port}/v1/models"
+    while time.time() - start_time < max_wait:
+        try:
+            resp = requests.get(health_check_url, timeout=2)
+            if resp.status_code == 200:
+                ready = True
+                break
+        except requests.exceptions.ConnectionError:
+            pass
+        time.sleep(2)
+
+    if not ready:
+        server_process.terminate()
+        typer.echo("Error: MLX server failed to start within timeout", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"MLX server ready at {base_url}")
+    typer.echo(f"Running benchmarks: {tasks}")
+
+    try:
+        # Build lm-eval command
+        lm_eval_cmd = [
+            sys.executable,
+            "-m",
+            "lm_eval",
+            "--model",
+            "local-completions",
+            "--model_args",
+            f"base_url={base_url},tokenizer_backend=huggingface,tokenizer={model_path}",
+            "--tasks",
+            tasks,
+            "--batch_size",
+            "1",
+            "--num_fewshot",
+            str(num_fewshot),
+        ]
+
+        if limit:
+            lm_eval_cmd.extend(["--limit", str(limit)])
+
+        if output_path:
+            lm_eval_cmd.extend(["--output_path", output_path])
+
+        typer.echo(f"Running: {' '.join(lm_eval_cmd)}")
+
+        # Run lm-eval
+        result = subprocess.run(
+            lm_eval_cmd,
+            capture_output=True,
+            text=True,
+            timeout=7200,  # 2 hour timeout
+        )
+
+        if result.returncode != 0:
+            typer.echo(f"lm-eval stderr:\n{result.stderr}", err=True)
+            raise typer.Exit(1)
+
+        # Parse and output results
+        output = result.stdout
+
+        # Try to extract JSON results from output
+        payload = {
+            "model": str(model_path),
+            "tasks": tasks.split(","),
+            "output": output,
+        }
+
+        # Try to parse results if output_path was specified
+        if output_path:
+            results_file = Path(output_path)
+            if results_file.is_dir():
+                # lm-eval creates results in a subdirectory
+                json_files = list(results_file.glob("**/*.json"))
+                if json_files:
+                    with open(json_files[0]) as f:
+                        payload["results"] = json.load(f)
+            elif results_file.exists():
+                with open(results_file) as f:
+                    payload["results"] = json.load(f)
+
+        if context.output_format == "text":
+            typer.echo("\n=== BENCHMARK RESULTS ===")
+            typer.echo(output)
+        else:
+            write_output(payload, context.output_format, context.pretty)
+
+    finally:
+        # Clean up server
+        typer.echo("Stopping MLX server...")
+        server_process.terminate()
+        try:
+            server_process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            server_process.kill()
 
 
 @compare_app.command("list")

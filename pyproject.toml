@@ -57,6 +57,7 @@ jax = { version = ">=0.4.30", optional = true }
 jaxlib = { version = ">=0.4.30", optional = true }
 scikit-learn = "^1.8.0"
 lm-eval = "^0.4.9.2"
+tenacity = "^9.1.2"
 
 [tool.poetry.extras]
 docs = ["pypdf", "python-docx", "beautifulsoup4", "openpyxl", "python-pptx"]
