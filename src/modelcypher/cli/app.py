@@ -60,6 +60,7 @@ from modelcypher.cli.commands.geometry import manifold as geometry_manifold_comm
 from modelcypher.cli.commands.geometry import merge_entropy as geometry_merge_entropy_commands
 from modelcypher.cli.commands.geometry import metrics as geometry_metrics_commands
 from modelcypher.cli.commands.geometry import moral as geometry_moral_commands
+from modelcypher.cli.commands.geometry import number_theory as geometry_number_theory_commands
 from modelcypher.cli.commands.geometry import path as geometry_path_commands
 from modelcypher.cli.commands.geometry import persona as geometry_persona_commands
 from modelcypher.cli.commands.geometry import primes as geometry_primes_commands
@@ -195,6 +196,7 @@ geometry_app.add_typer(geometry_spatial_commands.app, name="spatial")
 geometry_app.add_typer(geometry_social_commands.app, name="social")
 geometry_app.add_typer(geometry_temporal_commands.app, name="temporal")
 geometry_app.add_typer(geometry_moral_commands.app, name="moral")
+geometry_app.add_typer(geometry_number_theory_commands.app, name="number-theory")
 geometry_app.add_typer(geometry_waypoint_commands.app, name="waypoint")
 geometry_app.add_typer(geometry_interference_commands.app, name="interference")
 geometry_app.add_typer(geometry_research_commands.app, name="research")
