@@ -21,12 +21,16 @@ Merge pipeline stages.
 Each stage is a standalone module that can be imported and tested independently.
 The UnifiedGeometricMerger orchestrates these stages in sequence.
 
+Pipeline: VOCAB → PROBE → TRANSPLANT → VALIDATE
+
 Stage 0: VOCABULARY - Cross-vocabulary embedding alignment
 Stage 1: PROBE - Build intersection map from probe responses
-Stage 2: PERMUTE - Permutation alignment for MLP neurons
-Stage 3: TRANSPLANT - Null-space constrained grafting (optional)
-Stage 3-5: ROTATE + BLEND + PROPAGATE - Geometric merge loop
-Stage 6: VALIDATE - Safety checks (numerical + content)
+Stage 2: TRANSPLANT - Null-space constrained knowledge grafting
+Stage 3: VALIDATE - Safety checks (numerical + content)
+
+REMOVED (proven broken):
+- PERMUTE: Changes gauge, breaks invariance guarantee
+- ROTATE/BLEND/PROPAGATE: Alpha-blending produces gibberish
 """
 
 from .stage_0_vocabulary import (
@@ -39,17 +43,6 @@ from .stage_1_probe import (
     ProbeResult,
     collect_layer_activations_mlx,
     stage_probe,
-)
-from .stage_2_permute import (
-    PermuteConfig,
-    PermuteResult,
-    infer_hidden_dim,
-    stage_permute,
-)
-from .stage_3_5_rotate_blend import (
-    RotateBlendConfig,
-    RotateBlendResult,
-    stage_rotate_blend_propagate,
 )
 from .stage_3_transplant import (
     TransplantStageConfig,
@@ -72,20 +65,11 @@ __all__ = [
     "ProbeConfig",
     "ProbeResult",
     "collect_layer_activations_mlx",
-    # Stage 2
-    "stage_permute",
-    "PermuteConfig",
-    "PermuteResult",
-    "infer_hidden_dim",
-    # Stage 3-5
-    "stage_rotate_blend_propagate",
-    "RotateBlendConfig",
-    "RotateBlendResult",
-    # Stage 3
+    # Stage 2 (Transplant)
     "stage_transplant",
     "TransplantStageConfig",
     "TransplantStageResult",
-    # Stage 6
+    # Stage 3 (Validate)
     "stage_validate",
     "ValidateConfig",
     "ValidateResult",

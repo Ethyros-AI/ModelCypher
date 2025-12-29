@@ -18,18 +18,23 @@
 """
 Unified Geometric Merge Pipeline.
 
-Combines geometric merge techniques in the correct order:
+Pipeline:
+    VOCAB → PROBE → TRANSPLANT → VALIDATE
 
-    VOCAB → PROBE → PERMUTE → (TRANSPLANT | ROTATE → BLEND → PROPAGATE) → VALIDATE
-
-The intersection map (from semantic probes) is the control signal
-that guides all downstream operations.
+Transplant uses null-space constrained projection to transfer knowledge
+while preserving boundary behavior. This is the only mathematically valid
+approach - alpha-blending was proven to produce gibberish even for
+same-architecture models (see research plan Phase 5-8).
 
 Key Principles:
-1. Intersection map confidence controls when to apply risky operations
-2. Geometric transformations are propagated layer-to-layer (zipper)
-3. Alpha adjustments are applied sequentially (12+ stages)
-4. Per-dimension control enables surgical merging
+1. Null-space projection guarantees: A_boundary @ W' = A_boundary @ W_target
+2. Layer targeting enables surgical transplants
+3. Cross-dimensional projection via GRAM_TRANSPORT
+
+REMOVED (proven broken):
+- rotate_blend: Alpha-blending has no constraint, destroys coherence
+- PERMUTE: Changes gauge, breaks invariance guarantee with transplant
+- ROTATE/BLEND/PROPAGATE: Only served rotate_blend
 
 Stage implementations are in merge_stages/ subpackage for modularity.
 """
@@ -59,16 +64,14 @@ class UnifiedMergeConfig:
     """
     Configuration for unified geometric merge.
 
-    PURE GEOMETRY: The merge formula is mathematically derived.
-    No arbitrary thresholds. No "vibes". The math determines everything.
+    Transplant formula:
+        W' = W_target + P_null(A_boundary) @ (W_source_aligned - W_target)
 
-    W_merged = U_t @ diag(√(σ_s' ⊙ σ_t)) @ V_t^T
+    Guarantee:
+        A_boundary @ W' = A_boundary @ W_target  (boundary preserved)
 
-    Where:
-    - R* = argmin ||W_t - R @ W_s||_F (Procrustes alignment)
-    - σ_s' = singular values of aligned source
-    - σ_t = singular values of target
-    - √(σ_s' ⊙ σ_t) = Fréchet mean (geodesic midpoint on ℝ^+)
+    This was validated empirically (Phase 6-8 research) and theoretically
+    (AlphaEdit, ICLR 2025 Outstanding Paper).
     """
 
     # Probe mode: "precise" (CKA on activations) or "fast" (weight-level CKA)
@@ -77,15 +80,11 @@ class UnifiedMergeConfig:
     # Maximum probes in precise mode (0 = all 403)
     max_probes: int = 0
 
-    # Use Gromov-Wasserstein instead of Procrustes for alignment
-    use_transport_guided: bool = False
-
-    # Merge strategy: auto selects transplant when configured, otherwise rotate/blend
-    merge_strategy: Literal["auto", "rotate_blend", "transplant"] = "auto"
-
-    # Transplant settings (used when merge_strategy == "transplant")
+    # Transplant settings - REQUIRED for effective knowledge transfer
+    # Core domains define what concepts to transplant (e.g., "mathematical")
     transplant_domains: tuple[str, ...] = ()
-    transplant_layers: tuple[int, ...] | None = None  # None = all layers
+    # Specific layers to transplant (None = all, but targeting is recommended)
+    transplant_layers: tuple[int, ...] | None = None
     transplant_boundary_k: int | None = None
     transplant_geodesic_k_neighbors: int | None = None
 
@@ -118,9 +117,7 @@ class UnifiedMergeResult:
     # Per-stage metrics
     vocab_metrics: dict[str, Any]  # Stage 0: Vocabulary alignment
     probe_metrics: dict[str, Any]
-    permute_metrics: dict[str, Any]
-    rotate_metrics: dict[str, Any]
-    blend_metrics: dict[str, Any]
+    transplant_metrics: dict[str, Any]  # Stage 3: Transplant
 
     # Overall quality
     mean_confidence: float
@@ -132,7 +129,7 @@ class UnifiedMergeResult:
     timestamp: datetime
 
     # Merge strategy used
-    merge_strategy: str = "rotate_blend"
+    merge_strategy: str = "transplant"
 
     # Optional fields (must come after required fields)
     # Output path (if saved)
@@ -163,10 +160,11 @@ class UnifiedGeometricMerger:
     """
     Unified geometric merge pipeline.
 
-    Combines techniques in the correct order:
-    VOCAB → PROBE → PERMUTE → (TRANSPLANT | ROTATE → BLEND → PROPAGATE) → VALIDATE
+    Pipeline: VOCAB → PROBE → TRANSPLANT → VALIDATE
 
-    Stage implementations are in merge_stages/ for modularity.
+    Transplant uses null-space constrained projection to preserve
+    boundary behavior while transferring knowledge. Stage implementations
+    are in merge_stages/ for modularity.
     """
 
     def __init__(
@@ -202,28 +200,28 @@ class UnifiedGeometricMerger:
         dry_run: bool = False,
         use_full_geometry: bool = True,
         knowledge_delta_mask_path: str | None = None,
-        merge_strategy: Literal["auto", "rotate_blend", "transplant"] | None = None,
         transplant_domains: list[str] | None = None,
         transplant_layers: list[int] | None = None,
         transplant_boundary_k: int | None = None,
         transplant_geodesic_k_neighbors: int | None = None,
     ) -> UnifiedMergeResult:
         """
-        Execute pure geometric merge.
+        Execute null-space constrained transplant merge.
 
-        PURE GEOMETRY: No configurable thresholds. The math determines everything.
+        Transplant formula:
+            W' = W_target + P_null(A_boundary) @ (W_source_aligned - W_target)
 
-        W_merged = U_t @ diag(√(σ_s' ⊙ σ_t)) @ V_t^T
+        Guarantee:
+            A_boundary @ W' = A_boundary @ W_target  (boundary preserved)
 
         Args:
             source_path: Path to source model (skill donor)
             target_path: Path to target model (knowledge base)
             output_dir: Output directory for merged model
             dry_run: If True, don't save to disk
-            use_full_geometry: If True, use GeometricMergeOrchestrator with ALL 84 geometry files
+            use_full_geometry: If True, use GeometricMergeOrchestrator
             knowledge_delta_mask_path: Optional delta mask JSON for layer gating
-            merge_strategy: Override merge strategy (auto, rotate_blend, transplant)
-            transplant_domains: Core domains to transplant when using transplant strategy
+            transplant_domains: Core domains to transplant (e.g., ["mathematical"])
             transplant_layers: Limit transplant to specific layer indices (optional)
             transplant_boundary_k: Boundary neighbors per core probe (optional)
             transplant_geodesic_k_neighbors: k for geodesic graph (optional)
@@ -237,15 +235,13 @@ class UnifiedGeometricMerger:
 
         config = self.config
         if (
-            merge_strategy is not None
-            or transplant_domains is not None
+            transplant_domains is not None
             or transplant_layers is not None
             or transplant_boundary_k is not None
             or transplant_geodesic_k_neighbors is not None
         ):
             config = replace(
                 config,
-                merge_strategy=merge_strategy or config.merge_strategy,
                 transplant_domains=tuple(transplant_domains or config.transplant_domains),
                 transplant_layers=(
                     tuple(transplant_layers) if transplant_layers else config.transplant_layers
@@ -262,14 +258,12 @@ class UnifiedGeometricMerger:
                 ),
             )
 
-        if use_full_geometry:
-            if config.merge_strategy == "transplant" or (
-                config.merge_strategy == "auto" and config.transplant_domains
-            ):
-                logger.info(
-                    "Transplant strategy requested; bypassing full geometry merge."
-                )
-                use_full_geometry = False
+        # Transplant strategy bypasses full geometry merge (uses null-space projection)
+        if use_full_geometry and config.transplant_domains:
+            logger.info(
+                "Transplant domains specified; using null-space constrained transplant."
+            )
+            use_full_geometry = False
 
         if use_full_geometry:
             return self._merge_with_full_geometry(
@@ -295,12 +289,9 @@ class UnifiedGeometricMerger:
         # =================================================================
         # STAGE 0: VOCABULARY (Cross-vocabulary alignment for embedding layers)
         # =================================================================
-        # Skip vocabulary alignment for transplant strategy since GRAM_TRANSPORT
+        # Skip vocabulary alignment for transplant since GRAM_TRANSPORT
         # handles cross-dimensional projection at the weight level.
-        skip_vocab_for_transplant = (
-            config.merge_strategy == "transplant"
-            or (config.merge_strategy == "auto" and config.transplant_domains)
-        )
+        skip_vocab_for_transplant = bool(config.transplant_domains)
         if skip_vocab_for_transplant:
             logger.info("STAGE 0: VOCABULARY ALIGNMENT (skipped for transplant)")
             vocab_metrics = {"skipped": True, "reason": "transplant_strategy"}
@@ -389,53 +380,31 @@ class UnifiedGeometricMerger:
         logger.info("Cleared GPU cache after probe stage")
 
         # =================================================================
-        # STAGE 2: PERMUTE (Re-Basin neuron alignment)
+        # STAGE 2: TRANSPLANT (Null-space constrained knowledge transfer)
         # =================================================================
-        # Skip PERMUTE for transplant strategy - it handles weight projection via
-        # GRAM_TRANSPORT in the transplant stage itself.
-        if skip_vocab_for_transplant:
-            logger.info("STAGE 2: PERMUTE (skipped for transplant)")
-            permuted_source = source_weights
-            permute_metrics = {"skipped": True, "reason": "transplant_strategy"}
-        else:
-            logger.info("STAGE 2: PERMUTE")
-            permuted_source, permute_metrics = self._stage_permute(
-                source_weights, target_weights, layer_confidences, intersection_map_obj
+        # PERMUTE was removed - it changes gauge and breaks invariance guarantee.
+        # ROTATE/BLEND was removed - alpha-blending produces gibberish.
+        # Only null-space constrained transplant preserves boundary relationships.
+        if not config.transplant_domains:
+            raise RuntimeError(
+                "Transplant requires transplant_domains. "
+                "Specify domains like ['mathematical', 'logical'] for knowledge transfer."
+            )
+        if not target_activations:
+            raise RuntimeError(
+                "Transplant requires activations. Use probe_mode=precise."
             )
 
-        # =================================================================
-        # STAGE 3+: MERGE (strategy-specific)
-        # =================================================================
-        merge_strategy_resolved = self._resolve_merge_strategy(
-            config=config,
+        logger.info("STAGE 2: TRANSPLANT (null-space constrained)")
+        merged_weights, transplant_metrics = self._stage_transplant(
+            source_weights=source_weights,
+            target_weights=target_weights,
+            layer_indices=layer_indices,
+            probe_ids=probe_result.get("probe_ids"),
+            probe_domains=probe_result.get("probe_domains"),
             target_activations=target_activations,
+            config=config,
         )
-
-        if merge_strategy_resolved == "transplant":
-            logger.info("STAGE 3: TRANSPLANT")
-            merged_weights, rotate_metrics = self._stage_transplant(
-                source_weights=permuted_source,
-                target_weights=target_weights,
-                layer_indices=layer_indices,
-                probe_ids=probe_result.get("probe_ids"),
-                probe_domains=probe_result.get("probe_domains"),
-                target_activations=target_activations,
-                config=config,
-            )
-            blend_metrics = rotate_metrics
-        else:
-            logger.info("STAGES 3-5: GEOMETRIC MERGE")
-            merged_weights, rotate_metrics, blend_metrics = self._stage_rotate_blend_propagate(
-                permuted_source,
-                target_weights,
-                layer_indices,
-                layer_confidences,
-                dimension_correlations,
-                intersection_map_obj=intersection_map_obj,
-                source_activations=source_activations,
-                target_activations=target_activations,
-                config_override=config,
-            )
 
         # =================================================================
         # OUTPUT
@@ -449,29 +418,22 @@ class UnifiedGeometricMerger:
 
         # Compute metrics
         mean_confidence = probe_metrics.get("mean_confidence", 0.0)
-        if merge_strategy_resolved == "transplant":
-            projection_losses = rotate_metrics.get("projection_losses", [])
-            mean_error = (
-                sum(projection_losses) / len(projection_losses) if projection_losses else 0.0
-            )
-        else:
-            procrustes_errors = rotate_metrics.get("procrustes_errors", [])
-            mean_error = sum(procrustes_errors) / len(procrustes_errors) if procrustes_errors else 0.0
+        projection_losses = transplant_metrics.get("projection_losses", [])
+        mean_error = (
+            sum(projection_losses) / len(projection_losses) if projection_losses else 0.0
+        )
 
         result = UnifiedMergeResult(
             merged_weights=merged_weights,
             vocab_metrics=vocab_metrics,
             probe_metrics=probe_metrics,
-            permute_metrics=permute_metrics,
-            rotate_metrics=rotate_metrics,
-            blend_metrics=blend_metrics,
-            validation_metrics={},
+            transplant_metrics=transplant_metrics,
             mean_confidence=mean_confidence,
             mean_procrustes_error=float(mean_error),
             layer_count=len(layer_indices),
             weight_count=len(merged_weights),
             timestamp=datetime.utcnow(),
-            merge_strategy=merge_strategy_resolved,
+            merge_strategy="transplant",
             output_path=output_path,
             vocab_aligned=vocab_aligned,
             safety_verdict="geometric",
@@ -768,10 +730,7 @@ class UnifiedGeometricMerger:
                 "mean_intrinsic_dim": geometry.mean_intrinsic_dimension,
                 "mean_shared_dim": geometry.mean_shared_dimension,
             },
-            permute_metrics={},
-            rotate_metrics=merge_metrics,
-            blend_metrics=merge_metrics,
-            validation_metrics={},
+            transplant_metrics=merge_metrics,
             mean_confidence=geometry.overall_cka,
             mean_procrustes_error=0.0,
             layer_count=len(layer_indices),
@@ -889,30 +848,6 @@ class UnifiedGeometricMerger:
             "probe_domains": result.probe_domains,
         }, result.metrics, result.source_activations, result.target_activations
 
-    def _resolve_merge_strategy(
-        self,
-        config: UnifiedMergeConfig,
-        target_activations: dict | None,
-    ) -> Literal["rotate_blend", "transplant"]:
-        strategy = config.merge_strategy
-        if strategy == "auto":
-            if config.transplant_domains and target_activations:
-                return "transplant"
-            return "rotate_blend"
-        if strategy == "transplant":
-            if not config.transplant_domains:
-                raise RuntimeError(
-                    "Transplant strategy requires transplant_domains. "
-                    "Provide domains or use merge_strategy=auto."
-                )
-            if not target_activations:
-                raise RuntimeError(
-                    "Transplant strategy requires activations. "
-                    "Use probe_mode=precise to collect activations."
-                )
-            return "transplant"
-        return "rotate_blend"
-
     def _stage_transplant(
         self,
         source_weights: dict[str, "Array"],
@@ -949,79 +884,6 @@ class UnifiedGeometricMerger:
         )
 
         return result.merged_weights, result.metrics
-
-    def _stage_permute(
-        self,
-        source_weights: dict[str, "Array"],
-        target_weights: dict[str, "Array"],
-        layer_confidences: dict[int, float],
-        intersection_map_obj: Any | None,
-    ) -> tuple[dict[str, "Array"], dict[str, Any]]:
-        """Stage 2: Re-Basin neuron permutation alignment."""
-        from .merge_stages.stage_2_permute import (
-            PermuteConfig,
-            infer_hidden_dim,
-            stage_permute,
-        )
-
-        config = PermuteConfig()
-
-        result = stage_permute(
-            source_weights=source_weights,
-            target_weights=target_weights,
-            intersection_map_obj=intersection_map_obj,
-            layer_confidences=layer_confidences,
-            config=config,
-            infer_hidden_dim_fn=infer_hidden_dim,
-        )
-
-        return result.weights, result.metrics
-
-    def _stage_rotate_blend_propagate(
-        self,
-        source_weights: dict[str, "Array"],
-        target_weights: dict[str, "Array"],
-        layer_indices: list[int],
-        layer_confidences: dict[int, float],
-        dimension_correlations: dict,
-        intersection_map_obj: Any | None,
-        source_activations: dict | None = None,
-        target_activations: dict | None = None,
-        config_override: UnifiedMergeConfig | None = None,
-    ) -> tuple[dict[str, "Array"], dict[str, Any], dict[str, Any]]:
-        """Stages 3-5: PURE GEOMETRIC MERGE with per-layer alignment.
-
-        Uses activations to compute per-layer rotations before merging.
-        W_merged = U_t @ diag(√(σ_s' ⊙ σ_t)) @ V_t^T
-
-        Layer confidences from probe stage inform alignment quality.
-        Target activations enable null-space filtering to eliminate interference.
-        """
-        from .merge_stages.stage_3_5_rotate_blend import (
-            RotateBlendConfig,
-            stage_rotate_blend_propagate,
-        )
-
-        active_config = config_override or self.config
-        config = RotateBlendConfig(
-            use_transport_guided=active_config.use_transport_guided,
-        )
-
-        result = stage_rotate_blend_propagate(
-            source_weights=source_weights,
-            target_weights=target_weights,
-            intersection_map_obj=intersection_map_obj,
-            layer_confidences=layer_confidences,
-            dimension_correlations=dimension_correlations,
-            layer_indices=layer_indices,
-            config=config,
-            extract_layer_index_fn=self._extract_layer_index,
-            backend=self._backend,
-            source_activations=source_activations,
-            target_activations=target_activations,
-        )
-
-        return result.merged_weights, result.rotate_metrics, result.blend_metrics
 
     # =========================================================================
     # HELPER METHODS

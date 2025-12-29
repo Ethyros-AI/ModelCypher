@@ -18,8 +18,8 @@
 """
 Tests for the Unified Geometric Merge Pipeline.
 
-Validates the 6-stage merge process:
-    VOCAB → PROBE → PERMUTE → ROTATE → BLEND → PROPAGATE → VALIDATE
+Validates the 4-stage null-space constrained transplant process:
+    VOCAB → PROBE → TRANSPLANT → VALIDATE
 
 Uses REAL model weights from /Volumes/CodeCypher/caches/test_fixtures/
 to validate geometric operations on actual latent space structure.
@@ -107,19 +107,21 @@ class TestUnifiedMergeConfig:
         config = UnifiedMergeConfig()
         assert config.probe_mode == "precise"
         assert config.max_probes == 0
-        assert config.use_transport_guided is False
         assert config.output_quant is None
+        assert config.transplant_domains == ()
 
-    def test_custom_config(self):
-        """Test custom config values."""
+    def test_transplant_config(self):
+        """Test transplant config values."""
         config = UnifiedMergeConfig(
             probe_mode="fast",
             max_probes=100,
-            use_transport_guided=True,
+            transplant_domains=("mathematical", "logical"),
+            transplant_layers=(5, 10, 15),
         )
         assert config.probe_mode == "fast"
         assert config.max_probes == 100
-        assert config.use_transport_guided is True
+        assert config.transplant_domains == ("mathematical", "logical")
+        assert config.transplant_layers == (5, 10, 15)
 
 
 class TestUnifiedGeometricMerger:
@@ -133,10 +135,15 @@ class TestUnifiedGeometricMerger:
 
     def test_merger_with_custom_config(self, mock_model_loader):
         """Test merger accepts custom config."""
-        config = UnifiedMergeConfig(probe_mode="fast", max_probes=50)
+        config = UnifiedMergeConfig(
+            probe_mode="fast",
+            max_probes=50,
+            transplant_domains=("mathematical",),
+        )
         merger = UnifiedGeometricMerger(model_loader=mock_model_loader, config=config)
         assert merger.config.probe_mode == "fast"
         assert merger.config.max_probes == 50
+        assert merger.config.transplant_domains == ("mathematical",)
 
     def test_extract_layer_indices(self, real_weights, mock_model_loader):
         """Test layer index extraction from weight keys."""
@@ -152,19 +159,6 @@ class TestUnifiedGeometricMerger:
         assert merger._extract_layer_index("model.layers.5.self_attn.q_proj.weight") == 5
         assert merger._extract_layer_index("model.layers.12.mlp.up_proj.weight") == 12
         assert merger._extract_layer_index("model.embed_tokens.weight") is None
-
-
-class TestStageModuleHelpers:
-    """Test helper functions in stage modules."""
-
-    def test_infer_hidden_dim(self, real_weights):
-        """Test hidden dimension inference from weights."""
-        from modelcypher.core.use_cases.merge_stages.stage_2_permute import (
-            infer_hidden_dim,
-        )
-
-        hidden_dim = infer_hidden_dim(real_weights)
-        assert hidden_dim == 896  # Qwen 0.5B hidden dim
 
 
 class TestStageProbe:
@@ -210,22 +204,6 @@ class TestStageProbe:
 
         # Slightly perturbed should still have reasonable confidence
         assert metrics["mean_confidence"] > 0.5
-
-
-class TestStagePermute:
-    """Test Stage 2: PERMUTE (Re-Basin)."""
-
-    def test_permute_basic(self, real_weights, mock_model_loader):
-        """Test basic permutation stage."""
-        merger = UnifiedGeometricMerger(model_loader=mock_model_loader)
-
-        layer_confidences = {0: 0.9, 12: 0.9}
-        permuted, metrics = merger._stage_permute(
-            real_weights, real_weights, layer_confidences, None
-        )
-        # Should return some result
-        assert isinstance(permuted, dict)
-        assert isinstance(metrics, dict)
 
 
 class TestRealWeightProperties:
@@ -279,51 +257,6 @@ class TestRealWeightProperties:
         )
 
 
-class TestGeometricMerge:
-    """Test the core geometric merge function."""
-
-    def test_geometric_merge_identical(self, real_weights):
-        """Geometric merge of identical weights returns weights unchanged."""
-        from modelcypher.core.use_cases.merge_stages.stage_3_5_rotate_blend import (
-            geometric_merge_weights,
-        )
-        backend = get_default_backend()
-
-        W = backend.array(real_weights["model.layers.0.self_attn.q_proj.weight"])
-        backend.eval(W)
-
-        merged, metrics = geometric_merge_weights(W, W, backend, key="test")
-        backend.eval(merged)
-
-        # Merged should be very close to original (small numerical differences expected)
-        diff = backend.abs(merged - W)
-        backend.eval(diff)
-        max_diff = float(backend.max(diff))
-        # Allow small numerical tolerance due to SVD/SLERP operations
-        assert max_diff < 0.01, f"Merge of identical weights should be nearly unchanged, got diff {max_diff}"
-
-    def test_geometric_merge_different(self, source_target_weights):
-        """Geometric merge of different weights produces valid result."""
-        from modelcypher.core.use_cases.merge_stages.stage_3_5_rotate_blend import (
-            geometric_merge_weights,
-        )
-        backend = get_default_backend()
-
-        source, target = source_target_weights
-        W_source = backend.array(source["model.layers.0.self_attn.q_proj.weight"])
-        W_target = backend.array(target["model.layers.0.self_attn.q_proj.weight"])
-        backend.eval(W_source, W_target)
-
-        merged, metrics = geometric_merge_weights(W_source, W_target, backend, key="test")
-        backend.eval(merged)
-
-        # Merged should have same shape
-        assert merged.shape == W_source.shape
-
-        # Metrics should contain quality info
-        assert "mode" in metrics or "merge_quality" in metrics
-
-
 class TestResultConversion:
     """Test result dataclass."""
 
@@ -335,9 +268,7 @@ class TestResultConversion:
             merged_weights={},
             vocab_metrics={},
             probe_metrics={"mean_confidence": 0.8},
-            permute_metrics={"layers_permuted": 5},
-            rotate_metrics={"rotations_applied": 10},
-            blend_metrics={"mean_alpha": 0.5},
+            transplant_metrics={"layers_transplanted": 5, "weights_transplanted": 10},
             mean_confidence=0.8,
             mean_procrustes_error=0.05,
             layer_count=32,
@@ -348,6 +279,7 @@ class TestResultConversion:
         assert result.mean_confidence == 0.8
         assert result.layer_count == 32
         assert result.safety_verdict == "not_validated"  # default
+        assert result.merge_strategy == "transplant"  # default
 
 
 class TestStageValidate:

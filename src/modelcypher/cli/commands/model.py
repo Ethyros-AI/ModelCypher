@@ -171,13 +171,8 @@ def model_merge(
     source: str = typer.Option(..., "--source"),
     target: str = typer.Option(..., "--target"),
     output_dir: str = typer.Option(..., "--output-dir"),
-    merge_strategy: str = typer.Option(
-        "auto",
-        "--merge-strategy",
-        help="Merge strategy: auto, rotate_blend, transplant",
-    ),
-    transplant_domains: str | None = typer.Option(
-        None,
+    transplant_domains: str = typer.Option(
+        ...,
         "--transplant-domains",
         help="Comma-separated core domains for transplant (e.g., mathematical,logical)",
     ),
@@ -202,33 +197,26 @@ def model_merge(
         help="Path to knowledge delta mask JSON for layer gating",
     ),
 ) -> None:
-    """Merge two models using pure geometric alignment.
+    """Merge two models using null-space constrained transplant.
 
-    The geometry determines everything - per-layer blend coefficients,
-    alignment rotations, neuron permutations. No configuration needed.
+    Transplant formula: W' = W_target + P_null(A_boundary) @ (W_source - W_target)
+    Guarantee: A_boundary @ W' = A_boundary @ W_target (boundary preserved)
 
-    Pipeline: VOCAB → PROBE → PERMUTE → (TRANSPLANT | ROTATE → BLEND → PROPAGATE) → VALIDATE
+    Pipeline: VOCAB → PROBE → TRANSPLANT → VALIDATE
 
     Examples:
-        mc model merge --source ./instruct --target ./coder --output-dir ./merged
-        mc model merge --source ./instruct --target ./coder --output-dir ./merged \
-            --merge-strategy transplant --transplant-domains mathematical,logical
+        mc model merge --source ./instruct --target ./coder --output-dir ./merged \\
+            --transplant-domains mathematical,logical
     """
     from modelcypher.cli.composition import get_geometric_merger
 
     context = _context(ctx)
 
-    merge_strategy = merge_strategy.strip().lower()
-    allowed_strategies = {"auto", "rotate_blend", "transplant"}
-    if merge_strategy not in allowed_strategies:
+    domain_list = [d.strip() for d in transplant_domains.split(",") if d.strip()]
+    if not domain_list:
         raise typer.BadParameter(
-            f"Invalid merge strategy '{merge_strategy}'. "
-            f"Valid: {sorted(allowed_strategies)}"
+            "transplant-domains must specify at least one domain (e.g., mathematical,logical)"
         )
-
-    domain_list = None
-    if transplant_domains:
-        domain_list = [d.strip() for d in transplant_domains.split(",") if d.strip()]
 
     layer_list = None
     if transplant_layers:
@@ -241,7 +229,6 @@ def model_merge(
             target_path=target,
             output_dir=output_dir,
             knowledge_delta_mask_path=knowledge_delta_mask,
-            merge_strategy=merge_strategy,
             transplant_domains=domain_list,
             transplant_layers=layer_list,
             transplant_boundary_k=transplant_boundary_k,
@@ -259,18 +246,16 @@ def model_merge(
             "metrics": {
                 "meanProcrustesError": result.mean_procrustes_error,
             },
+            "transplantMetrics": {
+                "layersTransplanted": result.transplant_metrics.get("layers_transplanted"),
+                "weightsTransplanted": result.transplant_metrics.get("weights_transplanted"),
+                "meanPreservedFraction": result.transplant_metrics.get("mean_preserved_fraction"),
+                "meanProjectionLoss": result.transplant_metrics.get("mean_projection_loss"),
+                "meanBoundaryRelativeDiff": result.transplant_metrics.get("mean_boundary_relative_diff"),
+                "maxBoundaryRelativeDiff": result.transplant_metrics.get("max_boundary_relative_diff"),
+                "meanNullDim": result.transplant_metrics.get("mean_null_dim"),
+            },
         }
-        if result.merge_strategy == "transplant":
-            transplant_metrics = {
-                "layersTransplanted": result.rotate_metrics.get("layers_transplanted"),
-                "weightsTransplanted": result.rotate_metrics.get("weights_transplanted"),
-                "meanPreservedFraction": result.rotate_metrics.get("mean_preserved_fraction"),
-                "meanProjectionLoss": result.rotate_metrics.get("mean_projection_loss"),
-                "meanBoundaryRelativeDiff": result.rotate_metrics.get("mean_boundary_relative_diff"),
-                "maxBoundaryRelativeDiff": result.rotate_metrics.get("max_boundary_relative_diff"),
-                "meanNullDim": result.rotate_metrics.get("mean_null_dim"),
-            }
-            output["transplantMetrics"] = transplant_metrics
         write_output(output, context.output_format, context.pretty)
     except Exception as e:
         error = ErrorDetail(

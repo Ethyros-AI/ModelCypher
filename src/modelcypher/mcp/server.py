@@ -1110,18 +1110,20 @@ def build_server() -> FastMCP:
             source: str,
             target: str,
             output: str,
-            mergeStrategy: str | None = None,
-            transplantDomains: list[str] | None = None,
+            transplantDomains: list[str],
             transplantBoundaryK: int | None = None,
             transplantGeodesicK: int | None = None,
             idempotencyKey: str | None = None,
         ) -> dict:
-            """Merge two models using pure geometric alignment.
+            """Merge two models using null-space constrained transplant.
 
-            Pipeline: VOCAB → PROBE → PERMUTE → (TRANSPLANT | ROTATE → BLEND → PROPAGATE) → VALIDATE
+            Transplant formula: W' = W_target + P_null(A_boundary) @ (W_source - W_target)
+            Guarantee: A_boundary @ W' = A_boundary @ W_target (boundary preserved)
 
-            The geometry determines everything - per-layer blend coefficients,
-            alignment rotations, neuron permutations. No configuration needed.
+            Pipeline: VOCAB → PROBE → TRANSPLANT → VALIDATE
+
+            Args:
+                transplantDomains: Core domains to transplant (e.g., ["mathematical", "logical"])
             """
             if idempotencyKey:
                 previous = _get_idempotency("model_merge", idempotencyKey)
@@ -1137,15 +1139,12 @@ def build_server() -> FastMCP:
             _require_existing_directory(target)
             output_path = Path(output).expanduser().resolve()
 
-            if mergeStrategy is not None:
-                mergeStrategy = mergeStrategy.strip().lower()
-                allowed = {"auto", "rotate_blend", "transplant"}
-                if mergeStrategy not in allowed:
-                    return {
-                        "_schema": "mc.model.merge.v1",
-                        "status": "error",
-                        "message": f"Invalid mergeStrategy '{mergeStrategy}'. Valid: {sorted(allowed)}",
-                    }
+            if not transplantDomains:
+                return {
+                    "_schema": "mc.model.merge.v1",
+                    "status": "error",
+                    "message": "transplantDomains is required (e.g., ['mathematical', 'logical'])",
+                }
 
             merger = UnifiedGeometricMerger(
                 model_loader=registry.model_loader,
@@ -1154,7 +1153,6 @@ def build_server() -> FastMCP:
                 source_path=source,
                 target_path=target,
                 output_dir=str(output_path),
-                merge_strategy=mergeStrategy,
                 transplant_domains=transplantDomains,
                 transplant_boundary_k=transplantBoundaryK,
                 transplant_geodesic_k_neighbors=transplantGeodesicK,
@@ -1175,23 +1173,19 @@ def build_server() -> FastMCP:
                 "metrics": {
                     "meanProcrustesError": result.mean_procrustes_error,
                 },
-                "transplantMetrics": (
-                    {
-                        "layersTransplanted": result.rotate_metrics.get("layers_transplanted"),
-                        "weightsTransplanted": result.rotate_metrics.get("weights_transplanted"),
-                        "meanPreservedFraction": result.rotate_metrics.get("mean_preserved_fraction"),
-                        "meanProjectionLoss": result.rotate_metrics.get("mean_projection_loss"),
-                        "meanBoundaryRelativeDiff": result.rotate_metrics.get(
-                            "mean_boundary_relative_diff"
-                        ),
-                        "maxBoundaryRelativeDiff": result.rotate_metrics.get(
-                            "max_boundary_relative_diff"
-                        ),
-                        "meanNullDim": result.rotate_metrics.get("mean_null_dim"),
-                    }
-                    if result.merge_strategy == "transplant"
-                    else None
-                ),
+                "transplantMetrics": {
+                    "layersTransplanted": result.transplant_metrics.get("layers_transplanted"),
+                    "weightsTransplanted": result.transplant_metrics.get("weights_transplanted"),
+                    "meanPreservedFraction": result.transplant_metrics.get("mean_preserved_fraction"),
+                    "meanProjectionLoss": result.transplant_metrics.get("mean_projection_loss"),
+                    "meanBoundaryRelativeDiff": result.transplant_metrics.get(
+                        "mean_boundary_relative_diff"
+                    ),
+                    "maxBoundaryRelativeDiff": result.transplant_metrics.get(
+                        "max_boundary_relative_diff"
+                    ),
+                    "meanNullDim": result.transplant_metrics.get("mean_null_dim"),
+                },
                 "nextActions": [
                     f"mc_eval_run using model={output}",
                     f"mc_infer using model={output}",

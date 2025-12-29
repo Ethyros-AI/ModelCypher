@@ -28,7 +28,7 @@ The geometry is invariant:
 - Fréchet mean merges magnitudes
 
 This module is THE unified API for all cross-dimensional projection.
-The merge pipeline (stage_3_5_rotate_blend.py) uses this exclusively.
+The transplant pipeline (stage_3_transplant.py) uses this for cross-arch merges.
 """
 
 from __future__ import annotations

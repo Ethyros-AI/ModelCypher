@@ -183,12 +183,15 @@ class TestComputeTransplantDelta:
         activations_boundary = backend.random_normal((n_boundary, in_dim))
         backend.eval(weight_target, weight_source, activations_core, activations_boundary)
 
+        # Use explicit rank_threshold for deterministic null-space detection
+        config = NullSpaceFilterConfig(rank_threshold=1e-6)
         result = compute_transplant_delta(
             weight_target=weight_target,
             weight_source_aligned=weight_source,
             activations_core=activations_core,
             activations_boundary=activations_boundary,
             backend=backend,
+            nullspace_config=config,
         )
 
         metrics = verify_boundary_invariance(
