@@ -65,10 +65,10 @@ from modelcypher.core.domain.geometry.prime_geometry import (
     permutation_test,
     residue_embedding,
     run_comprehensive_analysis,
+    run_hypothesis_test,
     run_perturbation_study,
     run_scale_sweep,
     shuffled_gaps,
-    test_hypothesis,
     time_delay_embedding,
 )
 
@@ -554,9 +554,9 @@ class TestStatisticalTesting:
 class TestHypothesisValidation:
     """Tests for hypothesis testing framework."""
 
-    def test_test_hypothesis_returns_result(self, backend):
-        """test_hypothesis should return HypothesisTest result."""
-        result = test_hypothesis(
+    def test_run_hypothesis_test_returns_result(self, backend):
+        """run_hypothesis_test should return HypothesisTest result."""
+        result = run_hypothesis_test(
             hypothesis_id="H_test",
             description="Test hypothesis",
             prime_value=1.0,
@@ -569,12 +569,12 @@ class TestHypothesisValidation:
         assert isinstance(result.passed, bool)
         assert 0.0 <= result.p_value <= 1.0
 
-    def test_test_hypothesis_one_sided_less(self, backend):
+    def test_run_hypothesis_test_one_sided_less(self, backend):
         """When prime_value < baseline_value with samples, one_sided test should pass."""
         # Provide samples to get proper p-value computation
         prime_samples = [1.0, 1.1, 0.9, 1.05, 0.95] * 10
         baseline_samples = [10.0, 10.1, 9.9, 10.05, 9.95] * 10
-        result = test_hypothesis(
+        result = run_hypothesis_test(
             hypothesis_id="H_less",
             description="Test less",
             prime_value=1.0,
@@ -587,9 +587,9 @@ class TestHypothesisValidation:
         # With samples, permutation test should give low p-value
         assert result.passed is True
 
-    def test_test_hypothesis_one_sided_greater_fails(self, backend):
+    def test_run_hypothesis_test_one_sided_greater_fails(self, backend):
         """When prime_value > baseline_value, one_sided (less) test should fail."""
-        result = test_hypothesis(
+        result = run_hypothesis_test(
             hypothesis_id="H_greater",
             description="Test greater fails",
             prime_value=10.0,

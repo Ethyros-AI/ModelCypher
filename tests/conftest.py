@@ -148,15 +148,26 @@ def _clear_cli_composition_cache():
 
 
 def pytest_collection_modifyitems(config, items):
-    """Auto-skip tests based on hardware availability.
+    """Auto-skip tests based on hardware availability and filter non-test items.
 
     Tests importing mlx.core at module level will fail to collect on non-Apple machines.
     This hook handles tests that are properly marked with @pytest.mark.mlx etc.
+
+    Also filters out functions from source modules that start with test_ but aren't tests.
     """
     skip_mlx = pytest.mark.skip(reason="MLX not available (requires Apple Silicon)")
     skip_jax = pytest.mark.skip(reason="JAX GPU/TPU not available")
     skip_cuda = pytest.mark.skip(reason="CUDA not available")
     skip_accel = pytest.mark.skip(reason="No accelerator available")
+
+    # Filter out items from src/ directory (e.g., test_hypothesis in prime_geometry.py)
+    filtered_items = []
+    for item in items:
+        item_path = str(item.fspath)
+        # Only keep items from tests directory
+        if "/tests/" in item_path or "\\tests\\" in item_path or item_path.startswith("tests"):
+            filtered_items.append(item)
+    items[:] = filtered_items
 
     for item in items:
         if "mlx" in item.keywords and not HAS_MLX:

@@ -1193,7 +1193,7 @@ def permutation_test(
     return (count_extreme + 1) / (n_permutations + 1)
 
 
-def test_hypothesis(
+def run_hypothesis_test(
     hypothesis_id: str,
     description: str,
     prime_value: float,
@@ -1359,7 +1359,7 @@ def run_comprehensive_analysis(
     # H1: Spectral Concentration
     for baseline_type in baselines:
         baseline_ev = result.baseline_results[baseline_type.value]
-        h1 = test_hypothesis(
+        h1 = run_hypothesis_test(
             f"H1_{baseline_type.value}",
             f"Spectral concentration vs {baseline_type.value}",
             prime_ev.participation_ratio,
@@ -1373,7 +1373,7 @@ def run_comprehensive_analysis(
     # H2: Lower Spectral Entropy
     for baseline_type in baselines:
         baseline_ev = result.baseline_results[baseline_type.value]
-        h2 = test_hypothesis(
+        h2 = run_hypothesis_test(
             f"H2_{baseline_type.value}",
             f"Lower spectral entropy vs {baseline_type.value}",
             prime_ev.spectral_entropy,

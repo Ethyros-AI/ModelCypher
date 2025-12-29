@@ -82,6 +82,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+norecursedirs = ["src", ".git", "node_modules", "__pycache__", ".venv", "venv", "build", "dist"]
 # Use -n 4 manually for parallel: poetry run pytest -n 4
 markers = [
     "unit: Pure unit tests with no external dependencies",
