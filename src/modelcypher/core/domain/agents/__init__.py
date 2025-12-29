@@ -142,5 +142,11 @@ from .spatial_atlas import (
     SpatialConcept,
     SpatialConceptInventory,
 )
+from .syntax_atlas import (
+    ALL_SYNTAX_PROBES,
+    SyntaxCategory,
+    SyntaxConcept,
+    SyntaxConceptInventory,
+)
 from .task_diversion_detector import TaskDiversionDetector
 from .unified_atlas import *  # noqa: F401,F403

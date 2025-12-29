@@ -47,7 +47,6 @@ from modelcypher.core.domain.agents.unified_atlas import (
     AtlasSource,
     UnifiedAtlasInventory,
 )
-from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
 
 app = typer.Typer(no_args_is_help=True)
 logger = logging.getLogger(__name__)
@@ -58,7 +57,13 @@ def _context(ctx: typer.Context) -> CLIContext:
 
 
 class BackboneActivationProvider:
-    """Activation provider for knowledge density analysis."""
+    """Activation provider for knowledge density analysis.
+
+    Uses arithmetic mean for token aggregation (mean-pooling). This is
+    appropriate for aggregating tokens within a single sequence. The
+    manifold-aware Fréchet mean is used later in the intrinsic dimension
+    estimation when comparing ACROSS texts/concepts.
+    """
 
     def __init__(
         self,
@@ -67,16 +72,12 @@ class BackboneActivationProvider:
         layers,
         norm,
         backend,
-        frechet_k_neighbors: int | None = None,
-        frechet_max_k_neighbors: int | None = None,
     ) -> None:
         self._tokenizer = tokenizer
         self._embed_tokens = embed_tokens
         self._layers = layers
         self._norm = norm
         self._backend = backend
-        self._frechet_k_neighbors = frechet_k_neighbors
-        self._frechet_max_k_neighbors = frechet_max_k_neighbors
 
     def get_activations(self, texts: list[str], layer: int) -> list[list[float]]:
         activations = []
@@ -98,12 +99,10 @@ class BackboneActivationProvider:
                     target_layer=layer,
                     backend=self._backend,
                 )
-                mean = frechet_mean(
-                    hidden[0],
-                    backend=self._backend,
-                    k_neighbors=self._frechet_k_neighbors,
-                    max_k_neighbors=self._frechet_max_k_neighbors,
-                )
+                # Arithmetic mean for token aggregation (mean-pooling)
+                # Fréchet mean is used later in intrinsic dimension estimation
+                # when comparing across texts, not for within-text pooling
+                mean = self._backend.mean(hidden[0], axis=0)
                 self._backend.async_eval(mean)
                 pending.append(mean)
                 activations.append(mean)
@@ -141,8 +140,14 @@ def _parse_domains(values: list[str] | None) -> set[AtlasDomain] | None:
     return {AtlasDomain(value) for value in values}
 
 
-def _load_model_and_provider(model_path: str, k_neighbors: int):
-    """Load model and create activation provider."""
+def _load_model_and_provider(model_path: str, k_neighbors: int = 10):
+    """Load model and create activation provider.
+
+    Args:
+        model_path: Path to the model directory.
+        k_neighbors: k for geodesic distance computation in intrinsic dimension.
+                    Not used for token aggregation (which uses arithmetic mean).
+    """
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.backends.mlx_backend import MLXBackend
 
@@ -156,15 +161,12 @@ def _load_model_and_provider(model_path: str, k_neighbors: int):
     num_layers = len(layers)
 
     backend = MLXBackend()
-    frechet_max_k = max(k_neighbors, 20)
     provider = BackboneActivationProvider(
         tokenizer,
         embed_tokens,
         layers,
         norm,
         backend,
-        frechet_k_neighbors=k_neighbors,
-        frechet_max_k_neighbors=frechet_max_k,
     )
 
     return model, tokenizer, backend, provider, num_layers
@@ -1279,6 +1281,252 @@ def zero_shot_transfer(
         lines.append(f"  Stability/transfer ratio: {ratio:.2f}")
         lines.append(f"  Mean layer CKA: {mean_cka:.4f}")
         lines.append(f"  Target layers: {list(candidates_by_layer.keys())}")
+
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("full-profile")
+def full_profile(
+    ctx: typer.Context,
+    model_path: str = typer.Argument(..., help="Path to the model directory"),
+    output_path: str = typer.Option(
+        None, "--output-path", "-o", help="Save profile to JSON file"
+    ),
+    sources: list[str] | None = typer.Option(
+        None, "--source", "-s", help="Filter by atlas source (repeatable)"
+    ),
+    domains: list[str] | None = typer.Option(
+        None, "--domain", "-d", help="Filter by atlas domain (repeatable)"
+    ),
+    k_neighbors: int = typer.Option(
+        10, "--k-neighbors", help="k for geodesic distance graph"
+    ),
+    checkpoint_dir: str | None = typer.Option(
+        None, "--checkpoint-dir", help="Directory for incremental checkpoints"
+    ),
+    resume: bool = typer.Option(
+        False, "--resume", help="Resume from last checkpoint"
+    ),
+) -> None:
+    """Generate comprehensive knowledge density profile for a model.
+
+    Profiles ALL layers and ALL domains to create a complete map of where
+    the model is strong (dense) and weak (sparse) across the entire
+    representation space.
+
+    This is compute-intensive but produces the data needed for informed
+    knowledge transplant decisions. No sampling, no shortcuts.
+
+    Output includes:
+    - Per-layer density statistics for each domain
+    - Per-concept density scores at every layer
+    - Domain strength rankings by layer
+    - Overall model capability fingerprint
+
+    Use --checkpoint-dir to save progress incrementally (recommended for
+    large models). Use --resume to continue from last checkpoint.
+    """
+    context = _context(ctx)
+
+    from modelcypher.core.domain.geometry.knowledge_density import (
+        KnowledgeDensityAnalyzer,
+        KnowledgeDensityConfig,
+    )
+
+    # Load model
+    model, tokenizer, backend, provider, num_layers = _load_model_and_provider(
+        model_path, k_neighbors
+    )
+
+    # All layers, no sampling
+    all_layers = list(range(num_layers))
+
+    # Parse filters
+    source_filter = _parse_sources(sources)
+    domain_filter = _parse_domains(domains)
+
+    # Get ALL probes (no max_probes limit)
+    probes = UnifiedAtlasInventory.all_probes()
+    if source_filter:
+        probes = [probe for probe in probes if probe.source in source_filter]
+    if domain_filter:
+        probes = [probe for probe in probes if probe.domain in domain_filter]
+
+    logger.info(
+        "Full profile: %d probes × %d layers = %d measurements",
+        len(probes), num_layers, len(probes) * num_layers
+    )
+
+    # Check for checkpoint to resume from
+    checkpoint_data: dict = {}
+    completed_layers: set[int] = set()
+    if checkpoint_dir and resume:
+        checkpoint_path = Path(checkpoint_dir) / "full_profile_checkpoint.json"
+        if checkpoint_path.exists():
+            checkpoint_data = json.loads(checkpoint_path.read_text())
+            completed_layers = set(checkpoint_data.get("completedLayers", []))
+            logger.info("Resuming from checkpoint: %d layers complete", len(completed_layers))
+
+    analyzer = KnowledgeDensityAnalyzer(backend=backend)
+    config = KnowledgeDensityConfig()
+
+    # Results structure
+    layer_profiles: dict[int, dict] = checkpoint_data.get("layerProfiles", {})
+    # Convert string keys back to int
+    layer_profiles = {int(k): v for k, v in layer_profiles.items()}
+
+    # Process each layer
+    for layer_idx in all_layers:
+        if layer_idx in completed_layers:
+            logger.info("Layer %d already complete, skipping", layer_idx)
+            continue
+
+        logger.info("Processing layer %d/%d...", layer_idx + 1, num_layers)
+
+        try:
+            layer_result = analyzer.analyze_layer(probes, provider, layer_idx, config)
+
+            # Store results
+            layer_profiles[layer_idx] = {
+                "layer": layer_idx,
+                "totalConcepts": len(layer_result.concept_densities),
+                "meanDensity": layer_result.mean_density,
+                "medianDensity": layer_result.median_density,
+                "sparseCount": layer_result.sparse_concept_count,
+                "denseCount": layer_result.dense_concept_count,
+                "densityThreshold": layer_result.density_threshold,
+                "concepts": [
+                    {
+                        "probeID": c.probe_id,
+                        "name": c.name,
+                        "domain": c.domain,
+                        "densityScore": c.density_score,
+                        "intrinsicDimension": c.intrinsic_dimension,
+                        "activationVariance": c.activation_variance,
+                        "clusterTightness": c.cluster_tightness,
+                    }
+                    for c in layer_result.concept_densities
+                ],
+            }
+            completed_layers.add(layer_idx)
+
+            # Save checkpoint after each layer
+            if checkpoint_dir:
+                checkpoint_path = Path(checkpoint_dir)
+                checkpoint_path.mkdir(parents=True, exist_ok=True)
+                checkpoint_file = checkpoint_path / "full_profile_checkpoint.json"
+                checkpoint_file.write_text(json.dumps({
+                    "modelPath": model_path,
+                    "completedLayers": sorted(completed_layers),
+                    "totalLayers": num_layers,
+                    "layerProfiles": {str(k): v for k, v in layer_profiles.items()},
+                }, indent=2))
+                logger.info("Checkpoint saved: %d/%d layers", len(completed_layers), num_layers)
+
+        except Exception as exc:
+            logger.error("Failed to process layer %d: %s", layer_idx, exc)
+            # Continue to next layer, don't abort
+
+    # Compute domain summaries across all layers
+    domain_summaries: dict[str, dict] = {}
+    for layer_idx, lp in layer_profiles.items():
+        for concept in lp.get("concepts", []):
+            domain = concept["domain"]
+            if domain not in domain_summaries:
+                domain_summaries[domain] = {
+                    "domain": domain,
+                    "layerDensities": {},
+                    "conceptCount": 0,
+                    "totalDensitySum": 0.0,
+                }
+            if layer_idx not in domain_summaries[domain]["layerDensities"]:
+                domain_summaries[domain]["layerDensities"][layer_idx] = {
+                    "densities": [],
+                    "meanDensity": 0.0,
+                }
+            domain_summaries[domain]["layerDensities"][layer_idx]["densities"].append(
+                concept["densityScore"]
+            )
+            domain_summaries[domain]["conceptCount"] += 1
+            domain_summaries[domain]["totalDensitySum"] += concept["densityScore"]
+
+    # Compute means per domain per layer
+    for domain, summary in domain_summaries.items():
+        for layer_idx, layer_data in summary["layerDensities"].items():
+            densities = layer_data["densities"]
+            if densities:
+                layer_data["meanDensity"] = sum(densities) / len(densities)
+            del layer_data["densities"]  # Don't need raw list in output
+        if summary["conceptCount"] > 0:
+            summary["overallMeanDensity"] = summary["totalDensitySum"] / summary["conceptCount"]
+        else:
+            summary["overallMeanDensity"] = 0.0
+        del summary["totalDensitySum"]
+
+    # Find strongest/weakest layers per domain
+    for domain, summary in domain_summaries.items():
+        layer_means = [
+            (int(layer_idx), data["meanDensity"])
+            for layer_idx, data in summary["layerDensities"].items()
+        ]
+        if layer_means:
+            layer_means.sort(key=lambda x: x[1], reverse=True)
+            summary["strongestLayers"] = [lm[0] for lm in layer_means[:5]]
+            summary["weakestLayers"] = [lm[0] for lm in layer_means[-5:]]
+
+    # Build final payload
+    payload = {
+        "_schema": "mc.geometry.research.full_profile.v1",
+        "modelPath": model_path,
+        "totalLayers": num_layers,
+        "totalProbes": len(probes),
+        "completedLayers": sorted(completed_layers),
+        "domainSummaries": list(domain_summaries.values()),
+        "layerProfiles": [
+            layer_profiles[i] for i in sorted(layer_profiles.keys())
+        ],
+    }
+
+    if output_path:
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_path).write_text(json.dumps(payload, indent=2))
+        logger.info("Full profile saved to %s", output_path)
+
+    if context.output_format == "text":
+        lines = [
+            "FULL MODEL KNOWLEDGE PROFILE",
+            f"Model: {model_path}",
+            f"Layers: {num_layers}",
+            f"Probes: {len(probes)}",
+            f"Completed: {len(completed_layers)}/{num_layers} layers",
+            "",
+            "DOMAIN SUMMARY (strongest → weakest by overall density):",
+            "-" * 60,
+        ]
+
+        sorted_domains = sorted(
+            domain_summaries.values(),
+            key=lambda x: x.get("overallMeanDensity", 0),
+            reverse=True
+        )
+        for ds in sorted_domains:
+            lines.append(
+                f"  {ds['domain']}: mean_density={ds.get('overallMeanDensity', 0):.3f}, "
+                f"strongest_layers={ds.get('strongestLayers', [])[:3]}"
+            )
+
+        lines.append("")
+        lines.append("LAYER-BY-LAYER SUMMARY:")
+        lines.append("-" * 60)
+        for layer_idx in sorted(layer_profiles.keys()):
+            lp = layer_profiles[layer_idx]
+            lines.append(
+                f"  L{layer_idx}: mean={lp['meanDensity']:.3f}, "
+                f"sparse={lp['sparseCount']}, dense={lp['denseCount']}"
+            )
 
         write_output("\n".join(lines), context.output_format, context.pretty)
         return

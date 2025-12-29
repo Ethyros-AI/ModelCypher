@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 def _load_unified_atlas_concepts() -> list[tuple[str, list[str]]]:
-    """Load concepts from the UnifiedAtlas (441 probes across 12 atlas sources).
+    """Load concepts from the UnifiedAtlas (465 probes across 13 atlas sources).
 
     The UnifiedAtlas triangulates across:
     - Computational Gates (76): Programming concept primitives
@@ -49,6 +49,7 @@ def _load_unified_atlas_concepts() -> list[tuple[str, list[str]]]:
     - Philosophical (30): Ontology, epistemology, logic, modality, mereology
     - Conceptual Genealogy (29): Etymology and lineage anchors
     - Metaphor Invariants (14): Cross-cultural semantic anchors
+    - Syntax Concepts (24): Syntax, morphology, word order, punctuation
 
     Returns:
         List of (concept_id, [support_texts]) tuples for embedding triangulation.
@@ -200,10 +201,10 @@ class MLXConceptAdapter(ConceptDiscoveryPort):
 
     Uses sliding window embedding similarity against a multi-atlas concept
     inventory for cross-domain triangulation. The UnifiedAtlas provides
-    441 probes across 12 atlas sources: computational gates, sequence invariants,
+    465 probes across 13 atlas sources: computational gates, sequence invariants,
     semantic primes, emotions, moral foundations, temporal concepts, spatial concepts,
     social concepts, compositional probes, philosophical concepts, conceptual genealogy,
-    and metaphor invariants.
+    metaphor invariants, and syntax concepts.
     """
 
     def __init__(self, embedder: EmbedderPort, concepts: list[tuple[str, list[str]]] | None = None):

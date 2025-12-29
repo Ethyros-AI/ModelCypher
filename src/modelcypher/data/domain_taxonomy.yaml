@@ -38,8 +38,8 @@ core_domains:
 
   linguistic:
     atlas_domain: LINGUISTIC
-    probe_count: 65
-    description: "Semantic primes, speech acts, language fundamentals"
+    probe_count: 89
+    description: "Semantic primes, syntax, word order, language fundamentals"
     aliases:
       - "language"
       - "semantics"

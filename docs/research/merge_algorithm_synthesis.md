@@ -492,4 +492,4 @@ InterferencePrediction (existing)
 | `riemannian_density.py` | ✅ Active | ConceptVolume distribution modeling |
 | `manifold_curvature.py` | ⏳ Planned | Sectional curvature → extend to Ricci |
 | `fisher_blending.py` | ⏳ Planned | Stub → complete with CAMEx insights |
-| `domain_geometry_waypoints.py` | ✅ Active | Validation anchors (441 probes) |
+| `domain_geometry_waypoints.py` | ✅ Active | Validation anchors (465 probes) |

@@ -446,10 +446,10 @@ class AnchorExtractor:
         - SOCIAL_CONCEPT: 25 probes (power, kinship, formality, status)
         - MORAL_CONCEPT: 30 probes (Haidt's Moral Foundations Theory)
         - CONCEPTUAL_GENEALOGY: 29 probes (etymology + lineage)
-
         - METAPHOR_INVARIANT: 14 probes (cross-cultural semantic anchors)
+        - SYNTAX_CONCEPT: 24 probes (parts of speech, morphology, word order)
 
-        Total: 441 probes for cross-domain triangulation.
+        Total: 465 probes for cross-domain triangulation.
         """
         probes = UnifiedAtlasInventory.all_probes()
         anchors: dict[str, Array] = {}

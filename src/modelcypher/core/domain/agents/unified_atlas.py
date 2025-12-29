@@ -27,7 +27,7 @@ Philosophy IS conceptual math. These probes measure the fundamental categories o
 thought - the structural preconditions for coherent reasoning that are INVARIANT
 across all models. Knowledge occupies fixed probability clouds in hyperspace.
 
-Total probe count: 441
+Total probe count: 465
 - Sequence Invariants: 70 probes (10 families)
 - Semantic Primes: 65 probes (17 categories)
 - Computational Gates: 76 probes (14 categories)
@@ -40,6 +40,7 @@ Total probe count: 441
 - Philosophical: 30 probes (ontological, epistemological, logical, modal, mereological)
 - Conceptual Genealogy: 29 probes (etymology + lineage)
 - Metaphor Invariants: 14 probes (cross-cultural semantic anchors)
+- Syntax Concepts: 24 probes (syntax, morphology, word order, punctuation)
 """
 
 from __future__ import annotations
@@ -85,6 +86,10 @@ from modelcypher.core.domain.agents.social_atlas import (
     SocialConceptInventory,
 )
 from modelcypher.core.domain.agents.spatial_atlas import SpatialConceptInventory
+from modelcypher.core.domain.agents.syntax_atlas import (
+    SyntaxCategory,
+    SyntaxConceptInventory,
+)
 from modelcypher.core.domain.agents.temporal_atlas import (
     TemporalCategory,
     TemporalConceptInventory,
@@ -106,6 +111,7 @@ class AtlasSource(str, Enum):
     PHILOSOPHICAL_CONCEPT = "philosophical_concept"  # Fundamental categories of thought
     CONCEPTUAL_GENEALOGY = "conceptual_genealogy"
     METAPHOR_INVARIANT = "metaphor_invariant"
+    SYNTAX_CONCEPT = "syntax_concept"
 
 
 class AtlasDomain(str, Enum):
@@ -231,6 +237,16 @@ _MORAL_DOMAIN_MAP: dict[MoralFoundation, AtlasDomain] = {
     MoralFoundation.LIBERTY_OPPRESSION: AtlasDomain.MORAL,
 }
 
+_SYNTAX_DOMAIN_MAP: dict[SyntaxCategory, AtlasDomain] = {
+    SyntaxCategory.PART_OF_SPEECH: AtlasDomain.LINGUISTIC,
+    SyntaxCategory.MORPHOLOGY: AtlasDomain.LINGUISTIC,
+    SyntaxCategory.FUNCTION_WORD: AtlasDomain.LINGUISTIC,
+    SyntaxCategory.WORD_ORDER: AtlasDomain.LINGUISTIC,
+    SyntaxCategory.CLAUSE_STRUCTURE: AtlasDomain.LINGUISTIC,
+    SyntaxCategory.PUNCTUATION: AtlasDomain.LINGUISTIC,
+    SyntaxCategory.ORTHOGRAPHY: AtlasDomain.LINGUISTIC,
+}
+
 # Domain mapping for compositional probe categories
 _COMPOSITIONAL_DOMAIN_MAP: dict[str, AtlasDomain] = {
     "mentalPredicate": AtlasDomain.MENTAL,
@@ -314,6 +330,7 @@ _DEFAULT_WEIGHTS: dict[AtlasSource, float] = {
     AtlasSource.PHILOSOPHICAL_CONCEPT: 1.0,
     AtlasSource.CONCEPTUAL_GENEALOGY: 1.0,
     AtlasSource.METAPHOR_INVARIANT: 1.0,
+    AtlasSource.SYNTAX_CONCEPT: 1.0,
 }
 
 
@@ -334,8 +351,9 @@ class UnifiedAtlasInventory:
     - 30 philosophical concepts (ontological, epistemological, logical, modal, mereological)
     - 29 conceptual genealogy probes (etymology + lineage)
     - 14 metaphor invariants (cross-cultural semantic anchors)
+    - 24 syntax concepts (parts of speech, morphology, word order)
 
-    Total: 441 probes for cross-domain triangulation
+    Total: 465 probes for cross-domain triangulation
     """
 
     _cached_probes: list[AtlasProbe] | None = None
@@ -359,6 +377,7 @@ class UnifiedAtlasInventory:
         probes.extend(cls._philosophical_concept_probes())
         probes.extend(cls._conceptual_genealogy_probes())
         probes.extend(cls._metaphor_invariant_probes())
+        probes.extend(cls._syntax_concept_probes())
 
         cls._cached_probes = probes
         return list(probes)
@@ -752,6 +771,30 @@ class UnifiedAtlasInventory:
 
         return probes
 
+    @classmethod
+    def _syntax_concept_probes(cls) -> list[AtlasProbe]:
+        """Convert foundational syntax probes to unified probes."""
+        concepts = SyntaxConceptInventory.all_concepts()
+        probes: list[AtlasProbe] = []
+        base_weight = _DEFAULT_WEIGHTS[AtlasSource.SYNTAX_CONCEPT]
+
+        for concept in concepts:
+            domain = _SYNTAX_DOMAIN_MAP.get(concept.category, AtlasDomain.LINGUISTIC)
+            probes.append(
+                AtlasProbe(
+                    id=concept.id,
+                    source=AtlasSource.SYNTAX_CONCEPT,
+                    domain=domain,
+                    name=concept.name,
+                    description=concept.description,
+                    cross_domain_weight=concept.cross_domain_weight * base_weight,
+                    category_name=concept.category.value,
+                    support_texts=concept.support_texts,
+                )
+            )
+
+        return probes
+
 
 # Convenience constants
 ALL_ATLAS_SOURCES = frozenset(AtlasSource)
@@ -778,6 +821,7 @@ DEFAULT_ATLAS_SOURCES = frozenset(
         AtlasSource.PHILOSOPHICAL_CONCEPT,
         AtlasSource.CONCEPTUAL_GENEALOGY,
         AtlasSource.METAPHOR_INVARIANT,
+        AtlasSource.SYNTAX_CONCEPT,
     ]
 )
 

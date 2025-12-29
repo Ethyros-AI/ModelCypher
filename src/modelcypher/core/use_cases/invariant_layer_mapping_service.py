@@ -34,8 +34,9 @@ Supports:
 - Philosophical: 30 probes (philosophical/logical)
 - Conceptual Genealogy: 29 probes (etymology/lineage)
 - Metaphor Invariants: 14 probes (cross-cultural semantics)
+- Syntax Concepts: 24 probes (syntax, morphology, word order)
 
-Total: 441 probes for cross-domain triangulation.
+Total: 465 probes for cross-domain triangulation.
 """
 
 from __future__ import annotations
@@ -102,7 +103,7 @@ class LayerMappingConfig:
     sample_layer_count: int = 12
     # Multi-atlas configuration (only used when invariant_scope="multiAtlas")
     atlas_sources: list[str] | None = (
-        None  # sequence_invariant, semantic_prime, computational_gate, emotion_concept, spatial_concept, metaphor_invariant, ...
+        None  # sequence_invariant, semantic_prime, computational_gate, emotion_concept, spatial_concept, metaphor_invariant, syntax_concept, ...
     )
     atlas_domains: list[str] | None = None  # mathematical, logical, linguistic, etc.
 
@@ -196,6 +197,10 @@ def _parse_atlas_sources(sources: list[str] | None) -> frozenset[AtlasSource] | 
         "metaphor_invariant": AtlasSource.METAPHOR_INVARIANT,
         "metaphorinvariant": AtlasSource.METAPHOR_INVARIANT,
         "metaphor": AtlasSource.METAPHOR_INVARIANT,
+        "syntax_concept": AtlasSource.SYNTAX_CONCEPT,
+        "syntaxconcept": AtlasSource.SYNTAX_CONCEPT,
+        "syntax": AtlasSource.SYNTAX_CONCEPT,
+        "grammar": AtlasSource.SYNTAX_CONCEPT,
     }
 
     result: set[AtlasSource] = set()
@@ -274,8 +279,10 @@ class InvariantLayerMappingService:
     - 22 compositional probes (semantic prime compositions)
     - 30 philosophical concepts (philosophical/logical)
     - 29 conceptual genealogy probes (etymology/lineage)
+    - 14 metaphor invariants (cross-cultural semantics)
+    - 24 syntax concepts (syntax, morphology, word order)
 
-    Total: 441 probes for cross-domain triangulation.
+    Total: 465 probes for cross-domain triangulation.
 
     Fingerprint extraction is cached to ~/Library/Caches/ModelCypher/fingerprints/
     to avoid expensive MLX inference on repeated calls.

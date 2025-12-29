@@ -18,7 +18,7 @@
 """Geometry invariant layer mapping CLI commands.
 
 Provides commands for invariant-based layer mapping between models using
-multi-atlas triangulation scoring across 441 probes.
+multi-atlas triangulation scoring across 465 probes.
 
 Atlases:
 - Sequence Invariants: 70 probes (mathematical/logical)
@@ -33,6 +33,7 @@ Atlases:
 - Philosophical: 30 probes (philosophical/logical)
 - Conceptual Genealogy: 29 probes (etymology/lineage)
 - Metaphor Invariants: 14 probes (cross-cultural semantics)
+- Syntax Concepts: 24 probes (syntax, morphology, word order)
 
 Commands:
     mc geometry invariant map-layers --source <path> --target <path>
@@ -79,7 +80,7 @@ def geometry_invariant_map_layers(
     scope: str = typer.Option(
         "sequenceInvariants",
         "--scope",
-        help="Invariant scope: invariants, logicOnly, sequenceInvariants, multiAtlas (441 probes)",
+        help="Invariant scope: invariants, logicOnly, sequenceInvariants, multiAtlas (465 probes)",
     ),
     atlas_sources: str | None = typer.Option(
         None,
@@ -87,7 +88,7 @@ def geometry_invariant_map_layers(
         help=(
             "Comma-separated atlas sources for multiAtlas scope: sequence, semantic, gate, "
             "emotion, temporal, spatial, social, moral, compositional, philosophical, genealogy, "
-            "metaphor "
+            "metaphor, syntax "
             "(default: all)"
         ),
     ),
@@ -118,14 +119,14 @@ def geometry_invariant_map_layers(
 ) -> None:
     """Map layers between models using multi-atlas triangulation.
 
-    Uses up to 441 probes across 12 atlases with cross-domain
+    Uses up to 465 probes across 13 atlases with cross-domain
     triangulation scoring to find corresponding layers between models.
 
     Scopes:
         invariants        - Default sequence families
         logicOnly         - Logic family only
         sequenceInvariants - All 70 sequence invariants
-        multiAtlas        - All 441 probes from all atlases
+        multiAtlas        - All 465 probes from all atlases
 
     Example:
         mc geometry invariant map-layers --source ./model-a --target ./model-b
@@ -316,7 +317,7 @@ def geometry_invariant_atlas_inventory(
 ) -> None:
     """Show inventory of available probes across all atlases.
 
-    Displays the 441 probes available for multi-atlas layer mapping:
+    Displays the 465 probes available for multi-atlas layer mapping:
     - Sequence Invariants: 70 probes (mathematical/logical)
     - Semantic Primes: 65 probes (linguistic/mental)
     - Computational Gates: 76 probes (computational/structural)
