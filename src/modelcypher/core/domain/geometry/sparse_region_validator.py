@@ -53,8 +53,6 @@ class Assessment:
     refusal_ok: bool
     coherence_ok: bool
     overall_confidence: float
-    warnings: list[str]
-    recommendations: list[str]
 
 
 @dataclass(frozen=True)
@@ -89,16 +87,6 @@ class ValidationResult:
             "## Assessment",
             f"- Confidence: {self.assessment.overall_confidence * 100:.0f}%",
         ]
-
-        if self.assessment.warnings:
-            report_lines.append("")
-            report_lines.append("### Warnings")
-            report_lines.extend(f"- WARN: {warning}" for warning in self.assessment.warnings)
-
-        if self.assessment.recommendations:
-            report_lines.append("")
-            report_lines.append("### Recommendations")
-            report_lines.extend(f"- {rec}" for rec in self.assessment.recommendations)
 
         return "\n".join(report_lines)
 
@@ -222,34 +210,6 @@ class SparseRegionValidator:
         refusal_ok = refusal_delta <= self.config.max_refusal_delta
         coherence_ok = post_perturbation.coherence_score >= self.config.min_coherence_score
 
-        warnings: list[str] = []
-        if not entropy_ok:
-            warnings.append(
-                f"Entropy delta {entropy_delta * 100:.1f}% exceeds threshold {self.config.max_entropy_delta * 100:.1f}%"
-            )
-        if not refusal_ok:
-            warnings.append(
-                f"Refusal delta {refusal_delta * 100:.1f}% exceeds threshold {self.config.max_refusal_delta * 100:.1f}%"
-            )
-        if not coherence_ok:
-            warnings.append(
-                f"Coherence {post_perturbation.coherence_score:.2f} below minimum {self.config.min_coherence_score:.2f}"
-            )
-
-        recommendations: list[str] = []
-        if not entropy_ok:
-            recommendations.append(
-                "Consider reducing perturbation magnitude or targeting fewer layers"
-            )
-        if not refusal_ok:
-            recommendations.append("Some layers may affect safety circuits - review skip layers")
-        if not coherence_ok:
-            recommendations.append(
-                "Layer targeting may be too aggressive - increase sparsity threshold"
-            )
-        if not warnings:
-            recommendations.append("Recommended configuration appears safe for LoRA training")
-
         passed_checks = sum(1 for flag in [entropy_ok, refusal_ok, coherence_ok] if flag)
         overall_confidence = float(passed_checks) / 3.0
 
@@ -258,8 +218,6 @@ class SparseRegionValidator:
             refusal_ok=refusal_ok,
             coherence_ok=coherence_ok,
             overall_confidence=overall_confidence,
-            warnings=warnings,
-            recommendations=recommendations,
         )
 
         capabilities_preserved = entropy_ok and refusal_ok and coherence_ok

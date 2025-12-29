@@ -109,11 +109,6 @@ class GroundingRotation:
     axis_correspondence: dict[str, str]  # source_axis -> target_axis mapping
     confidence: float  # How confident we are in the rotation estimate
 
-    @property
-    def is_aligned(self) -> bool:
-        """Are the models' grounding axes well-aligned?"""
-        return self.alignment_score > 0.7
-
 
 @dataclass
 class GhostAnchor:
@@ -156,12 +151,9 @@ class CrossGroundingTransferResult:
     # Quality metrics
     mean_stress_preservation: float
     min_stress_preservation: float
-    successful_transfers: int
-    failed_transfers: int
 
-    # Recommendations
+    # Transfer geometry
     interpretability_gap: float  # How much "rotation" was needed
-    recommendation: str
 
 
 # =============================================================================
@@ -786,8 +778,6 @@ class CrossGroundingTransferEngine:
 
         # Transfer each concept
         ghost_anchors = []
-        successful = 0
-        failed = 0
 
         for concept_id, activation in concepts.items():
             try:
@@ -800,14 +790,8 @@ class CrossGroundingTransferEngine:
                 )
                 ghost_anchors.append(ghost)
 
-                if ghost.stress_preservation >= 0.5:
-                    successful += 1
-                else:
-                    failed += 1
-
             except Exception as e:
                 logger.warning(f"Failed to transfer concept {concept_id}: {e}")
-                failed += 1
 
         # Compute aggregate metrics
         if ghost_anchors:
@@ -818,31 +802,7 @@ class CrossGroundingTransferEngine:
             mean_preservation = 0.0
             min_preservation = 0.0
 
-        # Generate recommendation
         interpretability_gap = rotation.angle_degrees / 90.0  # Normalized 0-1
-
-        if rotation.is_aligned and mean_preservation > 0.8:
-            recommendation = (
-                "Excellent transfer quality. Source and target have aligned grounding - "
-                "direct coordinate mapping is also viable."
-            )
-        elif mean_preservation > 0.6:
-            recommendation = (
-                f"Good transfer quality despite {rotation.angle_degrees:.1f}° grounding rotation. "
-                "Ghost Anchors successfully preserved relational structure."
-            )
-        elif mean_preservation > 0.4:
-            recommendation = (
-                f"Moderate transfer quality. {rotation.angle_degrees:.1f}° rotation required. "
-                "The conceptual geometry is invariant but current anchors capture it with "
-                "limited precision. Consider additional probes for validation."
-            )
-        else:
-            recommendation = (
-                f"Low transfer quality. {rotation.angle_degrees:.1f}° rotation with stress distortion. "
-                "Conceptual geometry is invariant but current anchor set is insufficient to "
-                "capture the correspondence. Use more diverse anchors or verify model loading."
-            )
 
         return CrossGroundingTransferResult(
             source_model_grounding=source_grounding,
@@ -851,10 +811,7 @@ class CrossGroundingTransferEngine:
             ghost_anchors=ghost_anchors,
             mean_stress_preservation=mean_preservation,
             min_stress_preservation=min_preservation,
-            successful_transfers=successful,
-            failed_transfers=failed,
             interpretability_gap=interpretability_gap,
-            recommendation=recommendation,
         )
 
     def estimate_transfer_feasibility(
@@ -876,27 +833,6 @@ class CrossGroundingTransferEngine:
             "grounding_rotation_degrees": rotation.angle_degrees,
             "alignment_score": rotation.alignment_score,
             "confidence": rotation.confidence,
-            "is_aligned": rotation.is_aligned,
         }
-
-        # Feasibility assessment
-        if rotation.is_aligned:
-            feasibility["feasibility"] = "HIGH"
-            feasibility["recommendation"] = (
-                "Models have aligned grounding. Direct transfer should work well."
-            )
-        elif rotation.alignment_score > 0.5:
-            feasibility["feasibility"] = "MODERATE"
-            feasibility["recommendation"] = (
-                "Models have partially aligned grounding. "
-                "Cross-grounding transfer recommended over direct mapping."
-            )
-        else:
-            feasibility["feasibility"] = "LOW"
-            feasibility["recommendation"] = (
-                "Models have significantly different grounding axes. "
-                "Transfer will require substantial re-mapping. "
-                "Consider using more universal anchors."
-            )
 
         return feasibility

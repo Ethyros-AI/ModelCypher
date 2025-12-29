@@ -105,10 +105,6 @@ def geometry_sparse_locate(
     )
 
     payload = service.analysis_payload(result)
-    payload["nextActions"] = [
-        "mc geometry sparse domains to see available domain definitions",
-        "mc geometry adapter sparsity for DARE analysis",
-    ]
 
     if context.output_format == "text":
         lines = [
@@ -117,13 +113,9 @@ def geometry_sparse_locate(
             f"Sparse Layers: {len(result.sparse_layers)} {result.sparse_layers}",
             f"Skip Layers: {len(result.skip_layers)} {result.skip_layers}",
             "",
-            "LORA RECOMMENDATION",
-            f"  Quality: {result.recommendation.quality.value.upper()}",
+            "LORA PARAMETERS",
             f"  Overall Rank: {result.recommendation.overall_rank}",
             f"  Alpha: {result.recommendation.alpha}",
-            f"  Preservation: {result.recommendation.estimated_preservation:.0%}",
-            "",
-            result.recommendation.rationale,
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return

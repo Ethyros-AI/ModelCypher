@@ -35,7 +35,8 @@ import math
 import re
 from dataclasses import dataclass
 
-from modelcypher.core.domain.geometry.vector_math import VectorMath
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ class ChunkTrustAssessment:
     linguistic_entropy : float
         Character n-gram entropy in bits. Lower = more predictable.
     cross_reference_score : float or None
-        Agreement with other chunks in [0, 1]. None if unavailable.
+        Normalized geodesic agreement with other chunks in [0, 1]. None if unavailable.
     injection_risk : float
         Injection detection confidence in [0, 1]. Higher = more likely injection.
     suspicious_patterns : tuple[str, ...]
@@ -413,24 +414,66 @@ class ChunkEntropyAnalyzer:
         return (length_score + char_score) / 2.0
 
     def _compute_cross_reference_scores(self, embeddings: list[list[float]]) -> list[float]:
-        """Compute cross-reference consistency scores from embeddings."""
+        """Compute cross-reference agreement from geodesic structure."""
         if len(embeddings) <= 1:
             return [1.0] * len(embeddings)
 
-        # Validate all embeddings have the same dimension
-        dims = len(embeddings[0])
-        if not all(len(e) == dims for e in embeddings) or dims == 0:
-            logger.warning(
-                "Cross-reference scoring skipped: embedding dimensions mismatch or empty"
+        dims = [len(e) for e in embeddings]
+        min_dim = min(dims) if dims else 0
+        if min_dim == 0:
+            logger.warning("Cross-reference scoring skipped: empty embeddings detected")
+            return [0.0] * len(embeddings)
+
+        # Project to a shared dimension if needed (truncate to min dimension).
+        if len(set(dims)) > 1:
+            logger.debug(
+                "Cross-reference scoring using shared dimension %d for %d embeddings",
+                min_dim,
+                len(embeddings),
             )
-            return [1.0] * len(embeddings)
+            projected = [e[:min_dim] for e in embeddings]
+        else:
+            projected = embeddings
 
-        # Compute centroid
-        centroid = [0.0] * dims
-        for embedding in embeddings:
-            for i, val in enumerate(embedding):
-                centroid[i] += val
-        centroid = [v / len(embeddings) for v in centroid]
+        backend = get_default_backend()
+        points = backend.array(projected)
+        backend.eval(points)
 
-        # Score each embedding by similarity to centroid
-        return [VectorMath.cosine_similarity(e, centroid) or 0.0 for e in embeddings]
+        rg = RiemannianGeometry(backend)
+        geo_result = rg.geodesic_distances(points)
+        backend.eval(geo_result.distances)
+        geo_np = backend.to_numpy(geo_result.distances)
+
+        n = len(projected)
+        finite_distances: list[float] = []
+        for i in range(n):
+            for j in range(n):
+                value = float(geo_np[i, j])
+                if math.isfinite(value):
+                    finite_distances.append(value)
+
+        if not finite_distances:
+            logger.warning("Cross-reference scoring skipped: no finite distances")
+            return [0.0] * n
+
+        max_distance = max(finite_distances)
+        if max_distance <= 0:
+            return [1.0] * n
+
+        mean_distances: list[float] = []
+        for i in range(n):
+            row = geo_np[i]
+            total = 0.0
+            count = 0
+            for j in range(n):
+                if i == j:
+                    continue
+                value = float(row[j])
+                if not math.isfinite(value):
+                    value = max_distance
+                total += value
+                count += 1
+            mean_distances.append(total / max(1, count))
+
+        scores = [1.0 - (d / max_distance) for d in mean_distances]
+        return [min(1.0, max(0.0, score)) for score in scores]

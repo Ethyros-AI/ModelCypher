@@ -617,8 +617,6 @@ def model_validate_knowledge(
         for warning in result.warnings:
             typer.echo(f"    - {warning}", err=True)
 
-    typer.echo(f"\n  Recommendation: {result.report.recommendation}", err=True)
-
     # Save report if requested
     if report_path:
         from pathlib import Path

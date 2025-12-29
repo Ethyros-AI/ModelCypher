@@ -288,10 +288,6 @@ def atlas_dimensionality(
         "_schema": "mc.geometry.atlas.dimensionality.v1",
         "modelPath": model_path,
         **_report_payload(report),
-        "nextActions": [
-            "mc geometry metrics intrinsic-dimension for point cloud validation",
-            "mc geometry invariant map for layer alignment cross-checks",
-        ],
     }
 
     if context.output_format == "text":
@@ -490,10 +486,6 @@ def atlas_dimensionality_study(
         "layerReports": [_report_payload(report) for report in reports]
         if include_results
         else None,
-        "nextActions": [
-            "mc geometry atlas dimensionality for single-layer deep dives",
-            "mc geometry invariant map for layer alignment cross-checks",
-        ],
     }
 
     if context.output_format == "text":

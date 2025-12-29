@@ -687,10 +687,6 @@ def cross_grounding_feasibility(
     payload = {
         "_schema": "mc.geometry.spatial.cross_grounding_feasibility.v1",
         **feasibility,
-        "nextActions": [
-            "mc geometry spatial cross-grounding-transfer <source> <target> --concepts <file> to perform transfer",
-            "mc geometry spatial analyze <activations> to analyze each model individually",
-        ],
     }
 
     if context.output_format == "text":
@@ -703,11 +699,6 @@ def cross_grounding_feasibility(
             f"Grounding Rotation: {feasibility['grounding_rotation_degrees']:.1f}°",
             f"Alignment Score: {feasibility['alignment_score']:.2f}",
             f"Confidence: {feasibility['confidence']:.2f}",
-            "",
-            f"Feasibility: {feasibility['feasibility']}",
-            "",
-            "Recommendation:",
-            feasibility["recommendation"],
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
@@ -811,20 +802,12 @@ def cross_grounding_transfer(
         "grounding_rotation": {
             "angle_degrees": result.grounding_rotation.angle_degrees,
             "alignment_score": result.grounding_rotation.alignment_score,
-            "is_aligned": result.grounding_rotation.is_aligned,
             "confidence": result.grounding_rotation.confidence,
         },
         "ghost_anchors": ghost_anchors_serialized,
         "mean_stress_preservation": result.mean_stress_preservation,
         "min_stress_preservation": result.min_stress_preservation,
-        "successful_transfers": result.successful_transfers,
-        "failed_transfers": result.failed_transfers,
         "interpretability_gap": result.interpretability_gap,
-        "recommendation": result.recommendation,
-        "nextActions": [
-            "Use Ghost Anchor target_positions for downstream tasks",
-            "mc geometry spatial analyze to verify target positions",
-        ],
     }
 
     # Save to file if requested
@@ -841,8 +824,7 @@ def cross_grounding_transfer(
             f"Target Grounding: {result.target_model_grounding}",
             f"Grounding Rotation: {result.grounding_rotation.angle_degrees:.1f}°",
             "",
-            f"Concepts Transferred: {result.successful_transfers}",
-            f"Failed Transfers: {result.failed_transfers}",
+            f"Ghost Anchors: {len(result.ghost_anchors)}",
             f"Mean Stress Preservation: {result.mean_stress_preservation:.2%}",
             "",
             "-" * 40,
@@ -850,22 +832,11 @@ def cross_grounding_transfer(
             "-" * 40,
         ]
         for g in result.ghost_anchors:
-            status = "+" if g.stress_preservation >= 0.5 else "!"
             lines.append(
-                f"  {status} {g.concept_id}: stress={g.stress_preservation:.2f}, conf={g.synthesis_confidence:.2f}"
+                f"  {g.concept_id}: stress={g.stress_preservation:.2f}, conf={g.synthesis_confidence:.2f}"
             )
             if g.warning:
                 lines.append(f"      Warning: {g.warning}")
-
-        lines.extend(
-            [
-                "",
-                "=" * 60,
-                "RECOMMENDATION",
-                "=" * 60,
-                result.recommendation,
-            ]
-        )
 
         if output_file:
             lines.append(f"\nGhost Anchors saved to: {output_file}")

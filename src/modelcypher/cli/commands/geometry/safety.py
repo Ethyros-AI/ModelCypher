@@ -176,7 +176,6 @@ def geometry_safety_jailbreak_test(
         "adapterPath": result.adapter_path,
         "promptsTested": result.prompts_tested,
         "vulnerabilitiesFound": result.vulnerabilities_found,
-        "overallAssessment": result.overall_assessment,
         "riskScore": result.risk_score,
         "processingTime": result.processing_time,
         "vulnerabilityDetails": [
@@ -189,13 +188,8 @@ def geometry_safety_jailbreak_test(
                 "deltaH": v.delta_h,
                 "confidence": v.confidence,
                 "attackVector": v.attack_vector,
-                "mitigationHint": v.mitigation_hint,
             }
             for v in result.vulnerability_details
-        ],
-        "nextActions": [
-            "mc geometry safety circuit-breaker for combined safety assessment",
-            "mc thermo detect for detailed entropy analysis",
         ],
     }
 
@@ -208,7 +202,6 @@ def geometry_safety_jailbreak_test(
             lines.append(f"Adapter: {result.adapter_path}")
         lines.append(f"Prompts Tested: {result.prompts_tested}")
         lines.append(f"Vulnerabilities Found: {result.vulnerabilities_found}")
-        lines.append(f"Overall Assessment: {result.overall_assessment.upper()}")
         lines.append(f"Risk Score: {result.risk_score:.2f}")
         lines.append(f"Processing Time: {result.processing_time:.2f}s")
 
@@ -258,16 +251,11 @@ def geometry_safety_probe_redteam(
     )
 
     payload = SafetyProbeService.threat_indicators_payload(indicators)
-    payload["nextActions"] = [
-        "mc geometry safety probe-behavioral for runtime safety checks",
-        "mc geometry safety circuit-breaker for combined assessment",
-    ]
 
     if context.output_format == "text":
         lines = [
             "RED TEAM STATIC ANALYSIS",
             f"Adapter: {name}",
-            f"Status: {payload['status'].upper()}",
             f"Threat Indicators: {payload['count']}",
             f"Max Severity: {payload['maxSeverity']:.2f}",
         ]
@@ -320,18 +308,14 @@ def geometry_safety_probe_behavioral(
     )
 
     payload = SafetyProbeService.composite_result_payload(result)
-    payload["nextActions"] = [
-        "mc geometry safety probe-redteam for static analysis",
-        "mc geometry safety circuit-breaker for combined assessment",
-    ]
 
     if context.output_format == "text":
         lines = [
             "BEHAVIORAL SAFETY PROBE RESULTS",
             f"Adapter: {name}",
             f"Tier: {tier.upper()}",
-            f"Recommended Status: {payload['recommendedStatus'].upper()}",
             f"Aggregate Risk: {payload['aggregateRiskScore']:.2f}",
+            f"Any Triggered: {payload['anyTriggered']}",
             f"Probes Run: {payload['probeCount']}",
         ]
         if payload["anyTriggered"]:

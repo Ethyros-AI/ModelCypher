@@ -69,21 +69,11 @@ def geometry_training_status(
         "jobId": payload["jobId"],
         "step": payload["step"],
         "flatnessScore": payload["flatnessScore"],
-        "flatnessAssessment": payload["flatnessAssessment"] if format == "full" else None,
         "gradientSNR": payload["gradientSNR"],
-        "snrAssessment": payload["snrAssessment"] if format == "full" else None,
         "circuitBreakerSeverity": payload["circuitBreakerSeverity"],
         "circuitBreakerTripped": payload["circuitBreakerTripped"],
         "activeLayers": payload["activeLayers"],
         "perLayerGradientNorms": payload["perLayerGradientNorms"] if format == "full" else None,
-        "nextActions": (
-            [
-                f"mc geometry training history --job {job_id}",
-                f"mc geometry safety circuit-breaker --job {job_id}",
-            ]
-            if ai
-            else None
-        ),
     }
 
     if context.output_format == "text":
@@ -93,15 +83,9 @@ def geometry_training_status(
             f"Step: {output['step']}",
         ]
         if output["flatnessScore"] is not None:
-            assessment = output.get("flatnessAssessment") or ""
-            lines.append(
-                f"Flatness: {output['flatnessScore']:.3f} {f'({assessment})' if assessment else ''}".strip()
-            )
+            lines.append(f"Flatness: {output['flatnessScore']:.3f}")
         if output["gradientSNR"] is not None:
-            assessment = output.get("snrAssessment") or ""
-            lines.append(
-                f"Gradient SNR: {output['gradientSNR']:.2f} {f'({assessment})' if assessment else ''}".strip()
-            )
+            lines.append(f"Gradient SNR: {output['gradientSNR']:.2f}")
         if output["circuitBreakerSeverity"] is not None:
             tripped = "TRIPPED" if output.get("circuitBreakerTripped") else "OK"
             lines.append(f"Circuit Breaker: {output['circuitBreakerSeverity']:.3f} ({tripped})")

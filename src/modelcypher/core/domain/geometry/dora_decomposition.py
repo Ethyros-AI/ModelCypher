@@ -30,7 +30,7 @@ Key concepts:
 
 Usage:
     result = DoRADecomposition.analyze_adapter(base_weights, adapted_weights)
-    print(result.interpretation)
+    print(result.overall_directional_drift)
 """
 
 from __future__ import annotations
@@ -56,13 +56,6 @@ class ChangeType(str, Enum):
     MINIMAL = "minimal"
 
 
-class ChangeInterpretation(str, Enum):
-    """Interpretation of layer-level change."""
-
-    AMPLIFICATION = "amplification"
-    ATTENUATION = "attenuation"
-    ROTATION = "rotation"
-    MIXED = "mixed"
 
 
 @dataclass
@@ -128,20 +121,6 @@ class MagnitudeDirectionMetrics:
     absolute_magnitude_change: float
     relative_magnitude_change: float
 
-    @property
-    def interpretation(self) -> ChangeInterpretation:
-        """Interpret this layer's change."""
-        mag_change = abs(self.magnitude_ratio - 1.0)
-        if mag_change > self.directional_drift * 2:
-            return (
-                ChangeInterpretation.AMPLIFICATION
-                if self.magnitude_ratio > 1
-                else ChangeInterpretation.ATTENUATION
-            )
-        elif self.directional_drift > mag_change * 2:
-            return ChangeInterpretation.ROTATION
-        else:
-            return ChangeInterpretation.MIXED
 
 
 @dataclass
@@ -157,27 +136,6 @@ class DecompositionResult:
     layers_with_significant_magnitude_change: list[str]
     computed_at: datetime = field(default_factory=datetime.now)
 
-    @property
-    def interpretation(self) -> str:
-        """Human-readable interpretation."""
-        if self.dominant_change_type == ChangeType.MAGNITUDE_DOMINATED:
-            sign = "+" if self.overall_magnitude_change > 0 else ""
-            return f"Adapter primarily amplifies/attenuates features (magnitude {sign}{int(self.overall_magnitude_change * 100)}%)"
-        elif self.dominant_change_type == ChangeType.DIRECTION_DOMINATED:
-            return f"Adapter primarily rotates feature space (drift: {self.overall_directional_drift:.2f})"
-        elif self.dominant_change_type == ChangeType.BALANCED:
-            return "Adapter combines scaling and rotation (balanced change)"
-        else:
-            return "Adapter has minimal impact on weight geometry"
-
-    @property
-    def suggests_good_quality(self) -> bool:
-        """Whether this suggests good adapter quality."""
-        if self.dominant_change_type in (ChangeType.BALANCED, ChangeType.DIRECTION_DOMINATED):
-            return self.overall_directional_drift < 0.5
-        elif self.dominant_change_type == ChangeType.MAGNITUDE_DOMINATED:
-            return self.overall_magnitude_change < 0.3
-        return True
 
 
 class DoRADecomposition:

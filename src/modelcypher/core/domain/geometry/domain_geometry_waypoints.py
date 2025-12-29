@@ -111,8 +111,6 @@ class ModelGeometryProfile:
             "computedAt": self.computed_at.isoformat(),
             "totalAnchors": self.total_anchors,
             "meanManifoldScore": self.mean_manifold_score,
-            "strongestDomain": self.strongest_domain.value if self.strongest_domain else None,
-            "weakestDomain": self.weakest_domain.value if self.weakest_domain else None,
         }
 
 

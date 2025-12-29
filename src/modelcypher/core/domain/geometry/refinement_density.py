@@ -90,14 +90,6 @@ class LayerRefinementScore:
     raw_transition_cka: float | None = None
     raw_state_cka: float | None = None
 
-    @property
-    def interpretation(self) -> str:
-        """Human-readable interpretation using raw values."""
-        return (
-            f"Layer {self.layer_index}: refinement={self.composite_score:.3f}, "
-            f"recommended_alpha={self.recommended_alpha:.3f}"
-        )
-
 
 @dataclass(frozen=True)
 class RefinementDensityConfig:
@@ -229,40 +221,6 @@ class RefinementDensityResult:
         """Count of layers above high_alpha threshold (mean + 0.5*std)."""
         return len(self.high_alpha_layers)
 
-    @property
-    def interpretation(self) -> str:
-        """Human-readable summary of the analysis."""
-        total = len(self.layer_scores)
-        if total == 0:
-            return "No layers analyzed."
-
-        hard_count = self.layers_above_hard_swap
-        high_count = self.layers_above_high_alpha
-        hard_pct = (hard_count / total) * 100
-        high_pct = (high_count / total) * 100
-
-        hard_thresh, high_thresh, _ = self._derived_thresholds
-
-        lines = [
-            f"Refinement Density Analysis: {self.source_model} → {self.target_model}",
-            f"Score Distribution: mean={self.mean_composite_score:.3f}, std={self.std_composite_score:.3f}, max={self.max_composite_score:.3f}",
-            f"Hard Swap Candidates (>{hard_thresh:.2f}): {hard_count}/{total} ({hard_pct:.1f}%)",
-            f"High Alpha Candidates (>{high_thresh:.2f}): {high_count}/{total} ({high_pct:.1f}%)",
-        ]
-
-        if self.hard_swap_layers:
-            lines.append(f"Recommended Hard Swap Layers: {self.hard_swap_layers}")
-
-        components = []
-        if self.has_sparsity_data:
-            components.append("DARE")
-        if self.has_directional_data:
-            components.append("DoRA")
-        if self.has_transition_data:
-            components.append("Transition-CKA")
-        lines.append(f"Data Sources: {', '.join(components) or 'None'}")
-
-        return "\n".join(lines)
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
@@ -303,12 +261,12 @@ class RefinementDensityResult:
 
 class RefinementDensityAnalyzer:
     """
-    Analyzes refinement density across layers to guide selective merging.
+    Analyzes refinement density across layers using multiple geometric signals.
 
     Combines three signals:
-    1. DARE sparsity: Low sparsity = many essential parameters = more refined
-    2. DoRA drift: High directional drift = learning new features = more refined
-    3. Transition CKA: High transition alignment = important capability = worth porting
+    1. DARE sparsity: Lower sparsity indicates more essential parameters.
+    2. DoRA drift: Directional drift captures feature space rotation.
+    3. Transition CKA: Transition alignment reflects structural continuity.
 
     Usage:
         analyzer = RefinementDensityAnalyzer()
@@ -319,7 +277,6 @@ class RefinementDensityAnalyzer:
             dora_result=dora_result,
             transition_experiment=transition_result,
         )
-        print(result.interpretation)
         alphas = result.alpha_by_layer
     """
 
@@ -352,7 +309,7 @@ class RefinementDensityAnalyzer:
             layer_count: Override layer count (inferred from inputs if not provided)
 
         Returns:
-            RefinementDensityResult with per-layer scores and recommendations
+            RefinementDensityResult with per-layer scores and derived alphas
         """
         # Infer layer count from available data
         inferred_count = self._infer_layer_count(

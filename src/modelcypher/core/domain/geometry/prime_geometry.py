@@ -171,24 +171,14 @@ class ConfidenceInterval:
 
 @dataclass(frozen=True)
 class EffectSize:
-    """Cohen's d effect size with interpretation."""
+    """Cohen's d effect size."""
 
     d: float  # Cohen's d: (mean1 - mean2) / pooled_std
-    magnitude: str  # "negligible", "small", "medium", "large"
 
     @staticmethod
     def from_cohens_d(d: float) -> "EffectSize":
         """Create EffectSize from Cohen's d value."""
-        abs_d = abs(d)
-        if abs_d < 0.2:
-            magnitude = "negligible"
-        elif abs_d < 0.5:
-            magnitude = "small"
-        elif abs_d < 0.8:
-            magnitude = "medium"
-        else:
-            magnitude = "large"
-        return EffectSize(d=d, magnitude=magnitude)
+        return EffectSize(d=d)
 
 
 @dataclass(frozen=True)
@@ -1119,12 +1109,12 @@ def compute_cohens_d(
         values2: Second group of values.
 
     Returns:
-        EffectSize with Cohen's d and magnitude interpretation.
+    EffectSize with Cohen's d.
     """
     n1, n2 = len(values1), len(values2)
 
     if n1 < 2 or n2 < 2:
-        return EffectSize(d=0.0, magnitude="negligible")
+        return EffectSize(d=0.0)
 
     mean1 = sum(values1) / n1
     mean2 = sum(values2) / n2
@@ -1596,7 +1586,7 @@ def format_comprehensive_result(result: ComprehensiveResult) -> str:
         lines.append(f"{name}: {status}")
         lines.append(f"  {test.description}")
         lines.append(f"  Prime: {test.prime_value:.3f}, Baseline: {test.baseline_value:.3f}")
-        lines.append(f"  Effect size: {test.effect_size.d:.3f} ({test.effect_size.magnitude})")
+        lines.append(f"  Effect size: {test.effect_size.d:.3f}")
         lines.append(f"  p-value: {test.p_value:.4f}")
         lines.append("")
 

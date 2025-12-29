@@ -148,11 +148,6 @@ def geometry_refinement_analyze(
 
         payload = result.to_dict()
         payload["outputFile"] = output_file
-        payload["nextActions"] = [
-            "mc model merge with --use-refinement-density to apply recommendations",
-            "mc geometry adapter sparsity for detailed DARE analysis",
-            "mc geometry adapter decomposition for detailed DoRA analysis",
-        ]
 
         if context.output_format == "text":
             lines = [
@@ -163,13 +158,7 @@ def geometry_refinement_analyze(
                 f"Score Distribution: mean={result.mean_composite_score:.3f}, "
                 f"std={result.std_composite_score:.3f}, max={result.max_composite_score:.3f}",
                 "",
-                f"Hard Swap Candidates: {result.layers_above_hard_swap}",
-                f"High Alpha Candidates: {result.layers_above_high_alpha}",
-                "",
             ]
-
-            if result.hard_swap_layers:
-                lines.append(f"Recommended Hard Swap Layers: {result.hard_swap_layers}")
 
             components = []
             if result.has_sparsity_data:
@@ -190,7 +179,7 @@ def geometry_refinement_analyze(
                 reverse=True,
             )
             if sorted_scores:
-                lines.append("\nTop Refined Layers:")
+                lines.append("\nTop Layers by Composite Score:")
                 for idx, score in sorted_scores[:5]:
                     lines.append(
                         f"  Layer {idx}: score={score.composite_score:.3f}, "

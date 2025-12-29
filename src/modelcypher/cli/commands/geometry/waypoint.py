@@ -22,7 +22,7 @@ Provides commands for:
 - Computing model geometry profiles
 - Pre-merge geometry audit
 - Post-merge geometry validation
-- Domain-aware alpha recommendations
+- Domain-aware alpha profiles
 """
 
 from __future__ import annotations
@@ -115,18 +115,16 @@ def waypoint_profile(
             f"Layer Analyzed: {layer if layer != -1 else 'last'}",
             f"Total Anchors: {profile.total_anchors}",
             f"Mean Manifold Score: {profile.mean_manifold_score:.4f}",
-            f"Strongest Domain: {profile.strongest_domain.value if profile.strongest_domain else 'N/A'}",
-            f"Weakest Domain: {profile.weakest_domain.value if profile.weakest_domain else 'N/A'}",
             "",
             "-" * 50,
             "Per-Domain Scores:",
         ]
         for domain, score in profile.domain_scores.items():
-            status = "YES" if score.has_manifold else "NO"
             lines.append(
                 f"  {domain.value.upper():<10} MMS={score.manifold_score:.3f} "
                 f"Ortho={score.axis_orthogonality:.2f} "
-                f"Manifold={status}"
+                f"Grad={score.gradient_consistency:.2f} "
+                f"Anchors={score.anchors_probed}"
             )
         lines.append("")
         write_output("\n".join(lines), context.output_format, context.pretty)
@@ -146,8 +144,7 @@ def waypoint_audit(
     """
     Pre-merge geometry audit comparing source and target models.
 
-    Identifies geometry conflict zones and recommends domain-aware alpha values.
-    Run this BEFORE merging to understand geometric compatibility.
+    Computes geometry deltas and alpha variance before merging.
     """
     context = _context(ctx)
 
@@ -175,6 +172,7 @@ def waypoint_audit(
         typer.echo(f"Audit saved to {output_file}")
 
     if context.output_format == "text":
+        alpha_profile = service.compute_domain_alpha_profile(audit)
         lines = [
             "=" * 70,
             "PRE-MERGE GEOMETRY AUDIT",
@@ -182,28 +180,22 @@ def waypoint_audit(
             "",
             f"Source: {Path(source_path).name}",
             f"Target: {Path(target_path).name}",
-            f"Overall Compatibility: {audit.overall_compatibility:.1%}",
+            f"Alpha Variance: {audit.alpha_variance:.4f}",
             "",
             "-" * 50,
-            f"VERDICT: {audit.audit_verdict}",
-            "-" * 50,
-            "",
+            "Domain Deltas:",
         ]
 
-        if audit.conflict_zones:
-            lines.append("Conflict Zones:")
-            for zone in audit.conflict_zones:
-                lines.append(f"  [{zone.severity.upper()}] {zone.domain.value}")
-                lines.append(
-                    f"    Source: {zone.source_score:.3f} → Target: {zone.target_score:.3f}"
-                )
-                lines.append(f"    Δ = {zone.delta:.3f}")
-                lines.append(f"    {zone.recommendation}")
-            lines.append("")
+        for delta in audit.domain_deltas:
+            lines.append(
+                f"  {delta.domain.value:<10}: source={delta.source_score:.3f} "
+                f"target={delta.target_score:.3f} delta={delta.delta:.3f}"
+            )
 
-        lines.append("Recommended Alpha by Domain:")
-        for domain, alpha in audit.recommended_alpha_by_domain.items():
-            lines.append(f"  {domain.value:<10}: α = {alpha:.2f}")
+        lines.append("")
+        lines.append("Alpha by Domain (geometry-derived):")
+        for domain, alpha in alpha_profile.items():
+            lines.append(f"  {domain.value:<10}: alpha={alpha:.2f}")
 
         lines.append("")
         write_output("\n".join(lines), context.output_format, context.pretty)
@@ -262,24 +254,13 @@ def waypoint_validate(
             f"Source: {Path(source_path).name}",
             f"Merged: {Path(merged_path).name}",
             f"Overall Preservation: {validation.overall_preservation:.1%}",
-            f"Status: {validation.validation_status.upper()}",
             "",
             "-" * 50,
             "Preservation by Domain:",
         ]
 
         for domain, preservation in validation.preservation_by_domain.items():
-            status = ""
-            if domain in validation.degraded_domains:
-                status = " [DEGRADED]"
-            elif domain in validation.enhanced_domains:
-                status = " [ENHANCED]"
-            lines.append(f"  {domain.value:<10}: {preservation:.1%}{status}")
-
-        lines.append("")
-        lines.append("Recommendations:")
-        for rec in validation.recommendations:
-            lines.append(f"  • {rec}")
+            lines.append(f"  {domain.value:<10}: {preservation:.1%}")
 
         lines.append("")
         write_output("\n".join(lines), context.output_format, context.pretty)
@@ -300,8 +281,7 @@ def waypoint_alpha_profile(
     """
     Compute domain-aware alpha profile for merging.
 
-    Runs geometry audit and computes recommended alpha values for each domain
-    based on geometric compatibility between source and target.
+    Runs geometry audit and computes per-domain alpha values from geometry.
     """
     context = _context(ctx)
 
@@ -313,7 +293,11 @@ def waypoint_alpha_profile(
 
     try:
         audit = service.pre_merge_audit(source_path, target_path, layer)
-        alpha_profile = service.compute_domain_alpha_profile(audit, base_alpha, strength)
+        raw_profile = service.compute_domain_alpha_profile(audit)
+        alpha_profile = {
+            domain: base_alpha + (alpha - base_alpha) * strength
+            for domain, alpha in raw_profile.items()
+        }
     except Exception as e:
         typer.echo(f"Error computing alpha profile: {e}", err=True)
         raise typer.Exit(1)
@@ -324,9 +308,7 @@ def waypoint_alpha_profile(
         "targetModel": target_path,
         "baseAlpha": base_alpha,
         "strength": strength,
-        "compatibility": audit.overall_compatibility,
         "alphaProfile": {d.value: a for d, a in alpha_profile.items()},
-        "verdict": audit.audit_verdict,
     }
 
     if context.output_format == "text":
@@ -338,18 +320,14 @@ def waypoint_alpha_profile(
             f"Source: {Path(source_path).name}",
             f"Target: {Path(target_path).name}",
             f"Base α: {base_alpha:.2f}  Strength: {strength:.2f}",
-            f"Compatibility: {audit.overall_compatibility:.1%}",
             "",
             "-" * 50,
-            "Recommended Alpha by Domain:",
+            "Alpha by Domain (geometry-derived):",
         ]
         for domain, alpha in alpha_profile.items():
             delta = alpha - base_alpha
-            direction = "↑" if delta > 0 else "↓" if delta < 0 else "→"
-            lines.append(f"  {domain.value:<10}: α = {alpha:.2f}  {direction} ({delta:+.2f})")
+            lines.append(f"  {domain.value:<10}: alpha={alpha:.2f} delta={delta:+.2f}")
 
-        lines.append("")
-        lines.append(f"Verdict: {audit.audit_verdict}")
         lines.append("")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return

@@ -192,18 +192,6 @@ class TrainingDriftMetrics:
             (position for position in self.positions if position.trait_id == trait_id), None
         )
 
-    @property
-    def interpretation(self) -> str:
-        if not self.has_significant_drift:
-            return f"Persona alignment stable (drift: {self.overall_drift_magnitude:.3f})"
-        trait_list = ", ".join(self.drifting_traits)
-        if self.overall_drift_magnitude > 0.5:
-            return (
-                "WARNING: Significant persona drift detected in "
-                f"[{trait_list}] - consider stopping training"
-            )
-        return f"Moderate persona drift in [{trait_list}] - monitor closely"
-
 
 @dataclass(frozen=True)
 class PersonaBaseline:

@@ -429,5 +429,4 @@ class AdapterService:
             "strategy": "weighted",
             "weights": weights,
             "adapter_stats": adapter_stats,
-            "recommendation": "Use weighted ensemble with computed weights for balanced contribution",
         }

@@ -48,7 +48,7 @@ class Configuration:
 
 @dataclass(frozen=True)
 class LoRAConfigRecommendation:
-    """LoRA configuration recommendation based on sparse region analysis.
+    """LoRA configuration derived from sparse region analysis.
 
     Attributes
     ----------
@@ -64,10 +64,6 @@ class LoRAConfigRecommendation:
         LoRA alpha parameter.
     sparse_ratio : float
         Fraction of layers identified as sparse (0-1).
-    estimated_preservation : float
-        Expected fidelity preservation (0-1). Higher values indicate better quality.
-    rationale : str
-        Explanation of the recommendation.
     """
 
     target_modules: list[str]
@@ -76,8 +72,6 @@ class LoRAConfigRecommendation:
     overall_rank: int
     alpha: int
     sparse_ratio: float
-    estimated_preservation: float
-    rationale: str
 
     def to_peft_config(self) -> dict[str, object]:
         return {
@@ -97,8 +91,6 @@ class LoRAConfigRecommendation:
             "overallRank": self.overall_rank,
             "alpha": self.alpha,
             "sparseRatio": self.sparse_ratio,
-            "estimatedPreservation": self.estimated_preservation,
-            "rationale": self.rationale,
         }
         return json.dumps(payload, indent=2, sort_keys=True)
 
@@ -155,15 +147,11 @@ class AnalysisResult:
         report_lines.extend(
             [
                 "",
-                "## LoRA Recommendation",
+                "## LoRA Parameters",
                 f"- Sparse Ratio: {self.recommendation.sparse_ratio:.1%}",
                 f"- Overall Rank: {self.recommendation.overall_rank}",
                 f"- Alpha: {self.recommendation.alpha}",
                 f"- Target Modules: {', '.join(self.recommendation.target_modules)}",
-                f"- Estimated Preservation: {self.recommendation.estimated_preservation:.1%}",
-                "",
-                "## Rationale",
-                self.recommendation.rationale,
             ]
         )
 
@@ -317,7 +305,7 @@ class SparseRegionLocator:
         else:
             overlap = 0.0
 
-        confidence = 0.8 if overlap > 0.5 else 0.5
+        confidence = overlap
         return DAREAlignment(
             high_droppability_layers=sorted(set(high_droppability)),
             overlap_with_sparse=overlap,
@@ -346,21 +334,6 @@ class SparseRegionLocator:
 
         sparse_ratio = float(len(sparse_layers)) / float(max(1, len(layer_sparsity)))
 
-        # estimated_preservation derived from actual measurements
-        if dare_alignment and dare_alignment.overlap_with_sparse > 0.5:
-            estimated_preservation = 0.95
-        elif sparse_ratio > 0.3:
-            estimated_preservation = 0.90
-        else:
-            estimated_preservation = 0.80
-
-        rationale = self._build_rationale(
-            sparse_layers=sparse_layers,
-            skip_layers=skip_layers,
-            sparse_ratio=sparse_ratio,
-            dare_alignment=dare_alignment,
-        )
-
         return LoRAConfigRecommendation(
             target_modules=self.config.target_module_types,
             rank_by_layer=rank_by_layer,
@@ -368,26 +341,4 @@ class SparseRegionLocator:
             overall_rank=overall_rank,
             alpha=alpha,
             sparse_ratio=sparse_ratio,
-            estimated_preservation=estimated_preservation,
-            rationale=rationale,
         )
-
-    @staticmethod
-    def _build_rationale(
-        sparse_layers: list[int],
-        skip_layers: list[int],
-        sparse_ratio: float,
-        dare_alignment: DAREAlignment | None,
-    ) -> str:
-        parts = [
-            f"Found {len(sparse_layers)} sparse layers ({sparse_ratio * 100:.1f}% of total)",
-        ]
-        if skip_layers:
-            parts.append(f"Skipping {len(skip_layers)} occupied layers: {skip_layers}")
-        if dare_alignment:
-            parts.append(f"DARE alignment: {dare_alignment.overlap_with_sparse * 100:.1f}% overlap")
-        if sparse_ratio > 0.5:
-            parts.append("High sparsity suggests minimal capability disruption")
-        elif sparse_ratio < 0.2:
-            parts.append("Low sparsity - recommend conservative training parameters")
-        return ". ".join(parts)

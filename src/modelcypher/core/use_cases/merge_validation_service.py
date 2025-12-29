@@ -83,7 +83,6 @@ class GeometricDiagnosis:
     high_drift_layers: list[int]
     mean_drift: float
     max_drift: float
-    recommendations: list[str]
     raw_analysis: dict | None = None
 
 
@@ -383,7 +382,7 @@ class MergeValidationService:
         """
         Diagnose geometric issues in merged model.
 
-        Identifies which layers diverged and provides recommendations.
+        Identifies which layers diverged using refinement density scores.
         """
         from modelcypher.core.domain.geometry.dare_sparsity import (
             Configuration as DAREConfig,
@@ -462,14 +461,11 @@ class MergeValidationService:
             mean_drift = sum(drift_values) / len(drift_values) if drift_values else 0.0
             max_drift = max(drift_values) if drift_values else 0.0
 
-            # Note: recommendations removed per No Vibes rule - return raw measurements only
-            # Callers can interpret mean_drift, max_drift, high_drift_layers as needed
             return GeometricDiagnosis(
                 diverged_layers=diverged_layers,
                 high_drift_layers=high_drift_layers,
                 mean_drift=mean_drift,
                 max_drift=max_drift,
-                recommendations=[],  # Empty per No Vibes rule
                 raw_analysis=result.to_dict(),
             )
 
@@ -480,7 +476,6 @@ class MergeValidationService:
                 high_drift_layers=[],
                 mean_drift=0.0,
                 max_drift=0.0,
-                recommendations=["MLX not available - install for geometric diagnosis"],
             )
 
     def _score_coherence(self, prompt: str, response: str) -> float:
@@ -553,4 +548,3 @@ class MergeValidationService:
         if result.task_probe_pass_rate is not None and result.task_probe_pass_rate < probe_thresh:
             return True
         return False
-

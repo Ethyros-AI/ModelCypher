@@ -317,14 +317,12 @@ def curvature_analysis(
             "std": prime_curv.std_curvature,
             "min": prime_curv.min_curvature,
             "max": prime_curv.max_curvature,
-            "health": prime_curv.health.value,
         },
         "random_curvature": {
             "mean": random_curv.mean_curvature,
             "std": random_curv.std_curvature,
             "min": random_curv.min_curvature,
             "max": random_curv.max_curvature,
-            "health": random_curv.health.value,
         },
     }
 
@@ -346,12 +344,6 @@ def curvature_analysis(
             f"{'Std':<12} | {prime_curv.std_curvature:>15.4f} | {random_curv.std_curvature:>15.4f}",
             f"{'Min':<12} | {prime_curv.min_curvature:>15.4f} | {random_curv.min_curvature:>15.4f}",
             f"{'Max':<12} | {prime_curv.max_curvature:>15.4f} | {random_curv.max_curvature:>15.4f}",
-            f"{'Health':<12} | {prime_curv.health.value:>15} | {random_curv.health.value:>15}",
-            "",
-            "Curvature interpretation:",
-            "  Negative (< 0): Hyperbolic (spreading, information-rich)",
-            "  Near zero: Flat (Euclidean-like)",
-            "  Positive (> 0): Spherical (clustering, constrained)",
             "",
             "=" * 60,
         ]
@@ -534,7 +526,6 @@ def full_analysis(
             "passed": test.passed,
             "p_value": test.p_value,
             "effect_size": test.effect_size.d,
-            "effect_magnitude": test.effect_size.magnitude,
             "prime_value": test.prime_value,
             "baseline_value": test.baseline_value,
         }
@@ -819,12 +810,12 @@ def hypothesis_summary(
             f"Tests: {payload['n_tests']} total, {payload['n_passed']} passed",
             "",
             "-" * 70,
-            f"{'Hypothesis':<25} | {'Status':<10} | {'Effect Size':<12} | {'p-value':<10}",
+            f"{'Hypothesis':<25} | {'Passed':<7} | {'Effect Size':<12} | {'p-value':<10}",
             "-" * 70,
         ]
 
         for name, test in tests.items():
-            status = "✓ PASS" if test.get("passed", False) else "✗ FAIL"
+            status = str(bool(test.get("passed", False))).lower()
             effect = test.get("effect_size", 0.0)
             p_val = test.get("p_value", 1.0)
             lines.append(f"{name:<25} | {status:<10} | {effect:<12.3f} | {p_val:<10.4f}")
@@ -836,12 +827,6 @@ def hypothesis_summary(
             "-" * 70,
             "  H1: Spectral concentration (participation_ratio < baseline)",
             "  H2: Lower spectral entropy",
-            "",
-            "Effect size interpretation (Cohen's d):",
-            "  |d| < 0.2: negligible",
-            "  0.2 ≤ |d| < 0.5: small",
-            "  0.5 ≤ |d| < 0.8: medium",
-            "  |d| ≥ 0.8: large",
             "",
             "=" * 70,
         ])

@@ -157,9 +157,6 @@ class SafetyProbeService:
             ],
             "count": len(indicators),
             "maxSeverity": max((ind.severity for ind in indicators), default=0.0),
-            "status": "clean"
-            if not indicators
-            else ("warning" if max(ind.severity for ind in indicators) < 0.5 else "danger"),
         }
 
     @staticmethod
