@@ -511,43 +511,77 @@ def transplant_run(
 
         result_dict["test_response"] = response
 
-        if not is_quantized:
-            try:
-                loader = MLXModelLoader()
-                weights = loader.load_weights(target)
+        # Save transplanted weights (works for both quantized and non-quantized)
+        try:
+            loader = MLXModelLoader()
+            weights = loader.load_weights(target)
 
-                layer_token = f"layers.{target_layer}."
-                candidates = [
-                    key for key in weights
-                    if layer_token in key and "mlp" in key and "down_proj" in key and key.endswith("weight")
-                ]
-                weight_key = candidates[0] if candidates else None
+            layer_token = f"layers.{target_layer}."
+            candidates = [
+                key for key in weights
+                if layer_token in key and "mlp" in key and "down_proj" in key and key.endswith("weight")
+            ]
+            weight_key = candidates[0] if candidates else None
 
-                if weight_key is None:
-                    typer.echo("Could not locate down_proj weight key in safetensors; skipping save.")
+            if weight_key is None:
+                typer.echo("Could not locate down_proj weight key in safetensors; skipping save.")
+            else:
+                if is_quantized:
+                    # For quantized models: re-quantize the merged weight
+                    from modelcypher.core.use_cases.quantization_utils import (
+                        QuantizationHint,
+                        requantize_weights,
+                    )
+
+                    # Detect quantization params from original layer
+                    q_bits = getattr(target_o_proj, "bits", 4)
+                    q_group_size = getattr(target_o_proj, "group_size", 64)
+                    q_mode = "affine"
+
+                    # Convert merged weight to numpy for requantization
+                    merged_np = backend.to_numpy(merged_weight)
+
+                    # Create single-weight dict for requantization
+                    temp_weights = {weight_key: merged_np}
+                    requant_hint = QuantizationHint(bits=q_bits, group_size=q_group_size, mode=q_mode)
+                    requant_weights = requantize_weights(temp_weights, backend, requant_hint)
+
+                    # Update the full weights dict with requantized weight + scales/biases
+                    base_key = weight_key.replace(".weight", "")
+                    weights[weight_key] = requant_weights[weight_key]
+                    if f"{base_key}.scales" in requant_weights:
+                        weights[f"{base_key}.scales"] = requant_weights[f"{base_key}.scales"]
+                    if f"{base_key}.biases" in requant_weights:
+                        weights[f"{base_key}.biases"] = requant_weights[f"{base_key}.biases"]
+
+                    typer.echo(f"Re-quantized to {q_bits}-bit (group_size={q_group_size})")
                 else:
+                    # Non-quantized: just cast dtype
                     try:
                         merged_to_save = merged_weight.astype(weights[weight_key].dtype)
                     except Exception:
                         merged_to_save = merged_weight
-                    weights[weight_key] = merged_to_save
-                    output_weights_path = output_path / "model.safetensors"
-                    mx.save_safetensors(str(output_weights_path), weights)
+                    weights[weight_key] = backend.to_numpy(merged_to_save)
 
-                    for config_file in [
-                        "config.json",
-                        "tokenizer.json",
-                        "tokenizer_config.json",
-                        "special_tokens_map.json",
-                    ]:
-                        src = Path(target) / config_file
-                        if src.exists():
-                            shutil.copy(src, output_path / config_file)
+                output_weights_path = output_path / "model.safetensors"
+                mx.save_safetensors(str(output_weights_path), weights)
 
-                    result_dict["output_model"] = str(output_weights_path)
-                    typer.echo(f"Saved transplanted weights to: {output_weights_path}")
-            except Exception as e:
-                typer.echo(f"Failed to save transplanted model: {e}")
+                for config_file in [
+                    "config.json",
+                    "tokenizer.json",
+                    "tokenizer_config.json",
+                    "special_tokens_map.json",
+                ]:
+                    src = Path(target) / config_file
+                    if src.exists():
+                        shutil.copy(src, output_path / config_file)
+
+                result_dict["output_model"] = str(output_weights_path)
+                typer.echo(f"Saved transplanted weights to: {output_weights_path}")
+        except Exception as e:
+            typer.echo(f"Failed to save transplanted model: {e}")
+            import traceback
+            typer.echo(traceback.format_exc())
 
         # Save updated results
         with open(result_path, "w") as f:

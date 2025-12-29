@@ -108,9 +108,7 @@ class MergeValidationResult:
     # Diagnosis
     geometric_diagnosis: GeometricDiagnosis | None = None
 
-    # Overall assessment
-    overall_status: str = "unknown"  # healthy, degraded, failed
-    recommendations: list[str] = field(default_factory=list)
+    # Diagnostics
     warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -142,12 +140,9 @@ class MergeValidationResult:
                 "highDriftLayers": self.geometric_diagnosis.high_drift_layers,
                 "meanDrift": self.geometric_diagnosis.mean_drift,
                 "maxDrift": self.geometric_diagnosis.max_drift,
-                "recommendations": self.geometric_diagnosis.recommendations,
             }
             if self.geometric_diagnosis
             else None,
-            "overallStatus": self.overall_status,
-            "recommendations": self.recommendations,
             "warnings": self.warnings,
         }
 
@@ -257,10 +252,6 @@ class MergeValidationService:
             except Exception as e:
                 logger.warning(f"Geometric diagnosis failed: {e}")
                 result.warnings.append(f"Geometric diagnosis failed: {e}")
-
-        # 5. Compute overall status and recommendations
-        result.overall_status = self._compute_status(result)
-        result.recommendations = self._generate_recommendations(result)
 
         return result
 
@@ -576,88 +567,3 @@ class MergeValidationService:
             return True
         return False
 
-    def _compute_status(self, result: MergeValidationResult) -> str:
-        """Compute overall status based on all metrics."""
-        if result.source_perplexity is None:
-            return "unknown"  # Can't determine without baseline
-
-        ppl_thresh, ppl_delta_thresh, coh_thresh, probe_thresh = self._derive_thresholds(result)
-
-        issues = 0
-        severe_issues = 0
-
-        # Perplexity checks
-        if result.perplexity is not None:
-            if result.perplexity > ppl_thresh * 2:
-                severe_issues += 1
-            elif result.perplexity > ppl_thresh:
-                issues += 1
-
-        if result.perplexity_delta is not None:
-            if result.perplexity_delta > ppl_delta_thresh * 2:
-                severe_issues += 1
-            elif result.perplexity_delta > ppl_delta_thresh:
-                issues += 1
-
-        # Coherence checks
-        if result.coherence_score is not None:
-            if result.coherence_score < coh_thresh / 2:
-                severe_issues += 1
-            elif result.coherence_score < coh_thresh:
-                issues += 1
-
-        # Probe checks
-        if result.task_probe_pass_rate is not None:
-            if result.task_probe_pass_rate < probe_thresh / 2:
-                severe_issues += 1
-            elif result.task_probe_pass_rate < probe_thresh:
-                issues += 1
-
-        if severe_issues > 0:
-            return "failed"
-        elif issues > 0:
-            return "degraded"
-        else:
-            return "healthy"
-
-    def _generate_recommendations(self, result: MergeValidationResult) -> list[str]:
-        """Generate actionable recommendations based on results."""
-        if result.source_perplexity is None:
-            # Can't generate threshold-based recommendations without baseline
-            if result.geometric_diagnosis:
-                return result.geometric_diagnosis.recommendations
-            return []
-
-        ppl_thresh, ppl_delta_thresh, coh_thresh, probe_thresh = self._derive_thresholds(
-            result
-        )
-
-        recommendations = []
-
-        if result.overall_status == "failed":
-            recommendations.append(
-                "Model merge has critical issues - consider re-merging with different parameters"
-            )
-
-        if result.perplexity_delta is not None and result.perplexity_delta > ppl_delta_thresh:
-            recommendations.append(
-                f"Perplexity increased by {result.perplexity_delta:.2f} - reduce alpha or use adaptive merging"
-            )
-
-        if result.coherence_score is not None and result.coherence_score < coh_thresh:
-            recommendations.append("Low coherence score - check attention layer alignment")
-
-        if result.task_probe_pass_rate is not None:
-            failed_probes = [p.name for p in result.task_probe_results if not p.passed]
-            if failed_probes:
-                recommendations.append(
-                    f"Failed probes: {', '.join(failed_probes)} - inspect relevant layers"
-                )
-
-        if result.geometric_diagnosis:
-            recommendations.extend(result.geometric_diagnosis.recommendations)
-
-        if not recommendations and result.overall_status == "healthy":
-            recommendations.append("No issues detected - model appears healthy")
-
-        return recommendations
