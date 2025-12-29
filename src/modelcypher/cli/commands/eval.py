@@ -345,6 +345,177 @@ def eval_domain(
         raise typer.Exit(1)
 
 
+@eval_app.command("batch")
+def eval_batch(
+    ctx: typer.Context,
+    models: list[str] = typer.Option(
+        ...,
+        "--model",
+        "-m",
+        help="Model paths to evaluate (repeatable, runs sequentially)",
+    ),
+    suite: str = typer.Option(
+        "standard",
+        "--suite",
+        "-s",
+        help="Benchmark suite to run",
+    ),
+    limit: int | None = typer.Option(None, "--limit", help="Limit samples per task"),
+    num_fewshot: int = typer.Option(0, "--num-fewshot", help="Number of few-shot examples"),
+    output_dir: str = typer.Option(
+        None,
+        "--output-dir",
+        "-o",
+        help="Directory to save results (one JSON per model)",
+    ),
+) -> None:
+    """Run benchmarks on multiple models SEQUENTIALLY (one at a time).
+
+    Ensures full GPU/CPU resources are dedicated to each model.
+    Results are saved incrementally so crashes don't lose progress.
+
+    Examples:
+        mc eval batch -m ./model1 -m ./model2 -m ./model3 --suite standard
+        mc eval batch -m ./model1 -m ./model2 --suite quick --output-dir ./results
+    """
+    import gc
+    import json
+    import os
+    import time
+    from datetime import datetime
+    from pathlib import Path
+
+    from modelcypher.core.domain.geometry.domain_benchmark_map import get_suite
+    from modelcypher.core.use_cases.mlx_lm_eval import run_benchmark
+
+    context = _context(ctx)
+
+    tasks = get_suite(suite)
+    if not tasks:
+        typer.echo(f"Unknown suite: {suite}", err=True)
+        raise typer.Exit(1)
+
+    # Setup output directory
+    if output_dir:
+        out_path = Path(output_dir)
+        out_path.mkdir(parents=True, exist_ok=True)
+    else:
+        out_path = Path(f"./eval-results-{datetime.now().strftime('%Y%m%d-%H%M%S')}")
+        out_path.mkdir(parents=True, exist_ok=True)
+
+    typer.echo(f"=== SEQUENTIAL BATCH EVALUATION ===")
+    typer.echo(f"Suite: {suite} ({len(tasks)} tasks)")
+    typer.echo(f"Models: {len(models)}")
+    typer.echo(f"Output: {out_path}")
+    typer.echo("")
+
+    all_results = {}
+
+    for i, model in enumerate(models, 1):
+        model_path = Path(model).resolve()
+        model_name = model_path.name
+
+        typer.echo(f"[{i}/{len(models)}] {model_name}")
+        typer.echo(f"  Path: {model_path}")
+
+        if not model_path.exists():
+            typer.echo(f"  ERROR: Path does not exist, skipping", err=True)
+            continue
+
+        output_file = out_path / f"{model_name}.json"
+
+        # Skip if already completed
+        if output_file.exists():
+            typer.echo(f"  Already completed, loading existing results")
+            with open(output_file) as f:
+                all_results[model_name] = json.load(f)
+            continue
+
+        start_time = time.time()
+
+        try:
+            typer.echo(f"  Running {len(tasks)} tasks...")
+            results = run_benchmark(
+                model_path=str(model_path),
+                tasks=tasks,
+                limit=limit,
+                num_fewshot=num_fewshot,
+                output_path=str(output_file),
+            )
+
+            elapsed = time.time() - start_time
+            typer.echo(f"  Completed in {elapsed:.1f}s")
+
+            # Show summary
+            if "results" in results:
+                for task_name, task_results in results["results"].items():
+                    acc = task_results.get("acc_norm,none", task_results.get("acc,none", "N/A"))
+                    if isinstance(acc, float):
+                        typer.echo(f"    {task_name}: {acc:.4f}")
+
+            all_results[model_name] = results
+
+        except Exception as e:
+            typer.echo(f"  FAILED: {e}", err=True)
+            all_results[model_name] = {"error": str(e)}
+
+        # Force cleanup between models
+        typer.echo(f"  Releasing memory...")
+        gc.collect()
+
+        # Give system a moment to reclaim resources
+        if i < len(models):
+            time.sleep(2)
+
+        typer.echo("")
+
+    # Save summary
+    summary_file = out_path / "summary.json"
+    with open(summary_file, "w") as f:
+        json.dump({
+            "suite": suite,
+            "tasks": tasks,
+            "models": list(all_results.keys()),
+            "timestamp": datetime.now().isoformat(),
+        }, f, indent=2)
+
+    typer.echo(f"=== BATCH COMPLETE ===")
+    typer.echo(f"Results saved to: {out_path}")
+
+    # Print comparison table
+    if context.output_format == "text" and all_results:
+        typer.echo("\n=== COMPARISON ===")
+
+        # Collect all tasks across results
+        all_tasks_seen = set()
+        for result in all_results.values():
+            if isinstance(result, dict) and "results" in result:
+                all_tasks_seen.update(result["results"].keys())
+
+        # Header
+        header = f"{'Task':<20}"
+        for model_name in all_results.keys():
+            short_name = model_name[:12]
+            header += f" {short_name:>12}"
+        typer.echo(header)
+        typer.echo("-" * len(header))
+
+        # Rows
+        for task in sorted(all_tasks_seen):
+            row = f"{task:<20}"
+            for model_name, result in all_results.items():
+                if isinstance(result, dict) and "results" in result:
+                    task_result = result["results"].get(task, {})
+                    acc = task_result.get("acc_norm,none", task_result.get("acc,none"))
+                    if isinstance(acc, float):
+                        row += f" {acc:>12.4f}"
+                    else:
+                        row += f" {'N/A':>12}"
+                else:
+                    row += f" {'ERROR':>12}"
+            typer.echo(row)
+
+
 @compare_app.command("list")
 def compare_list(
     ctx: typer.Context,

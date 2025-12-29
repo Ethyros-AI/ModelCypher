@@ -1632,3 +1632,306 @@ def build_eval_dataset(
         return
 
     write_output(payload, context.output_format, context.pretty)
+
+
+def _cleanup_memory() -> None:
+    """Aggressively clean up memory between model operations.
+
+    This is critical when profiling multiple models sequentially.
+    Without cleanup, memory accumulates and can crash the system.
+    """
+    import gc
+
+    # Force Python garbage collection
+    gc.collect()
+    gc.collect()  # Second pass catches circular refs
+
+    # Clear MLX cache if available
+    try:
+        import mlx.core as mx
+
+        mx.clear_cache()
+    except (ImportError, AttributeError):
+        pass
+
+    # Brief pause to let system reclaim memory
+    import time
+
+    time.sleep(1)
+
+
+@app.command("batch-profile")
+def batch_profile(
+    ctx: typer.Context,
+    model_paths: list[str] = typer.Argument(..., help="Paths to model directories"),
+    output_dir: str = typer.Option(
+        None, "--output-dir", "-o", help="Directory for profile outputs"
+    ),
+    sources: list[str] | None = typer.Option(
+        None, "--source", "-s", help="Filter by atlas source (repeatable)"
+    ),
+    domains: list[str] | None = typer.Option(
+        None, "--domain", "-d", help="Filter by atlas domain (repeatable)"
+    ),
+    k_neighbors: int = typer.Option(
+        10, "--k-neighbors", help="k for geodesic distance graph"
+    ),
+) -> None:
+    """Profile multiple models SEQUENTIALLY with automatic resource management.
+
+    IMPORTANT: This command profiles models ONE AT A TIME to maximize resource
+    utilization and prevent system crashes. Each model gets full CPU/GPU access.
+
+    Memory is aggressively cleaned between models to prevent accumulation.
+    Checkpointing is automatic - interrupted profiles can be resumed.
+
+    Example:
+        mc geometry research batch-profile /path/to/model1 /path/to/model2 -o ./profiles
+
+    For uber model experiments:
+        mc geometry research batch-profile \\
+            /models/Qwen3-8B-4bit \\
+            /models/Qwen2.5-Math-7B \\
+            /models/Mistral-7B \\
+            -o /experiments/profiles
+    """
+    context = _context(ctx)
+
+    from modelcypher.core.domain.geometry.knowledge_density import (
+        KnowledgeDensityAnalyzer,
+        KnowledgeDensityConfig,
+    )
+
+    # Resolve output directory
+    if output_dir:
+        out_path = Path(output_dir)
+    else:
+        out_path = Path.cwd() / "profiles"
+    out_path.mkdir(parents=True, exist_ok=True)
+    checkpoint_base = out_path / "checkpoints"
+    checkpoint_base.mkdir(parents=True, exist_ok=True)
+
+    # Parse filters
+    source_filter = _parse_sources(sources)
+    domain_filter = _parse_domains(domains)
+
+    # Get probes once (same for all models)
+    probes = UnifiedAtlasInventory.all_probes()
+    if source_filter:
+        probes = [probe for probe in probes if probe.source in source_filter]
+    if domain_filter:
+        probes = [probe for probe in probes if probe.domain in domain_filter]
+
+    logger.info("Batch profiling %d models with %d probes", len(model_paths), len(probes))
+
+    results: list[dict] = []
+
+    for idx, model_path in enumerate(model_paths, 1):
+        model_name = Path(model_path).name
+        profile_output = out_path / f"{model_name}.json"
+        checkpoint_dir = checkpoint_base / model_name
+
+        logger.info("")
+        logger.info("=" * 60)
+        logger.info("MODEL %d/%d: %s", idx, len(model_paths), model_name)
+        logger.info("=" * 60)
+
+        # Check if already complete
+        if profile_output.exists():
+            try:
+                existing = json.loads(profile_output.read_text())
+                completed = len(existing.get("completedLayers", []))
+                total = existing.get("totalLayers", 0)
+                if completed == total and total > 0:
+                    logger.info("Already complete (%d/%d layers)", completed, total)
+                    results.append({
+                        "model": model_name,
+                        "status": "already_complete",
+                        "layers": total,
+                        "output": str(profile_output),
+                    })
+                    continue
+                logger.info("Resuming from checkpoint (%d/%d layers)", completed, total)
+            except Exception:
+                pass
+
+        # Clean memory before loading new model
+        logger.info("Cleaning memory before model load...")
+        _cleanup_memory()
+
+        try:
+            # Load model
+            logger.info("Loading model: %s", model_path)
+            model, tokenizer, backend, provider, num_layers = _load_model_and_provider(
+                model_path, k_neighbors
+            )
+
+            all_layers = list(range(num_layers))
+            logger.info(
+                "Full profile: %d probes x %d layers = %d measurements",
+                len(probes), num_layers, len(probes) * num_layers
+            )
+
+            # Check for checkpoint to resume from
+            checkpoint_data: dict = {}
+            completed_layers: set[int] = set()
+            checkpoint_dir.mkdir(parents=True, exist_ok=True)
+            checkpoint_file = checkpoint_dir / "full_profile_checkpoint.json"
+
+            if checkpoint_file.exists():
+                checkpoint_data = json.loads(checkpoint_file.read_text())
+                completed_layers = set(checkpoint_data.get("completedLayers", []))
+                logger.info("Resuming from checkpoint: %d layers complete", len(completed_layers))
+
+            analyzer = KnowledgeDensityAnalyzer(backend=backend)
+            config = KnowledgeDensityConfig()
+
+            # Results structure
+            layer_profiles: dict[int, dict] = checkpoint_data.get("layerProfiles", {})
+            layer_profiles = {int(k): v for k, v in layer_profiles.items()}
+
+            # Process each layer
+            for layer_idx in all_layers:
+                if layer_idx in completed_layers:
+                    continue
+
+                logger.info("Processing layer %d/%d...", layer_idx + 1, num_layers)
+
+                try:
+                    layer_result = analyzer.analyze_layer(probes, provider, layer_idx, config)
+
+                    layer_profiles[layer_idx] = {
+                        "layer": layer_idx,
+                        "totalConcepts": len(layer_result.concept_densities),
+                        "meanDensity": layer_result.mean_density,
+                        "medianDensity": layer_result.median_density,
+                        "sparseCount": layer_result.sparse_concept_count,
+                        "denseCount": layer_result.dense_concept_count,
+                        "densityThreshold": layer_result.density_threshold,
+                        "concepts": [
+                            {
+                                "probeID": c.probe_id,
+                                "name": c.name,
+                                "domain": c.domain,
+                                "densityScore": c.density_score,
+                                "intrinsicDimension": c.intrinsic_dimension,
+                                "activationVariance": c.activation_variance,
+                                "clusterTightness": c.cluster_tightness,
+                            }
+                            for c in layer_result.concept_densities
+                        ],
+                    }
+                    completed_layers.add(layer_idx)
+
+                    # Save checkpoint after each layer
+                    checkpoint_file.write_text(json.dumps({
+                        "modelPath": model_path,
+                        "completedLayers": sorted(completed_layers),
+                        "totalLayers": num_layers,
+                        "layerProfiles": {str(k): v for k, v in layer_profiles.items()},
+                    }, indent=2))
+                    logger.info("Checkpoint saved: %d/%d layers", len(completed_layers), num_layers)
+
+                except Exception as exc:
+                    logger.error("Failed to process layer %d: %s", layer_idx, exc)
+
+            # Compute domain summaries
+            domain_summaries: dict[str, dict] = {}
+            for layer_idx, lp in layer_profiles.items():
+                for concept in lp.get("concepts", []):
+                    domain = concept["domain"]
+                    if domain not in domain_summaries:
+                        domain_summaries[domain] = {
+                            "domain": domain,
+                            "layerDensities": {},
+                            "conceptCount": 0,
+                            "totalDensitySum": 0.0,
+                        }
+                    if layer_idx not in domain_summaries[domain]["layerDensities"]:
+                        domain_summaries[domain]["layerDensities"][layer_idx] = {
+                            "densities": [],
+                            "meanDensity": 0.0,
+                        }
+                    domain_summaries[domain]["layerDensities"][layer_idx]["densities"].append(
+                        concept["densityScore"]
+                    )
+                    domain_summaries[domain]["conceptCount"] += 1
+                    domain_summaries[domain]["totalDensitySum"] += concept["densityScore"]
+
+            for domain, summary in domain_summaries.items():
+                for layer_idx, layer_data in summary["layerDensities"].items():
+                    densities = layer_data["densities"]
+                    if densities:
+                        layer_data["meanDensity"] = sum(densities) / len(densities)
+                    del layer_data["densities"]
+                if summary["conceptCount"] > 0:
+                    summary["overallMeanDensity"] = summary["totalDensitySum"] / summary["conceptCount"]
+                else:
+                    summary["overallMeanDensity"] = 0.0
+                del summary["totalDensitySum"]
+
+            # Build final payload
+            final_payload = {
+                "_schema": "mc.geometry.research.full_profile.v1",
+                "modelPath": model_path,
+                "totalLayers": num_layers,
+                "totalProbes": len(probes),
+                "completedLayers": sorted(completed_layers),
+                "domainSummaries": list(domain_summaries.values()),
+                "layerProfiles": [
+                    layer_profiles[i] for i in sorted(layer_profiles.keys())
+                ],
+            }
+
+            profile_output.write_text(json.dumps(final_payload, indent=2))
+            logger.info("Profile saved to %s", profile_output)
+
+            results.append({
+                "model": model_name,
+                "status": "complete",
+                "layers": num_layers,
+                "output": str(profile_output),
+            })
+
+        except Exception as exc:
+            logger.error("Failed to profile %s: %s", model_name, exc)
+            results.append({
+                "model": model_name,
+                "status": "failed",
+                "error": str(exc),
+            })
+
+        # Clean memory after each model (CRITICAL)
+        logger.info("Cleaning memory after model completion...")
+        _cleanup_memory()
+
+    # Final output
+    summary = {
+        "_schema": "mc.geometry.research.batch_profile.v1",
+        "outputDir": str(out_path),
+        "totalModels": len(model_paths),
+        "completedModels": sum(1 for r in results if r.get("status") in ("complete", "already_complete")),
+        "failedModels": sum(1 for r in results if r.get("status") == "failed"),
+        "results": results,
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "",
+            "=" * 60,
+            "BATCH PROFILING COMPLETE",
+            "=" * 60,
+            f"Output directory: {out_path}",
+            f"Models processed: {len(model_paths)}",
+            f"Completed: {summary['completedModels']}",
+            f"Failed: {summary['failedModels']}",
+            "",
+            "Results:",
+        ]
+        for r in results:
+            status_icon = "[done]" if r.get("status") in ("complete", "already_complete") else "[fail]"
+            lines.append(f"  {status_icon} {r['model']}: {r.get('status', 'unknown')}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(summary, context.output_format, context.pretty)
