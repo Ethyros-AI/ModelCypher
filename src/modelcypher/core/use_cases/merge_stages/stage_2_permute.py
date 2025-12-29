@@ -331,11 +331,29 @@ def infer_hidden_dim(weights: dict[str, Any]) -> int:
 
     Must find a valid projection layer - no arbitrary defaults.
     """
+    # Prefer norm weights: 1D and directly encode hidden size even for quantized models.
     for key, val in weights.items():
-        if "q_proj" in key or "k_proj" in key:
-            return val.shape[1]
-        if "up_proj" in key or "gate_proj" in key:
-            return val.shape[1]
+        if key.endswith(".scales") or key.endswith(".biases"):
+            continue
+        if not hasattr(val, "shape") or len(val.shape) != 1:
+            continue
+        if key.endswith(("norm.weight", "layernorm.weight", "rms_norm.weight")):
+            return int(val.shape[0])
+
+    # Fall back to projection matrices (ignore quantization metadata like *.scales).
+    for key, val in weights.items():
+        if key.endswith(".scales") or key.endswith(".biases"):
+            continue
+        if not hasattr(val, "shape") or len(val.shape) != 2:
+            continue
+        if not key.endswith(".weight"):
+            continue
+        if "q_proj" in key or "o_proj" in key:
+            return int(max(val.shape))
+        if "k_proj" in key or "v_proj" in key:
+            return int(max(val.shape))
+        if "up_proj" in key or "gate_proj" in key or "down_proj" in key:
+            return int(min(val.shape))
     raise ValueError(
         "Cannot infer hidden dimension: no q_proj, k_proj, up_proj, or gate_proj "
         "found in weights. Available keys: " + ", ".join(list(weights.keys())[:10])

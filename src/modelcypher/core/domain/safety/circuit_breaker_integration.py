@@ -282,39 +282,6 @@ class CircuitBreakerState:
     token_index: int
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
-    @property
-    def interpretation(self) -> str:
-        if not self.is_tripped:
-            if self.severity < 0.25:
-                return "All clear - generation proceeding normally"
-            if self.severity < 0.50:
-                return "Low concern - monitoring signals"
-            return "Elevated concern - close monitoring recommended"
-
-        source = self.trigger_source
-        if source is None:
-            return "Circuit breaker tripped - unknown trigger"
-
-        interpretations = {
-            TriggerSource.entropy_spike: (
-                "HIGH UNCERTAINTY: Semantic entropy spike detected - potential hallucination"
-            ),
-            TriggerSource.refusal_approach: (
-                "SAFETY CONCERN: Model approaching refusal direction"
-            ),
-            TriggerSource.persona_drift: (
-                "ALIGNMENT DRIFT: Persona vectors shifting from baseline"
-            ),
-            TriggerSource.oscillation_pattern: (
-                "INSTABILITY: Oscillation pattern detected in generation"
-            ),
-            TriggerSource.combined_signals: (
-                "MULTIPLE CONCERNS: Combined safety signals exceeded threshold"
-            ),
-            TriggerSource.manual: "MANUAL TRIP: Circuit breaker manually activated",
-        }
-        return interpretations.get(source, "Circuit breaker tripped")
-
 
 @dataclass(frozen=True)
 class CircuitBreakerTelemetry:

@@ -279,17 +279,11 @@ class H2ValidationResult:
         Proportion of mappings above the configured high threshold (for diagnostics).
     position_correlation : float
         Correlation between source and target layer positions.
-    is_validated : bool
-        Whether the layer correspondence passes validation.
-    interpretation : str
-        Human-readable interpretation of the result.
     """
 
     mean_cka: float
     cka_above_threshold_proportion: float
     position_correlation: float
-    is_validated: bool
-    interpretation: str
 
 
 @dataclass(frozen=True)
@@ -502,9 +496,10 @@ class CrossArchitectureLayerMatcher:
     def _validate_h2(
         mappings: list[LayerMapping], config: Configuration
     ) -> H2ValidationResult:
-        """Validate layer correspondence using raw CKA values.
+        """Compute layer correspondence statistics using raw CKA values.
 
         Uses configured threshold to compute proportion above threshold for diagnostics.
+        Returns raw measurements - callers determine validation thresholds.
         """
         valid = [mapping for mapping in mappings if not mapping.is_skipped]
         if not valid:
@@ -512,8 +507,6 @@ class CrossArchitectureLayerMatcher:
                 mean_cka=0.0,
                 cka_above_threshold_proportion=0.0,
                 position_correlation=0.0,
-                is_validated=False,
-                interpretation="No valid layer mappings found.",
             )
 
         mean_cka = sum(mapping.cka for mapping in valid) / float(len(valid))
@@ -529,32 +522,10 @@ class CrossArchitectureLayerMatcher:
             source_positions, target_positions
         )
 
-        # Use raw mean_cka as the primary signal instead of binned proportion
-        is_validated = mean_cka > 0.5 and above_threshold_prop > 0.6 and position_corr > 0.8
-        if is_validated:
-            interpretation = (
-                "Layer correspondence measured with high fidelity. Conceptual geometry aligns "
-                "as expected - knowledge occupies the same probability clouds in both models."
-            )
-        elif mean_cka > 0.3 and position_corr > 0.5:
-            interpretation = (
-                "Moderate measurement quality. Conceptual invariance is fundamental, but this "
-                "probe set captures it with limited precision. Consider more probes or "
-                "different layer sampling."
-            )
-        else:
-            interpretation = (
-                "Insufficient measurement fidelity. The underlying conceptual geometry is "
-                "invariant, but current probes do not adequately capture the correspondence. "
-                "Use more diverse probes or verify model loading."
-            )
-
         return H2ValidationResult(
             mean_cka=float(mean_cka),
             cka_above_threshold_proportion=float(above_threshold_prop),
             position_correlation=float(position_corr),
-            is_validated=is_validated,
-            interpretation=interpretation,
         )
 
     @staticmethod

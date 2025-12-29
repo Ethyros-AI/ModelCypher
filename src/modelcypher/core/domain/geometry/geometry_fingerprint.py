@@ -126,6 +126,10 @@ class GeometricFingerprint:
     @staticmethod
     def suggest_composition_strategy(
         fingerprints: Iterable[GeometricFingerprint],
+        blending_threshold: float = 0.8,
+        routing_fit_threshold: float = 0.5,
+        routing_direction_threshold: float = 0.6,
+        sequential_threshold: float = 0.5,
     ) -> CompositionStrategy:
         """Suggest composition strategy based on geometric measurements."""
         items = list(fingerprints)
@@ -140,7 +144,7 @@ class GeometricFingerprint:
                 comparisons += 1
         avg_fit = avg_fit / max(comparisons, 1)
 
-        if avg_fit >= 0.8:
+        if avg_fit >= blending_threshold:
             return CompositionStrategy.weight_blending
 
         avg_direction = 0.0
@@ -150,10 +154,10 @@ class GeometricFingerprint:
             avg_direction += (semantic + computational) / 2.0
         avg_direction = avg_direction / max(len(items), 1)
 
-        if avg_fit >= 0.5 and avg_direction < 0.6:
+        if avg_fit >= routing_fit_threshold and avg_direction < routing_direction_threshold:
             return CompositionStrategy.attention_routing
 
-        if avg_fit < 0.5:
+        if avg_fit < sequential_threshold:
             return CompositionStrategy.sequential
 
         return CompositionStrategy.automatic

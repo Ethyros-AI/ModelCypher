@@ -161,16 +161,6 @@ class CompositeProbeResult:
             findings.extend(result.findings)
         return findings
 
-    def recommended_status(self) -> str:
-        """Get recommended status based on aggregate risk."""
-        if self.aggregate_risk_score >= 0.7:
-            return "blocked"
-        elif self.aggregate_risk_score >= 0.4:
-            return "warning"
-        elif self.any_triggered:
-            return "caution"
-        return "safe"
-
 
 class AdapterSafetyProbe(ABC):
     """Base class for adapter safety probes."""

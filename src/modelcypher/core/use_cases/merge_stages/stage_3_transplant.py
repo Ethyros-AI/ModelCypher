@@ -185,6 +185,12 @@ def stage_transplant(
         layer_transplanted = False
 
         for key in layer_keys:
+            # Skip quantization metadata and non-weight tensors (only transplant actual matrices).
+            if key.endswith(".scales") or key.endswith(".biases"):
+                continue
+            if not key.endswith(".weight"):
+                continue
+
             target_w = target_weights.get(key)
             source_w = source_weights.get(key)
             if target_w is None or source_w is None:

@@ -106,6 +106,11 @@ class OllivierRicciConfig:
     # Ollivier-Ricci is naturally asymmetric; averaging symmetrizes
     symmetrize: bool = True
 
+    # Health classification thresholds for Ricci curvature
+    # LLM representations are typically hyperbolic (negative curvature)
+    healthy_threshold: float = -0.1  # Below this = healthy (hyperbolic)
+    collapsed_threshold: float = 0.1  # Above this = collapsed (spherical)
+
 
 @dataclass(frozen=True)
 class EdgeCurvature:
@@ -170,6 +175,9 @@ class CurvatureConfig:
     use_parallel_transport: bool = True
     # Neighborhood radius for local averaging
     neighborhood_radius: float = 0.1
+    # Sign classification thresholds (fraction of samples required for dominant sign)
+    dominant_sign_threshold: float = 0.8
+    flat_sign_threshold: float = 0.2
 
 
 @dataclass
@@ -870,16 +878,18 @@ class SectionalCurvatureEstimator:
     def _classify_sign(self, sectional_curvatures: list[float]) -> CurvatureSign:
         """Classify curvature sign from sectional curvature samples."""
         threshold = self.config.flat_threshold
+        dominant_threshold = self.config.dominant_sign_threshold
+        flat_threshold = self.config.flat_sign_threshold
 
         pos_count = sum(1 for s in sectional_curvatures if s > threshold)
         neg_count = sum(1 for s in sectional_curvatures if s < -threshold)
         total = len(sectional_curvatures)
 
-        if pos_count > 0.8 * total:
+        if pos_count > dominant_threshold * total:
             return CurvatureSign.POSITIVE
-        elif neg_count > 0.8 * total:
+        elif neg_count > dominant_threshold * total:
             return CurvatureSign.NEGATIVE
-        elif pos_count + neg_count < 0.2 * total:
+        elif pos_count + neg_count < flat_threshold * total:
             return CurvatureSign.FLAT
         else:
             return CurvatureSign.MIXED
@@ -1376,14 +1386,11 @@ class OllivierRicciCurvature:
     def _classify_health(self, mean_ricci: float) -> ManifoldHealth:
         """Classify manifold health based on mean Ricci curvature.
 
-        For LLM representation manifolds:
-        - HEALTHY: mean_ricci < -0.1 (hyperbolic, expected geometry)
-        - DEGENERATE: -0.1 <= mean_ricci <= 0.1 (nearly flat, loss of structure)
-        - COLLAPSED: mean_ricci > 0.1 (spherical, representation collapse)
+        Uses configurable thresholds from OllivierRicciConfig.
         """
-        if mean_ricci < -0.1:
+        if mean_ricci < self.config.healthy_threshold:
             return ManifoldHealth.HEALTHY
-        elif mean_ricci > 0.1:
+        elif mean_ricci > self.config.collapsed_threshold:
             return ManifoldHealth.COLLAPSED
         else:
             return ManifoldHealth.DEGENERATE

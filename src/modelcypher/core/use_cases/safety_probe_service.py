@@ -184,7 +184,6 @@ class SafetyProbeService:
             ],
             "aggregateRiskScore": result.aggregate_risk_score,
             "anyTriggered": result.any_triggered,
-            "recommendedStatus": result.recommended_status(),
             "allFindings": result.all_findings,
             "probeCount": len(result.probe_results),
             "timestamp": result.timestamp.isoformat(),

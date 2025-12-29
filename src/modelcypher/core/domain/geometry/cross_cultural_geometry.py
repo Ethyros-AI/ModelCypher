@@ -113,6 +113,9 @@ class CrossCulturalGeometry:
         gram_b: list[float],
         prime_ids: list[str],
         prime_categories: dict[str, str],
+        convergence_threshold: float = 0.7,
+        divergence_threshold: float = 0.4,
+        sharpness_ratio_threshold: float = 1.5,
     ) -> ComparisonResult | None:
         n = len(prime_ids)
         if len(gram_a) != n * n or len(gram_b) != n * n or n <= 1:
@@ -135,10 +138,6 @@ class CrossCulturalGeometry:
         convergent: list[str] = []
         divergent: list[str] = []
         complementary: list[ComplementaryPrime] = []
-
-        convergence_threshold = 0.7
-        divergence_threshold = 0.4
-        sharpness_ratio_threshold = 1.5
 
         for idx, prime_id in enumerate(prime_ids):
             correlation = row_correlations[idx]
@@ -315,11 +314,11 @@ class CrossCulturalGeometry:
         sharpness_a: list[float],
         sharpness_b: list[float],
         row_correlations: list[float],
+        ratio_threshold: float = 1.3,
     ) -> float:
         if len(sharpness_a) != len(sharpness_b) or not sharpness_a:
             return 0.0
         complementary_count = 0
-        ratio_threshold = 1.3
         for i in range(len(sharpness_a)):
             s_a = sharpness_a[i]
             s_b = sharpness_b[i]

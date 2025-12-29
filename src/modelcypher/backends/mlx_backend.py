@@ -57,20 +57,40 @@ class MLXBackend(Backend):
 
     # --- Array Creation (lazy - no eval) ---
     def array(self, data: Any, dtype: Any | None = None) -> Array:
+        mapped_dtype = self._map_dtype(dtype)
+
+        # Fast-path: already an MLX array
+        module = type(data).__module__
+        if module.startswith("mlx"):
+            if mapped_dtype is None:
+                return data
+            # Avoid unnecessary copies when dtype already matches
+            try:
+                if getattr(data, "dtype", None) == mapped_dtype:
+                    return data
+            except Exception:
+                pass
+            return data.astype(mapped_dtype)
+
+        # Fast-path: numpy arrays (including uint32 packed weights).
+        # Passing numpy arrays directly preserves dtype and avoids std::bad_cast
+        # that can occur when converting large uint32 values through Python ints.
+        if isinstance(data, _np_interop.ndarray):
+            return self.mx.array(data, dtype=mapped_dtype)
+
+        # Numpy scalars -> Python scalars
+        if module.startswith("numpy") and hasattr(data, "item"):
+            data = data.item()
+
         # MLX doesn't accept nested lists of numpy scalars (e.g., numpy.float32)
-        # Convert numpy arrays to a form MLX can handle
-        if hasattr(data, "tolist"):
-            # If it's a numpy array, use tolist() to get pure Python types
-            data = data.tolist()
-        elif isinstance(data, list) and data:
-            # Check if nested list contains numpy scalars
+        if isinstance(data, list) and data:
             first = data[0]
             while isinstance(first, list) and first:
                 first = first[0]
             if hasattr(first, "item"):  # numpy scalar
-                # Convert entire nested structure to pure Python
                 data = _np_interop.array(data).tolist()
-        return self.mx.array(data, dtype=self._map_dtype(dtype))
+
+        return self.mx.array(data, dtype=mapped_dtype)
 
     def zeros(self, shape: tuple[int, ...], dtype: Any | None = None) -> Array:
         return self.mx.zeros(shape, dtype=self._map_dtype(dtype))

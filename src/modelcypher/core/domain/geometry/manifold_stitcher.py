@@ -1389,7 +1389,6 @@ class ManifoldStitcher:
             else 0.0
         )
 
-        # Return raw measurement - caller uses status_for_thresholds() to classify
         return ValidationResult(
             merged_model=merged_model_id,
             target_model=target_fingerprints.model_id,

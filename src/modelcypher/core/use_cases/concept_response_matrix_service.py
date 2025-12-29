@@ -387,9 +387,8 @@ class ConceptResponseMatrixService:
 
         h2_validation = {
             "meanCKA": matcher.h2_validation.mean_cka,
-            "highConfidenceProportion": matcher.h2_validation.high_confidence_proportion,
+            "highConfidenceProportion": matcher.h2_validation.cka_above_threshold_proportion,
             "positionCorrelation": matcher.h2_validation.position_correlation,
-            "isValidated": matcher.h2_validation.is_validated,
         }
 
         return CRMSharedSubspaceSummary(

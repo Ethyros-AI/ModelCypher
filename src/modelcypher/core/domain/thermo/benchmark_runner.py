@@ -58,7 +58,6 @@ class EffectSizeResult:
     cohens_d: float
     ci_lower: float
     ci_upper: float
-    interpretation: str  # "negligible", "small", "medium", "large"
 
 
 @dataclass
@@ -307,7 +306,6 @@ class ThermoBenchmarkRunner:
                 cohens_d=0.0,
                 ci_lower=0.0,
                 ci_upper=0.0,
-                interpretation="negligible",
             )
 
         mean1 = sum(baseline) / n1
@@ -329,22 +327,10 @@ class ThermoBenchmarkRunner:
         ci_lower = d - 1.96 * se_d
         ci_upper = d + 1.96 * se_d
 
-        # Interpret effect size
-        abs_d = abs(d)
-        if abs_d < 0.2:
-            interpretation = "negligible"
-        elif abs_d < 0.5:
-            interpretation = "small"
-        elif abs_d < 0.8:
-            interpretation = "medium"
-        else:
-            interpretation = "large"
-
         return EffectSizeResult(
             cohens_d=d,
             ci_lower=ci_lower,
             ci_upper=ci_upper,
-            interpretation=interpretation,
         )
 
     def effect_size_analysis(
@@ -427,7 +413,6 @@ class ThermoBenchmarkRunner:
                         [
                             f"- Cohen's d: {stats.effect_size.cohens_d:.4f}",
                             f"- 95% CI: [{stats.effect_size.ci_lower:.4f}, {stats.effect_size.ci_upper:.4f}]",
-                            f"- Interpretation: {stats.effect_size.interpretation}",
                             "",
                         ]
                     )

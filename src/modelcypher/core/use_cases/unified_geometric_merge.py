@@ -1068,11 +1068,34 @@ class UnifiedGeometricMerger:
 
         Used to determine if permutation alignment is applicable (same hidden dim).
         """
+        # Prefer norm weights: they are 1D, remain unquantized, and directly encode hidden size.
         for key, val in weights.items():
-            if "q_proj" in key or "k_proj" in key:
-                return val.shape[1]
-            if "up_proj" in key or "gate_proj" in key:
-                return val.shape[1]
+            if key.endswith(".scales") or key.endswith(".biases"):
+                continue
+            if not hasattr(val, "shape"):
+                continue
+            if len(val.shape) != 1:
+                continue
+            if key.endswith(("norm.weight", "layernorm.weight", "rms_norm.weight")):
+                return int(val.shape[0])
+
+        # Fall back to projection matrices (avoid quantization metadata like *.scales).
+        for key, val in weights.items():
+            if key.endswith(".scales") or key.endswith(".biases"):
+                continue
+            if not hasattr(val, "shape") or len(val.shape) != 2:
+                continue
+            if not key.endswith(".weight"):
+                continue
+            if "q_proj" in key or "o_proj" in key:
+                # Usually square [hidden, hidden]
+                return int(max(val.shape))
+            if "k_proj" in key or "v_proj" in key:
+                # GQA: [kv_dim, hidden] -> hidden is the max dim
+                return int(max(val.shape))
+            if "up_proj" in key or "gate_proj" in key or "down_proj" in key:
+                # MLP: [intermediate, hidden] or [hidden, intermediate] -> hidden is the min dim
+                return int(min(val.shape))
         # Return 0 for unknown (will disable permutation)
         return 0
 
@@ -1112,19 +1135,18 @@ class UnifiedGeometricMerger:
         path.mkdir(parents=True, exist_ok=True)
         output_path = path / "model.safetensors"
 
-        # Check if weights are MLX arrays
-        first_weight = next(iter(weights.values()), None)
-        if first_weight is not None:
-            try:
-                import mlx.core as mx
+        # MLX native save is only safe when *all* tensors are mx.array.
+        # Mixed dicts (mx.array + numpy) trigger MLX std::bad_cast.
+        try:
+            import mlx.core as mx
 
-                if isinstance(first_weight, mx.array):
-                    # Use MLX native save (faster, no conversion)
-                    mx.save_safetensors(str(output_path), weights)
-                    logger.info("Saved merged weights to %s (MLX native)", output_path)
-                    return
-            except (ImportError, TypeError):
-                pass
+            if weights and all(isinstance(v, mx.array) for v in weights.values()):
+                mx.save_safetensors(str(output_path), weights)
+                logger.info("Saved merged weights to %s (MLX native)", output_path)
+                return
+        except Exception:
+            # Fall through to numpy-based save paths.
+            pass
 
         # Fallback to safetensors (convert arrays to numpy for save)
         if output_format == "safetensors":
@@ -1133,10 +1155,12 @@ class UnifiedGeometricMerger:
             # Convert backend arrays to numpy for safetensors save
             numpy_weights = {}
             for key, value in weights.items():
-                if hasattr(value, "__array__"):
-                    self._backend.eval(value)
+                if type(value).__module__.startswith("numpy"):
+                    numpy_weights[key] = value
+                    continue
+                try:
                     numpy_weights[key] = self._backend.to_numpy(value)
-                else:
+                except Exception:
                     numpy_weights[key] = value
             save_file(numpy_weights, str(output_path))
         else:
@@ -1146,10 +1170,12 @@ class UnifiedGeometricMerger:
 
             numpy_weights = {}
             for key, value in weights.items():
-                if hasattr(value, "__array__"):
-                    self._backend.eval(value)
+                if type(value).__module__.startswith("numpy"):
+                    numpy_weights[key] = value
+                    continue
+                try:
                     numpy_weights[key] = self._backend.to_numpy(value)
-                else:
+                except Exception:
                     numpy_weights[key] = value
             _np_for_save.savez(str(output_path), **numpy_weights)
 
