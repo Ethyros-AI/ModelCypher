@@ -195,19 +195,14 @@ def stage_transplant(
         "geodesic_k_neighbors": config.geodesic_k_neighbors,
     }
 
-    # REQUIRE real activations - synthesized activations are broken (55% boundary violation)
-    # Use `mc geometry transplant run` to collect real activations through the model.
+    # REQUIRE real activations collected from probe runs.
     if not target_activations:
         error_msg = (
-            "TRANSPLANT REQUIRES REAL ACTIVATIONS. "
-            "Synthesized activations produce ~55% boundary violation (vs <1e-4 required). "
-            "Use `mc geometry transplant run` instead of `mc model merge`. "
-            "The correct pipeline collects REAL activations by running probes through the model."
+            "Transplant requires real activations collected from probe runs. "
+            "Use `mc geometry transplant run` to collect activations before merging."
         )
         logger.error(error_msg)
-        metrics["transplant_skipped"] = "no_activations_collected"
-        metrics["error"] = error_msg
-        return TransplantStageResult(merged_weights=merged, metrics=metrics)
+        raise RuntimeError(error_msg)
 
     metrics["activation_source"] = "collected_from_model"
 

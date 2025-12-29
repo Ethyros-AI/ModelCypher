@@ -452,15 +452,10 @@ class UnifiedGeometricMerger:
                 "Transplant requires transplant_domains. "
                 "Specify domains like ['mathematical', 'logical'] for knowledge transfer."
             )
-        # Cross-dimensional transplant: when activations aren't available (e.g., model
-        # loading failed due to dimension mismatch), the transplant stage will synthesize
-        # activations from weight geometry via SVD. This is the invariant bridge that
-        # makes architecture differences irrelevant - Gram matrices capture relational
-        # structure regardless of embedding dimension.
         if not target_activations:
-            logger.info(
-                "STAGE 3: No activations available - using weight-geometry synthesis "
-                "(cross-dimensional transplant mode)"
+            raise RuntimeError(
+                "Transplant requires probe activations. "
+                "Use `mc geometry transplant run` to collect activations before merging."
             )
 
         logger.info("STAGE 3: TRANSPLANT (null-space constrained)")

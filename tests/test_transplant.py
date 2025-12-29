@@ -307,6 +307,41 @@ def test_stage_transplant_emits_alignment_metrics() -> None:
     assert 0.0 <= metrics.get("mean_cka_before", 0.0) <= 1.0
     assert 0.0 <= metrics.get("mean_cka_after", 0.0) <= 1.0
 
+
+def test_stage_transplant_requires_real_activations() -> None:
+    """Stage transplant should hard fail without real activations."""
+    backend = get_default_backend()
+    backend.random_seed(7)
+
+    source_weights = {
+        "model.layers.0.mlp.down_proj.weight": backend.random_normal((4, 8)),
+    }
+    target_weights = {
+        "model.layers.0.mlp.down_proj.weight": backend.random_normal((4, 8)),
+    }
+    backend.eval(*source_weights.values(), *target_weights.values())
+
+    def extract_layer_index(key: str) -> int | None:
+        match = re.search(r"layers\.(\d+)\.", key)
+        if match:
+            return int(match.group(1))
+        return None
+
+    config = TransplantStageConfig(core_domains=("math",), boundary_k=1)
+
+    with pytest.raises(RuntimeError, match="requires real activations"):
+        stage_transplant(
+            source_weights=source_weights,
+            target_weights=target_weights,
+            layer_indices=[0],
+            probe_ids=["p0"],
+            probe_domains=["math"],
+            target_activations=None,
+            config=config,
+            extract_layer_index_fn=extract_layer_index,
+            backend=backend,
+        )
+
     def test_insufficient_core_samples_skipped(self) -> None:
         """Less than 2 core samples should skip transplant."""
         backend = get_default_backend()
