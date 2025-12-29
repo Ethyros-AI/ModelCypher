@@ -218,16 +218,19 @@ class TestPersistenceDiagram:
         assert betti.get(1, 0) == 1
 
 
-class TestInterpretation:
-    """Tests for comparison interpretation strings."""
+class TestComparisonMetrics:
+    """Tests for comparison raw metrics."""
 
-    def test_identical_structure_interpretation(self) -> None:
-        """Identical topologies should say 'Identical topological structure'."""
+    def test_identical_structure_metrics(self) -> None:
+        """Identical topologies should have zero distance and matching Betti numbers."""
         points = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]
         fingerprint = TopologicalFingerprint.compute(points, max_dimension=1)
         comparison = TopologicalFingerprint.compare(fingerprint, fingerprint)
 
-        assert "Identical" in comparison.interpretation
+        # Identical fingerprints have zero distance and matching Betti numbers
+        assert comparison.bottleneck_distance < 1e-6
+        assert comparison.betti_difference == 0
+        assert comparison.betti_numbers_match is True
 
     def test_scaled_points_similar_topology(self) -> None:
         """Scaled version of same points should have similar topology."""

@@ -194,7 +194,9 @@ class TestPhase9Geometry(unittest.TestCase):
         self.assertGreater(result.shared_dimension, 0)
         # First correlation should be high (> 0.9)
         self.assertGreater(result.alignment_strengths[0], 0.8)
-        self.assertTrue(result.h3_metrics.is_h3_validated or result.alignment_strengths[0] > 0.5)
+        # Check raw H3 metrics instead of vibes-based validation flag
+        self.assertGreater(result.h3_metrics.shared_dimension, 0)
+        self.assertGreater(result.h3_metrics.top_canonical_correlation, 0.5)
 
     def test_shared_subspace_procrustes(self):
         """Test Procrustes on rotated data."""

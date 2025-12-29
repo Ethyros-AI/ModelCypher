@@ -140,6 +140,7 @@ class ComparisonResult:
 
     Note: Different topologies do NOT mean models are incompatible.
     Models are always compatible - this measures structural similarity.
+    Raw metrics are returned; interpretation is left to callers.
     """
 
     bottleneck_distance: float
@@ -147,7 +148,6 @@ class ComparisonResult:
     betti_difference: int
     similarity_score: float
     betti_numbers_match: bool  # True if Betti numbers are identical
-    interpretation: str
 
 
 class TopologicalFingerprint:
@@ -255,21 +255,12 @@ class TopologicalFingerprint:
         # No arbitrary thresholds - Betti numbers are discrete invariants
         betti_match = betti_diff == 0
 
-        # Interpretation based on geometric facts, not arbitrary thresholds
-        if betti_diff == 0 and bottleneck < 1e-6:
-            interp = "Identical topological structure."
-        elif betti_diff == 0:
-            interp = f"Same topology, bottleneck distance {bottleneck:.4f} (scale {scale:.4f})."
-        else:
-            interp = f"Different Betti numbers (diff={betti_diff}), bottleneck {bottleneck:.4f}."
-
         return ComparisonResult(
             bottleneck_distance=bottleneck,
             wasserstein_distance=wasserstein,
             betti_difference=betti_diff,
             similarity_score=score,
             betti_numbers_match=betti_match,
-            interpretation=interp,
         )
 
     @staticmethod

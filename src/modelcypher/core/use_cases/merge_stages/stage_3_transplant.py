@@ -69,6 +69,46 @@ def _normalize_domains(domains: Iterable[str]) -> set[str]:
     return {d.strip().lower() for d in domains if d.strip()}
 
 
+def _compute_alignment_metrics(
+    core_acts: "Array",
+    weight_before: "Array",
+    weight_after: "Array",
+    weight_source: "Array",
+    backend: "Backend",
+) -> dict[str, float]:
+    """Measure core alignment shift toward the source for a single weight."""
+    from modelcypher.core.domain.geometry.cka import compute_cka
+
+    output_before = backend.matmul(core_acts, backend.transpose(weight_before))
+    output_after = backend.matmul(core_acts, backend.transpose(weight_after))
+    output_source = backend.matmul(core_acts, backend.transpose(weight_source))
+    backend.eval(output_before, output_after, output_source)
+
+    dist_before_arr = backend.norm(output_before - output_source)
+    dist_after_arr = backend.norm(output_after - output_source)
+    backend.eval(dist_before_arr, dist_after_arr)
+
+    dist_before = float(backend.to_numpy(dist_before_arr))
+    dist_after = float(backend.to_numpy(dist_after_arr))
+
+    eps = float(machine_epsilon(backend, weight_before))
+    if dist_before > eps:
+        alignment_improvement = (dist_before - dist_after) / dist_before
+    else:
+        alignment_improvement = 0.0
+
+    cka_before = compute_cka(output_before, output_source, backend=backend)
+    cka_after = compute_cka(output_after, output_source, backend=backend)
+
+    return {
+        "core_dist_to_source_before": dist_before,
+        "core_dist_to_source_after": dist_after,
+        "alignment_improvement": alignment_improvement,
+        "cka_before": cka_before.best,
+        "cka_after": cka_after.best,
+    }
+
+
 def stage_transplant(
     source_weights: dict[str, "Array"],
     target_weights: dict[str, "Array"],
@@ -94,6 +134,11 @@ def stage_transplant(
         "projection_losses": [],
         "null_dims": [],
         "boundary_relative_diffs": [],
+        "alignment_improvements": [],
+        "core_dist_to_source_before": [],
+        "core_dist_to_source_after": [],
+        "cka_before": [],
+        "cka_after": [],
         "core_probes": 0,
         "boundary_k": config.boundary_k,
         "geodesic_k_neighbors": config.geodesic_k_neighbors,
@@ -183,6 +228,9 @@ def stage_transplant(
             continue
 
         layer_transplanted = False
+        best_alignment: dict[str, float] | None = None
+        best_delta_norm = -1.0
+        can_measure_alignment = int(core_acts.shape[0]) >= 2
 
         for key in layer_keys:
             # Skip quantization metadata and non-weight tensors (only transplant actual matrices).
@@ -284,6 +332,18 @@ def stage_transplant(
                 metrics["preserved_fractions"].append(result.preserved_fraction)
                 metrics["projection_losses"].append(result.projection_loss)
                 metrics["null_dims"].append(result.null_dim)
+                if can_measure_alignment and result.delta_norm > best_delta_norm:
+                    try:
+                        best_alignment = _compute_alignment_metrics(
+                            core_acts=core_acts,
+                            weight_before=target_w,
+                            weight_after=result.merged_weight,
+                            weight_source=source_aligned,
+                            backend=b,
+                        )
+                        best_delta_norm = result.delta_norm
+                    except Exception as e:
+                        logger.debug("Alignment metrics failed for %s: %s", key, e)
                 if int(boundary_acts.shape[0]) > 0:
                     target_output = b.matmul(boundary_acts, b.transpose(target_w))
                     merged_output = b.matmul(
@@ -308,6 +368,16 @@ def stage_transplant(
 
         if layer_transplanted:
             metrics["layers_transplanted"] += 1
+        if best_alignment is not None:
+            metrics["alignment_improvements"].append(best_alignment["alignment_improvement"])
+            metrics["core_dist_to_source_before"].append(
+                best_alignment["core_dist_to_source_before"]
+            )
+            metrics["core_dist_to_source_after"].append(
+                best_alignment["core_dist_to_source_after"]
+            )
+            metrics["cka_before"].append(best_alignment["cka_before"])
+            metrics["cka_after"].append(best_alignment["cka_after"])
 
     if metrics["preserved_fractions"]:
         pres = metrics["preserved_fractions"]
@@ -322,6 +392,22 @@ def stage_transplant(
         diffs = metrics["boundary_relative_diffs"]
         metrics["mean_boundary_relative_diff"] = sum(diffs) / len(diffs)
         metrics["max_boundary_relative_diff"] = max(diffs)
+    if metrics["alignment_improvements"]:
+        improvements = metrics["alignment_improvements"]
+        metrics["alignment_samples"] = len(improvements)
+        metrics["mean_alignment_improvement"] = sum(improvements) / len(improvements)
+    if metrics["core_dist_to_source_before"]:
+        dists = metrics["core_dist_to_source_before"]
+        metrics["mean_core_dist_to_source_before"] = sum(dists) / len(dists)
+    if metrics["core_dist_to_source_after"]:
+        dists = metrics["core_dist_to_source_after"]
+        metrics["mean_core_dist_to_source_after"] = sum(dists) / len(dists)
+    if metrics["cka_before"]:
+        ckas = metrics["cka_before"]
+        metrics["mean_cka_before"] = sum(ckas) / len(ckas)
+    if metrics["cka_after"]:
+        ckas = metrics["cka_after"]
+        metrics["mean_cka_after"] = sum(ckas) / len(ckas)
 
     # Convert all weights to bfloat16 for consistent output format.
     # This handles the case where original weights are bf16 but transplanted

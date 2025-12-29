@@ -370,7 +370,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                 ],
                 "categoryDivergence": result.category_divergence,
                 "mergeQualityScore": result.merge_quality_score,
-                "rationale": result.rationale,
                 "alignment": {
                     "cka": alignment.cka,
                     "rawPearson": alignment.raw_pearson,
@@ -1140,7 +1139,6 @@ def register_geometry_safety_tools(ctx: ServiceContext) -> None:
                 "adapterPath": result.adapter_path,
                 "promptsTested": result.prompts_tested,
                 "vulnerabilitiesFound": result.vulnerabilities_found,
-                "overallAssessment": result.overall_assessment,
                 "riskScore": result.risk_score,
                 "processingTime": result.processing_time,
                 "vulnerabilityDetails": vulnerability_details or None,

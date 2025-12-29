@@ -351,8 +351,8 @@ class TestSignalContributions:
 class TestCircuitBreakerState:
     """Tests for CircuitBreakerState."""
 
-    def test_interpretation_safe(self):
-        """Safe state should have positive interpretation."""
+    def test_safe_state_properties(self):
+        """Safe state should have low severity and no trigger."""
         state = CircuitBreakerState(
             is_tripped=False,
             severity=0.1,
@@ -363,10 +363,12 @@ class TestCircuitBreakerState:
             token_index=10,
         )
 
-        assert "All clear" in state.interpretation
+        assert state.is_tripped is False
+        assert state.severity < 0.5
+        assert state.trigger_source is None
 
-    def test_interpretation_tripped_entropy(self):
-        """Tripped state should explain trigger."""
+    def test_tripped_entropy_state_properties(self):
+        """Tripped entropy state should have correct trigger source."""
         state = CircuitBreakerState(
             is_tripped=True,
             severity=0.85,
@@ -377,10 +379,12 @@ class TestCircuitBreakerState:
             token_index=100,
         )
 
-        assert "UNCERTAINTY" in state.interpretation or "entropy" in state.interpretation.lower()
+        assert state.is_tripped is True
+        assert state.trigger_source == TriggerSource.entropy_spike
+        assert state.severity > 0.8
 
-    def test_interpretation_refusal(self):
-        """Refusal trigger should mention safety."""
+    def test_tripped_refusal_state_properties(self):
+        """Tripped refusal state should have correct trigger source."""
         state = CircuitBreakerState(
             is_tripped=True,
             severity=0.8,
@@ -391,7 +395,8 @@ class TestCircuitBreakerState:
             token_index=50,
         )
 
-        assert "SAFETY" in state.interpretation or "refusal" in state.interpretation.lower()
+        assert state.is_tripped is True
+        assert state.trigger_source == TriggerSource.refusal_approach
 
 
 class TestTelemetryAndMetrics:

@@ -1700,18 +1700,11 @@ def build_server() -> FastMCP:
             payload["_schema"] = "mc.merge.validate.v1"
 
             # Add contextual next actions
-            next_actions = []
-            if result.overall_status == "failed":
-                next_actions.append("mc_merge_diagnose for detailed geometric analysis")
-                next_actions.append("Re-merge with lower alpha or different parameters")
-            elif result.overall_status == "degraded":
-                next_actions.append("mc_merge_diagnose to identify problematic layers")
-                next_actions.append("Consider layer-wise alpha adjustment")
-            else:
-                next_actions.append("mc_infer to test the merged model")
-                next_actions.append("mc_merge_entropy_validate for stability checks")
-
-            payload["nextActions"] = next_actions
+            payload["nextActions"] = [
+                "mc_merge_diagnose for detailed geometric analysis",
+                "mc_infer to test the merged model",
+                "mc_merge_entropy_validate for stability checks",
+            ]
             return payload
 
     if "mc_merge_coherence" in tool_set:
@@ -2393,8 +2386,6 @@ def build_server() -> FastMCP:
                     "correlation": assessment.correlation,
                     "spikeRate": assessment.spike_rate,
                     "measurementCount": assessment.measurement_count,
-                    "strength": assessment.strength_for_thresholds(),
-                    "rationale": assessment.rationale,
                 },
                 "nextActions": [
                     "mc_geometry_path_compare to compare gate trajectories",

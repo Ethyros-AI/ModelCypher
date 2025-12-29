@@ -150,19 +150,9 @@ class ManifoldPoint:
             mean_confidence = 0.0
 
         dominant_category = ManifoldPoint._compute_dominant_gate_category(measurement.gate_sequence)
-        relationship_strength = measurement.assessment.relationship_strength
-        strength_key = (
-            relationship_strength.value
-            if hasattr(relationship_strength, "value")
-            else str(relationship_strength)
-        )
-        strength_key = strength_key.lower()
-        assessment_strength = {
-            "strong": 1.0,
-            "moderate": 0.66,
-            "weak": 0.33,
-            "none": 0.0,
-        }.get(strength_key, 0.0)
+        # Use raw correlation magnitude as assessment strength (0-1 range)
+        correlation = measurement.assessment.correlation
+        assessment_strength = abs(correlation) if correlation is not None else 0.0
 
         return ManifoldPoint(
             id=uuid4(),

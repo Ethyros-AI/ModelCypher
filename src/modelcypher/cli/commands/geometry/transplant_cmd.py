@@ -563,8 +563,19 @@ def transplant_run(
                         merged_to_save = merged_weight
                     weights[weight_key] = backend.to_numpy(merged_to_save)
 
+                # Convert all weights to MLX arrays for saving
+                # (mix of numpy from requant and mlx from original causes std::bad_cast)
+                weights_to_save = {}
+                for k, v in weights.items():
+                    if hasattr(v, '__array__'):  # numpy array
+                        weights_to_save[k] = mx.array(v)
+                    elif hasattr(v, 'dtype'):  # mlx array
+                        weights_to_save[k] = v
+                    else:
+                        weights_to_save[k] = v
+
                 output_weights_path = output_path / "model.safetensors"
-                mx.save_safetensors(str(output_weights_path), weights)
+                mx.save_safetensors(str(output_weights_path), weights_to_save)
 
                 for config_file in [
                     "config.json",

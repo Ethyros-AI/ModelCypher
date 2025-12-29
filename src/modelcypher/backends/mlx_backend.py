@@ -437,9 +437,17 @@ class MLXBackend(Backend):
         return arr
 
     def pinv(self, array: Array) -> Array:
+        # MLX pinv requires float32/float64, not bfloat16
+        # Cast to float32, compute, then cast back to original dtype
+        original_dtype = array.dtype
+        array_f32 = array.astype(self.mx.float32) if "bfloat" in str(original_dtype) else array
         # MLX pinv requires CPU stream - must eval
-        arr = self.mx.linalg.pinv(array, stream=self.mx.cpu)
+        arr = self.mx.linalg.pinv(array_f32, stream=self.mx.cpu)
         self.safe.eval(arr)
+        # Cast back to original dtype if needed
+        if "bfloat" in str(original_dtype):
+            arr = arr.astype(original_dtype)
+            self.safe.eval(arr)
         return arr
 
     def cholesky(self, array: Array) -> Array:

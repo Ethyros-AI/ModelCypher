@@ -111,7 +111,6 @@ def geometry_safety_persona(
     output = {
         "jobId": job_id,
         "overallDriftMagnitude": drift_info.overall_drift_magnitude,
-        "driftAssessment": drift_info.assessment,
         "driftingTraits": drift_info.drifting_traits,
         "refusalDistance": drift_info.refusal_distance,
         "isApproachingRefusal": drift_info.is_approaching_refusal,
@@ -121,7 +120,7 @@ def geometry_safety_persona(
         lines = [
             "PERSONA DRIFT ANALYSIS",
             f"Job: {output['jobId']}",
-            f"Drift Magnitude: {output['overallDriftMagnitude']:.4f} ({output['driftAssessment']})",
+            f"Drift Magnitude: {output['overallDriftMagnitude']:.4f}",
         ]
         if output["driftingTraits"]:
             lines.append(f"Drifting Traits: {', '.join(output['driftingTraits'])}")

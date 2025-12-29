@@ -178,8 +178,6 @@ def thermo_path_integration(
             "correlation": assessment.correlation,
             "spikeRate": assessment.spike_rate,
             "measurementCount": assessment.measurement_count,
-            "strength": assessment.strength_for_thresholds(),
-            "rationale": assessment.rationale,
         },
     }
 
@@ -197,9 +195,7 @@ def thermo_path_integration(
             f"Gate Sequence: {sequence}",
             f"Entropy-Gate Correlation: {corr_text}",
             f"Spike Rate: {assessment.spike_rate:.3f}",
-            f"Assessment Strength: {assessment.strength_for_thresholds()}",
-            "",
-            assessment.rationale,
+            f"H3 Supported: {'yes' if assessment.h3_supported else 'no'}",
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
