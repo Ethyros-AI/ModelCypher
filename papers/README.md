@@ -2,16 +2,24 @@
 
 This directory contains publication-quality research manuscripts.
 
+## arXiv Submission Plan
+
+**See [ARXIV_SUBMISSION_PLAN.md](ARXIV_SUBMISSION_PLAN.md)** for detailed submission timeline and checklist.
+
 ## Paper Series
 
-| Paper | Title | Status | Focus |
-|-------|-------|--------|-------|
-| [Paper 0](paper-0-the-shape-of-knowledge.md) | The Shape of Knowledge | Framework | Geometric Knowledge Thesis |
-| [Paper 1](paper-1-invariant-semantic-structure.md) | Invariant Semantic Structure Across Language Model Families | Empirical | CKA > 0.9 cross-family |
-| [Paper 2](paper-2-entropy-safety-signal.md) | Intensity Modifiers Reduce Entropy | Empirical | ΔH AUROC = 0.85 |
-| [Paper 3](paper-3-cross-architecture-transfer.md) | Cross-Architecture Adapter Transfer | Empirical | 65-78% skill retention |
-| [Paper 4](paper-4-modelcypher-toolkit.md) | ModelCypher Toolkit | Systems | 274 modules, 3060 tests |
-| [Paper 5](paper-5-semantic-highway.md) | The Semantic Highway | Empirical | Early-layer ID cliff + low-ID plateau (3 models) |
+| Paper | Title | arXiv Ready | Focus |
+|-------|-------|-------------|-------|
+| [Paper 0](paper-0-the-shape-of-knowledge.md) | The Shape of Knowledge | ✅ Yes | Geometric Knowledge Thesis (Framework) |
+| [Paper 1](paper-1-invariant-semantic-structure.md) | Invariant Semantic Structure | ✅ Yes | CKA > 0.9 cross-family (primes AND random) |
+| [Paper 2](paper-2-entropy-safety-signal.md) | Entropy Safety Signal | ⚠️ Preliminary | ΔH methodology + initial results |
+| [Paper 3](paper-3-cross-architecture-transfer.md) | Cross-Architecture Transfer | ⚠️ Preliminary | Methodology + initial 65-78% retention |
+| [Paper 4](paper-4-modelcypher-toolkit.md) | ModelCypher Toolkit | ✅ Yes | 274 modules, 3060 tests (Systems) |
+| [Paper 5](paper-5-semantic-highway.md) | The Semantic Highway | ✅ Yes | Early-layer ID cliff (3 models, properly hedged) |
+
+### Key Finding (2025-12-25)
+
+**Semantic primes are NOT geometrically special** compared to random words. Both achieve CKA > 0.9 across model families. This is a *stronger* result than originally hypothesized: invariance is universal, not limited to theoretically-motivated concepts. See [NEGATIVE-RESULTS.md](NEGATIVE-RESULTS.md).
 
 ## Quality Standards
 

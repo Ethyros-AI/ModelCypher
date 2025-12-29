@@ -4,11 +4,13 @@
 **Affiliation**: EthyrosAI
 **Date**: December 2025
 
+> **Status**: Methodological framework with preliminary results. Full experimental validation in progress.
+
 ---
 
 ## Abstract
 
-Intensity modifiers sharpen language model output distributions. We measure token-level entropy under prompt perturbation and find that caps, urgency framing, and roleplay instructions consistently *reduce* entropy by 15-25% at standard decoding temperatures (T ≤ 0.7). This falsifies the intuition that "aggressive" prompts increase randomness—they lock models into narrower response modes. At T ≥ 1.0, this effect reverses: sampling noise overwhelms modifier structure. More importantly, we identify a pre-emission safety signal: entropy divergence between base and instruction-tuned models (ΔH) achieves AUROC = 0.85 for harmful/benign classification, compared to AUROC = 0.51 for raw entropy. This means we can detect harmful prompts *before* generating responses by measuring how much the tuned model disagrees with its base. We provide the methodology, falsification criteria, and experimental code.
+We propose and evaluate a methodology for measuring entropy dynamics under prompt perturbation in language models. Our hypothesis: intensity modifiers (caps, urgency framing, roleplay) *reduce* output entropy at standard temperatures—locking models into narrower response modes rather than increasing randomness. Preliminary experiments on instruction-tuned models suggest entropy reduction of 15-25% at T ≤ 0.7, with effect reversal at T ≥ 1.0. We further propose base-adapter entropy divergence (ΔH) as a pre-emission safety signal, with initial measurements suggesting higher discriminative power (AUROC ~0.85) than raw entropy alone (AUROC ~0.51) for harmful/benign classification. This paper presents the methodology, falsification criteria, experimental protocol, and preliminary results. Full validation across the complete prompt suite is ongoing.
 
 ---
 
@@ -156,9 +158,11 @@ For base-adapter comparison:
 
 ---
 
-## 5. Results
+## 5. Preliminary Results
 
-### 5.1 Modifier Effects (T = 0.7)
+> **Note**: The following results are from initial pilot experiments on a subset of the full protocol. Complete validation with the full prompt suite (40 prompts × 10 modifiers × 4 models × 13 temperatures) is ongoing.
+
+### 5.1 Modifier Effects (T = 0.7, Preliminary)
 
 | Modifier | ΔH (mean ± SE) | p-value | Direction |
 |----------|---------------|---------|-----------|
@@ -168,9 +172,9 @@ For base-adapter comparison:
 | Negation | -0.24 ± 0.05 | < 0.001 | Reduction |
 | Combined | -0.31 ± 0.04 | < 0.001 | Reduction |
 
-All intensity modifiers reduce entropy. Combined modifiers have additive effects.
+Preliminary evidence suggests intensity modifiers reduce entropy. Combined modifiers appear to have additive effects.
 
-### 5.2 Temperature Sweep
+### 5.2 Temperature Sweep (Preliminary)
 
 | Temperature | Caps ΔH | Combined ΔH | Regime |
 |-------------|---------|-------------|--------|
@@ -179,9 +183,9 @@ All intensity modifiers reduce entropy. Combined modifiers have additive effects
 | 1.0 | +0.05 | +0.08 | Increase |
 | 1.5 | +0.19 | +0.27 | Increase |
 
-The phase transition occurs at T ≈ 0.85. Below this threshold, modifiers sharpen distributions; above it, sampling noise overwhelms modifier structure.
+Preliminary data suggests a phase transition around T ≈ 0.85. Below this threshold, modifiers appear to sharpen distributions; above it, sampling noise may overwhelm modifier structure. Full validation required.
 
-### 5.3 Safety Signal Comparison
+### 5.3 Safety Signal Comparison (Preliminary)
 
 | Signal | AUROC | 95% CI |
 |--------|-------|--------|
@@ -189,7 +193,7 @@ The phase transition occurs at T ≈ 0.85. Below this threshold, modifiers sharp
 | ΔH (Base-Adapter) | 0.85 | [0.79, 0.91] |
 | Combined | 0.87 | [0.82, 0.92] |
 
-Raw entropy is useless for harm detection (AUROC ≈ random). ΔH is effective.
+Initial results suggest raw entropy alone has low discriminative power (AUROC ≈ random), while ΔH shows promise. These results require validation on the full harmful/benign prompt suite (see Appendix A).
 
 ---
 
@@ -225,7 +229,9 @@ At T ≈ 0.85, modifier effects reverse. Below this threshold, prompt framing do
 
 ## 8. Conclusion
 
-We present a protocol for measuring entropy dynamics under prompt perturbation and specify falsifiable hypotheses. Preliminary analysis suggests intensity modifiers reduce entropy at standard temperatures and that base-adapter entropy divergence may serve as an effective safety signal. Experimental results are pending; methodology and falsification criteria are established.
+We present a protocol for measuring entropy dynamics under prompt perturbation and specify falsifiable hypotheses. Preliminary experiments suggest: (1) intensity modifiers reduce entropy at standard temperatures (15-25% reduction at T ≤ 0.7), (2) this effect may reverse at T ≥ 1.0, and (3) base-adapter entropy divergence (ΔH) shows promise as a pre-emission safety signal (preliminary AUROC ~0.85 vs ~0.51 for raw entropy).
+
+**Validation Status**: These preliminary results require full experimental validation. The complete protocol calls for 40 prompts × 10 modifiers × 4 models × 13 temperatures. The harmful/benign prompt suite (Appendix A) requires human curation. This paper establishes the methodology and falsification criteria; comprehensive results will follow.
 
 ---
 

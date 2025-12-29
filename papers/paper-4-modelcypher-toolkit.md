@@ -8,7 +8,7 @@
 
 ## Abstract
 
-**ModelCypher** makes the Geometric Knowledge Thesis operational. The toolkit implements 274 domain modules for measuring representation geometry, entropy dynamics, safety constraints, and cross-architecture transfer. Three core capabilities: (1) CKA-based cross-model comparison achieves 0.82 alignment on semantic primes versus 0.54 for controls, (2) entropy divergence (ΔH) detects harmful prompts with AUROC = 0.85 before generation, (3) anchor-locked Procrustes enables adapter transfer across architectures with 65-78% skill retention. The framework integrates with CLI and Model Context Protocol (MCP) for agentic workflows. Validated with 3,060 passing tests. Implements methodology from 46 foundational papers. AGPLv3 license.
+**ModelCypher** makes the Geometric Knowledge Thesis operational. The toolkit implements 274 domain modules for measuring representation geometry, entropy dynamics, safety constraints, and cross-architecture transfer. Three core capabilities: (1) CKA-based cross-model comparison reveals high alignment (>0.9) across model families for both semantic primes and random word sets, demonstrating universal representation convergence, (2) entropy divergence (ΔH) methodology for detecting safety-relevant prompts before generation, (3) anchor-locked Procrustes enables adapter transfer across architectures. The framework integrates with CLI and Model Context Protocol (MCP) for agentic workflows. Validated with 3,060 passing tests. Implements methodology from 46 foundational papers. AGPLv3 license.
 
 ---
 
@@ -18,9 +18,9 @@ Knowledge has shape. **ModelCypher** measures it.
 
 The toolkit implements four core capabilities:
 
-1. **Geometric Diagnostics**: CKA measures cross-model alignment (0.82 for primes vs 0.54 for controls). Topological fingerprints capture manifold structure. Intrinsic dimension estimates representation complexity.
+1. **Geometric Diagnostics**: CKA measures cross-model alignment (>0.9 for both semantic primes and random word sets across model families). Topological fingerprints capture manifold structure. Intrinsic dimension estimates representation complexity.
 
-2. **Entropy Monitoring**: Token-level entropy tracks uncertainty. ΔH (base-adapter divergence) detects harmful prompts with AUROC = 0.85. Circuit breakers intervene before generation.
+2. **Entropy Monitoring**: Token-level entropy tracks uncertainty. ΔH (base-adapter divergence) provides a methodology for detecting safety-relevant behavior. Circuit breakers intervene before generation.
 
 3. **Safety Analysis**: Refusal is a direction (Arditi et al., 2024). We detect it, measure it, and verify it survives adapter merging.
 
@@ -214,7 +214,7 @@ mc eval suite --model merged --suite humaneval-subset.json
 
 ## 8. Conclusion
 
-ModelCypher makes the Geometric Knowledge Thesis operational. The results from Papers I–III are not theoretical claims—they are CLI commands. `mc geometry primes compare` produces CKA = 0.82. `mc entropy safety-auroc` produces AUROC = 0.85. `mc model stitch` achieves 65-78% skill retention. 274 modules. 3,060 tests. 46 papers implemented. Knowledge has shape, and now we can measure it.
+ModelCypher makes the Geometric Knowledge Thesis operational. The results from Papers I–III are not theoretical claims—they are CLI commands. `mc geometry primes compare` produces CKA values, revealing that cross-model alignment exceeds 0.9 for both semantic primes and random word sets. The toolkit provides methodology for entropy-based safety analysis and cross-architecture adapter transfer. 274 modules. 3,060 tests. 46 papers implemented. Knowledge has shape, and now we can measure it.
 
 ---
 

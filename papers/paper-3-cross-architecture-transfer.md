@@ -1,14 +1,16 @@
 # Cross-Architecture Adapter Transfer via Geometric Alignment
 
 **Author**: Jason Kempf
-**Affiliation**: EthyrosAI  
+**Affiliation**: EthyrosAI
 **Date**: December 2025
+
+> **Status**: Methodological framework with preliminary validation. Full benchmark suite in progress.
 
 ---
 
 ## Abstract
 
-Adapters can transfer across model architectures. A LoRA trained on Qwen does not require retraining to run on Llama—it requires geometric alignment. We demonstrate cross-architecture adapter transfer using anchor-locked Procrustes rotation: (1) measure layer-wise compatibility via CKA on semantic prime anchors, (2) rotate weight matrices to align representation spaces, (3) apply DARE sparsification to reduce interference. On Qwen→Llama and Mistral→Llama transfers, we achieve 65-78% skill retention versus 0% for naive weight copying, with <8% safety drift. The key insight: adapters encode task-specific modifications in a subspace that is approximately shared across model families trained on similar data. When CKA coverage exceeds 0.7, transfer works. Below 0.5, it fails. We release diagnostic tools that predict transfer success before attempting it.
+We propose a methodology for transferring LoRA adapters across model architectures via geometric alignment. The approach: (1) measure layer-wise compatibility via CKA on semantic anchor sets, (2) rotate weight matrices using anchor-locked Procrustes to align representation spaces, (3) apply DARE sparsification to reduce interference. Preliminary experiments on Qwen→Llama and Mistral→Llama transfers suggest 65-78% skill retention versus ~0% for naive weight copying, with limited safety drift. The key insight: adapters may encode task-specific modifications in a subspace approximately shared across model families trained on similar data. We hypothesize that when CKA coverage exceeds 0.7, transfer works; below 0.5, it fails. This paper presents the methodology, diagnostic tools, and preliminary results. Full validation on standardized benchmark suites is ongoing.
 
 ---
 
@@ -159,7 +161,9 @@ $$\text{Retention}(S, T) = \frac{\text{Score}(T + Δ_T, \text{task})}{\text{Scor
 
 ---
 
-## 5. Results
+## 5. Preliminary Results
+
+> **Note**: The following results are from initial experiments. Full validation on standardized benchmark suites (HumanEval, safety evaluation with curated prompts) is in progress.
 
 ### 5.1 Compatibility Assessment
 
@@ -169,27 +173,27 @@ $$\text{Retention}(S, T) = \frac{\text{Score}(T + Δ_T, \text{task})}{\text{Scor
 | Qwen-3B → Llama-3B | 0.72 | ✓ Yes |
 | Mistral-7B → Llama-8B | 0.71 | ✓ Yes |
 
-All tested pairs exceed the 0.7 threshold. Models trained on similar web data share subspace structure.
+All tested pairs exceed the 0.7 coverage threshold, suggesting models trained on similar web data share subspace structure.
 
-### 5.2 Skill Retention
+### 5.2 Skill Retention (Preliminary)
 
 | Method | Qwen→Llama (Code) | Mistral→Llama (Creative) |
 |--------|-------------------|-------------------------|
-| Naive | 0% | 0% |
-| Weight Avg | 12% | 8% |
-| TIES | 31% | 24% |
-| **Ours** | **78%** | **65%** |
+| Naive | ~0% | ~0% |
+| Weight Avg | ~12% | ~8% |
+| TIES | ~31% | ~24% |
+| **Ours** | **~78%** | **~65%** |
 
-Anchor-locked Procrustes + DARE achieves 65-78% retention. Naive transfer fails completely. TIES provides partial recovery but loses the majority of skill.
+Preliminary data suggests anchor-locked Procrustes + DARE achieves substantially higher retention than baselines. Validation on full HumanEval (50 problems) and creative writing rubrics is required.
 
-### 5.3 Safety Drift
+### 5.3 Safety Drift (Preliminary)
 
 | Transfer | Baseline Refusal | Post-Transfer Refusal | Drift |
 |----------|-----------------|----------------------|-------|
-| Qwen→Llama | 94% | 89% | -5% |
-| Mistral→Llama | 91% | 84% | -7% |
+| Qwen→Llama | ~94% | ~89% | ~-5% |
+| Mistral→Llama | ~91% | ~84% | ~-7% |
 
-Safety drift is <8% across all pairs. The rotation preserves the refusal direction—safety is geometric.
+Initial measurements suggest safety drift is limited (<10%). Full validation with curated harmful/benign prompt suite (see TEST_DATA_REQUIREMENTS.md) is required.
 
 ---
 
@@ -204,7 +208,9 @@ Safety drift is <8% across all pairs. The rotation preserves the refusal directi
 
 ## 7. Conclusion
 
-Adapters transfer across architectures. A LoRA trained on Qwen runs on Llama with 65-78% skill retention after geometric alignment. The method: measure compatibility via CKA, rotate via anchor-locked Procrustes, sparsify via DARE. Safety is preserved (<8% drift). This works because knowledge has invariant shape—the subspace learned for a task is approximately shared across models trained on similar data.
+We present a methodology for cross-architecture adapter transfer via geometric alignment: measure compatibility via CKA, rotate via anchor-locked Procrustes, sparsify via DARE. Preliminary experiments suggest 65-78% skill retention (vs ~0% for naive transfer) with limited safety drift (<10%). The underlying hypothesis: adapters encode task-specific modifications in subspaces approximately shared across model families trained on similar data.
+
+**Validation Status**: These preliminary results require validation on standardized benchmarks. Full HumanEval evaluation (50 problems), creative writing rubrics, and curated safety prompt suites are in progress. The methodology and diagnostic tools are released; comprehensive results will follow.
 
 ---
 
