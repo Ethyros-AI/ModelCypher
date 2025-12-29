@@ -1111,6 +1111,7 @@ def build_server() -> FastMCP:
             target: str,
             output: str,
             transplantDomains: list[str],
+            transplantLayers: list[int] | None = None,
             transplantBoundaryK: int | None = None,
             transplantGeodesicK: int | None = None,
             idempotencyKey: str | None = None,
@@ -1124,6 +1125,7 @@ def build_server() -> FastMCP:
 
             Args:
                 transplantDomains: Core domains to transplant (e.g., ["mathematical", "logical"])
+                transplantLayers: Optional layer indices to transplant.
             """
             if idempotencyKey:
                 previous = _get_idempotency("model_merge", idempotencyKey)
@@ -1146,6 +1148,17 @@ def build_server() -> FastMCP:
                     "message": "transplantDomains is required (e.g., ['mathematical', 'logical'])",
                 }
 
+            layer_list = None
+            if transplantLayers:
+                try:
+                    layer_list = [int(layer) for layer in transplantLayers]
+                except (TypeError, ValueError):
+                    return {
+                        "_schema": "mc.model.merge.v1",
+                        "status": "error",
+                        "message": "transplantLayers must be a list of integers",
+                    }
+
             merger = UnifiedGeometricMerger(
                 model_loader=registry.model_loader,
             )
@@ -1154,6 +1167,7 @@ def build_server() -> FastMCP:
                 target_path=target,
                 output_dir=str(output_path),
                 transplant_domains=transplantDomains,
+                transplant_layers=layer_list,
                 transplant_boundary_k=transplantBoundaryK,
                 transplant_geodesic_k_neighbors=transplantGeodesicK,
             )
@@ -1169,7 +1183,6 @@ def build_server() -> FastMCP:
                 "weightCount": result.weight_count,
                 "meanConfidence": result.mean_confidence,
                 "vocabAligned": result.vocab_aligned,
-                "mergeStrategy": result.merge_strategy,
                 "metrics": {
                     "meanProcrustesError": result.mean_procrustes_error,
                 },

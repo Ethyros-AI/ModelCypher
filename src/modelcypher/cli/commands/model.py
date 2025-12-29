@@ -241,7 +241,6 @@ def model_merge(
             "layerCount": result.layer_count,
             "weightCount": result.weight_count,
             "meanConfidence": result.mean_confidence,
-            "mergeStrategy": result.merge_strategy,
             "vocabAligned": result.vocab_aligned,
             "metrics": {
                 "meanProcrustesError": result.mean_procrustes_error,

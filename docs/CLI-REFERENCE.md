@@ -217,12 +217,27 @@ mc safety adapter-probe --adapter <path>    # Run adapter safety probes
 ```
 
 ### Model Merge Commands
+
+Merge uses **null-space constrained transplant** (validated by AlphaEdit, ICLR 2025 Outstanding Paper).
+The mathematical guarantee: `A_boundary @ W' = A_boundary @ W_target` (boundary preservation).
+
 ```bash
-mc model merge --source <path> --target <path> --output-dir <path>
-mc model merge --source <path> --target <path> --output-dir <path> --knowledge-delta-mask <mask.json>
-mc model merge --source <path> --target <path> --output-dir <path> --merge-strategy transplant --transplant-domains mathematical,logical
-mc model merge --source <path> --target <path> --output-dir <path> --merge-strategy transplant --transplant-domains <domains> --transplant-boundary-k <k> --transplant-geodesic-k <k>
+# Basic transplant (requires --transplant-domains)
+mc model merge --source <path> --target <path> --output-dir <path> --transplant-domains mathematical
+
+# Multiple domains
+mc model merge --source <path> --target <path> --output-dir <path> --transplant-domains mathematical,logical
+
+# With boundary tuning
+mc model merge --source <path> --target <path> --output-dir <path> --transplant-domains <domains> --transplant-boundary-k <k> --transplant-geodesic-k <k>
+
+# With per-layer alpha mask
+mc model merge --source <path> --target <path> --output-dir <path> --transplant-domains <domains> --knowledge-delta-mask <mask.json>
 ```
+
+**Pipeline**: `VOCAB → PROBE → TRANSPLANT → VALIDATE`
+
+**Note**: Alpha-blending (`rotate_blend`) was removed - it produces gibberish even for same-architecture models.
 
 ### Entropy Commands
 ```bash

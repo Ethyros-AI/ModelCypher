@@ -21,16 +21,21 @@ Merge pipeline stages.
 Each stage is a standalone module that can be imported and tested independently.
 The UnifiedGeometricMerger orchestrates these stages in sequence.
 
-Pipeline: VOCAB → PROBE → TRANSPLANT → VALIDATE
+Current Pipeline: VOCAB → PROBE → TRANSPLANT → VALIDATE
 
 Stage 0: VOCABULARY - Cross-vocabulary embedding alignment
 Stage 1: PROBE - Build intersection map from probe responses
 Stage 2: TRANSPLANT - Null-space constrained knowledge grafting
 Stage 3: VALIDATE - Safety checks (numerical + content)
 
+NOT CURRENTLY IMPLEMENTED:
+- PERMUTE (Git Re-Basin): Valid geometry for same-architecture pre-alignment.
+  Could be reintegrated as optional step before TRANSPLANT for same-arch models.
+  See Ainsworth et al. (2023) arXiv:2209.04836
+
 REMOVED (proven broken):
-- PERMUTE: Changes gauge, breaks invariance guarantee
-- ROTATE/BLEND/PROPAGATE: Alpha-blending produces gibberish
+- ROTATE/BLEND/PROPAGATE: Alpha-blending produces gibberish even for same-arch models.
+  No mathematical guarantee of boundary preservation.
 """
 
 from .stage_0_vocabulary import (

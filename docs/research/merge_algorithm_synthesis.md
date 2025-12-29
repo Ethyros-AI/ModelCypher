@@ -409,10 +409,10 @@ InterferencePrediction (existing)
       │
       ▼
 ┌─────────────────────────────────────────┐
-│  Safe Blending                          │
-│  - Null-space filtering                 │
-│  - Curvature-corrected alpha            │
-│  - Domain signal adjustment             │
+│  Null-Space Transplant                  │
+│  - Constrained functional replacement   │
+│  - Boundary preservation guarantee      │
+│  - No alpha-blending (proven broken)    │
 └─────────────────────────────────────────┘
       │
       ▼
@@ -426,29 +426,44 @@ InterferencePrediction (existing)
 
 ---
 
-## Implementation Priority
+## Implementation Status (2025-12-28)
 
-| Algorithm | Effort | Impact | Priority |
-|-----------|--------|--------|----------|
-| Null-Space Filtering | Medium | High | 1 |
-| TSV Selective Merge | Medium | High | 2 |
-| WUDI Subspace Detection | Low | Medium | 3 |
-| Ricci Curvature | Low | Medium | 4 |
-| Fisher Completion | Medium | Medium | 5 |
+| Algorithm | Status | Notes |
+|-----------|--------|-------|
+| Null-Space Filtering | ✅ Implemented | `null_space_filter.py`, `transplant.py` |
+| Git Re-Basin Permutation | 🔄 Future Work | Valid for same-architecture pre-alignment |
+| TSV Selective Merge | ⏳ Planned | Extends SVD infrastructure |
+| WUDI Subspace Detection | ⏳ Planned | Enhances interference analysis |
+| Ricci Curvature | ⏳ Planned | Extends `manifold_curvature.py` |
+| Fisher Completion | ⏳ Planned | Complete `fisher_blending.py` |
 
-### Recommended Next Steps
+### Implementation Notes
 
-1. **Implement Null-Space Filter** (`null_space_filter.py`)
-   - Highest impact: eliminates interference by construction
-   - Mathematically elegant, straightforward to implement
+**Null-Space Transplant** (IMPLEMENTED)
+- Mathematical primitive validated by AlphaEdit (ICLR 2025 Outstanding Paper)
+- Guarantee: `A_boundary @ W' = A_boundary @ W_target`
+- Formula: `W' = W_target + P_null(A_boundary) @ (W_source - W_target)`
+- Alpha-blending removed (produces gibberish even for same-architecture models)
+- Files: `transplant.py`, `null_space_filter.py`, `stage_3_transplant.py`
+
+**Git Re-Basin** (FUTURE WORK)
+- Valid geometry for same-architecture neuron alignment
+- Could reduce delta magnitude before null-space projection
+- Removed from current pipeline pending integration with transplant primitive
+- Original paper: Ainsworth et al. (2023) arXiv:2209.04836
+
+### Next Steps
+
+1. **Integrate Re-Basin pre-alignment** with null-space transplant
+   - For same-architecture models, align neurons first
+   - Then apply constrained transplant
 
 2. **Add TSV extraction to merger**
-   - Extends existing SVD infrastructure
-   - Validates low-rank hypothesis empirically
+   - Keep only dominant singular vectors
+   - Reduces noise and storage
 
-3. **Integrate subspace overlap into InterferencePredictor**
-   - Enhances existing interference analysis
-   - Provides pre-merge guidance
+3. **Complete Fisher weighting**
+   - Prioritize high-importance parameters during transplant
 
 ---
 
@@ -459,16 +474,22 @@ InterferencePrediction (existing)
 3. Stratified Manifolds: arXiv:2410.08993
 4. CAMEx: arXiv:2502.18821 (ICLR 2025)
 5. MINGLE: arXiv:2509.21413
+6. AlphaEdit: arXiv:2410.02355 (ICLR 2025 Outstanding Paper)
+7. Git Re-Basin: arXiv:2209.04836 (ICLR 2023)
 
 ---
 
 ## Related ModelCypher Modules
 
-| Module | Relevance |
-|--------|-----------|
-| `interference_predictor.py` | Pre-merge interference analysis |
-| `riemannian_density.py` | ConceptVolume distribution modeling |
-| `manifold_curvature.py` | Sectional curvature → extend to Ricci |
-| `fisher_blending.py` | Stub → complete with CAMEx insights |
-| `unified_manifold_merger.py` | Integration point for all algorithms |
-| `domain_geometry_waypoints.py` | Validation anchors (439 probes) |
+| Module | Status | Relevance |
+|--------|--------|-----------|
+| `transplant.py` | ✅ Active | Core null-space constrained transplant |
+| `null_space_filter.py` | ✅ Active | Null-space projection primitive |
+| `stage_3_transplant.py` | ✅ Active | Pipeline stage for transplant |
+| `interference_predictor.py` | ✅ Active | Pre-merge interference analysis |
+| `knowledge_density.py` | ✅ Active | Per-concept density metrics |
+| `knowledge_diff.py` | ✅ Active | Graft opportunity scoring |
+| `riemannian_density.py` | ✅ Active | ConceptVolume distribution modeling |
+| `manifold_curvature.py` | ⏳ Planned | Sectional curvature → extend to Ricci |
+| `fisher_blending.py` | ⏳ Planned | Stub → complete with CAMEx insights |
+| `domain_geometry_waypoints.py` | ✅ Active | Validation anchors (439 probes) |

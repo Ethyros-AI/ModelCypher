@@ -18,7 +18,7 @@
 """
 Unified Geometric Merge Pipeline.
 
-Pipeline:
+Current Pipeline:
     VOCAB → PROBE → TRANSPLANT → VALIDATE
 
 Transplant uses null-space constrained projection to transfer knowledge
@@ -31,9 +31,13 @@ Key Principles:
 2. Layer targeting enables surgical transplants
 3. Cross-dimensional projection via GRAM_TRANSPORT
 
+NOT CURRENTLY IMPLEMENTED:
+- PERMUTE (Git Re-Basin): Valid geometry for same-architecture pre-alignment.
+  Could be reintegrated as optional step before TRANSPLANT for same-arch models.
+  See Ainsworth et al. (2023) arXiv:2209.04836
+
 REMOVED (proven broken):
 - rotate_blend: Alpha-blending has no constraint, destroys coherence
-- PERMUTE: Changes gauge, breaks invariance guarantee with transplant
 - ROTATE/BLEND/PROPAGATE: Only served rotate_blend
 
 Stage implementations are in merge_stages/ subpackage for modularity.

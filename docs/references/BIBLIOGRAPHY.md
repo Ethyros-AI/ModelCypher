@@ -101,6 +101,33 @@ Recent papers referenced in [merge_algorithm_synthesis.md](../research/merge_alg
 | [CAMEx_2025_Fisher_Information.pdf](arxiv/CAMEx_2025_Fisher_Information.pdf) | CAMEx: Fisher Information Geometry (ICLR 2025) | 2502.18821 |
 | [NUFILT_2025_Null_Space_Projection.pdf](arxiv/NUFILT_2025_Null_Space_Projection.pdf) | NUFILT: Null-Space Projection for Merging | 2509.21413 |
 
+### 2025 Knowledge Editing (Null-Space Methods)
+
+Papers validating null-space constrained transplant for knowledge transfer:
+
+| File | Citation | arXiv |
+|------|----------|-------|
+| [Fang_2025_AlphaEdit.pdf](arxiv/Fang_2025_AlphaEdit.pdf) | AlphaEdit: Null-Space Constrained Knowledge Editing (ICLR 2025 Outstanding Paper) | 2410.02355 |
+
+**Implementation Notes:**
+- AlphaEdit won ICLR 2025 Outstanding Paper for null-space constrained editing
+- Key guarantee: `A_boundary @ W' = A_boundary @ W_target` (boundary preservation)
+- Mathematical formulation: `W' = W_target + P_null(A_boundary) @ (W_source - W_target)`
+- ModelCypher uses this identical primitive for transplant-based merging
+- Replaces alpha-blending (proven broken) with constrained functional replacement
+- GitHub: https://github.com/jianghoucheng/AlphaEdit (MIT license)
+
+**BibTeX:**
+```bibtex
+@inproceedings{fang2025alphaedit,
+  title={AlphaEdit: Null-Space Constrained Knowledge Editing for Language Models},
+  author={Fang, Junfeng and Jiang, Houcheng and Wang, Jixiong and Chen, Jiaming and Li, Shanshan},
+  booktitle={Proceedings of the International Conference on Learning Representations (ICLR)},
+  year={2025},
+  note={Outstanding Paper Award}
+}
+```
+
 ### 2024 High-Dimensional Frontiers (PILLAR 14)
 
 | File | Citation | arXiv |
@@ -214,7 +241,7 @@ Papers cited in the Geometric Knowledge Thesis and Dimensional Hierarchy framewo
 
 | Category | Count | Status |
 |----------|-------|--------|
-| arXiv/OpenReview PDFs | 52 | ✅ Downloaded |
+| arXiv/OpenReview PDFs | 53 | ✅ Downloaded |
 | Books | 15 | 📚 Copyright (links provided) |
 | Distill/TC | 6 | 🔗 URLs provided |
 | Conference | ~20 | 🔗 Venue info provided |

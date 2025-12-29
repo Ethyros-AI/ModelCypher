@@ -1323,7 +1323,7 @@ Call mc_inventory first to see what models are available before starting trainin
   "gateCount": 16,
   "nextActions": [
     "mc_geometry_crm_compare to compare against another model",
-    "mc_model_merge to use the CRM in shared subspace alignment"
+    "mc_model_merge to apply null-space constrained transplant"
   ]
 }
 ```
@@ -1363,7 +1363,7 @@ Call mc_inventory first to see what models are available before starting trainin
   "ckaMatrix": [],
   "nextActions": [
     "mc_geometry_crm_build to regenerate CRM with more anchors",
-    "mc_model_merge to apply shared-subspace alignment"
+    "mc_model_merge to apply null-space constrained transplant"
   ]
 }
 ```
