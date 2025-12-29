@@ -110,7 +110,7 @@ NumPy is:
 - **Slow** - Doesn't respect the GPU that every ML researcher has
 - **Wrong** - Breaks the hexagonal architecture we built specifically to be backend-agnostic
 
-We have a Backend protocol with 58 methods. USE IT.
+We have a Backend protocol with 79 methods. USE IT.
 
 ```python
 # WRONG - don't use numpy
@@ -128,7 +128,7 @@ data = backend.random_randn((100, 64))
 mean = backend.mean(vectors, axis=0)  # Or frechet_mean for embeddings
 ```
 
-**For tests**: Use `get_default_backend()` or the `any_backend` fixture from conftest.py. Generate test data with `backend.random_*` methods.
+**For tests**: Use `get_default_backend()` or the `any_backend` fixture from conftest.py. Generate test data with `backend.random_*` methods. Exception: Tests that verify backend implementations against numpy reference implementations (e.g., `np.linalg.qr`, `np.testing.assert_allclose`) may use numpy as ground truth.
 
 **For averaging embeddings**: Use `frechet_mean` from `riemannian_utils.py`. Arithmetic mean is WRONG on curved manifolds.
 
