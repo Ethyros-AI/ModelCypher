@@ -23,6 +23,8 @@ Mathematical guarantees to verify:
     3. preserved_fraction measures how much delta survived projection
 """
 
+import re
+
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -35,6 +37,10 @@ from modelcypher.core.domain.geometry.transplant import (
     TransplantDeltaResult,
     compute_transplant_delta,
     partition_core_boundary,
+)
+from modelcypher.core.use_cases.merge_stages.stage_3_transplant import (
+    TransplantStageConfig,
+    stage_transplant,
 )
 
 
@@ -247,6 +253,59 @@ class TestComputeTransplantDelta:
         )
 
         assert result.applied is False
+
+
+def test_stage_transplant_emits_alignment_metrics() -> None:
+    """Stage transplant should emit core alignment metrics for transplanted layers."""
+    backend = get_default_backend()
+    backend.random_seed(7)
+
+    in_dim = 8
+    out_dim = 4
+    probe_ids = ["p0", "p1", "p2", "p3"]
+    probe_domains = ["math", "math", "other", "other"]
+
+    source_weights = {
+        "model.layers.0.mlp.down_proj.weight": backend.random_normal((out_dim, in_dim)),
+    }
+    target_weights = {
+        "model.layers.0.mlp.down_proj.weight": backend.random_normal((out_dim, in_dim)),
+    }
+    backend.eval(*source_weights.values(), *target_weights.values())
+
+    target_activations = {
+        0: [backend.random_normal((in_dim,)) for _ in probe_ids],
+    }
+    for act in target_activations[0]:
+        backend.eval(act)
+
+    def extract_layer_index(key: str) -> int | None:
+        match = re.search(r"layers\.(\d+)\.", key)
+        if match:
+            return int(match.group(1))
+        return None
+
+    config = TransplantStageConfig(
+        core_domains=("math",),
+        boundary_k=1,
+    )
+
+    result = stage_transplant(
+        source_weights=source_weights,
+        target_weights=target_weights,
+        layer_indices=[0],
+        probe_ids=probe_ids,
+        probe_domains=probe_domains,
+        target_activations=target_activations,
+        config=config,
+        extract_layer_index_fn=extract_layer_index,
+        backend=backend,
+    )
+
+    metrics = result.metrics
+    assert metrics.get("alignment_samples", 0) >= 1
+    assert 0.0 <= metrics.get("mean_cka_before", 0.0) <= 1.0
+    assert 0.0 <= metrics.get("mean_cka_after", 0.0) <= 1.0
 
     def test_insufficient_core_samples_skipped(self) -> None:
         """Less than 2 core samples should skip transplant."""

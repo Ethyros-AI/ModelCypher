@@ -332,6 +332,10 @@ class DonorStageResult:
     cka_before: float
     cka_after: float
     cka_improvement: float
+    alignment_samples: int
+    mean_alignment_improvement: float
+    mean_core_dist_to_source_before: float
+    mean_core_dist_to_source_after: float
 
     # Boundary preservation
     boundary_preserved: float
@@ -364,6 +368,10 @@ class DonorStageResult:
             "cka_before": self.cka_before,
             "cka_after": self.cka_after,
             "cka_improvement": self.cka_improvement,
+            "alignment_samples": self.alignment_samples,
+            "mean_alignment_improvement": self.mean_alignment_improvement,
+            "mean_core_dist_to_source_before": self.mean_core_dist_to_source_before,
+            "mean_core_dist_to_source_after": self.mean_core_dist_to_source_after,
             "boundary_preserved": self.boundary_preserved,
             "mean_boundary_relative_diff": self.mean_boundary_relative_diff,
             "max_boundary_relative_diff": self.max_boundary_relative_diff,
@@ -819,8 +827,12 @@ class MultiDonorMergeService:
 
                 # Extract metrics
                 transplant_metrics = merge_result.transplant_metrics
-                cka_before = transplant_metrics.get("mean_cka_before", 0.0)
-                cka_after = transplant_metrics.get("mean_cka_after", 0.0)
+                cka_before = transplant_metrics.get("mean_cka_before")
+                cka_after = transplant_metrics.get("mean_cka_after")
+                if cka_before is None:
+                    cka_before = merge_result.probe_metrics.get("mean_cka", 0.0)
+                if cka_after is None:
+                    cka_after = cka_before
 
                 # Create checkpoint
                 checkpoint_path = str(
@@ -842,6 +854,16 @@ class MultiDonorMergeService:
                     cka_before=cka_before,
                     cka_after=cka_after,
                     cka_improvement=cka_after - cka_before,
+                    alignment_samples=transplant_metrics.get("alignment_samples", 0),
+                    mean_alignment_improvement=transplant_metrics.get(
+                        "mean_alignment_improvement", 0.0
+                    ),
+                    mean_core_dist_to_source_before=transplant_metrics.get(
+                        "mean_core_dist_to_source_before", 0.0
+                    ),
+                    mean_core_dist_to_source_after=transplant_metrics.get(
+                        "mean_core_dist_to_source_after", 0.0
+                    ),
                     boundary_preserved=transplant_metrics.get("mean_preserved_fraction", 0.0),
                     mean_boundary_relative_diff=transplant_metrics.get(
                         "mean_boundary_relative_diff", 0.0

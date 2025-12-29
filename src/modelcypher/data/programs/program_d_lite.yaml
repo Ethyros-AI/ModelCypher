@@ -1,0 +1,60 @@
+# Program D-Lite - 70B Class Donors (128GB RAM)
+#
+# Transplant using 70B class donors that fit comfortably in 128GB.
+# For larger donors (120B, 235B), use program_d_flagship.yaml after quantizing.
+#
+# Requirements: 64-128GB unified memory (Apple Silicon)
+# Peak memory: ~45GB (70B @ 4-bit + 8B target)
+
+_schema: "mc.program.transplant.v1"
+name: "Program D-Lite - 70B Donors"
+description: |
+  70B class transplant into 8B targets.
+  Fits comfortably in 128GB RAM.
+
+  Capability ceiling:
+    - Math: 72B-level (MATH leader in 70B class)
+    - Instruction: 70B-level (IFEval leader)
+    - Coding: 30B specialist level
+
+bases:
+  # Primary target - Qwen3-8B (Apache-2.0)
+  - id: "qwen3-8b"
+    source: "/Volumes/CodeCypher/models/mlx-community/Qwen3-8B-4bit"
+    alias: "qwen3"
+
+donors:
+  # Llama 3.3 70B (Dense) - ~35GB @ 4-bit
+  # IFEval leader, best instruction following
+  - id: "llama-3.3-70b"
+    source: "/Volumes/CodeCypher/models/mlx-community/Llama-3.3-70B-Instruct-4bit"
+    domains:
+      - "reasoning"
+      - "logical"
+    priority: 3
+    notes: "128K context, IFEval leader."
+
+  # Qwen 2.5 72B (Dense) - ~36GB @ 4-bit
+  # MATH, MMLU-Pro leader in 70B class
+  - id: "qwen2.5-72b"
+    source: "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-72B-Instruct-4bit"
+    domains:
+      - "mathematical"
+      - "factual"
+    priority: 2
+    notes: "Best MATH/MMLU-Pro in 70B class."
+
+evaluation:
+  after_each_donor: true
+  after_program_complete: true
+  benchmarks:
+    - "mmlu_pro"
+    - "gpqa_diamond"
+  smoke_test_prompts:
+    - "What is 15 * 17?"
+    - "Solve: If f(x) = x^3 - 3x^2 + 2x, find all values where f'(x) = 0."
+    - "What is the sum of all prime numbers less than 50?"
+    - "List exactly 5 benefits of exercise, numbered 1-5, with no additional text."
+
+output:
+  base_dir: "/Volumes/CodeCypher/experiments/program-D-lite"

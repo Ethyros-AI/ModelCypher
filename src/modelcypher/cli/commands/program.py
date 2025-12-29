@@ -54,9 +54,11 @@ def _context(ctx: typer.Context) -> CLIContext:
 
 def _get_multi_donor_service():
     """Get MultiDonorMergeService with proper dependency injection."""
+    from modelcypher.adapters.mlx_model_loader import MLXModelLoader
     from modelcypher.core.use_cases.multi_donor_merge import MultiDonorMergeService
 
-    return MultiDonorMergeService()
+    model_loader = MLXModelLoader()
+    return MultiDonorMergeService(model_loader=model_loader)
 
 
 @app.command("run")

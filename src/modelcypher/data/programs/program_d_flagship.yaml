@@ -43,7 +43,7 @@ donors:
   # AIME: 85.7%, near GPT-4o level math/reasoning
   # Applied first for maximum geometric imprint
   - id: "qwen3-235b"
-    source: "lmstudio-community/Qwen3-235B-A22B-Instruct-2507-MLX-4bit"
+    source: "/Volumes/CodeCypher/models/mlx-community/Qwen3-235B-A22B-Instruct-2507-MLX-4bit"
     domains:
       - "mathematical"
       - "logical"
@@ -57,7 +57,7 @@ donors:
     source: "/Volumes/CodeCypher/models/mlx-community/gpt-oss-120b-MLX-8bit"
     domains:
       - "factual"
-      - "scientific"
+      - "reasoning"
     priority: 4
     notes: "OpenAI's open-source reasoning model. Dense 120B."
 
@@ -68,8 +68,8 @@ donors:
   - id: "llama-3.3-70b"
     source: "/Volumes/CodeCypher/models/mlx-community/Llama-3.3-70B-Instruct-4bit"
     domains:
-      - "instruction"
-      - "agentic"
+      - "reasoning"
+      - "computational"
     priority: 3
     notes: "128K context, IFEval leader."
 
@@ -79,7 +79,7 @@ donors:
     source: "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-72B-Instruct-4bit"
     domains:
       - "mathematical"
-      - "knowledge"
+      - "factual"
     priority: 2
     notes: "Best MATH/MMLU-Pro in 70B class."
 
