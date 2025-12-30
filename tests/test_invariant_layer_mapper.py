@@ -428,7 +428,7 @@ def test_triangulation_scorer_used_in_mapper():
 
 
 def test_unified_atlas_inventory_total_probes():
-    """Test that UnifiedAtlasInventory returns 465 probes from all atlases."""
+    """Test that UnifiedAtlasInventory returns probes from all atlases."""
     all_probes = UnifiedAtlasInventory.all_probes()
 
     # Total should include all atlas sources

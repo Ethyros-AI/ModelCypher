@@ -70,7 +70,7 @@ src/modelcypher/
 │   │   ├── entropy/   # Shannon entropy calculations
 │   │   ├── merging/   # Model merge algorithms
 │   │   ├── thermo/    # LinguisticThermodynamics, RidgeCross
-│   │   ├── agents/    # UnifiedAtlas (465 probes), semantic primes
+│   │   ├── agents/    # UnifiedAtlas, semantic primes
 │   │   └── validation/# DatasetQualityScorer, AutoFixEngine
 │   ├── ports/         # Abstract interfaces (Backend protocol = 79 methods)
 │   └── use_cases/     # Service orchestration

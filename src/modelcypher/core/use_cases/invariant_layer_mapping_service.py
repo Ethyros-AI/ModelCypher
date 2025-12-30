@@ -35,8 +35,9 @@ Supports:
 - Conceptual Genealogy: 29 probes (etymology/lineage)
 - Metaphor Invariants: 14 probes (cross-cultural semantics)
 - Syntax Concepts: 24 probes (syntax, morphology, word order)
+- Safety Ethics: 34 probes (consent, autonomy, coercion, boundaries)
 
-Total: 465 probes for cross-domain triangulation.
+See UnifiedAtlasInventory.total_probe_count() for current total.
 """
 
 from __future__ import annotations
@@ -281,8 +282,9 @@ class InvariantLayerMappingService:
     - 29 conceptual genealogy probes (etymology/lineage)
     - 14 metaphor invariants (cross-cultural semantics)
     - 24 syntax concepts (syntax, morphology, word order)
+    - 34 safety ethics probes (consent, autonomy, coercion, boundaries)
 
-    Total: 465 probes for cross-domain triangulation.
+    See UnifiedAtlasInventory.total_probe_count() for current total.
 
     Fingerprint extraction is cached to ~/Library/Caches/ModelCypher/fingerprints/
     to avoid expensive MLX inference on repeated calls.

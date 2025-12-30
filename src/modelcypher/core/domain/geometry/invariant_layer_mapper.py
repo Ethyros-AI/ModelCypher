@@ -23,21 +23,9 @@ for optimal layer alignment between models.
 
 Notes
 -----
-Supported atlases for cross-domain triangulation (465 total probes):
-
-- Sequence Invariants: 70 probes (mathematical/logical)
-- Semantic Primes: 65 probes (linguistic/mental)
-- Computational Gates: 76 probes (computational/structural)
-- Emotion Concepts: 32 probes (affective/relational)
-- Temporal Concepts: 25 probes (temporal/logical)
-- Spatial Concepts: 23 probes (spatial grounding)
-- Social Concepts: 25 probes (relational/linguistic)
-- Moral Concepts: 30 probes (moral/relational)
-- Compositional: 22 probes (semantic prime compositions)
-- Philosophical: 30 probes (philosophical/logical)
-- Conceptual Genealogy: 29 probes (etymology/lineage)
-- Metaphor Invariants: 14 probes (cross-cultural semantics)
-- Syntax Concepts: 24 probes (syntax, morphology, word order)
+Supported atlases for cross-domain triangulation:
+See UnifiedAtlasInventory for the complete list of atlas sources,
+their probe counts, and the total number of probes available.
 """
 
 from __future__ import annotations
@@ -129,7 +117,7 @@ class InvariantScope(str, Enum):
     INVARIANTS = "invariants"
     LOGIC_ONLY = "logicOnly"
     SEQUENCE_INVARIANTS = "sequenceInvariants"  # Full 70-probe system with triangulation
-    MULTI_ATLAS = "multiAtlas"  # Full 465-probe system across all atlases
+    MULTI_ATLAS = "multiAtlas"  # Full probe system across all atlases
 
 
 # ConfidenceLevel enum removed - use raw similarity values directly.

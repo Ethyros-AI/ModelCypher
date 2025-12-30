@@ -2,18 +2,18 @@
 
 ## The Problem
 
-ModelCypher has a comprehensive 465-probe atlas system in `UnifiedAtlasInventory`, but most merge and geometry modules **ignore it entirely** and reinvent their own anchor systems.
+ModelCypher has a comprehensive multi-domain atlas system in `UnifiedAtlasInventory`, but most merge and geometry modules **ignore it entirely** and reinvent their own anchor systems.
 
 ---
 
 ## The Atlas System (What You Built)
 
-### UnifiedAtlasInventory: 465 Probes, 13 Atlas Sources
+### UnifiedAtlasInventory: Multi-Domain Probe System
 
 **Location:** `src/modelcypher/core/domain/agents/unified_atlas.py`
 
 ```
-ATLAS SOURCES (13):
+ATLAS SOURCES (14):
 ├── SEQUENCE_INVARIANT .... 70 probes  (Fibonacci, Lucas, Primes, Catalan, etc.)
 ├── SEMANTIC_PRIME ........ 65 probes  (Wierzbicka's Natural Semantic Metalanguage)
 ├── COMPUTATIONAL_GATE .... 76 probes  (Control flow, data types, functions)
@@ -26,7 +26,8 @@ ATLAS SOURCES (13):
 ├── PHILOSOPHICAL_CONCEPT . 30 probes  (Ontological, epistemological, modal)
 ├── CONCEPTUAL_GENEALOGY .. 29 probes  (Etymology + lineage)
 ├── METAPHOR_INVARIANT .... 14 probes  (Cross-cultural semantic anchors)
-└── SYNTAX_CONCEPT ........ 24 probes  (Syntax, morphology, word order, punctuation)
+├── SYNTAX_CONCEPT ........ 24 probes  (Syntax, morphology, word order, punctuation)
+└── SAFETY_ETHICS ......... 34 probes  (Consent, autonomy, coercion, boundaries)
 
 TRIANGULATION DOMAINS (12):
 ├── MATHEMATICAL .......... Sequences, ratios, patterns
@@ -55,7 +56,7 @@ from modelcypher.core.domain.agents.unified_atlas import (
     get_probe_ids,
 )
 
-# Get all 465 probes
+# Get all probes
 probes = UnifiedAtlasInventory.all_probes()
 
 # Filter by source
@@ -87,10 +88,10 @@ for probe in probes:
 ### Required Connections
 
 ```
-UnifiedAtlasInventory (465 probes)
+UnifiedAtlasInventory
          │
          ├──► AnchorExtractor
-         │    └─ Should use all 13 atlas sources, not just 2
+         │    └─ Should use all atlas sources, not just 2
          │
          ├──► merge_engine.py::RotationalMerger
          │    └─ SharedAnchors should be built from atlas probes
@@ -185,7 +186,7 @@ UnifiedAtlasInventory (465 probes)
 ### 1. AnchorExtractor: Use Full Atlas
 
 **Current:** Uses `SemanticPrimeFrames` + `ComputationalGateInventory` (141 anchors)
-**Should:** Use `UnifiedAtlasInventory` (465 probes)
+**Should:** Use `UnifiedAtlasInventory`
 
 ```python
 # In anchor_extractor.py
@@ -202,7 +203,7 @@ def _unified_atlas_anchors(
     vocab: int,
     confidence: dict[str, float],
 ) -> dict[str, Array]:
-    """Extract anchors from all 465 unified atlas probes."""
+    """Extract anchors from all unified atlas probes."""
     probes = UnifiedAtlasInventory.all_probes()
     anchors: dict[str, Array] = {}
 
@@ -241,7 +242,7 @@ from modelcypher.core.domain.agents.unified_atlas import (
 )
 
 def build_triangulated_probes() -> list[AtlasProbe]:
-    """Get all 465 probes for triangulation."""
+    """Get all probes for triangulation."""
     return UnifiedAtlasInventory.all_probes()
 ```
 
@@ -331,7 +332,7 @@ Atlas-relative (works):
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                    UnifiedAtlasInventory                        │
-│                        (465 probes)                             │
+│                                                                 │
 └──────────────────────────┬──────────────────────────────────────┘
                            │
          ┌─────────────────┼─────────────────┐
@@ -365,7 +366,7 @@ Atlas-relative (works):
 
 **The atlas is the anchor system. Everything else should derive from it.**
 
-1. `UnifiedAtlasInventory` = 465 cross-domain probes
+1. `UnifiedAtlasInventory` = multi-domain probe system (see `unified_atlas.py` for current count)
 2. All merge operations should use these as anchors
 3. Cross-dimension transfer works because anchor similarities are dimension-agnostic
 4. Triangulation across domains provides robustness

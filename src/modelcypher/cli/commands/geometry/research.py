@@ -1285,8 +1285,8 @@ def zero_shot_transfer(
 def full_profile(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to the model directory"),
-    output_path: str = typer.Option(
-        None, "--output-path", "-o", help="Save profile to JSON file"
+    output_path: str | None = typer.Option(
+        None, "--output", "-o", help="Save profile to JSON file"
     ),
     sources: list[str] | None = typer.Option(
         None, "--source", "-s", help="Filter by atlas source (repeatable)"

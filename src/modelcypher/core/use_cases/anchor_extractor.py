@@ -448,8 +448,9 @@ class AnchorExtractor:
         - CONCEPTUAL_GENEALOGY: 29 probes (etymology + lineage)
         - METAPHOR_INVARIANT: 14 probes (cross-cultural semantic anchors)
         - SYNTAX_CONCEPT: 24 probes (parts of speech, morphology, word order)
+        - SAFETY_ETHICS: 34 probes (consent, autonomy, coercion, boundaries)
 
-        Total: 465 probes for cross-domain triangulation.
+        See UnifiedAtlasInventory.total_probe_count() for current total.
         """
         probes = UnifiedAtlasInventory.all_probes()
         anchors: dict[str, Array] = {}
