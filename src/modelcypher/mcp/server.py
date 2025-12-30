@@ -102,6 +102,7 @@ TOOL_PROFILES = {
         "mc_program_status",
         "mc_program_list",
         "mc_program_show",
+        "mc_program_generate",  # Auto-generate from density profiles
         "mc_checkpoint_export",
         "mc_checkpoint_list",  # New
         "mc_checkpoint_delete",  # New
@@ -1040,10 +1041,6 @@ def build_server() -> FastMCP:
                 "vocabMatch": result.vocab_match,
                 "dimensionMatch": result.dimension_match,
                 "warnings": result.warnings,
-                    ["mc_model_merge to perform the merge"]
-                    if result.low_effort
-                    else ["Use layer mapping for cross-architecture merge"]
-                ),
             }
 
     if "mc_model_merge" in tool_set:
@@ -1251,10 +1248,6 @@ def build_server() -> FastMCP:
                 "valid": valid,
                 "metalAvailable": metal_available,
                 "recommendedBatchSize": result["predictedBatchSize"],
-                    [f"mc_train_start with model={model}, dataset={dataset}"]
-                    if valid
-                    else ["Reduce batch size", "Check model availability"]
-                ),
             }
 
     if "mc_estimate_train" in tool_set:
@@ -1290,10 +1283,6 @@ def build_server() -> FastMCP:
                 "tokensPerSecond": None,
                 "etaSeconds": None,
                 "confidence": "low",
-                    [f"mc_train_start with recommended batch size {result['predictedBatchSize']}"]
-                    if will_fit
-                    else ["Reduce batch size", "Reduce sequence length", "Use smaller model"]
-                ),
             }
 
     if "mc_train_preflight" in tool_set:

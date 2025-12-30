@@ -235,3 +235,113 @@ def register_program_tools(context: "ServiceContext") -> None:
                     "status": "error",
                     "message": f"Invalid program config: {e}",
                 }
+
+    if "mc_program_generate" in tool_set:
+
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_program_generate(
+            targetProfile: str,
+            donorDir: str | None = None,
+            donorProfiles: list[str] | None = None,
+            programName: str | None = None,
+            outputDir: str | None = None,
+            minOpportunity: float | None = None,
+            maxLayers: int = 10,
+            maxDonorsPerDomain: int = 1,
+        ) -> dict:
+            """Generate TransplantProgram YAML from density profiles.
+
+            Analyzes density profiles to identify graft opportunities where
+            donor models have denser knowledge than the target. Automatically
+            selects optimal layers and donors per domain.
+
+            Args:
+                targetProfile: Path to target model's density profile JSON
+                donorDir: Directory containing donor profile JSON files
+                donorProfiles: List of specific donor profile paths (alternative to donorDir)
+                programName: Name for the generated program
+                outputDir: Output directory for merged model
+                minOpportunity: Minimum opportunity threshold (default: data-derived)
+                maxLayers: Maximum layers per donor (default: 10)
+                maxDonorsPerDomain: Maximum donors per domain (default: 1)
+
+            Returns:
+                Generated TransplantProgram as YAML string plus metadata
+            """
+            from modelcypher.core.use_cases.program_generator_service import (
+                ProgramGeneratorConfig,
+                ProgramGeneratorService,
+            )
+
+            target_path = Path(targetProfile).expanduser().resolve()
+            if not target_path.exists():
+                return {
+                    "_schema": "mc.program.generate.v1",
+                    "status": "error",
+                    "message": f"Target profile not found: {target_path}",
+                }
+
+            # Collect donor profiles
+            donors: list[Path] = []
+            if donorDir:
+                donor_dir_path = Path(donorDir).expanduser().resolve()
+                if not donor_dir_path.is_dir():
+                    return {
+                        "_schema": "mc.program.generate.v1",
+                        "status": "error",
+                        "message": f"Donor directory not found: {donor_dir_path}",
+                    }
+                donors.extend(donor_dir_path.glob("*.json"))
+            if donorProfiles:
+                for dp in donorProfiles:
+                    p = Path(dp).expanduser().resolve()
+                    if p.exists():
+                        donors.append(p)
+
+            if not donors:
+                return {
+                    "_schema": "mc.program.generate.v1",
+                    "status": "error",
+                    "message": "No donor profiles provided (use donorDir or donorProfiles)",
+                }
+
+            config = ProgramGeneratorConfig(
+                min_opportunity_threshold=minOpportunity,
+                max_layers_per_donor=maxLayers,
+                max_donors_per_domain=maxDonorsPerDomain,
+            )
+
+            service = ProgramGeneratorService()
+            try:
+                result = service.generate(
+                    target_profile=target_path,
+                    donor_profiles=donors,
+                    config=config,
+                    program_name=programName,
+                    output_dir=outputDir,
+                )
+            except ValueError as e:
+                return {
+                    "_schema": "mc.program.generate.v1",
+                    "status": "error",
+                    "message": str(e),
+                }
+
+            return {
+                "_schema": "mc.program.generate.v1",
+                "status": "success",
+                "programYaml": result.program_yaml,
+                "selectedDonors": [
+                    {
+                        "donorId": d.profile_path.stem,
+                        "modelPath": d.model_path,
+                        "domain": d.domain,
+                        "meanOpportunity": round(d.mean_opportunity, 4),
+                        "recommendedLayers": list(d.recommended_layers),
+                    }
+                    for d in result.selected_donors
+                ],
+                "skippedDomains": list(result.skipped_domains),
+                "opportunityThreshold": round(result.opportunity_threshold, 4),
+                "donorsEvaluated": result.donors_evaluated,
+            }

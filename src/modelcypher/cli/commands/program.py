@@ -466,3 +466,153 @@ def _format_comparison_markdown(comparison: dict) -> str:
             lines.append("")
 
     return "\n".join(lines)
+
+
+@app.command("generate")
+def program_generate(
+    ctx: typer.Context,
+    target_profile: Annotated[
+        Path,
+        typer.Argument(
+            help="Path to target model's density profile JSON",
+            exists=True,
+            readable=True,
+        ),
+    ],
+    donor_dir: Path | None = typer.Option(
+        None,
+        "--donor-dir",
+        "-d",
+        help="Directory containing donor profile JSONs",
+    ),
+    donor_profiles: list[Path] | None = typer.Option(
+        None,
+        "--donor",
+        help="Individual donor profile paths (repeatable)",
+    ),
+    output_yaml: Path | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Path to save generated YAML program",
+    ),
+    program_name: str | None = typer.Option(
+        None,
+        "--name",
+        "-n",
+        help="Name for generated program",
+    ),
+    output_dir: str | None = typer.Option(
+        None,
+        "--output-dir",
+        help="Output directory for merged models",
+    ),
+    min_opportunity: float | None = typer.Option(
+        None,
+        "--min-opportunity",
+        help="Minimum opportunity score to include donor (derived from data if not set)",
+    ),
+    max_layers: int = typer.Option(
+        10,
+        "--max-layers",
+        help="Maximum layers per donor",
+    ),
+) -> None:
+    """Generate TransplantProgram YAML from density profiles.
+
+    Analyzes target and donor density profiles to automatically select
+    optimal donors for each knowledge domain. Outputs a complete
+    TransplantProgram ready for execution with `mc program run`.
+
+    The generator:
+    1. Loads target model's density profile
+    2. Loads all donor profiles from --donor-dir or --donor options
+    3. Computes per-domain opportunity scores (donor_density - target_density)
+    4. Selects best donor per domain where opportunity is positive
+    5. Generates layer assignments (target weak + donor strong intersection)
+
+    Examples:
+        mc program generate ./target_profile.json --donor-dir ./donor_profiles/
+        mc program generate ./target.json --donor ./math.json --donor ./code.json
+        mc program generate ./target.json -d ./donors/ -n "uber-model" -o ./program.yaml
+    """
+    context = _context(ctx)
+
+    try:
+        from modelcypher.core.use_cases.program_generator_service import (
+            ProgramGeneratorConfig,
+            ProgramGeneratorService,
+        )
+
+        # Validate inputs
+        if donor_dir is None and (donor_profiles is None or len(donor_profiles) == 0):
+            write_error(
+                "Either --donor-dir or at least one --donor must be provided",
+                context.output_format,
+            )
+            raise typer.Exit(1)
+
+        # Validate donor_dir exists if provided
+        if donor_dir is not None and not donor_dir.exists():
+            write_error(
+                f"Donor directory not found: {donor_dir}",
+                context.output_format,
+            )
+            raise typer.Exit(1)
+
+        # Validate individual donor profiles exist
+        if donor_profiles:
+            for dp in donor_profiles:
+                if not dp.exists():
+                    write_error(
+                        f"Donor profile not found: {dp}",
+                        context.output_format,
+                    )
+                    raise typer.Exit(1)
+
+        # Build config
+        config = ProgramGeneratorConfig(
+            min_opportunity_threshold=min_opportunity,
+            max_layers_per_donor=max_layers,
+        )
+
+        service = ProgramGeneratorService()
+
+        # Generate program
+        if donor_dir:
+            result = service.generate_from_directory(
+                target_profile=target_profile,
+                donor_dir=donor_dir,
+                config=config,
+                program_name=program_name,
+                output_dir=output_dir,
+            )
+        else:
+            result = service.generate(
+                target_profile=target_profile,
+                donor_profiles=list(donor_profiles),  # type: ignore[arg-type]
+                config=config,
+                program_name=program_name,
+                output_dir=output_dir,
+            )
+
+        # Save YAML if requested
+        if output_yaml:
+            output_yaml.parent.mkdir(parents=True, exist_ok=True)
+            result.program.to_yaml(output_yaml)
+            import sys
+
+            sys.stderr.write(f"Program saved to {output_yaml}\n")
+
+        # Output result
+        write_output(result.to_dict(), context.output_format, context.pretty)
+
+    except FileNotFoundError as e:
+        write_error(str(e), context.output_format)
+        raise typer.Exit(1) from e
+    except ValueError as e:
+        write_error(f"Invalid input: {e}", context.output_format)
+        raise typer.Exit(1) from e
+    except Exception as e:
+        write_error(f"Generation failed: {e}", context.output_format)
+        raise typer.Exit(1) from e
