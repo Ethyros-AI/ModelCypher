@@ -391,7 +391,7 @@ def atlas_dimensionality_study(
     embed_tokens, layers_module, norm = resolved
     num_layers = len(layers_module)
     if not layers:
-        layers = [0, num_layers // 2, num_layers - 1]
+        layers = list(range(num_layers))
 
     resolved_layers: list[int] = []
     for layer in layers:
