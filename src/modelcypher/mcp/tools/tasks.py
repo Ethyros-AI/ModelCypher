@@ -95,10 +95,6 @@ def register_task_tools(ctx: ServiceContext) -> None:
                     "completed": completed,
                     "failed": failed,
                 },
-                "nextActions": [
-                    "mc_task_status taskId=<id> for details",
-                    "mc_task_cancel taskId=<id> to cancel running task",
-                ],
             }
 
     if "mc_task_status" in tool_set:
@@ -121,7 +117,6 @@ def register_task_tools(ctx: ServiceContext) -> None:
                 return {
                     "_schema": "error",
                     "error": f"Task not found: {taskId}",
-                    "nextActions": ["mc_task_list to see available tasks"],
                 }
 
             # Build next actions based on status
@@ -150,7 +145,6 @@ def register_task_tools(ctx: ServiceContext) -> None:
             return {
                 "_schema": "mc_task_status_response",
                 **task.to_dict(),
-                "nextActions": next_actions,
             }
 
     if "mc_task_cancel" in tool_set:
@@ -179,7 +173,6 @@ def register_task_tools(ctx: ServiceContext) -> None:
                 return {
                     "_schema": "error",
                     "error": f"Cannot cancel task with status: {task.status.value}",
-                    "nextActions": ["mc_task_list for active tasks"],
                 }
 
             success = manager.cancel(taskId)
@@ -189,10 +182,6 @@ def register_task_tools(ctx: ServiceContext) -> None:
                 "taskId": taskId,
                 "cancelled": success,
                 "previousStatus": task.status.value,
-                "nextActions": [
-                    "mc_task_list for other tasks",
-                    f"mc_task_delete taskId={taskId} to clean up",
-                ],
             }
 
     if "mc_task_result" in tool_set:
@@ -221,7 +210,6 @@ def register_task_tools(ctx: ServiceContext) -> None:
                 return {
                     "_schema": "error",
                     "error": f"Task not completed, status: {task.status.value}",
-                    "nextActions": [f"mc_task_status taskId={taskId} to check progress"],
                 }
 
             return {
@@ -230,9 +218,6 @@ def register_task_tools(ctx: ServiceContext) -> None:
                 "taskType": task.type.value,
                 "durationSeconds": task.duration_seconds,
                 "result": task.result,
-                "nextActions": [
-                    f"mc_task_delete taskId={taskId} to clean up",
-                ],
             }
 
     if "mc_task_delete" in tool_set:
@@ -261,7 +246,6 @@ def register_task_tools(ctx: ServiceContext) -> None:
                 return {
                     "_schema": "error",
                     "error": f"Cannot delete active task with status: {task.status.value}",
-                    "nextActions": [f"mc_task_cancel taskId={taskId} first"],
                 }
 
             success = manager.delete_task(taskId)
@@ -270,7 +254,6 @@ def register_task_tools(ctx: ServiceContext) -> None:
                 "_schema": "mc_task_delete_response",
                 "taskId": taskId,
                 "deleted": success,
-                "nextActions": ["mc_task_list for remaining tasks"],
             }
 
 

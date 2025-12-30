@@ -53,10 +53,6 @@ def geometry_persona_traits(ctx: typer.Context):
 
     traits = service.list_traits()
     payload = service.traits_payload(traits)
-    payload["nextActions"] = [
-        "mc geometry persona extract to extract a persona vector",
-        "mc geometry persona drift to measure drift during training",
-    ]
 
     if context.output_format == "text":
         lines = ["PERSONA TRAITS", ""]
@@ -125,10 +121,6 @@ def geometry_persona_extract(
         raise typer.Exit(1)
 
     payload = service.persona_vector_payload(vector)
-    payload["nextActions"] = [
-        "mc geometry persona drift to measure training drift",
-        "mc safety persona-drift for safety monitoring",
-    ]
 
     if context.output_format == "text":
         lines = [
@@ -172,10 +164,6 @@ def geometry_persona_drift(
     )
 
     payload = service.drift_metrics_payload(metrics)
-    payload["nextActions"] = [
-        "mc safety circuit-breaker if drift is significant",
-        "mc train pause to halt training if needed",
-    ]
 
     if context.output_format == "text":
         lines = [

@@ -100,10 +100,6 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
                     "_schema": "mc.merge.entropy.profile.v1",
                     "error": f"Model path not found: {model}",
                     "hint": "Provide a valid local model path for entropy profiling",
-                    "nextActions": [
-                        "mc_model_download to fetch model locally",
-                        "Verify the model path is correct",
-                    ],
                 }
 
             profile = validator.create_profile(
@@ -164,10 +160,6 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
                     "_schema": "mc.merge.entropy.guide.v1",
                     "error": f"Source model path not found: {source}",
                     "hint": "Provide valid local model paths for entropy-guided merging",
-                    "nextActions": [
-                        "mc_model_download to fetch model locally",
-                        "Verify the model path is correct",
-                    ],
                 }
 
             target_path = Path(target).expanduser()
@@ -176,10 +168,6 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
                     "_schema": "mc.merge.entropy.guide.v1",
                     "error": f"Target model path not found: {target}",
                     "hint": "Provide valid local model paths for entropy-guided merging",
-                    "nextActions": [
-                        "mc_model_download to fetch model locally",
-                        "Verify the model path is correct",
-                    ],
                 }
 
             source_profile = validator.create_profile(
@@ -395,7 +383,6 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
                 return {
                     "_schema": "mc.model.vocab_compare.v1",
                     "error": "transformers package not installed",
-                    "nextActions": ["pip install transformers"],
                 }
 
             from modelcypher.core.domain.vocabulary import compare_tokenizers

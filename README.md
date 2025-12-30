@@ -42,7 +42,6 @@ mc geometry interference predict /path/to/model-A /path/to/model-B
 
 # "Is this merge safe?"
 mc geometry interference safety-polytope 0.3 0.4 0.2 0.3
-# -> SAFE (confidence: 0.87)
 ```
 
 ## Key Capabilities
@@ -52,7 +51,7 @@ mc geometry interference safety-polytope 0.3 0.4 0.2 0.3
 3.  **Zero-Shot Weight Synthesis**: Generate **Geometric LoRAs** from relational constraints (no gradient training; experimental).
 4.  **Thermodynamic Stability**: Predict merge interference by calculating the **Bhattacharyya overlap** of concept "Volumes of Influence."
 5.  **Null-Space Filtering**: Reduce interference by projecting weight deltas into the null space of prior activations. If Δw ∈ null(A), then A(W+Δw) = AW for the measured activation subspace.
-6.  **Safety Polytope**: Unified 4D decision boundary combining interference, importance, instability, and complexity into a single go/no-go verdict with recommended mitigations.
+6.  **Safety Polytope**: Unified 4D decision boundary combining interference, importance, instability, and complexity into raw diagnostics and transformation effort metrics.
 7.  **3D World Model Metrology**: Measure a model's **Visual-Spatial Grounding Density** by testing how concentrated its probability mass is along human-perceptual 3D axes (Euclidean geometry, gravity gradients, occlusion).
 
 ## Core Constraints & Falsifiability
@@ -101,19 +100,19 @@ mc model analyze-alignment \
 # 4. Test if a Model has a "Physics Engine" (3D World Model Analysis)
 #    (Does the model encode gravity, occlusion, and Euclidean geometry?)
 mc geometry spatial probe-model /path/to/Qwen2.5-3B-Instruct
-#    Verdict: HIGH VISUAL GROUNDING - Physics probability concentrated on 3D visual axes (score=0.85)
+#    Output: world_model_score=0.85, physics_engine_detected=true
 
 # 5. Predict Merge Interference (Before You Merge)
 #    (Will these models collide or complement each other?)
 mc geometry interference predict \
     /path/to/math-model \
     /path/to/code-model
-#    Output: overlap=0.23, bhattacharyya=0.15, verdict="LOW_INTERFERENCE"
+#    Output: overlap=0.23, bhattacharyya=0.15
 
 # 6. Check Merge Safety with 4D Polytope
-#    (Single go/no-go decision with recommended mitigations)
+#    (4D diagnostics for interference/importance/instability/complexity)
 mc geometry interference safety-polytope 0.3 0.4 0.2 0.3
-#    Output: {"verdict": "SAFE", "confidence": 0.87, "mitigations": []}
+#    Output: {"diagnostics": {"magnitude": 0.87}, "confidence": 0.87}
 
 # 7. Analyze Null-Space for Interference-Free Merging
 #    (Find the "safe directions" for weight updates)
@@ -154,10 +153,10 @@ The server exposes 148 tools (full profile) organized by domain. Key tools for m
 | `mc_geometry_interference_predict` | Predict constructive/destructive interference before merging |
 | `mc_geometry_null_space_filter` | Project weight deltas into null space for interference-free merging |
 | `mc_geometry_null_space_profile` | Analyze graftable layers across entire model |
-| `mc_geometry_safety_polytope_check` | 4D safety verdict with mitigations for single layer |
-| `mc_geometry_safety_polytope_model` | Full model safety profile with go/no-go recommendation |
+| `mc_geometry_safety_polytope_check` | 4D safety diagnostics for a single layer |
+| `mc_geometry_safety_polytope_model` | Full model safety profile with per-layer diagnostics |
 
-Tools return structured JSON; many include `nextActions` for agentic workflow orchestration.
+Tools return structured JSON.
 
 ## Backends
 

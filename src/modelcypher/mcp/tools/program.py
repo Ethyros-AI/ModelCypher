@@ -108,9 +108,6 @@ def register_program_tools(context: "ServiceContext") -> None:
                     "donors": len(program.donors),
                     "baseIds": [b.id for b in program.bases],
                     "donorIds": [d.id for d in program.donors],
-                    "nextActions": [
-                        f"mc_program_run with dryRun=false to execute",
-                    ],
                 }
 
             service = MultiDonorMergeService()
@@ -123,10 +120,6 @@ def register_program_tools(context: "ServiceContext") -> None:
             return {
                 "_schema": "mc.program.run.v1",
                 **result.to_dict(),
-                "nextActions": [
-                    f"mc_program_status with programId='{result.program_id}' to check status",
-                    "mc_program_compare to compare with other programs",
-                ],
             }
 
     if "mc_program_status" in tool_set:

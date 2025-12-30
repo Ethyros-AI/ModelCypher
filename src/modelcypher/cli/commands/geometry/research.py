@@ -804,16 +804,17 @@ def graft_boundary(
         ]
 
         if not concepts_in_bracket:
-            bracket_analysis.append({
-                "bracket": label,
-                "bracketIdx": bracket_idx,
-                "conceptCount": 0,
-                "meanOpportunity": 0.0,
-                "meanTargetDensity": 0.0,
-                "meanSourceDensity": 0.0,
-                "layerDistribution": {},
-                "graftRecommendation": "skip",
-            })
+            bracket_analysis.append(
+                {
+                    "bracket": label,
+                    "bracketIdx": bracket_idx,
+                    "conceptCount": 0,
+                    "meanOpportunity": 0.0,
+                    "meanTargetDensity": 0.0,
+                    "meanSourceDensity": 0.0,
+                    "layerDistribution": {},
+                }
+            )
             continue
 
         mean_opp = sum(c.opportunity_score for c in concepts_in_bracket) / len(concepts_in_bracket)
@@ -929,8 +930,7 @@ def graft_boundary(
             lines.append(
                 f"  [{ba['bracket']}] "
                 f"concepts={ba['conceptCount']}, "
-                f"opportunity={ba['meanOpportunity']:.3f}, "
-                f"recommendation={ba['graftRecommendation']}"
+                f"opportunity={ba['meanOpportunity']:.3f}"
             )
 
         lines.append("")
@@ -943,13 +943,6 @@ def graft_boundary(
                 f"density={corr['meanTargetDensity']:.3f}, "
                 f"opportunity={corr['meanOpportunity']:.3f} [{graftable}]"
             )
-
-        lines.append("")
-        lines.append("RECOMMENDATIONS:")
-        lines.append("-" * 60)
-        lines.append(f"  1. Graft concepts with target density < {graft_boundary_density:.2f}")
-        lines.append(f"  2. Focus on layers: {null_profile.graftable_layers}")
-        lines.append(f"  3. High-opportunity concepts to graft: {diff.high_opportunity_count}")
 
         write_output("\n".join(lines), context.output_format, context.pretty)
         return

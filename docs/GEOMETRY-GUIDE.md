@@ -126,8 +126,8 @@ How to report:
 
 Key fields:
 - `effectiveSparsity`: Fraction of adapter deltas that are small enough to drop.
-- `recommendedDropRate`: Suggested pruning rate based on distribution analysis.
-- `sparsityDistribution`: Histogram of delta magnitudes.
+- `perLayerSparsity`: Per-layer sparsity and importance metrics.
+- `layerRanking`: Layers sorted by importance.
 
 How to report:
 - "Effective sparsity is 91%. Delta magnitude distribution is heavily left-skewed."
@@ -137,7 +137,7 @@ How to report:
 Key fields:
 - `magnitudeChangeRatio`: Average scale change in weights (0.1 means about 10% change).
 - `directionalDrift`: Average angular change (0 means no rotation).
-- `componentBreakdown`: Per-layer magnitude vs direction contributions.
+- `perLayerDecomposition`: Per-layer magnitude and direction metrics.
 
 How to report:
 - "Magnitude change ratio is 0.18, directional drift is 0.04. Adapter primarily modifies scale."
@@ -220,17 +220,15 @@ Circuit breaker severity is 0.82 (threshold: 0.75). Primary signal: persona drif
   "checkpointPath": "./adapters/adapter.npz",
   "baseModelPath": "./models/base",
   "effectiveSparsity": 0.91,
-  "recommendedDropRate": 0.90,
-  "sparsityDistribution": {
-    "p10": 0.001,
-    "p50": 0.012,
-    "p90": 0.089
-  }
+  "perLayerSparsity": [
+    { "layerName": "layer1", "sparsity": 0.92, "importance": 0.08 }
+  ],
+  "layerRanking": ["layer1"]
 }
 ```
 
 **Human summary:**
-Effective sparsity is 91%. Delta magnitudes: p10=0.001, p50=0.012, p90=0.089.
+Effective sparsity is 91%. Layer1 sparsity 0.92 (importance 0.08).
 
 ### Example: mc geometry adapter decomposition (DoRA)
 
@@ -241,15 +239,21 @@ Effective sparsity is 91%. Delta magnitudes: p10=0.001, p50=0.012, p90=0.089.
   "baseModelPath": "./models/base",
   "magnitudeChangeRatio": 0.18,
   "directionalDrift": 0.04,
-  "componentBreakdown": {
-    "attention": {"magnitude": 0.15, "direction": 0.03},
-    "mlp": {"magnitude": 0.21, "direction": 0.05}
-  }
+  "magnitudeToDirectionRatio": 1.2,
+  "perLayerDecomposition": [
+    {
+      "layerName": "layer1",
+      "magnitudeChange": 0.15,
+      "directionalDrift": 0.03,
+      "magnitudeRatio": 1.1,
+      "directionCosine": 0.92
+    }
+  ]
 }
 ```
 
 **Human summary:**
-Magnitude change ratio is 0.18, directional drift is 0.04. MLP layers show higher change (0.21 magnitude).
+Magnitude change ratio is 0.18, directional drift is 0.04. Layer1 magnitude change is 0.15 with direction cosine 0.92.
 
 ## Glossary (short)
 

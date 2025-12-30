@@ -217,13 +217,13 @@ class GeometrySparseService:
             "sparseLayers": result.sparse_layers,
             "skipLayers": result.skip_layers,
             "layerSparsity": {str(k): v for k, v in result.layer_sparsity.items()},
-            "recommendation": {
+            "loraConfig": {
                 "overallRank": result.recommendation.overall_rank,
                 "alpha": result.recommendation.alpha,
                 "targetModules": result.recommendation.target_modules,
-                "quality": result.recommendation.quality.value,
-                "estimatedPreservation": result.recommendation.estimated_preservation,
-                "rationale": result.recommendation.rationale,
+                "rankByLayer": result.recommendation.rank_by_layer,
+                "skipLayers": result.recommendation.skip_layers,
+                "sparseRatio": result.recommendation.sparse_ratio,
             },
             "dareAlignment": {
                 "highDroppabilityLayers": result.dare_alignment.high_droppability_layers,

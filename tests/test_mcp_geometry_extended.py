@@ -133,7 +133,6 @@ class TestGromovWassersteinTool:
 
         assert payload["_schema"] == "mc.geometry.gromov_wasserstein.v1"
         assert "distance" in payload
-        assert "nextActions" in payload
 
     def test_gromov_wasserstein_distance_non_negative(self, mcp_env: dict[str, str]) -> None:
         """Gromov-Wasserstein distance must be >= 0."""
@@ -222,7 +221,6 @@ class TestIntrinsicDimensionTool:
 
         assert payload["_schema"] == "mc.geometry.intrinsic_dimension.v1"
         assert "intrinsicDimension" in payload
-        assert "nextActions" in payload
 
     def test_intrinsic_dimension_positive(self, mcp_env: dict[str, str]) -> None:
         """Intrinsic dimension must be > 0."""
@@ -301,7 +299,6 @@ class TestTopologicalFingerprintTool:
         payload = _extract_structured(result)
 
         assert payload["_schema"] == "mc.geometry.topological_fingerprint.v1"
-        assert "nextActions" in payload
 
 
 # =============================================================================
@@ -343,7 +340,6 @@ class TestManifoldClusterTool:
         payload = _extract_structured(result)
 
         assert payload["_schema"] == "mc.geometry.manifold_cluster.v1"
-        assert "nextActions" in payload
 
 
 # =============================================================================
@@ -377,7 +373,6 @@ class TestManifoldDimensionTool:
         payload = _extract_structured(result)
 
         assert payload["_schema"] == "mc.geometry.manifold_dimension.v1"
-        assert "nextActions" in payload
 
     def test_manifold_dimension_positive(self, mcp_env: dict[str, str]) -> None:
         """Manifold dimension must be > 0."""
@@ -436,7 +431,6 @@ class TestManifoldQueryTool:
         payload = _extract_structured(result)
 
         assert payload["_schema"] == "mc.geometry.manifold_query.v1"
-        assert "nextActions" in payload
 
 
 # =============================================================================
@@ -460,7 +454,6 @@ class TestSparseDomainsTool:
 
         assert payload["_schema"] == "mc.geometry.sparse_domains.v1"
         assert "domains" in payload
-        assert "nextActions" in payload
 
     def test_sparse_domains_with_category(self, mcp_env: dict[str, str]) -> None:
         """Tool should filter by category."""
@@ -500,7 +493,6 @@ class TestRefusalPairsTool:
 
         assert payload["_schema"] == "mc.geometry.refusal_pairs.v1"
         assert "pairs" in payload
-        assert "nextActions" in payload
 
     def test_refusal_pairs_non_empty(self, mcp_env: dict[str, str]) -> None:
         """Tool should return at least some prompt pairs."""
@@ -554,7 +546,6 @@ class TestRefusalDetectTool:
         payload = _extract_structured(result)
 
         assert payload["_schema"] == "mc.geometry.refusal_detect.v1"
-        assert "nextActions" in payload
 
 
 # =============================================================================
@@ -578,7 +569,6 @@ class TestPersonaTraitsTool:
 
         assert payload["_schema"] == "mc.geometry.persona_traits.v1"
         assert "traits" in payload
-        assert "nextActions" in payload
 
 
 # =============================================================================
@@ -619,7 +609,6 @@ class TestPersonaExtractTool:
         payload = _extract_structured(result)
 
         assert payload["_schema"] == "mc.geometry.persona_extract.v1"
-        assert "nextActions" in payload
 
 
 # =============================================================================
@@ -653,7 +642,6 @@ class TestPersonaDriftTool:
         payload = _extract_structured(result)
 
         assert payload["_schema"] == "mc.geometry.persona_drift.v1"
-        assert "nextActions" in payload
 
 
 # =============================================================================

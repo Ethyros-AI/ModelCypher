@@ -3,7 +3,7 @@
 > **Status**: Reference
 > **Domain**: Training Dynamics
 
-This document outlines the geometric interpretation of training parameters, specifically focusing on Low-Rank Adaptation (LoRA) as a geometric constraint.
+This document outlines the geometric framing of training parameters, specifically focusing on Low-Rank Adaptation (LoRA) as a geometric constraint.
 
 ## The LoRA Geometry
 

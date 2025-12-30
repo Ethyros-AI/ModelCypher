@@ -616,16 +616,6 @@ def null_space_filter(
             graft_marker = " [GRAFTABLE]" if layer_idx in profile.graftable_layers else ""
             lines.append(f"  Layer {layer_idx}: {lp.null_fraction:.1%} null{graft_marker}")
 
-        lines.extend(
-            [
-                "",
-                "Interpretation:",
-                f"  {len(profile.graftable_layers)} layers have ≥10% null space",
-                "  available for interference-free knowledge grafting.",
-                "",
-            ]
-        )
-
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -643,7 +633,7 @@ def safety_polytope_check(
         ..., "--baseline-file", help="JSON file with layer diagnostics for bound derivation"
     ),
     base_alpha: float | None = typer.Option(
-        None, "--base-alpha", help="Base merge alpha used for recommendations"
+        None, "--base-alpha", help="Base merge alpha used for context"
     ),
 ) -> None:
     """
@@ -733,7 +723,7 @@ def safety_polytope_check(
             for trigger in result.triggers
         ],
         "transformations": [t.value for t in result.transformations],
-        "recommendedAlpha": result.recommended_alpha,
+        "derivedAlpha": result.recommended_alpha,
         "confidence": result.confidence,
         "transformationEffort": result.transformation_effort,
     }
@@ -754,7 +744,7 @@ def safety_polytope_check(
             f"Confidence: {result.confidence:.1%}",
         ]
         if result.recommended_alpha is not None:
-            lines.append(f"Recommended Alpha: {result.recommended_alpha:.3f}")
+            lines.append(f"Derived Alpha: {result.recommended_alpha:.3f}")
 
         if result.triggers:
             lines.extend(

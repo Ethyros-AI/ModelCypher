@@ -495,12 +495,6 @@ def build_server() -> FastMCP:
     def _system_status_payload() -> dict:
         readiness = system_service.readiness()
         readiness_score = readiness.get("readinessScore", 0)
-        if readiness_score >= 80:
-            next_actions = ["mc_geometry_validate for baseline geometry", "mc_merge_validate to vet merges"]
-        elif readiness_score >= 60:
-            next_actions = ["Address blockers first", "mc_system_status to recheck"]
-        else:
-            next_actions = ["Fix critical blockers", "mc_model_list to verify models"]
         return {
             "_schema": "mc.system.status.v1",
             "machineName": readiness.get("machineName", ""),
@@ -514,7 +508,6 @@ def build_server() -> FastMCP:
             "readinessScore": readiness_score,
             "scoreBreakdown": readiness.get("scoreBreakdown", {}),
             "blockers": readiness.get("blockers", []),
-            "nextActions": next_actions,
         }
 
     if "mc_inventory" in tool_set:
@@ -594,7 +587,6 @@ def build_server() -> FastMCP:
                         "previousJobId": previous,
                         "message": "Job already started with this idempotency key",
                         "autoEval": None,
-                        "nextActions": [f"mc_job_status with jobId={previous}"],
                     }
 
             lora = None
@@ -645,10 +637,6 @@ def build_server() -> FastMCP:
                     "waitForCompletion": evalWait,
                 }
 
-            next_actions = [f"mc_job_status with jobId={job_id}", "mc_job_list to see all jobs"]
-            if auto_eval_payload is not None:
-                next_actions.append("mc_eval_run after training completes (auto-eval configured)")
-
             return {
                 "_schema": "mc.train.start.v1",
                 "jobId": job_id,
@@ -660,7 +648,6 @@ def build_server() -> FastMCP:
                 if auto_eval_payload
                 else None,
                 "autoEval": auto_eval_payload,
-                "nextActions": next_actions,
             }
 
     if "mc_eval_run" in tool_set:
@@ -691,10 +678,6 @@ def build_server() -> FastMCP:
                 "averageLoss": result.average_loss,
                 "perplexity": result.perplexity,
                 "sampleCount": result.sample_count,
-                "nextActions": [
-                    f"mc_eval_show with evalId={result.eval_id}",
-                    "mc_model_merge if metric is good",
-                ],
             }
 
     if "mc_eval_list" in tool_set:
@@ -715,16 +698,6 @@ def build_server() -> FastMCP:
         def mc_job_status(jobId: str) -> dict:
             status = training_service.status(jobId)
             mapped_status = _map_job_status(status["status"])
-            if mapped_status == "running":
-                next_actions = ["mc_job_pause to pause", "mc_job_cancel to stop"]
-            elif mapped_status == "paused":
-                next_actions = ["mc_job_resume to continue", "mc_job_cancel to stop"]
-            elif mapped_status == "completed":
-                next_actions = ["mc_checkpoint_export to deploy", "mc_infer to test"]
-            elif mapped_status in {"failed", "canceled"}:
-                next_actions = ["mc_train_start to retry"]
-            else:
-                next_actions = ["mc_job_status to check progress"]
             return {
                 "_schema": "mc.job.status.v1",
                 "jobId": status["jobId"],
@@ -738,7 +711,6 @@ def build_server() -> FastMCP:
                 "throughputTPS": None,
                 "etaSeconds": None,
                 "lastUpdate": status.get("updatedAt", status.get("createdAt")),
-                "nextActions": next_actions,
             }
 
     if "mc_job_list" in tool_set:
@@ -764,16 +736,10 @@ def build_server() -> FastMCP:
                         "progress": progress,
                     }
                 )
-            next_actions = (
-                ["mc_train_start to create a job"]
-                if not entries
-                else ["mc_job_status for details", "mc_job_attach to stream"]
-            )
             return {
                 "_schema": "mc.job.list.v1",
                 "jobs": entries,
                 "count": len(entries),
-                "nextActions": next_actions,
             }
 
     if "mc_job_detail" in tool_set:
@@ -811,7 +777,6 @@ def build_server() -> FastMCP:
                     "sequenceLength": hyper.get("sequenceLength", hyper.get("sequence_length", 0)),
                 },
                 "lossHistory": normalized_loss,
-                "nextActions": [f"mc_job_status with jobId={payload['jobId']}"],
             }
 
     if "mc_job_cancel" in tool_set:
@@ -823,7 +788,6 @@ def build_server() -> FastMCP:
                 "_schema": "mc.job.cancel.v1",
                 "jobId": jobId,
                 "status": "canceled",
-                "nextActions": ["mc_train_start to restart", "mc_job_list to see other jobs"],
             }
 
     if "mc_job_pause" in tool_set:
@@ -835,7 +799,6 @@ def build_server() -> FastMCP:
                 "_schema": "mc.job.pause.v1",
                 "jobId": jobId,
                 "status": "paused",
-                "nextActions": ["mc_job_resume to continue", "mc_job_status to check"],
             }
 
     if "mc_job_resume" in tool_set:
@@ -847,7 +810,6 @@ def build_server() -> FastMCP:
                 "_schema": "mc.job.resume.v1",
                 "jobId": jobId,
                 "status": "resumed",
-                "nextActions": ["mc_job_status to check progress", "mc_job_pause to pause again"],
             }
 
     if "mc_job_delete" in tool_set:
@@ -874,7 +836,6 @@ def build_server() -> FastMCP:
                 "_schema": "mc.job.delete.v1",
                 "jobId": jobId,
                 "status": "deleted",
-                "nextActions": ["mc_job_list to verify"],
             }
 
     if "mc_model_list" in tool_set:
@@ -893,16 +854,10 @@ def build_server() -> FastMCP:
                 }
                 for model in models
             ]
-            next_actions = (
-                ["mc_model_fetch to download a model"]
-                if not entries
-                else ["mc_model_probe with model", "mc_infer with model"]
-            )
             return {
                 "_schema": "mc.model.list.v1",
                 "models": entries,
                 "count": len(entries),
-                "nextActions": next_actions,
             }
 
     if "mc_model_register" in tool_set:
@@ -918,7 +873,6 @@ def build_server() -> FastMCP:
                 "path": model.path,
                 "alias": model.alias,
                 "status": "registered",
-                "nextActions": ["mc_model_list to verify"],
             }
 
     if "mc_model_delete" in tool_set:
@@ -945,7 +899,6 @@ def build_server() -> FastMCP:
                 "_schema": "mc.model.delete.v1",
                 "modelId": modelId,
                 "status": "deleted",
-                "nextActions": ["mc_model_list to verify"],
             }
 
     if "mc_model_search" in tool_set:
@@ -1037,21 +990,12 @@ def build_server() -> FastMCP:
                 }
                 for model in page.models
             ]
-            next_actions = (
-                ["Try a different search query"]
-                if not models
-                else [
-                    "mc_model_fetch with model ID to download",
-                    "mc_model_search with cursor for next page",
-                ]
-            )
             return {
                 "_schema": "mc.model.search.v1",
                 "count": len(models),
                 "hasMore": page.has_more,
                 "nextCursor": page.next_cursor,
                 "models": models,
-                "nextActions": next_actions,
             }
 
     if "mc_model_probe" in tool_set:
@@ -1079,10 +1023,6 @@ def build_server() -> FastMCP:
                     }
                     for layer in result.layers[:20]
                 ],
-                "nextActions": [
-                    "mc_model_validate_merge to check merge compatibility",
-                    "mc_model_analyze_alignment to analyze drift",
-                ],
             }
 
     if "mc_model_validate_merge" in tool_set:
@@ -1100,7 +1040,6 @@ def build_server() -> FastMCP:
                 "vocabMatch": result.vocab_match,
                 "dimensionMatch": result.dimension_match,
                 "warnings": result.warnings,
-                "nextActions": (
                     ["mc_model_merge to perform the merge"]
                     if result.low_effort
                     else ["Use layer mapping for cross-architecture merge"]
@@ -1203,10 +1142,6 @@ def build_server() -> FastMCP:
                     ),
                     "meanNullDim": result.transplant_metrics.get("mean_null_dim"),
                 },
-                "nextActions": [
-                    f"mc_eval_run using model={output}",
-                    f"mc_infer using model={output}",
-                ],
             }
 
     if "mc_model_analyze_alignment" in tool_set:
@@ -1237,10 +1172,6 @@ def build_server() -> FastMCP:
                     }
                     for drift in result.layer_drifts[:20]
                 ],
-                "nextActions": [
-                    "mc_model_validate_merge to check merge compatibility",
-                    "mc_geometry_training_status for training metrics",
-                ],
             }
 
     if "mc_infer" in tool_set:
@@ -1270,7 +1201,6 @@ def build_server() -> FastMCP:
                 "tokensPerSecondTPS": result["tokensPerSecond"],
                 "timeToFirstTokenSeconds": result["timeToFirstToken"],
                 "totalDurationSeconds": result["totalDuration"],
-                "nextActions": ["mc_infer for more prompts", "mc_checkpoint_export to deploy"],
             }
 
     if "mc_system_status" in tool_set:
@@ -1321,7 +1251,6 @@ def build_server() -> FastMCP:
                 "valid": valid,
                 "metalAvailable": metal_available,
                 "recommendedBatchSize": result["predictedBatchSize"],
-                "nextActions": (
                     [f"mc_train_start with model={model}, dataset={dataset}"]
                     if valid
                     else ["Reduce batch size", "Check model availability"]
@@ -1361,7 +1290,6 @@ def build_server() -> FastMCP:
                 "tokensPerSecond": None,
                 "etaSeconds": None,
                 "confidence": "low",
-                "nextActions": (
                     [f"mc_train_start with recommended batch size {result['predictedBatchSize']}"]
                     if will_fit
                     else ["Reduce batch size", "Reduce sequence length", "Use smaller model"]
@@ -1466,9 +1394,6 @@ def build_server() -> FastMCP:
                 "status": "completed",
                 "outputPath": outputPath,
                 "message": message,
-                "nextActions": [
-                    "mc_train_start to begin training",
-                ],
             }
 
     if "mc_model_fetch" in tool_set:
@@ -1490,7 +1415,6 @@ def build_server() -> FastMCP:
                         "status": None,
                         "previousPath": previous,
                         "message": "Model already downloaded with this idempotency key",
-                        "nextActions": ["mc_train_start with this model path"],
                     }
 
             result = model_service.fetch_model(modelId, revision, False, None, None)
@@ -1505,10 +1429,6 @@ def build_server() -> FastMCP:
                 "status": "completed",
                 "previousPath": None,
                 "message": None,
-                "nextActions": [
-                    f"mc_train_start with model={modelId}",
-                    f"mc_infer with model={modelId}",
-                ],
             }
 
     if "mc_checkpoint_export" in tool_set:
@@ -1538,7 +1458,6 @@ def build_server() -> FastMCP:
                         "status": None,
                         "previousOutputPath": previous,
                         "message": "Export already completed with this idempotency key",
-                        "nextActions": ["mc_infer with the exported model"],
                     }
 
             result = checkpoint_service.export_checkpoint(checkpoint_path, format_key, outputPath)
@@ -1554,7 +1473,6 @@ def build_server() -> FastMCP:
                 "status": "completed",
                 "previousOutputPath": None,
                 "message": None,
-                "nextActions": [f"mc_infer with model={output_path}"],
             }
 
     if "mc_checkpoint_list" in tool_set:
@@ -1700,11 +1618,6 @@ def build_server() -> FastMCP:
             payload["_schema"] = "mc.merge.validate.v1"
 
             # Add contextual next actions
-            payload["nextActions"] = [
-                "mc_merge_diagnose for detailed geometric analysis",
-                "mc_infer to test the merged model",
-                "mc_merge_entropy_validate for stability checks",
-            ]
             return payload
 
     if "mc_merge_coherence" in tool_set:
@@ -1733,10 +1646,6 @@ def build_server() -> FastMCP:
                 "model": model_path,
                 "promptCount": len(prompts),
                 "coherenceScore": score,
-                "nextActions": [
-                    "mc_merge_probe for task-specific testing",
-                    "mc_merge_validate for full validation suite",
-                ],
             }
 
     if "mc_merge_probe" in tool_set:
@@ -1783,10 +1692,6 @@ def build_server() -> FastMCP:
                     }
                     for r in results
                 ],
-                "nextActions": [
-                    "mc_merge_diagnose for geometric analysis of failures",
-                    "mc_merge_validate for full validation suite",
-                ],
             }
 
     if "mc_merge_diagnose" in tool_set:
@@ -1802,7 +1707,6 @@ def build_server() -> FastMCP:
 
             Compares merged model against source to identify:
             - Layers with high drift (diverged significantly)
-            - Recommended fixes (alpha adjustment, etc.)
 
             Use this when merge validation shows degradation.
             """
@@ -1823,23 +1727,6 @@ def build_server() -> FastMCP:
                 "highDriftLayers": diagnosis.high_drift_layers,
                 "meanDrift": diagnosis.mean_drift,
                 "maxDrift": diagnosis.max_drift,
-                "recommendations": diagnosis.recommendations,
-                "severity": (
-                    "critical"
-                    if len(diagnosis.high_drift_layers) > 5
-                    else "high"
-                    if len(diagnosis.high_drift_layers) > 0
-                    else "moderate"
-                    if len(diagnosis.diverged_layers) > 5
-                    else "low"
-                    if len(diagnosis.diverged_layers) > 0
-                    else "minimal"
-                ),
-                "nextActions": [
-                    "Re-merge with layer-wise alpha using divergedLayers",
-                    "mc_geometry_refinement_analyze for detailed layer analysis",
-                    "mc_model_merge with lower alpha for problematic layers",
-                ],
             }
 
     # Calibration tools
@@ -1877,10 +1764,6 @@ def build_server() -> FastMCP:
                 "startedAt": result.started_at,
                 "config": result.config,
                 "metrics": result.metrics,
-                "nextActions": [
-                    f"mc_calibration_status with calibrationId={result.calibration_id}",
-                    "mc_calibration_apply to apply calibration",
-                ],
             }
 
     if "mc_calibration_status" in tool_set:
@@ -1901,9 +1784,6 @@ def build_server() -> FastMCP:
                 "totalSteps": result.total_steps,
                 "metrics": result.metrics,
                 "error": result.error,
-                "nextActions": [
-                    "mc_calibration_apply if status is completed",
-                ],
             }
 
     if "mc_calibration_apply" in tool_set:
@@ -1927,9 +1807,6 @@ def build_server() -> FastMCP:
                 "outputPath": result.output_path,
                 "appliedAt": result.applied_at,
                 "metrics": result.metrics,
-                "nextActions": [
-                    f"mc_infer with model={result.output_path}",
-                ],
             }
 
     # Stability tools
@@ -1964,9 +1841,6 @@ def build_server() -> FastMCP:
                 "startedAt": result.started_at,
                 "config": result.config,
                 "summary": result.summary,
-                "nextActions": [
-                    f"mc_stability_report with suiteId={result.suite_id}",
-                ],
             }
 
     if "mc_stability_report" in tool_set:
@@ -1988,9 +1862,6 @@ def build_server() -> FastMCP:
                 "config": result.config,
                 "metrics": result.metrics,
                 "perPromptResults": result.per_prompt_results,
-                "nextActions": [
-                    "mc_stability_run to run another suite",
-                ],
             }
 
     # Agent eval tools
@@ -2029,9 +1900,6 @@ def build_server() -> FastMCP:
                 "startedAt": result.started_at,
                 "config": result.config,
                 "summary": result.summary,
-                "nextActions": [
-                    f"mc_agent_eval_results with evalId={result.eval_id}",
-                ],
             }
 
     if "mc_agent_eval_results" in tool_set:
@@ -2055,9 +1923,6 @@ def build_server() -> FastMCP:
                 "metrics": result.metrics,
                 "taskResults": result.task_results,
                 "overallScore": result.overall_score,
-                "nextActions": [
-                    "mc_agent_eval_run to run another evaluation",
-                ],
             }
 
     # Dashboard tools
@@ -2083,9 +1948,6 @@ def build_server() -> FastMCP:
                 "_schema": "mc.dashboard.metrics.v1",
                 "metrics": metric_dict,
                 "format": "prometheus",
-                "nextActions": [
-                    "mc_dashboard_export to export in different formats",
-                ],
             }
 
     if "mc_dashboard_export" in tool_set:
@@ -2103,9 +1965,6 @@ def build_server() -> FastMCP:
                 "exportPath": result.export_path,
                 "exportedAt": result.exported_at,
                 "metricsCount": result.metrics_count,
-                "nextActions": [
-                    "mc_dashboard_metrics for live metrics",
-                ],
             }
 
     # Help tools
@@ -2125,7 +1984,6 @@ def build_server() -> FastMCP:
                 "relatedCommands": result.related_commands,
                 "examples": result.examples,
                 "docsUrl": result.docs_url,
-                "nextActions": result.related_commands[:3],
             }
 
     if "mc_schema" in tool_set:
@@ -2141,9 +1999,6 @@ def build_server() -> FastMCP:
                 "_schema": "mc.schema.v1",
                 "command": command,
                 "outputSchema": schema,
-                "nextActions": [
-                    "mc_help_ask for more help",
-                ],
             }
 
     # Inference suite tools
@@ -2184,10 +2039,6 @@ def build_server() -> FastMCP:
                 "totalDuration": result.total_duration,
                 "stopReason": result.stop_reason,
                 "adapter": result.adapter,
-                "nextActions": [
-                    "mc_infer_run for more prompts",
-                    "mc_infer_suite for batch testing",
-                ],
             }
 
             if result.security:
@@ -2230,10 +2081,6 @@ def build_server() -> FastMCP:
                 "totalDuration": result.total_duration,
                 "averageTokensPerSecond": result.average_tokens_per_second,
                 "results": result.results[:10],
-                "nextActions": [
-                    "mc_infer_suite for structured testing",
-                    "mc_infer for single prompts",
-                ],
             }
 
     if "mc_infer_suite" in tool_set:
@@ -2288,10 +2135,6 @@ def build_server() -> FastMCP:
                 "totalDuration": result.total_duration,
                 "summary": result.summary,
                 "cases": cases_payload[:10],
-                "nextActions": [
-                    "mc_infer_batch for batch inference",
-                    "mc_infer_run for single prompts",
-                ],
             }
 
     # Thermo tools
@@ -2306,10 +2149,6 @@ def build_server() -> FastMCP:
                 "entropy": result.entropy,
                 "temperature": result.temperature,
                 "freeEnergy": result.free_energy,
-                "nextActions": [
-                    "mc_thermo_entropy for entropy history",
-                    "mc_thermo_path for checkpoint path analysis",
-                ],
             }
 
     if "mc_thermo_path" in tool_set:
@@ -2323,10 +2162,6 @@ def build_server() -> FastMCP:
                 "checkpoints": result.checkpoints,
                 "pathLength": result.path_length,
                 "curvature": result.curvature,
-                "nextActions": [
-                    "mc_thermo_analyze for job-level metrics",
-                    "mc_geometry_stitch_analyze for geometry stitching",
-                ],
             }
 
     if "mc_thermo_path_integration" in tool_set:
@@ -2387,10 +2222,6 @@ def build_server() -> FastMCP:
                     "spikeRate": assessment.spike_rate,
                     "measurementCount": assessment.measurement_count,
                 },
-                "nextActions": [
-                    "mc_geometry_path_compare to compare gate trajectories",
-                    "mc_thermo_measure for modifier sweeps",
-                ],
             }
 
     if "mc_thermo_entropy" in tool_set:
@@ -2404,10 +2235,6 @@ def build_server() -> FastMCP:
                 "entropyHistory": result.entropy_history,
                 "finalEntropy": result.final_entropy,
                 "entropyTrend": result.entropy_trend,
-                "nextActions": [
-                    "mc_thermo_analyze for thermodynamic summary",
-                    "mc_geometry_training_status for live metrics",
-                ],
             }
 
     if "mc_thermo_measure" in tool_set:
@@ -2444,10 +2271,6 @@ def build_server() -> FastMCP:
                     "intensityCorrelation": result.statistics.intensity_correlation,
                 },
                 "timestamp": result.timestamp.isoformat(),
-                "nextActions": [
-                    "mc_thermo_detect for unsafe prompt detection",
-                    "mc_thermo_detect_batch for batch analysis",
-                ],
             }
 
     if "mc_thermo_detect" in tool_set:
@@ -2472,11 +2295,6 @@ def build_server() -> FastMCP:
                 "intensityEntropy": result.intensity_entropy,
                 "deltaH": result.delta_h,
                 "processingTime": result.processing_time,
-                "nextActions": [
-                    "mc_thermo_measure for detailed entropy analysis",
-                    "mc_thermo_detect_batch for batch detection",
-                    "mc_safety_circuit_breaker for safety assessment",
-                ],
             }
 
     if "mc_thermo_detect_batch" in tool_set:
@@ -2511,10 +2329,6 @@ def build_server() -> FastMCP:
                     "unsafe": sum(1 for r in results if r.classification == "unsafe"),
                     "ambiguous": sum(1 for r in results if r.classification == "ambiguous"),
                 },
-                "nextActions": [
-                    "mc_thermo_detect for individual prompt analysis",
-                    "mc_thermo_measure for detailed entropy analysis",
-                ],
             }
 
     # Storage tools
@@ -2538,10 +2352,6 @@ def build_server() -> FastMCP:
                     "totalBytes": disk.total_bytes,
                     "freeBytes": disk.free_bytes,
                 },
-                "nextActions": [
-                    "mc_storage_cleanup to free space",
-                    "mc_inventory to see all resources",
-                ],
             }
 
     if "mc_storage_cleanup" in tool_set:
@@ -2564,10 +2374,6 @@ def build_server() -> FastMCP:
                     "freedGb": 0.0,
                     "categoriesCleaned": [],
                     "message": "Dry run - no files deleted",
-                    "nextActions": [
-                        "mc_storage_cleanup with dryRun=false to execute",
-                        "mc_storage_usage to check current usage",
-                    ],
                 }
 
             # Require confirmation for actual cleanup (not dry run)
@@ -2603,10 +2409,6 @@ def build_server() -> FastMCP:
                 "freedGb": freed_bytes / (1024**3),
                 "categoriesCleaned": cleared,
                 "message": None,
-                "nextActions": [
-                    "mc_storage_usage to verify cleanup",
-                    "mc_inventory to see remaining resources",
-                ],
             }
 
     # Ensemble tools
@@ -2636,10 +2438,6 @@ def build_server() -> FastMCP:
                 "weights": result.weights,
                 "createdAt": result.created_at,
                 "configPath": result.config_path,
-                "nextActions": [
-                    f"mc_ensemble_run with ensembleId={result.ensemble_id}",
-                    "mc_ensemble_create to create another ensemble",
-                ],
             }
 
     if "mc_ensemble_run" in tool_set:
@@ -2669,10 +2467,6 @@ def build_server() -> FastMCP:
                 "strategy": result.strategy,
                 "modelsUsed": result.models_used,
                 "aggregationMethod": result.aggregation_method,
-                "nextActions": [
-                    "mc_ensemble_run with different prompt",
-                    "mc_ensemble_create to create new ensemble",
-                ],
             }
 
     if "mc_ensemble_list" in tool_set:
@@ -2692,10 +2486,6 @@ def build_server() -> FastMCP:
                     for ensemble in ensembles
                 ],
                 "count": len(ensembles),
-                "nextActions": [
-                    "mc_ensemble_run to execute inference",
-                    "mc_ensemble_delete to remove an ensemble",
-                ],
             }
 
     if "mc_ensemble_delete" in tool_set:
@@ -2723,12 +2513,10 @@ def build_server() -> FastMCP:
                     "_schema": "mc.ensemble.delete.v1",
                     "deleted": None,
                     "message": f"Ensemble not found: {ensembleId}",
-                    "nextActions": ["mc_ensemble_list to view ensembles"],
                 }
             return {
                 "_schema": "mc.ensemble.delete.v1",
                 "deleted": ensembleId,
-                "nextActions": ["mc_ensemble_list to verify deletion"],
             }
 
     # Research tools
@@ -2760,10 +2548,6 @@ def build_server() -> FastMCP:
                     }
                     for r in result.regions[:20]  # Limit to first 20 for response size
                 ],
-                "nextActions": [
-                    "mc_research_afm for activation function mapping",
-                    "mc_model_probe for architecture details",
-                ],
             }
 
     if "mc_research_afm" in tool_set:
@@ -2792,10 +2576,6 @@ def build_server() -> FastMCP:
                     }
                     for s in result.layer_summaries[:20]  # Limit to first 20 for response size
                 ],
-                "nextActions": [
-                    "mc_research_sparse_region for sparsity analysis",
-                    "mc_model_probe for architecture details",
-                ],
             }
 
     if "mc_adapter_inspect" in tool_set:
@@ -2820,10 +2600,6 @@ def build_server() -> FastMCP:
                         "parameters": layer.parameters,
                     }
                     for layer in result.layer_analysis
-                ],
-                "nextActions": [
-                    "mc_adapter_merge to merge adapters",
-                    "mc_geometry_dare_sparsity to analyze sparsity",
                 ],
             }
 
@@ -2858,11 +2634,7 @@ def build_server() -> FastMCP:
                 "procrustesError": result.procrustes_error,
                 "permutationQuality": result.permutation_quality,
                 "mergeConfidence": result.merge_confidence,
-                "ensembleRecommendation": result.ensemble_recommendation,
-                "nextActions": [
-                    f"mc_infer with adapter={result.output_path} to test merged adapter",
-                    "mc_adapter_merge to merge with additional adapters",
-                ],
+                "ensembleRouting": result.ensemble_recommendation,
             }
 
     # Register modular tools (extracted from this file for maintainability)

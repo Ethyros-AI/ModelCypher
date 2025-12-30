@@ -188,7 +188,7 @@ def adapter_merge(
     adapter_paths: list[str] = typer.Argument(..., help="Paths to adapters to merge (at least 2)"),
     output_dir: str = typer.Option(..., "--output-dir", help="Output directory for merged adapter"),
     recommend_ensemble: bool = typer.Option(
-        False, "--recommend-ensemble", help="Compute ensemble routing recommendation"
+        False, "--recommend-ensemble", help="Compute ensemble routing weights"
     ),
 ) -> None:
     """Merge multiple LoRA adapters using geometric alignment.
@@ -227,7 +227,7 @@ def adapter_merge(
         "procrustesError": result.procrustes_error,
         "permutationQuality": result.permutation_quality,
         "mergeConfidence": result.merge_confidence,
-        "ensembleRecommendation": result.ensemble_recommendation,
+        "ensembleRouting": result.ensemble_recommendation,
     }
 
     if context.output_format == "text":

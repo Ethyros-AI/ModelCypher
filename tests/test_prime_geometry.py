@@ -522,16 +522,6 @@ class TestStatisticalTesting:
         # Very separated, should be large effect
         assert abs(effect.d) > 2.0
 
-    def test_cohens_d_magnitude(self):
-        """Cohen's d magnitude should match d value."""
-        # Small effect
-        small = compute_cohens_d([1, 2, 3, 4, 5], [1.2, 2.2, 3.2, 4.2, 5.2])
-        assert small.magnitude in ("negligible", "small")
-
-        # Large effect
-        large = compute_cohens_d([1, 2, 3, 4, 5], [10, 11, 12, 13, 14])
-        assert large.magnitude == "large"
-
     def test_permutation_test_significant_for_different(self, backend):
         """Permutation test should give low p-value for different distributions."""
         values1 = [1.0, 1.1, 1.2, 0.9, 1.0] * 10
@@ -798,7 +788,7 @@ class TestPrimeGeometryProperties:
     )
     @settings(max_examples=10, deadline=None)
     def test_cohens_d_symmetric(self, values1, values2):
-        """Cohen's d should be symmetric (magnitude)."""
+        """Cohen's d should be symmetric."""
         assume(len(values1) >= 2 and len(values2) >= 2)
         assume(not all(v == values1[0] for v in values1))  # Need variation
         assume(not all(v == values2[0] for v in values2))  # Need variation
@@ -864,22 +854,13 @@ class TestDataclasses:
 
     def test_effect_size_creation(self):
         """EffectSize should be creatable."""
-        effect = EffectSize(d=0.5, magnitude="medium")
-        assert effect.magnitude == "medium"
+        effect = EffectSize(d=0.5)
+        assert effect.d == 0.5
 
     def test_effect_size_from_cohens_d(self):
-        """EffectSize.from_cohens_d should compute magnitude."""
-        # Small d
-        small = EffectSize.from_cohens_d(0.3)
-        assert small.magnitude == "small"
-
-        # Medium d
-        medium = EffectSize.from_cohens_d(0.6)
-        assert medium.magnitude == "medium"
-
-        # Large d
-        large = EffectSize.from_cohens_d(1.0)
-        assert large.magnitude == "large"
+        """EffectSize.from_cohens_d should preserve d."""
+        effect = EffectSize.from_cohens_d(0.6)
+        assert effect.d == 0.6
 
     def test_hypothesis_test_creation(self):
         """HypothesisTest should be creatable."""
@@ -888,7 +869,7 @@ class TestDataclasses:
             description="Test spectral concentration",
             passed=True,
             p_value=0.01,
-            effect_size=EffectSize(d=0.8, magnitude="large"),
+            effect_size=EffectSize(d=0.8),
             prime_value=2.0,
             baseline_value=5.0,
         )

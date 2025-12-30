@@ -155,7 +155,8 @@ def test_entropy_verify_baseline():
     )
     assert result.exit_code == 0
     data = json.loads(result.stdout)
-    assert "passed" in data or "verdict" in data
+    assert "comparison" in data
+    assert "observedBaseline" in data
 
 
 def test_entropy_window_basic():

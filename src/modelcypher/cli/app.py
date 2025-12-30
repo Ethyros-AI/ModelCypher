@@ -318,7 +318,6 @@ def validate_train(
         },
         "warnings": [],
         "errors": [] if result["canProceed"] else ["Configuration may not fit in memory"],
-        "nextActions": [f"mc train start --model {model} --dataset {dataset}"],
     }
     write_output(payload, context.output_format, context.pretty)
 
@@ -593,9 +592,6 @@ def estimate_train(
         "thermalState": "unknown",
         "etaSeconds": None,
         "notes": [f"dtype={dtype}"],
-        "nextActions": [
-            f"mc train start --model {model} --dataset {dataset} --batch-size {batch_size}"
-        ],
     }
     write_output(payload, context.output_format, context.pretty)
 

@@ -106,10 +106,6 @@ def geometry_transport_merge(
     payload = {
         "mergedShape": [len(merged), len(merged[0]) if merged else 0],
         "outputFile": str(output) if output else None,
-        "nextActions": [
-            "mc geometry gromov-wasserstein to compute transport plan",
-            "mc model merge for full model merging",
-        ],
     }
 
     if context.output_format == "text":
@@ -192,10 +188,6 @@ def geometry_transport_synthesize(
 
     payload = service.merge_result_payload(result)
     payload["outputFile"] = str(output) if output else None
-    payload["nextActions"] = [
-        "mc geometry intrinsic-dimension to analyze merged space",
-        "mc model merge for full model merging",
-    ]
 
     if context.output_format == "text":
         lines = [

@@ -239,10 +239,6 @@ def social_probe_model(
             "Power Axis:",
             f"  Detected: {'YES' if report.power_gradient.power_axis_detected else 'NO'}",
             f"  Status Correlation: {report.power_gradient.status_correlation:.2f}",
-            "",
-            "=" * 60,
-            payload["verdict"],
-            "=" * 60,
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return

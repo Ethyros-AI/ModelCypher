@@ -336,10 +336,6 @@ def spatial_gravity(
     payload = {
         "_schema": "mc.geometry.spatial.gravity.v1",
         **result.to_dict(),
-        "nextActions": [
-            "mc geometry spatial euclidean <file> to verify Euclidean structure",
-            "mc geometry spatial analyze <model> for full 3D analysis",
-        ],
     }
 
     if context.output_format == "text":

@@ -115,10 +115,6 @@ def geometry_refusal_detect(
         raise typer.Exit(1)
 
     payload = service.refusal_direction_payload(direction)
-    payload["nextActions"] = [
-        "mc geometry refusal pairs to see contrastive prompts",
-        "mc geometry safety circuit-breaker for safety assessment",
-    ]
 
     if context.output_format == "text":
         lines = [

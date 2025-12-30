@@ -118,7 +118,7 @@ Interference prediction integrates with the 4 validated domain geometries:
 The CLI command `mc geometry interference predict` analyzes all domains and provides:
 - Per-domain safety scores
 - Domain-specific critical pairs
-- Aggregate recommendation
+- Aggregate summary
 
 ---
 

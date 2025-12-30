@@ -249,7 +249,7 @@ class RefinementDensityResult:
                     "sparsityContribution": score.sparsity_contribution,
                     "directionalContribution": score.directional_contribution,
                     "transitionContribution": score.transition_contribution,
-                    "recommendedAlpha": score.recommended_alpha,
+                    "alpha": score.recommended_alpha,
                 }
                 for idx, score in self.layer_scores.items()
             },

@@ -26,7 +26,7 @@ to detect distress patterns and trigger appropriate responses.
 
 from __future__ import annotations
 
-import numpy as np
+import math
 import pytest
 
 from modelcypher.core.domain.entropy.conversation_entropy_tracker import (
@@ -90,12 +90,11 @@ class TestEntropyCalculationIntegration:
     def test_entropy_always_non_negative(self, seed: int) -> None:
         """Entropy should always be non-negative."""
         backend = get_default_backend()
-        rng = np.random.default_rng(seed)
         calculator = LogitEntropyCalculator(backend=backend)
 
-        # Convert numpy array to backend array
-        logits_np = rng.standard_normal(20).astype(np.float32)
-        logits = backend.array(logits_np)
+        backend.random_seed(seed)
+        logits = backend.random_normal((20,))
+        backend.eval(logits)
         entropy, variance = calculator.compute(logits)
 
         assert entropy >= 0
@@ -316,14 +315,16 @@ class TestFullEntropyWorkflow:
 
         # Step 1: Probe (simulate logit samples)
         backend = get_default_backend()
-        rng = np.random.default_rng(42)
+        backend.random_seed(42)
 
         for i in range(10):
             # Generate peaked logits (low entropy - one dominant class)
-            logits_np = np.zeros(100, dtype=np.float32)
-            logits_np[i % 10] = 5.0  # One dominant logit per sample
-            logits_np += rng.uniform(-0.1, 0.1, 100).astype(np.float32)  # Small noise
-            logits = backend.array(logits_np)
+            base = [0.0] * 100
+            base[i % 10] = 5.0  # One dominant logit per sample
+            logits = backend.array(base)
+            noise = backend.random_uniform(-0.1, 0.1, (100,))
+            logits = logits + noise
+            backend.eval(logits)
 
             # Step 2: Measure
             entropy, variance = calculator.compute(logits)
@@ -343,11 +344,14 @@ class TestFullEntropyWorkflow:
         LogitEntropyCalculator(backend=get_default_backend())
 
         # Generate and analyze samples
-        rng = np.random.default_rng(42)
+        backend = get_default_backend()
+        backend.random_seed(42)
         phases = []
 
         for _ in range(5):
-            logits_list = rng.standard_normal(50).tolist()
+            logits = backend.random_normal((50,))
+            backend.eval(logits)
+            logits_list = backend.to_numpy(logits).tolist()
 
             # Calculate entropy via phase theory (works with lists)
             entropy = PhaseTransitionTheory.compute_entropy(logits_list, 1.0)
@@ -383,8 +387,8 @@ class TestFullEntropyWorkflow:
         backend = get_default_backend()
         for i in range(10):
             # Uniform logits = high entropy
-            logits_np = np.ones(50, dtype=np.float32)
-            logits = backend.array(logits_np)
+            logits = backend.ones((50,))
+            backend.eval(logits)
 
             entropy, variance = calculator.compute(logits)
             window.add(entropy, variance, i)
@@ -420,7 +424,7 @@ class TestEntropyWorkflowErrorHandling:
         backend = get_default_backend()
         calculator = LogitEntropyCalculator(backend=backend)
 
-        logits = backend.array(np.array([], dtype=np.float32))
+        logits = backend.array([])
 
         # Empty logits cannot have entropy computed - expect ValueError
         with pytest.raises(ValueError):
@@ -431,7 +435,7 @@ class TestEntropyWorkflowErrorHandling:
         backend = get_default_backend()
         calculator = LogitEntropyCalculator(backend=backend)
 
-        logits = backend.array(np.array([1.0], dtype=np.float32))
+        logits = backend.array([1.0])
         entropy, variance = calculator.compute(logits)
 
         # Should return values without crashing
@@ -444,12 +448,12 @@ class TestEntropyWorkflowErrorHandling:
         calculator = LogitEntropyCalculator(backend=backend)
 
         # Very large logits (but not extreme enough to cause overflow)
-        large_logits = backend.array(np.array([100.0, -100.0, 0.0], dtype=np.float32))
+        large_logits = backend.array([100.0, -100.0, 0.0])
         entropy, variance = calculator.compute(large_logits)
 
         # Should not crash, entropy should be finite
         assert isinstance(entropy, float)
-        assert np.isfinite(entropy)
+        assert math.isfinite(entropy)
 
     def test_empty_conversation_handled(self) -> None:
         """Empty conversation should be handled gracefully."""
@@ -484,15 +488,15 @@ class TestEntropyWorkflowInvariants:
     def test_entropy_always_bounded(self, seed: int) -> None:
         """Entropy should always be bounded by log(vocab_size)."""
         backend = get_default_backend()
-        rng = np.random.default_rng(seed)
         calculator = LogitEntropyCalculator(backend=backend)
 
-        vocab_size = rng.integers(10, 1000)
-        logits_np = rng.standard_normal(vocab_size).astype(np.float32)
-        logits = backend.array(logits_np)
+        backend.random_seed(seed)
+        vocab_size = int(backend.to_numpy(backend.random_randint(10, 1000, (1,)))[0])
+        logits = backend.random_normal((vocab_size,))
+        backend.eval(logits)
 
         entropy, _ = calculator.compute(logits)
-        max_entropy = np.log(vocab_size)
+        max_entropy = math.log(vocab_size)
 
         assert entropy <= max_entropy + 1e-6
 
@@ -529,11 +533,11 @@ class TestEntropyWorkflowInvariants:
         Raw entropy IS the measurement. Caller applies thresholds.
         """
         backend = get_default_backend()
-        rng = np.random.default_rng(seed)
         calculator = LogitEntropyCalculator(backend=backend)
 
-        logits_np = rng.standard_normal(100).astype(np.float32)
-        logits = backend.array(logits_np)
+        backend.random_seed(seed)
+        logits = backend.random_normal((100,))
+        backend.eval(logits)
         entropy, _ = calculator.compute(logits)
 
         # Circuit breaker uses explicit threshold comparison

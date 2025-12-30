@@ -238,7 +238,6 @@ def test_mc_system_status_schema(mcp_env: dict[str, str]):
     assert "readinessScore" in payload
     assert "scoreBreakdown" in payload
     assert "blockers" in payload
-    assert "nextActions" in payload
 
 
 def test_mc_settings_snapshot_schema(mcp_env: dict[str, str]):
@@ -277,7 +276,6 @@ def test_mc_model_list_schema(mcp_env: dict[str, str]):
     assert payload["_schema"] == "mc.model.list.v1"
     assert "models" in payload
     assert "count" in payload
-    assert "nextActions" in payload
 
 
 def test_mc_system_resource(mcp_env: dict[str, str]):
@@ -344,7 +342,6 @@ def test_mc_safety_circuit_breaker_schema(mcp_env: dict[str, str]):
     assert "maxThreatSeverity" in payload
     assert "entropyStats" in payload
     assert "indicators" in payload
-    assert "nextActions" in payload
 
 
 def test_mc_safety_persona_drift_schema(mcp_env: dict[str, str]):
@@ -365,7 +362,6 @@ def test_mc_safety_persona_drift_schema(mcp_env: dict[str, str]):
     assert payload["driftMagnitude"] >= 0.0
     assert "missingTraitCount" in payload
     assert "traitScores" in payload
-    assert "nextActions" in payload
 
 
 def test_mc_geometry_dare_sparsity_schema(mcp_env: dict[str, str], tmp_path: Path):
@@ -384,7 +380,6 @@ def test_mc_geometry_dare_sparsity_schema(mcp_env: dict[str, str], tmp_path: Pat
     assert payload["_schema"] == "mc.geometry.dare_sparsity.v1"
     assert payload["checkpointPath"] == str(checkpoint_path)
     assert "effectiveSparsity" in payload
-    assert "recommendedDropRate" in payload
     assert "layerRanking" in payload
 
 

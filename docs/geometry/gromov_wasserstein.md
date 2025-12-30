@@ -148,7 +148,6 @@ result = service.compute_gromov_wasserstein(
 
 print(f"Distance: {result.distance:.4f}")
 print(f"Compatibility: {result.compatibility_score:.2%}")
-print(f"Interpretation: {result.interpretation}")
 ```
 
 ## Computational Complexity

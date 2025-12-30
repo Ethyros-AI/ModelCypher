@@ -200,14 +200,17 @@ class TestConditionNumberInvariants:
         backend = get_default_backend()
         backend.random_seed(42)
 
-        # Create ill-conditioned matrix using numpy for SVD construction
-        import numpy as np
-        U, _, Vt = np.linalg.svd(np.random.randn(10, 10), full_matrices=False)
-        # Singular values with high ratio
-        s = np.array([100, 10, 1, 0.1, 0.01, 0.001, 0.001, 0.001, 0.001, 0.001])
-        ill_matrix = (U * s) @ Vt
+        # Create ill-conditioned matrix with controlled singular values
+        u = backend.random_normal((10, 10))
+        v = backend.random_normal((10, 10))
+        u, _ = backend.qr(u)
+        v, _ = backend.qr(v)
+        s = backend.array([100.0, 10.0, 1.0, 0.1, 0.01, 0.001, 0.001, 0.001, 0.001, 0.001])
+        s = backend.diag(s)
+        ill_matrix = backend.matmul(backend.matmul(u, s), v)
+        backend.eval(ill_matrix)
 
-        target = backend.array(ill_matrix.astype(np.float32))
+        target = backend.astype(ill_matrix, "float32")
         source = backend.eye(10)
         source = backend.astype(source, "float32")
         backend.eval(source, target)

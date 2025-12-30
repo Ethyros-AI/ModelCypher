@@ -62,7 +62,7 @@ def geometry_refinement_analyze(
     """Analyze refinement density between base and adapted models.
 
     Combines DARE sparsity, DoRA directional drift, and transition CKA
-    to produce per-layer refinement scores and merge recommendations.
+    to produce per-layer refinement scores and merge metrics.
 
     Thresholds and blend coefficients are derived from the geometry -
     no configuration needed.

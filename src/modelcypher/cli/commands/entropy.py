@@ -209,7 +209,22 @@ def entropy_verify_baseline(
     payload = service.verification_payload(result)
 
     if context.output_format == "text":
-        write_output(result.summary, context.output_format, context.pretty)
+        lines = [
+            "BASELINE VERIFICATION",
+            f"Declared Δ mean: {result.declared_baseline.delta_mean:.3f} ± {result.declared_baseline.delta_std_dev:.3f}",
+            f"Declared Δ range: [{result.declared_baseline.delta_min:.3f}, {result.declared_baseline.delta_max:.3f}]",
+            f"Observed Δ mean: {result.observed_baseline.delta_mean:.3f} ± {result.observed_baseline.delta_std_dev:.3f}",
+            f"Observed Δ range: [{result.observed_baseline.delta_min:.3f}, {result.observed_baseline.delta_max:.3f}]",
+            f"Mean Z-score: {result.comparison.mean_z_score:.2f}",
+            f"StdDev ratio: {result.comparison.std_dev_ratio:.2f}",
+            f"Range exceeded: {result.comparison.range_exceeded}",
+            f"Divergence score: {result.comparison.divergence_score:.3f}",
+            f"Sample count sufficient: {result.comparison.sample_count_sufficient}",
+            f"Total samples: {result.total_samples}",
+            f"Adversarial flags: {len(result.adversarial_flags)}",
+            f"Duration: {result.verification_duration:.1f}s",
+        ]
+        write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
     write_output(payload, context.output_format, context.pretty)

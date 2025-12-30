@@ -128,9 +128,6 @@ class GeometryTrainingService:
             "jobId": job_id,
             "step": step,
             "flatnessScore": metrics.flatness_score,
-            "flatnessAssessment": (
-                metrics.flatness_assessment if output_format == "full" and has_metrics else None
-            ),
             "hessianTraceEstimate": metrics.hessian_trace_estimate
             if output_format == "full"
             else None,
@@ -141,9 +138,6 @@ class GeometryTrainingService:
             if output_format == "full"
             else None,
             "gradientSNR": metrics.gradient_snr,
-            "snrAssessment": metrics.snr_assessment
-            if output_format == "full" and has_metrics
-            else None,
             "gradientVariance": metrics.gradient_variance if output_format == "full" else None,
             "effectiveStepRatio": metrics.effective_step_ratio if output_format == "full" else None,
             "activeLayers": metrics.active_layers,
@@ -154,11 +148,6 @@ class GeometryTrainingService:
             "circuitBreakerTripped": metrics.circuit_breaker_tripped,
             "refusalDistance": metrics.refusal_distance,
             "thresholds": thresholds,
-            "nextActions": [
-                "mc_geometry_training_history for trend analysis",
-                "mc_safety_circuit_breaker for detailed safety evaluation",
-                "mc_safety_persona_drift for alignment monitoring",
-            ],
         }
 
     def training_history_payload(self, job_id: str) -> dict:
@@ -183,8 +172,4 @@ class GeometryTrainingService:
             "circuitBreakerHistory": None,
             "parameterDivergenceHistory": divergence_history or None,
             "trendAnalysis": None,
-            "nextActions": [
-                "mc_geometry_training_status for current metrics",
-                "mc_job_detail for full job information",
-            ],
         }

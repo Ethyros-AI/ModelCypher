@@ -64,10 +64,6 @@ def geometry_adapter_sparsity(
         "checkpointPath": checkpoint_path,
         "baseModelPath": base_path,
         "effectiveSparsity": analysis.effective_sparsity,
-        "nextActions": [
-            f"mc geometry adapter decomposition --checkpoint '{checkpoint_path}'",
-            f"mc checkpoint export --path '{checkpoint_path}'",
-        ],
     }
 
     if context.output_format == "text":
@@ -78,7 +74,6 @@ def geometry_adapter_sparsity(
         if base_path:
             lines.append(f"Base Model: {base_path}")
         lines.append(f"Effective Sparsity: {analysis.effective_sparsity:.3f}")
-        lines.append(f"Recommended Drop Rate: {analysis.recommended_drop_rate:.2f}")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -109,10 +104,6 @@ def geometry_adapter_decomposition(
         "magnitudeChangeRatio": result.overall_magnitude_change,
         "directionalDrift": result.overall_directional_drift,
         "magnitudeToDirectionRatio": result.magnitude_to_direction_ratio,
-        "nextActions": [
-            f"mc geometry adapter sparsity --checkpoint '{checkpoint_path}'",
-            f"mc checkpoint export --path '{checkpoint_path}'",
-        ],
     }
 
     if context.output_format == "text":

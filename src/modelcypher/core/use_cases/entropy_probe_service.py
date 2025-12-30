@@ -263,7 +263,6 @@ class EntropyProbeService:
     def verification_payload(result: VerificationResult) -> dict:
         """Convert verification result to CLI/MCP payload."""
         return {
-            "verdict": result.verdict.value,
             "adapterPath": result.adapter_path,
             "baseModelPath": result.base_model_path,
             "declaredBaseline": result.declared_baseline.to_dict(),
@@ -273,12 +272,4 @@ class EntropyProbeService:
             "adversarialFlagCount": len(result.adversarial_flags),
             "verificationDuration": result.verification_duration,
             "timestamp": result.timestamp.isoformat(),
-            "summary": result.summary,
-            "status": (
-                "verified"
-                if result.verdict == VerificationVerdict.VERIFIED
-                else "suspicious"
-                if result.verdict == VerificationVerdict.SUSPICIOUS
-                else "failed"
-            ),
         }

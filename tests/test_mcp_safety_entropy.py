@@ -149,7 +149,6 @@ class TestSafetyCircuitBreakerTool:
         payload = _extract_structured(result)
 
         assert payload["_schema"] == "mc.safety.circuit_breaker.v1"
-        assert "nextActions" in payload
 
 
 # =============================================================================
@@ -188,7 +187,6 @@ class TestSafetyPersonaDriftTool:
         payload = _extract_structured(result)
 
         assert payload["_schema"] == "mc.safety.persona_drift.v1"
-        assert "nextActions" in payload
 
 
 # =============================================================================
@@ -219,7 +217,6 @@ class TestSafetyRedteamScanTool:
         payload = _extract_structured(result)
 
         assert payload["_schema"] == "mc.safety.redteam_scan.v1"
-        assert "nextActions" in payload
 
 
 # =============================================================================
@@ -249,7 +246,6 @@ class TestSafetyBehavioralProbeTool:
         payload = _extract_structured(result)
 
         assert payload["_schema"] == "mc.safety.behavioral_probe.v1"
-        assert "nextActions" in payload
 
     @pytest.mark.parametrize("tier", ["quick", "standard", "full"])
     def test_behavioral_probe_tiers(self, mcp_env: dict[str, str], tier: str) -> None:
@@ -297,7 +293,6 @@ class TestSafetyAdapterProbeTool:
         assert "maxL2Norm" in payload
         assert "meanL2Norm" in payload
         assert "suspectLayerFraction" in payload
-        assert "nextActions" in payload
 
 
 # =============================================================================
@@ -324,7 +319,6 @@ class TestEntropyAnalyzeTool:
         payload = _extract_structured(result)
 
         assert payload["_schema"] == "mc.entropy.analyze.v1"
-        assert "nextActions" in payload
 
 
 # =============================================================================
@@ -352,7 +346,6 @@ class TestEntropyDetectDistressTool:
         payload = _extract_structured(result)
 
         assert payload["_schema"] == "mc.entropy.detect_distress.v1"
-        assert "nextActions" in payload
 
 
 # =============================================================================
@@ -387,7 +380,6 @@ class TestEntropyVerifyBaselineTool:
         payload = _extract_structured(result)
 
         assert payload["_schema"] == "mc.entropy.verify_baseline.v1"
-        assert "nextActions" in payload
 
 
 # =============================================================================
@@ -421,7 +413,6 @@ class TestEntropyWindowTool:
         assert payload["_schema"] == "mc.entropy.window.v1"
         assert "samplesProcessed" in payload
         assert "circuitBreakerTripped" in payload
-        assert "nextActions" in payload
 
     def test_entropy_window_circuit_breaker_trips(self, mcp_env: dict[str, str]) -> None:
         """Circuit breaker should trip on very high entropy."""
@@ -485,7 +476,6 @@ class TestEntropyConversationTrackTool:
         assert "oscillationAmplitude" in payload
         assert "oscillationFrequency" in payload
         assert "cumulativeDrift" in payload
-        assert "nextActions" in payload
 
 
 # =============================================================================
@@ -525,7 +515,6 @@ class TestEntropyDualPathTool:
         # Raw measurements - no arbitrary "verdict" classification
         assert "anomalyRate" in payload
         assert "deltaThreshold" in payload
-        assert "nextActions" in payload
 
     def test_dual_path_detects_anomalies(self, mcp_env: dict[str, str]) -> None:
         """Large entropy delta should be flagged as anomaly."""

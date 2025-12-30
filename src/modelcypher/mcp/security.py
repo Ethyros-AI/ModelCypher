@@ -414,10 +414,6 @@ def create_confirmation_response(
         "description": description,
         "expiresInSeconds": timeout_seconds,
         "message": f"This is a destructive operation. To confirm, call this tool again with confirmationToken='{error.confirmation_token}'",
-        "nextActions": [
-            f"Call the same tool with confirmationToken='{error.confirmation_token}' to confirm",
-            "Or cancel by not retrying within {timeout_seconds} seconds",
-        ],
     }
 
 

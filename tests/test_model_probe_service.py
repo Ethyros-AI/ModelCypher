@@ -26,12 +26,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import numpy as np
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 from safetensors.numpy import save_file
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.use_cases.model_probe_service import (
     ModelProbeResult,
     ModelProbeService,
@@ -49,6 +49,8 @@ def _create_mock_model(
     """Create a mock model directory with config.json and safetensors weights."""
     model_dir = tmp_path / "model"
     model_dir.mkdir(parents=True, exist_ok=True)
+    backend = get_default_backend()
+    backend.random_seed(42)
 
     config = {
         "model_type": architecture,
@@ -61,23 +63,33 @@ def _create_mock_model(
 
     tensors = {}
     for i in range(num_layers):
-        tensors[f"model.layers.{i}.self_attn.q_proj.weight"] = np.random.randn(
-            hidden_size, hidden_size
-        ).astype(np.float32)
-        tensors[f"model.layers.{i}.self_attn.k_proj.weight"] = np.random.randn(
-            hidden_size, hidden_size
-        ).astype(np.float32)
-        tensors[f"model.layers.{i}.self_attn.v_proj.weight"] = np.random.randn(
-            hidden_size, hidden_size
-        ).astype(np.float32)
-        tensors[f"model.layers.{i}.mlp.gate_proj.weight"] = np.random.randn(
-            hidden_size * 4, hidden_size
-        ).astype(np.float32)
+        q_proj = backend.random_normal((hidden_size, hidden_size))
+        k_proj = backend.random_normal((hidden_size, hidden_size))
+        v_proj = backend.random_normal((hidden_size, hidden_size))
+        gate_proj = backend.random_normal((hidden_size * 4, hidden_size))
+        backend.eval(q_proj)
+        backend.eval(k_proj)
+        backend.eval(v_proj)
+        backend.eval(gate_proj)
+        tensors[f"model.layers.{i}.self_attn.q_proj.weight"] = backend.to_numpy(q_proj).astype(
+            "float32"
+        )
+        tensors[f"model.layers.{i}.self_attn.k_proj.weight"] = backend.to_numpy(k_proj).astype(
+            "float32"
+        )
+        tensors[f"model.layers.{i}.self_attn.v_proj.weight"] = backend.to_numpy(v_proj).astype(
+            "float32"
+        )
+        tensors[f"model.layers.{i}.mlp.gate_proj.weight"] = backend.to_numpy(gate_proj).astype(
+            "float32"
+        )
 
-    tensors["model.embed_tokens.weight"] = np.random.randn(vocab_size, hidden_size).astype(
-        np.float32
-    )
-    tensors["lm_head.weight"] = np.random.randn(vocab_size, hidden_size).astype(np.float32)
+    embed_tokens = backend.random_normal((vocab_size, hidden_size))
+    lm_head = backend.random_normal((vocab_size, hidden_size))
+    backend.eval(embed_tokens)
+    backend.eval(lm_head)
+    tensors["model.embed_tokens.weight"] = backend.to_numpy(embed_tokens).astype("float32")
+    tensors["lm_head.weight"] = backend.to_numpy(lm_head).astype("float32")
 
     save_file(tensors, model_dir / "model.safetensors")
 

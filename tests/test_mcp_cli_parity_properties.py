@@ -34,8 +34,8 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 # Define the expected schema mappings between CLI and MCP outputs
-# MCP outputs have additional fields: _schema, nextActions
-MCP_ONLY_FIELDS = {"_schema", "nextActions"}
+# MCP outputs have additional fields: _schema
+MCP_ONLY_FIELDS = {"_schema"}
 
 
 def normalize_keys(data: Any) -> Any:
@@ -57,7 +57,7 @@ def extract_schema_fields(data: dict) -> set[str]:
 def schemas_match(cli_output: dict, mcp_output: dict) -> tuple[bool, str]:
     """Check if CLI and MCP outputs have matching schemas.
 
-    MCP outputs are expected to have additional fields (_schema, nextActions)
+    MCP outputs are expected to have additional fields (_schema)
     but the core data fields should match.
 
     Returns:
@@ -136,10 +136,6 @@ class TestMCPCLIParity:
                         "totalBytes": disk.total_bytes,
                         "freeBytes": disk.free_bytes,
                     },
-                    "nextActions": [
-                        "mc_storage_cleanup to free space",
-                        "mc_inventory to see all resources",
-                    ],
                 }
 
                 # Property: schemas match
@@ -149,10 +145,6 @@ class TestMCPCLIParity:
                 # Property: MCP has _schema field
                 assert "_schema" in mcp_output
                 assert mcp_output["_schema"] == "mc.storage.usage.v1"
-
-                # Property: MCP has nextActions field
-                assert "nextActions" in mcp_output
-                assert isinstance(mcp_output["nextActions"], list)
 
             finally:
                 if old_mc_home is not None:
@@ -225,10 +217,6 @@ class TestMCPCLIParity:
                     "freedGb": freed_bytes / (1024**3),
                     "categoriesCleaned": cleared,
                     "message": None,
-                    "nextActions": [
-                        "mc_storage_usage to verify cleanup",
-                        "mc_inventory to see remaining resources",
-                    ],
                 }
 
                 # Property: CLI fields are subset of MCP fields (excluding MCP-only fields)
@@ -246,7 +234,6 @@ class TestMCPCLIParity:
 
                 # Property: MCP has required metadata fields
                 assert "_schema" in mcp_output
-                assert "nextActions" in mcp_output
 
             finally:
                 if old_mc_home is not None:
@@ -295,11 +282,6 @@ class TestMCPCLIParity:
                 "intensityEntropy": result.intensity_entropy,
                 "deltaH": result.delta_h,
                 "processingTime": result.processing_time,
-                "nextActions": [
-                    "mc_thermo_measure for detailed entropy analysis",
-                    "mc_thermo_detect_batch for batch detection",
-                    "mc_safety_circuit_breaker for safety assessment",
-                ],
             }
 
             # Property: CLI fields are subset of MCP fields (excluding MCP-only fields)
@@ -318,8 +300,6 @@ class TestMCPCLIParity:
             # Property: MCP has required metadata fields
             assert "_schema" in mcp_output
             assert mcp_output["_schema"] == "mc.thermo.detect.v1"
-            assert "nextActions" in mcp_output
-            assert isinstance(mcp_output["nextActions"], list)
 
     @pytest.mark.skip(reason="Test requires real model loading which isn't available in CI")
     @given(
@@ -386,10 +366,6 @@ class TestMCPCLIParity:
                     "unsafe": sum(1 for r in results if r.classification == "unsafe"),
                     "ambiguous": sum(1 for r in results if r.classification == "ambiguous"),
                 },
-                "nextActions": [
-                    "mc_thermo_detect for individual prompt analysis",
-                    "mc_thermo_measure for detailed entropy analysis",
-                ],
             }
 
             # Property: CLI fields are subset of MCP fields (excluding MCP-only fields)
@@ -407,7 +383,6 @@ class TestMCPCLIParity:
 
             # Property: MCP has required metadata fields
             assert "_schema" in mcp_output
-            assert "nextActions" in mcp_output
 
     @given(
         prompts=st.lists(
@@ -479,10 +454,6 @@ class TestMCPCLIParity:
                     "totalDuration": result.total_duration,
                     "summary": result.summary,
                     "cases": cases_payload[:10],
-                    "nextActions": [
-                        "mc_infer_batch for batch inference",
-                        "mc_infer_run for single prompts",
-                    ],
                 }
 
                 # Property: CLI fields are subset of MCP fields (excluding MCP-only fields)
@@ -500,7 +471,6 @@ class TestMCPCLIParity:
 
                 # Property: MCP has required metadata fields
                 assert "_schema" in mcp_output
-                assert "nextActions" in mcp_output
         finally:
             if previous is None:
                 os.environ.pop("MC_ALLOW_STUB_INFERENCE", None)
@@ -522,7 +492,7 @@ class TestMCPCLIParity:
 )
 @settings(max_examples=100, deadline=None)
 def test_mcp_output_has_required_metadata(command_type: str):
-    """Property 9: For any MCP tool, output has _schema and nextActions fields.
+    """Property 9: For any MCP tool, output has _schema field.
 
     This validates the structural requirement that all MCP outputs follow
     the same metadata pattern.

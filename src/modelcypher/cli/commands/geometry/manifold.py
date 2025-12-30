@@ -77,10 +77,6 @@ def geometry_manifold_cluster(
     )
 
     payload = service.clustering_payload(result)
-    payload["nextActions"] = [
-        "mc geometry manifold dimension to estimate dimensionality",
-        "mc geometry manifold query to classify new points",
-    ]
 
     if context.output_format == "text":
         lines = [
@@ -130,10 +126,6 @@ def geometry_manifold_dimension(
     )
 
     payload = service.dimension_payload(result)
-    payload["nextActions"] = [
-        "mc geometry intrinsic-dimension for alternative estimation",
-        "mc geometry manifold cluster to find regions",
-    ]
 
     if context.output_format == "text":
         lines = [
@@ -173,10 +165,6 @@ def geometry_manifold_query(
     )
 
     payload = service.region_query_payload(result)
-    payload["nextActions"] = [
-        "mc geometry manifold cluster to update clusters",
-        "mc thermo measure to get point features",
-    ]
 
     if context.output_format == "text":
         lines = [

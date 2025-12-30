@@ -14,7 +14,7 @@ The ModelCypher MCP server exposes on-device ML training capabilities to AI agen
 - **Inference** - Run text generation with fine-tuned models
 - **System Monitoring** - Check GPU, memory, and MLX status
 
-For interpretation of geometry outputs, see `GEOMETRY-GUIDE.md`.
+For geometry output field definitions, see `GEOMETRY-GUIDE.md`.
 
 ### Architecture
 
@@ -1396,11 +1396,7 @@ Call mc_inventory first to see what models are available before starting trainin
   "overallCoherenceRaw": 0.97,
   "categoryCoherence": {
     "structural": 0.97
-  },
-  "nextActions": [
-    "mc_geometry_primes_compare to compare with another model",
-    "mc_model_probe for architecture details"
-  ]
+  }
 }
 ```
 
@@ -1436,11 +1432,7 @@ Call mc_inventory first to see what models are available before starting trainin
   "ckaSimilarity": 0.98,
   "ckaRaw": 0.96,
   "mostSimilarPrimes": ["want", "know"],
-  "mostDivergentPrimes": ["before", "feel"],
-  "nextActions": [
-    "mc_model_analyze_alignment for layer-wise drift analysis",
-    "mc_geometry_primes_probe for individual model analysis"
-  ]
+  "mostDivergentPrimes": ["before", "feel"]
 }
 ```
 
@@ -1484,11 +1476,7 @@ Call mc_inventory first to see what models are available before starting trainin
   "hiddenDim": 4096,
   "anchorCount": 64,
   "primeCount": 48,
-  "gateCount": 16,
-  "nextActions": [
-    "mc_geometry_crm_compare to compare against another model",
-    "mc_model_merge to apply null-space constrained transplant"
-  ]
+  "gateCount": 16
 }
 ```
 
@@ -1524,11 +1512,7 @@ Call mc_inventory first to see what models are available before starting trainin
   "layerCorrespondence": [
     { "sourceLayer": 0, "targetLayer": 0, "cka": 0.98 }
   ],
-  "ckaMatrix": [],
-  "nextActions": [
-    "mc_geometry_crm_build to regenerate CRM with more anchors",
-    "mc_model_merge to apply null-space constrained transplant"
-  ]
+  "ckaMatrix": []
 }
 ```
 
@@ -1559,9 +1543,7 @@ Call mc_inventory first to see what models are available before starting trainin
   "jobId": "job-abc123",
   "step": 120,
   "flatnessScore": 0.78,
-  "flatnessAssessment": "Flat (good)",
   "gradientSNR": 5.4,
-  "snrAssessment": "Adequate",
   "circuitBreakerSeverity": 0.21,
   "circuitBreakerTripped": false,
   "activeLayers": ["layer1", "layer3"],
@@ -1647,14 +1629,7 @@ Call mc_inventory first to see what models are available before starting trainin
     "personaDriftCritical": 0.4,
     "semanticEntropyWarning": 0.7,
     "aggregateTripThreshold": 0.75
-  },
-  "interpretation": "Elevated concern - close monitoring recommended",
-  "recommendedAction": "Monitor more closely",
-  "nextActions": [
-    "mc_safety_persona_drift for detailed persona analysis",
-    "mc_job_pause if tripped=true",
-    "mc_geometry_training_status for full metrics"
-  ]
+  }
 }
 ```
 
@@ -1696,13 +1671,7 @@ Call mc_inventory first to see what models are available before starting trainin
     }
   ],
   "refusalDirectionCorrelation": 0.45,
-  "helpfulnessCorrelation": null,
-  "interpretation": "Moderate persona drift detected. Monitor closely for alignment degradation.",
-  "nextActions": [
-    "mc_safety_circuit_breaker for combined safety evaluation",
-    "mc_job_pause if assessment is 'critical'",
-    "mc_geometry_training_status for full metrics"
-  ]
+  "helpfulnessCorrelation": null
 }
 ```
 
@@ -1733,24 +1702,14 @@ Call mc_inventory first to see what models are available before starting trainin
   "checkpointPath": "/path/adapter.npz",
   "baseModelPath": "/path/base.npz",
   "effectiveSparsity": 0.82,
-  "qualityAssessment": "good",
   "perLayerSparsity": [
     {
       "layerName": "layer1",
       "sparsity": 0.91,
-      "importance": 0.09,
-      "canDrop": true
+      "importance": 0.09
     }
   ],
-  "layerRanking": ["layer1"],
-  "recommendedDropRate": 0.85,
-  "mergeReadiness": "ready",
-  "interpretation": "Effective sparsity 82.00% (good). Recommended drop rate 0.85.",
-  "nextActions": [
-    "mc_geometry_dora_decomposition for learning type",
-    "mc_checkpoint_score for quality assessment",
-    "mc_checkpoint_export for deployment"
-  ]
+  "layerRanking": ["layer1"]
 }
 ```
 
@@ -1782,23 +1741,16 @@ Call mc_inventory first to see what models are available before starting trainin
   "baseModelPath": "/path/base.npz",
   "magnitudeChangeRatio": 0.12,
   "directionalDrift": 0.08,
-  "learningType": "balanced",
-  "learningTypeConfidence": 0.62,
   "perLayerDecomposition": [
     {
       "layerName": "layer1",
       "magnitudeChange": 0.08,
       "directionalDrift": 0.05,
-      "dominantType": "balanced"
+      "magnitudeRatio": 1.2,
+      "directionCosine": 0.92
     }
   ],
-  "stabilityScore": 0.84,
-  "overfitRisk": "low",
-  "interpretation": "Adapter combines scaling and rotation (balanced change)",
-  "nextActions": [
-    "mc_geometry_dare_sparsity for sparsity assessment",
-    "mc_checkpoint_export for deployment"
-  ]
+  "stabilityScore": 0.84
 }
 ```
 

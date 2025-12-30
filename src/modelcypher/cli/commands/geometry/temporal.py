@@ -246,7 +246,6 @@ def temporal_probe_model(
             "future_anchors": report.arrow_of_time.future_anchors,
         },
         "principal_components_variance": report.principal_components_variance,
-        "verdict": report.verdict,
     }
 
     if context.output_format == "text":
@@ -276,10 +275,6 @@ def temporal_probe_model(
             "Arrow of Time:",
             f"  Detected: {'YES' if report.arrow_of_time.arrow_detected else 'NO'}",
             f"  Correlation: {report.arrow_of_time.direction_correlation:.2f}",
-            "",
-            "=" * 60,
-            report.verdict,
-            "=" * 60,
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
@@ -350,7 +345,6 @@ def temporal_analyze(
             "detected": report.arrow_of_time.arrow_detected,
             "correlation": report.arrow_of_time.direction_correlation,
         },
-        "verdict": report.verdict,
     }
 
     write_output(payload, context.output_format, context.pretty)

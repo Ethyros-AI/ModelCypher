@@ -196,7 +196,7 @@ For merged models, we can analyze:
 **Design decisions**:
 1. **Per-layer decomposition**: Each layer analyzed independently
 2. **Correlation tracking**: Monitor magnitude-direction correlation
-3. **Merge guidance**: Provide recommendations based on decomposition
+3. **Merge guidance**: Provide decomposition-derived metrics
 
 ---
 

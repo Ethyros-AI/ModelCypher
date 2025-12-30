@@ -384,7 +384,7 @@ class AgentEvalService:
             threshold: Similarity threshold below which drift is flagged
 
         Returns:
-            Dict with drift assessment including similarity, verdict, and details
+            Dict with drift assessment including similarity and details
         """
         config = SemanticPrimeDriftConfig(
             similarity_threshold=threshold,
@@ -405,7 +405,6 @@ class AgentEvalService:
 
         return {
             "similarity": result.similarity,
-            "verdict": result.verdict.name,
             "is_drifted": result.verdict != DriftVerdict.stable,
             "baseline_primes": baseline_primes,
             "observed_primes": observed_primes,

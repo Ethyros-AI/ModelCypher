@@ -92,10 +92,6 @@ def register_safety_tools(ctx: ServiceContext) -> None:
                     }
                     for ind in indicators[:5]
                 ],
-                "nextActions": [
-                    "mc_safety_redteam_scan for detailed static analysis",
-                    "mc_safety_behavioral_probe for runtime checks",
-                ],
             }
 
     if "mc_safety_persona_drift" in tool_set:
@@ -146,10 +142,6 @@ def register_safety_tools(ctx: ServiceContext) -> None:
                 "totalBaselineTraits": len(baseline_traits),
                 "missingTraits": missing_traits[:10],
                 "traitScores": trait_scores,
-                "nextActions": [
-                    "mc_safety_circuit_breaker for overall safety assessment",
-                    "mc_geometry_persona_extract to re-extract persona",
-                ],
             }
 
     if "mc_safety_redteam_scan" in tool_set:
@@ -176,10 +168,6 @@ def register_safety_tools(ctx: ServiceContext) -> None:
             )
             payload = SafetyProbeService.threat_indicators_payload(indicators)
             payload["_schema"] = "mc.safety.redteam_scan.v1"
-            payload["nextActions"] = [
-                "mc_safety_behavioral_probe for runtime safety checks",
-                "mc_safety_circuit_breaker for combined assessment",
-            ]
             return payload
 
     if "mc_safety_behavioral_probe" in tool_set:
@@ -213,10 +201,6 @@ def register_safety_tools(ctx: ServiceContext) -> None:
             )
             payload = SafetyProbeService.composite_result_payload(result)
             payload["_schema"] = "mc.safety.behavioral_probe.v1"
-            payload["nextActions"] = [
-                "mc_safety_redteam_scan for static analysis",
-                "mc_safety_circuit_breaker for combined assessment",
-            ]
             return payload
 
     # Phase 2: New safety tools
@@ -250,10 +234,6 @@ def register_safety_tools(ctx: ServiceContext) -> None:
                 "meanSparsity": features.mean_sparsity,
                 "suspectLayerFraction": features.suspect_layer_fraction,
                 "suspectLayerIndices": list(features.suspect_layer_indices),
-                "nextActions": [
-                    "mc_safety_circuit_breaker for overall assessment",
-                    "mc_geometry_dare_sparsity for sparsity analysis",
-                ],
             }
 
 
@@ -273,10 +253,6 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
             pattern = ctx.entropy_probe_service.analyze_pattern(parsed_samples)
             payload = EntropyProbeService.pattern_payload(pattern)
             payload["_schema"] = "mc.entropy.analyze.v1"
-            payload["nextActions"] = [
-                "mc_entropy_detect_distress for distress detection",
-                "mc_safety_circuit_breaker for safety assessment",
-            ]
             return payload
 
     if "mc_entropy_detect_distress" in tool_set:
@@ -290,10 +266,6 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
             result = ctx.entropy_probe_service.detect_distress(parsed_samples)
             payload = EntropyProbeService.distress_payload(result)
             payload["_schema"] = "mc.entropy.detect_distress.v1"
-            payload["nextActions"] = [
-                "mc_entropy_analyze for full pattern analysis",
-                "mc_safety_circuit_breaker for safety intervention",
-            ]
             return payload
 
     if "mc_entropy_verify_baseline" in tool_set:
@@ -323,10 +295,6 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
             )
             payload = EntropyProbeService.verification_payload(result)
             payload["_schema"] = "mc.entropy.verify_baseline.v1"
-            payload["nextActions"] = [
-                "mc_safety_redteam_scan for static metadata analysis",
-                "mc_safety_behavioral_probe for runtime checks",
-            ]
             return payload
 
     # Phase 2: New entropy tools
@@ -364,10 +332,6 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
                 "movingAverage": status.moving_average,
                 # circuitBreakerTripped is geometric: moving_average > circuit_threshold
                 "circuitBreakerTripped": status.should_trip_circuit_breaker,
-                "nextActions": [
-                    "mc_entropy_analyze for pattern analysis",
-                    "mc_safety_circuit_breaker if circuit breaker tripped",
-                ],
             }
 
     if "mc_entropy_conversation_track" in tool_set:
@@ -418,9 +382,6 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
                     "cumulativeDrift": 0.0,
                     "recentAnomalyCount": 0,
                     "assessmentConfidence": 0.0,
-                    "nextActions": [
-                        "mc_entropy_analyze for detailed pattern analysis",
-                    ],
                 }
 
             # Return raw geometric measurements
@@ -448,9 +409,6 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
                 # Binary geometric signals (not arbitrary thresholds)
                 "circuitBreakerTripped": components.circuit_breaker_tripped,
                 "baselineOscillationExceeded": components.baseline_oscillation_exceeded,
-                "nextActions": [
-                    "mc_entropy_analyze for detailed pattern analysis",
-                ],
             }
 
     if "mc_entropy_dual_path" in tool_set:
@@ -488,8 +446,4 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
                 "anomalyCount": len(anomalies),
                 "anomalyRate": anomaly_rate,
                 "anomalies": anomalies[:10],
-                "nextActions": [
-                    "mc_safety_adapter_probe for detailed adapter analysis",
-                    "mc_entropy_verify_baseline to check baseline compliance",
-                ],
             }

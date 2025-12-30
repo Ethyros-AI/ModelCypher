@@ -46,7 +46,6 @@ A measure of overlap between the *active* dimensions of two models.
 
 ### Refusal Vector Magnitude
 The Euclidean length of the activation vector associated with a refusal response (e.g., "I cannot do that").
--   **Interpretation**: High magnitude = Strong refusal reflex.
 
 ### Flavor Token
 Active but non-functional tokens (e.g., "Sure!", "Here is a...", "calibrating flux") that do not advance the reasoning trajectory but serve to "grease" the conversation.

@@ -74,9 +74,6 @@ def register_agent_tools(ctx: ServiceContext) -> None:
                 "startedAt": result.started_at,
                 "config": result.config,
                 "summary": result.summary,
-                "nextActions": [
-                    f"mc_agent_eval_results with evalId={result.eval_id}",
-                ],
             }
 
     if "mc_agent_eval_results" in tool_set:
@@ -100,9 +97,6 @@ def register_agent_tools(ctx: ServiceContext) -> None:
                 "metrics": result.metrics,
                 "taskResults": result.task_results,
                 "overallScore": result.overall_score,
-                "nextActions": [
-                    "mc_agent_eval_run to run another evaluation",
-                ],
             }
 
     # Phase 2: New agent tools
@@ -158,10 +152,6 @@ def register_agent_tools(ctx: ServiceContext) -> None:
                 "tracesImported": len(result.traces),
                 "warnings": result.warnings,
                 "traces": traces_payload,
-                "nextActions": [
-                    "mc_agent_trace_analyze to analyze imported traces",
-                    "mc_agent_validate_action to validate specific actions",
-                ],
             }
 
     if "mc_agent_trace_analyze" in tool_set:
@@ -217,10 +207,6 @@ def register_agent_tools(ctx: ServiceContext) -> None:
                 },
                 "averageSpanDurationMs": summary.average_span_duration_ms,
                 "uniqueModels": list(summary.unique_models),
-                "nextActions": [
-                    "mc_agent_validate_action to validate specific actions",
-                    "mc_entropy_analyze for entropy pattern analysis",
-                ],
             }
 
     if "mc_agent_validate_action" in tool_set:
@@ -260,8 +246,4 @@ def register_agent_tools(ctx: ServiceContext) -> None:
                 "sanitizedContent": result.sanitized_content,
                 "riskLevel": result.risk_level.value if result.risk_level else None,
                 "blockedPatterns": result.blocked_patterns,
-                "nextActions": [
-                    "mc_agent_trace_analyze for full trace analysis",
-                    "mc_safety_circuit_breaker if risk detected",
-                ],
             }

@@ -415,12 +415,6 @@ class ServiceContext:
         """Generate system status payload."""
         readiness = self.system_service.readiness()
         readiness_score = readiness.get("readinessScore", 0)
-        if readiness_score >= 80:
-            next_actions = ["mc_train_start to begin training"]
-        elif readiness_score >= 60:
-            next_actions = ["Address blockers first", "mc_system_status to recheck"]
-        else:
-            next_actions = ["Fix critical blockers", "mc_model_list to verify models"]
         return {
             "_schema": "mc.system.status.v1",
             "machineName": readiness.get("machineName", ""),
@@ -434,5 +428,4 @@ class ServiceContext:
             "readinessScore": readiness_score,
             "scoreBreakdown": readiness.get("scoreBreakdown", {}),
             "blockers": readiness.get("blockers", []),
-            "nextActions": next_actions,
         }

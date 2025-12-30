@@ -100,10 +100,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             )
             payload = ctx.geometry_service.detection_payload(detection)
             payload["_schema"] = "mc.geometry.path.detect.v1"
-            payload["nextActions"] = [
-                "mc_geometry_path_compare to compare two paths",
-                "mc_safety_circuit_breaker for safety assessment",
-            ]
             return payload
 
     if "mc_geometry_path_compare" in tool_set:
@@ -153,10 +149,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             )
             payload = ctx.geometry_service.path_comparison_payload(result)
             payload["_schema"] = "mc.geometry.path.compare.v1"
-            payload["nextActions"] = [
-                "mc_geometry_path_detect to inspect individual paths",
-                "mc_geometry_validate to validate geometry suite",
-            ]
             return payload
 
     if "mc_geometry_concept_detect" in tool_set:
@@ -227,10 +219,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                 ],
                 "meanConfidence": detection.mean_confidence,
                 "meanCrossModalConfidence": detection.mean_cross_modal_confidence,
-                "nextActions": [
-                    "mc_geometry_concept_compare to compare concept paths",
-                    "mc_geometry_path_compare to compare gate paths",
-                ],
             }
             return payload
 
@@ -306,10 +294,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                 "alignmentRatio": comparison.alignment_ratio,
                 "cka": comparison.cka,
                 "cosineSimilarity": comparison.cosine_similarity,
-                "nextActions": [
-                    "mc_geometry_concept_detect to inspect a single response",
-                    "mc_geometry_cross_cultural_analyze for gram-level alignment",
-                ],
             }
             return payload
 
@@ -377,10 +361,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                 }
                 if alignment
                 else None,
-                "nextActions": [
-                    "mc_geometry_primes_compare to generate prime grams",
-                    "mc_geometry_concept_compare to compare concept paths",
-                ],
             }
 
     # Metrics tools
@@ -402,10 +382,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             )
             payload = ctx.geometry_metrics_service.gromov_wasserstein_payload(result)
             payload["_schema"] = "mc.geometry.gromov_wasserstein.v1"
-            payload["nextActions"] = [
-                "mc_geometry_intrinsic_dimension to estimate dimensionality",
-                "mc_geometry_topological_fingerprint for topology analysis",
-            ]
             return payload
 
     if "mc_geometry_intrinsic_dimension" in tool_set:
@@ -424,10 +400,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             )
             payload = ctx.geometry_metrics_service.intrinsic_dimension_payload(result)
             payload["_schema"] = "mc.geometry.intrinsic_dimension.v1"
-            payload["nextActions"] = [
-                "mc_geometry_topological_fingerprint for topology analysis",
-                "mc_geometry_gromov_wasserstein for structure comparison",
-            ]
             return payload
 
     if "mc_geometry_topological_fingerprint" in tool_set:
@@ -446,10 +418,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             )
             payload = ctx.geometry_metrics_service.topological_fingerprint_payload(result)
             payload["_schema"] = "mc.geometry.topological_fingerprint.v1"
-            payload["nextActions"] = [
-                "mc_geometry_intrinsic_dimension for dimensionality",
-                "mc_geometry_gromov_wasserstein for structure comparison",
-            ]
             return payload
 
     # Sparse region tools
@@ -464,10 +432,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                 domains = ctx.geometry_sparse_service.list_domains()
             payload = ctx.geometry_sparse_service.domains_payload(domains)
             payload["_schema"] = "mc.geometry.sparse_domains.v1"
-            payload["nextActions"] = [
-                "mc_geometry_sparse_locate to find sparse regions",
-                "mc_geometry_intrinsic_dimension for dimensionality analysis",
-            ]
             return payload
 
     if "mc_geometry_sparse_locate" in tool_set:
@@ -490,10 +454,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             )
             payload = ctx.geometry_sparse_service.analysis_payload(result)
             payload["_schema"] = "mc.geometry.sparse_locate.v1"
-            payload["nextActions"] = [
-                "mc_geometry_dare_sparsity for DARE analysis",
-                "mc_geometry_dora_decomposition for magnitude separation",
-            ]
             return payload
 
     if "mc_geometry_sparse_neurons" in tool_set:
@@ -611,10 +571,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                 "summary": summary,
                 "graftCandidates": sparsity_map.get_graft_candidates(),
                 "deadNeurons": sparsity_map.dead_neurons,
-                "nextActions": [
-                    "mc_geometry_sparse_locate for layer-level analysis",
-                    "mc_model_merge with neuron-level alpha masking",
-                ],
             }
 
     # Refusal detection tools
@@ -626,10 +582,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             pairs = ctx.geometry_sparse_service.get_contrastive_pairs()
             payload = ctx.geometry_sparse_service.contrastive_pairs_payload(pairs)
             payload["_schema"] = "mc.geometry.refusal_pairs.v1"
-            payload["nextActions"] = [
-                "mc_geometry_refusal_detect to compute refusal direction",
-                "mc_safety_circuit_breaker for safety monitoring",
-            ]
             return payload
 
     if "mc_geometry_refusal_detect" in tool_set:
@@ -654,14 +606,9 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                 return {
                     "_schema": "mc.geometry.refusal_detect.v1",
                     "error": "Could not compute refusal direction",
-                    "nextActions": ["mc_geometry_refusal_pairs to get prompts"],
                 }
             payload = ctx.geometry_sparse_service.refusal_direction_payload(result)
             payload["_schema"] = "mc.geometry.refusal_detect.v1"
-            payload["nextActions"] = [
-                "mc_safety_circuit_breaker for safety monitoring",
-                "mc_safety_persona_drift to detect drift",
-            ]
             return payload
 
     # Persona tools
@@ -673,10 +620,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             traits = ctx.geometry_persona_service.list_traits()
             payload = ctx.geometry_persona_service.traits_payload(traits)
             payload["_schema"] = "mc.geometry.persona_traits.v1"
-            payload["nextActions"] = [
-                "mc_geometry_persona_extract to extract vectors",
-                "mc_geometry_persona_drift to measure drift",
-            ]
             return payload
 
     if "mc_geometry_persona_extract" in tool_set:
@@ -703,14 +646,9 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                 return {
                     "_schema": "mc.geometry.persona_extract.v1",
                     "error": "Could not extract persona vector",
-                    "nextActions": ["mc_geometry_persona_traits for definitions"],
                 }
             payload = ctx.geometry_persona_service.persona_vector_payload(vector)
             payload["_schema"] = "mc.geometry.persona_extract.v1"
-            payload["nextActions"] = [
-                "mc_geometry_persona_drift to measure drift",
-                "mc_safety_persona_drift for safety monitoring",
-            ]
             return payload
 
     if "mc_geometry_persona_drift" in tool_set:
@@ -729,10 +667,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             )
             payload = ctx.geometry_persona_service.drift_metrics_payload(metrics)
             payload["_schema"] = "mc.geometry.persona_drift.v1"
-            payload["nextActions"] = [
-                "mc_safety_circuit_breaker if drift is significant",
-                "mc_train_pause to halt training if needed",
-            ]
             return payload
 
     # Manifold tools
@@ -754,10 +688,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             )
             payload = ctx.geometry_persona_service.clustering_payload(result)
             payload["_schema"] = "mc.geometry.manifold_cluster.v1"
-            payload["nextActions"] = [
-                "mc_geometry_manifold_dimension for ID estimate",
-                "mc_geometry_manifold_query to classify points",
-            ]
             return payload
 
     if "mc_geometry_manifold_dimension" in tool_set:
@@ -776,10 +706,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             )
             payload = ctx.geometry_persona_service.dimension_payload(result)
             payload["_schema"] = "mc.geometry.manifold_dimension.v1"
-            payload["nextActions"] = [
-                "mc_geometry_manifold_cluster to find regions",
-                "mc_geometry_intrinsic_dimension for comparison",
-            ]
             return payload
 
     if "mc_geometry_manifold_query" in tool_set:
@@ -798,10 +724,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             )
             payload = ctx.geometry_persona_service.region_query_payload(result)
             payload["_schema"] = "mc.geometry.manifold_query.v1"
-            payload["nextActions"] = [
-                "mc_geometry_manifold_cluster to update clusters",
-                "mc_thermo_measure to get point features",
-            ]
             return payload
 
     # Transport tools
@@ -829,16 +751,11 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                 return {
                     "_schema": "mc.geometry.transport_merge.v1",
                     "error": "Failed to merge weights",
-                    "nextActions": ["mc_geometry_gromov_wasserstein for transport plan"],
                 }
             return {
                 "_schema": "mc.geometry.transport_merge.v1",
                 "mergedShape": [len(merged), len(merged[0]) if merged else 0],
                 "blendAlpha": blendAlpha,
-                "nextActions": [
-                    "mc_geometry_transport_synthesize for GW-guided merge",
-                    "mc_model_merge for full model merging",
-                ],
             }
 
     if "mc_geometry_transport_synthesize" in tool_set:
@@ -874,14 +791,9 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                 return {
                     "_schema": "mc.geometry.transport_synthesize.v1",
                     "error": "Failed to synthesize",
-                    "nextActions": ["mc_geometry_transport_merge for manual transport"],
                 }
             payload = ctx.geometry_transport_service.merge_result_payload(result)
             payload["_schema"] = "mc.geometry.transport_synthesize.v1"
-            payload["nextActions"] = [
-                "mc_geometry_intrinsic_dimension for merged space analysis",
-                "mc_model_merge for full model merging",
-            ]
             return payload
 
     # Training status tools
@@ -943,10 +855,6 @@ def register_geometry_invariant_tools(ctx: ServiceContext) -> None:
             )
             result = ctx.invariant_mapping_service.map_layers(config)
             payload = InvariantLayerMappingService.result_payload(result)
-            payload["nextActions"] = [
-                "mc_geometry_invariant_collapse_risk to analyze collapse risk",
-                "mc_geometry_atlas_inventory to see available probes",
-            ]
             return payload
 
     if "mc_geometry_invariant_collapse_risk" in tool_set:
@@ -973,10 +881,6 @@ def register_geometry_invariant_tools(ctx: ServiceContext) -> None:
             )
             result = ctx.invariant_mapping_service.analyze_collapse_risk(config)
             payload = InvariantLayerMappingService.collapse_risk_payload(result)
-            payload["nextActions"] = [
-                "mc_geometry_invariant_map_layers to map layers",
-                "mc_geometry_atlas_inventory to see available probes",
-            ]
             return payload
 
     if "mc_geometry_atlas_inventory" in tool_set:
@@ -1085,10 +989,6 @@ def register_geometry_invariant_tools(ctx: ServiceContext) -> None:
                         "description": "Etymology and lineage probes",
                     },
                 },
-                "nextActions": [
-                    "mc_geometry_invariant_map_layers with scope='multiAtlas'",
-                    "mc_geometry_invariant_collapse_risk to check compatibility",
-                ],
             }
 
 
@@ -1142,11 +1042,6 @@ def register_geometry_safety_tools(ctx: ServiceContext) -> None:
                 "riskScore": result.risk_score,
                 "processingTime": result.processing_time,
                 "vulnerabilityDetails": vulnerability_details or None,
-                "nextActions": [
-                    "mc_safety_circuit_breaker for combined safety assessment",
-                    "mc_thermo_detect for detailed entropy analysis",
-                    "mc_safety_persona_drift for alignment monitoring",
-                ],
             }
 
     if "mc_geometry_dare_sparsity" in tool_set:
@@ -1162,7 +1057,6 @@ def register_geometry_safety_tools(ctx: ServiceContext) -> None:
                         "layerName": name,
                         "sparsity": metrics.sparsity,
                         "importance": importance,
-                        "canDrop": metrics.sparsity >= analysis.recommended_drop_rate,
                     }
                 )
             layer_ranking = [
@@ -1176,12 +1070,6 @@ def register_geometry_safety_tools(ctx: ServiceContext) -> None:
                 "effectiveSparsity": analysis.effective_sparsity,
                 "perLayerSparsity": per_layer or None,
                 "layerRanking": layer_ranking or None,
-                "recommendedDropRate": analysis.recommended_drop_rate,
-                "nextActions": [
-                    "mc_geometry_dora_decomposition for learning type",
-                    "mc_checkpoint_score for quality assessment",
-                    "mc_checkpoint_export for deployment",
-                ],
             }
 
     if "mc_geometry_dora_decomposition" in tool_set:
@@ -1212,10 +1100,6 @@ def register_geometry_safety_tools(ctx: ServiceContext) -> None:
                 "magnitudeToDirectionRatio": result.magnitude_to_direction_ratio,
                 "perLayerDecomposition": per_layer or None,
                 "stabilityScore": stability_score,
-                "nextActions": [
-                    "mc_geometry_dare_sparsity for sparsity assessment",
-                    "mc_checkpoint_export for deployment",
-                ],
             }
 
 
@@ -1301,10 +1185,6 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
                 ],
                 "count": len(primes),
                 "categories": categories,
-                "nextActions": [
-                    "mc_geometry_primes_probe to analyze prime activations in a model",
-                    "mc_geometry_primes_compare to compare prime alignment between models",
-                ],
             }
 
     if "mc_geometry_primes_probe" in tool_set:
@@ -1411,10 +1291,6 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
                 "overallCoherence": overall_cka,
                 "overallCoherenceRaw": result.cka,
                 "categoryCoherence": category_coherence,
-                "nextActions": [
-                    "mc_geometry_primes_compare to compare with another model",
-                    "mc_model_probe for architecture details",
-                ],
             }
 
     if "mc_geometry_primes_compare" in tool_set:
@@ -1467,10 +1343,6 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
                 "ckaRaw": result.cka,
                 "mostSimilarPrimes": [p for p, _ in sims[:5]],
                 "mostDivergentPrimes": [p for p, _ in sims[-5:]],
-                "nextActions": [
-                    "mc_model_analyze_alignment for layer-wise drift analysis",
-                    "mc_geometry_primes_probe for individual model analysis",
-                ],
             }
 
 
@@ -1539,10 +1411,6 @@ def register_geometry_crm_tools(ctx: ServiceContext) -> None:
                 "primeCount": summary.prime_count,
                 "gateCount": summary.gate_count,
                 "sequenceInvariantCount": summary.sequence_invariant_count,
-                "nextActions": [
-                    "mc_geometry_crm_compare to compare against another model",
-                    "mc_model_merge to use the CRM in shared subspace alignment",
-                ],
             }
 
     if "mc_geometry_crm_compare" in tool_set:
@@ -1566,10 +1434,6 @@ def register_geometry_crm_tools(ctx: ServiceContext) -> None:
                 "commonAnchorCount": summary.common_anchor_count,
                 "overallAlignment": summary.overall_alignment,
                 "layerCorrespondence": summary.layer_correspondence,
-                "nextActions": [
-                    "mc_geometry_crm_build to regenerate CRM with more anchors",
-                    "mc_model_merge to apply shared-subspace alignment",
-                ],
             }
             if summary.cka_matrix is not None:
                 payload["ckaMatrix"] = summary.cka_matrix
@@ -1612,10 +1476,6 @@ def register_geometry_crm_tools(ctx: ServiceContext) -> None:
                     }
                     for p in probes
                 ],
-                "nextActions": [
-                    "mc_geometry_crm_build with includeSequenceInvariants=true",
-                    "mc_geometry_crm_build with sequenceFamilies=[...] to filter",
-                ],
             }
 
 
@@ -1645,7 +1505,6 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
                     for sp in result.stitching_points
                 ],
                 "recommendedConfig": result.recommended_config,
-                "nextActions": ["mc_geometry_stitch_apply to perform the stitching"],
             }
 
     if "mc_geometry_stitch_apply" in tool_set:
@@ -1672,10 +1531,6 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
                 "outputPath": result.output_path,
                 "stitchedLayers": result.stitched_layers,
                 "qualityScore": result.quality_score,
-                "nextActions": [
-                    "mc_model_probe to verify the stitched model",
-                    "mc_infer to test the stitched model",
-                ],
             }
 
     if "mc_geometry_stitch_train" in tool_set:
@@ -1727,10 +1582,6 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
                     "_schema": "mc.geometry.stitch.train.v1",
                     "status": "failed",
                     "error": "Training failed - insufficient data or convergence failure",
-                    "nextActions": [
-                        "Add more anchor pairs and retry",
-                        "Adjust learning rate or iterations",
-                    ],
                 }
             h4_metrics = result.h4_metrics()
             return {
@@ -1747,10 +1598,6 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
                 "transferQuality": h4_metrics.transfer_quality,
                 "weights": result.weights,
                 "bias": result.bias,
-                "nextActions": [
-                    "Use weights/bias to transform activations",
-                    "mc_geometry_stitch_apply to apply to full model",
-                ],
             }
 
     if "mc_geometry_refinement_analyze" in tool_set:
@@ -1831,11 +1678,6 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
                     "hardSwapLayers": result_dict.get("hardSwapLayers"),
                     "alphaByLayer": result_dict.get("alphaByLayer"),
                     "layerScores": result_dict.get("layerScores"),
-                    "nextActions": [
-                        "mc_model_merge with recommended alpha values",
-                        "mc_geometry_dare_sparsity for detailed DARE analysis",
-                        "mc_geometry_dora_decomposition for detailed DoRA analysis",
-                    ],
                 }
             except ImportError as e:
                 raise ValueError(f"MLX not available: {e}")
@@ -1916,10 +1758,6 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
                     if gradient_snr_values
                     else None,
                 },
-                "nextActions": [
-                    "mc_geometry_refinement_analyze to use profile in analysis",
-                    "mc_geometry_sparse_locate to find sparse regions",
-                ],
             }
 
 
@@ -1999,10 +1837,6 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
                     "Y": "Vertical (Down=-1, Up=+1) - Gravity axis",
                     "Z": "Depth (Far=-1, Near=+1) - Perspective axis",
                 },
-                "nextActions": [
-                    "mc_geometry_spatial_analyze to run full 3D analysis",
-                    "mc_geometry_spatial_probe_model for end-to-end model probing",
-                ],
             }
 
     if "mc_geometry_spatial_euclidean" in tool_set:
@@ -2037,10 +1871,6 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             return {
                 "_schema": "mc.geometry.spatial.euclidean.v1",
                 **result.to_dict(),
-                "nextActions": [
-                    "mc_geometry_spatial_gravity to test gravity gradient",
-                    "mc_geometry_spatial_analyze for full 3D analysis",
-                ],
             }
 
     if "mc_geometry_spatial_gravity" in tool_set:
@@ -2075,10 +1905,6 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             return {
                 "_schema": "mc.geometry.spatial.gravity.v1",
                 **result.to_dict(),
-                "nextActions": [
-                    "mc_geometry_spatial_euclidean to verify Euclidean structure",
-                    "mc_geometry_spatial_analyze for full 3D analysis",
-                ],
             }
 
     if "mc_geometry_spatial_density" in tool_set:
@@ -2112,10 +1938,6 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             return {
                 "_schema": "mc.geometry.spatial.density.v1",
                 **result.to_dict(),
-                "nextActions": [
-                    "mc_geometry_spatial_analyze for full 3D analysis",
-                    "mc_geometry_spatial_gravity for gravity gradient",
-                ],
             }
 
     if "mc_geometry_spatial_analyze" in tool_set:
@@ -2140,7 +1962,7 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
                 anchorActivations: Dict mapping anchor_name to activation vector
 
             Returns:
-                Full 3D world model analysis with verdict
+                Full 3D world model analysis
             """
             from modelcypher.backends.mlx_backend import MLXBackend
             from modelcypher.core.domain.geometry.spatial_3d import Spatial3DAnalyzer
@@ -2154,10 +1976,6 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             return {
                 "_schema": "mc.geometry.spatial.full_analysis.v1",
                 **report.to_dict(),
-                "nextActions": [
-                    "mc_geometry_spatial_probe_model to test another model",
-                    "mc_model_merge to preserve 3D structure during merging",
-                ],
             }
 
     if "mc_geometry_spatial_probe_model" in tool_set:
@@ -2181,7 +1999,7 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
                 saveActivations: Optional path to save activations JSON
 
             Returns:
-                Full 3D world model analysis with verdict
+                Full 3D world model analysis
             """
             import json
 
@@ -2221,7 +2039,6 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
                     "_schema": "mc.geometry.spatial.probe_model.v1",
                     "modelPath": str(model_path),
                     "error": "No activations extracted",
-                    "nextActions": ["Check model architecture supports hidden state extraction"],
                 }
 
             # Save activations if requested
@@ -2241,10 +2058,6 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
                 "anchorsProbed": len(anchor_activations),
                 "layer": layer if layer >= 0 else "last",
                 **report.to_dict(),
-                "nextActions": [
-                    "mc_geometry_spatial_analyze with custom activations",
-                    "mc_model_merge to preserve spatial representations",
-                ],
             }
 
     if "mc_geometry_spatial_cross_grounding_feasibility" in tool_set:
@@ -2267,7 +2080,7 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
                 targetAnchors: Dict of anchor_name -> activation_vector from target model
 
             Returns:
-                Feasibility assessment with rotation estimate and recommendation
+            Feasibility assessment with rotation estimate
             """
             from modelcypher.backends.mlx_backend import MLXBackend
             from modelcypher.core.domain.geometry.cross_grounding_transfer import (
@@ -2284,10 +2097,6 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             return {
                 "_schema": "mc.geometry.spatial.cross_grounding_feasibility.v1",
                 **feasibility,
-                "nextActions": [
-                    "mc_geometry_spatial_cross_grounding_transfer to perform transfer",
-                    "mc_geometry_spatial_analyze to analyze each model individually",
-                ],
             }
 
     if "mc_geometry_spatial_cross_grounding_transfer" in tool_set:
@@ -2366,14 +2175,11 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
                 "groundingRotation": {
                     "angleDegrees": result.grounding_rotation.angle_degrees,
                     "alignmentScore": result.grounding_rotation.alignment_score,
-                    "isAligned": result.grounding_rotation.is_aligned,
                     "confidence": result.grounding_rotation.confidence,
                 },
                 "ghostAnchors": ghost_anchors_serialized,
                 "meanStressPreservation": result.mean_stress_preservation,
                 "minStressPreservation": result.min_stress_preservation,
-                "successfulTransfers": result.successful_transfers,
-                "failedTransfers": result.failed_transfers,
                 "interpretabilityGap": result.interpretability_gap,
                 # Note: recommendation and nextActions removed per No Vibes rule
             }
@@ -2413,7 +2219,7 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                          Defaults to all domains if not specified.
 
             Returns:
-                Interference prediction with safety scores and recommendations.
+            Interference prediction with safety scores.
             """
 
             from modelcypher.backends.mlx_backend import MLXBackend
@@ -2466,11 +2272,6 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                 "layer": layer,
                 "domainsRequested": [d.value for d in domain_list],
                 "perDomain": domain_results,
-                "recommendation": "Use `mc geometry interference predict` CLI for full analysis with activation extraction.",
-                "nextActions": [
-                    "mc_geometry_null_space_filter to apply interference mitigation",
-                    "mc_geometry_safety_polytope_check for unified safety assessment",
-                ],
             }
 
     if "mc_geometry_null_space_filter" in tool_set:
@@ -2539,10 +2340,6 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                 "originalNorm": result.original_norm,
                 "filteredNorm": result.filtered_norm,
                 "filteredDelta": filtered_list,
-                "nextActions": [
-                    "Apply filteredDelta to weights for interference-free merge",
-                    "mc_geometry_safety_polytope_check for comprehensive safety",
-                ],
             }
 
     if "mc_geometry_null_space_profile" in tool_set:
@@ -2603,10 +2400,6 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                 "meanNullFraction": profile.mean_null_fraction,
                 "graftableLayers": profile.graftable_layers,
                 "perLayer": per_layer_info,
-                "nextActions": [
-                    "mc_geometry_null_space_filter to filter deltas for graftable layers",
-                    "mc_geometry_safety_polytope_model for full model safety profile",
-                ],
             }
 
     if "mc_geometry_safety_polytope_check" in tool_set:
@@ -2710,17 +2503,9 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                     for trigger in result.triggers
                 ],
                 "transformations": [t.value for t in result.transformations],
-                "recommendedAlpha": result.recommended_alpha,
+                "derivedAlpha": result.recommended_alpha,
                 "confidence": result.confidence,
                 "transformationEffort": result.transformation_effort,
-                "nextActions": [
-                    "mc_geometry_null_space_filter for interference mitigation",
-                    "mc_geometry_safety_polytope_model for full model profile",
-                ]
-                if result.transformations
-                else [
-                    "Proceed with merge using recommendedAlpha",
-                ],
             }
 
     if "mc_geometry_safety_polytope_model" in tool_set:
@@ -2740,7 +2525,7 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                 baseAlpha: Base merge coefficient
 
             Returns:
-                Full model transformation profile with per-layer recommendations
+            Full model transformation profile with per-layer metrics
             """
             from modelcypher.core.domain.geometry.safety_polytope import (
                 DiagnosticVector,
@@ -2774,7 +2559,7 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                 count = len(result.transformations)
                 layers_by_transform_count.setdefault(str(count), []).append(layer_idx)
                 per_layer_info[str(layer_idx)] = {
-                    "recommendedAlpha": result.recommended_alpha,
+                    "derivedAlpha": result.recommended_alpha,
                     "transformationCount": count,
                     "transformations": [t.value for t in result.transformations],
                     "transformationEffort": result.transformation_effort,
@@ -2801,10 +2586,6 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                 },
                 "totalTransformationEffort": profile.total_transformation_effort,
                 "perLayer": per_layer_info,
-                "nextActions": [
-                    "mc_geometry_null_space_filter for interference mitigation",
-                    "mc_geometry_safety_polytope_check for per-layer analysis",
-                ],
             }
 
 

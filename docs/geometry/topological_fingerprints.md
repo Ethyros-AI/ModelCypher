@@ -245,7 +245,6 @@ result = service.compute_topological_fingerprint(
 print(f"Components (β₀): {result.betti_0}")
 print(f"Loops (β₁): {result.betti_1}")
 print(f"Persistence entropy: {result.persistence_entropy:.3f}")
-print(f"Interpretation: {result.interpretation}")
 ```
 
 ## Computational Complexity
