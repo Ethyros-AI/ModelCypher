@@ -20,14 +20,14 @@ Unified Atlas.
 
 Combines all atlas sources (sequence invariants, semantic primes, computational gates,
 emotion concepts, temporal, social, moral, compositional, philosophical, conceptual
-genealogy) into a single
-unified probe system for cross-domain triangulation in layer mapping operations.
+genealogy, safety ethics) into a single unified probe system for cross-domain
+triangulation in layer mapping operations.
 
 Philosophy IS conceptual math. These probes measure the fundamental categories of
 thought - the structural preconditions for coherent reasoning that are INVARIANT
 across all models. Knowledge occupies fixed probability clouds in hyperspace.
 
-Total probe count: 465
+Total probe count: 499
 - Sequence Invariants: 70 probes (10 families)
 - Semantic Primes: 65 probes (17 categories)
 - Computational Gates: 76 probes (14 categories)
@@ -41,6 +41,7 @@ Total probe count: 465
 - Conceptual Genealogy: 29 probes (etymology + lineage)
 - Metaphor Invariants: 14 probes (cross-cultural semantic anchors)
 - Syntax Concepts: 24 probes (syntax, morphology, word order, punctuation)
+- Safety Ethics: 34 probes (consent, autonomy, coercion, boundaries, vulnerability)
 """
 
 from __future__ import annotations
@@ -64,6 +65,10 @@ from modelcypher.core.domain.agents.emotion_concept_atlas import (
 from modelcypher.core.domain.agents.moral_atlas import (
     MoralConceptInventory,
     MoralFoundation,
+)
+from modelcypher.core.domain.agents.safety_ethics_atlas import (
+    SafetyCategory,
+    SafetyEthicsInventory,
 )
 from modelcypher.core.domain.agents.metaphor_invariant_atlas import (
     MetaphorFamily,
@@ -112,6 +117,7 @@ class AtlasSource(str, Enum):
     CONCEPTUAL_GENEALOGY = "conceptual_genealogy"
     METAPHOR_INVARIANT = "metaphor_invariant"
     SYNTAX_CONCEPT = "syntax_concept"
+    SAFETY_ETHICS = "safety_ethics"  # Consent, autonomy, coercion, boundaries, vulnerability
 
 
 class AtlasDomain(str, Enum):
@@ -145,6 +151,9 @@ class AtlasDomain(str, Enum):
 
     # Moral/ethical domains
     MORAL = "moral"  # Ethics, virtue, vice
+
+    # Safety domains (AI safety critical concepts)
+    SAFETY = "safety"  # Consent, autonomy, coercion, boundaries, vulnerability
 
     # Philosophical domains (fundamental categories of thought)
     PHILOSOPHICAL = "philosophical"  # Ontology, epistemology, logic, modality, mereology
@@ -288,6 +297,14 @@ _METAPHOR_DOMAIN_MAP: dict[MetaphorFamily, AtlasDomain] = {
     MetaphorFamily.RESILIENCE: AtlasDomain.LINGUISTIC,
 }
 
+_SAFETY_DOMAIN_MAP: dict[SafetyCategory, AtlasDomain] = {
+    SafetyCategory.CONSENT: AtlasDomain.SAFETY,
+    SafetyCategory.AUTONOMY: AtlasDomain.SAFETY,
+    SafetyCategory.COERCION: AtlasDomain.SAFETY,
+    SafetyCategory.BOUNDARIES: AtlasDomain.SAFETY,
+    SafetyCategory.VULNERABILITY: AtlasDomain.SAFETY,
+}
+
 
 @dataclass(frozen=True)
 class AtlasProbe:
@@ -331,6 +348,7 @@ _DEFAULT_WEIGHTS: dict[AtlasSource, float] = {
     AtlasSource.CONCEPTUAL_GENEALOGY: 1.0,
     AtlasSource.METAPHOR_INVARIANT: 1.0,
     AtlasSource.SYNTAX_CONCEPT: 1.0,
+    AtlasSource.SAFETY_ETHICS: 1.0,
 }
 
 
@@ -352,8 +370,9 @@ class UnifiedAtlasInventory:
     - 29 conceptual genealogy probes (etymology + lineage)
     - 14 metaphor invariants (cross-cultural semantic anchors)
     - 24 syntax concepts (parts of speech, morphology, word order)
+    - 34 safety ethics concepts (consent, autonomy, coercion, boundaries, vulnerability)
 
-    Total: 465 probes for cross-domain triangulation
+    Total: 499 probes for cross-domain triangulation
     """
 
     _cached_probes: list[AtlasProbe] | None = None
@@ -378,6 +397,7 @@ class UnifiedAtlasInventory:
         probes.extend(cls._conceptual_genealogy_probes())
         probes.extend(cls._metaphor_invariant_probes())
         probes.extend(cls._syntax_concept_probes())
+        probes.extend(cls._safety_ethics_probes())
 
         cls._cached_probes = probes
         return list(probes)
@@ -795,6 +815,43 @@ class UnifiedAtlasInventory:
 
         return probes
 
+    @classmethod
+    def _safety_ethics_probes(cls) -> list[AtlasProbe]:
+        """Convert safety ethics concepts to unified probes.
+
+        Safety ethics probes test AI safety-critical concepts:
+        - CONSENT: Informed, voluntary, revocable consent
+        - AUTONOMY: Self-determination, bodily autonomy, agency
+        - COERCION: Physical force, psychological manipulation, exploitation
+        - BOUNDARIES: Personal limits, professional limits, violations
+        - VULNERABILITY: Power imbalance, dependency, diminished capacity
+
+        Total: 35 probes testing concepts critical for safe AI behavior.
+        Models with denser representations of these concepts should produce
+        naturally safer outputs.
+        """
+        concepts = SafetyEthicsInventory.all_concepts()
+        probes: list[AtlasProbe] = []
+
+        base_weight = _DEFAULT_WEIGHTS[AtlasSource.SAFETY_ETHICS]
+
+        for concept in concepts:
+            domain = _SAFETY_DOMAIN_MAP.get(concept.category, AtlasDomain.SAFETY)
+            probes.append(
+                AtlasProbe(
+                    id=concept.id,
+                    source=AtlasSource.SAFETY_ETHICS,
+                    domain=domain,
+                    name=concept.name,
+                    description=concept.description,
+                    cross_domain_weight=concept.cross_domain_weight * base_weight,
+                    category_name=concept.category.value,
+                    support_texts=concept.support_texts,
+                )
+            )
+
+        return probes
+
 
 # Convenience constants
 ALL_ATLAS_SOURCES = frozenset(AtlasSource)
@@ -805,6 +862,7 @@ AFFECTIVE_DOMAINS = frozenset([AtlasDomain.AFFECTIVE, AtlasDomain.RELATIONAL])
 SPATIOTEMPORAL_DOMAINS = frozenset([AtlasDomain.TEMPORAL, AtlasDomain.SPATIAL])
 MORAL_DOMAINS = frozenset([AtlasDomain.MORAL])
 PHILOSOPHICAL_DOMAINS = frozenset([AtlasDomain.PHILOSOPHICAL, AtlasDomain.LOGICAL])
+SAFETY_DOMAINS = frozenset([AtlasDomain.SAFETY])
 
 # Default sources for layer mapping (all sources enabled)
 DEFAULT_ATLAS_SOURCES = frozenset(
@@ -822,6 +880,7 @@ DEFAULT_ATLAS_SOURCES = frozenset(
         AtlasSource.CONCEPTUAL_GENEALOGY,
         AtlasSource.METAPHOR_INVARIANT,
         AtlasSource.SYNTAX_CONCEPT,
+        AtlasSource.SAFETY_ETHICS,
     ]
 )
 

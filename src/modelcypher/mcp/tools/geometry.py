@@ -1504,7 +1504,7 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
                     }
                     for sp in result.stitching_points
                 ],
-                "recommendedConfig": result.recommended_config,
+                "stitchConfig": result.recommended_config,
             }
 
     if "mc_geometry_stitch_apply" in tool_set:

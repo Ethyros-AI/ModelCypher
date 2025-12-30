@@ -82,7 +82,7 @@ def geometry_stitch_analyze(
             }
             for sp in result.stitching_points
         ],
-        "recommendedConfig": result.recommended_config,
+        "stitchConfig": result.recommended_config,
     }
 
     if context.output_format == "text":

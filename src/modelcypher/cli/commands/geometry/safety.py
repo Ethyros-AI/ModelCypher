@@ -76,7 +76,6 @@ def geometry_safety_circuit_breaker(
     output = {
         "tripped": state.is_tripped,
         "severity": state.severity,
-        "recommendedAction": state.recommended_action.description,
     }
 
     if context.output_format == "text":
@@ -84,7 +83,6 @@ def geometry_safety_circuit_breaker(
             "CIRCUIT BREAKER EVALUATION",
             f"Tripped: {state.is_tripped}",
             f"Severity: {output['severity']:.3f}",
-            f"Recommended Action: {output['recommendedAction']}",
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
