@@ -42,8 +42,10 @@ Usage:
 
 from __future__ import annotations
 
-import hashlib
 import logging
+import weakref
+
+import xxhash
 import threading
 import time
 from dataclasses import dataclass
@@ -160,13 +162,21 @@ class ComputationCache:
         self._stats = CacheStats()
         self._stats_lock = threading.Lock()
 
+        # id() → cache_key fast-path for arrays still in memory
+        # Maps id(array) → (weakref or None, cache_key)
+        # Weakref ensures we detect when array is GC'd and id reused
+        self._id_cache: dict[int, tuple[weakref.ref | None, str]] = {}
+        self._id_cache_lock = threading.Lock()
+        self._max_id_cache_entries = 500
+
     # --- Key Generation ---
 
     def make_array_key(self, arr: "Array", backend: "Backend") -> str:
         """
         Create a hash key from an array's content.
 
-        Uses shape + sampled values for efficiency on large arrays.
+        Uses id()-based fast-path caching for arrays still in memory,
+        falling back to shape + sampled values hashing for new arrays.
 
         Args:
             arr: Input array
@@ -175,6 +185,28 @@ class ComputationCache:
         Returns:
             16-character hex hash
         """
+        arr_id = id(arr)
+
+        # Fast path: check if we've seen this exact array object before
+        with self._id_cache_lock:
+            if arr_id in self._id_cache:
+                ref, cached_key = self._id_cache[arr_id]
+                # If weakref exists, verify it still points to same object
+                if ref is None or ref() is arr:
+                    return cached_key
+                # Array was GC'd and id reused - remove stale entry
+                del self._id_cache[arr_id]
+
+        # Slow path: compute the hash
+        key = self._compute_array_key(arr, backend)
+
+        # Cache for future lookups
+        self._cache_array_id(arr_id, arr, key)
+
+        return key
+
+    def _compute_array_key(self, arr: "Array", backend: "Backend") -> str:
+        """Compute cache key by hashing array content (slow path)."""
         backend.eval(arr)
         shape = tuple(int(d) for d in arr.shape)
         n_elements = 1
@@ -192,7 +224,8 @@ class ComputationCache:
             shape_bytes = str(shape).encode()
             content_bytes = flat.tobytes()
             # Hash shape + content bytes directly (avoids hex conversion overhead)
-            return hashlib.sha256(shape_bytes + content_bytes).hexdigest()[:16]
+            # xxhash is ~10-50× faster than SHA256 for non-cryptographic hashing
+            return xxhash.xxh64(shape_bytes + content_bytes).hexdigest()[:16]
         else:
             # Large array - sample strategically
             flat = arr_np.flatten()
@@ -208,7 +241,30 @@ class ComputationCache:
             step = max(1, len(flat) // 20)
             samples.extend(flat[::step][:10].tolist())
             content = f"shape={shape}|samples={samples}"
-            return hashlib.sha256(content.encode()).hexdigest()[:16]
+            return xxhash.xxh64(content.encode()).hexdigest()[:16]
+
+    def _cache_array_id(self, arr_id: int, arr: "Array", key: str) -> None:
+        """Cache id(array) → key mapping with LRU eviction."""
+        # Try to create a weakref for GC detection
+        try:
+            ref: weakref.ref | None = weakref.ref(arr)
+        except TypeError:
+            # Some array types don't support weakref
+            ref = None
+
+        with self._id_cache_lock:
+            self._id_cache[arr_id] = (ref, key)
+
+            # Simple LRU: if too many entries, remove oldest
+            if len(self._id_cache) > self._max_id_cache_entries:
+                # Remove first entry (oldest by insertion order in Python 3.7+)
+                oldest_id = next(iter(self._id_cache))
+                del self._id_cache[oldest_id]
+
+    def clear_id_cache(self) -> None:
+        """Clear the id() → key cache (for testing)."""
+        with self._id_cache_lock:
+            self._id_cache.clear()
 
     def make_gram_key(
         self,
@@ -553,6 +609,9 @@ class ComputationCache:
 
         with self._stats_lock:
             self._stats = CacheStats()
+
+        with self._id_cache_lock:
+            self._id_cache.clear()
 
         logger.info("Cleared all computation caches")
 

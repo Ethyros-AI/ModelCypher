@@ -15,9 +15,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Geodesic spectral signatures for point cloud manifolds.
+"""Graph spectral signatures for point cloud manifolds.
 
-Builds a graph Laplacian from geodesic distances and reports raw spectral
+Builds a k-NN graph Laplacian from pairwise distances and reports raw spectral
 metrics (eigenvalues, heat trace, entropy) without interpretation.
 """
 
@@ -68,7 +68,7 @@ class SpectralSignatureResult:
 
 
 class SpectralSignature:
-    """Compute geodesic spectral signatures for point clouds."""
+    """Compute graph spectral signatures for point clouds."""
 
     def __init__(self, backend: "Backend | None" = None) -> None:
         self._backend = backend or get_default_backend()
@@ -142,7 +142,7 @@ class SpectralSignature:
         if kernel_bandwidth is None:
             kernel_bandwidth = _median(edge_distances)
 
-        bandwidth_floor = tiny_value(backend, geo_dist)
+        bandwidth_floor = tiny_value(backend, euclidean_dist)
         if kernel_bandwidth <= bandwidth_floor:
             kernel_bandwidth = bandwidth_floor
 

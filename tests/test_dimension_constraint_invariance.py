@@ -1,0 +1,118 @@
+# Copyright (C) 2025 EthyrosAI LLC / Jason Kempf
+#
+# This file is part of ModelCypher.
+#
+# ModelCypher is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# ModelCypher is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
+
+"""Tests that constrained dimensions preserve manifold geometry."""
+
+from __future__ import annotations
+
+import pytest
+
+from modelcypher.core.domain.geometry.cka import compute_cka_from_grams
+from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+from modelcypher.core.domain.geometry.spectral_signature import (
+    SpectralSignature,
+    SpectralSignatureConfig,
+)
+from modelcypher.core.domain.geometry.topological_fingerprint import (
+    TopologicalFingerprint,
+)
+
+
+def _base_points() -> list[list[float]]:
+    return [
+        [0.0, 0.0],
+        [1.0, 0.0],
+        [0.5, 0.8],
+        [0.1, 0.7],
+        [0.9, 0.2],
+    ]
+
+
+def _pad_points(points: list[list[float]], dims: int) -> list[list[float]]:
+    return [row + [0.0] * (dims - len(row)) for row in points]
+
+
+def test_gram_matrix_invariance_under_padding(any_backend) -> None:
+    """Gram geometry is identical under zero-padding."""
+    backend = any_backend
+    points = _base_points()
+    padded = _pad_points(points, 4)
+
+    base = backend.array(points)
+    expanded = backend.array(padded)
+    backend.eval(base, expanded)
+
+    gram_base = backend.matmul(base, backend.transpose(base))
+    gram_expanded = backend.matmul(expanded, backend.transpose(expanded))
+    backend.eval(gram_base, gram_expanded)
+
+    cka = compute_cka_from_grams(gram_base, gram_expanded, backend=backend)
+    assert cka == pytest.approx(1.0, abs=1e-6)
+
+
+def test_geodesic_and_spectral_invariance_under_padding(any_backend) -> None:
+    """Geodesic and spectral signatures are invariant under zero-padding."""
+    backend = any_backend
+    points = _base_points()
+    padded = _pad_points(points, 3)
+
+    geometry = RiemannianGeometry(backend)
+    geo_base = geometry.geodesic_distances(points, k_neighbors=3)
+    geo_padded = geometry.geodesic_distances(padded, k_neighbors=3)
+
+    base_dist = backend.to_numpy(geo_base.distances).tolist()
+    padded_dist = backend.to_numpy(geo_padded.distances).tolist()
+    assert base_dist == pytest.approx(padded_dist, rel=1e-6, abs=1e-6)
+    assert geo_base.connected == geo_padded.connected
+    assert geo_base.k_neighbors == geo_padded.k_neighbors
+
+    config = SpectralSignatureConfig(k_neighbors=3)
+    spectral = SpectralSignature(backend)
+    sig_base = spectral.compute(points, config)
+    sig_padded = spectral.compute(padded, config)
+
+    assert sig_base.eigenvalues == pytest.approx(sig_padded.eigenvalues, rel=1e-6, abs=1e-6)
+    assert sig_base.heat_trace == pytest.approx(sig_padded.heat_trace, rel=1e-6, abs=1e-6)
+    assert sig_base.spectral_entropy == pytest.approx(sig_padded.spectral_entropy, abs=1e-6)
+    assert sig_base.algebraic_connectivity == pytest.approx(
+        sig_padded.algebraic_connectivity, abs=1e-6
+    )
+    assert sig_base.component_count == sig_padded.component_count
+    assert sig_base.edge_count == sig_padded.edge_count
+    assert sig_base.k_neighbors == sig_padded.k_neighbors
+
+
+def test_topological_fingerprint_invariance_under_padding() -> None:
+    """Persistent homology summaries are invariant under zero-padding."""
+    points = _base_points()
+    padded = _pad_points(points, 4)
+
+    fp_base = TopologicalFingerprint.compute(points, max_dimension=1)
+    fp_padded = TopologicalFingerprint.compute(padded, max_dimension=1)
+
+    assert fp_base.betti_numbers == fp_padded.betti_numbers
+    assert fp_base.summary.component_count == fp_padded.summary.component_count
+    assert fp_base.summary.cycle_count == fp_padded.summary.cycle_count
+    assert fp_base.summary.average_persistence == pytest.approx(
+        fp_padded.summary.average_persistence, abs=1e-9
+    )
+    assert fp_base.summary.max_persistence == pytest.approx(
+        fp_padded.summary.max_persistence, abs=1e-9
+    )
+    assert fp_base.summary.persistence_entropy == pytest.approx(
+        fp_padded.summary.persistence_entropy, abs=1e-9
+    )

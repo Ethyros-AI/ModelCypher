@@ -23,8 +23,9 @@ following patterns from TokenCounterService and RefusalDirectionCache.
 
 from __future__ import annotations
 
-import hashlib
 import json
+
+import xxhash
 import logging
 import threading
 import time
@@ -254,6 +255,9 @@ def content_hash(data: Any) -> str:
     """
     Create a deterministic hash of data for cache keys.
 
+    Uses xxhash for ~10-50× faster hashing than SHA256.
+    Not cryptographically secure, but that's not needed for cache keys.
+
     Args:
         data: Data to hash (must be JSON-serializable)
 
@@ -261,4 +265,4 @@ def content_hash(data: Any) -> str:
         16-character hex hash
     """
     content = json.dumps(data, sort_keys=True, default=str)
-    return hashlib.sha256(content.encode()).hexdigest()[:16]
+    return xxhash.xxh64(content.encode()).hexdigest()[:16]
