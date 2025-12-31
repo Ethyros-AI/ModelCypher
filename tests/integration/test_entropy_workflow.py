@@ -521,7 +521,8 @@ class TestEntropyWorkflowInvariants:
 
     def test_phase_classification_consistent(self) -> None:
         """Phase classification should be consistent with temperature."""
-        tc = PhaseTransitionTheory.theoretical_tc()
+        # Estimate T_c from typical LLM parameters (σ_z = 4.0, V_eff = 2000)
+        tc = PhaseTransitionTheory.estimate_critical_temperature(4.0, 2000)
 
         # Well below T_c should be ordered
         phase_low = PhaseTransitionTheory.classify_phase(tc * 0.5, tc)

@@ -245,17 +245,28 @@ class TestRowMismatchProjection:
         assert 0.0 <= result.alignment_score <= 1.0
 
     def test_row_mismatch_procrustes(self, backend: "Backend") -> None:
-        """Procrustes with row-only mismatch uses transpose + column handling.
+        """Procrustes should handle row mismatch with same columns."""
+        backend.random_seed(42)
+        source = backend.random_normal((12, 8))
+        target = backend.random_normal((10, 8))
+        backend.eval(source, target)
 
-        Note: Procrustes handles row mismatch by transposing matrices and
-        applying column-mismatch logic. For cases where the transposed
-        column mismatch involves truncation to a dimension larger than
-        the SVD rank, this can fail. Use gram_transport for such cases.
+        result = project_cross_dimensional(
+            source, target, method=ProjectionMethod.PROCRUSTES, backend=backend
+        )
+        assert result.projected.shape == (10, 8)
+        assert result.method_used == ProjectionMethod.PROCRUSTES
 
-        This test verifies the row expansion case works (SVD rank sufficient).
+    def test_row_mismatch_procrustes_rank_deficient(self, backend: "Backend") -> None:
+        """Procrustes should handle row mismatch even when SVD rank < target dim.
+
+        When source has fewer rows than columns and we transpose for row handling,
+        the SVD rank is limited. The code should pad with zeros to reach target dim.
         """
         backend.random_seed(42)
-        # Use expansion case (more rows in target) where SVD rank is sufficient
+        # Source: (8, 12) -> transpose (12, 8) has rank at most 8
+        # Target: (10, 12) -> transpose (12, 10) needs 10 columns
+        # After transpose, we have d_s=8, d_t=10, rank=8 < d_t
         source = backend.random_normal((8, 12))
         target = backend.random_normal((10, 12))
         backend.eval(source, target)
@@ -265,6 +276,7 @@ class TestRowMismatchProjection:
         )
         assert result.projected.shape == (10, 12)
         assert result.method_used == ProjectionMethod.PROCRUSTES
+        assert 0.0 <= result.alignment_score <= 1.0
 
     def test_row_mismatch_svd(self, backend: "Backend") -> None:
         """SVD should handle row mismatch."""

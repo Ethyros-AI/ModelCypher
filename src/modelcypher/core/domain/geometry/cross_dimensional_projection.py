@@ -390,18 +390,31 @@ def _project_procrustes(
     if m_s == m_t and d_s != d_t:
         # Use SVD on column space
         if d_s > d_t:
-            # Truncate: use top d_t components via SVD
+            # Truncate: use SVD to project to smaller dimension
             _, S, Vt = svd_via_eigh(b, source, full_matrices=False)
             b.eval(S, Vt)
 
-            # Project to top d_t dimensions
-            projected = b.matmul(source, b.transpose(Vt[:d_t, :]))
+            # Number of components is limited by SVD rank
+            # rank = min(m_s, d_s), but Vt.shape[0] gives actual rank
+            rank = int(Vt.shape[0])
+            k = min(d_t, rank)  # Can only project to min(d_t, rank) dimensions
+
+            # Project to top k dimensions
+            V_k = b.transpose(Vt[:k, :])  # [d_s, k]
+            projected = b.matmul(source, V_k)  # [m_s, k]
             b.eval(projected)
 
+            # If we couldn't reach d_t dimensions due to rank, pad with zeros
+            if k < d_t:
+                padding = b.zeros((m_s, d_t - k))
+                projected = b.concatenate([projected, padding], axis=1)
+                b.eval(projected)
+
+            # Now projected has shape [m_s, d_t]
             # Align to target via Procrustes
-            M = b.matmul(b.transpose(target), projected)
+            M = b.matmul(b.transpose(target), projected)  # [d_t, d_t]
             U, _, Vt_proc = svd_via_eigh(b, M, full_matrices=False)
-            R = b.matmul(U, Vt_proc)
+            R = b.matmul(U, Vt_proc)  # [d_t, d_t]
             b.eval(R)
 
             # Handle reflection - flip last column of U if det(R) < 0
@@ -412,12 +425,12 @@ def _project_procrustes(
                 R = b.matmul(U_fixed, Vt_proc)
                 b.eval(R)
 
-            projected = b.matmul(projected, R)
+            projected = b.matmul(projected, R)  # [m_s, d_t]
             b.eval(projected)
 
             # Alignment score from energy preserved
             total_energy = float(b.to_numpy(b.sum(S ** 2)))
-            kept_energy = float(b.to_numpy(b.sum(S[:d_t] ** 2)))
+            kept_energy = float(b.to_numpy(b.sum(S[:k] ** 2)))
             eps = float(division_epsilon(b, S))
             score = kept_energy / (total_energy + eps)
         else:
