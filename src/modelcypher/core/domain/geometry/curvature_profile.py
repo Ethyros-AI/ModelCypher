@@ -315,9 +315,6 @@ class CurvatureCompatibility:
         return {
             "score": self.score,
             "alignment_score": self.score,
-            "sectional_compatibility": self.sectional_compatibility,
-            "ollivier_ricci_compatibility": self.ollivier_ricci_compatibility,
-            "intrinsic_dimension_compatibility": self.intrinsic_dimension_compatibility,
             "sectional_alignment": self.sectional_compatibility,
             "ollivier_ricci_alignment": self.ollivier_ricci_compatibility,
             "intrinsic_dimension_alignment": self.intrinsic_dimension_compatibility,

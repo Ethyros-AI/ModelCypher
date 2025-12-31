@@ -126,7 +126,7 @@ TrainingConfig(model_id=..., batch_size=4, ...)
 # New API (nested):
 TrainingConfig(model_id=..., hyperparameters=Hyperparameters(batch_size=4), ...)
 ```
-**Fix**: Update test to use new API or add backward compatibility
+**Fix**: Update the test to match the new API shape
 
 #### 4. Floating Point Comparison Failures
 **Symptom**: `assert 0.1 in deaths` fails

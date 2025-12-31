@@ -104,7 +104,7 @@ class TestProfileComparison:
         assert pc.source_path == "/path/to/source"
         assert pc.target_path == "/path/to/target"
         assert pc.architecture_match is False
-        assert pc.overall_compatibility == 0.0
+        assert pc.overall_alignment == 0.0
 
     def test_create_full(self) -> None:
         """Should create ProfileComparison with all fields."""
@@ -114,10 +114,10 @@ class TestProfileComparison:
             architecture_match=True,
             hidden_dim_ratio=1.0,
             layer_count_ratio=1.0,
-            curvature_compatibility=0.85,
-            ricci_compatibility=0.90,
-            dimension_compatibility=0.80,
-            overall_compatibility=0.87,
+            curvature_alignment=0.85,
+            ricci_alignment=0.90,
+            dimension_alignment=0.80,
+            overall_alignment=0.87,
             topology_similarity=0.92,
             semantic_alignment=0.88,
             layer_mapping={0: 0, 1: 1, 2: 2},
@@ -132,7 +132,7 @@ class TestProfileComparison:
             recommended_strategy="procrustes",
         )
         assert pc.architecture_match
-        assert pc.overall_compatibility == 0.87
+        assert pc.overall_alignment == 0.87
         assert len(pc.layer_comparisons) == 2
 
     def test_to_dict_and_from_dict(self) -> None:
@@ -141,7 +141,7 @@ class TestProfileComparison:
             source_path="/path/to/source",
             target_path="/path/to/target",
             architecture_match=True,
-            curvature_compatibility=0.85,
+            curvature_alignment=0.85,
             layer_mapping={0: 0, 1: 1},
             layer_comparisons=[
                 LayerComparison(0, 0, alignment_effort=0.2),
@@ -153,7 +153,7 @@ class TestProfileComparison:
 
         assert restored.source_path == original.source_path
         assert restored.architecture_match == original.architecture_match
-        assert restored.curvature_compatibility == original.curvature_compatibility
+        assert restored.curvature_alignment == original.curvature_alignment
         assert restored.recommended_strategy == original.recommended_strategy
         assert len(restored.layer_comparisons) == 1
 
@@ -162,7 +162,7 @@ class TestCompareProfiles:
     """Tests for compare_profiles function."""
 
     def test_compare_identical_profiles(self) -> None:
-        """Identical profiles should have high compatibility."""
+        """Identical profiles should have high alignment."""
         profile = ModelProfile(
             model_path="/path/to/model",
             model_family="qwen",
@@ -186,9 +186,9 @@ class TestCompareProfiles:
         assert comparison.architecture_match
         assert comparison.hidden_dim_ratio == 1.0
         assert comparison.layer_count_ratio == 1.0
-        # Identical profiles should have high compatibility
-        assert comparison.curvature_compatibility > 0.9
-        assert comparison.overall_compatibility > 0.9
+        # Identical profiles should have high alignment
+        assert comparison.curvature_alignment > 0.9
+        assert comparison.overall_alignment > 0.9
         assert comparison.mean_alignment_effort < 0.1
 
     def test_compare_same_architecture_different_curvature(self) -> None:
@@ -233,8 +233,8 @@ class TestCompareProfiles:
 
         assert comparison.architecture_match
         assert comparison.hidden_dim_ratio == 1.0
-        # Should still have reasonable compatibility
-        assert comparison.overall_compatibility > 0.5
+        # Should still have reasonable alignment
+        assert comparison.overall_alignment > 0.5
         # But some alignment effort needed
         assert comparison.mean_alignment_effort > 0.0
 

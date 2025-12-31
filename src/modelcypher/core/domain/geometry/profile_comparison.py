@@ -19,7 +19,7 @@
 
 Two profiles together tell the alignment story:
 - What transformations are needed to merge?
-- How compatible is the geometry?
+- How aligned is the geometry?
 - What capabilities might be at risk?
 
 This module computes the comparison without making judgment calls.
@@ -122,17 +122,17 @@ class ProfileComparison:
     vocab_overlap: float = 0.0  # Shared vocabulary percentage (if computed)
 
     # === GEOMETRIC METRICS ===
-    # Curvature compatibility (0-1 scale derived from z-score differences)
-    curvature_compatibility: float = 0.0
+    # Curvature alignment (0-1 scale derived from z-score differences)
+    curvature_alignment: float = 0.0
 
-    # Ollivier-Ricci compatibility
-    ricci_compatibility: float = 0.0
+    # Ollivier-Ricci alignment
+    ricci_alignment: float = 0.0
 
-    # Intrinsic dimension compatibility
-    dimension_compatibility: float = 0.0
+    # Intrinsic dimension alignment
+    dimension_alignment: float = 0.0
 
-    # Overall geometric compatibility (weighted combination)
-    overall_compatibility: float = 0.0
+    # Overall geometric alignment (weighted combination)
+    overall_alignment: float = 0.0
 
     # === TOPOLOGY METRICS ===
     topology_similarity: float | None = None  # If topology summaries available
@@ -161,14 +161,10 @@ class ProfileComparison:
             "layer_count_ratio": self.layer_count_ratio,
             "vocab_overlap": self.vocab_overlap,
             # Geometric
-            "curvature_compatibility": self.curvature_compatibility,
-            "ricci_compatibility": self.ricci_compatibility,
-            "dimension_compatibility": self.dimension_compatibility,
-            "overall_compatibility": self.overall_compatibility,
-            "curvature_alignment": self.curvature_compatibility,
-            "ricci_alignment": self.ricci_compatibility,
-            "dimension_alignment": self.dimension_compatibility,
-            "overall_alignment": self.overall_compatibility,
+            "curvature_alignment": self.curvature_alignment,
+            "ricci_alignment": self.ricci_alignment,
+            "dimension_alignment": self.dimension_alignment,
+            "overall_alignment": self.overall_alignment,
             # Topology
             "topology_similarity": self.topology_similarity,
             # Semantic
@@ -193,22 +189,10 @@ class ProfileComparison:
             hidden_dim_ratio=d.get("hidden_dim_ratio", 1.0),
             layer_count_ratio=d.get("layer_count_ratio", 1.0),
             vocab_overlap=d.get("vocab_overlap", 0.0),
-            curvature_compatibility=d.get(
-                "curvature_compatibility",
-                d.get("curvature_alignment", 0.0),
-            ),
-            ricci_compatibility=d.get(
-                "ricci_compatibility",
-                d.get("ricci_alignment", 0.0),
-            ),
-            dimension_compatibility=d.get(
-                "dimension_compatibility",
-                d.get("dimension_alignment", 0.0),
-            ),
-            overall_compatibility=d.get(
-                "overall_compatibility",
-                d.get("overall_alignment", 0.0),
-            ),
+            curvature_alignment=d.get("curvature_alignment", 0.0),
+            ricci_alignment=d.get("ricci_alignment", 0.0),
+            dimension_alignment=d.get("dimension_alignment", 0.0),
+            overall_alignment=d.get("overall_alignment", 0.0),
             topology_similarity=d.get("topology_similarity"),
             semantic_alignment=d.get("semantic_alignment"),
             layer_mapping=d.get("layer_mapping", {}),
@@ -231,7 +215,7 @@ def compare_profiles(
 ) -> ProfileComparison:
     """Compare two ModelProfiles and produce alignment analysis.
 
-    This function computes geometric compatibility metrics between two models
+    This function computes geometric alignment metrics between two models
     without making value judgments. The geometry speaks for itself.
 
     Args:
@@ -283,26 +267,22 @@ def compare_profiles(
             comparison = _compare_layers(src_lp, tgt_lp)
             layer_comparisons.append(comparison)
 
-    # === GEOMETRIC COMPATIBILITY ===
-    # Compute compatibility scores from layer comparisons
+    # === GEOMETRIC ALIGNMENT ===
+    # Compute alignment scores from layer comparisons
     sectional_diffs = [
         abs(lc.sectional_curvature_diff) for lc in layer_comparisons
     ]
     ricci_diffs = [abs(lc.ollivier_ricci_diff) for lc in layer_comparisons]
     dim_diffs = [abs(lc.intrinsic_dimension_diff) for lc in layer_comparisons]
 
-    # Convert differences to compatibility (0-1 scale)
+    # Convert differences to alignment (0-1 scale)
     # Use exponential decay: exp(-diff/scale)
-    curvature_compatibility = _mean_compatibility(sectional_diffs, scale=0.5)
-    ricci_compatibility = _mean_compatibility(ricci_diffs, scale=0.5)
-    dimension_compatibility = _mean_compatibility(dim_diffs, scale=10.0)
+    curvature_alignment = _mean_alignment(sectional_diffs, scale=0.5)
+    ricci_alignment = _mean_alignment(ricci_diffs, scale=0.5)
+    dimension_alignment = _mean_alignment(dim_diffs, scale=10.0)
 
     # Overall: weighted average
-    overall_compatibility = (
-        0.5 * ricci_compatibility
-        + 0.3 * curvature_compatibility
-        + 0.2 * dimension_compatibility
-    )
+    overall_alignment = 0.5 * ricci_alignment + 0.3 * curvature_alignment + 0.2 * dimension_alignment
 
     # === TOPOLOGY COMPARISON ===
     topology_similarity = None
@@ -368,10 +348,10 @@ def compare_profiles(
         architecture_match=architecture_match,
         hidden_dim_ratio=hidden_dim_ratio,
         layer_count_ratio=layer_count_ratio,
-        curvature_compatibility=curvature_compatibility,
-        ricci_compatibility=ricci_compatibility,
-        dimension_compatibility=dimension_compatibility,
-        overall_compatibility=overall_compatibility,
+        curvature_alignment=curvature_alignment,
+        ricci_alignment=ricci_alignment,
+        dimension_alignment=dimension_alignment,
+        overall_alignment=overall_alignment,
         topology_similarity=topology_similarity,
         semantic_alignment=semantic_alignment,
         layer_mapping=layer_mapping,
@@ -439,8 +419,8 @@ def _compare_layers(source: LayerProfile, target: LayerProfile) -> LayerComparis
     )
 
 
-def _mean_compatibility(diffs: list[float], scale: float = 1.0) -> float:
-    """Convert differences to compatibility score using exponential decay."""
+def _mean_alignment(diffs: list[float], scale: float = 1.0) -> float:
+    """Convert differences to alignment score using exponential decay."""
     if not diffs:
         return 1.0
 

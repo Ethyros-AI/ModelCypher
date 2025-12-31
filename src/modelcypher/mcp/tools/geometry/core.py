@@ -396,8 +396,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             maxIterations: int = 50,
         ) -> dict:
             """Compute Gromov-Wasserstein distance between point clouds.
-
-            Returns distance metrics plus alignmentScore (alias of compatibilityScore).
             """
             result = ctx.geometry_metrics_service.compute_gromov_wasserstein(
                 source_points=sourcePoints,

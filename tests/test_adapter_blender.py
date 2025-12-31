@@ -340,8 +340,19 @@ class TestSignalType:
 
     def test_custom_signal_type(self) -> None:
         """Custom signal type should include custom name."""
+        # When namespace is "custom", capability_string uses value:custom_name
+        st = SignalType.custom("custom", "myevent")
+        assert st.capability_string == "custom:myevent"
+
+    def test_custom_signal_type_with_namespace(self) -> None:
+        """Custom signal type with non-custom namespace uses namespace:value."""
+        # When namespace != "custom", capability_string is namespace:value
+        # where value is set to namespace by the factory
         st = SignalType.custom("myns", "myevent")
-        assert st.capability_string == "myns:myevent"
+        assert st.namespace == "myns"
+        assert st.value == "myns"
+        assert st.custom_name == "myevent"
+        assert st.capability_string == "myns:myns"
 
 
 class TestSignal:

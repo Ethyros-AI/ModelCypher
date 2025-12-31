@@ -113,10 +113,10 @@ class ProfileComparison:
     layer_count_ratio: float
 
     # Geometric alignment (0-1 scale)
-    curvature_alignment: float          # alias: curvature_compatibility
-    ricci_alignment: float              # alias: ricci_compatibility
-    dimension_alignment: float          # alias: dimension_compatibility
-    overall_alignment: float            # alias: overall_compatibility
+    curvature_alignment: float
+    ricci_alignment: float
+    dimension_alignment: float
+    overall_alignment: float
 
     # Layer correspondence
     layer_mapping: dict[int, int]  # source -> target

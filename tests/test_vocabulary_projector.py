@@ -1,0 +1,499 @@
+# Copyright (C) 2025 EthyrosAI LLC / Jason Kempf
+#
+# This file is part of ModelCypher.
+#
+# ModelCypher is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+"""Tests for the vocabulary module.
+
+Tests EmbeddingProjector projection strategies and CrossVocabMerger operations.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+import pytest
+
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.vocabulary.embedding_projector import (
+    EmbeddingProjector,
+    ProjectionConfig,
+    ProjectionResult,
+    ProjectionStrategy,
+)
+from modelcypher.core.domain.vocabulary.cross_vocab_merger import (
+    CrossVocabMerger,
+    CrossVocabMergeConfig,
+)
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Backend
+
+
+@pytest.fixture
+def backend() -> "Backend":
+    """Get the default backend."""
+    return get_default_backend()
+
+
+# =============================================================================
+# EmbeddingProjector Tests
+# =============================================================================
+
+
+class TestProjectionResult:
+    """Tests for ProjectionResult dataclass."""
+
+    def test_to_dict_contains_required_fields(self, backend: "Backend") -> None:
+        """to_dict should contain required summary fields."""
+        embeddings = backend.random_normal((100, 64))
+        backend.eval(embeddings)
+
+        result = ProjectionResult(
+            projected_embeddings=embeddings,
+            projection_matrix=None,
+            reconstruction_error=0.5,
+            alignment_score=0.85,
+            strategy_used=ProjectionStrategy.TRUNCATE,
+            metadata={"test_key": "test_value"},
+        )
+
+        d = result.to_dict()
+
+        assert d["reconstruction_error"] == pytest.approx(0.5)
+        assert d["alignment_score"] == pytest.approx(0.85)
+        assert d["strategy_used"] == "truncate"
+        assert d["output_shape"] == [100, 64]
+        assert d["has_projection_matrix"] is False
+        assert d["test_key"] == "test_value"
+
+
+class TestTruncateStrategy:
+    """Tests for TRUNCATE projection strategy."""
+
+    def test_same_dimensions_returns_unchanged(self, backend: "Backend") -> None:
+        """Same dimensions should return source unchanged."""
+        source = backend.random_normal((100, 64))
+        target = backend.random_normal((100, 64))
+        backend.eval(source, target)
+
+        config = ProjectionConfig(strategy=ProjectionStrategy.TRUNCATE)
+        projector = EmbeddingProjector(config=config, backend=backend)
+
+        result = projector.project(source, target)
+
+        assert result.reconstruction_error == 0.0
+        assert result.alignment_score == 1.0
+        assert result.projected_embeddings.shape == source.shape
+
+    def test_larger_source_truncates(self, backend: "Backend") -> None:
+        """Larger source dimension should be truncated."""
+        source = backend.random_normal((100, 128))  # Larger
+        target = backend.random_normal((100, 64))  # Smaller
+        backend.eval(source, target)
+
+        config = ProjectionConfig(strategy=ProjectionStrategy.TRUNCATE)
+        projector = EmbeddingProjector(config=config, backend=backend)
+
+        result = projector.project(source, target)
+
+        assert result.projected_embeddings.shape == (100, 64)
+        assert result.reconstruction_error > 0.0  # Lost information
+        assert result.alignment_score == 64 / 128  # Ratio of dimensions
+
+    def test_smaller_source_pads(self, backend: "Backend") -> None:
+        """Smaller source dimension should be zero-padded."""
+        source = backend.random_normal((100, 32))  # Smaller
+        target = backend.random_normal((100, 64))  # Larger
+        backend.eval(source, target)
+
+        config = ProjectionConfig(strategy=ProjectionStrategy.TRUNCATE)
+        projector = EmbeddingProjector(config=config, backend=backend)
+
+        result = projector.project(source, target)
+
+        assert result.projected_embeddings.shape == (100, 64)
+        assert result.reconstruction_error == 0.0  # No information lost
+        assert result.alignment_score == 32 / 64  # Ratio of dimensions
+
+
+class TestPCAStrategy:
+    """Tests for PCA projection strategy."""
+
+    def test_pca_reduces_dimensions(self, backend: "Backend") -> None:
+        """PCA should reduce to target dimension."""
+        backend.random_seed(42)
+        source = backend.random_normal((100, 128))
+        target = backend.random_normal((100, 64))
+        backend.eval(source, target)
+
+        config = ProjectionConfig(strategy=ProjectionStrategy.PCA)
+        projector = EmbeddingProjector(config=config, backend=backend)
+
+        result = projector.project(source, target)
+
+        assert result.projected_embeddings.shape == (100, 64)
+        assert 0.0 <= result.alignment_score <= 1.0  # Explained variance ratio
+
+    def test_pca_with_n_components(self, backend: "Backend") -> None:
+        """PCA with explicit n_components."""
+        backend.random_seed(42)
+        source = backend.random_normal((100, 128))
+        target = backend.random_normal((100, 64))
+        backend.eval(source, target)
+
+        config = ProjectionConfig(strategy=ProjectionStrategy.PCA, n_components=32)
+        projector = EmbeddingProjector(config=config, backend=backend)
+
+        result = projector.project(source, target)
+
+        # Output is padded/truncated to target_dim
+        assert result.projected_embeddings.shape == (100, 64)
+        assert result.metadata["n_components"] == 32
+
+
+class TestProcrustesStrategy:
+    """Tests for Procrustes projection strategy."""
+
+    def test_procrustes_produces_rotation(self, backend: "Backend") -> None:
+        """Procrustes should produce an orthogonal rotation matrix."""
+        backend.random_seed(42)
+        source = backend.random_normal((100, 64))
+        target = backend.random_normal((100, 64))
+        backend.eval(source, target)
+
+        config = ProjectionConfig(strategy=ProjectionStrategy.PROCRUSTES)
+        projector = EmbeddingProjector(config=config, backend=backend)
+
+        result = projector.project(source, target)
+
+        assert result.projection_matrix is not None
+        assert result.projected_embeddings.shape == (100, 64)
+        assert 0.0 <= result.alignment_score <= 1.0
+
+    def test_procrustes_with_shared_indices(self, backend: "Backend") -> None:
+        """Procrustes with explicit shared token indices."""
+        backend.random_seed(42)
+        source = backend.random_normal((100, 64))
+        target = backend.random_normal((100, 64))
+        backend.eval(source, target)
+
+        shared_indices = (list(range(50)), list(range(50)))
+
+        config = ProjectionConfig(strategy=ProjectionStrategy.PROCRUSTES, anchor_count=50)
+        projector = EmbeddingProjector(config=config, backend=backend)
+
+        result = projector.project(source, target, shared_token_indices=shared_indices)
+
+        assert result.metadata["n_anchors"] == 50
+
+    def test_procrustes_cross_dimension(self, backend: "Backend") -> None:
+        """Procrustes with different dimensions pads smaller."""
+        backend.random_seed(42)
+        source = backend.random_normal((100, 48))
+        target = backend.random_normal((100, 64))
+        backend.eval(source, target)
+
+        config = ProjectionConfig(strategy=ProjectionStrategy.PROCRUSTES)
+        projector = EmbeddingProjector(config=config, backend=backend)
+
+        result = projector.project(source, target)
+
+        assert result.projected_embeddings.shape == (100, 64)
+
+
+class TestCCAStrategy:
+    """Tests for CCA projection strategy."""
+
+    def test_cca_produces_canonical_projection(self, backend: "Backend") -> None:
+        """CCA should produce canonical correlation-based projection."""
+        backend.random_seed(42)
+        source = backend.random_normal((100, 64))
+        target = backend.random_normal((100, 64))
+        backend.eval(source, target)
+
+        config = ProjectionConfig(strategy=ProjectionStrategy.CCA, regularization=1e-4)
+        projector = EmbeddingProjector(config=config, backend=backend)
+
+        result = projector.project(source, target)
+
+        assert result.projected_embeddings.shape == (100, 64)
+        assert "canonical_correlations" in result.metadata
+        assert len(result.metadata["canonical_correlations"]) <= 10  # Top 10
+
+    def test_cca_cross_dimension(self, backend: "Backend") -> None:
+        """CCA with different dimensions."""
+        backend.random_seed(42)
+        source = backend.random_normal((100, 32))
+        target = backend.random_normal((100, 64))
+        backend.eval(source, target)
+
+        config = ProjectionConfig(strategy=ProjectionStrategy.CCA, regularization=1e-4)
+        projector = EmbeddingProjector(config=config, backend=backend)
+
+        result = projector.project(source, target)
+
+        assert result.projected_embeddings.shape == (100, 64)
+
+
+class TestOptimalTransportStrategy:
+    """Tests for Optimal Transport projection strategy."""
+
+    @pytest.mark.skip(reason="linalg_inv not implemented in all backends")
+    def test_ot_produces_transport_plan(self, backend: "Backend") -> None:
+        """Optimal transport should compute transport-based alignment."""
+        backend.random_seed(42)
+        source = backend.random_normal((100, 64))
+        target = backend.random_normal((100, 64))
+        backend.eval(source, target)
+
+        config = ProjectionConfig(
+            strategy=ProjectionStrategy.OPTIMAL_TRANSPORT,
+            anchor_count=50,  # Small for speed
+        )
+        projector = EmbeddingProjector(config=config, backend=backend)
+
+        result = projector.project(source, target)
+
+        assert result.projected_embeddings.shape == (100, 64)
+        assert "transport_cost" in result.metadata
+        assert result.metadata["n_source_samples"] <= 50
+
+
+class TestAlignmentQualityComputation:
+    """Tests for alignment quality metrics."""
+
+    def test_compute_alignment_quality(self, backend: "Backend") -> None:
+        """Should compute multiple quality metrics."""
+        backend.random_seed(42)
+        source = backend.random_normal((100, 64))
+        target = backend.random_normal((100, 64))
+        backend.eval(source, target)
+
+        config = ProjectionConfig(strategy=ProjectionStrategy.PROCRUSTES)
+        projector = EmbeddingProjector(config=config, backend=backend)
+
+        result = projector.project(source, target)
+
+        quality = projector.compute_alignment_quality(
+            source, result.projected_embeddings, target
+        )
+
+        assert "mse" in quality
+        assert "mean_cosine_similarity" in quality
+        assert "norm_preservation_ratio" in quality
+        assert "n_samples_evaluated" in quality
+        assert quality["n_samples_evaluated"] <= 1000
+
+    def test_alignment_quality_with_shared_indices(self, backend: "Backend") -> None:
+        """Alignment quality should use shared indices when provided."""
+        backend.random_seed(42)
+        source = backend.random_normal((100, 64))
+        target = backend.random_normal((100, 64))
+        projected = backend.random_normal((100, 64))
+        backend.eval(source, target, projected)
+
+        shared_indices = (list(range(30)), list(range(30)))
+
+        projector = EmbeddingProjector(backend=backend)
+
+        quality = projector.compute_alignment_quality(
+            source, projected, target, shared_indices=shared_indices
+        )
+
+        assert quality["n_samples_evaluated"] == 30
+
+
+# =============================================================================
+# CrossVocabMerger Tests
+# =============================================================================
+
+
+class TestCrossVocabMergeConfig:
+    """Tests for CrossVocabMergeConfig."""
+
+    def test_default_config(self) -> None:
+        """Default config should have sensible defaults."""
+        config = CrossVocabMergeConfig()
+
+        assert config.projection_strategy == ProjectionStrategy.PROCRUSTES
+        assert config.blend_alpha == 0.5
+        assert config.preserve_special_tokens is True
+
+    def test_from_similarity_distribution(self) -> None:
+        """Should derive thresholds from similarity distribution."""
+        similarities = [0.1, 0.3, 0.5, 0.7, 0.9]
+
+        config = CrossVocabMergeConfig.from_similarity_distribution(
+            similarities,
+            high_similarity_percentile=0.8,
+            similar_percentile=0.6,
+            approximate_percentile=0.4,
+        )
+
+        # Thresholds should be derived from the distribution
+        assert config.high_similarity_threshold == pytest.approx(0.7)  # 80th percentile
+        assert config.similarity_threshold == pytest.approx(0.5)  # 60th percentile
+        assert config.confidence_threshold == pytest.approx(0.3)  # 40th percentile
+
+    def test_from_empty_distribution_uses_defaults(self) -> None:
+        """Empty distribution should use defaults."""
+        config = CrossVocabMergeConfig.from_similarity_distribution([])
+
+        assert config.high_similarity_threshold == 0.95  # Default
+        assert config.similarity_threshold == 0.8  # Default
+
+    def test_to_projection_config(self) -> None:
+        """Should convert to ProjectionConfig correctly."""
+        config = CrossVocabMergeConfig(
+            projection_strategy=ProjectionStrategy.CCA,
+            regularization=1e-5,
+            anchor_count=500,
+        )
+
+        proj_config = config.to_projection_config()
+
+        assert proj_config.strategy == ProjectionStrategy.CCA
+        assert proj_config.regularization == 1e-5
+        assert proj_config.anchor_count == 500
+
+
+class TestCrossVocabMerger:
+    """Tests for CrossVocabMerger."""
+
+    def test_merge_same_dimensions(self, backend: "Backend") -> None:
+        """Merge with same dimensions should work."""
+        backend.random_seed(42)
+        source = backend.random_normal((1000, 64))
+        target = backend.random_normal((1000, 64))
+        backend.eval(source, target)
+
+        config = CrossVocabMergeConfig(projection_strategy=ProjectionStrategy.TRUNCATE)
+        merger = CrossVocabMerger(config=config, backend=backend)
+
+        result = merger.merge(source, target)
+
+        assert result.output_vocab_size == 1000
+        assert result.output_hidden_dim == 64
+        assert result.merged_embeddings.shape == (1000, 64)
+
+    def test_merge_different_dimensions(self, backend: "Backend") -> None:
+        """Merge with different dimensions should project."""
+        backend.random_seed(42)
+        source = backend.random_normal((1000, 48))
+        target = backend.random_normal((1000, 64))
+        backend.eval(source, target)
+
+        config = CrossVocabMergeConfig(projection_strategy=ProjectionStrategy.PROCRUSTES)
+        merger = CrossVocabMerger(config=config, backend=backend)
+
+        result = merger.merge(source, target)
+
+        assert result.output_vocab_size == 1000
+        assert result.output_hidden_dim == 64
+        assert result.merged_embeddings.shape == (1000, 64)
+
+    def test_merge_different_vocab_sizes(self, backend: "Backend") -> None:
+        """Merge with different vocab sizes uses index alignment."""
+        backend.random_seed(42)
+        source = backend.random_normal((500, 64))
+        target = backend.random_normal((1000, 64))
+        backend.eval(source, target)
+
+        config = CrossVocabMergeConfig(projection_strategy=ProjectionStrategy.TRUNCATE)
+        merger = CrossVocabMerger(config=config, backend=backend)
+
+        result = merger.merge(source, target)
+
+        # Output uses target vocab size
+        assert result.output_vocab_size == 1000
+        assert result.output_hidden_dim == 64
+        # Should have warnings about index-based alignment
+        assert any("index-based" in w.lower() for w in result.warnings)
+
+    def test_merge_with_vocab_dicts(self, backend: "Backend") -> None:
+        """Merge with vocab dicts uses string-based alignment."""
+        backend.random_seed(42)
+        source = backend.random_normal((100, 64))
+        target = backend.random_normal((100, 64))
+        backend.eval(source, target)
+
+        source_vocab = {f"token_{i}": i for i in range(100)}
+        target_vocab = {f"token_{i}": i for i in range(100)}
+
+        config = CrossVocabMergeConfig(
+            projection_strategy=ProjectionStrategy.TRUNCATE,
+            exact_match_only=True,  # Skip embedding similarity for speed
+        )
+        merger = CrossVocabMerger(config=config, backend=backend)
+
+        result = merger.merge(source, target, source_vocab, target_vocab)
+
+        assert result.output_vocab_size == 100
+        # Should find exact matches
+        assert result.alignment_map.exact_matches == 100
+
+    def test_merge_result_to_dict(self, backend: "Backend") -> None:
+        """Merge result should serialize to dict."""
+        backend.random_seed(42)
+        source = backend.random_normal((100, 64))
+        target = backend.random_normal((100, 64))
+        backend.eval(source, target)
+
+        config = CrossVocabMergeConfig(projection_strategy=ProjectionStrategy.TRUNCATE)
+        merger = CrossVocabMerger(config=config, backend=backend)
+
+        result = merger.merge(source, target)
+        d = result.to_dict()
+
+        assert "output_vocab_size" in d
+        assert "output_hidden_dim" in d
+        assert "alignment_summary" in d
+        assert "projection_summary" in d
+        assert "compatibility_summary" in d
+
+    def test_analyze_merge_quality(self, backend: "Backend") -> None:
+        """Should analyze merge quality."""
+        backend.random_seed(42)
+        source = backend.random_normal((100, 64))
+        target = backend.random_normal((100, 64))
+        backend.eval(source, target)
+
+        config = CrossVocabMergeConfig(projection_strategy=ProjectionStrategy.PROCRUSTES)
+        merger = CrossVocabMerger(config=config, backend=backend)
+
+        result = merger.merge(source, target)
+        quality = merger.analyze_merge_quality(result)
+
+        assert "alignment_coverage" in quality
+        assert "alignment_confidence" in quality
+        assert "projection_alignment_score" in quality
+        assert "overall_quality_score" in quality
+        assert 0.0 <= quality["overall_quality_score"] <= 1.0
+
+
+class TestSpecialTokenHandling:
+    """Tests for special token preservation."""
+
+    def test_is_special_token(self, backend: "Backend") -> None:
+        """Should recognize special token patterns."""
+        merger = CrossVocabMerger(backend=backend)
+
+        # Special tokens
+        assert merger._is_special_token("<|endoftext|>") is True
+        assert merger._is_special_token("<s>") is True
+        assert merger._is_special_token("</s>") is True
+        assert merger._is_special_token("<pad>") is True
+        assert merger._is_special_token("[CLS]") is True
+        assert merger._is_special_token("[SEP]") is True
+        assert merger._is_special_token("<bos>") is True
+        assert merger._is_special_token("<eos>") is True
+
+        # Regular tokens
+        assert merger._is_special_token("hello") is False
+        assert merger._is_special_token("world") is False
+        assert merger._is_special_token("the") is False

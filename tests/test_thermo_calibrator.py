@@ -94,14 +94,14 @@ class TestCalibrationProgress:
 
     def test_update_modifier(self):
         progress = CalibrationProgress()
-        progress.update_modifier(LinguisticModifier.HYPOTHETICAL)
-        assert progress.modifier_measured["hypothetical"] == 1
+        progress.update_modifier(LinguisticModifier.POLITE)
+        assert progress.modifier_measured["polite"] == 1
 
-        progress.update_modifier(LinguisticModifier.HYPOTHETICAL)
-        assert progress.modifier_measured["hypothetical"] == 2
+        progress.update_modifier(LinguisticModifier.POLITE)
+        assert progress.modifier_measured["polite"] == 2
 
-        progress.update_modifier(LinguisticModifier.AUTHORITY)
-        assert progress.modifier_measured["authority"] == 1
+        progress.update_modifier(LinguisticModifier.DIRECT)
+        assert progress.modifier_measured["direct"] == 1
 
     def test_all_outcomes_tracked(self):
         progress = CalibrationProgress()
