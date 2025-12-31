@@ -39,8 +39,11 @@ class TestPlatformDetection:
         import platform as plat
 
         if plat.system() == "Darwin":
-            # MLX should be available on macOS test runners
-            assert _is_mlx_available() is True
+            # Clear conftest's MC_DISABLE_MLX to test real detection
+            clean_env = {"MC_DISABLE_MLX": ""}
+            with mock.patch.dict(os.environ, clean_env, clear=False):
+                # MLX should be available on macOS test runners
+                assert _is_mlx_available() is True
 
     def test_is_mlx_disabled_by_env(self):
         """MLX can be disabled via MC_DISABLE_MLX env var."""
@@ -124,7 +127,8 @@ class TestGetInferencePlatform:
         import platform as plat
 
         if plat.system() == "Darwin":
-            clean_env = {"MC_BACKEND": "", "MODELCYPHER_BACKEND": ""}
+            # Clear conftest's MC_DISABLE_MLX to test real detection
+            clean_env = {"MC_BACKEND": "", "MODELCYPHER_BACKEND": "", "MC_DISABLE_MLX": ""}
             with mock.patch.dict(os.environ, clean_env, clear=False):
                 # On macOS, MLX should be selected
                 assert get_inference_platform() == "mlx"

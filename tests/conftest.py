@@ -217,6 +217,27 @@ def pytest_collection_modifyitems(config, items):
                 item.add_marker(skip_accel)
 
 
+def pytest_ignore_collect(path, config):
+    """Skip MLX-only test modules when MLX is disabled to avoid import-time crashes."""
+    if not HAS_ANY_BACKEND:
+        return True
+    if os.environ.get("MC_DISABLE_MLX", "").lower() not in ("1", "true", "yes"):
+        return False
+    path_str = str(path)
+    if "/tests/" not in path_str and "\\tests\\" not in path_str and not path_str.startswith("tests"):
+        return False
+    if not path_str.endswith(".py"):
+        return False
+    try:
+        if hasattr(path, "read_text"):
+            content = path.read_text(encoding="utf-8")
+        else:
+            content = path.read()
+    except Exception:
+        return False
+    return "mlx.core" in content
+
+
 @pytest.hookimpl(tryfirst=True)
 def pytest_pyfunc_call(pyfuncitem):
     """Handle async test functions by running them with asyncio.run()."""
@@ -299,10 +320,10 @@ def mlx_backend() -> Backend:
 def jax_backend() -> Backend:
     """Provide JAXBackend for testing.
 
-    Skips test if JAX GPU/TPU is not available.
+    Skips test if JAX is not available.
     """
-    if not HAS_JAX_GPU:
-        pytest.skip("JAX GPU/TPU not available")
+    if not HAS_JAX:
+        pytest.skip("JAX not available")
     from modelcypher.backends.jax_backend import JAXBackend
 
     return JAXBackend()
@@ -310,7 +331,7 @@ def jax_backend() -> Backend:
 
 @pytest.fixture(params=["mlx", "jax"])
 def any_backend(request) -> Backend:
-    """Parametrized fixture that runs test on all available GPU backends.
+    """Parametrized fixture that runs tests on available backends.
 
     Use this for tests that should verify behavior consistency across backends.
     Tests will be skipped for unavailable backends.
@@ -324,8 +345,8 @@ def any_backend(request) -> Backend:
 
         return MLXBackend()
     elif backend_name == "jax":
-        if not HAS_JAX_GPU:
-            pytest.skip("JAX GPU/TPU not available")
+        if not HAS_JAX:
+            pytest.skip("JAX not available")
         from modelcypher.backends.jax_backend import JAXBackend
 
         return JAXBackend()
@@ -359,4 +380,4 @@ def accelerated_backend(request) -> Backend:
 
 
 # Export availability flags for use in skipif decorators
-__all__ = ["HAS_MLX", "HAS_JAX_GPU", "HAS_CUDA"]
+__all__ = ["HAS_MLX", "HAS_JAX", "HAS_JAX_GPU", "HAS_CUDA"]

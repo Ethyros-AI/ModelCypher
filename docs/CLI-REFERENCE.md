@@ -105,6 +105,33 @@ mc geometry metrics spectral-signature <points_file>
 }
 ```
 
+### Geometry Validate Output Schema (Spectral Excerpt)
+```json
+{
+  "_schema": "mc.geometry.validation.v1",
+  "spectralSignature": {
+    "eigenvalueMin": 0.0,
+    "eigenvalueMax": 2.0,
+    "algebraicConnectivity": 0.0,
+    "componentCount": 2,
+    "heatTrace": [3.64, 2.27, 2.0],
+    "heatTimes": [0.1, 1.0, 10.0],
+    "connected": false,
+    "passed": true
+  },
+  "spectralSignatureConnected": {
+    "eigenvalueMin": 0.0,
+    "eigenvalueMax": 2.0,
+    "algebraicConnectivity": 0.4,
+    "componentCount": 1,
+    "heatTrace": [3.71, 2.19, 1.0],
+    "heatTimes": [0.1, 1.0, 10.0],
+    "connected": true,
+    "passed": true
+  }
+}
+```
+
 ## Geometry Cross-Cultural Commands
 ```bash
 mc geometry cross-cultural analyze <input_json>

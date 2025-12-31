@@ -17,7 +17,12 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
+
+# Suppress noisy third-party initialization warnings
+logging.getLogger("jax._src.xla_bridge").setLevel(logging.ERROR)
+logging.getLogger("numexpr.utils").setLevel(logging.WARNING)
 
 import typer
 from typer.core import TyperGroup

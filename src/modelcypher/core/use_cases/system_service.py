@@ -17,9 +17,13 @@
 
 from __future__ import annotations
 
+import logging
 import platform
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
+
+# Suppress JAX's noisy TPU initialization warnings on macOS
+logging.getLogger("jax._src.xla_bridge").setLevel(logging.ERROR)
 
 if TYPE_CHECKING:
     from modelcypher.ports import ModelStore
