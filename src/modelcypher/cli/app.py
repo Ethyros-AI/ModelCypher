@@ -47,6 +47,7 @@ from modelcypher.cli.commands import eval as eval_commands
 from modelcypher.cli.commands import help_cmd as help_commands
 from modelcypher.cli.commands import infer as infer_commands
 from modelcypher.cli.commands import job as job_commands
+from modelcypher.cli.commands import merge as merge_commands
 from modelcypher.cli.commands import model as model_commands
 from modelcypher.cli.commands import profile as profile_commands
 from modelcypher.cli.commands import program as program_commands
@@ -171,6 +172,7 @@ dev_app = typer.Typer(no_args_is_help=True, hidden=True)
 app.add_typer(train_commands.train_app, name="train")
 app.add_typer(job_commands.app, name="job")
 app.add_typer(train_commands.checkpoint_app, name="checkpoint")
+app.add_typer(merge_commands.app, name="merge")
 app.add_typer(model_commands.app, name="model")
 app.add_typer(program_commands.app, name="program")
 app.add_typer(system_commands.app, name="system")

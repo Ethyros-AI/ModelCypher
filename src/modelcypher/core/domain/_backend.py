@@ -42,6 +42,8 @@ To select a specific backend:
 from __future__ import annotations
 
 import os
+import platform
+import subprocess
 import sys
 from typing import TYPE_CHECKING, Literal
 
@@ -51,6 +53,63 @@ if TYPE_CHECKING:
 BackendType = Literal["mlx", "jax", "cuda"]
 
 _default_backend: Backend | None = None
+_mlx_probe_result: bool | None = None
+_mlx_probe_error: str | None = None
+
+
+def probe_mlx_available(*, explicit: bool = False) -> bool:
+    """Safely check whether MLX can initialize without crashing the process.
+
+    Runs a short MLX import in a subprocess to avoid in-process aborts when
+    Metal device initialization fails. Uses mlx.core.default_device() per
+    the official MLX device API.
+    """
+    global _mlx_probe_result, _mlx_probe_error
+    if _mlx_probe_result is not None:
+        return _mlx_probe_result
+    if os.environ.get("MC_DISABLE_MLX", "").lower() in ("1", "true", "yes"):
+        _mlx_probe_result = False
+        _mlx_probe_error = "MLX disabled via MC_DISABLE_MLX"
+        return False
+    if sys.platform != "darwin":
+        _mlx_probe_result = False
+        _mlx_probe_error = "MLX requires macOS"
+        return False
+    if platform.machine() not in ("arm64", "aarch64"):
+        _mlx_probe_result = False
+        _mlx_probe_error = "MLX requires Apple Silicon"
+        return False
+
+    cmd = [
+        sys.executable,
+        "-c",
+        "import mlx.core as mx; mx.default_device(); print('mlx-ok')",
+    ]
+    try:
+        result = subprocess.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception as exc:
+        _mlx_probe_result = False
+        _mlx_probe_error = str(exc)
+        if not explicit:
+            os.environ.setdefault("MC_DISABLE_MLX", "1")
+        return False
+
+    if result.returncode != 0:
+        _mlx_probe_result = False
+        _mlx_probe_error = (result.stderr or result.stdout or "MLX probe failed").strip()
+        if not explicit:
+            os.environ.setdefault("MC_DISABLE_MLX", "1")
+        return False
+
+    _mlx_probe_result = True
+    _mlx_probe_error = None
+    return True
 
 
 def get_backend(backend_type: BackendType) -> Backend:
@@ -67,6 +126,12 @@ def get_backend(backend_type: BackendType) -> Backend:
         ValueError: If the backend type is not recognized.
     """
     if backend_type == "mlx":
+        if not probe_mlx_available(explicit=True):
+            detail = _mlx_probe_error or "MLX probe failed"
+            raise RuntimeError(
+                "MLX backend requested but failed to initialize. "
+                f"{detail}. Set MC_DISABLE_MLX=1 to force fallback."
+            )
         from modelcypher.backends.mlx_backend import MLXBackend
 
         return MLXBackend()
@@ -98,17 +163,20 @@ def _detect_default_backend_type() -> BackendType:
     if not env_backend:
         env_backend = os.environ.get("MODELCYPHER_BACKEND", "").lower()
     if env_backend in ("mlx", "jax", "cuda"):
+        if env_backend == "mlx":
+            if not probe_mlx_available(explicit=True):
+                detail = _mlx_probe_error or "MLX probe failed"
+                raise RuntimeError(
+                    "MC_BACKEND=mlx requested but MLX failed to initialize. "
+                    f"{detail}. Set MC_DISABLE_MLX=1 to force fallback."
+                )
         return env_backend  # type: ignore
     disable_mlx = os.environ.get("MC_DISABLE_MLX", "").lower() in ("1", "true", "yes")
 
-    # macOS: prefer MLX
+    # macOS: prefer MLX (probe in subprocess to avoid in-process abort)
     if sys.platform == "darwin" and not disable_mlx:
-        try:
-            import mlx.core  # noqa: F401
-
+        if probe_mlx_available(explicit=False):
             return "mlx"
-        except ImportError:
-            pass
 
     # Try CUDA (NVIDIA GPU)
     try:
