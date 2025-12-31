@@ -25,7 +25,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.vocabulary.vocabulary_analyzer import (
     TokenizerType,
     VocabularyAnalyzer,
-    VocabularyCompatibility,
+    VocabularyAlignment,
     VocabularyStats,
 )
 
@@ -68,13 +68,13 @@ class TestVocabularyStats:
         assert d["has_tie_weights"] is True
 
 
-class TestVocabularyCompatibility:
-    """Tests for VocabularyCompatibility dataclass."""
+class TestVocabularyAlignment:
+    """Tests for VocabularyAlignment dataclass."""
 
     def test_to_dict(self):
         """Test serialization."""
-        compat = VocabularyCompatibility(
-            compatibility_score=0.75,
+        alignment = VocabularyAlignment(
+            alignment_score=0.75,
             vocab_overlap_ratio=0.6,
             dimension_ratio=1.0,
             requires_projection=False,
@@ -84,9 +84,9 @@ class TestVocabularyCompatibility:
             target_only_tokens=6400,
         )
 
-        d = compat.to_dict()
+        d = alignment.to_dict()
 
-        assert d["compatibility_score"] == 0.75
+        assert d["alignment_score"] == 0.75
         assert d["requires_projection"] is False
         assert d["requires_vocab_mapping"] is True
         assert d["shared_token_count"] == 19200
@@ -136,8 +136,8 @@ class TestVocabularyAnalyzer:
         with pytest.raises(ValueError, match="Expected 2D"):
             analyzer.analyze_embeddings(embeddings)
 
-    def test_analyze_compatibility_same_dimensions(self, analyzer):
-        """Test compatibility analysis with same dimensions."""
+    def test_analyze_alignment_same_dimensions(self, analyzer):
+        """Test alignment analysis with same dimensions."""
         source = VocabularyStats(
             vocab_size=32000,
             hidden_dim=768,
@@ -157,13 +157,13 @@ class TestVocabularyAnalyzer:
             has_tie_weights=False,
         )
 
-        compat = analyzer.analyze_compatibility(source, target)
+        alignment = analyzer.analyze_alignment(source, target)
 
-        assert compat.requires_projection is False
-        assert compat.dimension_ratio == 1.0
+        assert alignment.requires_projection is False
+        assert alignment.dimension_ratio == 1.0
 
-    def test_analyze_compatibility_different_dimensions(self, analyzer):
-        """Test compatibility when dimensions differ."""
+    def test_analyze_alignment_different_dimensions(self, analyzer):
+        """Test alignment when dimensions differ."""
         source = VocabularyStats(
             vocab_size=32000,
             hidden_dim=768,
@@ -183,14 +183,14 @@ class TestVocabularyAnalyzer:
             has_tie_weights=True,
         )
 
-        compat = analyzer.analyze_compatibility(source, target)
+        alignment = analyzer.analyze_alignment(source, target)
 
-        assert compat.requires_projection is True
-        assert compat.dimension_ratio == 768 / 1024
-        assert compat.requires_vocab_mapping is True
+        assert alignment.requires_projection is True
+        assert alignment.dimension_ratio == 768 / 1024
+        assert alignment.requires_vocab_mapping is True
 
-    def test_analyze_compatibility_with_vocab_dicts(self, analyzer):
-        """Test compatibility with actual vocabulary dictionaries."""
+    def test_analyze_alignment_with_vocab_dicts(self, analyzer):
+        """Test alignment with actual vocabulary dictionaries."""
         source = VocabularyStats(
             vocab_size=100,
             hidden_dim=256,
@@ -214,15 +214,15 @@ class TestVocabularyAnalyzer:
         source_vocab = {f"token_{i}": i for i in range(100)}
         target_vocab = {f"token_{i}": i for i in range(20, 120)}
 
-        compat = analyzer.analyze_compatibility(
+        alignment = analyzer.analyze_alignment(
             source, target, source_vocab=source_vocab, target_vocab=target_vocab
         )
 
-        assert compat.shared_token_count == 80  # tokens 20-99
-        assert compat.source_only_tokens == 20  # tokens 0-19
-        assert compat.target_only_tokens == 20  # tokens 100-119
+        assert alignment.shared_token_count == 80  # tokens 20-99
+        assert alignment.source_only_tokens == 20  # tokens 0-19
+        assert alignment.target_only_tokens == 20  # tokens 100-119
         # Jaccard = 80 / 120 = 0.666...
-        assert 0.65 < compat.vocab_overlap_ratio < 0.68
+        assert 0.65 < alignment.vocab_overlap_ratio < 0.68
 
     def test_compute_token_overlap(self, analyzer):
         """Test token overlap computation."""

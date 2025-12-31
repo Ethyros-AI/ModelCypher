@@ -21,7 +21,7 @@ Enables combining multiple specialized LoRA adapters at inference time,
 allowing models to leverage multiple skill domains simultaneously.
 
 Two composition strategies are supported:
-- **Weight Blending**: High-compatibility adapters merged via linear interpolation
+- **Weight Blending**: High-alignment adapters merged via linear interpolation
 - **Attention Routing**: Different specializations route tokens to specific experts
 """
 
@@ -39,7 +39,7 @@ class CompositionStrategy(str, Enum):
     WEIGHT_BLENDING = "weight_blending"
     """Blend adapter weights via linear interpolation: W' = Σ αᵢ * W_loraᵢ
 
-    Best for adapters with similar specializations or high geometric compatibility.
+    Best for adapters with similar specializations or high geometric alignment.
     """
 
     ATTENTION_ROUTING = "attention_routing"
@@ -55,7 +55,7 @@ class AdapterInfo:
 
     id: UUID
     name: str
-    compatibility_score: float | None = None
+    alignment_score: float | None = None
 
 
 @dataclass(frozen=True)
@@ -104,7 +104,7 @@ class EnsembleResult:
 
     ensemble: Ensemble
     strategy_suggested: CompositionStrategy
-    compatibility_scores: dict[UUID, float]
+    alignment_scores: dict[UUID, float]
     warnings: list[str]
 
 
@@ -112,8 +112,8 @@ class EnsembleResult:
 class OrchestratorConfiguration:
     """Configuration for the orchestrator.
 
-    Thresholds should be derived from adapter compatibility distributions
-    using from_compatibility_distribution().
+    Thresholds should be derived from adapter alignment distributions
+    using from_alignment_distribution().
     """
 
     max_adapters: int
@@ -126,22 +126,22 @@ class OrchestratorConfiguration:
     """Threshold above which weight blending is preferred."""
 
     auto_select_strategy: bool = True
-    """Whether to auto-select composition strategy based on compatibility."""
+    """Whether to auto-select composition strategy based on alignment."""
 
     @classmethod
-    def from_compatibility_distribution(
+    def from_alignment_distribution(
         cls,
-        compatibility_scores: list[float],
+        alignment_scores: list[float],
         *,
         fit_percentile: float = 0.25,
         blending_percentile: float = 0.50,
         max_adapters: int = 4,
         auto_select_strategy: bool = True,
     ) -> "OrchestratorConfiguration":
-        """Derive thresholds from observed compatibility scores.
+        """Derive thresholds from observed alignment scores.
 
         Args:
-            compatibility_scores: List of compatibility scores from adapter pairs.
+            alignment_scores: List of alignment scores from adapter pairs.
             fit_percentile: Percentile for min_fit_score (exclude bottom N%).
             blending_percentile: Percentile for weight_blending_threshold.
             max_adapters: Maximum number of adapters in an ensemble.
@@ -150,10 +150,10 @@ class OrchestratorConfiguration:
         Returns:
             Configuration with thresholds derived from the distribution.
         """
-        if not compatibility_scores:
-            raise ValueError("compatibility_scores required for calibration")
+        if not alignment_scores:
+            raise ValueError("alignment_scores required for calibration")
 
-        sorted_scores = sorted(compatibility_scores)
+        sorted_scores = sorted(alignment_scores)
         n = len(sorted_scores)
 
         # Derive thresholds from percentiles
@@ -215,11 +215,11 @@ class NoAdaptersError(EnsembleOrchestratorError):
         super().__init__("No adapters provided for ensemble creation")
 
 
-class NoCompatibleAdaptersError(EnsembleOrchestratorError):
-    """No adapters meet the minimum compatibility threshold."""
+class NoAlignedAdaptersError(EnsembleOrchestratorError):
+    """No adapters meet the minimum alignment threshold."""
 
     def __init__(self) -> None:
-        super().__init__("No adapters meet the minimum compatibility threshold")
+        super().__init__("No adapters meet the minimum alignment threshold")
 
 
 class TooManyAdaptersError(EnsembleOrchestratorError):
@@ -265,26 +265,26 @@ class EnsembleOrchestrator:
     def create_ensemble(
         self,
         adapters: list[AdapterInfo],
-        compatibility_scores: dict[UUID, float] | None = None,
+        alignment_scores: dict[UUID, float] | None = None,
         strategy: CompositionStrategy | None = None,
     ) -> EnsembleResult:
         """Create an ensemble from a set of adapters.
 
-        Evaluates adapter compatibility, assigns weights based on scores,
+        Evaluates adapter alignment, assigns weights based on scores,
         and selects composition strategy.
 
         Args:
             adapters: Adapters to include in the ensemble.
-            compatibility_scores: Pre-computed compatibility scores by adapter ID.
+            alignment_scores: Pre-computed alignment scores by adapter ID.
             strategy: Composition strategy (None for auto-selection).
 
         Returns:
-            The created ensemble with compatibility information.
+            The created ensemble with alignment information.
 
         Raises:
             NoAdaptersError: If no adapters provided.
             TooManyAdaptersError: If too many adapters provided.
-            NoCompatibleAdaptersError: If no adapters meet threshold.
+            NoAlignedAdaptersError: If no adapters meet threshold.
         """
         if not adapters:
             raise NoAdaptersError()
@@ -293,12 +293,12 @@ class EnsembleOrchestrator:
             raise TooManyAdaptersError(len(adapters), self.configuration.max_adapters)
 
         # Use provided scores or compute defaults
-        scores = compatibility_scores or {}
+        scores = alignment_scores or {}
         warnings: list[str] = []
         valid_adapters: list[AdapterInfo] = []
 
         for adapter in adapters:
-            score = scores.get(adapter.id, adapter.compatibility_score or 0.5)
+            score = scores.get(adapter.id, adapter.alignment_score or 0.5)
             scores[adapter.id] = score
 
             if score >= self.configuration.min_fit_score:
@@ -309,16 +309,16 @@ class EnsembleOrchestrator:
                 )
 
         if not valid_adapters:
-            raise NoCompatibleAdaptersError()
+            raise NoAlignedAdaptersError()
 
-        # Compute weights from compatibility scores
+        # Compute weights from alignment scores
         weights = self._compute_weights(valid_adapters, scores)
 
         # Select strategy
-        avg_compatibility = sum(scores.values()) / len(scores) if scores else 0.0
+        avg_alignment = sum(scores.values()) / len(scores) if scores else 0.0
         suggested_strategy = (
             CompositionStrategy.WEIGHT_BLENDING
-            if avg_compatibility >= self.configuration.weight_blending_threshold
+            if avg_alignment >= self.configuration.weight_blending_threshold
             else CompositionStrategy.ATTENTION_ROUTING
         )
 
@@ -326,7 +326,7 @@ class EnsembleOrchestrator:
             selected_strategy = strategy
             if strategy != suggested_strategy:
                 warnings.append(
-                    f"Using {strategy.value} but {suggested_strategy.value} is recommended based on compatibility"
+                    f"Using {strategy.value} but {suggested_strategy.value} is recommended based on alignment"
                 )
         elif self.configuration.auto_select_strategy:
             selected_strategy = suggested_strategy
@@ -345,7 +345,7 @@ class EnsembleOrchestrator:
         return EnsembleResult(
             ensemble=ensemble,
             strategy_suggested=suggested_strategy,
-            compatibility_scores=scores,
+            alignment_scores=scores,
             warnings=warnings,
         )
 
@@ -421,7 +421,7 @@ class EnsembleOrchestrator:
         adapters: list[AdapterInfo],
         scores: dict[UUID, float],
     ) -> dict[UUID, float]:
-        """Compute weights proportional to compatibility score."""
+        """Compute weights proportional to alignment score."""
         total_score = sum(scores.get(adapter.id, 0) for adapter in adapters)
 
         if total_score <= 0:

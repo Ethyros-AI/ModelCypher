@@ -94,7 +94,7 @@ class Result:
         return 1.0 - math.exp(-self.distance) if math.isfinite(self.distance) else 1.0
 
     @property
-    def compatibility_score(self) -> float:
+    def alignment_score(self) -> float:
         return math.exp(-self.distance) if math.isfinite(self.distance) else 0.0
 
 

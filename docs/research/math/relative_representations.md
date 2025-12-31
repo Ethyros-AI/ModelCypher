@@ -139,7 +139,7 @@ Relative representations align with our geometric framework:
 
 **Design decisions**:
 1. **Multiple similarity functions**: Cosine (default) and RBF
-2. **Normalization option**: For downstream compatibility
+2. **Normalization option**: For downstream alignment
 3. **Geodesic-aware**: Can use geodesic distances for anchor similarities
 
 ---
@@ -225,4 +225,4 @@ aligned = relative_repr(en_embeddings, en_anchors)
 
 ---
 
-*Relative representations solve the problem of incompatible latent spaces by focusing on relationships rather than absolute positions.*
+*Relative representations solve the problem of misaligned latent spaces by focusing on relationships rather than absolute positions.*

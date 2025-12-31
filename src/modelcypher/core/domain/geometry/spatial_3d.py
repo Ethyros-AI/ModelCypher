@@ -52,6 +52,7 @@ from typing import TYPE_CHECKING, Any
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.atlas_protocols import (
     SpatialConceptProtocol,
+    axis_key,
     enum_key,
 )
 from modelcypher.core.domain.geometry.atlas_registry import get_spatial_concepts
@@ -70,10 +71,6 @@ _CATEGORY_LATERAL = "lateral"
 _CATEGORY_DEPTH = "depth"
 _CATEGORY_MASS = "mass"
 _CATEGORY_FURNITURE = "furniture"
-
-
-def _axis_key(value: object) -> str:
-    return enum_key(value).lower()
 
 
 def _category_key(value: object) -> str:
@@ -245,16 +242,16 @@ def _scalar_isinf(x: float) -> bool:
 def get_spatial_anchors_by_axis(axis: object) -> list[SpatialConceptProtocol]:
     """Get anchors that primarily vary along a given axis."""
     anchors = list(get_spatial_concepts())
-    axis_key = _axis_key(axis)
-    if axis_key == _AXIS_Y_VERTICAL:
+    axis_str = axis_key(axis)
+    if axis_str == _AXIS_Y_VERTICAL:
         return [
             a
             for a in anchors
             if _category_key(a.category) in (_CATEGORY_VERTICAL, _CATEGORY_MASS, _CATEGORY_FURNITURE)
         ]
-    if axis_key == _AXIS_X_LATERAL:
+    if axis_str == _AXIS_X_LATERAL:
         return [a for a in anchors if _category_key(a.category) == _CATEGORY_LATERAL]
-    if axis_key == _AXIS_Z_DEPTH:
+    if axis_str == _AXIS_Z_DEPTH:
         return [a for a in anchors if _category_key(a.category) == _CATEGORY_DEPTH]
     return anchors
 

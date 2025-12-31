@@ -41,7 +41,7 @@ from modelcypher.core.domain.adapters.ensemble_orchestrator import (
     InvalidAdapterIDError,
     NoActiveEnsembleError,
     NoAdaptersError,
-    NoCompatibleAdaptersError,
+    NoAlignedAdaptersError,
     OrchestratorConfiguration,
     TooManyAdaptersError,
 )
@@ -58,17 +58,17 @@ def test_adapter_info_creation():
 
     assert adapter.id == adapter_id
     assert adapter.name == "test-adapter"
-    assert adapter.compatibility_score is None
+    assert adapter.alignment_score is None
 
 
 def test_adapter_info_with_score():
-    """AdapterInfo can have compatibility score."""
+    """AdapterInfo can have alignment score."""
     adapter = AdapterInfo(
         id=uuid4(),
         name="test-adapter",
-        compatibility_score=0.85,
+        alignment_score=0.85,
     )
-    assert adapter.compatibility_score == 0.85
+    assert adapter.alignment_score == 0.85
 
 
 def test_adapter_info_frozen():
@@ -167,10 +167,10 @@ def test_config_with_thresholds():
 
 
 def test_config_from_distribution():
-    """from_compatibility_distribution derives thresholds from samples."""
+    """from_alignment_distribution derives thresholds from samples."""
     scores = [0.1, 0.3, 0.5, 0.7, 0.9]
 
-    config = OrchestratorConfiguration.from_compatibility_distribution(
+    config = OrchestratorConfiguration.from_alignment_distribution(
         scores,
         fit_percentile=0.25,
         blending_percentile=0.50,
@@ -266,29 +266,29 @@ def test_create_ensemble_too_many_raises():
     assert exc_info.value.max_count == 2
 
 
-def test_create_ensemble_no_compatible_raises():
-    """No adapters meeting threshold raises NoCompatibleAdaptersError."""
+def test_create_ensemble_no_aligned_raises():
+    """No adapters meeting threshold raises NoAlignedAdaptersError."""
     config = _test_config(min_fit_score=0.9)
     orchestrator = EnsembleOrchestrator(configuration=config)
 
-    # Adapter with low compatibility
-    adapter = AdapterInfo(id=uuid4(), name="low-compat", compatibility_score=0.3)
+    # Adapter with low alignment
+    adapter = AdapterInfo(id=uuid4(), name="low-align", alignment_score=0.3)
 
-    with pytest.raises(NoCompatibleAdaptersError):
+    with pytest.raises(NoAlignedAdaptersError):
         orchestrator.create_ensemble([adapter])
 
 
-def test_create_ensemble_filters_low_compatibility():
-    """Low compatibility adapters are filtered with warning."""
+def test_create_ensemble_filters_low_alignment():
+    """Low alignment adapters are filtered with warning."""
     config = _test_config(min_fit_score=0.5)
     orchestrator = EnsembleOrchestrator(configuration=config)
 
-    high_compat = AdapterInfo(id=uuid4(), name="high", compatibility_score=0.8)
-    low_compat = AdapterInfo(id=uuid4(), name="low", compatibility_score=0.2)
+    high_align = AdapterInfo(id=uuid4(), name="high", alignment_score=0.8)
+    low_align = AdapterInfo(id=uuid4(), name="low", alignment_score=0.2)
 
-    result = orchestrator.create_ensemble([high_compat, low_compat])
+    result = orchestrator.create_ensemble([high_align, low_align])
 
-    # Only high_compat should be included
+    # Only high_align should be included
     assert len(result.ensemble.adapters) == 1
     assert result.ensemble.adapters[0].name == "high"
     assert len(result.warnings) > 0
@@ -296,24 +296,24 @@ def test_create_ensemble_filters_low_compatibility():
 
 
 def test_create_ensemble_uses_provided_scores():
-    """Provided compatibility scores override adapter scores."""
+    """Provided alignment scores override adapter scores."""
     orchestrator = EnsembleOrchestrator(_test_config())
 
-    adapter = AdapterInfo(id=uuid4(), name="adapter", compatibility_score=0.1)
+    adapter = AdapterInfo(id=uuid4(), name="adapter", alignment_score=0.1)
     scores = {adapter.id: 0.9}  # Override to high
 
-    result = orchestrator.create_ensemble([adapter], compatibility_scores=scores)
+    result = orchestrator.create_ensemble([adapter], alignment_scores=scores)
 
-    assert result.compatibility_scores[adapter.id] == 0.9
+    assert result.alignment_scores[adapter.id] == 0.9
 
 
 def test_create_ensemble_weights_proportional():
-    """Weights are proportional to compatibility scores."""
+    """Weights are proportional to alignment scores."""
     # Low min_fit_score so both adapters pass the threshold
     orchestrator = EnsembleOrchestrator(_test_config(min_fit_score=0.3))
 
-    adapter1 = AdapterInfo(id=uuid4(), name="adapter1", compatibility_score=0.6)
-    adapter2 = AdapterInfo(id=uuid4(), name="adapter2", compatibility_score=0.4)
+    adapter1 = AdapterInfo(id=uuid4(), name="adapter1", alignment_score=0.6)
+    adapter2 = AdapterInfo(id=uuid4(), name="adapter2", alignment_score=0.4)
 
     result = orchestrator.create_ensemble([adapter1, adapter2])
 
@@ -326,7 +326,7 @@ def test_create_ensemble_weights_sum_to_one():
     orchestrator = EnsembleOrchestrator(_test_config())
 
     adapters = [
-        AdapterInfo(id=uuid4(), name=f"adapter-{i}", compatibility_score=0.5 + i * 0.1)
+        AdapterInfo(id=uuid4(), name=f"adapter-{i}", alignment_score=0.5 + i * 0.1)
         for i in range(3)
     ]
 
@@ -341,12 +341,12 @@ def test_create_ensemble_equal_weights_zero_scores():
     orchestrator = EnsembleOrchestrator(_test_config())
 
     adapters = [
-        AdapterInfo(id=uuid4(), name=f"adapter-{i}", compatibility_score=0.0) for i in range(3)
+        AdapterInfo(id=uuid4(), name=f"adapter-{i}", alignment_score=0.0) for i in range(3)
     ]
     # Need to provide scores that meet threshold
     scores = {a.id: 0.5 for a in adapters}  # All same score
 
-    result = orchestrator.create_ensemble(adapters, compatibility_scores=scores)
+    result = orchestrator.create_ensemble(adapters, alignment_scores=scores)
 
     weights = list(result.ensemble.weights.values())
     assert all(abs(w - 1 / 3) < 0.01 for w in weights)
@@ -358,11 +358,11 @@ def test_create_ensemble_equal_weights_zero_scores():
 
 
 def test_create_ensemble_auto_weight_blending():
-    """High compatibility suggests weight blending."""
+    """High alignment suggests weight blending."""
     config = _test_config(weight_blending_threshold=0.6)
     orchestrator = EnsembleOrchestrator(configuration=config)
 
-    adapter = AdapterInfo(id=uuid4(), name="adapter", compatibility_score=0.8)
+    adapter = AdapterInfo(id=uuid4(), name="adapter", alignment_score=0.8)
 
     result = orchestrator.create_ensemble([adapter])
 
@@ -370,11 +370,11 @@ def test_create_ensemble_auto_weight_blending():
 
 
 def test_create_ensemble_auto_attention_routing():
-    """Low compatibility suggests attention routing."""
+    """Low alignment suggests attention routing."""
     config = _test_config(weight_blending_threshold=0.9, min_fit_score=0.3)
     orchestrator = EnsembleOrchestrator(configuration=config)
 
-    adapter = AdapterInfo(id=uuid4(), name="adapter", compatibility_score=0.5)
+    adapter = AdapterInfo(id=uuid4(), name="adapter", alignment_score=0.5)
 
     result = orchestrator.create_ensemble([adapter])
 
@@ -385,7 +385,7 @@ def test_create_ensemble_explicit_strategy():
     """Explicit strategy overrides auto-selection."""
     orchestrator = EnsembleOrchestrator(_test_config())
 
-    adapter = AdapterInfo(id=uuid4(), name="adapter", compatibility_score=0.9)
+    adapter = AdapterInfo(id=uuid4(), name="adapter", alignment_score=0.9)
 
     result = orchestrator.create_ensemble(
         [adapter],
@@ -399,7 +399,7 @@ def test_create_ensemble_warns_on_suboptimal_strategy():
     """Warning issued when explicit strategy differs from suggested."""
     orchestrator = EnsembleOrchestrator(_test_config())
 
-    adapter = AdapterInfo(id=uuid4(), name="adapter", compatibility_score=0.9)
+    adapter = AdapterInfo(id=uuid4(), name="adapter", alignment_score=0.9)
 
     result = orchestrator.create_ensemble(
         [adapter],
@@ -418,7 +418,7 @@ def test_create_ensemble_no_auto_select():
     )
     orchestrator = EnsembleOrchestrator(configuration=config)
 
-    adapter = AdapterInfo(id=uuid4(), name="adapter", compatibility_score=0.4)
+    adapter = AdapterInfo(id=uuid4(), name="adapter", alignment_score=0.4)
 
     result = orchestrator.create_ensemble([adapter])
 
@@ -571,12 +571,12 @@ def test_full_lifecycle():
     orchestrator = EnsembleOrchestrator(_test_config())
 
     # Set up stabilizer
-    stabilizer = AdapterInfo(id=uuid4(), name="stabilizer", compatibility_score=0.9)
+    stabilizer = AdapterInfo(id=uuid4(), name="stabilizer", alignment_score=0.9)
     orchestrator.set_stabilizer(stabilizer)
 
     # Create ensemble
-    adapter1 = AdapterInfo(id=uuid4(), name="adapter1", compatibility_score=0.7)
-    adapter2 = AdapterInfo(id=uuid4(), name="adapter2", compatibility_score=0.8)
+    adapter1 = AdapterInfo(id=uuid4(), name="adapter1", alignment_score=0.7)
+    adapter2 = AdapterInfo(id=uuid4(), name="adapter2", alignment_score=0.8)
     result = orchestrator.create_ensemble([adapter1, adapter2])
 
     assert len(result.ensemble.adapters) == 2

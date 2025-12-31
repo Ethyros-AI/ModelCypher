@@ -383,7 +383,7 @@ class InvariantConvergenceAnalyzer:
                 for layer in common_layers:
                     res = ManifoldStitcher.compute_continuous_correlation(base_fp, curr_fp, layer)
                     if res:
-                        layer_scores.append(res.compatibility_score)
+                        layer_scores.append(res.alignment_score)
 
                 if layer_scores:
                     scores.append(sum(layer_scores) / len(layer_scores))

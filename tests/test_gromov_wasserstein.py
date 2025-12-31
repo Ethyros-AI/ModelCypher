@@ -131,8 +131,8 @@ class TestResult:
 
         assert result.normalized_distance == 1.0
 
-    def test_compatibility_score_zero_distance(self, any_backend: "Backend") -> None:
-        """compatibility_score should be 1 for distance=0."""
+    def test_alignment_score_zero_distance(self, any_backend: "Backend") -> None:
+        """alignment_score should be 1 for distance=0."""
         b = any_backend
         coupling = b.eye(2) / 2
         b.eval(coupling)
@@ -140,10 +140,10 @@ class TestResult:
         result = Result(distance=0.0, coupling=coupling, converged=True, iterations=0)
 
         # exp(-0) = 1
-        assert result.compatibility_score == 1.0
+        assert result.alignment_score == 1.0
 
-    def test_compatibility_score_large_distance(self, any_backend: "Backend") -> None:
-        """compatibility_score should approach 0 for large distance."""
+    def test_alignment_score_large_distance(self, any_backend: "Backend") -> None:
+        """alignment_score should approach 0 for large distance."""
         b = any_backend
         coupling = b.eye(2) / 2
         b.eval(coupling)
@@ -151,17 +151,17 @@ class TestResult:
         result = Result(distance=10.0, coupling=coupling, converged=True, iterations=0)
 
         # exp(-10) ≈ 0.000045
-        assert result.compatibility_score < 0.001
+        assert result.alignment_score < 0.001
 
-    def test_compatibility_score_inf(self, any_backend: "Backend") -> None:
-        """compatibility_score should be 0 for infinite distance."""
+    def test_alignment_score_inf(self, any_backend: "Backend") -> None:
+        """alignment_score should be 0 for infinite distance."""
         b = any_backend
         coupling = b.zeros((2, 2))
         b.eval(coupling)
 
         result = Result(distance=float("inf"), coupling=coupling, converged=False, iterations=0)
 
-        assert result.compatibility_score == 0.0
+        assert result.alignment_score == 0.0
 
     def test_frozen(self, any_backend: "Backend") -> None:
         """Result should be frozen (immutable)."""

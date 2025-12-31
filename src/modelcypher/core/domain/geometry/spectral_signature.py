@@ -148,19 +148,19 @@ class SpectralSignature:
         if kernel_bandwidth <= bandwidth_floor:
             kernel_bandwidth = bandwidth_floor
 
-        weights = [[0.0 for _ in range(n)] for _ in range(n)]
+        weights_arr = backend.zeros((n, n), dtype="float32")
         if edge_distances:
             sigma_sq = kernel_bandwidth * kernel_bandwidth * 2.0
-            for i in range(n):
-                for j in range(i + 1, n):
-                    if adj_np[i, j] < inf_value * 0.9:
-                        d = float(euclidean_np[i, j])
-                        if math.isfinite(d):
-                            weight = math.exp(-(d * d) / sigma_sq)
-                            weights[i][j] = weight
-                            weights[j][i] = weight
+            edge_mask = backend.where(
+                adjacency < inf_value * 0.9,
+                backend.ones_like(adjacency),
+                backend.zeros_like(adjacency),
+            )
+            weights_arr = backend.exp(-(euclidean_dist * euclidean_dist) / sigma_sq)
+            weights_arr = weights_arr * edge_mask
+            weights_arr = weights_arr * (1.0 - backend.eye(n))
+            weights_arr = backend.astype(weights_arr, "float32")
 
-        weights_arr = backend.array(weights, dtype="float32")
         backend.eval(weights_arr)
         degree = backend.sum(weights_arr, axis=1)
         backend.eval(degree)

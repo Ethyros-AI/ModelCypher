@@ -18,7 +18,7 @@
 """
 Vocabulary Analyzer for Cross-Model Merging.
 
-Analyzes vocabulary statistics and detects compatibility between models
+Analyzes vocabulary statistics and detects alignment between models
 with different tokenizers.
 """
 
@@ -79,10 +79,10 @@ class VocabularyStats:
 
 
 @dataclass(frozen=True)
-class VocabularyCompatibility:
+class VocabularyAlignment:
     """Vocabulary geometry assessment between two models."""
 
-    compatibility_score: float  # 0.0 (high effort) to 1.0 (minimal effort)
+    alignment_score: float  # 0.0 (high effort) to 1.0 (minimal effort)
     vocab_overlap_ratio: float  # Fraction of tokens shared
     dimension_ratio: float  # hidden_dim ratio
     requires_projection: bool  # Needs embedding projection
@@ -96,7 +96,7 @@ class VocabularyCompatibility:
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
-            "compatibility_score": self.compatibility_score,
+            "alignment_score": self.alignment_score,
             "vocab_overlap_ratio": self.vocab_overlap_ratio,
             "dimension_ratio": self.dimension_ratio,
             "requires_projection": self.requires_projection,
@@ -109,7 +109,7 @@ class VocabularyCompatibility:
 
 class VocabularyAnalyzer:
     """
-    Analyzes model vocabularies for merge compatibility.
+    Analyzes model vocabularies for merge alignment.
 
     Detects:
     - Vocabulary size and embedding dimensions
@@ -174,15 +174,15 @@ class VocabularyAnalyzer:
             has_tie_weights=has_tie,
         )
 
-    def analyze_compatibility(
+    def analyze_alignment(
         self,
         source_stats: VocabularyStats,
         target_stats: VocabularyStats,
         source_vocab: dict[str, int] | None = None,
         target_vocab: dict[str, int] | None = None,
-    ) -> VocabularyCompatibility:
+    ) -> VocabularyAlignment:
         """
-        Analyze compatibility between source and target vocabularies.
+        Analyze alignment between source and target vocabularies.
 
         Args:
             source_stats: Source model vocabulary statistics
@@ -191,9 +191,9 @@ class VocabularyAnalyzer:
             target_vocab: Optional target token->id mapping
 
         Returns:
-            VocabularyCompatibility assessment
+            VocabularyAlignment assessment
         """
-        # Check dimension compatibility
+        # Check dimension alignment
         dim_ratio = source_stats.hidden_dim / target_stats.hidden_dim
         requires_projection = source_stats.hidden_dim != target_stats.hidden_dim
 
@@ -224,11 +224,11 @@ class VocabularyAnalyzer:
             source_stats.vocab_size != target_stats.vocab_size or vocab_overlap < 1.0
         )
 
-        # Dimension ratio and overlap ratio provide compatibility information.
-        compatibility_score = vocab_overlap
+        # Dimension ratio and overlap ratio provide alignment information.
+        alignment_score = vocab_overlap
 
-        return VocabularyCompatibility(
-            compatibility_score=compatibility_score,
+        return VocabularyAlignment(
+            alignment_score=alignment_score,
             vocab_overlap_ratio=vocab_overlap,
             dimension_ratio=dim_ratio,
             requires_projection=requires_projection,

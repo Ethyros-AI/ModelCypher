@@ -163,7 +163,7 @@ Per-Domain Analysis:
     neutral: 30
 
 Recommendation:
-  LOW RISK: Models have compatible concept geometry.
+  LOW RISK: Models have aligned concept geometry.
 ```
 
 ---

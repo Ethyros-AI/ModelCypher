@@ -44,6 +44,7 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain.geometry.atlas_protocols import (
     MoralConceptProtocol,
+    axis_key,
     enum_key,
 )
 from modelcypher.core.domain.geometry.atlas_registry import get_moral_concepts
@@ -56,10 +57,6 @@ logger = logging.getLogger(__name__)
 _AXIS_VALENCE = "valence"
 _AXIS_AGENCY = "agency"
 _AXIS_SCOPE = "scope"
-
-
-def _axis_key(value: object) -> str:
-    return enum_key(value).lower()
 
 
 def _foundation_key(value: object) -> str:
@@ -322,12 +319,12 @@ class MoralGeometryAnalyzer:
             concept = self._concept_lookup.get(cid)
             if concept is None:
                 continue
-            axis_key = _axis_key(concept.axis)
-            if axis_key == _AXIS_VALENCE:
+            axis_str = axis_key(concept.axis)
+            if axis_str == _AXIS_VALENCE:
                 valence_vecs.append(matrix[i])
-            elif axis_key == _AXIS_AGENCY:
+            elif axis_str == _AXIS_AGENCY:
                 agency_vecs.append(matrix[i])
-            elif axis_key == _AXIS_SCOPE:
+            elif axis_str == _AXIS_SCOPE:
                 scope_vecs.append(matrix[i])
 
         def axis_direction(vecs: list) -> "Array":
@@ -391,7 +388,7 @@ class MoralGeometryAnalyzer:
 
             for i, cid in enumerate(concepts):
                 concept = self._concept_lookup.get(cid)
-                if concept is None or _axis_key(concept.axis) != axis:
+                if concept is None or axis_key(concept.axis) != axis:
                     continue
                 levels.append(concept.level)
                 backend.eval(matrix)

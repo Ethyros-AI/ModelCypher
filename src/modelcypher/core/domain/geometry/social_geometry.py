@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain.geometry.atlas_protocols import (
     SocialConceptProtocol,
-    enum_key,
+    axis_key,
 )
 from modelcypher.core.domain.geometry.atlas_registry import get_social_concepts
 
@@ -50,10 +50,6 @@ logger = logging.getLogger(__name__)
 _AXIS_POWER = "power"
 _AXIS_KINSHIP = "kinship"
 _AXIS_FORMALITY = "formality"
-
-
-def _axis_key(value: object) -> str:
-    return enum_key(value).lower()
 
 
 @dataclass
@@ -318,7 +314,7 @@ class SocialGeometryAnalyzer:
 
         # Get power anchors
         power_anchors = [
-            a for a in get_social_concepts() if _axis_key(a.axis) == _AXIS_POWER
+            a for a in get_social_concepts() if axis_key(a.axis) == _AXIS_POWER
         ]
         power_names = [a.id for a in power_anchors if a.id in names]
         power_levels = {a.id: a.level for a in power_anchors}

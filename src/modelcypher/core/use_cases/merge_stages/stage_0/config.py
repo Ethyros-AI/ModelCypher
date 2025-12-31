@@ -38,8 +38,8 @@ class VocabularyConfig:
           (CKA scores) between source and target. Higher alignment quality
           means higher weight for that model's embeddings.
 
-        - min_compatibility_score: If None, set to machine_epsilon - any
-          measurable compatibility is acceptable.
+        - min_alignment_score: If None, set to machine_epsilon - any
+          measurable alignment is acceptable.
 
         - min_coverage: If None, set to 0.0 - no arbitrary coverage floor.
     """
@@ -56,7 +56,7 @@ class VocabularyConfig:
     preserve_special_tokens: bool = True
 
     # Quality thresholds - None means no arbitrary floor
-    min_compatibility_score: float | None = None
+    min_alignment_score: float | None = None
     min_coverage: float | None = None
 
     # Advanced

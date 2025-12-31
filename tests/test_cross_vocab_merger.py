@@ -398,7 +398,7 @@ class TestCrossVocabMergerMerge:
         assert result.output_hidden_dim > 0
         assert result.alignment_map is not None
         assert result.projection_result is not None
-        assert result.compatibility is not None
+        assert result.alignment is not None
         assert result.source_stats is not None
         assert result.target_stats is not None
         assert isinstance(result.tokens_preserved_from_source, int)
@@ -476,7 +476,7 @@ class TestCrossVocabMergeResultToDict:
 
         assert "alignment_summary" in d
         assert "projection_summary" in d
-        assert "compatibility_summary" in d
+        assert "vocabulary_alignment" in d
         assert "source_stats" in d
         assert "target_stats" in d
 
@@ -539,7 +539,7 @@ class TestCrossVocabMergerAnalyzeMergeQuality:
         assert "projection_alignment_score" in quality
         assert "projection_reconstruction_error" in quality
 
-    def test_contains_compatibility_metrics(self, merger, backend):
+    def test_contains_alignment_metrics(self, merger, backend):
         backend.random_seed(42)
         source = backend.random_normal((10, 16))
         target = backend.random_normal((10, 16))
@@ -547,7 +547,7 @@ class TestCrossVocabMergerAnalyzeMergeQuality:
         result = merger.merge(source, target)
         quality = merger.analyze_merge_quality(result)
 
-        assert "compatibility_score" in quality
+        assert "alignment_score" in quality
         assert "vocab_overlap_ratio" in quality
 
     def test_contains_overall_score(self, merger, backend):

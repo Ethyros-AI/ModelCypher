@@ -23,14 +23,17 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.cka import compute_cka_from_grams
 from modelcypher.core.domain.geometry.gromov_wasserstein import Config as GWConfig
 from modelcypher.core.domain.geometry.gromov_wasserstein import GromovWassersteinDistance
 from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
 from modelcypher.core.domain.geometry.path_geometry import PathGeometry, PathNode, PathSignature
+from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 from modelcypher.core.domain.geometry.spectral_signature import (
     SpectralSignature,
     SpectralSignatureConfig,
 )
+from modelcypher.core.domain.geometry.topological_fingerprint import TopologicalFingerprint
 from modelcypher.core.domain.geometry.traversal_coherence import Path as TraversalPath
 from modelcypher.core.domain.geometry.traversal_coherence import TraversalCoherence
 
@@ -55,6 +58,14 @@ class Thresholds:
     traversal_perturbed_correlation_max: float
     signature_similarity_min: float
     frechet_distance_max: float
+    dimension_constraint_cka_min: float
+    dimension_constraint_geodesic_mean_abs_diff_max: float
+    dimension_constraint_geodesic_max_abs_diff_max: float
+    dimension_constraint_spectral_eigen_mean_abs_diff_max: float
+    dimension_constraint_spectral_eigen_max_abs_diff_max: float
+    dimension_constraint_spectral_entropy_abs_diff_max: float
+    dimension_constraint_heat_trace_max_abs_diff_max: float
+    dimension_constraint_topology_abs_diff_max: float
 
     @classmethod
     def with_parameters(
@@ -68,6 +79,14 @@ class Thresholds:
         traversal_perturbed_correlation_max: float = 0.995,
         signature_similarity_min: float = 0.999,
         frechet_distance_max: float = 1e-5,
+        dimension_constraint_cka_min: float = 0.999999,
+        dimension_constraint_geodesic_mean_abs_diff_max: float = 1e-6,
+        dimension_constraint_geodesic_max_abs_diff_max: float = 1e-6,
+        dimension_constraint_spectral_eigen_mean_abs_diff_max: float = 1e-6,
+        dimension_constraint_spectral_eigen_max_abs_diff_max: float = 1e-6,
+        dimension_constraint_spectral_entropy_abs_diff_max: float = 1e-6,
+        dimension_constraint_heat_trace_max_abs_diff_max: float = 1e-6,
+        dimension_constraint_topology_abs_diff_max: float = 1e-9,
     ) -> "Thresholds":
         """Create thresholds with explicit parameters.
 
@@ -80,6 +99,14 @@ class Thresholds:
             traversal_perturbed_correlation_max: Maximum perturbed correlation.
             signature_similarity_min: Minimum signature similarity.
             frechet_distance_max: Maximum Frechet distance.
+            dimension_constraint_cka_min: Minimum Gram CKA for padding invariance.
+            dimension_constraint_geodesic_mean_abs_diff_max: Maximum mean geodesic diff.
+            dimension_constraint_geodesic_max_abs_diff_max: Maximum max geodesic diff.
+            dimension_constraint_spectral_eigen_mean_abs_diff_max: Maximum mean eigen diff.
+            dimension_constraint_spectral_eigen_max_abs_diff_max: Maximum max eigen diff.
+            dimension_constraint_spectral_entropy_abs_diff_max: Maximum spectral entropy diff.
+            dimension_constraint_heat_trace_max_abs_diff_max: Maximum heat trace diff.
+            dimension_constraint_topology_abs_diff_max: Maximum topology summary diff.
 
         Returns:
             Thresholds with specified parameters.
@@ -93,6 +120,26 @@ class Thresholds:
             traversal_perturbed_correlation_max=traversal_perturbed_correlation_max,
             signature_similarity_min=signature_similarity_min,
             frechet_distance_max=frechet_distance_max,
+            dimension_constraint_cka_min=dimension_constraint_cka_min,
+            dimension_constraint_geodesic_mean_abs_diff_max=(
+                dimension_constraint_geodesic_mean_abs_diff_max
+            ),
+            dimension_constraint_geodesic_max_abs_diff_max=(
+                dimension_constraint_geodesic_max_abs_diff_max
+            ),
+            dimension_constraint_spectral_eigen_mean_abs_diff_max=(
+                dimension_constraint_spectral_eigen_mean_abs_diff_max
+            ),
+            dimension_constraint_spectral_eigen_max_abs_diff_max=(
+                dimension_constraint_spectral_eigen_max_abs_diff_max
+            ),
+            dimension_constraint_spectral_entropy_abs_diff_max=(
+                dimension_constraint_spectral_entropy_abs_diff_max
+            ),
+            dimension_constraint_heat_trace_max_abs_diff_max=(
+                dimension_constraint_heat_trace_max_abs_diff_max
+            ),
+            dimension_constraint_topology_abs_diff_max=dimension_constraint_topology_abs_diff_max,
         )
 
     @classmethod
@@ -295,6 +342,35 @@ class SpectralSignatureValidation:
 
 
 @dataclass(frozen=True)
+class DimensionConstraintValidation:
+    base_dimension: int
+    padded_dimension: int
+    sample_count: int
+    k_neighbors: int
+    gram_cka: float
+    geodesic_mean_abs_diff: float
+    geodesic_max_abs_diff: float
+    spectral_eigen_mean_abs_diff: float
+    spectral_eigen_max_abs_diff: float
+    spectral_entropy_base: float
+    spectral_entropy_padded: float
+    heat_trace_base: list[float]
+    heat_trace_padded: list[float]
+    heat_times: list[float]
+    betti_numbers_base: dict[int, int]
+    betti_numbers_padded: dict[int, int]
+    component_count_base: int
+    component_count_padded: int
+    cycle_count_base: int
+    cycle_count_padded: int
+    persistence_entropy_base: float
+    persistence_entropy_padded: float
+    max_persistence_base: float
+    max_persistence_padded: float
+    passed: bool
+
+
+@dataclass(frozen=True)
 class GromovWassersteinFixture:
     points_a: list[list[float]]
     points_b: list[list[float]]
@@ -332,12 +408,21 @@ class SpectralSignatureFixture:
 
 
 @dataclass(frozen=True)
+class DimensionConstraintFixture:
+    points: list[list[float]]
+    padded_dimension: int
+    k_neighbors: int
+    heat_times: list[float]
+
+
+@dataclass(frozen=True)
 class Fixtures:
     gromov_wasserstein: GromovWassersteinFixture
     traversal_coherence: TraversalCoherenceFixture
     path_signature: PathSignatureFixture
     spectral_signature: SpectralSignatureFixture
     spectral_signature_connected: SpectralSignatureFixture
+    dimension_constraint: DimensionConstraintFixture
 
 
 @dataclass(frozen=True)
@@ -351,6 +436,7 @@ class Report:
     path_signature: PathSignatureValidation
     spectral_signature: SpectralSignatureValidation
     spectral_signature_connected: SpectralSignatureValidation
+    dimension_constraint: DimensionConstraintValidation
     fixtures: Fixtures | None
 
 
@@ -388,6 +474,10 @@ class GeometryValidationSuite:
         spectral_connected_validation = self._validate_spectral_signature(
             fixture=fixtures.spectral_signature_connected,
         )
+        dimension_constraint_validation = self._validate_dimension_constraint(
+            fixture=fixtures.dimension_constraint,
+            thresholds=resolved.thresholds,
+        )
 
         passed = (
             gw_validation.passed
@@ -395,6 +485,7 @@ class GeometryValidationSuite:
             and path_validation.passed
             and spectral_validation.passed
             and spectral_connected_validation.passed
+            and dimension_constraint_validation.passed
         )
 
         return Report(
@@ -407,6 +498,7 @@ class GeometryValidationSuite:
             path_signature=path_validation,
             spectral_signature=spectral_validation,
             spectral_signature_connected=spectral_connected_validation,
+            dimension_constraint=dimension_constraint_validation,
             fixtures=fixtures if resolved.include_fixtures else None,
         )
 
@@ -544,6 +636,18 @@ class GeometryValidationSuite:
             expected_component_count=1,
             expected_connected=True,
         )
+        dimension_constraint_fixture = DimensionConstraintFixture(
+            points=[
+                [0.0, 0.0],
+                [1.0, 0.0],
+                [0.5, 0.8],
+                [0.1, 0.7],
+                [0.9, 0.2],
+            ],
+            padded_dimension=4,
+            k_neighbors=3,
+            heat_times=[0.1, 1.0, 10.0],
+        )
 
         return Fixtures(
             gromov_wasserstein=gw_fixture,
@@ -551,6 +655,7 @@ class GeometryValidationSuite:
             path_signature=path_fixture,
             spectral_signature=spectral_fixture,
             spectral_signature_connected=spectral_connected_fixture,
+            dimension_constraint=dimension_constraint_fixture,
         )
 
     def _validate_gromov_wasserstein(
@@ -758,5 +863,124 @@ class GeometryValidationSuite:
             heat_trace=signature.heat_trace,
             heat_times=signature.heat_times,
             connected=signature.connected,
+            passed=passed,
+        )
+
+    def _validate_dimension_constraint(
+        self,
+        fixture: DimensionConstraintFixture,
+        thresholds: Thresholds,
+    ) -> DimensionConstraintValidation:
+        backend = self._backend
+        points = fixture.points
+        sample_count = len(points)
+        base_dim = len(points[0]) if points else 0
+
+        padded_points = [
+            row + [0.0] * (fixture.padded_dimension - base_dim) for row in points
+        ]
+
+        base_arr = backend.array(points)
+        padded_arr = backend.array(padded_points)
+        backend.eval(base_arr, padded_arr)
+
+        gram_base = backend.matmul(base_arr, backend.transpose(base_arr))
+        gram_padded = backend.matmul(padded_arr, backend.transpose(padded_arr))
+        backend.eval(gram_base, gram_padded)
+        gram_cka = compute_cka_from_grams(gram_base, gram_padded, backend=backend)
+
+        geometry = RiemannianGeometry(backend)
+        geo_base = geometry.geodesic_distances(points, k_neighbors=fixture.k_neighbors)
+        geo_padded = geometry.geodesic_distances(padded_points, k_neighbors=fixture.k_neighbors)
+
+        geo_diff = backend.abs(geo_base.distances - geo_padded.distances)
+        geo_mean = backend.mean(geo_diff)
+        geo_max = backend.max(geo_diff)
+        backend.eval(geo_mean, geo_max)
+        geodesic_mean_abs_diff = float(backend.to_numpy(geo_mean).item())
+        geodesic_max_abs_diff = float(backend.to_numpy(geo_max).item())
+
+        spectral_config = SpectralSignatureConfig(
+            k_neighbors=fixture.k_neighbors,
+            normalized_laplacian=True,
+            heat_trace_times=tuple(fixture.heat_times),
+        )
+        spectral = SpectralSignature(backend)
+        sig_base = spectral.compute(points=points, config=spectral_config)
+        sig_padded = spectral.compute(points=padded_points, config=spectral_config)
+
+        eigen_diffs = [
+            abs(a - b) for a, b in zip(sig_base.eigenvalues, sig_padded.eigenvalues)
+        ]
+        spectral_eigen_mean_abs_diff = (
+            sum(eigen_diffs) / len(eigen_diffs) if eigen_diffs else 0.0
+        )
+        spectral_eigen_max_abs_diff = max(eigen_diffs) if eigen_diffs else 0.0
+
+        spectral_entropy_diff = abs(sig_base.spectral_entropy - sig_padded.spectral_entropy)
+        heat_diffs = [
+            abs(a - b) for a, b in zip(sig_base.heat_trace, sig_padded.heat_trace)
+        ]
+        heat_trace_max_abs_diff = max(heat_diffs) if heat_diffs else 0.0
+
+        fp_base = TopologicalFingerprint.compute(points, max_dimension=1)
+        fp_padded = TopologicalFingerprint.compute(padded_points, max_dimension=1)
+
+        persistence_entropy_diff = abs(
+            fp_base.summary.persistence_entropy - fp_padded.summary.persistence_entropy
+        )
+        max_persistence_diff = abs(
+            fp_base.summary.max_persistence - fp_padded.summary.max_persistence
+        )
+        topology_matches = (
+            fp_base.betti_numbers == fp_padded.betti_numbers
+            and fp_base.summary.component_count == fp_padded.summary.component_count
+            and fp_base.summary.cycle_count == fp_padded.summary.cycle_count
+        )
+
+        passed = (
+            float(gram_cka) >= thresholds.dimension_constraint_cka_min
+            and geodesic_mean_abs_diff
+            <= thresholds.dimension_constraint_geodesic_mean_abs_diff_max
+            and geodesic_max_abs_diff
+            <= thresholds.dimension_constraint_geodesic_max_abs_diff_max
+            and spectral_eigen_mean_abs_diff
+            <= thresholds.dimension_constraint_spectral_eigen_mean_abs_diff_max
+            and spectral_eigen_max_abs_diff
+            <= thresholds.dimension_constraint_spectral_eigen_max_abs_diff_max
+            and spectral_entropy_diff
+            <= thresholds.dimension_constraint_spectral_entropy_abs_diff_max
+            and heat_trace_max_abs_diff
+            <= thresholds.dimension_constraint_heat_trace_max_abs_diff_max
+            and topology_matches
+            and persistence_entropy_diff <= thresholds.dimension_constraint_topology_abs_diff_max
+            and max_persistence_diff <= thresholds.dimension_constraint_topology_abs_diff_max
+        )
+
+        return DimensionConstraintValidation(
+            base_dimension=base_dim,
+            padded_dimension=fixture.padded_dimension,
+            sample_count=sample_count,
+            k_neighbors=fixture.k_neighbors,
+            gram_cka=float(gram_cka),
+            geodesic_mean_abs_diff=geodesic_mean_abs_diff,
+            geodesic_max_abs_diff=geodesic_max_abs_diff,
+            spectral_eigen_mean_abs_diff=spectral_eigen_mean_abs_diff,
+            spectral_eigen_max_abs_diff=spectral_eigen_max_abs_diff,
+            spectral_entropy_base=sig_base.spectral_entropy,
+            spectral_entropy_padded=sig_padded.spectral_entropy,
+            heat_trace_base=sig_base.heat_trace,
+            heat_trace_padded=sig_padded.heat_trace,
+            heat_times=sig_base.heat_times,
+            betti_numbers_base=fp_base.betti_numbers,
+            betti_numbers_padded=fp_padded.betti_numbers,
+            component_count_base=fp_base.summary.component_count,
+            component_count_padded=fp_padded.summary.component_count,
+            cycle_count_base=fp_base.summary.cycle_count,
+            cycle_count_padded=fp_padded.summary.cycle_count,
+            persistence_entropy_base=fp_base.summary.persistence_entropy,
+            persistence_entropy_padded=fp_padded.summary.persistence_entropy,
+            max_persistence_base=fp_base.summary.max_persistence,
+            max_persistence_padded=fp_padded.summary.max_persistence,
             passed=passed,
         )

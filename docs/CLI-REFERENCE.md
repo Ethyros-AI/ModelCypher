@@ -144,7 +144,14 @@ mc geometry metrics dimension-constraint <points_file> --pad-dim <n>
 }
 ```
 
-### Geometry Validate Output Schema (Spectral Excerpt)
+### Dimension Constraint Example (Semantic Primes)
+```bash
+mc geometry primes probe-model ./model --output-file primes.json
+mc geometry metrics dimension-constraint primes.json --pad-dim 4096 --output json
+```
+Use `primes.json` directly; the command consumes activation dict values as points.
+
+### Geometry Validate Output Schema (Spectral + Dimension Constraint Excerpt)
 ```json
 {
   "_schema": "mc.geometry.validation.v1",
@@ -166,6 +173,36 @@ mc geometry metrics dimension-constraint <points_file> --pad-dim <n>
     "heatTrace": [3.71, 2.19, 1.0],
     "heatTimes": [0.1, 1.0, 10.0],
     "connected": true,
+    "passed": true
+  },
+  "dimensionConstraint": {
+    "baseDimension": 2,
+    "paddedDimension": 4,
+    "sampleCount": 5,
+    "kNeighbors": 3,
+    "gramCka": 1.0,
+    "geodesicDiff": { "meanAbs": 0.0, "maxAbs": 0.0 },
+    "spectral": {
+      "eigenMeanAbsDiff": 0.0,
+      "eigenMaxAbsDiff": 0.0,
+      "spectralEntropyBase": 0.123,
+      "spectralEntropyPadded": 0.123,
+      "heatTraceBase": [4.89, 2.31],
+      "heatTracePadded": [4.89, 2.31],
+      "heatTimes": [0.1, 1.0]
+    },
+    "topology": {
+      "bettiNumbersBase": { "0": 1, "1": 0 },
+      "bettiNumbersPadded": { "0": 1, "1": 0 },
+      "componentCountBase": 1,
+      "componentCountPadded": 1,
+      "cycleCountBase": 0,
+      "cycleCountPadded": 0,
+      "persistenceEntropyBase": 0.0,
+      "persistenceEntropyPadded": 0.0,
+      "maxPersistenceBase": 0.912,
+      "maxPersistencePadded": 0.912
+    },
     "passed": true
   }
 }
@@ -505,26 +542,25 @@ mc profile merge geometry.json topology.json semantic.json --output complete.jso
 ### Profile Comparison Output Schema
 ```json
 {
-  "_schema": "mc.profile.comparison.v1",
-  "source_model": "/path/to/source",
-  "target_model": "/path/to/target",
-  "structural_alignment": {
-    "architecture_match": true,
-    "layer_count_source": 24,
-    "layer_count_target": 24,
-    "hidden_dim_source": 896,
-    "hidden_dim_target": 896
-  },
-  "geometric_alignment": {
-    "curvature_delta": 0.05,
-    "curvature_z_score": 0.42,
-    "intrinsic_dimension_delta": 1.2,
-    "topology_compatible": true
-  },
-  "layer_correspondence": {
-    "critical_layers": [0, 12, 23],
-    "alignment_scores": [0.95, 0.92, 0.88]
-  }
+  "source_path": "/path/to/source",
+  "target_path": "/path/to/target",
+  "architecture_match": true,
+  "hidden_dim_ratio": 1.0,
+  "layer_count_ratio": 1.0,
+  "vocab_overlap": 0.82,
+  "curvature_alignment": 0.92,
+  "ricci_alignment": 0.94,
+  "dimension_alignment": 0.90,
+  "overall_alignment": 0.92,
+  "topology_similarity": 0.88,
+  "semantic_alignment": 0.91,
+  "layer_mapping": {"0": 0, "12": 12, "23": 23},
+  "layer_comparisons": [],
+  "critical_layers": [0, 12, 23],
+  "total_alignment_effort": 1.2,
+  "mean_alignment_effort": 0.05,
+  "max_alignment_effort": 0.2,
+  "recommended_strategy": "procrustes"
 }
 ```
 

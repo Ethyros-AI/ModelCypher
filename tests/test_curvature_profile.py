@@ -21,7 +21,7 @@ Tests cover:
 - LayerCurvature serialization
 - CurvatureProfile creation and serialization
 - FamilyBaseline aggregation
-- CurvatureCompatibility computation
+- CurvatureAlignment computation
 - Model info parsing
 - Edge cases and error handling
 """
@@ -36,12 +36,12 @@ from pathlib import Path
 import pytest
 
 from modelcypher.core.domain.geometry.curvature_profile import (
-    CurvatureCompatibility,
+    CurvatureAlignment,
     CurvatureProfile,
     FamilyBaseline,
     LayerCurvature,
     build_family_baseline,
-    compute_curvature_compatibility,
+    compute_curvature_alignment,
     parse_model_info,
     SCHEMA_VERSION,
 )
@@ -433,15 +433,15 @@ class TestBuildFamilyBaseline:
 
 
 # =============================================================================
-# compute_curvature_compatibility Tests
+# compute_curvature_alignment Tests
 # =============================================================================
 
 
-class TestComputeCurvatureCompatibility:
-    """Tests for compute_curvature_compatibility function."""
+class TestComputeCurvatureAlignment:
+    """Tests for compute_curvature_alignment function."""
 
     def test_identical_profiles(self):
-        """Identical profiles have perfect compatibility."""
+        """Identical profiles have perfect alignment."""
         profile = CurvatureProfile(
             model_path="/models/test",
             model_family="qwen",
@@ -453,15 +453,15 @@ class TestComputeCurvatureCompatibility:
             global_intrinsic_dimension_mean=100.0,
         )
 
-        compat = compute_curvature_compatibility(profile, profile)
-        assert compat.score == 1.0
-        assert compat.sectional_compatibility == 1.0
-        assert compat.ollivier_ricci_compatibility == 1.0
-        assert compat.sectional_z_score == 0.0
-        assert compat.ollivier_ricci_z_score == 0.0
+        alignment = compute_curvature_alignment(profile, profile)
+        assert alignment.score == 1.0
+        assert alignment.sectional_alignment == 1.0
+        assert alignment.ollivier_ricci_alignment == 1.0
+        assert alignment.sectional_z_score == 0.0
+        assert alignment.ollivier_ricci_z_score == 0.0
 
     def test_different_profiles_no_baseline(self):
-        """Different profiles produce lower compatibility without baseline."""
+        """Different profiles produce lower alignment without baseline."""
         source = CurvatureProfile(
             model_path="/models/source",
             model_family="qwen",
@@ -483,13 +483,13 @@ class TestComputeCurvatureCompatibility:
             global_intrinsic_dimension_mean=150.0,  # Different
         )
 
-        compat = compute_curvature_compatibility(source, target)
-        assert 0.0 < compat.score < 1.0
-        assert compat.sectional_z_score > 0.0
-        assert compat.baseline_family == "none"
+        alignment = compute_curvature_alignment(source, target)
+        assert 0.0 < alignment.score < 1.0
+        assert alignment.sectional_z_score > 0.0
+        assert alignment.baseline_family == "none"
 
     def test_with_baseline(self):
-        """Compatibility uses baseline for z-score when provided."""
+        """Alignment uses baseline for z-score when provided."""
         source = CurvatureProfile(
             model_path="/models/source",
             model_family="qwen",
@@ -520,14 +520,14 @@ class TestComputeCurvatureCompatibility:
             sample_count=3,
         )
 
-        compat = compute_curvature_compatibility(source, target, baseline)
-        assert compat.baseline_family == "qwen"
-        assert compat.baseline_model_count == 3
-        # With larger baseline std, z-scores should be smaller, compatibility higher
-        assert compat.score > 0.5
+        alignment = compute_curvature_alignment(source, target, baseline)
+        assert alignment.baseline_family == "qwen"
+        assert alignment.baseline_model_count == 3
+        # With larger baseline std, z-scores should be smaller, alignment higher
+        assert alignment.score > 0.5
 
     def test_very_different_profiles(self):
-        """Very different profiles have low compatibility."""
+        """Very different profiles have low alignment."""
         source = CurvatureProfile(
             model_path="/models/source",
             model_family="qwen",
@@ -549,13 +549,13 @@ class TestComputeCurvatureCompatibility:
             global_intrinsic_dimension_mean=500.0,  # Very different
         )
 
-        compat = compute_curvature_compatibility(source, target)
+        alignment = compute_curvature_alignment(source, target)
         # Score should be very low due to large differences
-        assert compat.score < 0.5
-        assert compat.sectional_z_score > 3.0  # More than 3 sigma
+        assert alignment.score < 0.5
+        assert alignment.sectional_z_score > 3.0  # More than 3 sigma
 
-    def test_compatibility_score_bounded(self):
-        """Compatibility score is bounded to [0, 1]."""
+    def test_alignment_score_bounded(self):
+        """Alignment score is bounded to [0, 1]."""
         source = CurvatureProfile(
             model_path="/models/source",
             model_family="test",
@@ -575,10 +575,10 @@ class TestComputeCurvatureCompatibility:
             global_ollivier_ricci_std=0.001,
         )
 
-        compat = compute_curvature_compatibility(source, target)
-        assert 0.0 <= compat.score <= 1.0
-        assert 0.0 <= compat.sectional_compatibility <= 1.0
-        assert 0.0 <= compat.ollivier_ricci_compatibility <= 1.0
+        alignment = compute_curvature_alignment(source, target)
+        assert 0.0 <= alignment.score <= 1.0
+        assert 0.0 <= alignment.sectional_alignment <= 1.0
+        assert 0.0 <= alignment.ollivier_ricci_alignment <= 1.0
 
 
 # =============================================================================
@@ -675,8 +675,8 @@ class TestEdgeCases:
         for std in baseline.sectional_std_by_position:
             assert std == 0.0
 
-    def test_compatibility_with_zero_std_profile(self):
-        """compute_curvature_compatibility handles zero std profiles."""
+    def test_alignment_with_zero_std_profile(self):
+        """compute_curvature_alignment handles zero std profiles."""
         profile = CurvatureProfile(
             model_path="/path",
             model_family="test",
@@ -687,12 +687,12 @@ class TestEdgeCases:
             global_ollivier_ricci_std=0.0,  # Zero std
         )
         # Should not raise, uses fallback epsilon
-        compat = compute_curvature_compatibility(profile, profile)
-        assert compat.score == 1.0
+        alignment = compute_curvature_alignment(profile, profile)
+        assert alignment.score == 1.0
 
-    def test_compatibility_dataclass_is_frozen(self):
-        """CurvatureCompatibility is immutable."""
-        compat = compute_curvature_compatibility(
+    def test_alignment_dataclass_is_frozen(self):
+        """CurvatureAlignment is immutable."""
+        alignment = compute_curvature_alignment(
             CurvatureProfile(
                 model_path="/a",
                 model_family="test",
@@ -705,7 +705,7 @@ class TestEdgeCases:
             ),
         )
         with pytest.raises(AttributeError):
-            compat.score = 0.5  # Should fail - frozen dataclass
+            alignment.score = 0.5  # Should fail - frozen dataclass
 
     def test_json_serialization(self):
         """Profiles serialize to valid JSON."""

@@ -41,17 +41,13 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.atlas_protocols import (
     TemporalConceptProtocol,
-    enum_key,
+    axis_key,
 )
 from modelcypher.core.domain.geometry.atlas_registry import get_temporal_concepts
 
 _AXIS_DIRECTION = "direction"
 _AXIS_DURATION = "duration"
 _AXIS_CAUSALITY = "causality"
-
-
-def _axis_key(value: object) -> str:
-    return enum_key(value).lower()
 
 logger = logging.getLogger(__name__)
 
@@ -260,12 +256,12 @@ class TemporalTopologyAnalyzer:
             anchor = self._anchor_lookup.get(concept)
             if anchor is None:
                 continue
-            axis_key = _axis_key(anchor.axis)
-            if axis_key == _AXIS_DIRECTION:
+            axis_str = axis_key(anchor.axis)
+            if axis_str == _AXIS_DIRECTION:
                 direction_vecs.append(matrix[i])
-            elif axis_key == _AXIS_DURATION:
+            elif axis_str == _AXIS_DURATION:
                 duration_vecs.append(matrix[i])
-            elif axis_key == _AXIS_CAUSALITY:
+            elif axis_str == _AXIS_CAUSALITY:
                 causality_vecs.append(matrix[i])
 
         def axis_direction(vecs: list) -> "object":
@@ -345,7 +341,7 @@ class TemporalTopologyAnalyzer:
 
             for i, concept in enumerate(concepts):
                 anchor = self._anchor_lookup.get(concept)
-                if anchor is None or _axis_key(anchor.axis) != axis:
+                if anchor is None or axis_key(anchor.axis) != axis:
                     continue
                 levels.append(anchor.level)
                 # Project onto first PC direction
@@ -402,7 +398,7 @@ class TemporalTopologyAnalyzer:
         direction_anchors = []
         for i, concept in enumerate(concepts):
             anchor = self._anchor_lookup.get(concept)
-            if anchor and _axis_key(anchor.axis) == _AXIS_DIRECTION:
+            if anchor and axis_key(anchor.axis) == _AXIS_DIRECTION:
                 direction_anchors.append((concept, anchor.level, matrix[i]))
 
         if len(direction_anchors) < 4:

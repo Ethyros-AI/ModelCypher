@@ -21,6 +21,10 @@ import math
 from dataclasses import dataclass
 from typing import Iterable
 
+from modelcypher.core.domain.geometry.numerical_stability import (
+    compute_pearson_correlation,
+)
+
 
 @dataclass(frozen=True)
 class Prediction:
@@ -64,7 +68,7 @@ class TransferFidelityPrediction:
                 vec_a.append(float(gram_a[i * n + j]))
                 vec_b.append(float(gram_b[i * n + j]))
 
-        correlation = _pearson_correlation(vec_a, vec_b)
+        correlation = compute_pearson_correlation(vec_a, vec_b)
         if not math.isfinite(correlation):
             return None
 
@@ -134,27 +138,3 @@ def _fisher_z_transform(value: float) -> float:
 def _inverse_fisher_z(value: float) -> float:
     e2z = math.exp(2.0 * value)
     return (e2z - 1.0) / (e2z + 1.0)
-
-
-def _pearson_correlation(lhs: list[float], rhs: list[float]) -> float:
-    if not lhs or len(lhs) != len(rhs):
-        return float("nan")
-    n = float(len(lhs))
-    mean_l = sum(lhs) / n
-    mean_r = sum(rhs) / n
-
-    num = 0.0
-    denom_l = 0.0
-    denom_r = 0.0
-
-    for i in range(len(lhs)):
-        diff_l = lhs[i] - mean_l
-        diff_r = rhs[i] - mean_r
-        num += diff_l * diff_r
-        denom_l += diff_l * diff_l
-        denom_r += diff_r * diff_r
-
-    denom = math.sqrt(denom_l * denom_r)
-    if denom <= 1e-12:
-        return float("nan")
-    return num / denom

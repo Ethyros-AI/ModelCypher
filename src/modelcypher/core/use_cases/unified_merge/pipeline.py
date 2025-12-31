@@ -363,8 +363,18 @@ def run_merge(
         copy_config_files(target_path, effective_output)
         final_output_path = effective_output
 
-    # Compute metrics
-    mean_confidence = probe_metrics.get("mean_confidence", 0.0)
+    # Compute geometric confidence from transplant metrics
+    # Confidence IS the geometry - no vibes, no interpretation strings
+    from modelcypher.core.use_cases.unified_merge.geometric_confidence import (
+        compute_geometric_confidence_from_transplant,
+        compute_mean_confidence,
+        compute_safety_verdict,
+    )
+
+    geometry_metrics = compute_geometric_confidence_from_transplant(transplant_metrics)
+    mean_confidence = compute_mean_confidence(geometry_metrics)
+    safety_verdict = compute_safety_verdict(geometry_metrics)
+
     projection_losses = transplant_metrics.get("projection_losses", [])
     mean_error = sum(projection_losses) / len(projection_losses) if projection_losses else 0.0
 
@@ -382,8 +392,9 @@ def run_merge(
         merge_strategy="transplant",
         output_path=final_output_path,
         vocab_aligned=vocab_aligned,
-        safety_verdict="geometric",
+        safety_verdict=safety_verdict,
         refusal_preserved=True,
+        geometry_metrics=geometry_metrics,
     )
 
     logger.info(

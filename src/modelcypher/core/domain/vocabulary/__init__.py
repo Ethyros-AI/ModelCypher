@@ -53,14 +53,14 @@ from .embedding_projector import (
 from .vocabulary_analyzer import (
     TokenizerType,
     VocabularyAnalyzer,
-    VocabularyCompatibility,
+    VocabularyAlignment,
     VocabularyStats,
 )
 
 __all__ = [
     # Analyzer
     "VocabularyStats",
-    "VocabularyCompatibility",
+    "VocabularyAlignment",
     "VocabularyAnalyzer",
     "TokenizerType",
     # Projector

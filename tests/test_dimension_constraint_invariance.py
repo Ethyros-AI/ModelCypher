@@ -20,6 +20,8 @@
 from __future__ import annotations
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from modelcypher.core.domain.geometry.cka import compute_cka_from_grams
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
@@ -117,3 +119,56 @@ def test_topological_fingerprint_invariance_under_padding() -> None:
     assert fp_base.summary.persistence_entropy == pytest.approx(
         fp_padded.summary.persistence_entropy, abs=1e-9
     )
+
+
+@given(
+    sample_count=st.integers(min_value=4, max_value=8),
+    base_dim=st.integers(min_value=2, max_value=4),
+    pad_extra=st.integers(min_value=1, max_value=3),
+    seed=st.integers(min_value=0, max_value=10_000),
+)
+@settings(max_examples=20, deadline=None)
+def test_padding_invariance_random_pointcloud(
+    any_backend,
+    sample_count: int,
+    base_dim: int,
+    pad_extra: int,
+    seed: int,
+) -> None:
+    """Random point clouds remain invariant under zero-padding."""
+    backend = any_backend
+    backend.random_seed(seed)
+
+    points_arr = backend.random_randn((sample_count, base_dim))
+    backend.eval(points_arr)
+    points = backend.to_numpy(points_arr).tolist()
+    padded = _pad_points(points, base_dim + pad_extra)
+    k_neighbors = min(5, sample_count - 1)
+
+    base = backend.array(points)
+    expanded = backend.array(padded)
+    backend.eval(base, expanded)
+
+    gram_base = backend.matmul(base, backend.transpose(base))
+    gram_expanded = backend.matmul(expanded, backend.transpose(expanded))
+    backend.eval(gram_base, gram_expanded)
+
+    cka = compute_cka_from_grams(gram_base, gram_expanded, backend=backend)
+    assert cka == pytest.approx(1.0, abs=1e-5)
+
+    geometry = RiemannianGeometry(backend)
+    geo_base = geometry.geodesic_distances(points, k_neighbors=k_neighbors)
+    geo_padded = geometry.geodesic_distances(padded, k_neighbors=k_neighbors)
+
+    geo_diff = backend.abs(geo_base.distances - geo_padded.distances)
+    geo_max = backend.max(geo_diff)
+    backend.eval(geo_max)
+    assert float(backend.to_numpy(geo_max).item()) <= 1e-5
+
+    config = SpectralSignatureConfig(k_neighbors=k_neighbors)
+    spectral = SpectralSignature(backend)
+    sig_base = spectral.compute(points, config)
+    sig_padded = spectral.compute(padded, config)
+
+    assert sig_base.eigenvalues == pytest.approx(sig_padded.eigenvalues, rel=1e-5, abs=1e-5)
+    assert sig_base.heat_trace == pytest.approx(sig_padded.heat_trace, rel=1e-5, abs=1e-5)

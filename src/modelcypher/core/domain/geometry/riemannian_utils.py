@@ -79,6 +79,24 @@ if TYPE_CHECKING:
 _cache = ComputationCache.shared()
 
 
+def safe_arithmetic_mean(values: "list[float] | tuple[float, ...]") -> float:
+    """Compute arithmetic mean, returning 0.0 for empty sequences.
+
+    This is a simple utility for scalar values. For embeddings on
+    curved manifolds, use frechet_mean() instead.
+
+    Args:
+        values: Sequence of float values.
+
+    Returns:
+        Arithmetic mean, or 0.0 if empty.
+    """
+    if not values:
+        return 0.0
+    vals = list(values) if not isinstance(values, list) else values
+    return sum(vals) / len(vals)
+
+
 def _set_matrix_element(
     backend: "Backend",
     matrix: "Array",

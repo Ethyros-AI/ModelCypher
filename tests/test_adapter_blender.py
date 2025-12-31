@@ -240,7 +240,7 @@ class TestAdapterBlenderLoRA:
         assert a_np[0, 0] == pytest.approx(1.0)
 
     def test_compute_geometric_weights(self) -> None:
-        """Geometric weights should normalize compatibility scores."""
+        """Geometric weights should normalize alignment scores."""
         id1, id2 = uuid4(), uuid4()
         scores = {id1: 0.8, id2: 0.2}
 

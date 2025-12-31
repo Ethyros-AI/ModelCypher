@@ -25,6 +25,7 @@ from enum import Enum
 from typing import Iterable
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.riemannian_utils import safe_arithmetic_mean
 
 
 class AnchorSet(str, Enum):
@@ -149,8 +150,8 @@ class GeometricFingerprint:
 
         avg_direction = 0.0
         for fp in items:
-            semantic = _safe_mean(fp.semantic_path_self_correlations)
-            computational = _safe_mean(fp.computational_path_self_correlations)
+            semantic = safe_arithmetic_mean(fp.semantic_path_self_correlations)
+            computational = safe_arithmetic_mean(fp.computational_path_self_correlations)
             avg_direction += (semantic + computational) / 2.0
         avg_direction = avg_direction / max(len(items), 1)
 
@@ -173,8 +174,8 @@ class GeometricFingerprint:
                 if i != j:
                     off_diag.append(float(gram[i * n + j]))
 
-        mean = _safe_mean(off_diag)
-        variance = _safe_mean([(val - mean) ** 2 for val in off_diag])
+        mean = safe_arithmetic_mean(off_diag)
+        variance = safe_arithmetic_mean([(val - mean) ** 2 for val in off_diag])
         std = math.sqrt(variance)
 
         backend = get_default_backend()
@@ -328,13 +329,6 @@ GeometricFingerprint.placeholder = GeometricFingerprint(
     model_id="placeholder",
     computed_at=datetime.utcfromtimestamp(0),
 )
-
-
-def _safe_mean(values: Iterable[float]) -> float:
-    vals = list(values)
-    if not vals:
-        return 0.0
-    return sum(vals) / len(vals)
 
 
 def _mean_abs_diff(lhs: Iterable[float], rhs: Iterable[float]) -> float:

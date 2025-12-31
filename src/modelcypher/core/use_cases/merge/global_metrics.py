@@ -79,33 +79,33 @@ def compute_global_metrics(geometry: MergeGeometry) -> None:
             health_counts["collapsed"],
         )
 
-    # Compute curvature compatibility
+    # Compute curvature alignment
     # This compares curvature profiles of source and target to inform merge confidence
-    _compute_curvature_compatibility(geometry, layer_geoms)
+    _compute_curvature_alignment(geometry, layer_geoms)
 
     logger.info(
-        "MERGE GEOMETRY: %d layers, mean_intrinsic_dim=%.1f, mean_shared_dim=%.1f, CKA=%.4f, health=%s, curv_compat=%.3f",
+        "MERGE GEOMETRY: %d layers, mean_intrinsic_dim=%.1f, mean_shared_dim=%.1f, CKA=%.4f, health=%s, curv_align=%.3f",
         len(layer_geoms),
         geometry.mean_intrinsic_dimension,
         geometry.mean_shared_dimension,
         geometry.overall_cka,
         geometry.overall_manifold_health,
-        geometry.curvature_compatibility,
+        geometry.curvature_alignment,
     )
 
 
-def _compute_curvature_compatibility(geometry: MergeGeometry, layer_geoms: list) -> None:
-    """Compute curvature compatibility score from per-layer geometry.
+def _compute_curvature_alignment(geometry: MergeGeometry, layer_geoms: list) -> None:
+    """Compute curvature alignment score from per-layer geometry.
 
-    Curvature compatibility measures how geometrically similar the source and
-    target representations are. Higher compatibility suggests easier merging.
+    Curvature alignment measures how geometrically similar the source and
+    target representations are. Higher alignment suggests easier merging.
 
     The score is computed from:
     - Consistency of curvature signs across layers
     - Variance in curvature values (low = more compatible)
     - Overall health distribution
 
-    Returns a score from 0.0 (incompatible) to 1.0 (highly compatible).
+    Returns a score from 0.0 (divergent) to 1.0 (highly aligned).
     """
     import math
 
@@ -116,8 +116,8 @@ def _compute_curvature_compatibility(geometry: MergeGeometry, layer_geoms: list)
 
     if not ricci:
         # No curvature data available
-        geometry.curvature_compatibility = 0.0
-        geometry.curvature_compatibility_details = {"error": "no_curvature_data"}
+        geometry.curvature_alignment = 0.0
+        geometry.curvature_alignment_details = {"error": "no_curvature_data"}
         return
 
     # Component 1: Curvature consistency (0-1)
@@ -126,7 +126,7 @@ def _compute_curvature_compatibility(geometry: MergeGeometry, layer_geoms: list)
     consistency_score = negative_ratio  # 1.0 = all negative (healthy)
 
     # Component 2: Curvature stability (0-1)
-    # Low variance in curvature = more stable manifold = higher compatibility
+    # Low variance in curvature = more stable manifold = higher alignment
     if len(ricci) > 1:
         mean_ricci = sum(ricci) / len(ricci)
         variance = sum((r - mean_ricci) ** 2 for r in ricci) / (len(ricci) - 1)
@@ -151,8 +151,8 @@ def _compute_curvature_compatibility(geometry: MergeGeometry, layer_geoms: list)
     # Ricci consistency is most important (50%), stability (30%), dimension (20%)
     overall = 0.5 * consistency_score + 0.3 * stability_score + 0.2 * dimension_score
 
-    geometry.curvature_compatibility = overall
-    geometry.curvature_compatibility_details = {
+    geometry.curvature_alignment = overall
+    geometry.curvature_alignment_details = {
         "consistency_score": consistency_score,
         "stability_score": stability_score,
         "dimension_score": dimension_score,
@@ -161,7 +161,7 @@ def _compute_curvature_compatibility(geometry: MergeGeometry, layer_geoms: list)
     }
 
     logger.debug(
-        "Curvature compatibility: %.3f (consistency=%.2f, stability=%.2f, dimension=%.2f)",
+        "Curvature alignment: %.3f (consistency=%.2f, stability=%.2f, dimension=%.2f)",
         overall,
         consistency_score,
         stability_score,

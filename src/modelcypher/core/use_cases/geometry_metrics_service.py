@@ -64,7 +64,7 @@ class GromovWassersteinResult:
 
     distance: float
     normalized_distance: float
-    compatibility_score: float
+    alignment_score: float
     converged: bool
     iterations: int
     coupling_shape: tuple[int, int]
@@ -212,7 +212,7 @@ class GeometryMetricsService:
         cached_result = CachedGWResult(
             distance=result.distance,
             normalized_distance=result.normalized_distance,
-            compatibility_score=result.compatibility_score,
+            alignment_score=result.alignment_score,
             converged=result.converged,
             iterations=result.iterations,
             coupling_shape=(len(source_points), len(target_points)),
@@ -228,7 +228,7 @@ class GeometryMetricsService:
         return GromovWassersteinResult(
             distance=cached.distance,
             normalized_distance=cached.normalized_distance,
-            compatibility_score=cached.compatibility_score,
+            alignment_score=cached.alignment_score,
             converged=cached.converged,
             iterations=cached.iterations,
             coupling_shape=cached.coupling_shape,
@@ -594,7 +594,7 @@ class GeometryMetricsService:
         return {
             "distance": result.distance,
             "normalizedDistance": result.normalized_distance,
-            "alignmentScore": result.compatibility_score,
+            "alignmentScore": result.alignment_score,
             "converged": result.converged,
             "iterations": result.iterations,
             "couplingShape": list(result.coupling_shape),

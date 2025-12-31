@@ -21,6 +21,10 @@ import math
 from dataclasses import dataclass
 from typing import Iterable
 
+from modelcypher.core.domain.geometry.numerical_stability import (
+    compute_pearson_correlation,
+)
+
 
 @dataclass(frozen=True)
 class Path:
@@ -147,7 +151,7 @@ class TraversalCoherence:
 
         if len(vec_a) < 2:
             return None
-        correlation = _pearson_correlation(vec_a, vec_b)
+        correlation = compute_pearson_correlation(vec_a, vec_b)
         if not math.isfinite(correlation):
             return None
         return Result(
@@ -170,27 +174,3 @@ standard_computational_paths = [
 
 def _valid_index(a: int, b: int, c: int, d: int, n: int) -> bool:
     return all(0 <= idx < n for idx in (a, b, c, d))
-
-
-def _pearson_correlation(lhs: list[float], rhs: list[float]) -> float:
-    if not lhs or len(lhs) != len(rhs):
-        return float("nan")
-    n = len(lhs)
-    mean_l = sum(lhs) / n
-    mean_r = sum(rhs) / n
-    num = 0.0
-    den_l = 0.0
-    den_r = 0.0
-    for i in range(n):
-        diff_l = lhs[i] - mean_l
-        diff_r = rhs[i] - mean_r
-        num += diff_l * diff_r
-        den_l += diff_l * diff_l
-        den_r += diff_r * diff_r
-    denom = math.sqrt(den_l * den_r)
-    if denom <= 1e-12:
-        max_delta = max(abs(a - b) for a, b in zip(lhs, rhs))
-        if max_delta <= 1e-9:
-            return 1.0
-        return float("nan")
-    return num / denom

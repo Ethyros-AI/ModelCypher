@@ -22,6 +22,9 @@ from dataclasses import dataclass
 from enum import Enum
 
 from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka_from_grams
+from modelcypher.core.domain.geometry.numerical_stability import (
+    compute_pearson_correlation,
+)
 from modelcypher.core.domain.geometry.path_geometry import (
     PathComparison,
     PathGeometry,
@@ -248,7 +251,7 @@ class CrossCulturalGeometry:
                         continue
                     off_diag_a.append(float(gram_a[i * n + j]))
                     off_diag_b.append(float(gram_b[i * n + j]))
-            pearson = _pearson_correlation(off_diag_a, off_diag_b)
+            pearson = compute_pearson_correlation(off_diag_a, off_diag_b, default=0.0)
         else:
             pearson = raw_pearson
 
@@ -283,7 +286,7 @@ class CrossCulturalGeometry:
         for i in range(n):
             vec_a = [float(gram_a[i * n + j]) for j in range(n) if i != j]
             vec_b = [float(gram_b[i * n + j]) for j in range(n) if i != j]
-            correlations.append(_pearson_correlation(vec_a, vec_b))
+            correlations.append(compute_pearson_correlation(vec_a, vec_b, default=0.0))
         return correlations
 
     @staticmethod
@@ -373,23 +376,3 @@ class CrossCulturalGeometry:
         # Use the raw measurements (roughness_reduction, complementarity_score,
         # convergent_count, divergent_count, category_divergence) directly.
         return score, ""
-
-
-def _pearson_correlation(lhs: list[float], rhs: list[float]) -> float:
-    if not lhs or len(lhs) != len(rhs):
-        return 0.0
-    mean_l = sum(lhs) / len(lhs)
-    mean_r = sum(rhs) / len(rhs)
-    num = 0.0
-    den_l = 0.0
-    den_r = 0.0
-    for i in range(len(lhs)):
-        diff_l = lhs[i] - mean_l
-        diff_r = rhs[i] - mean_r
-        num += diff_l * diff_r
-        den_l += diff_l * diff_l
-        den_r += diff_r * diff_r
-    denom = math.sqrt(den_l) * math.sqrt(den_r)
-    if denom <= 0:
-        return 0.0
-    return num / denom

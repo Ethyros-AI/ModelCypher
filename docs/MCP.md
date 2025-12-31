@@ -615,7 +615,7 @@ Call mc_inventory first to see what models are available before starting trainin
 
 ### mc_model_search
 
-**Purpose:** Search HuggingFace Hub for MLX-compatible models with memory-fit indicators.
+**Purpose:** Search HuggingFace Hub for MLX-ready models with memory-fit indicators.
 
 **Category:** Network
 
@@ -998,7 +998,7 @@ Call mc_inventory first to see what models are available before starting trainin
 
 ### mc_geometry_validate
 
-**Purpose:** Run the deterministic geometry validation suite (GW distance, traversal coherence, path signatures, spectral signature).
+**Purpose:** Run the deterministic geometry validation suite (GW distance, traversal coherence, path signatures, spectral signature, dimension-constraint invariance).
 
 **Category:** Read-only
 
@@ -1067,6 +1067,36 @@ Call mc_inventory first to see what models are available before starting trainin
     "heatTrace": [3.7, 2.1],
     "heatTimes": [0.1, 1.0],
     "connected": true,
+    "passed": true
+  },
+  "dimensionConstraint": {
+    "baseDimension": 2,
+    "paddedDimension": 4,
+    "sampleCount": 5,
+    "kNeighbors": 3,
+    "gramCka": 1.0,
+    "geodesicDiff": { "meanAbs": 0.0, "maxAbs": 0.0 },
+    "spectral": {
+      "eigenMeanAbsDiff": 0.0,
+      "eigenMaxAbsDiff": 0.0,
+      "spectralEntropyBase": 0.123,
+      "spectralEntropyPadded": 0.123,
+      "heatTraceBase": [4.89, 2.31],
+      "heatTracePadded": [4.89, 2.31],
+      "heatTimes": [0.1, 1.0]
+    },
+    "topology": {
+      "bettiNumbersBase": { "0": 1, "1": 0 },
+      "bettiNumbersPadded": { "0": 1, "1": 0 },
+      "componentCountBase": 1,
+      "componentCountPadded": 1,
+      "cycleCountBase": 0,
+      "cycleCountPadded": 0,
+      "persistenceEntropyBase": 0.0,
+      "persistenceEntropyPadded": 0.0,
+      "maxPersistenceBase": 0.912,
+      "maxPersistencePadded": 0.912
+    },
     "passed": true
   },
   "fixtures": null
@@ -1276,6 +1306,11 @@ Call mc_inventory first to see what models are available before starting trainin
   }
 }
 ```
+
+**Example (semantic primes point cloud):**
+1. Call `mc_geometry_primes_probe` with `outputFile` set (e.g., `primes.json`).
+2. Pass the activation vectors (values from `primes.json`) as `points` to
+   `mc_geometry_dimension_constraint_invariance` with your target `paddedDimension`.
 
 ---
 

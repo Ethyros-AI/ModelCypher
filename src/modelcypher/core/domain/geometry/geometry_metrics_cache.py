@@ -38,7 +38,7 @@ class CachedGWResult:
 
     distance: float
     normalized_distance: float
-    compatibility_score: float
+    alignment_score: float
     converged: bool
     iterations: int
     coupling_shape: tuple[int, int]
@@ -218,7 +218,7 @@ class GeometryMetricsCache:
         return {
             "distance": result.distance,
             "normalized_distance": result.normalized_distance,
-            "compatibility_score": result.compatibility_score,
+            "alignment_score": result.alignment_score,
             "converged": result.converged,
             "iterations": result.iterations,
             "coupling_shape": list(result.coupling_shape),
@@ -229,7 +229,7 @@ class GeometryMetricsCache:
         return CachedGWResult(
             distance=float(data["distance"]),
             normalized_distance=float(data["normalized_distance"]),
-            compatibility_score=float(data["compatibility_score"]),
+            alignment_score=float(data["alignment_score"]),
             converged=bool(data["converged"]),
             iterations=int(data["iterations"]),
             coupling_shape=tuple(data["coupling_shape"]),

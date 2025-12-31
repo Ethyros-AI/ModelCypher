@@ -296,20 +296,20 @@ class AdapterBlender:
 
     @staticmethod
     def compute_geometric_weights(
-        compatibility_scores: dict[UUID, float],
+        alignment_scores: dict[UUID, float],
     ) -> dict[UUID, float]:
-        """Compute blend weights from compatibility scores.
+        """Compute blend weights from alignment scores.
 
         Weights are proportional to how well each adapter's fingerprint
         aligns with the target model.
 
         Args:
-            compatibility_scores: Compatibility score for each adapter.
+            alignment_scores: Alignment score for each adapter.
 
         Returns:
             Normalized weights (sum to 1.0) for each adapter.
         """
-        return AdapterBlender.normalize_weights(compatibility_scores)
+        return AdapterBlender.normalize_weights(alignment_scores)
 
     @staticmethod
     def compute_fidelity_weights(

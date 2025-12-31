@@ -91,7 +91,7 @@ def geometry_metrics_gromov_wasserstein(
             "",
             f"Distance: {result.distance:.6f}",
             f"Normalized Distance: {result.normalized_distance:.4f}",
-            f"Alignment Score: {result.compatibility_score:.4f}",
+            f"Alignment Score: {result.alignment_score:.4f}",
             f"Converged: {'Yes' if result.converged else 'No'}",
             f"Iterations: {result.iterations}",
             f"Coupling Shape: {result.coupling_shape[0]} x {result.coupling_shape[1]}",
@@ -105,7 +105,9 @@ def geometry_metrics_gromov_wasserstein(
 @app.command("intrinsic-dimension")
 def geometry_metrics_intrinsic_dimension(
     ctx: typer.Context,
-    points_file: str = typer.Argument(..., help="Path to point cloud (JSON array of arrays)"),
+    points_file: str = typer.Argument(
+        ..., help="Path to point cloud (JSON array of arrays or activations dict)"
+    ),
     use_regression: bool = typer.Option(
         True,
         "--use-regression/--no-use-regression",
@@ -290,10 +292,17 @@ def geometry_metrics_dimension_constraint(
 
     Compares geometry in the base dimension to the same points padded with
     zero coordinates (e.g., 2D -> 3D -> 4D).
+
+    Accepts either a JSON array of point vectors or a JSON dict of activation
+    vectors (values are treated as points in sorted key order).
     """
     context = _context(ctx)
 
-    points = json.loads(Path(points_file).read_text())
+    raw_points = json.loads(Path(points_file).read_text())
+    if isinstance(raw_points, dict):
+        points = [raw_points[key] for key in sorted(raw_points.keys())]
+    else:
+        points = raw_points
     if not points:
         raise typer.BadParameter("Point cloud is empty.")
 

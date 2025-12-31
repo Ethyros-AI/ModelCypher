@@ -23,6 +23,7 @@ Tests the mathematical validation suite that verifies:
 - Path signature properties (invariance, Frechet distance)
 - Spectral signature properties (component count, spectral bounds, heat trace)
 - Connected spectral signature properties (connectivity, algebraic connectivity)
+- Dimension-constraint invariance properties (padding invariance across metrics)
 """
 
 from __future__ import annotations
@@ -52,6 +53,7 @@ class TestSuiteExecution:
         assert report.path_signature is not None
         assert report.spectral_signature is not None
         assert report.spectral_signature_connected is not None
+        assert report.dimension_constraint is not None
 
     def test_suite_reports_pass_status(self) -> None:
         """Suite should report overall pass/fail status correctly."""
@@ -65,6 +67,7 @@ class TestSuiteExecution:
             and report.path_signature.passed
             and report.spectral_signature.passed
             and report.spectral_signature_connected.passed
+            and report.dimension_constraint.passed
         )
         assert report.passed == expected_pass
 
@@ -84,6 +87,7 @@ class TestSuiteExecution:
         assert report.fixtures.path_signature is not None
         assert report.fixtures.spectral_signature is not None
         assert report.fixtures.spectral_signature_connected is not None
+        assert report.fixtures.dimension_constraint is not None
 
 
 class TestGromovWassersteinValidation:
@@ -282,6 +286,25 @@ class TestSpectralSignatureValidation:
             assert spectral.heat_trace[i] + eps >= spectral.heat_trace[i + 1]
 
 
+class TestDimensionConstraintValidation:
+    """Tests for dimension-constraint invariance validation."""
+
+    def test_dimension_constraint_invariance(self) -> None:
+        """Zero-padding should preserve geometry across metrics."""
+        suite = GeometryValidationSuite()
+        report = suite.run()
+        validation = report.dimension_constraint
+
+        assert validation.gram_cka >= 0.999999
+        assert validation.geodesic_mean_abs_diff <= 1e-6
+        assert validation.geodesic_max_abs_diff <= 1e-6
+        assert validation.spectral_eigen_mean_abs_diff <= 1e-6
+        assert validation.spectral_eigen_max_abs_diff <= 1e-6
+        assert validation.component_count_base == validation.component_count_padded
+        assert validation.cycle_count_base == validation.cycle_count_padded
+        assert validation.betti_numbers_base == validation.betti_numbers_padded
+
+
 class TestThresholds:
     """Tests for validation thresholds."""
 
@@ -298,6 +321,15 @@ class TestThresholds:
         assert thresholds.traversal_self_correlation_min > 0.9, (
             "Self correlation threshold should be near 1.0"
         )
+        assert thresholds.dimension_constraint_cka_min > 0.99, (
+            "Dimension constraint CKA threshold should be near 1.0"
+        )
+        assert thresholds.dimension_constraint_geodesic_max_abs_diff_max < 1e-3, (
+            "Dimension constraint geodesic threshold should be tight"
+        )
+        assert thresholds.dimension_constraint_spectral_eigen_max_abs_diff_max < 1e-3, (
+            "Dimension constraint spectral threshold should be tight"
+        )
 
     def test_custom_thresholds_affect_pass_status(self) -> None:
         """Custom thresholds should affect validation pass/fail."""
@@ -311,6 +343,14 @@ class TestThresholds:
             traversal_perturbed_correlation_max=0.0,
             signature_similarity_min=1.0001,
             frechet_distance_max=1e-20,
+            dimension_constraint_cka_min=1.1,
+            dimension_constraint_geodesic_mean_abs_diff_max=-1.0,
+            dimension_constraint_geodesic_max_abs_diff_max=-1.0,
+            dimension_constraint_spectral_eigen_mean_abs_diff_max=-1.0,
+            dimension_constraint_spectral_eigen_max_abs_diff_max=-1.0,
+            dimension_constraint_spectral_entropy_abs_diff_max=-1.0,
+            dimension_constraint_heat_trace_max_abs_diff_max=-1.0,
+            dimension_constraint_topology_abs_diff_max=-1.0,
         )
         config = Config(
             include_fixtures=False,

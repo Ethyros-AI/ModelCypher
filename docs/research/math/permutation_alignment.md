@@ -288,4 +288,4 @@ For large models:
 
 ---
 
-*Permutation alignment reveals that independently trained networks often learn the same solution—just with neurons in different orders. Re-basin unlocks their compatibility for merging.*
+*Permutation alignment reveals that independently trained networks often learn the same solution—just with neurons in different orders. Re-basin unlocks their alignment for merging.*

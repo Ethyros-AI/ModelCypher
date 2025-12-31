@@ -9,7 +9,7 @@
 The eigenvalue spectrum of weight matrices encodes:
 1. **Effective rank**: How many dimensions are actually used
 2. **Training stage**: Spectra evolve characteristically during training
-3. **Merge compatibility**: Similar spectra suggest compatible representations
+3. **Merge alignment**: Similar spectra suggest aligned representations
 
 **In ModelCypher**: Implemented in `spectral_analysis.py` for weight matrix analysis.
 
@@ -161,7 +161,7 @@ def spectral_aware_merge(models: list, weights: list = None):
         # Analyze each model's spectrum
         spectra = [spectral_analysis(m[layer_name]) for m in models]
 
-        # Check compatibility
+        # Check alignment
         rank_variance = var([s.effective_rank for s in spectra])
         if rank_variance > threshold:
             # Use projection to shared subspace

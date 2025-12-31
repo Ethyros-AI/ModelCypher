@@ -37,6 +37,15 @@ def enum_key_set(values: Iterable[Any]) -> set[str]:
     return {enum_key(v) for v in values}
 
 
+def axis_key(value: Any) -> str:
+    """Convert an axis enum/value to a lowercase string key.
+
+    This is the canonical utility for normalizing axis identifiers
+    across geometry modules (spatial, social, temporal, moral).
+    """
+    return enum_key(value).lower()
+
+
 @runtime_checkable
 class AtlasProbeProtocol(Protocol):
     probe_id: str

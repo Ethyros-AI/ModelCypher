@@ -583,7 +583,7 @@ class ContinuousCorrelationResult:
     entropy_delta: float
 
     @property
-    def compatibility_score(self) -> float:
+    def alignment_score(self) -> float:
         # Note: For 1D vectors (single prime activations), Linear CKA is equivalent to squared cosine similarity.
         # CKA(x, y) = <x, y>^2 / (||x||^2 ||y||^2) = cosine_sim(x, y)^2
 

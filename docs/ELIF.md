@@ -222,7 +222,7 @@ idea is: if two models “know the same shape”, that should show up as invaria
 
 Most merge failures come from confusing coordinates with structure:
 
-- Weight interpolation assumes the two models share a compatible internal coordinate system.
+- Weight interpolation assumes the two models share an aligned internal coordinate system.
 - But deep nets have **symmetries** (permutations, rotations, rescalings) that can make two functionally
   similar models look very different in raw weights.
 

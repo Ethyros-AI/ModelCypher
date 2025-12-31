@@ -146,9 +146,10 @@ result = service.compute_gromov_wasserstein(
     epsilon=0.05,
     max_iterations=50,
 )
+payload = service.gromov_wasserstein_payload(result)
 
 print(f"Distance: {result.distance:.4f}")
-print(f"Alignment: {result.compatibility_score:.2%}")
+print(f"Alignment: {payload['alignmentScore']:.2%}")
 ```
 
 ## Computational Complexity

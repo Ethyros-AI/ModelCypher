@@ -71,7 +71,7 @@ def compute(a, b):
 ### CUDA (NVIDIA)
 
 **Strengths:**
-- Largest ecosystem (PyTorch compatibility)
+- Largest ecosystem (PyTorch ecosystem support)
 - Mature tooling and debugging
 - Wide hardware support
 - Production-ready inference
@@ -93,7 +93,7 @@ backend.eval()  # torch.cuda.synchronize()
 ### NumPy (Testing)
 
 **Strengths:**
-- Universal compatibility
+- Universal availability
 - Deterministic behavior
 - Easy debugging
 - No GPU dependencies

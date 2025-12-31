@@ -19,7 +19,7 @@
 Stage 0: VOCABULARY ALIGNMENT - Cross-vocabulary merging.
 
 Uses the superior CrossVocabMerger pipeline:
-1. Analyze vocabularies (stats, compatibility)
+1. Analyze vocabularies (stats, alignment)
 2. Build token alignment map (exact + embedding similarity)
 3. Project source embeddings to target space (Procrustes/OT)
 4. Blend aligned embeddings with quality-weighted alpha
@@ -151,7 +151,7 @@ def stage_vocabulary_align(
     metrics["source_vocab_size"] = len(source_vocab)
     metrics["target_vocab_size"] = len(target_vocab)
 
-    # Check for vocab compatibility before doing expensive operations
+    # Check for vocab alignment before doing expensive operations
     overlap = set(source_vocab.keys()) & set(target_vocab.keys())
     overlap_ratio = len(overlap) / max(len(source_vocab), 1)
     metrics["overlap_count"] = len(overlap)
@@ -1164,18 +1164,18 @@ def stage_vocabulary_align(
             # Check quality
             quality_metrics = merger.analyze_merge_quality(result)
 
-            # Warn on low compatibility/coverage only if thresholds were specified
+            # Warn on low alignment/coverage only if thresholds were specified
             # If None, no arbitrary floor was set - we accept any measurable value
             if (
-                config.min_compatibility_score is not None
-                and result.compatibility.compatibility_score < config.min_compatibility_score
+                config.min_alignment_score is not None
+                and result.alignment.alignment_score < config.min_alignment_score
             ):
                 logger.warning(
-                    "Low compatibility score %.2f for %s (continuing alignment)",
-                    result.compatibility.compatibility_score,
+                    "Low alignment score %.2f for %s (continuing alignment)",
+                    result.alignment.alignment_score,
                     embed_key,
                 )
-                metrics[f"{embed_key}_warning"] = "low_compatibility"
+                metrics[f"{embed_key}_warning"] = "low_alignment"
 
             if (
                 config.min_coverage is not None
@@ -1212,7 +1212,7 @@ def stage_vocabulary_align(
             metrics[f"{embed_key}_alignment_coverage"] = result.alignment_map.coverage
             metrics[f"{embed_key}_alignment_confidence"] = result.alignment_map.mean_confidence
             metrics[f"{embed_key}_projection_score"] = result.projection_result.alignment_score
-            metrics[f"{embed_key}_compatibility_score"] = result.compatibility.compatibility_score
+            metrics[f"{embed_key}_alignment_score"] = result.alignment.alignment_score
             metrics[f"{embed_key}_overall_quality"] = quality_metrics["overall_quality_score"]
             metrics[f"{embed_key}_warnings"] = result.warnings
             metrics[f"{embed_key}_strict_token_alignment"] = strict_token_alignment

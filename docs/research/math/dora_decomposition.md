@@ -164,7 +164,7 @@ DoRA achieves near-full-fine-tuning performance with LoRA's parameter efficiency
 
 For merged models, we can analyze:
 - **Magnitude consistency**: Do merged models agree on magnitude?
-- **Directional alignment**: Are directions compatible?
+- **Directional alignment**: Are directions aligned?
 - **Interference patterns**: Where do conflicts occur?
 
 ### Merge Strategies

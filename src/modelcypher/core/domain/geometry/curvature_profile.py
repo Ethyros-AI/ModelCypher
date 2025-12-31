@@ -20,7 +20,7 @@
 This module provides infrastructure for:
 1. Computing per-layer curvature profiles for models
 2. Aggregating profiles into family baselines
-3. Computing curvature compatibility for merge decisions
+3. Computing curvature alignment for merge decisions
 
 Key insight: Knowledge density profiles tell us WHAT is encoded (semantics),
 while curvature profiles tell us HOW it's encoded (geometry/manifold shape).
@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.riemannian_utils import safe_arithmetic_mean
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -124,7 +125,7 @@ class CurvatureProfile:
     across all layers, enabling:
     - Comparison of geometric structure between models
     - Family baseline computation
-    - Curvature compatibility for merge decisions
+    - Curvature alignment for merge decisions
     """
 
     # Model identification
@@ -287,20 +288,20 @@ class FamilyBaseline:
 
 
 @dataclass(frozen=True)
-class CurvatureCompatibility:
-    """Curvature compatibility score between two models.
+class CurvatureAlignment:
+    """Curvature alignment score between two models.
 
     Uses z-scores relative to family baseline, NOT absolute thresholds.
     Score of 1.0 = perfect match, 0.0 = 3σ or more divergence.
     """
 
-    # Overall compatibility (0.0 - 1.0)
+    # Overall alignment (0.0 - 1.0)
     score: float
 
     # Component scores
-    sectional_compatibility: float
-    ollivier_ricci_compatibility: float
-    intrinsic_dimension_compatibility: float
+    sectional_alignment: float
+    ollivier_ricci_alignment: float
+    intrinsic_dimension_alignment: float
 
     # Raw z-scores for transparency
     sectional_z_score: float
@@ -315,9 +316,9 @@ class CurvatureCompatibility:
         return {
             "score": self.score,
             "alignment_score": self.score,
-            "sectional_alignment": self.sectional_compatibility,
-            "ollivier_ricci_alignment": self.ollivier_ricci_compatibility,
-            "intrinsic_dimension_alignment": self.intrinsic_dimension_compatibility,
+            "sectional_alignment": self.sectional_alignment,
+            "ollivier_ricci_alignment": self.ollivier_ricci_alignment,
+            "intrinsic_dimension_alignment": self.intrinsic_dimension_alignment,
             "sectional_z_score": self.sectional_z_score,
             "ollivier_ricci_z_score": self.ollivier_ricci_z_score,
             "intrinsic_dimension_z_score": self.intrinsic_dimension_z_score,
@@ -326,12 +327,12 @@ class CurvatureCompatibility:
         }
 
 
-def compute_curvature_compatibility(
+def compute_curvature_alignment(
     source_profile: CurvatureProfile,
     target_profile: CurvatureProfile,
     baseline: FamilyBaseline | None = None,
-) -> CurvatureCompatibility:
-    """Compute curvature compatibility between two models.
+) -> CurvatureAlignment:
+    """Compute curvature alignment between two models.
 
     Uses z-scores relative to family baseline when available.
     Falls back to direct comparison when no baseline exists.
@@ -342,7 +343,7 @@ def compute_curvature_compatibility(
         baseline: Optional family baseline for z-score computation
 
     Returns:
-        CurvatureCompatibility with score and component details
+        CurvatureAlignment with score and component details
     """
     # Direct comparison values
     sectional_diff = abs(
@@ -358,8 +359,8 @@ def compute_curvature_compatibility(
 
     if baseline is not None and baseline.sample_count > 1:
         # Z-score computation relative to baseline
-        baseline_sectional_std = _safe_mean(baseline.sectional_std_by_position) or 0.1
-        baseline_ricci_std = _safe_mean(baseline.ollivier_ricci_std_by_position) or 0.1
+        baseline_sectional_std = safe_arithmetic_mean(baseline.sectional_std_by_position) or 0.1
+        baseline_ricci_std = safe_arithmetic_mean(baseline.ollivier_ricci_std_by_position) or 0.1
         baseline_dim_std = 1.0  # Default for dimension
 
         sectional_z = sectional_diff / baseline_sectional_std
@@ -377,20 +378,20 @@ def compute_curvature_compatibility(
         baseline_family = "none"
         baseline_model_count = 0
 
-    # Convert z-scores to compatibility (1.0 at z=0, 0.0 at z>=3)
-    sectional_compat = max(0.0, 1.0 - sectional_z / 3.0)
-    ricci_compat = max(0.0, 1.0 - ricci_z / 3.0)
-    dim_compat = max(0.0, 1.0 - dim_z / 3.0)
+    # Convert z-scores to alignment (1.0 at z=0, 0.0 at z>=3)
+    sectional_alignment = max(0.0, 1.0 - sectional_z / 3.0)
+    ricci_alignment = max(0.0, 1.0 - ricci_z / 3.0)
+    dim_alignment = max(0.0, 1.0 - dim_z / 3.0)
 
     # Overall score: weighted average
     # Ollivier-Ricci is most important for manifold health
-    overall = 0.5 * ricci_compat + 0.3 * sectional_compat + 0.2 * dim_compat
+    overall = 0.5 * ricci_alignment + 0.3 * sectional_alignment + 0.2 * dim_alignment
 
-    return CurvatureCompatibility(
+    return CurvatureAlignment(
         score=overall,
-        sectional_compatibility=sectional_compat,
-        ollivier_ricci_compatibility=ricci_compat,
-        intrinsic_dimension_compatibility=dim_compat,
+        sectional_alignment=sectional_alignment,
+        ollivier_ricci_alignment=ricci_alignment,
+        intrinsic_dimension_alignment=dim_alignment,
         sectional_z_score=sectional_z,
         ollivier_ricci_z_score=ricci_z,
         intrinsic_dimension_z_score=dim_z,
@@ -454,11 +455,11 @@ def build_family_baseline(
                 dim_values_by_pos[pos_idx].append(lc.intrinsic_dimension)
 
     # Compute mean and std at each position
-    sectional_means = [_safe_mean(vals) for vals in sectional_values_by_pos]
+    sectional_means = [safe_arithmetic_mean(vals) for vals in sectional_values_by_pos]
     sectional_stds = [_safe_std(vals) for vals in sectional_values_by_pos]
-    ricci_means = [_safe_mean(vals) for vals in ricci_values_by_pos]
+    ricci_means = [safe_arithmetic_mean(vals) for vals in ricci_values_by_pos]
     ricci_stds = [_safe_std(vals) for vals in ricci_values_by_pos]
-    dim_means = [_safe_mean(vals) for vals in dim_values_by_pos]
+    dim_means = [safe_arithmetic_mean(vals) for vals in dim_values_by_pos]
 
     return FamilyBaseline(
         family=family,
@@ -472,13 +473,6 @@ def build_family_baseline(
         sample_count=len(profiles),
         created_date=datetime.now().isoformat(),
     )
-
-
-def _safe_mean(values: list[float]) -> float:
-    """Compute mean, returning 0.0 for empty lists."""
-    if not values:
-        return 0.0
-    return sum(values) / len(values)
 
 
 def _safe_std(values: list[float]) -> float:

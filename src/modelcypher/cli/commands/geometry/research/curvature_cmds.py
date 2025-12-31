@@ -374,7 +374,7 @@ def register(app: typer.Typer) -> None:
         from modelcypher.core.domain.geometry.curvature_profile import (
             CurvatureProfile,
             FamilyBaseline,
-            compute_curvature_compatibility,
+            compute_curvature_alignment,
         )
 
         # Load profiles
@@ -384,8 +384,8 @@ def register(app: typer.Typer) -> None:
         # Load baseline if provided
         baseline = FamilyBaseline.load(baseline_path) if baseline_path else None
 
-        # Compute compatibility
-        compat = compute_curvature_compatibility(src, tgt, baseline)
+        # Compute alignment
+        alignment = compute_curvature_alignment(src, tgt, baseline)
 
         # Output
         if context.output_format == "text":
@@ -394,20 +394,20 @@ def register(app: typer.Typer) -> None:
                 f"Source: {Path(source_profile).name} ({src.model_family} {src.model_size})",
                 f"Target: {Path(target_profile).name} ({tgt.model_family} {tgt.model_size})",
                 "",
-                f"OVERALL SCORE: {compat.score:.3f}",
+                f"OVERALL SCORE: {alignment.score:.3f}",
                 "",
                 "COMPONENT ALIGNMENT:",
-                f"  Sectional curvature:   {compat.sectional_compatibility:.3f} (z={compat.sectional_z_score:.2f})",
-                f"  Ollivier-Ricci:        {compat.ollivier_ricci_compatibility:.3f} (z={compat.ollivier_ricci_z_score:.2f})",
-                f"  Intrinsic dimension:   {compat.intrinsic_dimension_compatibility:.3f} (z={compat.intrinsic_dimension_z_score:.2f})",
+                f"  Sectional curvature:   {alignment.sectional_alignment:.3f} (z={alignment.sectional_z_score:.2f})",
+                f"  Ollivier-Ricci:        {alignment.ollivier_ricci_alignment:.3f} (z={alignment.ollivier_ricci_z_score:.2f})",
+                f"  Intrinsic dimension:   {alignment.intrinsic_dimension_alignment:.3f} (z={alignment.intrinsic_dimension_z_score:.2f})",
                 "",
-                f"Baseline: {compat.baseline_family} ({compat.baseline_model_count} models)",
+                f"Baseline: {alignment.baseline_family} ({alignment.baseline_model_count} models)",
             ]
 
             write_output("\n".join(lines), context.output_format, context.pretty)
             return
 
-        write_output(compat.to_dict(), context.output_format, context.pretty)
+        write_output(alignment.to_dict(), context.output_format, context.pretty)
 
 
     @app.command("curvature-alignment")

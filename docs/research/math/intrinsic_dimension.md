@@ -9,7 +9,7 @@
 Neural networks operate in high-dimensional spaces (4096 dimensions for LLMs), but representations often lie on low-dimensional manifolds. Understanding intrinsic dimension helps us:
 1. **Choose compression rank**: TSV and LoRA rank selection
 2. **Detect overfitting**: High ID may indicate memorization
-3. **Assess merge compatibility**: Similar ID suggests similar geometry
+3. **Assess merge alignment**: Similar ID suggests similar geometry
 
 **In ModelCypher**: Used in `intrinsic_dimension.py` for manifold complexity analysis and merge quality prediction.
 

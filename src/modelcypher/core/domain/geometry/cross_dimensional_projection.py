@@ -226,12 +226,12 @@ def _project_gram_transport(
         projected = b.matmul(projected, col_coupling)
         b.eval(projected)
 
-        total_score += result.compatibility_score
+        total_score += result.alignment_score
         score_count += 1
 
         logger.debug(
-            "Col projection: %d -> %d, GW distance=%.4f, score=%.4f",
-            d_s, d_t, result.distance, result.compatibility_score
+            "Col projection: %d -> %d, GW distance=%.4f, alignment=%.4f",
+            d_s, d_t, result.distance, result.alignment_score
         )
 
     # =========================================================================
@@ -271,12 +271,12 @@ def _project_gram_transport(
             projected = b.matmul(b.transpose(row_coupling), projected)
             b.eval(projected)
 
-            total_score += result.compatibility_score
+            total_score += result.alignment_score
             score_count += 1
 
             logger.debug(
-                "Row projection: %d -> %d, GW distance=%.4f, score=%.4f",
-                current_rows, m_t, result.distance, result.compatibility_score
+                "Row projection: %d -> %d, GW distance=%.4f, alignment=%.4f",
+                current_rows, m_t, result.distance, result.alignment_score
             )
         else:
             # Row dimension exceeds standard GW tractability limit (20k).

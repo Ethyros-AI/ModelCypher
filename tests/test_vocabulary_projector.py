@@ -454,7 +454,7 @@ class TestCrossVocabMerger:
         assert "output_hidden_dim" in d
         assert "alignment_summary" in d
         assert "projection_summary" in d
-        assert "compatibility_summary" in d
+        assert "vocabulary_alignment" in d
 
     def test_analyze_merge_quality(self, backend: "Backend") -> None:
         """Should analyze merge quality."""

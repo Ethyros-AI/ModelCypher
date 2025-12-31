@@ -109,8 +109,13 @@ class UnifiedMergeResult:
 
     # Stage 6: Safety validation metrics
     validation_metrics: dict[str, Any] = field(default_factory=dict)
-    safety_verdict: str = "not_validated"  # safe, caution, unsafe, critical
+    safety_verdict: str = "not_validated"  # healthy, degenerate, collapsed
     refusal_preserved: bool = True
+
+    # Geometric confidence signals (raw measurements, no interpretation)
+    # Contains: mean_preserved_fraction, mean_cka_after, mean_projection_loss,
+    # transplant_ratio, and component signals from curvature alignment
+    geometry_metrics: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

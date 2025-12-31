@@ -217,6 +217,28 @@ class GeometryService:
                     "traversalPerturbedCorrelationMax": thresholds.traversal_perturbed_correlation_max,
                     "signatureSimilarityMin": thresholds.signature_similarity_min,
                     "frechetDistanceMax": thresholds.frechet_distance_max,
+                    "dimensionConstraintCkaMin": thresholds.dimension_constraint_cka_min,
+                    "dimensionConstraintGeodesicMeanAbsDiffMax": (
+                        thresholds.dimension_constraint_geodesic_mean_abs_diff_max
+                    ),
+                    "dimensionConstraintGeodesicMaxAbsDiffMax": (
+                        thresholds.dimension_constraint_geodesic_max_abs_diff_max
+                    ),
+                    "dimensionConstraintSpectralEigenMeanAbsDiffMax": (
+                        thresholds.dimension_constraint_spectral_eigen_mean_abs_diff_max
+                    ),
+                    "dimensionConstraintSpectralEigenMaxAbsDiffMax": (
+                        thresholds.dimension_constraint_spectral_eigen_max_abs_diff_max
+                    ),
+                    "dimensionConstraintSpectralEntropyAbsDiffMax": (
+                        thresholds.dimension_constraint_spectral_entropy_abs_diff_max
+                    ),
+                    "dimensionConstraintHeatTraceMaxAbsDiffMax": (
+                        thresholds.dimension_constraint_heat_trace_max_abs_diff_max
+                    ),
+                    "dimensionConstraintTopologyAbsDiffMax": (
+                        thresholds.dimension_constraint_topology_abs_diff_max
+                    ),
                 },
                 "gromovWasserstein": {
                     "sinkhornEpsilon": gw_config.sinkhorn_epsilon,
@@ -273,6 +295,39 @@ class GeometryService:
                 "heatTimes": report.spectral_signature_connected.heat_times,
                 "connected": report.spectral_signature_connected.connected,
                 "passed": report.spectral_signature_connected.passed,
+            },
+            "dimensionConstraint": {
+                "baseDimension": report.dimension_constraint.base_dimension,
+                "paddedDimension": report.dimension_constraint.padded_dimension,
+                "sampleCount": report.dimension_constraint.sample_count,
+                "kNeighbors": report.dimension_constraint.k_neighbors,
+                "gramCka": report.dimension_constraint.gram_cka,
+                "geodesicDiff": {
+                    "meanAbs": report.dimension_constraint.geodesic_mean_abs_diff,
+                    "maxAbs": report.dimension_constraint.geodesic_max_abs_diff,
+                },
+                "spectral": {
+                    "eigenMeanAbsDiff": report.dimension_constraint.spectral_eigen_mean_abs_diff,
+                    "eigenMaxAbsDiff": report.dimension_constraint.spectral_eigen_max_abs_diff,
+                    "spectralEntropyBase": report.dimension_constraint.spectral_entropy_base,
+                    "spectralEntropyPadded": report.dimension_constraint.spectral_entropy_padded,
+                    "heatTraceBase": report.dimension_constraint.heat_trace_base,
+                    "heatTracePadded": report.dimension_constraint.heat_trace_padded,
+                    "heatTimes": report.dimension_constraint.heat_times,
+                },
+                "topology": {
+                    "bettiNumbersBase": report.dimension_constraint.betti_numbers_base,
+                    "bettiNumbersPadded": report.dimension_constraint.betti_numbers_padded,
+                    "componentCountBase": report.dimension_constraint.component_count_base,
+                    "componentCountPadded": report.dimension_constraint.component_count_padded,
+                    "cycleCountBase": report.dimension_constraint.cycle_count_base,
+                    "cycleCountPadded": report.dimension_constraint.cycle_count_padded,
+                    "persistenceEntropyBase": report.dimension_constraint.persistence_entropy_base,
+                    "persistenceEntropyPadded": report.dimension_constraint.persistence_entropy_padded,
+                    "maxPersistenceBase": report.dimension_constraint.max_persistence_base,
+                    "maxPersistencePadded": report.dimension_constraint.max_persistence_padded,
+                },
+                "passed": report.dimension_constraint.passed,
             },
             "fixtures": GeometryService._fixtures_payload(report.fixtures)
             if report.fixtures
@@ -359,5 +414,11 @@ class GeometryService:
                 "heatTimes": fixtures.spectral_signature_connected.heat_times,
                 "expectedComponentCount": fixtures.spectral_signature_connected.expected_component_count,
                 "expectedConnected": fixtures.spectral_signature_connected.expected_connected,
+            },
+            "dimensionConstraint": {
+                "points": fixtures.dimension_constraint.points,
+                "paddedDimension": fixtures.dimension_constraint.padded_dimension,
+                "kNeighbors": fixtures.dimension_constraint.k_neighbors,
+                "heatTimes": fixtures.dimension_constraint.heat_times,
             },
         }

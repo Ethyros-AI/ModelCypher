@@ -108,7 +108,7 @@ class MergeGeometry:
     overall_manifold_health: str = "unknown"  # healthy, degenerate, collapsed
     mean_ollivier_ricci: float = 0.0
 
-    # Curvature compatibility (for merge confidence)
-    # Score 0.0-1.0: how compatible are source/target curvature profiles
-    curvature_compatibility: float = 0.0
-    curvature_compatibility_details: dict[str, float] = field(default_factory=dict)
+    # Curvature alignment (for merge confidence)
+    # Score 0.0-1.0: how aligned are source/target curvature profiles
+    curvature_alignment: float = 0.0
+    curvature_alignment_details: dict[str, float] = field(default_factory=dict)

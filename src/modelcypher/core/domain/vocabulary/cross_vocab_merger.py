@@ -44,7 +44,7 @@ from .embedding_projector import (
 )
 from .vocabulary_analyzer import (
     VocabularyAnalyzer,
-    VocabularyCompatibility,
+    VocabularyAlignment,
     VocabularyStats,
 )
 
@@ -160,7 +160,7 @@ class CrossVocabMergeResult:
     projection_result: ProjectionResult
 
     # Quality metrics
-    compatibility: VocabularyCompatibility
+    alignment: VocabularyAlignment
     source_stats: VocabularyStats
     target_stats: VocabularyStats
 
@@ -177,7 +177,7 @@ class CrossVocabMergeResult:
             "output_hidden_dim": self.output_hidden_dim,
             "alignment_summary": self.alignment_map.to_dict(),
             "projection_summary": self.projection_result.to_dict(),
-            "compatibility_summary": self.compatibility.to_dict(),
+            "vocabulary_alignment": self.alignment.to_dict(),
             "source_stats": self.source_stats.to_dict(),
             "target_stats": self.target_stats.to_dict(),
             "tokens_preserved_from_source": self.tokens_preserved_from_source,
@@ -192,7 +192,7 @@ class CrossVocabMerger:
     Merges embeddings from models with different vocabularies.
 
     Pipeline:
-    1. Analyze vocabularies (stats, compatibility)
+    1. Analyze vocabularies (stats, alignment)
     2. Build token alignment map
     3. Project source embeddings to target space
     4. Blend aligned embeddings
@@ -250,15 +250,17 @@ class CrossVocabMerger:
         logger.info("Analyzing target vocabulary...")
         target_stats = self._analyzer.analyze_embeddings(target_embeddings, target_tokenizer_config)
 
-        # Step 2: Check compatibility
-        logger.info("Checking vocabulary compatibility...")
-        compatibility = self._analyzer.analyze_compatibility(
+        # Step 2: Check alignment
+        logger.info("Checking vocabulary alignment...")
+        alignment = self._analyzer.analyze_alignment(
             source_stats, target_stats, source_vocab, target_vocab
         )
 
-        # Note: is_compatible is always True. Add warnings based on effort score instead.
-        if compatibility.compatibility_score < 0.5:
-            warnings.append(f"High transformation effort needed (score: {compatibility.compatibility_score:.2f})")
+        # Note: alignment is always computed. Add warnings based on effort score instead.
+        if alignment.alignment_score < 0.5:
+            warnings.append(
+                f"High transformation effort needed (score: {alignment.alignment_score:.2f})"
+            )
 
         # Step 3: Build alignment map
         logger.info("Building alignment map...")
@@ -302,7 +304,7 @@ class CrossVocabMerger:
             output_hidden_dim=merged.shape[1],
             alignment_map=alignment_map,
             projection_result=projection_result,
-            compatibility=compatibility,
+            alignment=alignment,
             source_stats=source_stats,
             target_stats=target_stats,
             tokens_preserved_from_source=blend_stats["source_preserved"],
@@ -653,8 +655,8 @@ class CrossVocabMerger:
             "alignment_quality_distribution": alignment.quality_distribution(),
             "projection_alignment_score": projection.alignment_score,
             "projection_reconstruction_error": projection.reconstruction_error,
-            "compatibility_score": result.compatibility.compatibility_score,
-            "vocab_overlap_ratio": result.compatibility.vocab_overlap_ratio,
+            "alignment_score": result.alignment.alignment_score,
+            "vocab_overlap_ratio": result.alignment.vocab_overlap_ratio,
             "warnings_count": len(result.warnings),
         }
 
@@ -663,7 +665,7 @@ class CrossVocabMerger:
             0.3 * alignment.coverage
             + 0.2 * alignment.mean_confidence
             + 0.3 * projection.alignment_score
-            + 0.2 * result.compatibility.compatibility_score
+            + 0.2 * result.alignment.alignment_score
         )
         metrics["overall_quality_score"] = quality_score
 

@@ -100,6 +100,54 @@ def safe_log_epsilon(backend: Backend, array: Array) -> float:
     return backend.finfo(array.dtype).tiny
 
 
+def compute_pearson_correlation(
+    lhs: list[float],
+    rhs: list[float],
+    *,
+    default: float | None = None,
+) -> float:
+    """Compute Pearson correlation coefficient between two lists.
+
+    This is the canonical implementation for computing Pearson's r
+    across geometry modules. Uses pure Python math to avoid backend
+    dependencies for simple list operations.
+
+    Args:
+        lhs: First list of values.
+        rhs: Second list of values (must be same length as lhs).
+        default: Value to return on error (empty lists, mismatched lengths).
+                 If None, returns float("nan") on error.
+
+    Returns:
+        Pearson correlation coefficient in [-1, 1], or default/nan on error.
+    """
+    error_value = default if default is not None else float("nan")
+
+    if not lhs or len(lhs) != len(rhs):
+        return error_value
+
+    n = len(lhs)
+    mean_l = sum(lhs) / n
+    mean_r = sum(rhs) / n
+
+    num = 0.0
+    den_l = 0.0
+    den_r = 0.0
+
+    for i in range(n):
+        diff_l = lhs[i] - mean_l
+        diff_r = rhs[i] - mean_r
+        num += diff_l * diff_r
+        den_l += diff_l * diff_l
+        den_r += diff_r * diff_r
+
+    denom = math.sqrt(den_l) * math.sqrt(den_r)
+    if denom <= 0:
+        return error_value
+
+    return num / denom
+
+
 def svd_via_eigh(
     backend: Backend,
     array: Array,
