@@ -18,11 +18,8 @@
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import os
 import platform
-import subprocess
-import sys
 
 import pytest
 from hypothesis import settings
@@ -34,44 +31,48 @@ from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_re
 # Backend Availability Detection
 # =============================================================================
 
+_ENV_BACKEND = os.environ.get("MC_BACKEND", "").lower()
+if not _ENV_BACKEND:
+    _ENV_BACKEND = os.environ.get("MODELCYPHER_BACKEND", "").lower()
+_EXPLICIT_MLX = _ENV_BACKEND == "mlx" or os.environ.get("MC_ENABLE_MLX", "").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+if not _EXPLICIT_MLX:
+    os.environ.setdefault("MC_DISABLE_MLX", "1")
+
 
 def _detect_mlx_available() -> bool:
     """Detect if MLX is available (requires Apple Silicon)."""
-    env_backend = os.environ.get("MC_BACKEND", "").lower()
-    if not env_backend:
-        env_backend = os.environ.get("MODELCYPHER_BACKEND", "").lower()
-    if env_backend and env_backend != "mlx":
-        return False
     if os.environ.get("MC_DISABLE_MLX", "").lower() in ("1", "true", "yes"):
+        return False
+    if not _EXPLICIT_MLX:
         return False
     if platform.system() != "Darwin":
         return False
     if platform.machine() not in ("arm64", "aarch64"):
         return False
-    if importlib.util.find_spec("mlx.core") is None:
-        return False
-    try:
-        result = subprocess.run(
-            [sys.executable, "-c", "import mlx.core as mx; mx.zeros((1,))"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-        return result.returncode == 0
-    except Exception:
-        return False
+    return True
 
 
 def _detect_jax_available() -> bool:
+    """Detect if JAX is importable (CPU is acceptable for tests)."""
+    try:
+        import jax  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def _detect_jax_gpu_available() -> bool:
     """Detect if JAX is available with GPU/TPU backend."""
     try:
         import jax
 
         devices = jax.devices()
-        # Check for GPU or TPU (not just CPU)
-        has_accelerator = any(d.platform in ("gpu", "tpu") for d in devices)
-        return has_accelerator
-    except ImportError:
+        return any(d.platform in ("gpu", "tpu") for d in devices)
+    except Exception:
         return False
 
 
@@ -87,8 +88,10 @@ def _detect_cuda_available() -> bool:
 
 # Cache availability at import time
 HAS_MLX = _detect_mlx_available()
-HAS_JAX_GPU = _detect_jax_available()
+HAS_JAX = _detect_jax_available()
+HAS_JAX_GPU = _detect_jax_gpu_available() if HAS_JAX else False
 HAS_CUDA = _detect_cuda_available()
+HAS_ANY_BACKEND = HAS_MLX or HAS_JAX or HAS_CUDA
 
 if not HAS_MLX:
     os.environ.setdefault("MC_DISABLE_MLX", "1")
@@ -193,6 +196,14 @@ def pytest_collection_modifyitems(config, items):
         if "/tests/" in item_path or "\\tests\\" in item_path or item_path.startswith("tests"):
             filtered_items.append(item)
     items[:] = filtered_items
+
+    if not HAS_ANY_BACKEND:
+        skip_backend = pytest.mark.skip(
+            reason="No backend available. Set MC_BACKEND=mlx/jax/cuda or install JAX for CPU tests."
+        )
+        for item in items:
+            item.add_marker(skip_backend)
+        return
 
     for item in items:
         if "mlx" in item.keywords and not HAS_MLX:
