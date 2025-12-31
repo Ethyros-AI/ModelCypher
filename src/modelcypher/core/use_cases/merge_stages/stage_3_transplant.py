@@ -60,6 +60,12 @@ class TransplantStageConfig:
     transplant_layers: tuple[int, ...] | None = None  # None = all layers
     checkpoint_dir: Path | None = None  # Enable checkpointing if set
     progress_callback: Callable[[str, int, int], None] | None = None  # (msg, current, total)
+    analysis_max_samples: int = 128  # Cap geometry analysis samples per layer
+    analysis_anchor_count: int = 32  # Anchor count for relative representations
+    enable_shared_subspace: bool = True
+    enable_relative_representation: bool = True
+    enable_fisher_weighting: bool = True
+    enable_interference_analysis: bool = True
     # NOTE: Alpha interpolation was REMOVED. The null-space projection determines
     # preserved_fraction geometrically. Do NOT add hardcoded scalar overrides.
 
@@ -168,6 +174,7 @@ def stage_transplant(
     layer_indices: list[int],
     probe_ids: list[str] | None,
     probe_domains: list[str] | None,
+    source_activations: dict[int, list["Array"]] | None,
     target_activations: dict[int, list["Array"]] | None,
     config: TransplantStageConfig,
     extract_layer_index_fn: Callable[[str], int | None],
@@ -195,6 +202,13 @@ def stage_transplant(
         "core_probes": 0,
         "boundary_k": config.boundary_k,
         "geodesic_k_neighbors": config.geodesic_k_neighbors,
+        "shared_subspace_dimensions": [],
+        "relative_rep_errors": [],
+        "fisher_target_means": [],
+        "transform_requirements_by_layer": {},
+        "shared_subspace_applied": 0,
+        "procrustes_applied": 0,
+        "fisher_delta_scaled": 0,
     }
 
     # REQUIRE real activations collected from probe runs.
@@ -235,6 +249,65 @@ def stage_transplant(
         if layer_idx is None:
             continue
         weights_by_layer.setdefault(layer_idx, []).append(key)
+
+    layer_relations: dict[int, Any] = {}
+    analyzer = None
+    if source_activations and config.enable_interference_analysis:
+        from modelcypher.core.domain.geometry.interference_predictor import (
+            MergeAnalyzer,
+            MergeAnalysisConfig,
+        )
+        from modelcypher.core.domain.geometry.riemannian_density import (
+            RiemannianDensityEstimator,
+        )
+
+        estimator = RiemannianDensityEstimator()
+        overlap_scores: list[float] = []
+        max_samples = max(0, config.analysis_max_samples)
+
+        for layer_idx in layer_indices:
+            src_list = source_activations.get(layer_idx)
+            tgt_list = target_activations.get(layer_idx)
+            if not src_list or not tgt_list:
+                continue
+            sample_count = min(len(src_list), len(tgt_list), max_samples)
+            if sample_count < 2:
+                continue
+
+            src_stacked = b.stack(src_list[:sample_count], axis=0)
+            tgt_stacked = b.stack(tgt_list[:sample_count], axis=0)
+            b.eval(src_stacked, tgt_stacked)
+
+            source_volume = estimator.estimate_concept_volume(
+                f"layer_{layer_idx}_source",
+                src_stacked,
+            )
+            target_volume = estimator.estimate_concept_volume(
+                f"layer_{layer_idx}_target",
+                tgt_stacked,
+            )
+            relation = estimator.compute_relation(source_volume, target_volume)
+            layer_relations[layer_idx] = relation
+            overlap_score = (
+                relation.bhattacharyya_coefficient
+                + relation.overlap_coefficient
+                + relation.jaccard_index
+            ) / 3.0
+            overlap_scores.append(overlap_score)
+
+        analysis_config = (
+            MergeAnalysisConfig.from_overlap_distribution(overlap_scores)
+            if overlap_scores
+            else MergeAnalysisConfig()
+        )
+        analyzer = MergeAnalyzer(config=analysis_config)
+        metrics["interference_analysis_layers"] = len(layer_relations)
+        metrics["interference_thresholds"] = {
+            "alpha_scaling_threshold": analysis_config.alpha_scaling_threshold,
+            "curvature_correction_threshold": analysis_config.curvature_correction_threshold,
+            "procrustes_threshold": analysis_config.procrustes_threshold,
+            "boundary_asymmetry_threshold": analysis_config.boundary_asymmetry_threshold,
+        }
 
     # Check for existing checkpoint
     resume_from_layer = -1
@@ -294,6 +367,97 @@ def stage_transplant(
             continue
 
         metrics["layers_considered"] += 1
+
+        # Optional per-layer geometry analysis to align source before transplant.
+        shared_source_proj = None
+        shared_target_proj = None
+        transform_requirements: list[str] = []
+        layer_fisher_weights = None
+
+        src_act_list = source_activations.get(layer_idx) if source_activations else None
+        max_samples = max(0, config.analysis_max_samples)
+        analysis_samples = (
+            min(len(src_act_list), len(act_list), max_samples)
+            if src_act_list is not None and max_samples > 0
+            else 0
+        )
+        src_analysis = None
+        tgt_analysis = None
+
+        if analysis_samples >= 2:
+            src_analysis = b.stack(src_act_list[:analysis_samples], axis=0)
+            tgt_analysis = b.stack(act_list[:analysis_samples], axis=0)
+            b.eval(src_analysis, tgt_analysis)
+
+        if src_analysis is not None and config.enable_shared_subspace:
+            from modelcypher.core.domain.geometry.shared_subspace_projector import (
+                AlignmentMethod,
+                Config as SharedSubspaceConfig,
+                SharedSubspaceProjector,
+            )
+
+            src_list = b.to_numpy(src_analysis).tolist()
+            tgt_list = b.to_numpy(tgt_analysis).tolist()
+            shared_result = SharedSubspaceProjector._discover_with_cca(
+                source_activations=src_list,
+                target_activations=tgt_list,
+                weights=None,
+                n=len(src_list),
+                d_source=len(src_list[0]) if src_list else 0,
+                d_target=len(tgt_list[0]) if tgt_list else 0,
+                config=SharedSubspaceConfig(alignment_method=AlignmentMethod.cca),
+                backend=b,
+            )
+            if shared_result and shared_result.is_valid:
+                shared_source_proj = b.array(shared_result.source_projection)
+                shared_target_proj = b.array(shared_result.target_projection)
+                b.eval(shared_source_proj, shared_target_proj)
+                metrics["shared_subspace_dimensions"].append(shared_result.shared_dimension)
+
+        if src_analysis is not None and config.enable_relative_representation:
+            from modelcypher.core.domain.geometry.relative_representation import (
+                align_relative_representations,
+                compute_relative_representation,
+            )
+            from modelcypher.core.domain.geometry.riemannian_utils import (
+                farthest_point_sampling,
+            )
+
+            n_anchors = min(config.analysis_anchor_count, analysis_samples)
+            if n_anchors >= 2:
+                anchor_idx = farthest_point_sampling(tgt_analysis, n_anchors, backend=b)
+                anchors = b.take(tgt_analysis, b.array(anchor_idx), axis=0)
+                b.eval(anchors)
+                src_rel = compute_relative_representation(src_analysis, anchors)
+                tgt_rel = compute_relative_representation(tgt_analysis, anchors)
+                b.eval(src_rel, tgt_rel)
+                _, rel_error = align_relative_representations(src_rel, tgt_rel)
+                metrics["relative_rep_errors"].append(rel_error)
+
+        if src_analysis is not None and config.enable_fisher_weighting:
+            epsilon = 1e-6
+            src_var = b.var(src_analysis, axis=0)
+            tgt_var = b.var(tgt_analysis, axis=0)
+            b.eval(src_var, tgt_var)
+            src_fisher = 1.0 / (src_var + epsilon)
+            tgt_fisher = 1.0 / (tgt_var + epsilon)
+            total_fisher = src_fisher + tgt_fisher + epsilon
+            layer_fisher_weights = tgt_fisher / total_fisher
+            b.eval(layer_fisher_weights)
+            mean_arr = b.mean(layer_fisher_weights)
+            b.eval(mean_arr)
+            metrics["fisher_target_means"].append(float(b.to_numpy(mean_arr).item()))
+
+        if analyzer is not None:
+            relation = layer_relations.get(layer_idx)
+            if relation is not None:
+                analysis = analyzer.analyze(
+                    volume_a=relation.volume_a,
+                    volume_b=relation.volume_b,
+                    relation=relation,
+                )
+                transform_requirements = [t.value for t in analysis.transformations]
+                metrics["transform_requirements_by_layer"][layer_idx] = transform_requirements
 
         stacked = b.stack(act_list, axis=0)
         b.eval(stacked)
@@ -401,11 +565,36 @@ def stage_transplant(
                 logger.warning("Failed to convert weight %s to float32: %s", key, e)
                 continue
 
-            if target_w.shape != source_w.shape:
+            source_candidate = source_w
+            shared_subspace_applied = False
+
+            if shared_source_proj is not None and shared_target_proj is not None:
                 try:
-                    logger.debug("Projecting %s: source=%s -> target=%s", key, source_w.shape, target_w.shape)
+                    if (
+                        source_candidate.shape[1] == shared_source_proj.shape[0]
+                        and target_w.shape[1] == shared_target_proj.shape[0]
+                    ):
+                        source_shared = b.matmul(source_candidate, shared_source_proj)
+                        source_candidate = b.matmul(
+                            source_shared,
+                            b.transpose(shared_target_proj),
+                        )
+                        b.eval(source_candidate)
+                        shared_subspace_applied = True
+                        metrics["shared_subspace_applied"] += 1
+                except Exception as e:
+                    logger.debug("Shared subspace projection failed for %s: %s", key, e)
+
+            if target_w.shape != source_candidate.shape:
+                try:
+                    logger.debug(
+                        "Projecting %s: source=%s -> target=%s",
+                        key,
+                        source_candidate.shape,
+                        target_w.shape,
+                    )
                     projection = project_cross_dimensional(
-                        source=source_w,
+                        source=source_candidate,
                         target=target_w,
                         method=config.projection_method,
                         backend=b,
@@ -416,7 +605,35 @@ def stage_transplant(
                     logger.warning("Failed to project weight %s: %s", key, e)
                     continue
             else:
-                source_aligned = source_w
+                source_aligned = source_candidate
+
+            if (
+                not shared_subspace_applied
+                and transform_requirements
+                and source_aligned.shape == target_w.shape
+                and "procrustes_rotation" in {t.lower() for t in transform_requirements}
+            ):
+                try:
+                    from modelcypher.core.domain.geometry.backend_matrix_utils import (
+                        BackendMatrixUtils,
+                    )
+
+                    rotation = BackendMatrixUtils(b).procrustes_rotation(
+                        source_aligned, target_w
+                    ).rotation
+                    source_aligned = b.matmul(source_aligned, rotation)
+                    b.eval(source_aligned)
+                    metrics["procrustes_applied"] += 1
+                except Exception as e:
+                    logger.debug("Procrustes alignment failed for %s: %s", key, e)
+
+            if layer_fisher_weights is not None:
+                if source_aligned.shape[1] == int(layer_fisher_weights.shape[0]):
+                    weights = b.reshape(layer_fisher_weights, (1, -1))
+                    delta = source_aligned - target_w
+                    source_aligned = target_w + delta * (1.0 - weights)
+                    b.eval(source_aligned)
+                    metrics["fisher_delta_scaled"] += 1
 
             try:
                 logger.debug("Computing transplant delta for %s", key)
@@ -538,6 +755,21 @@ def stage_transplant(
     if metrics["cka_after"]:
         ckas = metrics["cka_after"]
         metrics["mean_cka_after"] = sum(ckas) / len(ckas)
+    if metrics["shared_subspace_dimensions"]:
+        dims = metrics["shared_subspace_dimensions"]
+        metrics["mean_shared_subspace_dimension"] = sum(dims) / len(dims)
+    if metrics["relative_rep_errors"]:
+        errors = metrics["relative_rep_errors"]
+        metrics["mean_relative_rep_error"] = sum(errors) / len(errors)
+    if metrics["fisher_target_means"]:
+        means = metrics["fisher_target_means"]
+        metrics["mean_fisher_target_weight"] = sum(means) / len(means)
+    if metrics["transform_requirements_by_layer"]:
+        counts: dict[str, int] = {}
+        for reqs in metrics["transform_requirements_by_layer"].values():
+            for req in reqs:
+                counts[req] = counts.get(req, 0) + 1
+        metrics["transform_requirements_counts"] = counts
 
     # Stage completion summary
     stage_elapsed = time.time() - stage_start_time

@@ -467,6 +467,7 @@ class UnifiedGeometricMerger:
             layer_indices=layer_indices,
             probe_ids=probe_result.get("probe_ids"),
             probe_domains=probe_result.get("probe_domains"),
+            source_activations=source_activations,
             target_activations=target_activations,
             config=merge_config,
         )
@@ -1004,6 +1005,7 @@ class UnifiedGeometricMerger:
         layer_indices: list[int],
         probe_ids: list[str] | None,
         probe_domains: list[str] | None,
+        source_activations: dict | None,
         target_activations: dict | None,
         config: UnifiedMergeConfig,
     ) -> tuple[dict[str, "Array"], dict[str, Any]]:
@@ -1026,6 +1028,7 @@ class UnifiedGeometricMerger:
             layer_indices=layer_indices,
             probe_ids=probe_ids,
             probe_domains=probe_domains,
+            source_activations=source_activations,
             target_activations=target_activations,
             config=stage_config,
             extract_layer_index_fn=self._extract_layer_index,
