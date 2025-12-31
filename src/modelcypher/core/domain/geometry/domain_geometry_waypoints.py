@@ -296,9 +296,15 @@ class DomainGeometryWaypointService:
         backend: "Backend",
     ) -> DomainGeometryScore:
         """Compute spatial geometry score (Blind Physicist hypothesis)."""
-        from modelcypher.core.domain.agents.spatial_atlas import SpatialConceptInventory
+        from modelcypher.core.domain.geometry.atlas_registry import get_spatial_concepts
         from modelcypher.core.domain.geometry.spatial_3d import Spatial3DAnalyzer
 
+        concepts = list(get_spatial_concepts())
+        if not concepts:
+            raise ValueError(
+                "No spatial concepts registered. Call register_default_atlas_registry() "
+                "before computing spatial geometry."
+            )
         model, tokenizer = self._model_loader.load_model_for_training(model_path)
 
         # Extract activations for spatial probes
@@ -306,7 +312,7 @@ class DomainGeometryWaypointService:
             model,
             tokenizer,
             layer,
-            [(p.id, p.prompt) for p in SpatialConceptInventory.all_concepts()],
+            [(p.id, p.prompt) for p in concepts],
             backend,
         )
 
@@ -333,11 +339,17 @@ class DomainGeometryWaypointService:
         backend: "Backend",
     ) -> DomainGeometryScore:
         """Compute social geometry score (Latent Sociologist hypothesis)."""
-        from modelcypher.core.domain.agents.social_atlas import SocialConceptInventory
+        from modelcypher.core.domain.geometry.atlas_registry import get_social_concepts
         from modelcypher.core.domain.geometry.social_geometry import (
             SocialGeometryAnalyzer,
         )
 
+        concepts = list(get_social_concepts())
+        if not concepts:
+            raise ValueError(
+                "No social concepts registered. Call register_default_atlas_registry() "
+                "before computing social geometry."
+            )
         model, tokenizer = self._model_loader.load_model_for_training(model_path)
 
         # Extract activations for social probes
@@ -345,7 +357,7 @@ class DomainGeometryWaypointService:
             model,
             tokenizer,
             layer,
-            [(p.id, p.prompt) for p in SocialConceptInventory.all_concepts()],
+            [(p.id, p.prompt) for p in concepts],
             backend,
         )
 
@@ -395,11 +407,17 @@ class DomainGeometryWaypointService:
         backend: "Backend",
     ) -> DomainGeometryScore:
         """Compute moral geometry score (Latent Ethicist hypothesis)."""
-        from modelcypher.core.domain.agents.moral_atlas import MoralConceptInventory
+        from modelcypher.core.domain.geometry.atlas_registry import get_moral_concepts
         from modelcypher.core.domain.geometry.moral_geometry import (
             MoralGeometryAnalyzer,
         )
 
+        concepts = list(get_moral_concepts())
+        if not concepts:
+            raise ValueError(
+                "No moral concepts registered. Call register_default_atlas_registry() "
+                "before computing moral geometry."
+            )
         model, tokenizer = self._model_loader.load_model_for_training(model_path)
 
         # Extract activations for moral probes
@@ -407,7 +425,7 @@ class DomainGeometryWaypointService:
             model,
             tokenizer,
             layer,
-            [(p.id, p.prompt) for p in MoralConceptInventory.all_concepts()],
+            [(p.id, p.prompt) for p in concepts],
             backend,
         )
 

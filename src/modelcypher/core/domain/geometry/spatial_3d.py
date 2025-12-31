@@ -1371,8 +1371,6 @@ class Spatial3DAnalyzer:
 
 __all__ = [
     # Data structures
-    "SpatialAxis",
-    "SpatialConcept",
     "get_spatial_anchors_by_axis",
     # Euclidean consistency
     "EuclideanConsistencyResult",

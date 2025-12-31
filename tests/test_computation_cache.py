@@ -242,3 +242,120 @@ class TestCKACaching:
 
         # Results should be the same
         assert result1.cka == pytest.approx(result2.cka, rel=1e-6)
+
+
+class TestCacheKeyPerformance:
+    """Performance tests for cache key generation."""
+
+    def test_key_generation_performance_small_array(self, cache: ComputationCache, backend):
+        """Key generation for small arrays should be fast (<1ms)."""
+        import time
+
+        backend.random_seed(42)
+        # 1000 elements is the threshold for "small" arrays
+        activations = backend.random_normal((50, 20))  # 1000 elements
+        backend.eval(activations)
+
+        # Warm up
+        cache.make_array_key(activations, backend)
+
+        # Time 100 iterations
+        start = time.perf_counter()
+        for _ in range(100):
+            cache.make_array_key(activations, backend)
+        elapsed = time.perf_counter() - start
+
+        avg_ms = (elapsed / 100) * 1000
+        # Should be < 1ms per call (typically ~50-200µs)
+        assert avg_ms < 1.0, f"Key generation too slow: {avg_ms:.3f}ms average"
+
+    def test_key_generation_performance_medium_array(self, cache: ComputationCache, backend):
+        """Key generation for medium arrays uses sampling and should be fast."""
+        import time
+
+        backend.random_seed(42)
+        # Just over 1000 elements - uses sampling
+        activations = backend.random_normal((100, 50))  # 5000 elements
+        backend.eval(activations)
+
+        # Warm up
+        cache.make_array_key(activations, backend)
+
+        # Time 100 iterations
+        start = time.perf_counter()
+        for _ in range(100):
+            cache.make_array_key(activations, backend)
+        elapsed = time.perf_counter() - start
+
+        avg_ms = (elapsed / 100) * 1000
+        # Should be < 2ms per call
+        assert avg_ms < 2.0, f"Key generation too slow: {avg_ms:.3f}ms average"
+
+
+class TestCacheKeyCollisionResistance:
+    """Tests for cache key collision resistance."""
+
+    def test_permuted_arrays_have_different_keys(self, cache: ComputationCache, backend):
+        """Permuted arrays should produce different cache keys."""
+        import numpy as np
+
+        backend.random_seed(42)
+
+        # Create a small array (uses full hash)
+        X = backend.random_normal((15, 8))  # 120 elements
+        backend.eval(X)
+
+        # Create permutation matrix
+        np.random.seed(42)
+        perm = list(range(15))
+        np.random.shuffle(perm)
+        P_np = np.zeros((15, 15), dtype=np.float32)
+        for i, j in enumerate(perm):
+            P_np[i, j] = 1.0
+        P = backend.array(P_np)
+
+        # Permute X
+        X_perm = backend.matmul(P, X)
+        backend.eval(X_perm)
+
+        # Keys should be different
+        key_x = cache.make_array_key(X, backend)
+        key_x_perm = cache.make_array_key(X_perm, backend)
+
+        assert key_x != key_x_perm, "Permuted array should have different key"
+
+    def test_slightly_different_arrays_have_different_keys(self, cache: ComputationCache, backend):
+        """Arrays differing only in later elements should have different keys."""
+        backend.random_seed(42)
+
+        # Create small array
+        X = backend.random_normal((10, 10))  # 100 elements
+        backend.eval(X)
+        X_np = backend.to_numpy(X).copy()
+
+        # Modify only the last element
+        X_np[-1, -1] += 0.001
+        X_modified = backend.array(X_np)
+        backend.eval(X_modified)
+
+        key_x = cache.make_array_key(X, backend)
+        key_modified = cache.make_array_key(X_modified, backend)
+
+        assert key_x != key_modified, "Modified array should have different key"
+
+    def test_identical_arrays_have_same_key(self, cache: ComputationCache, backend):
+        """Identical arrays should produce the same cache key."""
+        backend.random_seed(42)
+
+        X = backend.random_normal((20, 10))
+        backend.eval(X)
+
+        # Copy to a new array (same content)
+        X_np = backend.to_numpy(X)
+        X_copy = backend.array(X_np.copy())
+        backend.eval(X_copy)
+
+        key1 = cache.make_array_key(X, backend)
+        key2 = cache.make_array_key(X_copy, backend)
+
+        assert key1 == key2, "Identical arrays should have same key"

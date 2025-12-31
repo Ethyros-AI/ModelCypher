@@ -410,18 +410,21 @@ class DomainGeometryBaselineExtractor:
         Intrinsic dimension estimation (MLE) needs ~100+ samples for tight
         confidence intervals.
 
-        Therefore, we use ALL probes from UnifiedAtlas for geometry measurement.
+        Therefore, we use ALL probes from the atlas registry for geometry measurement.
         The manifold structure is domain-agnostic - any activation contributes to
         understanding the representation geometry. Domain-specific filtering is
         only applied to semantic metrics, not geometric measurement.
 
         Returns a list of prompts that will elicit activations for geometry analysis.
         """
-        from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+        from modelcypher.core.domain.geometry.atlas_registry import get_atlas_probes
 
-        # Use ALL probes for geometry measurement - manifold structure requires
-        # sufficient samples regardless of semantic domain
-        probes = UnifiedAtlasInventory.all_probes()
+        probes = list(get_atlas_probes())
+        if not probes:
+            raise ValueError(
+                "No atlas probes registered. Call register_default_atlas_registry() "
+                "before extracting geometry baselines."
+            )
 
         # Extract support texts from probes as prompts
         prompts: list[str] = []
@@ -442,10 +445,11 @@ class DomainGeometryBaselineExtractor:
                 seen.add(p)
                 unique_prompts.append(p)
 
-        total_probes = UnifiedAtlasInventory.total_probe_count()
         logger.info(
-            f"Using {len(unique_prompts)} probes from UnifiedAtlas for {domain} "
-            f"(all {total_probes} probes required for stable ORC/ID estimation)"
+            "Using %d probes from atlas registry for %s (all probes required for "
+            "stable ORC/ID estimation)",
+            len(unique_prompts),
+            domain,
         )
         return unique_prompts
 

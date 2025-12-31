@@ -753,3 +753,182 @@ class TestEdgeCases:
 
         # Should still produce valid result
         assert result.distance == 0.0
+
+
+# =============================================================================
+# Hypothesis Property-Based Tests
+# =============================================================================
+
+try:
+    from hypothesis import given, settings, assume, HealthCheck
+    from hypothesis import strategies as st
+
+    HYPOTHESIS_AVAILABLE = True
+except ImportError:
+    HYPOTHESIS_AVAILABLE = False
+
+
+@pytest.mark.skipif(not HYPOTHESIS_AVAILABLE, reason="hypothesis not installed")
+class TestGromovWassersteinHypothesis:
+    """Hypothesis-based property tests for Gromov-Wasserstein distance."""
+
+    @given(
+        n_points=st.integers(min_value=2, max_value=8),
+        seed=st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=20, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    def test_self_distance_zero_hypothesis(
+        self, n_points: int, seed: int, any_backend: "Backend"
+    ):
+        """GW distance from a set to itself should be 0."""
+        b = any_backend
+        b.random_seed(seed)
+        gw = GromovWassersteinDistance(backend=b)
+
+        # Generate random points
+        points = b.random_normal((n_points, 3))
+        b.eval(points)
+
+        # Compute distance matrix
+        dist = gw.compute_pairwise_distances(points)
+
+        # Self-distance should be 0
+        result = gw.compute(dist, dist)
+        assert result.distance == pytest.approx(0.0, abs=0.01)
+        assert result.converged is True
+
+    @given(
+        n_points=st.integers(min_value=2, max_value=6),
+        seed=st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=15, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    def test_symmetry_hypothesis(
+        self, n_points: int, seed: int, any_backend: "Backend"
+    ):
+        """GW(A, B) should equal GW(B, A) (symmetry)."""
+        b = any_backend
+        b.random_seed(seed)
+        gw = GromovWassersteinDistance(backend=b)
+
+        # Generate two different point sets
+        points_a = b.random_normal((n_points, 3))
+        b.random_seed(seed + 1000)
+        points_b = b.random_normal((n_points, 3))
+        b.eval(points_a, points_b)
+
+        dist_a = gw.compute_pairwise_distances(points_a)
+        dist_b = gw.compute_pairwise_distances(points_b)
+
+        config = Config(num_restarts=3, max_outer_iterations=15, seed=42)
+
+        result_ab = gw.compute(dist_a, dist_b, config)
+        result_ba = gw.compute(dist_b, dist_a, config)
+
+        # Should be symmetric within tolerance
+        assert result_ab.distance == pytest.approx(result_ba.distance, rel=0.2)
+
+    @given(
+        n_points=st.integers(min_value=2, max_value=6),
+        seed=st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=15, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    def test_distance_non_negative_hypothesis(
+        self, n_points: int, seed: int, any_backend: "Backend"
+    ):
+        """GW distance should always be non-negative."""
+        b = any_backend
+        b.random_seed(seed)
+        gw = GromovWassersteinDistance(backend=b)
+
+        points_a = b.random_normal((n_points, 3))
+        b.random_seed(seed + 1000)
+        points_b = b.random_normal((n_points, 3))
+        b.eval(points_a, points_b)
+
+        dist_a = gw.compute_pairwise_distances(points_a)
+        dist_b = gw.compute_pairwise_distances(points_b)
+
+        config = Config(num_restarts=2, max_outer_iterations=10)
+        result = gw.compute(dist_a, dist_b, config)
+
+        assert result.distance >= 0.0
+
+    @given(
+        n_points=st.integers(min_value=2, max_value=5),
+        seed=st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=10, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    def test_coupling_valid_marginals_hypothesis(
+        self, n_points: int, seed: int, any_backend: "Backend"
+    ):
+        """Coupling matrix should have valid marginals (row and column sums)."""
+        b = any_backend
+        b.random_seed(seed)
+        gw = GromovWassersteinDistance(backend=b)
+
+        points_a = b.random_normal((n_points, 3))
+        b.random_seed(seed + 1000)
+        points_b = b.random_normal((n_points, 3))
+        b.eval(points_a, points_b)
+
+        dist_a = gw.compute_pairwise_distances(points_a)
+        dist_b = gw.compute_pairwise_distances(points_b)
+
+        config = Config(num_restarts=2, max_outer_iterations=15)
+        result = gw.compute(dist_a, dist_b, config)
+
+        if not result.converged:
+            assume(False)
+
+        coupling = result.coupling
+        n = len(coupling)
+
+        # Check row sums ≈ 1/n
+        for i in range(n):
+            row_sum = sum(float(coupling[i][j]) for j in range(n))
+            assert row_sum == pytest.approx(1.0 / n, abs=0.1)
+
+        # Check column sums ≈ 1/n
+        for j in range(n):
+            col_sum = sum(float(coupling[i][j]) for i in range(n))
+            assert col_sum == pytest.approx(1.0 / n, abs=0.1)
+
+    @given(
+        n_points=st.integers(min_value=3, max_value=5),
+        seed=st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=10, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    def test_permutation_invariance_hypothesis(
+        self, n_points: int, seed: int, any_backend: "Backend"
+    ):
+        """GW distance should be invariant to point permutation."""
+        import numpy as np
+
+        b = any_backend
+        b.random_seed(seed)
+        gw = GromovWassersteinDistance(backend=b)
+
+        # Generate points
+        points = b.random_normal((n_points, 3))
+        b.eval(points)
+
+        # Create permutation
+        np.random.seed(seed)
+        perm = list(range(n_points))
+        np.random.shuffle(perm)
+
+        # Permute points
+        points_np = b.to_numpy(points)
+        permuted_np = points_np[perm]
+        permuted = b.array(permuted_np)
+        b.eval(permuted)
+
+        dist_orig = gw.compute_pairwise_distances(points)
+        dist_perm = gw.compute_pairwise_distances(permuted)
+
+        config = Config(num_restarts=3, max_outer_iterations=15, seed=42)
+
+        result = gw.compute(dist_orig, dist_perm, config)
+
+        # Should be near 0 since it's just a permutation
+        assert result.distance < 0.1

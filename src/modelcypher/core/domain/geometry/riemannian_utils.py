@@ -528,7 +528,8 @@ class RiemannianGeometry:
         backend.eval(geo_dist_arr)
 
         # Convert to numpy for connectivity check
-        geo_np = backend.to_numpy(geo_dist_arr)
+        # Use .copy() because JAX/MLX arrays are read-only when converted to numpy
+        geo_np = backend.to_numpy(geo_dist_arr).copy()
 
         # Derive near-zero threshold from dtype
         near_zero_eps = float(machine_epsilon(backend, geo_dist_arr))

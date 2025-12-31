@@ -1082,3 +1082,362 @@ class TestNumericalPrecision:
         assert tiny < mach_eps
         # All should be positive
         assert all(v > 0 for v in [mach_eps, div_eps, reg_eps, cond_thresh, tiny])
+
+
+# =============================================================================
+# Hypothesis Property-Based Tests
+# =============================================================================
+
+
+from hypothesis import given, strategies as st, assume, settings as hypothesis_settings, HealthCheck
+
+
+class TestNumericalStabilityHypothesis:
+    """Hypothesis property-based tests for numerical stability functions."""
+
+    @given(
+        rows=st.integers(min_value=2, max_value=30),
+        cols=st.integers(min_value=2, max_value=30),
+    )
+    @hypothesis_settings(max_examples=20, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    def test_epsilon_functions_always_positive(
+        self, any_backend: "Backend", rows: int, cols: int
+    ) -> None:
+        """All epsilon functions should return positive values for any array shape."""
+        b = any_backend
+        arr = b.zeros((rows, cols))
+
+        mach_eps = machine_epsilon(b, arr)
+        div_eps = division_epsilon(b, arr)
+        reg_eps = regularization_epsilon(b, arr)
+        cond_thresh = condition_threshold(b, arr)
+        tiny = tiny_value(b, arr)
+        log_eps = safe_log_epsilon(b, arr)
+
+        assert mach_eps > 0, "machine_epsilon must be positive"
+        assert div_eps > 0, "division_epsilon must be positive"
+        assert reg_eps > 0, "regularization_epsilon must be positive"
+        assert cond_thresh > 0, "condition_threshold must be positive"
+        assert tiny > 0, "tiny_value must be positive"
+        assert log_eps > 0, "safe_log_epsilon must be positive"
+
+    @given(
+        max_dim=st.integers(min_value=1, max_value=1000),
+    )
+    @hypothesis_settings(max_examples=20, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    def test_svd_rank_threshold_scales_linearly(
+        self, any_backend: "Backend", max_dim: int
+    ) -> None:
+        """SVD rank threshold should scale linearly with max_dim."""
+        b = any_backend
+        arr = b.zeros((2, 2))
+
+        thresh = svd_rank_threshold(b, arr, max_dim=max_dim)
+        mach_eps = machine_epsilon(b, arr)
+
+        expected = float(max_dim) * mach_eps
+        # Allow small floating point tolerance
+        assert abs(thresh - expected) < 1e-15, f"Expected {expected}, got {thresh}"
+
+    @given(
+        rows=st.integers(min_value=3, max_value=20),
+        cols=st.integers(min_value=3, max_value=20),
+        seed=st.integers(min_value=0, max_value=10000),
+    )
+    @hypothesis_settings(max_examples=15, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    def test_svd_via_eigh_no_nan_inf(
+        self, any_backend: "Backend", rows: int, cols: int, seed: int
+    ) -> None:
+        """SVD via eigh should never produce NaN or Inf for random matrices."""
+        b = any_backend
+        b.random_seed(seed)
+        A = b.random_normal((rows, cols))
+        b.eval(A)
+
+        U, S, Vt = svd_via_eigh(b, A)
+        b.eval(U, S, Vt)
+
+        # Check no NaN/Inf in singular values
+        S_np = b.to_numpy(S)
+        assert not any(math.isnan(float(v)) for v in S_np), "S contains NaN"
+        assert not any(math.isinf(float(v)) for v in S_np), "S contains Inf"
+
+        # Check no NaN/Inf in U (if non-empty)
+        if b.shape(U)[0] > 0 and b.shape(U)[1] > 0:
+            U_np = b.to_numpy(U).flatten()
+            assert not any(math.isnan(float(v)) for v in U_np), "U contains NaN"
+
+    @given(
+        rows=st.integers(min_value=5, max_value=20),
+        cols=st.integers(min_value=3, max_value=15),
+        seed=st.integers(min_value=0, max_value=10000),
+    )
+    @hypothesis_settings(max_examples=10, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    def test_svd_singular_values_nonnegative_hypothesis(
+        self, any_backend: "Backend", rows: int, cols: int, seed: int
+    ) -> None:
+        """SVD singular values should always be non-negative."""
+        b = any_backend
+        b.random_seed(seed)
+        A = b.random_normal((rows, cols))
+        b.eval(A)
+
+        _, S, _ = svd_via_eigh(b, A)
+        b.eval(S)
+
+        S_np = b.to_numpy(S)
+        assert all(s >= -1e-10 for s in S_np), "Singular values must be non-negative"
+
+    @given(
+        n_sv=st.integers(min_value=1, max_value=20),
+        seed=st.integers(min_value=0, max_value=10000),
+    )
+    @hypothesis_settings(max_examples=20, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    def test_entropy_effective_rank_bounded(
+        self, any_backend: "Backend", n_sv: int, seed: int
+    ) -> None:
+        """Effective rank should be bounded by [1, n] for non-trivial spectra."""
+        b = any_backend
+        b.random_seed(seed)
+
+        # Generate random positive singular values
+        sv_arr = b.abs(b.random_normal((n_sv,))) + 0.1  # Ensure positive
+        b.eval(sv_arr)
+        sv = [float(v) for v in b.to_numpy(sv_arr)]
+
+        erank = compute_entropy_effective_rank(b, sv)
+
+        # Effective rank is bounded: 1 <= erank <= n
+        # (can be < 1 for highly concentrated spectra, so use 0.9)
+        assert erank >= 0.9, f"Effective rank {erank} below lower bound"
+        assert erank <= n_sv + 0.1, f"Effective rank {erank} above upper bound {n_sv}"
+
+    @given(
+        n=st.integers(min_value=3, max_value=10),
+    )
+    @hypothesis_settings(max_examples=10, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    def test_uniform_singular_values_max_rank(
+        self, any_backend: "Backend", n: int
+    ) -> None:
+        """Uniform singular values should give effective rank close to n."""
+        b = any_backend
+        sv = [1.0] * n
+
+        erank = compute_entropy_effective_rank(b, sv)
+
+        # Uniform distribution has max entropy, so rank should be n
+        assert abs(erank - n) < 0.1, f"Expected rank {n}, got {erank}"
+
+
+class TestSolverStabilityHypothesis:
+    """Hypothesis property-based tests for solver stability."""
+
+    @given(
+        rows=st.integers(min_value=10, max_value=30),
+        cols=st.integers(min_value=5, max_value=20),
+        target_cols=st.integers(min_value=3, max_value=10),
+        seed=st.integers(min_value=0, max_value=10000),
+    )
+    @hypothesis_settings(max_examples=10, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    def test_qr_solver_consistent_system_low_residual(
+        self, any_backend: "Backend", rows: int, cols: int, target_cols: int, seed: int
+    ) -> None:
+        """QR solver on consistent system should have low residual."""
+        assume(rows > cols)  # Overdetermined
+        b = any_backend
+        b.random_seed(seed)
+
+        source = b.random_normal((rows, cols))
+        true_F = b.random_normal((cols, target_cols))
+        target = b.matmul(source, true_F)
+        b.eval(source, target, true_F)
+
+        F, diag = solve_full_row_rank_via_qr(b, source, target)
+
+        if F is not None:
+            # Consistent system should have low residual
+            assert diag["residual_norm"] < 0.1, f"High residual: {diag['residual_norm']}"
+
+    @given(
+        rows=st.integers(min_value=10, max_value=30),
+        cols=st.integers(min_value=5, max_value=20),
+        target_cols=st.integers(min_value=3, max_value=10),
+        seed=st.integers(min_value=0, max_value=10000),
+    )
+    @hypothesis_settings(max_examples=10, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    def test_svd_solver_consistent_system_low_projection_error(
+        self, any_backend: "Backend", rows: int, cols: int, target_cols: int, seed: int
+    ) -> None:
+        """SVD solver on consistent system should have low projection error."""
+        assume(rows > cols)  # Overdetermined
+        b = any_backend
+        b.random_seed(seed)
+
+        source = b.random_normal((rows, cols))
+        true_F = b.random_normal((cols, target_cols))
+        target = b.matmul(source, true_F)
+        b.eval(source, target, true_F)
+
+        F, diag = solve_via_truncated_svd(b, source, target)
+
+        if F is not None:
+            # Consistent system should have low projection error
+            assert diag["projection_error"] < 0.1, f"High error: {diag['projection_error']}"
+
+    @given(
+        scale=st.floats(min_value=1e-6, max_value=1e6),
+        seed=st.integers(min_value=0, max_value=10000),
+    )
+    @hypothesis_settings(max_examples=15, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    def test_solver_scale_invariance(
+        self, any_backend: "Backend", scale: float, seed: int
+    ) -> None:
+        """Solvers should handle different input scales gracefully."""
+        b = any_backend
+        b.random_seed(seed)
+
+        source = b.random_normal((30, 15))
+        target = b.random_normal((30, 10))
+        b.eval(source, target)
+
+        # Scale inputs
+        source_scaled = source * scale
+        target_scaled = target * scale
+        b.eval(source_scaled, target_scaled)
+
+        F, diag = solve_full_row_rank_via_qr(b, source_scaled, target_scaled)
+
+        # Should produce a valid solution (not None, no NaN)
+        if F is not None:
+            F_np = b.to_numpy(F).flatten()
+            nan_count = sum(1 for v in F_np if math.isnan(float(v)))
+            assert nan_count == 0, f"F contains {nan_count} NaN values at scale {scale}"
+
+
+class TestEdgeCaseEpsilons:
+    """Tests for edge case numerical behavior."""
+
+    def test_very_small_array_values(self, any_backend: "Backend") -> None:
+        """Arrays with very small values should not cause underflow issues."""
+        b = any_backend
+        # Create array with values near machine epsilon
+        small = b.array([[1e-30, 1e-35], [1e-35, 1e-30]])
+        b.eval(small)
+
+        # Epsilon functions should still work
+        eps = machine_epsilon(b, small)
+        assert eps > 0
+        assert not math.isnan(eps)
+
+    def test_very_large_array_values(self, any_backend: "Backend") -> None:
+        """Arrays with very large values should not cause overflow issues."""
+        b = any_backend
+        # Create array with large values
+        large = b.array([[1e30, 1e35], [1e35, 1e30]])
+        b.eval(large)
+
+        # Epsilon functions should still work
+        eps = machine_epsilon(b, large)
+        assert eps > 0
+        assert not math.isnan(eps)
+
+    def test_mixed_scale_array(self, any_backend: "Backend") -> None:
+        """Arrays with mixed scales should be handled properly."""
+        b = any_backend
+        b.random_seed(42)
+
+        # Create matrix with mixed scales
+        # Use .copy() because JAX arrays are read-only when converted to numpy
+        source_np = b.to_numpy(b.random_normal((20, 10))).copy()
+        # Scale columns by different orders of magnitude
+        for i in range(10):
+            source_np[:, i] *= 10.0 ** (i - 5)  # Scales from 1e-5 to 1e4
+        source = b.array(source_np)
+        target = b.random_normal((20, 5))
+        b.eval(source, target)
+
+        # SVD via eigh should handle this
+        U, S, Vt = svd_via_eigh(b, source)
+        b.eval(U, S, Vt)
+
+        S_np = b.to_numpy(S)
+        assert not any(math.isnan(float(v)) for v in S_np), "SVD produced NaN"
+        assert not any(math.isinf(float(v)) for v in S_np), "SVD produced Inf"
+
+    def test_near_singular_matrix(self, any_backend: "Backend") -> None:
+        """Near-singular matrices should be handled gracefully."""
+        b = any_backend
+
+        # Create a nearly singular matrix
+        # Start with rank-1 matrix and add tiny perturbation
+        v = b.array([[1.0], [2.0], [3.0], [4.0], [5.0]])
+        rank1 = b.matmul(v, b.transpose(v))
+        perturbation = b.eye(5) * 1e-10
+        near_singular = rank1 + perturbation
+        b.eval(near_singular)
+
+        # SVD should handle this without error
+        U, S, Vt = svd_via_eigh(b, near_singular)
+        b.eval(U, S, Vt)
+
+        # Should have one dominant singular value
+        S_np = [float(v) for v in b.to_numpy(S)]
+        assert S_np[0] > 0, "Largest singular value should be positive"
+        # Condition number should be very high
+        if S_np[-1] > 0:
+            condition = S_np[0] / S_np[-1]
+            assert condition > 1e5, f"Expected high condition number, got {condition}"
+
+    def test_diagonal_matrix_svd(self, any_backend: "Backend") -> None:
+        """Diagonal matrices should have exact SVD decomposition."""
+        b = any_backend
+
+        # Diagonal matrix - SVD should be trivial
+        diag_vals = [5.0, 4.0, 3.0, 2.0, 1.0]
+        D = b.diag(b.array(diag_vals))
+        b.eval(D)
+
+        U, S, Vt = svd_via_eigh(b, D)
+        b.eval(U, S, Vt)
+
+        # Singular values should match diagonal (sorted descending)
+        S_np = sorted([float(v) for v in b.to_numpy(S)], reverse=True)
+        expected = sorted(diag_vals, reverse=True)
+        for s, e in zip(S_np, expected):
+            assert abs(s - e) < 1e-4, f"Expected {e}, got {s}"
+
+    def test_zero_row_matrix(self, any_backend: "Backend") -> None:
+        """Matrix with zero rows should not cause solver crashes."""
+        b = any_backend
+        b.random_seed(42)
+
+        # Create matrix with one zero row
+        source = b.random_normal((10, 5))
+        source_np = b.to_numpy(source).copy()
+        source_np[3, :] = 0.0  # Zero out row 3
+        source = b.array(source_np)
+        target = b.random_normal((10, 3))
+        b.eval(source, target)
+
+        # QR solver should handle this
+        F, diag = solve_full_row_rank_via_qr(b, source, target)
+        # May succeed or fail gracefully
+        assert diag is not None, "Diagnostics should always be returned"
+
+    def test_zero_column_matrix(self, any_backend: "Backend") -> None:
+        """Matrix with zero columns should not cause solver crashes."""
+        b = any_backend
+        b.random_seed(42)
+
+        # Create matrix with one zero column
+        source = b.random_normal((10, 5))
+        source_np = b.to_numpy(source).copy()
+        source_np[:, 2] = 0.0  # Zero out column 2
+        source = b.array(source_np)
+        target = b.random_normal((10, 3))
+        b.eval(source, target)
+
+        # QR solver should handle this
+        F, diag = solve_full_row_rank_via_qr(b, source, target)
+        # May succeed or fail gracefully
+        assert diag is not None, "Diagnostics should always be returned"

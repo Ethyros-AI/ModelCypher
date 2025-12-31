@@ -21,6 +21,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, ClassVar
 
+from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol, enum_key
+from modelcypher.core.domain.geometry.atlas_registry import get_atlas_probes
+
 
 class Thresholds:
     strong_correlation: ClassVar[float] = 0.75
@@ -453,8 +456,7 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 
-# Import unified_atlas lazily to avoid circular imports
-# (geometry -> anchor_invariance_analyzer -> manifold_stitcher -> unified_atlas -> semantic_prime_atlas -> geometry)
+# Keep runtime imports local to avoid cross-domain cycles.
 
 logger = logging.getLogger(__name__)
 
@@ -745,21 +747,29 @@ class TriangulatedProbingConfig:
     max_domains_for_full_bonus: int = 1
 
 
+_SOURCE_SEMANTIC_PRIME = "semantic_prime"
+_SOURCE_SEQUENCE_INVARIANT = "sequence_invariant"
+_SOURCE_COMPUTATIONAL_GATE = "computational_gate"
+_SOURCE_METAPHOR_INVARIANT = "metaphor_invariant"
+_SOURCE_CONCEPTUAL_GENEALOGY = "conceptual_genealogy"
+_SOURCE_MORAL_CONCEPT = "moral_concept"
+_SOURCE_SOCIAL_CONCEPT = "social_concept"
+
+
 class TriangulatedProbeBuilder:
     """
     Builds triangulated probe sets for enhanced fingerprinting.
 
-    Now uses UnifiedAtlasInventory (multi-domain probe system) instead of
-    hardcoded probe lists. See UnifiedAtlasInventory for the complete list
-    of atlas sources and their probe counts.
+    Uses atlas registry probes instead of hardcoded probe lists. Outer layers
+    register probe inventories so geometry can remain decoupled from agents.
     """
 
     @staticmethod
     def build_triangulated_probes(
         config: TriangulatedProbingConfig | None = None,
-    ) -> list[Any]:
+    ) -> list[AtlasProbeProtocol]:
         """
-        Build probe set from UnifiedAtlasInventory.
+        Build probe set from the atlas registry.
 
         Returns list of AtlasProbe objects with:
         - probe_id: Unique identifier
@@ -768,63 +778,71 @@ class TriangulatedProbeBuilder:
         - domain: Triangulation domain
         - cross_domain_weight: Weight for cross-domain detection
         """
-        # Lazy import to avoid circular dependency
-        from modelcypher.core.domain.agents.unified_atlas import (
-            AtlasSource,
-            UnifiedAtlasInventory,
-        )
-
         if config is None:
             config = TriangulatedProbingConfig()
 
-        sources: set[AtlasSource] = set()
+        sources: set[str] = set()
 
         # Semantic primes always included
-        sources.add(AtlasSource.SEMANTIC_PRIME)
+        sources.add(_SOURCE_SEMANTIC_PRIME)
 
         # Add sequence invariants if enabled
         if config.include_sequence_invariants:
-            sources.add(AtlasSource.SEQUENCE_INVARIANT)
+            sources.add(_SOURCE_SEQUENCE_INVARIANT)
 
         # Add other sources based on config
         if config.include_metaphor_invariants:
-            sources.add(AtlasSource.METAPHOR_INVARIANT)
+            sources.add(_SOURCE_METAPHOR_INVARIANT)
 
         if config.include_conceptual_genealogy:
             # Conceptual genealogy probes plus moral/social foundations for lineage anchoring
-            sources.add(AtlasSource.CONCEPTUAL_GENEALOGY)
-            sources.add(AtlasSource.MORAL_CONCEPT)
-            sources.add(AtlasSource.SOCIAL_CONCEPT)
+            sources.add(_SOURCE_CONCEPTUAL_GENEALOGY)
+            sources.add(_SOURCE_MORAL_CONCEPT)
+            sources.add(_SOURCE_SOCIAL_CONCEPT)
 
         # Always include computational gates for cross-domain triangulation
-        sources.add(AtlasSource.COMPUTATIONAL_GATE)
+        sources.add(_SOURCE_COMPUTATIONAL_GATE)
 
-        return UnifiedAtlasInventory.probes_by_source(sources)
+        probes = list(get_atlas_probes())
+        if not probes:
+            raise ValueError(
+                "No atlas probes registered. Call register_default_atlas_registry() "
+                "before building triangulated probes."
+            )
+        source_keys = {enum_key(source) for source in sources}
+        return [probe for probe in probes if enum_key(probe.source) in source_keys]
 
     @staticmethod
-    def build_all_probes() -> list[Any]:
+    def build_all_probes() -> list[AtlasProbeProtocol]:
         """Get all probes for full triangulation."""
-        # Lazy import to avoid circular dependency
-        from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
-
-        return UnifiedAtlasInventory.all_probes()
+        probes = list(get_atlas_probes())
+        if not probes:
+            raise ValueError(
+                "No atlas probes registered. Call register_default_atlas_registry() "
+                "before building triangulated probes."
+            )
+        return probes
 
     @staticmethod
-    def build_probes_for_sources(sources: set) -> list[Any]:
+    def build_probes_for_sources(sources: set) -> list[AtlasProbeProtocol]:
         """Get probes from specific atlas sources."""
-        # Lazy import to avoid circular dependency
-        from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
-
-        return UnifiedAtlasInventory.probes_by_source(sources)
+        probes = list(get_atlas_probes())
+        if not probes:
+            raise ValueError(
+                "No atlas probes registered. Call register_default_atlas_registry() "
+                "before building triangulated probes."
+            )
+        source_keys = {enum_key(source) for source in sources}
+        return [probe for probe in probes if enum_key(probe.source) in source_keys]
 
     @staticmethod
-    def to_legacy_format(probes: list[Any]) -> list[dict[str, str]]:
+    def to_legacy_format(probes: list[AtlasProbeProtocol]) -> list[dict[str, str]]:
         """Convert AtlasProbe objects to legacy dict format for compatibility."""
         return [
             {
                 "probe_id": probe.probe_id,
                 "probe_text": probe.support_texts[0] if probe.support_texts else "",
-                "primary_domain": probe.source.value,
+                "primary_domain": enum_key(probe.source),
                 "cross_domain_weight": str(probe.cross_domain_weight),
             }
             for probe in probes

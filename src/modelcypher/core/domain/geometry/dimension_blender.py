@@ -54,6 +54,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol, enum_key
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array
@@ -69,27 +70,18 @@ def _sigmoid(x: "Array") -> "Array":
     )
 
 
-# TYPE_CHECKING for type hints only to avoid circular import with agents
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from modelcypher.core.domain.agents.unified_atlas import (
-        AtlasDomain,
-        AtlasProbe,
-    )
-
 logger = logging.getLogger(__name__)
 
-
-def _get_atlas_types():
-    """Lazy import for runtime usage of AtlasDomain and related types."""
-    from modelcypher.core.domain.agents.unified_atlas import (
-        AtlasDomain,
-        AtlasProbe,
-        UnifiedAtlasInventory,
-    )
-
-    return AtlasDomain, AtlasProbe, UnifiedAtlasInventory
+_DOMAIN_COMPUTATIONAL = "computational"
+_DOMAIN_STRUCTURAL = "structural"
+_DOMAIN_LINGUISTIC = "linguistic"
+_DOMAIN_MENTAL = "mental"
+_DOMAIN_AFFECTIVE = "affective"
+_DOMAIN_RELATIONAL = "relational"
+_DOMAIN_LOGICAL = "logical"
+_DOMAIN_MATHEMATICAL = "mathematical"
+_DOMAIN_TEMPORAL = "temporal"
+_DOMAIN_SPATIAL = "spatial"
 
 
 @dataclass
@@ -97,9 +89,9 @@ class DimensionDomainScores:
     """Domain affinity scores for a single dimension."""
 
     dimension_index: int
-    scores: dict[AtlasDomain, float] = field(default_factory=dict)
+    scores: dict[str, float] = field(default_factory=dict)
     total_activation: float = 0.0
-    dominant_domain: AtlasDomain | None = None
+    dominant_domain: str | None = None
     confidence: float = 0.0  # How confident we are in the classification
 
     def normalize(self) -> None:
@@ -126,9 +118,9 @@ class LayerDimensionProfile:
     dimension_count: int
     dimension_scores: dict[int, DimensionDomainScores] = field(default_factory=dict)
 
-    def get_domain_distribution(self) -> dict[AtlasDomain, int]:
+    def get_domain_distribution(self) -> dict[str, int]:
         """Get count of dimensions dominated by each domain."""
-        distribution: dict[AtlasDomain, int] = {}
+        distribution: dict[str, int] = {}
         for scores in self.dimension_scores.values():
             if scores.dominant_domain:
                 distribution[scores.dominant_domain] = (
@@ -152,7 +144,7 @@ class DimensionBlendConfig:
     """
 
     # Domain -> alpha preference
-    domain_alpha_map: dict[AtlasDomain, float] = field(default_factory=dict)
+    domain_alpha_map: dict[str, float] = field(default_factory=dict)
 
     # Minimum total activation to consider a dimension classified
     activation_threshold: float = 0.05
@@ -182,7 +174,7 @@ class DimensionBlendConfig:
         cls,
         activation_values: list[float],
         confidence_values: list[float],
-        domain_alpha_map: dict[AtlasDomain, float] | None = None,
+        domain_alpha_map: dict[str, float] | None = None,
         *,
         activation_percentile: float = 0.25,
         confidence_percentile: float = 0.40,
@@ -225,7 +217,7 @@ class DimensionBlendConfig:
         cls,
         activation_threshold: float,
         confidence_threshold: float,
-        domain_alpha_map: dict[AtlasDomain, float] | None = None,
+        domain_alpha_map: dict[str, float] | None = None,
         *,
         default_alpha: float = 0.5,
         smoothing: float = 0.2,
@@ -257,47 +249,45 @@ _BALANCED_AFFINITY: dict | None = None
 _CODER_TO_INSTRUCT_AFFINITY: dict | None = None
 
 
-def get_instruct_to_coder_affinity() -> dict:
+def get_instruct_to_coder_affinity() -> dict[str, float]:
     """Get domain affinity map for Instruct → Coder merges (lazy-loaded)."""
     global _INSTRUCT_TO_CODER_AFFINITY
     if _INSTRUCT_TO_CODER_AFFINITY is None:
-        AtlasDomain, _, _ = _get_atlas_types()
         _INSTRUCT_TO_CODER_AFFINITY = {
-            AtlasDomain.COMPUTATIONAL: 0.35,
-            AtlasDomain.STRUCTURAL: 0.35,
-            AtlasDomain.LINGUISTIC: 0.75,
-            AtlasDomain.MENTAL: 0.8,
-            AtlasDomain.AFFECTIVE: 0.85,
-            AtlasDomain.RELATIONAL: 0.75,
-            AtlasDomain.LOGICAL: 0.55,
-            AtlasDomain.MATHEMATICAL: 0.5,
-            AtlasDomain.TEMPORAL: 0.6,
-            AtlasDomain.SPATIAL: 0.55,
+            _DOMAIN_COMPUTATIONAL: 0.35,
+            _DOMAIN_STRUCTURAL: 0.35,
+            _DOMAIN_LINGUISTIC: 0.75,
+            _DOMAIN_MENTAL: 0.8,
+            _DOMAIN_AFFECTIVE: 0.85,
+            _DOMAIN_RELATIONAL: 0.75,
+            _DOMAIN_LOGICAL: 0.55,
+            _DOMAIN_MATHEMATICAL: 0.5,
+            _DOMAIN_TEMPORAL: 0.6,
+            _DOMAIN_SPATIAL: 0.55,
         }
     return _INSTRUCT_TO_CODER_AFFINITY
 
 
-def get_balanced_affinity() -> dict:
+def get_balanced_affinity() -> dict[str, float]:
     """Get balanced affinity map (lazy-loaded)."""
     global _BALANCED_AFFINITY
     if _BALANCED_AFFINITY is None:
-        AtlasDomain, _, _ = _get_atlas_types()
         _BALANCED_AFFINITY = {
-            AtlasDomain.COMPUTATIONAL: 0.4,
-            AtlasDomain.STRUCTURAL: 0.4,
-            AtlasDomain.LINGUISTIC: 0.7,
-            AtlasDomain.MENTAL: 0.7,
-            AtlasDomain.AFFECTIVE: 0.75,
-            AtlasDomain.RELATIONAL: 0.65,
-            AtlasDomain.LOGICAL: 0.5,
-            AtlasDomain.MATHEMATICAL: 0.5,
-            AtlasDomain.TEMPORAL: 0.55,
-            AtlasDomain.SPATIAL: 0.5,
+            _DOMAIN_COMPUTATIONAL: 0.4,
+            _DOMAIN_STRUCTURAL: 0.4,
+            _DOMAIN_LINGUISTIC: 0.7,
+            _DOMAIN_MENTAL: 0.7,
+            _DOMAIN_AFFECTIVE: 0.75,
+            _DOMAIN_RELATIONAL: 0.65,
+            _DOMAIN_LOGICAL: 0.5,
+            _DOMAIN_MATHEMATICAL: 0.5,
+            _DOMAIN_TEMPORAL: 0.55,
+            _DOMAIN_SPATIAL: 0.5,
         }
     return _BALANCED_AFFINITY
 
 
-def get_coder_to_instruct_affinity() -> dict:
+def get_coder_to_instruct_affinity() -> dict[str, float]:
     """Get domain affinity map for Coder → Instruct merges (lazy-loaded)."""
     global _CODER_TO_INSTRUCT_AFFINITY
     if _CODER_TO_INSTRUCT_AFFINITY is None:
@@ -318,14 +308,14 @@ class DimensionBlender:
     """
 
     @staticmethod
-    def build_probe_domain_map(probes: list[AtlasProbe]) -> dict[str, AtlasDomain]:
+    def build_probe_domain_map(probes: list[AtlasProbeProtocol]) -> dict[str, str]:
         """Build mapping from probe ID to domain."""
-        return {probe.probe_id: probe.domain for probe in probes}
+        return {probe.probe_id: enum_key(probe.domain) for probe in probes}
 
     @staticmethod
     def compute_dimension_profiles(
         fingerprints: list[dict],
-        probe_domain_map: dict[str, AtlasDomain],
+        probe_domain_map: dict[str, str],
         layer_indices: list[int],
         hidden_dim: int,
     ) -> dict[int, LayerDimensionProfile]:
@@ -334,7 +324,7 @@ class DimensionBlender:
 
         Args:
             fingerprints: List of fingerprint dicts with probe_id and per-layer activations
-            probe_domain_map: Mapping from probe_id to AtlasDomain
+            probe_domain_map: Mapping from probe_id to domain key
             layer_indices: Which layers to analyze
             hidden_dim: Size of hidden dimension
 

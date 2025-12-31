@@ -43,11 +43,28 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.atlas_protocols import enum_key
+from modelcypher.core.domain.geometry.atlas_registry import get_atlas_probes
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array
 
 logger = logging.getLogger(__name__)
+
+_PRIME_DOMAIN_KEYS = {
+    "linguistic",
+    "mental",
+    "affective",
+    "relational",
+    "temporal",
+    "spatial",
+}
+_GATE_DOMAIN_KEYS = {
+    "computational",
+    "structural",
+    "logical",
+    "mathematical",
+}
 
 
 def _sigmoid(x: float) -> float:
@@ -529,23 +546,15 @@ def get_prime_probe_ids() -> set[str]:
 
     These are probes that test stable knowledge representations.
     """
-    from modelcypher.core.domain.agents.unified_atlas import (
-        AtlasDomain,
-        UnifiedAtlasInventory,
-    )
+    probes = list(get_atlas_probes())
+    if not probes:
+        raise ValueError(
+            "No atlas probes registered. Call register_default_atlas_registry() "
+            "before verb/noun classification."
+        )
 
     # Linguistic and mental probes are primarily "noun" (knowledge) probes
-    prime_domains = {
-        AtlasDomain.LINGUISTIC,
-        AtlasDomain.MENTAL,
-        AtlasDomain.AFFECTIVE,
-        AtlasDomain.RELATIONAL,
-        AtlasDomain.TEMPORAL,
-        AtlasDomain.SPATIAL,
-    }
-
-    probes = UnifiedAtlasInventory.all_probes()
-    return {probe.probe_id for probe in probes if probe.domain in prime_domains}
+    return {probe.probe_id for probe in probes if enum_key(probe.domain) in _PRIME_DOMAIN_KEYS}
 
 
 def get_gate_probe_ids() -> set[str]:
@@ -554,21 +563,15 @@ def get_gate_probe_ids() -> set[str]:
 
     These are probes that test skill/operation representations.
     """
-    from modelcypher.core.domain.agents.unified_atlas import (
-        AtlasDomain,
-        UnifiedAtlasInventory,
-    )
+    probes = list(get_atlas_probes())
+    if not probes:
+        raise ValueError(
+            "No atlas probes registered. Call register_default_atlas_registry() "
+            "before verb/noun classification."
+        )
 
     # Computational and structural probes are primarily "verb" (skill) probes
-    gate_domains = {
-        AtlasDomain.COMPUTATIONAL,
-        AtlasDomain.STRUCTURAL,
-        AtlasDomain.LOGICAL,
-        AtlasDomain.MATHEMATICAL,
-    }
-
-    probes = UnifiedAtlasInventory.all_probes()
-    return {probe.probe_id for probe in probes if probe.domain in gate_domains}
+    return {probe.probe_id for probe in probes if enum_key(probe.domain) in _GATE_DOMAIN_KEYS}
 
 
 def modulate_with_confidence(
