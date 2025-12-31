@@ -479,11 +479,11 @@ def program_generate(
             readable=True,
         ),
     ],
-    donor_dir: Path | None = typer.Option(
+    donor_dirs: list[Path] | None = typer.Option(
         None,
         "--donor-dir",
         "-d",
-        help="Directory containing donor profile JSONs",
+        help="Directory containing donor profile JSONs (repeatable)",
     ),
     donor_profiles: list[Path] | None = typer.Option(
         None,
@@ -532,7 +532,7 @@ def program_generate(
     5. Generates layer assignments (target weak + donor strong intersection)
 
     Examples:
-        mc program generate ./target_profile.json --donor-dir ./donor_profiles/
+        mc program generate ./target.json -d ./experts/ -d ./full-profiles/
         mc program generate ./target.json --donor ./math.json --donor ./code.json
         mc program generate ./target.json -d ./donors/ -n "uber-model" -o ./program.yaml
     """
@@ -545,20 +545,24 @@ def program_generate(
         )
 
         # Validate inputs
-        if donor_dir is None and (donor_profiles is None or len(donor_profiles) == 0):
+        has_dirs = donor_dirs is not None and len(donor_dirs) > 0
+        has_profiles = donor_profiles is not None and len(donor_profiles) > 0
+        if not has_dirs and not has_profiles:
             write_error(
                 "Either --donor-dir or at least one --donor must be provided",
                 context.output_format,
             )
             raise typer.Exit(1)
 
-        # Validate donor_dir exists if provided
-        if donor_dir is not None and not donor_dir.exists():
-            write_error(
-                f"Donor directory not found: {donor_dir}",
-                context.output_format,
-            )
-            raise typer.Exit(1)
+        # Validate donor directories exist
+        if donor_dirs:
+            for dd in donor_dirs:
+                if not dd.exists():
+                    write_error(
+                        f"Donor directory not found: {dd}",
+                        context.output_format,
+                    )
+                    raise typer.Exit(1)
 
         # Validate individual donor profiles exist
         if donor_profiles:
@@ -570,6 +574,25 @@ def program_generate(
                     )
                     raise typer.Exit(1)
 
+        # Collect all donor profiles from directories and individual files
+        all_donors: list[Path] = []
+        if donor_dirs:
+            for dd in donor_dirs:
+                all_donors.extend(dd.glob("*.json"))
+        if donor_profiles:
+            all_donors.extend(donor_profiles)
+
+        # Remove target profile from donors if present
+        target_resolved = target_profile.resolve()
+        all_donors = [d for d in all_donors if d.resolve() != target_resolved]
+
+        if not all_donors:
+            write_error(
+                "No donor profiles found after filtering",
+                context.output_format,
+            )
+            raise typer.Exit(1)
+
         # Build config
         config = ProgramGeneratorConfig(
             min_opportunity_threshold=min_opportunity,
@@ -578,23 +601,14 @@ def program_generate(
 
         service = ProgramGeneratorService()
 
-        # Generate program
-        if donor_dir:
-            result = service.generate_from_directory(
-                target_profile=target_profile,
-                donor_dir=donor_dir,
-                config=config,
-                program_name=program_name,
-                output_dir=output_dir,
-            )
-        else:
-            result = service.generate(
-                target_profile=target_profile,
-                donor_profiles=list(donor_profiles),  # type: ignore[arg-type]
-                config=config,
-                program_name=program_name,
-                output_dir=output_dir,
-            )
+        # Generate program using all collected donors
+        result = service.generate(
+            target_profile=target_profile,
+            donor_profiles=all_donors,
+            config=config,
+            program_name=program_name,
+            output_dir=output_dir,
+        )
 
         # Save YAML if requested
         if output_yaml:

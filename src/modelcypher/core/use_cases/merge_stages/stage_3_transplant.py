@@ -60,6 +60,8 @@ class TransplantStageConfig:
     transplant_layers: tuple[int, ...] | None = None  # None = all layers
     checkpoint_dir: Path | None = None  # Enable checkpointing if set
     progress_callback: Callable[[str, int, int], None] | None = None  # (msg, current, total)
+    # NOTE: Alpha interpolation was REMOVED. The null-space projection determines
+    # preserved_fraction geometrically. Do NOT add hardcoded scalar overrides.
 
 
 @dataclass
@@ -251,7 +253,7 @@ def stage_transplant(
     stage_start_time = time.time()
 
     logger.info(
-        "TRANSPLANT: Starting stage 3 - %d layers, %d total weights",
+        "TRANSPLANT: Starting stage 3 - %d layers, %d total weights (geometry-driven preserved_fraction)",
         total_layers, total_weights
     )
 
@@ -431,6 +433,9 @@ def stage_transplant(
                 continue
 
             if result.applied:
+                # Use geometry-determined transplant result directly.
+                # The null-space projection already computed preserved_fraction
+                # based on the spectral structure of boundary activations.
                 merged[key] = result.merged_weight
                 metrics["weights_transplanted"] += 1
                 metrics["preserved_fractions"].append(result.preserved_fraction)
@@ -443,12 +448,14 @@ def stage_transplant(
                     weight_num + 1, len(layer_keys), key,
                     weight_elapsed, result.preserved_fraction, result.projection_loss
                 )
+                # Use the actual stored weight (may be alpha-scaled)
+                actual_merged_weight = merged[key]
                 if can_measure_alignment and result.delta_norm > best_delta_norm:
                     try:
                         best_alignment = _compute_alignment_metrics(
                             core_acts=core_acts,
                             weight_before=target_w,
-                            weight_after=result.merged_weight,
+                            weight_after=actual_merged_weight,
                             weight_source=source_aligned,
                             backend=b,
                         )
@@ -458,7 +465,7 @@ def stage_transplant(
                 if int(boundary_acts.shape[0]) > 0:
                     target_output = b.matmul(boundary_acts, b.transpose(target_w))
                     merged_output = b.matmul(
-                        boundary_acts, b.transpose(result.merged_weight)
+                        boundary_acts, b.transpose(actual_merged_weight)
                     )
                     diff = merged_output - target_output
                     diff_norm_arr = b.norm(b.reshape(diff, (-1,)))

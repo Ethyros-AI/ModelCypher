@@ -87,10 +87,17 @@ class DonorSpec:
     priority: int = 0
     boundary_k: int | None = None
     geodesic_k: int | None = None
+    # NOTE: Alpha was REMOVED. The null-space projection determines preserved_fraction
+    # geometrically. For best results, do sequential single-domain transplants.
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "DonorSpec":
         """Create DonorSpec from dictionary (parsed YAML/JSON)."""
+        if "alpha" in data:
+            logger.warning(
+                "Ignoring deprecated 'alpha' field in donor spec. "
+                "Preserved fraction is now geometry-determined via null-space projection."
+            )
         return cls(
             id=data["id"],
             source=data["source"],
@@ -801,7 +808,7 @@ class MultiDonorMergeService:
             )
 
             try:
-                # Configure merge
+                # Configure merge - preserved_fraction is geometry-determined by null-space projection
                 config = UnifiedMergeConfig(
                     probe_mode="precise",
                     transplant_domains=donor.domains,

@@ -92,6 +92,8 @@ class UnifiedMergeConfig:
     transplant_layers: tuple[int, ...] | None = None
     transplant_boundary_k: int | None = None
     transplant_geodesic_k_neighbors: int | None = None
+    # NOTE: Alpha was REMOVED. The null-space projection determines preserved_fraction
+    # geometrically. For best results, do sequential single-domain transplants.
 
     # Output quantization (None = preserve original dtype)
     output_quant: str | None = None
@@ -468,6 +470,48 @@ class UnifiedGeometricMerger:
             target_activations=target_activations,
             config=merge_config,
         )
+
+        # =================================================================
+        # REQUANTIZATION (if target was quantized)
+        # =================================================================
+        target_is_quantized = any(
+            k.endswith(".scales") or k.endswith(".biases")
+            for k in loaded_target_weights.keys()
+        )
+
+        if target_is_quantized:
+            from .quantization_utils import (
+                QuantizationHint,
+                quantization_config_from_payload,
+                requantize_weights,
+            )
+            import json as _json_for_quant
+
+            # Read target config to get quantization params
+            config_path = Path(target_path) / "config.json"
+            quant_hint = QuantizationHint(bits=4, group_size=64, mode="affine")  # Default
+            if config_path.exists():
+                try:
+                    with open(config_path) as f:
+                        config_data = _json_for_quant.load(f)
+                    quant_config = quantization_config_from_payload(config_data)
+                    if quant_config and quant_config.default:
+                        quant_hint = quant_config.default
+                        logger.info(
+                            "Detected target quantization: %d-bit, group_size=%d",
+                            quant_hint.bits,
+                            quant_hint.group_size,
+                        )
+                except Exception as e:
+                    logger.warning("Could not read target config for quantization: %s", e)
+
+            logger.info("Requantizing merged weights to match target format...")
+            merged_weights = requantize_weights(
+                merged_weights,
+                self._backend,
+                quant_hint,
+            )
+            logger.info("Requantization complete: %d weights", len(merged_weights))
 
         # =================================================================
         # OUTPUT
