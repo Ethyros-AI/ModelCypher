@@ -97,19 +97,12 @@ class ConstraintAlignmentResult:
         """True if all layer mappings have unanimous probe agreement."""
         return self.conflicting_mappings == 0 and self.unanimous_mappings > 0
 
-    @property
-    def alignment_quality(self) -> str:
-        """Human-readable assessment."""
-        if self.is_fully_aligned:
-            return "ALIGNED: All probes agree. CKA = 1.0 achievable."
-        elif self.conflicting_mappings > 0:
-            return (
-                f"CONFLICTS: {len(self.probes_needing_investigation)} probes disagree. "
-                "These probe measurements need investigation - the concepts ARE invariant, "
-                "the measurement is wrong."
-            )
-        else:
-            return "INCOMPLETE: Need more probes for alignment."
+    # NOTE: alignment_quality property removed per "No Vibes" rule.
+    # Use the raw measurements directly:
+    #   - is_fully_aligned: bool
+    #   - conflicting_mappings: int
+    #   - unanimous_mappings: int
+    #   - probes_needing_investigation: tuple[str, ...]
 
 
 class ConstraintAligner:
