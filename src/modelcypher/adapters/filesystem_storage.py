@@ -41,13 +41,12 @@ from modelcypher.ports.storage import (
     ModelStore,
 )
 from modelcypher.utils.locks import FileLock
-from modelcypher.utils.paths import ensure_dir, expand_path
+from modelcypher.utils.paths import ensure_dir, get_modelcypher_home
 
 
 class StoragePaths:
     def __init__(self) -> None:
-        base = Path(os.environ.get("MODELCYPHER_HOME", "~/.modelcypher"))
-        self.base = ensure_dir(base)
+        self.base = get_modelcypher_home()
         self.models = self.base / "models.json"
         self.jobs = ensure_dir(self.base / "jobs")
         self.checkpoints = self.base / "checkpoints.json"

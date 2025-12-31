@@ -22,6 +22,8 @@ from typing import Protocol, runtime_checkable
 
 @runtime_checkable
 class InferenceEngine(Protocol):
+    """Port for running inference against a model."""
+
     def infer(
         self,
         model: str,
@@ -29,15 +31,21 @@ class InferenceEngine(Protocol):
         max_tokens: int,
         temperature: float,
         top_p: float,
-    ) -> dict: ...
+    ) -> dict:
+        """Run inference and return structured results."""
+        ...
 
 
 @runtime_checkable
 class HiddenStateEngine(InferenceEngine, Protocol):
+    """Port for inference engines that expose hidden states."""
+
     def capture_hidden_states(
         self,
         model: str,
         prompt: str,
         adapter: str | None = None,
         target_layers: set[int] | None = None,
-    ) -> dict[int, list[float]]: ...
+    ) -> dict[int, list[float]]:
+        """Return hidden states keyed by layer index."""
+        ...

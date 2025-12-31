@@ -352,7 +352,8 @@ def validate_suite(
     """Run comprehensive CLI validation suite.
 
     Tests CLI commands against multiple models and generates a validation report.
-    Model paths are configured in the test definitions.
+    Model paths are configured in the test definitions and can be rooted via
+    MODELCYPHER_VALIDATE_ROOT.
 
     Categories:
         A: Model introspection (probe, vocab-compare, validate-merge)
@@ -366,6 +367,7 @@ def validate_suite(
         mc validate suite --model M1 --output-dir /path/to/results
     """
     import json
+    import os
     import shlex
     import subprocess
     import tempfile
@@ -386,12 +388,15 @@ def validate_suite(
         duration_seconds: float
         timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
 
-    # Model definitions
+    # Model definitions (root configurable via MODELCYPHER_VALIDATE_ROOT)
+    models_root = Path(
+        os.environ.get("MODELCYPHER_VALIDATE_ROOT", "~/.modelcypher/models")
+    ).expanduser()
     MODELS = {
-        "M1": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-0.5B-Instruct-bf16",
-        "M2": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-3B-Instruct-bf16",
-        "M3": "/Volumes/CodeCypher/models/mlx-community/Qwen2.5-Coder-3B-Instruct-bf16",
-        "M4": "/Volumes/CodeCypher/models/mlx-community/Mistral-7B-Instruct-v0.3-4bit",
+        "M1": str(models_root / "mlx-community" / "Qwen2.5-0.5B-Instruct-bf16"),
+        "M2": str(models_root / "mlx-community" / "Qwen2.5-3B-Instruct-bf16"),
+        "M3": str(models_root / "mlx-community" / "Qwen2.5-Coder-3B-Instruct-bf16"),
+        "M4": str(models_root / "mlx-community" / "Mistral-7B-Instruct-v0.3-4bit"),
     }
 
     # Test definitions

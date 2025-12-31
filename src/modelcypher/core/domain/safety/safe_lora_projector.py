@@ -36,6 +36,8 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
+from modelcypher.core.domain._backend import get_default_backend
+
 logger = logging.getLogger(__name__)
 
 
@@ -173,15 +175,17 @@ class SafeLoRAProjector:
             Number of weight matrices projected.
         """
         try:
-            import mlx.core as mx
-        except ImportError:
-            raise ImportError("MLX required for Safe LoRA projection")
+            from safetensors.numpy import load_file, save_file
+        except ImportError as exc:
+            raise ImportError("safetensors required for Safe LoRA projection") from exc
+
+        backend = get_default_backend()
 
         # Load projection matrix
-        projection_weights = mx.load(str(projection_path))
+        projection_weights = load_file(str(projection_path))
 
         # The projection file should contain projection matrices for each layer
-        # Format: {"layers.N.proj": mx.array} where proj is the projection matrix
+        # Format: {"layers.N.proj": array} where proj is the projection matrix
         if not projection_weights:
             raise ValueError(f"Empty projection file: {projection_path}")
 
@@ -192,7 +196,7 @@ class SafeLoRAProjector:
         if not adapter_file.exists():
             raise ValueError(f"No adapter weights found in {adapter_path}")
 
-        adapter_weights = mx.load(str(adapter_file))
+        adapter_weights = load_file(str(adapter_file))
         projected_count = 0
 
         # Apply projection to each LoRA weight matrix
@@ -208,8 +212,14 @@ class SafeLoRAProjector:
                 # For LoRA, we project the output direction (lora_b weights)
                 if "lora_b" in key or "lora_B" in key:
                     if P.shape[0] == weight.shape[0]:
-                        projected_weight = weight - P @ weight
-                        new_weights[key] = projected_weight
+                        weight_arr = backend.array(weight)
+                        proj_arr = backend.array(P)
+                        projected_weight = weight_arr - backend.matmul(proj_arr, weight_arr)
+                        backend.eval(projected_weight)
+                        projected_np = backend.to_numpy(projected_weight)
+                        if hasattr(weight, "dtype"):
+                            projected_np = projected_np.astype(weight.dtype)
+                        new_weights[key] = projected_np
                         projected_count += 1
                         continue
 
@@ -218,7 +228,7 @@ class SafeLoRAProjector:
 
         # Save projected weights
         if projected_count > 0:
-            mx.save_safetensors(str(adapter_file), new_weights)
+            save_file(new_weights, str(adapter_file))
 
         return projected_count
 

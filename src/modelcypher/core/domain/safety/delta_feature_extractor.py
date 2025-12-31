@@ -30,7 +30,9 @@ from __future__ import annotations
 import logging
 import math
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.safety.adapter_safety_models import AdapterSafetyTier
 from modelcypher.core.domain.safety.adapter_safety_probe import (
     AdapterSafetyProbe,
@@ -40,6 +42,9 @@ from modelcypher.core.domain.safety.adapter_safety_probe import (
 from modelcypher.core.domain.safety.delta_feature_set import DeltaFeatureSet
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Backend
 
 
 class DeltaFeatureExtractor:
@@ -56,6 +61,7 @@ class DeltaFeatureExtractor:
         self,
         sparsity_threshold: float = 1e-6,
         outlier_std_devs: float = 2.5,
+        backend: "Backend | None" = None,
     ):
         """Create a feature extractor.
 
@@ -67,6 +73,7 @@ class DeltaFeatureExtractor:
         """
         self._sparsity_threshold = sparsity_threshold
         self._outlier_std_devs = outlier_std_devs
+        self._backend = backend or get_default_backend()
 
     async def extract(self, adapter_path: Path) -> DeltaFeatureSet:
         """Extract delta features from adapter weights at the given path.
@@ -130,19 +137,30 @@ class DeltaFeatureExtractor:
             # Try to use safetensors library if available
             from safetensors import safe_open
 
+            backend = self._backend
             with safe_open(file_path, framework="numpy") as f:
                 for key in f.keys():
                     tensor = f.get_tensor(key)
+                    tensor_backend = backend.array(tensor)
 
                     # Compute L2 norm
-                    l2_norm = float(math.sqrt((tensor**2).sum()))
+                    sum_sq = backend.sum(tensor_backend * tensor_backend)
+                    backend.eval(sum_sq)
+                    l2_norm = float(math.sqrt(float(backend.to_numpy(sum_sq))))
                     l2_norms.append(l2_norm)
 
                     # Compute sparsity (fraction of near-zero elements)
-                    near_zero_count = (abs(tensor) < self._sparsity_threshold).sum()
-                    total_elements = tensor.size
+                    abs_tensor = backend.abs(tensor_backend)
+                    near_zero_count = backend.sum(abs_tensor < self._sparsity_threshold)
+                    backend.eval(near_zero_count)
+                    shape = backend.shape(tensor_backend)
+                    total_elements = 1
+                    for dim in shape:
+                        total_elements *= int(dim)
                     sparsity = (
-                        float(near_zero_count) / total_elements if total_elements > 0 else 0.0
+                        float(backend.to_numpy(near_zero_count)) / total_elements
+                        if total_elements > 0
+                        else 0.0
                     )
                     sparsities.append(sparsity)
 

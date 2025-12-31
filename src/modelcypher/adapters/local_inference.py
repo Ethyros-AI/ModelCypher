@@ -25,13 +25,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-from modelcypher.adapters.filesystem_storage import FileSystemStore
 from modelcypher.core.domain.entropy.hidden_state_extractor import (
     ExtractorConfig,
     HiddenStateExtractor,
 )
 from modelcypher.ports.inference import HiddenStateEngine
 from modelcypher.utils.locks import FileLock, FileLockError
+from modelcypher.utils.paths import get_modelcypher_home
 
 logger = logging.getLogger(__name__)
 STUB_MAX_TOKENS = 16  # Limit stub output length for test-only fallback.
@@ -192,9 +192,9 @@ class _LayerCapture:
 
 
 class LocalInferenceEngine(HiddenStateEngine):
-    def __init__(self, store: FileSystemStore | None = None) -> None:
-        self.store = store or FileSystemStore()
-        self.lock = FileLock(self.store.paths.base / "training.lock")
+    def __init__(self, base_path: Path | None = None) -> None:
+        self.base_path = base_path or get_modelcypher_home()
+        self.lock = FileLock(self.base_path / "training.lock")
         self._model_cache: dict[tuple[str, str | None], _ModelCacheEntry] = {}
         self._mx = None
         self._safe = None

@@ -22,6 +22,9 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+import numpy as np
+from safetensors.numpy import load_file, save_file
+
 from modelcypher.core.domain.safety.safe_lora_projector import (
     SafeLoRAConfiguration,
     SafeLoRAProjectionResult,
@@ -167,6 +170,38 @@ class TestSafeLoRAProjector:
         assert result.status == SafeLoRAProjectionStatus.SKIPPED
         assert len(result.warnings) > 0
         assert "failed" in result.warnings[0].lower()
+
+    def test_project_applied_happy_path(self, tmp_path: Path) -> None:
+        """project() applies projection when cache and adapter exist."""
+        model_id = "test/model"
+        sanitized = SafeLoRAProjector._sanitize(model_id)
+        cache_dir = tmp_path / "safety" / "projections" / sanitized
+        cache_dir.mkdir(parents=True)
+        projection_file = cache_dir / "projection.safetensors"
+
+        projection = {"layers.0.proj": np.eye(2, dtype=np.float32)}
+        save_file(projection, projection_file)
+
+        adapter_path = tmp_path / "adapter"
+        adapter_path.mkdir()
+        adapter_file = adapter_path / "adapter_model.safetensors"
+        adapter_weights = {
+            "layers.0.lora_b.weight": np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32),
+            "layers.0.lora_a.weight": np.array([[5.0, 6.0]], dtype=np.float32),
+        }
+        save_file(adapter_weights, adapter_file)
+
+        projector = SafeLoRAProjector(resources_path=tmp_path)
+        result = asyncio.run(projector.project(model_id, adapter_path))
+
+        assert result.status == SafeLoRAProjectionStatus.APPLIED
+        assert result.was_applied is True
+
+        updated = load_file(str(adapter_file))
+        np.testing.assert_allclose(updated["layers.0.lora_b.weight"], np.zeros((2, 2)))
+        np.testing.assert_allclose(
+            updated["layers.0.lora_a.weight"], adapter_weights["layers.0.lora_a.weight"]
+        )
 
 
 class TestSafeLoRAConfiguration:

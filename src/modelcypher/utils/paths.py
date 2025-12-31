@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 
@@ -28,6 +29,12 @@ def ensure_dir(path: str | Path) -> Path:
     resolved = expand_path(path)
     resolved.mkdir(parents=True, exist_ok=True)
     return resolved
+
+
+def get_modelcypher_home() -> Path:
+    """Get the ModelCypher home directory, creating it if needed."""
+    base = Path(os.environ.get("MODELCYPHER_HOME", "~/.modelcypher"))
+    return ensure_dir(base)
 
 
 def get_jobs_dir() -> Path:
