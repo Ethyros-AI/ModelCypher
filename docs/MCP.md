@@ -1101,12 +1101,14 @@ Call mc_inventory first to see what models are available before starting trainin
   "_schema": "mc.geometry.gromov_wasserstein.v1",
   "distance": 0.0312,
   "normalizedDistance": 0.0123,
+  "alignmentScore": 0.9877,
   "compatibilityScore": 0.9877,
   "converged": true,
   "iterations": 20,
   "couplingShape": [12, 12]
 }
 ```
+`alignmentScore` is the preferred name; `compatibilityScore` is retained for backward compatibility.
 
 ---
 

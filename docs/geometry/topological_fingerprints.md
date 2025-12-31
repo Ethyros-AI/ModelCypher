@@ -193,40 +193,29 @@ def greedy_bottleneck(diagram_a, diagram_b):
     return max_cost
 ```
 
-## Comparison and Compatibility
+## Comparison and Alignment
 
-### Similarity Score
+### Alignment Score
 
 Combined metric using bottleneck, Wasserstein, and Betti differences:
 
 ```python
 scale = max(fp_a.max_persistence, fp_b.max_persistence)
-score = exp(-bottleneck/scale) * exp(-wasserstein/scale) * (1 / (1 + betti_diff))
+alignment_score = exp(-bottleneck/scale) * exp(-wasserstein/scale) * (1 / (1 + betti_diff))
 ```
 
-### Compatibility Assessment
+### Reporting Guidance
 
-```python
-is_compatible = (
-    betti_difference <= 2 and
-    bottleneck < scale * 0.5
-)
-```
-
-Interpretation thresholds:
-| Score Range | Interpretation |
-|-------------|----------------|
-| > 0.8, β_diff=0 | Identical topological structure |
-| > 0.6 | Similar topological structure |
-| > 0.3 | Moderate topological similarity |
-| ≤ 0.3 | Different topological structure |
+Report raw metrics and alignment_score. Avoid pass/fail thresholds.
+If thresholds are required, derive them from baseline distributions for the
+model family and domain.
 
 ## Use in ModelCypher
 
 Topological fingerprints are used for:
 
 1. **Model comparison**: Architecture-invariant similarity
-2. **Merge safety**: Detect incompatible representation structures
+2. **Merge alignment**: Detect divergent representation structures
 3. **Training monitoring**: Track manifold collapse or fragmentation
 4. **Anomaly detection**: Identify unusual representation topology
 

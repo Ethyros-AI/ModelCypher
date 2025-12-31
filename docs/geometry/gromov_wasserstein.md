@@ -116,20 +116,21 @@ normalized = 1 - exp(-distance)
 - 0.5: Moderate structural difference
 - 1.0: Completely different
 
-### Compatibility Score
+### Alignment Score
 
 The inverse exponential provides a similarity metric:
 
 ```python
-compatibility = exp(-distance)
+alignment = exp(-distance)
 ```
 
-This is useful for merge safety assessment: higher scores indicate safer merging.
+This is useful for relative alignment reporting: higher scores indicate closer
+geometry under this metric.
 
 ## Use in ModelCypher
 
 GW distance is used for:
-1. **Pre-merge compatibility**: Assess if models can be safely merged
+1. **Pre-merge alignment**: Measure relative geometry before merging
 2. **Layer correspondence**: Find structurally similar layers across architectures
 3. **Training monitoring**: Detect geometric drift during fine-tuning
 
@@ -147,7 +148,7 @@ result = service.compute_gromov_wasserstein(
 )
 
 print(f"Distance: {result.distance:.4f}")
-print(f"Compatibility: {result.compatibility_score:.2%}")
+print(f"Alignment: {result.compatibility_score:.2%}")
 ```
 
 ## Computational Complexity

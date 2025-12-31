@@ -400,7 +400,7 @@ ModelCypher includes three predefined programs (all MIT/Apache-2.0 licensed for 
 | Program | Base | Focus | Description |
 |---------|------|-------|-------------|
 | A | Qwen3-8B, Ministral | General | Multi-specialist with math, code, medical, legal |
-| B | Ministral | Mistral-centric | Same-tokenizer donors for maximum compatibility |
+| B | Ministral | Mistral-centric | Same-tokenizer donors for maximum tokenizer alignment |
 | C | Qwen3-8B, Granite | Qwen-centric | Same-tokenizer Qwen ecosystem |
 
 Programs located at: `src/modelcypher/data/programs/`

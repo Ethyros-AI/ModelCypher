@@ -12,7 +12,7 @@ Related docs:
 A ModelProfile answers: "What does this model look like on the inside?"
 
 For any two models, the unified profile enables:
-- **Compatibility assessment**: How similar is their geometry?
+- **Alignment assessment**: How similar is their geometry?
 - **Alignment planning**: What transformations are needed to merge?
 - **Capability mapping**: Where does each model store what knowledge?
 - **Transfer prediction**: What will survive a merge?
@@ -112,11 +112,11 @@ class ProfileComparison:
     hidden_dim_ratio: float
     layer_count_ratio: float
 
-    # Geometric compatibility (0-1 scale)
-    curvature_compatibility: float
-    ricci_compatibility: float
-    dimension_compatibility: float
-    overall_compatibility: float
+    # Geometric alignment (0-1 scale)
+    curvature_alignment: float          # alias: curvature_compatibility
+    ricci_alignment: float              # alias: ricci_compatibility
+    dimension_alignment: float          # alias: dimension_compatibility
+    overall_alignment: float            # alias: overall_compatibility
 
     # Layer correspondence
     layer_mapping: dict[int, int]  # source -> target
@@ -172,19 +172,16 @@ mc profile import density.json --type density --base unified.json -o updated.jso
 mc profile merge geometry.json topology.json semantic.json -o complete.json
 ```
 
-## Understanding Compatibility Scores
+## Alignment Scores
 
-All compatibility scores are on a 0-1 scale using exponential decay from differences:
+Alignment scores are in [0, 1] and computed via exponential decay of differences.
+They are comparative metrics, not pass/fail thresholds. If you need thresholds,
+derive them from baseline distributions for the model family.
 
-- **1.0**: Identical geometry
-- **0.8-1.0**: Very compatible, minimal transformation needed
-- **0.5-0.8**: Moderate compatibility, some transformation required
-- **<0.5**: Low compatibility, significant transformation needed
+The `recommended_strategy` field records which alignment heuristic was selected:
 
-The `recommended_strategy` field suggests the best approach:
-
-| Strategy | When Used |
-|----------|-----------|
+| Strategy | Heuristic trigger |
+|----------|-------------------|
 | `procrustes` | Similar dimensions, curvature signs match |
 | `projection_first` | Dimension ratios > 1.5x difference |
 | `curvature_flow` | Curvature sign mismatches or high effort |
@@ -260,7 +257,7 @@ mc profile compare smolm.json qwen2.json --save comparison.json
 
 # 3. Check the results
 mc --output json profile compare smolm.json qwen2.json | jq '{
-  compatibility: .overall_compatibility,
+  alignment: .overall_alignment,
   strategy: .recommended_strategy,
   effort: .mean_alignment_effort
 }'

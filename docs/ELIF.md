@@ -233,7 +233,7 @@ Most merge failures come from confusing coordinates with structure:
   wrong.
 
 This is why ModelCypher treats “merge” as a multi‑stage alignment problem and why validation must check the
-post‑merge geometry, not just pre‑merge compatibility.
+post‑merge geometry, not just pre‑merge alignment.
 
 ---
 
@@ -334,7 +334,7 @@ ModelCypher’s preferred loop is:
 1) **Measure** the target and source geometries on the same probe protocol.
 2) **Diff**: find “graft opportunities” where target is sparse and source is dense.
 3) **Graft** only where the target has room (mask or projection constraints).
-4) **Validate** the merged model’s geometry (post‑merge), not just compatibility (pre‑merge).
+4) **Validate** the merged model’s geometry (post‑merge), not just alignment (pre‑merge).
 
 Concrete CLI entry points (see `docs/CLI-REFERENCE.md`):
 
