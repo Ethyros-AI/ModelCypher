@@ -17,11 +17,12 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from modelcypher.core.domain.model_search import ModelSearchFilters, ModelSearchPage
 
 
+@runtime_checkable
 class ModelSearchService(Protocol):
     def search_models(
         self, filters: ModelSearchFilters, cursor: str | None = None

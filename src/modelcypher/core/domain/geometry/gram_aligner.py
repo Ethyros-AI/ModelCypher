@@ -57,6 +57,17 @@ samples relate to each other.
 
 To achieve this with feature-space transformations, we search iteratively
 until the feature transformation produces matching Gram matrices.
+
+References:
+    - Kornblith, S., Norouzi, M., Lee, H., & Hinton, G. (2019).
+      "Similarity of Neural Network Representations Revisited."
+      arXiv:1905.00414. https://arxiv.org/abs/1905.00414
+    - Williams, C. K. I. (2001). "On a Connection between Kernel PCA and
+      Metric Multidimensional Scaling." Machine Learning 46(1):11-19.
+      https://doi.org/10.1023/A:1012485807823
+    - Schölkopf, B., Smola, A., & Müller, K. R. (1997). "Kernel Principal
+      Component Analysis." Artificial Neural Networks (ICANN), pp. 583-588.
+      https://doi.org/10.1007/BFb0020217
 """
 
 from __future__ import annotations

@@ -15,6 +15,37 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Generalized Procrustes Analysis (GPA) for multi-model alignment.
+
+Aligns multiple neural network representations to a common consensus space
+using orthogonal Procrustes transformations. Supports both Fréchet mean
+(curvature-aware) and arithmetic mean for consensus computation.
+
+Mathematical Background:
+    Given k models with representations X_1, ..., X_k, GPA finds:
+    - Consensus C: The common reference representation
+    - Rotations R_1, ..., R_k: Orthogonal matrices aligning each X_i to C
+    - Scales s_1, ..., s_k: Optional scaling factors
+
+    Minimizes: Σᵢ ||sᵢ Xᵢ Rᵢ - C||²_F
+
+    Uses iterative refinement:
+    1. Initialize consensus as first model
+    2. Align each model to consensus via SVD
+    3. Update consensus as (Fréchet) mean of aligned models
+    4. Repeat until convergence
+
+References:
+    - Gower, J. C. (1975). "Generalized Procrustes Analysis."
+      Psychometrika 40(1):33-51. https://doi.org/10.1007/BF02291478
+    - Schönemann, P. H. (1966). "A Generalized Solution of the Orthogonal
+      Procrustes Problem." Psychometrika 31(1):1-10.
+      https://doi.org/10.1007/BF02289451
+    - Karcher, H. (1977). "Riemannian Center of Mass and Mollifier Smoothing."
+      Communications on Pure and Applied Mathematics 30(5):509-541.
+      https://doi.org/10.1002/cpa.3160300502
+"""
+
 from __future__ import annotations
 
 import logging

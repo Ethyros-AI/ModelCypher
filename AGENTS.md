@@ -29,6 +29,8 @@ A Python framework for measuring and experimenting with the geometry of represen
 - **Secondary backend**: JAX (Linux/TPU/GPU)
 - **Tests**: Use `get_default_backend()` - runs on whatever GPU is available
 
+> **Skeptical of the claims?** This document contains strong assertions ("models are ALWAYS compatible", "geodesic is CORRECT"). These are implemented design decisions, not aspirations. See [docs/SKEPTICS-GUIDE.md](docs/SKEPTICS-GUIDE.md) for code references proving each claim.
+
 ---
 
 ## Commands

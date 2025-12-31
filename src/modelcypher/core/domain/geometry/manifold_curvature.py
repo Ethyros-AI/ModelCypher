@@ -31,6 +31,16 @@ For neural network latent spaces, curvature indicates:
 - High positive: concepts are tightly clustered, interference likely
 - Negative: concepts have room to spread, safer for merging
 - Variable: complex topology, needs careful analysis
+
+References:
+    - do Carmo, M. P. (1992). "Riemannian Geometry." Birkhäuser.
+      ISBN: 978-0-8176-3490-2
+    - Fefferman, C., Mitter, S., & Narayanan, H. (2016).
+      "Testing the Manifold Hypothesis." J. American Mathematical Society.
+      https://doi.org/10.1090/jams/852
+    - Tenenbaum, J. B., de Silva, V., & Langford, J. C. (2000).
+      "A Global Geometric Framework for Nonlinear Dimensionality Reduction."
+      Science 290(5500):2319-2323. https://doi.org/10.1126/science.290.5500.2319
 """
 
 from __future__ import annotations

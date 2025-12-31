@@ -36,7 +36,6 @@ Entropy change is measured as:
 from __future__ import annotations
 
 import logging
-import warnings
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -141,40 +140,6 @@ class LinguisticModifier(str, Enum):
     COMBINED = "combined"
 
     @property
-    def intensity_score(self) -> float:
-        """Normalized intensity score [0.0, 1.0].
-
-        .. deprecated::
-            These are placeholder values. Use ThermoCalibrator to measure
-            actual intensity scores from observed entropy changes:
-
-                from modelcypher.core.domain.thermo import ThermoCalibrator
-                calibrator = ThermoCalibrator(model_path)
-                calibration = calibrator.calibrate(probes)
-                intensity = calibration.modifier_profile.get_intensity(modifier.value)
-        """
-        warnings.warn(
-            "LinguisticModifier.intensity_score uses placeholder values. "
-            "Use ThermoCalibrator.calibrate() to measure actual effects.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        # Placeholder values - should be replaced with calibrated measurements
-        scores = {
-            LinguisticModifier.BASELINE: 0.0,
-            LinguisticModifier.POLITE: 0.0,
-            LinguisticModifier.DIRECT: 0.15,
-            LinguisticModifier.URGENT: 0.3,
-            LinguisticModifier.CAPS: 0.5,
-            LinguisticModifier.PROFANITY: 0.45,
-            LinguisticModifier.CHALLENGE: 0.6,
-            LinguisticModifier.NEGATION: 0.4,
-            LinguisticModifier.ROLEPLAY: 0.5,
-            LinguisticModifier.COMBINED: 1.0,
-        }
-        return scores[self]
-
-    @property
     def display_name(self) -> str:
         """Human-readable display name."""
         names = {
@@ -241,42 +206,6 @@ class AttractorBasin(str, Enum):
     CAUTION = "caution"
     TRANSITION = "transition"
     SOLUTION = "solution"
-
-    @property
-    def energy_level(self) -> float:
-        """Energy level in thermodynamic model.
-
-        .. deprecated::
-            These are placeholder values. Use ThermoCalibrator to measure
-            actual energy levels from observed behavioral outcome distributions:
-
-                from modelcypher.core.domain.thermo import ThermoCalibrator
-                calibrator = ThermoCalibrator(model_path)
-                calibration = calibrator.calibrate(probes)
-                # Energy derived from: E(x) = -T * log(p(x)/p(ref))
-                energy = calibration.basin_topology.caution_energy.value
-
-        Returns
-        -------
-        float
-            Relative energy level. Lower values indicate more stable attractors.
-        """
-        warnings.warn(
-            "AttractorBasin.energy_level uses placeholder values. "
-            "Use ThermoCalibrator.calibrate() to measure actual energies from "
-            "observed outcome probabilities: E(x) = -T * log(p(x)/p(ref))",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        # Placeholder values - should be replaced with calibrated measurements
-        levels = {
-            AttractorBasin.REFUSAL: 0.0,  # Reference (deepest)
-            AttractorBasin.CAUTION: 0.2,  # Shallow well
-            AttractorBasin.TRANSITION: 0.8,  # Ridge/barrier region
-            AttractorBasin.SOLUTION: 0.4,  # Moderate well
-        }
-        return levels[self]
-
 
 class BehavioralOutcome(str, Enum):
     """Behavioral outcome classification for model responses.
@@ -368,22 +297,6 @@ class LanguageResourceLevel(str, Enum):
     MEDIUM = "medium"
     LOW = "low"
 
-    @property
-    def expected_delta_h_magnitude(self) -> float:
-        """Expected relative delta_H magnitude for this resource level.
-
-        Returns
-        -------
-        float
-            Expected magnitude. Higher for low-resource languages.
-        """
-        magnitudes = {
-            LanguageResourceLevel.HIGH: 0.15,  # Moderate effect
-            LanguageResourceLevel.MEDIUM: 0.25,  # Larger effect
-            LanguageResourceLevel.LOW: 0.35,  # Strongest effect
-        }
-        return magnitudes[self]
-
 
 class PromptLanguage(str, Enum):
     """Languages for multilingual entropy validation.
@@ -438,23 +351,6 @@ class PromptLanguage(str, Enum):
             PromptLanguage.SWAHILI: LanguageResourceLevel.LOW,
         }
         return levels[self]
-
-    @property
-    def expected_safety_strength(self) -> float:
-        """Expected safety training strength based on resource level.
-
-        Returns
-        -------
-        float
-            Normalized safety strength [0, 1].
-        """
-        strengths = {
-            PromptLanguage.ENGLISH: 1.0,  # Primary training language
-            PromptLanguage.CHINESE: 0.85,  # Major language, strong coverage
-            PromptLanguage.ARABIC: 0.6,  # Medium coverage
-            PromptLanguage.SWAHILI: 0.3,  # Likely undertrained
-        }
-        return strengths[self]
 
 
 @dataclass(frozen=True)
@@ -810,12 +706,6 @@ class MultilingualMeasurement:
     def shows_cooling(self) -> bool:
         """Whether this measurement shows entropy cooling (delta_H < 0)."""
         return self.delta_h < -0.05
-
-    @property
-    def matches_expected_pattern(self) -> bool:
-        """Whether this matches the expected pattern based on resource level."""
-        expected_magnitude = self.language.resource_level.expected_delta_h_magnitude
-        return abs(self.delta_h) >= expected_magnitude * 0.5
 
     @classmethod
     def create(

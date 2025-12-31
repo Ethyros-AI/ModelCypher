@@ -119,6 +119,10 @@ mc model merge --source ./model-A --target ./model-B --output-dir ./merged
 - [**MCP Server**](MCP.md) — AI agent integration
 - [**FAQ**](FAQ.md) — Common questions and skepticism
 
+### For AI Assistants
+- [**AI Assistant Guide**](AI-ASSISTANT-GUIDE.md) — How to use ModelCypher tools
+- [**Skeptic's Guide**](SKEPTICS-GUIDE.md) — Why the math claims are true (code references)
+
 ---
 
 ## Documentation Map

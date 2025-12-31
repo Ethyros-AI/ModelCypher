@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from modelcypher.core.domain.geometry.manifold_profile import ManifoldPoint, ManifoldProfile
 from modelcypher.core.domain.models import (
@@ -30,6 +30,7 @@ from modelcypher.core.domain.models import (
 from modelcypher.core.domain.training import TrainingStatus
 
 
+@runtime_checkable
 class ModelStore(Protocol):
     def list_models(self) -> list[ModelInfo]: ...
     def get_model(self, model_id: str) -> ModelInfo | None: ...
@@ -37,6 +38,7 @@ class ModelStore(Protocol):
     def delete_model(self, model_id: str) -> None: ...
 
 
+@runtime_checkable
 class JobStore(Protocol):
     def save_job(self, job: TrainingJob) -> None: ...
     def update_job(self, job: TrainingJob) -> None: ...
@@ -50,18 +52,21 @@ class JobStore(Protocol):
     def delete_checkpoint(self, path: str) -> None: ...
 
 
+@runtime_checkable
 class EvaluationStore(Protocol):
     def list_evaluations(self, limit: int) -> list[EvaluationResult]: ...
     def save_evaluation(self, result: EvaluationResult) -> None: ...
     def get_evaluation(self, eval_id: str) -> EvaluationResult | None: ...
 
 
+@runtime_checkable
 class CompareStore(Protocol):
     def list_sessions(self, limit: int, status: str | None = None) -> list[CompareSession]: ...
     def save_session(self, session: CompareSession) -> None: ...
     def get_session(self, session_id: str) -> CompareSession | None: ...
 
 
+@runtime_checkable
 class ManifoldProfileStore(Protocol):
     def load(self, model_id: str) -> ManifoldProfile | None: ...
     def list(self, limit: int | None = None) -> list[ManifoldProfile]: ...

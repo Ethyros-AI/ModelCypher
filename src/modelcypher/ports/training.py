@@ -17,12 +17,13 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from modelcypher.core.domain.models import TrainingJob
 from modelcypher.core.domain.training import PreflightResult, TrainingConfig
 
 
+@runtime_checkable
 class TrainingEngine(Protocol):
     def preflight(self, config: TrainingConfig) -> PreflightResult: ...
     def start(

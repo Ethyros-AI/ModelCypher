@@ -17,9 +17,10 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 
+@runtime_checkable
 class InferenceEngine(Protocol):
     def infer(
         self,
@@ -31,6 +32,7 @@ class InferenceEngine(Protocol):
     ) -> dict: ...
 
 
+@runtime_checkable
 class HiddenStateEngine(InferenceEngine, Protocol):
     def capture_hidden_states(
         self,

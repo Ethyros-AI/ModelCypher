@@ -58,10 +58,16 @@ ALGORITHM
 4. Sign correction: handle ±1 symmetry per neuron
 5. Return: P (permutation), S (signs) such that W_aligned = S @ P @ W @ P^T @ S^T
 
-REFERENCES
-----------
-- Ainsworth et al. (2022) "Git Re-Basin" arXiv:2209.04836
-- Yadav et al. (2023) "TIES-Merging" arXiv:2306.01708
+References:
+    - Ainsworth, S. K., Hayase, J., & Srinivasa, S. (2022).
+      "Git Re-Basin: Merging Models modulo Permutation Symmetries."
+      arXiv:2209.04836. https://arxiv.org/abs/2209.04836
+    - Kuhn, H. W. (1955). "The Hungarian Method for the Assignment Problem."
+      Naval Research Logistics Quarterly 2(1-2):83-97.
+      https://doi.org/10.1002/nav.3800020109
+    - Yadav, P., Tam, D., Choshen, L., Raffel, C., & Bansal, M. (2023).
+      "TIES-Merging: Resolving Interference When Merging Models."
+      arXiv:2306.01708. https://arxiv.org/abs/2306.01708
 """
 
 from __future__ import annotations
