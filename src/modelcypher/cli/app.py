@@ -48,6 +48,7 @@ from modelcypher.cli.commands import help_cmd as help_commands
 from modelcypher.cli.commands import infer as infer_commands
 from modelcypher.cli.commands import job as job_commands
 from modelcypher.cli.commands import model as model_commands
+from modelcypher.cli.commands import profile as profile_commands
 from modelcypher.cli.commands import program as program_commands
 from modelcypher.cli.commands import research as research_commands
 from modelcypher.cli.commands import safety as safety_commands
@@ -221,6 +222,7 @@ app.add_typer(storage_commands.app, name="storage")
 app.add_typer(ensemble_commands.app, name="ensemble")
 app.add_typer(infer_commands.app, name="infer")
 app.add_typer(help_commands.app, name="help")
+app.add_typer(profile_commands.app, name="profile")
 
 
 def _context(ctx: typer.Context) -> CLIContext:

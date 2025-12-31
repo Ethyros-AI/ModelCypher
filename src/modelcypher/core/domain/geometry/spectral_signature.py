@@ -120,6 +120,8 @@ class SpectralSignature:
                 connected=True,
             )
 
+        # Local edges are Euclidean distances; on the k-NN graph these are exact
+        # geodesic segments, and the global geodesic is the shortest path on this graph.
         adjacency, euclidean_dist, inf_value, k_neighbors = self._build_knn_adjacency(
             points_arr, config.k_neighbors
         )

@@ -217,22 +217,22 @@ def pytest_collection_modifyitems(config, items):
                 item.add_marker(skip_accel)
 
 
-def pytest_ignore_collect(path, config):
+def pytest_ignore_collect(collection_path, config):
     """Skip MLX-only test modules when MLX is disabled to avoid import-time crashes."""
     if not HAS_ANY_BACKEND:
         return True
     if os.environ.get("MC_DISABLE_MLX", "").lower() not in ("1", "true", "yes"):
         return False
-    path_str = str(path)
+    path_str = str(collection_path)
     if "/tests/" not in path_str and "\\tests\\" not in path_str and not path_str.startswith("tests"):
         return False
     if not path_str.endswith(".py"):
         return False
     try:
-        if hasattr(path, "read_text"):
-            content = path.read_text(encoding="utf-8")
+        if hasattr(collection_path, "read_text"):
+            content = collection_path.read_text(encoding="utf-8")
         else:
-            content = path.read()
+            content = collection_path.read()
     except Exception:
         return False
     if isinstance(content, bytes):

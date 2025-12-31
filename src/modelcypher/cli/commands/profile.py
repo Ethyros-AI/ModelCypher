@@ -1,0 +1,379 @@
+# Copyright (C) 2025 EthyrosAI LLC / Jason Kempf
+#
+# This file is part of ModelCypher.
+#
+# ModelCypher is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# ModelCypher is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
+
+"""CLI commands for unified ModelProfile operations.
+
+Commands:
+    mc profile inspect   - View a profile's contents
+    mc profile compare   - Compare two profiles for alignment story
+    mc profile import    - Import from existing profile formats (curvature, etc.)
+    mc profile merge     - Merge multiple partial profiles
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+import typer
+
+from modelcypher.cli.output import OutputFormat, output_result
+
+if TYPE_CHECKING:
+    pass
+
+logger = logging.getLogger(__name__)
+
+app = typer.Typer(
+    name="profile",
+    help="Unified model profile operations - the transparent black box.",
+    no_args_is_help=True,
+)
+
+
+@app.command("inspect")
+def inspect_profile(
+    ctx: typer.Context,
+    profile_path: str = typer.Argument(..., help="Path to model profile JSON"),
+    section: str | None = typer.Option(
+        None,
+        "--section",
+        "-s",
+        help="Show only this section (identity, geometry, topology, semantic, density)",
+    ),
+    layer: int | None = typer.Option(
+        None, "--layer", "-l", help="Show only this layer index"
+    ),
+) -> None:
+    """Inspect a model profile.
+
+    Examples:
+        mc profile inspect profile.json
+        mc profile inspect profile.json --section geometry
+        mc profile inspect profile.json --layer 5
+    """
+    from modelcypher.core.domain.geometry.model_profile import (
+        ModelProfile,
+        ProfileSection,
+    )
+
+    output_format = ctx.obj.get("output_format", OutputFormat.TEXT)
+
+    try:
+        profile = ModelProfile.load(profile_path)
+    except Exception as e:
+        typer.echo(f"Error loading profile: {e}", err=True)
+        raise typer.Exit(1) from e
+
+    # Build output based on requested section
+    if section:
+        result = _extract_section(profile, section, layer)
+    elif layer is not None:
+        result = _extract_layer(profile, layer)
+    else:
+        result = _build_summary(profile)
+
+    output_result(result, output_format)
+
+
+@app.command("compare")
+def compare_profiles_cmd(
+    ctx: typer.Context,
+    source_path: str = typer.Argument(..., help="Path to source model profile JSON"),
+    target_path: str = typer.Argument(..., help="Path to target model profile JSON"),
+    output_path: str | None = typer.Option(
+        None, "--save", "-o", help="Save comparison result to JSON file"
+    ),
+) -> None:
+    """Compare two model profiles and show alignment story.
+
+    The comparison shows:
+    - Structural compatibility (architecture, dimensions)
+    - Geometric compatibility (curvature, topology)
+    - Layer correspondence and critical layers
+    - Recommended alignment strategy
+
+    Examples:
+        mc profile compare source.json target.json
+        mc profile compare source.json target.json --save comparison.json
+    """
+    from modelcypher.core.domain.geometry.model_profile import ModelProfile
+    from modelcypher.core.domain.geometry.profile_comparison import compare_profiles
+
+    output_format = ctx.obj.get("output_format", OutputFormat.TEXT)
+
+    try:
+        source = ModelProfile.load(source_path)
+        target = ModelProfile.load(target_path)
+    except Exception as e:
+        typer.echo(f"Error loading profiles: {e}", err=True)
+        raise typer.Exit(1) from e
+
+    comparison = compare_profiles(source, target)
+    result = comparison.to_dict()
+
+    if output_path:
+        with open(output_path, "w") as f:
+            json.dump(result, f, indent=2)
+        typer.echo(f"Saved comparison to {output_path}")
+
+    output_result(result, output_format)
+
+
+@app.command("import")
+def import_profile(
+    ctx: typer.Context,
+    source_path: str = typer.Argument(..., help="Path to existing profile JSON"),
+    profile_type: str = typer.Option(
+        "curvature",
+        "--type",
+        "-t",
+        help="Profile type: curvature, density, topology",
+    ),
+    output_path: str = typer.Option(
+        ..., "--output", "-o", help="Output path for unified profile"
+    ),
+    base_path: str | None = typer.Option(
+        None,
+        "--base",
+        "-b",
+        help="Base unified profile to merge into (optional)",
+    ),
+) -> None:
+    """Import from existing profile format to unified ModelProfile.
+
+    Supports importing:
+    - curvature: CurvatureProfile JSON files
+    - (more formats to be added)
+
+    Examples:
+        mc profile import curvature.json --type curvature --output unified.json
+        mc profile import density.json --type density --base unified.json --output updated.json
+    """
+    from modelcypher.core.domain.geometry.model_profile import ModelProfile
+
+    output_format = ctx.obj.get("output_format", OutputFormat.TEXT)
+
+    # Load base profile if provided
+    base_profile = None
+    if base_path:
+        try:
+            base_profile = ModelProfile.load(base_path)
+        except Exception as e:
+            typer.echo(f"Error loading base profile: {e}", err=True)
+            raise typer.Exit(1) from e
+
+    # Import based on type
+    try:
+        if profile_type == "curvature":
+            from modelcypher.core.domain.geometry.curvature_profile import (
+                CurvatureProfile,
+            )
+
+            curvature = CurvatureProfile.load(source_path)
+            imported = ModelProfile.from_curvature_profile(curvature)
+        else:
+            typer.echo(f"Unsupported profile type: {profile_type}", err=True)
+            typer.echo("Supported types: curvature", err=True)
+            raise typer.Exit(1)
+    except Exception as e:
+        typer.echo(f"Error importing profile: {e}", err=True)
+        raise typer.Exit(1) from e
+
+    # Merge if base provided
+    if base_profile:
+        result_profile = base_profile.merge_with(imported)
+    else:
+        result_profile = imported
+
+    # Save
+    result_profile.save(output_path)
+
+    result = {
+        "status": "success",
+        "imported_from": source_path,
+        "profile_type": profile_type,
+        "output_path": output_path,
+        "computed_sections": result_profile.computed_sections,
+        "layer_count": len(result_profile.layer_profiles),
+    }
+
+    output_result(result, output_format)
+
+
+@app.command("merge")
+def merge_profiles(
+    ctx: typer.Context,
+    profiles: list[str] = typer.Argument(..., help="Paths to profile JSON files"),
+    output_path: str = typer.Option(
+        ..., "--output", "-o", help="Output path for merged profile"
+    ),
+) -> None:
+    """Merge multiple partial profiles into one.
+
+    Profiles are merged in order, with later profiles filling in
+    missing sections from earlier ones.
+
+    Examples:
+        mc profile merge geometry.json topology.json semantic.json --output complete.json
+    """
+    from modelcypher.core.domain.geometry.model_profile import ModelProfile
+
+    output_format = ctx.obj.get("output_format", OutputFormat.TEXT)
+
+    if not profiles:
+        typer.echo("No profiles provided", err=True)
+        raise typer.Exit(1)
+
+    # Load and merge profiles
+    merged = None
+    for path in profiles:
+        try:
+            profile = ModelProfile.load(path)
+            if merged is None:
+                merged = profile
+            else:
+                merged = merged.merge_with(profile)
+        except Exception as e:
+            typer.echo(f"Error loading {path}: {e}", err=True)
+            raise typer.Exit(1) from e
+
+    if merged is None:
+        typer.echo("No valid profiles to merge", err=True)
+        raise typer.Exit(1)
+
+    # Save
+    merged.save(output_path)
+
+    result = {
+        "status": "success",
+        "merged_profiles": profiles,
+        "output_path": output_path,
+        "computed_sections": merged.computed_sections,
+        "layer_count": len(merged.layer_profiles),
+    }
+
+    output_result(result, output_format)
+
+
+def _build_summary(profile: "ModelProfile") -> dict[str, Any]:
+    """Build summary view of profile."""
+    from modelcypher.core.domain.geometry.model_profile import ModelProfile
+
+    summary: dict[str, Any] = {
+        "model_path": profile.model_path,
+        "model_family": profile.model_family,
+        "architecture": profile.architecture,
+        "identity": {
+            "parameter_count": profile.parameter_count,
+            "hidden_dim": profile.hidden_dim,
+            "num_layers": profile.num_layers,
+            "num_attention_heads": profile.num_attention_heads,
+            "vocab_size": profile.vocab_size,
+        },
+        "computed_sections": profile.computed_sections,
+        "layer_profile_count": len(profile.layer_profiles),
+    }
+
+    # Add curvature summary if available
+    if profile.global_sectional_mean != 0.0 or profile.global_ollivier_ricci_mean != 0.0:
+        summary["curvature"] = {
+            "global_sectional_mean": profile.global_sectional_mean,
+            "global_sectional_std": profile.global_sectional_std,
+            "global_ollivier_ricci_mean": profile.global_ollivier_ricci_mean,
+            "global_ollivier_ricci_std": profile.global_ollivier_ricci_std,
+            "global_intrinsic_dimension_mean": profile.global_intrinsic_dimension_mean,
+        }
+
+    # Add optional sections if present
+    if profile.topology_summary:
+        summary["topology"] = profile.topology_summary.to_dict()
+
+    if profile.semantic_signature:
+        summary["semantic"] = {
+            "vector_dim": len(profile.semantic_signature.vector),
+            "dominant_primes": profile.semantic_signature.dominant_primes,
+        }
+
+    if profile.density_summary:
+        summary["density"] = profile.density_summary.to_dict()
+
+    return summary
+
+
+def _extract_section(
+    profile: "ModelProfile", section: str, layer: int | None
+) -> dict[str, Any]:
+    """Extract a specific section from profile."""
+    if section == "identity":
+        return {
+            "model_path": profile.model_path,
+            "model_family": profile.model_family,
+            "architecture": profile.architecture,
+            "parameter_count": profile.parameter_count,
+            "hidden_dim": profile.hidden_dim,
+            "num_layers": profile.num_layers,
+            "num_attention_heads": profile.num_attention_heads,
+            "vocab_size": profile.vocab_size,
+        }
+
+    elif section == "geometry":
+        if layer is not None:
+            return _extract_layer(profile, layer)
+        return {
+            "global_sectional_mean": profile.global_sectional_mean,
+            "global_sectional_std": profile.global_sectional_std,
+            "global_ollivier_ricci_mean": profile.global_ollivier_ricci_mean,
+            "global_ollivier_ricci_std": profile.global_ollivier_ricci_std,
+            "global_intrinsic_dimension_mean": profile.global_intrinsic_dimension_mean,
+            "layer_count": len(profile.layer_profiles),
+        }
+
+    elif section == "topology":
+        if profile.topology_summary:
+            return profile.topology_summary.to_dict()
+        return {"status": "not_computed"}
+
+    elif section == "semantic":
+        if profile.semantic_signature:
+            return profile.semantic_signature.to_dict()
+        return {"status": "not_computed"}
+
+    elif section == "density":
+        if profile.density_summary:
+            return profile.density_summary.to_dict()
+        return {"status": "not_computed"}
+
+    elif section == "layers":
+        return {
+            "layer_count": len(profile.layer_profiles),
+            "layers": [lp.to_dict() for lp in profile.layer_profiles],
+        }
+
+    else:
+        return {"error": f"Unknown section: {section}"}
+
+
+def _extract_layer(profile: "ModelProfile", layer_idx: int) -> dict[str, Any]:
+    """Extract a specific layer from profile."""
+    for lp in profile.layer_profiles:
+        if lp.layer_idx == layer_idx:
+            return lp.to_dict()
+
+    return {"error": f"Layer {layer_idx} not found"}
