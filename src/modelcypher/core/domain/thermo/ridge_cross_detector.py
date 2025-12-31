@@ -102,32 +102,28 @@ class RidgeCrossEvent:
     to_outcome: BehavioralOutcome
 
     @property
-    def delta_e(self) -> float:
-        """Energy delta in thermodynamic model.
-
-        Returns
-        -------
-        float
-            Energy delta computed as: to_basin.energy_level - from_basin.energy_level
-        """
-        return self.to_basin.energy_level - self.from_basin.energy_level
-
-    @property
-    def is_uphill(self) -> bool:
-        """Whether this was an 'uphill' transition (to higher energy basin)."""
-        return self.delta_e > 0
-
-    @property
     def is_solution_crossing(self) -> bool:
-        """Whether this crossed from caution basin to solution basin."""
+        """Whether this crossed from caution/refusal basin to solution basin."""
         from_caution = self.from_basin in (AttractorBasin.REFUSAL, AttractorBasin.CAUTION)
         to_solution = self.to_basin in (AttractorBasin.TRANSITION, AttractorBasin.SOLUTION)
         return from_caution and to_solution
 
     @property
+    def is_refusal_crossing(self) -> bool:
+        """Whether this crossed from solution/transition basin to refusal basin."""
+        from_solution = self.from_basin in (AttractorBasin.TRANSITION, AttractorBasin.SOLUTION)
+        to_refusal = self.to_basin in (AttractorBasin.REFUSAL, AttractorBasin.CAUTION)
+        return from_solution and to_refusal
+
+    @property
     def description(self) -> str:
         """Human-readable description."""
-        direction = "↗" if self.is_uphill else "↘"
+        if self.is_solution_crossing:
+            direction = "→ solution"
+        elif self.is_refusal_crossing:
+            direction = "→ refusal"
+        else:
+            direction = "→"
         return (
             f"{self.trigger_modifier.display_name}: "
             f"{self.from_basin.value} {direction} {self.to_basin.value} "

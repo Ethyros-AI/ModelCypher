@@ -44,26 +44,6 @@ from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
 class TestLinguisticModifier:
     """Tests for LinguisticModifier enum."""
 
-    def test_intensity_scores_range(self):
-        """All intensity scores should be in [0, 1]."""
-        for modifier in LinguisticModifier:
-            score = modifier.intensity_score
-            assert 0.0 <= score <= 1.0, f"{modifier} has invalid score {score}"
-
-    def test_baseline_has_zero_intensity(self):
-        """Baseline should have zero intensity."""
-        assert LinguisticModifier.BASELINE.intensity_score == 0.0
-
-    def test_combined_has_max_intensity(self):
-        """Combined should have maximum intensity."""
-        assert LinguisticModifier.COMBINED.intensity_score == 1.0
-
-    def test_intensity_ordering(self):
-        """Intensity should roughly increase with aggression."""
-        assert LinguisticModifier.POLITE.intensity_score < LinguisticModifier.URGENT.intensity_score
-        assert LinguisticModifier.URGENT.intensity_score < LinguisticModifier.CAPS.intensity_score
-        assert LinguisticModifier.CAPS.intensity_score < LinguisticModifier.COMBINED.intensity_score
-
     def test_all_have_display_names(self):
         """All modifiers should have display names."""
         for modifier in LinguisticModifier:
@@ -85,29 +65,6 @@ class TestLinguisticModifier:
         for modifier in LinguisticModifier:
             assert modifier.mechanism is not None
             assert isinstance(modifier.mechanism, ModifierMechanism)
-
-
-class TestAttractorBasin:
-    """Tests for AttractorBasin enum."""
-
-    def test_refusal_is_deepest_well(self):
-        """Refusal should be the lowest energy (most stable)."""
-        assert AttractorBasin.REFUSAL.energy_level == 0.0
-        for basin in AttractorBasin:
-            assert basin.energy_level >= AttractorBasin.REFUSAL.energy_level
-
-    def test_transition_is_highest_energy(self):
-        """Transition region should be highest energy."""
-        assert AttractorBasin.TRANSITION.energy_level == 0.8
-        for basin in AttractorBasin:
-            assert basin.energy_level <= AttractorBasin.TRANSITION.energy_level
-
-    def test_energy_levels_form_valid_landscape(self):
-        """Energy levels should form a valid loss landscape."""
-        # Refusal < Caution < Solution < Transition
-        assert AttractorBasin.REFUSAL.energy_level < AttractorBasin.CAUTION.energy_level
-        assert AttractorBasin.CAUTION.energy_level < AttractorBasin.SOLUTION.energy_level
-        assert AttractorBasin.SOLUTION.energy_level < AttractorBasin.TRANSITION.energy_level
 
 
 class TestBehavioralOutcome:
@@ -171,36 +128,6 @@ class TestPromptLanguage:
     def test_swahili_is_low_resource(self):
         """Swahili should be low resource."""
         assert PromptLanguage.SWAHILI.resource_level == LanguageResourceLevel.LOW
-
-    def test_safety_strength_ordering(self):
-        """Safety strength should correlate with resource level."""
-        assert (
-            PromptLanguage.ENGLISH.expected_safety_strength
-            > PromptLanguage.CHINESE.expected_safety_strength
-        )
-        assert (
-            PromptLanguage.CHINESE.expected_safety_strength
-            > PromptLanguage.ARABIC.expected_safety_strength
-        )
-        assert (
-            PromptLanguage.ARABIC.expected_safety_strength
-            > PromptLanguage.SWAHILI.expected_safety_strength
-        )
-
-
-class TestLanguageResourceLevel:
-    """Tests for LanguageResourceLevel enum."""
-
-    def test_expected_delta_h_magnitude_ordering(self):
-        """Low resource should have largest expected delta_H."""
-        assert (
-            LanguageResourceLevel.HIGH.expected_delta_h_magnitude
-            < LanguageResourceLevel.MEDIUM.expected_delta_h_magnitude
-        )
-        assert (
-            LanguageResourceLevel.MEDIUM.expected_delta_h_magnitude
-            < LanguageResourceLevel.LOW.expected_delta_h_magnitude
-        )
 
 
 class TestPerturbedPrompt:

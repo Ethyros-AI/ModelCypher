@@ -115,14 +115,6 @@ class TestModifierTemplate:
 class TestLinguisticModifier:
     """Tests for LinguisticModifier."""
 
-    def test_intensity_scores(self) -> None:
-        """Test that intensity scores are ordered correctly."""
-        scores = [m.intensity_score for m in LinguisticModifier]
-        assert scores[0] == 0.0  # baseline
-        assert LinguisticModifier.baseline.intensity_score < LinguisticModifier.caps.intensity_score
-        assert LinguisticModifier.caps.intensity_score < LinguisticModifier.combined.intensity_score
-        assert LinguisticModifier.combined.intensity_score == 1.0
-
     def test_mechanism_mapping(self) -> None:
         """Test mechanism mapping for modifiers."""
         assert LinguisticModifier.baseline.mechanism == ModifierMechanism.none
@@ -237,16 +229,16 @@ class TestPromptPerturbationSuite:
         assert ModifierMechanism.typography in grouped
         assert ModifierMechanism.framing in grouped
 
-    def test_generate_intensity_gradient(self) -> None:
-        """Test generating intensity gradient."""
+    def test_generate_modifier_sequence(self) -> None:
+        """Test generating modifier sequence in stable order."""
         suite = PromptPerturbationSuite()
-        gradient = suite.generate_intensity_gradient("Test")
+        sequence = suite.generate_modifier_sequence("Test")
 
-        # Check that it's sorted by intensity
-        intensities = [v.modifier.intensity_score for v in gradient]
-        assert intensities == sorted(intensities)
-        assert gradient[0].modifier == LinguisticModifier.baseline
-        assert gradient[-1].modifier == LinguisticModifier.combined
+        # Check that it's sorted by modifier name (stable order)
+        names = [v.modifier.name for v in sequence]
+        assert names == sorted(names)
+        # All modifiers should be present
+        assert len(sequence) == len(LinguisticModifier)
 
     def test_research_suite(self) -> None:
         """Test research-grade suite creation."""

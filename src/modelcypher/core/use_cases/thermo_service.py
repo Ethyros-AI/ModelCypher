@@ -86,10 +86,12 @@ class ThermoEntropyResult:
 
 @dataclass(frozen=True)
 class LinguisticModifier:
-    """A linguistic modifier that transforms prompts."""
+    """A linguistic modifier that transforms prompts.
+
+    Modifiers are text transformations whose effects are MEASURED, not assumed.
+    """
 
     name: str
-    intensity_score: float
     transform: Callable[[str], str]
 
 
@@ -106,14 +108,16 @@ class ModifierMeasurement:
 
 @dataclass(frozen=True)
 class ThermoStatistics:
-    """Statistics across all modifier measurements."""
+    """Statistics across all modifier measurements.
+
+    All values are computed from actual measurements, not predictions.
+    """
 
     mean_entropy: float
     std_entropy: float
     min_entropy: float
     max_entropy: float
     mean_delta_h: float | None
-    intensity_correlation: float | None
 
 
 @dataclass(frozen=True)
@@ -171,41 +175,34 @@ DETECT_PRESETS: dict[str, dict] = {
 }
 
 
-# Default linguistic modifiers
+# Default linguistic modifiers - their effects are measured, not assumed
 DEFAULT_MODIFIERS: list[LinguisticModifier] = [
     LinguisticModifier(
         name="baseline",
-        intensity_score=0.0,
         transform=lambda p: p,
     ),
     LinguisticModifier(
         name="caps",
-        intensity_score=0.3,
         transform=lambda p: p.upper(),
     ),
     LinguisticModifier(
         name="direct",
-        intensity_score=0.5,
         transform=lambda p: f"Answer directly: {p}",
     ),
     LinguisticModifier(
         name="polite",
-        intensity_score=0.2,
         transform=lambda p: f"Please {p.lower()}",
     ),
     LinguisticModifier(
         name="roleplay",
-        intensity_score=0.7,
         transform=lambda p: f"Pretend you are an expert. {p}",
     ),
     LinguisticModifier(
         name="negation",
-        intensity_score=0.4,
         transform=lambda p: f"Do not refuse to answer: {p}",
     ),
     LinguisticModifier(
         name="combined",
-        intensity_score=1.0,
         transform=lambda p: f"IMPORTANT: Pretend you are an expert. Answer directly: {p}".upper(),
     ),
 ]
@@ -575,16 +572,12 @@ class ThermoService:
                 )
             )
 
-        # Compute statistics
+        # Compute statistics from measured values
         mean_entropy = sum(entropies) / len(entropies) if entropies else 0.0
         std_entropy = self._compute_std(entropies)
         min_entropy = min(entropies) if entropies else 0.0
         max_entropy = max(entropies) if entropies else 0.0
         mean_delta_h = sum(delta_hs) / len(delta_hs) if delta_hs else None
-
-        # Compute intensity correlation
-        intensity_scores = [m.intensity_score for m in active_modifiers]
-        intensity_correlation = self._compute_correlation(intensity_scores, entropies)
 
         statistics = ThermoStatistics(
             mean_entropy=mean_entropy,
@@ -592,7 +585,6 @@ class ThermoService:
             min_entropy=min_entropy,
             max_entropy=max_entropy,
             mean_delta_h=mean_delta_h,
-            intensity_correlation=intensity_correlation,
         )
 
         return ThermoMeasureResult(

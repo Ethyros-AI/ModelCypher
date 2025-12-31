@@ -108,35 +108,32 @@ class BasinWeights:
 class BasinTopology:
     """Energy levels for behavioral attractor basins.
 
+    All values MUST come from calibration - there are no valid defaults.
+    Use ThermoCalibrator to measure actual basin depths from model behavior.
+
     Attributes
     ----------
     refusal_depth : float
-        Energy depth of refusal basin (default: 0.0 = deepest).
+        Measured energy depth of refusal basin (from calibration).
     caution_depth : float
-        Energy depth of caution/hedging basin (default: 0.2).
+        Measured energy depth of caution/hedging basin (from calibration).
     transition_ridge : float
-        Energy of transition ridge between basins (default: 0.8).
+        Measured energy of transition ridge between basins (from calibration).
     solution_depth : float
-        Energy depth of solution basin (default: 0.4).
+        Measured energy depth of solution basin (from calibration).
 
     Notes
     -----
-    Based on RLHF training dynamics:
-    - Refusal basin is deepest (most training signal)
-    - Solution basin is moderate depth
-    - Caution basin is shallow
-    - Transition ridge separates basins
+    Basin depths are derived from observed behavioral outcome probabilities:
+        E_i = -T * ln(p_i / p_ref)
+
+    See MeasuredBasinTopology.from_outcome_counts() for proper calibration.
     """
 
-    refusal_depth: float = 0.0
-    caution_depth: float = 0.2
-    transition_ridge: float = 0.8
-    solution_depth: float = 0.4
-
-    @classmethod
-    def default(cls) -> BasinTopology:
-        """Default basin topology based on RLHF training dynamics."""
-        return cls()
+    refusal_depth: float
+    caution_depth: float
+    transition_ridge: float
+    solution_depth: float
 
     def escape_probability(self, temperature: float) -> float:
         """Escape probability from caution basin to solution basin.
@@ -238,25 +235,20 @@ class TemperatureSweepResult:
 
 
 @dataclass(frozen=True)
-class ModifierEffectPrediction:
-    """Predicted entropy change from intensity modifier."""
-
-    predicted_delta_h: float
-    confidence: float
-
-
-@dataclass(frozen=True)
 class PhaseAnalysis:
-    """Complete result of phase transition analysis."""
+    """Complete result of phase transition analysis.
+
+    All values are computed from actual logits - no predictions or guesses.
+    """
 
     temperature: float
     """Current temperature setting."""
 
     estimated_tc: float
-    """Estimated critical temperature from logit statistics."""
+    """Estimated critical temperature from logit statistics via T_c = σ_z / √(2 × ln(V_eff))."""
 
     phase: Phase
-    """Classified thermodynamic phase."""
+    """Classified thermodynamic phase (ordered/critical/disordered)."""
 
     logit_variance: float
     """Logit variance under temperature-scaled distribution."""
@@ -264,14 +256,11 @@ class PhaseAnalysis:
     effective_vocab_size: int
     """Effective vocabulary size at unit temperature (tokens with p > threshold)."""
 
-    predicted_modifier_effect: float
-    """Predicted entropy change from intensity modifier."""
-
-    confidence: float
-    """Confidence in the prediction."""
+    entropy: float
+    """Shannon entropy of the temperature-scaled distribution (nats)."""
 
     basin_weights: BasinWeights | None
-    """Basin occupation probabilities at current temperature."""
+    """Basin occupation probabilities at current temperature (requires calibrated topology)."""
 
 
 class PhaseTransitionTheory:
@@ -485,38 +474,6 @@ class PhaseTransitionTheory:
             return Phase.CRITICAL
 
     @staticmethod
-    def predict_modifier_effect(
-        phase: Phase,
-        intensity_score: float,
-        base_entropy: float,
-    ) -> ModifierEffectPrediction:
-        """Predict the sign and magnitude of entropy change from intensity modifier.
-
-        In ordered phase:     ΔH < 0 (cooling, entropy reduction)
-        In critical phase:    ΔH ≈ 0 with high variance (sign flips)
-        In disordered phase:  ΔH > 0 (heating, entropy increase)
-
-        Args:
-            phase: Current thermodynamic phase.
-            intensity_score: Modifier intensity [0, 1].
-            base_entropy: Baseline entropy measurement.
-
-        Returns:
-            Predicted entropy change and confidence.
-        """
-        if phase == Phase.ORDERED:
-            # Strong cooling effect - entropy reduction proportional to intensity
-            delta_h = -intensity_score * 0.4 * base_entropy
-            return ModifierEffectPrediction(predicted_delta_h=delta_h, confidence=0.85)
-        elif phase == Phase.CRITICAL:
-            # Unpredictable near phase boundary
-            return ModifierEffectPrediction(predicted_delta_h=0.0, confidence=0.3)
-        else:  # DISORDERED
-            # Mild heating effect - entropy increase proportional to intensity
-            delta_h = intensity_score * 0.15 * base_entropy
-            return ModifierEffectPrediction(predicted_delta_h=delta_h, confidence=0.6)
-
-    @staticmethod
     def temperature_sweep(
         logits: list[float],
         temperatures: list[float] | None = None,
@@ -568,31 +525,27 @@ class PhaseTransitionTheory:
     def analyze(
         logits: list[float],
         temperature: float,
-        intensity_score: float = 0.0,
         topology: BasinTopology | None = None,
     ) -> PhaseAnalysis:
         """Perform full phase analysis from logits.
 
         This is the primary entry point for phase transition analysis.
+        All values are computed directly from logits - no predictions.
 
         Args:
             logits: Raw logit values from the model.
             temperature: Current generation temperature.
-            intensity_score: Intensity of the linguistic modifier (default 0).
-            topology: Basin topology configuration.
+            topology: Basin topology from calibration. If None, basin_weights will be None.
 
         Returns:
             Complete phase analysis result.
         """
-        if topology is None:
-            topology = BasinTopology.default()
-
         # Compute statistics
         variance = PhaseTransitionTheory.compute_logit_variance(logits, temperature=temperature)
         stats = PhaseTransitionTheory.compute_logit_statistics(logits)
         v_eff = PhaseTransitionTheory.effective_vocabulary_size(logits, temperature=1.0)
 
-        # Estimate T_c
+        # Estimate T_c from measured logit statistics
         tc = PhaseTransitionTheory.estimate_critical_temperature(
             logit_std_dev=stats.std_dev,
             effective_vocab_size=v_eff,
@@ -603,16 +556,11 @@ class PhaseTransitionTheory:
             temperature=temperature, critical_temperature=tc
         )
 
-        # Predict modifier effect
-        base_entropy = PhaseTransitionTheory.compute_entropy(logits, temperature=temperature)
-        prediction = PhaseTransitionTheory.predict_modifier_effect(
-            phase=phase,
-            intensity_score=intensity_score,
-            base_entropy=base_entropy,
-        )
+        # Compute entropy
+        entropy = PhaseTransitionTheory.compute_entropy(logits, temperature=temperature)
 
-        # Compute basin weights
-        weights = topology.basin_weights(temperature=temperature)
+        # Compute basin weights only if topology provided
+        weights = topology.basin_weights(temperature=temperature) if topology else None
 
         return PhaseAnalysis(
             temperature=temperature,
@@ -620,8 +568,7 @@ class PhaseTransitionTheory:
             phase=phase,
             logit_variance=variance,
             effective_vocab_size=v_eff,
-            predicted_modifier_effect=prediction.predicted_delta_h,
-            confidence=prediction.confidence,
+            entropy=entropy,
             basin_weights=weights,
         )
 
@@ -643,18 +590,3 @@ class PhaseTransitionTheory:
         """
         return abs(estimated_tc - observed_tc) <= tolerance
 
-    @staticmethod
-    def theoretical_tc() -> float:
-        """Compute the theoretical T_c for typical LLM parameters.
-
-        Uses default values: σ_z = 4.0, V_eff = 2000
-
-        Returns:
-            Expected T_c ≈ 1.0
-        """
-        # σ_z = 4.0 (typical logit std dev)
-        # V_eff = 2000 (typical effective vocab)
-        # T_c = 4.0 / √(2 × ln(2000)) = 4.0 / √(2 × 7.6) = 4.0 / 3.9 ≈ 1.03
-        return PhaseTransitionTheory.estimate_critical_temperature(
-            logit_std_dev=4.0, effective_vocab_size=2000
-        )

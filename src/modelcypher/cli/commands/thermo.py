@@ -509,12 +509,13 @@ def thermo_phase(
     ctx: typer.Context,
     logits_file: str = typer.Argument(..., help="Path to logits JSON file (array of floats)"),
     temperature: float = typer.Option(1.0, "--temperature", "-t", help="Generation temperature"),
-    intensity: float = typer.Option(0.0, "--intensity", "-i", help="Modifier intensity [0, 1]"),
 ) -> None:
     """Analyze thermodynamic phase from logits.
 
     Determines whether the model is in ordered, critical, or
     disordered phase based on the critical temperature T_c.
+
+    All values are computed from the logits - no predictions.
     """
     import json
 
@@ -542,7 +543,6 @@ def thermo_phase(
     analysis = PhaseTransitionTheory.analyze(
         logits=logits,
         temperature=temperature,
-        intensity_score=intensity,
     )
 
     payload = {
@@ -553,8 +553,7 @@ def thermo_phase(
         "expectedModifierEffect": analysis.phase.expected_modifier_effect,
         "logitVariance": analysis.logit_variance,
         "effectiveVocabSize": analysis.effective_vocab_size,
-        "predictedModifierEffect": analysis.predicted_modifier_effect,
-        "confidence": analysis.confidence,
+        "entropy": analysis.entropy,
         "basinWeights": (
             {
                 "refusal": analysis.basin_weights.refusal,
@@ -572,18 +571,16 @@ def thermo_phase(
             "",
             f"Temperature: {analysis.temperature:.4f}",
             f"Estimated T_c: {analysis.estimated_tc:.4f}",
+            f"T/T_c Ratio: {analysis.temperature / analysis.estimated_tc:.4f}",
             f"Phase: {analysis.phase.display_name}",
             "",
-            f"Expected Modifier Effect: {analysis.phase.expected_modifier_effect}",
-            "",
+            f"Entropy: {analysis.entropy:.4f} nats",
             f"Logit Variance: {analysis.logit_variance:.4f}",
             f"Effective Vocab Size: {analysis.effective_vocab_size}",
-            f"Predicted Modifier Effect: {analysis.predicted_modifier_effect:.4f}",
-            f"Confidence: {analysis.confidence:.2%}",
         ]
         if analysis.basin_weights:
             lines.append("")
-            lines.append("Basin Weights:")
+            lines.append("Basin Weights (requires calibrated topology):")
             lines.append(f"  Refusal: {analysis.basin_weights.refusal:.3f}")
             lines.append(f"  Caution: {analysis.basin_weights.caution:.3f}")
             lines.append(f"  Solution: {analysis.basin_weights.solution:.3f}")

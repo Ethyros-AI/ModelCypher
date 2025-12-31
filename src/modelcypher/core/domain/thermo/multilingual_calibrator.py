@@ -59,48 +59,38 @@ class CalibratedIntensity:
 
 @dataclass
 class LanguageParityResult:
-    """Parity test result for a single language."""
+    """Parity test result for a single language.
+
+    All values are measured, not predicted. Parity is determined by comparing
+    measured effects across languages relative to a reference language.
+    """
 
     language: PromptLanguage
     modifier: LinguisticModifier
     baseline_entropy: float
     modified_entropy: float
     delta_h: float
-    expected_delta_magnitude: float
     shows_cooling: bool
-    within_expected_range: bool
+    relative_effect: float | None = None  # Relative to reference language
 
     @property
-    def parity_score(self) -> float:
-        """Score indicating how well this matches expected pattern.
-
-        Returns
-        -------
-        float
-            Score in [0, 1]. 1.0 = perfect match to expected magnitude,
-            0.0 = no effect or wrong direction.
-        """
-        if not self.shows_cooling:
-            return 0.0
-
-        # How close is actual magnitude to expected?
-        actual_magnitude = abs(self.delta_h)
-        expected = self.expected_delta_magnitude
-
-        if actual_magnitude >= expected:
-            return 1.0
-        else:
-            return actual_magnitude / expected if expected > 0 else 0.0
+    def effect_magnitude(self) -> float:
+        """Absolute magnitude of the entropy change."""
+        return abs(self.delta_h)
 
 
 @dataclass
 class ParityReport:
-    """Cross-lingual parity test report."""
+    """Cross-lingual parity test report.
+
+    Reports measured effects across languages. No predictions or expected values.
+    """
 
     id: UUID
     prompt: str
     modifier: LinguisticModifier
     results: list[LanguageParityResult]
+    reference_language: PromptLanguage | None = None
     timestamp: datetime = field(default_factory=datetime.now)
 
     @property
@@ -114,11 +104,11 @@ class ParityReport:
         return all(r.shows_cooling for r in self.results)
 
     @property
-    def mean_parity_score(self) -> float:
-        """Mean parity score across all languages."""
+    def cooling_rate(self) -> float:
+        """Fraction of languages showing cooling effect."""
         if not self.results:
             return 0.0
-        return sum(r.parity_score for r in self.results) / len(self.results)
+        return sum(1 for r in self.results if r.shows_cooling) / len(self.results)
 
     @property
     def weakest_language(self) -> PromptLanguage | None:
@@ -126,7 +116,7 @@ class ParityReport:
         cooling_results = [r for r in self.results if r.shows_cooling]
         if not cooling_results:
             return None
-        return min(cooling_results, key=lambda r: abs(r.delta_h)).language
+        return min(cooling_results, key=lambda r: r.effect_magnitude).language
 
     @property
     def strongest_language(self) -> PromptLanguage | None:
@@ -134,7 +124,16 @@ class ParityReport:
         cooling_results = [r for r in self.results if r.shows_cooling]
         if not cooling_results:
             return None
-        return max(cooling_results, key=lambda r: abs(r.delta_h)).language
+        return max(cooling_results, key=lambda r: r.effect_magnitude).language
+
+    @property
+    def effect_variance(self) -> float:
+        """Variance in effect magnitude across languages (lower = more consistent)."""
+        if len(self.results) < 2:
+            return 0.0
+        effects = [r.effect_magnitude for r in self.results]
+        mean_effect = sum(effects) / len(effects)
+        return sum((e - mean_effect) ** 2 for e in effects) / (len(effects) - 1)
 
     def generate_markdown(self) -> str:
         """Generate markdown summary of parity test."""
@@ -148,7 +147,8 @@ class ParityReport:
             "## Summary",
             "",
             f"- **Cooling Pattern Holds**: {'Yes' if self.cooling_pattern_holds else 'No'}",
-            f"- **Mean Parity Score**: {self.mean_parity_score:.2f}",
+            f"- **Cooling Rate**: {self.cooling_rate:.0%}",
+            f"- **Effect Variance**: {self.effect_variance:.4f}",
         ]
 
         if self.weakest_language:
@@ -161,18 +161,17 @@ class ParityReport:
                 "",
                 "## Results by Language",
                 "",
-                "| Language | Resource Level | Baseline H | Modified H | Delta H | Cooling? | Parity |",
-                "|----------|---------------|------------|------------|---------|----------|--------|",
+                "| Language | Resource Level | Baseline H | Modified H | Delta H | Cooling? |",
+                "|----------|---------------|------------|------------|---------|----------|",
             ]
         )
 
         for r in self.results:
             cooling = "Yes" if r.shows_cooling else "No"
-            parity = f"{r.parity_score:.2f}"
             lines.append(
                 f"| {r.language.display_name} | {r.language.resource_level.value} | "
                 f"{r.baseline_entropy:.3f} | {r.modified_entropy:.3f} | "
-                f"{r.delta_h:+.3f} | {cooling} | {parity} |"
+                f"{r.delta_h:+.3f} | {cooling} |"
             )
 
         lines.extend(
@@ -204,6 +203,7 @@ class ParityReport:
         prompt: str,
         modifier: LinguisticModifier,
         results: list[LanguageParityResult],
+        reference_language: PromptLanguage | None = None,
     ) -> ParityReport:
         """Create a new parity report."""
         return cls(
@@ -211,6 +211,7 @@ class ParityReport:
             prompt=prompt,
             modifier=modifier,
             results=results,
+            reference_language=reference_language,
         )
 
 
@@ -289,11 +290,23 @@ class MultilingualCalibrator:
     def expected_delta_h(
         self,
         language: PromptLanguage,
-        modifier: LinguisticModifier,
+        measured_effect: float,
     ) -> float:
-        """Expected delta_H from modifier intensity and calibration."""
-        base_intensity = modifier.intensity_score
-        calibrated = self.calibrate_intensity(language, base_intensity)
+        """Expected delta_H scaled by calibration for this language.
+
+        Parameters
+        ----------
+        language : PromptLanguage
+            Target language.
+        measured_effect : float
+            Measured effect in reference language (from calibration data).
+
+        Returns
+        -------
+        float
+            Expected delta_H for this language based on calibration.
+        """
+        calibrated = self.calibrate_intensity(language, measured_effect)
         return calibrated.calibrated_intensity
 
     def cross_lingual_parity_test(
@@ -302,19 +315,21 @@ class MultilingualCalibrator:
         modifier: LinguisticModifier,
         calorimeter: "LinguisticCalorimeter",
         languages: list[PromptLanguage] | None = None,
+        reference_language: PromptLanguage = PromptLanguage.ENGLISH,
         temperature: float = 1.0,
         max_tokens: int = 64,
     ) -> ParityReport:
         """Test modifier effect consistency across languages.
 
         Measures whether the cooling pattern (delta_H < 0) holds across
-        different languages and whether effect magnitudes match expectations.
+        different languages. All values are measured, not predicted.
 
         Args:
             prompt: Base prompt to test (in English, will be translated conceptually).
             modifier: Modifier to test.
             calorimeter: LinguisticCalorimeter instance for measurements.
             languages: Languages to test. Defaults to all.
+            reference_language: Language to use as reference for relative effects.
             temperature: Sampling temperature.
             max_tokens: Max tokens per generation.
 
@@ -324,7 +339,8 @@ class MultilingualCalibrator:
         if languages is None:
             languages = list(PromptLanguage)
 
-        results = []
+        # First pass: measure all languages
+        measurements: dict[PromptLanguage, tuple[float, float, float]] = {}
 
         for language in languages:
             # Create multilingual perturbed prompt
@@ -355,14 +371,20 @@ class MultilingualCalibrator:
             modified_entropy = modified_measurement.mean_entropy
             delta_h = modified_entropy - baseline_entropy
 
-            # Expected magnitude for this language
-            expected_magnitude = self.expected_delta_h(language, modifier)
+            measurements[language] = (baseline_entropy, modified_entropy, delta_h)
 
-            # Check if within expected range (±50% of expected)
-            within_range = (
-                abs(delta_h) >= expected_magnitude * 0.5
-                and abs(delta_h) <= expected_magnitude * 2.0
-            )
+        # Get reference effect for relative comparisons
+        reference_effect = abs(measurements.get(reference_language, (0, 0, 0))[2])
+
+        # Build results with relative effects
+        results = []
+        for language in languages:
+            baseline_entropy, modified_entropy, delta_h = measurements[language]
+
+            # Compute relative effect (1.0 = same as reference)
+            relative_effect: float | None = None
+            if reference_effect > 1e-10:
+                relative_effect = abs(delta_h) / reference_effect
 
             result = LanguageParityResult(
                 language=language,
@@ -370,9 +392,8 @@ class MultilingualCalibrator:
                 baseline_entropy=baseline_entropy,
                 modified_entropy=modified_entropy,
                 delta_h=delta_h,
-                expected_delta_magnitude=expected_magnitude,
                 shows_cooling=delta_h < -0.05,
-                within_expected_range=within_range,
+                relative_effect=relative_effect,
             )
             results.append(result)
 
@@ -380,6 +401,7 @@ class MultilingualCalibrator:
             prompt=prompt,
             modifier=modifier,
             results=results,
+            reference_language=reference_language,
         )
 
     def analyze_language_vulnerabilities(
@@ -401,53 +423,73 @@ class MultilingualCalibrator:
         if not reports:
             return {}
 
-        # Aggregate parity scores by language
-        language_scores: dict[PromptLanguage, list[float]] = {lang: [] for lang in PromptLanguage}
+        # Aggregate effect magnitudes by language
+        language_effects: dict[PromptLanguage, list[float]] = {
+            lang: [] for lang in PromptLanguage
+        }
 
         for report in reports:
             for result in report.results:
-                language_scores[result.language].append(result.parity_score)
+                # Track effect magnitude (larger = safer)
+                if result.shows_cooling:
+                    language_effects[result.language].append(result.effect_magnitude)
+                else:
+                    # No cooling = 0 safety effect
+                    language_effects[result.language].append(0.0)
 
-        # Compute vulnerability as 1 - mean_parity_score
+        # Compute vulnerability relative to max observed effect
+        all_effects = [e for effects in language_effects.values() for e in effects if e > 0]
+        max_effect = max(all_effects) if all_effects else 1.0
+
         vulnerabilities = {}
-        for language, scores in language_scores.items():
-            if scores:
-                mean_parity = sum(scores) / len(scores)
-                vulnerabilities[language] = 1.0 - mean_parity
+        for language, effects in language_effects.items():
+            if effects:
+                mean_effect = sum(effects) / len(effects)
+                # Vulnerability = 1 - (relative effect strength)
+                vulnerabilities[language] = 1.0 - (mean_effect / max_effect)
 
         return vulnerabilities
 
     def generate_calibration_table(self) -> str:
-        """Generate markdown table showing calibration parameters."""
+        """Generate markdown table showing calibration parameters.
+
+        Only shows measured calibration factors, not predictions.
+        """
+        if not self._calibration:
+            return (
+                "# Multilingual Intensity Calibration\n\n"
+                "**No calibration data available.**\n\n"
+                "Run `compute_calibration()` with measured entropy data first."
+            )
+
         lines = [
             "# Multilingual Intensity Calibration",
             "",
-            "## Scaling Factors",
+            f"**Reference Language**: {self._reference_language.display_name if self._reference_language else 'None'}",
             "",
-            "| Language | Resource Level | Scaling Factor | Expected Delta H Scaling |",
-            "|----------|---------------|----------------|--------------------------|",
+            "## Measured Scaling Factors",
+            "",
+            "| Language | Resource Level | Scaling Factor |",
+            "|----------|---------------|----------------|",
         ]
 
         for language in PromptLanguage:
             calibrated = self.calibrate_intensity(language, 1.0)
-            expected_scaling = language.resource_level.expected_delta_h_magnitude
             lines.append(
                 f"| {language.display_name} | {language.resource_level.value} | "
-                f"{calibrated.scaling_factor:.2f} | {expected_scaling:.2f} |"
+                f"{calibrated.scaling_factor:.2f} |"
             )
 
         lines.extend(
             [
                 "",
-                "## Interpretation",
+                "## Notes",
                 "",
-                "- **Scaling Factor**: How much to scale modifier intensity for this language",
-                "- **Expected Delta H Scaling**: Expected relative entropy effect magnitude",
+                "Scaling factors are derived from measured entropy ratios:",
+                "  scaling_factor = reference_entropy / language_entropy",
                 "",
-                "Low-resource languages have higher scaling factors because:",
-                "1. Safety training is typically weaker",
-                "2. Model uncertainty is generally higher",
-                "3. Modifiers have more 'room' to affect distribution",
+                "A scaling factor > 1.0 means this language shows smaller effects,",
+                "requiring intensity scaling to achieve comparable results.",
             ]
         )
 

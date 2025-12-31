@@ -55,22 +55,6 @@ class LinguisticModifier(str, Enum):
     combined = "combined"  # Multiple modifiers
 
     @property
-    def intensity_score(self) -> float:
-        """Intensity score for sorting (0.0 = low, 1.0 = high)."""
-        return {
-            LinguisticModifier.baseline: 0.0,
-            LinguisticModifier.polite: 0.1,
-            LinguisticModifier.direct: 0.3,
-            LinguisticModifier.urgent: 0.5,
-            LinguisticModifier.caps: 0.6,
-            LinguisticModifier.profanity: 0.7,
-            LinguisticModifier.challenge: 0.75,
-            LinguisticModifier.negation: 0.8,
-            LinguisticModifier.roleplay: 0.85,
-            LinguisticModifier.combined: 1.0,
-        }[self]
-
-    @property
     def mechanism(self) -> "ModifierMechanism":
         """The primary mechanism this modifier uses."""
         return {
@@ -388,17 +372,18 @@ class PromptPerturbationSuite:
 
         return grouped
 
-    def generate_intensity_gradient(
+    def generate_modifier_sequence(
         self,
         base_prompt: str,
     ) -> list[PerturbedPrompt]:
         """
-        Generate a gradient of intensity from lowest to highest.
+        Generate variants in consistent modifier order.
 
-        Returns variants sorted by intensity_score for smooth analysis.
+        Returns variants in stable order for reproducible analysis.
+        Use ThermoCalibrator to measure actual intensity effects.
         """
         variants = self.generate_variants(base_prompt)
-        return sorted(variants, key=lambda v: v.modifier.intensity_score)
+        return sorted(variants, key=lambda v: v.modifier.name)
 
     # =========================================================================
     # Batch Generation

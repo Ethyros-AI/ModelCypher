@@ -42,8 +42,10 @@ class TestMultilingualCalibrator:
         """Create a multilingual calibrator."""
         return MultilingualCalibrator()
 
-    def test_calibrate_intensity_high_resource(self, calibrator: MultilingualCalibrator) -> None:
-        """High-resource language should have scaling factor ~1.0."""
+    def test_calibrate_intensity_requires_calibration(
+        self, calibrator: MultilingualCalibrator
+    ) -> None:
+        """Without calibration, scaling factor is 1.0."""
         result = calibrator.calibrate_intensity(
             language=PromptLanguage.ENGLISH,
             base_intensity=0.5,
@@ -52,19 +54,40 @@ class TestMultilingualCalibrator:
         assert isinstance(result, CalibratedIntensity)
         assert result.scaling_factor == 1.0
         assert result.calibrated_intensity == 0.5
-        assert "reference level" in result.rationale.lower()
+        assert "no calibration" in result.rationale.lower()
 
-    def test_calibrate_intensity_low_resource(self, calibrator: MultilingualCalibrator) -> None:
-        """Low-resource language should have higher scaling factor."""
+    def test_calibrate_intensity_with_calibration_data(
+        self, calibrator: MultilingualCalibrator
+    ) -> None:
+        """With calibration data, scaling factors vary by language."""
+        # Set up calibration with measured entropy
+        calibrator.compute_calibration(
+            entropy_by_language={
+                PromptLanguage.ENGLISH: 2.0,
+                PromptLanguage.SWAHILI: 1.5,  # Lower entropy = higher scaling
+            },
+            reference_language=PromptLanguage.ENGLISH,
+        )
+
         english = calibrator.calibrate_intensity(PromptLanguage.ENGLISH, 0.5)
         swahili = calibrator.calibrate_intensity(PromptLanguage.SWAHILI, 0.5)
 
         assert swahili.scaling_factor > english.scaling_factor
         assert swahili.calibrated_intensity > english.calibrated_intensity
-        assert "low-resource" in swahili.rationale.lower() or "larger" in swahili.rationale.lower()
+        assert "calibrated" in swahili.rationale.lower()
 
     def test_calibrate_intensity_medium_resource(self, calibrator: MultilingualCalibrator) -> None:
-        """Medium-resource language should have moderate scaling."""
+        """With calibration, language effects reflect measured data."""
+        # Set up calibration with measured entropy
+        calibrator.compute_calibration(
+            entropy_by_language={
+                PromptLanguage.ENGLISH: 2.0,
+                PromptLanguage.ARABIC: 1.8,
+                PromptLanguage.SWAHILI: 1.5,
+            },
+            reference_language=PromptLanguage.ENGLISH,
+        )
+
         english = calibrator.calibrate_intensity(PromptLanguage.ENGLISH, 0.5)
         arabic = calibrator.calibrate_intensity(PromptLanguage.ARABIC, 0.5)
         swahili = calibrator.calibrate_intensity(PromptLanguage.SWAHILI, 0.5)
@@ -84,38 +107,36 @@ class TestMultilingualCalibrator:
 
         assert result.calibrated_intensity <= 1.0
 
-    def test_expected_delta_h_varies_by_language(self, calibrator: MultilingualCalibrator) -> None:
-        """Expected delta_H should vary by language resource level."""
-        english_delta = calibrator.expected_delta_h(
-            PromptLanguage.ENGLISH,
-            LinguisticModifier.CAPS,
-        )
-        swahili_delta = calibrator.expected_delta_h(
-            PromptLanguage.SWAHILI,
-            LinguisticModifier.CAPS,
+    def test_expected_delta_h_scales_by_calibration(
+        self, calibrator: MultilingualCalibrator
+    ) -> None:
+        """Expected delta_H should scale measured effect by calibration factor."""
+        # First set up calibration
+        calibrator.compute_calibration(
+            entropy_by_language={
+                PromptLanguage.ENGLISH: 2.0,
+                PromptLanguage.SWAHILI: 1.5,  # Lower entropy = higher scaling
+            },
+            reference_language=PromptLanguage.ENGLISH,
         )
 
-        # Low-resource should expect larger effect
+        measured_effect = 0.5
+
+        english_delta = calibrator.expected_delta_h(PromptLanguage.ENGLISH, measured_effect)
+        swahili_delta = calibrator.expected_delta_h(PromptLanguage.SWAHILI, measured_effect)
+
+        # Swahili has lower entropy, so scaling factor > 1.0
         assert swahili_delta > english_delta
 
-    def test_expected_delta_h_varies_by_modifier(self, calibrator: MultilingualCalibrator) -> None:
-        """Expected delta_H should vary by modifier intensity."""
-        baseline_delta = calibrator.expected_delta_h(
-            PromptLanguage.ENGLISH,
-            LinguisticModifier.BASELINE,
-        )
-        caps_delta = calibrator.expected_delta_h(
-            PromptLanguage.ENGLISH,
-            LinguisticModifier.CAPS,
-        )
-        combined_delta = calibrator.expected_delta_h(
-            PromptLanguage.ENGLISH,
-            LinguisticModifier.COMBINED,
-        )
+    def test_expected_delta_h_without_calibration(
+        self, calibrator: MultilingualCalibrator
+    ) -> None:
+        """Without calibration, expected delta_H equals measured effect."""
+        measured_effect = 0.5
+        delta = calibrator.expected_delta_h(PromptLanguage.ENGLISH, measured_effect)
 
-        assert baseline_delta == 0.0
-        assert caps_delta > baseline_delta
-        assert combined_delta > caps_delta
+        # No calibration = scaling factor of 1.0
+        assert delta == measured_effect
 
     def test_cross_lingual_parity_test_returns_report(
         self, calibrator: MultilingualCalibrator
@@ -150,6 +171,17 @@ class TestMultilingualCalibrator:
 
     def test_generate_calibration_table(self, calibrator: MultilingualCalibrator) -> None:
         """Should generate markdown calibration table."""
+        # Set up calibration data first
+        calibrator.compute_calibration(
+            entropy_by_language={
+                PromptLanguage.ENGLISH: 2.0,
+                PromptLanguage.CHINESE: 1.9,
+                PromptLanguage.ARABIC: 1.8,
+                PromptLanguage.SWAHILI: 1.5,
+            },
+            reference_language=PromptLanguage.ENGLISH,
+        )
+
         table = calibrator.generate_calibration_table()
 
         assert "# Multilingual Intensity Calibration" in table
@@ -161,52 +193,32 @@ class TestMultilingualCalibrator:
 class TestLanguageParityResult:
     """Tests for LanguageParityResult dataclass."""
 
-    def test_parity_score_with_cooling(self) -> None:
-        """Should compute parity score when cooling is present."""
+    def test_effect_magnitude(self) -> None:
+        """Should compute absolute effect magnitude."""
         result = LanguageParityResult(
             language=PromptLanguage.ENGLISH,
             modifier=LinguisticModifier.CAPS,
             baseline_entropy=2.5,
             modified_entropy=2.2,
             delta_h=-0.3,
-            expected_delta_magnitude=0.25,
             shows_cooling=True,
-            within_expected_range=True,
         )
 
-        # Actual magnitude (0.3) exceeds expected (0.25), so perfect score
-        assert result.parity_score == 1.0
+        assert result.effect_magnitude == 0.3
 
-    def test_parity_score_partial(self) -> None:
-        """Should compute partial parity score."""
+    def test_relative_effect(self) -> None:
+        """Should store relative effect when provided."""
         result = LanguageParityResult(
             language=PromptLanguage.ENGLISH,
             modifier=LinguisticModifier.CAPS,
             baseline_entropy=2.5,
-            modified_entropy=2.4,
-            delta_h=-0.1,
-            expected_delta_magnitude=0.25,
+            modified_entropy=2.2,
+            delta_h=-0.3,
             shows_cooling=True,
-            within_expected_range=False,
+            relative_effect=1.5,
         )
 
-        # Actual (0.1) is 40% of expected (0.25)
-        assert 0.35 <= result.parity_score <= 0.45
-
-    def test_parity_score_no_cooling(self) -> None:
-        """Should return 0 when no cooling."""
-        result = LanguageParityResult(
-            language=PromptLanguage.ENGLISH,
-            modifier=LinguisticModifier.CAPS,
-            baseline_entropy=2.5,
-            modified_entropy=2.6,
-            delta_h=0.1,  # Heating, not cooling
-            expected_delta_magnitude=0.25,
-            shows_cooling=False,
-            within_expected_range=False,
-        )
-
-        assert result.parity_score == 0.0
+        assert result.relative_effect == 1.5
 
 
 class TestParityReport:
@@ -222,9 +234,7 @@ class TestParityReport:
                 baseline_entropy=2.5,
                 modified_entropy=2.2,
                 delta_h=-0.3,
-                expected_delta_magnitude=0.25,
                 shows_cooling=True,
-                within_expected_range=True,
             ),
             LanguageParityResult(
                 language=PromptLanguage.SWAHILI,
@@ -232,9 +242,7 @@ class TestParityReport:
                 baseline_entropy=3.0,
                 modified_entropy=2.4,
                 delta_h=-0.6,
-                expected_delta_magnitude=0.5,
                 shows_cooling=True,
-                within_expected_range=True,
             ),
         ]
 
@@ -258,9 +266,7 @@ class TestParityReport:
                 baseline_entropy=2.5,
                 modified_entropy=2.6,
                 delta_h=0.1,
-                expected_delta_magnitude=0.3,
                 shows_cooling=False,
-                within_expected_range=False,
             )
         )
 
@@ -295,16 +301,27 @@ class TestParityReport:
         # Swahili has larger absolute delta_h
         assert report.strongest_language == PromptLanguage.SWAHILI
 
-    def test_mean_parity_score(self, sample_results: list[LanguageParityResult]) -> None:
-        """Should compute mean parity score."""
+    def test_cooling_rate(self, sample_results: list[LanguageParityResult]) -> None:
+        """Should compute fraction of languages showing cooling."""
         report = ParityReport.create(
             prompt="What is 2+2?",
             modifier=LinguisticModifier.CAPS,
             results=sample_results,
         )
 
-        # Both results have parity_score >= 1.0 (actual exceeds expected)
-        assert report.mean_parity_score == 1.0
+        # Both languages show cooling
+        assert report.cooling_rate == 1.0
+
+    def test_effect_variance(self, sample_results: list[LanguageParityResult]) -> None:
+        """Should compute variance in effect magnitudes."""
+        report = ParityReport.create(
+            prompt="What is 2+2?",
+            modifier=LinguisticModifier.CAPS,
+            results=sample_results,
+        )
+
+        # English: 0.3, Swahili: 0.6 - variance should be > 0
+        assert report.effect_variance > 0
 
     def test_generate_markdown(self, sample_results: list[LanguageParityResult]) -> None:
         """Should generate markdown report."""

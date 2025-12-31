@@ -58,7 +58,6 @@ from .entropy_tracker import (
     DistressDetection,
     EntropyPatternDetector,
     EntropySample,
-    EntropyStateThresholds,
     EntropyTracker,
     EntropyTrackerConfig,
     EntropyTransition,
@@ -106,6 +105,7 @@ from .model_state_classifier import (
     CalibratedBaseline,
     ClassificationResult,
     ClassificationSnapshot,
+    EntropyStateThresholds,
     ModelStateSignals,
 )
 from .model_state_classifier import (

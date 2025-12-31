@@ -262,7 +262,10 @@ class TestPhaseTransitionIntegration:
         temperature = 1.0
 
         entropy = PhaseTransitionTheory.compute_entropy(logits, temperature)
-        tc = PhaseTransitionTheory.theoretical_tc()
+        # Estimate T_c from logit statistics (not hardcoded)
+        stats = PhaseTransitionTheory.compute_logit_statistics(logits)
+        v_eff = PhaseTransitionTheory.effective_vocabulary_size(logits, 1.0)
+        tc = PhaseTransitionTheory.estimate_critical_temperature(stats.std_dev, v_eff)
 
         phase = PhaseTransitionTheory.classify_phase(temperature, tc)
 
@@ -285,7 +288,6 @@ class TestPhaseTransitionIntegration:
         result = PhaseTransitionTheory.analyze(
             logits=logits,
             temperature=1.0,
-            intensity_score=0.5,
         )
 
         assert result.temperature == 1.0
@@ -293,6 +295,7 @@ class TestPhaseTransitionIntegration:
         assert result.phase in Phase
         assert result.logit_variance >= 0
         assert result.effective_vocab_size >= 1
+        assert result.entropy >= 0
 
 
 # =============================================================================
@@ -356,8 +359,10 @@ class TestFullEntropyWorkflow:
             # Calculate entropy via phase theory (works with lists)
             entropy = PhaseTransitionTheory.compute_entropy(logits_list, 1.0)
 
-            # Classify phase
-            tc = PhaseTransitionTheory.theoretical_tc()
+            # Estimate T_c from logit statistics (not hardcoded)
+            stats = PhaseTransitionTheory.compute_logit_statistics(logits_list)
+            v_eff = PhaseTransitionTheory.effective_vocabulary_size(logits_list, 1.0)
+            tc = PhaseTransitionTheory.estimate_critical_temperature(stats.std_dev, v_eff)
             # Use entropy as proxy for effective temperature
             effective_temp = max(0.1, entropy / 2.0)
             phase = PhaseTransitionTheory.classify_phase(effective_temp, tc)

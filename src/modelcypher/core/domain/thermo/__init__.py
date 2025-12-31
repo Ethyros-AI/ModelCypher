@@ -67,7 +67,6 @@ from modelcypher.core.domain.thermo.phase_transition_theory import (
     BasinTopology,
     BasinWeights,
     LogitStatistics,
-    ModifierEffectPrediction,
     Phase,
     PhaseAnalysis,
     PhaseTransitionTheory,

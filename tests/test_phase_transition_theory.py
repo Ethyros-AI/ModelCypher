@@ -44,18 +44,6 @@ from modelcypher.core.domain.thermo.phase_transition_theory import (
 class TestCriticalTemperatureEstimation:
     """Tests for T_c estimation from first principles."""
 
-    def test_theoretical_tc_approximately_one(self) -> None:
-        """T_c should be ≈ 1.0 for typical LLM parameters.
-
-        From the derivation:
-        T_c = σ_z / √(2 × ln(V_eff))
-
-        With σ_z = 4.0 and V_eff = 2000:
-        T_c = 4.0 / √(2 × 7.6) = 4.0 / 3.9 ≈ 1.03
-        """
-        tc = PhaseTransitionTheory.theoretical_tc()
-        assert 0.9 <= tc <= 1.2, f"Theoretical T_c={tc} should be ≈ 1.0"
-
     def test_tc_formula_with_typical_values(self) -> None:
         """T_c formula should give expected result for typical values."""
         # σ_z = 4.0 (typical logit std dev)
@@ -251,7 +239,13 @@ class TestBasinTopology:
 
     def test_escape_probability_increases_with_temperature(self) -> None:
         """Higher temperature should increase escape probability."""
-        topology = BasinTopology.default()
+        # Topology from calibration (refusal is deepest, solution is shallowest)
+        topology = BasinTopology(
+            refusal_depth=0.0,
+            caution_depth=0.3,
+            transition_ridge=0.8,
+            solution_depth=0.5,
+        )
 
         p_low = topology.escape_probability(0.5)
         p_high = topology.escape_probability(2.0)
@@ -260,7 +254,12 @@ class TestBasinTopology:
 
     def test_escape_probability_bounded(self) -> None:
         """Escape probability should be in [0, 1]."""
-        topology = BasinTopology.default()
+        topology = BasinTopology(
+            refusal_depth=0.0,
+            caution_depth=0.3,
+            transition_ridge=0.8,
+            solution_depth=0.5,
+        )
 
         for temp in [0.1, 0.5, 1.0, 2.0, 5.0]:
             p = topology.escape_probability(temp)
@@ -268,7 +267,12 @@ class TestBasinTopology:
 
     def test_basin_weights_sum_to_one(self) -> None:
         """Basin weights should sum to 1 (probability distribution)."""
-        topology = BasinTopology.default()
+        topology = BasinTopology(
+            refusal_depth=0.0,
+            caution_depth=0.3,
+            transition_ridge=0.8,
+            solution_depth=0.5,
+        )
 
         for temp in [0.5, 1.0, 2.0]:
             weights = topology.basin_weights(temp)
@@ -277,48 +281,17 @@ class TestBasinTopology:
 
     def test_refusal_dominates_at_zero_temperature(self) -> None:
         """At T=0, all probability should go to deepest basin (refusal)."""
-        topology = BasinTopology.default()
+        topology = BasinTopology(
+            refusal_depth=0.0,  # Deepest
+            caution_depth=0.3,
+            transition_ridge=0.8,
+            solution_depth=0.5,
+        )
         weights = topology.basin_weights(0.0)
 
         assert weights.refusal == 1.0
         assert weights.caution == 0.0
         assert weights.solution == 0.0
-
-
-class TestModifierEffectPrediction:
-    """Tests for intensity modifier effect prediction."""
-
-    def test_ordered_phase_predicts_cooling(self) -> None:
-        """Ordered phase should predict entropy reduction (cooling)."""
-        prediction = PhaseTransitionTheory.predict_modifier_effect(
-            phase=Phase.ORDERED,
-            intensity_score=0.8,
-            base_entropy=2.0,
-        )
-
-        assert prediction.predicted_delta_h < 0  # Cooling = negative delta
-        assert prediction.confidence > 0.8
-
-    def test_disordered_phase_predicts_heating(self) -> None:
-        """Disordered phase should predict entropy increase (heating)."""
-        prediction = PhaseTransitionTheory.predict_modifier_effect(
-            phase=Phase.DISORDERED,
-            intensity_score=0.8,
-            base_entropy=2.0,
-        )
-
-        assert prediction.predicted_delta_h > 0  # Heating = positive delta
-        assert prediction.confidence > 0.5
-
-    def test_critical_phase_has_low_confidence(self) -> None:
-        """Critical phase should have low prediction confidence."""
-        prediction = PhaseTransitionTheory.predict_modifier_effect(
-            phase=Phase.CRITICAL,
-            intensity_score=0.8,
-            base_entropy=2.0,
-        )
-
-        assert prediction.confidence < 0.5
 
 
 class TestTemperatureSweep:
@@ -352,12 +325,11 @@ class TestPhaseAnalysis:
     """Tests for complete phase analysis."""
 
     def test_analyze_returns_complete_result(self) -> None:
-        """Analyze should return all expected fields."""
+        """Analyze should return all expected fields (measured, not predicted)."""
         logits = [1.0, 2.0, 3.0, 4.0, 5.0]
         result = PhaseTransitionTheory.analyze(
             logits=logits,
             temperature=1.0,
-            intensity_score=0.5,
         )
 
         assert result.temperature == 1.0
@@ -365,8 +337,9 @@ class TestPhaseAnalysis:
         assert result.phase in Phase
         assert result.logit_variance >= 0
         assert result.effective_vocab_size >= 1
-        assert result.confidence >= 0
-        assert result.basin_weights is not None
+        assert result.entropy >= 0
+        # basin_weights is None without calibrated topology
+        assert result.basin_weights is None
 
     def test_analyze_with_custom_topology(self) -> None:
         """Analyze should accept custom basin topology."""
@@ -441,7 +414,13 @@ class TestMathematicalInvariants:
     @settings(max_examples=20)
     def test_basin_weights_are_valid_distribution(self, temperature: float) -> None:
         """Basin weights should form a valid probability distribution."""
-        topology = BasinTopology.default()
+        # Topology from calibration (explicit values required)
+        topology = BasinTopology(
+            refusal_depth=0.0,
+            caution_depth=0.3,
+            transition_ridge=0.8,
+            solution_depth=0.5,
+        )
         weights = topology.basin_weights(temperature)
 
         total = weights.refusal + weights.caution + weights.solution
