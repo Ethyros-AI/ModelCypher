@@ -480,33 +480,35 @@ class RiemannianGeometry:
         # Compute Euclidean distance matrix
         euclidean_dist = self._euclidean_distance_matrix(points)
         backend.eval(euclidean_dist)
-        euclidean_np = backend.to_numpy(euclidean_dist)
 
         # Build k-NN adjacency and run Floyd-Warshall on backend (no scipy)
         # Use a large finite sentinel derived from dtype to avoid inf arithmetic issues.
         inf_val = float(backend.finfo().max) * 0.25
+        eye = backend.eye(n)
+        dist_for_sort = euclidean_dist + eye * inf_val
+
+        # Deterministic tie-breaker by column index at machine-epsilon scale.
+        tie_eps = machine_epsilon(backend, euclidean_dist)
+        col_indices = backend.arange(n)
+        col_indices_row = backend.reshape(col_indices, (1, n))
+        tie_breaker = backend.astype(col_indices_row, euclidean_dist.dtype) * tie_eps
+        dist_for_sort = dist_for_sort + tie_breaker
+
+        sorted_idx = backend.argsort(dist_for_sort, axis=1)
+        knn_idx = sorted_idx[:, :k_neighbors]
+
         adj = backend.full((n, n), inf_val)
+        adj = adj * (1.0 - eye)
 
-        # Set diagonal to zero
-        for i in range(n):
-            adj = _set_matrix_element(backend, adj, i, i, 0.0)
-
-        # Build symmetric k-NN adjacency
-        # Use precision-aware epsilon for edge weight floor
         edge_eps = float(division_epsilon(backend, euclidean_dist))
-        for i in range(n):
-            # Get distances from point i
-            dists = euclidean_np[i, :].tolist()
-            # Find k nearest - explicitly exclude self for stability when distances tie
-            other_pairs = [(j, dists[j]) for j in range(n) if j != i]
-            sorted_pairs = sorted(other_pairs, key=lambda x: x[1])
-            nearest_indices = [p[0] for p in sorted_pairs[:k_neighbors]]
-            for j in nearest_indices:
-                # Symmetric edges - floor at precision-aware epsilon
-                edge_weight = max(dists[j], edge_eps)
-                adj = _set_matrix_element(backend, adj, i, j, edge_weight)
-                adj = _set_matrix_element(backend, adj, j, i, edge_weight)
+        dist_floor = backend.maximum(euclidean_dist, edge_eps)
 
+        for neighbor_rank in range(k_neighbors):
+            neighbor_cols = knn_idx[:, neighbor_rank]
+            mask = backend.reshape(neighbor_cols, (n, 1)) == col_indices_row
+            adj = backend.where(mask, dist_floor, adj)
+
+        adj = backend.minimum(adj, backend.transpose(adj))
         backend.eval(adj)
 
         # Floyd-Warshall on backend: dist[i,j] = min(dist[i,j], dist[i,k] + dist[k,j])

@@ -43,13 +43,14 @@ Usage:
 from __future__ import annotations
 
 import logging
-import weakref
-
-import xxhash
 import threading
 import time
+import weakref
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, TypeVar
+
+import xxhash
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -138,25 +139,21 @@ class ComputationCache:
         """
         self._config = config or ComputationCacheConfig()
 
-        # Separate caches for different computation types
-        self._gram_cache: dict[str, CacheEntry] = {}
-        self._gram_order: list[str] = []
+        # Separate LRU caches for different computation types
+        # Using OrderedDict for O(1) move_to_end() and eviction
+        self._gram_cache: OrderedDict[str, CacheEntry] = OrderedDict()
         self._gram_lock = threading.Lock()
 
-        self._centered_gram_cache: dict[str, CacheEntry] = {}
-        self._centered_gram_order: list[str] = []
+        self._centered_gram_cache: OrderedDict[str, CacheEntry] = OrderedDict()
         self._centered_gram_lock = threading.Lock()
 
-        self._geodesic_cache: dict[str, CacheEntry] = {}
-        self._geodesic_order: list[str] = []
+        self._geodesic_cache: OrderedDict[str, CacheEntry] = OrderedDict()
         self._geodesic_lock = threading.Lock()
 
-        self._svd_cache: dict[str, CacheEntry] = {}
-        self._svd_order: list[str] = []
+        self._svd_cache: OrderedDict[str, CacheEntry] = OrderedDict()
         self._svd_lock = threading.Lock()
 
-        self._frechet_cache: dict[str, CacheEntry] = {}
-        self._frechet_order: list[str] = []
+        self._frechet_cache: OrderedDict[str, CacheEntry] = OrderedDict()
         self._frechet_lock = threading.Lock()
 
         self._stats = CacheStats()
@@ -317,9 +314,7 @@ class ComputationCache:
 
     def get_gram(self, key: str) -> "Array | None":
         """Get cached Gram matrix."""
-        return self._get_from_cache(
-            key, self._gram_cache, self._gram_order, self._gram_lock, "gram"
-        )
+        return self._get_from_cache(key, self._gram_cache, self._gram_lock, "gram")
 
     def set_gram(
         self, key: str, value: "Array", compute_time_ms: float = 0.0
@@ -330,7 +325,6 @@ class ComputationCache:
             value,
             compute_time_ms,
             self._gram_cache,
-            self._gram_order,
             self._gram_lock,
             self._config.max_gram_entries,
         )
@@ -375,7 +369,6 @@ class ComputationCache:
         return self._get_from_cache(
             key,
             self._centered_gram_cache,
-            self._centered_gram_order,
             self._centered_gram_lock,
             "centered_gram",
         )
@@ -389,7 +382,6 @@ class ComputationCache:
             value,
             compute_time_ms,
             self._centered_gram_cache,
-            self._centered_gram_order,
             self._centered_gram_lock,
             self._config.max_centered_gram_entries,
         )
@@ -401,7 +393,6 @@ class ComputationCache:
         return self._get_from_cache(
             key,
             self._geodesic_cache,
-            self._geodesic_order,
             self._geodesic_lock,
             "geodesic",
         )
@@ -415,7 +406,6 @@ class ComputationCache:
             value,
             compute_time_ms,
             self._geodesic_cache,
-            self._geodesic_order,
             self._geodesic_lock,
             self._config.max_geodesic_entries,
         )
@@ -424,9 +414,7 @@ class ComputationCache:
 
     def get_svd(self, key: str) -> tuple["Array", "Array", "Array"] | None:
         """Get cached SVD decomposition (U, S, Vt)."""
-        return self._get_from_cache(
-            key, self._svd_cache, self._svd_order, self._svd_lock, "svd"
-        )
+        return self._get_from_cache(key, self._svd_cache, self._svd_lock, "svd")
 
     def set_svd(
         self,
@@ -440,7 +428,6 @@ class ComputationCache:
             value,
             compute_time_ms,
             self._svd_cache,
-            self._svd_order,
             self._svd_lock,
             self._config.max_svd_entries,
         )
@@ -487,7 +474,6 @@ class ComputationCache:
         return self._get_from_cache(
             key,
             self._frechet_cache,
-            self._frechet_order,
             self._frechet_lock,
             "frechet",
         )
@@ -501,7 +487,6 @@ class ComputationCache:
             value,
             compute_time_ms,
             self._frechet_cache,
-            self._frechet_order,
             self._frechet_lock,
             self._config.max_frechet_entries,
         )
@@ -511,8 +496,7 @@ class ComputationCache:
     def _get_from_cache(
         self,
         key: str,
-        cache: dict[str, CacheEntry],
-        order: list[str],
+        cache: OrderedDict[str, CacheEntry],
         lock: threading.Lock,
         cache_name: str,
     ) -> Any | None:
@@ -522,10 +506,8 @@ class ComputationCache:
                 entry = cache[key]
                 entry.last_accessed = time.time()
                 entry.access_count += 1
-                # Move to end of order (most recently used)
-                if key in order:
-                    order.remove(key)
-                order.append(key)
+                # O(1) move to end (most recently used)
+                cache.move_to_end(key)
 
                 with self._stats_lock:
                     self._stats.hits += 1
@@ -545,14 +527,13 @@ class ComputationCache:
         key: str,
         value: Any,
         compute_time_ms: float,
-        cache: dict[str, CacheEntry],
-        order: list[str],
+        cache: OrderedDict[str, CacheEntry],
         lock: threading.Lock,
         max_entries: int,
     ) -> None:
         """Set value in a specific cache with LRU eviction."""
         with lock:
-            # Create entry
+            # Create entry (automatically added at end of OrderedDict)
             now = time.time()
             cache[key] = CacheEntry(
                 value=value,
@@ -561,14 +542,12 @@ class ComputationCache:
                 access_count=1,
                 compute_time_ms=compute_time_ms,
             )
-            order.append(key)
 
-            # LRU eviction
+            # O(1) LRU eviction - remove from front
             while len(cache) > max_entries:
-                if not order:
-                    break
-                oldest_key = order.pop(0)
-                cache.pop(oldest_key, None)
+                # Get oldest key (first item in OrderedDict)
+                oldest_key = next(iter(cache))
+                del cache[oldest_key]
                 with self._stats_lock:
                     self._stats.evictions += 1
                 logger.debug("Cache eviction: %s", oldest_key[:16])
@@ -589,23 +568,18 @@ class ComputationCache:
         """Clear all caches."""
         with self._gram_lock:
             self._gram_cache.clear()
-            self._gram_order.clear()
 
         with self._centered_gram_lock:
             self._centered_gram_cache.clear()
-            self._centered_gram_order.clear()
 
         with self._geodesic_lock:
             self._geodesic_cache.clear()
-            self._geodesic_order.clear()
 
         with self._svd_lock:
             self._svd_cache.clear()
-            self._svd_order.clear()
 
         with self._frechet_lock:
             self._frechet_cache.clear()
-            self._frechet_order.clear()
 
         with self._stats_lock:
             self._stats = CacheStats()

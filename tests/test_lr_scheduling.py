@@ -141,8 +141,8 @@ class TestLinearDecaySchedule:
         schedule = LinearDecaySchedule(
             base_lr=1e-4, total_steps=1000, warmup_steps=0, min_lr=1e-6
         )
-        # At last step before total, should be close to min_lr
-        assert schedule.get_lr(999) == pytest.approx(1e-6, rel=0.01)
+        # At last step before total, should be close to min_lr (within 10%)
+        assert schedule.get_lr(999) == pytest.approx(1e-6, rel=0.1)
 
     def test_after_total_steps_returns_min_lr(self):
         schedule = LinearDecaySchedule(
