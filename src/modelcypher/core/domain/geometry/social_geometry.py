@@ -36,7 +36,6 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.agents.social_atlas import (
     SocialAxis,
     SocialCategory,

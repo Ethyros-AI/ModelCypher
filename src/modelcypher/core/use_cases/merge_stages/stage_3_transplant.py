@@ -254,8 +254,8 @@ def stage_transplant(
     analyzer = None
     if source_activations and config.enable_interference_analysis:
         from modelcypher.core.domain.geometry.interference_predictor import (
-            MergeAnalyzer,
             MergeAnalysisConfig,
+            MergeAnalyzer,
         )
         from modelcypher.core.domain.geometry.riemannian_density import (
             RiemannianDensityEstimator,
@@ -392,8 +392,10 @@ def stage_transplant(
         if src_analysis is not None and config.enable_shared_subspace:
             from modelcypher.core.domain.geometry.shared_subspace_projector import (
                 AlignmentMethod,
-                Config as SharedSubspaceConfig,
                 SharedSubspaceProjector,
+            )
+            from modelcypher.core.domain.geometry.shared_subspace_projector import (
+                Config as SharedSubspaceConfig,
             )
 
             src_list = b.to_numpy(src_analysis).tolist()

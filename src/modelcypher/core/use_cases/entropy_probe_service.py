@@ -32,11 +32,9 @@ from modelcypher.core.domain.entropy.baseline_verification_probe import (
     EntropyBaseline,
     VerificationConfiguration,
     VerificationResult,
-    VerificationVerdict,
 )
 from modelcypher.core.domain.entropy.entropy_pattern_detector import (
     DetectorConfiguration,
-    DistressAction,
     DistressDetectionResult,
     EntropyPattern,
     EntropyPatternAnalyzer,

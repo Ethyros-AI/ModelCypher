@@ -1053,7 +1053,6 @@ class OllivierRicciCurvature:
             OllivierRicciResult with edge/node curvatures and health classification
         """
         from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
-        from modelcypher.core.domain.geometry.numerical_stability import tiny_value
 
         backend = self._backend
         points = backend.array(points)

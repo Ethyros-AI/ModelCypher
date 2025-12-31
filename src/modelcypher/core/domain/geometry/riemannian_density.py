@@ -39,7 +39,7 @@ from typing import TYPE_CHECKING, Callable
 from modelcypher.core.domain._backend import get_default_backend
 
 if TYPE_CHECKING:
-    from modelcypher.core.ports.backend import Array, Backend
+    from modelcypher.core.ports.backend import Array
 
 from .manifold_curvature import (
     CurvatureConfig,
@@ -790,7 +790,7 @@ class RiemannianDensityEstimator:
         Returns:
             ConceptVolumeRelation with CKA-derived metrics
         """
-        from modelcypher.core.domain.geometry.cka import compute_cka_backend, HSICEstimator
+        from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka_backend
 
         backend = get_default_backend()
 

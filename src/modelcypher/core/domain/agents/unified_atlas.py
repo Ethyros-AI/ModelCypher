@@ -50,33 +50,33 @@ import math
 from dataclasses import dataclass
 from enum import Enum
 
-from modelcypher.core.domain.agents.conceptual_genealogy_atlas import (
-    ConceptDomain,
-    ConceptualGenealogyInventory,
-)
 from modelcypher.core.domain.agents.computational_gate_atlas import (
     ComputationalGateCategory,
     ComputationalGateInventory,
+)
+from modelcypher.core.domain.agents.conceptual_genealogy_atlas import (
+    ConceptDomain,
+    ConceptualGenealogyInventory,
 )
 from modelcypher.core.domain.agents.emotion_concept_atlas import (
     EmotionCategory,
     EmotionConceptInventory,
 )
-from modelcypher.core.domain.agents.moral_atlas import (
-    MoralConceptInventory,
-    MoralFoundation,
-)
-from modelcypher.core.domain.agents.safety_ethics_atlas import (
-    SafetyCategory,
-    SafetyEthicsInventory,
-)
 from modelcypher.core.domain.agents.metaphor_invariant_atlas import (
     MetaphorFamily,
     MetaphorInvariantInventory,
 )
+from modelcypher.core.domain.agents.moral_atlas import (
+    MoralConceptInventory,
+    MoralFoundation,
+)
 from modelcypher.core.domain.agents.philosophical_atlas import (
     PhilosophicalCategory,
     PhilosophicalConceptInventory,
+)
+from modelcypher.core.domain.agents.safety_ethics_atlas import (
+    SafetyCategory,
+    SafetyEthicsInventory,
 )
 from modelcypher.core.domain.agents.semantic_prime_atlas import (
     SemanticPrimeCategory,

@@ -53,10 +53,9 @@ def run_benchmark(
     """
     import mlx.core as mx
     import mlx.nn as nn
-    from mlx_lm import load
     from lm_eval import evaluator
     from lm_eval.api.model import LM
-    from lm_eval.api.registry import register_model
+    from mlx_lm import load
 
     model_path = Path(model_path).resolve()
     if not model_path.exists():

@@ -149,7 +149,6 @@ def eval_benchmark(
         mc eval benchmark --model ./model --tasks mmlu --limit 100
         mc eval benchmark --model ./model --tasks arc_challenge --num-fewshot 5
     """
-    import json
     from pathlib import Path
 
     from modelcypher.core.use_cases.mlx_lm_eval import run_benchmark
@@ -237,12 +236,10 @@ def eval_domain(
         mc eval domain --model ./model --suite standard
         mc eval domain --model ./model --suite comprehensive --limit 100
     """
-    import json
     from pathlib import Path
 
     from modelcypher.core.domain.geometry.domain_benchmark_map import (
         BENCHMARK_SUITES,
-        DOMAIN_BENCHMARK_MAP,
         EvalDomain,
         get_benchmarks_for_domains,
         get_suite,
@@ -302,7 +299,9 @@ def eval_domain(
 
             if "results" in results:
                 # Group results by domain
-                from modelcypher.core.domain.geometry.domain_benchmark_map import domain_from_benchmark
+                from modelcypher.core.domain.geometry.domain_benchmark_map import (
+                    domain_from_benchmark,
+                )
 
                 domain_scores: dict[str, list[tuple[str, float]]] = {}
 
@@ -380,7 +379,6 @@ def eval_batch(
     """
     import gc
     import json
-    import os
     import time
     from datetime import datetime
     from pathlib import Path
@@ -403,7 +401,7 @@ def eval_batch(
         out_path = Path(f"./eval-results-{datetime.now().strftime('%Y%m%d-%H%M%S')}")
         out_path.mkdir(parents=True, exist_ok=True)
 
-    typer.echo(f"=== SEQUENTIAL BATCH EVALUATION ===")
+    typer.echo("=== SEQUENTIAL BATCH EVALUATION ===")
     typer.echo(f"Suite: {suite} ({len(tasks)} tasks)")
     typer.echo(f"Models: {len(models)}")
     typer.echo(f"Output: {out_path}")
@@ -419,14 +417,14 @@ def eval_batch(
         typer.echo(f"  Path: {model_path}")
 
         if not model_path.exists():
-            typer.echo(f"  ERROR: Path does not exist, skipping", err=True)
+            typer.echo("  ERROR: Path does not exist, skipping", err=True)
             continue
 
         output_file = out_path / f"{model_name}.json"
 
         # Skip if already completed
         if output_file.exists():
-            typer.echo(f"  Already completed, loading existing results")
+            typer.echo("  Already completed, loading existing results")
             with open(output_file) as f:
                 all_results[model_name] = json.load(f)
             continue
@@ -460,7 +458,7 @@ def eval_batch(
             all_results[model_name] = {"error": str(e)}
 
         # Force cleanup between models
-        typer.echo(f"  Releasing memory...")
+        typer.echo("  Releasing memory...")
         gc.collect()
 
         # Give system a moment to reclaim resources
@@ -479,7 +477,7 @@ def eval_batch(
             "timestamp": datetime.now().isoformat(),
         }, f, indent=2)
 
-    typer.echo(f"=== BATCH COMPLETE ===")
+    typer.echo("=== BATCH COMPLETE ===")
     typer.echo(f"Results saved to: {out_path}")
 
     # Print comparison table

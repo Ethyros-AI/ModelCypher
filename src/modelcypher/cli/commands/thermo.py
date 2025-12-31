@@ -1174,7 +1174,7 @@ def thermo_calibrate(
             ])
 
         lines.append("Calibration saved. Use with:")
-        lines.append(f"  from modelcypher.core.domain.thermo import ThermoCalibration")
+        lines.append("  from modelcypher.core.domain.thermo import ThermoCalibration")
         lines.append(f"  cal = ThermoCalibration.load(Path('{output_path}'))")
 
         write_output("\n".join(lines), context.output_format, context.pretty)

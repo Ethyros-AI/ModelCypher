@@ -111,7 +111,7 @@ class ProbeCalibrator:
         if len(activations_a) != len(activations_b):
             raise ValueError("Activation matrices must have same number of samples")
 
-        from modelcypher.core.domain.geometry.cka import compute_cka, HSICEstimator
+        from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
 
         result = compute_cka(
             activations_a,

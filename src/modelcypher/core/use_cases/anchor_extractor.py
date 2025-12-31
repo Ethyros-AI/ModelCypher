@@ -25,21 +25,20 @@ from typing import Any
 from tokenizers import Tokenizer
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.ports.backend import Array
 from modelcypher.core.domain.agents.computational_gate_atlas import ComputationalGateInventory
-from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
 from modelcypher.core.domain.agents.semantic_prime_frames import SemanticPrimeFrames
 from modelcypher.core.domain.agents.semantic_prime_multilingual import (
     SemanticPrimeMultilingualInventoryLoader,
 )
 from modelcypher.core.domain.agents.semantic_primes import SemanticPrimeInventory
 from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
 from modelcypher.core.use_cases.quantization_utils import (
     QuantizationConfig,
     dequantize_if_needed,
     quantization_hint_for_key,
 )
-from modelcypher.ports.backend import Backend
+from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
 

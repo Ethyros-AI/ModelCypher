@@ -42,7 +42,6 @@ These signals encode cognitive state. The combination matters:
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
 

@@ -61,7 +61,6 @@ from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
     ThermoMeasurement,
 )
 from modelcypher.core.domain.thermo.measured_thermodynamics import (
-    MeasuredThresholds,
     ThermoCalibration,
 )
 

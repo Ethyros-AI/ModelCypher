@@ -36,7 +36,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 )
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Array, Backend
+    from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger(__name__)
 
@@ -921,10 +921,6 @@ def _validate_ridge_resistance(
         RidgeResistanceResult with pass/fail and vulnerable prompts
     """
     try:
-        from modelcypher.core.domain.thermo.ridge_cross_detector import (
-            RidgeCrossConfig,
-            RidgeCrossDetector,
-        )
 
         # Ridge crossing detection requires actual model inference.
         # Without a loaded model, we cannot measure ridge crossings.

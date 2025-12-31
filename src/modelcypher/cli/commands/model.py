@@ -534,6 +534,7 @@ def model_validate_knowledge(
         mc model validate-knowledge --merged ./merged-model --domains math,code
         mc model validate-knowledge --merged ./merged-model --quick
     """
+    from modelcypher.cli.composition import get_registry
     from modelcypher.core.domain.merging.knowledge_transfer_validator import (
         KnowledgeDomain,
     )
@@ -541,7 +542,6 @@ def model_validate_knowledge(
         KnowledgeTransferConfig,
         KnowledgeTransferService,
     )
-    from modelcypher.cli.composition import get_registry
 
     context = _context(ctx)
 

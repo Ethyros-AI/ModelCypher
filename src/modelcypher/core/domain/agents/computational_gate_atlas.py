@@ -39,7 +39,7 @@ from modelcypher.data import load_json
 from modelcypher.ports.embedding import EmbeddingProvider
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Array
+    pass
 
 # Optional: Riemannian density for volume-based gate representation
 try:

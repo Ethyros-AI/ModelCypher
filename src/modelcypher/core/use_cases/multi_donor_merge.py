@@ -55,7 +55,7 @@ import yaml
 from modelcypher.core.domain._backend import get_default_backend
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Array, Backend
+    from modelcypher.ports.backend import Backend
     from modelcypher.ports.model_loader import ModelLoaderPort
 
 logger = logging.getLogger(__name__)
@@ -904,7 +904,7 @@ class MultiDonorMergeService:
                     stage_result.boundary_preserved * 100,
                 )
 
-            except Exception as e:
+            except Exception:
                 logger.exception("    Failed to apply donor %s", donor.id)
                 # Continue with next donor (partial completion)
                 break

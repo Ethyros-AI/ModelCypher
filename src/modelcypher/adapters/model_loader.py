@@ -26,7 +26,6 @@ import mlx.nn as nn
 from mlx_lm import load as mlx_lm_load
 
 from modelcypher.core.domain._backend import get_default_backend
-
 from modelcypher.core.domain.training.lora_mlx import (
     LoRAConfig,
     apply_lora_to_model,

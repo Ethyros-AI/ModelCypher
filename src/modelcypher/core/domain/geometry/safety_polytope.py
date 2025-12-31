@@ -28,8 +28,6 @@ import math
 from dataclasses import dataclass, field
 from enum import Enum
 
-from modelcypher.core.domain._backend import get_default_backend
-
 logger = logging.getLogger(__name__)
 
 

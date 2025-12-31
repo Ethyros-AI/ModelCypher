@@ -34,7 +34,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Protocol
 
 from modelcypher.core.domain._backend import Backend, get_default_backend
 
@@ -171,7 +170,7 @@ class ConstraintAligner:
         This tells us which layer pairs have matching conceptual geometry.
         A pair with CKA ≈ 1.0 means the concepts are identically positioned.
         """
-        from modelcypher.core.domain.geometry.cka import compute_cka, HSICEstimator
+        from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
         cka_matrix: dict[tuple[int, int], float] = {}
 
         for source_layer, source_acts in source_activations.items():

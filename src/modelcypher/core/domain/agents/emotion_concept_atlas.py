@@ -47,7 +47,7 @@ from modelcypher.core.domain.geometry.vector_math import VectorMath
 from modelcypher.ports.embedding import EmbeddingProvider
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Array
+    pass
 
 # Optional: Riemannian density for volume-based emotion representation (CABE-4)
 try:

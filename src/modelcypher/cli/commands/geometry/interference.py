@@ -26,11 +26,10 @@ from typing import TYPE_CHECKING
 
 import typer
 
-from modelcypher.core.domain._backend import get_default_backend
-
 from modelcypher.cli.composition import get_domain_geometry_waypoint_service
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
+from modelcypher.core.domain._backend import get_default_backend
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.geometry.domain_geometry_waypoints import (

@@ -93,14 +93,14 @@ def stage_permute(
     """
     b = backend or get_default_backend()
 
+    from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
+    from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
     from modelcypher.core.domain.geometry.permutation_aligner import (
         Config as PAConfig,
     )
     from modelcypher.core.domain.geometry.permutation_aligner import (
         PermutationAligner,
     )
-    from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
-    from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
     if not config.enable_permutation:
         logger.info("PERMUTE: Disabled")

@@ -48,7 +48,6 @@ from modelcypher.core.domain.geometry.concept_dimensionality import (
 )
 from modelcypher.core.domain.geometry.intrinsic_dimension import (
     IntrinsicDimension,
-    TwoNNConfiguration,
 )
 
 if TYPE_CHECKING:

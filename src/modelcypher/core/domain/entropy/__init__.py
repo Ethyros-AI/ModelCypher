@@ -70,7 +70,11 @@ from .entropy_tracker import (
 )
 from .entropy_window import (
     EntropyWindow as EntropyWindowV2,  # Renamed to avoid conflict with entropy_tracker version
+)
+from .entropy_window import (
     EntropyWindowConfig,
+)
+from .entropy_window import (
     EntropyWindowStatus as EntropyWindowStatusV2,
 )
 from .geometric_alignment import *  # noqa: F401,F403
@@ -96,6 +100,20 @@ from .metrics_ring_buffer import (
     MetricSample,
     MetricsRingBuffer,
 )
+
+# model_state_classifier exports (ModelState enum removed in Pure Geometry refactor)
+from .model_state_classifier import (
+    CalibratedBaseline,
+    ClassificationResult,
+    ClassificationSnapshot,
+    ModelStateSignals,
+)
+from .model_state_classifier import (
+    EntropyStateThresholds as ModelStateThresholds,
+)
+from .model_state_classifier import (
+    ModelStateClassifier as CalibratedModelStateClassifier,
+)
 from .sep_probe import (
     LayerProbeWeights,
     PredictionResult,
@@ -103,15 +121,5 @@ from .sep_probe import (
     SEPProbe,
     SEPProbeConfig,
     SEPProbeError,
-)
-
-# model_state_classifier exports (ModelState enum removed in Pure Geometry refactor)
-from .model_state_classifier import (
-    CalibratedBaseline,
-    ClassificationResult,
-    ClassificationSnapshot,
-    EntropyStateThresholds as ModelStateThresholds,
-    ModelStateClassifier as CalibratedModelStateClassifier,
-    ModelStateSignals,
 )
 from .sep_probe_online_training import *  # noqa: F401,F403

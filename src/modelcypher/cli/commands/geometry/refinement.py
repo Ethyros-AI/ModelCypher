@@ -36,7 +36,6 @@ from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.core.domain.geometry.refinement_density import (
     RefinementDensityAnalyzer,
-    RefinementDensityConfig,
 )
 from modelcypher.utils.errors import ErrorDetail
 from modelcypher.utils.json import dump_json

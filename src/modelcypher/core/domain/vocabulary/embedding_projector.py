@@ -25,7 +25,6 @@ using various alignment strategies.
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any

@@ -45,7 +45,8 @@ from modelcypher.core.domain._backend import get_default_backend
 
 if TYPE_CHECKING:
     from tokenizers import Tokenizer
-    from modelcypher.ports.backend import Array, Backend
+
+    from modelcypher.ports.backend import Array
 
 logger = logging.getLogger(__name__)
 

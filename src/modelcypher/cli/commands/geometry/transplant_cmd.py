@@ -35,7 +35,7 @@ from typing import TYPE_CHECKING, Annotated
 import typer
 
 if TYPE_CHECKING:
-    pass
+    from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
 
@@ -139,8 +139,8 @@ def transplant_run(
             --output-dir /path/to/output \\
             --core-domain mathematical
     """
-    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.agents.unified_atlas import AtlasDomain, UnifiedAtlasInventory
     from modelcypher.core.domain.geometry.cross_dimensional_projection import (
         ProjectionMethod,

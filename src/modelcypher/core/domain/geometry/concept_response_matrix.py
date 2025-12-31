@@ -22,9 +22,12 @@ import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array
 
 
 @dataclass(frozen=True)

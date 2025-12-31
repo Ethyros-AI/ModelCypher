@@ -21,7 +21,7 @@ import math
 from dataclasses import dataclass
 from enum import Enum
 
-from modelcypher.core.domain.geometry.cka import compute_cka_from_grams, HSICEstimator
+from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka_from_grams
 from modelcypher.core.domain.geometry.path_geometry import (
     PathComparison,
     PathGeometry,

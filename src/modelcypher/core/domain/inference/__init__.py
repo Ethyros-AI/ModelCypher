@@ -43,19 +43,31 @@ _inference_platform = get_inference_platform()
 
 if _inference_platform == "mlx":
     from .dual_path_mlx import *  # noqa: F401,F403
-    from .dual_path_mlx import DualPathGenerator, DualPathGeneratorConfiguration, SecurityScanMetrics
+    from .dual_path_mlx import (
+        DualPathGenerator,
+        DualPathGeneratorConfiguration,
+        SecurityScanMetrics,
+    )
 elif _inference_platform == "cuda":
     from .dual_path_cuda import *  # noqa: F401,F403
     from .dual_path_cuda import (
-        DualPathGeneratorCUDA as DualPathGenerator,
         DualPathGeneratorConfigurationCUDA as DualPathGeneratorConfiguration,
+    )
+    from .dual_path_cuda import (
+        DualPathGeneratorCUDA as DualPathGenerator,
+    )
+    from .dual_path_cuda import (
         SecurityScanMetricsCUDA as SecurityScanMetrics,
     )
 elif _inference_platform == "jax":
     from .dual_path_jax import *  # noqa: F401,F403
     from .dual_path_jax import (
-        DualPathGeneratorJAX as DualPathGenerator,
         DualPathGeneratorConfigurationJAX as DualPathGeneratorConfiguration,
+    )
+    from .dual_path_jax import (
+        DualPathGeneratorJAX as DualPathGenerator,
+    )
+    from .dual_path_jax import (
         SecurityScanMetricsJAX as SecurityScanMetrics,
     )
 else:

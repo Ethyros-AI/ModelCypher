@@ -1562,7 +1562,7 @@ def format_comprehensive_result(result: ComprehensiveResult) -> str:
     # Prime results
     if "prime_time_delay" in result.embedding_results:
         ev = result.embedding_results["prime_time_delay"]
-        lines.append(f"Prime gaps (time-delay embedding):")
+        lines.append("Prime gaps (time-delay embedding):")
         lines.append(f"  Participation ratio: {ev.participation_ratio:.3f}")
         lines.append(f"  Spectral entropy:    {ev.spectral_entropy:.3f}")
         lines.append(f"  Top-10 ratio:        {ev.top_k_ratio:.3f}")

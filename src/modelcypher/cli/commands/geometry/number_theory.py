@@ -375,7 +375,6 @@ def parameter_sweep(
     backend = get_default_backend()
 
     # Generate logarithmically-spaced prime counts
-    import math
 
     prime_counts = [
         int(100 * (max_primes / 100) ** (i / (steps - 1))) for i in range(steps)

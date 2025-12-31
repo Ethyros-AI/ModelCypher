@@ -46,8 +46,8 @@ import hashlib
 import logging
 import threading
 import time
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable, TypeVar
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, TypeVar
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend

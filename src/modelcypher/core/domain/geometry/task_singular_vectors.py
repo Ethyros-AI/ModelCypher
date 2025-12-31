@@ -48,7 +48,6 @@ components while maintaining target model stability.
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 

@@ -154,8 +154,8 @@ class LinguisticModifier(str, Enum):
                 intensity = calibration.modifier_profile.get_intensity(modifier.value)
         """
         warnings.warn(
-            f"LinguisticModifier.intensity_score uses placeholder values. "
-            f"Use ThermoCalibrator.calibrate() to measure actual effects.",
+            "LinguisticModifier.intensity_score uses placeholder values. "
+            "Use ThermoCalibrator.calibrate() to measure actual effects.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -262,9 +262,9 @@ class AttractorBasin(str, Enum):
             Relative energy level. Lower values indicate more stable attractors.
         """
         warnings.warn(
-            f"AttractorBasin.energy_level uses placeholder values. "
-            f"Use ThermoCalibrator.calibrate() to measure actual energies from "
-            f"observed outcome probabilities: E(x) = -T * log(p(x)/p(ref))",
+            "AttractorBasin.energy_level uses placeholder values. "
+            "Use ThermoCalibrator.calibrate() to measure actual energies from "
+            "observed outcome probabilities: E(x) = -T * log(p(x)/p(ref))",
             DeprecationWarning,
             stacklevel=2,
         )

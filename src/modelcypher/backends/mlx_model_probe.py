@@ -25,11 +25,11 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from pathlib import Path
 from typing import Any
 
 import mlx.core as mx
-import math
 
 from modelcypher.ports.model_probe import (
     AlignmentAnalysisResult,

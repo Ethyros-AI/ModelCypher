@@ -30,7 +30,6 @@ from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
-    LanguageResourceLevel,
     LinguisticModifier,
     MultilingualPerturbedPrompt,
     PromptLanguage,

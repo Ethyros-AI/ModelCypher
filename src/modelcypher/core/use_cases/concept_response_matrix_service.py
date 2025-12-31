@@ -43,6 +43,8 @@ from modelcypher.core.domain.geometry.concept_response_matrix import (
 )
 from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
     Configuration as LayerMatcherConfiguration,
+)
+from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
     CrossArchitectureLayerMatcher,
 )
 from modelcypher.core.domain.geometry.shared_subspace_projector import (

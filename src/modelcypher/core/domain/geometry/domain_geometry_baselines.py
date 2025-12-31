@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -277,9 +277,8 @@ class DomainGeometryBaselineExtractor:
             DomainGeometryBaseline with computed metrics
         """
         from modelcypher.core.domain.geometry.manifold_curvature import (
-            OllivierRicciCurvature,
             OllivierRicciConfig,
-            ManifoldHealth,
+            OllivierRicciCurvature,
         )
 
         logger.info(f"Extracting {domain} geometry baseline from {model_path}")

@@ -27,9 +27,9 @@ Uses the superior CrossVocabMerger pipeline:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import logging
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -1411,7 +1411,6 @@ def _sample_embedding_similarities(
     Returns a list of similarity values that can be used to derive
     thresholds via spectral gap detection.
     """
-    import math as _math
 
     n_source = source_embed.shape[0]
     n_target = target_embed.shape[0]

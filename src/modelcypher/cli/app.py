@@ -47,10 +47,10 @@ from modelcypher.cli.commands import storage as storage_commands
 from modelcypher.cli.commands import system as system_commands
 from modelcypher.cli.commands import thermo as thermo_commands
 from modelcypher.cli.commands import train as train_commands
-from modelcypher.cli.commands.geometry import crm as geometry_crm_commands
 from modelcypher.cli.commands.geometry import atlas as geometry_atlas_commands
 from modelcypher.cli.commands.geometry import baseline as geometry_baseline_commands
 from modelcypher.cli.commands.geometry import concept as geometry_concept_commands
+from modelcypher.cli.commands.geometry import crm as geometry_crm_commands
 from modelcypher.cli.commands.geometry import cross_cultural as geometry_cross_cultural_commands
 from modelcypher.cli.commands.geometry import emotion as geometry_emotion_commands
 from modelcypher.cli.commands.geometry import geom_adapter as geometry_adapter_commands
@@ -66,6 +66,7 @@ from modelcypher.cli.commands.geometry import persona as geometry_persona_comman
 from modelcypher.cli.commands.geometry import primes as geometry_primes_commands
 from modelcypher.cli.commands.geometry import refinement as geometry_refinement_commands
 from modelcypher.cli.commands.geometry import refusal as geometry_refusal_commands
+from modelcypher.cli.commands.geometry import research as geometry_research_commands
 from modelcypher.cli.commands.geometry import safety as geometry_safety_commands
 from modelcypher.cli.commands.geometry import social as geometry_social_commands
 from modelcypher.cli.commands.geometry import sparse as geometry_sparse_commands
@@ -74,16 +75,14 @@ from modelcypher.cli.commands.geometry import stitch as geometry_stitch_commands
 from modelcypher.cli.commands.geometry import temporal as geometry_temporal_commands
 from modelcypher.cli.commands.geometry import training as geometry_training_commands
 from modelcypher.cli.commands.geometry import transfer as geometry_transfer_cabe_commands
+from modelcypher.cli.commands.geometry import transplant_cmd as geometry_transplant_commands
 from modelcypher.cli.commands.geometry import transport as geometry_transport_commands
 from modelcypher.cli.commands.geometry import waypoint as geometry_waypoint_commands
-from modelcypher.cli.commands.geometry import research as geometry_research_commands
-from modelcypher.cli.commands.geometry import transplant_cmd as geometry_transplant_commands
-from modelcypher.cli.context import CLIContext, resolve_ai_mode, resolve_output_format
-from modelcypher.cli.output import write_error, write_output
 from modelcypher.cli.composition import get_training_service
-from modelcypher.core.use_cases.geometry_service import GeometryService
+from modelcypher.cli.context import CLIContext, resolve_ai_mode, resolve_output_format
+from modelcypher.cli.output import write_output
 from modelcypher.core.domain.training import Hyperparameters, TrainingConfig
-from modelcypher.utils.errors import ErrorDetail
+from modelcypher.core.use_cases.geometry_service import GeometryService
 from modelcypher.utils.json import dump_json
 from modelcypher.utils.logging import configure_logging
 

@@ -48,7 +48,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.agents.sequence_invariant_atlas import (
     SequenceFamily,
     SequenceInvariantInventory,

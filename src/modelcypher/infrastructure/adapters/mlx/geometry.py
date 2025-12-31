@@ -20,9 +20,12 @@ from typing import Any
 
 import mlx.core as mx
 
+from modelcypher.core.domain.geometry.compositional_probes import CompositionalProbes
 from modelcypher.core.domain.geometry.generalized_procrustes import Config as GPAConfig
-from modelcypher.core.domain.geometry.generalized_procrustes import FrechetMeanConfig
-from modelcypher.core.domain.geometry.generalized_procrustes import GeneralizedProcrustes
+from modelcypher.core.domain.geometry.generalized_procrustes import (
+    FrechetMeanConfig,
+    GeneralizedProcrustes,
+)
 from modelcypher.core.domain.geometry.intrinsic_dimension import (
     IntrinsicDimension,
 )
@@ -36,7 +39,6 @@ from modelcypher.core.domain.geometry.permutation_aligner import Config as MLXAl
 from modelcypher.core.domain.geometry.permutation_aligner import (
     PermutationAligner as MLXPermutationAligner,
 )
-from modelcypher.core.domain.geometry.compositional_probes import CompositionalProbes
 from modelcypher.core.domain.geometry.types import (
     AlignmentConfig,
     BatchMergerResult,

@@ -19,7 +19,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .common import (
@@ -102,7 +101,6 @@ def register_safety_tools(ctx: ServiceContext) -> None:
             currentBehavior: list[str],
         ) -> dict:
             """Detect persona drift between baseline and current behavior."""
-            import math
 
             # Extract baseline traits (expected traits are keys with positive values)
             baseline_traits = set(

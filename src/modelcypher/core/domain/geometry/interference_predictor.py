@@ -27,10 +27,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from modelcypher.core.domain._backend import get_default_backend
-
 if TYPE_CHECKING:
-    pass
+    from modelcypher.ports.backend import Array
 
 from .riemannian_density import (
     ConceptVolume,

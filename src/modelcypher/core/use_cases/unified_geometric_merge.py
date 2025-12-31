@@ -47,9 +47,9 @@ Stage implementations are in merge_stages/ subpackage for modularity.
 from __future__ import annotations
 
 import logging
-import time
 import re
 import shutil
+import time
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
@@ -481,12 +481,13 @@ class UnifiedGeometricMerger:
         )
 
         if target_is_quantized:
+            import json as _json_for_quant
+
             from .quantization_utils import (
                 QuantizationHint,
                 quantization_config_from_payload,
                 requantize_weights,
             )
-            import json as _json_for_quant
 
             # Read target config to get quantization params
             config_path = Path(target_path) / "config.json"
@@ -630,6 +631,7 @@ class UnifiedGeometricMerger:
             if source_model and target_model and source_tokenizer and target_tokenizer:
                 from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
                 from modelcypher.core.domain.vocabulary.alignment_map import AlignmentQuality
+
                 from .merge_stages.stage_1_probe import (
                     _encode_probe_ids,
                     build_token_id_map,
@@ -786,13 +788,14 @@ class UnifiedGeometricMerger:
         )
 
         if target_is_quantized:
+            import json
+            from pathlib import Path
+
             from .quantization_utils import (
                 QuantizationHint,
                 quantization_config_from_payload,
                 requantize_weights,
             )
-            import json
-            from pathlib import Path
 
             # Read target config to get quantization params
             config_path = Path(target_path) / "config.json"

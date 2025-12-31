@@ -307,7 +307,7 @@ def _probe_precise(
     """Precise probe mode: Run probes through BOTH models."""
     b = backend or get_default_backend()
     from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
-    from modelcypher.core.domain.geometry.cka import compute_cka, HSICEstimator
+    from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
     from modelcypher.core.domain.geometry.manifold_stitcher import (
         ActivatedDimension,
         ActivationFingerprint,
@@ -634,7 +634,7 @@ def _probe_fast(
     and orthogonal transformations - exactly what we need for merge alignment.
     """
     b = backend or get_default_backend()
-    from modelcypher.core.domain.geometry.cka import compute_layer_cka, compute_cka, HSICEstimator
+    from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka, compute_layer_cka
 
     weight_cka: dict[str, float] = {}
     layer_cka: dict[int, list[float]] = {}

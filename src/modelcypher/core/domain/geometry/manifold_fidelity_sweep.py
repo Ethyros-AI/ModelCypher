@@ -296,7 +296,7 @@ class ManifoldFidelitySweep:
 
         Delegates to the canonical Backend-aware CKA implementation in cka.py.
         """
-        from modelcypher.core.domain.geometry.cka import compute_cka_backend, HSICEstimator
+        from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka_backend
 
         return compute_cka_backend(
             x,

@@ -182,6 +182,8 @@ def _project_gram_transport(
     """
     from modelcypher.core.domain.geometry.gromov_wasserstein import (
         Config as GWConfig,
+    )
+    from modelcypher.core.domain.geometry.gromov_wasserstein import (
         GromovWassersteinDistance,
     )
 

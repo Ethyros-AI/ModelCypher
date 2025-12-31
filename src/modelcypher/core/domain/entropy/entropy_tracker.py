@@ -41,11 +41,7 @@ from modelcypher.core.domain._backend import get_default_backend
 # Import calibration-based classes from model_state_classifier
 from modelcypher.core.domain.entropy.model_state_classifier import (
     CalibratedBaseline,
-    ClassificationResult,
-    ClassificationSnapshot,
-    EntropyStateThresholds,
     ModelStateClassifier,
-    ModelStateSignals,
 )
 
 if TYPE_CHECKING:

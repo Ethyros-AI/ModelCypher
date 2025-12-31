@@ -17,7 +17,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import time
 from dataclasses import dataclass
@@ -37,7 +36,6 @@ from modelcypher.core.domain.training import TrainingConfig
 from modelcypher.core.use_cases.concept_response_matrix_service import (
     ConceptResponseMatrixService,
 )
-from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
 from modelcypher.core.use_cases.evaluation_service import (
     EvalConfig,
 )
@@ -46,10 +44,9 @@ from modelcypher.core.use_cases.geometry_stitch_service import GeometryStitchSer
 from modelcypher.core.use_cases.merge_validation_service import (
     MergeValidationConfig,
 )
-from modelcypher.core.use_cases.unified_geometric_merge import UnifiedGeometricMerger
 from modelcypher.core.use_cases.model_probe_service import ModelProbeService
-from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
 from modelcypher.core.use_cases.settings_service import SettingsService
+from modelcypher.core.use_cases.unified_geometric_merge import UnifiedGeometricMerger
 from modelcypher.infrastructure.container import PortRegistry
 from modelcypher.infrastructure.service_factory import ServiceFactory
 from modelcypher.mcp.security import (

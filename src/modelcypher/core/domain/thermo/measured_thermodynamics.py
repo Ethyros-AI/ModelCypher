@@ -45,10 +45,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
-        BehavioralOutcome,
-        LinguisticModifier,
-    )
+    pass
 
 logger = logging.getLogger(__name__)
 

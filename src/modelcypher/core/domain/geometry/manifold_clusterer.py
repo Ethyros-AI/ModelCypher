@@ -35,7 +35,7 @@ from modelcypher.core.domain.geometry.manifold_profile import (
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 
 if TYPE_CHECKING:
-    from modelcypher.core.ports.backend import Backend
+    pass
 
 logger = logging.getLogger(__name__)
 

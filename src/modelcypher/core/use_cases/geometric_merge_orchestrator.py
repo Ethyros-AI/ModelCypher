@@ -511,7 +511,7 @@ class GeometricMergeOrchestrator:
         b = self._backend
 
         # cka - compute overall CKA
-        from modelcypher.core.domain.geometry.cka import compute_cka, HSICEstimator
+        from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
 
         # Get all activations stacked
         src_all = []
@@ -592,8 +592,8 @@ class GeometricMergeOrchestrator:
         # manifold_curvature - sectional curvature for geodesic interpolation
         try:
             from modelcypher.core.domain.geometry.manifold_curvature import (
-                SectionalCurvatureEstimator,
                 CurvatureConfig,
+                SectionalCurvatureEstimator,
             )
             stacked = b.stack(tgt_acts, axis=0)
             b.eval(stacked)
@@ -613,8 +613,8 @@ class GeometricMergeOrchestrator:
         # Ollivier-Ricci curvature - discrete Ricci for manifold health
         try:
             from modelcypher.core.domain.geometry.manifold_curvature import (
-                OllivierRicciCurvature,
                 OllivierRicciConfig,
+                OllivierRicciCurvature,
             )
             stacked = b.stack(tgt_acts, axis=0)
             b.eval(stacked)
@@ -646,8 +646,10 @@ class GeometricMergeOrchestrator:
         if src_acts and len(src_acts) >= 5:
             try:
                 from modelcypher.core.domain.geometry.gromov_wasserstein import (
-                    GromovWassersteinDistance,
                     Config as GWConfig,
+                )
+                from modelcypher.core.domain.geometry.gromov_wasserstein import (
+                    GromovWassersteinDistance,
                 )
                 n = min(len(src_acts), len(tgt_acts), 50)  # Limit for speed
                 src_stacked = b.stack(src_acts[:n], axis=0)
@@ -689,9 +691,11 @@ class GeometricMergeOrchestrator:
         if not self._avoid_svd:
             try:
                 from modelcypher.core.domain.geometry.shared_subspace_projector import (
-                    SharedSubspaceProjector,
-                    Config as SSPConfig,
                     AlignmentMethod,
+                    SharedSubspaceProjector,
+                )
+                from modelcypher.core.domain.geometry.shared_subspace_projector import (
+                    Config as SSPConfig,
                 )
 
                 # Convert activations to lists for CRM-style input
@@ -737,8 +741,8 @@ class GeometricMergeOrchestrator:
         if not self._avoid_svd:
             try:
                 from modelcypher.core.domain.geometry.relative_representation import (
-                    compute_relative_representation,
                     align_relative_representations,
+                    compute_relative_representation,
                 )
 
                 # Need anchor embeddings - use first N activations as anchors
@@ -880,9 +884,7 @@ class GeometricMergeOrchestrator:
 
         # tangent_space_alignment - local alignment
         try:
-            from modelcypher.core.domain.geometry.tangent_space_alignment import (
-                TangentSpaceAligner,
-            )
+            pass
             # Would compute tangent space alignment here
         except Exception:
             pass
@@ -1013,18 +1015,14 @@ class GeometricMergeOrchestrator:
         """STAGE 6: Compute per-dimension weights for blending."""
         # dimension_blender - per-dimension alpha
         try:
-            from modelcypher.core.domain.geometry.dimension_blender import (
-                DimensionBlender,
-            )
+            pass
             # Would compute dimension-specific alphas
         except Exception:
             pass
 
         # verb_noun_classifier - skill vs structure
         try:
-            from modelcypher.core.domain.geometry.verb_noun_classifier import (
-                VerbNounClassifier,
-            )
+            pass
             # Would classify dimensions as verb (skill) or noun (structure)
         except Exception:
             pass
@@ -1032,10 +1030,6 @@ class GeometricMergeOrchestrator:
         # fisher_blending - importance weights from activation variance
         # Higher variance = more important = trust that model more
         try:
-            from modelcypher.core.domain.geometry.fisher_blending import (
-                FisherBlendingConfig,
-                FisherWeights,
-            )
 
             if src_acts and tgt_acts and len(src_acts) >= 5 and len(tgt_acts) >= 5:
                 n = min(len(src_acts), len(tgt_acts))
@@ -1073,9 +1067,6 @@ class GeometricMergeOrchestrator:
 
         # dimension_blender - per-dimension domain-based alphas
         try:
-            from modelcypher.core.domain.geometry.dimension_blender import (
-                compute_dimension_correlations,
-            )
 
             if src_acts and tgt_acts and len(src_acts) >= 5 and len(tgt_acts) >= 5:
                 n = min(len(src_acts), len(tgt_acts))
@@ -1149,18 +1140,13 @@ class GeometricMergeOrchestrator:
         """STAGE 8: Validate merge geometry."""
         # safety_polytope - check we're in safe region
         try:
-            from modelcypher.core.domain.geometry.safety_polytope import (
-                SafetyPolytope,
-            )
+            pass
             # Would check merge is within safe transformation bounds
         except Exception:
             pass
 
         # refusal_direction_detector - preserve refusal
         try:
-            from modelcypher.core.domain.geometry.refusal_direction_detector import (
-                RefusalDirectionDetector,
-            )
             # Would verify refusal direction is preserved
             geometry.refusal_preserved = True
         except Exception:
@@ -1215,19 +1201,14 @@ class GeometricMergeOrchestrator:
 
         # Use CrossArchitectureLayerMatcher for different layer counts
         try:
-            from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
-                CrossArchitectureLayerMatcher,
-                Configuration,
-            )
-            from modelcypher.core.domain.geometry.concept_response_matrix import (
-                ConceptResponseMatrix,
-            )
-
             # Build CRM-like structures from activations
             # We need to compute CKA between all layer pairs
-
             # First, compute a CKA matrix manually since we don't have full CRMs
-            from modelcypher.core.domain.geometry.cka import compute_cka, HSICEstimator
+            from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
+            from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
+                Configuration,
+                CrossArchitectureLayerMatcher,
+            )
 
             n_src = len(src_layers)
             n_tgt = len(tgt_layers)
@@ -1262,8 +1243,8 @@ class GeometricMergeOrchestrator:
                         if src_stacked.shape[1] != tgt_stacked.shape[1]:
                             # Use Gram matrices for cross-dimensional CKA
                             from modelcypher.core.domain.geometry.cka import (
-                                compute_cka_from_grams,
                                 HSICEstimator,
+                                compute_cka_from_grams,
                             )
                             gram_src = b.matmul(src_stacked, b.transpose(src_stacked))
                             gram_tgt = b.matmul(tgt_stacked, b.transpose(tgt_stacked))
@@ -1969,6 +1950,8 @@ class GeometricMergeOrchestrator:
                         try:
                             from modelcypher.core.domain.geometry.dare_sparsity import (
                                 Configuration as DAREConfig,
+                            )
+                            from modelcypher.core.domain.geometry.dare_sparsity import (
                                 analyze_sparsity,
                             )
                             # Compute delta and sparsify

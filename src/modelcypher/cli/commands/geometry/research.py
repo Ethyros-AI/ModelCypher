@@ -983,13 +983,13 @@ def zero_shot_transfer(
     """
     context = _context(ctx)
 
+    from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
     from modelcypher.core.domain.geometry.knowledge_density import (
         KnowledgeDensityAnalyzer,
         KnowledgeDensityConfig,
         ModelDensityProfile,
     )
     from modelcypher.core.domain.geometry.knowledge_diff import KnowledgeDiffer
-    from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
 
     # Load models using helper
     logger.info("Loading target model: %s", target_path)

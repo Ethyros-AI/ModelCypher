@@ -56,7 +56,7 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Array, Backend
+    from modelcypher.ports.backend import Array
 
 from .manifold_curvature import (
     LocalCurvature,

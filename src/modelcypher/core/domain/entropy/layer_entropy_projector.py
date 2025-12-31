@@ -377,7 +377,6 @@ class LayerEntropyProjector:
         ModelLayerEntropyProfile
             Complete per-layer entropy profile.
         """
-        from pathlib import Path
 
         b = self._backend
 

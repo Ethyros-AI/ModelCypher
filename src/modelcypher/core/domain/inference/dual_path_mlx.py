@@ -41,7 +41,6 @@ from typing import TYPE_CHECKING, Any, AsyncGenerator
 # Infrastructure dependencies (MLX-specific model loading)
 # These cannot be abstracted via Backend protocol
 # from mlx_lm import load  # Moved to lazy import inside DualPathGenerator
-
 from modelcypher.core.domain._backend import get_default_backend
 
 if TYPE_CHECKING:

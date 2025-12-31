@@ -29,8 +29,10 @@ from typing import TYPE_CHECKING, Callable
 
 from modelcypher.core.domain.geometry.thermo_path_integration import (
     CombinedMeasurement,
-    Configuration as ThermoPathConfig,
     ThermoPathIntegration,
+)
+from modelcypher.core.domain.geometry.thermo_path_integration import (
+    Configuration as ThermoPathConfig,
 )
 from modelcypher.ports.embedding import EmbeddingProvider
 
@@ -381,6 +383,8 @@ class ThermoService:
 
         from modelcypher.core.domain.geometry.gate_detector import (
             Configuration as GateConfig,
+        )
+        from modelcypher.core.domain.geometry.gate_detector import (
             GateDetector,
         )
 

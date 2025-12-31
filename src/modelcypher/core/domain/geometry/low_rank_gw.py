@@ -43,11 +43,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
-    machine_epsilon,
-    tiny_value,
-)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -894,8 +889,10 @@ def project_via_lowrank_gw(
         # If column dimension is small enough, use standard GW
         if d_s <= 2000 and d_t <= 2000:
             from modelcypher.core.domain.geometry.gromov_wasserstein import (
-                GromovWassersteinDistance,
                 Config as StandardGWConfig,
+            )
+            from modelcypher.core.domain.geometry.gromov_wasserstein import (
+                GromovWassersteinDistance,
             )
             gw = GromovWassersteinDistance(b)
             col_result = gw.compute(G_source_col, G_target_col, StandardGWConfig(max_outer_iterations=30))

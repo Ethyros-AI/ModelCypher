@@ -39,6 +39,7 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain.entropy.logit_entropy_calculator import (
     EntropyThresholds,
 )
+
 # EntropyLevel enum removed - use raw entropy values with thresholds
 from modelcypher.core.domain.thermo.phase_transition_theory import Phase
 

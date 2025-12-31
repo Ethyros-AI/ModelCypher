@@ -37,7 +37,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Backend
+    from modelcypher.ports.backend import Array, Backend
     from modelcypher.ports.model_loader import ModelLoaderPort
 
 logger = logging.getLogger(__name__)

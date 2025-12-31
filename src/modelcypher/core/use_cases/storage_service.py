@@ -28,7 +28,7 @@ from modelcypher.core.domain.storage_usage import DiskStats, StorageSnapshot, St
 from modelcypher.utils.paths import ensure_dir, expand_path
 
 if TYPE_CHECKING:
-    from modelcypher.ports.storage import DatasetStore, JobStore, ModelStore
+    from modelcypher.ports.storage import JobStore, ModelStore
 
 
 BYTES_PER_GB = 1024**3

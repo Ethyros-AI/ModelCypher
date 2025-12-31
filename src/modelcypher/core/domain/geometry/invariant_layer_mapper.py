@@ -1502,7 +1502,7 @@ class StrategyLayerMapper:
 
         if source_activations and target_activations:
             from modelcypher.core.domain._backend import get_default_backend
-            from modelcypher.core.domain.geometry.cka import compute_cka, HSICEstimator
+            from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
 
             backend = get_default_backend()
             source_layers = sorted(source_activations.keys())
@@ -1602,7 +1602,7 @@ class StrategyLayerMapper:
 
         Delegates to the canonical CKA implementation in cka.py.
         """
-        from modelcypher.core.domain.geometry.cka import compute_cka_from_lists, HSICEstimator
+        from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka_from_lists
 
         return compute_cka_from_lists(
             x,
