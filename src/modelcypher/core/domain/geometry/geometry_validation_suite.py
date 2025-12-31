@@ -328,6 +328,7 @@ class SpectralSignatureFixture:
     normalized_laplacian: bool
     heat_times: list[float]
     expected_component_count: int
+    expected_connected: bool
 
 
 @dataclass(frozen=True)
@@ -336,6 +337,7 @@ class Fixtures:
     traversal_coherence: TraversalCoherenceFixture
     path_signature: PathSignatureFixture
     spectral_signature: SpectralSignatureFixture
+    spectral_signature_connected: SpectralSignatureFixture
 
 
 @dataclass(frozen=True)
@@ -348,6 +350,7 @@ class Report:
     traversal_coherence: TraversalCoherenceValidation
     path_signature: PathSignatureValidation
     spectral_signature: SpectralSignatureValidation
+    spectral_signature_connected: SpectralSignatureValidation
     fixtures: Fixtures | None
 
 
@@ -382,12 +385,16 @@ class GeometryValidationSuite:
         spectral_validation = self._validate_spectral_signature(
             fixture=fixtures.spectral_signature,
         )
+        spectral_connected_validation = self._validate_spectral_signature(
+            fixture=fixtures.spectral_signature_connected,
+        )
 
         passed = (
             gw_validation.passed
             and traversal_validation.passed
             and path_validation.passed
             and spectral_validation.passed
+            and spectral_connected_validation.passed
         )
 
         return Report(
@@ -399,6 +406,7 @@ class GeometryValidationSuite:
             traversal_coherence=traversal_validation,
             path_signature=path_validation,
             spectral_signature=spectral_validation,
+            spectral_signature_connected=spectral_connected_validation,
             fixtures=fixtures if resolved.include_fixtures else None,
         )
 
@@ -526,6 +534,15 @@ class GeometryValidationSuite:
             normalized_laplacian=True,
             heat_times=[0.1, 1.0, 10.0],
             expected_component_count=2,
+            expected_connected=False,
+        )
+        spectral_connected_fixture = SpectralSignatureFixture(
+            points=[[0.0, 0.0], [1.0, 0.0], [2.0, 0.0], [3.0, 0.0]],
+            k_neighbors=1,
+            normalized_laplacian=True,
+            heat_times=[0.1, 1.0, 10.0],
+            expected_component_count=1,
+            expected_connected=True,
         )
 
         return Fixtures(
@@ -533,6 +550,7 @@ class GeometryValidationSuite:
             traversal_coherence=traversal_fixture,
             path_signature=path_fixture,
             spectral_signature=spectral_fixture,
+            spectral_signature_connected=spectral_connected_fixture,
         )
 
     def _validate_gromov_wasserstein(
@@ -724,8 +742,13 @@ class GeometryValidationSuite:
                 break
 
         component_ok = signature.component_count == fixture.expected_component_count
+        connected_ok = signature.connected == fixture.expected_connected
+        if fixture.expected_connected:
+            connectivity_ok = signature.algebraic_connectivity > eig_eps
+        else:
+            connectivity_ok = signature.algebraic_connectivity <= eig_eps
 
-        passed = eigen_bounds_ok and heat_monotone and component_ok
+        passed = eigen_bounds_ok and heat_monotone and component_ok and connected_ok and connectivity_ok
 
         return SpectralSignatureValidation(
             eigenvalue_min=float(eig_min),

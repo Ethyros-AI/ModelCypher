@@ -488,3 +488,71 @@ class BackendMatrixUtils:
         """
         diag_vals = self.backend.diag(A)
         return float(self.backend.to_numpy(self.backend.sum(diag_vals)))
+
+
+# =============================================================================
+# Pure Python list-based matrix utilities (no Backend required)
+# =============================================================================
+# These functions operate on Python lists for cases where Backend acceleration
+# is not needed or not available. Useful for small matrices and pure computation.
+
+
+def reshape_flat_to_matrix(flat: list[float], rows: int, cols: int) -> list[list[float]]:
+    """Reshape a flat list into a 2D matrix (list of lists).
+
+    Args:
+        flat: 1D list of floats with length = rows * cols
+        rows: Number of rows in output matrix
+        cols: Number of columns in output matrix
+
+    Returns:
+        2D list with shape [rows, cols]
+
+    Example:
+        >>> flat = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        >>> reshape_flat_to_matrix(flat, 2, 3)
+        [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+    """
+    result: list[list[float]] = []
+    for i in range(rows):
+        row = []
+        for j in range(cols):
+            row.append(flat[i * cols + j])
+        result.append(row)
+    return result
+
+
+def transpose_flat_matrix(matrix: list[float], m: int, n: int) -> list[float]:
+    """Transpose a flat matrix from m×n to n×m.
+
+    Args:
+        matrix: Flat list representing m×n matrix (row-major order)
+        m: Number of rows in input matrix
+        n: Number of columns in input matrix
+
+    Returns:
+        Flat list representing n×m transposed matrix (row-major order)
+
+    Example:
+        >>> # 2×3 matrix: [[1,2,3], [4,5,6]]
+        >>> flat = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        >>> transpose_flat_matrix(flat, 2, 3)
+        [1.0, 4.0, 2.0, 5.0, 3.0, 6.0]  # 3×2: [[1,4], [2,5], [3,6]]
+    """
+    result = [0.0 for _ in range(m * n)]
+    for i in range(m):
+        for j in range(n):
+            result[j * m + i] = matrix[i * n + j]
+    return result
+
+
+def compute_frobenius_norm_squared(matrix: list[float]) -> float:
+    """Compute the squared Frobenius norm of a flat matrix.
+
+    Args:
+        matrix: Flat list representing a matrix
+
+    Returns:
+        Sum of squares of all elements
+    """
+    return sum(value * value for value in matrix)

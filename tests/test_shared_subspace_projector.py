@@ -37,6 +37,10 @@ from modelcypher.core.domain.geometry.concept_response_matrix import (
     AnchorMetadata,
     ConceptResponseMatrix,
 )
+from modelcypher.core.domain.geometry.backend_matrix_utils import (
+    reshape_flat_to_matrix,
+    transpose_flat_matrix,
+)
 from modelcypher.core.domain.geometry.shared_subspace_projector import (
     AlignmentMethod,
     Config,
@@ -980,7 +984,7 @@ class TestMatrixHelpers:
         matrix = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]  # 2x3
         m, n = 2, 3
 
-        transposed = SharedSubspaceProjector._transpose_matrix(matrix, m, n)
+        transposed = transpose_flat_matrix(matrix, m, n)
 
         # Should be 3x2
         assert len(transposed) == 6
@@ -994,7 +998,7 @@ class TestMatrixHelpers:
         flat = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
         rows, cols = 2, 3
 
-        result = SharedSubspaceProjector._reshape_to_matrix(flat, rows, cols)
+        result = reshape_flat_to_matrix(flat, rows, cols)
 
         assert len(result) == 2
         assert len(result[0]) == 3

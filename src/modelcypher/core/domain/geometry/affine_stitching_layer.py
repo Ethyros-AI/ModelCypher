@@ -23,6 +23,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
+from modelcypher.core.domain.geometry.backend_matrix_utils import (
+    compute_frobenius_norm_squared,
+    reshape_flat_to_matrix,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
@@ -183,7 +187,7 @@ class AffineStitchingLayer:
             forward_loss = AffineStitchingLayer._compute_mse(forward_preds, target)
             backward_loss = AffineStitchingLayer._compute_mse(backward_preds, source)
             reg_loss = (
-                AffineStitchingLayer._compute_frobenius_norm_squared(weights) * config.weight_decay
+                compute_frobenius_norm_squared(weights) * config.weight_decay
             )
             total_loss = (
                 config.forward_weight * forward_loss
@@ -256,7 +260,7 @@ class AffineStitchingLayer:
             d_source=d_source,
             d_target=d_target,
         )
-        weights_2d = AffineStitchingLayer._reshape_to_matrix(weights, d_target, d_source)
+        weights_2d = reshape_flat_to_matrix(weights, d_target, d_source)
 
         return Result(
             weights=weights_2d,
@@ -471,10 +475,6 @@ class AffineStitchingLayer:
         return total / float(count) if count > 0 else 0.0
 
     @staticmethod
-    def _compute_frobenius_norm_squared(matrix: list[float]) -> float:
-        return sum(value * value for value in matrix)
-
-    @staticmethod
     def _compute_reconstruction_error(
         weights: list[float],
         bias: list[float],
@@ -516,16 +516,6 @@ class AffineStitchingLayer:
                 error_sum += diff * diff
                 source_norm += source[i][k] * source[i][k]
         return math.sqrt(error_sum / source_norm) if source_norm > 0 else 0.0
-
-    @staticmethod
-    def _reshape_to_matrix(flat: list[float], rows: int, cols: int) -> list[list[float]]:
-        result: list[list[float]] = []
-        for i in range(rows):
-            row = []
-            for j in range(cols):
-                row.append(flat[i * cols + j])
-            result.append(row)
-        return result
 
 
 class BackendAffineStitchingLayer:

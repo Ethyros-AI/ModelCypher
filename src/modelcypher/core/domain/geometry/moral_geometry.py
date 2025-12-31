@@ -42,16 +42,28 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from modelcypher.core.domain.agents.moral_atlas import (
-    ALL_MORAL_PROBES,
-    MoralAxis,
-    MoralFoundation,
+from modelcypher.core.domain.geometry.atlas_protocols import (
+    MoralConceptProtocol,
+    enum_key,
 )
+from modelcypher.core.domain.geometry.atlas_registry import get_moral_concepts
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
+
+_AXIS_VALENCE = "valence"
+_AXIS_AGENCY = "agency"
+_AXIS_SCOPE = "scope"
+
+
+def _axis_key(value: object) -> str:
+    return enum_key(value).lower()
+
+
+def _foundation_key(value: object) -> str:
+    return enum_key(value).lower()
 
 
 @dataclass
@@ -169,14 +181,25 @@ class MoralGeometryAnalyzer:
     6. Compute Moral Manifold Score (MMS)
     """
 
-    def __init__(self, backend: "Backend") -> None:
+    def __init__(
+        self,
+        backend: "Backend",
+        concepts: list[MoralConceptProtocol] | None = None,
+    ) -> None:
         """Initialize with compute backend.
 
         Args:
             backend: Backend for array operations
+            concepts: Optional moral concept inventory (defaults to registry)
         """
         self._backend = backend
-        self._concept_lookup = {c.id: c for c in ALL_MORAL_PROBES}
+        self._concepts = list(concepts or get_moral_concepts())
+        if not self._concepts:
+            raise ValueError(
+                "No moral concepts registered. Call register_default_atlas_registry() "
+                "before running moral geometry analysis."
+            )
+        self._concept_lookup = {c.id: c for c in self._concepts}
 
     def full_analysis(
         self,
@@ -197,7 +220,9 @@ class MoralGeometryAnalyzer:
         backend = self._backend
 
         # Build activation matrix
-        concepts = [c.id for c in ALL_MORAL_PROBES if c.name in activations or c.id in activations]
+        concepts = [
+            c.id for c in self._concepts if c.name in activations or c.id in activations
+        ]
         if len(concepts) < 15:
             raise ValueError(f"Insufficient anchors: {len(concepts)} < 15 required")
 
@@ -297,11 +322,12 @@ class MoralGeometryAnalyzer:
             concept = self._concept_lookup.get(cid)
             if concept is None:
                 continue
-            if concept.axis == MoralAxis.VALENCE:
+            axis_key = _axis_key(concept.axis)
+            if axis_key == _AXIS_VALENCE:
                 valence_vecs.append(matrix[i])
-            elif concept.axis == MoralAxis.AGENCY:
+            elif axis_key == _AXIS_AGENCY:
                 agency_vecs.append(matrix[i])
-            elif concept.axis == MoralAxis.SCOPE:
+            elif axis_key == _AXIS_SCOPE:
                 scope_vecs.append(matrix[i])
 
         def axis_direction(vecs: list) -> "Array":
@@ -358,14 +384,14 @@ class MoralGeometryAnalyzer:
 
         backend = self._backend
 
-        def axis_correlation(axis: MoralAxis) -> tuple[float, bool]:
+        def axis_correlation(axis: str) -> tuple[float, bool]:
             """Compute correlation for a specific axis."""
             levels = []
             projections = []
 
             for i, cid in enumerate(concepts):
                 concept = self._concept_lookup.get(cid)
-                if concept is None or concept.axis != axis:
+                if concept is None or _axis_key(concept.axis) != axis:
                     continue
                 levels.append(concept.level)
                 backend.eval(matrix)
@@ -381,9 +407,9 @@ class MoralGeometryAnalyzer:
             monotonic = abs(corr) > 0.8
             return float(corr), monotonic
 
-        val_corr, val_mono = axis_correlation(MoralAxis.VALENCE)
-        agen_corr, agen_mono = axis_correlation(MoralAxis.AGENCY)
-        scope_corr, scope_mono = axis_correlation(MoralAxis.SCOPE)
+        val_corr, val_mono = axis_correlation(_AXIS_VALENCE)
+        agen_corr, agen_mono = axis_correlation(_AXIS_AGENCY)
+        scope_corr, scope_mono = axis_correlation(_AXIS_SCOPE)
 
         return MoralGradientConsistency(
             valence_correlation=val_corr,
@@ -402,14 +428,15 @@ class MoralGeometryAnalyzer:
         backend.eval(matrix)
 
         # Group by foundation
-        foundation_indices: dict[MoralFoundation, list[int]] = {}
+        foundation_indices: dict[str, list[int]] = {}
         for i, cid in enumerate(concepts):
             concept = self._concept_lookup.get(cid)
             if concept is None:
                 continue
-            if concept.foundation not in foundation_indices:
-                foundation_indices[concept.foundation] = []
-            foundation_indices[concept.foundation].append(i)
+            foundation_key = _foundation_key(concept.foundation)
+            if foundation_key not in foundation_indices:
+                foundation_indices[foundation_key] = []
+            foundation_indices[foundation_key].append(i)
 
         def cosine_sim(v1: "Array", v2: "Array") -> float:
             n1 = float(backend.to_numpy(backend.norm(v1)))
@@ -438,7 +465,7 @@ class MoralGeometryAnalyzer:
 
         for f1_idx, f1 in enumerate(foundations):
             for f2 in foundations[f1_idx + 1 :]:
-                key = (f1.value, f2.value)
+                key = (f1, f2)
                 pair_sims[key] = []
                 for i1 in foundation_indices[f1]:
                     for i2 in foundation_indices[f2]:
@@ -456,7 +483,7 @@ class MoralGeometryAnalyzer:
                 for i in range(len(indices)):
                     for j in range(i + 1, len(indices)):
                         sims.append(cosine_sim(matrix[indices[i]], matrix[indices[j]]))
-                foundation_means[f.value] = sum(sims) / len(sims) if sims else 0.0
+                foundation_means[f] = sum(sims) / len(sims) if sims else 0.0
 
         most_distinct = (
             max(foundation_means.keys(), key=lambda k: foundation_means[k])
@@ -523,4 +550,3 @@ class MoralGeometryAnalyzer:
             mean_opposition=mean_opp,
             opposition_detected=mean_opp > 0.5,
         )
-

@@ -22,6 +22,7 @@ Tests the mathematical validation suite that verifies:
 - Traversal coherence properties (self-correlation, perturbation sensitivity)
 - Path signature properties (invariance, Frechet distance)
 - Spectral signature properties (component count, spectral bounds, heat trace)
+- Connected spectral signature properties (connectivity, algebraic connectivity)
 """
 
 from __future__ import annotations
@@ -50,6 +51,7 @@ class TestSuiteExecution:
         assert report.traversal_coherence is not None
         assert report.path_signature is not None
         assert report.spectral_signature is not None
+        assert report.spectral_signature_connected is not None
 
     def test_suite_reports_pass_status(self) -> None:
         """Suite should report overall pass/fail status correctly."""
@@ -62,6 +64,7 @@ class TestSuiteExecution:
             and report.traversal_coherence.passed
             and report.path_signature.passed
             and report.spectral_signature.passed
+            and report.spectral_signature_connected.passed
         )
         assert report.passed == expected_pass
 
@@ -80,6 +83,7 @@ class TestSuiteExecution:
         assert report.fixtures.traversal_coherence is not None
         assert report.fixtures.path_signature is not None
         assert report.fixtures.spectral_signature is not None
+        assert report.fixtures.spectral_signature_connected is not None
 
 
 class TestGromovWassersteinValidation:
@@ -245,6 +249,17 @@ class TestSpectralSignatureValidation:
 
         assert spectral.component_count == 2, "Spectral fixture should produce 2 components"
         assert spectral.connected is False
+
+    def test_connected_fixture_properties(self) -> None:
+        """Connected spectral fixture should reflect connectivity."""
+        suite = GeometryValidationSuite()
+        report = suite.run()
+        spectral = report.spectral_signature_connected
+
+        assert spectral.component_count == 1, "Connected spectral fixture should produce 1 component"
+        assert spectral.connected is True
+        eps = regularization_epsilon(suite._backend, suite._backend.array([spectral.eigenvalue_min]))
+        assert spectral.algebraic_connectivity > eps
 
     def test_eigenvalue_bounds_normalized(self) -> None:
         """Normalized Laplacian eigenvalues should lie in [0, 2]."""

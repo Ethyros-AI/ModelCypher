@@ -12,6 +12,7 @@ The high-dimensional geometric structure induced by a model’s representations 
 ### Intrinsic Dimension
 The minimum number of variables needed to describe a model's state.
 -   **Analogy**: A car moves in 3D space (x, y, z), but its "Intrinsic Dimension" is 2 (steering wheel angle, gas pedal).
+-   **Constraint view**: A d-dimensional manifold embedded in R^D is a D-vector with (D−d) constraints; 2D is 3D with one constraint, 3D is 4D with one constraint, and so on.
 -   **Relevance**: We explore whether some refusal/safety behaviors exhibit lower intrinsic dimension under specific probes. This is an empirical question, not a universal rule.
 -   **Used in**: [Paper 0](../papers/paper-0-the-shape-of-knowledge.md), [Paper 5](../papers/paper-5-semantic-highway.md) (primary focus on dimensionality cliff and plateau)
 -   **CLI**: `mc geometry atlas dimensionality-study`

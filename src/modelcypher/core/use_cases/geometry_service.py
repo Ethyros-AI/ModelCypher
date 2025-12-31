@@ -264,6 +264,16 @@ class GeometryService:
                 "connected": report.spectral_signature.connected,
                 "passed": report.spectral_signature.passed,
             },
+            "spectralSignatureConnected": {
+                "eigenvalueMin": report.spectral_signature_connected.eigenvalue_min,
+                "eigenvalueMax": report.spectral_signature_connected.eigenvalue_max,
+                "algebraicConnectivity": report.spectral_signature_connected.algebraic_connectivity,
+                "componentCount": report.spectral_signature_connected.component_count,
+                "heatTrace": report.spectral_signature_connected.heat_trace,
+                "heatTimes": report.spectral_signature_connected.heat_times,
+                "connected": report.spectral_signature_connected.connected,
+                "passed": report.spectral_signature_connected.passed,
+            },
             "fixtures": GeometryService._fixtures_payload(report.fixtures)
             if report.fixtures
             else None,
@@ -340,5 +350,14 @@ class GeometryService:
                 "normalizedLaplacian": fixtures.spectral_signature.normalized_laplacian,
                 "heatTimes": fixtures.spectral_signature.heat_times,
                 "expectedComponentCount": fixtures.spectral_signature.expected_component_count,
+                "expectedConnected": fixtures.spectral_signature.expected_connected,
+            },
+            "spectralSignatureConnected": {
+                "points": fixtures.spectral_signature_connected.points,
+                "kNeighbors": fixtures.spectral_signature_connected.k_neighbors,
+                "normalizedLaplacian": fixtures.spectral_signature_connected.normalized_laplacian,
+                "heatTimes": fixtures.spectral_signature_connected.heat_times,
+                "expectedComponentCount": fixtures.spectral_signature_connected.expected_component_count,
+                "expectedConnected": fixtures.spectral_signature_connected.expected_connected,
             },
         }

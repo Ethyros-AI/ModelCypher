@@ -23,6 +23,10 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.backend_matrix_utils import (
+    reshape_flat_to_matrix,
+    transpose_flat_matrix,
+)
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
 from modelcypher.core.domain.geometry.geometry_fingerprint import GeometricFingerprint
 from modelcypher.core.domain.geometry.atlas_registry import get_atlas_probes
@@ -1128,24 +1132,6 @@ class SharedSubspaceProjector:
     def _truncate_rows(matrix: list[float], rows: int, total_rows: int) -> list[float]:
         cols = len(matrix) // total_rows
         return list(matrix[: rows * cols])
-
-    @staticmethod
-    def _transpose_matrix(matrix: list[float], m: int, n: int) -> list[float]:
-        result = [0.0 for _ in range(m * n)]
-        for i in range(m):
-            for j in range(n):
-                result[j * m + i] = matrix[i * n + j]
-        return result
-
-    @staticmethod
-    def _reshape_to_matrix(flat: list[float], rows: int, cols: int) -> list[list[float]]:
-        result: list[list[float]] = []
-        for i in range(rows):
-            row = []
-            for j in range(cols):
-                row.append(flat[i * cols + j])
-            result.append(row)
-        return result
 
     @staticmethod
     def _compute_determinant(matrix: list[float], d: int) -> float:

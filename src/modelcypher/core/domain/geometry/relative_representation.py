@@ -37,11 +37,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Sequence
 
 from modelcypher.core.domain._backend import get_default_backend
-
-# unified_atlas imported lazily to avoid circular imports
+from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol
+from modelcypher.core.domain.geometry.atlas_registry import get_atlas_probes
 
 if TYPE_CHECKING:
     from tokenizers import Tokenizer
@@ -80,6 +80,7 @@ def compute_anchor_embeddings(
     embedding_matrix: "Array",
     tokenizer: "Tokenizer",
     vocab_size: int | None = None,
+    probes: Sequence[AtlasProbeProtocol] | None = None,
 ) -> tuple["Array", list[str]]:
     """Compute anchor embeddings from token embedding matrix.
 
@@ -87,18 +88,21 @@ def compute_anchor_embeddings(
         embedding_matrix: Token embedding matrix [vocab, hidden_dim]
         tokenizer: Tokenizer for encoding probe texts
         vocab_size: Vocabulary size (defaults to embedding_matrix.shape[0])
+        probes: Optional probe inventory (defaults to registry)
 
     Returns:
         Tuple of (anchor_embeddings [n_anchors, hidden_dim], anchor_ids)
     """
-    # Lazy import to avoid circular dependency
-    from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
-
     backend = get_default_backend()
     if vocab_size is None:
         vocab_size = backend.shape(embedding_matrix)[0]
 
-    probes = UnifiedAtlasInventory.all_probes()
+    probes = list(probes or get_atlas_probes())
+    if not probes:
+        raise ValueError(
+            "No atlas probes registered. Call register_default_atlas_registry() "
+            "before computing anchor embeddings."
+        )
     anchors: list["Array"] = []
     anchor_ids: list[str] = []
 

@@ -39,13 +39,19 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.agents.temporal_atlas import (
-    TemporalAxis,
-    TemporalConceptInventory,
+from modelcypher.core.domain.geometry.atlas_protocols import (
+    TemporalConceptProtocol,
+    enum_key,
 )
+from modelcypher.core.domain.geometry.atlas_registry import get_temporal_concepts
 
-if TYPE_CHECKING:
-    import mlx.core as mx
+_AXIS_DIRECTION = "direction"
+_AXIS_DURATION = "duration"
+_AXIS_CAUSALITY = "causality"
+
+
+def _axis_key(value: object) -> str:
+    return enum_key(value).lower()
 
 logger = logging.getLogger(__name__)
 
@@ -138,15 +144,25 @@ class TemporalTopologyAnalyzer:
     5. Compute Temporal Manifold Score (TMS)
     """
 
-    def __init__(self, activations: dict[str, list[float]]) -> None:
+    def __init__(
+        self,
+        activations: dict[str, list[float]],
+        concepts: list[TemporalConceptProtocol] | None = None,
+    ) -> None:
         """Initialize with anchor activations.
 
         Args:
             activations: Dict mapping anchor concept to activation vector (as list)
+            concepts: Optional temporal concept inventory (defaults to registry)
         """
         self.activations = activations
-        anchors = TemporalConceptInventory.all_concepts()
-        self._anchor_lookup = {a.id: a for a in anchors}
+        self._anchors = list(concepts or get_temporal_concepts())
+        if not self._anchors:
+            raise ValueError(
+                "No temporal concepts registered. Call register_default_atlas_registry() "
+                "before running temporal topology analysis."
+            )
+        self._anchor_lookup = {a.id: a for a in self._anchors}
 
     def analyze(self) -> TemporalTopologyReport:
         """Run complete temporal topology analysis.
@@ -155,7 +171,7 @@ class TemporalTopologyAnalyzer:
             TemporalTopologyReport with all measurements
         """
         # Build activation matrix
-        anchors = TemporalConceptInventory.all_concepts()
+        anchors = self._anchors
         concepts = [a.id for a in anchors if a.id in self.activations]
         if len(concepts) < 10:
             raise ValueError(f"Insufficient anchors: {len(concepts)} < 10 required")
@@ -244,11 +260,12 @@ class TemporalTopologyAnalyzer:
             anchor = self._anchor_lookup.get(concept)
             if anchor is None:
                 continue
-            if anchor.axis == TemporalAxis.DIRECTION:
+            axis_key = _axis_key(anchor.axis)
+            if axis_key == _AXIS_DIRECTION:
                 direction_vecs.append(matrix[i])
-            elif anchor.axis == TemporalAxis.DURATION:
+            elif axis_key == _AXIS_DURATION:
                 duration_vecs.append(matrix[i])
-            elif anchor.axis == TemporalAxis.CAUSALITY:
+            elif axis_key == _AXIS_CAUSALITY:
                 causality_vecs.append(matrix[i])
 
         def axis_direction(vecs: list) -> "object":
@@ -321,14 +338,14 @@ class TemporalTopologyAnalyzer:
         matrix = backend.array(matrix_np, dtype="float32")
         backend.eval(matrix)
 
-        def axis_correlation(axis: TemporalAxis) -> tuple[float, bool]:
+        def axis_correlation(axis: str) -> tuple[float, bool]:
             """Compute correlation for a specific axis."""
             levels = []
             projections = []
 
             for i, concept in enumerate(concepts):
                 anchor = self._anchor_lookup.get(concept)
-                if anchor is None or anchor.axis != axis:
+                if anchor is None or _axis_key(anchor.axis) != axis:
                     continue
                 levels.append(anchor.level)
                 # Project onto first PC direction
@@ -351,9 +368,9 @@ class TemporalTopologyAnalyzer:
             monotonic = abs(corr) > 0.8
             return float(corr), monotonic
 
-        dir_corr, dir_mono = axis_correlation(TemporalAxis.DIRECTION)
-        dur_corr, dur_mono = axis_correlation(TemporalAxis.DURATION)
-        caus_corr, caus_mono = axis_correlation(TemporalAxis.CAUSALITY)
+        dir_corr, dir_mono = axis_correlation(_AXIS_DIRECTION)
+        dur_corr, dur_mono = axis_correlation(_AXIS_DURATION)
+        caus_corr, caus_mono = axis_correlation(_AXIS_CAUSALITY)
 
         return GradientConsistency(
             direction_correlation=dir_corr,
@@ -385,7 +402,7 @@ class TemporalTopologyAnalyzer:
         direction_anchors = []
         for i, concept in enumerate(concepts):
             anchor = self._anchor_lookup.get(concept)
-            if anchor and anchor.axis == TemporalAxis.DIRECTION:
+            if anchor and _axis_key(anchor.axis) == _AXIS_DIRECTION:
                 direction_anchors.append((concept, anchor.level, matrix[i]))
 
         if len(direction_anchors) < 4:
@@ -438,7 +455,7 @@ def extract_temporal_activations(
 
     activations = {}
 
-    for anchor in TemporalConceptInventory.all_concepts():
+    for anchor in get_temporal_concepts():
         # Tokenize prompt
         tokens = tokenizer.encode(anchor.prompt)
         input_ids = mx.array([tokens])

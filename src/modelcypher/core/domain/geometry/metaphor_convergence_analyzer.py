@@ -30,10 +30,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-from modelcypher.core.domain.agents.metaphor_invariant_atlas import (
-    MetaphorFamily,
-    MetaphorInvariantInventory,
-)
+from modelcypher.core.domain.geometry.atlas_protocols import enum_key
+from modelcypher.core.domain.geometry.atlas_registry import get_metaphor_invariants
 from modelcypher.core.domain.geometry.manifold_stitcher import (
     ModelFingerprints,
     ProbeSpace,
@@ -164,9 +162,14 @@ class MetaphorConvergenceAnalyzer:
         target: ModelFingerprints,
         align_mode: AlignMode = AlignMode.LAYER,
     ) -> Report:
-        inventory = list(MetaphorInvariantInventory.ALL_PROBES)
-        family_set = {inv.family.value for inv in inventory}
-        ordered_families = [f.value for f in MetaphorFamily if f.value in family_set]
+        inventory = list(get_metaphor_invariants())
+        if not inventory:
+            raise ValueError(
+                "No metaphor invariants registered. Call register_default_atlas_registry() "
+                "before running metaphor convergence analysis."
+            )
+        family_set = {enum_key(inv.family) for inv in inventory}
+        ordered_families = sorted(family_set)
 
         # 1. Build Vectors
         source_vectors = MetaphorConvergenceAnalyzer._build_anchor_vectors(source)
@@ -236,7 +239,7 @@ class MetaphorConvergenceAnalyzer:
         layers_union: list[int] = []
 
         for family in ordered_families:
-            anchor_ids = [inv.id for inv in inventory if inv.family.value == family]
+            anchor_ids = [inv.id for inv in inventory if enum_key(inv.family) == family]
 
             # Collect vectors for this family
             source_layer_vecs: dict[int, list[dict[int, float]]] = {}

@@ -43,7 +43,7 @@ def register(app: typer.Typer) -> None:
         ctx: typer.Context,
         model_path: str = typer.Argument(..., help="Path to the model directory"),
         output_path: str | None = typer.Option(
-            None, "--output", "-o", help="Save profile to JSON file"
+            None, "--save", "-s", help="Save profile to JSON file"
         ),
         k_neighbors: int = typer.Option(
             10, "--k-neighbors", help="k for k-NN graph construction"
@@ -264,7 +264,7 @@ def register(app: typer.Typer) -> None:
             None, "--family", "-f", help="Filter by model family (qwen, llama, etc.)"
         ),
         output_path: str | None = typer.Option(
-            None, "--output", "-o", help="Save baseline to JSON file"
+            None, "--save", "-s", help="Save baseline to JSON file"
         ),
     ) -> None:
         """Build a family baseline from multiple curvature profiles.

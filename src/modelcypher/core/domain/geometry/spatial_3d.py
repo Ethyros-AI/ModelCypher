@@ -50,17 +50,34 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.agents.spatial_atlas import (
-    SpatialAxis,
-    SpatialCategory,
-    SpatialConcept,
-    SpatialConceptInventory,
+from modelcypher.core.domain.geometry.atlas_protocols import (
+    SpatialConceptProtocol,
+    enum_key,
 )
+from modelcypher.core.domain.geometry.atlas_registry import get_spatial_concepts
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
+
+_AXIS_X_LATERAL = "x_lateral"
+_AXIS_Y_VERTICAL = "y_vertical"
+_AXIS_Z_DEPTH = "z_depth"
+
+_CATEGORY_VERTICAL = "vertical"
+_CATEGORY_LATERAL = "lateral"
+_CATEGORY_DEPTH = "depth"
+_CATEGORY_MASS = "mass"
+_CATEGORY_FURNITURE = "furniture"
+
+
+def _axis_key(value: object) -> str:
+    return enum_key(value).lower()
+
+
+def _category_key(value: object) -> str:
+    return enum_key(value).lower()
 
 
 def _safe_to_list(backend: "Backend", arr: "Array") -> list[float]:
@@ -225,19 +242,20 @@ def _scalar_isinf(x: float) -> bool:
 
 
 # =============================================================================
-def get_spatial_anchors_by_axis(axis: SpatialAxis) -> list[SpatialConcept]:
+def get_spatial_anchors_by_axis(axis: object) -> list[SpatialConceptProtocol]:
     """Get anchors that primarily vary along a given axis."""
-    anchors = SpatialConceptInventory.all_concepts()
-    if axis == SpatialAxis.Y_VERTICAL:
+    anchors = list(get_spatial_concepts())
+    axis_key = _axis_key(axis)
+    if axis_key == _AXIS_Y_VERTICAL:
         return [
             a
             for a in anchors
-            if a.category in (SpatialCategory.VERTICAL, SpatialCategory.MASS)
+            if _category_key(a.category) in (_CATEGORY_VERTICAL, _CATEGORY_MASS, _CATEGORY_FURNITURE)
         ]
-    if axis == SpatialAxis.X_LATERAL:
-        return [a for a in anchors if a.category == SpatialCategory.LATERAL]
-    if axis == SpatialAxis.Z_DEPTH:
-        return [a for a in anchors if a.category == SpatialCategory.DEPTH]
+    if axis_key == _AXIS_X_LATERAL:
+        return [a for a in anchors if _category_key(a.category) == _CATEGORY_LATERAL]
+    if axis_key == _AXIS_Z_DEPTH:
+        return [a for a in anchors if _category_key(a.category) == _CATEGORY_DEPTH]
     return anchors
 
 
@@ -288,20 +306,20 @@ class EuclideanConsistencyAnalyzer:
     def analyze(
         self,
         anchor_activations: dict[str, "Array"],
-        anchors: list[SpatialConcept] | None = None,
+        anchors: list[SpatialConceptProtocol] | None = None,
     ) -> EuclideanConsistencyResult:
         """
         Analyze Euclidean consistency of spatial anchor representations.
 
         Args:
             anchor_activations: Map from anchor name to activation vector
-            anchors: Spatial anchors (uses SpatialConceptInventory if None)
+            anchors: Spatial anchors (uses registry if None)
 
         Returns:
             EuclideanConsistencyResult with consistency metrics
         """
         b = self._backend
-        anchors = anchors or SpatialConceptInventory.all_concepts()
+        anchors = anchors or list(get_spatial_concepts())
 
         # Filter to anchors we have activations for
         available = [a for a in anchors if a.name in anchor_activations]
@@ -483,7 +501,7 @@ class EuclideanConsistencyAnalyzer:
     def _compute_axis_orthogonality(
         self,
         activations: "Array",
-        anchors: list[SpatialConcept],
+        anchors: list[SpatialConceptProtocol],
     ) -> dict[str, float]:
         """Compute orthogonality between inferred X, Y, Z axes.
 
@@ -803,7 +821,7 @@ class GravityGradientAnalyzer:
         b = self._backend
 
         # Get vertical anchors
-        vertical_anchors = get_spatial_anchors_by_axis(SpatialAxis.Y_VERTICAL)
+        vertical_anchors = get_spatial_anchors_by_axis(_AXIS_Y_VERTICAL)
         available = [a for a in vertical_anchors if a.name in anchor_activations]
 
         if len(available) < 3:
@@ -907,7 +925,7 @@ class GravityGradientAnalyzer:
     def _compute_layer_gravity(
         self,
         layer_acts: dict[str, "Array"],
-        anchors: list[SpatialConcept],
+        anchors: list[SpatialConceptProtocol],
     ) -> float:
         """Compute gravity correlation for a single layer."""
         b = self._backend
@@ -975,7 +993,7 @@ class VolumetricDensityProber:
     def analyze(
         self,
         anchor_activations: dict[str, "Array"],
-        anchors: list[SpatialConcept] | None = None,
+        anchors: list[SpatialConceptProtocol] | None = None,
     ) -> VolumetricDensityResult:
         """
         Analyze volumetric density of anchor representations.
@@ -992,8 +1010,8 @@ class VolumetricDensityProber:
         if anchors is None:
             anchors = [
                 a
-                for a in SpatialConceptInventory.all_concepts()
-                if a.category in (SpatialCategory.MASS, SpatialCategory.FURNITURE)
+                for a in get_spatial_concepts()
+                if _category_key(a.category) in (_CATEGORY_MASS, _CATEGORY_FURNITURE)
             ]
 
         available = [a for a in anchors if a.name in anchor_activations]
