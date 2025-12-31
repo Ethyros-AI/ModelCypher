@@ -25,7 +25,12 @@ from uuid import UUID
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.gromov_wasserstein import Config as GWConfig
 from modelcypher.core.domain.geometry.gromov_wasserstein import GromovWassersteinDistance
+from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
 from modelcypher.core.domain.geometry.path_geometry import PathGeometry, PathNode, PathSignature
+from modelcypher.core.domain.geometry.spectral_signature import (
+    SpectralSignature,
+    SpectralSignatureConfig,
+)
 from modelcypher.core.domain.geometry.traversal_coherence import Path as TraversalPath
 from modelcypher.core.domain.geometry.traversal_coherence import TraversalCoherence
 
@@ -278,6 +283,18 @@ class PathSignatureValidation:
 
 
 @dataclass(frozen=True)
+class SpectralSignatureValidation:
+    eigenvalue_min: float
+    eigenvalue_max: float
+    algebraic_connectivity: float
+    component_count: int
+    heat_trace: list[float]
+    heat_times: list[float]
+    connected: bool
+    passed: bool
+
+
+@dataclass(frozen=True)
 class GromovWassersteinFixture:
     points_a: list[list[float]]
     points_b: list[list[float]]
@@ -305,10 +322,20 @@ class PathSignatureFixture:
 
 
 @dataclass(frozen=True)
+class SpectralSignatureFixture:
+    points: list[list[float]]
+    k_neighbors: int | None
+    normalized_laplacian: bool
+    heat_times: list[float]
+    expected_component_count: int
+
+
+@dataclass(frozen=True)
 class Fixtures:
     gromov_wasserstein: GromovWassersteinFixture
     traversal_coherence: TraversalCoherenceFixture
     path_signature: PathSignatureFixture
+    spectral_signature: SpectralSignatureFixture
 
 
 @dataclass(frozen=True)
@@ -320,6 +347,7 @@ class Report:
     gromov_wasserstein: GromovWassersteinValidation
     traversal_coherence: TraversalCoherenceValidation
     path_signature: PathSignatureValidation
+    spectral_signature: SpectralSignatureValidation
     fixtures: Fixtures | None
 
 
@@ -351,8 +379,16 @@ class GeometryValidationSuite:
             fixture=fixtures.path_signature,
             thresholds=resolved.thresholds,
         )
+        spectral_validation = self._validate_spectral_signature(
+            fixture=fixtures.spectral_signature,
+        )
 
-        passed = gw_validation.passed and traversal_validation.passed and path_validation.passed
+        passed = (
+            gw_validation.passed
+            and traversal_validation.passed
+            and path_validation.passed
+            and spectral_validation.passed
+        )
 
         return Report(
             suite_version=SUITE_VERSION,
@@ -362,6 +398,7 @@ class GeometryValidationSuite:
             gromov_wasserstein=gw_validation,
             traversal_coherence=traversal_validation,
             path_signature=path_validation,
+            spectral_signature=spectral_validation,
             fixtures=fixtures if resolved.include_fixtures else None,
         )
 
@@ -483,10 +520,19 @@ class GeometryValidationSuite:
             projection_dim=3,
         )
 
+        spectral_fixture = SpectralSignatureFixture(
+            points=[[0.0, 0.0], [1.0, 0.0], [10.0, 0.0], [11.0, 0.0]],
+            k_neighbors=1,
+            normalized_laplacian=True,
+            heat_times=[0.1, 1.0, 10.0],
+            expected_component_count=2,
+        )
+
         return Fixtures(
             gromov_wasserstein=gw_fixture,
             traversal_coherence=traversal_fixture,
             path_signature=path_fixture,
+            spectral_signature=spectral_fixture,
         )
 
     def _validate_gromov_wasserstein(
@@ -643,5 +689,51 @@ class GeometryValidationSuite:
             signed_area=float(signature.signed_area),
             signature_norm=float(signature.signature_norm),
             frechet_distance=float(frechet.distance),
+            passed=passed,
+        )
+
+    def _validate_spectral_signature(
+        self,
+        fixture: SpectralSignatureFixture,
+    ) -> SpectralSignatureValidation:
+        backend = self._backend
+        config = SpectralSignatureConfig(
+            k_neighbors=fixture.k_neighbors,
+            normalized_laplacian=fixture.normalized_laplacian,
+            heat_trace_times=tuple(fixture.heat_times),
+        )
+        computer = SpectralSignature(backend)
+        signature = computer.compute(points=fixture.points, config=config)
+
+        eig_min = min(signature.eigenvalues) if signature.eigenvalues else 0.0
+        eig_max = max(signature.eigenvalues) if signature.eigenvalues else 0.0
+
+        eig_arr = backend.array(signature.eigenvalues or [0.0], dtype="float32")
+        eig_eps = regularization_epsilon(backend, eig_arr)
+
+        eigen_bounds_ok = True
+        if fixture.normalized_laplacian:
+            eigen_bounds_ok = eig_min >= -eig_eps and eig_max <= 2.0 + eig_eps
+
+        heat_arr = backend.array(signature.heat_trace or [0.0], dtype="float32")
+        heat_eps = regularization_epsilon(backend, heat_arr)
+        heat_monotone = True
+        for i in range(len(signature.heat_trace) - 1):
+            if signature.heat_trace[i] + heat_eps < signature.heat_trace[i + 1]:
+                heat_monotone = False
+                break
+
+        component_ok = signature.component_count == fixture.expected_component_count
+
+        passed = eigen_bounds_ok and heat_monotone and component_ok
+
+        return SpectralSignatureValidation(
+            eigenvalue_min=float(eig_min),
+            eigenvalue_max=float(eig_max),
+            algebraic_connectivity=float(signature.algebraic_connectivity),
+            component_count=signature.component_count,
+            heat_trace=signature.heat_trace,
+            heat_times=signature.heat_times,
+            connected=signature.connected,
             passed=passed,
         )

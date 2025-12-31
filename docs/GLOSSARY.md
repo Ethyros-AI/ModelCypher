@@ -39,6 +39,12 @@ A measure of similarity between two neural network layers that is robust to rota
 -   **Used in**: [Paper 0](../papers/paper-0-the-shape-of-knowledge.md), [Paper 1](../papers/paper-1-invariant-semantic-structure.md), [Paper 3](../papers/paper-3-cross-architecture-transfer.md), [Paper 4](../papers/paper-4-modelcypher-toolkit.md), [Paper 5](../papers/paper-5-semantic-highway.md)
 -   **CLI**: `mc geometry cka compute`
 
+### Spectral Signature (Graph Laplacian)
+Raw spectral measurements of a geodesic k-NN graph: Laplacian eigenvalues, algebraic connectivity (λ₂), component count (zero-eigenvalue multiplicity), and heat trace $H(t)=\sum_i e^{-t\lambda_i}$.
+-   **Operational meaning**: Encodes diffusion geometry of the discrete manifold without requiring shared coordinates.
+-   **Used in**: `mc geometry metrics spectral-signature`, `mc_geometry_spectral_signature`
+-   **References**: von Luxburg, *A Tutorial on Spectral Clustering* ([arXiv:0711.0189](https://arxiv.org/abs/0711.0189)); *Heat Kernel Goes Topological* ([arXiv:2507.12380](https://arxiv.org/abs/2507.12380))
+
 ### Jaccard Similarity (Intersection)
 A measure of overlap between the *active* dimensions of two models.
 -   **Formula**: $|A \cap B| / |A \cup B|$

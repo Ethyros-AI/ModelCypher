@@ -998,7 +998,7 @@ Call mc_inventory first to see what models are available before starting trainin
 
 ### mc_geometry_validate
 
-**Purpose:** Run the deterministic geometry validation suite (GW distance, traversal coherence, path signatures).
+**Purpose:** Run the deterministic geometry validation suite (GW distance, traversal coherence, path signatures, spectral signature).
 
 **Category:** Read-only
 
@@ -1047,6 +1047,16 @@ Call mc_inventory first to see what models are available before starting trainin
     "signedArea": 0.5,
     "signatureNorm": 1.4,
     "frechetDistance": 0.0,
+    "passed": true
+  },
+  "spectralSignature": {
+    "eigenvalueMin": 0.0,
+    "eigenvalueMax": 2.0,
+    "algebraicConnectivity": 0.5,
+    "componentCount": 1,
+    "heatTrace": [3.7, 2.1],
+    "heatTimes": [0.1, 1.0],
+    "connected": true,
     "passed": true
   },
   "fixtures": null

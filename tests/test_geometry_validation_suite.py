@@ -21,6 +21,7 @@ Tests the mathematical validation suite that verifies:
 - Gromov-Wasserstein distance properties (identity, symmetry, mass conservation)
 - Traversal coherence properties (self-correlation, perturbation sensitivity)
 - Path signature properties (invariance, Frechet distance)
+- Spectral signature properties (component count, spectral bounds, heat trace)
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ from modelcypher.core.domain.geometry.geometry_validation_suite import (
     GromovWassersteinConfig,
     Thresholds,
 )
+from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
 
 
 class TestSuiteExecution:
@@ -47,6 +49,7 @@ class TestSuiteExecution:
         assert report.gromov_wasserstein is not None
         assert report.traversal_coherence is not None
         assert report.path_signature is not None
+        assert report.spectral_signature is not None
 
     def test_suite_reports_pass_status(self) -> None:
         """Suite should report overall pass/fail status correctly."""
@@ -58,6 +61,7 @@ class TestSuiteExecution:
             report.gromov_wasserstein.passed
             and report.traversal_coherence.passed
             and report.path_signature.passed
+            and report.spectral_signature.passed
         )
         assert report.passed == expected_pass
 
@@ -75,6 +79,7 @@ class TestSuiteExecution:
         assert report.fixtures.gromov_wasserstein is not None
         assert report.fixtures.traversal_coherence is not None
         assert report.fixtures.path_signature is not None
+        assert report.fixtures.spectral_signature is not None
 
 
 class TestGromovWassersteinValidation:
@@ -227,6 +232,39 @@ class TestPathSignatureValidation:
         assert ps.signature_similarity >= 0.999, (
             f"Signature similarity {ps.signature_similarity} should be ~1.0 for translations"
         )
+
+
+class TestSpectralSignatureValidation:
+    """Tests for spectral signature validation component."""
+
+    def test_component_count_matches_fixture(self) -> None:
+        """Spectral fixture should reflect disconnected components."""
+        suite = GeometryValidationSuite()
+        report = suite.run()
+        spectral = report.spectral_signature
+
+        assert spectral.component_count == 2, "Spectral fixture should produce 2 components"
+        assert spectral.connected is False
+
+    def test_eigenvalue_bounds_normalized(self) -> None:
+        """Normalized Laplacian eigenvalues should lie in [0, 2]."""
+        suite = GeometryValidationSuite()
+        report = suite.run()
+        spectral = report.spectral_signature
+
+        eps = regularization_epsilon(suite._backend, suite._backend.array([spectral.eigenvalue_min]))
+        assert spectral.eigenvalue_min >= -eps
+        assert spectral.eigenvalue_max <= 2.0 + eps
+
+    def test_heat_trace_monotone(self) -> None:
+        """Heat trace should be non-increasing with time."""
+        suite = GeometryValidationSuite()
+        report = suite.run()
+        spectral = report.spectral_signature
+
+        eps = regularization_epsilon(suite._backend, suite._backend.array(spectral.heat_trace))
+        for i in range(len(spectral.heat_trace) - 1):
+            assert spectral.heat_trace[i] + eps >= spectral.heat_trace[i + 1]
 
 
 class TestThresholds:

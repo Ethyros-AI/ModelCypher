@@ -84,6 +84,27 @@ mc geometry metrics topological-fingerprint <points_file>
 mc geometry metrics spectral-signature <points_file>
 ```
 
+### Spectral Signature Output Schema
+```json
+{
+  "_schema": "mc.geometry.spectral_signature.v1",
+  "eigenvalues": [0.0, 0.18, 0.62, 1.02],
+  "eigenvalueCount": 4,
+  "eigenvaluesTruncated": false,
+  "heatTrace": [3.74, 2.11],
+  "heatTimes": [0.1, 1.0],
+  "spectralEntropy": 0.942,
+  "algebraicConnectivity": 0.18,
+  "componentCount": 1,
+  "nodeCount": 4,
+  "edgeCount": 3,
+  "kNeighbors": 2,
+  "kernelBandwidth": 0.75,
+  "normalizedLaplacian": true,
+  "connected": true
+}
+```
+
 ## Geometry Cross-Cultural Commands
 ```bash
 mc geometry cross-cultural analyze <input_json>

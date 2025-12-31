@@ -254,6 +254,16 @@ class GeometryService:
                 "frechetDistance": report.path_signature.frechet_distance,
                 "passed": report.path_signature.passed,
             },
+            "spectralSignature": {
+                "eigenvalueMin": report.spectral_signature.eigenvalue_min,
+                "eigenvalueMax": report.spectral_signature.eigenvalue_max,
+                "algebraicConnectivity": report.spectral_signature.algebraic_connectivity,
+                "componentCount": report.spectral_signature.component_count,
+                "heatTrace": report.spectral_signature.heat_trace,
+                "heatTimes": report.spectral_signature.heat_times,
+                "connected": report.spectral_signature.connected,
+                "passed": report.spectral_signature.passed,
+            },
             "fixtures": GeometryService._fixtures_payload(report.fixtures)
             if report.fixtures
             else None,
@@ -323,5 +333,12 @@ class GeometryService:
                     ],
                 },
                 "projectionDim": fixtures.path_signature.projection_dim,
+            },
+            "spectralSignature": {
+                "points": fixtures.spectral_signature.points,
+                "kNeighbors": fixtures.spectral_signature.k_neighbors,
+                "normalizedLaplacian": fixtures.spectral_signature.normalized_laplacian,
+                "heatTimes": fixtures.spectral_signature.heat_times,
+                "expectedComponentCount": fixtures.spectral_signature.expected_component_count,
             },
         }
