@@ -25,7 +25,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.agents.unified_atlas import AtlasProbe
 from modelcypher.core.domain.geometry.intrinsic_dimension import (
     BootstrapConfiguration,
     GeodesicConfiguration,
@@ -34,6 +33,7 @@ from modelcypher.core.domain.geometry.intrinsic_dimension import (
 )
 from modelcypher.core.domain.geometry.probe_calibration import ActivationProvider
 from modelcypher.core.domain.geometry.vector_math import VectorMath
+from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol, enum_key
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
@@ -144,7 +144,7 @@ class ConceptDimensionalityAnalyzer:
 
     def analyze(
         self,
-        probes: list[AtlasProbe],
+        probes: list[AtlasProbeProtocol],
         activation_provider: ActivationProvider,
         layer: int,
         config: ConceptDimensionalityConfig | None = None,
@@ -233,8 +233,8 @@ class ConceptDimensionalityAnalyzer:
                 ConceptDimensionalityResult(
                     probe_id=probe.probe_id,
                     name=probe.name,
-                    source=probe.source.value,
-                    domain=probe.domain.value,
+                    source=enum_key(probe.source),
+                    domain=enum_key(probe.domain),
                     category=probe.category_name,
                     layer=layer,
                     support_text_count=len(texts),
@@ -268,7 +268,7 @@ class ConceptDimensionalityAnalyzer:
 
     @staticmethod
     def _build_support_texts(
-        probe: AtlasProbe,
+        probe: AtlasProbeProtocol,
         config: ConceptDimensionalityConfig,
     ) -> list[str]:
         texts: list[str] = []

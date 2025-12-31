@@ -48,17 +48,14 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Iterable
+from typing import Iterable
 
 from modelcypher.core.domain.geometry.path_geometry import PathNode, PathSignature
 from modelcypher.core.domain.geometry.vector_math import VectorMath
+from modelcypher.core.domain.geometry.atlas_protocols import ComputationalGateProtocol
+from modelcypher.core.domain.geometry.atlas_registry import get_gate_inventory
 from modelcypher.ports.embedding import EmbeddingProvider
 from modelcypher.utils.text import truncate
-
-if TYPE_CHECKING:
-    from modelcypher.core.domain.agents.computational_gate_atlas import ComputationalGate
-
-from modelcypher.core.domain.agents.computational_gate_atlas import ComputationalGateInventory
 
 logger = logging.getLogger(__name__)
 
@@ -129,15 +126,15 @@ class GateDetector:
         self,
         configuration: Configuration | None = None,
         embedder: EmbeddingProvider | None = None,
-        gate_inventory: Iterable[ComputationalGate] | None = None,
+        gate_inventory: Iterable[ComputationalGateProtocol] | None = None,
     ) -> None:
         self.config = configuration or Configuration()
         self.embedder = embedder
         self.gate_embeddings: dict[str, list[float]] = {}
-        self.gate_metadata: dict[str, ComputationalGate] = {}
+        self.gate_metadata: dict[str, ComputationalGateProtocol] = {}
 
         if gate_inventory is None:
-            gate_inventory = ComputationalGateInventory.all_gates()
+            gate_inventory = get_gate_inventory()
 
         for gate in gate_inventory:
             self.gate_metadata[gate.id] = gate

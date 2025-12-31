@@ -972,3 +972,283 @@ class TestEdgeCasesAndNumericalStability:
                 expected = abs(i - j)  # Euclidean distance on the line
                 if not math.isinf(dist_np[i, j]):
                     assert abs(dist_np[i, j] - expected) < 0.5
+
+
+# =============================================================================
+# Hypothesis Property-Based Tests
+# =============================================================================
+
+try:
+    from hypothesis import given, settings, assume, HealthCheck
+    from hypothesis import strategies as st
+
+    HYPOTHESIS_AVAILABLE = True
+except ImportError:
+    HYPOTHESIS_AVAILABLE = False
+
+
+@pytest.mark.skipif(not HYPOTHESIS_AVAILABLE, reason="hypothesis not installed")
+class TestRiemannianHypothesis:
+    """Hypothesis-based property tests for Riemannian geometry."""
+
+    @given(
+        n_points=st.integers(min_value=4, max_value=30),
+        n_dim=st.integers(min_value=2, max_value=10),
+        seed=st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=30, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    def test_geodesic_diagonal_zero(
+        self, n_points: int, n_dim: int, seed: int, any_backend: "Backend"
+    ):
+        """Geodesic distance d(x, x) = 0 for all points."""
+        backend = any_backend
+        backend.random_seed(seed)
+        rg = RiemannianGeometry(backend)
+
+        points = backend.random_normal((n_points, n_dim))
+        result = rg.geodesic_distances(points)
+
+        dist_np = backend.to_numpy(result.distances)
+        for i in range(n_points):
+            assert dist_np[i, i] == 0.0
+
+    @given(
+        n_points=st.integers(min_value=4, max_value=20),
+        n_dim=st.integers(min_value=2, max_value=8),
+        seed=st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=30, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    def test_geodesic_symmetry(
+        self, n_points: int, n_dim: int, seed: int, any_backend: "Backend"
+    ):
+        """Geodesic distance d(x, y) = d(y, x) (symmetry)."""
+        backend = any_backend
+        backend.random_seed(seed)
+        rg = RiemannianGeometry(backend)
+
+        points = backend.random_normal((n_points, n_dim))
+        result = rg.geodesic_distances(points)
+
+        dist_np = backend.to_numpy(result.distances)
+        for i in range(n_points):
+            for j in range(n_points):
+                assert abs(dist_np[i, j] - dist_np[j, i]) < 1e-6
+
+    @given(
+        n_points=st.integers(min_value=4, max_value=15),
+        n_dim=st.integers(min_value=2, max_value=6),
+        seed=st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=20, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    def test_geodesic_triangle_inequality_hypothesis(
+        self, n_points: int, n_dim: int, seed: int, any_backend: "Backend"
+    ):
+        """Geodesic distances satisfy triangle inequality d(x,z) <= d(x,y) + d(y,z)."""
+        backend = any_backend
+        backend.random_seed(seed)
+        rg = RiemannianGeometry(backend)
+
+        points = backend.random_normal((n_points, n_dim))
+        result = rg.geodesic_distances(points, k_neighbors=min(n_points - 1, 8))
+
+        if not result.connected:
+            assume(False)  # Skip disconnected graphs
+
+        dist_np = backend.to_numpy(result.distances)
+        n = dist_np.shape[0]
+
+        # Sample random triples to check triangle inequality
+        import random
+        random.seed(seed)
+        for _ in range(min(50, n * n * n)):
+            i, j, k = random.randint(0, n-1), random.randint(0, n-1), random.randint(0, n-1)
+            d_ij = dist_np[i, j]
+            d_jk = dist_np[j, k]
+            d_ik = dist_np[i, k]
+            if math.isfinite(d_ij) and math.isfinite(d_jk) and math.isfinite(d_ik):
+                assert d_ik <= d_ij + d_jk + 1e-5
+
+    @given(
+        n_points=st.integers(min_value=4, max_value=20),
+        n_dim=st.integers(min_value=2, max_value=8),
+        seed=st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=20, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    def test_geodesic_non_negative(
+        self, n_points: int, n_dim: int, seed: int, any_backend: "Backend"
+    ):
+        """Geodesic distances are non-negative d(x, y) >= 0."""
+        backend = any_backend
+        backend.random_seed(seed)
+        rg = RiemannianGeometry(backend)
+
+        points = backend.random_normal((n_points, n_dim))
+        result = rg.geodesic_distances(points)
+
+        dist_np = backend.to_numpy(result.distances)
+        for i in range(n_points):
+            for j in range(n_points):
+                assert dist_np[i, j] >= -1e-10
+
+    @given(
+        n_points=st.integers(min_value=3, max_value=15),
+        n_dim=st.integers(min_value=2, max_value=8),
+        seed=st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=20, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    def test_frechet_mean_variance_non_negative(
+        self, n_points: int, n_dim: int, seed: int, any_backend: "Backend"
+    ):
+        """Fréchet mean has non-negative final variance."""
+        backend = any_backend
+        backend.random_seed(seed)
+        rg = RiemannianGeometry(backend)
+
+        points = backend.random_normal((n_points, n_dim))
+        result = rg.frechet_mean(points, max_iterations=50)
+
+        assert result.final_variance >= 0.0
+
+    @given(
+        n_points=st.integers(min_value=3, max_value=15),
+        n_dim=st.integers(min_value=2, max_value=8),
+        seed=st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=20, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    def test_frechet_mean_finite(
+        self, n_points: int, n_dim: int, seed: int, any_backend: "Backend"
+    ):
+        """Fréchet mean should be finite."""
+        backend = any_backend
+        backend.random_seed(seed)
+        rg = RiemannianGeometry(backend)
+
+        points = backend.random_normal((n_points, n_dim))
+        result = rg.frechet_mean(points, max_iterations=50)
+
+        mean_np = backend.to_numpy(result.mean)
+        assert all(math.isfinite(v) for v in mean_np)
+
+
+# =============================================================================
+# Synthetic Manifold Tests (Ground Truth)
+# =============================================================================
+
+
+class TestSyntheticManifolds:
+    """Tests on synthetic manifolds with known ground truth."""
+
+    def _sample_sphere(self, backend: "Backend", n_points: int, dim: int, seed: int):
+        """Sample uniform points on unit (dim-1)-sphere in R^dim."""
+        backend.random_seed(seed)
+        # Sample Gaussian, normalize to sphere
+        points = backend.random_normal((n_points, dim))
+        norms = backend.sqrt(backend.sum(points * points, axis=1, keepdims=True))
+        # Avoid division by zero
+        norms = backend.maximum(norms, backend.ones_like(norms) * 1e-10)
+        sphere_points = points / norms
+        return sphere_points
+
+    def test_frechet_mean_uniform_sphere_near_origin(self, any_backend: "Backend"):
+        """Fréchet mean of uniformly sampled sphere points approaches origin.
+
+        On a unit sphere with enough uniformly distributed points, the Fréchet mean
+        (intrinsic mean on the sphere) converges to the origin in the ambient space.
+        """
+        backend = any_backend
+        rg = RiemannianGeometry(backend)
+
+        # Sample many points uniformly on 3D unit sphere
+        sphere_points = self._sample_sphere(backend, n_points=100, dim=3, seed=42)
+
+        result = rg.frechet_mean(sphere_points, max_iterations=100)
+        mean_np = backend.to_numpy(result.mean)
+
+        # Mean should be near origin (center of sphere)
+        mean_norm = math.sqrt(sum(v * v for v in mean_np))
+        assert mean_norm < 0.5, f"Fréchet mean norm = {mean_norm}, expected near 0"
+
+    def test_geodesic_on_linear_subspace(self, any_backend: "Backend"):
+        """On a linear subspace (flat manifold), geodesic equals Euclidean.
+
+        For points on a line, geodesic distance = Euclidean distance.
+        """
+        backend = any_backend
+        rg = RiemannianGeometry(backend)
+
+        # Points on a line in 3D (2D ambient, 1D manifold)
+        t = backend.array([[0.0], [1.0], [2.0], [3.0], [4.0]])
+        # Line: (t, 0, 0)
+        zeros = backend.zeros((5, 2))
+        points = backend.concatenate([t, zeros], axis=1)
+        backend.eval(points)
+
+        result = rg.geodesic_distances(points, k_neighbors=4)
+        dist_np = backend.to_numpy(result.distances)
+
+        # Geodesic should match Euclidean on a line
+        for i in range(5):
+            for j in range(5):
+                expected = abs(i - j)  # Euclidean distance on line
+                if not math.isinf(dist_np[i, j]):
+                    assert abs(dist_np[i, j] - expected) < 0.3, (
+                        f"d({i},{j}) = {dist_np[i, j]}, expected {expected}"
+                    )
+
+    def test_frechet_mean_equals_arithmetic_in_euclidean(self, any_backend: "Backend"):
+        """In Euclidean space (flat), Fréchet mean = arithmetic mean.
+
+        When points lie in a flat region, the Riemannian Fréchet mean should
+        converge to the arithmetic mean.
+        """
+        backend = any_backend
+        backend.random_seed(42)
+        rg = RiemannianGeometry(backend)
+
+        # Generate points in a small region (approximately Euclidean)
+        points = backend.random_normal((10, 3)) * 0.1  # Small scale
+        backend.eval(points)
+
+        # Arithmetic mean
+        arith_mean = backend.mean(points, axis=0)
+        arith_np = backend.to_numpy(arith_mean)
+
+        # Fréchet mean
+        result = rg.frechet_mean(points, max_iterations=100)
+        frechet_np = backend.to_numpy(result.mean)
+
+        # Should be close
+        for i in range(3):
+            assert abs(frechet_np[i] - arith_np[i]) < 0.5, (
+                f"Dim {i}: Fréchet={frechet_np[i]}, Arithmetic={arith_np[i]}"
+            )
+
+    def test_geodesic_geq_euclidean(self, any_backend: "Backend"):
+        """Geodesic distance >= Euclidean distance.
+
+        The geodesic (shortest path on manifold) is always >= the straight-line
+        Euclidean distance (chord) because it must follow the manifold surface.
+        """
+        backend = any_backend
+        backend.random_seed(42)
+        rg = RiemannianGeometry(backend)
+
+        # Points on a curved manifold (random cloud)
+        points = backend.random_normal((15, 4))
+        backend.eval(points)
+
+        # Compute geodesic distances
+        geo_result = rg.geodesic_distances(points, k_neighbors=10)
+        geo_np = backend.to_numpy(geo_result.distances)
+
+        # Compute Euclidean distances
+        points_np = backend.to_numpy(points)
+        for i in range(15):
+            for j in range(15):
+                if i != j and math.isfinite(geo_np[i, j]):
+                    # Euclidean distance
+                    euc = math.sqrt(sum((points_np[i, k] - points_np[j, k])**2 for k in range(4)))
+                    # Geodesic should be >= Euclidean (with small tolerance for numerical error)
+                    assert geo_np[i, j] >= euc - 1e-3, (
+                        f"Geodesic({i},{j})={geo_np[i,j]} < Euclidean={euc}"
+                    )

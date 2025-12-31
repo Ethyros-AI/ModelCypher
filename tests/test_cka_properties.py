@@ -407,3 +407,284 @@ class TestCKAEdgeCases:
         result = compute_cka(x, y, backend)
         # Should be low due to orthogonal structure
         assert result.cka < 0.5
+
+
+# =============================================================================
+# Hypothesis Property-Based Tests
+# =============================================================================
+
+try:
+    from hypothesis import given, settings, assume
+    from hypothesis import strategies as st
+
+    HYPOTHESIS_AVAILABLE = True
+except ImportError:
+    HYPOTHESIS_AVAILABLE = False
+
+
+def _random_orthogonal_matrix(backend, dim: int, seed: int):
+    """Generate random orthogonal matrix via QR decomposition."""
+    backend.random_seed(seed)
+    A = backend.random_normal(shape=(dim, dim))
+    Q, _ = backend.qr(A)
+    return Q
+
+
+def _random_permutation_matrix(backend, n: int, seed: int):
+    """Generate random permutation matrix."""
+    import random
+    random.seed(seed)
+    perm = list(range(n))
+    random.shuffle(perm)
+    P_list = [[1.0 if j == perm[i] else 0.0 for j in range(n)] for i in range(n)]
+    return backend.array(P_list)
+
+
+@pytest.mark.skipif(not HYPOTHESIS_AVAILABLE, reason="hypothesis not installed")
+class TestCKAHypothesis:
+    """Hypothesis-based property tests for comprehensive coverage."""
+
+    @given(
+        n_samples=st.integers(min_value=4, max_value=50),
+        n_features=st.integers(min_value=2, max_value=32),
+        seed=st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=50, deadline=None)
+    def test_self_similarity_hypothesis(self, n_samples: int, n_features: int, seed: int):
+        """CKA(X, X) = 1.0 for all valid matrices (Hypothesis)."""
+        backend = get_default_backend()
+        X = _random_matrix(backend, n_samples, n_features, seed)
+
+        result = compute_cka(X, X, backend)
+
+        assert result.is_valid
+        assert abs(result.cka - 1.0) < 1e-4
+
+    @given(
+        n_samples=st.integers(min_value=4, max_value=30),
+        n_features_x=st.integers(min_value=2, max_value=20),
+        n_features_y=st.integers(min_value=2, max_value=20),
+        seed_x=st.integers(min_value=0, max_value=10000),
+        seed_y=st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=50, deadline=None)
+    def test_symmetry_hypothesis(
+        self,
+        n_samples: int,
+        n_features_x: int,
+        n_features_y: int,
+        seed_x: int,
+        seed_y: int,
+    ):
+        """CKA(X, Y) = CKA(Y, X) (Hypothesis)."""
+        assume(seed_x != seed_y)
+        backend = get_default_backend()
+        X = _random_matrix(backend, n_samples, n_features_x, seed_x)
+        Y = _random_matrix(backend, n_samples, n_features_y, seed_y)
+
+        result_xy = compute_cka(X, Y, backend)
+        result_yx = compute_cka(Y, X, backend)
+
+        assert result_xy.is_valid and result_yx.is_valid
+        assert abs(result_xy.cka - result_yx.cka) < 1e-5
+
+    @given(
+        n_samples=st.integers(min_value=4, max_value=30),
+        n_features=st.integers(min_value=2, max_value=20),
+        seed_x=st.integers(min_value=0, max_value=10000),
+        seed_y=st.integers(min_value=0, max_value=10000),
+        seed_r=st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=30, deadline=None)
+    def test_rotation_invariance_hypothesis(
+        self,
+        n_samples: int,
+        n_features: int,
+        seed_x: int,
+        seed_y: int,
+        seed_r: int,
+    ):
+        """CKA(X @ R, Y) = CKA(X, Y) for orthogonal R (Hypothesis)."""
+        backend = get_default_backend()
+        X = _random_matrix(backend, n_samples, n_features, seed_x)
+        Y = _random_matrix(backend, n_samples, n_features, seed_y)
+        R = _random_orthogonal_matrix(backend, n_features, seed_r)
+
+        X_rotated = backend.matmul(X, R)
+        backend.eval(X_rotated)
+
+        result_original = compute_cka(X, Y, backend)
+        result_rotated = compute_cka(X_rotated, Y, backend)
+
+        assert result_original.is_valid and result_rotated.is_valid
+        assert abs(result_original.cka - result_rotated.cka) < 0.05
+
+    @given(
+        n_samples=st.integers(min_value=4, max_value=30),
+        n_features=st.integers(min_value=2, max_value=20),
+        seed=st.integers(min_value=0, max_value=10000),
+        seed_r=st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=30, deadline=None)
+    def test_self_after_rotation_hypothesis(
+        self,
+        n_samples: int,
+        n_features: int,
+        seed: int,
+        seed_r: int,
+    ):
+        """CKA(X, X @ R) = 1.0 for orthogonal R (Hypothesis)."""
+        backend = get_default_backend()
+        X = _random_matrix(backend, n_samples, n_features, seed)
+        R = _random_orthogonal_matrix(backend, n_features, seed_r)
+
+        X_rotated = backend.matmul(X, R)
+        backend.eval(X_rotated)
+
+        result = compute_cka(X, X_rotated, backend)
+
+        assert result.is_valid
+        assert abs(result.cka - 1.0) < 0.05
+
+    @given(
+        n_samples=st.integers(min_value=4, max_value=30),
+        n_features=st.integers(min_value=2, max_value=20),
+        seed_x=st.integers(min_value=0, max_value=10000),
+        seed_y=st.integers(min_value=0, max_value=10000),
+        scale=st.floats(min_value=0.1, max_value=100.0, allow_nan=False, allow_infinity=False),
+    )
+    @settings(max_examples=30, deadline=None)
+    def test_scale_invariance_hypothesis(
+        self,
+        n_samples: int,
+        n_features: int,
+        seed_x: int,
+        seed_y: int,
+        scale: float,
+    ):
+        """CKA(c * X, Y) = CKA(X, Y) for c > 0 (Hypothesis)."""
+        backend = get_default_backend()
+        X = _random_matrix(backend, n_samples, n_features, seed_x)
+        Y = _random_matrix(backend, n_samples, n_features, seed_y)
+
+        X_scaled = X * scale
+        backend.eval(X_scaled)
+
+        result_original = compute_cka(X, Y, backend)
+        result_scaled = compute_cka(X_scaled, Y, backend)
+
+        assert result_original.is_valid and result_scaled.is_valid
+        assert abs(result_original.cka - result_scaled.cka) < 0.05
+
+    @given(
+        n_samples=st.integers(min_value=4, max_value=20),
+        n_features_x=st.integers(min_value=2, max_value=12),
+        n_features_y=st.integers(min_value=2, max_value=12),
+        seed_x=st.integers(min_value=0, max_value=10000),
+        seed_y=st.integers(min_value=0, max_value=10000),
+        seed_p=st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=20, deadline=None)
+    def test_sample_permutation_invariance_hypothesis(
+        self,
+        n_samples: int,
+        n_features_x: int,
+        n_features_y: int,
+        seed_x: int,
+        seed_y: int,
+        seed_p: int,
+    ):
+        """CKA(P @ X, P @ Y) = CKA(X, Y) for permutation P (Hypothesis).
+
+        Permuting samples in both X and Y identically should preserve CKA.
+        This is the 5th key property of CKA.
+        """
+        backend = get_default_backend()
+        X = _random_matrix(backend, n_samples, n_features_x, seed_x)
+        Y = _random_matrix(backend, n_samples, n_features_y, seed_y)
+        P = _random_permutation_matrix(backend, n_samples, seed_p)
+
+        X_perm = backend.matmul(P, X)
+        Y_perm = backend.matmul(P, Y)
+        backend.eval(X_perm, Y_perm)
+
+        result_original = compute_cka(X, Y, backend)
+        result_permuted = compute_cka(X_perm, Y_perm, backend)
+
+        assert result_original.is_valid and result_permuted.is_valid
+        assert abs(result_original.cka - result_permuted.cka) < 1e-4
+
+    @given(
+        n_samples=st.integers(min_value=4, max_value=50),
+        n_features_x=st.integers(min_value=2, max_value=32),
+        n_features_y=st.integers(min_value=2, max_value=32),
+        seed_x=st.integers(min_value=0, max_value=10000),
+        seed_y=st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=100, deadline=None)
+    def test_bounded_hypothesis(
+        self,
+        n_samples: int,
+        n_features_x: int,
+        n_features_y: int,
+        seed_x: int,
+        seed_y: int,
+    ):
+        """CKA always in [0, 1] (Hypothesis)."""
+        backend = get_default_backend()
+        X = _random_matrix(backend, n_samples, n_features_x, seed_x)
+        Y = _random_matrix(backend, n_samples, n_features_y, seed_y)
+
+        result = compute_cka(X, Y, backend)
+
+        assert result.is_valid
+        assert 0.0 <= result.cka <= 1.0
+
+
+# =============================================================================
+# Sample Permutation Invariance (Non-Hypothesis)
+# =============================================================================
+
+
+class TestCKASamplePermutation:
+    """Explicit tests for sample permutation invariance."""
+
+    @pytest.mark.parametrize("seed", range(5))
+    def test_sample_permutation_invariance(self, seed: int):
+        """CKA(P @ X, P @ Y) = CKA(X, Y) for permutation P."""
+        backend = get_default_backend()
+        n_samples = 15
+
+        X = _random_matrix(backend, n_samples, 8, seed)
+        Y = _random_matrix(backend, n_samples, 10, seed + 1000)
+        P = _random_permutation_matrix(backend, n_samples, seed + 2000)
+
+        X_perm = backend.matmul(P, X)
+        Y_perm = backend.matmul(P, Y)
+        backend.eval(X_perm, Y_perm)
+
+        result_original = compute_cka(X, Y, backend)
+        result_permuted = compute_cka(X_perm, Y_perm, backend)
+
+        assert result_original.is_valid and result_permuted.is_valid
+        assert result_original.cka == pytest.approx(result_permuted.cka, abs=1e-4)
+
+    def test_reversed_samples(self):
+        """CKA should be invariant to reversing sample order."""
+        backend = get_default_backend()
+        n_samples = 20
+        X = _random_matrix(backend, n_samples, 10, 42)
+        Y = _random_matrix(backend, n_samples, 10, 43)
+
+        # Create reversal permutation matrix
+        P_rev_list = [[1.0 if j == (n_samples - 1 - i) else 0.0 for j in range(n_samples)] for i in range(n_samples)]
+        P_rev = backend.array(P_rev_list)
+
+        X_rev = backend.matmul(P_rev, X)
+        Y_rev = backend.matmul(P_rev, Y)
+        backend.eval(X_rev, Y_rev)
+
+        result_original = compute_cka(X, Y, backend)
+        result_reversed = compute_cka(X_rev, Y_rev, backend)
+
+        assert result_original.cka == pytest.approx(result_reversed.cka, abs=1e-4)

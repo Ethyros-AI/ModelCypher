@@ -24,6 +24,7 @@ import pytest
 from hypothesis import settings
 
 from modelcypher.ports.backend import Backend
+from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_registry
 
 # =============================================================================
 # Backend Availability Detection
@@ -121,6 +122,12 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "jax_gpu: tests that require JAX with GPU/TPU backend")
     config.addinivalue_line("markers", "cuda: tests that require CUDA")
     config.addinivalue_line("markers", "accelerator: tests that require any GPU/accelerator")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _register_atlas_defaults():
+    """Register default atlas inventories for geometry tests."""
+    register_default_atlas_registry()
 
 
 @pytest.fixture(autouse=True)

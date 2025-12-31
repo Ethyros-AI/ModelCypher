@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
 from modelcypher.core.domain.geometry.geometry_fingerprint import GeometricFingerprint
+from modelcypher.core.domain.geometry.atlas_registry import get_atlas_probes
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -65,7 +66,10 @@ class Config:
         return Config()
 
 
-def validate_crm_uses_atlas(crm: ConceptResponseMatrix) -> tuple[bool, dict]:
+def validate_crm_uses_atlas(
+    crm: ConceptResponseMatrix,
+    atlas_probe_ids: set[str] | None = None,
+) -> tuple[bool, dict]:
     """Check if ConceptResponseMatrix was built using unified atlas probes.
 
     The unified atlas provides N probes across all sources for cross-domain
@@ -83,10 +87,9 @@ def validate_crm_uses_atlas(crm: ConceptResponseMatrix) -> tuple[bool, dict]:
         - coverage: Fraction of atlas IDs present in CRM
         - is_subset: Whether CRM uses a subset of atlas
     """
-    # Lazy import to avoid circular dependency
-    from modelcypher.core.domain.agents.unified_atlas import get_probe_ids
-
-    atlas_ids = set(get_probe_ids())
+    if atlas_probe_ids is None:
+        atlas_probe_ids = {probe.probe_id for probe in get_atlas_probes()}
+    atlas_ids = set(atlas_probe_ids)
     crm_ids = set(crm.concept_ids) if hasattr(crm, "concept_ids") else set()
 
     overlap = len(atlas_ids & crm_ids)

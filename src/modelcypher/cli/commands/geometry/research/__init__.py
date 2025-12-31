@@ -22,6 +22,7 @@ from __future__ import annotations
 import typer
 
 from . import (
+    curvature_cmds,
     density_cmds,
     diff_cmds,
     eval_cmds,
@@ -34,6 +35,7 @@ app = typer.Typer(no_args_is_help=True)
 
 
 def _register() -> None:
+    curvature_cmds.register(app)
     density_cmds.register(app)
     diff_cmds.register(app)
     graft_cmds.register(app)
