@@ -366,6 +366,7 @@ def validate_suite(
         mc validate suite --model M1 --output-dir /path/to/results
     """
     import json
+    import shlex
     import subprocess
     import tempfile
     from dataclasses import dataclass, field
@@ -420,7 +421,9 @@ def validate_suite(
         try:
             if "--output" not in cmd and "--ai" not in cmd:
                 cmd = cmd + " --ai"
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=cmd_timeout)
+            # Use shlex.split for safe command parsing (no shell=True)
+            cmd_parts = shlex.split(cmd)
+            result = subprocess.run(cmd_parts, capture_output=True, text=True, timeout=cmd_timeout)
             duration = time.time() - start
             if result.returncode == 0:
                 try:

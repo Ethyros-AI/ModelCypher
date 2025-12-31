@@ -443,7 +443,6 @@ class LowRankGromovWasserstein:
     ) -> "Array":
         """Compute approximate cost matrix using sampling for large matrices."""
         b = backend
-        eps = 1e-10
 
         # Sample subset of rows and columns
         sample_size = min(1000, n, m)
@@ -483,8 +482,8 @@ class LowRankGromovWasserstein:
         # Interpolate to full size
         cost = b.zeros((n, m))
         # This is a simplified interpolation - just tile the sampled cost
-        scale_n = (n + sample_size - 1) // sample_size
-        scale_m = (m + sample_size - 1) // sample_size
+        (n + sample_size - 1) // sample_size
+        (m + sample_size - 1) // sample_size
 
         # For simplicity, use the mean cost value as a constant matrix
         # This is a rough approximation but numerically stable

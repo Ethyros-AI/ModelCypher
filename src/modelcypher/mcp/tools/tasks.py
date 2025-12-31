@@ -120,27 +120,14 @@ def register_task_tools(ctx: ServiceContext) -> None:
                 }
 
             # Build next actions based on status
-            next_actions = []
             if task.status == TaskStatus.RUNNING:
-                next_actions = [
-                    f"mc_task_status taskId={taskId} to refresh",
-                    f"mc_task_cancel taskId={taskId} to stop",
-                ]
+                pass
             elif task.status == TaskStatus.PENDING:
-                next_actions = [
-                    f"mc_task_status taskId={taskId} to check if started",
-                    f"mc_task_cancel taskId={taskId} to cancel",
-                ]
+                pass
             elif task.status == TaskStatus.COMPLETED:
-                next_actions = [
-                    f"mc_task_result taskId={taskId} for full result",
-                    f"mc_task_delete taskId={taskId} to clean up",
-                ]
+                pass
             elif task.status in (TaskStatus.FAILED, TaskStatus.CANCELLED):
-                next_actions = [
-                    f"mc_task_delete taskId={taskId} to clean up",
-                    "mc_task_list for other tasks",
-                ]
+                pass
 
             return {
                 "_schema": "mc_task_status_response",

@@ -416,7 +416,7 @@ def build_server() -> FastMCP:
     system_service = factory.system_service()
     checkpoint_service = factory.checkpoint_service()
     evaluation_service = factory.evaluation_service()
-    geometry_training_service = factory.geometry_training_service()
+    factory.geometry_training_service()
     ensemble_service = factory.ensemble_service()
 
     # Services without port dependencies (direct instantiation)

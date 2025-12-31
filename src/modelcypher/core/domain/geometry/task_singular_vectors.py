@@ -352,7 +352,7 @@ def blend_with_svd_awareness(
 
     # Find spectral gap - the natural boundary between skill and structure
     significant_svs = [S_list[i] for i in significant_indices]
-    k = _find_spectral_gap(significant_svs, epsilon)
+    _find_spectral_gap(significant_svs, epsilon)
 
     # Compute per-component alpha based on variance contribution
     # Alpha_i = base_alpha * (1 - variance_fraction_i)

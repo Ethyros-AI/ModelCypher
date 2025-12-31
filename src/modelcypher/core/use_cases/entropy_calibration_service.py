@@ -314,8 +314,6 @@ class EntropyCalibrationService:
 
         # Load model
         model, tokenizer = self._mlx_load(str(model_dir))
-        mx = self._mx
-        b = self._backend
 
         # Get vocab size from model config or tokenizer
         vocab_size = getattr(tokenizer, "vocab_size", None)

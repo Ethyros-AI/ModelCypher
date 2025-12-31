@@ -76,6 +76,8 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
+from modelcypher.core.domain.geometry.alignment_diagnostic import AlignmentSignal
+
 logger = logging.getLogger(__name__)
 
 
@@ -743,7 +745,7 @@ class GramAligner:
 
         # Compute sample-space transform T = K_t^{1/2} @ K_s^{-1/2}
         K_s = b.matmul(source_centered, b.transpose(source_centered))
-        K_t = b.matmul(target_centered, b.transpose(target_centered))
+        b.matmul(target_centered, b.transpose(target_centered))
         K_s_c_local = b.matmul(b.matmul(H, K_s), H)
         b.eval(K_s_c_local)
 

@@ -533,7 +533,7 @@ def analyze_eigenvalues(
 
     # Sort descending
     eigenvalues = backend.sort(eigenvalues)
-    n = int(backend.shape(eigenvalues)[0])
+    int(backend.shape(eigenvalues)[0])
     # Reverse for descending order
     ev_list = backend.to_numpy(eigenvalues)
     eigenvalues = backend.array(ev_list[::-1])
@@ -738,7 +738,7 @@ def generate_poisson_gaps(
     for _ in range(n):
         # Generate a single Poisson sample
         u = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
-        u_val = float(backend.to_numpy(u)[0])
+        float(backend.to_numpy(u)[0])
 
         L = math.exp(-rate)
         k = 0

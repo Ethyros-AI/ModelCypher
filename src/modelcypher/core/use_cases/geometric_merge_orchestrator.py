@@ -552,7 +552,7 @@ class GeometricMergeOrchestrator:
         # topological_fingerprint - compute topological signature
         try:
             from modelcypher.core.domain.geometry.topological_fingerprint import (
-                TopologicalFingerprint,
+                TopologicalFingerprint,  # noqa: F401 - for feature detection
             )
             # Would compute persistent homology here
         except ImportError:
@@ -905,7 +905,7 @@ class GeometricMergeOrchestrator:
                 TransformationType,
             )
 
-            config = MergeAnalysisConfig()
+            MergeAnalysisConfig()
             # Would analyze using RiemannianDensityEstimator
             # For now, set defaults based on alignment quality
             if layer_geom.alignment_quality < 0.5:
@@ -1210,7 +1210,7 @@ class GeometricMergeOrchestrator:
                 CrossArchitectureLayerMatcher,
             )
 
-            n_src = len(src_layers)
+            len(src_layers)
             n_tgt = len(tgt_layers)
             cka_matrix: list[list[float]] = []
 
@@ -1684,7 +1684,6 @@ class GeometricMergeOrchestrator:
                 # A.2: Check transform_requirements and set dispatch flags
                 # ============================================================
                 use_geodesic_blend = False
-                apply_boundary_smoothing = False
                 if layer_geom and layer_geom.transform_requirements:
                     for transform in layer_geom.transform_requirements:
                         tag = transform.upper()
@@ -1694,7 +1693,7 @@ class GeometricMergeOrchestrator:
                             # Reduce alpha in high-interference regions
                             pass  # Will be applied below with interference_score
                         elif tag == "BOUNDARY_SMOOTHING":
-                            apply_boundary_smoothing = True
+                            pass
                     metrics["transform_requirements_checked"] += 1
 
                 # Get base alpha for this layer
@@ -1957,14 +1956,14 @@ class GeometricMergeOrchestrator:
                             # Compute delta and sparsify
                             delta = merged_w - target_f32
                             b.eval(delta)
-                            delta_np = b.to_numpy(delta)
+                            b.to_numpy(delta)
 
                             # Analyze sparsity
                             config = DAREConfig(
                                 sparsity_threshold=0.01,
                                 droppable_percentile=0.9,
                             )
-                            analysis = analyze_sparsity({"delta": delta}, config)
+                            analyze_sparsity({"delta": delta}, config)
 
                             # Drop low-magnitude components
                             threshold = 0.01 * float(b.max(b.abs(delta)).item())

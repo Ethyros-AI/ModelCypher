@@ -41,7 +41,7 @@ from modelcypher.cli.commands.geometry.helpers import (
     resolve_model_backbone,
 )
 from modelcypher.cli.context import CLIContext
-from modelcypher.cli.output import write_output
+from modelcypher.cli.output import write_error, write_output
 from modelcypher.core.domain.agents.unified_atlas import (
     AtlasDomain,
     AtlasSource,
@@ -457,7 +457,7 @@ def knowledge_diff(
             "KNOWLEDGE STATE DIFF",
             f"Source: {source_path}",
             f"Target: {target_path}",
-            f"Layers: {', '.join(str(l) for l in resolved_layers)}",
+            f"Layers: {', '.join(str(layer) for layer in resolved_layers)}",
             "",
             f"Total concepts compared: {diff.total_concepts}",
             f"Overall source density: {diff.overall_source_density:.3f}",
@@ -616,7 +616,7 @@ def sparse_regions(
         lines = [
             "SPARSE REGION ANALYSIS",
             f"Model: {model_path}",
-            f"Layers: {', '.join(str(l) for l in resolved_layers)}",
+            f"Layers: {', '.join(str(layer) for layer in resolved_layers)}",
             f"Overall Density: {profile.overall_density:.3f}",
             f"Total Sparse Concepts: {len(profile.sparse_concepts)}",
             f"Total Dense Concepts: {len(profile.dense_concepts)}",
@@ -916,7 +916,7 @@ def graft_boundary(
             "GRAFT BOUNDARY ANALYSIS",
             f"Source: {source_path}",
             f"Target: {target_path}",
-            f"Layers: {', '.join(str(l) for l in resolved_layers)}",
+            f"Layers: {', '.join(str(layer) for layer in resolved_layers)}",
             "",
             f"Estimated Graft Boundary: density < {graft_boundary_density:.2f}",
             f"Graftable Layers (by null space): {null_profile.graftable_layers}",
@@ -1006,7 +1006,7 @@ def zero_shot_transfer(
     num_layers = min(target_n_layers, source_n_layers)
 
     if layers:
-        resolved_layers = [l for l in layers if l < num_layers]
+        resolved_layers = [layer for layer in layers if layer < num_layers]
     else:
         # Analyze key layers: early, middle, late
         resolved_layers = [
@@ -2005,7 +2005,7 @@ def validate_transplant(
 
         # Parse layers
         if layers:
-            layer_list = [int(l.strip()) for l in layers.split(",")]
+            layer_list = [int(layer_str.strip()) for layer_str in layers.split(",")]
         else:
             layer_list = None
 

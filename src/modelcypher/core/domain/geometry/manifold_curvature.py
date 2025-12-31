@@ -845,7 +845,7 @@ class SectionalCurvatureEstimator:
             centered_np = backend.to_numpy(centered)
 
             # Build design matrix in Python
-            num_quad = d * (d + 1) // 2
+            d * (d + 1) // 2
             design_list = []
             for row_idx in range(n):
                 row = list(centered_np[row_idx])

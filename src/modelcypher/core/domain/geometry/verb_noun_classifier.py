@@ -40,8 +40,12 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array
 
 logger = logging.getLogger(__name__)
 
@@ -501,7 +505,7 @@ class VerbNounDimensionClassifier:
         Returns:
             Modulated blend weights
         """
-        backend = get_default_backend()
+        get_default_backend()
 
         if len(correlation_weights) != len(vn_classification.alpha_vector):
             logger.warning(

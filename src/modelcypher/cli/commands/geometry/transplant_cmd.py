@@ -230,7 +230,6 @@ def transplant_run(
             for i, layer_module in enumerate(inner.layers):
                 if use_mlp_intermediate and i == layer:
                     # Get intermediate MLP activation (after up_proj, before down_proj)
-                    residual = h
                     h_norm = layer_module.input_layernorm(h)
 
                     # Self-attention (skip for now, just add residual)

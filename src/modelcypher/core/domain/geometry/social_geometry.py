@@ -166,7 +166,7 @@ class SocialGeometryAnalyzer:
         idx_np = backend.to_numpy(idx)[::-1].tolist()
         eigenvalues_sorted = backend.array([float(backend.to_numpy(eigenvalues)[i]) for i in idx_np])
         eigenvectors_np = backend.to_numpy(eigenvectors)
-        eigenvectors_sorted = backend.array([[eigenvectors_np[i, j] for j in idx_np] for i in range(eigenvectors_np.shape[0])])
+        backend.array([[eigenvectors_np[i, j] for j in idx_np] for i in range(eigenvectors_np.shape[0])])
 
         # Project data
         eigenvectors_subset = backend.array([[eigenvectors_np[i, idx_np[j]] for j in range(n_components)] for i in range(eigenvectors_np.shape[0])])

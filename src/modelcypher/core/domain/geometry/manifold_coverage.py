@@ -503,7 +503,6 @@ class ManifoldCoverage:
         step_size: float,
     ) -> list["Array"]:
         """Propose new points by stepping in sparse directions."""
-        backend = self._backend
         proposals: list["Array"] = []
 
         for idx in sparse_indices[:n_proposals]:

@@ -648,7 +648,7 @@ def compute_dimension_correlations(
             f"Shape mismatch: {source_activations.shape} vs {target_activations.shape}"
         )
 
-    num_probes = int(source_activations.shape[0])
+    int(source_activations.shape[0])
     hidden_dim = int(source_activations.shape[1])
 
     # Compute cosine similarity per dimension

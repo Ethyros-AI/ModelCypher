@@ -790,7 +790,6 @@ class MultiDonorMergeService:
         logger.info("Processing base %s (%s)", base.id, base.source)
 
         donor_stages: list[DonorStageResult] = []
-        current_weights: dict[str, Any] | None = None
         current_target_path: str = base.source
 
         # Update status

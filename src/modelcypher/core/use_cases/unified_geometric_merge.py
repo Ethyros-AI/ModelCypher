@@ -361,7 +361,7 @@ class UnifiedGeometricMerger:
         )
 
         layer_confidences: dict[int, float] = probe_result.get("confidences", {})
-        dimension_correlations: dict = probe_result.get("dimension_correlations", {})
+        probe_result.get("dimension_correlations", {})
         intersection_map_obj = probe_result.get("intersection_map")
         probe_failed = bool(probe_metrics.get("probe_failed"))
         perfect_alignment = bool(probe_metrics.get("perfect_alignment"))

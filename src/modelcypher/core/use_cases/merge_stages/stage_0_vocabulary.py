@@ -299,11 +299,9 @@ def stage_vocabulary_align(
                 "target",
             )
             backend.eval(source_embed, target_embed)
-            source_embed_original = source_embed
             target_embed_original = target_embed
             source_cache_key = _make_embedding_cache_key(source_embed, backend)
             target_cache_key = _make_embedding_cache_key(target_embed, backend)
-            source_cache_key_original = source_cache_key
             target_cache_key_original = target_cache_key
 
             # Binary (1D) alignment: align byte-level anchors before vocabulary blending.

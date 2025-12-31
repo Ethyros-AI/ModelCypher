@@ -73,14 +73,15 @@ def prevent_sleep() -> Generator[None, None, None]:
             except subprocess.TimeoutExpired:
                 caffeinate_proc.kill()
 
-from modelcypher.cli.composition import (
+# Late imports to keep prevent_sleep() context manager lightweight
+from modelcypher.cli.composition import (  # noqa: E402
     get_model_search_service,
     get_model_service,
 )
-from modelcypher.cli.context import CLIContext
-from modelcypher.cli.output import write_error, write_output
-from modelcypher.cli.presenters import model_payload, model_search_payload
-from modelcypher.core.domain.model_search import (
+from modelcypher.cli.context import CLIContext  # noqa: E402
+from modelcypher.cli.output import write_error, write_output  # noqa: E402
+from modelcypher.cli.presenters import model_payload, model_search_payload  # noqa: E402
+from modelcypher.core.domain.model_search import (  # noqa: E402
     MemoryFitStatus,
     ModelSearchFilters,
     ModelSearchLibraryFilter,
@@ -88,8 +89,8 @@ from modelcypher.core.domain.model_search import (
     ModelSearchQuantization,
     ModelSearchSortOption,
 )
-from modelcypher.core.use_cases.model_probe_service import ModelProbeService
-from modelcypher.utils.errors import ErrorDetail
+from modelcypher.core.use_cases.model_probe_service import ModelProbeService  # noqa: E402
+from modelcypher.utils.errors import ErrorDetail  # noqa: E402
 
 app = typer.Typer(no_args_is_help=True)
 

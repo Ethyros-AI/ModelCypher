@@ -288,7 +288,7 @@ class GromovWassersteinDistance:
 
         # Generate all permutations
         perms = list(itertools.permutations(range(n)))
-        n_perms = len(perms)  # n!
+        len(perms)  # n!
 
         # Build all permutation matrices on GPU [n_perms, n, n]
         # P[idx, i, perm[i]] = 1.0

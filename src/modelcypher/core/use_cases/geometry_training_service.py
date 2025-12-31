@@ -103,7 +103,6 @@ class GeometryTrainingService:
         metrics = GeometricTrainingMetrics.from_progress_metrics(job.metrics or {})
         if metrics is None and require_metrics:
             raise ValueError(f"Job '{job_id}' not found or has no geometric metrics")
-        has_metrics = metrics is not None
         if metrics is None:
             metrics = GeometricTrainingMetrics()
         checkpoints = self.store.list_checkpoints(job_id)

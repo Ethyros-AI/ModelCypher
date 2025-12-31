@@ -30,6 +30,7 @@ from modelcypher.core.domain.safety.circuit_breaker_integration import (
     CircuitBreakerState,
     Configuration,
     InputSignals,
+    RecommendedAction,
 )
 
 if TYPE_CHECKING:

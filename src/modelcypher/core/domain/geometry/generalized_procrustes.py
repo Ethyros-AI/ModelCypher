@@ -158,7 +158,7 @@ class GeneralizedProcrustes:
             self._riemannian = RiemannianGeometry(backend=self._backend)
 
         backend = self._backend
-        M, N, K = aligned_X.shape[0], aligned_X.shape[1], aligned_X.shape[2]
+        _M, N, _K = aligned_X.shape[0], aligned_X.shape[1], aligned_X.shape[2]
 
         # For each sample point, compute Fréchet mean across M models
         # Each sample is a set of M points in K-dimensional space
@@ -233,7 +233,7 @@ class GeneralizedProcrustes:
 
         aligned_X = X  # Initially aligned is just centered X
 
-        prev_error = float("inf")
+        float("inf")
         converged = False
         iterations = 0
         current_error = 0.0
@@ -280,7 +280,6 @@ class GeneralizedProcrustes:
                 consensus = new_consensus
                 break
 
-            prev_error = current_error
             consensus = new_consensus
 
         # Final outputs
