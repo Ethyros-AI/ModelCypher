@@ -151,6 +151,14 @@ class ProfileComparison:
     max_alignment_effort: float = 0.0
     recommended_strategy: str = "procrustes"  # "procrustes", "projection_first", "curvature_flow"
 
+    # === BASELINE-RELATIVE Z-SCORES ===
+    # These are only populated when a FamilyBaseline is provided
+    sectional_z_score: float | None = None  # Mean z-score across layers
+    ricci_z_score: float | None = None  # Mean z-score for Ollivier-Ricci
+    dimension_z_score: float | None = None  # Mean z-score for intrinsic dimension
+    baseline_family: str | None = None  # Family used for baseline
+    baseline_model_count: int | None = None  # Number of models in baseline
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "source_path": self.source_path,
@@ -178,6 +186,12 @@ class ProfileComparison:
             "mean_alignment_effort": self.mean_alignment_effort,
             "max_alignment_effort": self.max_alignment_effort,
             "recommended_strategy": self.recommended_strategy,
+            # Baseline-relative z-scores
+            "sectional_z_score": self.sectional_z_score,
+            "ricci_z_score": self.ricci_z_score,
+            "dimension_z_score": self.dimension_z_score,
+            "baseline_family": self.baseline_family,
+            "baseline_model_count": self.baseline_model_count,
         }
 
     @classmethod
@@ -205,6 +219,11 @@ class ProfileComparison:
             mean_alignment_effort=d.get("mean_alignment_effort", 0.0),
             max_alignment_effort=d.get("max_alignment_effort", 0.0),
             recommended_strategy=d.get("recommended_strategy", "procrustes"),
+            sectional_z_score=d.get("sectional_z_score"),
+            ricci_z_score=d.get("ricci_z_score"),
+            dimension_z_score=d.get("dimension_z_score"),
+            baseline_family=d.get("baseline_family"),
+            baseline_model_count=d.get("baseline_model_count"),
         )
 
 
@@ -341,6 +360,70 @@ def compare_profiles(
         strategy = "curvature_flow"
     else:
         strategy = "procrustes"
+
+    # === BASELINE-RELATIVE Z-SCORES ===
+    sectional_z_score = None
+    ricci_z_score = None
+    dimension_z_score = None
+    baseline_family = None
+    baseline_model_count = None
+
+    if baseline is not None and baseline.sample_count > 0:
+        baseline_family = baseline.family
+        baseline_model_count = baseline.sample_count
+
+        # Compute z-scores for differences relative to baseline
+        # The baseline captures typical variation within a family
+        # Z-score = (observed_diff - expected_diff) / std
+        # For curvature differences, expected_diff ≈ 0 within same family
+
+        sectional_z_scores = []
+        ricci_z_scores = []
+        dim_z_scores = []
+
+        for lc in layer_comparisons:
+            # Map layer to relative position for baseline lookup
+            src_layers = source.num_layers or len(source.layer_profiles)
+            pos = lc.source_layer_idx / max(1, src_layers - 1)
+
+            # Find closest baseline position
+            closest_idx = 0
+            min_dist = float("inf")
+            for i, bp in enumerate(baseline.layer_positions):
+                dist = abs(bp - pos)
+                if dist < min_dist:
+                    min_dist = dist
+                    closest_idx = i
+
+            # Sectional z-score
+            if closest_idx < len(baseline.sectional_std_by_position):
+                std = baseline.sectional_std_by_position[closest_idx]
+                if std > 1e-10:
+                    z = abs(lc.sectional_curvature_diff) / std
+                    sectional_z_scores.append(z)
+
+            # Ricci z-score
+            if closest_idx < len(baseline.ollivier_ricci_std_by_position):
+                std = baseline.ollivier_ricci_std_by_position[closest_idx]
+                if std > 1e-10:
+                    z = abs(lc.ollivier_ricci_diff) / std
+                    ricci_z_scores.append(z)
+
+            # Dimension z-score (using relative diff)
+            if closest_idx < len(baseline.intrinsic_dimension_by_position):
+                baseline_dim = baseline.intrinsic_dimension_by_position[closest_idx]
+                if baseline_dim > 1e-10:
+                    # Use relative diff: |diff| / baseline_dim
+                    z = abs(lc.intrinsic_dimension_diff) / baseline_dim
+                    dim_z_scores.append(z)
+
+        # Aggregate z-scores (mean across layers)
+        if sectional_z_scores:
+            sectional_z_score = sum(sectional_z_scores) / len(sectional_z_scores)
+        if ricci_z_scores:
+            ricci_z_score = sum(ricci_z_scores) / len(ricci_z_scores)
+        if dim_z_scores:
+            dimension_z_score = sum(dim_z_scores) / len(dim_z_scores)
 
     return ProfileComparison(
         source_path=source.model_path,

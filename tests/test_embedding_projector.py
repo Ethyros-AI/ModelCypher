@@ -344,7 +344,6 @@ class TestEmbeddingProjectorCCA:
         assert result.strategy_used == ProjectionStrategy.CCA
         assert result.projected_embeddings.shape == (100, 64)
 
-    @pytest.mark.skip(reason="Source code has JAX list indexing issue - needs fix")
     def test_cca_with_shared_indices(self, projector, backend):
         backend.random_seed(42)
         source = backend.random_normal((100, 64))
@@ -364,7 +363,6 @@ class TestEmbeddingProjectorCCA:
         assert "canonical_correlations" in result.metadata
 
 
-@pytest.mark.skip(reason="Source code uses linalg_inv which is not in Backend protocol")
 class TestEmbeddingProjectorOptimalTransport:
     """Tests for OPTIMAL_TRANSPORT projection strategy."""
 
@@ -471,12 +469,7 @@ class TestProjectionStrategyDispatch:
         source = backend.random_normal((50, 32))
         target = backend.random_normal((50, 32))
 
-        # Skip OPTIMAL_TRANSPORT - source code uses linalg_inv which is not in Backend
-        strategies_to_test = [
-            s for s in ProjectionStrategy if s != ProjectionStrategy.OPTIMAL_TRANSPORT
-        ]
-
-        for strategy in strategies_to_test:
+        for strategy in ProjectionStrategy:
             config = ProjectionConfig(strategy=strategy, anchor_count=20)
             projector = EmbeddingProjector(config=config)
             result = projector.project(source, target)

@@ -24,7 +24,7 @@ profile types into one complete picture.
 A ModelProfile answers: "What does this model look like on the inside?"
 
 For any two models, the unified profile enables:
-- Compatibility assessment: How similar is their geometry?
+- Alignment assessment: How similar is their geometry?
 - Alignment planning: What transformations are needed to merge?
 - Capability mapping: Where does each model store what knowledge?
 - Transfer prediction: What will survive a merge?

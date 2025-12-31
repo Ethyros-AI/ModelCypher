@@ -408,7 +408,9 @@ class EmbeddingProjector:
 
         # Reconstruction error
         if shared_indices:
-            proj_shared = projected[source_idx[:n_shared]]
+            # Use array indexing for JAX compatibility
+            idx_array = b.array(source_idx[:n_shared])
+            proj_shared = projected[idx_array]
             target_shared = Y
             error = float(b.to_numpy(b.mean(b.norm(proj_shared - target_shared, axis=1))))
         else:
@@ -499,10 +501,11 @@ class EmbeddingProjector:
         # Simple approach: compute linear transformation from reduced space
         # A @ source_reduced ≈ projected_sample
         # A = projected_sample @ pinv(source_reduced)
+        # Note: This computation is for documentation - actual projection uses Procrustes below
         b.matmul(
             b.matmul(
                 source_reduced.T,
-                b.linalg_inv(
+                b.inv(
                     b.matmul(source_reduced, source_reduced.T)
                     + self.config.regularization * b.eye(n_source)
                 ),

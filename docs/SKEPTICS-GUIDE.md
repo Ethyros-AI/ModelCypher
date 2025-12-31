@@ -403,7 +403,7 @@ During review, one legitimate problem was identified: the thermodynamics module 
 4. **Updated** `LinguisticCalorimeter` to use calibration when available
 5. **Added** `mc thermo calibrate` CLI command
 
-The fix maintains backward compatibility (old code works but warns) while providing the correct path forward.
+The fix requires updating call sites to the corrected path forward.
 
 ---
 
