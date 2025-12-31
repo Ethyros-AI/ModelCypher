@@ -61,7 +61,7 @@ def _sample_embedding_similarities(
     source_normed = source_sample / (source_norms + eps)
     target_normed = target_sample / (target_norms + eps)
 
-    # Compute pairwise cosine similarities (sample × sample matrix)
+    # Compute pairwise cosine similarities (sample x sample matrix)
     sim_matrix = backend.matmul(source_normed, backend.transpose(target_normed))
     backend.eval(sim_matrix)
 

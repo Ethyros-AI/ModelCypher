@@ -54,7 +54,7 @@ def _frechet_mean_vectors(
     vectors: "object",
     backend: "object",
 ) -> "object":
-    """Compute Fréchet mean of vectors with full geodesic precision.
+    """Compute Frechet mean of vectors with full geodesic precision.
 
     For byte/vocabulary anchors, we need EXACT alignment - no approximations.
     """

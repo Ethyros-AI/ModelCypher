@@ -235,7 +235,7 @@ def stage_vocabulary_align(
             target_cache_key_original = target_cache_key
 
             # Binary (1D) alignment: align byte-level anchors before vocabulary blending.
-            # Pre-compute byte maps ONCE to avoid repeated Fréchet mean computation.
+            # Pre-compute byte maps ONCE to avoid repeated Frechet mean computation.
             binary_metrics = metrics.setdefault("binary_alignment", {})
             binary_signals: list[dict[str, Any]] = []
             binary_start = time.perf_counter()
@@ -1107,7 +1107,7 @@ def stage_vocabulary_align(
                         effective_confidence = eps
 
             # For blend_alpha, if None, compute from CKA alignment quality
-            # Higher source CKA → higher alpha (more weight to source)
+            # Higher source CKA -> higher alpha (more weight to source)
             if merge_blend_alpha is None:
                 # Use corrected CKA to avoid feature-sampling underestimation
                 source_cka_score = compute_cka(

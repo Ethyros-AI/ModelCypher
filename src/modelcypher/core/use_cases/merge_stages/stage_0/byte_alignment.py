@@ -49,7 +49,7 @@ def _build_byte_embedding_map(
 ) -> dict[int, "object"]:
     """Build byte anchor map with session caching.
 
-    This is expensive (256 Fréchet mean computations) so we cache the result
+    This is expensive (256 Frechet mean computations) so we cache the result
     based on the embedding matrix hash and tokenizer signature.
     """
     global _anchor_map_cache
@@ -118,10 +118,10 @@ def _align_bytes_from_matrices(
     initial_transform: "object | None" = None,
     require_phase_lock: bool = False,
 ) -> dict[str, Any]:
-    """Align using pre-computed anchor matrices (avoids recomputing Fréchet means).
+    """Align using pre-computed anchor matrices (avoids recomputing Frechet means).
 
     This is the optimized inner loop function that works with pre-computed
-    anchor matrices, avoiding the expensive Fréchet mean recomputation.
+    anchor matrices, avoiding the expensive Frechet mean recomputation.
 
     Args:
         tolerance: Alignment tolerance. If None, uses machine_epsilon.
@@ -315,7 +315,7 @@ def _align_bytes_from_matrices(
 
     # Log final alignment result
     logger.debug(
-        "Alignment complete: CKA %.8f → %.8f (iterations=%d, error=%.2e, phase_locked=%s)",
+        "Alignment complete: CKA %.8f -> %.8f (iterations=%d, error=%.2e, phase_locked=%s)",
         cka_before,
         cka_after,
         result.iterations,
