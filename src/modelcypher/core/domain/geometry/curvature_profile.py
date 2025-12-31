@@ -314,9 +314,13 @@ class CurvatureCompatibility:
     def to_dict(self) -> dict[str, Any]:
         return {
             "score": self.score,
+            "alignment_score": self.score,
             "sectional_compatibility": self.sectional_compatibility,
             "ollivier_ricci_compatibility": self.ollivier_ricci_compatibility,
             "intrinsic_dimension_compatibility": self.intrinsic_dimension_compatibility,
+            "sectional_alignment": self.sectional_compatibility,
+            "ollivier_ricci_alignment": self.ollivier_ricci_compatibility,
+            "intrinsic_dimension_alignment": self.intrinsic_dimension_compatibility,
             "sectional_z_score": self.sectional_z_score,
             "ollivier_ricci_z_score": self.ollivier_ricci_z_score,
             "intrinsic_dimension_z_score": self.intrinsic_dimension_z_score,

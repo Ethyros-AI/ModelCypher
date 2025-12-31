@@ -176,22 +176,23 @@ class ModelProfilerService:
         Returns:
             Updated ModelProfile with identity section
         """
-        from modelcypher.core.domain.geometry.model_architecture_probe import (
-            ModelArchitectureProbe,
-        )
+        from modelcypher.core.use_cases.model_probe_service import get_model_probe
 
-        probe = ModelArchitectureProbe()
+        probe = get_model_probe()
         result = probe.probe(model_path)
+
+        # Infer model family from architecture
+        model_family = _infer_model_family(result.architecture) or profile.model_family
 
         # Create updated profile with identity info
         updated = ModelProfile(
             model_path=model_path,
             profile_version=profile.profile_version,
-            model_family=result.model_family or profile.model_family,
+            model_family=model_family,
             architecture=result.architecture or profile.architecture,
             parameter_count=result.parameter_count or profile.parameter_count,
-            hidden_dim=result.hidden_dim or profile.hidden_dim,
-            num_layers=result.num_layers or profile.num_layers,
+            hidden_dim=result.hidden_size or profile.hidden_dim,
+            num_layers=len(result.layers) or profile.num_layers,
             num_attention_heads=result.num_attention_heads or profile.num_attention_heads,
             vocab_size=result.vocab_size or profile.vocab_size,
             # Preserve existing data
@@ -265,6 +266,26 @@ class ModelProfilerService:
                 logger.warning(f"Failed to load {path}: {e}")
 
         return profiles
+
+
+def _infer_model_family(architecture: str) -> str:
+    """Infer model family from architecture string."""
+    arch_lower = architecture.lower()
+
+    if "llama" in arch_lower:
+        return "llama"
+    elif "qwen" in arch_lower:
+        return "qwen"
+    elif "mistral" in arch_lower:
+        return "mistral"
+    elif "smol" in arch_lower:
+        return "smollm"
+    elif "phi" in arch_lower:
+        return "phi"
+    elif "gemma" in arch_lower:
+        return "gemma"
+    else:
+        return "unknown"
 
 
 __all__ = [

@@ -150,7 +150,7 @@ def waypoint_audit(
 
     from modelcypher.cli.composition import get_domain_geometry_waypoint_service
 
-    typer.echo("Auditing geometry compatibility...")
+    typer.echo("Auditing geometry alignment...")
     typer.echo(f"  Source: {source_path}")
     typer.echo(f"  Target: {target_path}")
 

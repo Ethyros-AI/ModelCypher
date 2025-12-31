@@ -165,6 +165,10 @@ class ProfileComparison:
             "ricci_compatibility": self.ricci_compatibility,
             "dimension_compatibility": self.dimension_compatibility,
             "overall_compatibility": self.overall_compatibility,
+            "curvature_alignment": self.curvature_compatibility,
+            "ricci_alignment": self.ricci_compatibility,
+            "dimension_alignment": self.dimension_compatibility,
+            "overall_alignment": self.overall_compatibility,
             # Topology
             "topology_similarity": self.topology_similarity,
             # Semantic
@@ -189,10 +193,22 @@ class ProfileComparison:
             hidden_dim_ratio=d.get("hidden_dim_ratio", 1.0),
             layer_count_ratio=d.get("layer_count_ratio", 1.0),
             vocab_overlap=d.get("vocab_overlap", 0.0),
-            curvature_compatibility=d.get("curvature_compatibility", 0.0),
-            ricci_compatibility=d.get("ricci_compatibility", 0.0),
-            dimension_compatibility=d.get("dimension_compatibility", 0.0),
-            overall_compatibility=d.get("overall_compatibility", 0.0),
+            curvature_compatibility=d.get(
+                "curvature_compatibility",
+                d.get("curvature_alignment", 0.0),
+            ),
+            ricci_compatibility=d.get(
+                "ricci_compatibility",
+                d.get("ricci_alignment", 0.0),
+            ),
+            dimension_compatibility=d.get(
+                "dimension_compatibility",
+                d.get("dimension_alignment", 0.0),
+            ),
+            overall_compatibility=d.get(
+                "overall_compatibility",
+                d.get("overall_alignment", 0.0),
+            ),
             topology_similarity=d.get("topology_similarity"),
             semantic_alignment=d.get("semantic_alignment"),
             layer_mapping=d.get("layer_mapping", {}),

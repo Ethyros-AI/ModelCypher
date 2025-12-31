@@ -34,6 +34,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import platform
 import sys
 from pathlib import Path
 
@@ -49,6 +50,17 @@ DEFAULT_TIMEOUT_SECONDS = 15
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
+def _mlx_available() -> bool:
+    if platform.system() != "Darwin":
+        return False
+    if platform.machine() not in ("arm64", "aarch64"):
+        return False
+    try:
+        import mlx.core  # noqa: F401
+    except Exception:
+        return False
+    return True
+
 
 def _build_env(tmp_home: Path) -> dict[str, str]:
     env = os.environ.copy()
@@ -59,6 +71,10 @@ def _build_env(tmp_home: Path) -> dict[str, str]:
     env["PYTHONPATH"] = python_path
     env["MODELCYPHER_HOME"] = str(tmp_home)
     env["MC_MCP_PROFILE"] = "full"
+    if _mlx_available():
+        env["MC_BACKEND"] = "mlx"
+        env["MC_ENABLE_MLX"] = "1"
+        env["MC_DISABLE_MLX"] = ""
     return env
 
 

@@ -594,6 +594,7 @@ class GeometryMetricsService:
         return {
             "distance": result.distance,
             "normalizedDistance": result.normalized_distance,
+            "alignmentScore": result.compatibility_score,
             "compatibilityScore": result.compatibility_score,
             "converged": result.converged,
             "iterations": result.iterations,

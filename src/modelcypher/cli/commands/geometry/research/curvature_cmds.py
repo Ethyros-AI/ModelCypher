@@ -390,13 +390,13 @@ def register(app: typer.Typer) -> None:
         # Output
         if context.output_format == "text":
             lines = [
-                "CURVATURE COMPATIBILITY",
+                "CURVATURE ALIGNMENT",
                 f"Source: {Path(source_profile).name} ({src.model_family} {src.model_size})",
                 f"Target: {Path(target_profile).name} ({tgt.model_family} {tgt.model_size})",
                 "",
                 f"OVERALL SCORE: {compat.score:.3f}",
                 "",
-                "COMPONENT SCORES:",
+                "COMPONENT ALIGNMENT:",
                 f"  Sectional curvature:   {compat.sectional_compatibility:.3f} (z={compat.sectional_z_score:.2f})",
                 f"  Ollivier-Ricci:        {compat.ollivier_ricci_compatibility:.3f} (z={compat.ollivier_ricci_z_score:.2f})",
                 f"  Intrinsic dimension:   {compat.intrinsic_dimension_compatibility:.3f} (z={compat.intrinsic_dimension_z_score:.2f})",

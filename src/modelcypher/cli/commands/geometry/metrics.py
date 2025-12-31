@@ -91,7 +91,7 @@ def geometry_metrics_gromov_wasserstein(
             "",
             f"Distance: {result.distance:.6f}",
             f"Normalized Distance: {result.normalized_distance:.4f}",
-            f"Compatibility Score: {result.compatibility_score:.4f}",
+            f"Alignment Score: {result.compatibility_score:.4f}",
             f"Converged: {'Yes' if result.converged else 'No'}",
             f"Iterations: {result.iterations}",
             f"Coupling Shape: {result.coupling_shape[0]} x {result.coupling_shape[1]}",

@@ -298,7 +298,7 @@ def model_merge(
             code="MC-1010",
             title="Merge failed",
             detail=str(e),
-            hint="Check model paths and compatibility",
+            hint="Check model paths and merge inputs",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)

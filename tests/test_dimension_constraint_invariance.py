@@ -74,9 +74,10 @@ def test_geodesic_and_spectral_invariance_under_padding(any_backend) -> None:
     geo_base = geometry.geodesic_distances(points, k_neighbors=3)
     geo_padded = geometry.geodesic_distances(padded, k_neighbors=3)
 
-    base_dist = backend.to_numpy(geo_base.distances).tolist()
-    padded_dist = backend.to_numpy(geo_padded.distances).tolist()
-    assert base_dist == pytest.approx(padded_dist, rel=1e-6, abs=1e-6)
+    geo_diff = backend.abs(geo_base.distances - geo_padded.distances)
+    geo_max = backend.max(geo_diff)
+    backend.eval(geo_max)
+    assert float(backend.to_numpy(geo_max).item()) <= 1e-6
     assert geo_base.connected == geo_padded.connected
     assert geo_base.k_neighbors == geo_padded.k_neighbors
 
