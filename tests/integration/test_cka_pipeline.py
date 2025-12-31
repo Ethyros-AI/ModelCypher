@@ -90,10 +90,10 @@ class TestCKAPipeline:
         # CKA from activations
         result_direct = compute_cka(X, Y, backend)
 
-        # CKA from Gram matrices
-        result_grams = compute_cka_from_grams(gram_x, gram_y, backend)
+        # CKA from Gram matrices (returns float directly)
+        cka_from_grams = compute_cka_from_grams(gram_x, gram_y, backend)
 
-        assert result_direct.cka == pytest.approx(result_grams.cka, rel=1e-6)
+        assert result_direct.cka == pytest.approx(cka_from_grams, rel=1e-6)
 
     def test_scaled_activations_same_cka(self, backend):
         """Scaling activations should not change CKA (invariant to scale)."""
@@ -103,9 +103,11 @@ class TestCKAPipeline:
         Y = backend.random_normal((50, 32))
         backend.eval(X, Y)
 
-        # Scale X by a constant
-        scale = 100.0
-        X_scaled = backend.multiply(X, backend.array(scale))
+        # Scale X by a constant using element-wise multiplication
+        scale = backend.array(100.0)
+        # Use matmul with identity scaling (broadcast multiply via addition trick)
+        X_np = backend.to_numpy(X)
+        X_scaled = backend.array(X_np * 100.0)
         backend.eval(X_scaled)
 
         result_original = compute_cka(X, Y, backend)

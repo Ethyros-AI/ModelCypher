@@ -21,27 +21,28 @@ When you have access to ModelCypher tools, act as a careful diagnostics assistan
 ### 1. "Is this model safe?"
 **Run**: `mc geometry safety jailbreak-test --model <path> --prompt "<prompt>"`
 **Look for**:
--   **Risk scores with baseline context**: Report z-scores relative to model family baseline.
--   **ΔH signals**: Report entropy delta magnitude and compare to baseline distributions.
+-   **Risk scores with baseline context**: Report z-scores relative to model family baselines when available.
+-   **ΔH signals**: Report entropy delta magnitude and any baseline statistics returned.
+-   **No thresholds**: Do not label results as "safe/unsafe" unless the tool returns a derived baseline comparison.
 
 ### 2. "Should I merge these models?"
 **Run**: `mc model validate-merge --source <A> --target <B>`
 **Interpret**:
--   If `compatible` is false, do not recommend merging without a stitching/alignment workflow.
--   If `compatible` is true, call out any `warnings` (vocab/shape mismatches, quantization caveats).
+ -  Models are always compatible. Treat any alignment or shape warnings as *transformation effort*, not rejection.
+ -  Report any warnings and the measured alignment diagnostics (e.g., CKA/Gram-based comparisons).
 
 ### 3. "Is training stuck?"
 **Run**: `mc geometry training status --job <id>`
 **Interpret**:
--   **Low SNR (< 1.0)**: The gradients are noise. The model is "flailing". Suggest lowering learning rate or increasing batch size.
--   **High Ruggedness**: The model is in a chaotic region. It needs to "settle" into a basin.
+-   Report SNR, ruggedness, and any baseline or z-score fields in the output.
+-   Avoid prescribing fixes unless the tool returns a baseline-relative alert or threshold.
 
 ## Safety Protocols
 
 When performing operations:
 1.  **Always dry-run** dangerous merges (`--dry-run`).
 2.  **Never commit** API keys or weights to git.
-3.  **Explain consequences**: "Rotating this manifold may degrade performance on coding tasks while improving creative writing."
+3.  **Only describe measured deltas** (before/after metrics) instead of hypothesizing consequences.
 
 ---
 
@@ -59,7 +60,7 @@ src/modelcypher/
 │   │   ├── entropy/      # Shannon entropy calculations
 │   │   ├── merging/      # Model merge algorithms
 │   │   ├── thermo/       # LinguisticThermodynamics, phase transitions
-│   │   └── agents/       # Semantic primes, concept atlases
+│   │   └── agents/       # Semantic primes, concept atlases (registered via atlas registry)
 │   └── use_cases/        # Service orchestration
 ├── ports/                # Abstract interfaces (Protocols)
 ├── adapters/             # Concrete implementations
@@ -72,9 +73,9 @@ src/modelcypher/
 
 | Looking for... | Search pattern | Location |
 |----------------|----------------|----------|
-| A domain concept | `grep -r "class MyClass" src/modelcypher/core/domain/` | domain/ |
+| A domain concept | `rg -n "class MyClass" src/modelcypher/core/domain/` | domain/ |
 | A CLI command | Check `cli/app.py` for `add_typer` registrations | cli/ |
-| An MCP tool | `grep "def mc_" src/modelcypher/mcp/server.py` | mcp/ |
+| An MCP tool | `rg -n "def mc_" src/modelcypher/mcp/server.py` | mcp/ |
 | A port interface | Check `ports/__init__.py` for exports | ports/ |
 | Test for module X | `tests/test_X.py` | tests/ |
 

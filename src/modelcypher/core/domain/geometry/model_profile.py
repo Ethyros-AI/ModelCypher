@@ -1,0 +1,699 @@
+# Copyright (C) 2025 EthyrosAI LLC / Jason Kempf
+#
+# This file is part of ModelCypher.
+#
+# ModelCypher is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# ModelCypher is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
+
+"""Unified ModelProfile - The transparent black box.
+
+This module provides a single, unified schema that captures everything needed
+to understand a model's high-dimensional geometry. It unifies 18+ existing
+profile types into one complete picture.
+
+A ModelProfile answers: "What does this model look like on the inside?"
+
+For any two models, the unified profile enables:
+- Compatibility assessment: How similar is their geometry?
+- Alignment planning: What transformations are needed to merge?
+- Capability mapping: Where does each model store what knowledge?
+- Transfer prediction: What will survive a merge?
+
+Schema: mc.model_profile.v1
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import math
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from modelcypher.core.domain.geometry.curvature_profile import (
+        CurvatureProfile,
+        FamilyBaseline,
+    )
+    from modelcypher.core.domain.geometry.knowledge_density import ModelDensityProfile
+    from modelcypher.core.domain.geometry.topological_fingerprint import Fingerprint
+
+logger = logging.getLogger(__name__)
+
+SCHEMA_VERSION = "mc.model_profile.v1"
+
+
+class ProfileSection(Enum):
+    """Sections of a ModelProfile for partial computation."""
+
+    IDENTITY = "identity"  # Always fast - just config.json
+    GEOMETRY = "geometry"  # Curvature, intrinsic dimension
+    TOPOLOGY = "topology"  # Persistent homology (expensive)
+    SEMANTIC = "semantic"  # Semantic primes (requires inference)
+    DENSITY = "density"  # Knowledge density (expensive)
+    ENTROPY = "entropy"  # Entropy measurements
+
+
+@dataclass
+class ManifoldRegion:
+    """A region of the manifold with consistent properties."""
+
+    start_position: float  # 0.0-1.0 relative position
+    end_position: float
+    phase: str  # "ordered", "critical", "chaotic"
+    mean_entropy: float
+
+
+@dataclass
+class LayerProfile:
+    """Complete geometric profile for a single transformer layer.
+
+    Captures curvature, intrinsic dimension, entropy, topology, and stability
+    metrics for a single layer. These are the building blocks of the full
+    model profile.
+    """
+
+    layer_idx: int
+    layer_name: str = ""  # e.g., "layers.0.self_attn"
+
+    # === CURVATURE ===
+    sectional_curvature_mean: float = 0.0
+    sectional_curvature_std: float = 0.0
+    ollivier_ricci_mean: float = 0.0
+    ollivier_ricci_std: float = 0.0
+    dominant_curvature_sign: str = "unknown"  # "positive", "negative", "flat", "mixed"
+
+    # === INTRINSIC DIMENSION ===
+    intrinsic_dimension: float = 0.0
+    intrinsic_dimension_uncertainty: float = 0.0
+    intrinsic_dimension_method: str = "mle"  # "mle", "correlation", "twonn"
+
+    # === ENTROPY ===
+    shannon_entropy: float | None = None
+    renyi_entropy_alpha2: float | None = None
+    entropy_phase: str = "unknown"  # "ordered", "critical", "chaotic"
+
+    # === TOPOLOGY ===
+    betti_0: int | None = None  # Connected components
+    betti_1: int | None = None  # Holes
+    max_persistence: float | None = None
+
+    # === STABILITY ===
+    gradient_norm: float | None = None
+    condition_number: float | None = None
+
+    # === MANIFOLD STRUCTURE ===
+    manifold_regions: list[ManifoldRegion] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+
+        def safe_float(v: float | None) -> float | None:
+            if v is None:
+                return None
+            if math.isnan(v) or math.isinf(v):
+                return None
+            return v
+
+        return {
+            "layer_idx": self.layer_idx,
+            "layer_name": self.layer_name,
+            # Curvature
+            "sectional_curvature_mean": safe_float(self.sectional_curvature_mean),
+            "sectional_curvature_std": safe_float(self.sectional_curvature_std),
+            "ollivier_ricci_mean": safe_float(self.ollivier_ricci_mean),
+            "ollivier_ricci_std": safe_float(self.ollivier_ricci_std),
+            "dominant_curvature_sign": self.dominant_curvature_sign,
+            # Intrinsic dimension
+            "intrinsic_dimension": safe_float(self.intrinsic_dimension),
+            "intrinsic_dimension_uncertainty": safe_float(
+                self.intrinsic_dimension_uncertainty
+            ),
+            "intrinsic_dimension_method": self.intrinsic_dimension_method,
+            # Entropy
+            "shannon_entropy": safe_float(self.shannon_entropy),
+            "renyi_entropy_alpha2": safe_float(self.renyi_entropy_alpha2),
+            "entropy_phase": self.entropy_phase,
+            # Topology
+            "betti_0": self.betti_0,
+            "betti_1": self.betti_1,
+            "max_persistence": safe_float(self.max_persistence),
+            # Stability
+            "gradient_norm": safe_float(self.gradient_norm),
+            "condition_number": safe_float(self.condition_number),
+            # Manifold structure
+            "manifold_regions": [
+                {
+                    "start_position": r.start_position,
+                    "end_position": r.end_position,
+                    "phase": r.phase,
+                    "mean_entropy": r.mean_entropy,
+                }
+                for r in self.manifold_regions
+            ],
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> LayerProfile:
+        """Create from dictionary."""
+
+        def safe_get(key: str, default: float = 0.0) -> float:
+            val = d.get(key, default)
+            return default if val is None else val
+
+        regions = [
+            ManifoldRegion(
+                start_position=r["start_position"],
+                end_position=r["end_position"],
+                phase=r["phase"],
+                mean_entropy=r["mean_entropy"],
+            )
+            for r in d.get("manifold_regions", [])
+        ]
+
+        return cls(
+            layer_idx=d["layer_idx"],
+            layer_name=d.get("layer_name", ""),
+            sectional_curvature_mean=safe_get("sectional_curvature_mean", 0.0),
+            sectional_curvature_std=safe_get("sectional_curvature_std", 0.0),
+            ollivier_ricci_mean=safe_get("ollivier_ricci_mean", 0.0),
+            ollivier_ricci_std=safe_get("ollivier_ricci_std", 0.0),
+            dominant_curvature_sign=d.get("dominant_curvature_sign", "unknown"),
+            intrinsic_dimension=safe_get("intrinsic_dimension", 0.0),
+            intrinsic_dimension_uncertainty=safe_get(
+                "intrinsic_dimension_uncertainty", 0.0
+            ),
+            intrinsic_dimension_method=d.get("intrinsic_dimension_method", "mle"),
+            shannon_entropy=d.get("shannon_entropy"),
+            renyi_entropy_alpha2=d.get("renyi_entropy_alpha2"),
+            entropy_phase=d.get("entropy_phase", "unknown"),
+            betti_0=d.get("betti_0"),
+            betti_1=d.get("betti_1"),
+            max_persistence=d.get("max_persistence"),
+            gradient_norm=d.get("gradient_norm"),
+            condition_number=d.get("condition_number"),
+            manifold_regions=regions,
+        )
+
+
+@dataclass
+class TopologySummary:
+    """Summary of topological fingerprint for storage in ModelProfile."""
+
+    component_count: int = 1
+    cycle_count: int = 0
+    average_persistence: float = 0.0
+    max_persistence: float = 0.0
+    persistence_entropy: float = 0.0
+    betti_numbers: dict[int, int] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "component_count": self.component_count,
+            "cycle_count": self.cycle_count,
+            "average_persistence": self.average_persistence,
+            "max_persistence": self.max_persistence,
+            "persistence_entropy": self.persistence_entropy,
+            "betti_numbers": self.betti_numbers,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> TopologySummary:
+        return cls(
+            component_count=d.get("component_count", 1),
+            cycle_count=d.get("cycle_count", 0),
+            average_persistence=d.get("average_persistence", 0.0),
+            max_persistence=d.get("max_persistence", 0.0),
+            persistence_entropy=d.get("persistence_entropy", 0.0),
+            betti_numbers=d.get("betti_numbers", {}),
+        )
+
+    @classmethod
+    def from_fingerprint(cls, fingerprint: "Fingerprint") -> TopologySummary:
+        """Create from a TopologicalFingerprint's Fingerprint result."""
+        return cls(
+            component_count=fingerprint.summary.component_count,
+            cycle_count=fingerprint.summary.cycle_count,
+            average_persistence=fingerprint.summary.average_persistence,
+            max_persistence=fingerprint.summary.max_persistence,
+            persistence_entropy=fingerprint.summary.persistence_entropy,
+            betti_numbers=fingerprint.betti_numbers.copy(),
+        )
+
+
+@dataclass
+class SemanticSignature:
+    """Summary of semantic prime signature for storage in ModelProfile."""
+
+    vector: list[float] = field(default_factory=list)  # 65-dimensional
+    dominant_primes: list[str] = field(default_factory=list)  # Top 5 semantic primes
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "vector": self.vector,
+            "dominant_primes": self.dominant_primes,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> SemanticSignature:
+        return cls(
+            vector=d.get("vector", []),
+            dominant_primes=d.get("dominant_primes", []),
+        )
+
+
+@dataclass
+class DensitySummary:
+    """Summary of knowledge density for storage in ModelProfile."""
+
+    overall_density: float = 0.0
+    sparse_concept_count: int = 0
+    dense_concept_count: int = 0
+    domain_densities: dict[str, float] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "overall_density": self.overall_density,
+            "sparse_concept_count": self.sparse_concept_count,
+            "dense_concept_count": self.dense_concept_count,
+            "domain_densities": self.domain_densities,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> DensitySummary:
+        return cls(
+            overall_density=d.get("overall_density", 0.0),
+            sparse_concept_count=d.get("sparse_concept_count", 0),
+            dense_concept_count=d.get("dense_concept_count", 0),
+            domain_densities=d.get("domain_densities", {}),
+        )
+
+    @classmethod
+    def from_density_profile(cls, profile: "ModelDensityProfile") -> DensitySummary:
+        """Create from a ModelDensityProfile."""
+        return cls(
+            overall_density=profile.overall_density,
+            sparse_concept_count=len(profile.sparse_concepts),
+            dense_concept_count=len(profile.dense_concepts),
+            domain_densities=dict(profile.domain_densities),
+        )
+
+
+@dataclass
+class ModelProfile:
+    """Complete geometric profile of a model - the transparent black box.
+
+    This is the unified schema that combines all 18+ existing profile types
+    into a single, complete picture of a model's geometry.
+
+    All fields are optional except identity fields, allowing partial profiles
+    to be built incrementally as different sections are computed.
+    """
+
+    # === IDENTITY (always required) ===
+    model_path: str
+    profile_version: str = SCHEMA_VERSION
+    computed_at: str = ""
+
+    # === ARCHITECTURE (from config.json) ===
+    model_family: str = "unknown"  # "llama", "qwen", "mistral", "smollm"
+    architecture: str = "unknown"  # "llama", "qwen2", "mistral", etc.
+    parameter_count: int = 0
+    hidden_dim: int = 0
+    num_layers: int = 0
+    num_attention_heads: int = 0
+    vocab_size: int = 0
+
+    # === LAYER-LEVEL GEOMETRY ===
+    layer_profiles: list[LayerProfile] = field(default_factory=list)
+
+    # === GLOBAL CURVATURE (aggregated from layer profiles) ===
+    global_sectional_mean: float = 0.0
+    global_sectional_std: float = 0.0
+    global_ollivier_ricci_mean: float = 0.0
+    global_ollivier_ricci_std: float = 0.0
+    global_intrinsic_dimension_mean: float = 0.0
+
+    # === TOPOLOGY ===
+    topology_summary: TopologySummary | None = None
+
+    # === SEMANTIC STRUCTURE ===
+    semantic_signature: SemanticSignature | None = None
+
+    # === KNOWLEDGE DENSITY ===
+    density_summary: DensitySummary | None = None
+
+    # === COMPUTED SECTIONS (track what's been computed) ===
+    computed_sections: list[str] = field(default_factory=list)
+
+    # === METADATA ===
+    probe_corpus_hash: str = ""  # Which probes generated this profile
+    backend_used: str = ""  # "mlx", "jax", etc.
+    extraction_config: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Set computed_at if not provided."""
+        if not self.computed_at:
+            self.computed_at = datetime.now().isoformat()
+
+    def has_section(self, section: ProfileSection) -> bool:
+        """Check if a section has been computed."""
+        return section.value in self.computed_sections
+
+    def add_section(self, section: ProfileSection) -> None:
+        """Mark a section as computed."""
+        if section.value not in self.computed_sections:
+            self.computed_sections.append(section.value)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+
+        def safe_float(v: float) -> float | None:
+            if math.isnan(v) or math.isinf(v):
+                return None
+            return v
+
+        result: dict[str, Any] = {
+            "_schema": self.profile_version,
+            # Identity
+            "model_path": self.model_path,
+            "profile_version": self.profile_version,
+            "computed_at": self.computed_at,
+            # Architecture
+            "model_family": self.model_family,
+            "architecture": self.architecture,
+            "parameter_count": self.parameter_count,
+            "hidden_dim": self.hidden_dim,
+            "num_layers": self.num_layers,
+            "num_attention_heads": self.num_attention_heads,
+            "vocab_size": self.vocab_size,
+            # Layer profiles
+            "layer_profiles": [lp.to_dict() for lp in self.layer_profiles],
+            # Global curvature
+            "global_sectional_mean": safe_float(self.global_sectional_mean),
+            "global_sectional_std": safe_float(self.global_sectional_std),
+            "global_ollivier_ricci_mean": safe_float(self.global_ollivier_ricci_mean),
+            "global_ollivier_ricci_std": safe_float(self.global_ollivier_ricci_std),
+            "global_intrinsic_dimension_mean": safe_float(
+                self.global_intrinsic_dimension_mean
+            ),
+            # Topology
+            "topology_summary": (
+                self.topology_summary.to_dict() if self.topology_summary else None
+            ),
+            # Semantic
+            "semantic_signature": (
+                self.semantic_signature.to_dict() if self.semantic_signature else None
+            ),
+            # Density
+            "density_summary": (
+                self.density_summary.to_dict() if self.density_summary else None
+            ),
+            # Computed sections
+            "computed_sections": self.computed_sections,
+            # Metadata
+            "probe_corpus_hash": self.probe_corpus_hash,
+            "backend_used": self.backend_used,
+            "extraction_config": self.extraction_config,
+        }
+
+        return result
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> ModelProfile:
+        """Create from dictionary."""
+
+        def safe_get(key: str, default: float = 0.0) -> float:
+            val = d.get(key, default)
+            return default if val is None else val
+
+        layer_profiles = [
+            LayerProfile.from_dict(lp) for lp in d.get("layer_profiles", [])
+        ]
+
+        topology = None
+        if d.get("topology_summary"):
+            topology = TopologySummary.from_dict(d["topology_summary"])
+
+        semantic = None
+        if d.get("semantic_signature"):
+            semantic = SemanticSignature.from_dict(d["semantic_signature"])
+
+        density = None
+        if d.get("density_summary"):
+            density = DensitySummary.from_dict(d["density_summary"])
+
+        return cls(
+            model_path=d["model_path"],
+            profile_version=d.get("profile_version", SCHEMA_VERSION),
+            computed_at=d.get("computed_at", ""),
+            model_family=d.get("model_family", "unknown"),
+            architecture=d.get("architecture", "unknown"),
+            parameter_count=d.get("parameter_count", 0),
+            hidden_dim=d.get("hidden_dim", 0),
+            num_layers=d.get("num_layers", 0),
+            num_attention_heads=d.get("num_attention_heads", 0),
+            vocab_size=d.get("vocab_size", 0),
+            layer_profiles=layer_profiles,
+            global_sectional_mean=safe_get("global_sectional_mean", 0.0),
+            global_sectional_std=safe_get("global_sectional_std", 0.0),
+            global_ollivier_ricci_mean=safe_get("global_ollivier_ricci_mean", 0.0),
+            global_ollivier_ricci_std=safe_get("global_ollivier_ricci_std", 0.0),
+            global_intrinsic_dimension_mean=safe_get(
+                "global_intrinsic_dimension_mean", 0.0
+            ),
+            topology_summary=topology,
+            semantic_signature=semantic,
+            density_summary=density,
+            computed_sections=d.get("computed_sections", []),
+            probe_corpus_hash=d.get("probe_corpus_hash", ""),
+            backend_used=d.get("backend_used", ""),
+            extraction_config=d.get("extraction_config", {}),
+        )
+
+    def save(self, path: str | Path) -> None:
+        """Save profile to JSON file."""
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(self.to_dict(), f, indent=2)
+        logger.info("Saved model profile to %s", path)
+
+    @classmethod
+    def load(cls, path: str | Path) -> ModelProfile:
+        """Load profile from JSON file."""
+        with open(path) as f:
+            data = json.load(f)
+        return cls.from_dict(data)
+
+    @classmethod
+    def from_curvature_profile(
+        cls, curvature: "CurvatureProfile"
+    ) -> ModelProfile:
+        """Create ModelProfile from an existing CurvatureProfile.
+
+        This is the primary import path for converting existing curvature
+        profile data to the unified format.
+        """
+        layer_profiles = []
+        for lc in curvature.layer_curvatures:
+            layer_profiles.append(
+                LayerProfile(
+                    layer_idx=lc.layer_idx,
+                    sectional_curvature_mean=lc.sectional_mean,
+                    sectional_curvature_std=lc.sectional_std,
+                    ollivier_ricci_mean=lc.ollivier_ricci_mean,
+                    ollivier_ricci_std=lc.ollivier_ricci_std,
+                    dominant_curvature_sign=lc.dominant_sign,
+                    intrinsic_dimension=lc.intrinsic_dimension,
+                    intrinsic_dimension_uncertainty=lc.intrinsic_dimension_uncertainty,
+                )
+            )
+
+        profile = cls(
+            model_path=curvature.model_path,
+            model_family=curvature.model_family,
+            num_layers=curvature.total_layers,
+            layer_profiles=layer_profiles,
+            global_sectional_mean=curvature.global_sectional_mean,
+            global_sectional_std=curvature.global_sectional_std,
+            global_ollivier_ricci_mean=curvature.global_ollivier_ricci_mean,
+            global_ollivier_ricci_std=curvature.global_ollivier_ricci_std,
+            global_intrinsic_dimension_mean=curvature.global_intrinsic_dimension_mean,
+            computed_sections=[ProfileSection.GEOMETRY.value],
+            extraction_config=curvature.extraction_config,
+        )
+
+        if curvature.extraction_date:
+            profile.computed_at = curvature.extraction_date
+
+        return profile
+
+    def merge_with(self, other: ModelProfile) -> ModelProfile:
+        """Merge another profile into this one, filling in missing sections.
+
+        This allows building up a complete profile incrementally.
+        """
+        # Start with a copy of self
+        result = ModelProfile.from_dict(self.to_dict())
+
+        # Merge layer profiles (prefer other if we have no layers)
+        if not result.layer_profiles and other.layer_profiles:
+            result.layer_profiles = [
+                LayerProfile.from_dict(lp.to_dict()) for lp in other.layer_profiles
+            ]
+        elif result.layer_profiles and other.layer_profiles:
+            # Merge per-layer data
+            other_by_idx = {lp.layer_idx: lp for lp in other.layer_profiles}
+            merged_layers = []
+            for lp in result.layer_profiles:
+                if lp.layer_idx in other_by_idx:
+                    olp = other_by_idx[lp.layer_idx]
+                    # Merge fields from other if ours are default/empty
+                    merged = LayerProfile(
+                        layer_idx=lp.layer_idx,
+                        layer_name=lp.layer_name or olp.layer_name,
+                        sectional_curvature_mean=(
+                            lp.sectional_curvature_mean
+                            if lp.sectional_curvature_mean != 0.0
+                            else olp.sectional_curvature_mean
+                        ),
+                        sectional_curvature_std=(
+                            lp.sectional_curvature_std
+                            if lp.sectional_curvature_std != 0.0
+                            else olp.sectional_curvature_std
+                        ),
+                        ollivier_ricci_mean=(
+                            lp.ollivier_ricci_mean
+                            if lp.ollivier_ricci_mean != 0.0
+                            else olp.ollivier_ricci_mean
+                        ),
+                        ollivier_ricci_std=(
+                            lp.ollivier_ricci_std
+                            if lp.ollivier_ricci_std != 0.0
+                            else olp.ollivier_ricci_std
+                        ),
+                        dominant_curvature_sign=(
+                            lp.dominant_curvature_sign
+                            if lp.dominant_curvature_sign != "unknown"
+                            else olp.dominant_curvature_sign
+                        ),
+                        intrinsic_dimension=(
+                            lp.intrinsic_dimension
+                            if lp.intrinsic_dimension != 0.0
+                            else olp.intrinsic_dimension
+                        ),
+                        intrinsic_dimension_uncertainty=(
+                            lp.intrinsic_dimension_uncertainty
+                            if lp.intrinsic_dimension_uncertainty != 0.0
+                            else olp.intrinsic_dimension_uncertainty
+                        ),
+                        intrinsic_dimension_method=(
+                            lp.intrinsic_dimension_method
+                            if lp.intrinsic_dimension_method != "mle"
+                            else olp.intrinsic_dimension_method
+                        ),
+                        shannon_entropy=(
+                            lp.shannon_entropy
+                            if lp.shannon_entropy is not None
+                            else olp.shannon_entropy
+                        ),
+                        renyi_entropy_alpha2=(
+                            lp.renyi_entropy_alpha2
+                            if lp.renyi_entropy_alpha2 is not None
+                            else olp.renyi_entropy_alpha2
+                        ),
+                        entropy_phase=(
+                            lp.entropy_phase
+                            if lp.entropy_phase != "unknown"
+                            else olp.entropy_phase
+                        ),
+                        betti_0=lp.betti_0 if lp.betti_0 is not None else olp.betti_0,
+                        betti_1=lp.betti_1 if lp.betti_1 is not None else olp.betti_1,
+                        max_persistence=(
+                            lp.max_persistence
+                            if lp.max_persistence is not None
+                            else olp.max_persistence
+                        ),
+                        gradient_norm=(
+                            lp.gradient_norm
+                            if lp.gradient_norm is not None
+                            else olp.gradient_norm
+                        ),
+                        condition_number=(
+                            lp.condition_number
+                            if lp.condition_number is not None
+                            else olp.condition_number
+                        ),
+                        manifold_regions=(
+                            lp.manifold_regions if lp.manifold_regions else olp.manifold_regions
+                        ),
+                    )
+                    merged_layers.append(merged)
+                else:
+                    merged_layers.append(lp)
+            result.layer_profiles = merged_layers
+
+        # Merge optional sections
+        if result.topology_summary is None and other.topology_summary is not None:
+            result.topology_summary = TopologySummary.from_dict(
+                other.topology_summary.to_dict()
+            )
+
+        if result.semantic_signature is None and other.semantic_signature is not None:
+            result.semantic_signature = SemanticSignature.from_dict(
+                other.semantic_signature.to_dict()
+            )
+
+        if result.density_summary is None and other.density_summary is not None:
+            result.density_summary = DensitySummary.from_dict(
+                other.density_summary.to_dict()
+            )
+
+        # Merge computed sections
+        for section in other.computed_sections:
+            if section not in result.computed_sections:
+                result.computed_sections.append(section)
+
+        # Merge architecture info if missing
+        if result.architecture == "unknown" and other.architecture != "unknown":
+            result.architecture = other.architecture
+        if result.model_family == "unknown" and other.model_family != "unknown":
+            result.model_family = other.model_family
+        if result.parameter_count == 0:
+            result.parameter_count = other.parameter_count
+        if result.hidden_dim == 0:
+            result.hidden_dim = other.hidden_dim
+        if result.num_layers == 0:
+            result.num_layers = other.num_layers
+        if result.num_attention_heads == 0:
+            result.num_attention_heads = other.num_attention_heads
+        if result.vocab_size == 0:
+            result.vocab_size = other.vocab_size
+
+        return result
+
+
+__all__ = [
+    "ProfileSection",
+    "ManifoldRegion",
+    "LayerProfile",
+    "TopologySummary",
+    "SemanticSignature",
+    "DensitySummary",
+    "ModelProfile",
+    "SCHEMA_VERSION",
+]
