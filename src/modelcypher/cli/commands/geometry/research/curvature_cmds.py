@@ -363,7 +363,7 @@ def register(app: typer.Typer) -> None:
     ) -> None:
         """Compare curvature profiles of two models.
 
-        Computes curvature compatibility score for merge decisions.
+        Computes curvature alignment score for merge planning.
         Uses family baseline for z-score comparison when provided.
 
         Example:

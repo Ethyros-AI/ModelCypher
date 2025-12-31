@@ -214,7 +214,7 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
             Compare geometry profiles of two models.
 
             Extracts baselines from both models and computes divergence metrics.
-            Useful for pre-merge compatibility assessment.
+            Useful for pre-merge alignment assessment.
 
             Args:
                 model1Path: Path to first model

@@ -19,7 +19,7 @@
 
 Commands:
     mc profile inspect   - View a profile's contents
-    mc profile compare   - Compare two profiles for alignment story
+    mc profile compare   - Compare two profiles for alignment summary
     mc profile import    - Import from existing profile formats (curvature, etc.)
     mc profile merge     - Merge multiple partial profiles
 """
@@ -106,13 +106,13 @@ def compare_profiles_cmd(
         None, "--save", "-o", help="Save comparison result to JSON file"
     ),
 ) -> None:
-    """Compare two model profiles and show alignment story.
+    """Compare two model profiles and show alignment summary.
 
     The comparison shows:
-    - Structural compatibility (architecture, dimensions)
-    - Geometric compatibility (curvature, topology)
+    - Structural alignment (architecture, dimensions)
+    - Geometric alignment (curvature, topology)
     - Layer correspondence and critical layers
-    - Recommended alignment strategy
+    - Alignment inputs for downstream planning
 
     Examples:
         mc profile compare source.json target.json
@@ -382,3 +382,128 @@ def _extract_layer(profile: "ModelProfile", layer_idx: int) -> dict[str, Any]:
             return lp.to_dict()
 
     return {"error": f"Layer {layer_idx} not found"}
+
+
+@app.command("generate")
+def generate_profile(
+    ctx: typer.Context,
+    model_path: str = typer.Argument(..., help="Path to the model directory"),
+    output_path: str = typer.Option(
+        ..., "--output", "-o", help="Output path for the profile JSON"
+    ),
+    identity_only: bool = typer.Option(
+        False, "--identity-only", help="Only extract identity (fast, no model loading)"
+    ),
+) -> None:
+    """Generate a unified profile from a model.
+
+    By default, extracts identity information from config.json (fast).
+    For full geometry profiling, use 'mc geometry research curvature-profile'
+    then import with 'mc profile import'.
+
+    Examples:
+        mc profile generate /path/to/model -o profile.json --identity-only
+        mc profile generate /path/to/model -o profile.json
+    """
+    from modelcypher.core.domain.geometry.model_profile import ModelProfile
+    from modelcypher.core.use_cases.model_profiler_service import ModelProfilerService
+
+    context = _context(ctx)
+    service = ModelProfilerService()
+
+    # Start with empty profile
+    profile = ModelProfile(model_path=model_path)
+
+    # Always try to get identity
+    try:
+        profile = service.update_identity(profile, model_path)
+    except Exception as e:
+        logger.warning(f"Failed to extract identity: {e}")
+
+    if identity_only:
+        profile.save(output_path)
+        result = {
+            "status": "success",
+            "model_path": model_path,
+            "output_path": output_path,
+            "computed_sections": profile.computed_sections,
+            "identity": {
+                "architecture": profile.architecture,
+                "num_layers": profile.num_layers,
+                "hidden_dim": profile.hidden_dim,
+            },
+        }
+        write_output(result, context.output_format, context.pretty)
+        return
+
+    # For full geometry, delegate to curvature profiling and import
+    typer.echo(
+        "For full geometry profiling, use:\n"
+        "  mc geometry research curvature-profile /path/to/model --save curvature.json\n"
+        "  mc profile import curvature.json --type curvature -o profile.json",
+        err=True,
+    )
+
+    # Save what we have
+    profile.save(output_path)
+    result = {
+        "status": "partial",
+        "model_path": model_path,
+        "output_path": output_path,
+        "computed_sections": profile.computed_sections,
+        "note": "Use 'mc geometry research curvature-profile' for full geometry",
+    }
+    write_output(result, context.output_format, context.pretty)
+
+
+@app.command("update")
+def update_profile(
+    ctx: typer.Context,
+    profile_path: str = typer.Argument(..., help="Path to existing profile JSON"),
+    model_path: str | None = typer.Option(
+        None, "--model", "-m", help="Model path to extract identity from"
+    ),
+    output_path: str | None = typer.Option(
+        None, "--output", "-o", help="Output path (defaults to overwrite input)"
+    ),
+) -> None:
+    """Update an existing profile with additional information.
+
+    Currently supports:
+    - Adding identity information from a model directory
+
+    Examples:
+        mc profile update profile.json --model /path/to/model
+        mc profile update profile.json --model /path/to/model -o updated.json
+    """
+    from modelcypher.core.domain.geometry.model_profile import ModelProfile
+    from modelcypher.core.use_cases.model_profiler_service import ModelProfilerService
+
+    context = _context(ctx)
+
+    # Load existing profile
+    try:
+        profile = ModelProfile.load(profile_path)
+    except Exception as e:
+        typer.echo(f"Error loading profile: {e}", err=True)
+        raise typer.Exit(1) from e
+
+    # Update identity if model path provided
+    if model_path:
+        service = ModelProfilerService()
+        try:
+            profile = service.update_identity(profile, model_path)
+        except Exception as e:
+            typer.echo(f"Warning: Failed to extract identity: {e}", err=True)
+
+    # Save
+    save_path = output_path or profile_path
+    profile.save(save_path)
+
+    result = {
+        "status": "success",
+        "input_path": profile_path,
+        "output_path": save_path,
+        "computed_sections": profile.computed_sections,
+    }
+    write_output(result, context.output_format, context.pretty)
