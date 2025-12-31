@@ -28,8 +28,8 @@ When you have access to ModelCypher tools, act as a careful diagnostics assistan
 ### 2. "Should I merge these models?"
 **Run**: `mc model validate-merge --source <A> --target <B>`
 **Interpret**:
- -  Models are always compatible. Treat any alignment or shape warnings as *transformation effort*, not rejection.
- -  Report any warnings and the measured alignment diagnostics (e.g., CKA/Gram-based comparisons).
+-   Models are always compatible. Treat any alignment or shape warnings as *transformation effort*, not rejection.
+-   Report any warnings and the measured alignment diagnostics (e.g., CKA/Gram-based comparisons).
 
 ### 3. "Is training stuck?"
 **Run**: `mc geometry training status --job <id>`
@@ -104,9 +104,9 @@ from modelcypher.adapters.mlx_backend import MLXBackend  # BAD - domain importin
 **Diagnosis**:
 ```bash
 # Check if module exists
-find src/modelcypher -name "*.py" | xargs grep -l "class ClassName"
+rg -n "class ClassName" src/modelcypher
 # Check exports
-grep "from .module import" src/modelcypher/core/domain/__init__.py
+rg -n "from \\.module import" src/modelcypher/core/domain/__init__.py
 ```
 **Fix**: Ensure the class is exported in the package's `__init__.py`
 
@@ -151,12 +151,12 @@ from .my_module import MyClass
 
 2. **Check for API mismatches**:
    ```bash
-   grep -r "class ClassName" src/  # Find the actual definition
+   rg -n "class ClassName" src/  # Find the actual definition
    ```
 
 3. **Trace imports**:
    ```bash
-   poetry run python3 -c "from module import Class; print(Class.__module__)"
+   rg -n "from module import Class" src/
    ```
 
 4. **Compare expected vs actual**:
@@ -168,17 +168,17 @@ from .my_module import MyClass
 
 1. **Check tool registration**:
    ```bash
-   grep "def mc_tool_name" src/modelcypher/mcp/server.py
+   rg -n "def mc_tool_name" src/modelcypher/mcp/server.py
    ```
 
 2. **Verify schema**:
    ```bash
-   grep -A 20 "_schema.*mc\.tool" src/modelcypher/mcp/server.py
+   rg -n -A 20 "_schema.*mc\\.tool" src/modelcypher/mcp/server.py
    ```
 
-3. **Test tool in isolation**:
+3. **Prefer CLI equivalents for smoke tests**:
    ```bash
-   poetry run python3 -c "from modelcypher.mcp.server import mc_tool_name; print(mc_tool_name(...))"
+   poetry run mc --help
    ```
 
 ---
@@ -199,6 +199,14 @@ Report the raw grounding density score along with:
 - **Percentile** within the reference distribution
 
 Example: "Visual grounding density is 0.52 (baseline mean: 0.48, z-score: +0.6 for this architecture)."
+
+---
+
+## Git Status Tags (Avoid Confusion)
+
+If you run `git ls-files -v`, the leading `H` means "tracked file" (normal). It is **not**
+skip-worktree or assume-unchanged. Use `git status -sb` for day-to-day checks. If you need
+to detect special flags, look for `S` (skip-worktree) or lowercase tags, not `H`.
 
 ### Grounding Types
 - **Visual grounding**: Model encodes physical reality along axes that align with human visual perception.
