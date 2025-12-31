@@ -343,12 +343,15 @@ class CrossCulturalGeometry:
         total_primes: int,
         category_divergence: dict[str, float],
     ) -> tuple[float, str]:
-        """Compute merge quality score and rationale.
+        """Compute merge quality score.
+
+        Returns raw score [0, 1]. Higher values indicate lower transformation stress.
+        Qualitative rationale was removed - use raw measurements to interpret.
 
         Returns
         -------
         tuple
-            (score, rationale): score is 0-1 (higher = lower transformation stress).
+            (score, rationale): score is 0-1. Rationale is empty (deprecated).
         """
         score = 0.0
         score += max(0.0, roughness_reduction) * 0.3
@@ -366,31 +369,10 @@ class CrossCulturalGeometry:
         score += (1.0 - avg_divergence) * 0.1
         score = max(0.0, min(1.0, score))
 
-        rationale = ""
-        if convergent_ratio > 0.5:
-            rationale += f"High prime correlation ({int(convergent_ratio * 100)}% convergent). "
-        if complementarity_score > 0.5:
-            rationale += "Strong complementary sharpness patterns. "
-
-        if category_divergence:
-            worst_category = max(category_divergence.items(), key=lambda item: item[1])
-            best_category = min(category_divergence.items(), key=lambda item: item[1])
-            if worst_category[1] > 0.3:
-                rationale += (
-                    f"{worst_category[0]} shows largest divergence ({worst_category[1]:.2f}). "
-                )
-            if best_category[1] < 0.2:
-                rationale += f"{best_category[0]} strongly aligned. "
-
-        if roughness_reduction > 0.2:
-            rationale += f"Merge would reduce roughness by {int(roughness_reduction * 100)}%. "
-        elif roughness_reduction < 0:
-            rationale += "Warning: merge increases roughness. "
-
-        if not rationale:
-            rationale = "Moderate alignment with mixed signals."
-
-        return score, rationale.strip()
+        # NOTE: Qualitative rationale generation removed per "No Vibes" rule.
+        # Use the raw measurements (roughness_reduction, complementarity_score,
+        # convergent_count, divergent_count, category_divergence) directly.
+        return score, ""
 
 
 def _pearson_correlation(lhs: list[float], rhs: list[float]) -> float:

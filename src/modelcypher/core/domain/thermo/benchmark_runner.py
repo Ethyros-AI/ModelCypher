@@ -417,38 +417,9 @@ class ThermoBenchmarkRunner:
                         ]
                     )
 
-        lines.extend(
-            [
-                "## Recommendations",
-                "",
-            ]
-        )
-
-        # Generate recommendations based on results
-        if result.best_effect_size < -0.2:
-            lines.append(
-                f"- **{result.best_modifier.display_name}** shows significant entropy reduction "
-                f"(cooling effect), supporting the hypothesis that modifiers sharpen model confidence."
-            )
-        elif result.best_effect_size > 0.2:
-            lines.append(
-                f"- **{result.best_modifier.display_name}** shows entropy increase, "
-                f"which may indicate model confusion or resistance."
-            )
-        else:
-            lines.append(
-                "- No modifiers showed substantial effect sizes. "
-                "Consider testing with a larger corpus or different prompt types."
-            )
-
-        # Count significant results
-        sig_count = sum(
-            1 for s in result.modifiers if s.significance and s.significance.is_significant
-        )
-        if sig_count > 0:
-            lines.append(
-                f"- {sig_count} modifier(s) showed statistically significant effects (p < {self.alpha})."
-            )
+        # NOTE: "Recommendations" section removed per "No Vibes" rule.
+        # Raw measurements (effect sizes, p-values, confidence intervals) are
+        # provided above. Caller interprets meaning based on their context.
 
         return "\n".join(lines)
 

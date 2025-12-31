@@ -245,7 +245,12 @@ class RedTeamProbe(AdapterSafetyProbe):
 
 @dataclass(frozen=True)
 class ScanConfiguration:
-    """Configuration for red team scanning."""
+    """Configuration for red team scanning.
+
+    Severity values are configurable. Defaults are placeholder values
+    that should be calibrated from baseline scans of known-good and
+    known-bad adapters for your specific use case.
+    """
 
     check_name: bool = True
     check_description: bool = True
@@ -255,10 +260,23 @@ class ScanConfiguration:
     check_base_model: bool = True
     max_target_modules: int = 50
 
+    # Severity values for each location type (must be calibrated)
+    severity_name: float = 0.5
+    severity_description: float = 0.6
+    severity_tags: float = 0.4
+    severity_creator: float = 0.5
+    severity_modules: float = 0.2
+    severity_datasets: float = 0.5
+    severity_base_model: float = 0.4
+
 
 @dataclass(frozen=True)
 class ThreatIndicator:
-    """A detected threat indicator."""
+    """A detected threat indicator.
+
+    Severity values come from ScanConfiguration and can be calibrated
+    by the caller based on their specific use case.
+    """
 
     pattern: str
     location: str
@@ -318,7 +336,7 @@ class RedTeamScanner:
                     ThreatIndicator(
                         pattern=finding.split("'")[1] if "'" in finding else finding,
                         location="name",
-                        severity=0.5,
+                        severity=self.config.severity_name,
                         description=finding,
                     )
                 )
@@ -330,7 +348,7 @@ class RedTeamScanner:
                     ThreatIndicator(
                         pattern=finding.split("'")[1] if "'" in finding else finding,
                         location="description",
-                        severity=0.6,
+                        severity=self.config.severity_description,
                         description=finding,
                     )
                 )
@@ -342,7 +360,7 @@ class RedTeamScanner:
                     ThreatIndicator(
                         pattern=finding.split("'")[1] if "'" in finding else finding,
                         location="skill_tags",
-                        severity=0.4,
+                        severity=self.config.severity_tags,
                         description=finding,
                     )
                 )
@@ -358,7 +376,7 @@ class RedTeamScanner:
                     ThreatIndicator(
                         pattern=finding.split("'")[1] if "'" in finding else finding,
                         location="creator",
-                        severity=0.5,
+                        severity=self.config.severity_creator,
                         description=finding,
                     )
                 )
@@ -369,7 +387,7 @@ class RedTeamScanner:
                 ThreatIndicator(
                     pattern=f"module_count:{len(target_modules)}",
                     location="target_modules",
-                    severity=0.2,
+                    severity=self.config.severity_modules,
                     description=f"Unusually large number of target modules ({len(target_modules)})",
                 )
             )
@@ -385,7 +403,7 @@ class RedTeamScanner:
                         ThreatIndicator(
                             pattern=finding.split("'")[1] if "'" in finding else finding,
                             location="training_datasets",
-                            severity=0.5,
+                            severity=self.config.severity_datasets,
                             description=finding,
                         )
                     )
@@ -401,7 +419,7 @@ class RedTeamScanner:
                     ThreatIndicator(
                         pattern=finding.split("'")[1] if "'" in finding else finding,
                         location="base_model",
-                        severity=0.4,
+                        severity=self.config.severity_base_model,
                         description=finding,
                     )
                 )

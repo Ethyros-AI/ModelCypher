@@ -57,33 +57,8 @@ class ThermoPathAssessment:
     measurement_count: int
     rationale: str
 
-    def strength_for_thresholds(
-        self,
-        strong_threshold: float = 0.6,
-        moderate_threshold: float = 0.4,
-        weak_threshold: float = 0.2,
-    ) -> str:
-        """Classify relationship strength using caller-provided thresholds.
-
-        Args:
-            strong_threshold: |correlation| above this is "strong"
-            moderate_threshold: |correlation| above this is "moderate"
-            weak_threshold: |correlation| above this is "weak"
-
-        Returns:
-            Strength label: "strong", "moderate", "weak", or "none"
-        """
-        if self.correlation is None:
-            return "none"
-        abs_corr = abs(self.correlation)
-        if abs_corr > strong_threshold:
-            return "strong"
-        elif abs_corr > moderate_threshold:
-            return "moderate"
-        elif abs_corr > weak_threshold:
-            return "weak"
-        else:
-            return "none"
+    # NOTE: strength_for_thresholds() method was removed.
+    # Use the raw correlation value directly - caller interprets meaning.
 
 
 @dataclass(frozen=True)

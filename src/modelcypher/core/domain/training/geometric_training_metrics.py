@@ -153,26 +153,8 @@ class GeometricTrainingMetrics:
         normalized = 1 - (log_eigen + 1) / 3
         return max(0.0, min(1.0, normalized))
 
-    @property
-    def flatness_assessment(self) -> str:
-        score = self.flatness_score
-        if score is None:
-            return "Unknown"
-        if score > 0.7:
-            return "Flat (good)"
-        if score > 0.4:
-            return "Moderate"
-        return "Sharp (risk)"
-
-    @property
-    def snr_assessment(self) -> str:
-        if self.gradient_snr is None:
-            return "Unknown"
-        if self.gradient_snr > 10:
-            return "Strong signal"
-        if self.gradient_snr > 1:
-            return "Adequate"
-        return "Noisy"
+    # NOTE: flatness_assessment and snr_assessment properties were removed.
+    # Use flatness_score and gradient_snr directly - caller interprets meaning.
 
     def to_metrics_dict(self) -> dict[str, float]:
         metrics: dict[str, float] = {}

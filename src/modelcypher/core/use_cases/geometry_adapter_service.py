@@ -665,16 +665,15 @@ class GeometryAdapterService:
         return max(0.0, 1.0 - fraction)
 
     @staticmethod
-    def dora_overfit_risk(result: DoRADecomposition.DecompositionResult) -> str:
+    def dora_significant_layer_fraction(result: DoRADecomposition.DecompositionResult) -> float:
+        """Return the fraction of layers with significant changes.
+
+        Returns raw measurement [0.0, 1.0]. Caller interprets meaning.
+        """
         total_layers = len(result.per_layer_metrics)
         if total_layers == 0:
-            return "unknown"
+            return 0.0
         significant = set(result.layers_with_significant_direction_change) | set(
             result.layers_with_significant_magnitude_change
         )
-        fraction = len(significant) / float(total_layers)
-        if fraction >= 0.5:
-            return "high"
-        if fraction >= 0.2:
-            return "medium"
-        return "low"
+        return len(significant) / float(total_layers)

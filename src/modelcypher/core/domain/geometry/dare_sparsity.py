@@ -29,10 +29,23 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class Configuration:
+    """Configuration for DARE sparsity analysis.
+
+    Drop rate computation uses a linear scaling of effective_sparsity:
+        recommended_drop_rate = effective_sparsity * drop_rate_scale_factor
+
+    The scale factor is clamped to [0, 1] to ensure valid drop rates.
+    Callers should validate the recommended rate against their specific
+    model and task requirements.
+    """
+
     sparsity_threshold: float = 0.01
     droppable_percentile: float = 0.95
     analysis_layers: set[str] | None = None
     compute_per_layer_metrics: bool = True
+
+    # Linear scaling factor for drop rate (recommended = effective_sparsity * scale)
+    drop_rate_scale_factor: float = 0.9
 
     @staticmethod
     def default() -> "Configuration":
@@ -40,7 +53,19 @@ class Configuration:
 
     @staticmethod
     def aggressive() -> "Configuration":
-        return Configuration(sparsity_threshold=0.001, droppable_percentile=0.99)
+        return Configuration(
+            sparsity_threshold=0.001,
+            droppable_percentile=0.99,
+            drop_rate_scale_factor=0.95,
+        )
+
+    @staticmethod
+    def conservative() -> "Configuration":
+        return Configuration(
+            sparsity_threshold=0.05,
+            droppable_percentile=0.90,
+            drop_rate_scale_factor=0.5,
+        )
 
 
 @dataclass(frozen=True)
@@ -139,7 +164,8 @@ class DARESparsityAnalyzer:
                 )
 
         recommended_drop_rate = DARESparsityAnalyzer._compute_recommended_drop_rate(
-            effective_sparsity=effective_sparsity
+            effective_sparsity=effective_sparsity,
+            scale_factor=configuration.drop_rate_scale_factor,
         )
         return SparsityAnalysis(
             total_parameters=total_count,
@@ -321,7 +347,9 @@ class DARESparsityAnalyzer:
                 percentile95=p95,
                 percentile99=p99,
             ),
-            recommended_drop_rate=DARESparsityAnalyzer._compute_recommended_drop_rate(effective_sparsity),
+            recommended_drop_rate=DARESparsityAnalyzer._compute_recommended_drop_rate(
+                effective_sparsity, configuration.drop_rate_scale_factor
+            ),
             computed_at=datetime.now(timezone.utc),
         )
 
@@ -444,14 +472,21 @@ class DARESparsityAnalyzer:
         )
 
     @staticmethod
-    def _compute_recommended_drop_rate(effective_sparsity: float) -> float:
-        if effective_sparsity > 0.95:
-            return 0.95
-        if effective_sparsity > 0.90:
-            return 0.90
-        if effective_sparsity > 0.80:
-            return 0.85
-        if effective_sparsity > 0.50:
-            return effective_sparsity * 0.9
-        return effective_sparsity * 0.5
+    def _compute_recommended_drop_rate(
+        effective_sparsity: float, scale_factor: float = 0.9
+    ) -> float:
+        """Compute recommended DARE drop rate from effective sparsity.
+
+        Uses linear scaling: drop_rate = effective_sparsity * scale_factor
+        Result is clamped to [0, 1].
+
+        Args:
+            effective_sparsity: Fraction of weights that are droppable [0, 1]
+            scale_factor: Scaling factor from Configuration.drop_rate_scale_factor
+
+        Returns:
+            Recommended drop rate [0, 1]
+        """
+        drop_rate = effective_sparsity * scale_factor
+        return max(0.0, min(1.0, drop_rate))
 

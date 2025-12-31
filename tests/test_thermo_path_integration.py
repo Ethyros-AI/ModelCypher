@@ -97,6 +97,4 @@ def test_analyze_relationship() -> None:
     # but with 2 measurements we should have a value
     assert assessment.correlation is not None or assessment.measurement_count < 3
     assert 0.0 <= assessment.spike_rate <= 1.0
-    # strength_for_thresholds() requires explicit caller thresholds
-    strength = assessment.strength_for_thresholds()
-    assert strength in ("strong", "moderate", "weak", "none")
+    # Caller interprets correlation directly - no qualitative strength labels
