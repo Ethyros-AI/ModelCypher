@@ -91,6 +91,12 @@ from modelcypher.core.domain.geometry.alignment_diagnostic import AlignmentSigna
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "AlignmentResult",
+    "GramAligner",
+    "find_alignment",
+]
+
 
 @dataclass(frozen=True)
 class AlignmentResult:

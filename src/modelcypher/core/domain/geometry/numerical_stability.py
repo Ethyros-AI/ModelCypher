@@ -29,6 +29,28 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
+__all__ = [
+    # Epsilon and threshold utilities
+    "machine_epsilon",
+    "division_epsilon",
+    "regularization_epsilon",
+    "condition_threshold",
+    "svd_rank_threshold",
+    "tiny_value",
+    "safe_log_epsilon",
+    # Statistical utilities
+    "compute_pearson_correlation",
+    # Matrix decomposition
+    "svd_via_eigh",
+    "solve_full_row_rank_via_qr",
+    "solve_via_truncated_svd",
+    "solve_via_gram_alignment",
+    "solve_via_cca_procrustes",
+    # Rank estimation
+    "compute_entropy_effective_rank",
+    "compute_shared_relational_rank",
+]
+
 
 def machine_epsilon(backend: Backend, array: Array) -> float:
     """Get machine epsilon for the array's dtype.

@@ -30,17 +30,22 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from modelcypher.core.domain.geometry.invariant_layer_mapper import (
         Config,
+        CRMMappingConfig,
+        InvariantLayerMapper,
         LayerMapping,
+        LayerMappingStrategy,
         LayerProfile,
         ModelFingerprints,
         Summary,
     )
 
-from modelcypher.core.domain.geometry.invariant_layer_mapper import (
-    CRMMappingConfig,
-    InvariantLayerMapper,
-    LayerMappingStrategy,
-)
+__all__ = [
+    "LayerCategoryScores",
+    "StrategyMappingResult",
+    "StrategyLayerMapper",
+    "compute_layer_alignment_confidence",
+    "select_optimal_strategy",
+]
 
 
 @dataclass(frozen=True)
@@ -114,6 +119,10 @@ class StrategyLayerMapper:
         Returns:
             StrategyMappingResult with mappings and per-layer scores
         """
+        from modelcypher.core.domain.geometry.invariant_layer_mapper import (
+            LayerMappingStrategy,
+        )
+
         if config.strategy == LayerMappingStrategy.CRM:
             return StrategyLayerMapper._map_with_crm(
                 source, target, config, source_activations, target_activations
@@ -133,7 +142,10 @@ class StrategyLayerMapper:
     ) -> StrategyMappingResult:
         """Map layers using CRM-based CKA alignment."""
         from modelcypher.core.domain.geometry.invariant_layer_mapper import (
+            CRMMappingConfig,
+            InvariantLayerMapper,
             LayerMapping,
+            LayerMappingStrategy,
             Summary,
         )
 
@@ -226,6 +238,11 @@ class StrategyLayerMapper:
         target_activations: dict[int, list[list[float]]] | None = None,
     ) -> StrategyMappingResult:
         """Map layers using invariant-collapse strategy."""
+        from modelcypher.core.domain.geometry.invariant_layer_mapper import (
+            InvariantLayerMapper,
+            LayerMappingStrategy,
+        )
+
         # Use the existing InvariantLayerMapper for base mapping
         base_report = InvariantLayerMapper.map_layers(source, target, config)
 
@@ -354,7 +371,10 @@ class StrategyLayerMapper:
         config: "Config",
     ) -> list["LayerMapping"]:
         """Align layers using CKA matrix (greedy optimal assignment)."""
-        from modelcypher.core.domain.geometry.invariant_layer_mapper import LayerMapping
+        from modelcypher.core.domain.geometry.invariant_layer_mapper import (
+            CRMMappingConfig,
+            LayerMapping,
+        )
 
         crm_cfg = config.crm_config or CRMMappingConfig()
         mappings: list[LayerMapping] = []
@@ -511,7 +531,7 @@ def select_optimal_strategy(
     source: "ModelFingerprints",
     target: "ModelFingerprints",
     has_activations: bool = False,
-) -> LayerMappingStrategy:
+) -> "LayerMappingStrategy":
     """
     Select optimal layer mapping strategy based on model characteristics.
 
@@ -520,6 +540,10 @@ def select_optimal_strategy(
     - If models have very different depths: INVARIANT_COLLAPSE
     - If one model has many collapsed layers: INVARIANT_COLLAPSE
     """
+    from modelcypher.core.domain.geometry.invariant_layer_mapper import (
+        LayerMappingStrategy,
+    )
+
     depth_ratio = min(source.layer_count, target.layer_count) / max(
         source.layer_count, target.layer_count, 1
     )

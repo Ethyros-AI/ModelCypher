@@ -687,6 +687,28 @@ def run_full_geometry_merge(
 
     # Build result
     layer_indices = extract_layer_indices(target_weights)
+
+    # Derive geometric confidence from MergeGeometry
+    # For full geometry merge, confidence IS the CKA - kernel alignment is the geometry
+    geometry_metrics_full = {
+        "overall_cka": geometry.overall_cka,
+        "mean_intrinsic_dim": geometry.mean_intrinsic_dimension,
+        "mean_shared_dim": geometry.mean_shared_dimension,
+        "mean_ollivier_ricci": geometry.mean_ollivier_ricci,
+        "overall_manifold_health": geometry.overall_manifold_health,
+        "curvature_alignment": geometry.curvature_alignment,
+        **geometry.curvature_alignment_details,
+    }
+
+    # Safety verdict derived from manifold health - no hardcoded strings
+    # This reflects the actual geometric state of the merged model
+    if geometry.overall_manifold_health == "collapsed":
+        safety_verdict_full = "collapsed"
+    elif geometry.overall_manifold_health == "degenerate":
+        safety_verdict_full = "degenerate"
+    else:
+        safety_verdict_full = "healthy"
+
     result = UnifiedMergeResult(
         merged_weights=merged_weights,
         vocab_metrics=vocab_metrics,
@@ -705,8 +727,9 @@ def run_full_geometry_merge(
         merge_strategy="full_geometry",
         output_path=output_path,
         vocab_aligned=vocab_aligned,
-        safety_verdict="geometric",
+        safety_verdict=safety_verdict_full,
         refusal_preserved=geometry.refusal_preserved,
+        geometry_metrics=geometry_metrics_full,
     )
 
     logger.info(

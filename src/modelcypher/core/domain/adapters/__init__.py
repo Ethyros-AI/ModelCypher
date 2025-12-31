@@ -31,7 +31,7 @@ from modelcypher.core.domain.adapters.ensemble_orchestrator import (
     InvalidAdapterIDError,
     NoActiveEnsembleError,
     NoAdaptersError,
-    NoCompatibleAdaptersError,
+    NoAlignedAdaptersError,
     OrchestratorConfiguration,
     TooManyAdaptersError,
 )
@@ -48,7 +48,7 @@ __all__ = [
     "InvalidAdapterIDError",
     "NoActiveEnsembleError",
     "NoAdaptersError",
-    "NoCompatibleAdaptersError",
+    "NoAlignedAdaptersError",
     "OrchestratorConfiguration",
     "TooManyAdaptersError",
 ]

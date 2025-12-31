@@ -51,6 +51,32 @@ AtlasProbe: TypeAlias = AtlasProbeProtocol
 SequenceInvariant: TypeAlias = SequenceInvariantProtocol
 TriangulatedScore: TypeAlias = TriangulatedScoreProtocol
 
+__all__ = [
+    # Enums
+    "LayerMappingStrategy",
+    "InvariantScope",
+    "LayerMatchCategory",
+    # Config dataclasses
+    "CRMMappingConfig",
+    "InvariantCollapseMappingConfig",
+    "Config",
+    # Result dataclasses
+    "TriangulationProfile",
+    "LayerProfile",
+    "LayerMapping",
+    "Summary",
+    "Report",
+    "ModelFingerprints",
+    # Main class
+    "InvariantLayerMapper",
+    # Re-exports from strategy_layer_mapper
+    "LayerCategoryScores",
+    "StrategyMappingResult",
+    "StrategyLayerMapper",
+    "compute_layer_alignment_confidence",
+    "select_optimal_strategy",
+]
+
 _DEFAULT_SEQUENCE_FAMILIES = frozenset(
     [
         "fibonacci",
