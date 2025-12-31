@@ -40,7 +40,7 @@ from typing import TYPE_CHECKING, Any, AsyncGenerator
 
 # Infrastructure dependencies (MLX-specific model loading)
 # These cannot be abstracted via Backend protocol
-from mlx_lm import load
+# from mlx_lm import load  # Moved to lazy import inside DualPathGenerator
 
 from modelcypher.core.domain._backend import get_default_backend
 
@@ -168,6 +168,8 @@ class DualPathGenerator:
         # MLX-LM loading handling:
         # We load the BASE model.
         # For the ADAPTER path, we need to apply adapters.
+        from mlx_lm import load
+
         logger.info(f"Loading model from {config.base_model_path}")
         self.model, self.tokenizer = load(config.base_model_path)
 
@@ -185,6 +187,8 @@ class DualPathGenerator:
         if config.adapter_path:
             logger.info(f"Loading adapter model from {config.adapter_path}")
             # In MLX-LM, loading with adapter_path fuses? Or returns LoRA model?
+            from mlx_lm import load
+
             self.adapter_model, _ = load(config.base_model_path, adapter_path=config.adapter_path)
         else:
             self.adapter_model = self.model  # If no adapter, both paths are same (degenerate case)

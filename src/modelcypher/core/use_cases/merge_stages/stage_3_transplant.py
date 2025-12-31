@@ -174,10 +174,10 @@ def stage_transplant(
     layer_indices: list[int],
     probe_ids: list[str] | None,
     probe_domains: list[str] | None,
-    source_activations: dict[int, list["Array"]] | None,
     target_activations: dict[int, list["Array"]] | None,
     config: TransplantStageConfig,
     extract_layer_index_fn: Callable[[str], int | None],
+    source_activations: dict[int, list["Array"]] | None = None,
     backend: "Backend | None" = None,
 ) -> TransplantStageResult:
     """Stage 3: Null-space constrained transplant using probe activations."""
