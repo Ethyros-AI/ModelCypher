@@ -99,9 +99,10 @@ def _detect_default_backend_type() -> BackendType:
         env_backend = os.environ.get("MODELCYPHER_BACKEND", "").lower()
     if env_backend in ("mlx", "jax", "cuda"):
         return env_backend  # type: ignore
+    disable_mlx = os.environ.get("MC_DISABLE_MLX", "").lower() in ("1", "true", "yes")
 
     # macOS: prefer MLX
-    if sys.platform == "darwin":
+    if sys.platform == "darwin" and not disable_mlx:
         try:
             import mlx.core  # noqa: F401
 

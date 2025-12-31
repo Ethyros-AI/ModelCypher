@@ -63,8 +63,15 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Session-scoped cache for Gram matrices and centered Gram matrices
-_cache = ComputationCache.shared()
+
+def _get_cache() -> ComputationCache:
+    """Get the shared cache instance.
+
+    This function exists to ensure we always get the current shared instance,
+    even after reset_shared() is called. A module-level variable would capture
+    the instance at import time and become stale after reset.
+    """
+    return ComputationCache.shared()
 
 
 class HSICEstimator(str, Enum):
@@ -220,8 +227,8 @@ def _center_gram_matrix(
     """
     # Check cache if key provided
     if cache_key is not None:
-        centered_key = _cache.make_centered_gram_key(cache_key)
-        cached = _cache.get_centered_gram(centered_key)
+        centered_key = _get_cache().make_centered_gram_key(cache_key)
+        cached = _get_cache().get_centered_gram(centered_key)
         if cached is not None:
             return cached
 
@@ -245,8 +252,8 @@ def _center_gram_matrix(
 
     # Cache result if key provided
     if cache_key is not None:
-        centered_key = _cache.make_centered_gram_key(cache_key)
-        _cache.set_centered_gram(centered_key, centered, elapsed_ms)
+        centered_key = _get_cache().make_centered_gram_key(cache_key)
+        _get_cache().set_centered_gram(centered_key, centered, elapsed_ms)
 
     return centered
 
@@ -530,28 +537,28 @@ def compute_cka(
 
     if use_linear_kernel:
         # Use cached Gram matrices for linear kernel
-        gram_key_x = _cache.make_gram_key(activations_x, backend, kernel_type)
-        gram_key_y = _cache.make_gram_key(activations_y, backend, kernel_type)
+        gram_key_x = _get_cache().make_gram_key(activations_x, backend, kernel_type)
+        gram_key_y = _get_cache().make_gram_key(activations_y, backend, kernel_type)
 
-        gram_x = _cache.get_gram(gram_key_x)
+        gram_x = _get_cache().get_gram(gram_key_x)
         if gram_x is None:
             start = time.perf_counter()
             gram_x = backend.matmul(activations_x, backend.transpose(activations_x))
             backend.eval(gram_x)
             elapsed_ms = (time.perf_counter() - start) * 1000
-            _cache.set_gram(gram_key_x, gram_x, elapsed_ms)
+            _get_cache().set_gram(gram_key_x, gram_x, elapsed_ms)
 
-        gram_y = _cache.get_gram(gram_key_y)
+        gram_y = _get_cache().get_gram(gram_key_y)
         if gram_y is None:
             start = time.perf_counter()
             gram_y = backend.matmul(activations_y, backend.transpose(activations_y))
             backend.eval(gram_y)
             elapsed_ms = (time.perf_counter() - start) * 1000
-            _cache.set_gram(gram_key_y, gram_y, elapsed_ms)
+            _get_cache().set_gram(gram_key_y, gram_y, elapsed_ms)
     else:
         # RBF kernel - compute directly (less frequently reused)
-        gram_key_x = _cache.make_gram_key(activations_x, backend, kernel_type)
-        gram_key_y = _cache.make_gram_key(activations_y, backend, kernel_type)
+        gram_key_x = _get_cache().make_gram_key(activations_x, backend, kernel_type)
+        gram_key_y = _get_cache().make_gram_key(activations_y, backend, kernel_type)
         gram_x = _rbf_gram_matrix(activations_x, backend)
         gram_y = _rbf_gram_matrix(activations_y, backend)
 
@@ -784,24 +791,24 @@ def compute_cka_backend(
             return 0.0
         return result.cka_corrected if result.cka_corrected is not None else result.cka
 
-    gram_key_x = _cache.make_gram_key(x, backend, kernel_type="linear")
-    gram_key_y = _cache.make_gram_key(y, backend, kernel_type="linear")
+    gram_key_x = _get_cache().make_gram_key(x, backend, kernel_type="linear")
+    gram_key_y = _get_cache().make_gram_key(y, backend, kernel_type="linear")
 
     if gram_key_x == gram_key_y:
         # Identical Gram keys imply identical geometry; return exact self-similarity.
         return 1.0
 
-    gram_x = _cache.get_gram(gram_key_x)
+    gram_x = _get_cache().get_gram(gram_key_x)
     if gram_x is None:
         gram_x = backend.matmul(x, backend.transpose(x))
         backend.eval(gram_x)
-        _cache.set_gram(gram_key_x, gram_x)
+        _get_cache().set_gram(gram_key_x, gram_x)
 
-    gram_y = _cache.get_gram(gram_key_y)
+    gram_y = _get_cache().get_gram(gram_key_y)
     if gram_y is None:
         gram_y = backend.matmul(y, backend.transpose(y))
         backend.eval(gram_y)
-        _cache.set_gram(gram_key_y, gram_y)
+        _get_cache().set_gram(gram_key_y, gram_y)
 
     # HSIC via Frobenius inner product: sum(K * L)
     hsic_xy_arr = backend.sum(gram_x * gram_y)

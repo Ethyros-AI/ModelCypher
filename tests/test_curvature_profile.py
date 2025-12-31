@@ -637,14 +637,16 @@ class TestEdgeCases:
     """Tests for edge cases and error handling."""
 
     def test_nan_values_in_layer_curvature(self):
-        """LayerCurvature handles NaN values."""
+        """LayerCurvature handles NaN values by converting to None for JSON."""
         lc = LayerCurvature(
             layer_idx=0,
             sectional_mean=float("nan"),
             ollivier_ricci_mean=float("nan"),
         )
         d = lc.to_dict()
-        assert math.isnan(d["sectional_mean"])
+        # NaN is converted to None for JSON serialization safety
+        assert d["sectional_mean"] is None
+        assert d["ollivier_ricci_mean"] is None
 
     def test_empty_layer_curvatures_in_profile(self):
         """CurvatureProfile handles empty layer_curvatures."""

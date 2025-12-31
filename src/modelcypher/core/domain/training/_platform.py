@@ -54,6 +54,8 @@ if TYPE_CHECKING:
 
 def _is_mlx_available() -> bool:
     """Check if MLX is available (macOS with Apple Silicon)."""
+    if os.environ.get("MC_DISABLE_MLX", "").lower() in ("1", "true", "yes"):
+        return False
     if platform.system() != "Darwin":
         return False
     try:

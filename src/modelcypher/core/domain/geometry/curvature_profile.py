@@ -74,33 +74,44 @@ class LayerCurvature:
     manifold_health: str = "unknown"  # healthy, degenerate, collapsed
 
     def to_dict(self) -> dict[str, Any]:
+        def safe_float(v: float) -> float | None:
+            """Convert NaN/Inf to None for JSON serialization."""
+            if math.isnan(v) or math.isinf(v):
+                return None
+            return v
+
         return {
             "layer_idx": self.layer_idx,
-            "sectional_mean": self.sectional_mean,
-            "sectional_std": self.sectional_std,
-            "sectional_min": self.sectional_min,
-            "sectional_max": self.sectional_max,
+            "sectional_mean": safe_float(self.sectional_mean),
+            "sectional_std": safe_float(self.sectional_std),
+            "sectional_min": safe_float(self.sectional_min),
+            "sectional_max": safe_float(self.sectional_max),
             "dominant_sign": self.dominant_sign,
-            "ollivier_ricci_mean": self.ollivier_ricci_mean,
-            "ollivier_ricci_std": self.ollivier_ricci_std,
-            "intrinsic_dimension": self.intrinsic_dimension,
-            "intrinsic_dimension_uncertainty": self.intrinsic_dimension_uncertainty,
+            "ollivier_ricci_mean": safe_float(self.ollivier_ricci_mean),
+            "ollivier_ricci_std": safe_float(self.ollivier_ricci_std),
+            "intrinsic_dimension": safe_float(self.intrinsic_dimension),
+            "intrinsic_dimension_uncertainty": safe_float(self.intrinsic_dimension_uncertainty),
             "manifold_health": self.manifold_health,
         }
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> LayerCurvature:
+        def safe_get(key: str, default: float = 0.0) -> float:
+            """Get value, converting None to default."""
+            val = d.get(key, default)
+            return default if val is None else val
+
         return cls(
             layer_idx=d["layer_idx"],
-            sectional_mean=d.get("sectional_mean", 0.0),
-            sectional_std=d.get("sectional_std", 0.0),
-            sectional_min=d.get("sectional_min", 0.0),
-            sectional_max=d.get("sectional_max", 0.0),
+            sectional_mean=safe_get("sectional_mean", 0.0),
+            sectional_std=safe_get("sectional_std", 0.0),
+            sectional_min=safe_get("sectional_min", 0.0),
+            sectional_max=safe_get("sectional_max", 0.0),
             dominant_sign=d.get("dominant_sign", "unknown"),
-            ollivier_ricci_mean=d.get("ollivier_ricci_mean", 0.0),
-            ollivier_ricci_std=d.get("ollivier_ricci_std", 0.0),
-            intrinsic_dimension=d.get("intrinsic_dimension", 0.0),
-            intrinsic_dimension_uncertainty=d.get("intrinsic_dimension_uncertainty", 0.0),
+            ollivier_ricci_mean=safe_get("ollivier_ricci_mean", 0.0),
+            ollivier_ricci_std=safe_get("ollivier_ricci_std", 0.0),
+            intrinsic_dimension=safe_get("intrinsic_dimension", 0.0),
+            intrinsic_dimension_uncertainty=safe_get("intrinsic_dimension_uncertainty", 0.0),
             manifold_health=d.get("manifold_health", "unknown"),
         )
 
@@ -137,6 +148,12 @@ class CurvatureProfile:
     extraction_config: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        def safe_float(v: float) -> float | None:
+            """Convert NaN/Inf to None for JSON serialization."""
+            if math.isnan(v) or math.isinf(v):
+                return None
+            return v
+
         return {
             "_schema": SCHEMA_VERSION,
             "model_path": self.model_path,
@@ -144,28 +161,33 @@ class CurvatureProfile:
             "model_size": self.model_size,
             "layer_curvatures": [lc.to_dict() for lc in self.layer_curvatures],
             "total_layers": self.total_layers,
-            "global_sectional_mean": self.global_sectional_mean,
-            "global_sectional_std": self.global_sectional_std,
-            "global_ollivier_ricci_mean": self.global_ollivier_ricci_mean,
-            "global_ollivier_ricci_std": self.global_ollivier_ricci_std,
-            "global_intrinsic_dimension_mean": self.global_intrinsic_dimension_mean,
+            "global_sectional_mean": safe_float(self.global_sectional_mean),
+            "global_sectional_std": safe_float(self.global_sectional_std),
+            "global_ollivier_ricci_mean": safe_float(self.global_ollivier_ricci_mean),
+            "global_ollivier_ricci_std": safe_float(self.global_ollivier_ricci_std),
+            "global_intrinsic_dimension_mean": safe_float(self.global_intrinsic_dimension_mean),
             "extraction_date": self.extraction_date,
             "extraction_config": self.extraction_config,
         }
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> CurvatureProfile:
+        def safe_get(key: str, default: float = 0.0) -> float:
+            """Get value, converting None to default."""
+            val = d.get(key, default)
+            return default if val is None else val
+
         return cls(
             model_path=d["model_path"],
             model_family=d["model_family"],
             model_size=d["model_size"],
             layer_curvatures=[LayerCurvature.from_dict(lc) for lc in d.get("layer_curvatures", [])],
             total_layers=d.get("total_layers", 0),
-            global_sectional_mean=d.get("global_sectional_mean", 0.0),
-            global_sectional_std=d.get("global_sectional_std", 0.0),
-            global_ollivier_ricci_mean=d.get("global_ollivier_ricci_mean", 0.0),
-            global_ollivier_ricci_std=d.get("global_ollivier_ricci_std", 0.0),
-            global_intrinsic_dimension_mean=d.get("global_intrinsic_dimension_mean", 0.0),
+            global_sectional_mean=safe_get("global_sectional_mean", 0.0),
+            global_sectional_std=safe_get("global_sectional_std", 0.0),
+            global_ollivier_ricci_mean=safe_get("global_ollivier_ricci_mean", 0.0),
+            global_ollivier_ricci_std=safe_get("global_ollivier_ricci_std", 0.0),
+            global_intrinsic_dimension_mean=safe_get("global_intrinsic_dimension_mean", 0.0),
             extraction_date=d.get("extraction_date", ""),
             extraction_config=d.get("extraction_config", {}),
         )

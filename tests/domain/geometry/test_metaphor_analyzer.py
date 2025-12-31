@@ -55,7 +55,7 @@ class TestMetaphorConvergenceAnalyzer(unittest.TestCase):
     def _create_dummy_fingerprints(self, model_id: str, offset: float) -> ModelFingerprints:
         fingerprints = []
         # Use known probes from inventory
-        probes = MetaphorInvariantInventory.all_probes()
+        probes = MetaphorInvariantInventory.ALL_PROBES
 
         for i, probe in enumerate(probes):
             # Simulate activation in layer 5 and 10
@@ -64,8 +64,11 @@ class TestMetaphorConvergenceAnalyzer(unittest.TestCase):
                 10: [ActivatedDimension(index=i, activation=0.5 + offset)],
             }
 
+            # prime_id must be prefixed with "metaphor_invariant:" for the analyzer to recognize it
             fp = ActivationFingerprint(
-                prime_id=probe.id, prime_text=probe.prompt, activated_dimensions=activations
+                prime_id=f"metaphor_invariant:{probe.id}",
+                prime_text=probe.universal_concept,
+                activated_dimensions=activations,
             )
             fingerprints.append(fp)
 
@@ -96,8 +99,8 @@ class TestMetaphorConvergenceAnalyzer(unittest.TestCase):
         self.assertEqual(report.source_layer_count, 12)
         self.assertTrue(len(report.layers) > 0)
 
-        # Check families are present
-        self.assertIn(MetaphorFamily.TIME_IS_MONEY.value, report.families)
+        # Check families are present (FUTILITY is the first probe family)
+        self.assertIn(MetaphorFamily.FUTILITY.value, report.families)
 
         # Check convergence values (should be high since vectors are similar)
         # We used identity mapping shim in DimensionAlignmentBuilder,
@@ -105,13 +108,13 @@ class TestMetaphorConvergenceAnalyzer(unittest.TestCase):
         # But we used sparse vectors.
         # Cosine similarity between [1.0] and [1.1] is 1.0.
 
-        time_family = report.families[MetaphorFamily.TIME_IS_MONEY.value]
+        futility_family = report.families[MetaphorFamily.FUTILITY.value]
         # In layer 5, both have activation on dimension i.
         # Cosine should be 1.0
 
         # Check label for layer 5
-        self.assertIn("5", time_family.layers)
-        self.assertAlmostEqual(time_family.layers["5"], 1.0, places=4)
+        self.assertIn("5", futility_family.layers)
+        self.assertAlmostEqual(futility_family.layers["5"], 1.0, places=4)
 
 
 if __name__ == "__main__":

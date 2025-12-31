@@ -94,6 +94,7 @@ markers = [
     "slow: Tests that take more than 1 second",
     "mlx: Tests that require MLX hardware (Apple Silicon)",
     "property: Hypothesis property-based tests",
+    "real_model: Tests that load real models from HuggingFace or local paths",
 ]
 
 [build-system]

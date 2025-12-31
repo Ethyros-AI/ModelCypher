@@ -186,9 +186,11 @@ class ComputationCache:
         arr_np = backend.to_numpy(arr)
 
         if n_elements <= 1000:
-            # Small array - hash all values
+            # Small array - hash all values (not truncated!)
             flat = arr_np.flatten()
-            content = f"shape={shape}|{flat.tobytes().hex()[:64]}"
+            # Use full bytes hash, not truncated - truncating causes collisions
+            # when arrays differ only in later elements
+            content = f"shape={shape}|{flat.tobytes().hex()}"
         else:
             # Large array - sample strategically
             flat = arr_np.flatten()

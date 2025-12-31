@@ -15,6 +15,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
+import os
+
 import pytest
 
 
@@ -30,6 +32,8 @@ class _MockLoader:
 
 
 def test_save_weights_mixed_mlx_and_numpy_does_not_use_mx_save(tmp_path):
+    if os.environ.get("MC_DISABLE_MLX", "").lower() in ("1", "true", "yes"):
+        pytest.skip("MLX disabled via MC_DISABLE_MLX")
     mx = pytest.importorskip("mlx.core")
 
     import numpy as np
@@ -47,4 +51,3 @@ def test_save_weights_mixed_mlx_and_numpy_does_not_use_mx_save(tmp_path):
     merger._save_weights(str(tmp_path), weights, "safetensors")
 
     assert (tmp_path / "model.safetensors").exists()
-

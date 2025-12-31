@@ -412,15 +412,15 @@ def register(app: typer.Typer) -> None:
 
 def _collect_layer_activations(provider, probe_texts, layer_idx, backend):
     """Collect activations from a specific layer for given probes."""
-    activations = []
+    # Use the batch API - provider.get_activations returns list of list[float]
+    raw_activations = provider.get_activations(probe_texts, layer_idx)
 
-    for text in probe_texts:
-        try:
-            act = provider.get_activation(text, layer_idx)
-            if act is not None:
-                activations.append(act)
-        except Exception:
-            continue
+    # Convert to backend arrays
+    activations = []
+    for raw in raw_activations:
+        if raw:  # Skip empty activations
+            arr = backend.array(raw)
+            activations.append(arr)
 
     return activations
 

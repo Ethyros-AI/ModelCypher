@@ -18,7 +18,11 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
+import os
 import platform
+import subprocess
+import sys
 
 import pytest
 from hypothesis import settings
@@ -33,17 +37,28 @@ from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_re
 
 def _detect_mlx_available() -> bool:
     """Detect if MLX is available (requires Apple Silicon)."""
+    env_backend = os.environ.get("MC_BACKEND", "").lower()
+    if not env_backend:
+        env_backend = os.environ.get("MODELCYPHER_BACKEND", "").lower()
+    if env_backend and env_backend != "mlx":
+        return False
+    if os.environ.get("MC_DISABLE_MLX", "").lower() in ("1", "true", "yes"):
+        return False
     if platform.system() != "Darwin":
         return False
     if platform.machine() not in ("arm64", "aarch64"):
         return False
+    if importlib.util.find_spec("mlx.core") is None:
+        return False
     try:
-        import mlx.core as mx
-
-        # Verify Metal GPU is accessible
-        _ = mx.zeros((1,))
-        return True
-    except (ImportError, RuntimeError):
+        result = subprocess.run(
+            [sys.executable, "-c", "import mlx.core as mx; mx.zeros((1,))"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        return result.returncode == 0
+    except Exception:
         return False
 
 
@@ -74,6 +89,9 @@ def _detect_cuda_available() -> bool:
 HAS_MLX = _detect_mlx_available()
 HAS_JAX_GPU = _detect_jax_available()
 HAS_CUDA = _detect_cuda_available()
+
+if not HAS_MLX:
+    os.environ.setdefault("MC_DISABLE_MLX", "1")
 
 
 # =============================================================================

@@ -48,6 +48,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from modelcypher.core.domain._backend import get_default_backend
 from .unified_merge import helpers as merge_helpers
 from .unified_merge import stages as merge_stages
 from .unified_merge.models import (
@@ -103,13 +104,8 @@ class UnifiedGeometricMerger:
         self._model_loader = model_loader
         self.config = config or UnifiedMergeConfig()
 
-        # Default to MLXBackend for GPU-accelerated operations
-        if backend is None:
-            from modelcypher.backends.mlx_backend import MLXBackend
-
-            self._backend = MLXBackend()
-        else:
-            self._backend = backend
+        # Default to configured backend (respects MC_BACKEND/MODELCYPHER_BACKEND)
+        self._backend = backend or get_default_backend()
 
     def merge(
         self,
