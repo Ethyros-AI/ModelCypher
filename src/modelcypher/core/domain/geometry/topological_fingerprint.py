@@ -955,7 +955,8 @@ class BackendTopologicalFingerprint:
                     row_j = dist_arr[j, :]
                     triangle_fills = b.maximum(b.maximum(row_i, row_j), b.full((n,), dist))
                     # Set self-edges to inf
-                    fills_np = b.to_numpy(triangle_fills)
+                    # Use .copy() to get a writable array (JAX returns read-only)
+                    fills_np = b.to_numpy(triangle_fills).copy()
                     fills_np[i] = float("inf")
                     fills_np[j] = float("inf")
 

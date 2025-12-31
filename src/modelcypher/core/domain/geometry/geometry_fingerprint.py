@@ -212,7 +212,8 @@ class GeometricFingerprint:
                 backend.eval(w_arr)
                 backend.eval(w)
                 # Update w[i] in-place through numpy conversion
-                w_np = backend.to_numpy(w)
+                # Use .copy() to get a writable array (JAX returns read-only)
+                w_np = backend.to_numpy(w).copy()
                 w_np[i] = row_sum
                 w = backend.array(w_np)
 

@@ -953,7 +953,8 @@ def solve_via_gram_alignment(
     R_det = _determinant_sign(b, R)
     if R_det < 0:
         # Flip sign of last column of U_proc
-        U_proc_np = b.to_numpy(U_proc)
+        # Use .copy() to get a writable array (JAX returns read-only)
+        U_proc_np = b.to_numpy(U_proc).copy()
         U_proc_np[:, -1] = -U_proc_np[:, -1]
         U_proc = b.array(U_proc_np)
         b.eval(U_proc)
@@ -1141,7 +1142,7 @@ def solve_via_cca_procrustes(
 
         # Eigendecomposition of Gram (gives squared singular values)
         # Cast to float32 for eigendecomposition (MLX doesn't support bfloat16 for eigh)
-        gram_dtype = str(b.dtype(gram))
+        gram_dtype = str(gram.dtype)
         if "bfloat16" in gram_dtype:
             gram_f32 = b.astype(gram, "float32")
             b.eval(gram_f32)
@@ -1227,7 +1228,7 @@ def solve_via_cca_procrustes(
     def whiten_cov(cov: Array) -> Array | None:
         """Compute inverse sqrt of covariance for whitening."""
         # Cast to float32 for eigendecomposition (MLX doesn't support bfloat16 for eigh)
-        cov_dtype = str(b.dtype(cov))
+        cov_dtype = str(cov.dtype)
         if "bfloat16" in cov_dtype:
             cov_f32 = b.astype(cov, "float32")
             b.eval(cov_f32)
@@ -1348,7 +1349,8 @@ def solve_via_cca_procrustes(
 
     if det < 0:
         # Flip last column of U_proc to get proper rotation
-        U_proc_np = b.to_numpy(U_proc)
+        # Use .copy() to get a writable array (JAX returns read-only)
+        U_proc_np = b.to_numpy(U_proc).copy()
         U_proc_np[:, -1] = -U_proc_np[:, -1]
         U_proc = b.array(U_proc_np)
         b.eval(U_proc)

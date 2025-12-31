@@ -879,8 +879,9 @@ class ManifoldStitcher:
             """Compute geodesic distances from all points to selected centroids."""
             num_centroids = len(centroid_indices)
             # Use precomputed geodesic distances
+            # Use .copy() to get writable arrays (JAX returns read-only)
             dists = b.zeros((n, num_centroids))
-            dists_np = b.to_numpy(dists)
+            dists_np = b.to_numpy(dists).copy()
             geo_np = b.to_numpy(geodesic_dist_matrix)
             for ci, idx in enumerate(centroid_indices):
                 dists_np[:, ci] = geo_np[:, idx]
@@ -928,7 +929,9 @@ class ManifoldStitcher:
             centroid_indices.append(next_idx)
 
         # Initialize centroids from selected points
-        centroids_np = b.to_numpy(pts[centroid_indices])
+        # Use array indexing instead of list (JAX doesn't allow list indexing)
+        idx_arr = b.array(centroid_indices)
+        centroids_np = b.to_numpy(pts[idx_arr])
         centroids = b.array(centroids_np)
         assignments = b.zeros((n,), dtype="int32")
         # Track representative data point for each centroid (for geodesic proxy)

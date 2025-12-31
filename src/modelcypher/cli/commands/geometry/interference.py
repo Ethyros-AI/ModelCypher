@@ -779,4 +779,287 @@ def safety_polytope_check(
     write_output(payload, context.output_format, context.pretty)
 
 
+@app.command("verify")
+def verify_prediction(
+    ctx: typer.Context,
+    merge_id: str = typer.Argument(..., help="Merge ID to verify"),
+    geometry_metrics_file: str = typer.Option(
+        ..., "--metrics", "-m", help="JSON file with geometry_metrics from merge result"
+    ),
+    transplant_metrics_file: str | None = typer.Option(
+        None, "--transplant", "-t", help="JSON file with transplant_metrics (optional)"
+    ),
+    safety_verdict: str = typer.Option(
+        "unknown", "--verdict", "-v", help="Safety verdict from merge"
+    ),
+    registry_path: str = typer.Option(
+        None, "--registry", "-r", help="Path to prediction registry"
+    ),
+) -> None:
+    """
+    Verify a merge result against its prediction.
+
+    Compares predicted interference with actual merge outcomes.
+    Part of the closed loop: Predict → Merge → Verify → Learn.
+
+    Example:
+        mc geometry interference verify abc123 --metrics merge_result.json
+    """
+    context = _context(ctx)
+
+    from modelcypher.core.use_cases.interference_verification_service import (
+        InterferenceVerificationService,
+    )
+
+    # Load metrics
+    geometry_path = Path(geometry_metrics_file)
+    if not geometry_path.exists():
+        typer.echo(f"Geometry metrics file not found: {geometry_path}", err=True)
+        raise typer.Exit(1)
+
+    geometry_data = json.loads(geometry_path.read_text())
+
+    # Handle different input formats
+    if "geometry_metrics" in geometry_data:
+        geometry_metrics = geometry_data["geometry_metrics"]
+    elif "geometryMetrics" in geometry_data:
+        geometry_metrics = geometry_data["geometryMetrics"]
+    else:
+        geometry_metrics = geometry_data
+
+    transplant_metrics = {}
+    if transplant_metrics_file:
+        transplant_path = Path(transplant_metrics_file)
+        if transplant_path.exists():
+            transplant_data = json.loads(transplant_path.read_text())
+            if "transplant_metrics" in transplant_data:
+                transplant_metrics = transplant_data["transplant_metrics"]
+            elif "transplantMetrics" in transplant_data:
+                transplant_metrics = transplant_data["transplantMetrics"]
+            else:
+                transplant_metrics = transplant_data
+
+    # Initialize service
+    service = InterferenceVerificationService(registry_path=registry_path)
+
+    # Verify
+    result = service.verify_from_metrics(
+        merge_id=merge_id,
+        geometry_metrics=geometry_metrics,
+        transplant_metrics=transplant_metrics,
+        safety_verdict=safety_verdict,
+    )
+
+    if result is None:
+        typer.echo(f"No prediction found for merge_id: {merge_id}", err=True)
+        typer.echo("Use 'mc geometry interference predict' to create a prediction first.")
+        raise typer.Exit(1)
+
+    payload = {
+        "_schema": "mc.geometry.interference.verification.v1",
+        "mergeId": result.merge_id,
+        "timestamp": result.timestamp,
+        "overlapDelta": result.overlap_delta,
+        "curvatureDelta": result.curvature_delta,
+        "alignmentDelta": result.alignment_delta,
+        "meanAbsoluteError": result.mean_absolute_error,
+        "transformationAccuracy": result.transformation_accuracy,
+        "layerErrors": {str(k): v for k, v in result.layer_errors.items()},
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "=" * 60,
+            "PREDICTION VERIFICATION",
+            "=" * 60,
+            "",
+            f"Merge ID: {result.merge_id}",
+            f"Timestamp: {result.timestamp}",
+            "",
+            "-" * 40,
+            "Error Analysis (actual - predicted)",
+            "-" * 40,
+            f"  Overlap Delta:   {result.overlap_delta:+.4f}",
+            f"  Curvature Delta: {result.curvature_delta:+.4f}",
+            f"  Alignment Delta: {result.alignment_delta:+.4f}",
+            "",
+            f"Mean Absolute Error: {result.mean_absolute_error:.4f}",
+            "",
+        ]
+
+        if result.transformation_accuracy:
+            lines.extend([
+                "-" * 40,
+                "Transformation Prediction Accuracy",
+                "-" * 40,
+            ])
+            for t_name, correct in result.transformation_accuracy.items():
+                status = "✓" if correct else "✗"
+                lines.append(f"  {status} {t_name}")
+
+        if result.layer_errors:
+            lines.extend([
+                "",
+                "-" * 40,
+                "Per-Layer Errors (top 5)",
+                "-" * 40,
+            ])
+            sorted_layers = sorted(result.layer_errors.items(), key=lambda x: -x[1])
+            for layer_idx, error in sorted_layers[:5]:
+                lines.append(f"  Layer {layer_idx}: {error:.4f}")
+
+        lines.append("")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("calibration-report")
+def calibration_report(
+    ctx: typer.Context,
+    registry_path: str = typer.Option(
+        None, "--registry", "-r", help="Path to prediction registry"
+    ),
+    output_file: str | None = typer.Option(
+        None, "--output", "-o", help="Save report to file"
+    ),
+) -> None:
+    """
+    Generate calibration report from verification history.
+
+    Shows prediction accuracy statistics derived from actual merge outcomes.
+    Use this to understand how well interference predictions match reality.
+
+    Example:
+        mc geometry interference calibration-report --registry ~/.modelcypher/predictions.json
+    """
+    context = _context(ctx)
+
+    from modelcypher.core.use_cases.interference_verification_service import (
+        InterferenceVerificationService,
+    )
+
+    service = InterferenceVerificationService(registry_path=registry_path)
+    stats = service.get_calibration_stats()
+
+    if stats.n_verifications == 0:
+        typer.echo("No verifications found in registry.", err=True)
+        typer.echo("Run some merges with verification to build calibration data.")
+        raise typer.Exit(1)
+
+    payload = {
+        "_schema": "mc.geometry.interference.calibration.v1",
+        "nVerifications": stats.n_verifications,
+        "errors": {
+            "meanOverlap": stats.mean_overlap_error,
+            "stdOverlap": stats.std_overlap_error,
+            "meanCurvature": stats.mean_curvature_error,
+            "stdCurvature": stats.std_curvature_error,
+            "meanAlignment": stats.mean_alignment_error,
+            "stdAlignment": stats.std_alignment_error,
+        },
+        "overallAccuracy": {
+            "meanAbsoluteError": stats.mean_absolute_error,
+            "medianAbsoluteError": stats.median_absolute_error,
+            "error90thPercentile": stats.error_90th_percentile,
+        },
+        "transformationAccuracyRates": stats.transformation_accuracy_rates,
+    }
+
+    if output_file:
+        service.export_calibration_report(output_file)
+        typer.echo(f"Report saved to {output_file}")
+
+    if context.output_format == "text":
+        lines = [
+            "=" * 60,
+            "CALIBRATION REPORT",
+            "=" * 60,
+            "",
+            f"Verifications: {stats.n_verifications}",
+            "",
+            "-" * 40,
+            "Prediction Errors (bias)",
+            "-" * 40,
+            f"  Overlap:   mean={stats.mean_overlap_error:+.4f}, std={stats.std_overlap_error:.4f}",
+            f"  Curvature: mean={stats.mean_curvature_error:+.4f}, std={stats.std_curvature_error:.4f}",
+            f"  Alignment: mean={stats.mean_alignment_error:+.4f}, std={stats.std_alignment_error:.4f}",
+            "",
+            "-" * 40,
+            "Overall Accuracy",
+            "-" * 40,
+            f"  Mean Absolute Error:   {stats.mean_absolute_error:.4f}",
+            f"  Median Absolute Error: {stats.median_absolute_error:.4f}",
+            f"  90th Percentile Error: {stats.error_90th_percentile:.4f}",
+            "",
+        ]
+
+        if stats.transformation_accuracy_rates:
+            lines.extend([
+                "-" * 40,
+                "Transformation Prediction Accuracy",
+                "-" * 40,
+            ])
+            for t_name, rate in stats.transformation_accuracy_rates.items():
+                lines.append(f"  {t_name}: {rate:.1%}")
+
+        lines.append("")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("list-pending")
+def list_pending_verifications(
+    ctx: typer.Context,
+    registry_path: str = typer.Option(
+        None, "--registry", "-r", help="Path to prediction registry"
+    ),
+) -> None:
+    """
+    List predictions awaiting verification.
+
+    Shows merge IDs that have predictions but haven't been verified yet.
+
+    Example:
+        mc geometry interference list-pending --registry ~/.modelcypher/predictions.json
+    """
+    context = _context(ctx)
+
+    from modelcypher.core.use_cases.interference_verification_service import (
+        InterferenceVerificationService,
+    )
+
+    service = InterferenceVerificationService(registry_path=registry_path)
+    pending = service.list_pending_verifications()
+
+    if not pending:
+        typer.echo("No pending verifications.")
+        return
+
+    payload = {
+        "_schema": "mc.geometry.interference.pending.v1",
+        "count": len(pending),
+        "mergeIds": pending,
+    }
+
+    if context.output_format == "text":
+        lines = [
+            f"Pending verifications: {len(pending)}",
+            "",
+        ]
+        for merge_id in pending:
+            pred = service.get_prediction(merge_id)
+            if pred:
+                lines.append(f"  {merge_id}: {pred.source_model} → {pred.target_model}")
+            else:
+                lines.append(f"  {merge_id}")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
 __all__ = ["app"]

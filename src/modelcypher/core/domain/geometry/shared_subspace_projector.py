@@ -554,7 +554,8 @@ class SharedSubspaceProjector:
 
         if det < 0:
             # Flip last column of U
-            u_np = b.to_numpy(u)
+            # Use .copy() to get a writable array (JAX returns read-only)
+            u_np = b.to_numpy(u).copy()
             u_np[:, -1] = -u_np[:, -1]
             u = b.array(u_np)
             b.eval(u)

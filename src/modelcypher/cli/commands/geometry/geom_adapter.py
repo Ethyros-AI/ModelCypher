@@ -54,10 +54,11 @@ def geometry_adapter_sparsity(
         mc geometry adapter sparsity --checkpoint ./checkpoint --base ./base-model
     """
     from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+    from modelcypher.backends.mlx_backend import MLXBackend
 
     context = _context(ctx)
     model_loader = MLXModelLoader()
-    service = GeometryAdapterService(model_loader=model_loader)
+    service = GeometryAdapterService(model_loader=model_loader, backend=MLXBackend())
     analysis = service.analyze_dare(checkpoint_path, base_path)
 
     output = {
@@ -93,10 +94,11 @@ def geometry_adapter_decomposition(
         mc geometry adapter decomposition --checkpoint ./checkpoint --base ./base-model
     """
     from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+    from modelcypher.backends.mlx_backend import MLXBackend
 
     context = _context(ctx)
     model_loader = MLXModelLoader()
-    service = GeometryAdapterService(model_loader=model_loader)
+    service = GeometryAdapterService(model_loader=model_loader, backend=MLXBackend())
     result = service.analyze_dora(checkpoint_path, base_path)
     output = {
         "checkpointPath": checkpoint_path,

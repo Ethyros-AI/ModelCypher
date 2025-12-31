@@ -526,7 +526,8 @@ class TestSolveFullRowRankViaQR:
         # Create ill-conditioned matrix by scaling columns
         source = b.random_normal((50, 10))
         # Scale last few columns to be very small
-        source_np = b.to_numpy(source)
+        # Use .copy() to get a writable array (JAX returns read-only)
+        source_np = b.to_numpy(source).copy()
         source_np[:, -3:] *= 1e-8
         source = b.array(source_np)
         target = b.random_normal((50, 5))
@@ -1047,7 +1048,8 @@ class TestNumericalPrecision:
         # Create ill-conditioned matrix
         A = b.random_normal((20, 10))
         # Scale columns to create poor conditioning
-        A_np = b.to_numpy(A)
+        # Use .copy() to get a writable array (JAX returns read-only)
+        A_np = b.to_numpy(A).copy()
         for i in range(10):
             A_np[:, i] *= 10 ** (-i)
         A = b.array(A_np)

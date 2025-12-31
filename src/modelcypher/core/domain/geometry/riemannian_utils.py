@@ -1103,7 +1103,8 @@ class RiemannianGeometry:
         # Iteratively select farthest point
         for _ in range(n_samples - 1):
             # Find point with maximum min-distance to selected set
-            min_dist_np = backend.to_numpy(min_distances).flatten()
+            # Use .copy() to get a writable array (JAX returns read-only)
+            min_dist_np = backend.to_numpy(min_distances).flatten().copy()
 
             # Exclude already selected points by setting their distance to -inf
             for idx in selected:

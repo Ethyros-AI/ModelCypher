@@ -265,10 +265,14 @@ class ServiceContext:
     def geometry_adapter_service(self):
         if self._geometry_adapter_service is None:
             from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+            from modelcypher.backends.mlx_backend import MLXBackend
             from modelcypher.core.use_cases.geometry_adapter_service import GeometryAdapterService
 
             model_loader = MLXModelLoader()
-            self._geometry_adapter_service = GeometryAdapterService(model_loader=model_loader)
+            self._geometry_adapter_service = GeometryAdapterService(
+                model_loader=model_loader,
+                backend=MLXBackend(),
+            )
         return self._geometry_adapter_service
 
     @property
