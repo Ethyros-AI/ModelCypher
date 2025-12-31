@@ -235,6 +235,8 @@ def pytest_ignore_collect(path, config):
             content = path.read()
     except Exception:
         return False
+    if isinstance(content, bytes):
+        content = content.decode("utf-8", errors="ignore")
     return "mlx.core" in content
 
 

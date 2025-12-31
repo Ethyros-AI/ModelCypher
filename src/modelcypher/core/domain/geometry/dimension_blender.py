@@ -158,6 +158,11 @@ class DimensionBlendConfig:
     # Smoothing factor: blend domain alpha toward default (0 = pure domain, 1 = pure default)
     smoothing: float = 0.2
 
+    def __post_init__(self) -> None:
+        if self.domain_alpha_map:
+            normalized = {enum_key(key): value for key, value in self.domain_alpha_map.items()}
+            object.__setattr__(self, "domain_alpha_map", normalized)
+
     def __hash__(self) -> int:
         return hash(
             (

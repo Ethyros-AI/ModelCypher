@@ -24,7 +24,7 @@ for optimal layer alignment between models.
 Notes
 -----
 Supported atlases for cross-domain triangulation:
-See UnifiedAtlasInventory for the complete list of atlas sources,
+See the atlas registry for the complete list of atlas sources,
 their probe counts, and the total number of probes available.
 """
 
@@ -33,67 +33,38 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeAlias
 
-# Type hints only - prevents circular import with agents package
-if TYPE_CHECKING:
-    from modelcypher.core.domain.agents.sequence_invariant_atlas import (
-        ExpressionDomain,
-        SequenceFamily,
-        SequenceInvariant,
-        TriangulatedScore,
-    )
-    from modelcypher.core.domain.agents.unified_atlas import (
-        AtlasDomain,
-        AtlasProbe,
-        AtlasSource,
-    )
+from modelcypher.core.domain.geometry.atlas_protocols import (
+    AtlasProbeProtocol,
+    SequenceInvariantProtocol,
+    TriangulatedScoreProtocol,
+    enum_key,
+)
+from modelcypher.core.domain.geometry.atlas_registry import (
+    get_atlas_probes,
+    get_sequence_invariants,
+    get_sequence_triangulation_scorer,
+)
 
+AtlasProbe: TypeAlias = AtlasProbeProtocol
+SequenceInvariant: TypeAlias = SequenceInvariantProtocol
+TriangulatedScore: TypeAlias = TriangulatedScoreProtocol
 
-def _get_sequence_invariants():
-    """Lazy import for sequence invariant types."""
-    from modelcypher.core.domain.agents.sequence_invariant_atlas import (
-        DEFAULT_FAMILIES,
-        ExpressionDomain,
-        SequenceFamily,
-        SequenceInvariant,
-        SequenceInvariantInventory,
-        TriangulatedScore,
-        TriangulationScorer,
-    )
-
-    return (
-        SequenceFamily,
-        SequenceInvariant,
-        SequenceInvariantInventory,
-        TriangulationScorer,
-        TriangulatedScore,
-        ExpressionDomain,
-        DEFAULT_FAMILIES,
-    )
-
-
-def _get_unified_atlas():
-    """Lazy import for unified atlas types."""
-    from modelcypher.core.domain.agents.unified_atlas import (
-        DEFAULT_ATLAS_SOURCES,
-        AtlasDomain,
-        AtlasProbe,
-        AtlasSource,
-        MultiAtlasTriangulationScore,
-        MultiAtlasTriangulationScorer,
-        UnifiedAtlasInventory,
-    )
-
-    return (
-        AtlasProbe,
-        AtlasSource,
-        AtlasDomain,
-        UnifiedAtlasInventory,
-        MultiAtlasTriangulationScorer,
-        MultiAtlasTriangulationScore,
-        DEFAULT_ATLAS_SOURCES,
-    )
+_DEFAULT_SEQUENCE_FAMILIES = frozenset(
+    [
+        "fibonacci",
+        "lucas",
+        "primes",
+        "catalan",
+        "ramanujan",
+        "logic",
+        "ordering",
+        "arithmetic",
+        "causality",
+    ]
+)
+_LOGIC_FAMILY_KEY = "logic"
 
 
 class LayerMappingStrategy(str, Enum):
@@ -184,7 +155,7 @@ class Config:
     invariant_collapse_config: InvariantCollapseMappingConfig | None = None
 
     invariant_scope: InvariantScope = InvariantScope.INVARIANTS
-    family_allowlist: frozenset[SequenceFamily] | None = None
+    family_allowlist: frozenset[str] | None = None
     sample_layer_count: int | None = 12
     min_similarity: float = 0.0
     max_skip: int = 0
@@ -198,8 +169,8 @@ class Config:
     use_cross_domain_weighting: bool = False
     triangulation_threshold: float = 0.0
     multi_domain_bonus: bool = False
-    atlas_sources: frozenset[AtlasSource] | None = None
-    atlas_domains: frozenset[AtlasDomain] | None = None
+    atlas_sources: frozenset[str] | None = None
+    atlas_domains: frozenset[str] | None = None
     use_cka_auxiliary: bool = False
     cka_auxiliary_weight: float = 1.0
 
@@ -250,6 +221,14 @@ class TriangulationProfile:
     layer_index: int
     domains_detected: int
     cross_domain_multiplier: float
+    coherence_bonus: float
+
+
+@dataclass(frozen=True)
+class _TriangulatedScoreFallback:
+    base: float
+    cross_domain_multiplier: float
+    relationship_bonus: float
     coherence_bonus: float
 
 
@@ -369,7 +348,7 @@ class InvariantLayerMapper:
     weights of an LLM are a high-dimensional Lego that precisely fits
     every other Lego.
 
-    Uses SequenceInvariantInventory for cross-domain anchoring and dynamic
+    Uses registered sequence invariants for cross-domain anchoring and dynamic
     programming for optimal layer alignment. The alignment works identically
     regardless of model family (Qwen, Llama, Mistral, etc.) because the
     geometry of knowledge is universal.
@@ -421,8 +400,8 @@ class InvariantLayerMapper:
         target_triangulation: dict[int, TriangulatedScore] = {}
 
         # Track multi-atlas metrics
-        all_sources_detected: set[AtlasSource] = set()
-        all_domains_detected: set[AtlasDomain] = set()
+        all_sources_detected: set[str] = set()
+        all_domains_detected: set[str] = set()
 
         if use_triangulation:
             if config.invariant_scope == InvariantScope.MULTI_ATLAS and atlas_probes:
@@ -578,61 +557,53 @@ class InvariantLayerMapper:
             - sequence_invariants: SequenceInvariant objects (for backward compat)
             - atlas_probes: AtlasProbe objects (for multi-atlas mode)
         """
-        # Lazy imports to avoid circular dependency with agents package
-        (
-            SequenceFamily,
-            SequenceInvariant,
-            SequenceInvariantInventory,
-            TriangulationScorer,
-            TriangulatedScore,
-            ExpressionDomain,
-            DEFAULT_FAMILIES,
-        ) = _get_sequence_invariants()
-        (
-            AtlasProbe,
-            AtlasSource,
-            AtlasDomain,
-            UnifiedAtlasInventory,
-            MultiAtlasTriangulationScorer,
-            MultiAtlasTriangulationScore,
-            DEFAULT_ATLAS_SOURCES,
-        ) = _get_unified_atlas()
-
-        # Handle MULTI_ATLAS scope - return all atlas probes
+        # Handle MULTI_ATLAS scope - return atlas probes
         if config.invariant_scope == InvariantScope.MULTI_ATLAS:
-            sources = config.atlas_sources or DEFAULT_ATLAS_SOURCES
-            if config.atlas_domains:
-                probes = [
-                    p
-                    for p in UnifiedAtlasInventory.probes_by_source(sources)
-                    if p.domain in config.atlas_domains
-                ]
-            else:
-                probes = UnifiedAtlasInventory.probes_by_source(sources)
+            probes = list(get_atlas_probes())
+            if not probes:
+                return [], [], []
+            source_keys = (
+                {enum_key(source) for source in config.atlas_sources}
+                if config.atlas_sources
+                else None
+            )
+            domain_keys = (
+                {enum_key(domain) for domain in config.atlas_domains}
+                if config.atlas_domains
+                else None
+            )
+            if source_keys:
+                probes = [probe for probe in probes if enum_key(probe.source) in source_keys]
+            if domain_keys:
+                probes = [probe for probe in probes if enum_key(probe.domain) in domain_keys]
 
             ids = [probe.probe_id for probe in probes]
             # Return empty sequence invariants list for multi-atlas mode
             return ids, [], probes
 
         # Handle sequence-only scopes (backward compatible)
-        all_families = frozenset(SequenceFamily)
+        invariants = list(get_sequence_invariants())
+        if not invariants:
+            return [], [], []
+        all_families = {enum_key(inv.family) for inv in invariants}
 
         if config.invariant_scope == InvariantScope.SEQUENCE_INVARIANTS:
             # Full 70-probe system with all 10 families (including tribonacci)
             base_families = all_families
         elif config.invariant_scope == InvariantScope.LOGIC_ONLY:
-            base_families = frozenset([SequenceFamily.LOGIC])
+            base_families = {_LOGIC_FAMILY_KEY}
         else:
-            base_families = DEFAULT_FAMILIES
+            base_families = _DEFAULT_SEQUENCE_FAMILIES & all_families
 
-        families = (
-            config.family_allowlist.intersection(base_families)
-            if config.family_allowlist
-            else base_families
-        )
-        invariants = SequenceInvariantInventory.probes_for_families(set(families))
-        ids = [f"invariant:{inv.family.value}_{inv.id}" for inv in invariants]
-        return ids, invariants, []
+        if config.family_allowlist:
+            allowlist_keys = {enum_key(family) for family in config.family_allowlist}
+            families = base_families & allowlist_keys
+        else:
+            families = base_families
+
+        selected = [inv for inv in invariants if enum_key(inv.family) in families]
+        ids = [f"invariant:{enum_key(inv.family)}_{inv.id}" for inv in selected]
+        return ids, selected, []
 
     @staticmethod
     def _compute_triangulation_scores(
@@ -640,29 +611,19 @@ class InvariantLayerMapper:
         invariants: list[SequenceInvariant],
         config: Config,
     ) -> dict[int, TriangulatedScore]:
-        """Compute per-layer triangulation scores using TriangulationScorer.
+        """Compute per-layer triangulation scores using the registered scorer.
 
         Cross-domain detection (detecting invariants in multiple domains like
         definition, code, ratio, matrix) provides stronger anchoring.
         """
-        # Lazy imports for runtime access
-        (
-            SequenceFamily,
-            SequenceInvariant,
-            SequenceInvariantInventory,
-            TriangulationScorer,
-            TriangulatedScore,
-            ExpressionDomain,
-            DEFAULT_FAMILIES,
-        ) = _get_sequence_invariants()
-
         scores: dict[int, TriangulatedScore] = {}
         if not invariants:
             return scores
+        scorer = get_sequence_triangulation_scorer()
 
         for layer, vector in vectors.items():
             # Group activations by domain
-            domain_activations: dict[ExpressionDomain, float] = {}
+            domain_activations: dict[object, float] = {}
             for i, activation in enumerate(vector):
                 if i < len(invariants) and activation > config.triangulation_threshold:
                     domain = invariants[i].domain
@@ -674,10 +635,18 @@ class InvariantLayerMapper:
             # (In practice, scores will be similar across families for cross-domain detection)
             if domain_activations:
                 family = invariants[0].family
-                scores[layer] = TriangulationScorer.compute_score(domain_activations, family, None)
+                if scorer:
+                    scores[layer] = scorer(domain_activations, family, None)
+                else:
+                    scores[layer] = _TriangulatedScoreFallback(
+                        base=max(domain_activations.values()),
+                        cross_domain_multiplier=1.0,
+                        relationship_bonus=0.0,
+                        coherence_bonus=0.0,
+                    )
             else:
                 # No significant activations - return neutral score
-                scores[layer] = TriangulatedScore(
+                scores[layer] = _TriangulatedScoreFallback(
                     base=0.0,
                     cross_domain_multiplier=1.0,
                     relationship_bonus=0.0,
@@ -691,55 +660,40 @@ class InvariantLayerMapper:
         vectors: dict[int, list[float]],
         probes: list[AtlasProbe],
         config: Config,
-    ) -> tuple[dict[int, TriangulatedScore], set[AtlasSource], set[AtlasDomain]]:
+    ) -> tuple[dict[int, TriangulatedScore], set[str], set[str]]:
         """Compute per-layer triangulation scores using multi-atlas probes.
 
         Returns:
             Tuple of (scores_by_layer, sources_detected, domains_detected)
         """
-        # Lazy imports for runtime access
-        (
-            SequenceFamily,
-            SequenceInvariant,
-            SequenceInvariantInventory,
-            TriangulationScorer,
-            TriangulatedScore,
-            ExpressionDomain,
-            DEFAULT_FAMILIES,
-        ) = _get_sequence_invariants()
-        (
-            AtlasProbe,
-            AtlasSource,
-            AtlasDomain,
-            UnifiedAtlasInventory,
-            MultiAtlasTriangulationScorer,
-            MultiAtlasTriangulationScore,
-            DEFAULT_ATLAS_SOURCES,
-        ) = _get_unified_atlas()
-
         scores: dict[int, TriangulatedScore] = {}
-        all_sources: set[AtlasSource] = set()
-        all_domains: set[AtlasDomain] = set()
+        all_sources: set[str] = set()
+        all_domains: set[str] = set()
 
         if not probes:
             return scores, all_sources, all_domains
 
+        domain_space = {enum_key(probe.domain) for probe in probes}
+        max_domains = max(1, len(domain_space))
+
         for layer, vector in vectors.items():
             # Group activations by source and domain
-            source_activations: dict[AtlasSource, float] = {}
-            domain_activations: dict[AtlasDomain, float] = {}
+            source_activations: dict[str, float] = {}
+            domain_activations: dict[str, float] = {}
 
             for i, activation in enumerate(vector):
                 if i < len(probes) and activation > config.triangulation_threshold:
                     probe = probes[i]
-                    source_activations[probe.source] = max(
-                        source_activations.get(probe.source, 0.0), activation
+                    source_key = enum_key(probe.source)
+                    domain_key = enum_key(probe.domain)
+                    source_activations[source_key] = max(
+                        source_activations.get(source_key, 0.0), activation
                     )
-                    domain_activations[probe.domain] = max(
-                        domain_activations.get(probe.domain, 0.0), activation
+                    domain_activations[domain_key] = max(
+                        domain_activations.get(domain_key, 0.0), activation
                     )
-                    all_sources.add(probe.source)
-                    all_domains.add(probe.domain)
+                    all_sources.add(source_key)
+                    all_domains.add(domain_key)
 
             # Compute multi-atlas triangulation score using geometric principles
             if source_activations or domain_activations:
@@ -759,17 +713,16 @@ class InvariantLayerMapper:
 
                 # Coherence bonus: fraction of possible domains detected (0 to 1 scale)
                 # This is a ratio, not an arbitrary coefficient
-                max_domains = len(AtlasDomain)
                 coherence = (domain_count - 1) / max(1, max_domains - 1) if domain_count > 1 else 0.0
 
-                scores[layer] = TriangulatedScore(
+                scores[layer] = _TriangulatedScoreFallback(
                     base=sum(source_activations.values()) / max(1, source_count),
                     cross_domain_multiplier=combined_mult,
                     relationship_bonus=0.0,
                     coherence_bonus=coherence,
                 )
             else:
-                scores[layer] = TriangulatedScore(
+                scores[layer] = _TriangulatedScoreFallback(
                     base=0.0,
                     cross_domain_multiplier=1.0,
                     relationship_bonus=0.0,

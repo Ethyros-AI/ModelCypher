@@ -33,7 +33,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     regularization_epsilon,
     tiny_value,
 )
-from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+from modelcypher.core.domain.geometry.riemannian_utils import _set_matrix_element
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -120,22 +120,20 @@ class SpectralSignature:
                 connected=True,
             )
 
-        rg = RiemannianGeometry(backend)
-        geo_result = rg.geodesic_distances(points_arr, k_neighbors=config.k_neighbors)
-        geo_dist = geo_result.distances
-        adjacency = geo_result.adjacency
-        backend.eval(geo_dist, adjacency)
+        adjacency, euclidean_dist, inf_value, k_neighbors = self._build_knn_adjacency(
+            points_arr, config.k_neighbors
+        )
+        backend.eval(adjacency, euclidean_dist)
 
-        geo_np = backend.to_numpy(geo_dist)
+        euclidean_np = backend.to_numpy(euclidean_dist)
         adj_np = backend.to_numpy(adjacency)
-        inf_value = geo_result.inf_value
 
         edge_distances: list[float] = []
         edge_count = 0
         for i in range(n):
             for j in range(i + 1, n):
                 if adj_np[i, j] < inf_value * 0.9:
-                    d = float(geo_np[i, j])
+                    d = float(euclidean_np[i, j])
                     if math.isfinite(d):
                         edge_distances.append(d)
                         edge_count += 1
@@ -154,7 +152,7 @@ class SpectralSignature:
             for i in range(n):
                 for j in range(i + 1, n):
                     if adj_np[i, j] < inf_value * 0.9:
-                        d = float(geo_np[i, j])
+                        d = float(euclidean_np[i, j])
                         if math.isfinite(d):
                             weight = math.exp(-(d * d) / sigma_sq)
                             weights[i][j] = weight
@@ -176,6 +174,7 @@ class SpectralSignature:
         spectral_entropy = _spectral_entropy(eig_np, regularization_epsilon(backend, eigvals))
         algebraic_connectivity = eig_np[1] if len(eig_np) > 1 else 0.0
         component_count = _count_components(adj_np, inf_value)
+        connected = component_count == 1
 
         eig_arr = backend.array(eig_np, dtype="float32")
         backend.eval(eig_arr)
@@ -190,10 +189,10 @@ class SpectralSignature:
             component_count=component_count,
             node_count=n,
             edge_count=edge_count,
-            k_neighbors=geo_result.k_neighbors,
+            k_neighbors=k_neighbors,
             kernel_bandwidth=float(kernel_bandwidth),
             normalized_laplacian=config.normalized_laplacian,
-            connected=geo_result.connected,
+            connected=connected,
         )
 
     def _build_laplacian(
@@ -213,6 +212,48 @@ class SpectralSignature:
             return backend.eye(n) - backend.matmul(d_inv_sqrt, backend.matmul(weights, d_inv_sqrt))
         diag = backend.diag(degree)
         return diag - weights
+
+    def _build_knn_adjacency(
+        self,
+        points: "Array",
+        k_neighbors: int | None,
+    ) -> tuple["Array", "Array", float, int]:
+        backend = self._backend
+        n = int(points.shape[0])
+        if k_neighbors is None:
+            k_neighbors = min(10, n - 1)
+        k_neighbors = max(1, min(k_neighbors, n - 1))
+
+        euclidean_dist = self._euclidean_distance_matrix(points)
+        backend.eval(euclidean_dist)
+        euclidean_np = backend.to_numpy(euclidean_dist)
+
+        inf_val = float(backend.finfo().max) * 0.25
+        adj = backend.full((n, n), inf_val)
+        for i in range(n):
+            adj = _set_matrix_element(backend, adj, i, i, 0.0)
+
+        edge_eps = float(division_epsilon(backend, euclidean_dist))
+        for i in range(n):
+            dists = euclidean_np[i, :].tolist()
+            other_pairs = [(j, dists[j]) for j in range(n) if j != i]
+            sorted_pairs = sorted(other_pairs, key=lambda x: x[1])
+            nearest_indices = [p[0] for p in sorted_pairs[:k_neighbors]]
+            for j in nearest_indices:
+                edge_weight = max(dists[j], edge_eps)
+                adj = _set_matrix_element(backend, adj, i, j, edge_weight)
+                adj = _set_matrix_element(backend, adj, j, i, edge_weight)
+
+        return adj, euclidean_dist, inf_val, k_neighbors
+
+    def _euclidean_distance_matrix(self, points: "Array") -> "Array":
+        backend = self._backend
+        norms = backend.sum(points * points, axis=1, keepdims=True)
+        dist_sq = norms + backend.transpose(norms) - 2.0 * backend.matmul(
+            points, backend.transpose(points)
+        )
+        dist_sq = backend.maximum(dist_sq, 0.0)
+        return backend.sqrt(dist_sq)
 
 
 def _median(values: list[float]) -> float:

@@ -27,7 +27,7 @@ across models, regardless of their hidden dimension. This enables transfer
 between models of different sizes (e.g., 2048-dim to 896-dim) by working in
 anchor-relative space.
 
-The UnifiedAtlasInventory anchors serve as the universal bridge:
+The atlas registry anchors serve as the universal bridge:
 - Any hidden state h in R^d maps to s in R^N via cosine similarities
 - Alignment happens in R^N (dimension-agnostic)
 - Transfer back to target space uses pseudo-inverse projection

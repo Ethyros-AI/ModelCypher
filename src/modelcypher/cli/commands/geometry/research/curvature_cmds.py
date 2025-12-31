@@ -410,6 +410,117 @@ def register(app: typer.Typer) -> None:
         write_output(compat.to_dict(), context.output_format, context.pretty)
 
 
+    @app.command("curvature-alignment")
+    def curvature_alignment(
+        ctx: typer.Context,
+        source_profile: str = typer.Argument(..., help="Path to source curvature profile JSON"),
+        target_profile: str = typer.Argument(..., help="Path to target curvature profile JSON"),
+        output_path: str | None = typer.Option(
+            None, "--save", "-s", help="Save alignment plan to JSON file"
+        ),
+    ) -> None:
+        """Compute alignment guidance from curvature profiles.
+
+        Analyzes curvature differences between source and target models to
+        determine the transformation needed for alignment. Key insight:
+        curvature differences represent rotation/projection needed, NOT
+        fundamental incompatibility.
+
+        The output includes:
+        - Per-layer alignment effort (0-1, higher = more transformation needed)
+        - Dimension scaling factors
+        - Curvature correction factors
+        - Critical layers needing special attention
+        - Recommended alignment strategy
+        """
+        from pathlib import Path
+
+        from modelcypher.cli.output import write_output
+        from modelcypher.core.domain.geometry.curvature_alignment import (
+            compute_alignment_guidance,
+            compute_layer_correspondence_by_curvature,
+        )
+        from modelcypher.core.domain.geometry.curvature_profile import CurvatureProfile
+
+        context = get_context(ctx)
+
+        # Load profiles
+        src = CurvatureProfile.load(source_profile)
+        tgt = CurvatureProfile.load(target_profile)
+
+        # Compute alignment plan
+        plan = compute_alignment_guidance(src, tgt)
+
+        # Compute layer correspondence by curvature similarity
+        correspondence = compute_layer_correspondence_by_curvature(src, tgt)
+
+        # Build output
+        result = {
+            "source_model": plan.source_model,
+            "target_model": plan.target_model,
+            "recommended_strategy": plan.recommended_strategy,
+            "total_alignment_effort": plan.total_alignment_effort,
+            "mean_dimension_scale": plan.mean_dimension_scale,
+            "critical_layers": plan.critical_layers,
+            "layer_correspondence": {str(k): v for k, v in correspondence.items()},
+            "layer_guidance": [
+                {
+                    "layer_idx": g.layer_idx,
+                    "alignment_effort": g.alignment_effort,
+                    "dimension_scale": g.dimension_scale,
+                    "curvature_correction": g.curvature_correction,
+                    "alignment_weight": g.alignment_weight,
+                    "needs_projection": g.needs_projection,
+                    "needs_curvature_flow": g.needs_curvature_flow,
+                }
+                for g in plan.layer_guidance
+            ],
+        }
+
+        # Save to file if requested
+        if output_path:
+            import json
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(output_path).write_text(json.dumps(result, indent=2))
+            logger.info("Alignment plan saved to %s", output_path)
+
+        # Text output
+        if context.output_format == "text":
+            lines = [
+                "CURVATURE-GUIDED ALIGNMENT PLAN",
+                f"Source: {Path(source_profile).name} ({src.model_family} {src.model_size})",
+                f"Target: {Path(target_profile).name} ({tgt.model_family} {tgt.model_size})",
+                "",
+                f"RECOMMENDED STRATEGY: {plan.recommended_strategy}",
+                f"TOTAL ALIGNMENT EFFORT: {plan.total_alignment_effort:.2f}",
+                f"MEAN DIMENSION SCALE: {plan.mean_dimension_scale:.3f}",
+                "",
+            ]
+
+            if plan.critical_layers:
+                lines.append(f"CRITICAL LAYERS: {plan.critical_layers}")
+                lines.append("")
+
+            lines.append("PER-LAYER GUIDANCE:")
+            for g in plan.layer_guidance:
+                flags = []
+                if g.needs_projection:
+                    flags.append("PROJECTION")
+                if g.needs_curvature_flow:
+                    flags.append("CURV_FLOW")
+                flag_str = f" [{', '.join(flags)}]" if flags else ""
+                lines.append(
+                    f"  Layer {g.layer_idx}: effort={g.alignment_effort:.2f}, "
+                    f"dim_scale={g.dimension_scale:.3f}, "
+                    f"weight={g.alignment_weight:.2f}{flag_str}"
+                )
+
+            write_output("\n".join(lines), context.output_format, context.pretty)
+            return
+
+        write_output(result, context.output_format, context.pretty)
+
+
 def _collect_layer_activations(provider, probe_texts, layer_idx, backend):
     """Collect activations from a specific layer for given probes."""
     # Use the batch API - provider.get_activations returns list of list[float]
