@@ -24,6 +24,7 @@ Contains the main geometry tools for:
 - Gromov-Wasserstein distance
 - Intrinsic dimension estimation
 - Topological fingerprinting
+- Spectral signature
 - Sparse region analysis
 - Refusal direction detection
 - Persona vector extraction
@@ -415,6 +416,31 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             )
             payload = ctx.geometry_metrics_service.topological_fingerprint_payload(result)
             payload["_schema"] = "mc.geometry.topological_fingerprint.v1"
+            return payload
+
+    if "mc_geometry_spectral_signature" in tool_set:
+
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_spectral_signature(
+            points: list[list[float]],
+            kNeighbors: int | None = None,
+            kernelBandwidth: float | None = None,
+            normalizedLaplacian: bool = True,
+            heatTimes: list[float] | None = None,
+            maxEigenvalues: int | None = None,
+        ) -> dict:
+            """Compute geodesic spectral signature from a point cloud."""
+            result = ctx.geometry_metrics_service.compute_spectral_signature(
+                points=points,
+                k_neighbors=kNeighbors,
+                kernel_bandwidth=kernelBandwidth,
+                normalized_laplacian=normalizedLaplacian,
+                heat_times=heatTimes,
+            )
+            payload = ctx.geometry_metrics_service.spectral_signature_payload(
+                result, max_eigenvalues=maxEigenvalues
+            )
+            payload["_schema"] = "mc.geometry.spectral_signature.v1"
             return payload
 
     # Sparse region tools

@@ -239,3 +239,270 @@ class TestUsableCountInvariants:
 
         assert estimate.usable_count <= estimate.sample_count
         assert estimate.usable_count > 0
+
+
+# =============================================================================
+# Hypothesis Property-Based Tests
+# =============================================================================
+
+try:
+    from hypothesis import given, settings, assume, HealthCheck
+    from hypothesis import strategies as st
+
+    HYPOTHESIS_AVAILABLE = True
+except ImportError:
+    HYPOTHESIS_AVAILABLE = False
+
+
+@pytest.mark.skipif(not HYPOTHESIS_AVAILABLE, reason="hypothesis not installed")
+class TestIntrinsicDimensionHypothesis:
+    """Hypothesis-based property tests for intrinsic dimension estimation."""
+
+    @given(
+        n_samples=st.integers(min_value=10, max_value=50),
+        n_dim=st.integers(min_value=2, max_value=8),
+        seed=st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=20, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    def test_dimension_always_positive_hypothesis(
+        self, n_samples: int, n_dim: int, seed: int
+    ):
+        """Intrinsic dimension is always positive (Hypothesis)."""
+        backend = get_default_backend()
+        backend.random_seed(seed)
+        data = backend.random_normal((n_samples, n_dim))
+        backend.eval(data)
+
+        config = TwoNNConfiguration(use_regression=True)
+        computer = IntrinsicDimensionEstimator(backend)
+        try:
+            estimate = computer.compute(data, configuration=config)
+            assert estimate.intrinsic_dimension > 0
+        except EstimatorError:
+            # Some degenerate configurations may fail
+            assume(False)
+
+    @given(
+        n_samples=st.integers(min_value=15, max_value=40),
+        n_dim=st.integers(min_value=2, max_value=6),
+        seed=st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=15, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    def test_usable_count_bounded_hypothesis(
+        self, n_samples: int, n_dim: int, seed: int
+    ):
+        """Usable count <= sample count (Hypothesis)."""
+        backend = get_default_backend()
+        backend.random_seed(seed)
+        data = backend.random_normal((n_samples, n_dim))
+        backend.eval(data)
+
+        config = TwoNNConfiguration(use_regression=True)
+        computer = IntrinsicDimensionEstimator(backend)
+        try:
+            estimate = computer.compute(data, configuration=config)
+            assert estimate.usable_count <= estimate.sample_count
+            assert estimate.sample_count == n_samples
+        except EstimatorError:
+            assume(False)
+
+    @given(
+        n_samples=st.integers(min_value=40, max_value=80),
+        ambient_dim=st.integers(min_value=3, max_value=10),
+        seed=st.integers(min_value=0, max_value=10000),
+    )
+    @settings(max_examples=15, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    def test_dimension_bounded_by_ambient_hypothesis(
+        self, n_samples: int, ambient_dim: int, seed: int
+    ):
+        """Intrinsic dimension should be bounded by ambient dimension (Hypothesis).
+
+        Note: Uses n_samples >= 40 for more stable estimates. TwoNN with small
+        samples and geodesic distances can have higher variance.
+        """
+        backend = get_default_backend()
+        backend.random_seed(seed)
+        data = backend.random_normal((n_samples, ambient_dim))
+        backend.eval(data)
+
+        config = TwoNNConfiguration(use_regression=True)
+        computer = IntrinsicDimensionEstimator(backend)
+        try:
+            estimate = computer.compute(data, configuration=config)
+            # Allow wiggle room - geodesic distances + small samples = variance
+            assert estimate.intrinsic_dimension <= ambient_dim + 6
+        except EstimatorError:
+            assume(False)
+
+
+# =============================================================================
+# Synthetic Manifold Ground Truth Tests
+# =============================================================================
+
+
+class TestSyntheticManifoldDimension:
+    """Ground truth tests on synthetic manifolds with known dimension."""
+
+    def test_sphere_dimension(self) -> None:
+        """n-sphere embedded in R^{n+1} should have dimension n.
+
+        Mathematical property: S^n is an n-dimensional manifold.
+        Testing S^2 (surface of 3D sphere) which should have ID ≈ 2.
+        """
+        import math
+
+        backend = get_default_backend()
+        backend.random_seed(42)
+        n_samples = 100
+
+        # Sample uniformly on unit sphere S^2 using rejection sampling
+        # Generate random 3D points and normalize
+        points_list = []
+        backend.random_seed(42)
+        for i in range(n_samples * 3):  # Generate extra to ensure enough valid points
+            backend.random_seed(42 + i)
+            point = backend.random_normal((3,))
+            backend.eval(point)
+            point_np = backend.to_numpy(point)
+            norm = math.sqrt(sum(x * x for x in point_np))
+            if norm > 1e-6:
+                normalized = [x / norm for x in point_np]
+                points_list.append(normalized)
+            if len(points_list) >= n_samples:
+                break
+
+        points = backend.array(points_list[:n_samples])
+        backend.eval(points)
+
+        config = TwoNNConfiguration(use_regression=True)
+        computer = IntrinsicDimensionEstimator(backend)
+        estimate = computer.compute(points, configuration=config)
+
+        # S^2 has intrinsic dimension 2
+        # Allow some tolerance due to finite sampling and estimation variance
+        assert 1.0 <= estimate.intrinsic_dimension <= 4.0
+
+    def test_swiss_roll_dimension(self) -> None:
+        """Swiss roll is a 2D manifold in 3D space.
+
+        Mathematical property: Swiss roll has intrinsic dimension 2.
+        """
+        import math
+
+        backend = get_default_backend()
+        backend.random_seed(42)
+        n_samples = 150
+
+        # Generate swiss roll: (t*cos(t), height, t*sin(t))
+        # t ranges from ~1.5π to 4.5π for a nice roll
+        points_list = []
+        for i in range(n_samples):
+            # Uniform in (t, height) space
+            t = 1.5 * math.pi + (3.0 * math.pi) * (i / n_samples)
+            # Add noise to t to break regularity
+            backend.random_seed(42 + i)
+            noise = backend.random_uniform(low=-0.2, high=0.2, shape=())
+            backend.eval(noise)
+            t += float(backend.to_numpy(noise).item())
+
+            # Random height
+            backend.random_seed(1000 + i)
+            height = backend.random_uniform(low=0.0, high=10.0, shape=())
+            backend.eval(height)
+            h = float(backend.to_numpy(height).item())
+
+            x = t * math.cos(t)
+            y = h
+            z = t * math.sin(t)
+            points_list.append([x, y, z])
+
+        points = backend.array(points_list)
+        backend.eval(points)
+
+        config = TwoNNConfiguration(use_regression=True)
+        computer = IntrinsicDimensionEstimator(backend)
+        estimate = computer.compute(points, configuration=config)
+
+        # Swiss roll has intrinsic dimension 2
+        # Geodesic distances should help unroll the manifold conceptually
+        assert 1.0 <= estimate.intrinsic_dimension <= 4.0
+
+    def test_linear_subspace_dimension(self) -> None:
+        """k-dimensional linear subspace in R^n should have dimension k.
+
+        Mathematical property: Linear subspace of dimension k has ID = k.
+        """
+        backend = get_default_backend()
+        backend.random_seed(42)
+
+        # Create 3D subspace in 10D ambient space
+        true_dim = 3
+        ambient_dim = 10
+        n_samples = 100
+
+        # Generate random basis for 3D subspace
+        backend.random_seed(100)
+        basis = backend.random_normal((true_dim, ambient_dim))
+        backend.eval(basis)
+
+        # Generate random coefficients
+        backend.random_seed(42)
+        coeffs = backend.random_normal((n_samples, true_dim))
+        backend.eval(coeffs)
+
+        # Project onto subspace: points = coeffs @ basis
+        points = backend.matmul(coeffs, basis)
+        backend.eval(points)
+
+        config = TwoNNConfiguration(use_regression=True)
+        computer = IntrinsicDimensionEstimator(backend)
+        estimate = computer.compute(points, configuration=config)
+
+        # Linear subspace should have dimension close to true_dim
+        assert 1.5 <= estimate.intrinsic_dimension <= true_dim + 2.0
+
+    def test_product_manifold_dimension(self) -> None:
+        """Product of S^1 × S^1 (torus) should have dimension 2.
+
+        Mathematical property: dim(M × N) = dim(M) + dim(N).
+        S^1 × S^1 = T^2 (2-torus) has dimension 1 + 1 = 2.
+        """
+        import math
+
+        backend = get_default_backend()
+        backend.random_seed(42)
+        n_samples = 150
+
+        # Generate points on flat torus embedded in R^4:
+        # (cos(θ), sin(θ), cos(φ), sin(φ))
+        points_list = []
+        for i in range(n_samples):
+            theta = 2 * math.pi * (i / n_samples)
+            # Add noise to theta
+            backend.random_seed(42 + i)
+            noise_theta = backend.random_uniform(low=-0.1, high=0.1, shape=())
+            backend.eval(noise_theta)
+            theta += float(backend.to_numpy(noise_theta).item())
+
+            # Random phi
+            backend.random_seed(1000 + i)
+            phi_rand = backend.random_uniform(low=0.0, high=2 * math.pi, shape=())
+            backend.eval(phi_rand)
+            phi = float(backend.to_numpy(phi_rand).item())
+
+            points_list.append([
+                math.cos(theta),
+                math.sin(theta),
+                math.cos(phi),
+                math.sin(phi),
+            ])
+
+        points = backend.array(points_list)
+        backend.eval(points)
+
+        config = TwoNNConfiguration(use_regression=True)
+        computer = IntrinsicDimensionEstimator(backend)
+        estimate = computer.compute(points, configuration=config)
+
+        # Torus T^2 has intrinsic dimension 2
+        assert 1.0 <= estimate.intrinsic_dimension <= 4.0

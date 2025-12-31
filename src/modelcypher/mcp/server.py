@@ -132,6 +132,7 @@ TOOL_PROFILES = {
         "mc_geometry_gromov_wasserstein",  # New
         "mc_geometry_intrinsic_dimension",  # New
         "mc_geometry_topological_fingerprint",  # New
+        "mc_geometry_spectral_signature",  # New
         "mc_geometry_sparse_domains",  # New
         "mc_geometry_sparse_locate",  # New
         "mc_geometry_refusal_pairs",  # New

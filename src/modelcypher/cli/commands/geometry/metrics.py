@@ -25,6 +25,7 @@ Commands:
     mc geometry metrics gromov-wasserstein <source_file> <target_file>
     mc geometry metrics intrinsic-dimension <points_file>
     mc geometry metrics topological-fingerprint <points_file>
+    mc geometry metrics spectral-signature <points_file>
 """
 
 from __future__ import annotations
@@ -191,6 +192,79 @@ def geometry_metrics_topological_fingerprint(
             f"Persistence Entropy: {result.persistence_entropy:.4f}",
             f"Total Persistence: {result.total_persistence:.4f}",
         ]
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("spectral-signature")
+def geometry_metrics_spectral_signature(
+    ctx: typer.Context,
+    points_file: str = typer.Argument(..., help="Path to point cloud (JSON array of arrays)"),
+    k_neighbors: int | None = typer.Option(
+        None, "--k-neighbors", help="k for geodesic k-NN graph construction"
+    ),
+    kernel_bandwidth: float | None = typer.Option(
+        None, "--kernel-bandwidth", help="Gaussian kernel bandwidth (sigma)"
+    ),
+    normalized: bool = typer.Option(
+        True,
+        "--normalized/--unnormalized",
+        help="Use normalized Laplacian for spectral signature",
+    ),
+    heat_times: list[float] | None = typer.Option(
+        None, "--heat-time", help="Heat trace time (repeatable)"
+    ),
+    max_eigenvalues: int | None = typer.Option(
+        None, "--max-eigenvalues", help="Maximum eigenvalues to include in output"
+    ),
+) -> None:
+    """
+    Compute geodesic spectral signature of a point cloud.
+
+    Builds a geodesic k-NN graph, constructs a Laplacian, and reports
+    eigenvalues and heat trace as raw spectral measurements.
+    """
+    context = _context(ctx)
+
+    points = json.loads(Path(points_file).read_text())
+
+    service = GeometryMetricsService()
+    result = service.compute_spectral_signature(
+        points=points,
+        k_neighbors=k_neighbors,
+        kernel_bandwidth=kernel_bandwidth,
+        normalized_laplacian=normalized,
+        heat_times=heat_times,
+    )
+
+    payload = service.spectral_signature_payload(result, max_eigenvalues=max_eigenvalues)
+    payload["_schema"] = "mc.geometry.spectral_signature.v1"
+
+    if context.output_format == "text":
+        lines = [
+            "SPECTRAL SIGNATURE",
+            "",
+            f"Nodes: {result.node_count}",
+            f"Edges: {result.edge_count}",
+            f"k-Neighbors: {result.k_neighbors}",
+            f"Kernel Bandwidth: {result.kernel_bandwidth:.6f}",
+            f"Normalized Laplacian: {'Yes' if result.normalized_laplacian else 'No'}",
+            f"Connected: {'Yes' if result.connected else 'No'}",
+            f"Component Count: {result.component_count}",
+            f"Algebraic Connectivity: {result.algebraic_connectivity:.6f}",
+            f"Spectral Entropy: {result.spectral_entropy:.6f}",
+            "Heat Trace:",
+        ]
+        for t, value in zip(payload["heatTimes"], payload["heatTrace"]):
+            lines.append(f"  t={t}: {value:.6f}")
+        eigenvalues = payload["eigenvalues"]
+        lines.append(
+            f"Eigenvalues (total={payload['eigenvalueCount']}, shown={len(eigenvalues)}): {eigenvalues}"
+        )
+        if payload.get("eigenvaluesTruncated"):
+            lines.append("Eigenvalues truncated for output.")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

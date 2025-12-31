@@ -49,7 +49,7 @@ from modelcypher.core.domain.geometry.concept_dimensionality import (
 from modelcypher.core.domain.geometry.intrinsic_dimension import (
     IntrinsicDimension,
 )
-from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeLike
+from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.geometry.probe_calibration import ActivationProvider
@@ -162,7 +162,7 @@ class KnowledgeDensityAnalyzer:
 
     def analyze_layer(
         self,
-        probes: list["AtlasProbeLike"],
+        probes: list["AtlasProbeProtocol"],
         activation_provider: "ActivationProvider",
         layer: int,
         config: KnowledgeDensityConfig | None = None,

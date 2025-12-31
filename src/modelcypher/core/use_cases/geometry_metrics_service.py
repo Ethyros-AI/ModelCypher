@@ -20,7 +20,8 @@ Geometry Metrics Service.
 
 Exposes standalone geometry metrics as CLI/MCP-consumable operations.
 These are the unique value propositions of ModelCypher - geometric
-diagnostics that no other tool provides.
+diagnostics that no other tool provides. Includes Gromov-Wasserstein,
+intrinsic dimension, topological fingerprint, and spectral signature metrics.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ from dataclasses import dataclass
 from modelcypher.core.domain.geometry.geometry_metrics_cache import (
     CachedGWResult,
     CachedIDResult,
+    CachedSpectralResult,
     CachedTopoResult,
     GeometryMetricsCache,
 )
@@ -46,6 +48,10 @@ from modelcypher.core.domain.geometry.intrinsic_dimension import (
 )
 from modelcypher.core.domain.geometry.topological_fingerprint import (
     TopologicalFingerprint,
+)
+from modelcypher.core.domain.geometry.spectral_signature import (
+    SpectralSignature,
+    SpectralSignatureConfig,
 )
 
 
@@ -80,6 +86,24 @@ class TopologicalFingerprintResult:
     betti_1: int  # Loops/holes
     persistence_entropy: float
     total_persistence: float
+
+
+@dataclass(frozen=True)
+class SpectralSignatureResult:
+    """Result of spectral signature computation."""
+
+    eigenvalues: list[float]
+    heat_trace: list[float]
+    heat_times: list[float]
+    spectral_entropy: float
+    algebraic_connectivity: float
+    component_count: int
+    node_count: int
+    edge_count: int
+    k_neighbors: int
+    kernel_bandwidth: float
+    normalized_laplacian: bool
+    connected: bool
 
 
 class GeometryMetricsService:
@@ -318,6 +342,84 @@ class GeometryMetricsService:
             total_persistence=cached.total_persistence,
         )
 
+    def compute_spectral_signature(
+        self,
+        points: list[list[float]],
+        k_neighbors: int | None = None,
+        kernel_bandwidth: float | None = None,
+        normalized_laplacian: bool = True,
+        heat_times: list[float] | None = None,
+    ) -> SpectralSignatureResult:
+        """
+        Compute geodesic spectral signature from a point cloud.
+
+        Builds a k-NN geodesic graph, constructs a Laplacian, and reports
+        raw spectral metrics (eigenvalues, heat trace, entropy).
+        """
+        times = (
+            tuple(heat_times)
+            if heat_times is not None
+            else SpectralSignatureConfig().heat_trace_times
+        )
+
+        cached = self._cache.get_spectral_result(
+            points, k_neighbors, kernel_bandwidth, normalized_laplacian, times
+        )
+        if cached is not None:
+            return self._spectral_result_from_cached(cached)
+
+        config = SpectralSignatureConfig(
+            k_neighbors=k_neighbors,
+            kernel_bandwidth=kernel_bandwidth,
+            normalized_laplacian=normalized_laplacian,
+            heat_trace_times=times,
+        )
+
+        from modelcypher.core.domain._backend import get_default_backend
+
+        backend = get_default_backend()
+        computer = SpectralSignature(backend=backend)
+        signature = computer.compute(points=points, config=config)
+
+        cached_result = CachedSpectralResult(
+            eigenvalues=signature.eigenvalues,
+            heat_trace=signature.heat_trace,
+            heat_times=signature.heat_times,
+            spectral_entropy=signature.spectral_entropy,
+            algebraic_connectivity=signature.algebraic_connectivity,
+            component_count=signature.component_count,
+            node_count=signature.node_count,
+            edge_count=signature.edge_count,
+            k_neighbors=signature.k_neighbors,
+            kernel_bandwidth=signature.kernel_bandwidth,
+            normalized_laplacian=signature.normalized_laplacian,
+            connected=signature.connected,
+        )
+        self._cache.set_spectral_result(
+            points, k_neighbors, kernel_bandwidth, normalized_laplacian, times, cached_result
+        )
+
+        return self._spectral_result_from_cached(cached_result)
+
+    def _spectral_result_from_cached(
+        self, cached: CachedSpectralResult
+    ) -> SpectralSignatureResult:
+        """Convert cached spectral result to full result."""
+        return SpectralSignatureResult(
+            eigenvalues=cached.eigenvalues,
+            heat_trace=cached.heat_trace,
+            heat_times=cached.heat_times,
+            spectral_entropy=cached.spectral_entropy,
+            algebraic_connectivity=cached.algebraic_connectivity,
+            component_count=cached.component_count,
+            node_count=cached.node_count,
+            edge_count=cached.edge_count,
+            k_neighbors=cached.k_neighbors,
+            kernel_bandwidth=cached.kernel_bandwidth,
+            normalized_laplacian=cached.normalized_laplacian,
+            connected=cached.connected,
+        )
+
     @staticmethod
     def gromov_wasserstein_payload(result: GromovWassersteinResult) -> dict:
         """Convert GW result to CLI/MCP payload."""
@@ -349,4 +451,33 @@ class GeometryMetricsService:
             "betti1": result.betti_1,
             "persistenceEntropy": result.persistence_entropy,
             "totalPersistence": result.total_persistence,
+        }
+
+    @staticmethod
+    def spectral_signature_payload(
+        result: SpectralSignatureResult,
+        max_eigenvalues: int | None = None,
+    ) -> dict:
+        """Convert spectral signature result to CLI/MCP payload."""
+        eigenvalues = result.eigenvalues
+        truncated = False
+        if max_eigenvalues is not None and max_eigenvalues >= 0:
+            if len(eigenvalues) > max_eigenvalues:
+                eigenvalues = eigenvalues[:max_eigenvalues]
+                truncated = True
+        return {
+            "eigenvalues": eigenvalues,
+            "eigenvalueCount": len(result.eigenvalues),
+            "eigenvaluesTruncated": truncated,
+            "heatTrace": result.heat_trace,
+            "heatTimes": result.heat_times,
+            "spectralEntropy": result.spectral_entropy,
+            "algebraicConnectivity": result.algebraic_connectivity,
+            "componentCount": result.component_count,
+            "nodeCount": result.node_count,
+            "edgeCount": result.edge_count,
+            "kNeighbors": result.k_neighbors,
+            "kernelBandwidth": result.kernel_bandwidth,
+            "normalizedLaplacian": result.normalized_laplacian,
+            "connected": result.connected,
         }

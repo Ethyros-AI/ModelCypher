@@ -79,11 +79,91 @@ def compute_global_metrics(geometry: MergeGeometry) -> None:
             health_counts["collapsed"],
         )
 
+    # Compute curvature compatibility
+    # This compares curvature profiles of source and target to inform merge confidence
+    _compute_curvature_compatibility(geometry, layer_geoms)
+
     logger.info(
-        "MERGE GEOMETRY: %d layers, mean_intrinsic_dim=%.1f, mean_shared_dim=%.1f, CKA=%.4f, health=%s",
+        "MERGE GEOMETRY: %d layers, mean_intrinsic_dim=%.1f, mean_shared_dim=%.1f, CKA=%.4f, health=%s, curv_compat=%.3f",
         len(layer_geoms),
         geometry.mean_intrinsic_dimension,
         geometry.mean_shared_dimension,
         geometry.overall_cka,
         geometry.overall_manifold_health,
+        geometry.curvature_compatibility,
+    )
+
+
+def _compute_curvature_compatibility(geometry: MergeGeometry, layer_geoms: list) -> None:
+    """Compute curvature compatibility score from per-layer geometry.
+
+    Curvature compatibility measures how geometrically similar the source and
+    target representations are. Higher compatibility suggests easier merging.
+
+    The score is computed from:
+    - Consistency of curvature signs across layers
+    - Variance in curvature values (low = more compatible)
+    - Overall health distribution
+
+    Returns a score from 0.0 (incompatible) to 1.0 (highly compatible).
+    """
+    import math
+
+    # Collect valid curvature values
+    sectional = [lg.curvature for lg in layer_geoms if lg.curvature != 0]
+    ricci = [lg.ollivier_ricci_mean for lg in layer_geoms if lg.manifold_health != "unknown"]
+    dims = [lg.intrinsic_dimension for lg in layer_geoms if lg.intrinsic_dimension > 0]
+
+    if not ricci:
+        # No curvature data available
+        geometry.curvature_compatibility = 0.0
+        geometry.curvature_compatibility_details = {"error": "no_curvature_data"}
+        return
+
+    # Component 1: Curvature consistency (0-1)
+    # Healthy LLMs have negative Ricci curvature - how consistent is this?
+    negative_ratio = sum(1 for r in ricci if r < 0) / len(ricci)
+    consistency_score = negative_ratio  # 1.0 = all negative (healthy)
+
+    # Component 2: Curvature stability (0-1)
+    # Low variance in curvature = more stable manifold = higher compatibility
+    if len(ricci) > 1:
+        mean_ricci = sum(ricci) / len(ricci)
+        variance = sum((r - mean_ricci) ** 2 for r in ricci) / (len(ricci) - 1)
+        std_ricci = math.sqrt(variance)
+        # Normalize: 0.1 std = 1.0 score, 0.5+ std = 0.0 score
+        stability_score = max(0.0, 1.0 - std_ricci / 0.5)
+    else:
+        stability_score = 0.5  # Unknown stability with single sample
+
+    # Component 3: Dimension consistency (0-1)
+    if len(dims) > 1:
+        mean_dim = sum(dims) / len(dims)
+        dim_variance = sum((d - mean_dim) ** 2 for d in dims) / (len(dims) - 1)
+        dim_std = math.sqrt(dim_variance)
+        # Normalize: low relative std = high score
+        relative_dim_std = dim_std / (mean_dim + 1e-6)
+        dimension_score = max(0.0, 1.0 - relative_dim_std / 0.5)
+    else:
+        dimension_score = 0.5
+
+    # Overall score: weighted combination
+    # Ricci consistency is most important (50%), stability (30%), dimension (20%)
+    overall = 0.5 * consistency_score + 0.3 * stability_score + 0.2 * dimension_score
+
+    geometry.curvature_compatibility = overall
+    geometry.curvature_compatibility_details = {
+        "consistency_score": consistency_score,
+        "stability_score": stability_score,
+        "dimension_score": dimension_score,
+        "mean_ricci": sum(ricci) / len(ricci),
+        "negative_ratio": negative_ratio,
+    }
+
+    logger.debug(
+        "Curvature compatibility: %.3f (consistency=%.2f, stability=%.2f, dimension=%.2f)",
+        overall,
+        consistency_score,
+        stability_score,
+        dimension_score,
     )

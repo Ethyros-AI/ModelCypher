@@ -18,7 +18,7 @@
 """Cache for expensive geometry metrics computations.
 
 Provides caching for Gromov-Wasserstein distance, intrinsic dimension,
-and topological fingerprint computations.
+topological fingerprint, and spectral signature computations.
 """
 
 from __future__ import annotations
@@ -65,6 +65,24 @@ class CachedTopoResult:
     total_persistence: float
 
 
+@dataclass(frozen=True)
+class CachedSpectralResult:
+    """Cached spectral signature result."""
+
+    eigenvalues: list[float]
+    heat_trace: list[float]
+    heat_times: list[float]
+    spectral_entropy: float
+    algebraic_connectivity: float
+    component_count: int
+    node_count: int
+    edge_count: int
+    k_neighbors: int
+    kernel_bandwidth: float
+    normalized_laplacian: bool
+    connected: bool
+
+
 class GeometryMetricsCache:
     """
     Two-level cache for expensive geometry metric computations.
@@ -73,6 +91,7 @@ class GeometryMetricsCache:
     - Gromov-Wasserstein distance (O(n^3-n^4))
     - Intrinsic dimension estimation (O(n log n) with bootstrap)
     - Topological fingerprints (O(n^2 log n))
+    - Spectral signatures (O(n^3) for geodesic distances)
 
     Cache is stored in ~/Library/Caches/ModelCypher/geometry_metrics/
     """
@@ -122,6 +141,13 @@ class GeometryMetricsCache:
             cache_directory=base / "topological",
             serializer=self._serialize_topo,
             deserializer=self._deserialize_topo,
+            config=config,
+        )
+
+        self._spectral_cache: TwoLevelCache[CachedSpectralResult] = TwoLevelCache(
+            cache_directory=base / "spectral_signature",
+            serializer=self._serialize_spectral,
+            deserializer=self._deserialize_spectral,
             config=config,
         )
 
@@ -365,6 +391,112 @@ class GeometryMetricsCache:
             total_persistence=float(data["total_persistence"]),
         )
 
+    # --- Spectral Signature ---
+
+    def get_spectral_result(
+        self,
+        points: list[list[float]],
+        k_neighbors: int | None,
+        kernel_bandwidth: float | None,
+        normalized_laplacian: bool,
+        heat_times: tuple[float, ...],
+    ) -> CachedSpectralResult | None:
+        """
+        Get cached spectral signature result.
+
+        Args:
+            points: Point cloud
+            k_neighbors: k for geodesic k-NN graph
+            kernel_bandwidth: Gaussian kernel bandwidth
+            normalized_laplacian: Whether Laplacian is normalized
+            heat_times: Heat trace time values
+
+        Returns:
+            Cached result or None if not found
+        """
+        key = self._make_spectral_key(
+            points, k_neighbors, kernel_bandwidth, normalized_laplacian, heat_times
+        )
+        return self._spectral_cache.get(key)
+
+    def set_spectral_result(
+        self,
+        points: list[list[float]],
+        k_neighbors: int | None,
+        kernel_bandwidth: float | None,
+        normalized_laplacian: bool,
+        heat_times: tuple[float, ...],
+        result: CachedSpectralResult,
+    ) -> None:
+        """
+        Cache spectral signature result.
+
+        Args:
+            points: Point cloud
+            k_neighbors: k for geodesic k-NN graph
+            kernel_bandwidth: Gaussian kernel bandwidth
+            normalized_laplacian: Whether Laplacian is normalized
+            heat_times: Heat trace time values
+            result: Result to cache
+        """
+        key = self._make_spectral_key(
+            points, k_neighbors, kernel_bandwidth, normalized_laplacian, heat_times
+        )
+        self._spectral_cache.set(key, result)
+
+    def _make_spectral_key(
+        self,
+        points: list[list[float]],
+        k_neighbors: int | None,
+        kernel_bandwidth: float | None,
+        normalized_laplacian: bool,
+        heat_times: tuple[float, ...],
+    ) -> str:
+        """Create cache key for spectral signature computation."""
+        return content_hash(
+            {
+                "points": sorted([tuple(p) for p in points]),
+                "k_neighbors": k_neighbors,
+                "kernel_bandwidth": kernel_bandwidth,
+                "normalized_laplacian": normalized_laplacian,
+                "heat_times": list(heat_times),
+            }
+        )
+
+    @staticmethod
+    def _serialize_spectral(result: CachedSpectralResult) -> dict:
+        return {
+            "eigenvalues": result.eigenvalues,
+            "heat_trace": result.heat_trace,
+            "heat_times": result.heat_times,
+            "spectral_entropy": result.spectral_entropy,
+            "algebraic_connectivity": result.algebraic_connectivity,
+            "component_count": result.component_count,
+            "node_count": result.node_count,
+            "edge_count": result.edge_count,
+            "k_neighbors": result.k_neighbors,
+            "kernel_bandwidth": result.kernel_bandwidth,
+            "normalized_laplacian": result.normalized_laplacian,
+            "connected": result.connected,
+        }
+
+    @staticmethod
+    def _deserialize_spectral(data: dict) -> CachedSpectralResult:
+        return CachedSpectralResult(
+            eigenvalues=[float(v) for v in data["eigenvalues"]],
+            heat_trace=[float(v) for v in data["heat_trace"]],
+            heat_times=[float(v) for v in data["heat_times"]],
+            spectral_entropy=float(data["spectral_entropy"]),
+            algebraic_connectivity=float(data["algebraic_connectivity"]),
+            component_count=int(data["component_count"]),
+            node_count=int(data["node_count"]),
+            edge_count=int(data["edge_count"]),
+            k_neighbors=int(data["k_neighbors"]),
+            kernel_bandwidth=float(data["kernel_bandwidth"]),
+            normalized_laplacian=bool(data["normalized_laplacian"]),
+            connected=bool(data["connected"]),
+        )
+
     # --- Utilities ---
 
     def clear_all(self) -> None:
@@ -372,4 +504,5 @@ class GeometryMetricsCache:
         self._gw_cache.clear_all()
         self._id_cache.clear_all()
         self._topo_cache.clear_all()
+        self._spectral_cache.clear_all()
         logger.info("Cleared all geometry metrics caches")

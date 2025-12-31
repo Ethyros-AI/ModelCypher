@@ -76,6 +76,14 @@ mc geometry crm compare --source <crm.json> --target <crm.json>
 mc geometry crm delta-mask --source <crm.json> --target <crm.json> --output-path <mask.json>
 ```
 
+## Geometry Metrics Commands
+```bash
+mc geometry metrics gromov-wasserstein <source_file> <target_file>
+mc geometry metrics intrinsic-dimension <points_file>
+mc geometry metrics topological-fingerprint <points_file>
+mc geometry metrics spectral-signature <points_file>
+```
+
 ## Geometry Cross-Cultural Commands
 ```bash
 mc geometry cross-cultural analyze <input_json>

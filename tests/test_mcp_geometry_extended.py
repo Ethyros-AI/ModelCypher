@@ -21,6 +21,7 @@ Tests for geometry tools not covered in test_mcp_contracts.py:
 - Gromov-Wasserstein distance
 - Intrinsic dimension estimation
 - Topological fingerprinting
+- Spectral signature
 - Manifold clustering, dimension, query
 - Transport merge/synthesize
 - Sparse domains and regions
@@ -300,6 +301,63 @@ class TestTopologicalFingerprintTool:
 
         assert payload["_schema"] == "mc.geometry.topological_fingerprint.v1"
 
+
+# =============================================================================
+# Spectral Signature Tests
+# =============================================================================
+
+
+class TestSpectralSignatureTool:
+    """Tests for mc_geometry_spectral_signature tool."""
+
+    def test_spectral_signature_schema(self, mcp_env: dict[str, str]) -> None:
+        """Tool should return properly structured response."""
+        backend = get_default_backend()
+        backend.random_seed(42)
+        points_arr = backend.random_normal((12, 3))
+        backend.eval(points_arr)
+        points = backend.to_numpy(points_arr).tolist()
+
+        async def runner(session: ClientSession):
+            return await _await_with_timeout(
+                session.call_tool(
+                    "mc_geometry_spectral_signature",
+                    arguments={
+                        "points": points,
+                        "kNeighbors": 3,
+                        "heatTimes": [0.1, 1.0],
+                        "maxEigenvalues": 5,
+                    },
+                )
+            )
+
+        result = _run_mcp(mcp_env, runner)
+        payload = _extract_structured(result)
+
+        assert payload["_schema"] == "mc.geometry.spectral_signature.v1"
+        assert "eigenvalues" in payload
+        assert "heatTrace" in payload
+
+    def test_spectral_signature_component_count(self, mcp_env: dict[str, str]) -> None:
+        """Disconnected clusters should increase component count."""
+        points = [[0.0, 0.0], [1.0, 0.0], [10.0, 0.0], [11.0, 0.0]]
+
+        async def runner(session: ClientSession):
+            return await _await_with_timeout(
+                session.call_tool(
+                    "mc_geometry_spectral_signature",
+                    arguments={
+                        "points": points,
+                        "kNeighbors": 1,
+                    },
+                )
+            )
+
+        result = _run_mcp(mcp_env, runner)
+        payload = _extract_structured(result)
+
+        assert payload["componentCount"] == 2
+        assert payload["connected"] is False
 
 # =============================================================================
 # Manifold Cluster Tests

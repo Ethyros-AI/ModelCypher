@@ -81,6 +81,7 @@ _SUBMODULES = {
     "sparse_region_prober",
     "sparse_region_validator",
     "spectral_analysis",
+    "spectral_signature",
     "tangent_space_alignment",
     "task_singular_vectors",
     "thermo_path_integration",

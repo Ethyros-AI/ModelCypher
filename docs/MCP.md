@@ -229,7 +229,7 @@ All tools include MCP annotations for AI client optimization:
 
 | Category | Tools | Annotations |
 |----------|-------|-------------|
-| Read-only | `mc_inventory`, `mc_settings_snapshot`, `mc_job_status`, `mc_job_list`, `mc_job_detail`, `mc_model_list`, `mc_system_status`, `mc_validate_train`, `mc_estimate_train`, `mc_geometry_validate`, `mc_geometry_training_status`, `mc_geometry_training_history`, `mc_geometry_crm_compare`, `mc_safety_circuit_breaker`, `mc_safety_persona_drift`, `mc_geometry_dare_sparsity`, `mc_geometry_dora_decomposition` | `readOnly=true, idempotent=true` |
+| Read-only | `mc_inventory`, `mc_settings_snapshot`, `mc_job_status`, `mc_job_list`, `mc_job_detail`, `mc_model_list`, `mc_system_status`, `mc_validate_train`, `mc_estimate_train`, `mc_geometry_validate`, `mc_geometry_training_status`, `mc_geometry_training_history`, `mc_geometry_gromov_wasserstein`, `mc_geometry_intrinsic_dimension`, `mc_geometry_topological_fingerprint`, `mc_geometry_spectral_signature`, `mc_geometry_crm_compare`, `mc_safety_circuit_breaker`, `mc_safety_persona_drift`, `mc_geometry_dare_sparsity`, `mc_geometry_dora_decomposition` | `readOnly=true, idempotent=true` |
 | Mutating | `mc_train_start`, `mc_job_pause`, `mc_job_resume`, `mc_infer`, `mc_checkpoint_export`, `mc_geometry_crm_build` | `readOnly=false` |
 | Destructive | `mc_job_cancel` | `destructive=true, idempotent=true` |
 | Network | `mc_model_fetch`, `mc_model_search` | `openWorld=true, idempotent=true` |
@@ -1050,6 +1050,151 @@ Call mc_inventory first to see what models are available before starting trainin
     "passed": true
   },
   "fixtures": null
+}
+```
+
+---
+
+### mc_geometry_gromov_wasserstein
+
+**Purpose:** Compute Gromov-Wasserstein distance between two point clouds.
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "sourcePoints": { "type": "array", "items": { "type": "array", "items": { "type": "number" } } },
+    "targetPoints": { "type": "array", "items": { "type": "array", "items": { "type": "number" } } },
+    "epsilon": { "type": "number", "default": 0.05 },
+    "maxIterations": { "type": "integer", "default": 50 }
+  },
+  "required": ["sourcePoints", "targetPoints"]
+}
+```
+
+**Output:**
+```json
+{
+  "_schema": "mc.geometry.gromov_wasserstein.v1",
+  "distance": 0.0312,
+  "normalizedDistance": 0.0123,
+  "compatibilityScore": 0.9877,
+  "converged": true,
+  "iterations": 20,
+  "couplingShape": [12, 12]
+}
+```
+
+---
+
+### mc_geometry_intrinsic_dimension
+
+**Purpose:** Estimate intrinsic dimension using TwoNN.
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "points": { "type": "array", "items": { "type": "array", "items": { "type": "number" } } },
+    "useRegression": { "type": "boolean", "default": true },
+    "bootstrapSamples": { "type": "integer", "default": 200 }
+  },
+  "required": ["points"]
+}
+```
+
+**Output:**
+```json
+{
+  "_schema": "mc.geometry.intrinsic_dimension.v1",
+  "intrinsicDimension": 3.04,
+  "confidenceLower": 2.88,
+  "confidenceUpper": 3.22,
+  "sampleCount": 120,
+  "method": "TwoNN (regression)"
+}
+```
+
+---
+
+### mc_geometry_topological_fingerprint
+
+**Purpose:** Compute topological fingerprint using persistent homology.
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "points": { "type": "array", "items": { "type": "array", "items": { "type": "number" } } },
+    "maxDimension": { "type": "integer", "default": 1 },
+    "numSteps": { "type": "integer", "default": 50 }
+  },
+  "required": ["points"]
+}
+```
+
+**Output:**
+```json
+{
+  "_schema": "mc.geometry.topological_fingerprint.v1",
+  "betti0": 1,
+  "betti1": 0,
+  "persistenceEntropy": 0.132,
+  "totalPersistence": 0.912
+}
+```
+
+---
+
+### mc_geometry_spectral_signature
+
+**Purpose:** Compute geodesic spectral signature from a point cloud.
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "points": { "type": "array", "items": { "type": "array", "items": { "type": "number" } } },
+    "kNeighbors": { "type": ["integer", "null"] },
+    "kernelBandwidth": { "type": ["number", "null"] },
+    "normalizedLaplacian": { "type": "boolean", "default": true },
+    "heatTimes": { "type": ["array", "null"], "items": { "type": "number" } },
+    "maxEigenvalues": { "type": ["integer", "null"] }
+  },
+  "required": ["points"]
+}
+```
+
+**Output:**
+```json
+{
+  "_schema": "mc.geometry.spectral_signature.v1",
+  "eigenvalues": [0.0, 0.18, 0.62, 1.02],
+  "eigenvalueCount": 4,
+  "eigenvaluesTruncated": false,
+  "heatTrace": [3.74, 2.11],
+  "heatTimes": [0.1, 1.0],
+  "spectralEntropy": 0.942,
+  "algebraicConnectivity": 0.18,
+  "componentCount": 1,
+  "nodeCount": 4,
+  "edgeCount": 3,
+  "kNeighbors": 2,
+  "kernelBandwidth": 0.75,
+  "normalizedLaplacian": true,
+  "connected": true
 }
 ```
 
@@ -1898,6 +2043,10 @@ These tools never modify state and are safe to call whenever context is needed:
 - `mc_model_list` – Registered models with metadata.
 - `mc_system_status` – System readiness (Metal, memory fit, storage, MLX health).
 - `mc_geometry_validate` – Deterministic geometry validation suite.
+- `mc_geometry_gromov_wasserstein` – Gromov-Wasserstein distance between point clouds.
+- `mc_geometry_intrinsic_dimension` – Intrinsic dimension (TwoNN).
+- `mc_geometry_topological_fingerprint` – Persistent homology fingerprint (Betti numbers, entropy).
+- `mc_geometry_spectral_signature` – Geodesic spectral signature (Laplacian eigenvalues, heat trace).
 - `mc_geometry_concept_detect` – Detect semantic concept activations in text or model responses.
 - `mc_geometry_concept_compare` – Compare concept paths between two responses.
 - `mc_geometry_cross_cultural_analyze` – Gram-level alignment analysis across cultures.
