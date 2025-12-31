@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Stage 0 vocabulary alignment compatibility wrapper."""
+"""Stage 0 vocabulary alignment wrapper."""
 
 from .stage_0 import VocabularyConfig, VocabularyResult, stage_vocabulary_align
 

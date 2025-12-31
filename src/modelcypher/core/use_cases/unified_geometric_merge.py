@@ -143,7 +143,7 @@ class UnifiedGeometricMerger:
             config=config,
         )
 
-    # Compatibility wrappers to preserve internal helper access in tests/callers.
+    # Convenience wrappers to preserve internal helper access in tests/callers.
     def _stage_vocabulary(
         self,
         source_weights: dict[str, "Array"],

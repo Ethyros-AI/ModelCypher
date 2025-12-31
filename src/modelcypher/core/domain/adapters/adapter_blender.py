@@ -21,7 +21,7 @@ Supports linear blending of LoRA A and B matrices:
 - A_blend = Σ αᵢ * Aᵢ
 - B_blend = Σ αᵢ * Bᵢ
 
-Also provides geometric weight computation based on compatibility scores.
+Also provides geometric weight computation based on alignment scores.
 """
 
 from __future__ import annotations

@@ -355,7 +355,7 @@ def compare_tokenizers(
     target_tokenizer: Any,
 ) -> TokenizerComparisonResult:
     """
-    Compare two tokenizers' vocabularies for merge compatibility.
+    Compare two tokenizers' vocabularies for merge alignment.
 
     This is the canonical tokenizer comparison function. It analyzes
     vocabulary overlap and reports alignment statistics.

@@ -20,7 +20,7 @@
 from __future__ import annotations
 
 import pytest
-from hypothesis import given, settings
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from modelcypher.core.domain.geometry.cka import compute_cka_from_grams
@@ -127,7 +127,11 @@ def test_topological_fingerprint_invariance_under_padding() -> None:
     pad_extra=st.integers(min_value=1, max_value=3),
     seed=st.integers(min_value=0, max_value=10_000),
 )
-@settings(max_examples=20, deadline=None)
+@settings(
+    max_examples=20,
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
 def test_padding_invariance_random_pointcloud(
     any_backend,
     sample_count: int,
@@ -139,7 +143,7 @@ def test_padding_invariance_random_pointcloud(
     backend = any_backend
     backend.random_seed(seed)
 
-    points_arr = backend.random_randn((sample_count, base_dim))
+    points_arr = backend.random_normal((sample_count, base_dim))
     backend.eval(points_arr)
     points = backend.to_numpy(points_arr).tolist()
     padded = _pad_points(points, base_dim + pad_extra)
