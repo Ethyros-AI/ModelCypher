@@ -76,6 +76,7 @@ def geometry_safety_circuit_breaker(
     output = {
         "tripped": state.is_tripped,
         "severity": state.severity,
+        "state": "tripped" if state.is_tripped else "not_tripped",
     }
 
     if context.output_format == "text":

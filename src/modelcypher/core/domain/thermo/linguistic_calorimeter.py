@@ -60,6 +60,10 @@ from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
     PromptLanguage,
     ThermoMeasurement,
 )
+from modelcypher.core.domain.thermo.measured_thermodynamics import (
+    MeasuredThresholds,
+    ThermoCalibration,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +162,7 @@ class LinguisticCalorimeter:
         backend: "Backend | None" = None,
         model: object | None = None,
         tokenizer: object | None = None,
+        calibration: ThermoCalibration | None = None,
     ):
         """Initialize the calorimeter.
 
@@ -170,6 +175,9 @@ class LinguisticCalorimeter:
             backend: Optional backend for array operations.
             model: Optional pre-loaded model instance.
             tokenizer: Optional pre-loaded tokenizer instance.
+            calibration: Optional thermodynamic calibration for this model.
+                If provided, classification thresholds will be derived from
+                calibrated measurements instead of hardcoded values.
         """
         self.model_path = Path(model_path).expanduser().resolve() if model_path else None
         self.adapter_path = Path(adapter_path).expanduser().resolve() if adapter_path else None
@@ -177,6 +185,7 @@ class LinguisticCalorimeter:
         self.top_k = top_k
         self.epsilon = epsilon
         self._backend = backend or get_default_backend()
+        self._calibration = calibration
 
         # Lazy-loaded components (or pre-loaded)
         self._model = model
@@ -602,7 +611,22 @@ class LinguisticCalorimeter:
         entropy: float,
         variance: float,
     ) -> BehavioralOutcome:
-        """Classify behavioral outcome from entropy metrics."""
+        """Classify behavioral outcome from entropy metrics.
+
+        If calibration is available, uses calibrated thresholds derived from
+        baseline entropy distribution. Otherwise, uses placeholder thresholds
+        with a warning.
+        """
+        if self._calibration and self._calibration.thresholds:
+            # Use calibrated thresholds
+            outcome_str = self._calibration.thresholds.classify_outcome(entropy, variance)
+            return BehavioralOutcome(outcome_str)
+
+        # Placeholder thresholds - warn that these should be calibrated
+        logger.debug(
+            "Using placeholder thresholds for outcome classification. "
+            "Run ThermoCalibrator.calibrate() for accurate classification."
+        )
         # High entropy + low variance = distress (stuck in uncertainty)
         if entropy >= 4.0:
             if variance < 0.1:
@@ -614,7 +638,28 @@ class LinguisticCalorimeter:
             return BehavioralOutcome.SOLVED
 
     def _classify_model_state(self, entropy: float) -> str:
-        """Classify model state from entropy."""
+        """Classify model state from entropy.
+
+        If calibration is available, uses percentile-based classification.
+        Otherwise, uses placeholder thresholds.
+        """
+        if self._calibration and self._calibration.thresholds:
+            # Use calibrated percentiles for state classification
+            percentiles = self._calibration.thresholds.percentiles
+            if entropy < percentiles.get(25, 1.5):
+                return "confident"
+            elif entropy < percentiles.get(50, 3.0):
+                return "normal"
+            elif entropy < percentiles.get(75, 4.0):
+                return "uncertain"
+            else:
+                return "distressed"
+
+        # Placeholder thresholds
+        logger.debug(
+            "Using placeholder thresholds for state classification. "
+            "Run ThermoCalibrator.calibrate() for accurate classification."
+        )
         if entropy < 1.5:
             return "confident"
         elif entropy < 3.0:

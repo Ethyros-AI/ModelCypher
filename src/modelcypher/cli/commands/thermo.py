@@ -942,3 +942,242 @@ def thermo_parity(
         return
 
     write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("calibrate")
+def thermo_calibrate(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", "-m", help="Path to model directory"),
+    output: str = typer.Option(
+        None, "--output", "-o", help="Output path for calibration JSON"
+    ),
+    probes_file: str | None = typer.Option(
+        None, "--probes", "-p", help="Path to custom probes file (JSON array or newline-separated)"
+    ),
+    temperature: float = typer.Option(1.0, "--temperature", "-t", help="Temperature for measurements"),
+    max_tokens: int = typer.Option(64, "--max-tokens", help="Max tokens per measurement"),
+    min_samples: int = typer.Option(50, "--min-samples", help="Minimum baseline samples"),
+) -> None:
+    """Calibrate thermodynamic parameters from empirical measurement.
+
+    This command measures actual entropy distributions and behavioral outcomes
+    to derive calibrated energy levels, modifier effects, and classification
+    thresholds. The result replaces hardcoded placeholder values with physics
+    derived from real observations.
+
+    The calibration measures:
+    - Basin energy levels: E(x) = -T * log(p(x)/p(ref))
+    - Modifier intensity scores: measured delta_H for each modifier
+    - Classification thresholds: percentiles from baseline entropy distribution
+
+    Example:
+        mc thermo calibrate --model /path/to/model -o calibration.json
+        mc thermo calibrate --model /path/to/model --probes prompts.txt -o cal.json
+    """
+    import json
+    from pathlib import Path
+
+    context = _context(ctx)
+    from modelcypher.core.domain.thermo.thermo_calibrator import (
+        CalibrationConfig,
+        ThermoCalibrator,
+        get_default_calibration_probes,
+    )
+
+    model_path = Path(model).expanduser().resolve()
+    if not model_path.exists():
+        error = ErrorDetail(
+            code="MC-1030",
+            title="Model not found",
+            detail=f"Model directory not found: {model}",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Load probes
+    if probes_file:
+        probes_path = Path(probes_file)
+        if not probes_path.exists():
+            error = ErrorDetail(
+                code="MC-1031",
+                title="Probes file not found",
+                detail=f"File not found: {probes_file}",
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+
+        try:
+            content = probes_path.read_text()
+            try:
+                probes = json.loads(content)
+                if not isinstance(probes, list):
+                    raise ValueError("JSON must be an array of strings")
+            except json.JSONDecodeError:
+                probes = [line.strip() for line in content.splitlines() if line.strip()]
+        except Exception as exc:
+            error = ErrorDetail(
+                code="MC-1032",
+                title="Failed to load probes",
+                detail=str(exc),
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+    else:
+        probes = get_default_calibration_probes()
+
+    if len(probes) < min_samples:
+        error = ErrorDetail(
+            code="MC-1033",
+            title="Insufficient probes",
+            detail=f"Need at least {min_samples} probes, got {len(probes)}",
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    # Configure calibrator
+    config = CalibrationConfig(
+        temperature=temperature,
+        max_tokens=max_tokens,
+        baseline_samples=min_samples,
+    )
+
+    calibrator = ThermoCalibrator(
+        model_path=model,
+        config=config,
+    )
+
+    # Progress callback for text output
+    def progress_callback(current: int, total: int, progress) -> None:
+        if context.output_format == "text":
+            pct = (current + 1) / total * 100
+            print(f"\rCalibrating: {current + 1}/{total} ({pct:.1f}%)", end="", flush=True)
+
+    # Run calibration
+    try:
+        calibration = calibrator.calibrate(
+            probes=probes,
+            progress_callback=progress_callback if context.output_format == "text" else None,
+        )
+    except Exception as exc:
+        if context.output_format == "text":
+            print()  # Newline after progress
+        error = ErrorDetail(
+            code="MC-1034",
+            title="Calibration failed",
+            detail=str(exc),
+            trace_id=context.trace_id,
+        )
+        write_error(error.as_dict(), context.output_format, context.pretty)
+        raise typer.Exit(code=1)
+
+    if context.output_format == "text":
+        print()  # Newline after progress
+
+    # Determine output path
+    if output:
+        output_path = Path(output)
+    else:
+        output_path = Path(f"{model_path.name}_thermo_calibration.json")
+
+    # Save calibration
+    calibration.save(output_path)
+
+    # Build payload
+    payload = {
+        "_schema": "mc.thermo.calibrate.v1",
+        "modelId": calibration.model_id,
+        "outputPath": str(output_path),
+        "isComplete": calibration.is_complete,
+        "basinTopology": (
+            {
+                "refusalEnergy": calibration.basin_topology.refusal_energy.value,
+                "cautionEnergy": calibration.basin_topology.caution_energy.value,
+                "solutionEnergy": calibration.basin_topology.solution_energy.value,
+                "transitionRidge": calibration.basin_topology.transition_ridge.value,
+                "temperature": calibration.basin_topology.temperature,
+            }
+            if calibration.basin_topology
+            else None
+        ),
+        "modifierProfile": (
+            {
+                "modifierCount": len(calibration.modifier_profile.effects),
+                "effects": {
+                    name: {
+                        "meanDeltaH": effect.mean_delta_h,
+                        "intensityScore": effect.intensity_score,
+                        "direction": effect.effect_direction,
+                        "sampleCount": effect.sample_count,
+                    }
+                    for name, effect in calibration.modifier_profile.effects.items()
+                }
+            }
+            if calibration.modifier_profile
+            else None
+        ),
+        "thresholds": (
+            {
+                "refusedThreshold": calibration.thresholds.refused_threshold,
+                "hedgedThreshold": calibration.thresholds.hedged_threshold,
+                "attemptedThreshold": calibration.thresholds.attempted_threshold,
+                "percentiles": calibration.thresholds.percentiles,
+            }
+            if calibration.thresholds
+            else None
+        ),
+        "timestamp": calibration.calibration_timestamp.isoformat(),
+    }
+
+    if context.output_format == "text":
+        lines = [
+            "THERMODYNAMIC CALIBRATION COMPLETE",
+            "",
+            f"Model: {calibration.model_id}",
+            f"Output: {output_path}",
+            f"Complete: {'yes' if calibration.is_complete else 'no'}",
+            "",
+        ]
+
+        if calibration.basin_topology:
+            bt = calibration.basin_topology
+            lines.extend([
+                "Basin Topology (measured energies):",
+                f"  Refusal:    E = {bt.refusal_energy.value:.4f} (reference)",
+                f"  Caution:    E = {bt.caution_energy.value:.4f}",
+                f"  Solution:   E = {bt.solution_energy.value:.4f}",
+                f"  Ridge:      E = {bt.transition_ridge.value:.4f}",
+                "",
+            ])
+
+        if calibration.modifier_profile:
+            lines.append("Modifier Effects (measured delta_H):")
+            for name, effect in calibration.modifier_profile.effects.items():
+                lines.append(
+                    f"  {name}: delta_H = {effect.mean_delta_h:+.4f}, "
+                    f"intensity = {effect.intensity_score:.2f}, "
+                    f"direction = {effect.effect_direction}"
+                )
+            lines.append("")
+
+        if calibration.thresholds:
+            th = calibration.thresholds
+            lines.extend([
+                "Classification Thresholds (from baseline percentiles):",
+                f"  REFUSED threshold:  {th.refused_threshold:.4f} (p95)",
+                f"  HEDGED threshold:   {th.hedged_threshold:.4f} (p75)",
+                f"  ATTEMPTED threshold: {th.attempted_threshold:.4f} (p50)",
+                "",
+            ])
+
+        lines.append("Calibration saved. Use with:")
+        lines.append(f"  from modelcypher.core.domain.thermo import ThermoCalibration")
+        lines.append(f"  cal = ThermoCalibration.load(Path('{output_path}'))")
+
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)

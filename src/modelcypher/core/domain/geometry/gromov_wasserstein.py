@@ -84,6 +84,11 @@ class Result:
     converged: bool
     iterations: int
 
+    def __post_init__(self) -> None:
+        # Enforce the metric invariant: GW distance is non-negative.
+        if math.isfinite(self.distance) and self.distance < 0:
+            object.__setattr__(self, "distance", 0.0)
+
     @property
     def normalized_distance(self) -> float:
         return 1.0 - math.exp(-self.distance) if math.isfinite(self.distance) else 1.0

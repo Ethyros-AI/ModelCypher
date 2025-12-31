@@ -71,6 +71,21 @@ from modelcypher.core.domain.thermo.ridge_cross_detector import (
     RidgeCrossRateStats,
     TransitionAnalysis,
 )
+from modelcypher.core.domain.thermo.measured_thermodynamics import (
+    MeasuredBasinTopology,
+    MeasuredEnergy,
+    MeasuredModifierEffect,
+    MeasuredModifierProfile,
+    MeasuredThresholds,
+    ThermoCalibration,
+    UncalibratedError,
+)
+from modelcypher.core.domain.thermo.thermo_calibrator import (
+    CalibrationConfig,
+    CalibrationProgress,
+    ThermoCalibrator,
+    get_default_calibration_probes,
+)
 
 __all__ = [
     "AttractorBasin",
@@ -115,4 +130,17 @@ __all__ = [
     "LanguageParityResult",
     "MultilingualCalibrator",
     "ParityReport",
+    # MeasuredThermodynamics
+    "MeasuredBasinTopology",
+    "MeasuredEnergy",
+    "MeasuredModifierEffect",
+    "MeasuredModifierProfile",
+    "MeasuredThresholds",
+    "ThermoCalibration",
+    "UncalibratedError",
+    # ThermoCalibrator
+    "CalibrationConfig",
+    "CalibrationProgress",
+    "ThermoCalibrator",
+    "get_default_calibration_probes",
 ]
