@@ -444,6 +444,11 @@ def compare_profiles(
         mean_alignment_effort=mean_effort,
         max_alignment_effort=max_effort,
         recommended_strategy=strategy,
+        sectional_z_score=sectional_z_score,
+        ricci_z_score=ricci_z_score,
+        dimension_z_score=dimension_z_score,
+        baseline_family=baseline_family,
+        baseline_model_count=baseline_model_count,
     )
 
 

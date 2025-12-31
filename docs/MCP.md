@@ -1,7 +1,7 @@
 # ModelCypher MCP Server Documentation
 
 **Version:** 1.3.0
-**Last Updated:** 2025-12-28
+**Last Updated:** 2025-12-31
 **MCP SDK:** Python `mcp` FastMCP
 **Protocol:** MCP Specification 2024-11-05
 
@@ -2367,9 +2367,38 @@ Phase 2 adds comprehensive safety, entropy, and agent tools for deeper model ana
 | `mc_geometry_atlas_inventory` | List available atlas probes (sources, domains, counts) | Read-only |
 | `mc_geometry_atlas_dimensionality` | Intrinsic dimensionality for atlas probes at a layer | Read-only |
 | `mc_geometry_atlas_dimensionality_study` | Multi-layer dimensionality sweep for atlas probes | Read-only |
-| `mc_geometry_spatial_euclidean` | Euclidean consistency check for spatial anchors | Read-only |
+| `mc_geometry_spatial_anchors` | List the Spatial Prime Atlas anchors (23 anchors with 3D coordinates) | Read-only |
+| `mc_geometry_spatial_euclidean` | Test Euclidean consistency (Pythagorean theorem in latent space) | Read-only |
+| `mc_geometry_spatial_gravity` | Analyze gravity gradient in latent representations | Read-only |
+| `mc_geometry_spatial_density` | Probe volumetric density of spatial representations | Read-only |
+| `mc_geometry_spatial_analyze` | Run full 3D world model analysis | Read-only |
+| `mc_geometry_spatial_probe_model` | Probe a model with the Spatial Prime Atlas | Read-only |
+| `mc_geometry_spatial_cross_grounding_feasibility` | Estimate feasibility of cross-grounding transfer | Read-only |
+| `mc_geometry_spatial_cross_grounding_transfer` | Transfer knowledge via cross-grounding | Read-only |
 
-Note: Full geometry tool coverage (path, CRM, stitch, probes, manifold) is implemented in `src/modelcypher/mcp/tools/geometry.py`.
+Note: Full geometry tool coverage (path, CRM, stitch, probes, manifold) is implemented in `src/modelcypher/mcp/tools/geometry/`.
+
+### Geometry Tools (Interference + Null Space)
+
+| Tool | Purpose | Category |
+|------|---------|----------|
+| `mc_geometry_interference_predict` | Predict interference between model domains | Read-only |
+| `mc_geometry_null_space_filter` | Apply null-space filtering for knowledge preservation | Read-only |
+| `mc_geometry_null_space_profile` | Generate null-space profile for a model | Read-only |
+| `mc_geometry_safety_polytope_check` | Check if activations fall within safety polytope | Read-only |
+| `mc_geometry_safety_polytope_model` | Build safety polytope model from a reference model | Read-only |
+
+### Thermo Tools
+
+| Tool | Purpose | Category |
+|------|---------|----------|
+| `mc_thermo_analyze` | Analyze thermodynamic metrics for a training job | Read-only |
+| `mc_thermo_path` | Compute thermodynamic path between checkpoints | Read-only |
+| `mc_thermo_path_integration` | Integrate along a checkpoint path for free energy | Read-only |
+| `mc_thermo_entropy` | Get entropy metrics for a training job | Read-only |
+| `mc_thermo_measure` | Measure linguistic thermodynamics from activations | Read-only |
+| `mc_thermo_detect` | Detect phase transitions in training dynamics | Read-only |
+| `mc_thermo_detect_batch` | Batch phase transition detection across checkpoints | Read-only |
 
 ---
 
@@ -2394,9 +2423,12 @@ Each tool module exports registration functions:
 - `register_geometry_primes_tools(ctx)` - Semantic prime analysis
 - `register_geometry_crm_tools(ctx)` - Concept response matrix
 - `register_geometry_stitch_tools(ctx)` - Manifold stitching and refinement
+- `register_geometry_spatial_tools(ctx)` - 3D spatial metrology and cross-grounding
+- `register_geometry_interference_tools(ctx)` - Interference prediction and null-space filtering
 - `register_safety_tools(ctx)` - Adapter safety probes
 - `register_entropy_tools(ctx)` - Window, conversation, dual-path tracking
 - `register_agent_tools(ctx)` - Trace import/analysis/validation
+- `register_thermo_tools(ctx)` - Linguistic thermodynamics and phase detection
 
 The `ServiceContext` class provides lazy-loaded access to all domain services.
 

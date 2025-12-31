@@ -153,7 +153,20 @@ mc profile compare source.json target.json
 
 # Save comparison result
 mc profile compare source.json target.json --save comparison.json
+
+# Compare with baseline for z-score computation
+mc profile compare source.json target.json --baseline qwen-baseline.json
 ```
+
+When a baseline is provided, the comparison includes z-scores that show how many
+standard deviations the differences are from typical within-family variation:
+
+- `ricci_z_score`: How unusual the Ollivier-Ricci curvature difference is
+- `dimension_z_score`: How unusual the intrinsic dimension difference is
+- `sectional_z_score`: How unusual the sectional curvature difference is
+
+A z-score < 1.0 means the difference is within typical family variation.
+A z-score > 2.0 suggests the difference is statistically significant.
 
 ### Import from existing formats
 
@@ -185,6 +198,41 @@ The `recommended_strategy` field records which alignment heuristic was selected:
 | `procrustes` | Similar dimensions, curvature signs match |
 | `projection_first` | Dimension ratios > 1.5x difference |
 | `curvature_flow` | Curvature sign mismatches or high effort |
+
+## Family Baselines
+
+Family baselines capture typical curvature distributions for a model family
+(e.g., Qwen, LLaMA, Mistral). They enable z-score comparisons that express
+differences relative to family variation, not arbitrary thresholds.
+
+### Building a Baseline
+
+```bash
+# Generate curvature profiles for multiple models in the family
+mc geometry research curvature-profile /path/to/Qwen2-0.5B --save qwen-0.5b.json
+mc geometry research curvature-profile /path/to/Qwen2.5-3B --save qwen-3b.json
+mc geometry research curvature-profile /path/to/Qwen3-0.6B --save qwen-0.6b.json
+
+# Build family baseline from all profiles
+mc geometry research curvature-baseline ./profiles --family qwen --save qwen-baseline.json
+```
+
+### Using a Baseline
+
+```bash
+# Compare with baseline for z-score computation
+mc profile compare model_a.json model_b.json --baseline qwen-baseline.json
+```
+
+The comparison result includes:
+- `baseline_family`: Which family the baseline represents
+- `baseline_model_count`: How many models contributed to the baseline
+- `ricci_z_score`, `dimension_z_score`, `sectional_z_score`: Z-scores for differences
+
+### Existing Baselines
+
+Pre-computed baselines are stored in experiment directories:
+- `/Volumes/CodeCypher/experiments/curvature-profiles-2025-12-31/baselines/qwen-baseline.json`
 
 ## Importing Existing Profiles
 

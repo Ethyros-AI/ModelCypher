@@ -30,6 +30,7 @@ Primary workflows:
 - `mc job` (list/show/attach/delete)
 - `mc checkpoint` (list/delete/export)
 - `mc model` (list/register/delete/fetch/merge/search/probe/validate-merge/validate-knowledge/analyze-alignment/vocab-compare)
+- `mc profile` (generate/inspect/compare/update/import/merge)
 - `mc program` (run/status/list/show/compare)
 - `mc doc` (convert/validate)
 - `mc infer` (run/suite)
@@ -442,6 +443,101 @@ mc agent trace-import --file <path>         # Import OpenTelemetry/Monocle trace
 mc agent trace-analyze --trace <file>       # Analyze agent traces
 mc agent validate-action --action <json>    # Validate agent actions
 ```
+
+## Profile Commands
+
+Unified model profile operations for geometric analysis, comparison, and merge planning.
+
+```bash
+# Generate a profile from a model
+mc profile generate /path/to/model -o profile.json --identity-only
+mc profile generate /path/to/model -o profile.json
+
+# Inspect a profile
+mc profile inspect profile.json
+mc profile inspect profile.json --section geometry
+mc profile inspect profile.json --section topology
+mc profile inspect profile.json --layer 5
+
+# Compare two profiles
+mc profile compare source.json target.json
+mc profile compare source.json target.json --save comparison.json
+mc profile compare source.json target.json --baseline qwen-baseline.json
+
+# Update a profile with additional info
+mc profile update profile.json --model /path/to/model
+mc profile update profile.json --model /path/to/model -o updated.json
+
+# Import from legacy profile formats
+mc profile import curvature.json --type curvature --output unified.json
+mc profile import density.json --type density --base unified.json --output updated.json
+
+# Merge multiple partial profiles
+mc profile merge geometry.json topology.json semantic.json --output complete.json
+```
+
+### Profile Output Schema
+```json
+{
+  "_schema": "mc.profile.summary.v1",
+  "model_path": "/path/to/model",
+  "model_family": "qwen",
+  "architecture": "Qwen2ForCausalLM",
+  "identity": {
+    "parameter_count": 500000000,
+    "hidden_dim": 896,
+    "num_layers": 24,
+    "num_attention_heads": 14,
+    "vocab_size": 151936
+  },
+  "computed_sections": ["identity", "geometry"],
+  "layer_profile_count": 24,
+  "curvature": {
+    "global_sectional_mean": -0.15,
+    "global_sectional_std": 0.08,
+    "global_ollivier_ricci_mean": -0.23,
+    "global_ollivier_ricci_std": 0.12,
+    "global_intrinsic_dimension_mean": 12.4
+  }
+}
+```
+
+### Profile Comparison Output Schema
+```json
+{
+  "_schema": "mc.profile.comparison.v1",
+  "source_model": "/path/to/source",
+  "target_model": "/path/to/target",
+  "structural_alignment": {
+    "architecture_match": true,
+    "layer_count_source": 24,
+    "layer_count_target": 24,
+    "hidden_dim_source": 896,
+    "hidden_dim_target": 896
+  },
+  "geometric_alignment": {
+    "curvature_delta": 0.05,
+    "curvature_z_score": 0.42,
+    "intrinsic_dimension_delta": 1.2,
+    "topology_compatible": true
+  },
+  "layer_correspondence": {
+    "critical_layers": [0, 12, 23],
+    "alignment_scores": [0.95, 0.92, 0.88]
+  }
+}
+```
+
+### Profile Sections
+
+| Section | Description |
+|---------|-------------|
+| `identity` | Model architecture (layers, hidden dim, attention heads, vocab size) |
+| `geometry` | Curvature metrics (sectional, Ollivier-Ricci, intrinsic dimension) |
+| `topology` | Topological fingerprint (Betti numbers, persistence entropy) |
+| `semantic` | Semantic primes signature (dominant concepts, vector embedding) |
+| `density` | Activation density distribution across layers |
+| `layers` | Per-layer geometric profiles |
 
 ## Streaming
 

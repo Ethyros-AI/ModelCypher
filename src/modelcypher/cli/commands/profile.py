@@ -105,6 +105,9 @@ def compare_profiles_cmd(
     output_path: str | None = typer.Option(
         None, "--save", "-o", help="Save comparison result to JSON file"
     ),
+    baseline_path: str | None = typer.Option(
+        None, "--baseline", "-b", help="Path to family baseline for z-score computation"
+    ),
 ) -> None:
     """Compare two model profiles and show alignment summary.
 
@@ -113,11 +116,14 @@ def compare_profiles_cmd(
     - Geometric alignment (curvature, topology)
     - Layer correspondence and critical layers
     - Alignment inputs for downstream planning
+    - Baseline-relative z-scores (when --baseline provided)
 
     Examples:
         mc profile compare source.json target.json
         mc profile compare source.json target.json --save comparison.json
+        mc profile compare source.json target.json --baseline qwen-baseline.json
     """
+    from modelcypher.core.domain.geometry.curvature_profile import FamilyBaseline
     from modelcypher.core.domain.geometry.model_profile import ModelProfile
     from modelcypher.core.domain.geometry.profile_comparison import compare_profiles
 
@@ -130,7 +136,15 @@ def compare_profiles_cmd(
         typer.echo(f"Error loading profiles: {e}", err=True)
         raise typer.Exit(1) from e
 
-    comparison = compare_profiles(source, target)
+    # Load baseline if provided
+    baseline = None
+    if baseline_path:
+        try:
+            baseline = FamilyBaseline.load(baseline_path)
+        except Exception as e:
+            typer.echo(f"Warning: Failed to load baseline: {e}", err=True)
+
+    comparison = compare_profiles(source, target, baseline=baseline)
     result = comparison.to_dict()
 
     if output_path:
