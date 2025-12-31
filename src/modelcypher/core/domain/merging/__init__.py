@@ -61,13 +61,13 @@ __all__ = [
     "ModelEntropyProfile",
     "LayerMergeValidation",
     "MergeEntropyValidation",
-    # Merge Engine (canonical geometric merge)
-    "RotationalMerger",
-    "MergeOptions",
-    "MergeAnalysisResult",
-    "LayerMergeMetric",
-    "AnchorMode",
-    "ModuleScope",
+    # Unified Geometric Merge (re-exported from use_cases for convenience)
+    # NOTE: Prefer importing directly from modelcypher.core.use_cases.unified_geometric_merge
+    "UnifiedGeometricMerger",
+    "UnifiedMergeConfig",
+    "UnifiedMergeResult",
+    "LayerMergeState",
+    # Exceptions
     "MergeError",
     # LoRA Adapter Merger (geometric)
     "LoRAAdapterMerger",

@@ -119,16 +119,6 @@ def register_task_tools(ctx: ServiceContext) -> None:
                     "error": f"Task not found: {taskId}",
                 }
 
-            # Build next actions based on status
-            if task.status == TaskStatus.RUNNING:
-                pass
-            elif task.status == TaskStatus.PENDING:
-                pass
-            elif task.status == TaskStatus.COMPLETED:
-                pass
-            elif task.status in (TaskStatus.FAILED, TaskStatus.CANCELLED):
-                pass
-
             return {
                 "_schema": "mc_task_status_response",
                 **task.to_dict(),
