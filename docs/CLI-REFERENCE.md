@@ -82,6 +82,7 @@ mc geometry metrics gromov-wasserstein <source_file> <target_file>
 mc geometry metrics intrinsic-dimension <points_file>
 mc geometry metrics topological-fingerprint <points_file>
 mc geometry metrics spectral-signature <points_file>
+mc geometry metrics dimension-constraint <points_file> --pad-dim <n>
 ```
 
 ### Spectral Signature Output Schema
@@ -102,6 +103,43 @@ mc geometry metrics spectral-signature <points_file>
   "kernelBandwidth": 0.75,
   "normalizedLaplacian": true,
   "connected": true
+}
+```
+
+### Dimension Constraint Invariance Output Schema
+```json
+{
+  "_schema": "mc.geometry.dimension_constraint_invariance.v1",
+  "baseDimension": 2,
+  "paddedDimension": 4,
+  "sampleCount": 5,
+  "kNeighbors": 3,
+  "gramCka": 1.0,
+  "geodesicDiff": {
+    "meanAbs": 0.0,
+    "maxAbs": 0.0
+  },
+  "spectral": {
+    "eigenMeanAbsDiff": 0.0,
+    "eigenMaxAbsDiff": 0.0,
+    "spectralEntropyBase": 0.123,
+    "spectralEntropyPadded": 0.123,
+    "heatTraceBase": [4.89, 2.31],
+    "heatTracePadded": [4.89, 2.31],
+    "heatTimes": [0.1, 1.0]
+  },
+  "topology": {
+    "bettiNumbersBase": { "0": 1, "1": 0 },
+    "bettiNumbersPadded": { "0": 1, "1": 0 },
+    "componentCountBase": 1,
+    "componentCountPadded": 1,
+    "cycleCountBase": 0,
+    "cycleCountPadded": 0,
+    "persistenceEntropyBase": 0.0,
+    "persistenceEntropyPadded": 0.0,
+    "maxPersistenceBase": 0.912,
+    "maxPersistencePadded": 0.912
+  }
 }
 ```
 

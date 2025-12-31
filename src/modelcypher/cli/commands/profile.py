@@ -33,10 +33,11 @@ from typing import TYPE_CHECKING, Any
 
 import typer
 
-from modelcypher.cli.output import OutputFormat, output_result
+from modelcypher.cli.context import CLIContext
+from modelcypher.cli.output import write_output
 
 if TYPE_CHECKING:
-    pass
+    from modelcypher.core.domain.geometry.model_profile import ModelProfile
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,10 @@ app = typer.Typer(
     help="Unified model profile operations - the transparent black box.",
     no_args_is_help=True,
 )
+
+
+def _context(ctx: typer.Context) -> CLIContext:
+    return ctx.obj
 
 
 @app.command("inspect")
@@ -73,7 +78,7 @@ def inspect_profile(
         ProfileSection,
     )
 
-    output_format = ctx.obj.get("output_format", OutputFormat.TEXT)
+    context = _context(ctx)
 
     try:
         profile = ModelProfile.load(profile_path)
@@ -89,7 +94,7 @@ def inspect_profile(
     else:
         result = _build_summary(profile)
 
-    output_result(result, output_format)
+    write_output(result, context.output_format, context.pretty)
 
 
 @app.command("compare")
@@ -116,7 +121,7 @@ def compare_profiles_cmd(
     from modelcypher.core.domain.geometry.model_profile import ModelProfile
     from modelcypher.core.domain.geometry.profile_comparison import compare_profiles
 
-    output_format = ctx.obj.get("output_format", OutputFormat.TEXT)
+    context = _context(ctx)
 
     try:
         source = ModelProfile.load(source_path)
@@ -133,7 +138,7 @@ def compare_profiles_cmd(
             json.dump(result, f, indent=2)
         typer.echo(f"Saved comparison to {output_path}")
 
-    output_result(result, output_format)
+    write_output(result, context.output_format, context.pretty)
 
 
 @app.command("import")
@@ -168,7 +173,7 @@ def import_profile(
     """
     from modelcypher.core.domain.geometry.model_profile import ModelProfile
 
-    output_format = ctx.obj.get("output_format", OutputFormat.TEXT)
+    context = _context(ctx)
 
     # Load base profile if provided
     base_profile = None
@@ -214,7 +219,7 @@ def import_profile(
         "layer_count": len(result_profile.layer_profiles),
     }
 
-    output_result(result, output_format)
+    write_output(result, context.output_format, context.pretty)
 
 
 @app.command("merge")
@@ -235,7 +240,7 @@ def merge_profiles(
     """
     from modelcypher.core.domain.geometry.model_profile import ModelProfile
 
-    output_format = ctx.obj.get("output_format", OutputFormat.TEXT)
+    context = _context(ctx)
 
     if not profiles:
         typer.echo("No profiles provided", err=True)
@@ -269,7 +274,7 @@ def merge_profiles(
         "layer_count": len(merged.layer_profiles),
     }
 
-    output_result(result, output_format)
+    write_output(result, context.output_format, context.pretty)
 
 
 def _build_summary(profile: "ModelProfile") -> dict[str, Any]:

@@ -26,6 +26,7 @@ Commands:
     mc geometry metrics intrinsic-dimension <points_file>
     mc geometry metrics topological-fingerprint <points_file>
     mc geometry metrics spectral-signature <points_file>
+    mc geometry metrics dimension-constraint <points_file> --pad-dim <n>
 """
 
 from __future__ import annotations
@@ -62,7 +63,8 @@ def geometry_metrics_gromov_wasserstein(
     Compute Gromov-Wasserstein distance between two point clouds.
 
     Measures structural similarity of representation spaces without requiring
-    point-to-point correspondence. Lower distance = more similar structure.
+    point-to-point correspondence. Smaller values indicate closer structure
+    under this metric.
 
     Input files should contain JSON arrays of point arrays, e.g.:
     [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], ...]
@@ -119,7 +121,7 @@ def geometry_metrics_intrinsic_dimension(
     Estimate intrinsic dimension of a point cloud using TwoNN.
 
     Reveals effective degrees of freedom in representation space.
-    Low dimension = compressed/structured, high dimension = rich/complex.
+    Lower values indicate fewer effective degrees of freedom for the sample.
 
     Input file should contain JSON array of point arrays.
     """
@@ -221,10 +223,10 @@ def geometry_metrics_spectral_signature(
     ),
 ) -> None:
     """
-    Compute geodesic spectral signature of a point cloud.
+    Compute spectral signature of a point cloud.
 
-    Builds a geodesic k-NN graph, constructs a Laplacian, and reports
-    eigenvalues and heat trace as raw spectral measurements.
+    Builds a k-NN graph (local geodesic edges), constructs a Laplacian,
+    and reports eigenvalues and heat trace as raw spectral measurements.
     """
     context = _context(ctx)
 
@@ -265,6 +267,94 @@ def geometry_metrics_spectral_signature(
         )
         if payload.get("eigenvaluesTruncated"):
             lines.append("Eigenvalues truncated for output.")
+        write_output("\n".join(lines), context.output_format, context.pretty)
+        return
+
+    write_output(payload, context.output_format, context.pretty)
+
+
+@app.command("dimension-constraint")
+def geometry_metrics_dimension_constraint(
+    ctx: typer.Context,
+    points_file: str = typer.Argument(..., help="Path to point cloud (JSON array of arrays)"),
+    pad_dim: int = typer.Option(..., "--pad-dim", help="Target padded dimension"),
+    k_neighbors: int | None = typer.Option(
+        None, "--k-neighbors", help="k for geodesic k-NN graph construction"
+    ),
+    heat_times: list[float] | None = typer.Option(
+        None, "--heat-time", help="Heat trace time (repeatable)"
+    ),
+) -> None:
+    """
+    Measure invariance under zero-padding dimension constraints.
+
+    Compares geometry in the base dimension to the same points padded with
+    zero coordinates (e.g., 2D -> 3D -> 4D).
+    """
+    context = _context(ctx)
+
+    points = json.loads(Path(points_file).read_text())
+    if not points:
+        raise typer.BadParameter("Point cloud is empty.")
+
+    base_dim = len(points[0])
+    for row in points:
+        if len(row) != base_dim:
+            raise typer.BadParameter("All points must share the same dimension.")
+    if pad_dim < base_dim:
+        raise typer.BadParameter("pad-dim must be >= base dimension.")
+
+    service = GeometryMetricsService()
+    result = service.compute_dimension_constraint_invariance(
+        points=points,
+        padded_dimension=pad_dim,
+        k_neighbors=k_neighbors,
+        heat_times=heat_times,
+    )
+    payload = service.dimension_constraint_invariance_payload(result)
+    payload["_schema"] = "mc.geometry.dimension_constraint_invariance.v1"
+
+    if context.output_format == "text":
+        lines = [
+            "DIMENSION-CONSTRAINT INVARIANCE",
+            "",
+            f"Base Dimension: {result.base_dimension}",
+            f"Padded Dimension: {result.padded_dimension}",
+            f"Sample Count: {result.sample_count}",
+            f"k-Neighbors: {result.k_neighbors}",
+            f"Gram CKA: {result.gram_cka:.6f}",
+            "",
+            "Geodesic Distance Diff:",
+            f"  Mean |Δ|: {result.geodesic_mean_abs_diff:.6e}",
+            f"  Max |Δ|: {result.geodesic_max_abs_diff:.6e}",
+            "",
+            "Spectral Signature Diff:",
+            f"  Eigen Mean |Δ|: {result.spectral_eigen_mean_abs_diff:.6e}",
+            f"  Eigen Max |Δ|: {result.spectral_eigen_max_abs_diff:.6e}",
+            f"  Spectral Entropy Base: {result.spectral_entropy_base:.6f}",
+            f"  Spectral Entropy Padded: {result.spectral_entropy_padded:.6f}",
+            "Heat Trace:",
+        ]
+        for t, base_val, pad_val in zip(
+            result.heat_times, result.heat_trace_base, result.heat_trace_padded
+        ):
+            lines.append(f"  t={t}: base={base_val:.6f} padded={pad_val:.6f}")
+        lines.extend(
+            [
+                "",
+                "Topology:",
+                f"  Betti Base: {result.betti_numbers_base}",
+                f"  Betti Padded: {result.betti_numbers_padded}",
+                f"  Components Base: {result.component_count_base}",
+                f"  Components Padded: {result.component_count_padded}",
+                f"  Cycles Base: {result.cycle_count_base}",
+                f"  Cycles Padded: {result.cycle_count_padded}",
+                f"  Persistence Entropy Base: {result.persistence_entropy_base:.6f}",
+                f"  Persistence Entropy Padded: {result.persistence_entropy_padded:.6f}",
+                f"  Max Persistence Base: {result.max_persistence_base:.6f}",
+                f"  Max Persistence Padded: {result.max_persistence_padded:.6f}",
+            ]
+        )
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

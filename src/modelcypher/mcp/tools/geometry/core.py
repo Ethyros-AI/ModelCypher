@@ -25,6 +25,7 @@ Contains the main geometry tools for:
 - Intrinsic dimension estimation
 - Topological fingerprinting
 - Spectral signature
+- Dimension-constraint invariance
 - Sparse region analysis
 - Refusal direction detection
 - Persona vector extraction
@@ -64,6 +65,14 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
 
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_validate(includeFixtures: bool = False) -> dict:
+            """Run geometry validation suite and return raw diagnostics.
+
+            Args:
+                includeFixtures: Include built-in fixtures in the report.
+
+            Returns:
+                Validation payload with measurements and schema.
+            """
             report = ctx.geometry_service.validate(include_fixtures=includeFixtures)
             return ctx.geometry_service.validation_payload(report, include_schema=True)
 
@@ -76,6 +85,11 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             threshold: float = DEFAULT_PATH_THRESHOLD,
             entropyTrace: list[float] | None = None,
         ) -> dict:
+            """Detect path geometry in a response or provided text.
+
+            If `model` is set, `text` is treated as a prompt and the model
+            response is analyzed. Otherwise, `text` is analyzed directly.
+            """
             if model:
                 response = ctx.inference_engine.infer(
                     model,
@@ -112,6 +126,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             threshold: float = DEFAULT_PATH_THRESHOLD,
             comprehensive: bool = False,
         ) -> dict:
+            """Compare path geometry between two texts or model responses."""
             if textA and textB:
                 text_to_analyze_a, text_to_analyze_b = textA, textB
                 model_id_a, model_id_b = "text-a", "text-b"
@@ -161,6 +176,10 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             maxConcepts: int = 30,
             collapse: bool = True,
         ) -> dict:
+            """Detect concept sequence in text or model response.
+
+            If `model` is set, `text` is treated as a prompt and the response is analyzed.
+            """
             from modelcypher.core.domain.geometry.concept_detector import (
                 ConceptDetector,
                 Configuration,
@@ -235,6 +254,10 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             maxConcepts: int = 30,
             collapse: bool = True,
         ) -> dict:
+            """Compare concept sequences between two texts or model responses.
+
+            Provide textA/textB or modelA/modelB with a prompt.
+            """
             from modelcypher.core.domain.geometry.concept_detector import (
                 ConceptDetector,
                 Configuration,
@@ -304,6 +327,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             primeIds: list[str],
             primeCategories: dict[str, str] | None = None,
         ) -> dict:
+            """Analyze cross-cultural geometry from Gram matrices and prime IDs."""
             from modelcypher.core.domain.geometry.cross_cultural_geometry import (
                 CrossCulturalGeometry,
             )
@@ -441,6 +465,26 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                 result, max_eigenvalues=maxEigenvalues
             )
             payload["_schema"] = "mc.geometry.spectral_signature.v1"
+            return payload
+
+    if "mc_geometry_dimension_constraint_invariance" in tool_set:
+
+        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
+        def mc_geometry_dimension_constraint_invariance(
+            points: list[list[float]],
+            paddedDimension: int,
+            kNeighbors: int | None = None,
+            heatTimes: list[float] | None = None,
+        ) -> dict:
+            """Measure invariance under zero-padding dimension constraints."""
+            result = ctx.geometry_metrics_service.compute_dimension_constraint_invariance(
+                points=points,
+                padded_dimension=paddedDimension,
+                k_neighbors=kNeighbors,
+                heat_times=heatTimes,
+            )
+            payload = ctx.geometry_metrics_service.dimension_constraint_invariance_payload(result)
+            payload["_schema"] = "mc.geometry.dimension_constraint_invariance.v1"
             return payload
 
     # Sparse region tools

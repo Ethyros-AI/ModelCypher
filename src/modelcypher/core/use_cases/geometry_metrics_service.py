@@ -21,13 +21,15 @@ Geometry Metrics Service.
 Exposes standalone geometry metrics as CLI/MCP-consumable operations.
 These are the unique value propositions of ModelCypher - geometric
 diagnostics that no other tool provides. Includes Gromov-Wasserstein,
-intrinsic dimension, topological fingerprint, and spectral signature metrics.
+intrinsic dimension, topological fingerprint, spectral signature, and
+dimension-constraint invariance metrics.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+from modelcypher.core.domain.geometry.cka import compute_cka_from_grams
 from modelcypher.core.domain.geometry.geometry_metrics_cache import (
     CachedGWResult,
     CachedIDResult,
@@ -46,6 +48,7 @@ from modelcypher.core.domain.geometry.intrinsic_dimension import (
     IntrinsicDimension,
     TwoNNConfiguration,
 )
+from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 from modelcypher.core.domain.geometry.topological_fingerprint import (
     TopologicalFingerprint,
 )
@@ -104,6 +107,36 @@ class SpectralSignatureResult:
     kernel_bandwidth: float
     normalized_laplacian: bool
     connected: bool
+
+
+@dataclass(frozen=True)
+class DimensionConstraintInvarianceResult:
+    """Result of dimension-constraint invariance computation."""
+
+    base_dimension: int
+    padded_dimension: int
+    sample_count: int
+    k_neighbors: int
+    gram_cka: float
+    geodesic_mean_abs_diff: float
+    geodesic_max_abs_diff: float
+    spectral_eigen_mean_abs_diff: float
+    spectral_eigen_max_abs_diff: float
+    spectral_entropy_base: float
+    spectral_entropy_padded: float
+    heat_trace_base: list[float]
+    heat_trace_padded: list[float]
+    heat_times: list[float]
+    betti_numbers_base: dict[int, int]
+    betti_numbers_padded: dict[int, int]
+    component_count_base: int
+    component_count_padded: int
+    cycle_count_base: int
+    cycle_count_padded: int
+    persistence_entropy_base: float
+    persistence_entropy_padded: float
+    max_persistence_base: float
+    max_persistence_padded: float
 
 
 class GeometryMetricsService:
@@ -420,6 +453,141 @@ class GeometryMetricsService:
             connected=cached.connected,
         )
 
+    def compute_dimension_constraint_invariance(
+        self,
+        points: list[list[float]],
+        padded_dimension: int,
+        k_neighbors: int | None = None,
+        heat_times: list[float] | None = None,
+    ) -> DimensionConstraintInvarianceResult:
+        """Measure invariance under zero-padding dimension constraints."""
+        sample_count = len(points)
+        if sample_count == 0:
+            return DimensionConstraintInvarianceResult(
+                base_dimension=0,
+                padded_dimension=max(0, padded_dimension),
+                sample_count=0,
+                k_neighbors=0,
+                gram_cka=0.0,
+                geodesic_mean_abs_diff=0.0,
+                geodesic_max_abs_diff=0.0,
+                spectral_eigen_mean_abs_diff=0.0,
+                spectral_eigen_max_abs_diff=0.0,
+                spectral_entropy_base=0.0,
+                spectral_entropy_padded=0.0,
+                heat_trace_base=[],
+                heat_trace_padded=[],
+                heat_times=list(
+                    SpectralSignatureConfig().heat_trace_times
+                    if heat_times is None
+                    else heat_times
+                ),
+                betti_numbers_base={},
+                betti_numbers_padded={},
+                component_count_base=0,
+                component_count_padded=0,
+                cycle_count_base=0,
+                cycle_count_padded=0,
+                persistence_entropy_base=0.0,
+                persistence_entropy_padded=0.0,
+                max_persistence_base=0.0,
+                max_persistence_padded=0.0,
+            )
+
+        base_dimension = len(points[0])
+        for row in points:
+            if len(row) != base_dimension:
+                raise ValueError("All points must share the same dimension.")
+        if padded_dimension < base_dimension:
+            raise ValueError("Padded dimension must be >= base dimension.")
+
+        if sample_count <= 1:
+            k_neighbors_final = 0
+        elif k_neighbors is None:
+            k_neighbors_final = min(10, sample_count - 1)
+        else:
+            k_neighbors_final = max(1, min(k_neighbors, sample_count - 1))
+
+        padded_points = [
+            row + [0.0] * (padded_dimension - base_dimension) for row in points
+        ]
+
+        from modelcypher.core.domain._backend import get_default_backend
+
+        backend = get_default_backend()
+        base_arr = backend.array(points)
+        padded_arr = backend.array(padded_points)
+        backend.eval(base_arr, padded_arr)
+
+        gram_base = backend.matmul(base_arr, backend.transpose(base_arr))
+        gram_padded = backend.matmul(padded_arr, backend.transpose(padded_arr))
+        backend.eval(gram_base, gram_padded)
+        gram_cka = compute_cka_from_grams(gram_base, gram_padded, backend=backend)
+
+        geometry = RiemannianGeometry(backend)
+        geo_base = geometry.geodesic_distances(points, k_neighbors=k_neighbors_final)
+        geo_padded = geometry.geodesic_distances(padded_points, k_neighbors=k_neighbors_final)
+
+        geo_diff = backend.abs(geo_base.distances - geo_padded.distances)
+        geo_mean = backend.mean(geo_diff)
+        geo_max = backend.max(geo_diff)
+        backend.eval(geo_mean, geo_max)
+        geodesic_mean_abs_diff = float(backend.to_numpy(geo_mean).item())
+        geodesic_max_abs_diff = float(backend.to_numpy(geo_max).item())
+
+        times = (
+            tuple(heat_times)
+            if heat_times is not None
+            else SpectralSignatureConfig().heat_trace_times
+        )
+        spectral_config = SpectralSignatureConfig(
+            k_neighbors=k_neighbors_final,
+            heat_trace_times=times,
+        )
+        spectral = SpectralSignature(backend)
+        sig_base = spectral.compute(points=points, config=spectral_config)
+        sig_padded = spectral.compute(points=padded_points, config=spectral_config)
+
+        eigen_diffs = [
+            abs(a - b) for a, b in zip(sig_base.eigenvalues, sig_padded.eigenvalues)
+        ]
+        if eigen_diffs:
+            spectral_eigen_mean_abs_diff = sum(eigen_diffs) / len(eigen_diffs)
+            spectral_eigen_max_abs_diff = max(eigen_diffs)
+        else:
+            spectral_eigen_mean_abs_diff = 0.0
+            spectral_eigen_max_abs_diff = 0.0
+
+        fp_base = TopologicalFingerprint.compute(points, max_dimension=1)
+        fp_padded = TopologicalFingerprint.compute(padded_points, max_dimension=1)
+
+        return DimensionConstraintInvarianceResult(
+            base_dimension=base_dimension,
+            padded_dimension=padded_dimension,
+            sample_count=sample_count,
+            k_neighbors=k_neighbors_final,
+            gram_cka=gram_cka,
+            geodesic_mean_abs_diff=geodesic_mean_abs_diff,
+            geodesic_max_abs_diff=geodesic_max_abs_diff,
+            spectral_eigen_mean_abs_diff=spectral_eigen_mean_abs_diff,
+            spectral_eigen_max_abs_diff=spectral_eigen_max_abs_diff,
+            spectral_entropy_base=sig_base.spectral_entropy,
+            spectral_entropy_padded=sig_padded.spectral_entropy,
+            heat_trace_base=sig_base.heat_trace,
+            heat_trace_padded=sig_padded.heat_trace,
+            heat_times=list(sig_base.heat_times),
+            betti_numbers_base=fp_base.betti_numbers,
+            betti_numbers_padded=fp_padded.betti_numbers,
+            component_count_base=fp_base.summary.component_count,
+            component_count_padded=fp_padded.summary.component_count,
+            cycle_count_base=fp_base.summary.cycle_count,
+            cycle_count_padded=fp_padded.summary.cycle_count,
+            persistence_entropy_base=fp_base.summary.persistence_entropy,
+            persistence_entropy_padded=fp_padded.summary.persistence_entropy,
+            max_persistence_base=fp_base.summary.max_persistence,
+            max_persistence_padded=fp_padded.summary.max_persistence,
+        )
+
     @staticmethod
     def gromov_wasserstein_payload(result: GromovWassersteinResult) -> dict:
         """Convert GW result to CLI/MCP payload."""
@@ -480,4 +648,42 @@ class GeometryMetricsService:
             "kernelBandwidth": result.kernel_bandwidth,
             "normalizedLaplacian": result.normalized_laplacian,
             "connected": result.connected,
+        }
+
+    @staticmethod
+    def dimension_constraint_invariance_payload(
+        result: DimensionConstraintInvarianceResult,
+    ) -> dict:
+        """Convert dimension-constraint invariance result to CLI/MCP payload."""
+        return {
+            "baseDimension": result.base_dimension,
+            "paddedDimension": result.padded_dimension,
+            "sampleCount": result.sample_count,
+            "kNeighbors": result.k_neighbors,
+            "gramCka": result.gram_cka,
+            "geodesicDiff": {
+                "meanAbs": result.geodesic_mean_abs_diff,
+                "maxAbs": result.geodesic_max_abs_diff,
+            },
+            "spectral": {
+                "eigenMeanAbsDiff": result.spectral_eigen_mean_abs_diff,
+                "eigenMaxAbsDiff": result.spectral_eigen_max_abs_diff,
+                "spectralEntropyBase": result.spectral_entropy_base,
+                "spectralEntropyPadded": result.spectral_entropy_padded,
+                "heatTraceBase": result.heat_trace_base,
+                "heatTracePadded": result.heat_trace_padded,
+                "heatTimes": result.heat_times,
+            },
+            "topology": {
+                "bettiNumbersBase": result.betti_numbers_base,
+                "bettiNumbersPadded": result.betti_numbers_padded,
+                "componentCountBase": result.component_count_base,
+                "componentCountPadded": result.component_count_padded,
+                "cycleCountBase": result.cycle_count_base,
+                "cycleCountPadded": result.cycle_count_padded,
+                "persistenceEntropyBase": result.persistence_entropy_base,
+                "persistenceEntropyPadded": result.persistence_entropy_padded,
+                "maxPersistenceBase": result.max_persistence_base,
+                "maxPersistencePadded": result.max_persistence_padded,
+            },
         }

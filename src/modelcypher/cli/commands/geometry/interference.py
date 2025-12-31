@@ -37,7 +37,7 @@ if TYPE_CHECKING:
         GeometryDomain,
     )
 
-app = typer.Typer(help="Merge analysis for model compatibility")
+app = typer.Typer(help="Merge analysis for model alignment")
 logger = logging.getLogger(__name__)
 
 
@@ -60,7 +60,7 @@ def predict_interference(
         None, "--output-file", "-o", help="Save report to file"
     ),
 ) -> None:
-    """Analyze merge requirements between source and target models."""
+    """Analyze merge effort and interference between source and target models."""
     context = _context(ctx)
 
     from modelcypher.core.domain.geometry.domain_geometry_waypoints import (

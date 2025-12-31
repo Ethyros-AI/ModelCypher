@@ -66,9 +66,9 @@ def baseline_extract(
     Extract geometry baseline from a reference model.
 
     Uses Ollivier-Ricci curvature and domain-specific analyzers to create
-    an empirical baseline for healthy LLM geometry. Baselines are used for:
+    an empirical baseline for reference LLM geometry. Baselines are used for:
 
-    - Validating model health (negative Ricci = healthy, positive = collapsed)
+    - Baseline-relative diagnostics (curvature and domain deltas)
     - Pre/post merge geometry checks
     - Cross-model geometry comparison
 
@@ -170,10 +170,10 @@ def baseline_validate(
     Validate model geometry against established baselines.
 
     Compares model's Ollivier-Ricci curvature and domain metrics against
-    known-good baselines, returning baseline-relative deltas. Useful for:
+    reference baselines, returning baseline-relative deltas. Useful for:
 
     - Post-merge validation (did the merge preserve geometry?)
-    - Model health checks (is the model collapsed?)
+    - Baseline-relative checks after fine-tuning or merge
     - Regression testing after fine-tuning
 
     Example:
@@ -286,7 +286,7 @@ def baseline_compare(
     Extracts baselines from both models and computes divergence metrics.
     Useful for:
 
-    - Pre-merge compatibility assessment
+    - Pre-merge alignment assessment
     - Model family similarity analysis
     - Fine-tuning impact measurement
 

@@ -229,7 +229,7 @@ All tools include MCP annotations for AI client optimization:
 
 | Category | Tools | Annotations |
 |----------|-------|-------------|
-| Read-only | `mc_inventory`, `mc_settings_snapshot`, `mc_job_status`, `mc_job_list`, `mc_job_detail`, `mc_model_list`, `mc_system_status`, `mc_validate_train`, `mc_estimate_train`, `mc_geometry_validate`, `mc_geometry_training_status`, `mc_geometry_training_history`, `mc_geometry_gromov_wasserstein`, `mc_geometry_intrinsic_dimension`, `mc_geometry_topological_fingerprint`, `mc_geometry_spectral_signature`, `mc_geometry_crm_compare`, `mc_safety_circuit_breaker`, `mc_safety_persona_drift`, `mc_geometry_dare_sparsity`, `mc_geometry_dora_decomposition` | `readOnly=true, idempotent=true` |
+| Read-only | `mc_inventory`, `mc_settings_snapshot`, `mc_job_status`, `mc_job_list`, `mc_job_detail`, `mc_model_list`, `mc_system_status`, `mc_validate_train`, `mc_estimate_train`, `mc_geometry_validate`, `mc_geometry_training_status`, `mc_geometry_training_history`, `mc_geometry_gromov_wasserstein`, `mc_geometry_intrinsic_dimension`, `mc_geometry_topological_fingerprint`, `mc_geometry_spectral_signature`, `mc_geometry_dimension_constraint_invariance`, `mc_geometry_crm_compare`, `mc_safety_circuit_breaker`, `mc_safety_persona_drift`, `mc_geometry_dare_sparsity`, `mc_geometry_dora_decomposition` | `readOnly=true, idempotent=true` |
 | Mutating | `mc_train_start`, `mc_job_pause`, `mc_job_resume`, `mc_infer`, `mc_checkpoint_export`, `mc_geometry_crm_build` | `readOnly=false` |
 | Destructive | `mc_job_cancel` | `destructive=true, idempotent=true` |
 | Network | `mc_model_fetch`, `mc_model_search` | `openWorld=true, idempotent=true` |
@@ -1220,6 +1220,65 @@ Call mc_inventory first to see what models are available before starting trainin
 
 ---
 
+### mc_geometry_dimension_constraint_invariance
+
+**Purpose:** Measure invariance under zero-padding dimension constraints.
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "points": { "type": "array", "items": { "type": "array", "items": { "type": "number" } } },
+    "paddedDimension": { "type": "integer" },
+    "kNeighbors": { "type": ["integer", "null"] },
+    "heatTimes": { "type": ["array", "null"], "items": { "type": "number" } }
+  },
+  "required": ["points", "paddedDimension"]
+}
+```
+
+**Output:**
+```json
+{
+  "_schema": "mc.geometry.dimension_constraint_invariance.v1",
+  "baseDimension": 2,
+  "paddedDimension": 4,
+  "sampleCount": 5,
+  "kNeighbors": 3,
+  "gramCka": 1.0,
+  "geodesicDiff": {
+    "meanAbs": 0.0,
+    "maxAbs": 0.0
+  },
+  "spectral": {
+    "eigenMeanAbsDiff": 0.0,
+    "eigenMaxAbsDiff": 0.0,
+    "spectralEntropyBase": 0.123,
+    "spectralEntropyPadded": 0.123,
+    "heatTraceBase": [4.89, 2.31],
+    "heatTracePadded": [4.89, 2.31],
+    "heatTimes": [0.1, 1.0]
+  },
+  "topology": {
+    "bettiNumbersBase": { "0": 1, "1": 0 },
+    "bettiNumbersPadded": { "0": 1, "1": 0 },
+    "componentCountBase": 1,
+    "componentCountPadded": 1,
+    "cycleCountBase": 0,
+    "cycleCountPadded": 0,
+    "persistenceEntropyBase": 0.0,
+    "persistenceEntropyPadded": 0.0,
+    "maxPersistenceBase": 0.912,
+    "maxPersistencePadded": 0.912
+  }
+}
+```
+
+---
+
 ### mc_geometry_baseline_list
 
 **Purpose:** List available domain geometry baselines.
@@ -2067,6 +2126,7 @@ These tools never modify state and are safe to call whenever context is needed:
 - `mc_geometry_intrinsic_dimension` – Intrinsic dimension (TwoNN).
 - `mc_geometry_topological_fingerprint` – Persistent homology fingerprint (Betti numbers, entropy).
 - `mc_geometry_spectral_signature` – Geodesic spectral signature (Laplacian eigenvalues, heat trace).
+- `mc_geometry_dimension_constraint_invariance` – Invariance under zero-padding dimension constraints.
 - `mc_geometry_concept_detect` – Detect semantic concept activations in text or model responses.
 - `mc_geometry_concept_compare` – Compare concept paths between two responses.
 - `mc_geometry_cross_cultural_analyze` – Gram-level alignment analysis across cultures.

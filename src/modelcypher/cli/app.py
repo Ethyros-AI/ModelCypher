@@ -232,17 +232,21 @@ def _context(ctx: typer.Context) -> CLIContext:
 @app.callback()
 def main(
     ctx: typer.Context,
-    ai: bool | None = typer.Option(None, "--ai", help="AI mode: JSON output, no prompts"),
-    output: str | None = typer.Option(None, "--output", help="Output format: json, yaml, text"),
-    quiet: bool = typer.Option(False, "--quiet", help="Suppress info logs"),
-    very_quiet: bool = typer.Option(False, "--very-quiet", help="Suppress all logs"),
+    ai: bool | None = typer.Option(
+        None, "--ai", help="AI mode: force JSON output, suppress prompts/logs (MC_AI_MODE=1)"
+    ),
+    output: str | None = typer.Option(
+        None, "--output", help="Output format: json, yaml, text (AI defaults to json)"
+    ),
+    quiet: bool = typer.Option(False, "--quiet", help="Suppress info logs (stderr)"),
+    very_quiet: bool = typer.Option(False, "--very-quiet", help="Suppress all logs (stderr)"),
     yes: bool = typer.Option(False, "--yes", help="Auto-confirm prompts"),
     no_prompt: bool = typer.Option(False, "--no-prompt", help="Fail if confirmation required"),
-    pretty: bool = typer.Option(False, "--pretty", help="Pretty print JSON output"),
+    pretty: bool = typer.Option(False, "--pretty", help="Pretty print structured output"),
     log_level: str = typer.Option(
         "info", "--log-level", help="Log level: trace, debug, info, warn, error"
     ),
-    trace_id: str | None = typer.Option(None, "--trace-id", help="Trace ID"),
+    trace_id: str | None = typer.Option(None, "--trace-id", help="Trace ID for diagnostics"),
 ) -> None:
     ai_mode = resolve_ai_mode(ai)
     output_format = resolve_output_format(ai_mode, output)

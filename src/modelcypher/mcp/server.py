@@ -133,6 +133,7 @@ TOOL_PROFILES = {
         "mc_geometry_intrinsic_dimension",  # New
         "mc_geometry_topological_fingerprint",  # New
         "mc_geometry_spectral_signature",  # New
+        "mc_geometry_dimension_constraint_invariance",  # New
         "mc_geometry_sparse_domains",  # New
         "mc_geometry_sparse_locate",  # New
         "mc_geometry_refusal_pairs",  # New

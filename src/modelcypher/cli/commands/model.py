@@ -462,7 +462,7 @@ def model_validate_merge(
     source: str = typer.Option(..., "--source", help="Path to source model"),
     target: str = typer.Option(..., "--target", help="Path to target model"),
 ) -> None:
-    """Validate merge compatibility between two models.
+    """Validate merge alignment between two models.
 
     Examples:
         mc model validate-merge --source ./model-a --target ./model-b

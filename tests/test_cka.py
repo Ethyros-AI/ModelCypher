@@ -1377,9 +1377,9 @@ class TestEdgeCasesAndNumericalStability:
         X = backend.random_normal((10, 8))
         Y = backend.random_normal((10, 8))
 
-        # Zero out most entries
-        X_np = backend.to_numpy(X)
-        Y_np = backend.to_numpy(Y)
+        # Zero out most entries (copy needed for JAX read-only arrays)
+        X_np = backend.to_numpy(X).copy()
+        Y_np = backend.to_numpy(Y).copy()
         X_np[X_np < 0.5] = 0.0
         Y_np[Y_np < 0.5] = 0.0
         X_sparse = backend.array(X_np)

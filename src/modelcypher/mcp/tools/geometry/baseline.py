@@ -88,7 +88,7 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
             Extract geometry baseline from a reference model.
 
             Uses Ollivier-Ricci curvature and domain-specific analyzers to create
-            an empirical baseline for healthy LLM geometry.
+            an empirical baseline for reference LLM geometry.
 
             Args:
                 modelPath: Path to the model directory
@@ -148,7 +148,7 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
             Validate model geometry against established baselines.
 
             Compares model's Ollivier-Ricci curvature and domain metrics against
-            known-good baselines. Useful for post-merge validation and health checks.
+            reference baselines. Useful for post-merge validation and baseline-relative checks.
 
             Args:
                 modelPath: Path to the model to validate

@@ -359,6 +359,46 @@ class TestSpectralSignatureTool:
         assert payload["componentCount"] == 2
         assert payload["connected"] is False
 
+
+# =============================================================================
+# Dimension Constraint Invariance Tests
+# =============================================================================
+
+
+class TestDimensionConstraintInvarianceTool:
+    """Tests for mc_geometry_dimension_constraint_invariance tool."""
+
+    def test_dimension_constraint_schema(self, mcp_env: dict[str, str]) -> None:
+        """Tool should return properly structured response."""
+        points = [
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [0.5, 0.8],
+            [0.1, 0.7],
+            [0.9, 0.2],
+        ]
+
+        async def runner(session: ClientSession):
+            return await _await_with_timeout(
+                session.call_tool(
+                    "mc_geometry_dimension_constraint_invariance",
+                    arguments={
+                        "points": points,
+                        "paddedDimension": 4,
+                        "kNeighbors": 3,
+                    },
+                )
+            )
+
+        result = _run_mcp(mcp_env, runner)
+        payload = _extract_structured(result)
+
+        assert payload["_schema"] == "mc.geometry.dimension_constraint_invariance.v1"
+        assert payload["baseDimension"] == 2
+        assert payload["paddedDimension"] == 4
+        assert payload["gramCka"] == pytest.approx(1.0, abs=1e-6)
+        assert payload["geodesicDiff"]["maxAbs"] == pytest.approx(0.0, abs=1e-6)
+
 # =============================================================================
 # Manifold Cluster Tests
 # =============================================================================
