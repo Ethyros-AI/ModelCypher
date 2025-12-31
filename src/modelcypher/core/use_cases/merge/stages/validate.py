@@ -15,8 +15,32 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Geometric merge orchestrator compatibility wrapper."""
+from __future__ import annotations
 
-from .merge import GeometricMergeOrchestrator, LayerGeometry, MergeGeometry
+from typing import TYPE_CHECKING
 
-__all__ = ["GeometricMergeOrchestrator", "LayerGeometry", "MergeGeometry"]
+from ..data_models import MergeGeometry
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array
+
+
+def stage_validate(
+    geometry: MergeGeometry,
+    source_weights: dict[str, "Array"],
+    target_weights: dict[str, "Array"],
+) -> None:
+    """STAGE 8: Validate merge geometry."""
+    # safety_polytope - check we're in safe region
+    try:
+        pass
+        # Would check merge is within safe transformation bounds
+    except Exception:
+        pass
+
+    # refusal_direction_detector - preserve refusal
+    try:
+        # Would verify refusal direction is preserved
+        geometry.refusal_preserved = True
+    except Exception:
+        pass

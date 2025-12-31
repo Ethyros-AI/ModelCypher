@@ -15,8 +15,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Geometric merge orchestrator compatibility wrapper."""
+"""Geometric merge orchestration package."""
 
-from .merge import GeometricMergeOrchestrator, LayerGeometry, MergeGeometry
+from .data_models import LayerGeometry, MergeGeometry
+from .orchestrator import GeometricMergeOrchestrator
 
 __all__ = ["GeometricMergeOrchestrator", "LayerGeometry", "MergeGeometry"]
