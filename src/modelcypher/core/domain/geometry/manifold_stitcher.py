@@ -797,7 +797,7 @@ class ManifoldStitcher:
         k: int,
         max_iterations: int = 50,
         backend: "Backend | None" = None,
-        geodesic_k_neighbors: int = 10,
+        geodesic_k_neighbors: int | None = None,
         seed: int | None = 42,
     ) -> tuple[list[int], list[list[float]]]:
         """Riemannian K-means clustering with geodesic distances.
@@ -816,7 +816,7 @@ class ManifoldStitcher:
             k: Number of clusters
             max_iterations: Maximum iterations
             backend: Compute backend
-            geodesic_k_neighbors: k for k-NN graph in geodesic estimation
+            geodesic_k_neighbors: k for k-NN graph (None = derive from geometry)
 
         Returns:
             (assignments, centroids) tuple
@@ -831,6 +831,14 @@ class ManifoldStitcher:
 
         pts = b.array(points)
         d_dim = pts.shape[1]
+
+        # Derive k from geometry if not specified
+        if geodesic_k_neighbors is None:
+            from modelcypher.core.domain.geometry.intrinsic_dimension import (
+                compute_k_for_points,
+            )
+
+            geodesic_k_neighbors = compute_k_for_points(pts, b)
 
         # Precompute geodesic distances and Riemannian geometry for Fréchet means
         from modelcypher.core.domain.geometry.riemannian_utils import (

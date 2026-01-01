@@ -76,8 +76,8 @@ class KnowledgeDensityConfig:
     # Whether to compute cluster tightness
     compute_clustering: bool = True
 
-    # Number of neighbors for clustering metric
-    k_neighbors: int = 10
+    # Number of neighbors for clustering metric (None = derive from geometry)
+    k_neighbors: int | None = None
 
 
 @dataclass(frozen=True)

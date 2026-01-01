@@ -239,7 +239,9 @@ def pytest_ignore_collect(collection_path, config):
         return False
     if isinstance(content, bytes):
         content = content.decode("utf-8", errors="ignore")
-    return "mlx.core" in content
+    content_lower = content.lower()
+    mlx_markers = ("import mlx", "from mlx", "mlx.core", "mlx.nn", "mlx_lm")
+    return any(marker in content_lower for marker in mlx_markers)
 
 
 @pytest.hookimpl(tryfirst=True)
