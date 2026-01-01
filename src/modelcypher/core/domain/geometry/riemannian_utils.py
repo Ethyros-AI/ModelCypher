@@ -557,8 +557,13 @@ class RiemannianGeometry:
         backend.eval(euclidean_dist)
 
         # Build k-NN adjacency and run Floyd-Warshall on backend (no scipy)
-        # Use a large finite sentinel derived from dtype to avoid inf arithmetic issues.
-        inf_val = float(backend.finfo().max) * 0.25
+        # Use a reasonable sentinel value that's:
+        # - Large enough to clearly indicate "no direct edge" in the k-NN graph
+        # - Small enough to not cause overflow when used in downstream computations
+        #   (like scale = geodesic / euclidean in Fréchet mean)
+        # 1e20 is a good balance: much larger than any reasonable geodesic distance
+        # but small enough that scale = 1e20 / 0.001 = 1e23 won't overflow
+        inf_val = 1e20
         eye = backend.eye(n)
         dist_for_sort = euclidean_dist + eye * inf_val
 
@@ -1552,8 +1557,50 @@ class RiemannianGeometry:
         # Gradient is the weighted mean of log vectors
         gradient = backend.sum(log_vectors * weights_col, axis=0)
 
-        # Step size (could be adaptive, using fixed for simplicity)
-        eta = 0.5
+        # Adaptive step size based on gradient magnitude
+        # This is geometrically valid - we're controlling step size, not the direction
+        # Large gradients (from extreme curvature) need smaller steps to avoid overshooting
+        backend.eval(gradient)
+        grad_np = backend.to_numpy(gradient)
+
+        # Check for inf in gradient (can happen with extreme curvature)
+        # IEEE 754: 0 * inf = nan, so we must handle inf before scaling
+        has_inf = any(math.isinf(float(g)) for g in grad_np.flatten())
+
+        if has_inf:
+            # Gradient contains inf - this means extreme curvature caused overflow
+            # Replace inf with max finite value preserving sign, then renormalize
+            # This preserves the geometric DIRECTION while preventing nan propagation
+            max_finite = 1e38  # Large but safely below float64 overflow
+            grad_np_clipped = []
+            for g in grad_np.flatten():
+                g_float = float(g)
+                if math.isinf(g_float):
+                    grad_np_clipped.append(max_finite if g_float > 0 else -max_finite)
+                elif math.isnan(g_float):
+                    grad_np_clipped.append(0.0)  # nan -> no contribution
+                else:
+                    grad_np_clipped.append(g_float)
+
+            gradient = backend.array(grad_np_clipped)
+            backend.eval(gradient)
+            grad_np = backend.to_numpy(gradient)
+
+        grad_norm = float(backend.to_numpy(backend.sqrt(backend.sum(gradient * gradient))))
+
+        # Use a step size that limits the maximum movement per iteration
+        # This prevents numerical instability from extreme curvature while preserving
+        # the gradient direction (which IS the geometric signal)
+        base_eta = 0.5
+        max_step = 1.0  # Maximum distance to move in one iteration
+
+        if grad_norm > 0 and not math.isinf(grad_norm):
+            eta = min(base_eta, max_step / grad_norm)
+        elif math.isinf(grad_norm):
+            # Gradient is still inf after clipping - use minimal step
+            eta = 1e-10
+        else:
+            eta = base_eta
 
         # Update
         new_mu = mu + eta * gradient

@@ -193,7 +193,7 @@ class GeometryMetricsService:
         backend = get_default_backend()
         gw = GromovWassersteinDistance(backend=backend)
         config = GWConfig(
-            epsilon=epsilon,
+            sinkhorn_epsilon=epsilon,
             max_outer_iterations=max_iterations,
         )
 

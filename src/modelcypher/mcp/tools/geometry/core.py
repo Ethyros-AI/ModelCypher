@@ -533,7 +533,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             promptsFile: str | None = None,
             layerStart: float = 0.0,
             layerEnd: float = 1.0,
-            sparsityThreshold: float = 0.8,
+            sparsityThreshold: float | None = None,
         ) -> dict:
             """Analyze per-neuron sparsity for fine-grained knowledge grafting.
 
@@ -546,7 +546,8 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                 promptsFile: Path to JSON file with custom prompts
                 layerStart: Start layer fraction (0.0-1.0)
                 layerEnd: End layer fraction (0.0-1.0)
-                sparsityThreshold: Sparsity threshold for graft candidates
+                sparsityThreshold: Sparsity threshold for graft candidates.
+                    If None (default), derived from distribution as mean + 2σ.
 
             Returns:
                 Neuron sparsity map with graft candidates and dead neurons
@@ -581,8 +582,11 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             else:
                 raise ValueError("Provide either domain or promptsFile")
 
+            # All thresholds derived from data distribution when None
             config = NeuronSparsityConfig(
-                sparsity_threshold=sparsityThreshold,
+                sparsity_threshold=sparsityThreshold,  # None = mean + 2σ
+                dead_neuron_threshold=None,  # mean + 3σ
+                activation_threshold=None,  # noise floor from data
                 min_prompts=min(len(prompts), 20),
             )
 

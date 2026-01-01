@@ -34,13 +34,6 @@ from modelcypher.core.domain.geometry.interference_predictor import (
     GlobalMergeAnalysisReport,
     MergeAnalyzer,
     quick_merge_analysis,
-    # Backward compatibility aliases
-    InterferenceMechanism,
-    InterferencePredictorConfig,
-    InterferenceResult,
-    GlobalInterferenceReport,
-    InterferencePredictor,
-    quick_interference_check,
 )
 from modelcypher.core.domain.geometry.riemannian_density import (
     ConceptVolume,
@@ -121,11 +114,6 @@ class TestTransformationType:
         """Verify expected number of transformation types."""
         assert len(list(TransformationType)) == 5
 
-    def test_backward_compat_alias(self) -> None:
-        """InterferenceMechanism should alias TransformationType."""
-        assert InterferenceMechanism is TransformationType
-        assert InterferenceMechanism.ALPHA_SCALING == TransformationType.ALPHA_SCALING
-
 
 # =============================================================================
 # MergeAnalysisConfig Tests
@@ -193,9 +181,10 @@ class TestMergeAnalysisConfig:
         # The actual value depends on percentile calculation
         assert 0.4 <= config.alpha_scaling_threshold <= 0.6
 
-    def test_backward_compat_alias(self) -> None:
-        """InterferencePredictorConfig should alias MergeAnalysisConfig."""
-        assert InterferencePredictorConfig is MergeAnalysisConfig
+    def test_config_initializes(self) -> None:
+        """Configuration should initialize with defaults."""
+        config = MergeAnalysisConfig()
+        assert isinstance(config, MergeAnalysisConfig)
 
 
 # =============================================================================
@@ -259,11 +248,6 @@ class TestMergeAnalysisResult:
             transformation_descriptions=["desc1", "desc2", "desc3"],
         )
         assert len(result.transformations) == 3
-
-    def test_backward_compat_alias(self) -> None:
-        """InterferenceResult should alias MergeAnalysisResult."""
-        assert InterferenceResult is MergeAnalysisResult
-
 
 # =============================================================================
 # GlobalMergeAnalysisReport Tests
@@ -365,11 +349,6 @@ class TestGlobalMergeAnalysisReport:
         )
         assert len(curvature_pairs) == 0
 
-    def test_backward_compat_alias(self) -> None:
-        """GlobalInterferenceReport should alias GlobalMergeAnalysisReport."""
-        assert GlobalInterferenceReport is GlobalMergeAnalysisReport
-
-
 # =============================================================================
 # MergeAnalyzer Tests
 # =============================================================================
@@ -438,24 +417,6 @@ class TestMergeAnalyzer:
         )
         assert isinstance(result, MergeAnalysisResult)
 
-    def test_predict_backward_compat(
-        self,
-        sample_volumes: dict[str, ConceptVolume],
-    ) -> None:
-        """predict() should be alias for analyze()."""
-        analyzer = MergeAnalyzer()
-        result_analyze = analyzer.analyze(
-            sample_volumes["concept_a"],
-            sample_volumes["concept_b"],
-        )
-        result_predict = analyzer.predict(
-            sample_volumes["concept_a"],
-            sample_volumes["concept_b"],
-        )
-        # Results should have same structure (values may differ due to randomness)
-        assert result_analyze.volume_a_id == result_predict.volume_a_id
-        assert result_analyze.volume_b_id == result_predict.volume_b_id
-
     def test_analyze_global_returns_report(
         self,
         sample_volumes: dict[str, ConceptVolume],
@@ -482,15 +443,6 @@ class TestMergeAnalyzer:
         report = analyzer.analyze_global(sample_volumes, relations=relations)
         assert report.total_pairs == len(relations)
 
-    def test_predict_global_backward_compat(
-        self,
-        sample_volumes: dict[str, ConceptVolume],
-    ) -> None:
-        """predict_global() should be alias for analyze_global()."""
-        analyzer = MergeAnalyzer()
-        report = analyzer.predict_global(sample_volumes)
-        assert isinstance(report, GlobalMergeAnalysisReport)
-
     def test_transformation_counts(
         self,
         sample_volumes: dict[str, ConceptVolume],
@@ -513,10 +465,6 @@ class TestMergeAnalyzer:
         assert 0.0 <= report.mean_overlap <= 1.0
         assert report.mean_curvature_divergence >= 0.0
         assert 0.0 <= report.mean_alignment <= 1.0
-
-    def test_backward_compat_alias(self) -> None:
-        """InterferencePredictor should alias MergeAnalyzer."""
-        assert InterferencePredictor is MergeAnalyzer
 
 
 # =============================================================================
@@ -808,10 +756,6 @@ class TestQuickMergeAnalysis:
         # Check that pair keys have prefixed IDs
         for key in report.pair_results.keys():
             assert key[0].startswith("source:") or key[1].startswith("target:")
-
-    def test_backward_compat_alias(self, backend: "Backend") -> None:
-        """quick_interference_check should alias quick_merge_analysis."""
-        assert quick_interference_check is quick_merge_analysis
 
 
 # =============================================================================

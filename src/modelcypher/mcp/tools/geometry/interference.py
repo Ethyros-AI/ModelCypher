@@ -75,7 +75,7 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                 GeometryDomain,
             )
             from modelcypher.core.domain.geometry.interference_predictor import (
-                InterferencePredictor,
+                MergeAnalyzer,
             )
             from modelcypher.core.domain.geometry.riemannian_density import (
                 RiemannianDensityEstimator,
@@ -97,7 +97,7 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
 
             DomainGeometryWaypointService()
             RiemannianDensityEstimator()
-            InterferencePredictor()
+            MergeAnalyzer()
             MLXBackend()
 
             domain_results = {}

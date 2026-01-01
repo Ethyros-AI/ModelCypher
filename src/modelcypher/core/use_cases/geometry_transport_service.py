@@ -158,8 +158,8 @@ class GeometryTransportService:
         blend_alpha = float(similarity)
 
         gw_config = GWConfig(
-            epsilon=gw_epsilon,
-            max_iterations=gw_max_iterations,
+            sinkhorn_epsilon=gw_epsilon,
+            max_outer_iterations=gw_max_iterations,
         )
         tgm_config = TransportGuidedMerger.Config(
             coupling_threshold=coupling_threshold,

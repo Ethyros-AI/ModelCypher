@@ -21,7 +21,6 @@ Tests:
 - Result dataclass (properties, __post_init__)
 - Config dataclass (defaults, parameters)
 - GromovWassersteinDistance class (compute, Frank-Wolfe, Sinkhorn, helpers)
-- compute_gromov_wasserstein convenience function
 - Edge cases (empty, single point, identical matrices)
 """
 
@@ -36,7 +35,6 @@ from modelcypher.core.domain.geometry.gromov_wasserstein import (
     Config,
     GromovWassersteinDistance,
     Result,
-    compute_gromov_wasserstein,
 )
 
 if TYPE_CHECKING:
@@ -644,12 +642,12 @@ class TestDifferentSizes:
 
 
 # =============================================================================
-# Convenience Function Tests
+# Point Cloud GW Tests
 # =============================================================================
 
 
-class TestConvenienceFunction:
-    """Tests for compute_gromov_wasserstein convenience function."""
+class TestPointCloudGW:
+    """Tests for point-cloud GW distance via pairwise geodesic distances."""
 
     def test_compute_identical_points(self, any_backend: "Backend") -> None:
         """Identical point sets should have near-zero distance."""
@@ -659,7 +657,16 @@ class TestConvenienceFunction:
         b.eval(points)
 
         config = Config(num_restarts=1, max_outer_iterations=10)
-        result = compute_gromov_wasserstein(points, points, config, backend=b)
+        gw = GromovWassersteinDistance(backend=b)
+        source_dist = gw.compute_pairwise_distances(
+            points,
+            k_neighbors=config.geodesic_k_neighbors,
+        )
+        target_dist = gw.compute_pairwise_distances(
+            points,
+            k_neighbors=config.geodesic_k_neighbors,
+        )
+        result = gw.compute(source_dist, target_dist, config)
 
         assert result.distance == pytest.approx(0.0, abs=0.01)
 
@@ -669,7 +676,16 @@ class TestConvenienceFunction:
         points_b = [[0.0, 0.0], [1.0, 0.0]]
 
         config = Config(num_restarts=1, max_outer_iterations=10)
-        result = compute_gromov_wasserstein(points_a, points_b, config)
+        gw = GromovWassersteinDistance()
+        source_dist = gw.compute_pairwise_distances(
+            points_a,
+            k_neighbors=config.geodesic_k_neighbors,
+        )
+        target_dist = gw.compute_pairwise_distances(
+            points_b,
+            k_neighbors=config.geodesic_k_neighbors,
+        )
+        result = gw.compute(source_dist, target_dist, config)
 
         assert result.distance == pytest.approx(0.0, abs=0.01)
 

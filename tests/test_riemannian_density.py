@@ -39,7 +39,7 @@ except ImportError:
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.interference_predictor import (
-    InterferencePredictor,
+    MergeAnalyzer,
     TransformationType,
     quick_merge_analysis,
 )
@@ -390,7 +390,7 @@ class TestConceptVolumeRelation:
 # ============================================================================
 
 
-class TestInterferencePredictor:
+class TestMergeAnalyzer:
     """Tests for interference prediction."""
 
     def test_distant_concepts_neutral(self, two_distant_concepts):
@@ -406,8 +406,8 @@ class TestInterferencePredictor:
         vol_a = estimator.estimate_concept_volume("A", samples_a)
         vol_b = estimator.estimate_concept_volume("B", samples_b)
 
-        predictor = InterferencePredictor()
-        result = predictor.predict(vol_a, vol_b)
+        predictor = MergeAnalyzer()
+        result = predictor.analyze(vol_a, vol_b)
 
         # Distant concepts should need few or no transformations
         # (minimal geometric intervention needed)
@@ -425,8 +425,8 @@ class TestInterferencePredictor:
         vol_a = estimator.estimate_concept_volume("A", samples_a)
         vol_b = estimator.estimate_concept_volume("B", samples_b)
 
-        predictor = InterferencePredictor()
-        result = predictor.predict(vol_a, vol_b)
+        predictor = MergeAnalyzer()
+        result = predictor.analyze(vol_a, vol_b)
 
         # Overlapping concepts should have some transformations identified
         # Type can vary but the analysis should produce meaningful scores
@@ -438,8 +438,8 @@ class TestInterferencePredictor:
         estimator = RiemannianDensityEstimator()
         vol = estimator.estimate_concept_volume("A", simple_gaussian_samples)
 
-        predictor = InterferencePredictor()
-        result = predictor.predict(vol, vol)
+        predictor = MergeAnalyzer()
+        result = predictor.analyze(vol, vol)
 
         # Overlap score should be substantial for identical volumes
         assert result.overlap_score > 0.5
@@ -456,8 +456,8 @@ class TestInterferencePredictor:
         vol_a = estimator.estimate_concept_volume("A", samples_a)
         vol_b = estimator.estimate_concept_volume("B", samples_b)
 
-        predictor = InterferencePredictor()
-        result = predictor.predict(vol_a, vol_b)
+        predictor = MergeAnalyzer()
+        result = predictor.analyze(vol_a, vol_b)
 
         # Should have transformation descriptions (even if empty for direct merge)
         assert isinstance(result.transformation_descriptions, list)
@@ -473,14 +473,14 @@ class TestInterferencePredictor:
         vol_a = estimator.estimate_concept_volume("A", samples_a)
         vol_b = estimator.estimate_concept_volume("B", samples_b)
 
-        predictor = InterferencePredictor()
-        result = predictor.predict(vol_a, vol_b)
+        predictor = MergeAnalyzer()
+        result = predictor.analyze(vol_a, vol_b)
 
         assert 0 <= result.measurement_confidence <= 1
 
 
-class TestGlobalInterferenceReport:
-    """Tests for global interference analysis."""
+class TestGlobalMergeAnalysisReport:
+    """Tests for global merge analysis."""
 
     def test_global_report_structure(self):
         """Test global report has correct structure."""
@@ -503,8 +503,8 @@ class TestGlobalInterferenceReport:
         estimator = RiemannianDensityEstimator()
         volumes = batch_estimate_volumes(estimator, concepts)
 
-        predictor = InterferencePredictor()
-        report = predictor.predict_global(volumes)
+        predictor = MergeAnalyzer()
+        report = predictor.analyze_global(volumes)
 
         # Should have 3 pairs: (A,B), (A,C), (B,C)
         assert report.total_pairs == 3
@@ -533,8 +533,8 @@ class TestGlobalInterferenceReport:
         estimator = RiemannianDensityEstimator()
         volumes = batch_estimate_volumes(estimator, concepts)
 
-        predictor = InterferencePredictor()
-        report = predictor.predict_global(volumes)
+        predictor = MergeAnalyzer()
+        report = predictor.analyze_global(volumes)
 
         # Each pair result should have bounded geometric measurements
         for pair, result in report.pair_results.items():
@@ -544,7 +544,7 @@ class TestGlobalInterferenceReport:
 
 
 class TestQuickInterferenceCheck:
-    """Tests for quick_interference_check utility."""
+    """Tests for quick_merge_analysis utility."""
 
     def test_quick_check_common_concepts(self):
         """Quick check should analyze common concepts."""
@@ -674,8 +674,8 @@ class TestRiemannianDensityProperties:
         vol_a = estimator.estimate_concept_volume("A", backend.to_numpy(samples_a))
         vol_b = estimator.estimate_concept_volume("B", backend.to_numpy(samples_b))
 
-        predictor = InterferencePredictor()
-        result = predictor.predict(vol_a, vol_b)
+        predictor = MergeAnalyzer()
+        result = predictor.analyze(vol_a, vol_b)
 
         # All geometric measurements should be bounded (with small epsilon for floating point)
         eps = 1e-6

@@ -251,7 +251,7 @@ class MergePipelineService:
             resolve_domains,
         )
         from modelcypher.core.domain.geometry.interference_predictor import (
-            InterferencePredictor,
+            MergeAnalyzer,
             TransformationType,
         )
         from modelcypher.core.domain.geometry.riemannian_density import (
@@ -261,7 +261,7 @@ class MergePipelineService:
         backend = get_default_backend()
         waypoint_service = get_domain_geometry_waypoint_service()
         density_estimator = RiemannianDensityEstimator()
-        predictor = InterferencePredictor()
+        predictor = MergeAnalyzer()
 
         # Map domain strings to AtlasDomain enums using the canonical resolver
         domain_list = resolve_domains(domains)
@@ -323,7 +323,7 @@ class MergePipelineService:
             }
 
             for concept_id in common_concepts:
-                result = predictor.predict(
+                result = predictor.analyze(
                     source_volumes[concept_id], target_volumes[concept_id]
                 )
                 for t in result.transformations:

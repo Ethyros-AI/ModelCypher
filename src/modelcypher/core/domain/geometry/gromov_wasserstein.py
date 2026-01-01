@@ -136,12 +136,6 @@ class Config:
     # because curvature is inherent in high-dimensional spaces.
     geodesic_k_neighbors: int | None = None
 
-    # Legacy parameters (kept for backward compatibility)
-    epsilon: float = 0.05
-    epsilon_min: float = 0.005
-    epsilon_decay: float = 0.9
-    max_inner_iterations: int = 100
-
 
 class GromovWassersteinDistance:
     """GPU-accelerated Gromov-Wasserstein distance using Frank-Wolfe algorithm."""
@@ -706,41 +700,3 @@ class GromovWassersteinDistance:
         result = rg.geodesic_distances(points, k_neighbors=k_neighbors)
         return result.distances
 
-
-# Convenience function for backward compatibility
-def compute_gromov_wasserstein(
-    source_points: "Array",
-    target_points: "Array",
-    config: Config = Config(),
-    backend: "Backend | None" = None,
-) -> Result:
-    """
-    Compute Gromov-Wasserstein distance between point sets.
-
-    Convenience function that computes pairwise geodesic distances and GW distance.
-    Geodesic distances are used because curvature is inherent in high-dimensional
-    representation spaces.
-
-    Args:
-        source_points: Source point matrix [n, d]
-        target_points: Target point matrix [m, d]
-        config: Algorithm configuration
-        backend: Backend protocol implementation. If None, uses default.
-
-    Returns:
-        Result with distance, coupling, and convergence info
-    """
-    if backend is None:
-        backend = get_default_backend()
-
-    gw = GromovWassersteinDistance(backend)
-    source_dist = gw.compute_pairwise_distances(
-        source_points,
-        k_neighbors=config.geodesic_k_neighbors,
-    )
-    target_dist = gw.compute_pairwise_distances(
-        target_points,
-        k_neighbors=config.geodesic_k_neighbors,
-    )
-
-    return gw.compute(source_dist, target_dist, config)

@@ -209,10 +209,12 @@ def geometry_sparse_neurons(
     typer.echo(f"  Layer range: {layer_start:.0%} - {layer_end:.0%}", err=True)
     typer.echo("  Sparsity threshold: (derived from activation distribution)", err=True)
 
-    # Use None to signal that threshold should be derived from data
-    # The NeuronSparsityConfig.from_activations() will compute it
+    # Use None to signal thresholds should be derived from data
+    # NeuronSparsityMap._derive_thresholds() computes them as mean + N*sigma
     config = NeuronSparsityConfig(
-        sparsity_threshold=None,  # Derived from activation distribution
+        sparsity_threshold=None,  # Derived as mean + 2σ from distribution
+        dead_neuron_threshold=None,  # Derived as mean + 3σ from distribution
+        activation_threshold=None,  # Derived from noise floor
         min_prompts=min(len(prompts), 20),
     )
 
