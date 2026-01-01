@@ -50,15 +50,15 @@ from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 
-from .unified_merge import helpers as merge_helpers
-from .unified_merge import stages as merge_stages
-from .unified_merge.models import (
+from . import helpers as merge_helpers
+from . import stages as merge_stages
+from .models import (
     CrossArchitectureInfo,
     LayerMergeState,
     UnifiedMergeConfig,
     UnifiedMergeResult,
 )
-from .unified_merge.pipeline import run_merge
+from .pipeline import run_merge
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend

@@ -409,7 +409,7 @@ def run_merge(
 
     # Compute geometric confidence from transplant metrics
     # Confidence IS the geometry - no vibes, no interpretation strings
-    from modelcypher.core.use_cases.unified_merge.geometric_confidence import (
+    from modelcypher.core.use_cases.merge.confidence import (
         compute_geometric_confidence_from_transplant,
         compute_mean_confidence,
         compute_safety_verdict,
@@ -530,7 +530,7 @@ def run_full_geometry_merge(
 
         if source_model and target_model and source_tokenizer and target_tokenizer:
             from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
-            from modelcypher.core.use_cases.merge_stages.stage_1_probe import (
+            from modelcypher.core.use_cases.merge.stages.probe import (
                 _encode_probe_ids,
                 build_token_id_map,
                 collect_layer_activations_mlx,
