@@ -55,6 +55,10 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.exceptions import EstimatorError
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -298,9 +302,9 @@ class IntrinsicDimension:
         r2_sq = sorted_dist_sq[:, 2]
 
         # Filter degenerate points (r1 > 0 to avoid division by zero)
-        # Use a mask-based approach on GPU
-        threshold = 1e-9
-        valid_mask = r1_sq > threshold
+        # Use machine epsilon for precision-aware threshold
+        eps = machine_epsilon(backend, r1_sq)
+        valid_mask = r1_sq > eps
 
         # Count valid points
         backend.eval(valid_mask)
@@ -353,7 +357,9 @@ class IntrinsicDimension:
             mean_log_mu_arr = backend.mean(log_mu)
             backend.eval(mean_log_mu_arr)
             mean_log_mu = float(backend.to_numpy(mean_log_mu_arr))
-            if mean_log_mu < 1e-9:
+            # Use machine epsilon for precision-aware threshold
+            eps = machine_epsilon(backend, log_mu)
+            if mean_log_mu < eps:
                 raise EstimatorError.regression_degenerate()
             return 1.0 / mean_log_mu
 
@@ -369,8 +375,9 @@ class IntrinsicDimension:
         F_sliced = F[:-1]
         one_minus_F = 1.0 - F_sliced
 
-        # Clamp to avoid log(0)
-        min_val = backend.full(one_minus_F.shape, 1e-12)
+        # Clamp to avoid log(0) - use machine epsilon
+        eps = machine_epsilon(backend, one_minus_F)
+        min_val = backend.full(one_minus_F.shape, eps)
         clamped = backend.maximum(min_val, one_minus_F)
         y = -backend.log(clamped)
 
@@ -381,7 +388,8 @@ class IntrinsicDimension:
         sum_xx_val = float(backend.to_numpy(sum_xx))
         sum_xy_val = float(backend.to_numpy(sum_xy))
 
-        if sum_xx_val < 1e-9:
+        # Use machine epsilon for degenerate check
+        if sum_xx_val < eps:
             raise EstimatorError.regression_degenerate()
 
         d = sum_xy_val / sum_xx_val
@@ -438,7 +446,7 @@ class IntrinsicDimension:
     def local_dimension_map(
         self,
         points: "Array",
-        k: int = 10,
+        k: int | None = None,
         deficiency_threshold: float | None = None,
     ) -> LocalDimensionMap:
         """
@@ -462,124 +470,161 @@ class IntrinsicDimension:
 
         Args:
             points: Point cloud [n, d]
-            k: Number of neighbors for local estimation (must be >= 3)
-            deficiency_threshold: Threshold for deficiency detection.
-                Points with local ID < threshold * modal_dimension are flagged.
-                Must be explicitly provided - there is no default.
+            k: Number of neighbors for local estimation. If None, uses
+                connectivity-based selection (minimum k for connected graph).
+            deficiency_threshold: Optional threshold for deficiency detection.
+                If provided, points with local ID < threshold * modal_dimension
+                are flagged. Common values: 0.5 (50% of modal), 0.8 (80% of modal).
+                If None, deficiency detection is skipped but dimensions are still computed.
 
         Returns:
             LocalDimensionMap with per-point dimensions and deficiency indices
-
-        Raises:
-            ValueError: If deficiency_threshold is not provided.
         """
-        if deficiency_threshold is None:
-            raise ValueError(
-                "deficiency_threshold must be explicitly provided. "
-                "This is a ratio (0.0-1.0) that determines when local ID is "
-                "considered deficient relative to modal dimension. "
-                "Common values: 0.5 (50% of modal), 0.8 (80% of modal)."
-            )
+        # deficiency_threshold is optional - if not provided, we skip deficiency detection
+        # but still compute per-point dimensions and statistics
         backend = self._backend
         points = backend.array(points)
         backend.eval(points)
 
         n = int(points.shape[0])
-        k = max(3, min(k, n - 1))  # Need at least 3 neighbors for TwoNN
 
-        # Compute geodesic distances once
+        # Compute geodesic distances (k=None triggers connectivity-based selection)
         from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 
         rg = RiemannianGeometry(backend)
         geo_result = rg.geodesic_distances(points, k_neighbors=k)
         geo_dist = geo_result.distances
+        k_actual = geo_result.k_neighbors
         backend.eval(geo_dist)
-        geo_np = backend.to_numpy(geo_dist)
 
-        # Compute local ID for each point
-        local_dims: list[float] = []
-        import math
+        # Need at least 3 neighbors for meaningful local ID
+        k_local = max(3, min(k_actual, n - 1))
 
-        for i in range(n):
-            # Get distances from point i to all others
-            dists = geo_np[i, :].tolist()
+        # Get machine epsilon from the array's dtype - the geometry's precision limit
+        eps = machine_epsilon(backend, geo_dist)
 
-            # Sort to get k+1 nearest (including self at distance 0)
-            sorted_pairs = sorted(enumerate(dists), key=lambda x: (x[1], x[0]))
+        # Sort distances per row to get k-nearest neighbors
+        # Shape: [n, n] -> [n, n] sorted per row
+        sorted_dists = backend.sort(geo_dist, axis=1)
+        backend.eval(sorted_dists)
 
-            # Skip self (index 0), take neighbors 1 to k
-            # We need at least 2 neighbors for TwoNN (r1 and r2)
-            neighbors_with_dist = [
-                (idx, d) for idx, d in sorted_pairs
-                if idx != i and not math.isinf(d)
-            ][:k]
+        # Skip self (column 0, distance 0), take k_local neighbors
+        # k_dists[:, 0] is distance to self (0), k_dists[:, 1:k_local+1] are k nearest
+        k_dists = sorted_dists[:, 1 : k_local + 1]  # [n, k_local]
 
-            if len(neighbors_with_dist) < 2:
-                # Can't compute local ID - mark as NaN or use global
-                local_dims.append(float("nan"))
-                continue
+        # Detect infinite distances (disconnected points in geodesic graph)
+        # Infinity manifests as very large values (> 1e30)
+        inf_threshold = backend.array(1e30)
+        is_finite = k_dists < inf_threshold  # [n, k_local]
 
-            # Compute mu values for local neighborhood
-            # For TwoNN, we need the ratio r2/r1 for multiple point pairs
-            # Simplest approach: use the first few neighbor distance ratios
-            mu_vals: list[float] = []
-            for j in range(1, len(neighbors_with_dist)):
-                r1 = neighbors_with_dist[j - 1][1]  # Distance to (j-1)-th neighbor
-                r2 = neighbors_with_dist[j][1]  # Distance to j-th neighbor
-                if r1 > 1e-12:
-                    mu_vals.append(r2 / r1)
+        # Compute mu = r_{j+1} / r_j for consecutive neighbor pairs
+        # r1: distances to neighbors 1 through k_local-1
+        # r2: distances to neighbors 2 through k_local
+        r1 = k_dists[:, :-1]  # [n, k_local-1]
+        r2 = k_dists[:, 1:]  # [n, k_local-1]
 
-            if len(mu_vals) < 2:
-                local_dims.append(float("nan"))
-                continue
+        # Valid ratios require: r1 > eps, both r1 and r2 finite
+        r1_valid = r1 > eps
+        both_finite = is_finite[:, :-1] & is_finite[:, 1:]
+        valid_mask = r1_valid & both_finite  # [n, k_local-1]
 
-            # Local ID estimate: MLE form d = 1 / mean(log(mu))
-            log_mu_vals = [math.log(mu) for mu in mu_vals if mu > 0]
-            if len(log_mu_vals) == 0 or sum(log_mu_vals) < 1e-12:
-                local_dims.append(float("nan"))
-                continue
+        # Safe division: replace invalid r1 with 1.0 to avoid division by zero
+        ones = backend.ones_like(r1)
+        r1_safe = backend.where(r1_valid, r1, ones)
+        mu = r2 / r1_safe  # [n, k_local-1]
 
-            mean_log_mu = sum(log_mu_vals) / len(log_mu_vals)
-            if mean_log_mu < 1e-12:
-                local_dims.append(float("nan"))
-                continue
+        # Compute log(mu) - only meaningful where mu > 1
+        # For mu <= 1, log would be <= 0, which gives negative dimension (invalid)
+        # Clamp mu to minimum of 1+eps to ensure positive log
+        one_plus_eps = backend.array(1.0) + eps
+        mu_clamped = backend.where(mu > one_plus_eps, mu, one_plus_eps)
+        log_mu = backend.log(mu_clamped)  # [n, k_local-1]
 
-            local_id = 1.0 / mean_log_mu
-            local_dims.append(local_id)
+        # Mask invalid entries with 0
+        zeros = backend.zeros_like(log_mu)
+        log_mu_masked = backend.where(valid_mask, log_mu, zeros)
 
-        # Convert to backend array
-        # Replace nan with 0 for statistics, but keep track for filtering
-        valid_dims = [d for d in local_dims if not math.isnan(d) and d > 0]
+        # Count valid entries per row
+        valid_float = backend.astype(valid_mask, backend.float32)
+        valid_count = backend.sum(valid_float, axis=1)  # [n]
 
-        if len(valid_dims) == 0:
+        # Sum of log(mu) per row
+        sum_log_mu = backend.sum(log_mu_masked, axis=1)  # [n]
+
+        # Mean log(mu) per row - only where we have enough valid entries
+        # Need at least 2 valid mu values for meaningful estimate
+        min_valid = backend.array(2.0)
+        has_enough = valid_count >= min_valid
+
+        # Safe mean computation
+        valid_count_safe = backend.where(has_enough, valid_count, backend.ones_like(valid_count))
+        mean_log_mu = sum_log_mu / valid_count_safe  # [n]
+
+        # Local ID = 1 / mean_log_mu
+        # Valid only where mean_log_mu > eps and has_enough is True
+        mean_positive = mean_log_mu > eps
+        valid_id = has_enough & mean_positive
+
+        # Safe division for ID
+        mean_log_mu_safe = backend.where(valid_id, mean_log_mu, backend.ones_like(mean_log_mu))
+        local_dims_raw = backend.array(1.0) / mean_log_mu_safe
+
+        # Mark invalid points with NaN
+        nan_val = backend.array(float("nan"))
+        local_dims = backend.where(valid_id, local_dims_raw, nan_val)
+        backend.eval(local_dims)
+
+        # Extract valid dimensions for statistics (convert to numpy for final stats)
+        local_dims_np = backend.to_numpy(local_dims)
+        valid_id_np = backend.to_numpy(valid_id)
+
+        # Filter to valid positive dimensions
+        valid_mask_np = valid_id_np & (local_dims_np > 0)
+        valid_dims_arr = local_dims_np[valid_mask_np]
+
+        if len(valid_dims_arr) == 0:
             return LocalDimensionMap(
-                dimensions=backend.array(local_dims),
+                dimensions=local_dims,
                 modal_dimension=0.0,
                 mean_dimension=0.0,
                 std_dimension=0.0,
                 deficient_indices=[],
                 deficiency_threshold=deficiency_threshold,
-                k_neighbors=k,
+                k_neighbors=k_actual,
             )
 
-        # Compute statistics
-        mean_dim = sum(valid_dims) / len(valid_dims)
-        var_dim = sum((d - mean_dim) ** 2 for d in valid_dims) / len(valid_dims)
-        std_dim = math.sqrt(var_dim)
+        # Compute statistics using backend operations
+        valid_dims_backend = backend.array(valid_dims_arr)
+        mean_dim = float(backend.mean(valid_dims_backend))
+        var_dim = float(backend.mean((valid_dims_backend - mean_dim) ** 2))
+        std_dim = float(backend.sqrt(backend.array(var_dim)))
 
         # Modal dimension: bin dimensions and find most common
         # Use histogram with bins of width 0.5
-        if len(valid_dims) > 1:
-            min_dim = min(valid_dims)
-            max_dim = max(valid_dims)
+        min_dim = float(backend.min(valid_dims_backend))
+        max_dim = float(backend.max(valid_dims_backend))
+
+        if len(valid_dims_arr) > 1 and max_dim > min_dim:
             n_bins = max(1, int((max_dim - min_dim) / 0.5) + 1)
-            bin_width = (max_dim - min_dim + 1e-9) / n_bins
+            bin_width = (max_dim - min_dim + eps) / n_bins
 
-            bin_counts: list[int] = [0] * n_bins
-            for d in valid_dims:
-                bin_idx = min(n_bins - 1, int((d - min_dim) / bin_width))
-                bin_counts[bin_idx] += 1
+            # Compute bin indices
+            bin_indices = backend.astype(
+                (valid_dims_backend - min_dim) / bin_width, backend.int32
+            )
+            # Clamp to valid range
+            max_bin_idx = backend.array(n_bins - 1, dtype=backend.int32)
+            zero_idx = backend.array(0, dtype=backend.int32)
+            bin_indices = backend.where(bin_indices > max_bin_idx, max_bin_idx, bin_indices)
+            bin_indices = backend.where(bin_indices < zero_idx, zero_idx, bin_indices)
 
+            # Count bins (convert to numpy for histogram counting)
+            bin_indices_np = backend.to_numpy(bin_indices)
+            bin_counts = [0] * n_bins
+            for idx in bin_indices_np:
+                bin_counts[int(idx)] += 1
+
+            # Find modal bin
             max_bin = 0
             max_count = bin_counts[0]
             for i, c in enumerate(bin_counts):
@@ -589,30 +634,31 @@ class IntrinsicDimension:
 
             modal_dim = min_dim + (max_bin + 0.5) * bin_width
         else:
-            modal_dim = valid_dims[0]
+            modal_dim = valid_dims_arr[0] if len(valid_dims_arr) > 0 else 0.0
 
-        # Find deficient points
-        threshold = deficiency_threshold * modal_dim
+        # Find deficient points (only if threshold provided)
         deficient: list[int] = []
-        for i, d in enumerate(local_dims):
-            if not math.isnan(d) and d < threshold:
-                deficient.append(i)
+        if deficiency_threshold is not None:
+            threshold = deficiency_threshold * modal_dim
+            for i in range(n):
+                if valid_id_np[i] and local_dims_np[i] < threshold:
+                    deficient.append(i)
 
         return LocalDimensionMap(
-            dimensions=backend.array(local_dims),
+            dimensions=local_dims,
             modal_dimension=modal_dim,
             mean_dimension=mean_dim,
             std_dimension=std_dim,
             deficient_indices=deficient,
-            deficiency_threshold=deficiency_threshold,
-            k_neighbors=k,
+            deficiency_threshold=deficiency_threshold or 0.0,
+            k_neighbors=k_actual,
         )
 
     @staticmethod
     def detect_dimension_deficiency(
         points: "Array",
         threshold: float,
-        k: int = 10,
+        k: int | None = None,
         backend: "Backend | None" = None,
     ) -> list[int]:
         """
@@ -629,7 +675,8 @@ class IntrinsicDimension:
             threshold: Deficiency threshold. This is a ratio (0.0-1.0) that
                 determines when local ID is considered deficient relative to
                 modal dimension. Must be explicitly provided.
-            k: Number of neighbors for local estimation
+            k: Number of neighbors for local estimation. If None, uses
+                connectivity-based selection (minimum k for connected graph).
             backend: Backend to use
 
         Returns:

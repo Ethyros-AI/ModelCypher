@@ -174,19 +174,18 @@ class SystemService:
 
     @staticmethod
     def _mlx_available() -> bool:
-        try:
-            import mlx.core  # noqa: F401
+        from modelcypher.core.domain import _backend as backend_manager
 
-            return True
-        except Exception:
-            return False
+        return backend_manager.probe_mlx_available(explicit=False)
 
     @staticmethod
     def _mlx_version() -> str:
         try:
-            import mlx
+            from importlib.metadata import PackageNotFoundError, version
 
-            return getattr(mlx, "__version__", "unknown")
+            return version("mlx")
+        except PackageNotFoundError:
+            return "unavailable"
         except Exception:
             return "unavailable"
 

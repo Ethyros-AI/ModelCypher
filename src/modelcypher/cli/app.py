@@ -91,7 +91,6 @@ from modelcypher.cli.commands.geometry import waypoint as geometry_waypoint_comm
 from modelcypher.cli.composition import get_training_service
 from modelcypher.cli.context import CLIContext, resolve_ai_mode, resolve_output_format
 from modelcypher.cli.output import write_output
-from modelcypher.core.domain.training import Hyperparameters, TrainingConfig
 from modelcypher.core.use_cases.geometry_service import GeometryService
 from modelcypher.utils.json import dump_json
 from modelcypher.utils.logging import configure_logging
@@ -302,6 +301,8 @@ def validate_train(
 ) -> None:
     context = _context(ctx)
     service = get_training_service()
+    from modelcypher.core.domain.training import Hyperparameters, TrainingConfig
+
     hyperparams = Hyperparameters(
         batch_size=batch_size,
         learning_rate=learning_rate,
@@ -584,6 +585,8 @@ def estimate_train(
 ) -> None:
     context = _context(ctx)
     service = get_training_service()
+    from modelcypher.core.domain.training import Hyperparameters, TrainingConfig
+
     hyperparams = Hyperparameters(
         batch_size=batch_size,
         learning_rate=1e-5,

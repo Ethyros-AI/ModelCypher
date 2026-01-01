@@ -1137,29 +1137,60 @@ class RiemannianDensityEstimator:
     ) -> float:
         """Compute alignment of principal subspaces.
 
-        Uses principal angles between covariance eigenspaces.
+        For same-dimension: Uses principal angles between covariance eigenspaces.
+        For cross-dimension: Uses CKA on Gram matrices (dimension-agnostic).
         Returns value in [0, 1] where 1 = perfectly aligned.
         """
         backend = get_default_backend()
 
-        # Get principal directions (eigenvectors of covariance)
-        _, Va = backend.eigh(volume_a.covariance)
-        _, Vb = backend.eigh(volume_b.covariance)
-        backend.eval(Va, Vb)
+        dim_a = int(volume_a.covariance.shape[0])
+        dim_b = int(volume_b.covariance.shape[0])
 
-        # Compute singular values of Va^T @ Vb
-        # These are cosines of principal angles
-        M = backend.matmul(backend.transpose(Va), Vb)
-        singular_values = backend.svd(M)[1]  # S is the second element
-        backend.eval(singular_values)
+        if dim_a == dim_b:
+            # Same dimension: use principal angles
+            _, Va = backend.eigh(volume_a.covariance)
+            _, Vb = backend.eigh(volume_b.covariance)
+            backend.eval(Va, Vb)
 
-        # Average of squared cosines (like CKA)
-        sq_vals = singular_values * singular_values
-        alignment = backend.mean(sq_vals)
-        backend.eval(alignment)
+            # Compute singular values of Va^T @ Vb
+            # These are cosines of principal angles
+            M = backend.matmul(backend.transpose(Va), Vb)
+            singular_values = backend.svd(M)[1]
+            backend.eval(singular_values)
+
+            sq_vals = singular_values * singular_values
+            alignment = backend.mean(sq_vals)
+            backend.eval(alignment)
+            result = float(backend.to_numpy(alignment))
+        else:
+            # Cross-architecture: use CKA on Gram matrices (dimension-agnostic)
+            # Gram matrix K = X @ X^T has shape [n_samples, n_samples]
+            # This is the SAME size regardless of feature dimension!
+            from modelcypher.core.domain.geometry.cka import compute_cka_from_grams
+
+            # Must use raw_activations to compute proper Gram matrices
+            if volume_a.raw_activations is None or volume_b.raw_activations is None:
+                logger.warning(
+                    "Cross-architecture subspace alignment requires raw_activations. "
+                    "Enable store_raw_activations=True when creating volumes."
+                )
+                return 0.0
+
+            # Compute Gram matrices: K = X @ X^T → [n_samples, n_samples]
+            # These have the SAME dimensions regardless of feature dimension
+            gram_a = backend.matmul(
+                volume_a.raw_activations,
+                backend.transpose(volume_a.raw_activations),
+            )
+            gram_b = backend.matmul(
+                volume_b.raw_activations,
+                backend.transpose(volume_b.raw_activations),
+            )
+            backend.eval(gram_a, gram_b)
+
+            result = compute_cka_from_grams(gram_a, gram_b, backend=backend)
 
         # Clamp to [0, 1] to handle floating point precision
-        result = float(backend.to_numpy(alignment))
         return max(0.0, min(1.0, result))
 
 

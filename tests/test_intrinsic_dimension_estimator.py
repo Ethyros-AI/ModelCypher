@@ -44,14 +44,14 @@ def test_two_nn_invalid_dimension() -> None:
 
 
 def test_two_nn_degenerate_neighbors() -> None:
-    # With connectivity-based k selection and geodesic distances,
-    # nearly-identical points are handled robustly (floating-point precision
-    # gives small but non-zero distances). This is better behavior than failing.
+    # With machine epsilon precision, identical points are correctly detected
+    # as degenerate. All distances are below machine epsilon, so no valid
+    # neighbor ratios can be computed.
     points = [[1.0, 1.0] for _ in range(5)]
-    result = IntrinsicDimension.compute_two_nn(points)
-    # Algorithm should produce a valid result instead of failing
-    assert result.sample_count == 5
-    assert result.intrinsic_dimension > 0
+    with pytest.raises(EstimatorError) as exc:
+        IntrinsicDimension.compute_two_nn(points)
+    # Error kind can vary: two_nn (insufficient samples), regressionDegenerate, etc.
+    assert exc.value.kind in ("two_nn", "insufficientSamples", "nearestNeighborDegenerate", "regressionDegenerate")
 
 
 def test_two_nn_estimate_basic() -> None:

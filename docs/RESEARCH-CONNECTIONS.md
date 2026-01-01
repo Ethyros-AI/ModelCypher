@@ -320,6 +320,26 @@ Based on our initial findings, we make the following falsifiable predictions:
 
 **Interpretation**: At the bottleneck, domain-specific encoding overhead is stripped away, leaving only universal semantic structure. All domains converge to ~1.2-1.8D regardless of their input complexity.
 
+### P7: Two Fundamental Representation Modes Exist
+**Discovery**: Cross-domain analysis reveals two distinct architectural strategies:
+
+| Mode | Architecture | Bottleneck Position | Geometry | Gradient |
+|------|-------------|--------------------| ---------|----------|
+| Concentrated | SmolLM | 89% (final) | Lower orthogonality | Strong |
+| Distributed | Qwen | 50% (middle) | High orthogonality | Moderate |
+
+**Evidence** (consistent across spatial, moral, domain geometry):
+
+| Metric | SmolLM | Qwen |
+|--------|--------|------|
+| Bottleneck dimension | 1.59 | 1.56 |
+| Spatial X-Y orthogonality | 0.59 | 0.95 |
+| Moral axis orthogonality | 0.37 | 0.76 |
+| Moral PC1 concentration | 50% | 20% |
+| Valence gradient | -0.69 | -0.42 |
+
+**Interpretation**: Both modes converge to the same ~1.6D semantic bottleneck despite radically different encoding strategies. This strongly suggests the bottleneck reflects the intrinsic dimension of meaning itself, not an architectural artifact.
+
 ---
 
 ## Theoretical Implications

@@ -76,13 +76,8 @@ def predict_interference(
     typer.echo(f"  Source: {source_path}")
     typer.echo(f"  Target: {target_path}")
 
-    # Parse domains
-    supported = {
-        AtlasDomain.SPATIAL,
-        AtlasDomain.SOCIAL,
-        AtlasDomain.TEMPORAL,
-        AtlasDomain.MORAL,
-    }
+    # Parse domains - all AtlasDomain values supported
+    supported = set(AtlasDomain)
     if domains:
         domain_list: list[AtlasDomain] = []
         for raw in domains.split(","):

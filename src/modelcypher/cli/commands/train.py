@@ -45,7 +45,6 @@ from modelcypher.cli.composition import (
 )
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
-from modelcypher.core.domain.training import Hyperparameters, LoRAConfig, TrainingConfig
 from modelcypher.utils.errors import ErrorDetail
 
 train_app = typer.Typer(no_args_is_help=True)
@@ -88,6 +87,7 @@ def train_start(
         mc train start --model ./local-model --dataset ./data.jsonl --lora-rank 8 --lora-alpha 16
     """
     context = _context(ctx)
+    from modelcypher.core.domain.training import Hyperparameters, LoRAConfig, TrainingConfig
 
     # Build LoRA config if specified
     lora_config = None
@@ -171,6 +171,7 @@ def train_preflight(
         mc train preflight --model meta-llama/Llama-2-7b --dataset ./data.jsonl
     """
     context = _context(ctx)
+    from modelcypher.core.domain.training import Hyperparameters, LoRAConfig, TrainingConfig
 
     # Build LoRA config if specified
     lora_config = None

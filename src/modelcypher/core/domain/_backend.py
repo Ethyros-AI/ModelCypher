@@ -43,8 +43,8 @@ from __future__ import annotations
 
 import os
 import platform
-import subprocess
 import sys
+import importlib.util
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
@@ -58,11 +58,11 @@ _mlx_probe_error: str | None = None
 
 
 def probe_mlx_available(*, explicit: bool = False) -> bool:
-    """Safely check whether MLX can initialize without crashing the process.
+    """Check whether MLX is available on this system.
 
-    Runs a short MLX import in a subprocess to avoid in-process aborts when
-    Metal device initialization fails. Uses mlx.core.default_device() per
-    the official MLX device API.
+    Avoids importing MLX at probe time to keep initialization fast and
+    prevent crash-prone subprocess probes. This verifies platform support
+    and package presence only.
     """
     global _mlx_probe_result, _mlx_probe_error
     if _mlx_probe_result is not None:
@@ -80,31 +80,9 @@ def probe_mlx_available(*, explicit: bool = False) -> bool:
         _mlx_probe_error = "MLX requires Apple Silicon"
         return False
 
-    cmd = [
-        sys.executable,
-        "-c",
-        "import mlx.core as mx; mx.default_device(); print('mlx-ok')",
-    ]
-    try:
-        result = subprocess.run(
-            cmd,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-    except Exception as exc:
+    if importlib.util.find_spec("mlx.core") is None:
         _mlx_probe_result = False
-        _mlx_probe_error = str(exc)
-        if not explicit:
-            os.environ.setdefault("MC_DISABLE_MLX", "1")
-        return False
-
-    if result.returncode != 0:
-        _mlx_probe_result = False
-        _mlx_probe_error = (result.stderr or result.stdout or "MLX probe failed").strip()
-        if not explicit:
-            os.environ.setdefault("MC_DISABLE_MLX", "1")
+        _mlx_probe_error = "MLX not installed"
         return False
 
     _mlx_probe_result = True

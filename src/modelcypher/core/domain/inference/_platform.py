@@ -54,12 +54,9 @@ def _is_mlx_available() -> bool:
         return False
     if platform.system() != "Darwin":
         return False
-    try:
-        import mlx.core  # noqa: F401
+    from modelcypher.core.domain import _backend as backend_manager
 
-        return True
-    except ImportError:
-        return False
+    return backend_manager.probe_mlx_available(explicit=False)
 
 
 def _is_cuda_available() -> bool:
