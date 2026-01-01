@@ -52,7 +52,7 @@ from .probe import (
     stage_probe,
 )
 from .density import (
-    DensityResult,
+    DensityStageResult,
     stage_density,
 )
 from .permute import (
@@ -85,7 +85,7 @@ __all__ = [
     "collect_layer_activations_mlx",
     # Stage 2a: Density
     "stage_density",
-    "DensityResult",
+    "DensityStageResult",
     # Stage 2b: Permute (PermuteConfig REMOVED - always runs)
     "stage_permute",
     "PermuteResult",

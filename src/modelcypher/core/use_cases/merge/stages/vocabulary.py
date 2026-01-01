@@ -17,6 +17,6 @@
 
 """Stage 0 vocabulary alignment wrapper."""
 
-from .stage_0 import VocabularyConfig, VocabularyResult, stage_vocabulary_align
+from .vocab import VocabularyConfig, VocabularyResult, stage_vocabulary_align
 
 __all__ = ["stage_vocabulary_align", "VocabularyConfig", "VocabularyResult"]
