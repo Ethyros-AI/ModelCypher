@@ -91,18 +91,15 @@ class TestDensityConfiguration:
         config = DensityConfiguration()
         assert config.k_neighbors == 10
         assert config.normalize is True
-        assert config.use_geodesic is False
 
     def test_custom_values(self) -> None:
         """Test custom configuration values."""
         config = DensityConfiguration(
             k_neighbors=20,
             normalize=False,
-            use_geodesic=True,
         )
         assert config.k_neighbors == 20
         assert config.normalize is False
-        assert config.use_geodesic is True
 
 
 # =============================================================================

@@ -438,18 +438,13 @@ class CircuitBreakerIntegration:
     ) -> float:
         """Compute persona drift contribution.
 
-        Uses drift_magnitude directly. Trait count adds logarithmic penalty
-        (diminishing returns is principled, not arbitrary).
+        Uses drift_magnitude directly. Trait count is reported separately.
         """
         if drift_magnitude is None:
             return 0.0
 
-        base = min(drift_magnitude, 1.0)
-        # log(1 + n) / log(11) gives diminishing returns: 0 traits -> 0, 10 traits -> 1
-        trait_bonus = math.log(1 + len(drifting_traits)) / math.log(11) if drifting_traits else 0.0
-        # Trait contribution capped at 0.2 of weight
-        combined = base + trait_bonus * 0.2
-        return min(combined, 1.0) * weight
+        # Pass through the raw measurement
+        return min(drift_magnitude, 1.0) * weight
 
     @staticmethod
     def _compute_oscillation_contribution(
@@ -467,15 +462,11 @@ class CircuitBreakerIntegration:
             weight: Weight for this signal
         """
         if oscillation_severity is not None:
-            # Direct pass-through with consecutive bonus
-            # Each consecutive window adds 0.1 up to 0.3 max
-            consecutive_bonus = min(consecutive_oscillations * 0.1, 0.3)
-            raw_contribution = min(oscillation_severity + consecutive_bonus, 1.0)
-            return raw_contribution * weight
+            # Direct pass-through of raw measurement
+            return min(oscillation_severity, 1.0) * weight
 
-        # Fallback if no severity provided - binary oscillation signal
-        oscillation_contribution = 0.5 if has_oscillation else 0.0
-        return oscillation_contribution * weight
+        # No severity provided - return 0 (no data = no contribution)
+        return 0.0
 
     @staticmethod
     def _compute_confidence(signals: InputSignals) -> float:
@@ -501,30 +492,13 @@ class CircuitBreakerIntegration:
     ) -> RecommendedAction:
         """Determine action based on severity relative to thresholds.
 
-        Action zones are proportional to the range [trip_threshold, 1.0].
+        Returns monitor/continue based on warning threshold, stop if tripped.
+        No arbitrary sub-classification - severity is the measurement.
         """
         if not is_tripped:
             if severity >= configuration.warning_threshold:
                 return RecommendedAction.monitor
             return RecommendedAction.continue_generation
 
-        # Severe oscillation triggers stop
-        if signals.oscillation_severity is not None and signals.oscillation_severity >= 0.9:
-            return RecommendedAction.stop_generation
-
-        # Action based on position in danger zone
-        trip = configuration.trip_threshold
-        danger_range = 1.0 - trip
-        if danger_range <= 0:
-            return RecommendedAction.human_review
-
-        danger_fraction = (severity - trip) / danger_range
-
-        # Equal-sized zones in danger range
-        if danger_fraction >= 0.75:
-            return RecommendedAction.human_review
-        if danger_fraction >= 0.50 or signals.is_approaching_refusal:
-            return RecommendedAction.stop_generation
-        if danger_fraction >= 0.25:
-            return RecommendedAction.insert_safety_prompt
-        return RecommendedAction.reduce_temperature
+        # Tripped = stop. Severity tells you how bad. No further classification.
+        return RecommendedAction.stop_generation

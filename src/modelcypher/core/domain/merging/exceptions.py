@@ -170,3 +170,34 @@ class PostconditionError(MergeValidationError):
     """
 
     pass
+
+
+class CalibrationRequiredError(MergeValidationError):
+    """Calibration data is required but not provided.
+
+    Operations requiring baseline or calibration data cannot proceed
+    without proper calibration. The caller must provide calibration
+    data or run a calibration step first.
+
+    Context typically includes:
+    - required_data: What calibration data was needed
+    - suggestion: How to obtain the calibration data
+    """
+
+    pass
+
+
+class EntropyMeasurementError(MergeValidationError):
+    """Entropy measurement failed.
+
+    Real entropy measurement is required for merge validation.
+    Simulated profiles are not acceptable - they mask genuine
+    measurement failures.
+
+    Context typically includes:
+    - model_path: Path to the model
+    - failure_reason: Why measurement failed
+    - fix: Suggested debugging steps
+    """
+
+    pass

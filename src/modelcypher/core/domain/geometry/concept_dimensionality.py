@@ -67,6 +67,11 @@ class ConceptDimensionalityConfig:
 
 @dataclass(frozen=True)
 class ConceptDimensionalityResult:
+    """Dimensionality measurement for a single concept.
+
+    Raw measurements only. Use intrinsic_dimension directly - no categorical classes.
+    """
+
     probe_id: str
     name: str
     source: str
@@ -77,7 +82,6 @@ class ConceptDimensionalityResult:
     sample_count: int
     usable_count: int
     intrinsic_dimension: float
-    dimension_class: str
     calibration_weight: float | None
     ci_lower: float | None
     ci_upper: float | None
@@ -237,7 +241,6 @@ class ConceptDimensionalityAnalyzer:
                 )
                 continue
 
-            dim_class = self._dimension_class(estimate.intrinsic_dimension)
             results.append(
                 ConceptDimensionalityResult(
                     probe_id=probe.probe_id,
@@ -250,7 +253,6 @@ class ConceptDimensionalityAnalyzer:
                     sample_count=estimate.sample_count,
                     usable_count=estimate.usable_count,
                     intrinsic_dimension=estimate.intrinsic_dimension,
-                    dimension_class=dim_class,
                     calibration_weight=weight,
                     ci_lower=estimate.ci.lower if estimate.ci else None,
                     ci_upper=estimate.ci.upper if estimate.ci else None,
@@ -367,22 +369,24 @@ class ConceptDimensionalityAnalyzer:
             return None
 
     @staticmethod
-    def _dimension_class(value: float) -> str:
-        if value < 1.5:
-            return "1D"
-        if value < 2.5:
-            return "2D"
-        if value < 3.5:
-            return "3D"
-        return "4D+"
-
-    @staticmethod
     def _dimension_histogram(
         results: list[ConceptDimensionalityResult],
     ) -> dict[str, int]:
-        histogram: dict[str, int] = {"1D": 0, "2D": 0, "3D": 0, "4D+": 0}
+        """Build histogram of intrinsic dimensions by integer bucket.
+
+        Keys are "1", "2", "3", etc. based on floor of intrinsic_dimension.
+        Dimensions >= 4 are grouped into "4+".
+        """
+        histogram: dict[str, int] = {}
         for result in results:
-            histogram[result.dimension_class] = histogram.get(result.dimension_class, 0) + 1
+            if not math.isfinite(result.intrinsic_dimension):
+                continue
+            bucket = int(result.intrinsic_dimension)
+            if bucket >= 4:
+                key = "4+"
+            else:
+                key = str(max(1, bucket))  # Clamp to at least 1
+            histogram[key] = histogram.get(key, 0) + 1
         return histogram
 
     @staticmethod

@@ -389,32 +389,42 @@ class MeasuredModifierEffect:
 
     @property
     def intensity_score(self) -> float:
-        """Derived intensity score from measured effect.
+        """Raw intensity magnitude from measured effect.
 
-        Intensity = |mean_delta_h| normalized to [0, 1].
-        We use the magnitude because both heating and cooling represent
-        thermodynamic work on the system.
+        Returns the absolute value of mean_delta_h directly. No arbitrary
+        normalization - the raw measurement is the measurement.
 
         Returns
         -------
         float
-            Normalized intensity score.
+            Absolute value of mean entropy change.
         """
-        # Normalize to [0, 1] assuming max delta_H of ~2.0 nats
-        return min(abs(self.mean_delta_h) / 2.0, 1.0)
+        return abs(self.mean_delta_h)
 
     @property
     def effect_direction(self) -> str:
         """Direction of the entropy effect.
 
+        Uses statistical significance: effect is significant if
+        |mean_delta_h| > 2σ (where σ is std_delta_h).
+
         Returns
         -------
         str
-            "cooling" if delta_H < 0, "heating" if delta_H > 0, "neutral" otherwise.
+            "cooling" if delta_H significantly < 0, "heating" if significantly > 0,
+            "neutral" otherwise.
         """
-        if self.mean_delta_h < -0.05:
+        # Use 2σ as significance threshold (derived from measurement noise)
+        # If we don't have enough samples for reliable std, be conservative
+        if self.std_delta_h <= 0 or self.sample_count < 2:
+            # Can't determine significance without variance estimate
+            return "neutral"
+
+        # Check if effect is statistically significant (> 2 standard deviations)
+        significance_threshold = 2.0 * self.std_delta_h
+        if self.mean_delta_h < -significance_threshold:
             return "cooling"
-        elif self.mean_delta_h > 0.05:
+        elif self.mean_delta_h > significance_threshold:
             return "heating"
         return "neutral"
 
@@ -566,6 +576,10 @@ class MeasuredThresholds:
         Baseline entropy percentiles.
     model_id : str
         Identifier for the model.
+    variance_threshold : float | None
+        Variance threshold for distinguishing refused vs hedged.
+        If None, high-entropy outcomes are classified as "hedged" (no refused/hedged distinction).
+        Should be derived from baseline variance measurements.
     calibration_timestamp : datetime
         When this calibration was performed.
     """
@@ -575,6 +589,7 @@ class MeasuredThresholds:
     attempted_threshold: float
     percentiles: dict[int, float]
     model_id: str
+    variance_threshold: float | None = None
     calibration_timestamp: datetime = field(default_factory=datetime.now)
 
     @classmethod
@@ -649,7 +664,9 @@ class MeasuredThresholds:
             Outcome classification: "refused", "hedged", "attempted", or "solved".
         """
         if entropy >= self.refused_threshold:
-            if variance < 0.1:  # High entropy + low variance = stuck
+            # Use calibrated variance threshold if available
+            if self.variance_threshold is not None and variance < self.variance_threshold:
+                # High entropy + low variance = stuck on one token/pattern
                 return "refused"
             return "hedged"
         elif entropy >= self.hedged_threshold:
@@ -666,6 +683,7 @@ class MeasuredThresholds:
             "attempted_threshold": self.attempted_threshold,
             "percentiles": self.percentiles,
             "model_id": self.model_id,
+            "variance_threshold": self.variance_threshold,
             "calibration_timestamp": self.calibration_timestamp.isoformat(),
         }
 
@@ -678,6 +696,7 @@ class MeasuredThresholds:
             attempted_threshold=data["attempted_threshold"],
             percentiles={int(k): v for k, v in data["percentiles"].items()},
             model_id=data["model_id"],
+            variance_threshold=data.get("variance_threshold"),
             calibration_timestamp=datetime.fromisoformat(data["calibration_timestamp"]),
         )
 

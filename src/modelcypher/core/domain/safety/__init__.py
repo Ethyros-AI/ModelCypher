@@ -23,6 +23,7 @@ from __future__ import annotations
 
 # Subpackages
 from . import calibration, sidecar, stability_suite
+from .exceptions import *  # noqa: F401,F403
 from .adapter_capability import *  # noqa: F401,F403
 from .adapter_safety_models import *  # noqa: F401,F403
 from .adapter_safety_probe import *  # noqa: F401,F403

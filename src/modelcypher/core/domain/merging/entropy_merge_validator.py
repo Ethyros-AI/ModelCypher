@@ -15,244 +15,23 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Entropy-based validation and guidance for model merging.
+"""Entropy-based validation and profiling for model merging.
 
-Provides:
-- Pre-merge entropy profiling per layer
-- Entropy-aware smoothing adjustments
-- Post-merge stability validation
-
-Notes
------
-Layers are classified into phases (ORDERED, CRITICAL, DISORDERED) based on
-entropy relative to critical temperature. Phase determines alpha adjustment
-and smoothing sigma for stable blending.
+Provides raw entropy measurements per layer and merge validation metrics.
+No subjective thresholds or phase-based adjustments are applied.
 """
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from modelcypher.core.domain.entropy.logit_entropy_calculator import (
-    EntropyThresholds,
-)
-
-# EntropyLevel enum removed - use raw entropy values with thresholds
-from modelcypher.core.domain.thermo.phase_transition_theory import Phase
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.model_loader import ModelLoaderPort
-
-logger = logging.getLogger(__name__)
-
-
-# =============================================================================
-# Configuration
-# =============================================================================
-
-
-@dataclass(frozen=True)
-class PhaseAdjustments:
-    """Phase-based adjustment values for merge operations.
-
-    Defines alpha and sigma adjustments per phase (ORDERED, CRITICAL, DISORDERED).
-    All values must be explicitly provided or derived from calibration data.
-    """
-
-    ordered_alpha: float
-    """Alpha adjustment for ORDERED phase layers (typically 1.0, no reduction)."""
-
-    critical_alpha: float
-    """Alpha adjustment for CRITICAL phase layers (most conservative, < 1.0)."""
-
-    disordered_alpha: float
-    """Alpha adjustment for DISORDERED phase layers (moderate reduction)."""
-
-    ordered_sigma: float
-    """Smoothing sigma for ORDERED phase layers (tight smoothing)."""
-
-    critical_sigma: float
-    """Smoothing sigma for CRITICAL phase layers (wider stabilization)."""
-
-    disordered_sigma: float
-    """Smoothing sigma for DISORDERED phase layers (moderate smoothing)."""
-
-    def alpha_for_phase(self, phase: Phase) -> float:
-        """Get alpha adjustment for a given phase."""
-        if phase == Phase.ORDERED:
-            return self.ordered_alpha
-        elif phase == Phase.CRITICAL:
-            return self.critical_alpha
-        else:  # DISORDERED
-            return self.disordered_alpha
-
-    def sigma_for_phase(self, phase: Phase) -> float:
-        """Get smoothing sigma for a given phase."""
-        if phase == Phase.ORDERED:
-            return self.ordered_sigma
-        elif phase == Phase.CRITICAL:
-            return self.critical_sigma
-        else:  # DISORDERED
-            return self.disordered_sigma
-
-
-@dataclass(frozen=True)
-class EntropyMergeConfig:
-    """Configuration for entropy-based merge validation.
-
-    All thresholds must be explicitly provided or derived from calibration data.
-    No arbitrary defaults.
-    """
-
-    entropy_thresholds: EntropyThresholds
-    """Thresholds for entropy level classification (low, high, circuit_breaker)."""
-
-    critical_bandwidth: float
-    """Bandwidth around phase boundary center to classify as CRITICAL phase."""
-
-    phase_adjustments: PhaseAdjustments
-    """Per-phase alpha and sigma adjustment values."""
-
-    high_risk_fraction: float
-    """Fraction of critical layers above which model is high risk (0.0-1.0)."""
-
-    unstable_fraction: float
-    """Fraction of unstable layers above which merge is overall UNSTABLE."""
-
-    stability_thresholds: tuple[float, float, float]
-    """(stable, marginal, unstable) multipliers relative to entropy thresholds.
-
-    - delta < low * stable_mult → STABLE
-    - delta < low * marginal_mult → MARGINAL
-    - delta < high * unstable_mult → UNSTABLE
-    - else → CRITICAL
-    """
-
-    @classmethod
-    def from_calibration_data(
-        cls,
-        entropy_samples: list[float],
-        merge_deltas: list[float],
-        percentile_low: float = 25.0,
-        percentile_high: float = 75.0,
-        percentile_circuit_breaker: float = 95.0,
-        target_stable_percentile: float = 50.0,
-        target_marginal_percentile: float = 80.0,
-    ) -> "EntropyMergeConfig":
-        """Derive configuration from calibration data.
-
-        Args:
-            entropy_samples: Entropy values from baseline measurements.
-            merge_deltas: Observed entropy deltas from previous merges.
-            percentile_low: Percentile for LOW entropy threshold.
-            percentile_high: Percentile for HIGH entropy threshold.
-            percentile_circuit_breaker: Percentile for circuit breaker.
-            target_stable_percentile: Deltas below this percentile are STABLE.
-            target_marginal_percentile: Deltas below this percentile are MARGINAL.
-
-        Returns:
-            Configuration with calibrated thresholds.
-        """
-        if not entropy_samples:
-            raise ValueError("entropy_samples cannot be empty for calibration")
-        if not merge_deltas:
-            raise ValueError("merge_deltas cannot be empty for calibration")
-
-        sorted_entropy = sorted(entropy_samples)
-        n_ent = len(sorted_entropy)
-        low = sorted_entropy[int(n_ent * percentile_low / 100)]
-        high = sorted_entropy[int(n_ent * percentile_high / 100)]
-        circuit_breaker = sorted_entropy[int(n_ent * percentile_circuit_breaker / 100)]
-
-        entropy_thresholds = EntropyThresholds(
-            low=low, high=high, circuit_breaker=circuit_breaker
-        )
-
-        # Derive stability multipliers from observed deltas
-        sorted_deltas = sorted(merge_deltas)
-        n_del = len(sorted_deltas)
-        stable_delta = sorted_deltas[int(n_del * target_stable_percentile / 100)]
-        marginal_delta = sorted_deltas[int(n_del * target_marginal_percentile / 100)]
-
-        # Convert to multipliers relative to low threshold
-        stable_mult = stable_delta / low if low > 0 else 0.2
-        marginal_mult = marginal_delta / low if low > 0 else 0.5
-        unstable_mult = marginal_delta / high if high > 0 else 0.5
-
-        # Critical bandwidth from entropy distribution spread
-        entropy_std = (high - low) / 2.0
-        critical_bandwidth = entropy_std * 0.5
-
-        return cls(
-            entropy_thresholds=entropy_thresholds,
-            critical_bandwidth=critical_bandwidth,
-            phase_adjustments=PhaseAdjustments(
-                ordered_alpha=1.0,  # No reduction for stable layers
-                critical_alpha=stable_mult,  # Reduce proportionally
-                disordered_alpha=(1.0 + stable_mult) / 2.0,  # Moderate
-                ordered_sigma=1.0,
-                critical_sigma=2.0 * (1.0 / stable_mult) if stable_mult > 0 else 2.0,
-                disordered_sigma=1.5,
-            ),
-            high_risk_fraction=0.5 * (1.0 - stable_mult),  # Derived from stability
-            unstable_fraction=marginal_mult,
-            stability_thresholds=(stable_mult, marginal_mult, unstable_mult),
-        )
-
-    @classmethod
-    def from_entropy_statistics(
-        cls,
-        entropy_mean: float,
-        entropy_std: float,
-        critical_bandwidth_factor: float = 0.5,
-    ) -> "EntropyMergeConfig":
-        """Derive configuration from entropy statistics.
-
-        Simpler factory when full calibration data isn't available but
-        statistics from baseline measurements are known.
-
-        Args:
-            entropy_mean: Mean entropy from baseline.
-            entropy_std: Standard deviation of entropy from baseline.
-            critical_bandwidth_factor: Factor of std to use for critical bandwidth.
-
-        Returns:
-            Configuration with derived thresholds.
-        """
-        low = max(0.1, entropy_mean - entropy_std)
-        high = entropy_mean + entropy_std
-        circuit_breaker = entropy_mean + 2.0 * entropy_std
-
-        # Stability multipliers based on normalized spread
-        # Tighter entropy distribution = stricter stability requirements
-        cv = entropy_std / entropy_mean if entropy_mean > 0 else 0.5
-        stable_mult = min(0.3, cv)  # Smaller CV = stricter
-        marginal_mult = min(0.6, 2.0 * cv)
-        unstable_mult = min(0.7, cv)
-
-        return cls(
-            entropy_thresholds=EntropyThresholds(
-                low=low, high=high, circuit_breaker=circuit_breaker
-            ),
-            critical_bandwidth=entropy_std * critical_bandwidth_factor,
-            phase_adjustments=PhaseAdjustments(
-                ordered_alpha=1.0,
-                critical_alpha=1.0 - cv,
-                disordered_alpha=1.0 - 0.5 * cv,
-                ordered_sigma=1.0,
-                critical_sigma=1.0 + cv,
-                disordered_sigma=1.0 + 0.5 * cv,
-            ),
-            high_risk_fraction=cv,
-            unstable_fraction=2.0 * cv,
-            stability_thresholds=(stable_mult, marginal_mult, unstable_mult),
-        )
-
-
-# MergeStability enum removed - use raw entropy_ratio values directly.
 
 
 @dataclass(frozen=True)
@@ -266,40 +45,6 @@ class LayerEntropyProfile:
     layer_name: str
     mean_entropy: float
     entropy_variance: float
-    phase: Phase
-    # entropy_level field removed - use mean_entropy directly with thresholds
-
-    @property
-    def is_critical(self) -> bool:
-        """True if layer is in critical phase (near boundary)."""
-        return self.phase == Phase.CRITICAL
-
-    @property
-    def is_stable(self) -> bool:
-        """True if layer is in ordered phase (stable)."""
-        return self.phase == Phase.ORDERED
-
-    def alpha_adjustment(self, adjustments: PhaseAdjustments) -> float:
-        """Compute alpha adjustment using provided phase adjustments.
-
-        Args:
-            adjustments: PhaseAdjustments config with per-phase values.
-
-        Returns:
-            Alpha adjustment factor for this layer's phase.
-        """
-        return adjustments.alpha_for_phase(self.phase)
-
-    def smoothing_sigma(self, adjustments: PhaseAdjustments) -> float:
-        """Compute smoothing sigma using provided phase adjustments.
-
-        Args:
-            adjustments: PhaseAdjustments config with per-phase values.
-
-        Returns:
-            Smoothing sigma value for this layer's phase.
-        """
-        return adjustments.sigma_for_phase(self.phase)
 
 
 @dataclass(frozen=True)
@@ -313,8 +58,6 @@ class ModelEntropyProfile:
     layer_profiles: dict[str, LayerEntropyProfile]
     mean_entropy: float
     entropy_variance: float
-    dominant_phase: Phase
-    critical_layer_count: int
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
     @classmethod
@@ -330,29 +73,17 @@ class ModelEntropyProfile:
                 layer_profiles={},
                 mean_entropy=0.0,
                 entropy_variance=0.0,
-                dominant_phase=Phase.ORDERED,
-                critical_layer_count=0,
             )
 
         entropies = [p.mean_entropy for p in layer_profiles.values()]
         mean_entropy = sum(entropies) / len(entropies)
         variance = sum((e - mean_entropy) ** 2 for e in entropies) / len(entropies)
 
-        # Count phases
-        phase_counts = {Phase.ORDERED: 0, Phase.CRITICAL: 0, Phase.DISORDERED: 0}
-        for profile in layer_profiles.values():
-            phase_counts[profile.phase] += 1
-
-        dominant_phase = max(phase_counts, key=phase_counts.get)
-        critical_count = phase_counts[Phase.CRITICAL]
-
         return cls(
             model_name=model_name,
             layer_profiles=layer_profiles,
             mean_entropy=mean_entropy,
             entropy_variance=variance,
-            dominant_phase=dominant_phase,
-            critical_layer_count=critical_count,
         )
 
 
@@ -401,7 +132,9 @@ class LayerMergeValidation:
         entropy_delta = abs(merged_entropy - expected_entropy)
 
         # Ratio normalized by expected - stability signal (lower = more stable)
-        eps = 1e-10  # Numerical stability only
+        backend = get_default_backend()
+        ref_array = backend.array([source_entropy, target_entropy, merged_entropy])
+        eps = division_epsilon(backend, ref_array)
         entropy_ratio = entropy_delta / (expected_entropy + eps)
 
         # Knowledge retention score: how close to expected
@@ -461,7 +194,6 @@ class MergeEntropyValidation:
         source_model: str,
         target_model: str,
         layer_validations: dict[str, LayerMergeValidation],
-        unstable_fraction: float | None = None,  # Deprecated, ignored
     ) -> MergeEntropyValidation:
         """Create validation result from per-layer validations.
 
@@ -469,13 +201,10 @@ class MergeEntropyValidation:
             source_model: Name of source model.
             target_model: Name of target model.
             layer_validations: Per-layer validation results.
-            unstable_fraction: Deprecated, ignored. Kept for API compatibility.
 
         Returns:
             MergeEntropyValidation with raw aggregate measurements.
         """
-        _ = unstable_fraction  # Suppress unused warning
-
         if not layer_validations:
             return cls(
                 source_model=source_model,
@@ -543,96 +272,9 @@ class MergeEntropyValidation:
 class EntropyMergeValidator:
     """Validates model merges using entropy analysis.
 
-    This class bridges thermodynamics concepts with the merge pipeline:
-    1. Pre-merge: Profile models to identify critical layers
-    2. During merge: Provide entropy-aware alpha adjustments
-    3. Post-merge: Validate that knowledge was preserved
-
-    Example (with config):
-        ```python
-        config = EntropyMergeConfig.from_entropy_statistics(
-            entropy_mean=2.5, entropy_std=0.75
-        )
-        validator = EntropyMergeValidator(config)
-
-        # Pre-merge profiling (requires model loading and entropy measurement)
-        source_profile = validator.create_profile("/path/to/source-model", model_loader)
-        target_profile = validator.create_profile("/path/to/target-model", model_loader)
-
-        # Get per-layer alpha adjustments
-        adjustments = validator.compute_alpha_adjustments(source_profile, target_profile)
-
-        # After merge, validate
-        validation = validator.validate_merge(
-            source_entropies={"layer_0": 2.1, "layer_1": 2.3},
-            target_entropies={"layer_0": 2.0, "layer_1": 2.4},
-            merged_entropies={"layer_0": 2.05, "layer_1": 2.35},
-            source_model="model_a",
-            target_model="model_b",
-        )
-        print(validation.summary)
-        ```
+    This class computes raw entropy measurements for profiling and merge
+    validation without thresholds or phase-based adjustments.
     """
-
-    def __init__(
-        self,
-        config: EntropyMergeConfig | None = None,
-    ):
-        """Initialize validator.
-
-        Args:
-            config: Full configuration.
-        """
-        self.config = config
-
-    def _ensure_config_from_values(self, entropy_values: list[float]) -> EntropyMergeConfig:
-        if self.config is not None:
-            return self.config
-        if not entropy_values:
-            raise ValueError("entropy_values cannot be empty when deriving merge config")
-        mean = sum(entropy_values) / len(entropy_values)
-        variance = sum((v - mean) ** 2 for v in entropy_values) / len(entropy_values)
-        self.config = EntropyMergeConfig.from_entropy_statistics(mean, variance ** 0.5)
-        return self.config
-
-    def _ensure_config_from_profiles(
-        self, *profiles: ModelEntropyProfile
-    ) -> EntropyMergeConfig:
-        values: list[float] = []
-        for profile in profiles:
-            values.extend(
-                layer.mean_entropy for layer in profile.layer_profiles.values()
-            )
-        return self._ensure_config_from_values(values)
-
-    def classify_phase(self, entropy: float) -> Phase:
-        """Classify entropy into thermodynamic phase.
-
-        Uses raw entropy values compared against thresholds, with a critical
-        bandwidth around the moderate zone center for layers near phase boundary.
-
-        Args:
-            entropy: Raw entropy value.
-
-        Returns:
-            Phase classification (ORDERED, CRITICAL, or DISORDERED).
-        """
-        if self.config is None:
-            raise ValueError("EntropyMergeConfig is required to classify phases")
-        thresholds = self.config.entropy_thresholds
-        if entropy < thresholds.low:
-            return Phase.ORDERED
-        elif entropy >= thresholds.high:
-            return Phase.DISORDERED
-        else:
-            # Moderate zone - check if near the center (critical region)
-            moderate_center = (thresholds.low + thresholds.high) / 2
-            if abs(entropy - moderate_center) < self.config.critical_bandwidth:
-                return Phase.CRITICAL
-            elif entropy < moderate_center:
-                return Phase.ORDERED
-            else:
-                return Phase.DISORDERED
 
     def create_layer_profile(
         self,
@@ -653,20 +295,15 @@ class EntropyMergeValidator:
                 layer_name=layer_name,
                 mean_entropy=0.0,
                 entropy_variance=0.0,
-                phase=Phase.ORDERED,
             )
-
-        self._ensure_config_from_values(entropy_values)
 
         mean_entropy = sum(entropy_values) / len(entropy_values)
         variance = sum((e - mean_entropy) ** 2 for e in entropy_values) / len(entropy_values)
-        phase = self.classify_phase(mean_entropy)
 
         return LayerEntropyProfile(
             layer_name=layer_name,
             mean_entropy=mean_entropy,
             entropy_variance=variance,
-            phase=phase,
         )
 
     def create_profile(
@@ -701,7 +338,6 @@ class EntropyMergeValidator:
         """
         from pathlib import Path
 
-        from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.entropy.layer_entropy_projector import (
             LayerEntropyProjector,
         )
@@ -717,11 +353,26 @@ class EntropyMergeValidator:
         projector = LayerEntropyProjector(backend=backend)
 
         # Set up unembedding matrix for projection
+        # No fallback - real measurement is required
+        from modelcypher.core.domain.merging.exceptions import EntropyMeasurementError
+
         try:
             projector.set_unembedding_matrix(model)
         except ValueError as e:
-            logger.warning(f"Could not set unembedding matrix: {e}. Using simulated mode.")
-            return self._create_simulated_profile(model, model_name, num_layers)
+            raise EntropyMeasurementError(
+                stage="ENTROPY_PROFILING",
+                weight_key=None,
+                message=f"Failed to extract unembedding matrix from {model_name}",
+                context={
+                    "model_path": model_path,
+                    "error": str(e),
+                    "fix": (
+                        "1. Verify model has lm_head or embed_out attribute\n"
+                        "2. Check model architecture compatibility\n"
+                        "3. Ensure model is fully loaded (not lazy)"
+                    ),
+                },
+            ) from e
 
         # Probe prompts for entropy measurement
         probe_prompts = [
@@ -752,146 +403,14 @@ class EntropyMergeValidator:
 
         # Convert to ModelEntropyProfile format
         layer_profiles = {}
-        self._ensure_config_from_values(
-            [result.mean_entropy for result in profile_result.layer_results.values()]
-        )
-
         for layer_idx, result in profile_result.layer_results.items():
-            phase = self.classify_phase(result.mean_entropy)
             layer_profiles[result.layer_name] = LayerEntropyProfile(
                 layer_name=result.layer_name,
                 mean_entropy=result.mean_entropy,
                 entropy_variance=result.entropy_variance,
-                phase=phase,
             )
 
         return ModelEntropyProfile.from_layer_profiles(model_name, layer_profiles)
-
-    def _create_simulated_profile(
-        self,
-        model: Any,
-        model_name: str,
-        num_layers: int | None,
-    ) -> ModelEntropyProfile:
-        """Create a simulated profile as fallback when real measurement fails.
-
-        This is only used when the unembedding matrix cannot be extracted.
-        The simulated profile uses a typical entropy curve based on research.
-        """
-        # Detect number of layers
-        if num_layers is None:
-            if hasattr(model, "model") and hasattr(model.model, "layers"):
-                num_layers = len(model.model.layers)
-            elif hasattr(model, "layers"):
-                num_layers = len(model.layers)
-            else:
-                num_layers = 32
-
-        layer_profiles = {}
-        simulated_layers: list[tuple[str, float, float]] = []
-        for i in range(num_layers):
-            # Simulate typical entropy curve: high early, valley mid, rise late
-            # Based on findings from Entropy-Lens paper
-            depth_ratio = (i + 1) / num_layers
-            if depth_ratio < 0.3:
-                # Early layers: high entropy (exploration)
-                mean_entropy = 8.0 - depth_ratio * 10.0
-            elif depth_ratio < 0.7:
-                # Middle layers: entropy valley (compression)
-                mean_entropy = 5.0 + (depth_ratio - 0.3) * 2.0
-            else:
-                # Late layers: entropy rises then drops
-                mean_entropy = 6.0 - (depth_ratio - 0.7) * 10.0
-
-            # Add some variance based on depth
-            variance = 0.5 + abs(depth_ratio - 0.5) * 1.0
-
-            layer_name = f"layers.{i}"
-            simulated_layers.append((layer_name, mean_entropy, variance))
-
-        self._ensure_config_from_values([mean for _, mean, _ in simulated_layers])
-
-        for layer_name, mean_entropy, variance in simulated_layers:
-            phase = self.classify_phase(mean_entropy)
-            layer_profiles[layer_name] = LayerEntropyProfile(
-                layer_name=layer_name,
-                mean_entropy=mean_entropy,
-                entropy_variance=variance,
-                phase=phase,
-            )
-
-        logger.warning(
-            f"Using SIMULATED entropy profile for {model_name}. "
-            "Real measurement failed - results are estimates only."
-        )
-        return ModelEntropyProfile.from_layer_profiles(model_name, layer_profiles)
-
-    def compute_alpha_adjustments(
-        self,
-        source_profile: ModelEntropyProfile,
-        target_profile: ModelEntropyProfile,
-    ) -> dict[str, float]:
-        """Compute entropy-aware alpha adjustments for each layer.
-
-        Args:
-            source_profile: Entropy profile of source model.
-            target_profile: Entropy profile of target model.
-
-        Returns:
-            Dict mapping layer names to alpha adjustment factors.
-        """
-        adjustments = {}
-        config = self._ensure_config_from_profiles(source_profile, target_profile)
-        phase_adj = config.phase_adjustments
-
-        # Get common layers
-        common_layers = set(source_profile.layer_profiles.keys()) & set(
-            target_profile.layer_profiles.keys()
-        )
-
-        for layer_name in common_layers:
-            source_layer = source_profile.layer_profiles[layer_name]
-            target_layer = target_profile.layer_profiles[layer_name]
-
-            # Use the more conservative adjustment of the two
-            source_adj = source_layer.alpha_adjustment(phase_adj)
-            target_adj = target_layer.alpha_adjustment(phase_adj)
-            adjustments[layer_name] = min(source_adj, target_adj)
-
-        return adjustments
-
-    def compute_smoothing_sigmas(
-        self,
-        source_profile: ModelEntropyProfile,
-        target_profile: ModelEntropyProfile,
-    ) -> dict[str, float]:
-        """Compute entropy-aware smoothing sigma for each layer.
-
-        Args:
-            source_profile: Entropy profile of source model.
-            target_profile: Entropy profile of target model.
-
-        Returns:
-            Dict mapping layer names to smoothing sigmas.
-        """
-        sigmas = {}
-        config = self._ensure_config_from_profiles(source_profile, target_profile)
-        phase_adj = config.phase_adjustments
-
-        common_layers = set(source_profile.layer_profiles.keys()) & set(
-            target_profile.layer_profiles.keys()
-        )
-
-        for layer_name in common_layers:
-            source_layer = source_profile.layer_profiles[layer_name]
-            target_layer = target_profile.layer_profiles[layer_name]
-
-            # Use the larger sigma (more conservative smoothing)
-            source_sigma = source_layer.smoothing_sigma(phase_adj)
-            target_sigma = target_layer.smoothing_sigma(phase_adj)
-            sigmas[layer_name] = max(source_sigma, target_sigma)
-
-        return sigmas
 
     def validate_merge(
         self,
@@ -913,9 +432,6 @@ class EntropyMergeValidator:
         Returns:
             MergeEntropyValidation with stability assessment.
         """
-        config = self._ensure_config_from_values(
-            list(source_entropies.values()) + list(target_entropies.values())
-        )
         layer_validations = {}
 
         # Validate common layers
@@ -938,72 +454,4 @@ class EntropyMergeValidator:
             source_model=source_model,
             target_model=target_model,
             layer_validations=layer_validations,
-            unstable_fraction=config.unstable_fraction,
         )
-
-    def generate_merge_guidance(
-        self,
-        source_profile: ModelEntropyProfile,
-        target_profile: ModelEntropyProfile,
-    ) -> str:
-        """Generate human-readable merge guidance.
-
-        Args:
-            source_profile: Source model entropy profile.
-            target_profile: Target model entropy profile.
-
-        Returns:
-            Markdown-formatted guidance string.
-        """
-        alpha_adjustments = self.compute_alpha_adjustments(source_profile, target_profile)
-        smoothing_sigmas = self.compute_smoothing_sigmas(source_profile, target_profile)
-
-        # Count critical layers
-        source_critical = [
-            name for name, p in source_profile.layer_profiles.items() if p.is_critical
-        ]
-        target_critical = [
-            name for name, p in target_profile.layer_profiles.items() if p.is_critical
-        ]
-
-        lines = [
-            "# Entropy-Guided Merge Metrics",
-            "",
-            "## Model Summary",
-            "",
-            f"**Source**: {source_profile.model_name}",
-            f"  - Mean entropy: {source_profile.mean_entropy:.3f}",
-            f"  - Dominant phase: {source_profile.dominant_phase.value}",
-            f"  - Critical layers: {len(source_critical)}",
-            "",
-            f"**Target**: {target_profile.model_name}",
-            f"  - Mean entropy: {target_profile.mean_entropy:.3f}",
-            f"  - Dominant phase: {target_profile.dominant_phase.value}",
-            f"  - Critical layers: {len(target_critical)}",
-            "",
-            "## Per-Layer Adjustments",
-            "",
-            "| Layer | Alpha Adjust | Smoothing σ | Phase |",
-            "|-------|-------------|-------------|-------|",
-        ]
-
-        for layer_name in sorted(alpha_adjustments.keys()):
-            adj = alpha_adjustments[layer_name]
-            sigma = smoothing_sigmas[layer_name]
-            source_phase = source_profile.layer_profiles[layer_name].phase.value
-            target_phase = target_profile.layer_profiles[layer_name].phase.value
-            phase_str = f"{source_phase}/{target_phase}"
-            lines.append(f"| {layer_name} | {adj:.2f} | {sigma:.1f} | {phase_str} |")
-
-        if source_critical or target_critical:
-            lines.extend(
-                [
-                    "",
-                    "## Phase-Boundary Layers",
-                    "",
-                ]
-            )
-            for name in sorted(set(source_critical + target_critical)):
-                lines.append(f"- `{name}`")
-
-        return "\n".join(lines)

@@ -232,22 +232,19 @@ class CompositeProbeResult:
         versions = [r.probe_version for r in self.probe_results]
         return "+".join(versions)
 
-    def recommended_status(
-        self,
-        quarantine_threshold: float = 0.3,
-        block_threshold: float = 0.7,
-    ) -> AdapterSafetyStatus:
-        """Determine the recommended safety status based on probe results.
+    @property
+    def triggered_count(self) -> int:
+        """Count of probes that triggered."""
+        return sum(1 for r in self.probe_results if r.triggered)
 
-        Args:
-            quarantine_threshold: Risk score threshold for quarantine.
-            block_threshold: Risk score threshold for blocking.
+    @property
+    def total_probes(self) -> int:
+        """Total number of probes run."""
+        return len(self.probe_results)
 
-        Returns:
-            Recommended adapter safety status.
-        """
-        if self.aggregate_risk_score >= block_threshold:
-            return AdapterSafetyStatus.BLOCKED
-        elif self.aggregate_risk_score >= quarantine_threshold or self.any_triggered:
-            return AdapterSafetyStatus.QUARANTINED
-        return AdapterSafetyStatus.ALLOWED
+    @property
+    def trigger_ratio(self) -> float:
+        """Ratio of triggered probes to total probes (0.0 to 1.0)."""
+        if not self.probe_results:
+            return 0.0
+        return self.triggered_count / self.total_probes

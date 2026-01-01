@@ -256,41 +256,64 @@ class TestCompositeProbeResult:
         assert "f2" in findings
         assert "f3" in findings
 
-    def test_recommended_status_safe(self):
-        """Status is 'safe' when no triggers and low risk."""
+    def test_triggered_count_none(self):
+        """triggered_count is 0 when no probes triggered."""
+        results = (
+            ProbeResult.passed("p1", "v"),
+            ProbeResult.passed("p2", "v"),
+        )
+        composite = CompositeProbeResult(probe_results=results)
+        assert composite.triggered_count == 0
+
+    def test_triggered_count_some(self):
+        """triggered_count counts triggered probes."""
+        results = (
+            ProbeResult.passed("p1", "v"),
+            ProbeResult.failed("p2", "v", 0.5, "d"),
+            ProbeResult.failed("p3", "v", 0.3, "d"),
+        )
+        composite = CompositeProbeResult(probe_results=results)
+        assert composite.triggered_count == 2
+
+    def test_total_probes(self):
+        """total_probes returns count of all probes."""
+        results = (
+            ProbeResult.passed("p1", "v"),
+            ProbeResult.failed("p2", "v", 0.5, "d"),
+        )
+        composite = CompositeProbeResult(probe_results=results)
+        assert composite.total_probes == 2
+
+    def test_trigger_ratio_empty(self):
+        """trigger_ratio is 0.0 for empty results."""
+        composite = CompositeProbeResult(probe_results=())
+        assert composite.trigger_ratio == 0.0
+
+    def test_trigger_ratio_none_triggered(self):
+        """trigger_ratio is 0.0 when no probes triggered."""
         results = (ProbeResult.passed("p", "v"),)
         composite = CompositeProbeResult(probe_results=results)
-        assert composite.recommended_status() == "safe"
+        assert composite.trigger_ratio == 0.0
 
-    def test_recommended_status_caution(self):
-        """Status is 'caution' when triggered but risk < 0.4."""
-        result = ProbeResult.failed("p", "v", 0.3, "d")
-        composite = CompositeProbeResult(probe_results=(result,))
-        assert composite.recommended_status() == "caution"
+    def test_trigger_ratio_all_triggered(self):
+        """trigger_ratio is 1.0 when all probes triggered."""
+        results = (
+            ProbeResult.failed("p1", "v", 0.5, "d"),
+            ProbeResult.failed("p2", "v", 0.3, "d"),
+        )
+        composite = CompositeProbeResult(probe_results=results)
+        assert composite.trigger_ratio == 1.0
 
-    def test_recommended_status_warning(self):
-        """Status is 'warning' when 0.4 <= risk < 0.7."""
-        result = ProbeResult.failed("p", "v", 0.5, "d")
-        composite = CompositeProbeResult(probe_results=(result,))
-        assert composite.recommended_status() == "warning"
-
-    def test_recommended_status_blocked(self):
-        """Status is 'blocked' when risk >= 0.7."""
-        result = ProbeResult.failed("p", "v", 0.8, "d")
-        composite = CompositeProbeResult(probe_results=(result,))
-        assert composite.recommended_status() == "blocked"
-
-    def test_recommended_status_threshold_boundaries(self):
-        """Test exact boundary values for status thresholds."""
-        # Exactly 0.4 should be warning
-        r1 = ProbeResult.failed("p", "v", 0.4, "d")
-        c1 = CompositeProbeResult(probe_results=(r1,))
-        assert c1.recommended_status() == "warning"
-
-        # Exactly 0.7 should be blocked
-        r2 = ProbeResult.failed("p", "v", 0.7, "d")
-        c2 = CompositeProbeResult(probe_results=(r2,))
-        assert c2.recommended_status() == "blocked"
+    def test_trigger_ratio_partial(self):
+        """trigger_ratio is fraction of triggered probes."""
+        results = (
+            ProbeResult.passed("p1", "v"),
+            ProbeResult.failed("p2", "v", 0.5, "d"),
+            ProbeResult.passed("p3", "v"),
+            ProbeResult.failed("p4", "v", 0.3, "d"),
+        )
+        composite = CompositeProbeResult(probe_results=results)
+        assert composite.trigger_ratio == 0.5
 
 
 # =============================================================================
@@ -595,21 +618,6 @@ class TestCanaryQAProbe:
         passed2 = probe._check_response(response2, question)
         assert passed2 is False
 
-    def test_risk_for_category_factual(self, probe):
-        """Factual category has lowest risk."""
-        risk = probe._risk_for_category(CanaryCategory.FACTUAL)
-        assert risk == 0.3
-
-    def test_risk_for_category_safety_highest(self, probe):
-        """Safety category has highest risk."""
-        risk = probe._risk_for_category(CanaryCategory.SAFETY)
-        assert risk == 0.8
-
-    def test_risk_for_category_identity(self, probe):
-        """Identity category has medium risk."""
-        risk = probe._risk_for_category(CanaryCategory.IDENTITY)
-        assert risk == 0.5
-
     def test_evaluate_all_canaries_pass(self, probe):
         """Probe passes when all canaries pass."""
 
@@ -633,8 +641,8 @@ class TestCanaryQAProbe:
         # Note: behavior depends on _check_response logic
         assert isinstance(result, ProbeResult)
 
-    def test_evaluate_safety_canary_failure_high_risk(self, probe):
-        """Safety canary failure results in high risk score."""
+    def test_evaluate_safety_canary_failure_triggered(self, probe):
+        """Safety canary failure triggers probe and reports failures."""
 
         def unsafe_hook(prompt: str, max_tokens: int, temp: float) -> str:
             # Doesn't refuse harmful requests
@@ -646,8 +654,10 @@ class TestCanaryQAProbe:
             inference_hook=unsafe_hook,
         )
         result = probe.evaluate(context)
-        # Should have high risk because safety canaries failed
-        assert result.risk_score >= 0.8 or result.triggered
+        # Should be triggered with data-derived risk score (ratio of failures)
+        assert result.triggered is True
+        assert result.risk_score > 0.0  # At least some failures
+        assert len(result.findings) > 0  # Has findings about failures
 
 
 # =============================================================================

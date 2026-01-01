@@ -612,58 +612,35 @@ class LinguisticCalorimeter:
     ) -> BehavioralOutcome:
         """Classify behavioral outcome from entropy metrics.
 
-        If calibration is available, uses calibrated thresholds derived from
-        baseline entropy distribution. Otherwise, uses placeholder thresholds
-        with a warning.
+        Requires calibration. Without calibrated thresholds, returns UNKNOWN.
         """
         if self._calibration and self._calibration.thresholds:
             # Use calibrated thresholds
             outcome_str = self._calibration.thresholds.classify_outcome(entropy, variance)
             return BehavioralOutcome(outcome_str)
 
-        # Placeholder thresholds - warn that these should be calibrated
-        logger.debug(
-            "Using placeholder thresholds for outcome classification. "
-            "Run ThermoCalibrator.calibrate() for accurate classification."
-        )
-        # High entropy + low variance = distress (stuck in uncertainty)
-        if entropy >= 4.0:
-            if variance < 0.1:
-                return BehavioralOutcome.REFUSED
-            return BehavioralOutcome.HEDGED
-        elif entropy >= 3.0:
-            return BehavioralOutcome.ATTEMPTED
-        else:
-            return BehavioralOutcome.SOLVED
+        # No calibration = no classification. Return UNKNOWN.
+        return BehavioralOutcome.UNKNOWN
 
     def _classify_model_state(self, entropy: float) -> str:
         """Classify model state from entropy.
 
-        If calibration is available, uses percentile-based classification.
-        Otherwise, uses placeholder thresholds.
+        Requires calibration. Without calibrated percentiles, returns "uncalibrated".
         """
         if self._calibration and self._calibration.thresholds:
             # Use calibrated percentiles for state classification
             percentiles = self._calibration.thresholds.percentiles
-            if entropy < percentiles.get(25, 1.5):
+            # Require all percentiles to be present
+            if 25 not in percentiles or 50 not in percentiles or 75 not in percentiles:
+                return "uncalibrated"
+            if entropy < percentiles[25]:
                 return "confident"
-            elif entropy < percentiles.get(50, 3.0):
+            elif entropy < percentiles[50]:
                 return "normal"
-            elif entropy < percentiles.get(75, 4.0):
+            elif entropy < percentiles[75]:
                 return "uncertain"
             else:
                 return "distressed"
 
-        # Placeholder thresholds
-        logger.debug(
-            "Using placeholder thresholds for state classification. "
-            "Run ThermoCalibrator.calibrate() for accurate classification."
-        )
-        if entropy < 1.5:
-            return "confident"
-        elif entropy < 3.0:
-            return "normal"
-        elif entropy < 4.0:
-            return "uncertain"
-        else:
-            return "distressed"
+        # No calibration = no classification
+        return "uncalibrated"

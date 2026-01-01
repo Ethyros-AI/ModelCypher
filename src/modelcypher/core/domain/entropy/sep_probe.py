@@ -72,14 +72,22 @@ class LayerNotFoundError(SEPProbeError):
 
 @dataclass
 class SEPProbeConfig:
-    """Configuration for SEP probe."""
+    """Configuration for SEP probe.
+
+    Thresholds must be derived from baseline measurements. No arbitrary defaults.
+    """
 
     layer_count: int = 32
     layer_fractions: list[float] = field(default_factory=lambda: [0.75, 0.78, 0.81, 0.84, 0.875])
     hidden_dim: int = 4096
     use_ensemble: bool = True
-    min_r2_threshold: float = 0.5
-    circuit_breaker_threshold: float = 0.7
+
+    # Thresholds - MUST be derived from baseline measurements, no arbitrary defaults
+    min_r2_threshold: float | None = None
+    """Minimum R² for probe to be considered valid. Derive from training validation."""
+
+    circuit_breaker_threshold: float | None = None
+    """Risk threshold for tripping circuit breaker. Derive from baseline risk distribution."""
 
     @property
     def target_layers(self) -> list[int]:
@@ -88,6 +96,7 @@ class SEPProbeConfig:
 
     @classmethod
     def default(cls) -> "SEPProbeConfig":
+        """Create config with architecture defaults. Thresholds must be set separately."""
         return cls()
 
 
@@ -188,7 +197,9 @@ class SEPProbe:
             layer = lw["layer"]
             r2 = lw.get("validation_r2", 0.0)
 
-            if layer in self.config.target_layers and r2 >= self.config.min_r2_threshold:
+            # Filter by R² threshold if configured; if None, accept all
+            passes_r2 = self.config.min_r2_threshold is None or r2 >= self.config.min_r2_threshold
+            if layer in self.config.target_layers and passes_r2:
                 weights = LayerProbeWeights(
                     layer=layer,
                     weights=lw["weights"],
@@ -206,7 +217,9 @@ class SEPProbe:
     def register_weights(self, weights: list[LayerProbeWeights], model_id: str) -> None:
         """Register weights directly (for testing or in-memory)."""
         for lw in weights:
-            if lw.validation_r2 >= self.config.min_r2_threshold:
+            # Filter by R² threshold if configured; if None, accept all
+            passes_r2 = self.config.min_r2_threshold is None or lw.validation_r2 >= self.config.min_r2_threshold
+            if passes_r2:
                 self._probe_weights[lw.layer] = lw
                 self._cached_weight_arrays[lw.layer] = self._backend.array(lw.weights)
 
@@ -274,11 +287,17 @@ class SEPProbe:
 
         latency_ms = (time.time() - start) * 1000
 
+        # Only trip circuit breaker if threshold is configured
+        should_trip = (
+            self.config.circuit_breaker_threshold is not None
+            and final >= self.config.circuit_breaker_threshold
+        )
+
         return PredictionResult(
             predicted_entropy=final,
             layer_predictions=predictions,
             ensemble_weights=ensemble_weights,
-            should_trip_circuit_breaker=final >= self.config.circuit_breaker_threshold,
+            should_trip_circuit_breaker=should_trip,
             latency_ms=latency_ms,
         )
 

@@ -67,7 +67,12 @@ class SecurityScanMetricsJAX:
 
 @dataclass
 class DualPathGeneratorConfigurationJAX:
-    """Configuration for JAX dual-path generator."""
+    """Configuration for JAX dual-path generator.
+
+    Anomaly thresholds must be derived from baseline measurements.
+    No arbitrary defaults - the caller must measure their model to determine
+    appropriate thresholds.
+    """
 
     base_model_path: str
     adapter_path: str | None
@@ -80,6 +85,16 @@ class DualPathGeneratorConfigurationJAX:
     halt_on_circuit_breaker: bool
     entropy_top_k: int  # Top-K for entropy calculation
     seed: int
+
+    # Anomaly detection thresholds - MUST be derived from baseline measurements
+    kl_divergence_threshold: float | None = None
+    """KL divergence above which sample is anomalous. Derive from baseline σ."""
+
+    surprisal_threshold: float | None = None
+    """Surprisal above which sample is anomalous. Derive from baseline σ."""
+
+    approval_threshold: float | None = None
+    """Normalized approval below which sample is anomalous. Derive from baseline σ."""
 
 
 def compute_token_rank_metrics_jax(
@@ -505,16 +520,28 @@ class DualPathGeneratorJAX:
         return int(jax.random.categorical(rng_key, jnp.log(probs + eps)))
 
     def _check_anomaly(self, sample: EntropyDeltaSampleJAX) -> bool:
-        """Check if sample represents an anomaly."""
+        """Check if sample represents an anomaly.
+
+        Uses caller-provided thresholds from config. If thresholds are not provided,
+        no anomaly detection is performed (returns False).
+
+        Thresholds should be derived from baseline measurements:
+        - kl_divergence_threshold: baseline_mean + 2*baseline_std
+        - surprisal_threshold: baseline_mean + 2*baseline_std
+        - approval_threshold: baseline_mean - 2*baseline_std
+        """
         # High KL divergence indicates disagreement
-        if sample.kl_divergence > 5.0:
-            return True
+        if self.config.kl_divergence_threshold is not None:
+            if sample.kl_divergence > self.config.kl_divergence_threshold:
+                return True
         # High surprisal indicates unexpected token
-        if sample.base_surprisal > 10.0:
-            return True
+        if self.config.surprisal_threshold is not None:
+            if sample.base_surprisal > self.config.surprisal_threshold:
+                return True
         # Low approval indicates base model disapproves
-        if sample.normalized_approval < 0.1:
-            return True
+        if self.config.approval_threshold is not None:
+            if sample.normalized_approval < self.config.approval_threshold:
+                return True
         return False
 
     def _check_circuit_breaker(self) -> bool:

@@ -97,13 +97,15 @@ class LinguisticModifier:
 
 @dataclass(frozen=True)
 class ModifierMeasurement:
-    """Entropy measurement for a single modifier."""
+    """Entropy measurement for a single modifier.
+
+    Raw measurements only - no behavioral classification.
+    """
 
     modifier: str
     mean_entropy: float
     delta_h: float | None
     ridge_crossed: bool
-    behavioral_outcome: str
 
 
 @dataclass(frozen=True)
@@ -132,47 +134,17 @@ class ThermoMeasureResult:
 
 @dataclass(frozen=True)
 class ThermoDetectResult:
-    """Result of unsafe prompt detection."""
+    """Result of prompt entropy measurement.
+
+    Raw measurements only - no classification or risk levels.
+    The caller interprets delta_h relative to their baseline.
+    """
 
     prompt: str
-    classification: str  # "safe", "unsafe", "ambiguous"
-    risk_level: int  # 0-3
-    confidence: float
     baseline_entropy: float
     intensity_entropy: float
     delta_h: float
     processing_time: float
-
-
-# Preset configurations for detect
-# Thresholds use full-vocab entropy scale where typical values are:
-#   - Low entropy: < 1.5 (confident)
-#   - Moderate: 1.5-3.0 (normal)
-#   - High: 3.0-4.0 (uncertain)
-#   - Very high: >= 4.0 (distressed)
-# Delta thresholds indicate change from baseline to modified prompt
-DETECT_PRESETS: dict[str, dict] = {
-    "default": {
-        "threshold_safe": 0.3,  # Delta < 0.3 = safe
-        "threshold_unsafe": 1.0,  # Delta > 1.0 = unsafe
-        "modifiers": ["baseline", "caps", "direct"],
-    },
-    "strict": {
-        "threshold_safe": 0.2,
-        "threshold_unsafe": 0.7,
-        "modifiers": ["baseline", "caps", "direct", "roleplay", "combined"],
-    },
-    "sensitive": {
-        "threshold_safe": 0.15,
-        "threshold_unsafe": 0.5,
-        "modifiers": ["baseline", "caps", "direct", "roleplay", "combined", "negation"],
-    },
-    "quick": {
-        "threshold_safe": 0.4,
-        "threshold_unsafe": 1.2,
-        "modifiers": ["baseline", "caps"],
-    },
-}
 
 
 # Default linguistic modifiers - their effects are measured, not assumed
@@ -542,25 +514,9 @@ class ThermoService:
                 delta_h = entropy - (baseline_entropy or entropy)
                 delta_hs.append(delta_h)
 
-            # Determine if ridge was crossed (entropy spike)
-            # Real entropy threshold: 0.5 in full-vocab scale (not normalized)
-            ridge_crossed = delta_h is not None and abs(delta_h) > 0.5
-
-            # Determine behavioral outcome using calibrated thresholds
-            # Real entropy scale: [0, ~10.5] for 32K vocab
-            # Based on LogitEntropyCalculator calibration:
-            #   < 1.5 = confident/compliant
-            #   1.5-3.0 = normal/cautious
-            #   3.0-4.0 = uncertain/resistant
-            #   >= 4.0 = distressed/refusal
-            if entropy < 1.5:
-                behavioral_outcome = "compliant"
-            elif entropy < 3.0:
-                behavioral_outcome = "cautious"
-            elif entropy < 4.0:
-                behavioral_outcome = "resistant"
-            else:
-                behavioral_outcome = "refusal"
+            # ridge_crossed indicates a non-baseline modifier produced a change
+            # The magnitude of change is in delta_h - caller determines significance
+            ridge_crossed = delta_h is not None
 
             measurements.append(
                 ModifierMeasurement(
@@ -568,7 +524,6 @@ class ThermoService:
                     mean_entropy=entropy,
                     delta_h=delta_h,
                     ridge_crossed=ridge_crossed,
-                    behavioral_outcome=behavioral_outcome,
                 )
             )
 
@@ -623,32 +578,29 @@ class ThermoService:
         self,
         prompt: str,
         model_path: str,
-        preset: str = "default",
+        modifiers: list[str] | None = None,
     ) -> ThermoDetectResult:
-        """Detect unsafe prompt patterns via entropy differential.
+        """Measure prompt entropy differential.
+
+        Returns raw measurements. The caller interprets delta_h
+        relative to their baseline distribution.
 
         Args:
             prompt: The prompt to analyze.
             model_path: Path to the model directory.
-            preset: Preset configuration name (default, strict, sensitive, quick).
+            modifiers: List of modifier names to use. Defaults to
+                ["baseline", "caps", "direct"].
 
         Returns:
-            ThermoDetectResult with classification and risk assessment.
+            ThermoDetectResult with raw entropy measurements.
         """
         start_time = time.time()
 
-        # Get preset configuration
-        if preset not in DETECT_PRESETS:
-            logger.warning(f"Unknown preset '{preset}', using 'default'")
-            preset = "default"
-
-        config = DETECT_PRESETS[preset]
-        threshold_safe = config["threshold_safe"]
-        threshold_unsafe = config["threshold_unsafe"]
-        modifier_names = config["modifiers"]
+        if modifiers is None:
+            modifiers = ["baseline", "caps", "direct"]
 
         # Measure entropy across modifiers
-        measure_result = self.measure(prompt, model_path, modifier_names)
+        measure_result = self.measure(prompt, model_path, modifiers)
 
         # Extract baseline and intensity entropies
         baseline_entropy = 0.0
@@ -669,42 +621,13 @@ class ThermoService:
                     if measurement.mean_entropy > intensity_entropy:
                         intensity_entropy = measurement.mean_entropy
 
-        # Compute delta_h
+        # Compute delta_h - the raw measurement
         delta_h = intensity_entropy - baseline_entropy
-
-        # Classify based on delta_h
-        if delta_h < threshold_safe:
-            classification = "safe"
-            risk_level = 0
-            confidence = min(1.0, (threshold_safe - delta_h) / threshold_safe)
-        elif delta_h > threshold_unsafe:
-            classification = "unsafe"
-            risk_level = 3
-            # Avoid division by zero when threshold_unsafe >= 1.0
-            if threshold_unsafe >= 1.0:
-                confidence = min(1.0, delta_h / threshold_unsafe)
-            else:
-                confidence = min(1.0, (delta_h - threshold_unsafe) / (1.0 - threshold_unsafe))
-        else:
-            classification = "ambiguous"
-            # Risk level 1 or 2 based on where in the range
-            mid_point = (threshold_safe + threshold_unsafe) / 2
-            if delta_h < mid_point:
-                risk_level = 1
-            else:
-                risk_level = 2
-            # Confidence is lower for ambiguous cases
-            range_size = threshold_unsafe - threshold_safe
-            distance_from_center = abs(delta_h - mid_point)
-            confidence = 0.5 + (distance_from_center / range_size) * 0.3
 
         processing_time = time.time() - start_time
 
         return ThermoDetectResult(
             prompt=prompt,
-            classification=classification,
-            risk_level=risk_level,
-            confidence=confidence,
             baseline_entropy=baseline_entropy,
             intensity_entropy=intensity_entropy,
             delta_h=delta_h,
@@ -715,23 +638,23 @@ class ThermoService:
         self,
         prompts_file: str,
         model_path: str,
-        preset: str = "default",
+        modifiers: list[str] | None = None,
     ) -> list[ThermoDetectResult]:
-        """Batch detect unsafe patterns across multiple prompts.
+        """Batch measure entropy differential across multiple prompts.
 
         Args:
             prompts_file: Path to file containing prompts (JSON array or newline-separated).
             model_path: Path to the model directory.
-            preset: Preset configuration name (default, strict, sensitive, quick).
+            modifiers: List of modifier names to use.
 
         Returns:
-            List of ThermoDetectResult, one per prompt.
+            List of ThermoDetectResult with raw measurements, one per prompt.
         """
         prompts = self._load_prompts_from_file(prompts_file)
 
         results: list[ThermoDetectResult] = []
         for prompt in prompts:
-            result = self.detect(prompt, model_path, preset)
+            result = self.detect(prompt, model_path, modifiers)
             results.append(result)
 
         return results

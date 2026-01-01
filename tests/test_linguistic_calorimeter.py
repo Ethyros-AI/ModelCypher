@@ -530,84 +530,173 @@ class TestTrajectoryAnalysis:
 
 
 class TestBehavioralClassification:
-    """Tests for behavioral outcome classification."""
+    """Tests for behavioral outcome classification.
 
-    def test_low_entropy_is_solved(self) -> None:
-        """Low entropy should classify as SOLVED."""
+    Classification requires calibration. Without calibrated thresholds,
+    _classify_outcome returns UNKNOWN. The geometry determines the thresholds.
+    """
+
+    def test_without_calibration_returns_unknown(self) -> None:
+        """Without calibration, all outcomes return UNKNOWN."""
         from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
             BehavioralOutcome,
         )
 
         cal = LinguisticCalorimeter(simulated=True)
 
-        # Manual classification test
-        outcome = cal._classify_outcome(entropy=2.0, variance=0.1)
-        assert outcome == BehavioralOutcome.SOLVED
+        # Any entropy/variance combination returns UNKNOWN without calibration
+        assert cal._classify_outcome(entropy=2.0, variance=0.1) == BehavioralOutcome.UNKNOWN
+        assert cal._classify_outcome(entropy=4.5, variance=0.05) == BehavioralOutcome.UNKNOWN
+        assert cal._classify_outcome(entropy=4.5, variance=0.5) == BehavioralOutcome.UNKNOWN
+        assert cal._classify_outcome(entropy=3.5, variance=0.2) == BehavioralOutcome.UNKNOWN
 
-    def test_high_entropy_low_variance_is_refused(self) -> None:
-        """High entropy + low variance should be REFUSED."""
+    def test_with_calibration_uses_thresholds(self) -> None:
+        """With calibration, classification uses calibrated thresholds."""
         from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
             BehavioralOutcome,
         )
+        from modelcypher.core.domain.thermo.measured_thermodynamics import (
+            MeasuredThresholds,
+            ThermoCalibration,
+        )
 
-        cal = LinguisticCalorimeter(simulated=True)
+        # Create calibration with thresholds derived from baseline
+        # Include variance_threshold to enable refused/hedged distinction
+        thresholds = MeasuredThresholds(
+            refused_threshold=4.0,
+            hedged_threshold=3.0,
+            attempted_threshold=2.5,
+            percentiles={25: 1.5, 50: 2.5, 75: 3.5, 95: 4.5},
+            model_id="test-model",
+            variance_threshold=0.1,  # Derived from baseline variance measurements
+        )
+        calibration = ThermoCalibration(
+            basin_topology=None,
+            modifier_profile=None,
+            thresholds=thresholds,
+            model_id="test-model",
+        )
 
-        outcome = cal._classify_outcome(entropy=4.5, variance=0.05)
-        assert outcome == BehavioralOutcome.REFUSED
+        cal = LinguisticCalorimeter(simulated=True, calibration=calibration)
 
-    def test_high_entropy_high_variance_is_hedged(self) -> None:
-        """High entropy + high variance should be HEDGED."""
+        # With calibration, classification uses the calibrated thresholds
+        assert cal._classify_outcome(entropy=2.0, variance=0.1) == BehavioralOutcome.SOLVED
+        # High entropy + low variance (below variance_threshold) = REFUSED
+        assert cal._classify_outcome(entropy=4.5, variance=0.05) == BehavioralOutcome.REFUSED
+        # High entropy + high variance (above variance_threshold) = HEDGED
+        assert cal._classify_outcome(entropy=4.5, variance=0.5) == BehavioralOutcome.HEDGED
+        assert cal._classify_outcome(entropy=2.8, variance=0.2) == BehavioralOutcome.ATTEMPTED
+
+    def test_without_variance_threshold_no_refused_distinction(self) -> None:
+        """Without variance_threshold, high entropy always classifies as HEDGED."""
         from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
             BehavioralOutcome,
         )
-
-        cal = LinguisticCalorimeter(simulated=True)
-
-        outcome = cal._classify_outcome(entropy=4.5, variance=0.5)
-        assert outcome == BehavioralOutcome.HEDGED
-
-    def test_medium_entropy_is_attempted(self) -> None:
-        """Medium entropy should be ATTEMPTED."""
-        from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
-            BehavioralOutcome,
+        from modelcypher.core.domain.thermo.measured_thermodynamics import (
+            MeasuredThresholds,
+            ThermoCalibration,
         )
 
-        cal = LinguisticCalorimeter(simulated=True)
+        # Create calibration WITHOUT variance_threshold
+        thresholds = MeasuredThresholds(
+            refused_threshold=4.0,
+            hedged_threshold=3.0,
+            attempted_threshold=2.5,
+            percentiles={25: 1.5, 50: 2.5, 75: 3.5, 95: 4.5},
+            model_id="test-model",
+            # variance_threshold=None (default)
+        )
+        calibration = ThermoCalibration(
+            basin_topology=None,
+            modifier_profile=None,
+            thresholds=thresholds,
+            model_id="test-model",
+        )
 
-        outcome = cal._classify_outcome(entropy=3.5, variance=0.2)
-        assert outcome == BehavioralOutcome.ATTEMPTED
+        cal = LinguisticCalorimeter(simulated=True, calibration=calibration)
+
+        # Without variance_threshold, high entropy always → HEDGED (no REFUSED)
+        assert cal._classify_outcome(entropy=4.5, variance=0.05) == BehavioralOutcome.HEDGED
+        assert cal._classify_outcome(entropy=4.5, variance=0.5) == BehavioralOutcome.HEDGED
 
 
 class TestModelStateClassification:
-    """Tests for model state classification."""
+    """Tests for model state classification.
 
-    def test_very_low_entropy_is_confident(self) -> None:
-        """Entropy < 1.5 should be 'confident'."""
+    Classification requires calibration with percentiles. Without calibrated
+    percentiles, _classify_model_state returns "uncalibrated".
+    """
+
+    def test_without_calibration_returns_uncalibrated(self) -> None:
+        """Without calibration, all states return 'uncalibrated'."""
         cal = LinguisticCalorimeter(simulated=True)
 
-        state = cal._classify_model_state(1.0)
-        assert state == "confident"
+        # Any entropy value returns "uncalibrated" without calibration
+        assert cal._classify_model_state(1.0) == "uncalibrated"
+        assert cal._classify_model_state(2.0) == "uncalibrated"
+        assert cal._classify_model_state(3.5) == "uncalibrated"
+        assert cal._classify_model_state(5.0) == "uncalibrated"
 
-    def test_low_entropy_is_normal(self) -> None:
-        """Entropy 1.5-3.0 should be 'normal'."""
-        cal = LinguisticCalorimeter(simulated=True)
+    def test_with_calibration_uses_percentiles(self) -> None:
+        """With calibration, classification uses calibrated percentiles."""
+        from modelcypher.core.domain.thermo.measured_thermodynamics import (
+            MeasuredThresholds,
+            ThermoCalibration,
+        )
 
-        state = cal._classify_model_state(2.0)
-        assert state == "normal"
+        # Create calibration with percentiles
+        thresholds = MeasuredThresholds(
+            refused_threshold=4.0,
+            hedged_threshold=3.0,
+            attempted_threshold=2.5,
+            percentiles={25: 1.5, 50: 2.5, 75: 3.5, 95: 4.5},
+            model_id="test-model",
+        )
+        calibration = ThermoCalibration(
+            basin_topology=None,
+            modifier_profile=None,
+            thresholds=thresholds,
+            model_id="test-model",
+        )
 
-    def test_medium_entropy_is_uncertain(self) -> None:
-        """Entropy 3.0-4.0 should be 'uncertain'."""
-        cal = LinguisticCalorimeter(simulated=True)
+        cal = LinguisticCalorimeter(simulated=True, calibration=calibration)
 
-        state = cal._classify_model_state(3.5)
-        assert state == "uncertain"
+        # With calibration, uses calibrated percentiles
+        # entropy < p25 (1.5) → confident
+        assert cal._classify_model_state(1.0) == "confident"
+        # p25 ≤ entropy < p50 (2.5) → normal
+        assert cal._classify_model_state(2.0) == "normal"
+        # p50 ≤ entropy < p75 (3.5) → uncertain
+        assert cal._classify_model_state(3.0) == "uncertain"
+        # entropy ≥ p75 → distressed
+        assert cal._classify_model_state(4.0) == "distressed"
 
-    def test_high_entropy_is_distressed(self) -> None:
-        """Entropy >= 4.0 should be 'distressed'."""
-        cal = LinguisticCalorimeter(simulated=True)
+    def test_missing_percentiles_returns_uncalibrated(self) -> None:
+        """If calibration has missing percentiles, return 'uncalibrated'."""
+        from modelcypher.core.domain.thermo.measured_thermodynamics import (
+            MeasuredThresholds,
+            ThermoCalibration,
+        )
 
-        state = cal._classify_model_state(5.0)
-        assert state == "distressed"
+        # Create calibration with incomplete percentiles (missing p25)
+        thresholds = MeasuredThresholds(
+            refused_threshold=4.0,
+            hedged_threshold=3.0,
+            attempted_threshold=2.5,
+            percentiles={50: 2.5, 75: 3.5, 95: 4.5},  # Missing p25
+            model_id="test-model",
+        )
+        calibration = ThermoCalibration(
+            basin_topology=None,
+            modifier_profile=None,
+            thresholds=thresholds,
+            model_id="test-model",
+        )
+
+        cal = LinguisticCalorimeter(simulated=True, calibration=calibration)
+
+        # Missing percentile means uncalibrated
+        assert cal._classify_model_state(2.0) == "uncalibrated"
 
 
 class TestTemperatureEffects:

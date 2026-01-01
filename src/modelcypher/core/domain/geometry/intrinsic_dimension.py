@@ -513,8 +513,8 @@ class IntrinsicDimension:
         k_dists = sorted_dists[:, 1 : k_local + 1]  # [n, k_local]
 
         # Detect infinite distances (disconnected points in geodesic graph)
-        # Infinity manifests as very large values (> 1e30)
-        inf_threshold = backend.array(1e30)
+        # Use dtype max as the numerical "infinite" sentinel.
+        inf_threshold = backend.array(backend.finfo(geo_dist.dtype).max)
         is_finite = k_dists < inf_threshold  # [n, k_local]
 
         # Compute mu = r_{j+1} / r_j for consecutive neighbor pairs
@@ -545,7 +545,7 @@ class IntrinsicDimension:
         log_mu_masked = backend.where(valid_mask, log_mu, zeros)
 
         # Count valid entries per row
-        valid_float = backend.astype(valid_mask, backend.float32)
+        valid_float = backend.astype(valid_mask, str(geo_dist.dtype))
         valid_count = backend.sum(valid_float, axis=1)  # [n]
 
         # Sum of log(mu) per row
@@ -610,11 +610,11 @@ class IntrinsicDimension:
 
             # Compute bin indices
             bin_indices = backend.astype(
-                (valid_dims_backend - min_dim) / bin_width, backend.int32
+                (valid_dims_backend - min_dim) / bin_width, "int32"
             )
             # Clamp to valid range
-            max_bin_idx = backend.array(n_bins - 1, dtype=backend.int32)
-            zero_idx = backend.array(0, dtype=backend.int32)
+            max_bin_idx = backend.array(n_bins - 1, dtype="int32")
+            zero_idx = backend.array(0, dtype="int32")
             bin_indices = backend.where(bin_indices > max_bin_idx, max_bin_idx, bin_indices)
             bin_indices = backend.where(bin_indices < zero_idx, zero_idx, bin_indices)
 
@@ -686,4 +686,3 @@ class IntrinsicDimension:
         estimator = IntrinsicDimension(b)
         result = estimator.local_dimension_map(points, k=k, deficiency_threshold=threshold)
         return result.deficient_indices
-

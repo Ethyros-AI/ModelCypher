@@ -365,16 +365,67 @@ class BackendMatrixUtils:
 
         return aligned, result
 
+    def spectral_gap_rank(self, eigenvalues: Array) -> int:
+        """Compute effective rank from spectral gap detection.
+
+        Finds the natural boundary between signal and noise by locating
+        the maximum relative drop in eigenvalues. This is geometry-derived,
+        not an arbitrary threshold.
+
+        Returns:
+            The number of eigenvalues before the spectral gap.
+        """
+        b = self.backend
+        eig_flat = b.reshape(eigenvalues, (-1,))
+        mask = eig_flat > 0
+        b.eval(mask)
+
+        eig_np = b.to_numpy(eig_flat)
+        mask_np = b.to_numpy(mask)
+        eig_positive = sorted([float(x) for x in eig_np[mask_np]], reverse=True)
+
+        if len(eig_positive) < 2:
+            return len(eig_positive)
+
+        # Machine epsilon for numerical stability
+        eps = _division_epsilon_for_dtype(b)
+
+        # Find the maximum relative drop: (λ_i - λ_{i+1}) / λ_i
+        max_gap = 0.0
+        gap_index = 1  # Keep at least 1 component
+
+        for i in range(len(eig_positive) - 1):
+            if eig_positive[i] < eps:
+                break
+            relative_drop = (eig_positive[i] - eig_positive[i + 1]) / eig_positive[i]
+            if relative_drop > max_gap:
+                max_gap = relative_drop
+                gap_index = i + 1
+
+        return gap_index
+
     def effective_rank(
         self,
         eigenvalues: Array,
-        variance_threshold: float = 0.95,
+        variance_threshold: float | None = None,
     ) -> int:
         """Compute effective rank from eigenvalues.
 
-        Finds the number of eigenvalues needed to capture the specified
-        fraction of total variance.
+        Args:
+            eigenvalues: Array of eigenvalues (squared singular values).
+            variance_threshold: If provided, use variance-based rank (the number
+                of eigenvalues needed to capture this fraction of total variance).
+                If None (default), use spectral gap detection which finds the natural
+                signal/noise boundary from the data.
+
+        Returns:
+            Effective rank (number of significant dimensions).
         """
+        # Default: use spectral gap detection (geometry-derived)
+        if variance_threshold is None:
+            return self.spectral_gap_rank(eigenvalues)
+
+        # If variance threshold provided, use cumulative variance method
         b = self.backend
         eig_flat = b.reshape(eigenvalues, (-1,))
         mask = eig_flat > 0

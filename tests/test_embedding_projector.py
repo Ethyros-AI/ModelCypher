@@ -61,7 +61,7 @@ class TestProjectionConfig:
     def test_defaults(self):
         config = ProjectionConfig()
         assert config.strategy == ProjectionStrategy.PROCRUSTES
-        assert config.regularization == 1e-6
+        assert config.regularization is None
         assert config.n_components is None
         assert config.preserve_norms is True
         assert config.anchor_count == 1000

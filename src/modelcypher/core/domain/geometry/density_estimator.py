@@ -73,12 +73,10 @@ class DensityConfiguration:
     Attributes:
         k_neighbors: Number of neighbors for density estimation
         normalize: Whether to normalize densities to [0, 1]
-        use_geodesic: Whether to use geodesic (graph) distances
     """
 
     k_neighbors: int = 10
     normalize: bool = True
-    use_geodesic: bool = True  # Geodesic is correct on curved manifolds
 
 
 class DensityEstimator:

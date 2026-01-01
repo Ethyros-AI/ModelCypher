@@ -212,6 +212,8 @@ class BehavioralOutcome(str, Enum):
 
     Attributes
     ----------
+    UNKNOWN : str
+        Outcome cannot be determined (no calibration available).
     REFUSED : str
         Model explicitly declined to answer.
     HEDGED : str
@@ -230,6 +232,7 @@ class BehavioralOutcome(str, Enum):
     4. Entropy trajectory
     """
 
+    UNKNOWN = "unknown"
     REFUSED = "refused"
     HEDGED = "hedged"
     ATTEMPTED = "attempted"
@@ -239,6 +242,7 @@ class BehavioralOutcome(str, Enum):
     def display_name(self) -> str:
         """Human-readable display name."""
         names = {
+            BehavioralOutcome.UNKNOWN: "Unknown",
             BehavioralOutcome.REFUSED: "Refused",
             BehavioralOutcome.HEDGED: "Hedged",
             BehavioralOutcome.ATTEMPTED: "Attempted",
@@ -261,6 +265,7 @@ class BehavioralOutcome(str, Enum):
     def basin(self) -> AttractorBasin:
         """Basin classification in thermodynamic model."""
         basins = {
+            BehavioralOutcome.UNKNOWN: AttractorBasin.REFUSAL,  # Default to safe
             BehavioralOutcome.REFUSED: AttractorBasin.REFUSAL,
             BehavioralOutcome.HEDGED: AttractorBasin.CAUTION,
             BehavioralOutcome.ATTEMPTED: AttractorBasin.TRANSITION,
@@ -272,6 +277,7 @@ class BehavioralOutcome(str, Enum):
     def display_color(self) -> str:
         """Color hint for UI display."""
         colors = {
+            BehavioralOutcome.UNKNOWN: "gray",
             BehavioralOutcome.REFUSED: "red",
             BehavioralOutcome.HEDGED: "orange",
             BehavioralOutcome.ATTEMPTED: "yellow",

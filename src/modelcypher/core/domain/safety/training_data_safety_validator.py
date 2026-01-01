@@ -42,7 +42,6 @@ from modelcypher.core.domain.safety.regex_content_filter import (
     SafetyCategory,
 )
 from modelcypher.core.domain.safety.safety_models import (
-    ModerationFailureMode,
     SafetyStatus,
     SafetyThresholds,
     SafetyValidationLayer,
@@ -118,7 +117,6 @@ class TrainingDataSafetyValidator:
         strictness: StrictnessLevel,
         thresholds: SafetyThresholds,
         custom_whitelist: set[str] | None = None,
-        failure_mode: ModerationFailureMode = ModerationFailureMode.FLAG,
         allow_external_moderation: bool | None = None,
     ) -> SafetyValidationResult:
         """Validate a training sample for potentially harmful content.
@@ -132,11 +130,14 @@ class TrainingDataSafetyValidator:
             strictness: Validation strictness level.
             thresholds: Per-category confidence thresholds.
             custom_whitelist: Additional rule IDs to skip.
-            failure_mode: Behavior when moderation API fails.
             allow_external_moderation: Override instance setting.
 
         Returns:
             Validation result with status and details.
+
+        Raises:
+            ModerationUnavailableError: If external moderation is enabled
+                but the API call fails. The caller must handle this.
         """
         custom_whitelist = custom_whitelist or set()
 
@@ -216,10 +217,24 @@ class TrainingDataSafetyValidator:
             return result
 
         except Exception as e:
-            logger.error("OpenAI moderation failed: %s", str(e))
-            fallback = self._result_for_failure_mode(failure_mode, "OpenAI moderation unavailable")
-            self._log_decision(fallback)
-            return fallback
+            # No fallback - the caller must handle moderation unavailability
+            from modelcypher.core.domain.safety.exceptions import ModerationUnavailableError
+
+            raise ModerationUnavailableError(
+                stage="EXTERNAL_MODERATION",
+                message=f"OpenAI moderation API call failed: {e}",
+                context={
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                    "sample_length": len(sample.text),
+                    "suggestion": (
+                        "Handle ModerationUnavailableError at call site:\n"
+                        "1. Retry with backoff\n"
+                        "2. Use local-only validation (pass allow_external_moderation=False)\n"
+                        "3. Queue for manual review"
+                    ),
+                },
+            ) from e
 
     def _approved_result(self) -> SafetyValidationResult:
         """Create an approved validation result."""
@@ -232,35 +247,6 @@ class TrainingDataSafetyValidator:
             reason=None,
             source_layer=None,
         )
-
-    def _result_for_failure_mode(
-        self,
-        failure_mode: ModerationFailureMode,
-        reason: str,
-    ) -> SafetyValidationResult:
-        """Create a result based on failure mode."""
-        if failure_mode == ModerationFailureMode.APPROVE:
-            return self._approved_result()
-        elif failure_mode == ModerationFailureMode.FLAG:
-            return SafetyValidationResult(
-                status=SafetyStatus.FLAGGED_FOR_REVIEW,
-                confidence=0.0,
-                flagged_categories=(),
-                category_scores={},
-                requires_human_review=True,
-                reason=reason,
-                source_layer=SafetyValidationLayer.OPENAI,
-            )
-        else:  # REJECT
-            return SafetyValidationResult(
-                status=SafetyStatus.REJECTED,
-                confidence=0.0,
-                flagged_categories=(),
-                category_scores={},
-                requires_human_review=False,
-                reason=reason,
-                source_layer=SafetyValidationLayer.OPENAI,
-            )
 
     def _log_decision(self, result: SafetyValidationResult) -> None:
         """Log a validation decision."""

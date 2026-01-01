@@ -78,9 +78,6 @@ class ConceptDensity:
     # Mean pairwise similarity within concept (higher = tighter cluster)
     cluster_tightness: float | None = None
 
-    # Raw dimension class
-    dimension_class: str = "unknown"
-
 
 @dataclass(frozen=True)
 class LayerDensityProfile:
@@ -192,7 +189,6 @@ class KnowledgeDensityAnalyzer:
                     density_score=density_score,
                     activation_variance=variance,
                     cluster_tightness=tightness,
-                    dimension_class=result.dimension_class,
                 )
             )
 
