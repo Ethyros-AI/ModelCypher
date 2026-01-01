@@ -101,7 +101,7 @@ def pipeline(
         mc merge pipeline -s /path/a -t /path/b -o /out -d spatial,social \\
             --skip-pre-analysis --output-file result.json
     """
-    from modelcypher.core.use_cases.merge_pipeline_service import MergePipelineService
+    from modelcypher.core.use_cases.merge import MergePipelineService
 
     context = _context(ctx)
 

@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from ..data_models import LayerGeometry
+from ..models import LayerGeometry
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend

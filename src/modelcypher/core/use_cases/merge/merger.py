@@ -19,13 +19,14 @@
 Unified Geometric Merge Pipeline.
 
 Pipeline:
-    VOCAB → PROBE → PERMUTE → TRANSPLANT → VALIDATE
+    VOCAB → PROBE → DENSITY → PERMUTE → TRANSPLANT → VALIDATE
 
 Stage 0: VOCABULARY - Cross-vocabulary embedding alignment
 Stage 1: PROBE - Build intersection map from probe responses
-Stage 2: PERMUTE - Git Re-Basin permutation alignment (same-arch only)
+Stage 2a: DENSITY - Knowledge density profiling for graft mask
+Stage 2b: PERMUTE - Git Re-Basin permutation alignment (same-arch only)
 Stage 3: TRANSPLANT - Null-space constrained knowledge grafting
-Stage 4: VALIDATE - Safety checks (numerical + content)
+Stage 6: VALIDATE - Safety checks (numerical + content)
 
 Key Principles:
 1. Null-space projection guarantees: A_boundary @ W' = A_boundary @ W_target
@@ -41,7 +42,7 @@ REMOVED (proven broken):
 - rotate_blend: Alpha-blending has no constraint, destroys coherence
 - ROTATE/BLEND/PROPAGATE: Only served rotate_blend
 
-Stage implementations are in merge_stages/ subpackage for modularity.
+Stage implementations are in merge/stages for modularity.
 """
 
 from __future__ import annotations
@@ -78,14 +79,14 @@ class UnifiedGeometricMerger:
     """
     Unified geometric merge pipeline.
 
-    Pipeline: VOCAB → PROBE → PERMUTE → TRANSPLANT → VALIDATE
+    Pipeline: VOCAB → PROBE → DENSITY → PERMUTE → TRANSPLANT → VALIDATE
 
     - PERMUTE (Git Re-Basin): Solves permutation symmetry for same-architecture models.
       Reduces delta magnitude before transplant by aligning neuron orderings.
     - TRANSPLANT: Null-space constrained projection preserves boundary behavior
       while transferring knowledge.
 
-    Stage implementations are in merge_stages/ for modularity.
+    Stage implementations are in merge/stages for modularity.
     """
 
     def __init__(

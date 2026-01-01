@@ -15,16 +15,16 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Backward-compatible shim for merge stages package."""
+"""Backward-compatible shim for unified merge helpers."""
 
-from modelcypher.core.use_cases.merge import stages as _stages
+from modelcypher.core.use_cases.merge import helpers as _helpers
 
-__all__ = [name for name in dir(_stages) if not name.startswith("_")]
+__all__ = [name for name in dir(_helpers) if not name.startswith("_")]
 
 
 def __getattr__(name: str):
-    return getattr(_stages, name)
+    return getattr(_helpers, name)
 
 
 def __dir__() -> list[str]:
-    return sorted(set(globals()) | set(dir(_stages)))
+    return sorted(set(globals()) | set(dir(_helpers)))

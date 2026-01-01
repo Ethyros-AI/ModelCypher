@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 
-from .data_models import MergeGeometry
+from .models import MergeGeometry
 
 logger = logging.getLogger(__name__)
 

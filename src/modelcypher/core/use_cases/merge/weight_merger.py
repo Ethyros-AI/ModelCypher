@@ -23,7 +23,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from .data_models import MergeGeometry
+from .models import MergeGeometry
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend

@@ -46,12 +46,12 @@ from modelcypher.core.domain.merging.exceptions import (
     DimensionMismatchError,
     StitchUnavailableError,
 )
-from modelcypher.core.use_cases.merge_stages.transplant_manifest import (
+from modelcypher.core.use_cases.merge.stages.manifest import (
     TransplantManifest,
     WeightStatus,
     WeightTransformRecord,
 )
-from modelcypher.core.use_cases.merge_stages.stage_2_density import (
+from modelcypher.core.use_cases.merge.stages.density import (
     filter_core_probes_by_graft_mask,
 )
 from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed

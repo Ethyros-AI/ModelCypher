@@ -15,9 +15,16 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Stage 0 vocabulary alignment package."""
+"""Backward-compatible shim for vocabulary stage modules."""
 
-from .align import stage_vocabulary_align
-from .config import VocabularyConfig, VocabularyResult
+from modelcypher.core.use_cases.merge.stages import vocab as _stage
 
-__all__ = ["stage_vocabulary_align", "VocabularyConfig", "VocabularyResult"]
+__all__ = [name for name in dir(_stage) if not name.startswith("_")]
+
+
+def __getattr__(name: str):
+    return getattr(_stage, name)
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(dir(_stage)))

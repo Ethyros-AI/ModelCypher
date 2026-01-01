@@ -27,8 +27,8 @@ Provides geometric alignment for merging models and adapters using:
 
 from modelcypher.core.domain.merging.exceptions import MergeError
 
-# Re-export from unified_geometric_merge (the canonical geometric merge)
-from modelcypher.core.use_cases.unified_geometric_merge import (
+# Re-export from merge (the canonical geometric merge)
+from modelcypher.core.use_cases.merge import (
     LayerMergeState,
     UnifiedGeometricMerger,
     UnifiedMergeConfig,
@@ -62,7 +62,7 @@ __all__ = [
     "LayerMergeValidation",
     "MergeEntropyValidation",
     # Unified Geometric Merge (re-exported from use_cases for convenience)
-    # NOTE: Prefer importing directly from modelcypher.core.use_cases.unified_geometric_merge
+    # NOTE: Prefer importing directly from modelcypher.core.use_cases.merge
     "UnifiedGeometricMerger",
     "UnifiedMergeConfig",
     "UnifiedMergeResult",

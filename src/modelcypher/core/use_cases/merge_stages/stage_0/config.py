@@ -15,52 +15,16 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-from __future__ import annotations
+"""Backward-compatible shim for vocab config models."""
 
-from dataclasses import dataclass
-from typing import Any
+from modelcypher.core.use_cases.merge.stages.vocab import config as _stage
 
-
-@dataclass
-class VocabularyConfig:
-    """Configuration for Stage 0 vocabulary alignment.
-
-    No heuristic thresholds are applied in alignment or blending.
-    """
-
-    # Projection strategy: procrustes, pca, optimal_transport, cca
-    projection_strategy: str = "procrustes"
-
-    # Embedding blending
-    blend_alpha: float = 0.5
-    preserve_special_tokens: bool = True
-
-    # Advanced
-    anchor_count: int = 1000
-    similarity_batch_size: int = 128
-
-    # Phase-lock alignment tuning
-    alignment_iterations: int = 8
-    alignment_solver_iterations: int = 5000
-    alignment_solver_rounds: int = 1
-    # Tolerance is overridden by dtype's machine_epsilon when smaller.
-    # Effective tolerance = max(alignment_tolerance, machine_epsilon).
-    alignment_tolerance: float = 0.0  # 0.0 = use dtype-derived threshold only
-    phase_lock_max_iterations: int = 0
-    use_all_support_texts: bool = True
-    use_byte_anchors_for_atlas: bool = True
-    balance_anchor_weights: bool = True
-    use_coverage_anchor_selection: bool = True
-    coverage_k_neighbors: int | None = None
-    coverage_candidate_multiplier: int = 3
-    strict_token_alignment: bool = True
+__all__ = [name for name in dir(_stage) if not name.startswith("_")]
 
 
-@dataclass
-class VocabularyResult:
-    """Result of Stage 0 vocabulary alignment."""
+def __getattr__(name: str):
+    return getattr(_stage, name)
 
-    modified_weights: dict[str, "object"]
-    metrics: dict[str, Any]
-    was_aligned: bool
-    alignment_map: Any | None = None
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(dir(_stage)))

@@ -15,53 +15,16 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-from __future__ import annotations
+"""Backward-compatible shim for vocab tokenizer utilities."""
 
-import logging
-from typing import Any
+from modelcypher.core.use_cases.merge.stages.vocab import tokenizer_utils as _stage
 
-logger = logging.getLogger(__name__)
-
-
-def _extract_vocab(tokenizer: Any) -> dict[str, int] | None:
-    """Extract vocabulary mapping from tokenizer."""
-    # Try different tokenizer APIs
-    if hasattr(tokenizer, "get_vocab"):
-        return tokenizer.get_vocab()
-    if hasattr(tokenizer, "vocab"):
-        vocab = tokenizer.vocab
-        if isinstance(vocab, dict):
-            return vocab
-    if hasattr(tokenizer, "encoder"):
-        return tokenizer.encoder
-    if hasattr(tokenizer, "token_to_id"):
-        # Tokenizers library - need to iterate
-        try:
-            vocab = {}
-            for token in tokenizer.get_vocab():
-                vocab[token] = tokenizer.token_to_id(token)
-            return vocab
-        except Exception:
-            pass
-
-    logger.warning("Could not extract vocabulary from tokenizer type %s", type(tokenizer))
-    return None
+__all__ = [name for name in dir(_stage) if not name.startswith("_")]
 
 
-def _encode_ids(tokenizer: Any, text: str) -> list[int]:
-    try:
-        encoded = tokenizer.encode(text, add_special_tokens=False)
-    except TypeError:
-        encoded = tokenizer.encode(text)
-
-    if isinstance(encoded, list):
-        return encoded
-    if hasattr(encoded, "ids"):
-        return list(encoded.ids)
-    if hasattr(encoded, "input_ids"):
-        return list(encoded.input_ids)
-    return []
+def __getattr__(name: str):
+    return getattr(_stage, name)
 
 
-def _encode_bytes(text: str) -> list[int]:
-    return list(text.encode("utf-8"))
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(dir(_stage)))

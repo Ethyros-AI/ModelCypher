@@ -123,9 +123,7 @@ class ModelService:
         The geometry determines everything - per-layer blend coefficients,
         alignment rotations, neuron permutations. No configuration needed.
         """
-        from modelcypher.core.use_cases.unified_geometric_merge import (
-            UnifiedGeometricMerger,
-        )
+        from modelcypher.core.use_cases.merge import UnifiedGeometricMerger
 
         merger = UnifiedGeometricMerger(model_loader=self._model_loader)
         merge_result = merger.merge(

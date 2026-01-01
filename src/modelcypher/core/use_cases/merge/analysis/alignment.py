@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from ..data_models import LayerGeometry
+from ..models import LayerGeometry
 from ..infrastructure import select_shared_full_rank_indices
 
 if TYPE_CHECKING:

@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-from ..data_models import MergeGeometry
+from ..models import MergeGeometry
 
 
 def stage_smooth_alphas(geometry: MergeGeometry) -> None:

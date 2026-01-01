@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from modelcypher.core.use_cases.unified_merge.models import UnifiedMergeResult
+    from modelcypher.core.use_cases.merge.models import UnifiedMergeResult
 
 logger = logging.getLogger(__name__)
 

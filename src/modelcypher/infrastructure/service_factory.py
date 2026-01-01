@@ -175,9 +175,7 @@ class ServiceFactory:
 
     def merge_validation_service(self):
         """Create MergeValidationService with injected inference engine."""
-        from modelcypher.core.use_cases.merge_validation_service import (
-            MergeValidationService,
-        )
+        from modelcypher.core.use_cases.merge import MergeValidationService
 
         return MergeValidationService(inference_engine=self._registry.inference_engine)
 

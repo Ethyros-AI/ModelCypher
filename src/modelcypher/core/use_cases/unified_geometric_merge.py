@@ -15,16 +15,22 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Backward-compatible shim for merge stages package."""
+"""Backward-compatible shim for unified geometric merge."""
 
-from modelcypher.core.use_cases.merge import stages as _stages
+from modelcypher.core.use_cases.merge.merger import (
+    CrossArchitectureInfo,
+    LayerMergeState,
+    UnifiedGeometricMerger,
+    UnifiedMergeConfig,
+    UnifiedMergeResult,
+    unified_merge,
+)
 
-__all__ = [name for name in dir(_stages) if not name.startswith("_")]
-
-
-def __getattr__(name: str):
-    return getattr(_stages, name)
-
-
-def __dir__() -> list[str]:
-    return sorted(set(globals()) | set(dir(_stages)))
+__all__ = [
+    "CrossArchitectureInfo",
+    "LayerMergeState",
+    "UnifiedGeometricMerger",
+    "UnifiedMergeConfig",
+    "UnifiedMergeResult",
+    "unified_merge",
+]

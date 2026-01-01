@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..data_models import MergeGeometry
+from ..models import MergeGeometry
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array

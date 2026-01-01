@@ -39,6 +39,11 @@ References:
 - AlphaEdit (null-space transplant): Fang et al. (2025) ICLR Outstanding Paper
 """
 
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING, Any
+
 from .vocabulary import (
     VocabularyResult,
     stage_vocabulary_align,
@@ -75,8 +80,46 @@ from .validate import (
 # NOTE: ValidateConfig was REMOVED. Validation always runs all checks.
 # entropy_phase is passed directly to stage_validate (input data, not config).
 
+logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Array
+
+
+def stage_vocabulary(
+    *,
+    source_weights: dict[str, "Array"],
+    target_weights: dict[str, "Array"],
+    source_tokenizer: Any | None,
+    target_tokenizer: Any | None,
+) -> tuple[dict[str, "Array"], dict[str, Any], bool, Any | None]:
+    """Stage 0: Align source vocabulary to target vocabulary."""
+    config = _VocabularyConfig()
+
+    result = stage_vocabulary_align(
+        source_weights=source_weights,
+        target_weights=target_weights,
+        source_tokenizer=source_tokenizer,
+        target_tokenizer=target_tokenizer,
+        config=config,
+    )
+
+    if result.was_aligned:
+        logger.info("Vocabulary alignment applied")
+    else:
+        reason = result.metrics.get("reason", "unknown")
+        logger.info("Vocabulary alignment skipped: %s", reason)
+
+    return (
+        result.modified_weights,
+        result.metrics,
+        result.was_aligned,
+        result.alignment_map,
+    )
+
 __all__ = [
     # Stage 0: Vocabulary (VocabularyConfig INTERNAL ONLY - not exported)
+    "stage_vocabulary",
     "stage_vocabulary_align",
     "VocabularyResult",
     # Stage 1: Probe (ProbeConfig REMOVED - always precise mode, all probes)

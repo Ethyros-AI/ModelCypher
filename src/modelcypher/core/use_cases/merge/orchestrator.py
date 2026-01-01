@@ -103,7 +103,7 @@ from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 
-from .data_models import LayerGeometry, MergeGeometry
+from .models import LayerGeometry, MergeGeometry
 from .global_metrics import compute_global_metrics
 from .infrastructure import setup_infrastructure
 from .analysis import (
