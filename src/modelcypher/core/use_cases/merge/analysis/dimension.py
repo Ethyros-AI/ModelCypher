@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from ..models import LayerGeometry
 
 if TYPE_CHECKING:
@@ -102,7 +103,8 @@ def stage_compute_dimension_weights(
             dot = backend.sum(src_stacked * tgt_stacked, axis=0)
             norm_src = backend.sqrt(backend.sum(src_stacked * src_stacked, axis=0))
             norm_tgt = backend.sqrt(backend.sum(tgt_stacked * tgt_stacked, axis=0))
-            corr = dot / (norm_src * norm_tgt + 1e-10)
+            eps = division_epsilon(backend, src_stacked)
+            corr = dot / (norm_src * norm_tgt + eps)
             corr = backend.maximum(0.0, backend.minimum(1.0, corr))
             backend.eval(corr)
 

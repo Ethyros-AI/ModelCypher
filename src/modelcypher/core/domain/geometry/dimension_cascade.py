@@ -52,6 +52,7 @@ from modelcypher.core.domain.geometry.intrinsic_dimension import (
 from modelcypher.core.domain.geometry.manifold_curvature import (
     OllivierRicciCurvature,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.riemannian_utils import (
     RiemannianGeometry,
 )
@@ -457,9 +458,11 @@ class DimensionCascade:
         projected = U_k * sqrt_S_k[None, :]  # [n, target_dim]
         b.eval(projected)
 
+        total_var = float(b.to_numpy(b.sum(S)))
+        eps = division_epsilon(b, S)
         logger.debug(
             "Isomap embedding: explained variance ratio = %.2f%%",
-            100.0 * float(b.to_numpy(b.sum(S_k))) / max(1e-10, float(b.to_numpy(b.sum(S)))),
+            100.0 * float(b.to_numpy(b.sum(S_k))) / max(eps, total_var),
         )
 
         # Step 5: Derive linear coupling for streaming
@@ -486,7 +489,7 @@ class DimensionCascade:
         )
 
         # Regularized inverse of singular values
-        eps = 1e-10
+        eps = division_epsilon(b, S_x)
         S_x_inv = 1.0 / (S_x + eps)
         b.eval(S_x_inv)
 
@@ -563,7 +566,7 @@ class DimensionCascade:
             euc_std = b.sqrt(b.sum(euc_centered * euc_centered))
             b.eval(numerator, geo_std, euc_std)
 
-            eps = 1e-10
+            eps = division_epsilon(b, geo_flat)
             correlation = numerator / (geo_std * euc_std + eps)
             b.eval(correlation)
 

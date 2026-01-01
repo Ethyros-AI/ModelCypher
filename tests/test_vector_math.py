@@ -92,12 +92,14 @@ class TestVectorMathDot:
         assert result == pytest.approx(0.0)
 
     def test_dot_empty_vectors(self):
-        """Dot product of empty vectors returns None."""
-        assert VectorMath.dot([], []) is None
+        """Dot product of empty vectors raises ValueError."""
+        with pytest.raises(ValueError, match="empty"):
+            VectorMath.dot([], [])
 
     def test_dot_mismatched_lengths(self):
-        """Dot product of mismatched lengths returns None."""
-        assert VectorMath.dot([1.0, 2.0], [1.0]) is None
+        """Dot product of mismatched lengths raises ValueError."""
+        with pytest.raises(ValueError, match="matching dimensions"):
+            VectorMath.dot([1.0, 2.0], [1.0])
 
     def test_dot_with_mlx_arrays(self):
         """Dot product works with MLX arrays."""
@@ -126,12 +128,13 @@ class TestVectorMathL2Norm:
         assert VectorMath.l2_norm(a) == pytest.approx(5.0)
 
     def test_l2_norm_empty(self):
-        """L2 norm of empty vector returns None."""
-        assert VectorMath.l2_norm([]) is None
+        """L2 norm of empty vector raises ValueError."""
+        with pytest.raises(ValueError, match="empty"):
+            VectorMath.l2_norm([])
 
     def test_l2_norm_zero_vector(self):
-        """L2 norm of zero vector returns None."""
-        assert VectorMath.l2_norm([0.0, 0.0, 0.0]) is None
+        """L2 norm of zero vector returns 0.0."""
+        assert VectorMath.l2_norm([0.0, 0.0, 0.0]) == pytest.approx(0.0)
 
     def test_l2_norm_with_mlx_array(self):
         """L2 norm works with MLX arrays."""
@@ -166,9 +169,9 @@ class TestVectorMathL2Normalized:
         assert result == [0.0, 0.0]
 
     def test_l2_normalized_empty(self):
-        """L2 normalizing empty vector returns empty."""
-        result = VectorMath.l2_normalized([])
-        assert result == []
+        """L2 normalizing empty vector raises ValueError."""
+        with pytest.raises(ValueError, match="empty"):
+            VectorMath.l2_normalized([])
 
 
 class TestVectorMathCosineSimilarity:
@@ -195,16 +198,19 @@ class TestVectorMathCosineSimilarity:
         assert result == pytest.approx(0.0)
 
     def test_cosine_similarity_empty(self):
-        """Cosine similarity of empty vectors returns None."""
-        assert VectorMath.cosine_similarity([], []) is None
+        """Cosine similarity of empty vectors raises ValueError."""
+        with pytest.raises(ValueError, match="empty"):
+            VectorMath.cosine_similarity([], [])
 
     def test_cosine_similarity_mismatched(self):
-        """Cosine similarity of mismatched lengths returns None."""
-        assert VectorMath.cosine_similarity([1.0, 2.0], [1.0]) is None
+        """Cosine similarity of mismatched lengths raises ValueError."""
+        with pytest.raises(ValueError, match="matching dimensions"):
+            VectorMath.cosine_similarity([1.0, 2.0], [1.0])
 
     def test_cosine_similarity_zero_vector(self):
-        """Cosine similarity with zero vector returns None."""
-        assert VectorMath.cosine_similarity([0.0, 0.0], [1.0, 2.0]) is None
+        """Cosine similarity with zero vector raises ValueError."""
+        with pytest.raises(ValueError, match="zero"):
+            VectorMath.cosine_similarity([0.0, 0.0], [1.0, 2.0])
 
     def test_cosine_similarity_with_mlx_arrays(self):
         """Cosine similarity works with MLX arrays."""
@@ -241,8 +247,9 @@ class TestSparseVectorMathL2Norm:
         assert result == pytest.approx(5.0)
 
     def test_sparse_l2_norm_empty(self):
-        """Sparse L2 norm of empty dict returns None."""
-        assert SparseVectorMath.l2_norm({}) is None
+        """Sparse L2 norm of empty dict raises ValueError."""
+        with pytest.raises(ValueError, match="empty"):
+            SparseVectorMath.l2_norm({})
 
 
 class TestSparseVectorMathCosineSimilarity:
@@ -271,9 +278,11 @@ class TestSparseVectorMathCosineSimilarity:
         assert result == pytest.approx(0.5)
 
     def test_sparse_cosine_empty(self):
-        """Sparse cosine similarity of empty dicts returns None."""
-        assert SparseVectorMath.cosine_similarity({}, {}) is None
-        assert SparseVectorMath.cosine_similarity({"a": 1.0}, {}) is None
+        """Sparse cosine similarity of empty dicts raises ValueError."""
+        with pytest.raises(ValueError, match="empty"):
+            SparseVectorMath.cosine_similarity({}, {})
+        with pytest.raises(ValueError, match="empty"):
+            SparseVectorMath.cosine_similarity({"a": 1.0}, {})
 
 
 class TestVectorMathSlerp:
@@ -346,16 +355,19 @@ class TestVectorMathSlerp:
         assert result[1] == pytest.approx(0.00005, rel=0.1)
 
     def test_slerp_empty_vectors(self):
-        """SLERP of empty vectors returns None."""
-        assert VectorMath.slerp([], [], 0.5) is None
+        """SLERP of empty vectors raises ValueError."""
+        with pytest.raises(ValueError, match="empty"):
+            VectorMath.slerp([], [], 0.5)
 
     def test_slerp_mismatched_lengths(self):
-        """SLERP of mismatched lengths returns None."""
-        assert VectorMath.slerp([1.0, 2.0], [1.0], 0.5) is None
+        """SLERP of mismatched lengths raises ValueError."""
+        with pytest.raises(ValueError, match="matching dimensions"):
+            VectorMath.slerp([1.0, 2.0], [1.0], 0.5)
 
     def test_slerp_zero_vector(self):
-        """SLERP with zero vector returns None."""
-        assert VectorMath.slerp([0.0, 0.0], [1.0, 0.0], 0.5) is None
+        """SLERP with zero vector raises ValueError."""
+        with pytest.raises(ValueError, match="zero"):
+            VectorMath.slerp([0.0, 0.0], [1.0, 0.0], 0.5)
 
     def test_slerp_with_mlx_arrays(self):
         """SLERP works with MLX arrays."""

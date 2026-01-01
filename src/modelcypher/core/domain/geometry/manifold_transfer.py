@@ -54,6 +54,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array
@@ -435,6 +436,7 @@ class CrossManifoldProjector:
 
         backend.eval(target_centroids_arr)
         d = int(target_centroids_arr.shape[1])
+        eps = division_epsilon(backend, target_centroids_arr)
         n_anchors = len(matching_anchor_ids)
         k_neighbors = min(max(3, n_anchors // 3), n_anchors)
 
@@ -493,10 +495,10 @@ class CrossManifoldProjector:
             for i in range(n_anchors):
                 diff = position_np - target_centroids_np[i]
                 dist = current_distances_np[i]
-                if dist > 1e-10:
+                if dist > eps:
                     # Tangent-space gradient direction
                     diff_norm = float(sum(x**2 for x in diff) ** 0.5)
-                    if diff_norm > 1e-10:
+                    if diff_norm > eps:
                         for j in range(d):
                             grad_np[j] += 2 * weights_np[i] * residuals_np[i] * diff[j] / diff_norm
 
@@ -525,7 +527,8 @@ class CrossManifoldProjector:
         # Normalize stress
         src_dist_sq_sum = backend.sum(source_distances * source_distances)
         backend.eval(src_dist_sq_sum)
-        normalized_stress = best_stress / (float(backend.to_numpy(src_dist_sq_sum)) + 1e-10)
+        stress_eps = division_epsilon(backend, source_distances)
+        normalized_stress = best_stress / (float(backend.to_numpy(src_dist_sq_sum)) + stress_eps)
 
         # Compute curvature mismatch
         curvature_mismatch = 0.0
@@ -657,21 +660,22 @@ class CrossManifoldProjector:
         # Copy covariance using backend
         projected_covariance = backend.array(source_volume.covariance)
         projected_radius = source_volume.geodesic_radius
+        eps = division_epsilon(backend, projected_covariance)
 
         if source_curvature is not None and target_curvature is not None:
             K_source = source_curvature.mean_sectional
             K_target = target_curvature.mean_sectional
 
-            if abs(K_source) > 1e-10 and abs(K_target) > 1e-10:
+            if abs(K_source) > eps and abs(K_target) > eps:
                 ratio = (1 - K_target / 6) / (1 - K_source / 6)
                 ratio = max(0.5, min(2.0, ratio))  # Clip to [0.5, 2.0]
                 projected_covariance = projected_covariance * ratio
                 projected_radius = projected_radius * math.sqrt(ratio)
-            elif abs(K_source) > 1e-10:
+            elif abs(K_source) > eps:
                 expansion = 1 + abs(K_source) * source_volume.geodesic_radius**2 / 6
                 projected_covariance = projected_covariance * expansion
                 projected_radius = projected_radius * math.sqrt(expansion)
-            elif abs(K_target) > 1e-10:
+            elif abs(K_target) > eps:
                 contraction = 1 / (1 + abs(K_target) * source_volume.geodesic_radius**2 / 6)
                 projected_covariance = projected_covariance * contraction
                 projected_radius = projected_radius * math.sqrt(contraction)

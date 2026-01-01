@@ -48,6 +48,9 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
 logger = logging.getLogger(__name__)
 
 from modelcypher.core.domain.geometry.concept_response_matrix import (
@@ -379,7 +382,9 @@ class CrossArchitectureLayerMatcher:
             sum_x2 += dx * dx
             sum_y2 += dy * dy
         denom = (sum_x2 * sum_y2) ** 0.5
-        return sum_xy / denom if denom > 1e-10 else 0.0
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([denom]))
+        return sum_xy / denom if denom > eps else 0.0
 
     @staticmethod
     def _compute_weighted_cka_matrix(

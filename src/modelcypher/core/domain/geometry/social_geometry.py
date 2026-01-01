@@ -40,6 +40,7 @@ from modelcypher.core.domain.geometry.atlas_protocols import (
     axis_key,
 )
 from modelcypher.core.domain.geometry.atlas_registry import get_social_concepts
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -250,6 +251,8 @@ class SocialGeometryAnalyzer:
             if len(indices) < 3:
                 return False, 0.0
 
+            eps = division_epsilon(backend, X_pca)
+
             # Get positions from X_pca using backend slicing
             X_pca_np = backend.to_numpy(X_pca)
             positions = [float(X_pca_np[i, 0]) for i in indices]
@@ -276,7 +279,7 @@ class SocialGeometryAnalyzer:
             den_pos = math.sqrt(sum((pos_ranks[i] - mean_pos) ** 2 for i in range(n)))
             den_exp = math.sqrt(sum((exp_ranks[i] - mean_exp) ** 2 for i in range(n)))
 
-            if den_pos < 1e-10 or den_exp < 1e-10:
+            if den_pos < eps or den_exp < eps:
                 corr = 0.0
             else:
                 corr = num / (den_pos * den_exp)
@@ -341,7 +344,8 @@ class SocialGeometryAnalyzer:
         den_pos = math.sqrt(sum((positions[i] - mean_pos) ** 2 for i in range(n)))
         den_exp = math.sqrt(sum((expected_levels[i] - mean_exp) ** 2 for i in range(n)))
 
-        if den_pos < 1e-10 or den_exp < 1e-10:
+        eps = division_epsilon(backend, X_pca)
+        if den_pos < eps or den_exp < eps:
             correlation = 0.0
         else:
             correlation = num / (den_pos * den_exp)

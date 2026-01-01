@@ -15,6 +15,8 @@ poetry run modelcypher-mcp
 - `mc_geometry_intrinsic_dimension(points_file)`
 - `mc_geometry_topological_fingerprint(points_file)`
 - `mc_geometry_spectral_signature(points_file)`
+- `mc_geometry_density_profile(modelPath, layers=None, sources=None, domains=None, maxProbes=0)`
+- `mc_geometry_density_diff(sourcePath, targetPath, layers=None, sources=None, domains=None, maxProbes=0)`
 
 ## Input Format
 

@@ -9,6 +9,8 @@ mc geometry metrics gromov-wasserstein <source_file> <target_file>
 mc geometry metrics intrinsic-dimension <points_file>
 mc geometry metrics topological-fingerprint <points_file>
 mc geometry metrics spectral-signature <points_file>
+mc geometry density profile <model_dir>
+mc geometry density diff <source_model_dir> <target_model_dir>
 ```
 
 ## Input Format

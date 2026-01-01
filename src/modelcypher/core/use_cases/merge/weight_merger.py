@@ -23,6 +23,8 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
 from .models import MergeGeometry
 
 if TYPE_CHECKING:
@@ -391,7 +393,7 @@ def merge_weights(
                 # Embedding-scale matrices: use direct Frechet mean to avoid SVD blowups.
                 m_rows, n_cols = source_f32.shape
                 if m_rows > 4 * n_cols and m_rows > 10000:
-                    eps = 1e-10
+                    eps = division_epsilon(b, source_f32)
                     source_abs = b.abs(source_f32)
                     target_abs = b.abs(target_f32)
                     merged_w = b.sqrt((source_abs + eps) * (target_abs + eps)) * b.sign(target_f32)
@@ -634,8 +636,9 @@ def merge_weights(
                         pass
             else:
                 # 1D tensors - geometric mean of magnitudes (Frechet mean on R+)
+                eps = division_epsilon(b, source_w)
                 merged_w = (
-                    b.sqrt((b.abs(source_w) + 1e-10) * (b.abs(target_w) + 1e-10))
+                    b.sqrt((b.abs(source_w) + eps) * (b.abs(target_w) + eps))
                     * b.sign(target_w)
                 )
                 b.eval(merged_w)

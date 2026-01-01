@@ -27,14 +27,6 @@ Provides geometric alignment for merging models and adapters using:
 
 from modelcypher.core.domain.merging.exceptions import MergeError
 
-# Re-export from merge (the canonical geometric merge)
-from modelcypher.core.use_cases.merge import (
-    LayerMergeState,
-    UnifiedGeometricMerger,
-    UnifiedMergeConfig,
-    UnifiedMergeResult,
-)
-
 # Platform detection (for backend selection, not merger selection)
 from ._platform import (
     get_lora_adapter_merger_class,
@@ -61,12 +53,6 @@ __all__ = [
     "ModelEntropyProfile",
     "LayerMergeValidation",
     "MergeEntropyValidation",
-    # Unified Geometric Merge (re-exported from use_cases for convenience)
-    # NOTE: Prefer importing directly from modelcypher.core.use_cases.merge
-    "UnifiedGeometricMerger",
-    "UnifiedMergeConfig",
-    "UnifiedMergeResult",
-    "LayerMergeState",
     # Exceptions
     "MergeError",
     # LoRA Adapter Merger (geometric)

@@ -69,6 +69,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
@@ -1133,13 +1134,15 @@ class BackendTopologicalFingerprint:
         b.eval(total)
         total_val = float(b.to_numpy(total))
 
-        if total_val <= 1e-9:
+        eps = division_epsilon(b, arr)
+
+        if total_val <= eps:
             return 0.0
 
         probs = arr / total
         # Compute -sum(p * log(p)), avoiding log(0)
         # Add small epsilon to avoid log(0)
-        log_probs = b.log(probs + 1e-10)
+        log_probs = b.log(probs + eps)
         entropy = -b.sum(probs * log_probs)
         b.eval(entropy)
 

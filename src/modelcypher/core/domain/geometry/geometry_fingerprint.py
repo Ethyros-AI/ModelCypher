@@ -25,6 +25,10 @@ from enum import Enum
 from typing import Iterable
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    regularization_epsilon,
+)
 from modelcypher.core.domain.geometry.riemannian_utils import safe_arithmetic_mean
 
 
@@ -222,7 +226,8 @@ class GeometricFingerprint:
             backend.eval(dot_arr, norm_arr)
             lam = float(backend.to_numpy(dot_arr).item())
             norm = float(backend.to_numpy(norm_arr).item())
-            if norm <= 1e-10:
+            eps = division_epsilon(backend, w)
+            if norm <= eps:
                 break
             v = w / norm
 
@@ -233,9 +238,11 @@ class GeometricFingerprint:
         eigenvalues = GeometricFingerprint.symmetric_eigenvalues(gram, n, max_iterations=iterations)
         if eigenvalues is None or not eigenvalues:
             return float("inf")
+        backend = get_default_backend()
+        eig_eps = regularization_epsilon(backend, backend.array(eigenvalues))
         max_eigen = max(eigenvalues)
-        min_eigen = min(val for val in eigenvalues if val > 1e-12) if eigenvalues else 0.0
-        if max_eigen <= 1e-12 or min_eigen <= 1e-12:
+        min_eigen = min(val for val in eigenvalues if val > eig_eps) if eigenvalues else 0.0
+        if max_eigen <= eig_eps or min_eigen <= eig_eps:
             return float("inf")
         return float(max_eigen / min_eigen)
 
@@ -247,7 +254,9 @@ class GeometricFingerprint:
         clamped = [max(0.0, val) for val in eigenvalues]
         sum_vals = sum(clamped)
         sum_sq = sum(val * val for val in clamped)
-        if sum_sq <= 1e-12:
+        backend = get_default_backend()
+        eig_eps = regularization_epsilon(backend, backend.array(clamped))
+        if sum_sq <= eig_eps:
             return float(n)
         return float((sum_vals * sum_vals) / sum_sq)
 
@@ -256,7 +265,7 @@ class GeometricFingerprint:
         gram: list[float],
         n: int,
         max_iterations: int = 64,
-        tolerance: float = 1e-10,
+        tolerance: float = 0.0,
     ) -> list[float] | None:
         if len(gram) != n * n or n <= 0:
             return None
@@ -264,6 +273,8 @@ class GeometricFingerprint:
             return [float(gram[0])]
 
         matrix = [float(val) for val in gram]
+        backend = get_default_backend()
+        tol = max(tolerance, regularization_epsilon(backend, backend.array(matrix)))
 
         def idx(i: int, j: int) -> int:
             return i * n + j
@@ -279,7 +290,7 @@ class GeometricFingerprint:
                         max_off = value
                         p = i
                         q = j
-            if max_off < tolerance:
+            if max_off < tol:
                 break
 
             app = matrix[idx(p, p)]

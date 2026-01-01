@@ -209,7 +209,8 @@ class ConceptResponseMatrix:
             if source_entry is None:
                 continue
             source_gram, source_frob, source_correction = source_entry
-            if source_frob <= 1e-10:
+            eps = division_epsilon(backend, source_gram)
+            if source_frob <= eps:
                 continue
             for target_layer in range(other.layer_count):
                 target_entry = target_grams.get(target_layer)
@@ -217,7 +218,6 @@ class ConceptResponseMatrix:
                     continue
                 target_gram, target_frob, target_correction = target_entry
                 denom = math.sqrt(source_frob * target_frob)
-                eps = division_epsilon(backend, source_gram)
                 if denom < eps:
                     continue
                 hsic_xy = float(backend.to_numpy(backend.sum(source_gram * target_gram)))

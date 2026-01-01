@@ -26,6 +26,7 @@ This package contains geometry-related MCP tools organized by functional area:
 - spatial: 3D world model analysis (Euclidean, gravity, density)
 - interference: Interference prediction and null-space filtering
 - baseline: Domain geometry baseline extraction and validation
+- density: Knowledge density profiling and diffing
 - visualize: Real-time 3D manifold visualization (curvature, density, trajectories)
 """
 
@@ -36,6 +37,7 @@ from typing import TYPE_CHECKING
 from .baseline import register_geometry_baseline_tools
 from .core import register_geometry_tools
 from .crm import register_geometry_crm_tools
+from .density import register_geometry_density_tools
 from .interference import register_geometry_interference_tools
 from .invariant import register_geometry_invariant_tools
 from .primes import register_geometry_primes_tools
@@ -52,6 +54,7 @@ __all__ = [
     "register_geometry_safety_tools",
     "register_geometry_primes_tools",
     "register_geometry_crm_tools",
+    "register_geometry_density_tools",
     "register_geometry_spatial_tools",
     "register_geometry_interference_tools",
     "register_geometry_baseline_tools",
@@ -70,6 +73,7 @@ def register_all_geometry_tools(ctx: "ServiceContext") -> None:
     register_geometry_safety_tools(ctx)
     register_geometry_primes_tools(ctx)
     register_geometry_crm_tools(ctx)
+    register_geometry_density_tools(ctx)
     register_geometry_spatial_tools(ctx)
     register_geometry_interference_tools(ctx)
     register_geometry_baseline_tools(ctx)

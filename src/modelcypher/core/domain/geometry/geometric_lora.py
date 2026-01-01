@@ -53,6 +53,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    tiny_value,
+)
 
 from .manifold_transfer import TransferPoint
 
@@ -334,8 +338,10 @@ class GeometricLoRAGenerator:
                 weights_list.append(profile.weights[i])
 
         if not anchor_inputs:
-            logger.warning(f"No anchor activations for layer {layer_idx}")
-            return None
+            raise ValueError(
+                f"No anchor activations available for layer {layer_idx}. "
+                "Ensure activation profile was computed for this layer."
+            )
 
         # Stack anchor inputs and compute weighted average using backend
         anchor_stack = backend.stack([backend.array(a) for a in anchor_inputs], axis=0)
@@ -352,14 +358,16 @@ class GeometricLoRAGenerator:
 
         rep_shape = backend.shape(representative_input)
         if rep_shape[0] != in_features:
-            logger.warning(
-                f"Input dimension mismatch: {rep_shape[0]} vs {in_features}"
+            raise ValueError(
+                f"Activation dimension {rep_shape[0]} does not match layer input dimension {in_features}. "
+                "Ensure activation profile was computed from the same model architecture."
             )
-            return None
 
         if len(target_position) != out_features:
-            logger.warning(f"Output dimension mismatch: {len(target_position)} vs {out_features}")
-            return None
+            raise ValueError(
+                f"Target position dimension {len(target_position)} does not match layer output dimension {out_features}. "
+                "Ensure target manifold position matches the layer being modified."
+            )
 
         # Current output and target delta using backend
         current_output = backend.matmul(current_weight, representative_input)
@@ -371,9 +379,13 @@ class GeometricLoRAGenerator:
         input_norm_sq = backend.sum(representative_input * representative_input)
         backend.eval(input_norm_sq)
         input_norm_sq_val = float(backend.to_numpy(input_norm_sq))
-        if input_norm_sq_val < 1e-10:
-            logger.warning(f"Near-zero input for layer {layer_idx}")
-            return None
+        # Use dtype-derived threshold for near-zero detection
+        near_zero_thresh = float(tiny_value(backend, representative_input))
+        if input_norm_sq_val < near_zero_thresh:
+            raise ValueError(
+                f"Near-zero input norm for layer {layer_idx}: {input_norm_sq_val}. "
+                "Cannot compute LoRA weights from degenerate activations."
+            )
 
         # Outer product: output_delta[:, None] @ representative_input[None, :]
         # Use reshape instead of expand_dims
@@ -407,7 +419,7 @@ class GeometricLoRAGenerator:
         # Compute geometric loss
         reconstructed = backend.matmul(backend.matmul(B, A), representative_input)
         diff_norm = backend.norm(reconstructed - output_delta)
-        delta_norm = backend.norm(output_delta) + 1e-10
+        delta_norm = backend.norm(output_delta) + division_epsilon(backend, output_delta)
         backend.eval(diff_norm, delta_norm)
         geometric_loss = float(backend.to_numpy(diff_norm) / backend.to_numpy(delta_norm))
 
@@ -435,7 +447,7 @@ class GeometricLoRAGenerator:
             return 1
 
         first_sv = float(backend.to_numpy(singular_values[0]))
-        if first_sv < 1e-10:
+        if first_sv < division_epsilon(backend, singular_values):
             return 1
 
         # Use condition number threshold (numerical stability)

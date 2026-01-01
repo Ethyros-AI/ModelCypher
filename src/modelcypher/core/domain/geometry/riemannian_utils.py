@@ -671,26 +671,40 @@ class RiemannianGeometry:
             f"After Floyd-Warshall: finite={fw_finite}, inf={fw_inf}, nan={fw_nan}"
         )
 
-        # Convert to numpy for connectivity check
-        # Derive near-zero threshold from dtype
-        near_zero_eps = float(machine_epsilon(backend, geo_dist_arr))
+        # Derive thresholds from dtype
+        near_zero_eps = machine_epsilon(backend, geo_dist_arr)
+        tiny = division_epsilon(backend, geo_dist_arr)
 
-        # Check connectivity BEFORE converting to numpy - use backend operations
-        # inf values represent genuinely infinite geodesic distance between
-        # disconnected manifold components. No fallback to Euclidean.
-        near_inf_mask = backend.greater_equal(geo_dist_arr, inf_val * 0.9)
-        backend.eval(near_inf_mask)
-        inf_count = int(backend.to_numpy(backend.sum(near_inf_mask)))
+        # Create indicator for "x >= threshold" using sign arithmetic:
+        # sign(x - threshold + tiny) = 1 for x >= threshold, -1 for x < threshold
+        # maximum(..., 0) converts -1 to 0, giving 1/0 indicator
+        threshold = inf_val * 0.9
+        diff_from_threshold = geo_dist_arr - threshold
+        near_inf_indicator = backend.maximum(
+            backend.sign(diff_from_threshold + tiny),
+            backend.zeros_like(geo_dist_arr),
+        )
 
-        # Use .copy() because JAX/MLX arrays are read-only when converted to numpy
-        geo_np = backend.to_numpy(geo_dist_arr).copy()
-
-        # Mark distances >= inf_val as true infinity and small values as zero
-        near_inf_mask_np = geo_np >= inf_val * 0.9
-        near_zero_mask_np = geo_np < near_zero_eps
-        geo_np[near_inf_mask_np] = float("inf")
-        geo_np[near_zero_mask_np] = 0.0
+        # Count disconnected pairs (inf values represent genuinely infinite
+        # geodesic distance between disconnected manifold components)
+        inf_count = int(backend.to_numpy(backend.sum(near_inf_indicator)).item())
         connected = inf_count == 0
+
+        # Create indicator for "x < near_zero_eps" (i.e., near_zero_eps - x > 0)
+        diff_from_zero = near_zero_eps - geo_dist_arr
+        near_zero_indicator = backend.maximum(
+            backend.sign(diff_from_zero + tiny),
+            backend.zeros_like(geo_dist_arr),
+        )
+
+        # Replace near-inf values with actual infinity, near-zero with 0
+        inf_array = backend.full(geo_dist_arr.shape, float("inf"))
+        zero_array = backend.zeros_like(geo_dist_arr)
+
+        # where(indicator, replacement, original) - indicator acts as boolean
+        geo_dist = backend.where(near_inf_indicator, inf_array, geo_dist_arr)
+        geo_dist = backend.where(near_zero_indicator, zero_array, geo_dist)
+        backend.eval(geo_dist)
 
         if not connected:
             n_disconnected = inf_count // 2  # symmetric, so divide by 2
@@ -698,8 +712,6 @@ class RiemannianGeometry:
                 f"k-NN graph has {n_disconnected} disconnected pairs "
                 f"(k={k_neighbors}, n={n}). Consider increasing k_neighbors."
             )
-
-        geo_dist = backend.array(geo_np)
 
         result = GeodesicDistanceResult(
             distances=geo_dist,

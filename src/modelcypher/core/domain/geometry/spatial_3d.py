@@ -56,6 +56,7 @@ from modelcypher.core.domain.geometry.atlas_protocols import (
     enum_key,
 )
 from modelcypher.core.domain.geometry.atlas_registry import get_spatial_concepts
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -163,7 +164,8 @@ def _backend_corrcoef(backend: "Backend", x: "Array", y: "Array") -> float:
     std_x_val = float(b.to_numpy(std_x))
     std_y_val = float(b.to_numpy(std_y))
 
-    if std_x_val < 1e-10 or std_y_val < 1e-10:
+    eps = division_epsilon(b, x_flat)
+    if std_x_val < eps or std_y_val < eps:
         return 0.0
 
     # Covariance

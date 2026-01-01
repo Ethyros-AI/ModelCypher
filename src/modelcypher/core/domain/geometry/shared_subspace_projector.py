@@ -26,14 +26,13 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.atlas_registry import get_atlas_probes
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
 from modelcypher.core.domain.geometry.geometry_fingerprint import GeometricFingerprint
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 # unified_atlas imported lazily in validate_crm_uses_atlas to avoid circular imports
 
-EIGENVALUE_FLOOR = 1e-10
-SINGULAR_VALUE_FLOOR = 1e-8
 
 
 class AlignmentMethod(str, Enum):
@@ -824,8 +823,11 @@ class SharedSubspaceProjector:
 
             # Components: matrix.T @ (eigenvectors / singular_values)
             # Handle floor for division
-            sv_np = b.to_numpy(singular_values)
-            denom = b.array([max(float(v), SINGULAR_VALUE_FLOOR) for v in sv_np])
+            sv_eps = division_epsilon(b, singular_values)
+            denom = b.maximum(
+                singular_values,
+                b.full(singular_values.shape, sv_eps),
+            )
             b.eval(denom)
             eigenvectors_scaled = eigenvectors_reordered / denom
             components = b.matmul(matrix_t, eigenvectors_scaled)
@@ -919,7 +921,8 @@ class SharedSubspaceProjector:
         b.eval(eigenvalues, eigenvectors)
 
         # Floor eigenvalues
-        floor = b.full(eigenvalues.shape, EIGENVALUE_FLOOR)
+        eig_eps = division_epsilon(b, eigenvalues)
+        floor = b.full(eigenvalues.shape, eig_eps)
         eigenvalues_floored = b.maximum(eigenvalues, floor)
         b.eval(eigenvalues_floored)
 

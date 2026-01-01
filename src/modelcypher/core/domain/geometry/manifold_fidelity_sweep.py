@@ -39,6 +39,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -286,7 +287,8 @@ class ManifoldFidelitySweep:
         captured_arr = b.sum(s_sq[:rank])
         b.eval(total_arr, captured_arr)
         total = float(b.to_numpy(total_arr).item())
-        if total < 1e-10:
+        eps = division_epsilon(b, s)
+        if total < eps:
             return 0.0
         captured = float(b.to_numpy(captured_arr).item())
         return captured / total
@@ -331,7 +333,8 @@ class ManifoldFidelitySweep:
             error = float(b.to_numpy(error_arr).item())
             norm_y = float(b.to_numpy(norm_y_arr).item())
 
-            return math.sqrt(error / norm_y) if norm_y > 1e-10 else 0.0
+            eps = division_epsilon(b, y)
+            return math.sqrt(error / norm_y) if norm_y > eps else 0.0
 
         except Exception:
             return 0.0
