@@ -27,7 +27,7 @@ from modelcypher.core.domain.geometry.compositional_probes import (
 
 
 def test_analyze_composition_basic() -> None:
-    probe = CompositionProbe("I WANT", ["I", "WANT"], CompositionCategory.mental_predicate)
+    probe = CompositionProbe("I WANT", ["I", "WANT"], CompositionCategory.MENTAL_PREDICATE)
     components = [[1.0, 0.0], [0.0, 1.0]]
     composition = [0.5, 0.5]
     analysis = CompositionalProbes.analyze_composition(composition, components, probe)
@@ -40,7 +40,7 @@ def test_analyze_composition_basic() -> None:
 
 def test_check_consistency_identical() -> None:
     """Check consistency returns raw measurements."""
-    probe = CompositionProbe("I WANT", ["I", "WANT"], CompositionCategory.mental_predicate)
+    probe = CompositionProbe("I WANT", ["I", "WANT"], CompositionCategory.MENTAL_PREDICATE)
     analysis = CompositionalProbes.analyze_composition([0.5, 0.5], [[1.0, 0.0], [0.0, 1.0]], probe)
     result = CompositionalProbes.check_consistency([analysis], [analysis])
 
@@ -51,7 +51,7 @@ def test_check_consistency_identical() -> None:
 
 
 def test_analyze_all_probes_custom() -> None:
-    probe = CompositionProbe("TEST", ["A", "B"], CompositionCategory.relational)
+    probe = CompositionProbe("TEST", ["A", "B"], CompositionCategory.RELATIONAL)
     prime_embeddings = {"A": [1.0, 0.0], "B": [0.0, 1.0]}
     composition_embeddings = {"TEST": [0.5, 0.5]}
     analyses = CompositionalProbes.analyze_all_probes(

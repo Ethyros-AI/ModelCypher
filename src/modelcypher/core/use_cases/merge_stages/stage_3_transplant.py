@@ -390,6 +390,67 @@ def stage_transplant(
         total_layers, total_weights
     )
 
+    # ==========================================================================
+    # GLOBAL TRAJECTORY ALIGNMENT: Compute ONE hidden stitch for ALL layers
+    # ==========================================================================
+    # The model processes as a trajectory: layer_0 → layer_1 → ... → layer_N
+    # If we compute independent F per layer, we break compositional structure.
+    # Solution: compute a SINGLE alignment using concatenated activations.
+    global_hidden_stitch_output = None
+    global_hidden_stitch_input = None
+    global_src_hidden_dim = None
+    global_tgt_hidden_dim = None
+
+    if source_activations:
+        # Concatenate activations from all layers to get trajectory-consistent alignment
+        all_src_acts = []
+        all_tgt_acts = []
+        for layer_idx in layer_indices:
+            src_list = source_activations.get(layer_idx)
+            tgt_list = target_activations.get(layer_idx)
+            if src_list and tgt_list:
+                # Sample same number from each layer for balanced representation
+                n_samples = min(len(src_list), len(tgt_list), 50)
+                for i in range(n_samples):
+                    all_src_acts.append(src_list[i])
+                    all_tgt_acts.append(tgt_list[i])
+
+        if len(all_src_acts) >= 20:
+            src_concat = b.stack(all_src_acts, axis=0)
+            tgt_concat = b.stack(all_tgt_acts, axis=0)
+            src_concat = b.astype(src_concat, "float32")
+            tgt_concat = b.astype(tgt_concat, "float32")
+            b.eval(src_concat, tgt_concat)
+
+            global_src_hidden_dim = int(src_concat.shape[1])
+            global_tgt_hidden_dim = int(tgt_concat.shape[1])
+
+            if global_src_hidden_dim != global_tgt_hidden_dim:
+                from modelcypher.core.domain.geometry.gram_aligner import GramAligner
+                aligner = GramAligner(b)
+                global_result = aligner.find_perfect_alignment(src_concat, tgt_concat)
+
+                if global_result.is_perfect:
+                    F = b.array(global_result.feature_transform)
+                    b.eval(F)
+                    global_hidden_stitch_output = b.transpose(F)  # F.T [tgt, src]
+                    global_hidden_stitch_input = b.transpose(b.pinv(F))  # pinv(F).T [src, tgt]
+                    b.eval(global_hidden_stitch_output, global_hidden_stitch_input)
+                    logger.info(
+                        "GLOBAL TRAJECTORY ALIGNMENT: CKA=%.4f (%d→%d) using %d samples",
+                        global_result.achieved_cka, global_src_hidden_dim,
+                        global_tgt_hidden_dim, len(all_src_acts)
+                    )
+                    metrics["global_trajectory_aligned"] = True
+                    metrics["global_trajectory_cka"] = float(global_result.achieved_cka)
+                else:
+                    logger.warning(
+                        "GLOBAL TRAJECTORY ALIGNMENT failed (CKA=%.4f)",
+                        global_result.achieved_cka
+                    )
+            else:
+                logger.info("GLOBAL: Same hidden dims (%d) - no alignment needed", global_src_hidden_dim)
+
     for layer_num, layer_idx in enumerate(layer_indices):
         # Skip layers already completed (checkpoint resume)
         if layer_idx <= resume_from_layer:
@@ -607,50 +668,20 @@ def stage_transplant(
 
         from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 
-        # Compute HIDDEN alignment (source hidden_dim → target hidden_dim)
-        if src_act_list is not None and act_list is not None:
-            n_hidden_samples = min(len(src_act_list), len(act_list))
-            if n_hidden_samples >= 10:
-                src_hidden = b.stack(src_act_list[:n_hidden_samples], axis=0)
-                tgt_hidden = b.stack(act_list[:n_hidden_samples], axis=0)
-                src_hidden = b.astype(src_hidden, "float32")
-                tgt_hidden = b.astype(tgt_hidden, "float32")
-                b.eval(src_hidden, tgt_hidden)
-
-                src_hidden_dim = int(src_hidden.shape[1])
-                tgt_hidden_dim = int(tgt_hidden.shape[1])
-
-                if src_hidden_dim != tgt_hidden_dim:
-                    # Use GramAligner - finds EXACT CKA = 1.0 transform
-                    aligner = GramAligner(b)
-                    hidden_result = aligner.find_perfect_alignment(src_hidden, tgt_hidden)
-
-                    if hidden_result.is_perfect:
-                        # feature_transform F is [d_source, d_target]
-                        # source @ F → target (activation alignment)
-                        #
-                        # For weight folding W_target = F_out.T @ W_source @ pinv(F_in).T:
-                        #   - F.T [d_target, d_source] for OUTPUT side (left multiply)
-                        #   - pinv(F).T [d_source, d_target] for INPUT side (right multiply)
-                        F = b.array(hidden_result.feature_transform)
-                        b.eval(F)
-                        hidden_stitch_output = b.transpose(F)  # F.T [tgt, src]
-                        hidden_stitch_input = b.transpose(b.pinv(F))  # pinv(F).T [src, tgt]
-                        b.eval(hidden_stitch_output, hidden_stitch_input)
-                        logger.info(
-                            "Layer %d: Hidden GramAlign CKA=%.4f (%d→%d), err=%.6f",
-                            layer_idx, hidden_result.achieved_cka,
-                            src_hidden_dim, tgt_hidden_dim, hidden_result.alignment_error
-                        )
-                        metrics.setdefault("hidden_gram_aligned", 0)
-                        metrics["hidden_gram_aligned"] += 1
-                    else:
-                        logger.warning(
-                            "Layer %d: Hidden GramAlign failed (CKA=%.4f)",
-                            layer_idx, hidden_result.achieved_cka
-                        )
+        # USE GLOBAL TRAJECTORY-ALIGNED hidden stitch (computed once for all layers)
+        # This ensures consistent alignment across the entire model trajectory.
+        if global_hidden_stitch_output is not None:
+            hidden_stitch_output = global_hidden_stitch_output
+            hidden_stitch_input = global_hidden_stitch_input
+            # Log only on first layer to avoid spam
+            if layer_num == 0:
+                logger.info(
+                    "Layer %d: Using GLOBAL hidden stitch (%d→%d)",
+                    layer_idx, global_src_hidden_dim, global_tgt_hidden_dim
+                )
 
         # Compute INTERMEDIATE alignment (source intermediate_dim → target intermediate_dim)
+        # Note: Intermediate stitch is per-layer since each MLP has different internal geometry
         if src_inter_list is not None and tgt_inter_list is not None:
             n_inter_samples = min(len(src_inter_list), len(tgt_inter_list))
             if n_inter_samples >= 10:
@@ -906,15 +937,46 @@ def stage_transplant(
                     metrics["dual_stitch_applied"] += 1
 
                 elif hidden_stitch_output is not None and hidden_stitch_input is not None:
-                    # Attention or other weight: both dimensions are hidden
+                    # =================================================================
+                    # ATTENTION HEAD STRUCTURE CHECK
+                    # =================================================================
+                    # For cross-architecture merges, attention weights (q_proj, k_proj,
+                    # v_proj, o_proj) have INCOMPATIBLE internal structure even if hidden
+                    # dimensions can be aligned.
+                    #
+                    # Example: SmolLM (15 heads) → Qwen (14 heads)
+                    #   - q_proj [960, 960] → [896, 896] works dimensionally
+                    #   - But 960 = 15 * 64 (15 heads of 64 dims)
+                    #   - And 896 = 14 * 64 (14 heads of 64 dims)
+                    #   - The head boundaries are DIFFERENT!
+                    #
+                    # GramAligner aligns hidden_dim but doesn't preserve head structure.
+                    # Transplanting attention weights causes gibberish output.
+                    #
+                    # SOLUTION: Skip attention weights for cross-architecture merges.
+                    # Only MLP weights (which don't have head structure) are safe.
+                    is_attention = any(attn_name in key for attn_name in [
+                        "q_proj", "k_proj", "v_proj", "o_proj",
+                        "self_attn", "query", "key", "value",
+                    ])
+
+                    if is_attention:
+                        logger.info(
+                            "Cross-arch: SKIPPING attention weight %s (head structure incompatible)",
+                            key
+                        )
+                        metrics.setdefault("attention_skipped_cross_arch", 0)
+                        metrics["attention_skipped_cross_arch"] += 1
+                        continue
+
+                    # Non-attention weight with hidden dimensions (e.g., layer norm)
                     # W_target = hidden_stitch_output @ W @ hidden_stitch_input
                     src_hidden_dim = int(hidden_stitch_output.shape[1])
                     tgt_hidden_dim = int(hidden_stitch_output.shape[0])
                     dim0, dim1 = int(original_source_shape[0]), int(original_source_shape[1])
 
                     if dim0 == src_hidden_dim and dim1 == src_hidden_dim:
-                        # BOTH dimensions are hidden_dim (e.g., attention weights)
-                        # W_target = hidden_stitch_output @ W @ hidden_stitch_input
+                        # BOTH dimensions are hidden_dim
                         source_aligned = b.matmul(hidden_stitch_output, source_w)
                         source_aligned = b.matmul(source_aligned, hidden_stitch_input)
                         b.eval(source_aligned)

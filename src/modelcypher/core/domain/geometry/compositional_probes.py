@@ -207,6 +207,14 @@ class CompositionalProbes:
         bk = backend or get_default_backend()
         va = bk.array(a)
         vb = bk.array(b_list)
+        bk.eval(va, vb)
+
+        # If arrays are identical, correlation is 1.0 (even with zero variance)
+        diff = bk.sum(bk.abs(va - vb))
+        bk.eval(diff)
+        eps = bk.finfo().eps
+        if float(bk.to_numpy(diff).item()) < eps * len(a):
+            return 1.0
 
         ma = bk.mean(va)
         mb = bk.mean(vb)
@@ -219,7 +227,6 @@ class CompositionalProbes:
         bk.eval(num, den)
 
         den_val = float(bk.to_numpy(den).item())
-        eps = bk.finfo().eps
         if den_val > eps:
             return float(bk.to_numpy(num).item()) / den_val
         return 0.0

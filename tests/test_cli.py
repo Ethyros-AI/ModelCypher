@@ -17,6 +17,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 from typer.testing import CliRunner
 
 from modelcypher.cli.app import app
@@ -47,18 +49,55 @@ def test_geometry_validate_command():
 def test_estimate_train_command(tmp_path):
     dataset = tmp_path / "data.jsonl"
     dataset.write_text('{"text": "train data"}\n', encoding="utf-8")
-    result = runner.invoke(
-        app,
-        [
-            "estimate",
-            "train",
-            "--model",
-            "test-model",
-            "--dataset",
-            str(dataset),
-            "--output",
-            "json",
-        ],
-    )
+    out_path = tmp_path / "output"
+
+    # Mock the training service since it requires calibrated resource profiles
+    mock_service = MagicMock()
+    mock_service.preflight.return_value = {
+        "canProceed": True,
+        "predictedBatchSize": 4,
+        "estimatedVRAMUsageBytes": 4 * 1024**3,  # 4 GB
+        "availableVRAMBytes": 16 * 1024**3,  # 16 GB
+    }
+
+    with patch("modelcypher.cli.app.get_training_service", return_value=mock_service):
+        result = runner.invoke(
+            app,
+            [
+                "estimate",
+                "train",
+                "--model",
+                "test-model",
+                "--dataset",
+                str(dataset),
+                "--out",
+                str(out_path),
+                "--batch-size",
+                "4",
+                "--sequence-length",
+                "512",
+                "--learning-rate",
+                "0.0001",
+                "--epochs",
+                "1",
+                "--grad-accum",
+                "1",
+                "--warmup-steps",
+                "10",
+                "--weight-decay",
+                "0.01",
+                "--no-gradient-checkpointing",
+                "--no-mixed-precision",
+                "--compute-precision",
+                "float32",
+                "--optimizer-type",
+                "adamw",
+                "--seed",
+                "42",
+                "--deterministic",
+                "--output",
+                "json",
+            ],
+        )
     assert result.exit_code == 0
     assert "willFit" in result.stdout
