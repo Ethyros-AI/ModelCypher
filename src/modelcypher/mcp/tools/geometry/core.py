@@ -702,13 +702,17 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         def mc_geometry_persona_drift(
             positions: list[dict],
             step: int,
-            driftThreshold: float = 0.2,
         ) -> dict:
-            """Compute drift metrics from persona position measurements."""
+            """Compute drift metrics from persona position measurements.
+
+            Returns raw drift measurements. User interprets based on their
+            model's baseline characteristics.
+            """
+            # Compute raw drift without threshold classification
             metrics = ctx.geometry_persona_service.compute_drift(
                 positions=positions,
                 step=step,
-                drift_threshold=driftThreshold,
+                drift_threshold=0.0,  # No classification - return raw values
             )
             payload = ctx.geometry_persona_service.drift_metrics_payload(metrics)
             payload["_schema"] = "mc.geometry.persona_drift.v1"

@@ -66,6 +66,11 @@ class TransplantDeltaResult:
     filtered_norm: float
     projection_loss: float
     preserved_fraction: float
+    # Birkhoff projection metrics (optional, populated when birkhoff_config is used)
+    birkhoff_applied: bool = False
+    birkhoff_converged: bool = False
+    birkhoff_iterations: int = 0
+    birkhoff_spectral_clipped: bool = False
 
 
 def partition_core_boundary(
@@ -192,11 +197,41 @@ def compute_transplant_delta(
     delta_filtered_t = b.matmul(proj, delta_core_t)
     b.eval(delta_filtered_t)
 
-    merged_weight = weight_target + b.transpose(delta_filtered_t)
+    # Apply Birkhoff projection for compositional stability (per DeepSeek mHC paper)
+    # This bounds spectral norm to prevent signal amplification across layers
+    birkhoff = BirkhoffProjector(backend=b)
+    delta_filtered = b.transpose(delta_filtered_t)
+    b.eval(delta_filtered)
+
+    birkhoff_result = birkhoff.project_weight_delta(delta_filtered)
+    delta_stabilized = birkhoff_result.projected_matrix
+    b.eval(delta_stabilized)
+
+    # For non-square deltas, birkhoff returns projected Gram matrix
+    # We need to apply it as a scaling factor to preserve the delta's shape
+    if delta_stabilized.shape != delta_filtered.shape:
+        # Non-square: use spectral norm bounding directly
+        _, was_clipped = birkhoff.bound_spectral_norm(delta_filtered, max_norm=1.0)
+        if was_clipped:
+            # Scale delta to have unit spectral norm
+            from modelcypher.core.domain.geometry.numerical_stability import svd_via_eigh
+            _, S, _ = svd_via_eigh(b, delta_filtered, full_matrices=False)
+            b.eval(S)
+            S_np = b.to_numpy(S)
+            spectral_norm = float(S_np[0]) if len(S_np) > 0 else 1.0
+            if spectral_norm > 1.0:
+                delta_stabilized = delta_filtered / spectral_norm
+                b.eval(delta_stabilized)
+            else:
+                delta_stabilized = delta_filtered
+        else:
+            delta_stabilized = delta_filtered
+
+    merged_weight = weight_target + delta_stabilized
     b.eval(merged_weight)
 
-    delta_norm_arr = b.norm(delta_core_t)
-    filtered_norm_arr = b.norm(delta_filtered_t)
+    delta_norm_arr = b.norm(b.transpose(delta_core_t))
+    filtered_norm_arr = b.norm(delta_stabilized)
     b.eval(delta_norm_arr, filtered_norm_arr)
     delta_norm = float(b.to_numpy(delta_norm_arr))
     filtered_norm = float(b.to_numpy(filtered_norm_arr))
@@ -216,4 +251,8 @@ def compute_transplant_delta(
         filtered_norm=filtered_norm,
         projection_loss=projection_loss,
         preserved_fraction=preserved_fraction,
+        birkhoff_applied=True,
+        birkhoff_converged=birkhoff_result.converged,
+        birkhoff_iterations=birkhoff_result.iterations_used,
+        birkhoff_spectral_clipped=birkhoff_result.spectral_clipped,
     )

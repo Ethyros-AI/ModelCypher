@@ -745,13 +745,6 @@ def perturbation_study(
 
         lines.extend([
             "",
-            "-" * 70,
-            "H8: PERTURBATION ROBUSTNESS",
-            "-" * 70,
-            "",
-            f"  High noise threshold: {high_noise_threshold:.2f}",
-            f"  Stability at high noise: {high_noise_stability:.3f}",
-            "",
             "=" * 70,
         ])
 

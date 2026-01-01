@@ -498,11 +498,7 @@ class TestEntropyDualPathTool:
             return await _await_with_timeout(
                 session.call_tool(
                     "mc_entropy_dual_path",
-                    arguments={
-                        "samples": samples,
-                        "anomalyThreshold": 0.6,
-                        "deltaThreshold": 1.0,
-                    },
+                    arguments={"samples": samples},  # No threshold - raw measurements
                 )
             )
 
@@ -511,13 +507,17 @@ class TestEntropyDualPathTool:
 
         assert payload["_schema"] == "mc.entropy.dual_path.v1"
         assert "samplesProcessed" in payload
-        assert "anomalyCount" in payload
-        # Raw measurements - no arbitrary "verdict" classification
-        assert "anomalyRate" in payload
-        assert "deltaThreshold" in payload
+        # Raw statistics derived from the data itself
+        assert "meanDelta" in payload
+        assert "medianDelta" in payload
+        assert "minDelta" in payload
+        assert "maxDelta" in payload
+        # All samples with measurements - no filtering
+        assert "samples" in payload
+        assert len(payload["samples"]) == len(samples)
 
-    def test_dual_path_detects_anomalies(self, mcp_env: dict[str, str]) -> None:
-        """Large entropy delta should be flagged as anomaly."""
+    def test_dual_path_returns_all_samples(self, mcp_env: dict[str, str]) -> None:
+        """Tool returns measurements for ALL samples - the geometry speaks."""
         samples = [
             {"base": [1.0, 0.2], "adapter": [5.0, 2.0]},  # Large delta
             {"base": [1.1, 0.25], "adapter": [5.1, 2.1]},
@@ -527,19 +527,20 @@ class TestEntropyDualPathTool:
             return await _await_with_timeout(
                 session.call_tool(
                     "mc_entropy_dual_path",
-                    arguments={
-                        "samples": samples,
-                        "deltaThreshold": 1.0,
-                    },
+                    arguments={"samples": samples},
                 )
             )
 
         result = _run_mcp(mcp_env, runner)
         payload = _extract_structured(result)
 
-        # Raw measurements - check anomalyCount directly, not a boolean "hasAnomalies"
-        assert payload["anomalyCount"] >= 1
-        assert payload["anomalyRate"] > 0
+        # All samples returned with their delta measurements
+        assert len(payload["samples"]) == 2
+        # Each sample has raw measurements
+        for s in payload["samples"]:
+            assert "deltaEntropy" in s
+            assert "deltaVariance" in s
+            assert "combinedDelta" in s
 
 
 # =============================================================================
@@ -567,11 +568,11 @@ class TestSafetyEntropyInvariants:
 
         assert payload["samplesProcessed"] == len(samples)
 
-    def test_dual_path_anomaly_rate_bounded(self, mcp_env: dict[str, str]) -> None:
-        """Anomaly rate should be in [0, 1]."""
+    def test_dual_path_statistics_bounded(self, mcp_env: dict[str, str]) -> None:
+        """Delta statistics should be non-negative."""
         samples = [
             {"base": [1.5, 0.3], "adapter": [1.6, 0.35]},
-            {"base": [1.6, 0.35], "adapter": [4.0, 1.5]},  # Anomaly
+            {"base": [1.6, 0.35], "adapter": [4.0, 1.5]},  # Large delta
             {"base": [1.7, 0.4], "adapter": [1.8, 0.45]},
         ]
 
@@ -579,14 +580,20 @@ class TestSafetyEntropyInvariants:
             return await _await_with_timeout(
                 session.call_tool(
                     "mc_entropy_dual_path",
-                    arguments={"samples": samples, "deltaThreshold": 1.0},
+                    arguments={"samples": samples},
                 )
             )
 
         result = _run_mcp(mcp_env, runner)
         payload = _extract_structured(result)
 
-        assert 0.0 <= payload["anomalyRate"] <= 1.0
+        # All delta statistics are non-negative (absolute values)
+        assert payload["minDelta"] >= 0.0
+        assert payload["meanDelta"] >= 0.0
+        assert payload["medianDelta"] >= 0.0
+        assert payload["maxDelta"] >= 0.0
+        # min <= median <= max
+        assert payload["minDelta"] <= payload["medianDelta"] <= payload["maxDelta"]
 
     def test_conversation_track_turns_processed_matches_input(
         self, mcp_env: dict[str, str]

@@ -17,7 +17,7 @@
 
 """Invariant Layer Mapper.
 
-Layer mapping strategy using invariant activation profiles and collapse-aware confidence.
+Layer mapping using invariant activation profiles.
 Uses multi-atlas probes for cross-domain anchoring and dynamic programming
 for optimal layer alignment between models.
 
@@ -53,13 +53,8 @@ TriangulatedScore: TypeAlias = TriangulatedScoreProtocol
 
 __all__ = [
     # Enums
-    "LayerMappingStrategy",
     "InvariantScope",
-    "LayerMatchCategory",
     # Config dataclasses
-    "CRMMappingConfig",
-    "InvariantCollapseMappingConfig",
-    "Config",
     # Result dataclasses
     "TriangulationProfile",
     "LayerProfile",
@@ -87,21 +82,6 @@ _DEFAULT_SEQUENCE_FAMILIES = frozenset(
 _LOGIC_FAMILY_KEY = "logic"
 
 
-class LayerMappingStrategy(str, Enum):
-    """Strategy for mapping layers between models.
-
-    CRM: CRM-based CKA alignment using centered kernel alignment
-         to match layers by representation similarity.
-
-    INVARIANT_COLLAPSE: Invariant-only mapping with collapse-awareness.
-         Uses semantic/sequence invariant probes and penalizes
-         collapsed layer mismatches.
-    """
-
-    CRM = "crm"
-    INVARIANT_COLLAPSE = "invariant_collapse"
-
-
 class InvariantScope(str, Enum):
     """Scope of invariants to use for mapping."""
 
@@ -110,128 +90,6 @@ class InvariantScope(str, Enum):
     SEQUENCE_INVARIANTS = "sequenceInvariants"  # Full 70-probe system with triangulation
     MULTI_ATLAS = "multiAtlas"  # Full probe system across all atlases
 
-
-# ConfidenceLevel enum removed - use raw similarity values directly.
-
-
-class LayerMatchCategory(str, Enum):
-    """Categories of layer matching criteria."""
-
-    ACTIVATION_PATTERN = "activation_pattern"  # Raw activation similarity
-    INVARIANT_COVERAGE = "invariant_coverage"  # Semantic prime coverage
-    COLLAPSE_STATE = "collapse_state"  # Layer collapse detection
-    TRIANGULATION = "triangulation"  # Cross-domain triangulation quality
-    CKA_ALIGNMENT = "cka_alignment"  # Centered kernel alignment score
-
-
-@dataclass(frozen=True)
-class CRMMappingConfig:
-    """CRM-based layer mapping using CKA."""
-
-    cka_kernel: str = "linear"
-    rbf_sigma: float = 1.0
-    normalize_activations: bool = True
-    min_cka_score: float = 0.0
-    use_debiased_cka: bool = True
-
-
-@dataclass(frozen=True)
-class InvariantCollapseMappingConfig:
-    """Invariant-collapse layer mapping.
-
-    Note on collapse_threshold:
-        If None, derived from confidence distribution using the spectral gap
-        (the largest drop between consecutive confidence values). This naturally
-        separates "healthy" from "collapsed" layers.
-    """
-
-    # Threshold for marking layers as collapsed.
-    # If None, derived from spectral gap in confidence distribution.
-    collapse_threshold: float | None = None
-    min_invariant_coverage: float = 0.0
-    collapse_mismatch_penalty: float = 1.0
-    allow_many_to_one: bool = False
-    use_triangulation_boost: bool = False
-
-
-@dataclass(frozen=True)
-class Config:
-    """Configuration for invariant layer mapping.
-
-    Note on thresholds:
-        All thresholds default to None and are derived from data:
-
-        - collapse_threshold: If None, derived from spectral gap in confidence
-          distribution (the largest drop between consecutive confidence values).
-          This naturally separates "healthy" from "collapsed" layers.
-
-        - high_confidence_threshold, medium_confidence_threshold: If None,
-          use from_similarity_distribution() to derive from observed CKA/similarity
-          values. The distribution itself determines the cutoffs.
-    """
-
-    strategy: LayerMappingStrategy = LayerMappingStrategy.INVARIANT_COLLAPSE
-    crm_config: CRMMappingConfig | None = None
-    invariant_collapse_config: InvariantCollapseMappingConfig | None = None
-
-    invariant_scope: InvariantScope = InvariantScope.INVARIANTS
-    family_allowlist: frozenset[str] | None = None
-    sample_layer_count: int | None = 12
-    min_similarity: float = 0.0
-    max_skip: int = 0
-    skip_penalty: float = 1.0
-    collapse_threshold: float | None = None
-    collapse_mismatch_penalty: float = 1.0
-    strength_weight: float = 1.0
-    coverage_weight: float = 1.0
-    high_confidence_threshold: float | None = None
-    medium_confidence_threshold: float | None = None
-    use_cross_domain_weighting: bool = False
-    triangulation_threshold: float = 0.0
-    multi_domain_bonus: bool = False
-    atlas_sources: frozenset[str] | None = None
-    atlas_domains: frozenset[str] | None = None
-    use_cka_auxiliary: bool = False
-    cka_auxiliary_weight: float = 1.0
-
-    @classmethod
-    def from_similarity_distribution(
-        cls,
-        similarities: list[float],
-        *,
-        high_percentile: float = 0.75,
-        medium_percentile: float = 0.50,
-        strategy: LayerMappingStrategy = LayerMappingStrategy.INVARIANT_COLLAPSE,
-    ) -> "Config":
-        """Derive confidence thresholds from observed similarity distribution.
-
-        Instead of arbitrary 0.75/0.5 cutoffs, derives thresholds from
-        the actual distribution of CKA or cosine similarities observed.
-
-        Args:
-            similarities: List of similarity scores from layer comparisons.
-            high_percentile: Percentile for high confidence threshold.
-            medium_percentile: Percentile for medium confidence threshold.
-            strategy: Layer mapping strategy to use.
-
-        Returns:
-            Configuration with distribution-derived thresholds.
-        """
-        if not similarities:
-            return cls(strategy=strategy)
-
-        sorted_sims = sorted(similarities)
-        n = len(sorted_sims)
-
-        def percentile(p: float) -> float:
-            idx = int(p * (n - 1))
-            return sorted_sims[idx]
-
-        return cls(
-            strategy=strategy,
-            high_confidence_threshold=percentile(high_percentile),
-            medium_confidence_threshold=percentile(medium_percentile),
-        )
 
 
 @dataclass(frozen=True)
@@ -276,14 +134,11 @@ class LayerMapping:
         Target model layer index.
     similarity : float
         Layer similarity score (0-1).
-    is_skipped : bool
-        Whether this mapping was skipped due to low similarity.
     """
 
     source_layer: int
     target_layer: int
     similarity: float
-    is_skipped: bool
 
 
 @dataclass(frozen=True)
@@ -291,14 +146,12 @@ class Summary:
     """Summary statistics for layer mapping."""
 
     mapped_layers: int
-    skipped_layers: int
     mean_similarity: float
     alignment_quality: float
     source_collapsed_layers: int
     target_collapsed_layers: int
     # Triangulation metrics (populated when using SEQUENCE_INVARIANTS/MULTI_ATLAS scope)
     mean_triangulation_multiplier: float = 1.0
-    triangulation_quality: str = "none"  # "high", "medium", "low", "none"
     # Multi-atlas metrics (populated when using MULTI_ATLAS scope)
     atlas_sources_detected: int = 0  # Number of atlas sources with activations
     atlas_domains_detected: int = 0  # Number of domains with activations
@@ -311,7 +164,6 @@ class Report:
 
     source_model: str
     target_model: str
-    config: Config
     invariant_count: int
     source_profiles: tuple[LayerProfile, ...]
     target_profiles: tuple[LayerProfile, ...]
@@ -378,7 +230,6 @@ class InvariantLayerMapper:
     def map_layers(
         source: ModelFingerprints,
         target: ModelFingerprints,
-        config: Config | None = None,
     ) -> Report:
         """
         Map layers from source to target model.
@@ -394,28 +245,21 @@ class InvariantLayerMapper:
         Raises:
             ValueError: If insufficient layers or missing invariants
         """
-        if config is None:
-            config = Config()
-
         if source.layer_count <= 0 or target.layer_count <= 0:
             raise ValueError("Invariant layer mapping requires non-empty layer counts")
 
-        invariant_ids, invariants, atlas_probes = InvariantLayerMapper._get_invariants(config)
+        invariant_ids, invariants, atlas_probes = InvariantLayerMapper._get_invariants()
         if not invariant_ids:
             raise ValueError("Invariant layer mapping requires invariant fingerprints")
 
-        source_profile = InvariantLayerMapper._build_profile(source, invariant_ids, config)
-        target_profile = InvariantLayerMapper._build_profile(target, invariant_ids, config)
+        source_profile = InvariantLayerMapper._build_profile(source, invariant_ids)
+        target_profile = InvariantLayerMapper._build_profile(target, invariant_ids)
 
         if not source_profile.has_signal or not target_profile.has_signal:
             raise ValueError("Invariant layer mapping skipped: no invariant activations detected")
 
         # Compute triangulation scores for SEQUENCE_INVARIANTS or MULTI_ATLAS scope
-        use_triangulation = (
-            config.invariant_scope
-            in (InvariantScope.SEQUENCE_INVARIANTS, InvariantScope.MULTI_ATLAS)
-            and config.multi_domain_bonus
-        )
+        use_triangulation = True
         source_triangulation: dict[int, TriangulatedScore] = {}
         target_triangulation: dict[int, TriangulatedScore] = {}
 
@@ -424,16 +268,16 @@ class InvariantLayerMapper:
         all_domains_detected: set[str] = set()
 
         if use_triangulation:
-            if config.invariant_scope == InvariantScope.MULTI_ATLAS and atlas_probes:
+            if atlas_probes:
                 # Use multi-atlas triangulation scoring
                 source_triangulation, src_sources, src_domains = (
                     InvariantLayerMapper._compute_multi_atlas_scores(
-                        source_profile.vectors, atlas_probes, config
+                        source_profile.vectors, atlas_probes
                     )
                 )
                 target_triangulation, tgt_sources, tgt_domains = (
                     InvariantLayerMapper._compute_multi_atlas_scores(
-                        target_profile.vectors, atlas_probes, config
+                        target_profile.vectors, atlas_probes
                     )
                 )
                 all_sources_detected = src_sources | tgt_sources
@@ -441,28 +285,23 @@ class InvariantLayerMapper:
             elif invariants:
                 # Use sequence invariant triangulation scoring
                 source_triangulation = InvariantLayerMapper._compute_triangulation_scores(
-                    source_profile.vectors, invariants, config
+                    source_profile.vectors, invariants
                 )
                 target_triangulation = InvariantLayerMapper._compute_triangulation_scores(
-                    target_profile.vectors, invariants, config
+                    target_profile.vectors, invariants
                 )
 
-        source_samples = InvariantLayerMapper._sample_layers(
-            source.layer_count, config.sample_layer_count
-        )
-        target_samples = InvariantLayerMapper._sample_layers(
-            target.layer_count, config.sample_layer_count
-        )
+        source_samples = list(range(source.layer_count))
+        target_samples = list(range(target.layer_count))
 
         # Build similarity matrix - invariance is universal across all model families
         # Concepts occupy fixed probability clouds in hyperspace
-        if config.invariant_scope == InvariantScope.MULTI_ATLAS and atlas_probes:
+        if atlas_probes:
             similarity_matrix = InvariantLayerMapper._build_similarity_matrix_multi_atlas(
                 source_samples,
                 target_samples,
                 source_profile,
                 target_profile,
-                config,
                 atlas_probes,
                 source_triangulation,
                 target_triangulation,
@@ -473,14 +312,13 @@ class InvariantLayerMapper:
                 target_samples,
                 source_profile,
                 target_profile,
-                config,
                 invariants,
                 source_triangulation,
                 target_triangulation,
             )
 
         mappings = InvariantLayerMapper._align_layers(
-            source_samples, target_samples, similarity_matrix, config
+            source_samples, target_samples, similarity_matrix
         )
 
         source_profiles = InvariantLayerMapper._profile_array(
@@ -491,56 +329,24 @@ class InvariantLayerMapper:
         )
 
         mapped_count = len(mappings)
-        skipped_count = sum(1 for m in mappings if m.is_skipped)
         mean_similarity = sum(m.similarity for m in mappings) / len(mappings) if mappings else 0.0
-        valid_mappings = [m for m in mappings if not m.is_skipped]
-        alignment_quality = (
-            sum(m.similarity for m in valid_mappings) / len(valid_mappings)
-            if valid_mappings
-            else 0.0
-        )
+        alignment_quality = mean_similarity
 
         # Compute triangulation metrics for summary
         all_triangulation = {**source_triangulation, **target_triangulation}
         if all_triangulation:
             multipliers = [ts.cross_domain_multiplier for ts in all_triangulation.values()]
             mean_triangulation_mult = sum(multipliers) / len(multipliers)
-
-            # Derive quality thresholds from log-based multiplier formula:
-            # multiplier = log(count+1)/log(2), so:
-            #   count=1: log(2)/log(2) = 1.0 (single domain)
-            #   count=2: log(3)/log(2) ≈ 1.585 (two domains)
-            #   count=3: log(4)/log(2) = 2.0 (three domains)
-            #   count=4: log(5)/log(2) ≈ 2.322 (four domains)
-            #
-            # Thresholds derived from geometric mean of consecutive values:
-            #   high = sqrt(1.585 * 2.0) ≈ 1.78 (reliably 3+ domains)
-            #   medium = sqrt(1.0 * 1.585) ≈ 1.26 (reliably 2+ domains)
-            #   low = anything above 1.0 (at least some cross-domain signal)
-            high_threshold = math.sqrt(math.log(3) / math.log(2) * math.log(4) / math.log(2))
-            medium_threshold = math.sqrt(1.0 * math.log(3) / math.log(2))
-
-            if mean_triangulation_mult >= high_threshold:
-                tri_quality = "high"
-            elif mean_triangulation_mult >= medium_threshold:
-                tri_quality = "medium"
-            elif mean_triangulation_mult > 1.0:
-                tri_quality = "low"
-            else:
-                tri_quality = "none"
         else:
             mean_triangulation_mult = 1.0
-            tri_quality = "none"
 
         summary = Summary(
             mapped_layers=mapped_count,
-            skipped_layers=skipped_count,
             mean_similarity=mean_similarity,
             alignment_quality=alignment_quality,
             source_collapsed_layers=source_profile.collapsed_count,
             target_collapsed_layers=target_profile.collapsed_count,
             mean_triangulation_multiplier=mean_triangulation_mult,
-            triangulation_quality=tri_quality,
             atlas_sources_detected=len(all_sources_detected),
             atlas_domains_detected=len(all_domains_detected),
             total_probes_used=len(invariant_ids),
@@ -549,7 +355,6 @@ class InvariantLayerMapper:
         return Report(
             source_model=source.model_id,
             target_model=target.model_id,
-            config=config,
             invariant_count=len(invariant_ids),
             source_profiles=tuple(source_profiles),
             target_profiles=tuple(target_profiles),
@@ -560,15 +365,13 @@ class InvariantLayerMapper:
         )
 
     @staticmethod
-    def _invariant_anchor_ids(config: Config) -> list[str]:
+    def _invariant_anchor_ids() -> list[str]:
         """Get invariant anchor IDs based on config."""
-        ids, _, _ = InvariantLayerMapper._get_invariants(config)
+        ids, _, _ = InvariantLayerMapper._get_invariants()
         return ids
 
     @staticmethod
-    def _get_invariants(
-        config: Config,
-    ) -> tuple[list[str], list[SequenceInvariant], list[AtlasProbe]]:
+    def _get_invariants() -> tuple[list[str], list[SequenceInvariant], list[AtlasProbe]]:
         """Get invariant IDs, sequence invariants, and atlas probes for config.
 
         Returns:
@@ -577,59 +380,21 @@ class InvariantLayerMapper:
             - sequence_invariants: SequenceInvariant objects (for backward compat)
             - atlas_probes: AtlasProbe objects (for multi-atlas mode)
         """
-        # Handle MULTI_ATLAS scope - return atlas probes
-        if config.invariant_scope == InvariantScope.MULTI_ATLAS:
-            probes = list(get_atlas_probes())
-            if not probes:
-                return [], [], []
-            source_keys = (
-                {enum_key(source) for source in config.atlas_sources}
-                if config.atlas_sources
-                else None
-            )
-            domain_keys = (
-                {enum_key(domain) for domain in config.atlas_domains}
-                if config.atlas_domains
-                else None
-            )
-            if source_keys:
-                probes = [probe for probe in probes if enum_key(probe.source) in source_keys]
-            if domain_keys:
-                probes = [probe for probe in probes if enum_key(probe.domain) in domain_keys]
-
+        probes = list(get_atlas_probes())
+        if probes:
             ids = [probe.probe_id for probe in probes]
-            # Return empty sequence invariants list for multi-atlas mode
             return ids, [], probes
 
-        # Handle sequence-only scopes (backward compatible)
         invariants = list(get_sequence_invariants())
         if not invariants:
             return [], [], []
-        all_families = {enum_key(inv.family) for inv in invariants}
-
-        if config.invariant_scope == InvariantScope.SEQUENCE_INVARIANTS:
-            # Full 70-probe system with all 10 families (including tribonacci)
-            base_families = all_families
-        elif config.invariant_scope == InvariantScope.LOGIC_ONLY:
-            base_families = {_LOGIC_FAMILY_KEY}
-        else:
-            base_families = _DEFAULT_SEQUENCE_FAMILIES & all_families
-
-        if config.family_allowlist:
-            allowlist_keys = {enum_key(family) for family in config.family_allowlist}
-            families = base_families & allowlist_keys
-        else:
-            families = base_families
-
-        selected = [inv for inv in invariants if enum_key(inv.family) in families]
-        ids = [f"invariant:{enum_key(inv.family)}_{inv.id}" for inv in selected]
-        return ids, selected, []
+        ids = [f"invariant:{enum_key(inv.family)}_{inv.id}" for inv in invariants]
+        return ids, invariants, []
 
     @staticmethod
     def _compute_triangulation_scores(
         vectors: dict[int, list[float]],
         invariants: list[SequenceInvariant],
-        config: Config,
     ) -> dict[int, TriangulatedScore]:
         """Compute per-layer triangulation scores using the registered scorer.
 
@@ -645,7 +410,7 @@ class InvariantLayerMapper:
             # Group activations by domain
             domain_activations: dict[object, float] = {}
             for i, activation in enumerate(vector):
-                if i < len(invariants) and activation > config.triangulation_threshold:
+                if i < len(invariants) and activation > 0.0:
                     domain = invariants[i].domain
                     domain_activations[domain] = max(
                         domain_activations.get(domain, 0.0), activation
@@ -679,7 +444,6 @@ class InvariantLayerMapper:
     def _compute_multi_atlas_scores(
         vectors: dict[int, list[float]],
         probes: list[AtlasProbe],
-        config: Config,
     ) -> tuple[dict[int, TriangulatedScore], set[str], set[str]]:
         """Compute per-layer triangulation scores using multi-atlas probes.
 
@@ -702,7 +466,7 @@ class InvariantLayerMapper:
             domain_activations: dict[str, float] = {}
 
             for i, activation in enumerate(vector):
-                if i < len(probes) and activation > config.triangulation_threshold:
+                if i < len(probes) and activation > 0.0:
                     probe = probes[i]
                     source_key = enum_key(probe.source)
                     domain_key = enum_key(probe.domain)
@@ -757,7 +521,6 @@ class InvariantLayerMapper:
         target_layers: list[int],
         source_profile: _ProfileData,
         target_profile: _ProfileData,
-        config: Config,
         probes: list[AtlasProbe],
         source_triangulation: dict[int, TriangulatedScore],
         target_triangulation: dict[int, TriangulatedScore],
@@ -785,12 +548,10 @@ class InvariantLayerMapper:
         for i, source_layer in enumerate(source_layers):
             source_vector = source_profile.vectors.get(source_layer, [])
             source_confidence = source_profile.confidence_by_layer.get(source_layer, 0.0)
-            source_collapsed = source_layer in source_profile.collapsed_layers
 
             for j, target_layer in enumerate(target_layers):
                 target_vector = target_profile.vectors.get(target_layer, [])
                 target_confidence = target_profile.confidence_by_layer.get(target_layer, 0.0)
-                target_collapsed = target_layer in target_profile.collapsed_layers
 
                 # Compute weighted cosine similarity
                 similarity = InvariantLayerMapper._weighted_cosine_similarity(
@@ -800,19 +561,13 @@ class InvariantLayerMapper:
                 confidence_weight = math.sqrt(max(0, source_confidence) * max(0, target_confidence))
                 similarity *= confidence_weight
 
-                # Apply multi-atlas triangulation boost
-                if config.multi_domain_bonus:
-                    source_ts = source_triangulation.get(source_layer)
-                    target_ts = target_triangulation.get(target_layer)
-                    if source_ts and target_ts:
-                        tri_boost = math.sqrt(
-                            source_ts.cross_domain_multiplier * target_ts.cross_domain_multiplier
-                        )
-                        similarity *= math.sqrt(tri_boost)
-
-                if source_collapsed != target_collapsed:
-                    penalty = max(0.0, min(1.0, config.collapse_mismatch_penalty))
-                    similarity *= 1 - penalty
+                source_ts = source_triangulation.get(source_layer)
+                target_ts = target_triangulation.get(target_layer)
+                if source_ts and target_ts:
+                    tri_boost = math.sqrt(
+                        source_ts.cross_domain_multiplier * target_ts.cross_domain_multiplier
+                    )
+                    similarity *= math.sqrt(tri_boost)
 
                 matrix[i][j] = max(0.0, min(1.0, similarity))
 
@@ -822,7 +577,6 @@ class InvariantLayerMapper:
     def _build_profile(
         fingerprints: ModelFingerprints,
         invariant_ids: list[str],
-        config: Config,
     ) -> _ProfileData:
         """Build profile data from fingerprints."""
         id_to_index = {id_: idx for idx, id_ in enumerate(invariant_ids)}
@@ -864,7 +618,9 @@ class InvariantLayerMapper:
         strength_by_layer: dict[int, float] = {}
         collapsed_layers: set[int] = set()
 
-        weight_sum = max(0, config.strength_weight) + max(0, config.coverage_weight)
+        strength_weight = 1.0
+        coverage_weight = 1.0
+        weight_sum = strength_weight + coverage_weight
         normalized_weight_sum = weight_sum if weight_sum > 0 else 1.0
 
         has_signal = False
@@ -875,8 +631,7 @@ class InvariantLayerMapper:
             normalized_strength = strength / max_strength if max_strength > 0 else 0.0
             coverage = coverage_counts.get(layer, 0) / total_invariants
             confidence = (
-                max(0, config.strength_weight) * normalized_strength
-                + max(0, config.coverage_weight) * coverage
+                strength_weight * normalized_strength + coverage_weight * coverage
             ) / normalized_weight_sum
 
             clamped_confidence = max(0.0, min(1.0, confidence))
@@ -887,18 +642,9 @@ class InvariantLayerMapper:
             if clamped_confidence > 0:
                 has_signal = True
 
-        # Derive collapse threshold from spectral gap if not provided
-        if config.collapse_threshold is not None:
-            collapse_thresh = max(0.0, config.collapse_threshold)
-        else:
-            # Compute spectral gap threshold from confidence distribution
-            collapse_thresh = InvariantLayerMapper._derive_collapse_threshold(
-                list(confidence_by_layer.values())
-            )
-
-        # Second pass: mark collapsed layers
+        # Second pass: mark collapsed layers (no signal => collapsed)
         for layer, confidence in confidence_by_layer.items():
-            if confidence < collapse_thresh:
+            if confidence <= 0.0:
                 collapsed_layers.add(layer)
 
         return _ProfileData(
@@ -961,85 +707,11 @@ class InvariantLayerMapper:
         return total / len(dims)
 
     @staticmethod
-    def _derive_collapse_threshold(confidence_values: list[float]) -> float:
-        """Derive collapse threshold from spectral gap in confidence distribution.
-
-        Finds the largest gap between consecutive confidence values (when sorted).
-        The threshold is set at the geometric mean of the values around this gap,
-        naturally separating "healthy" from "collapsed" layers.
-
-        A gap is considered significant if it exceeds mean + 2*stddev of all gaps
-        (a standard statistical threshold for outlier detection).
-
-        Returns 0.0 if no meaningful gap is found (all layers are similar).
-        """
-        if len(confidence_values) < 2:
-            return 0.0
-
-        sorted_conf = sorted(confidence_values)
-
-        # Compute all gaps
-        gaps = [
-            sorted_conf[i + 1] - sorted_conf[i] for i in range(len(sorted_conf) - 1)
-        ]
-
-        if not gaps:
-            return 0.0
-
-        # Find largest gap and its index
-        max_gap = max(gaps)
-        gap_index = gaps.index(max_gap)
-
-        # Significance threshold: mean + 2*stddev (standard outlier detection)
-        # A gap is only meaningful if it's statistically significant
-        mean_gap = sum(gaps) / len(gaps)
-        if len(gaps) > 1:
-            variance = sum((g - mean_gap) ** 2 for g in gaps) / len(gaps)
-            stddev = math.sqrt(variance)
-            significance_threshold = mean_gap + 2.0 * stddev
-        else:
-            # Only one gap - it's significant by definition if it exists
-            significance_threshold = 0.0
-
-        # If largest gap isn't significant, no natural boundary exists
-        if max_gap <= significance_threshold:
-            return 0.0
-
-        # Threshold is geometric mean of values around the gap
-        # This places the threshold exactly at the natural boundary
-        lower_val = sorted_conf[gap_index]
-        upper_val = sorted_conf[gap_index + 1]
-
-        # Geometric mean (handles case where lower_val is 0)
-        if lower_val <= 0:
-            return upper_val / 2.0  # Midpoint when geometric mean undefined
-        return math.sqrt(lower_val * upper_val)
-
-    @staticmethod
-    def _sample_layers(layer_count: int, sample_count: int | None) -> list[int]:
-        """Sample layers evenly across the model."""
-        if layer_count <= 0:
-            return []
-        if sample_count is None or sample_count <= 0 or sample_count >= layer_count:
-            return list(range(layer_count))
-
-        last_index = layer_count - 1
-        indices: list[int] = []
-
-        for i in range(sample_count):
-            position = i / max(1, sample_count - 1)
-            index = int(round(position * last_index))
-            indices.append(index)
-
-        return sorted(set(indices))
-
-    @staticmethod
     def _build_similarity_matrix(
         source_layers: list[int],
         target_layers: list[int],
         source_profile: _ProfileData,
         target_profile: _ProfileData,
-        config: Config,
         invariants: list[SequenceInvariant] | None = None,
         source_triangulation: dict[int, TriangulatedScore] | None = None,
         target_triangulation: dict[int, TriangulatedScore] | None = None,
@@ -1062,7 +734,7 @@ class InvariantLayerMapper:
 
         # Cross-domain weights - universal across all models
         weights: list[float] | None = None
-        if config.use_cross_domain_weighting and invariants:
+        if invariants:
             weights = [inv.cross_domain_weight for inv in invariants]
 
         matrix = [[0.0] * target_count for _ in range(source_count)]
@@ -1070,12 +742,10 @@ class InvariantLayerMapper:
         for i, source_layer in enumerate(source_layers):
             source_vector = source_profile.vectors.get(source_layer, [])
             source_confidence = source_profile.confidence_by_layer.get(source_layer, 0.0)
-            source_collapsed = source_layer in source_profile.collapsed_layers
 
             for j, target_layer in enumerate(target_layers):
                 target_vector = target_profile.vectors.get(target_layer, [])
                 target_confidence = target_profile.confidence_by_layer.get(target_layer, 0.0)
-                target_collapsed = target_layer in target_profile.collapsed_layers
 
                 # Compute similarity with optional cross-domain weighting
                 if weights:
@@ -1091,20 +761,14 @@ class InvariantLayerMapper:
                 similarity *= confidence_weight
 
                 # Apply triangulation boost if available
-                if config.multi_domain_bonus and source_triangulation and target_triangulation:
+                if source_triangulation and target_triangulation:
                     source_ts = source_triangulation.get(source_layer)
                     target_ts = target_triangulation.get(target_layer)
                     if source_ts and target_ts:
-                        # Geometric mean of multipliers
                         tri_boost = math.sqrt(
                             source_ts.cross_domain_multiplier * target_ts.cross_domain_multiplier
                         )
-                        # Apply as a mild boost (sqrt to dampen)
                         similarity *= math.sqrt(tri_boost)
-
-                if source_collapsed != target_collapsed:
-                    penalty = max(0.0, min(1.0, config.collapse_mismatch_penalty))
-                    similarity *= 1 - penalty
 
                 matrix[i][j] = max(0.0, min(1.0, similarity))
 
@@ -1139,121 +803,52 @@ class InvariantLayerMapper:
         source_samples: list[int],
         target_samples: list[int],
         similarity_matrix: list[list[float]],
-        config: Config,
     ) -> list[LayerMapping]:
-        """Align layers using dynamic programming."""
+        """Align layers using monotonic dynamic programming."""
         source_count = len(source_samples)
         target_count = len(target_samples)
 
         if source_count == 0 or target_count == 0:
             return []
 
-        NEG_INF = float("-inf")
-
-        # DP table
-        dp = [[NEG_INF] * (target_count + 1) for _ in range(source_count + 1)]
-        parent: list[list[tuple[int, int, str] | None]] = [
-            [None] * (target_count + 1) for _ in range(source_count + 1)
+        dp = [[float("-inf")] * target_count for _ in range(source_count)]
+        parent: list[list[tuple[int, int] | None]] = [
+            [None] * target_count for _ in range(source_count)
         ]
 
-        dp[0][0] = 0.0
+        for j in range(target_count):
+            dp[0][j] = float(similarity_matrix[0][j])
 
-        for i in range(source_count + 1):
-            for j in range(target_count + 1):
-                current = dp[i][j]
-                if current <= NEG_INF / 2:
-                    continue
+        for i in range(1, source_count):
+            best_prev_score = float("-inf")
+            best_prev_j = 0
+            for j in range(target_count):
+                if dp[i - 1][j] > best_prev_score:
+                    best_prev_score = dp[i - 1][j]
+                    best_prev_j = j
+                dp[i][j] = float(similarity_matrix[i][j]) + best_prev_score
+                parent[i][j] = (i - 1, best_prev_j)
 
-                # Match
-                if i < source_count and j < target_count:
-                    score = current + similarity_matrix[i][j]
-                    if score > dp[i + 1][j + 1]:
-                        dp[i + 1][j + 1] = score
-                        parent[i + 1][j + 1] = (i, j, "match")
+        best_j = max(range(target_count), key=lambda j: dp[source_count - 1][j])
 
-                # Skip source
-                if i < source_count:
-                    if InvariantLayerMapper._allow_skip(
-                        parent, i, j, "skip_source", config.max_skip
-                    ):
-                        score = current - config.skip_penalty
-                        if score > dp[i + 1][j]:
-                            dp[i + 1][j] = score
-                            parent[i + 1][j] = (i, j, "skip_source")
-
-                # Skip target
-                if j < target_count:
-                    if InvariantLayerMapper._allow_skip(
-                        parent, i, j, "skip_target", config.max_skip
-                    ):
-                        score = current - config.skip_penalty
-                        if score > dp[i][j + 1]:
-                            dp[i][j + 1] = score
-                            parent[i][j + 1] = (i, j, "skip_target")
-
-        # Backtrack to get mappings
         mappings: list[LayerMapping] = []
-        i, j = source_count, target_count
-
-        while i > 0 or j > 0:
-            step = parent[i][j]
-            if step is None:
-                break
-
-            source_idx, target_idx, move = step
-
-            if move == "match":
-                source_layer = source_samples[source_idx]
-                target_layer = target_samples[target_idx]
-                similarity = similarity_matrix[source_idx][target_idx]
-                is_skipped = similarity < config.min_similarity
-
-                mappings.append(
-                    LayerMapping(
-                        source_layer=source_layer,
-                        target_layer=target_layer,
-                        similarity=similarity,
-                        is_skipped=is_skipped,
-                    )
+        current: tuple[int, int] | None = (source_count - 1, best_j)
+        while current is not None:
+            i, j = current
+            source_layer = source_samples[i]
+            target_layer = target_samples[j]
+            similarity = similarity_matrix[i][j]
+            mappings.append(
+                LayerMapping(
+                    source_layer=source_layer,
+                    target_layer=target_layer,
+                    similarity=similarity,
                 )
-
-            i, j = source_idx, target_idx
+            )
+            current = parent[i][j]
 
         mappings.reverse()
         return mappings
-
-    @staticmethod
-    def _allow_skip(
-        parent: list[list[tuple[int, int, str] | None]],
-        source_index: int,
-        target_index: int,
-        move: str,
-        max_skip: int,
-    ) -> bool:
-        """Check if a skip is allowed based on max consecutive skips."""
-        if max_skip <= 0:
-            return True
-
-        skips = 0
-        current_source = source_index
-        current_target = target_index
-
-        while current_source >= 0 and current_target >= 0:
-            step = parent[current_source][current_target]
-            if step is None:
-                break
-
-            _, _, step_move = step
-            if step_move != move:
-                break
-
-            skips += 1
-            if skips >= max_skip:
-                return False
-
-            current_source, current_target, _ = step
-
-        return True
 
     # _classify_confidence method removed - use raw similarity values directly.
 
@@ -1279,4 +874,3 @@ class InvariantLayerMapper:
             return 0.0
 
         return max(0.0, min(1.0, dot / (math.sqrt(norm_a) * math.sqrt(norm_b))))
-

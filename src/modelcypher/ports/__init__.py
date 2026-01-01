@@ -41,7 +41,6 @@ Storage Ports:
 
 Asynchronous Ports (async-first design for streaming/complex ops):
 - InferenceEnginePort: Async dual-path generation with entropy monitoring
-- GeometryPort: Async high-dimensional geometry operations
 - EmbedderPort: Async embedding interface
 - ConceptDiscoveryPort: Async semantic concept detection
 
@@ -50,7 +49,6 @@ USAGE:
 Import specific ports:
     from modelcypher.ports.backend import Backend
     from modelcypher.ports.inference import InferenceEngine
-    from modelcypher.ports.async_geometry import GeometryPort as AsyncGeometryPort
 
 Or import from this module:
     from modelcypher.ports import Backend, InferenceEngine
@@ -58,7 +56,6 @@ Or import from this module:
 
 # Compute Backend
 from modelcypher.ports.async_embeddings import EmbedderPort
-from modelcypher.ports.async_geometry import GeometryPort as AsyncGeometryPort
 
 # Asynchronous Ports
 from modelcypher.ports.async_inference import InferenceEnginePort
@@ -104,7 +101,6 @@ __all__ = [
     "ManifoldProfileStore",
     # Async
     "InferenceEnginePort",
-    "AsyncGeometryPort",
     "EmbedderPort",
     "ConceptDiscoveryPort",
 ]

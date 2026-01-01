@@ -342,47 +342,6 @@ class PermutationAligner:
         return w
 
     @staticmethod
-    def align_via_anchor_projection(
-        source_weight: "Array",
-        target_weight: "Array",
-        anchors: "Array",
-        config: Config = Config(),
-        backend: "Backend | None" = None,
-    ) -> AlignmentResult:
-        """Aligns neurons using low-dimensional anchor projections."""
-        b = backend or get_default_backend()
-
-        if source_weight.ndim != 2 or target_weight.ndim != 2:
-            raise ValueError(
-                f"Weights must be 2D. Got source={source_weight.ndim}D, target={target_weight.ndim}D"
-            )
-
-        N = source_weight.shape[0]
-        if N != target_weight.shape[0]:
-            raise ValueError(
-                f"Output dimensions must match. Source: {N}, Target: {target_weight.shape[0]}"
-            )
-
-        input_dim = source_weight.shape[1]
-        anchor_dim = anchors.shape[1]
-
-        source_signatures = None
-        target_signatures = None
-
-        if input_dim != anchor_dim:
-            raise PermutationAlignerError(
-                f"Weight dim {input_dim} != anchor dim {anchor_dim}"
-            )
-
-        source_signatures = b.matmul(b.astype(source_weight, "float32"), b.transpose(anchors))
-        target_signatures = b.matmul(b.astype(target_weight, "float32"), b.transpose(anchors))
-
-        b.eval(source_signatures, target_signatures)
-        return PermutationAligner._align_from_signatures(
-            source_signatures, target_signatures, config, backend=b
-        )
-
-    @staticmethod
     def align_via_anchor_activations(
         source_weight: "Array",
         target_weight: "Array",
@@ -505,126 +464,28 @@ class PermutationAligner:
         )
 
     @staticmethod
-    def rebasin_mlp_only(
-        source_weights: "dict[str, Array]",
-        target_weights: "dict[str, Array]",
-        anchors: "Array",
-        config: Config = Config(),
-        backend: "Backend | None" = None,
-    ) -> "tuple[dict[str, Array], float, int]":
-        """Performs MLP-only re-basin alignment."""
-        b = backend or get_default_backend()
-
-        aligned_weights: "dict[str, Array]" = {}
-        total_quality = 0.0
-        mlp_blocks_aligned = 0
-
-        up_proj_keys = [
-            k for k in source_weights.keys() if "up_proj" in k and k.endswith(".weight")
-        ]
-        up_proj_keys.sort()
-
-        for up_key in up_proj_keys:
-            gate_key = up_key.replace("up_proj", "gate_proj")
-            down_key = up_key.replace("up_proj", "down_proj")
-
-            source_up = source_weights.get(up_key)
-            target_up = target_weights.get(up_key)
-            source_gate = source_weights.get(gate_key)
-            target_gate = target_weights.get(gate_key)
-            source_down = source_weights.get(down_key)
-            target_down = target_weights.get(down_key)
-
-            if not all(
-                [
-                    source_up is not None,
-                    target_up is not None,
-                    source_gate is not None,
-                    target_gate is not None,
-                    source_down is not None,
-                    target_down is not None,
-                ]
-            ):
-                continue
-
-            # MLP Re-Basin Strategy:
-            # ----------------------
-            # For transformer MLPs: hidden → up_proj → intermediate → gate → down_proj → hidden
-            #
-            # The intermediate dimension has permutation symmetry.
-            # We find permutation P on up_proj, then apply consistently:
-            #   up_proj:   P @ W (permute output rows)
-            #   gate_proj: P @ W (permute output rows, same P)
-            #   down_proj: W @ P^T (permute input columns, same P)
-            #
-            # This preserves: down_proj(gate_proj(x) * up_proj(x)) functional equivalence
-            #
-            # NOTE: Attention is NOT re-basined here - multi-head structure requires
-            # head-aware alignment which is not implemented (see is_attention_weight()).
-
-            # Align based on up_proj
-            # up_proj: [intermediate, hidden] => align rows (dim 0)
-            alignment = PermutationAligner.align_via_anchor_projection(
-                source_up, target_up, anchors, config, backend=b
-            )
-
-            # Apply to source
-            # up_proj: align output (permute rows = intermediate dimension)
-            aligned_up = PermutationAligner.apply(
-                source_up, alignment, align_output=True, align_input=False, backend=b
-            )
-
-            # gate_proj: align output (same permutation as up_proj)
-            aligned_gate = PermutationAligner.apply(
-                source_gate, alignment, align_output=True, align_input=False, backend=b
-            )
-
-            # down_proj: align input (permute COLUMNS = intermediate dimension)
-            # NOTE: This is NOT "rows only" - we DO permute columns here!
-            aligned_down = PermutationAligner.apply(
-                source_down, alignment, align_output=False, align_input=True, backend=b
-            )
-
-            aligned_weights[up_key] = aligned_up
-            aligned_weights[gate_key] = aligned_gate
-            aligned_weights[down_key] = aligned_down
-
-            total_quality += alignment.match_quality
-            mlp_blocks_aligned += 1
-
-        # Copy all other weights unchanged (attention, norms, embeddings)
-        for key, value in source_weights.items():
-            if key not in aligned_weights:
-                aligned_weights[key] = value
-
-        avg_quality = total_quality / max(1, mlp_blocks_aligned)
-        logger.info(
-            f"MLP re-basin complete: {mlp_blocks_aligned} blocks aligned, avg quality: {avg_quality:.3f}"
-        )
-        return aligned_weights, avg_quality, mlp_blocks_aligned
-
-    @staticmethod
     def rebasin_mlp_with_activations(
         source_weights: "dict[str, Array]",
         target_weights: "dict[str, Array]",
-        anchors: "Array | None" = None,
+        source_anchors: "Array",
+        target_anchors: "Array",
         anchor_activations: AnchorActivationContext | None = None,
         config: Config = Config(),
         backend: "Backend | None" = None,
-        source_anchors: "Array | None" = None,
-        target_anchors: "Array | None" = None,
     ) -> "tuple[dict[str, Array], float, int]":
-        """Performs MLP-only re-basin alignment with optional per-layer anchor activations.
+        """Performs MLP-only re-basin alignment with separate source/target anchors.
+
+        Each model needs its own anchor embeddings because different models encode
+        concepts at different locations, even for same-architecture models.
 
         Args:
             source_weights: Source model weights by key.
             target_weights: Target model weights by key.
-            anchors: Legacy single anchor set (deprecated, use source/target_anchors).
+            source_anchors: Source model anchor embeddings [numAnchors, anchorDim].
+            target_anchors: Target model anchor embeddings [numAnchors, anchorDim].
             anchor_activations: Optional per-layer anchor activation context.
             config: Alignment configuration.
             backend: Optional backend for array operations.
-            source_anchors: Source model anchor embeddings [numAnchors, anchorDim].
-            target_anchors: Target model anchor embeddings [numAnchors, anchorDim].
 
         Returns:
             Tuple of (aligned_weights, average_quality, mlp_blocks_aligned).
@@ -666,10 +527,12 @@ class PermutationAligner:
                 logger.warning(f"Incomplete MLP block for {up_key}, skipping")
                 continue
 
-            # Check for per-layer anchor activations
+            # Compute alignment using per-layer activations if available, else global anchors
             layer_idx = PermutationAligner._extract_layer_index(up_key)
             alignment: AlignmentResult
 
+            # Per-layer anchor activations take priority if available
+            use_per_layer = False
             if anchor_activations is not None and layer_idx is not None:
                 activations = anchor_activations.activations(layer_idx)
                 if activations is not None and len(activations[0]) > 0 and len(activations[1]) > 0:
@@ -683,28 +546,13 @@ class PermutationAligner:
                     alignment = PermutationAligner.align_via_anchor_activations(
                         source_up, target_up, src_act, tgt_act, config, backend=b
                     )
-                elif source_anchors is not None and target_anchors is not None:
-                    # Use separate source/target anchors for proper cross-model alignment
-                    alignment = PermutationAligner.align_via_anchor_activations(
-                        source_up, target_up, source_anchors, target_anchors, config, backend=b
-                    )
-                elif anchors is not None:
-                    alignment = PermutationAligner.align_via_anchor_projection(
-                        source_up, target_up, anchors, config, backend=b
-                    )
-                else:
-                    raise ValueError("No anchors provided for permutation alignment")
-            elif source_anchors is not None and target_anchors is not None:
+                    use_per_layer = True
+
+            if not use_per_layer:
                 # Use separate source/target anchors for proper cross-model alignment
                 alignment = PermutationAligner.align_via_anchor_activations(
                     source_up, target_up, source_anchors, target_anchors, config, backend=b
                 )
-            elif anchors is not None:
-                alignment = PermutationAligner.align_via_anchor_projection(
-                    source_up, target_up, anchors, config, backend=b
-                )
-            else:
-                raise ValueError("No anchors provided for permutation alignment")
 
             # Apply permutation (sparse or dense)
             if alignment.is_sparse_permutation and alignment.assignment_indices is not None:

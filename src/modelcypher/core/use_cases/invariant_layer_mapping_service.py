@@ -378,8 +378,8 @@ class InvariantLayerMappingService:
         fingerprints = self._load_fingerprints(config.model_path, mapper_config)
 
         # Build profile to assess collapse
-        invariant_ids, _, _ = InvariantLayerMapper._get_invariants(mapper_config)
-        profile = InvariantLayerMapper._build_profile(fingerprints, invariant_ids, mapper_config)
+        invariant_ids, _, _ = InvariantLayerMapper._get_invariants()
+        profile = InvariantLayerMapper._build_profile(fingerprints, invariant_ids)
 
         collapsed_count = profile.collapsed_count
         layer_count = fingerprints.layer_count

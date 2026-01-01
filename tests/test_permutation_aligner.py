@@ -462,46 +462,6 @@ class TestPermutationAlignerApply:
 class TestAnchorAlignment:
     """Tests for anchor-based alignment methods."""
 
-    def test_align_via_anchor_projection(self, any_backend: "Backend") -> None:
-        """Should align using anchor projections."""
-        b = any_backend
-        b.random_seed(42)
-        source = b.random_normal((10, 32))
-        target = b.random_normal((10, 32))
-        anchors = b.random_normal((8, 32))
-        b.eval(source, target, anchors)
-
-        config = Config()
-        result = PermutationAligner.align_via_anchor_projection(
-            source, target, anchors, config=config, backend=b
-        )
-
-        assert result is not None
-        assert result.match_quality >= 0.0
-        assert len(result.match_confidences) == 10
-
-    def test_align_via_anchor_projection_dim_mismatch(
-        self, any_backend: "Backend"
-    ) -> None:
-        """Dimension mismatch should raise PermutationAlignerError."""
-        from modelcypher.core.domain.geometry.permutation_aligner import (
-            PermutationAlignerError,
-        )
-
-        b = any_backend
-        b.random_seed(42)
-        source = b.random_normal((10, 32))
-        target = b.random_normal((10, 32))
-        anchors = b.random_normal((8, 16))  # Wrong dim
-        b.eval(source, target, anchors)
-
-        config = Config()
-        # Should raise on dimension mismatch
-        with pytest.raises(PermutationAlignerError, match="Weight dim 32 != anchor dim 16"):
-            PermutationAligner.align_via_anchor_projection(
-                source, target, anchors, config=config, backend=b
-            )
-
     def test_align_via_anchor_activations(self, any_backend: "Backend") -> None:
         """Should align using per-model anchor activations."""
         b = any_backend
@@ -520,127 +480,27 @@ class TestAnchorAlignment:
         assert result is not None
         assert len(result.match_confidences) == 10
 
+    def test_align_via_anchor_activations_dim_mismatch(
+        self, any_backend: "Backend"
+    ) -> None:
+        """Anchor dimension mismatch should raise PermutationAlignerError."""
+        from modelcypher.core.domain.geometry.permutation_aligner import (
+            PermutationAlignerError,
+        )
 
-# =============================================================================
-# MLP Re-Basin Tests
-# =============================================================================
-
-
-class TestMlpRebasin:
-    """Tests for MLP re-basin operations."""
-
-    def test_rebasin_mlp_only(self, any_backend: "Backend") -> None:
-        """Should re-basin MLP blocks."""
         b = any_backend
         b.random_seed(42)
-
-        # Create mock MLP weights
-        hidden = 32
-        intermediate = 64
-        source_weights = {
-            "model.layers.0.mlp.up_proj.weight": b.random_normal((intermediate, hidden)),
-            "model.layers.0.mlp.gate_proj.weight": b.random_normal(
-                (intermediate, hidden)
-            ),
-            "model.layers.0.mlp.down_proj.weight": b.random_normal(
-                (hidden, intermediate)
-            ),
-        }
-        target_weights = {
-            "model.layers.0.mlp.up_proj.weight": b.random_normal((intermediate, hidden)),
-            "model.layers.0.mlp.gate_proj.weight": b.random_normal(
-                (intermediate, hidden)
-            ),
-            "model.layers.0.mlp.down_proj.weight": b.random_normal(
-                (hidden, intermediate)
-            ),
-        }
-        anchors = b.random_normal((16, hidden))
-        for k, v in source_weights.items():
-            b.eval(v)
-        for k, v in target_weights.items():
-            b.eval(v)
-        b.eval(anchors)
+        source = b.random_normal((10, 32))
+        target = b.random_normal((10, 32))
+        source_anchors = b.random_normal((5, 16))  # Wrong dim
+        target_anchors = b.random_normal((5, 16))  # Wrong dim
+        b.eval(source, target, source_anchors, target_anchors)
 
         config = Config()
-        aligned, avg_quality, blocks_aligned = PermutationAligner.rebasin_mlp_only(
-            source_weights, target_weights, anchors, config=config, backend=b
-        )
-
-        assert blocks_aligned == 1
-        assert avg_quality >= 0.0
-        assert len(aligned) == 3
-        assert "model.layers.0.mlp.up_proj.weight" in aligned
-
-    def test_rebasin_preserves_non_mlp_weights(self, any_backend: "Backend") -> None:
-        """Non-MLP weights should be copied unchanged."""
-        b = any_backend
-        b.random_seed(42)
-
-        hidden = 32
-        intermediate = 64
-        source_weights = {
-            "model.layers.0.mlp.up_proj.weight": b.random_normal((intermediate, hidden)),
-            "model.layers.0.mlp.gate_proj.weight": b.random_normal(
-                (intermediate, hidden)
-            ),
-            "model.layers.0.mlp.down_proj.weight": b.random_normal(
-                (hidden, intermediate)
-            ),
-            "model.layers.0.attn.q_proj.weight": b.random_normal((hidden, hidden)),
-            "model.embed_tokens.weight": b.random_normal((1000, hidden)),
-        }
-        target_weights = {
-            "model.layers.0.mlp.up_proj.weight": b.random_normal((intermediate, hidden)),
-            "model.layers.0.mlp.gate_proj.weight": b.random_normal(
-                (intermediate, hidden)
-            ),
-            "model.layers.0.mlp.down_proj.weight": b.random_normal(
-                (hidden, intermediate)
-            ),
-        }
-        anchors = b.random_normal((16, hidden))
-        for v in source_weights.values():
-            b.eval(v)
-        for v in target_weights.values():
-            b.eval(v)
-        b.eval(anchors)
-
-        config = Config()
-        aligned, _, _ = PermutationAligner.rebasin_mlp_only(
-            source_weights, target_weights, anchors, config=config, backend=b
-        )
-
-        # Non-MLP weights should be preserved
-        assert "model.layers.0.attn.q_proj.weight" in aligned
-        assert "model.embed_tokens.weight" in aligned
-
-    def test_rebasin_incomplete_mlp_skipped(self, any_backend: "Backend") -> None:
-        """Incomplete MLP blocks should be skipped."""
-        b = any_backend
-        b.random_seed(42)
-
-        hidden = 32
-        intermediate = 64
-        source_weights = {
-            "model.layers.0.mlp.up_proj.weight": b.random_normal((intermediate, hidden)),
-            # Missing gate_proj and down_proj
-        }
-        target_weights = {
-            "model.layers.0.mlp.up_proj.weight": b.random_normal((intermediate, hidden)),
-        }
-        anchors = b.random_normal((16, hidden))
-        for v in source_weights.values():
-            b.eval(v)
-        for v in target_weights.values():
-            b.eval(v)
-        b.eval(anchors)
-
-        _, _, blocks_aligned = PermutationAligner.rebasin_mlp_only(
-            source_weights, target_weights, anchors, backend=b
-        )
-
-        assert blocks_aligned == 0  # No complete blocks
+        with pytest.raises(PermutationAlignerError, match="Anchor activation dim mismatch"):
+            PermutationAligner.align_via_anchor_activations(
+                source, target, source_anchors, target_anchors, config=config, backend=b
+            )
 
 
 # =============================================================================

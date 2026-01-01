@@ -99,53 +99,46 @@ def register_safety_tools(ctx: ServiceContext) -> None:
         def mc_safety_persona_drift(
             baselinePersona: dict,
             currentBehavior: list[str],
-            traitThreshold: float = 0.5,
         ) -> dict:
             """Detect persona drift between baseline and current behavior.
 
+            Returns raw drift measurements for ALL traits - no arbitrary threshold
+            classification. User interprets which traits matter for their use case.
+
             Args:
-                baselinePersona: Mapping of trait names to numeric scores.
+                baselinePersona: Mapping of trait names to numeric scores (0-1).
                 currentBehavior: List of behavior text samples.
-                traitThreshold: Score threshold for considering a trait present (default 0.5).
             """
-
-            # Extract baseline traits (expected traits are keys with value above threshold)
-            baseline_traits = set(
-                k for k, v in baselinePersona.items() if isinstance(v, (int, float)) and v > traitThreshold
-            )
-
-            # Check which baseline traits are missing from current behavior
             current_text = " ".join(currentBehavior).lower()
-            missing_traits = []
-            for trait in baseline_traits:
-                if trait.lower() not in current_text:
-                    missing_traits.append(trait)
 
-            # Compute drift magnitude as ratio of missing traits
-            if len(baseline_traits) > 0:
-                drift_magnitude = len(missing_traits) / len(baseline_traits)
-            else:
-                drift_magnitude = 0.0
-
-            # Compute trait-level drift scores
+            # Compute drift scores for ALL traits - no threshold filtering
             trait_scores = {}
+            total_drift = 0.0
+            trait_count = 0
+
             for k, v in baselinePersona.items():
                 if isinstance(v, (int, float)):
-                    # Check if trait is present in current behavior
+                    # Binary presence check (trait name appears in current behavior)
                     present = 1.0 if k.lower() in current_text else 0.0
+                    # Drift = difference between expected and observed presence, weighted by baseline score
+                    drift = abs(v - present * v)
                     trait_scores[k] = {
                         "baseline": v,
-                        "current": present * v,
-                        "drift": abs(v - present * v),
+                        "detected": present,
+                        "drift": drift,
                     }
+                    total_drift += drift
+                    trait_count += 1
+
+            # Mean drift across all traits (not threshold-filtered)
+            mean_drift = total_drift / trait_count if trait_count > 0 else 0.0
 
             return {
                 "_schema": "mc.safety.persona_drift.v1",
-                # Raw measurements - no arbitrary "isDrifting" classification
-                "driftMagnitude": drift_magnitude,
-                "missingTraitCount": len(missing_traits),
-                "totalBaselineTraits": len(baseline_traits),
-                "missingTraits": missing_traits[:10],
+                # Raw measurements for ALL traits - user decides interpretation
+                "meanDrift": mean_drift,
+                "totalDrift": total_drift,
+                "traitCount": trait_count,
                 "traitScores": trait_scores,
             }
 
@@ -523,34 +516,44 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_entropy_dual_path(
             samples: list[dict],
-            anomalyThreshold: float = 0.6,
-            deltaThreshold: float = 1.0,
         ) -> dict:
-            """Analyze dual-path entropy (base vs adapter) for security."""
-            anomalies = []
+            """Analyze dual-path entropy (base vs adapter) for security.
+
+            Returns raw delta measurements for ALL samples. The deltas
+            themselves ARE the geometric signal - no threshold filtering.
+            """
+            # Compute raw deltas for every sample - the geometry speaks
+            per_sample = []
+            all_deltas = []
             for i, sample in enumerate(samples):
                 base = sample.get("base", [0.0, 0.0])
                 adapter = sample.get("adapter", [0.0, 0.0])
                 delta_entropy = abs(adapter[0] - base[0])
                 delta_variance = abs(adapter[1] - base[1])
                 combined_delta = (delta_entropy + delta_variance) / 2
-                if combined_delta > deltaThreshold:
-                    anomalies.append(
-                        {
-                            "index": i,
-                            "deltaEntropy": delta_entropy,
-                            "deltaVariance": delta_variance,
-                            "combinedDelta": combined_delta,
-                        }
-                    )
-            anomaly_rate = len(anomalies) / len(samples) if samples else 0.0
+                all_deltas.append(combined_delta)
+                per_sample.append({
+                    "index": i,
+                    "deltaEntropy": delta_entropy,
+                    "deltaVariance": delta_variance,
+                    "combinedDelta": combined_delta,
+                })
+
+            # Raw statistics from the data itself
+            mean_delta = sum(all_deltas) / len(all_deltas) if all_deltas else 0.0
+            max_delta = max(all_deltas) if all_deltas else 0.0
+            min_delta = min(all_deltas) if all_deltas else 0.0
+            sorted_deltas = sorted(all_deltas)
+            median_delta = sorted_deltas[len(sorted_deltas) // 2] if sorted_deltas else 0.0
+
             return {
                 "_schema": "mc.entropy.dual_path.v1",
                 "samplesProcessed": len(samples),
-                # Return the thresholds that were used for filtering
-                "deltaThreshold": deltaThreshold,
-                # Raw measurements - no "verdict" classification
-                "anomalyCount": len(anomalies),
-                "anomalyRate": anomaly_rate,
-                "anomalies": anomalies[:10],
+                # Raw statistics derived from the data
+                "meanDelta": mean_delta,
+                "medianDelta": median_delta,
+                "minDelta": min_delta,
+                "maxDelta": max_delta,
+                # All samples with their measurements - no filtering
+                "samples": per_sample,
             }

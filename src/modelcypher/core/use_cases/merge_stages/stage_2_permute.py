@@ -286,11 +286,9 @@ def stage_permute(
     aligned, mean_quality, blocks_aligned = PermutationAligner.rebasin_mlp_with_activations(
         source_arr,
         target_arr,
-        anchors=None,  # Use separate anchors instead
-        anchor_activations=None,
+        source_anchors,
+        target_anchors,
         config=pa_config,
-        source_anchors=source_anchors,
-        target_anchors=target_anchors,
     )
     # Eval all aligned weights
     for val in aligned.values():

@@ -17,8 +17,8 @@
 
 """Tests for advanced PermutationAligner methods (requires MLX).
 
-Tests fuse(), rebasin_mlp_only(), rebasin_mlp_with_activations(),
-and helper methods added for TIES-Merging and MLP-focused re-basin.
+Tests fuse(), rebasin_mlp_with_activations(), and helper methods
+added for TIES-Merging and MLP-focused re-basin.
 """
 
 import pytest
@@ -39,7 +39,6 @@ from modelcypher.core.domain.geometry.permutation_aligner import (
     AlignmentResult,
     AnchorActivationContext,
     Config,
-    FusionConfig,
     PermutationAligner,
     PermutationAlignerError,
 )
@@ -89,13 +88,12 @@ class TestPermutationAlignerFuse:
         source = mx.array([[1.0, 1.0], [1.0, 1.0]])
         target = mx.array([[3.0, 3.0], [3.0, 3.0]])
 
-        config = FusionConfig(source_alpha=0.5)
-        fused = PermutationAligner.fuse(source, target, alignment, config)
+        fused = PermutationAligner.fuse(source, target, alignment)
 
         mx.eval(fused)
-        # Row 0 (confidence=1.0): full average = (1+3)/2 = 2.0
-        # Row 1 (confidence=0.0): source only = 1.0
-        assert mx.isclose(fused[0, 0], mx.array(2.0)).item()
+        # Row 0 (confidence=1.0): uses target = 3.0
+        # Row 1 (confidence=0.0): uses source = 1.0
+        assert mx.isclose(fused[0, 0], mx.array(3.0)).item()
         assert mx.isclose(fused[1, 0], mx.array(1.0)).item()
 
     def test_fuse_respects_source_alpha(self):
@@ -114,104 +112,12 @@ class TestPermutationAlignerFuse:
         source = mx.array([[0.0], [0.0]])
         target = mx.array([[10.0], [10.0]])
 
-        # 80% source, 20% target
-        config = FusionConfig(source_alpha=0.8)
-        fused = PermutationAligner.fuse(source, target, alignment, config)
+        # 80% source, 20% target - fuse now uses alignment confidence directly
+        fused = PermutationAligner.fuse(source, target, alignment)
 
         mx.eval(fused)
-        # Expected: 0.8 * 0 + 0.2 * 10 = 2.0
-        assert mx.allclose(fused, mx.array([[2.0], [2.0]]), atol=1e-5).item()
-
-    def test_fuse_config_default(self):
-        """Default FusionConfig should work."""
-        config = FusionConfig.default()
-        assert config.source_alpha == 0.5
-        assert config.interference_threshold == 0.5
-        assert config.normalize is False
-
-
-class TestPermutationAlignerRebasinMLP:
-    """Tests for PermutationAligner.rebasin_mlp_only()."""
-
-    @pytest.fixture
-    def mlp_weights(self):
-        """Create mock MLP weights for testing."""
-        hidden = 4
-        intermediate = 8
-        return {
-            "model.layers.0.mlp.up_proj.weight": mx.random.normal((intermediate, hidden)),
-            "model.layers.0.mlp.gate_proj.weight": mx.random.normal((intermediate, hidden)),
-            "model.layers.0.mlp.down_proj.weight": mx.random.normal((hidden, intermediate)),
-            "model.layers.0.self_attn.q_proj.weight": mx.random.normal((hidden, hidden)),
-            "model.layers.0.self_attn.k_proj.weight": mx.random.normal((hidden, hidden)),
-        }
-
-    @pytest.fixture
-    def anchors(self):
-        """Create anchor embeddings."""
-        return mx.random.normal((5, 4))  # 5 anchors, dim 4
-
-    @pytest.fixture
-    def config(self):
-        """Create alignment config with explicit threshold."""
-        return Config.with_threshold(min_match_threshold=0.3)
-
-    def test_rebasin_mlp_returns_aligned_weights(self, mlp_weights, anchors, config):
-        """rebasin_mlp_only should return aligned MLP weights."""
-        target_weights = {k: mx.random.normal(v.shape) for k, v in mlp_weights.items()}
-
-        aligned, avg_quality, blocks_aligned = PermutationAligner.rebasin_mlp_only(
-            source_weights=mlp_weights,
-            target_weights=target_weights,
-            anchors=anchors,
-            config=config,
-        )
-
-        # Should have aligned the MLP blocks
-        assert blocks_aligned >= 1
-        assert 0.0 <= avg_quality <= 1.0
-        # MLP weights should be in the result
-        assert "model.layers.0.mlp.up_proj.weight" in aligned
-        assert "model.layers.0.mlp.gate_proj.weight" in aligned
-        assert "model.layers.0.mlp.down_proj.weight" in aligned
-        # Attention weights should also be present (copied unchanged)
-        assert "model.layers.0.self_attn.q_proj.weight" in aligned
-
-    def test_rebasin_mlp_preserves_shapes(self, mlp_weights, anchors, config):
-        """Aligned weights should have the same shapes as source."""
-        target_weights = {k: mx.random.normal(v.shape) for k, v in mlp_weights.items()}
-
-        aligned, _, _ = PermutationAligner.rebasin_mlp_only(
-            source_weights=mlp_weights,
-            target_weights=target_weights,
-            anchors=anchors,
-            config=config,
-        )
-
-        for key, value in mlp_weights.items():
-            assert aligned[key].shape == value.shape
-
-    def test_rebasin_mlp_handles_incomplete_blocks(self, anchors, config):
-        """Should gracefully skip incomplete MLP blocks."""
-        # Missing gate_proj
-        incomplete = {
-            "model.layers.0.mlp.up_proj.weight": mx.random.normal((8, 4)),
-            "model.layers.0.mlp.down_proj.weight": mx.random.normal((4, 8)),
-        }
-        target = {
-            "model.layers.0.mlp.up_proj.weight": mx.random.normal((8, 4)),
-            "model.layers.0.mlp.down_proj.weight": mx.random.normal((4, 8)),
-        }
-
-        aligned, avg_quality, blocks_aligned = PermutationAligner.rebasin_mlp_only(
-            source_weights=incomplete,
-            target_weights=target,
-            anchors=anchors,
-            config=config,
-        )
-
-        # Should have 0 blocks aligned (incomplete)
-        assert blocks_aligned == 0
+        # With confidence=1.0, fused = target = [[10], [10]]
+        assert mx.allclose(fused, mx.array([[10.0], [10.0]]), atol=1e-5).item()
 
 
 class TestPermutationAlignerRebasinWithActivations:
@@ -229,14 +135,19 @@ class TestPermutationAlignerRebasinWithActivations:
         }
 
     @pytest.fixture
-    def anchors(self):
-        """Create anchor embeddings."""
+    def source_anchors(self):
+        """Create source model anchor embeddings."""
+        return mx.random.normal((5, 4))
+
+    @pytest.fixture
+    def target_anchors(self):
+        """Create target model anchor embeddings."""
         return mx.random.normal((5, 4))
 
     @pytest.fixture
     def config(self):
-        """Create alignment config with explicit threshold."""
-        return Config.with_threshold(min_match_threshold=0.3)
+        """Create alignment config."""
+        return Config()
 
     @pytest.fixture
     def anchor_context(self):
@@ -252,7 +163,7 @@ class TestPermutationAlignerRebasinWithActivations:
         )
 
     def test_rebasin_with_activations_uses_context(
-        self, mlp_weights, anchors, anchor_context, config
+        self, mlp_weights, source_anchors, target_anchors, anchor_context, config
     ):
         """rebasin_mlp_with_activations should use per-layer anchor activations."""
         target_weights = {k: mx.random.normal(v.shape) for k, v in mlp_weights.items()}
@@ -260,13 +171,31 @@ class TestPermutationAlignerRebasinWithActivations:
         aligned, avg_quality, blocks = PermutationAligner.rebasin_mlp_with_activations(
             source_weights=mlp_weights,
             target_weights=target_weights,
-            anchors=anchors,
+            source_anchors=source_anchors,
+            target_anchors=target_anchors,
             anchor_activations=anchor_context,
             config=config,
         )
 
         assert blocks >= 0
         # Should complete without error
+        assert aligned is not None
+
+    def test_rebasin_with_separate_anchors(
+        self, mlp_weights, source_anchors, target_anchors, config
+    ):
+        """rebasin_mlp_with_activations should work with separate anchors (no per-layer context)."""
+        target_weights = {k: mx.random.normal(v.shape) for k, v in mlp_weights.items()}
+
+        aligned, avg_quality, blocks = PermutationAligner.rebasin_mlp_with_activations(
+            source_weights=mlp_weights,
+            target_weights=target_weights,
+            source_anchors=source_anchors,
+            target_anchors=target_anchors,
+            config=config,
+        )
+
+        assert blocks >= 0
         assert aligned is not None
 
     def test_anchor_context_activations_method(self, anchor_context):
@@ -319,35 +248,6 @@ class TestPermutationAlignerHelpers:
 
         # No layer index
         assert PermutationAligner._extract_layer_index("embed_tokens") is None
-
-
-class TestFusionConfig:
-    """Tests for FusionConfig dataclass."""
-
-    def test_default_values(self):
-        """Default FusionConfig should have expected values."""
-        config = FusionConfig()
-        # interference_threshold is None by default - derived from data
-        assert config.interference_threshold is None
-        assert config.source_alpha == 0.5
-        assert config.normalize is False
-
-    def test_default_method_has_threshold(self):
-        """FusionConfig.default() should have threshold set."""
-        config = FusionConfig.default()
-        assert config.interference_threshold == 0.5
-        assert config.source_alpha == 0.5
-
-    def test_custom_values(self):
-        """FusionConfig should accept custom values."""
-        config = FusionConfig(
-            interference_threshold=0.7,
-            source_alpha=0.3,
-            normalize=True,
-        )
-        assert config.interference_threshold == 0.7
-        assert config.source_alpha == 0.3
-        assert config.normalize is True
 
 
 class TestPermutationAlignerError:

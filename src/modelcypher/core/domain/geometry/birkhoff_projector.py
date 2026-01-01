@@ -199,7 +199,7 @@ class BirkhoffProjector:
         # Apply spectral norm bound if configured
         spectral_clipped = False
         if self.config.enforce_spectral_bound:
-            M, spectral_clipped = self._bound_spectral_norm(
+            M, spectral_clipped = self.bound_spectral_norm(
                 M, self.config.max_spectral_norm
             )
             backend.eval(M)
@@ -328,15 +328,19 @@ class BirkhoffProjector:
         backend.eval(norm)
         return float(backend.to_numpy(norm))
 
-    def _bound_spectral_norm(
+    def bound_spectral_norm(
         self,
         matrix: "Array",
-        max_norm: float,
+        max_norm: float = 1.0,
     ) -> tuple["Array", bool]:
         """Bound spectral norm by scaling singular values.
 
         If ||M||_2 > max_norm, computes M' = U @ S' @ Vh where
         S' = S * (max_norm / ||M||_2).
+
+        Args:
+            matrix: Matrix to bound.
+            max_norm: Maximum spectral norm allowed (default 1.0).
 
         Returns:
             (bounded_matrix, was_clipped)

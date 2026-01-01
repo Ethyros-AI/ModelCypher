@@ -359,8 +359,9 @@ def test_mc_safety_persona_drift_schema(mcp_env: dict[str, str]):
     result = _run_mcp(mcp_env, runner)
     payload = _extract_structured(result)
     assert payload["_schema"] == "mc.safety.persona_drift.v1"
-    assert payload["driftMagnitude"] >= 0.0
-    assert "missingTraitCount" in payload
+    # Raw measurements for ALL traits - no threshold filtering
+    assert payload["meanDrift"] >= 0.0
+    assert "traitCount" in payload
     assert "traitScores" in payload
 
 

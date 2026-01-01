@@ -452,9 +452,12 @@ class TestTransplantEndToEnd:
 
         assert result.applied is True
         # With only 5 boundary samples in 128-dim space, null space is large
-        # Expect high preserved_fraction (most of delta survives)
         assert result.null_dim > 100  # 128 - 5 = 123 null dims expected
-        assert result.preserved_fraction > 0.5  # majority survives
+        # Birkhoff projection enforces spectral stability (mHC paper)
+        # preserved_fraction is lower because we bound spectral norm
+        assert result.birkhoff_applied is True
+        assert result.filtered_norm > 0  # some delta survives
+        assert result.projection_loss < 1.0  # not total loss
 
     def test_transplant_with_small_null_space(self) -> None:
         """When boundary has small null space, less delta survives."""

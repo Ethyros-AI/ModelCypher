@@ -73,16 +73,22 @@ def register_thermo_tools(ctx: ServiceContext) -> None:
         def mc_thermo_path_integration(
             prompt: str,
             model: str,
-            gateThreshold: float = 0.55,
             maxTokens: int = 200,
             temperature: float = 0.0,
             captureTrajectory: bool = True,
         ) -> dict:
+            """
+            Run thermodynamic path integration with gate detection.
+
+            Returns ALL gates with their confidence scores. The confidence
+            IS the geometry - no arbitrary threshold filtering.
+            """
             model_path = require_existing_directory(model)
+            # Return all gates - confidence scores speak for themselves
             result = ctx.thermo_service.path_integration(
                 prompt=prompt,
                 model_path=model_path,
-                gate_threshold=gateThreshold,
+                gate_threshold=0.0,  # No filtering - return all with confidence
                 max_tokens=maxTokens,
                 temperature=temperature,
                 capture_trajectory=captureTrajectory,

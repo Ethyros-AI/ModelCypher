@@ -135,7 +135,6 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
         def mc_geometry_null_space_filter(
             weightDelta: list[list[float]],
             priorActivations: list[list[float]],
-            rankThreshold: float = 0.01,
             method: str = "svd",
         ) -> dict:
             """
@@ -149,17 +148,23 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
             Args:
                 weightDelta: Weight update to filter (2D array)
                 priorActivations: Activation matrix from prior task [n_samples, d]
-                rankThreshold: Threshold for null space determination (default 0.01)
                 method: Computation method: 'svd', 'qr', or 'eigenvalue'
 
             Returns:
                 Filtered delta with diagnostics
+
+            Note:
+                Rank threshold is derived from machine epsilon (dtype-dependent),
+                not an arbitrary user parameter.
             """
             from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.domain.geometry.null_space_filter import (
                 NullSpaceFilter,
                 NullSpaceFilterConfig,
                 NullSpaceMethod,
+            )
+            from modelcypher.core.domain.geometry.numerical_stability import (
+                svd_rank_threshold,
             )
 
             backend = get_default_backend()
@@ -173,8 +178,11 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
             except ValueError:
                 method_enum = NullSpaceMethod.SVD
 
+            # Derive rank threshold from machine epsilon - no arbitrary defaults
+            rank_threshold = svd_rank_threshold(backend, activations)
+
             config = NullSpaceFilterConfig(
-                rank_threshold=rankThreshold,
+                rank_threshold=rank_threshold,
                 method=method_enum,
             )
 
@@ -202,21 +210,21 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_null_space_profile(
             layerActivations: dict[str, list[list[float]]],
-            graftThreshold: float = 0.1,
         ) -> dict:
             """
             Compute null space profile across model layers.
 
-            Identifies which layers have sufficient null space for
-            knowledge grafting without interference.
+            Returns raw null space measurements for each layer. User interprets
+            which layers have sufficient null space based on their specific
+            model and use case.
 
             Args:
                 layerActivations: Dict mapping layer index (as string) to
                                   activation matrix [n_samples, d]
-                graftThreshold: Minimum null fraction to be considered graftable
 
             Returns:
-                Per-layer null space analysis and graftable layer list
+                Per-layer null space analysis with raw measurements.
+                User filters by nullFraction based on their requirements.
             """
             from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.domain.geometry.null_space_filter import (
@@ -234,11 +242,13 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                 backend.eval(arr)
                 layer_arrays[int(k)] = arr
 
+            # Don't pass arbitrary threshold - compute raw measurements
             profile = null_filter.compute_model_null_space_profile(
-                layer_arrays, graft_threshold=graftThreshold
+                layer_arrays, graft_threshold=0.0  # Return all layers
             )
 
             per_layer_info = {}
+            null_fractions = []
             for layer_idx, lp in profile.per_layer.items():
                 per_layer_info[str(layer_idx)] = {
                     "nullDim": lp.null_dim,
@@ -247,13 +257,18 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                     "meanSingularValue": lp.mean_singular_value,
                     "conditionNumber": lp.condition_number,
                 }
+                null_fractions.append(lp.null_fraction)
 
+            # Return raw statistics - user decides threshold
             return {
                 "_schema": "mc.geometry.null_space.profile.v1",
                 "totalNullDim": profile.total_null_dim,
                 "totalDim": profile.total_dim,
                 "meanNullFraction": profile.mean_null_fraction,
-                "graftableLayers": profile.graftable_layers,
+                # Statistics to help user choose threshold
+                "minNullFraction": min(null_fractions) if null_fractions else 0.0,
+                "maxNullFraction": max(null_fractions) if null_fractions else 0.0,
+                "medianNullFraction": sorted(null_fractions)[len(null_fractions) // 2] if null_fractions else 0.0,
                 "perLayer": per_layer_info,
             }
 
