@@ -59,15 +59,16 @@ from .training_dataset import TrainingDataset
 logger = logging.getLogger(__name__)
 
 
-def _get_hp_attr(config: Any, attr: str, default: Any = None) -> Any:
-    """Get hyperparameter attribute from config, supporting both old and new formats.
-
-    New format: config.hyperparameters.attr
-    Old format: config.attr
-    """
-    if hasattr(config, "hyperparameters") and config.hyperparameters is not None:
-        return getattr(config.hyperparameters, attr, default)
-    return getattr(config, attr, default)
+def _get_hp_attr(config: Any, attr: str) -> Any:
+    """Fetch explicit hyperparameter values (no implicit defaults)."""
+    if not hasattr(config, "hyperparameters") or config.hyperparameters is None:
+        raise ValueError("TrainingConfig.hyperparameters is required.")
+    if not hasattr(config.hyperparameters, attr):
+        raise ValueError(f"TrainingConfig.hyperparameters missing {attr}.")
+    value = getattr(config.hyperparameters, attr)
+    if value is None:
+        raise ValueError(f"TrainingConfig.hyperparameters.{attr} must be set.")
+    return value
 
 
 class LocalTrainingEngine(TrainingEngine):
@@ -108,7 +109,7 @@ class LocalTrainingEngine(TrainingEngine):
         available_memory = self._available_memory_bytes()
 
         can_proceed = estimated_vram < available_memory
-        batch_size = _get_hp_attr(config, "batch_size", 1)
+        batch_size = _get_hp_attr(config, "batch_size")
         return PreflightResult(
             predicted_batch_size=batch_size or 1,
             estimated_vram_bytes=estimated_vram,
@@ -150,8 +151,8 @@ class LocalTrainingEngine(TrainingEngine):
             created_at=created_at,
             updated_at=created_at,
             started_at=created_at,
-            total_epochs=_get_hp_attr(config, "epochs", 3),
-            learning_rate=_get_hp_attr(config, "learning_rate", 1e-5),
+            total_epochs=_get_hp_attr(config, "epochs"),
+            learning_rate=_get_hp_attr(config, "learning_rate"),
             config=config,
             metrics={},
             metrics_history=[],
@@ -209,23 +210,29 @@ class LocalTrainingEngine(TrainingEngine):
 
         # Map to Domain Config
         domain_hp = DomainHyperparameters(
-            batch_size=_get_hp_attr(config, "batch_size", 4),
-            learning_rate=_get_hp_attr(config, "learning_rate", 1e-5),
-            epochs=_get_hp_attr(config, "epochs", 3),
-            gradient_accumulation_steps=_get_hp_attr(config, "gradient_accumulation_steps", 1),
-            seed=_get_hp_attr(config, "seed", 42),
+            batch_size=_get_hp_attr(config, "batch_size"),
+            learning_rate=_get_hp_attr(config, "learning_rate"),
+            epochs=_get_hp_attr(config, "epochs"),
+            sequence_length=_get_hp_attr(config, "sequence_length"),
+            gradient_accumulation_steps=_get_hp_attr(config, "gradient_accumulation_steps"),
+            gradient_checkpointing=_get_hp_attr(config, "gradient_checkpointing"),
+            mixed_precision=_get_hp_attr(config, "mixed_precision"),
+            compute_precision=_get_hp_attr(config, "compute_precision"),
+            warmup_steps=_get_hp_attr(config, "warmup_steps"),
+            weight_decay=_get_hp_attr(config, "weight_decay"),
+            seed=_get_hp_attr(config, "seed"),
+            deterministic=_get_hp_attr(config, "deterministic"),
+            optimizer_type=_get_hp_attr(config, "optimizer_type"),
         )
 
         domain_lora = None
-        lora = getattr(config, "lora", None) or getattr(config, "lora_config", None)
+        lora = getattr(config, "lora_config", None)
         if lora:
             domain_lora = DomainLoRAConfig(
                 rank=lora.rank,
                 alpha=lora.alpha,
                 dropout=lora.dropout,
-                target_modules=getattr(
-                    lora, "target_modules", ["q_proj", "v_proj", "k_proj", "o_proj"]
-                ),
+                target_modules=lora.target_modules,
             )
 
         domain_config = DomainTrainingConfig(
@@ -234,8 +241,7 @@ class LocalTrainingEngine(TrainingEngine):
             output_path=str(self.paths.base / "checkpoints"),
             hyperparameters=domain_hp,
             lora_config=domain_lora,
-            resume_from_checkpoint_path=getattr(config, "resume_from", None)
-            or getattr(config, "resume_from_checkpoint_path", None),
+            resume_from_checkpoint_path=getattr(config, "resume_from_checkpoint_path", None),
         )
 
         # Execution using Domain Engine
@@ -245,11 +251,21 @@ class LocalTrainingEngine(TrainingEngine):
 
             # 2. Load Dataset
             dataset = TrainingDataset(
-                config.dataset_path, tokenizer, batch_size=_get_hp_attr(config, "batch_size", 4)
+                config.dataset_path, tokenizer, batch_size=_get_hp_attr(config, "batch_size")
             )
 
             # 3. Setup Optimizer
-            optimizer = optim.AdamW(learning_rate=_get_hp_attr(config, "learning_rate", 1e-5))
+            optimizer_type = _get_hp_attr(config, "optimizer_type")
+            learning_rate = _get_hp_attr(config, "learning_rate")
+            weight_decay = _get_hp_attr(config, "weight_decay")
+            if optimizer_type == "adamw":
+                optimizer = optim.AdamW(learning_rate=learning_rate, weight_decay=weight_decay)
+            elif optimizer_type == "adam":
+                optimizer = optim.Adam(learning_rate=learning_rate, weight_decay=weight_decay)
+            elif optimizer_type == "sgd":
+                optimizer = optim.SGD(learning_rate=learning_rate, weight_decay=weight_decay)
+            else:
+                raise ValueError(f"Unsupported optimizer_type: {optimizer_type}")
 
             # 4. Progress Bridge
             def progress_callback(progress: DomainTrainingProgress):

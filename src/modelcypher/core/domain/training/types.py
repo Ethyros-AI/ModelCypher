@@ -45,30 +45,30 @@ class PreflightResult:
 
 @dataclass
 class Hyperparameters:
-    batch_size: int = 4
-    learning_rate: float = 3e-5
-    epochs: int = 3
-    sequence_length: int = 1024
-    gradient_accumulation_steps: int = 1
+    batch_size: int
+    learning_rate: float
+    epochs: int
+    sequence_length: int
+    gradient_accumulation_steps: int
     # For Unsloth-like optimizations
-    gradient_checkpointing: bool = True
-    mixed_precision: bool = True
-    compute_precision: ComputePrecision = ComputePrecision.FLOAT16
-    warmup_steps: int = 10
-    weight_decay: float = 0.01
-    seed: int = 42
-    deterministic: bool = True
+    gradient_checkpointing: bool
+    mixed_precision: bool
+    compute_precision: ComputePrecision
+    warmup_steps: int
+    weight_decay: float
+    seed: int
+    deterministic: bool
 
     # MLX specifics
-    optimizer_type: str = "adamw"  # adamw, adam, sgd
+    optimizer_type: str  # adamw, adam, sgd
 
 
 @dataclass
 class LoRAConfig:
-    rank: int = 8
-    alpha: float = 16.0
-    dropout: float = 0.05
-    target_modules: list[str] = field(default_factory=lambda: ["q_proj", "v_proj"])
+    rank: int
+    alpha: float
+    dropout: float
+    target_modules: list[str]
 
 
 @dataclass

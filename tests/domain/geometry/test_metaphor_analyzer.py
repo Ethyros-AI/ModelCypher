@@ -38,10 +38,12 @@ from modelcypher.core.domain.geometry.manifold_stitcher import (
     ModelFingerprints,
     ProbeSpace,
 )
-from modelcypher.core.domain.geometry.metaphor_convergence_analyzer import (
-    MetaphorConvergenceAnalyzer,
+from modelcypher.core.domain.agents.metaphor_invariant_atlas import (
     MetaphorFamily,
     MetaphorInvariantInventory,
+)
+from modelcypher.core.domain.geometry.metaphor_convergence_analyzer import (
+    MetaphorConvergenceAnalyzer,
 )
 
 

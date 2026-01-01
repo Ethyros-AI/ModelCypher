@@ -118,6 +118,32 @@ class Report:
 
 
 # =============================================================================
+# Legacy Compatibility Classes
+# =============================================================================
+
+
+@dataclass
+class ConvergenceMetric:
+    """Legacy: Per-family convergence metric at a training step."""
+
+    sequence_family: str
+    step: int
+    alignment_score: float
+    variance: float
+    is_converged: bool
+
+
+@dataclass
+class ConvergenceReport:
+    """Legacy: Overall convergence report for a model."""
+
+    model_id: str
+    metrics: list[ConvergenceMetric]
+    overall_convergence: float
+    stable_families: list[str]
+
+
+# =============================================================================
 # Invariant Convergence Analyzer
 # =============================================================================
 

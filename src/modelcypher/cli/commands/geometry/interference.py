@@ -347,14 +347,13 @@ def _extract_domain_activations(
 
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.backends.mlx_backend import MLXBackend
-    from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlas
+    from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
 
     backend = MLXBackend()
     model, tokenizer = load_model_for_training(model_path)
 
-    # Get ALL probes for this domain from the UnifiedAtlas
-    atlas = UnifiedAtlas()
-    all_probes = atlas.all_probes()
+    # Get ALL probes for this domain from the UnifiedAtlasInventory
+    all_probes = UnifiedAtlasInventory.all_probes()
 
     # Filter to probes matching this domain
     domain_probes = [p for p in all_probes if p.domain == domain]
