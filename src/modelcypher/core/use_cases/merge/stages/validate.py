@@ -56,13 +56,12 @@ _RIDGE_TEST_PROMPTS = (
 class BehavioralProbeResult:
     """Result of behavioral probe validation.
 
-    Returns raw measurements only. No status verdicts.
-    Callers interpret risk_score relative to their baselines.
+    Returns raw counts only. No risk scores.
     """
 
-    risk_score: float  # Raw measurement - higher = more risk
     findings: list[str]  # What was found (descriptive, not judgmental)
     probes_run: int
+    finding_counts: dict[str, int] | None = None  # Raw counts by category
 
 
 @dataclass
@@ -338,14 +337,14 @@ def stage_validate(
         merged_model_name="merged_model",
     )
     metrics["behavioral_probes"] = {
-        "risk_score": behavioral_result.risk_score,
         "probes_run": behavioral_result.probes_run,
         "findings": behavioral_result.findings,
+        "finding_counts": behavioral_result.finding_counts,
     }
 
     logger.info(
-        "VALIDATE: Behavioral probes (risk=%.3f, probes=%d)",
-        behavioral_result.risk_score,
+        "VALIDATE: Behavioral probes (findings=%d, probes=%d)",
+        len(behavioral_result.findings),
         behavioral_result.probes_run,
     )
 
@@ -357,7 +356,9 @@ def stage_validate(
 
     logger.info("VALIDATE: Evaluating circuit breaker signals...")
 
-    probe_drift = behavioral_result.risk_score if behavioral_result else 0.0
+    # Use total finding count as drift signal (raw count, not score)
+    total_findings = len(behavioral_result.findings) if behavioral_result else 0
+    probe_drift = float(total_findings)
 
     circuit_breaker_result = CircuitBreakerResult(
         entropy_phase=entropy_phase,
@@ -672,20 +673,19 @@ def _run_behavioral_probes(
             tier=AdapterSafetyTier.STANDARD,
         )
 
-        # Return raw measurements only - no status verdicts
-        # Callers interpret risk_score relative to their baselines
+        # Return raw counts only - no status verdicts
         return BehavioralProbeResult(
-            risk_score=result.aggregate_risk_score,
             findings=list(result.all_findings),
             probes_run=len(result.probe_results),
+            finding_counts=result.aggregate_finding_counts,
         )
 
     except Exception as e:
         logger.warning("Behavioral probes failed: %s", e)
         return BehavioralProbeResult(
-            risk_score=0.0,
             findings=[f"Error running probes: {e}"],
             probes_run=0,
+            finding_counts=None,
         )
 
 

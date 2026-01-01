@@ -141,13 +141,13 @@ class TestProbeResult:
     """Tests for ProbeResult dataclass."""
 
     def test_passed_factory_creates_non_triggered_result(self):
-        """ProbeResult.passed creates non-triggered result with zero risk."""
+        """ProbeResult.passed creates non-triggered result."""
         result = ProbeResult.passed("test-probe", "v1.0", "All good")
         assert result.probe_name == "test-probe"
         assert result.probe_version == "v1.0"
-        assert result.risk_score == 0.0
         assert result.triggered is False
         assert result.details == "All good"
+        assert result.finding_counts is None
 
     def test_passed_factory_default_details(self):
         """ProbeResult.passed has default details."""
@@ -156,22 +156,28 @@ class TestProbeResult:
 
     def test_failed_factory_creates_triggered_result(self):
         """ProbeResult.failed creates triggered result."""
-        result = ProbeResult.failed("test-probe", "v1.0", 0.5, "Something wrong", ("finding1",))
+        result = ProbeResult.failed(
+            "test-probe", "v1.0", "Something wrong",
+            ("finding1",), {"errors": 1}
+        )
         assert result.probe_name == "test-probe"
         assert result.probe_version == "v1.0"
-        assert result.risk_score == 0.5
         assert result.triggered is True
         assert result.details == "Something wrong"
         assert result.findings == ("finding1",)
+        assert result.finding_counts == {"errors": 1}
 
-    def test_risk_score_bounds(self):
-        """Risk score can be any float (no validation in dataclass)."""
-        result = ProbeResult.failed("p", "v", 1.5, "high risk")
-        assert result.risk_score == 1.5
+    def test_finding_counts_optional(self):
+        """Finding counts can be None or dict."""
+        result1 = ProbeResult.failed("p", "v", "details")
+        assert result1.finding_counts is None
+
+        result2 = ProbeResult.failed("p", "v", "details", finding_counts={"a": 1})
+        assert result2.finding_counts == {"a": 1}
 
     def test_findings_tuple_immutability(self):
         """Findings are stored as immutable tuple."""
-        result = ProbeResult.failed("p", "v", 0.5, "d", ("a", "b"))
+        result = ProbeResult.failed("p", "v", "d", ("a", "b"))
         assert isinstance(result.findings, tuple)
         with pytest.raises(TypeError):
             result.findings[0] = "changed"
@@ -192,7 +198,7 @@ class TestProbeResult:
         """ProbeResult is immutable."""
         result = ProbeResult.passed("p", "v")
         with pytest.raises(AttributeError):
-            result.risk_score = 0.9
+            result.triggered = True
 
 
 # =============================================================================
@@ -203,26 +209,26 @@ class TestProbeResult:
 class TestCompositeProbeResult:
     """Tests for CompositeProbeResult dataclass."""
 
-    def test_aggregate_risk_empty_results(self):
-        """Empty results return zero risk."""
+    def test_aggregate_finding_counts_empty_results(self):
+        """Empty results return empty finding counts."""
         composite = CompositeProbeResult(probe_results=())
-        assert composite.aggregate_risk_score == 0.0
+        assert composite.aggregate_finding_counts == {}
 
-    def test_aggregate_risk_single_result(self):
-        """Single result returns its risk score."""
-        result = ProbeResult.failed("p", "v", 0.5, "d")
+    def test_aggregate_finding_counts_single_result(self):
+        """Single result returns its finding counts."""
+        result = ProbeResult.failed("p", "v", "d", finding_counts={"errors": 2})
         composite = CompositeProbeResult(probe_results=(result,))
-        assert composite.aggregate_risk_score == 0.5
+        assert composite.aggregate_finding_counts == {"errors": 2}
 
-    def test_aggregate_risk_takes_maximum(self):
-        """Multiple results return maximum risk score."""
+    def test_aggregate_finding_counts_merges_multiple(self):
+        """Multiple results merge finding counts."""
         results = (
-            ProbeResult.failed("p1", "v", 0.3, "low"),
-            ProbeResult.failed("p2", "v", 0.8, "high"),
+            ProbeResult.failed("p1", "v", "low", finding_counts={"errors": 1, "warnings": 2}),
+            ProbeResult.failed("p2", "v", "high", finding_counts={"errors": 3}),
             ProbeResult.passed("p3", "v"),
         )
         composite = CompositeProbeResult(probe_results=results)
-        assert composite.aggregate_risk_score == 0.8
+        assert composite.aggregate_finding_counts == {"errors": 4, "warnings": 2}
 
     def test_any_triggered_none_triggered(self):
         """any_triggered returns False when no probes triggered."""
@@ -237,7 +243,7 @@ class TestCompositeProbeResult:
         """any_triggered returns True when at least one triggered."""
         results = (
             ProbeResult.passed("p1", "v"),
-            ProbeResult.failed("p2", "v", 0.5, "d"),
+            ProbeResult.failed("p2", "v", "d"),
         )
         composite = CompositeProbeResult(probe_results=results)
         assert composite.any_triggered is True
@@ -245,8 +251,8 @@ class TestCompositeProbeResult:
     def test_all_findings_aggregation(self):
         """all_findings aggregates findings from all probes."""
         results = (
-            ProbeResult.failed("p1", "v", 0.5, "d", ("f1", "f2")),
-            ProbeResult.failed("p2", "v", 0.3, "d", ("f3",)),
+            ProbeResult.failed("p1", "v", "d", ("f1", "f2")),
+            ProbeResult.failed("p2", "v", "d", ("f3",)),
             ProbeResult.passed("p3", "v"),
         )
         composite = CompositeProbeResult(probe_results=results)
@@ -269,8 +275,8 @@ class TestCompositeProbeResult:
         """triggered_count counts triggered probes."""
         results = (
             ProbeResult.passed("p1", "v"),
-            ProbeResult.failed("p2", "v", 0.5, "d"),
-            ProbeResult.failed("p3", "v", 0.3, "d"),
+            ProbeResult.failed("p2", "v", "d"),
+            ProbeResult.failed("p3", "v", "d"),
         )
         composite = CompositeProbeResult(probe_results=results)
         assert composite.triggered_count == 2
@@ -279,7 +285,7 @@ class TestCompositeProbeResult:
         """total_probes returns count of all probes."""
         results = (
             ProbeResult.passed("p1", "v"),
-            ProbeResult.failed("p2", "v", 0.5, "d"),
+            ProbeResult.failed("p2", "v", "d"),
         )
         composite = CompositeProbeResult(probe_results=results)
         assert composite.total_probes == 2
@@ -298,8 +304,8 @@ class TestCompositeProbeResult:
     def test_trigger_ratio_all_triggered(self):
         """trigger_ratio is 1.0 when all probes triggered."""
         results = (
-            ProbeResult.failed("p1", "v", 0.5, "d"),
-            ProbeResult.failed("p2", "v", 0.3, "d"),
+            ProbeResult.failed("p1", "v", "d"),
+            ProbeResult.failed("p2", "v", "d"),
         )
         composite = CompositeProbeResult(probe_results=results)
         assert composite.trigger_ratio == 1.0
@@ -308,9 +314,9 @@ class TestCompositeProbeResult:
         """trigger_ratio is fraction of triggered probes."""
         results = (
             ProbeResult.passed("p1", "v"),
-            ProbeResult.failed("p2", "v", 0.5, "d"),
+            ProbeResult.failed("p2", "v", "d"),
             ProbeResult.passed("p3", "v"),
-            ProbeResult.failed("p4", "v", 0.3, "d"),
+            ProbeResult.failed("p4", "v", "d"),
         )
         composite = CompositeProbeResult(probe_results=results)
         assert composite.trigger_ratio == 0.5
@@ -376,7 +382,8 @@ class TestSemanticDriftProbe:
         )
         result = probe.evaluate(context)
         assert result.triggered is True
-        assert result.risk_score >= 0.3
+        assert result.finding_counts is not None
+        assert result.finding_counts["prompts_with_issues"] > 0
         assert any("jailbreak" in f.lower() for f in result.findings)
 
     def test_evaluate_detects_identity_confusion(self, probe):
@@ -654,9 +661,10 @@ class TestCanaryQAProbe:
             inference_hook=unsafe_hook,
         )
         result = probe.evaluate(context)
-        # Should be triggered with data-derived risk score (ratio of failures)
+        # Should be triggered with finding counts for failed canaries
         assert result.triggered is True
-        assert result.risk_score > 0.0  # At least some failures
+        assert result.finding_counts is not None
+        assert result.finding_counts["failed_canaries"] > 0
         assert len(result.findings) > 0  # Has findings about failures
 
 
@@ -719,7 +727,7 @@ class TestProbeRunner:
         )
         result = runner.run([], context)
         assert len(result.probe_results) == 0
-        assert result.aggregate_risk_score == 0.0
+        assert result.aggregate_finding_counts == {}
 
     def test_run_filters_by_tier(self, runner):
         """Runner only runs probes for the given tier."""
@@ -770,11 +778,11 @@ class TestProbeRunner:
         )
         result = runner.run([FailingProbe()], context)
         assert len(result.probe_results) == 1
-        assert result.probe_results[0].risk_score == 1.0
+        assert result.probe_results[0].finding_counts == {"execution_errors": 1}
         assert result.probe_results[0].triggered is True
 
-    def test_run_records_failed_probe_max_risk(self, runner):
-        """Failed probe is recorded with maximum risk score."""
+    def test_run_records_failed_probe_with_error_count(self, runner):
+        """Failed probe is recorded with execution_errors count."""
 
         class FailingProbe(AdapterSafetyProbe):
             @property
@@ -794,7 +802,7 @@ class TestProbeRunner:
 
         context = ProbeContext(tier=AdapterSafetyTier.STANDARD, adapter_name="test")
         result = runner.run([FailingProbe()], context)
-        assert result.aggregate_risk_score == 1.0
+        assert result.aggregate_finding_counts == {"execution_errors": 1}
 
     def test_run_all_applicable_probes(self, runner):
         """Runner runs all probes applicable to the tier."""
@@ -899,4 +907,4 @@ class TestIntegration:
         result = runner.run(probes, context)
         # Should detect jailbreak indicators
         assert result.any_triggered is True
-        assert result.aggregate_risk_score > 0
+        assert len(result.aggregate_finding_counts) > 0

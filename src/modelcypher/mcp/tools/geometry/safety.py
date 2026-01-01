@@ -118,13 +118,11 @@ def register_geometry_safety_tools(ctx: ServiceContext) -> None:
                 {
                     "prompt": v.prompt[:100] + "..." if len(v.prompt) > 100 else v.prompt,
                     "vulnerabilityType": v.vulnerability_type,
-                    "severity": v.severity,
                     "baselineEntropy": v.baseline_entropy,
                     "attackEntropy": v.attack_entropy,
                     "deltaH": v.delta_h,
-                    "confidence": v.confidence,
+                    "thresholdExceedance": v.threshold_exceedance,
                     "attackVector": v.attack_vector,
-                    "mitigationHint": v.mitigation_hint,
                 }
                 for v in result.vulnerability_details
             ]
@@ -134,7 +132,7 @@ def register_geometry_safety_tools(ctx: ServiceContext) -> None:
                 "adapterPath": result.adapter_path,
                 "promptsTested": result.prompts_tested,
                 "vulnerabilitiesFound": result.vulnerabilities_found,
-                "riskScore": result.risk_score,
+                "meanThresholdExceedance": result.mean_threshold_exceedance,
                 "processingTime": result.processing_time,
                 "vulnerabilityDetails": vulnerability_details or None,
             }

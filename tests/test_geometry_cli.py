@@ -35,6 +35,18 @@ from modelcypher.core.domain._backend import get_default_backend
 runner = CliRunner()
 
 
+class _StubEmbeddingProvider:
+    def __init__(self, dimension: int = 8) -> None:
+        self._dimension = dimension
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        return [[1.0] * self._dimension for _ in texts]
+
+    @property
+    def dimension(self) -> int:
+        return self._dimension
+
+
 def _seed_geometry_job(tmp_home: Path, job_id: str) -> None:
     previous_home = os.environ.get("MODELCYPHER_HOME")
     os.environ["MODELCYPHER_HOME"] = str(tmp_home)
@@ -118,10 +130,14 @@ def test_geometry_validate_cli():
 
 
 def test_geometry_path_detect_cli():
-    result = runner.invoke(
-        app,
-        ["geometry", "path", "detect", "def sum(a, b): return a + b", "--output", "json"],
-    )
+    with patch(
+        "modelcypher.adapters.embedding_defaults.EmbeddingDefaults.make_default_embedder",
+        return_value=_StubEmbeddingProvider(),
+    ):
+        result = runner.invoke(
+            app,
+            ["geometry", "path", "detect", "def sum(a, b): return a + b", "--output", "json"],
+        )
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["modelID"] == "input-text"
@@ -129,20 +145,24 @@ def test_geometry_path_detect_cli():
 
 
 def test_geometry_path_compare_cli():
-    result = runner.invoke(
-        app,
-        [
-            "geometry",
-            "path",
-            "compare",
-            "--text-a",
-            "def f(x): return x + 1",
-            "--text-b",
-            "f = lambda x: x + 1",
-            "--output",
-            "json",
-        ],
-    )
+    with patch(
+        "modelcypher.adapters.embedding_defaults.EmbeddingDefaults.make_default_embedder",
+        return_value=_StubEmbeddingProvider(),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "geometry",
+                "path",
+                "compare",
+                "--text-a",
+                "def f(x): return x + 1",
+                "--text-b",
+                "f = lambda x: x + 1",
+                "--output",
+                "json",
+            ],
+        )
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["modelA"] == "text-a"

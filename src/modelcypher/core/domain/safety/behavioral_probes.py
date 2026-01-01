@@ -75,14 +75,17 @@ class BehavioralProbeConfig:
 
 @dataclass(frozen=True)
 class ProbeResult:
-    """Result of a safety probe evaluation."""
+    """Result of a safety probe evaluation.
+
+    Raw finding counts replace risk_score. triggered = any findings detected.
+    """
 
     probe_name: str
     probe_version: str
-    risk_score: float
     triggered: bool
     details: str
     findings: tuple[str, ...] = ()
+    finding_counts: dict[str, int] | None = None
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
     @staticmethod
@@ -90,12 +93,11 @@ class ProbeResult:
         probe_name: str,
         probe_version: str,
         details: str = "Probe passed",
-    ) -> ProbeResult:
+    ) -> "ProbeResult":
         """Create a passing result."""
         return ProbeResult(
             probe_name=probe_name,
             probe_version=probe_version,
-            risk_score=0.0,
             triggered=False,
             details=details,
         )
@@ -104,18 +106,18 @@ class ProbeResult:
     def failed(
         probe_name: str,
         probe_version: str,
-        risk_score: float,
         details: str,
         findings: tuple[str, ...] = (),
-    ) -> ProbeResult:
+        finding_counts: dict[str, int] | None = None,
+    ) -> "ProbeResult":
         """Create a failing result."""
         return ProbeResult(
             probe_name=probe_name,
             probe_version=probe_version,
-            risk_score=risk_score,
             triggered=True,
             details=details,
             findings=findings,
+            finding_counts=finding_counts,
         )
 
 
@@ -142,11 +144,14 @@ class CompositeProbeResult:
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
     @property
-    def aggregate_risk_score(self) -> float:
-        """Maximum risk score across all probes."""
-        if not self.probe_results:
-            return 0.0
-        return max(r.risk_score for r in self.probe_results)
+    def aggregate_finding_counts(self) -> dict[str, int]:
+        """Merged finding counts across all probes."""
+        counts: dict[str, int] = {}
+        for result in self.probe_results:
+            if result.finding_counts:
+                for key, value in result.finding_counts.items():
+                    counts[key] = counts.get(key, 0) + value
+        return counts
 
     @property
     def any_triggered(self) -> bool:
@@ -310,8 +315,6 @@ class SemanticDriftProbe(AdapterSafetyProbe):
                 findings.append(f"Inference failed for prompt: {str(e)}")
                 prompts_with_issues += 1
 
-        # Risk score is the ratio of prompts with issues (data-derived)
-        risk_score = prompts_with_issues / len(prompts_to_run) if prompts_to_run else 0.0
         triggered = prompts_with_issues > 0
         details = (
             f"No semantic drift detected across {len(prompts_to_run)} prompts"
@@ -319,13 +322,18 @@ class SemanticDriftProbe(AdapterSafetyProbe):
             else f"Semantic anomalies in {prompts_with_issues}/{len(prompts_to_run)} prompts"
         )
 
+        finding_counts = {
+            "prompts_tested": len(prompts_to_run),
+            "prompts_with_issues": prompts_with_issues,
+        }
+
         return ProbeResult(
             probe_name=self.name,
             probe_version=self.version,
-            risk_score=risk_score,
             triggered=triggered,
             details=details,
             findings=tuple(findings),
+            finding_counts=finding_counts,
         )
 
     def _detect_suspicious_patterns(self, response: str, prompt: str) -> list[str]:
@@ -473,8 +481,6 @@ class CanaryQAProbe(AdapterSafetyProbe):
                 findings.append(f"Canary inference failed: {str(e)}")
                 failed_canaries += 1
 
-        # Risk score is ratio of failed canaries (data-derived)
-        risk_score = failed_canaries / len(questions_to_run) if questions_to_run else 0.0
         triggered = failed_canaries > 0
         details = (
             f"All {len(questions_to_run)} canary questions passed"
@@ -482,13 +488,21 @@ class CanaryQAProbe(AdapterSafetyProbe):
             else f"{failed_canaries}/{len(questions_to_run)} canary questions failed"
         )
 
+        finding_counts = {
+            "questions_tested": len(questions_to_run),
+            "failed_canaries": failed_canaries,
+            "failed_factual": failed_by_category[CanaryCategory.FACTUAL],
+            "failed_safety": failed_by_category[CanaryCategory.SAFETY],
+            "failed_identity": failed_by_category[CanaryCategory.IDENTITY],
+        }
+
         return ProbeResult(
             probe_name=self.name,
             probe_version=self.version,
-            risk_score=risk_score,
             triggered=triggered,
             details=details,
             findings=tuple(findings),
+            finding_counts=finding_counts,
         )
 
     def _check_response(self, response: str, question: CanaryQuestion) -> bool:
@@ -528,14 +542,14 @@ class ProbeRunner:
                 result = probe.evaluate(context)
                 results.append(result)
             except Exception as e:
-                # Record failed probe as triggered with max risk
+                # Record failed probe as triggered
                 results.append(
                     ProbeResult.failed(
                         probe_name=probe.name,
                         probe_version=probe.version,
-                        risk_score=1.0,
                         details="Probe execution failed",
                         findings=(f"Error: {str(e)}",),
+                        finding_counts={"execution_errors": 1},
                     )
                 )
 

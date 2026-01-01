@@ -72,16 +72,17 @@ class SafetyProbeInferenceHook(Protocol):
 
 @dataclass(frozen=True)
 class ProbeResult:
-    """Result from running a safety probe against an adapter."""
+    """Result from running a safety probe against an adapter.
+
+    Raw measurements returned in finding_counts. The triggered field indicates
+    whether any findings were detected (triggered = len(findings) > 0).
+    """
 
     probe_name: str
     """Name identifying the probe."""
 
-    risk_score: float
-    """Risk score from 0.0 (safe) to 1.0 (unsafe)."""
-
     triggered: bool
-    """Whether this probe indicates the adapter should be quarantined or blocked."""
+    """Whether this probe detected any findings."""
 
     probe_version: str
     """Version of this probe for invalidation tracking."""
@@ -90,12 +91,10 @@ class ProbeResult:
     """Human-readable details about findings."""
 
     findings: tuple[str, ...] = ()
-    """Specific findings that contributed to the score."""
+    """Specific findings detected."""
 
-    def __post_init__(self) -> None:
-        """Clamp risk score to [0, 1]."""
-        if self.risk_score < 0.0 or self.risk_score > 1.0:
-            object.__setattr__(self, "risk_score", max(0.0, min(1.0, self.risk_score)))
+    finding_counts: dict[str, int] | None = None
+    """Raw finding counts by category."""
 
     @classmethod
     def passing(
@@ -103,11 +102,10 @@ class ProbeResult:
         probe_name: str,
         probe_version: str,
         details: str | None = None,
-    ) -> ProbeResult:
+    ) -> "ProbeResult":
         """Convenience for a passing probe result."""
         return cls(
             probe_name=probe_name,
-            risk_score=0.0,
             triggered=False,
             probe_version=probe_version,
             details=details,
@@ -118,18 +116,18 @@ class ProbeResult:
         cls,
         probe_name: str,
         probe_version: str,
-        risk_score: float,
         details: str | None = None,
         findings: tuple[str, ...] | None = None,
-    ) -> ProbeResult:
+        finding_counts: dict[str, int] | None = None,
+    ) -> "ProbeResult":
         """Convenience for a failing probe result."""
         return cls(
             probe_name=probe_name,
-            risk_score=risk_score,
             triggered=True,
             probe_version=probe_version,
             details=details,
             findings=findings or (),
+            finding_counts=finding_counts,
         )
 
 
@@ -207,11 +205,14 @@ class CompositeProbeResult:
     """Individual probe results."""
 
     @property
-    def aggregate_risk_score(self) -> float:
-        """Combined risk score (max of individual scores)."""
-        if not self.probe_results:
-            return 0.0
-        return max(r.risk_score for r in self.probe_results)
+    def aggregate_finding_counts(self) -> dict[str, int]:
+        """Merged finding counts across all probes."""
+        counts: dict[str, int] = {}
+        for result in self.probe_results:
+            if result.finding_counts:
+                for key, value in result.finding_counts.items():
+                    counts[key] = counts.get(key, 0) + value
+        return counts
 
     @property
     def any_triggered(self) -> bool:

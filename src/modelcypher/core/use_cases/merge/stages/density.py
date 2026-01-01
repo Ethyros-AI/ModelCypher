@@ -304,7 +304,6 @@ def _build_density_profile_from_activations(
                     density_score=density_score,
                     activation_variance=variance,
                     cluster_tightness=cluster_tightness,
-                    dimension_class="local",
                 )
             )
 

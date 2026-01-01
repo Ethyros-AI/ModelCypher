@@ -14,7 +14,6 @@ Uses Hypothesis to verify mathematical properties and invariants.
 
 from __future__ import annotations
 
-import pytest
 from hypothesis import given, strategies as st, assume, settings
 
 from modelcypher.core.domain.merging.knowledge_transfer_validator import (
@@ -235,7 +234,7 @@ class TestKnowledgeRetentionResultProperties:
             probes_tested=10,
         )
 
-        assert result.retention_score == pytest.approx(1.0, rel=0.01)
+        assert result.retention_score == 1.0
 
 
 # =============================================================================
@@ -312,7 +311,7 @@ class TestKnowledgeTransferReportProperties:
         passed_count = sum(1 for r in probe_results if r.passed)
         expected_rate = passed_count / len(probe_results)
 
-        assert report.overall_pass_rate == pytest.approx(expected_rate, rel=1e-6)
+        assert report.overall_pass_rate == expected_rate
 
     def test_empty_report_handles_gracefully(self) -> None:
         """Empty report should produce sensible defaults."""
@@ -321,48 +320,6 @@ class TestKnowledgeTransferReportProperties:
         assert report.overall_retention == 0.0
         assert report.overall_pass_rate == 0.0
 
-    @given(
-        threshold=st.floats(min_value=0.0, max_value=1.0, allow_nan=False),
-    )
-    @settings(max_examples=30)
-    def test_get_failed_domains_threshold_logic(
-        self, threshold: float
-    ) -> None:
-        """get_failed_domains should return domains below threshold."""
-        # Create results with known retention scores
-        high_retention = KnowledgeRetentionResult(
-            domain=KnowledgeDomain.MATH,
-            source_pass_rate=1.0,
-            merged_pass_rate=0.95,  # 95% retention
-            probes_tested=10,
-        )
-        low_retention = KnowledgeRetentionResult(
-            domain=KnowledgeDomain.CODE,
-            source_pass_rate=1.0,
-            merged_pass_rate=0.5,  # 50% retention
-            probes_tested=10,
-        )
-
-        report = KnowledgeTransferReport(
-            per_domain={
-                KnowledgeDomain.MATH: high_retention,
-                KnowledgeDomain.CODE: low_retention,
-            }
-        )
-
-        failed = report.get_failed_domains(threshold)
-
-        # Math has 95% retention
-        if threshold > 0.95:
-            assert KnowledgeDomain.MATH in failed
-        else:
-            assert KnowledgeDomain.MATH not in failed
-
-        # Code has 50% retention
-        if threshold > 0.5:
-            assert KnowledgeDomain.CODE in failed
-        else:
-            assert KnowledgeDomain.CODE not in failed
 
 
 # =============================================================================

@@ -17,6 +17,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from modelcypher.core.domain.geometry.intersection_map_analysis import (
     IntersectionMapAnalysis,
     MarkdownReportOptions,
@@ -36,9 +38,7 @@ def test_intersection_map_analysis_counts() -> None:
         ]
     }
     layer_confidences = [
-        LayerConfidence(
-            layer=0, strong_correlations=1, moderate_correlations=0, weak_correlations=1
-        )
+        LayerConfidence(layer=0, confidence=0.65, correlation_count=2)
     ]
     map_data = IntersectionMap(
         source_model="source",
@@ -53,8 +53,10 @@ def test_intersection_map_analysis_counts() -> None:
 
     analysis = IntersectionMapAnalysis.analyze(map_data)
     assert analysis.overall_stats.pair_count == 2
-    assert analysis.overall_stats.strong_count == 1
-    assert analysis.overall_stats.weak_count == 1
+    assert analysis.overall_stats.mean_correlation == pytest.approx(0.55)
+    assert analysis.overall_stats.min_correlation == 0.3
+    assert analysis.overall_stats.max_correlation == 0.8
+    assert analysis.average_layer_confidence == 0.65
 
 
 def test_intersection_map_report() -> None:
@@ -68,9 +70,7 @@ def test_intersection_map_report() -> None:
         total_source_dims=2,
         total_target_dims=2,
         layer_confidences=[
-            LayerConfidence(
-                layer=0, strong_correlations=1, moderate_correlations=0, weak_correlations=0
-            )
+            LayerConfidence(layer=0, confidence=0.9, correlation_count=1)
         ],
     )
     report = IntersectionMapAnalysis.render_markdown_report(

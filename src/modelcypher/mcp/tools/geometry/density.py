@@ -242,7 +242,6 @@ def register_geometry_density_tools(ctx: ServiceContext) -> None:
                                 "densityScore": c.density_score,
                                 "activationVariance": c.activation_variance,
                                 "clusterTightness": c.cluster_tightness,
-                                "dimensionClass": c.dimension_class,
                             }
                             for c in layer_profile.concept_densities
                         ],

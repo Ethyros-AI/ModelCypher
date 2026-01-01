@@ -165,10 +165,10 @@ class SafetyProbeService:
         return {
             "probeName": result.probe_name,
             "probeVersion": result.probe_version,
-            "riskScore": result.risk_score,
             "triggered": result.triggered,
             "details": result.details,
             "findings": list(result.findings),
+            "findingCounts": result.finding_counts,
             "timestamp": result.timestamp.isoformat(),
         }
 
@@ -179,7 +179,7 @@ class SafetyProbeService:
             "probeResults": [
                 SafetyProbeService.probe_result_payload(r) for r in result.probe_results
             ],
-            "aggregateRiskScore": result.aggregate_risk_score,
+            "aggregateFindingCounts": result.aggregate_finding_counts,
             "anyTriggered": result.any_triggered,
             "allFindings": result.all_findings,
             "probeCount": len(result.probe_results),

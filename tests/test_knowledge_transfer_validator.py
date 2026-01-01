@@ -234,74 +234,6 @@ class TestKnowledgeTransferReport:
         # (0.8 * 10 + 0.9 * 10) / 20 = 0.85
         assert sample_report.overall_retention == 0.85
 
-    def test_status_excellent(self):
-        """Status should be EXCELLENT for retention >= 95%."""
-        report = KnowledgeTransferReport(
-            per_domain={
-                KnowledgeDomain.MATH: KnowledgeRetentionResult(
-                    domain=KnowledgeDomain.MATH,
-                    source_pass_rate=1.0,
-                    merged_pass_rate=0.95,
-                    probes_tested=10,
-                ),
-            }
-        )
-
-        # Raw measurement - status is now a string, no enum
-        assert report.status == "excellent"
-
-    def test_status_acceptable(self):
-        """Status should be 'acceptable' for retention >= 80%."""
-        report = KnowledgeTransferReport(
-            per_domain={
-                KnowledgeDomain.MATH: KnowledgeRetentionResult(
-                    domain=KnowledgeDomain.MATH,
-                    source_pass_rate=1.0,
-                    merged_pass_rate=0.85,
-                    probes_tested=10,
-                ),
-            }
-        )
-
-        assert report.status == "acceptable"
-
-    def test_status_degraded(self):
-        """Status should be 'degraded' for retention >= 60%."""
-        report = KnowledgeTransferReport(
-            per_domain={
-                KnowledgeDomain.MATH: KnowledgeRetentionResult(
-                    domain=KnowledgeDomain.MATH,
-                    source_pass_rate=1.0,
-                    merged_pass_rate=0.7,
-                    probes_tested=10,
-                ),
-            }
-        )
-
-        assert report.status == "degraded"
-
-    def test_status_failed(self):
-        """Status should be 'failed' for retention < 60%."""
-        report = KnowledgeTransferReport(
-            per_domain={
-                KnowledgeDomain.MATH: KnowledgeRetentionResult(
-                    domain=KnowledgeDomain.MATH,
-                    source_pass_rate=1.0,
-                    merged_pass_rate=0.5,
-                    probes_tested=10,
-                ),
-            }
-        )
-
-        assert report.status == "failed"
-
-    def test_get_failed_domains(self, sample_report):
-        """Should identify domains below threshold."""
-        failed = sample_report.get_failed_domains(threshold=0.85)
-
-        assert KnowledgeDomain.MATH in failed  # 0.8 < 0.85
-        assert KnowledgeDomain.CODE not in failed  # 0.9 >= 0.85
-
 
 class TestRunKnowledgeProbes:
     """Tests for run_knowledge_probes function."""
@@ -400,23 +332,3 @@ class TestPropertyBasedTests:
         )
 
         assert 0.0 <= result.retention_score <= 1.0
-
-    @given(
-        pass_rate=st.floats(0.0, 1.0, allow_nan=False, allow_infinity=False),
-    )
-    @settings(max_examples=100)
-    def test_status_always_defined(self, pass_rate):
-        """Status should always be one of the defined values."""
-        report = KnowledgeTransferReport(
-            per_domain={
-                KnowledgeDomain.MATH: KnowledgeRetentionResult(
-                    domain=KnowledgeDomain.MATH,
-                    source_pass_rate=1.0,
-                    merged_pass_rate=pass_rate,
-                    probes_tested=10,
-                ),
-            }
-        )
-
-        # Status is now a raw string, no enum
-        assert report.status in ("excellent", "acceptable", "degraded", "failed")

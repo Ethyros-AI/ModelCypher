@@ -71,13 +71,19 @@ class FisherBlendingConfig:
     estimation_method: FisherEstimationMethod = FisherEstimationMethod.GRADIENT_VARIANCE
     normalization: FisherNormalization = FisherNormalization.LAYER
     epsilon: float = 1e-6  # Numerical stability
-    strength: float = 0.5  # How much to weight by Fisher (0=ignore, 1=full)
+    strength: float | None = None
+    """How much to weight by Fisher (0=ignore, 1=full). If None, uses 1.0 (full Fisher)."""
     temperature: float = 1.0  # Temperature for softmax normalization
     min_fisher: float = 1e-8  # Minimum Fisher value (prevents division by zero)
     max_fisher: float = 1e8  # Maximum Fisher value (prevents overflow)
     source_bias: float = 0.0  # Bias toward source model (-1 to 1)
     clip_alpha: bool = True  # Whether to clip resulting alpha to [0, 1]
     seed: int | None = 42  # Deterministic perturbations when set
+
+    @property
+    def effective_strength(self) -> float:
+        """Effective strength (defaults to 1.0 if not specified, meaning full Fisher)."""
+        return self.strength if self.strength is not None else 1.0
 
 
 @dataclass
@@ -342,8 +348,8 @@ def apply_fisher_blending(
     # strength=0 -> use base_alpha only
     # strength=1 -> use pure Fisher weighting
     alpha_effective = (
-        (1.0 - config.strength) * base_alpha
-        + config.strength
+        (1.0 - config.effective_strength) * base_alpha
+        + config.effective_strength
         * target_importance
         * base_alpha
         * 2.0  # Scale by 2 since importance is 0-1
@@ -421,7 +427,7 @@ def fisher_weighted_merge(
         params_blended += 1
 
     mean_alpha = sum(all_alphas) / len(all_alphas) if all_alphas else base_alpha
-    fisher_applied = config.strength > 0 and (
+    fisher_applied = config.effective_strength > 0 and (
         bool(source_fisher.weights_by_key) or bool(target_fisher.weights_by_key)
     )
 

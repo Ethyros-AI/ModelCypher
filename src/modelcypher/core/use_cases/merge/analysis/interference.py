@@ -47,11 +47,15 @@ def stage_analyze_interference(
         )
 
         MergeAnalysisConfig()
-        # Would analyze using RiemannianDensityEstimator
-        # For now, set defaults based on alignment quality
-        if layer_geom.alignment_quality < 0.5:
+        # Transforms are always enabled - the geometry itself determines the
+        # magnitude of correction. A near-identity Procrustes is still valid;
+        # near-zero curvature correction is still correct.
+        # No thresholds - let the continuous values inform the transforms.
+        if layer_geom.alignment_quality < 1.0:
+            # Any misalignment benefits from Procrustes rotation
             layer_geom.transform_requirements.append(TransformationType.PROCRUSTES_ROTATION.value)
-        if layer_geom.curvature > 0.1:
+        if layer_geom.curvature > 0.0:
+            # Any nonzero curvature benefits from geodesic blending
             layer_geom.transform_requirements.append(TransformationType.CURVATURE_CORRECTION.value)
     except Exception as e:
         logger.debug("interference_predictor failed for layer %d: %s", layer_geom.layer_idx, e)

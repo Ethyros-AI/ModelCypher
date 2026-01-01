@@ -219,8 +219,8 @@ class TestDeltaFeatureProbe:
         )
         result = await probe.evaluate(context)
         assert result.probe_name == "delta-features"
-        assert result.risk_score == 0.0
         assert result.triggered is False
+        assert result.finding_counts is not None
 
     @pytest.mark.asyncio
     async def test_evaluate_with_custom_extractor(self, tmp_path: Path) -> None:
@@ -246,38 +246,13 @@ class TestDeltaFeatureProbe:
         )
         result = await probe.evaluate(context)
         assert result.triggered is False
-        assert result.risk_score == 0.0
+        assert result.finding_counts is not None
+        assert result.finding_counts["total_layers"] == 3
+        assert result.finding_counts["outlier_layers"] == 0
 
     @pytest.mark.asyncio
-    async def test_evaluate_high_l2_norms(self, tmp_path: Path) -> None:
-        """evaluate flags high L2 norms."""
-
-        class MockExtractor:
-            VERSION = "mock-v1"
-
-            async def extract(self, path: Path) -> DeltaFeatureSet:
-                return DeltaFeatureSet(
-                    l2_norms=(100.0, 200.0),  # Very high norms
-                    sparsity=(0.1, 0.2),
-                    suspect_layer_indices=(),
-                )
-
-        probe = DeltaFeatureProbe(
-            extractor=MockExtractor(),  # type: ignore
-            l2_norm_warning_threshold=50.0,
-        )
-        context = ProbeContext(
-            adapter_path=tmp_path,
-            tier=AdapterSafetyTier.STANDARD,
-            trigger=AdapterSafetyTrigger.IMPORT_ADAPTER,
-        )
-        result = await probe.evaluate(context)
-        assert result.risk_score >= 0.3
-        assert any("L2 norm" in f for f in result.findings)
-
-    @pytest.mark.asyncio
-    async def test_evaluate_suspect_layers(self, tmp_path: Path) -> None:
-        """evaluate flags high fraction of suspect layers."""
+    async def test_evaluate_outlier_layers(self, tmp_path: Path) -> None:
+        """evaluate flags outlier layers using data-derived detection."""
 
         class MockExtractor:
             VERSION = "mock-v1"
@@ -286,48 +261,20 @@ class TestDeltaFeatureProbe:
                 return DeltaFeatureSet(
                     l2_norms=(1.0, 2.0, 3.0, 4.0, 5.0),
                     sparsity=(0.1,) * 5,
-                    suspect_layer_indices=(0, 1, 2),  # 60% suspect
+                    suspect_layer_indices=(0, 1, 2),  # 3 outlier layers detected
                 )
 
-        probe = DeltaFeatureProbe(
-            extractor=MockExtractor(),  # type: ignore
-            suspect_layer_fraction=0.2,
-        )
+        probe = DeltaFeatureProbe(extractor=MockExtractor())  # type: ignore
         context = ProbeContext(
             adapter_path=tmp_path,
             tier=AdapterSafetyTier.FULL,
             trigger=AdapterSafetyTrigger.MERGE,
         )
         result = await probe.evaluate(context)
-        assert result.risk_score >= 0.4
+        assert result.triggered is True
+        assert result.finding_counts is not None
+        assert result.finding_counts["outlier_layers"] == 3
         assert any("outlier" in f for f in result.findings)
-
-    @pytest.mark.asyncio
-    async def test_evaluate_high_sparsity(self, tmp_path: Path) -> None:
-        """evaluate flags unusually high sparsity."""
-
-        class MockExtractor:
-            VERSION = "mock-v1"
-
-            async def extract(self, path: Path) -> DeltaFeatureSet:
-                return DeltaFeatureSet(
-                    l2_norms=(1.0, 2.0),
-                    sparsity=(0.95, 0.98),  # Very sparse
-                    suspect_layer_indices=(),
-                )
-
-        probe = DeltaFeatureProbe(
-            extractor=MockExtractor(),  # type: ignore
-            high_sparsity_threshold=0.9,
-        )
-        context = ProbeContext(
-            adapter_path=tmp_path,
-            tier=AdapterSafetyTier.STANDARD,
-            trigger=AdapterSafetyTrigger.IMPORT_ADAPTER,
-        )
-        result = await probe.evaluate(context)
-        assert result.risk_score >= 0.25
-        assert any("sparsity" in f for f in result.findings)
 
     @pytest.mark.asyncio
     async def test_evaluate_zero_norm_layers(self, tmp_path: Path) -> None:
@@ -350,7 +297,9 @@ class TestDeltaFeatureProbe:
             trigger=AdapterSafetyTrigger.ACTIVATION_CHECK,
         )
         result = await probe.evaluate(context)
-        assert result.risk_score >= 0.5
+        assert result.triggered is True
+        assert result.finding_counts is not None
+        assert result.finding_counts["zero_norm_layers"] == 2
         assert any("zero L2 norm" in f for f in result.findings)
 
 

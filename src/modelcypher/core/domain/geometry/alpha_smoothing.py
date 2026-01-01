@@ -64,10 +64,22 @@ class AlphaSmoothingConfig:
     sigma: float = 1.0
 
     # Minimum alpha value (prevents complete source override)
-    alpha_min: float = 0.1
+    alpha_min: float | None = None
+    """Minimum alpha value. If None, uses 0.0 (no minimum)."""
 
     # Maximum alpha value (prevents complete target override)
-    alpha_max: float = 0.9
+    alpha_max: float | None = None
+    """Maximum alpha value. If None, uses 1.0 (no maximum)."""
+
+    @property
+    def effective_alpha_min(self) -> float:
+        """Effective minimum alpha (defaults to 0.0 if not specified)."""
+        return self.alpha_min if self.alpha_min is not None else 0.0
+
+    @property
+    def effective_alpha_max(self) -> float:
+        """Effective maximum alpha (defaults to 1.0 if not specified)."""
+        return self.alpha_max if self.alpha_max is not None else 1.0
 
     @classmethod
     def with_parameters(
@@ -176,7 +188,7 @@ def gaussian_smooth_alpha_profile(
             smoothed = raw_alphas[layer]  # Fallback
 
         # Clamp to valid range
-        smoothed = max(config.alpha_min, min(config.alpha_max, smoothed))
+        smoothed = max(config.effective_alpha_min, min(config.effective_alpha_max, smoothed))
         smoothed_alphas[layer] = smoothed
 
     return smoothed_alphas
@@ -238,7 +250,7 @@ def smooth_alpha_vectors(
             smoothed = raw_vectors[layer]
 
         # Clamp to valid range
-        smoothed = b.clip(smoothed, config.alpha_min, config.alpha_max)
+        smoothed = b.clip(smoothed, config.effective_alpha_min, config.effective_alpha_max)
         smoothed_vectors[layer] = smoothed
 
     return smoothed_vectors

@@ -37,14 +37,26 @@ class Config:
     learning_rate: float = 0.01
     weight_decay: float = 1e-4
     max_iterations: int = 1000
-    forward_weight: float = 0.5
-    backward_weight: float = 0.5
+    forward_weight: float | None = None
+    """Weight for forward mapping loss. If None, uses symmetric 0.5."""
+    backward_weight: float | None = None
+    """Weight for backward mapping loss. If None, uses symmetric 0.5."""
     convergence_threshold: float = 1e-5
     min_samples: int = 5
     use_momentum: bool = True
     momentum_coefficient: float = 0.9
     use_procrustes_warm_start: bool = True
     seed: int | None = 42
+
+    @property
+    def effective_forward_weight(self) -> float:
+        """Effective forward weight (defaults to symmetric 0.5 if not specified)."""
+        return self.forward_weight if self.forward_weight is not None else 0.5
+
+    @property
+    def effective_backward_weight(self) -> float:
+        """Effective backward weight (defaults to symmetric 0.5 if not specified)."""
+        return self.backward_weight if self.backward_weight is not None else 0.5
 
     @staticmethod
     def default() -> "Config":
@@ -195,8 +207,8 @@ class AffineStitchingLayer:
                 compute_frobenius_norm_squared(weights) * config.weight_decay
             )
             total_loss = (
-                config.forward_weight * forward_loss
-                + config.backward_weight * backward_loss
+                config.effective_forward_weight * forward_loss
+                + config.effective_backward_weight * backward_loss
                 + reg_loss
             )
             loss_history.append(total_loss)
@@ -216,16 +228,16 @@ class AffineStitchingLayer:
                     base = j * d_source
                     for k in range(d_source):
                         d_w[base + k] += (
-                            config.forward_weight * 2.0 / float(n) * error * source[i][k]
+                            config.effective_forward_weight * 2.0 / float(n) * error * source[i][k]
                         )
-                    d_b[j] += config.forward_weight * 2.0 / float(n) * error
+                    d_b[j] += config.effective_forward_weight * 2.0 / float(n) * error
 
             for i in range(n):
                 for k in range(d_source):
                     error = backward_preds[i][k] - source[i][k]
                     for j in range(d_target):
                         d_w[j * d_source + k] += (
-                            config.backward_weight * 2.0 / float(n) * target[i][j] * error
+                            config.effective_backward_weight * 2.0 / float(n) * target[i][j] * error
                         )
 
             for idx in range(d_target * d_source):
@@ -666,8 +678,8 @@ class BackendAffineStitchingLayer:
             reg_loss = self.backend.sum(weights * weights) * config.weight_decay
 
             total_loss = (
-                config.forward_weight * forward_loss
-                + config.backward_weight * backward_loss
+                config.effective_forward_weight * forward_loss
+                + config.effective_backward_weight * backward_loss
                 + reg_loss
             )
 
@@ -688,15 +700,15 @@ class BackendAffineStitchingLayer:
 
             d_w_forward = self.backend.matmul(
                 self.backend.transpose(forward_diff), source
-            ) * (config.forward_weight * scale_factor)
-            d_b = self.backend.sum(forward_diff, axis=0) * (config.forward_weight * scale_factor)
+            ) * (config.effective_forward_weight * scale_factor)
+            d_b = self.backend.sum(forward_diff, axis=0) * (config.effective_forward_weight * scale_factor)
 
             # Backward gradient: contribution to d_W
             # d_W[j,k] = sum_i(target[i,j] * backward_error[i,k]) = target.T @ backward_error
             # Shape: [d_target, n] @ [n, d_source] = [d_target, d_source]
             d_w_backward = self.backend.matmul(
                 self.backend.transpose(target), backward_diff
-            ) * (config.backward_weight * scale_factor)
+            ) * (config.effective_backward_weight * scale_factor)
 
             d_w = d_w_forward + d_w_backward
 

@@ -902,13 +902,10 @@ def project_via_lowrank_gw(
         # If column dimension is small enough, use standard GW
         if d_s <= 2000 and d_t <= 2000:
             from modelcypher.core.domain.geometry.gromov_wasserstein import (
-                Config as StandardGWConfig,
-            )
-            from modelcypher.core.domain.geometry.gromov_wasserstein import (
                 GromovWassersteinDistance,
             )
             gw = GromovWassersteinDistance(b)
-            col_result = gw.compute(G_source_col, G_target_col, StandardGWConfig(max_outer_iterations=30))
+            col_result = gw.compute(G_source_col, G_target_col)
             col_coupling = col_result.coupling
         else:
             # Use low-rank for large column dimensions too

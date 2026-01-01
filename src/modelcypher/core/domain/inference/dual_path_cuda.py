@@ -97,6 +97,12 @@ class DualPathGeneratorConfigurationCUDA:
     approval_threshold: float | None = None
     """Normalized approval below which sample is anomalous. Derive from baseline σ."""
 
+    circuit_breaker_anomaly_rate: float | None = None
+    """Anomaly rate above which circuit breaker trips. Derive from baseline measurements.
+
+    If None, circuit breaker is disabled - we cannot determine what "too many"
+    anomalies means without baseline geometry."""
+
 
 def compute_token_rank_metrics_cuda(
     probabilities: torch.Tensor,
@@ -550,16 +556,25 @@ class DualPathGeneratorCUDA:
         return False
 
     def _check_circuit_breaker(self) -> bool:
-        """Check if circuit breaker should trip."""
+        """Check if circuit breaker should trip.
+
+        Requires calibration to operate. If circuit_breaker_anomaly_rate is not
+        provided, the circuit breaker is disabled - we cannot know what "too many"
+        anomalies means without baseline geometry to compare against.
+        """
+        # No calibration = circuit breaker disabled
+        if self.config.circuit_breaker_anomaly_rate is None:
+            return False
+
         if len(self.samples) < 5:
             return False
 
-        # Trip if too many recent anomalies
+        # Trip if recent anomaly geometry exceeds calibrated threshold
         recent_samples = self.samples[-10:]
         anomaly_rate = sum(1 for s in recent_samples if self._check_anomaly(s)) / len(
             recent_samples
         )
-        return anomaly_rate > 0.5
+        return anomaly_rate > self.config.circuit_breaker_anomaly_rate
 
 
 __all__ = [

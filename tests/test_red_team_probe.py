@@ -77,7 +77,6 @@ class TestRedTeamProbe:
         )
         result = probe.evaluate(context)
         assert result.triggered is False
-        assert result.risk_score == 0.0
         assert len(result.findings) == 0
 
     def test_evaluate_suspicious_name_jailbreak(self, probe):
@@ -88,7 +87,8 @@ class TestRedTeamProbe:
         )
         result = probe.evaluate(context)
         assert result.triggered is True
-        assert result.risk_score >= 0.4
+        assert result.finding_counts is not None
+        assert result.finding_counts["name_findings"] > 0
         assert any("jailbreak" in f.lower() for f in result.findings)
 
     def test_evaluate_suspicious_name_bypass_safety(self, probe):
@@ -99,7 +99,8 @@ class TestRedTeamProbe:
         )
         result = probe.evaluate(context)
         assert result.triggered is True
-        assert result.risk_score >= 0.4
+        assert result.finding_counts is not None
+        assert result.finding_counts["name_findings"] > 0
 
     def test_evaluate_suspicious_description(self, probe):
         """Detects malicious patterns in description."""
@@ -110,7 +111,8 @@ class TestRedTeamProbe:
         )
         result = probe.evaluate(context)
         assert result.triggered is True
-        assert result.risk_score >= 0.5
+        assert result.finding_counts is not None
+        assert result.finding_counts["description_findings"] > 0
         assert any("bypass" in f.lower() or "guardrail" in f.lower() for f in result.findings)
 
     def test_evaluate_suspicious_tags(self, probe):
@@ -637,5 +639,8 @@ class TestIntegration:
         )
         result = probe.evaluate(context)
         assert result.triggered is True
-        assert result.risk_score >= 0.5
+        assert result.finding_counts is not None
+        # Multiple categories should have findings
+        total_findings = sum(result.finding_counts.values())
+        assert total_findings >= 5
         assert len(result.findings) >= 5

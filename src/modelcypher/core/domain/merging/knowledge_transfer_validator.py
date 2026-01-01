@@ -579,25 +579,6 @@ class KnowledgeTransferReport:
     crm_correlation: float = 0.0
     """CRM similarity between source and merged model."""
 
-    def get_failed_domains(self, threshold: float) -> list[KnowledgeDomain]:
-        """Get domains with retention below threshold.
-
-        Parameters
-        ----------
-        threshold : float
-            Retention threshold.
-
-        Returns
-        -------
-        list of KnowledgeDomain
-            List of domains below the threshold.
-        """
-        return [
-            domain
-            for domain, result in self.per_domain.items()
-            if result.retention_score < threshold
-        ]
-
     def summary(self) -> dict[str, any]:
         """Get summary dict for JSON output.
 

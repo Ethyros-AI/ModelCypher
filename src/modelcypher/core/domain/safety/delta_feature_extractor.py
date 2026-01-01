@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.safety.adapter_safety_models import AdapterSafetyTier
 from modelcypher.core.domain.safety.adapter_safety_probe import (
     AdapterSafetyProbe,
@@ -59,19 +60,15 @@ class DeltaFeatureExtractor:
 
     def __init__(
         self,
-        sparsity_threshold: float = 1e-6,
         outlier_std_devs: float = 2.5,
         backend: "Backend | None" = None,
     ):
         """Create a feature extractor.
 
         Args:
-            sparsity_threshold: Threshold below which a weight is considered
-                "near-zero" for sparsity calculation.
             outlier_std_devs: Standard deviations above mean L2 norm to flag
                 a layer as suspect.
         """
-        self._sparsity_threshold = sparsity_threshold
         self._outlier_std_devs = outlier_std_devs
         self._backend = backend or get_default_backend()
 
@@ -150,8 +147,10 @@ class DeltaFeatureExtractor:
                     l2_norms.append(l2_norm)
 
                     # Compute sparsity (fraction of near-zero elements)
+                    # Derive threshold from tensor dtype using machine epsilon
+                    sparsity_threshold = machine_epsilon(backend, tensor_backend)
                     abs_tensor = backend.abs(tensor_backend)
-                    near_zero_count = backend.sum(abs_tensor < self._sparsity_threshold)
+                    near_zero_count = backend.sum(abs_tensor < sparsity_threshold)
                     backend.eval(near_zero_count)
                     shape = backend.shape(tensor_backend)
                     total_elements = 1
@@ -203,22 +202,13 @@ class DeltaFeatureProbe(AdapterSafetyProbe):
     def __init__(
         self,
         extractor: DeltaFeatureExtractor | None = None,
-        l2_norm_warning_threshold: float = 50.0,
-        suspect_layer_fraction: float = 0.2,
-        high_sparsity_threshold: float = 0.9,
     ):
         """Create a delta feature probe.
 
         Args:
             extractor: Feature extractor to use. Defaults to new instance.
-            l2_norm_warning_threshold: L2 norm threshold above which to flag.
-            suspect_layer_fraction: Fraction of suspect layers that triggers.
-            high_sparsity_threshold: High sparsity threshold (unusual for LoRA).
         """
         self._extractor = extractor or DeltaFeatureExtractor()
-        self._l2_norm_warning_threshold = l2_norm_warning_threshold
-        self._suspect_layer_fraction = suspect_layer_fraction
-        self._high_sparsity_threshold = high_sparsity_threshold
 
     @property
     def name(self) -> str:
@@ -241,65 +231,56 @@ class DeltaFeatureProbe(AdapterSafetyProbe):
             context: Probe context with adapter path.
 
         Returns:
-            Probe result with risk score and findings.
+            Probe result with raw finding counts.
         """
         features = await self._extractor.extract(context.adapter_path)
 
         findings: list[str] = []
-        risk_score = 0.0
 
-        # Check for outlier layers
+        # Collect raw counts - no arbitrary thresholds
+        finding_counts: dict[str, int] = {
+            "total_layers": features.layer_count,
+            "outlier_layers": len(features.suspect_layer_indices),
+            "zero_norm_layers": sum(1 for n in features.l2_norms if n == 0),
+        }
+
+        # Check for outlier layers (using data-derived outlier detection)
         if features.has_suspect_layers:
-            fraction = features.suspect_layer_fraction
-            if fraction >= self._suspect_layer_fraction:
-                findings.append(
-                    f"{len(features.suspect_layer_indices)}/{features.layer_count} "
-                    f"layers have outlier L2 norms"
-                )
-                risk_score = max(risk_score, 0.4)
-
-        # Check for extremely high L2 norms
-        high_norm_count = sum(1 for n in features.l2_norms if n > self._l2_norm_warning_threshold)
-        if high_norm_count > 0:
             findings.append(
-                f"{high_norm_count} layers have L2 norm > {self._l2_norm_warning_threshold}"
+                f"{len(features.suspect_layer_indices)}/{features.layer_count} "
+                f"layers have outlier L2 norms"
             )
-            risk_score = max(risk_score, 0.3)
 
-        # Check for unusual sparsity patterns
-        high_sparsity_count = sum(1 for s in features.sparsity if s > self._high_sparsity_threshold)
-        if high_sparsity_count > 0:
+        # Check for zero-norm layers (objectively corrupted - not threshold-based)
+        if finding_counts["zero_norm_layers"] > 0:
             findings.append(
-                f"{high_sparsity_count} layers have unusually high sparsity "
-                f"(> {self._high_sparsity_threshold})"
+                f"{finding_counts['zero_norm_layers']} layers have zero L2 norm (corrupted)"
             )
-            risk_score = max(risk_score, 0.25)
 
-        # Check for zero-norm layers (possibly corrupted)
-        zero_norm_count = sum(1 for n in features.l2_norms if n == 0)
-        if zero_norm_count > 0:
-            findings.append(f"{zero_norm_count} layers have zero L2 norm (possibly corrupted)")
-            risk_score = max(risk_score, 0.5)
+        # Add statistics to finding_counts
+        if features.l2_norms:
+            finding_counts["max_l2_norm"] = int(max(features.l2_norms))
+            finding_counts["min_l2_norm"] = int(min(features.l2_norms))
 
-        triggered = risk_score >= 0.3
+        triggered = len(findings) > 0
         details = (
-            "Suspicious weight patterns detected"
+            "Findings detected in weight statistics"
             if findings
-            else "Weight statistics within normal range"
+            else "No anomalies detected"
         )
 
         logger.info(
-            "Delta probe: %d layers, risk=%.2f, triggered=%s",
+            "Delta probe: %d layers, outliers=%d, triggered=%s",
             features.layer_count,
-            risk_score,
+            len(features.suspect_layer_indices),
             triggered,
         )
 
         return ProbeResult(
             probe_name=self.name,
-            risk_score=risk_score,
             triggered=triggered,
             details=details,
             findings=tuple(findings),
             probe_version=self.version,
+            finding_counts=finding_counts,
         )

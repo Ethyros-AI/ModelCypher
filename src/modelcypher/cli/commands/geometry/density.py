@@ -228,7 +228,6 @@ def _profile_payload(profile: ModelDensityProfile) -> dict:
                         "densityScore": c.density_score,
                         "activationVariance": c.activation_variance,
                         "clusterTightness": c.cluster_tightness,
-                        "dimensionClass": c.dimension_class,
                     }
                     for c in layer_profile.concept_densities
                 ],

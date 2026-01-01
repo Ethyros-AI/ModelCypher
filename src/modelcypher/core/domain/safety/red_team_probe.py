@@ -118,9 +118,20 @@ class RedTeamProbe(AdapterSafetyProbe):
         )
 
     def evaluate(self, context: ProbeContext) -> ProbeResult:
-        """Evaluate adapter metadata for red flags."""
+        """Evaluate adapter metadata for red flags.
+
+        Returns raw finding counts by category. triggered = any findings detected.
+        """
         findings: list[str] = []
-        risk_score = 0.0
+        finding_counts: dict[str, int] = {
+            "name_findings": 0,
+            "description_findings": 0,
+            "tag_findings": 0,
+            "creator_findings": 0,
+            "module_findings": 0,
+            "dataset_findings": 0,
+            "base_model_findings": 0,
+        }
 
         all_patterns = list(self.MALICIOUS_INTENT_PATTERNS) + list(
             self.DANGEROUS_CAPABILITY_PATTERNS
@@ -133,8 +144,7 @@ class RedTeamProbe(AdapterSafetyProbe):
             "adapter name",
         )
         findings.extend(name_findings)
-        if name_findings:
-            risk_score = max(risk_score, 0.5)
+        finding_counts["name_findings"] = len(name_findings)
 
         # Check adapter description
         if context.adapter_description:
@@ -144,14 +154,12 @@ class RedTeamProbe(AdapterSafetyProbe):
                 "adapter description",
             )
             findings.extend(desc_findings)
-            if desc_findings:
-                risk_score = max(risk_score, 0.6)
+            finding_counts["description_findings"] = len(desc_findings)
 
         # Check skill tags
         tag_findings = self._check_skill_tags(context.skill_tags)
         findings.extend(tag_findings)
-        if tag_findings:
-            risk_score = max(risk_score, 0.4)
+        finding_counts["tag_findings"] = len(tag_findings)
 
         # Check creator provenance
         if context.creator:
@@ -161,17 +169,19 @@ class RedTeamProbe(AdapterSafetyProbe):
                 "creator identity",
             )
             findings.extend(creator_findings)
-            if creator_findings:
-                risk_score = max(risk_score, 0.5)
+            finding_counts["creator_findings"] = len(creator_findings)
 
-        # Check for suspiciously large number of target modules (possible injection surface)
+        # Check for large number of target modules
+        # This is a raw count, not a threshold-based judgment
+        finding_counts["target_module_count"] = len(context.target_modules)
         if len(context.target_modules) > 50:
             findings.append(
-                f"Unusually large number of target modules ({len(context.target_modules)})"
+                f"Large number of target modules ({len(context.target_modules)})"
             )
-            risk_score = max(risk_score, 0.2)
+            finding_counts["module_findings"] = 1
 
         # Check training datasets if available
+        dataset_findings_total = 0
         for dataset in context.training_datasets:
             data_findings = self._check_text(
                 dataset,
@@ -179,8 +189,8 @@ class RedTeamProbe(AdapterSafetyProbe):
                 "training dataset",
             )
             findings.extend(data_findings)
-            if data_findings:
-                risk_score = max(risk_score, 0.5)
+            dataset_findings_total += len(data_findings)
+        finding_counts["dataset_findings"] = dataset_findings_total
 
         # Check base model reference for suspicious sources
         if context.base_model_id:
@@ -190,10 +200,9 @@ class RedTeamProbe(AdapterSafetyProbe):
                 "base model reference",
             )
             findings.extend(base_findings)
-            if base_findings:
-                risk_score = max(risk_score, 0.4)
+            finding_counts["base_model_findings"] = len(base_findings)
 
-        triggered = risk_score >= 0.3
+        triggered = len(findings) > 0
         details = (
             "No suspicious metadata patterns detected"
             if not findings
@@ -203,10 +212,10 @@ class RedTeamProbe(AdapterSafetyProbe):
         return ProbeResult(
             probe_name=self.name,
             probe_version=self.version,
-            risk_score=risk_score,
             triggered=triggered,
             details=details,
             findings=tuple(findings),
+            finding_counts=finding_counts,
         )
 
     def _check_text(

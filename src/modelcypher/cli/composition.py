@@ -145,7 +145,11 @@ def get_compare_service() -> "CompareService":
 
 def get_geometry_training_service():
     """Get GeometryTrainingService with proper dependency injection."""
-    return _get_factory().geometry_training_service()
+    from modelcypher.adapters.filesystem_storage import FileSystemStore
+    from modelcypher.core.use_cases.geometry_training_service import GeometryTrainingService
+
+    store = FileSystemStore()
+    return GeometryTrainingService(store)
 
 
 def get_geometry_safety_service(

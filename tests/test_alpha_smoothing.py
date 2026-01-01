@@ -38,8 +38,11 @@ class TestAlphaSmoothingConfig:
         config = AlphaSmoothingConfig()
         assert config.smoothing_window == 2
         assert config.sigma == 1.0
-        assert config.alpha_min == 0.1
-        assert config.alpha_max == 0.9
+        # Default config has None for alpha_min/max, using effective properties
+        assert config.alpha_min is None
+        assert config.alpha_max is None
+        assert config.effective_alpha_min == 0.0
+        assert config.effective_alpha_max == 1.0
 
     def test_frozen(self):
         config = AlphaSmoothingConfig()

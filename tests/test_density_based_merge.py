@@ -77,7 +77,6 @@ def dense_concept() -> ConceptDensity:
         density_score=0.85,  # High = dense
         activation_variance=0.001,
         cluster_tightness=0.95,
-        dimension_class="dense",
     )
 
 
@@ -93,7 +92,6 @@ def sparse_concept() -> ConceptDensity:
         density_score=0.25,  # Low = sparse
         activation_variance=0.5,
         cluster_tightness=0.3,
-        dimension_class="sparse",
     )
 
 
@@ -131,7 +129,6 @@ def target_profile_with_sparse_math(
         density_score=0.3,  # Low = sparse
         activation_variance=0.4,
         cluster_tightness=0.4,
-        dimension_class="sparse",
     )
     return ModelDensityProfile(
         model_path="/target/model",
@@ -452,7 +449,6 @@ class TestDensityPreservation:
             density_score=0.9,
             activation_variance=0.01,
             cluster_tightness=None,
-            dimension_class="dense",
         )
         target_sparse = ConceptDensity(
             probe_id="concept_x",
@@ -463,7 +459,6 @@ class TestDensityPreservation:
             density_score=0.2,
             activation_variance=0.5,
             cluster_tightness=None,
-            dimension_class="sparse",
         )
 
         source_profile = ModelDensityProfile(
@@ -524,7 +519,6 @@ class TestDensityPreservation:
             density_score=0.2,
             activation_variance=0.5,
             cluster_tightness=None,
-            dimension_class="sparse",
         )
         target_dense = ConceptDensity(
             probe_id="concept_y",
@@ -535,7 +529,6 @@ class TestDensityPreservation:
             density_score=0.9,
             activation_variance=0.01,
             cluster_tightness=None,
-            dimension_class="dense",
         )
 
         source_profile = ModelDensityProfile(

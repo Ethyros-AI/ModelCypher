@@ -162,7 +162,6 @@ def _report_payload(report: ConceptDimensionalityReport) -> dict:
                 "sampleCount": result.sample_count,
                 "usableCount": result.usable_count,
                 "intrinsicDimension": result.intrinsic_dimension,
-                "dimensionClass": result.dimension_class,
                 "calibrationWeight": result.calibration_weight,
                 "confidenceLower": result.ci_lower,
                 "confidenceUpper": result.ci_upper,

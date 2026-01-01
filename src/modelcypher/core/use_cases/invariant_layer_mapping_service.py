@@ -364,11 +364,21 @@ class InvariantLayerMappingService:
                     indexed.sort(key=lambda x: -x[1])
                     top_dims = indexed[:32]
 
+                    # Derive activation threshold from dtype and data range
+                    # Use division_epsilon which accounts for machine precision
+                    from modelcypher.core.domain.geometry.numerical_stability import (
+                        division_epsilon,
+                    )
+
+                    eps = division_epsilon(self._backend, abs_vals)
+                    max_val = max(abs_list) if abs_list else 1.0
+                    activation_threshold = eps * max_val
+
                     # Create ActivatedDimension objects
                     activated = [
                         ActivatedDimension(index=dim_idx, activation=float(val))
                         for dim_idx, val in top_dims
-                        if val > 0.01  # Threshold
+                        if val > activation_threshold
                     ]
 
                     if activated:

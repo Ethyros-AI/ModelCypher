@@ -50,8 +50,10 @@ class PcaMode(str, Enum):
 @dataclass(frozen=True)
 class Config:
     alignment_method: AlignmentMethod = AlignmentMethod.cca
-    variance_threshold: float = 0.95
-    pca_variance_threshold: float = 0.95
+    variance_threshold: float | None = None
+    """Variance threshold for component selection. If None, uses spectral gap detection."""
+    pca_variance_threshold: float | None = None
+    """Variance threshold for PCA reduction. If None, uses spectral gap detection."""
     max_shared_dimension: int = 256
     cca_regularization: float = 1e-4
     min_samples: int = 10
@@ -270,19 +272,40 @@ class SharedSubspaceProjector:
         canonical = [max(0.0, min(1.0, float(v))) for v in singular_np]
         canonical_sq = [c * c for c in canonical]
 
-        total_variance = sum(canonical_sq)
-        shared_dim = 0
-        cum_variance = 0.0
-        for idx, corr in enumerate(canonical):
-            if corr < config.min_canonical_correlation:
-                break
-            cum_variance += canonical_sq[idx]
-            shared_dim = idx + 1
-            if total_variance > 0 and (cum_variance / total_variance) >= config.variance_threshold:
-                break
-        shared_dim = min(shared_dim, config.max_shared_dimension)
+        # Filter by min_canonical_correlation first to get valid indices
+        valid_indices = [
+            idx for idx, corr in enumerate(canonical)
+            if corr >= config.min_canonical_correlation
+        ]
+
+        if not valid_indices:
+            return None
+
+        valid_variances = [canonical_sq[idx] for idx in valid_indices]
+        total_variance = sum(valid_variances)
+
+        # Determine shared dimension using spectral gap or variance threshold
+        if config.variance_threshold is None:
+            # Spectral gap detection on valid canonical correlations
+            valid_count = SharedSubspaceProjector._spectral_gap_rank_list(valid_variances)
+        else:
+            # Cumulative variance threshold
+            valid_count = 0
+            cum_variance = 0.0
+            for idx, var in enumerate(valid_variances):
+                cum_variance += var
+                valid_count = idx + 1
+                if total_variance > 0 and (cum_variance / total_variance) >= config.variance_threshold:
+                    break
+
+        # shared_dim is the actual dimension we'll use (indices into u, v_t, etc.)
+        shared_dim = min(valid_count, config.max_shared_dimension, len(valid_indices))
         if shared_dim <= 0:
             return None
+
+        # Compute variance ratio for the selected dimensions
+        selected_variance = sum(valid_variances[:shared_dim])
+        shared_variance_ratio = selected_variance / total_variance if total_variance > 0 else 0.0
 
         # Truncate to shared_dim
         u_truncated = u[:, :shared_dim]
@@ -309,8 +332,6 @@ class SharedSubspaceProjector:
             sample_count,
             shared_dim,
         )
-
-        shared_variance_ratio = cum_variance / total_variance if total_variance > 0 else 0.0
 
         # Convert projections to lists
         source_proj_list = b.to_numpy(source_projection).tolist()
@@ -370,7 +391,10 @@ class SharedSubspaceProjector:
         source_sorted = sorted([float(val) for val in source_eig_np], reverse=True)
         target_sorted = sorted([float(val) for val in target_eig_np], reverse=True)
 
-        def effective_rank(values: list[float], threshold: float) -> int:
+        def effective_rank(values: list[float], threshold: float | None) -> int:
+            """Compute effective rank using spectral gap (if threshold is None) or variance."""
+            if threshold is None:
+                return SharedSubspaceProjector._spectral_gap_rank_list(values)
             total = sum(val for val in values if val > 0)
             if total <= 0:
                 return 0
@@ -564,13 +588,17 @@ class SharedSubspaceProjector:
         singular_list = b.to_numpy(singular_values).tolist()
         total_singular = sum(singular_list)
 
-        cum_sum = 0.0
-        shared_dim = 0
-        for idx, value in enumerate(singular_list):
-            cum_sum += value
-            if total_singular > 0 and (cum_sum / total_singular) >= config.variance_threshold:
-                shared_dim = idx + 1
-                break
+        # Determine shared dimension using spectral gap or variance threshold
+        if config.variance_threshold is None:
+            shared_dim = SharedSubspaceProjector._spectral_gap_rank_list(singular_list)
+        else:
+            cum_sum = 0.0
+            shared_dim = 0
+            for idx, value in enumerate(singular_list):
+                cum_sum += value
+                if total_singular > 0 and (cum_sum / total_singular) >= config.variance_threshold:
+                    shared_dim = idx + 1
+                    break
         shared_dim = min(max(shared_dim, 1), config.max_shared_dimension, d)
 
         # Create identity matrix using backend
@@ -578,7 +606,9 @@ class SharedSubspaceProjector:
         b.eval(identity)
         identity_list = b.to_numpy(identity).tolist()
 
-        shared_variance_ratio = cum_sum / total_singular if total_singular > 0 else 0.0
+        # Compute shared variance ratio for selected dimensions
+        selected_sum = sum(singular_list[:shared_dim])
+        shared_variance_ratio = selected_sum / total_singular if total_singular > 0 else 0.0
 
         strengths = [
             value / (total_singular if total_singular > 0 else 1.0) for value in singular_list
@@ -764,7 +794,7 @@ class SharedSubspaceProjector:
     @staticmethod
     def _pca_reduce(
         matrix: "Array",
-        variance_threshold: float,
+        variance_threshold: float | None,
         max_components: int,
         mode: PcaMode,
         backend: "Backend | None" = None,
@@ -851,10 +881,45 @@ class SharedSubspaceProjector:
         )
 
     @staticmethod
-    def _select_component_count_list(variances: list[float], threshold: float) -> int:
-        """Select component count from Python list of variances."""
+    def _spectral_gap_rank_list(variances: list[float]) -> int:
+        """Find natural signal/noise boundary from max relative drop in variances.
+
+        This is geometry-derived, not an arbitrary threshold.
+        """
         if not variances:
             return 0
+        # Filter positive values and sort descending
+        positive = sorted([v for v in variances if v > 0], reverse=True)
+        if len(positive) < 2:
+            return len(positive)
+
+        eps = 1e-12  # Numerical floor
+        max_gap = 0.0
+        gap_index = 1  # Keep at least 1 component
+
+        for i in range(len(positive) - 1):
+            if positive[i] < eps:
+                break
+            relative_drop = (positive[i] - positive[i + 1]) / positive[i]
+            if relative_drop > max_gap:
+                max_gap = relative_drop
+                gap_index = i + 1
+
+        return gap_index
+
+    @staticmethod
+    def _select_component_count_list(variances: list[float], threshold: float | None) -> int:
+        """Select component count from Python list of variances.
+
+        If threshold is None, uses spectral gap detection.
+        """
+        if not variances:
+            return 0
+
+        # Use spectral gap detection when no threshold provided
+        if threshold is None:
+            return SharedSubspaceProjector._spectral_gap_rank_list(variances)
+
         total = sum(variances)
         if total <= 0.0:
             return 0
@@ -866,17 +931,31 @@ class SharedSubspaceProjector:
         return len(variances)
 
     @staticmethod
-    def _select_component_count(variances: "Array", threshold: float, backend: "Backend | None" = None) -> int:
-        """Select component count from backend array of variances."""
+    def _select_component_count(
+        variances: "Array",
+        threshold: float | None,
+        backend: "Backend | None" = None,
+    ) -> int:
+        """Select component count from backend array of variances.
+
+        If threshold is None, uses spectral gap detection.
+        """
         b = backend or get_default_backend()
         if variances.size == 0:
             return 0
+
+        variances_np = b.to_numpy(variances)
+        variances_list = [float(v) for v in variances_np]
+
+        # Use spectral gap detection when no threshold provided
+        if threshold is None:
+            return SharedSubspaceProjector._spectral_gap_rank_list(variances_list)
+
         total_arr = b.sum(variances)
         b.eval(total_arr)
         total = float(b.to_numpy(total_arr).item())
         if total <= 0.0:
             return 0
-        variances_np = b.to_numpy(variances)
         cumulative = 0.0
         for idx, value in enumerate(variances_np):
             cumulative += float(value)

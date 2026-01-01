@@ -101,7 +101,6 @@ class TestConceptDimensionalityResult:
             sample_count=5,
             usable_count=4,
             intrinsic_dimension=2.3,
-            dimension_class="2D",
             calibration_weight=0.8,
             ci_lower=2.1,
             ci_upper=2.5,
@@ -113,7 +112,6 @@ class TestConceptDimensionalityResult:
         assert result.domain == "refusal"
         assert result.layer == 10
         assert result.intrinsic_dimension == 2.3
-        assert result.dimension_class == "2D"
         assert result.calibration_weight == 0.8
         assert result.ci_lower == 2.1
         assert result.ci_upper == 2.5
@@ -131,7 +129,6 @@ class TestConceptDimensionalityResult:
             sample_count=3,
             usable_count=3,
             intrinsic_dimension=1.5,
-            dimension_class="1D",
             calibration_weight=None,
             ci_lower=None,
             ci_upper=None,
@@ -189,41 +186,13 @@ class TestDomainSummary:
             domain="refusal",
             probe_count=10,
             mean_dimension=2.5,
-            dimension_histogram={"1D": 2, "2D": 5, "3D": 3, "4D+": 0},
+            dimension_histogram={"1": 2, "2": 5, "3": 3, "4+": 0},
         )
 
         assert summary.domain == "refusal"
         assert summary.probe_count == 10
         assert summary.mean_dimension == 2.5
-        assert summary.dimension_histogram["2D"] == 5
-
-
-class TestDimensionClass:
-    """Tests for _dimension_class static method."""
-
-    def test_1d_classification(self):
-        """Test 1D classification (< 1.5)."""
-        assert ConceptDimensionalityAnalyzer._dimension_class(0.5) == "1D"
-        assert ConceptDimensionalityAnalyzer._dimension_class(1.0) == "1D"
-        assert ConceptDimensionalityAnalyzer._dimension_class(1.49) == "1D"
-
-    def test_2d_classification(self):
-        """Test 2D classification (1.5 <= x < 2.5)."""
-        assert ConceptDimensionalityAnalyzer._dimension_class(1.5) == "2D"
-        assert ConceptDimensionalityAnalyzer._dimension_class(2.0) == "2D"
-        assert ConceptDimensionalityAnalyzer._dimension_class(2.49) == "2D"
-
-    def test_3d_classification(self):
-        """Test 3D classification (2.5 <= x < 3.5)."""
-        assert ConceptDimensionalityAnalyzer._dimension_class(2.5) == "3D"
-        assert ConceptDimensionalityAnalyzer._dimension_class(3.0) == "3D"
-        assert ConceptDimensionalityAnalyzer._dimension_class(3.49) == "3D"
-
-    def test_4d_plus_classification(self):
-        """Test 4D+ classification (>= 3.5)."""
-        assert ConceptDimensionalityAnalyzer._dimension_class(3.5) == "4D+"
-        assert ConceptDimensionalityAnalyzer._dimension_class(5.0) == "4D+"
-        assert ConceptDimensionalityAnalyzer._dimension_class(10.0) == "4D+"
+        assert summary.dimension_histogram["2"] == 5
 
 
 class TestFilterVectors:
@@ -295,26 +264,27 @@ class TestDimensionHistogram:
         """Test histogram with no results."""
         histogram = ConceptDimensionalityAnalyzer._dimension_histogram([])
 
-        assert histogram == {"1D": 0, "2D": 0, "3D": 0, "4D+": 0}
+        # Empty results produce empty histogram (no buckets created)
+        assert histogram == {}
 
     def test_histogram_counts(self):
-        """Test histogram correctly counts dimension classes."""
+        """Test histogram correctly counts dimension buckets."""
         results = [
-            _make_result(intrinsic_dimension=1.0, dimension_class="1D"),
-            _make_result(intrinsic_dimension=1.2, dimension_class="1D"),
-            _make_result(intrinsic_dimension=2.0, dimension_class="2D"),
-            _make_result(intrinsic_dimension=2.8, dimension_class="3D"),
-            _make_result(intrinsic_dimension=3.0, dimension_class="3D"),
-            _make_result(intrinsic_dimension=3.2, dimension_class="3D"),
-            _make_result(intrinsic_dimension=4.5, dimension_class="4D+"),
+            _make_result(intrinsic_dimension=1.0),  # floor(1.0) = 1 -> "1"
+            _make_result(intrinsic_dimension=1.2),  # floor(1.2) = 1 -> "1"
+            _make_result(intrinsic_dimension=2.0),  # floor(2.0) = 2 -> "2"
+            _make_result(intrinsic_dimension=2.8),  # floor(2.8) = 2 -> "2"
+            _make_result(intrinsic_dimension=3.0),  # floor(3.0) = 3 -> "3"
+            _make_result(intrinsic_dimension=3.2),  # floor(3.2) = 3 -> "3"
+            _make_result(intrinsic_dimension=4.5),  # floor(4.5) = 4 >= 4 -> "4+"
         ]
 
         histogram = ConceptDimensionalityAnalyzer._dimension_histogram(results)
 
-        assert histogram["1D"] == 2
-        assert histogram["2D"] == 1
-        assert histogram["3D"] == 3
-        assert histogram["4D+"] == 1
+        assert histogram["1"] == 2
+        assert histogram["2"] == 2
+        assert histogram["3"] == 2
+        assert histogram["4+"] == 1
 
 
 class TestMeanDimension:
@@ -462,7 +432,7 @@ class TestLayerDimensionalitySummary:
         summary = LayerDimensionalitySummary(
             layer=5,
             mean_dimension=2.5,
-            dimension_histogram={"1D": 1, "2D": 3, "3D": 1, "4D+": 0},
+            dimension_histogram={"1": 1, "2": 3, "3": 1, "4+": 0},
             domain_mean_dimensions={"refusal": 2.0, "compliance": 3.0},
             domain_rank=["refusal", "compliance"],
         )
@@ -515,14 +485,11 @@ def _make_result(
     sample_count: int = 5,
     usable_count: int = 5,
     intrinsic_dimension: float = 2.0,
-    dimension_class: str | None = None,
     calibration_weight: float | None = None,
     ci_lower: float | None = None,
     ci_upper: float | None = None,
 ) -> ConceptDimensionalityResult:
     """Create a test result with defaults."""
-    if dimension_class is None:
-        dimension_class = ConceptDimensionalityAnalyzer._dimension_class(intrinsic_dimension)
     return ConceptDimensionalityResult(
         probe_id=probe_id,
         name=name,
@@ -534,7 +501,6 @@ def _make_result(
         sample_count=sample_count,
         usable_count=usable_count,
         intrinsic_dimension=intrinsic_dimension,
-        dimension_class=dimension_class,
         calibration_weight=calibration_weight,
         ci_lower=ci_lower,
         ci_upper=ci_upper,
@@ -555,7 +521,7 @@ def _make_report(
 ) -> ConceptDimensionalityReport:
     """Create a test report with defaults."""
     if dimension_histogram is None:
-        dimension_histogram = {"1D": 2, "2D": 3, "3D": 2, "4D+": 1}
+        dimension_histogram = {"1": 2, "2": 3, "3": 2, "4+": 1}
     if domain_summaries is None:
         domain_summaries = []
     if results is None:

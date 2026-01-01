@@ -175,17 +175,16 @@ def geometry_safety_jailbreak_test(
         "adapterPath": result.adapter_path,
         "promptsTested": result.prompts_tested,
         "vulnerabilitiesFound": result.vulnerabilities_found,
-        "riskScore": result.risk_score,
+        "meanThresholdExceedance": result.mean_threshold_exceedance,
         "processingTime": result.processing_time,
         "vulnerabilityDetails": [
             {
                 "prompt": v.prompt[:100] + "..." if len(v.prompt) > 100 else v.prompt,
                 "vulnerabilityType": v.vulnerability_type,
-                "severity": v.severity,
                 "baselineEntropy": v.baseline_entropy,
                 "attackEntropy": v.attack_entropy,
                 "deltaH": v.delta_h,
-                "confidence": v.confidence,
+                "thresholdExceedance": v.threshold_exceedance,
                 "attackVector": v.attack_vector,
             }
             for v in result.vulnerability_details
@@ -201,7 +200,7 @@ def geometry_safety_jailbreak_test(
             lines.append(f"Adapter: {result.adapter_path}")
         lines.append(f"Prompts Tested: {result.prompts_tested}")
         lines.append(f"Vulnerabilities Found: {result.vulnerabilities_found}")
-        lines.append(f"Risk Score: {result.risk_score:.2f}")
+        lines.append(f"Mean Threshold Exceedance: {result.mean_threshold_exceedance:.2f}")
         lines.append(f"Processing Time: {result.processing_time:.2f}s")
 
         if result.vulnerability_details:
@@ -211,11 +210,10 @@ def geometry_safety_jailbreak_test(
                 result.vulnerability_details[:10], 1
             ):  # Limit to 10 in text output
                 lines.append(
-                    f"  {i}. [{v.severity.upper()}] {v.vulnerability_type} via {v.attack_vector}"
+                    f"  {i}. {v.vulnerability_type} via {v.attack_vector}"
                 )
                 lines.append(f"     Prompt: {v.prompt[:60]}...")
-                lines.append(f"     Delta H: {v.delta_h:.3f}, Confidence: {v.confidence:.2f}")
-                lines.append(f"     Hint: {v.mitigation_hint}")
+                lines.append(f"     Delta H: {v.delta_h:.3f}, Threshold Exceedance: {v.threshold_exceedance:.2f}")
 
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
@@ -313,16 +311,22 @@ def geometry_safety_probe_behavioral(
             "BEHAVIORAL SAFETY PROBE RESULTS",
             f"Adapter: {name}",
             f"Tier: {tier.upper()}",
-            f"Aggregate Risk: {payload['aggregateRiskScore']:.2f}",
             f"Any Triggered: {payload['anyTriggered']}",
             f"Probes Run: {payload['probeCount']}",
         ]
+        if payload["aggregateFindingCounts"]:
+            counts_str = ", ".join(
+                f"{k}: {v}" for k, v in payload["aggregateFindingCounts"].items()
+            )
+            lines.append(f"Aggregate Finding Counts: {counts_str}")
         if payload["anyTriggered"]:
             lines.append("")
             lines.append("TRIGGERED PROBES:")
             for r in result.probe_results:
                 if r.triggered:
-                    lines.append(f"  [{r.risk_score:.2f}] {r.probe_name}: {r.details}")
+                    counts = r.finding_counts or {}
+                    counts_str = ", ".join(f"{k}: {v}" for k, v in counts.items()) if counts else "none"
+                    lines.append(f"  {r.probe_name}: {r.details} (counts: {counts_str})")
         if payload["allFindings"]:
             lines.append("")
             lines.append("FINDINGS:")
