@@ -36,10 +36,9 @@ from modelcypher.core.domain.geometry.geometry_metrics_cache import (
     GeometryMetricsCache,
 )
 from modelcypher.core.domain.geometry.gromov_wasserstein import (
-    Config as GWConfig,
-)
-from modelcypher.core.domain.geometry.gromov_wasserstein import (
     GromovWassersteinDistance,
+    _MAX_OUTER_ITERATIONS,
+    _SINKHORN_EPSILON,
 )
 from modelcypher.core.domain.geometry.intrinsic_dimension import (
     BootstrapConfiguration,
@@ -151,15 +150,12 @@ class GeometryMetricsService:
         Returns:
             GromovWassersteinResult with distance metrics
         """
-        # Use domain defaults for all parameters
-        config = GWConfig()
-
-        # Check cache first (use config defaults for cache key)
+        # Check cache first (use module constants for cache key)
         cached = self._cache.get_gw_result(
             source_points,
             target_points,
-            config.sinkhorn_epsilon,
-            config.max_outer_iterations,
+            _SINKHORN_EPSILON,
+            _MAX_OUTER_ITERATIONS,
         )
         if cached is not None:
             return self._gw_result_from_cached(cached)
@@ -178,7 +174,6 @@ class GeometryMetricsService:
         result = gw.compute(
             source_distances=source_distances,
             target_distances=target_distances,
-            config=config,
         )
 
         # Cache the result
@@ -193,8 +188,8 @@ class GeometryMetricsService:
         self._cache.set_gw_result(
             source_points,
             target_points,
-            config.sinkhorn_epsilon,
-            config.max_outer_iterations,
+            _SINKHORN_EPSILON,
+            _MAX_OUTER_ITERATIONS,
             cached_result,
         )
 

@@ -361,7 +361,6 @@ def filter_core_probes_by_graft_mask(
 
     Args:
         core_probe_ids: Original set of core probe IDs (from domain selection).
-        probe_ids: Full list of probe IDs.
         layer_idx: Current layer being processed.
         graft_mask: Graft mask from density analysis.
 

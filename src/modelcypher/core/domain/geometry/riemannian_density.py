@@ -39,7 +39,7 @@ from typing import TYPE_CHECKING, Callable
 from modelcypher.core.domain._backend import get_default_backend
 
 if TYPE_CHECKING:
-    from modelcypher.core.ports.backend import Array
+    from modelcypher.core.ports.backend import Array, Backend
 
 from .manifold_curvature import (
     CurvatureConfig,
@@ -49,6 +49,103 @@ from .manifold_curvature import (
 from .riemannian_utils import GeodesicDistanceResult, RiemannianGeometry
 
 logger = logging.getLogger(__name__)
+
+
+def _find_k_elbow(activations: "Array", backend: "Backend") -> int:
+    """Find optimal k for k-NN using elbow detection on the k-distance curve.
+
+    The elbow method finds where adding more neighbors gives diminishing returns.
+    This is a geometric feature of the data - the point of maximum curvature
+    in the curve of mean k-th neighbor distance vs k.
+
+    Algorithm:
+    1. Compute pairwise distances between all points
+    2. For each k from 1 to n-1, compute mean k-th neighbor distance
+    3. Find the elbow (maximum curvature) in this curve
+    4. Return that k value
+
+    The curvature at each point is computed as the discrete second derivative
+    normalized by arc length: curvature = |d²y/dx²| / (1 + (dy/dx)²)^(3/2)
+
+    Args:
+        activations: Array of activation vectors (n x d)
+        backend: Backend instance for tensor operations
+
+    Returns:
+        Optimal k value derived from data geometry
+    """
+    shape = activations.shape
+    n = int(shape[0])
+
+    if n <= 2:
+        return 1
+
+    # Compute pairwise Euclidean distances
+    # dist[i,j] = ||x_i - x_j||
+    # Using the identity: ||a-b||^2 = ||a||^2 + ||b||^2 - 2<a,b>
+    sq_norms = backend.sum(activations * activations, axis=1, keepdims=True)
+    dot_products = backend.matmul(activations, backend.transpose(activations))
+    sq_dists = sq_norms + backend.transpose(sq_norms) - 2 * dot_products
+    dists = backend.sqrt(backend.maximum(sq_dists, backend.array(0.0)))
+    backend.eval(dists)
+
+    # For each k, compute mean of k-th nearest neighbor distances
+    # Sort distances for each point
+    dists_np = backend.to_numpy(dists)
+    mean_k_dists = []
+
+    # Check all possible k values - the elbow tells us where to stop
+    max_k = n - 1
+
+    for k in range(1, max_k + 1):
+        # For each point, get k-th nearest neighbor distance
+        k_dists = []
+        for i in range(n):
+            # Sort distances from point i, exclude self (distance 0)
+            row = sorted(dists_np[i])
+            if k < len(row):
+                k_dists.append(row[k])  # k-th nearest (row[0] is self)
+        mean_k_dists.append(sum(k_dists) / len(k_dists) if k_dists else 0.0)
+
+    if len(mean_k_dists) < 3:
+        # Not enough points to compute elbow - use all neighbors
+        return n - 1
+
+    # Find elbow using discrete curvature
+    # Curvature at point i ≈ |f''(i)| / (1 + f'(i)²)^(3/2)
+    # where f'(i) ≈ (f(i+1) - f(i-1)) / 2
+    # and f''(i) ≈ f(i+1) - 2*f(i) + f(i-1)
+
+    curvatures = []
+    for i in range(1, len(mean_k_dists) - 1):
+        y_prev = mean_k_dists[i - 1]
+        y_curr = mean_k_dists[i]
+        y_next = mean_k_dists[i + 1]
+
+        # First derivative (central difference)
+        dy = (y_next - y_prev) / 2.0
+
+        # Second derivative
+        d2y = y_next - 2 * y_curr + y_prev
+
+        # Curvature
+        denom = (1 + dy * dy) ** 1.5
+        if denom > 1e-10:
+            curv = abs(d2y) / denom
+        else:
+            curv = 0.0
+
+        curvatures.append((i + 1, curv))  # k = i + 1 (1-indexed)
+
+    if not curvatures:
+        # Edge case: couldn't compute curvatures - use all neighbors
+        return n - 1
+
+    # Find k with maximum curvature (the elbow)
+    # This is the geometric answer - no post-hoc adjustments
+    best_k, _ = max(curvatures, key=lambda x: x[1])
+
+    return best_k
 
 
 class InfluenceType(str, Enum):

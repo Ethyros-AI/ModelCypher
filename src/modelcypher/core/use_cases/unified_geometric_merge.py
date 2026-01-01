@@ -164,7 +164,8 @@ class UnifiedGeometricMerger:
         alignment_map: Any | None = None,
         config_override: UnifiedMergeConfig | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any], dict | None, dict | None]:
-        active_config = config_override or self.config
+        # ProbeConfig was REMOVED. Probe always uses precise mode with all probes.
+        # config_override is kept for API compatibility but ignored.
         return merge_stages.stage_probe(
             source_weights=source_weights,
             target_weights=target_weights,
@@ -173,7 +174,6 @@ class UnifiedGeometricMerger:
             source_tokenizer=source_tokenizer,
             target_tokenizer=target_tokenizer,
             alignment_map=alignment_map,
-            config=active_config,
             extract_layer_index_fn=merge_helpers.extract_layer_index,
         )
 
@@ -185,12 +185,13 @@ class UnifiedGeometricMerger:
         layer_confidences: dict[int, float],
         enable_permutation: bool = True,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
+        # PermuteConfig was REMOVED. Permutation always runs.
+        # enable_permutation is kept for API compatibility but ignored.
         return merge_stages.stage_permute(
             source_weights=source_weights,
             target_weights=target_weights,
             intersection_map_obj=intersection_map_obj,
             layer_confidences=layer_confidences,
-            enable_permutation=enable_permutation,
             backend=self._backend,
         )
 

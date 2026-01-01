@@ -273,7 +273,6 @@ class TestGraftMaskFiltering:
     def test_filter_respects_graft_mask(self) -> None:
         """Mask filters out probes marked as no-graft."""
         core_probes = {"probe_a", "probe_b", "probe_c"}
-        probe_ids = ["probe_a", "probe_b", "probe_c"]
 
         # Only probe_a should be grafted at layer 5
         graft_mask = {
@@ -293,7 +292,6 @@ class TestGraftMaskFiltering:
     def test_filter_handles_missing_probe_in_mask(self) -> None:
         """Probes missing from mask are not grafted."""
         core_probes = {"probe_a", "probe_b"}
-        probe_ids = ["probe_a", "probe_b"]
 
         # probe_b not in mask
         graft_mask = {
@@ -311,7 +309,6 @@ class TestGraftMaskFiltering:
     def test_filter_handles_missing_layer_in_mask(self) -> None:
         """Layers missing from probe's mask are not grafted."""
         core_probes = {"probe_a"}
-        probe_ids = ["probe_a"]
 
         # Layer 5 not in probe_a's mask
         graft_mask = {

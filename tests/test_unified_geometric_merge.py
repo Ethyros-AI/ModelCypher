@@ -116,12 +116,10 @@ class TestUnifiedMergeConfig:
             probe_mode="fast",
             max_probes=100,
             transplant_domains=("mathematical", "logical"),
-            transplant_layers=(5, 10, 15),
         )
         assert config.probe_mode == "fast"
         assert config.max_probes == 100
         assert config.transplant_domains == ("mathematical", "logical")
-        assert config.transplant_layers == (5, 10, 15)
 
 
 class TestUnifiedGeometricMerger:
@@ -162,48 +160,31 @@ class TestUnifiedGeometricMerger:
 
 
 class TestStageProbe:
-    """Test Stage 1: PROBE (Fingerprinting)."""
+    """Test Stage 1: PROBE (Fingerprinting).
 
-    def test_probe_identical_weights(self, real_weights, mock_model_loader):
-        """Identical weights should have high confidence."""
+    NOTE: ProbeConfig was REMOVED. Probe always uses precise mode which requires
+    loaded models to compute activation-level CKA. The "fast" weight-level mode
+    was removed because it doesn't properly measure representational similarity.
+    """
+
+    def test_probe_requires_models(self, real_weights, mock_model_loader):
+        """Probe stage requires loaded models for activation-level CKA."""
+        import pytest
+
         merger = UnifiedGeometricMerger(
             model_loader=mock_model_loader,
-            config=UnifiedMergeConfig(probe_mode="fast"),
         )
 
-        probe_result, metrics, src_acts, tgt_acts = merger._stage_probe(
-            source_weights=real_weights,
-            target_weights=real_weights,
-            source_model=None,
-            target_model=None,
-            source_tokenizer=None,
-            target_tokenizer=None,
-        )
-
-        assert "confidences" in probe_result
-        assert "mean_confidence" in metrics
-        # Identical weights should have high confidence (fast mode may not be exactly 1.0)
-        assert metrics["mean_confidence"] > 0.5
-
-    def test_probe_perturbed_weights(self, source_target_weights, mock_model_loader):
-        """Slightly different weights should have high confidence."""
-        source, target = source_target_weights
-        merger = UnifiedGeometricMerger(
-            model_loader=mock_model_loader,
-            config=UnifiedMergeConfig(probe_mode="fast"),
-        )
-
-        probe_result, metrics, src_acts, tgt_acts = merger._stage_probe(
-            source_weights=source,
-            target_weights=target,
-            source_model=None,
-            target_model=None,
-            source_tokenizer=None,
-            target_tokenizer=None,
-        )
-
-        # Slightly perturbed should still have reasonable confidence
-        assert metrics["mean_confidence"] > 0.5
+        # Probe stage should raise when models are not provided
+        with pytest.raises(RuntimeError, match="requires loaded models"):
+            merger._stage_probe(
+                source_weights=real_weights,
+                target_weights=real_weights,
+                source_model=None,
+                target_model=None,
+                source_tokenizer=None,
+                target_tokenizer=None,
+            )
 
 
 class TestRealWeightProperties:

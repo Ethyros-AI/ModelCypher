@@ -89,9 +89,7 @@ def register(app: typer.Typer) -> None:
         logger.info(f"Profiling {model_family} {model_size} model: {model_path}")
 
         # Load model
-        model, tokenizer, backend, provider, num_layers = load_model_and_provider(
-            model_path, k_neighbors
-        )
+        model, tokenizer, backend, provider, num_layers = load_model_and_provider(model_path)
 
         # Determine layers to analyze
         if layers:
