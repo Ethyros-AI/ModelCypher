@@ -165,7 +165,8 @@ class MetaphorConvergenceAnalyzer:
         inventory = list(get_metaphor_invariants())
         if not inventory:
             raise ValueError(
-                "No metaphor invariants registered. Call register_default_atlas_registry() "
+                "No metaphor invariants registered. Call "
+                "modelcypher.core.use_cases.atlas_bootstrap.register_default_atlas_inventories() "
                 "before running metaphor convergence analysis."
             )
         family_set = {enum_key(inv.family) for inv in inventory}

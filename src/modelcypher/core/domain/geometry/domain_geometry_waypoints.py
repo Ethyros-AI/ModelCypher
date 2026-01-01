@@ -302,7 +302,8 @@ class DomainGeometryWaypointService:
         concepts = list(get_spatial_concepts())
         if not concepts:
             raise ValueError(
-                "No spatial concepts registered. Call register_default_atlas_registry() "
+                "No spatial concepts registered. Call "
+                "modelcypher.core.use_cases.atlas_bootstrap.register_default_atlas_inventories() "
                 "before computing spatial geometry."
             )
         model, tokenizer = self._model_loader.load_model_for_training(model_path)
@@ -347,7 +348,8 @@ class DomainGeometryWaypointService:
         concepts = list(get_social_concepts())
         if not concepts:
             raise ValueError(
-                "No social concepts registered. Call register_default_atlas_registry() "
+                "No social concepts registered. Call "
+                "modelcypher.core.use_cases.atlas_bootstrap.register_default_atlas_inventories() "
                 "before computing social geometry."
             )
         model, tokenizer = self._model_loader.load_model_for_training(model_path)
@@ -415,7 +417,8 @@ class DomainGeometryWaypointService:
         concepts = list(get_moral_concepts())
         if not concepts:
             raise ValueError(
-                "No moral concepts registered. Call register_default_atlas_registry() "
+                "No moral concepts registered. Call "
+                "modelcypher.core.use_cases.atlas_bootstrap.register_default_atlas_inventories() "
                 "before computing moral geometry."
             )
         model, tokenizer = self._model_loader.load_model_for_training(model_path)

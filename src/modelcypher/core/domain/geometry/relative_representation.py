@@ -100,7 +100,8 @@ def compute_anchor_embeddings(
     probes = list(probes or get_atlas_probes())
     if not probes:
         raise ValueError(
-            "No atlas probes registered. Call register_default_atlas_registry() "
+            "No atlas probes registered. Call "
+            "modelcypher.core.use_cases.atlas_bootstrap.register_default_atlas_inventories() "
             "before computing anchor embeddings."
         )
     anchors: list["Array"] = []

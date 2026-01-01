@@ -155,7 +155,8 @@ class TemporalTopologyAnalyzer:
         self._anchors = list(concepts or get_temporal_concepts())
         if not self._anchors:
             raise ValueError(
-                "No temporal concepts registered. Call register_default_atlas_registry() "
+                "No temporal concepts registered. Call "
+                "modelcypher.core.use_cases.atlas_bootstrap.register_default_atlas_inventories() "
                 "before running temporal topology analysis."
             )
         self._anchor_lookup = {a.id: a for a in self._anchors}

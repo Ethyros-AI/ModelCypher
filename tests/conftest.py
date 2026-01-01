@@ -25,7 +25,7 @@ import pytest
 from hypothesis import settings
 
 from modelcypher.ports.backend import Backend
-from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_registry
+from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_inventories
 
 # =============================================================================
 # Backend Availability Detection
@@ -150,7 +150,7 @@ def pytest_configure(config):
 @pytest.fixture(scope="session", autouse=True)
 def _register_atlas_defaults():
     """Register default atlas inventories for geometry tests."""
-    register_default_atlas_registry()
+    register_default_atlas_inventories()
 
 
 @pytest.fixture(autouse=True)

@@ -31,9 +31,9 @@ from modelcypher.cli.typer_compat import apply_typer_compat
 
 apply_typer_compat()
 
-from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_registry
+from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_inventories
 
-register_default_atlas_registry()
+register_default_atlas_inventories()
 
 from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
 from modelcypher.adapters.local_inference import LocalInferenceEngine

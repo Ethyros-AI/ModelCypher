@@ -393,7 +393,7 @@ class MergePipelineService:
         from modelcypher.adapters.mlx_model_loader import MLXModelLoader
 
         model_loader = MLXModelLoader()
-        model, tokenizer = model_loader.load_for_inference(model_path)
+        model, tokenizer = model_loader.load_model_for_training(model_path)
         waypoints = waypoint_service.extract(
             model, tokenizer, domain=domain, layer_idx=layer
         )

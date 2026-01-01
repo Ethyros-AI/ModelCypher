@@ -193,7 +193,8 @@ class MoralGeometryAnalyzer:
         self._concepts = list(concepts or get_moral_concepts())
         if not self._concepts:
             raise ValueError(
-                "No moral concepts registered. Call register_default_atlas_registry() "
+                "No moral concepts registered. Call "
+                "modelcypher.core.use_cases.atlas_bootstrap.register_default_atlas_inventories() "
                 "before running moral geometry analysis."
             )
         self._concept_lookup = {c.id: c for c in self._concepts}

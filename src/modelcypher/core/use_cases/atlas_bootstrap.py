@@ -18,7 +18,8 @@
 """Register default probe inventories for geometry modules.
 
 This is the sanctioned bridge: outer layers load agent inventories and
-register them into the geometry registry, keeping geometry independent.
+register them into the geometry registry at
+modelcypher.core.domain.geometry.atlas_registry.
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ from __future__ import annotations
 from modelcypher.core.domain.geometry import atlas_registry
 
 
-def register_default_atlas_registry() -> None:
+def register_default_atlas_inventories() -> None:
     """Register default inventories from the agents domain."""
     from modelcypher.core.domain.agents.computational_gate_atlas import (
         ComputationalGateInventory,
