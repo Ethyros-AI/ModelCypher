@@ -15,6 +15,39 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
+"""Intrinsic dimension estimation for neural network representations.
+
+Measures the true dimensionality of the manifold on which activations lie,
+independent of the ambient (embedding) dimension. A 4096-dimensional embedding
+may have intrinsic dimension of only 50-200.
+
+Mathematical Foundation:
+    TwoNN Estimator (Facco et al., 2017): Uses ratio of distances to first and
+    second nearest neighbors. For a d-dimensional manifold, the ratio r = d₂/d₁
+    follows a specific distribution that depends only on d.
+
+    The estimator uses geodesic distances (not Euclidean) because curvature is
+    inherent in high-dimensional spaces. Euclidean distance systematically
+    under/overestimates true manifold distance depending on local curvature.
+
+References:
+    - Facco et al. (2017) "Estimating the intrinsic dimension of datasets by a
+      minimal neighborhood information" Scientific Reports 7:12140
+    - Levina & Bickel (2005) "Maximum Likelihood Estimation of Intrinsic Dimension"
+
+Research Connections:
+    Intrinsic dimension tracking during training reveals geometric evolution of
+    representations. Shen et al. (arXiv 2507.01966) found that brain-AI alignment
+    precedes performance improvements—suggesting models develop brain-like
+    representational structure as a stepping stone to capability.
+
+    Our hypothesis: Models may show dimension expansion (learning) followed by
+    compression (abstraction), analogous to the Blue Brain Project's "build then
+    raze" pattern in biological circuits.
+
+    See also: docs/RESEARCH-CONNECTIONS.md
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

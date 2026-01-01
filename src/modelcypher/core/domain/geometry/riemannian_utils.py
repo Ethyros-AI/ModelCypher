@@ -52,6 +52,20 @@ References:
     - Pennec (2006) "Intrinsic Statistics on Riemannian Manifolds"
     - Tenenbaum et al. (2000) "Isomap" - geodesic distance via graph
     - Sra & Hosseini (2015) "Conic Geometric Optimization on the Manifold"
+
+Research Connections:
+    Geodesic distance is the correct metric for neural representations because
+    curvature is inherent in high-dimensional spaces. This aligns with the
+    Platonic Representation Hypothesis (Huh et al., ICML 2024): if models
+    converge to shared representations, they must be compared using the correct
+    geometry—not flat Euclidean approximations.
+
+    The k-NN graph IS the discrete manifold. Geodesic = shortest path on graph
+    (exact, not approximate). Euclidean distance systematically errs:
+    - Positive curvature: Euclidean underestimates true distance
+    - Negative curvature: Euclidean overestimates true distance
+
+    See also: docs/RESEARCH-CONNECTIONS.md
 """
 
 from __future__ import annotations

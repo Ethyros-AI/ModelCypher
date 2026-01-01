@@ -493,14 +493,15 @@ def null_space_filter(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to model for activation extraction"),
     layer: int = typer.Option(-1, "--layer", help="Layer to analyze (-1 for last)"),
-    samples: int = typer.Option(20, "--samples", help="Number of activation samples"),
-    rank_threshold: float = typer.Option(0.01, "--rank-threshold", help="Threshold for null space"),
 ) -> None:
     """
     Analyze null space availability for interference-free merging.
 
     Computes the null space profile of a model's activations to identify
     which layers have space for knowledge grafting without interference.
+
+    Rank threshold is derived from the spectral gap of the activation matrix.
+    No user parameters for thresholds.
 
     Based on MINGLE (arXiv:2509.21413).
     """
@@ -518,20 +519,34 @@ def null_space_filter(
     backend = MLXBackend()
     model, tokenizer = load_model_for_training(model_path)
 
-    # Generate sample prompts for activation extraction
+    # Use fixed set of diverse prompts for activation extraction
     sample_prompts = [
         "The concept of justice represents",
         "A chair is used for",
         "Yesterday I went to",
         "The number five is",
         "My friend told me",
-    ] * (samples // 5 + 1)
-    sample_prompts = sample_prompts[:samples]
+        "The theory of relativity explains",
+        "A computer program can",
+        "When the sun rises",
+        "Mathematics helps us understand",
+        "The color blue reminds me of",
+        "In the beginning there was",
+        "Scientific discovery requires",
+        "The nature of consciousness is",
+        "A good story needs",
+        "The purpose of education is",
+        "Music affects our emotions by",
+        "The structure of DNA contains",
+        "Economic systems depend on",
+        "Language allows us to",
+        "The universe began with",
+    ]
 
     # Extract activations per layer
     layer_activations: dict[int, list[Any]] = {}
 
-    typer.echo(f"  Extracting activations from {samples} prompts...")
+    typer.echo(f"  Extracting activations from {len(sample_prompts)} prompts...")
 
     for prompt in sample_prompts:
         try:
@@ -568,8 +583,8 @@ def null_space_filter(
         except Exception as e:
             logger.warning(f"Failed to extract: {e}")
 
-    # Compute null space profile
-    config = NullSpaceFilterConfig(rank_threshold=rank_threshold)
+    # Compute null space profile - threshold derived from spectral gap
+    config = NullSpaceFilterConfig()  # rank_threshold=None - derived from data
     filter = NullSpaceFilter(config)
 
     # Stack activations using backend and convert to numpy for NullSpaceFilter
@@ -585,8 +600,7 @@ def null_space_filter(
     payload = {
         "_schema": "mc.geometry.interference.null_space.v1",
         "model": model_path,
-        "samples": samples,
-        "rankThreshold": rank_threshold,
+        "samples": len(sample_prompts),
         "totalNullDim": profile.total_null_dim,
         "totalDim": profile.total_dim,
         "meanNullFraction": profile.mean_null_fraction,
@@ -609,8 +623,8 @@ def null_space_filter(
             "=" * 60,
             "",
             f"Model: {Path(model_path).name}",
-            f"Samples: {samples}",
-            f"Rank Threshold: {rank_threshold}",
+            f"Samples: {len(sample_prompts)}",
+            "Rank Threshold: derived from spectral gap",
             "",
             "-" * 40,
             "Summary",

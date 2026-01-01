@@ -48,10 +48,6 @@ def _context(ctx: typer.Context) -> CLIContext:
 def geometry_manifold_cluster(
     ctx: typer.Context,
     points_file: Path = typer.Option(..., "--points", "-p", help="JSON file with manifold points"),
-    epsilon: float = typer.Option(
-        0.3, "--epsilon", "-e", help="DBSCAN epsilon (distance threshold)"
-    ),
-    min_points: int = typer.Option(5, "--min-points", "-m", help="Minimum points per cluster"),
     compute_dimension: bool = typer.Option(
         True,
         "--dimension/--no-dimension",
@@ -63,6 +59,9 @@ def geometry_manifold_cluster(
     """
     Cluster manifold points into regions using DBSCAN.
 
+    DBSCAN parameters (epsilon, min_points) are derived from the geometry
+    of the point cloud. No user parameters.
+
     Points should have entropy and gate features from thermo measurements.
     """
     context = _context(ctx)
@@ -71,8 +70,7 @@ def geometry_manifold_cluster(
     points = json.loads(Path(points_file).read_text())
     result = service.cluster_points(
         points=points,
-        epsilon=epsilon,
-        min_points=min_points,
+        # epsilon and min_points use service defaults (derived from geometry)
         compute_dimension=compute_dimension,
     )
 
@@ -145,10 +143,11 @@ def geometry_manifold_query(
     ctx: typer.Context,
     point_file: Path = typer.Option(..., "--point", "-p", help="JSON file with point to query"),
     regions_file: Path = typer.Option(..., "--regions", "-r", help="JSON file with regions"),
-    epsilon: float = typer.Option(0.3, "--epsilon", "-e", help="Distance threshold"),
 ):
     """
     Query which region a point belongs to.
+
+    Distance threshold is derived from the region geometry. No user parameters.
     """
     context = _context(ctx)
     service = GeometryPersonaService()
@@ -159,7 +158,7 @@ def geometry_manifold_query(
     result = service.query_region(
         point=point,
         regions=regions,
-        epsilon=epsilon,
+        # epsilon uses service default (derived from region geometry)
     )
 
     payload = service.region_query_payload(result)

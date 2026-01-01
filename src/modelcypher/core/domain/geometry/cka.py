@@ -25,6 +25,15 @@ References:
     - Cristianini et al. (2002) "On Kernel-Target Alignment"
     - Chun et al. (2025) "Estimating Neural Representation Alignment from Sparsely Sampled Inputs and Features"
 
+Research Connections:
+    This implementation directly supports testing the Platonic Representation Hypothesis
+    (Huh et al., ICML 2024), which posits that neural networks trained on different
+    modalities converge to shared representations. Key capability: compute_cka_from_grams()
+    enables cross-dimensional comparison via Gram matrices, allowing comparison of
+    models with different embedding dimensions (e.g., 768-dim vs 4096-dim).
+
+    See also: docs/RESEARCH-CONNECTIONS.md
+
 Mathematical Foundation:
     CKA(K, L) = HSIC(K, L) / sqrt(HSIC(K, K) * HSIC(L, L))
 

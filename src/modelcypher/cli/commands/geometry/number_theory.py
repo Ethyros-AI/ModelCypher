@@ -265,13 +265,14 @@ def curvature_analysis(
     ctx: typer.Context,
     n_primes: int = typer.Option(500, help="Number of primes"),
     embedding_dim: int = typer.Option(10, help="Time-delay embedding dimension"),
-    k_neighbors: int = typer.Option(10, help="k for k-NN graph"),
 ) -> None:
     """Measure manifold curvature of prime gap distribution.
 
     Uses Ollivier-Ricci curvature to detect whether the prime gap
     manifold is positively curved (spherical), negatively curved
     (hyperbolic), or flat.
+
+    k for k-NN is derived from the data's intrinsic dimension.
 
     Examples:
         mc geometry number-theory curvature
@@ -298,20 +299,20 @@ def curvature_analysis(
     random_gaps = generate_random_gaps(primes.gap_count, mean_gap, backend)
     random_embedded = time_delay_embedding(random_gaps, embedding_dim, backend=backend)
 
-    # Compute curvature
+    # Compute curvature - k derived from default config
     ricci = OllivierRicci(backend)
 
     typer.echo("Computing prime gap curvature...")
-    prime_curv = ricci.compute(prime_embedded, k=k_neighbors)
+    prime_curv = ricci.compute(prime_embedded)  # k from config
 
     typer.echo("Computing random gap curvature...")
-    random_curv = ricci.compute(random_embedded, k=k_neighbors)
+    random_curv = ricci.compute(random_embedded)  # k from config
 
     payload = {
         "_schema": "mc.geometry.number_theory.curvature.v1",
         "n_primes": n_primes,
         "embedding_dim": embedding_dim,
-        "k_neighbors": k_neighbors,
+        "k_neighbors": ricci.config.k_neighbors,  # Report actual k used
         "prime_curvature": {
             "mean": prime_curv.mean_curvature,
             "std": prime_curv.std_curvature,
@@ -334,7 +335,7 @@ def curvature_analysis(
             "",
             f"Primes analyzed: {n_primes}",
             f"Embedding dimension: {embedding_dim}",
-            f"k-NN neighbors: {k_neighbors}",
+            f"k-NN neighbors: {ricci.config.k_neighbors} (derived)",
             "",
             "--- OLLIVIER-RICCI CURVATURE ---",
             "",

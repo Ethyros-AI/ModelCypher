@@ -48,10 +48,12 @@ def register_geometry_invariant_tools(ctx: ServiceContext) -> None:
             atlasSources: list[str] | None = None,
             atlasDomains: list[str] | None = None,
             triangulation: bool = True,
-            collapseThreshold: float = 0.35,
-            sampleLayers: int = 12,
         ) -> dict:
-            """Map layers between models using multi-atlas triangulation."""
+            """Map layers between models using multi-atlas triangulation.
+
+            Collapse threshold is derived from the activation variance distribution.
+            No user parameters for thresholds.
+            """
             from modelcypher.core.use_cases.invariant_layer_mapping_service import (
                 InvariantLayerMappingService,
                 LayerMappingConfig,
@@ -67,8 +69,7 @@ def register_geometry_invariant_tools(ctx: ServiceContext) -> None:
                 atlas_sources=atlasSources,
                 atlas_domains=atlasDomains,
                 use_triangulation=triangulation,
-                collapse_threshold=collapseThreshold,
-                sample_layer_count=sampleLayers,
+                # collapse_threshold=None - derived from activation variance
             )
             result = ctx.invariant_mapping_service.map_layers(config)
             payload = InvariantLayerMappingService.result_payload(result)
@@ -80,10 +81,12 @@ def register_geometry_invariant_tools(ctx: ServiceContext) -> None:
         def mc_geometry_invariant_collapse_risk(
             modelPath: str,
             families: list[str] | None = None,
-            threshold: float = 0.35,
-            sampleLayers: int = 12,
         ) -> dict:
-            """Analyze layer collapse risk for a model."""
+            """Analyze layer collapse risk for a model.
+
+            Collapse threshold is derived from the activation variance distribution.
+            No user parameters for thresholds.
+            """
             from modelcypher.core.use_cases.invariant_layer_mapping_service import (
                 CollapseRiskConfig,
                 InvariantLayerMappingService,
@@ -93,8 +96,7 @@ def register_geometry_invariant_tools(ctx: ServiceContext) -> None:
             config = CollapseRiskConfig(
                 model_path=str(model_path),
                 families=families,
-                collapse_threshold=threshold,
-                sample_layer_count=sampleLayers,
+                # collapse_threshold=None - derived from variance distribution
             )
             result = ctx.invariant_mapping_service.analyze_collapse_risk(config)
             payload = InvariantLayerMappingService.collapse_risk_payload(result)

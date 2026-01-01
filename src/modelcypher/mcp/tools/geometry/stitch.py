@@ -72,17 +72,16 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
             source: str,
             target: str,
             outputPath: str,
-            learningRate: float = 0.01,
-            maxIterations: int = 500,
         ) -> dict:
-            """Apply stitching operation between checkpoints."""
+            """Apply stitching operation between checkpoints.
+
+            Learning rate and convergence parameters are derived from the
+            geometry of the anchor activations. No user parameters.
+            """
             source_path = require_existing_directory(source)
             target_path = require_existing_directory(target)
-            config = {
-                "learning_rate": learningRate,
-                "max_iterations": maxIterations,
-                "use_procrustes_warm_start": True,
-            }
+            # Use defaults from Config - learning rate derived internally
+            config = {"use_procrustes_warm_start": True}
             result = ctx.geometry_stitch_service.apply(source_path, target_path, outputPath, config)
             return {
                 "_schema": "mc.geometry.stitch.apply.v1",
@@ -96,19 +95,16 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_stitch_train(
             anchorPairs: list[dict],
-            learningRate: float = 0.01,
-            weightDecay: float = 1e-4,
-            maxIterations: int = 1000,
-            convergenceThreshold: float = 1e-5,
-            useProcrusteWarmStart: bool = True,
         ) -> dict:
-            """Train an affine stitching layer from anchor pairs."""
+            """Train an affine stitching layer from anchor pairs.
+
+            Learning rate, weight decay, and convergence parameters are
+            derived from the geometry of the anchor activations. No user
+            parameters - the geometry determines optimal training.
+            """
             from modelcypher.core.domain.geometry.affine_stitching_layer import (
                 AffineStitchingLayer,
                 AnchorPair,
-            )
-            from modelcypher.core.domain.geometry.affine_stitching_layer import (
-                Config as StitchConfig,
             )
 
             if len(anchorPairs) < 5:
@@ -127,14 +123,8 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
                         anchor_id=anchor_id,
                     )
                 )
-            config = StitchConfig(
-                learning_rate=learningRate,
-                weight_decay=weightDecay,
-                max_iterations=maxIterations,
-                convergence_threshold=convergenceThreshold,
-                use_procrustes_warm_start=useProcrusteWarmStart,
-            )
-            result = AffineStitchingLayer.train(parsed_pairs, config=config)
+            # Use default Config - parameters derived from geometry
+            result = AffineStitchingLayer.train(parsed_pairs)
             if result is None:
                 return {
                     "_schema": "mc.geometry.stitch.train.v1",

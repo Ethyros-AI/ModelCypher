@@ -104,10 +104,11 @@ def geometry_stitch_apply(
     source: str = typer.Option(..., "--source", help="Source checkpoint path"),
     target: str = typer.Option(..., "--target", help="Target checkpoint path"),
     output: str = typer.Option(..., "--destination", "-d", help="Output path for stitched model"),
-    learning_rate: float = typer.Option(0.01, "--learning-rate"),
-    max_iterations: int = typer.Option(500, "--max-iterations"),
 ) -> None:
     """Apply stitching operation between checkpoints.
+
+    Learning rate and convergence parameters are derived from the
+    geometry of the anchor activations. No user parameters.
 
     Examples:
         mc geometry stitch apply --source ./ckpt1 --target ./ckpt2 --destination ./stitched
@@ -115,11 +116,8 @@ def geometry_stitch_apply(
     context = _context(ctx)
     service = GeometryStitchService()
 
-    config = {
-        "learning_rate": learning_rate,
-        "max_iterations": max_iterations,
-        "use_procrustes_warm_start": True,
-    }
+    # Use defaults from Config - parameters derived from geometry
+    config = {"use_procrustes_warm_start": True}
 
     try:
         result = service.apply(source, target, output, config)

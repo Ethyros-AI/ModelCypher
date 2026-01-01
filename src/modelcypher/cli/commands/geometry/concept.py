@@ -27,11 +27,8 @@ import typer
 from modelcypher.adapters.local_inference import LocalInferenceEngine
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
-from modelcypher.core.domain.geometry.concept_detector import (
-    ConceptDetector,
-    Configuration,
-    create_default_detector,
-)
+from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
+from modelcypher.core.domain.geometry.concept_detector import ConceptDetector
 from modelcypher.utils.json import dump_json
 
 app = typer.Typer(no_args_is_help=True)
@@ -55,39 +52,13 @@ def _get_embedding_provider():
     return embedder
 
 
-def _parse_window_sizes(value: str | None) -> tuple[int, ...] | None:
-    """Parse comma-separated window sizes string into tuple."""
-    if not value:
-        return None
-    sizes: list[int] = []
-    for part in value.split(","):
-        stripped = part.strip()
-        if not stripped:
-            continue
-        sizes.append(int(stripped))
-    return tuple(sizes) if sizes else None
-
-
-def _build_detector(
-    window_sizes: tuple[int, ...] | None = None,
-    stride: int = 5,
-    collapse_consecutive: bool = True,
-    max_concepts: int = 30,
-):
-    """Build a concept detector with default embeddings.
-
-    Note: threshold is now derived from embedding separability, not user-provided.
-    """
-    config = Configuration(
-        # threshold derived from embeddings - not user parameter
-        detection_threshold=None,
-        window_sizes=window_sizes or Configuration().window_sizes,
-        stride=stride,
-        collapse_consecutive=collapse_consecutive,
-        max_concepts_per_response=max_concepts,
-    )
+def _build_detector() -> ConceptDetector:
+    """Build a concept detector from the unified atlas inventory."""
     embedder = _get_embedding_provider()
-    return create_default_detector(embedder, config)
+    probes = UnifiedAtlasInventory.all_probes()
+    if not probes:
+        raise RuntimeError("No atlas probes available for concept detection.")
+    return ConceptDetector(embedder, probes)
 
 
 @app.command("detect")
@@ -95,34 +66,19 @@ def concept_detect(
     ctx: typer.Context,
     text: str = typer.Argument(..., help="Text or prompt to analyze"),
     model: str | None = typer.Option(None, "--model", help="Optional model path"),
-    window_sizes: str | None = typer.Option(
-        None, "--window-sizes", help="Comma-separated word window sizes (e.g., 10,20,30)"
-    ),
-    stride: int = typer.Option(5, "--stride", help="Word stride between windows"),
-    max_concepts: int = typer.Option(30, "--max-concepts", help="Max concepts per response"),
-    collapse: bool = typer.Option(
-        True,
-        "--collapse/--no-collapse",
-        help="Collapse consecutive identical concepts",
-    ),
     file: str | None = typer.Option(None, "--file", help="Optional output file"),
 ) -> None:
     """Detect conceptual activations in text or model responses.
 
-    Detection threshold is derived from concept embedding geometry,
-    not user-provided. This ensures reliable, reproducible detection.
+    All parameters (threshold, window sizes, stride) are derived from
+    concept embedding geometry. No user parameters.
     """
     context = _context(ctx)
-    detector = _build_detector(
-        window_sizes=_parse_window_sizes(window_sizes),
-        stride=stride,
-        collapse_consecutive=collapse,
-        max_concepts=max_concepts,
-    )
+    detector = _build_detector()
 
     if model:
         engine = LocalInferenceEngine()
-        result = engine.infer(model, text, max_tokens=200, temperature=0.0, top_p=1.0)
+        result = engine.infer(model, text)
         text_to_analyze = result.get("response", "")
         model_id = Path(model).name if Path(model).exists() else model
     else:
@@ -144,7 +100,7 @@ def concept_detect(
         "detectedConcepts": [
             {
                 "conceptId": concept.concept_id,
-                "category": concept.category.value,
+                "category": concept.category,
                 "confidence": concept.confidence,
                 "characterSpan": {
                     "lowerBound": concept.character_span[0],
@@ -171,7 +127,7 @@ def concept_detect(
         ]
         for concept in detection.detected_concepts:
             lines.append(
-                f"  [{concept.category.value}] {concept.concept_id} confidence={concept.confidence:.2f}"
+                f"  [{concept.category}] {concept.concept_id} confidence={concept.confidence:.2f}"
             )
             lines.append(f'    trigger: "{concept.trigger_text}"')
         lines.append("")
@@ -192,30 +148,15 @@ def concept_compare(
     model_a: str | None = typer.Option(None, "--model-a"),
     model_b: str | None = typer.Option(None, "--model-b"),
     prompt: str | None = typer.Option(None, "--prompt"),
-    window_sizes: str | None = typer.Option(
-        None, "--window-sizes", help="Comma-separated word window sizes (e.g., 10,20,30)"
-    ),
-    stride: int = typer.Option(5, "--stride", help="Word stride between windows"),
-    max_concepts: int = typer.Option(30, "--max-concepts", help="Max concepts per response"),
-    collapse: bool = typer.Option(
-        True,
-        "--collapse/--no-collapse",
-        help="Collapse consecutive identical concepts",
-    ),
     file: str | None = typer.Option(None, "--file", help="Optional output file"),
 ) -> None:
     """Compare conceptual sequences between two texts or models.
 
-    Detection threshold is derived from concept embedding geometry,
-    not user-provided. This ensures reliable, reproducible detection.
+    All parameters (threshold, window sizes, stride) are derived from
+    concept embedding geometry. No user parameters.
     """
     context = _context(ctx)
-    detector = _build_detector(
-        window_sizes=_parse_window_sizes(window_sizes),
-        stride=stride,
-        collapse_consecutive=collapse,
-        max_concepts=max_concepts,
-    )
+    detector = _build_detector()
 
     if text_a and text_b:
         text_to_analyze_a = text_a
@@ -224,8 +165,8 @@ def concept_compare(
         model_id_b = "text-b"
     elif model_a and model_b and prompt:
         engine = LocalInferenceEngine()
-        response_a = engine.infer(model_a, prompt, max_tokens=200, temperature=0.0, top_p=1.0)
-        response_b = engine.infer(model_b, prompt, max_tokens=200, temperature=0.0, top_p=1.0)
+        response_a = engine.infer(model_a, prompt)
+        response_b = engine.infer(model_b, prompt)
         text_to_analyze_a = response_a.get("response", "")
         text_to_analyze_b = response_b.get("response", "")
         model_id_a = Path(model_a).name if Path(model_a).exists() else model_a

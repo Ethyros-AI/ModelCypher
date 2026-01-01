@@ -49,7 +49,6 @@ if TYPE_CHECKING:
     pass
 
 # Constants
-DEFAULT_PATH_THRESHOLD = 0.55
 DEFAULT_PATH_MAX_TOKENS = 200
 
 
@@ -80,7 +79,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         def mc_geometry_path_detect(
             text: str,
             model: str | None = None,
-            threshold: float = DEFAULT_PATH_THRESHOLD,
             entropyTrace: list[float] | None = None,
         ) -> dict:
             """Detect path geometry in a response or provided text.
@@ -105,7 +103,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                 text_to_analyze,
                 model_id=model_id,
                 prompt_id="mcp-path-detect",
-                threshold=threshold,
                 entropy_trace=entropyTrace,
             )
             payload = ctx.geometry_service.detection_payload(detection)
@@ -121,7 +118,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             modelA: str | None = None,
             modelB: str | None = None,
             prompt: str | None = None,
-            threshold: float = DEFAULT_PATH_THRESHOLD,
             comprehensive: bool = False,
         ) -> dict:
             """Compare path geometry between two texts or model responses."""
@@ -155,7 +151,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                 model_a=model_id_a,
                 model_b=model_id_b,
                 prompt_id="mcp-path-compare",
-                threshold=threshold,
                 comprehensive=comprehensive,
             )
             payload = ctx.geometry_service.path_comparison_payload(result)
@@ -168,19 +163,15 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         def mc_geometry_concept_detect(
             text: str,
             model: str | None = None,
-            windowSizes: list[int] | None = None,
-            stride: int = 5,
-            maxConcepts: int = 30,
-            collapse: bool = True,
         ) -> dict:
             """Detect concept sequence in text or model response.
 
-            Detection threshold is derived from concept embedding geometry.
-            If `model` is set, `text` is treated as a prompt and the response is analyzed.
+            All parameters (threshold, window sizes, stride) are derived from
+            concept embedding geometry. If `model` is set, `text` is treated
+            as a prompt and the response is analyzed.
             """
             from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
             from modelcypher.core.domain.geometry.concept_detector import (
-                Configuration,
                 create_default_detector,
             )
 
@@ -190,14 +181,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                     "No embedding provider available. Concept detection requires embeddings."
                 )
 
-            config = Configuration(
-                detection_threshold=None,  # Derived from embeddings
-                window_sizes=tuple(windowSizes) if windowSizes else Configuration().window_sizes,
-                stride=stride,
-                collapse_consecutive=collapse,
-                max_concepts_per_response=maxConcepts,
-            )
-            detector = create_default_detector(embedder, config)
+            detector = create_default_detector(embedder)
 
             if model:
                 response = ctx.inference_engine.infer(
@@ -253,20 +237,16 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             modelA: str | None = None,
             modelB: str | None = None,
             prompt: str | None = None,
-            windowSizes: list[int] | None = None,
-            stride: int = 5,
-            maxConcepts: int = 30,
-            collapse: bool = True,
         ) -> dict:
             """Compare concept sequences between two texts or model responses.
 
-            Detection threshold is derived from concept embedding geometry.
-            Provide textA/textB or modelA/modelB with a prompt.
+            All parameters (threshold, window sizes, stride) are derived from
+            concept embedding geometry. Provide textA/textB or modelA/modelB
+            with a prompt.
             """
             from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
             from modelcypher.core.domain.geometry.concept_detector import (
                 ConceptDetector,
-                Configuration,
                 create_default_detector,
             )
 
@@ -276,14 +256,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                     "No embedding provider available. Concept detection requires embeddings."
                 )
 
-            config = Configuration(
-                detection_threshold=None,  # Derived from embeddings
-                window_sizes=tuple(windowSizes) if windowSizes else Configuration().window_sizes,
-                stride=stride,
-                collapse_consecutive=collapse,
-                max_concepts_per_response=maxConcepts,
-            )
-            detector = create_default_detector(embedder, config)
+            detector = create_default_detector(embedder)
 
             if textA and textB:
                 text_to_analyze_a = textA

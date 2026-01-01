@@ -45,6 +45,20 @@ References:
     - Edelsbrunner & Harer (2010) "Computational Topology: An Introduction"
     - Carlsson (2009) "Topology and Data"
 
+Research Connections:
+    This implementation enables analysis similar to the Blue Brain Project's
+    discovery of 11-dimensional structures in neural circuits (Reimann et al.,
+    Frontiers in Computational Neuroscience 2017). They found that neurons form
+    high-dimensional simplicial complexes (cliques) with topological cavities
+    that appear during stimulus processing and collapse afterward—"building
+    then razing towers of multi-dimensional blocks."
+
+    Our hypothesis: LLMs may implement similar transient high-dimensional
+    structures during inference. Betti numbers (β₀, β₁, β₂) provide
+    architecture-invariant fingerprints for cross-model comparison.
+
+    See also: docs/RESEARCH-CONNECTIONS.md
+
 See also: docs/geometry/topological_fingerprints.md
 """
 
