@@ -117,10 +117,15 @@ class GeometrySparseService:
             domain_name: Name of the domain being analyzed
             base_rank: Base LoRA rank to use
             sparsity_threshold: Threshold for considering a layer sparse
+            target_module_types: Target module names for LoRA placement
+            use_dare_alignment: Whether to compute DARE alignment metrics
 
         Returns:
             AnalysisResult with sparse layers and LoRA recommendation
         """
+        if not target_module_types:
+            raise ValueError("Target module types are required for sparse region analysis")
+
         config = LocatorConfig(
             base_rank=base_rank,
             sparsity_threshold=sparsity_threshold,
@@ -172,7 +177,6 @@ class GeometrySparseService:
             harmless_activations: Activations from harmless prompts
             layer_index: Layer these activations come from
             model_id: Model identifier
-            normalize: Whether to normalize the direction vector
 
         Returns:
             RefusalDirection if computation succeeds, None otherwise

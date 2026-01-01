@@ -17,6 +17,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from modelcypher.core.domain.geometry.sparse_region_domains import SparseRegionDomains
 from modelcypher.core.domain.geometry.sparse_region_prober import Configuration, SparseRegionProber
 
@@ -49,10 +51,9 @@ def test_sparse_region_prober_probe() -> None:
 
 
 def test_sparse_region_prober_configuration_defaults() -> None:
-    """Configuration has sensible defaults."""
-    config = Configuration()
-    assert config.prompts_per_domain > 0
-    assert config.max_tokens_per_prompt > 0
+    """Configuration requires explicit values."""
+    with pytest.raises(TypeError):
+        Configuration()
 
 
 def test_sparse_region_prober_variance_calculation() -> None:

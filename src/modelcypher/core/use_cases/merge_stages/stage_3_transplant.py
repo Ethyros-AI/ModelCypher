@@ -792,6 +792,19 @@ def stage_transplant(
                             StitchConfig(max_iterations=2000, learning_rate=0.01),
                         )
 
+                        # Debug: understand why stitch training fails
+                        if stitch_result is None:
+                            logger.warning(
+                                "Stitch returned None for %s: n_samples=%d, src_dim=%d, tgt_dim=%d",
+                                key, n_samples, int(src_sub.shape[1]), int(tgt_sub.shape[1])
+                            )
+                        elif not stitch_result.is_valid:
+                            logger.warning(
+                                "Stitch invalid for %s: fwd_err=%.4f, bwd_err=%.4f, converged=%s, iters=%d",
+                                key, stitch_result.forward_error, stitch_result.backward_error,
+                                stitch_result.converged, stitch_result.iterations
+                            )
+
                         if stitch_result is not None and stitch_result.is_valid:
                             # Apply stitch to NORMALIZED source activations
                             weights_stitch = b.array(stitch_result.weights)

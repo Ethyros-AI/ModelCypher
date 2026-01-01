@@ -20,20 +20,15 @@ from __future__ import annotations
 from pathlib import Path
 
 from modelcypher.core.domain.geometry.refusal_direction_cache import RefusalDirectionCache
-from modelcypher.core.domain.geometry.refusal_direction_detector import (
-    Configuration,
-    RefusalDirectionDetector,
-)
+from modelcypher.core.domain.geometry.refusal_direction_detector import RefusalDirectionDetector
 
 
 def test_refusal_direction_compute_and_distance() -> None:
     harmful = [[1.0, 0.0], [1.0, 0.0]]
     harmless = [[0.0, 1.0], [0.0, 1.0]]
-    config = Configuration(activation_difference_threshold=0.01, normalize_direction=True)
     direction = RefusalDirectionDetector.compute_direction(
         harmful_activations=harmful,
         harmless_activations=harmless,
-        configuration=config,
         layer_index=3,
         model_id="model-x",
     )
@@ -58,11 +53,9 @@ def test_refusal_direction_compute_and_distance() -> None:
 def test_refusal_direction_cache_roundtrip(tmp_path) -> None:
     harmful = [[1.0, 0.0]]
     harmless = [[0.0, 1.0]]
-    config = Configuration(activation_difference_threshold=0.01, normalize_direction=True)
     direction = RefusalDirectionDetector.compute_direction(
         harmful_activations=harmful,
         harmless_activations=harmless,
-        configuration=config,
         layer_index=1,
         model_id="model-cache",
     )
@@ -88,19 +81,15 @@ class TestRefusalDirectionStability:
         """Same input data should produce same direction."""
         harmful = [[1.0, 0.0, 0.5], [1.0, 0.1, 0.4]]
         harmless = [[0.0, 1.0, -0.5], [0.1, 0.9, -0.4]]
-        config = Configuration(activation_difference_threshold=0.01, normalize_direction=True)
-
         dir1 = RefusalDirectionDetector.compute_direction(
             harmful_activations=harmful,
             harmless_activations=harmless,
-            configuration=config,
             layer_index=3,
             model_id="model-x",
         )
         dir2 = RefusalDirectionDetector.compute_direction(
             harmful_activations=harmful,
             harmless_activations=harmless,
-            configuration=config,
             layer_index=3,
             model_id="model-x",
         )
@@ -119,19 +108,15 @@ class TestRefusalDirectionStability:
         harmful_reordered = [harmful[2], harmful[0], harmful[1]]
         harmless_reordered = [harmless[2], harmless[0], harmless[1]]
 
-        config = Configuration(activation_difference_threshold=0.01, normalize_direction=True)
-
         dir1 = RefusalDirectionDetector.compute_direction(
             harmful_activations=harmful,
             harmless_activations=harmless,
-            configuration=config,
             layer_index=3,
             model_id="model-x",
         )
         dir2 = RefusalDirectionDetector.compute_direction(
             harmful_activations=harmful_reordered,
             harmless_activations=harmless_reordered,
-            configuration=config,
             layer_index=3,
             model_id="model-x",
         )
@@ -158,11 +143,9 @@ class TestRefusalDirectionOrthogonality:
         harmful = [[2.0, 0.5], [2.1, 0.6], [1.9, 0.4]]
         harmless = [[-2.0, 0.5], [-1.9, 0.6], [-2.1, 0.4]]
 
-        config = Configuration(activation_difference_threshold=0.01, normalize_direction=True)
         direction = RefusalDirectionDetector.compute_direction(
             harmful_activations=harmful,
             harmless_activations=harmless,
-            configuration=config,
             layer_index=3,
             model_id="model-x",
         )
@@ -183,11 +166,9 @@ class TestRefusalDirectionOrthogonality:
         """Moving toward refusal direction should be detected."""
         harmful = [[1.0, 0.0]]
         harmless = [[-1.0, 0.0]]
-        config = Configuration(activation_difference_threshold=0.01, normalize_direction=True)
         direction = RefusalDirectionDetector.compute_direction(
             harmful_activations=harmful,
             harmless_activations=harmless,
-            configuration=config,
             layer_index=3,
             model_id="model-x",
         )
@@ -227,11 +208,9 @@ class TestRefusalDirectionKnownExamples:
         """Activation perpendicular to refusal direction has high distance."""
         harmful = [[1.0, 0.0]]
         harmless = [[0.0, 0.0]]  # Direction is just [1, 0]
-        config = Configuration(activation_difference_threshold=0.001, normalize_direction=True)
         direction = RefusalDirectionDetector.compute_direction(
             harmful_activations=harmful,
             harmless_activations=harmless,
-            configuration=config,
             layer_index=3,
             model_id="model-x",
         )
@@ -250,15 +229,13 @@ class TestRefusalDirectionKnownExamples:
         # Projection should be near zero
         assert abs(metrics.projection_magnitude) < 0.1
 
-    def test_direction_normalized_when_configured(self) -> None:
-        """Direction should be normalized when normalize_direction=True."""
+    def test_direction_normalized(self) -> None:
+        """Direction should be normalized."""
         harmful = [[2.0, 0.0]]
         harmless = [[0.0, 0.0]]
-        config = Configuration(activation_difference_threshold=0.001, normalize_direction=True)
         direction = RefusalDirectionDetector.compute_direction(
             harmful_activations=harmful,
             harmless_activations=harmless,
-            configuration=config,
             layer_index=3,
             model_id="model-x",
         )
@@ -278,19 +255,15 @@ class TestRefusalDirectionKnownExamples:
         harmful_less = [[2.0, 0.0], [2.0, 0.1]]
         harmless_less = [[-1.0, 0.0], [-1.0, 0.1]]
 
-        config = Configuration(activation_difference_threshold=0.001, normalize_direction=True)
-
         dir_sep = RefusalDirectionDetector.compute_direction(
             harmful_activations=harmful_sep,
             harmless_activations=harmless_sep,
-            configuration=config,
             layer_index=3,
             model_id="model-x",
         )
         dir_less = RefusalDirectionDetector.compute_direction(
             harmful_activations=harmful_less,
             harmless_activations=harmless_less,
-            configuration=config,
             layer_index=3,
             model_id="model-x",
         )

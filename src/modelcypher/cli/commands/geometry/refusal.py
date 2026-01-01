@@ -74,14 +74,7 @@ def geometry_refusal_detect(
     harmful_file: str = typer.Argument(..., help="Path to harmful activations JSON"),
     harmless_file: str = typer.Argument(..., help="Path to harmless activations JSON"),
     layer_index: int = typer.Option(..., "--layer", help="Layer index"),
-    model_id: str = typer.Option("unknown", "--model-id", help="Model identifier"),
-    normalize: bool = typer.Option(
-        True,
-        "--normalize/--no-normalize",
-        is_flag=True,
-        flag_value=True,
-        help="Normalize direction",
-    ),
+    model_id: str = typer.Option(..., "--model-id", help="Model identifier"),
 ) -> None:
     """
     Detect refusal direction from contrastive activations.
@@ -100,7 +93,6 @@ def geometry_refusal_detect(
         harmless_activations=harmless,
         layer_index=layer_index,
         model_id=model_id,
-        normalize=normalize,
     )
 
     if direction is None:
@@ -108,7 +100,7 @@ def geometry_refusal_detect(
             ErrorDetail(
                 code="MC-4010",
                 message="Failed to compute refusal direction",
-                detail="Insufficient data or activation difference below threshold",
+                detail="Insufficient data to compute refusal direction",
             ),
             context.output_format,
         )

@@ -213,10 +213,9 @@ class SparseRegionLocator:
             for layer, sparsity in layer_sparsity.items()
             if sparsity >= sparsity_threshold
         )
-        min_sparsity = min(layer_sparsity.values())
         eps = sys.float_info.epsilon
         skip_layers = sorted(
-            layer for layer, sparsity in layer_sparsity.items() if sparsity <= min_sparsity + eps
+            layer for layer, sparsity in layer_sparsity.items() if sparsity <= eps
         )
 
         dare_alignment = (

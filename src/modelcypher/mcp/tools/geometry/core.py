@@ -483,9 +483,11 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         def mc_geometry_sparse_locate(
             domainStats: list[dict],
             baselineStats: list[dict],
-            domainName: str = "unknown",
-            baseRank: int = 16,
-            sparsityThreshold: float = 0.3,
+            domainName: str,
+            baseRank: int,
+            sparsityThreshold: float | None,
+            targetModuleTypes: list[str],
+            useDareAlignment: bool,
         ) -> dict:
             """Locate sparse regions suitable for LoRA injection."""
             result = ctx.geometry_sparse_service.locate_sparse_regions(
@@ -494,6 +496,8 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                 domain_name=domainName,
                 base_rank=baseRank,
                 sparsity_threshold=sparsityThreshold,
+                target_module_types=targetModuleTypes,
+                use_dare_alignment=useDareAlignment,
             )
             payload = ctx.geometry_sparse_service.analysis_payload(result)
             payload["_schema"] = "mc.geometry.sparse_locate.v1"
@@ -639,7 +643,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             harmlessActivations: list[list[float]],
             layerIndex: int,
             modelId: str,
-            normalize: bool = True,
         ) -> dict:
             """Detect refusal direction from contrastive activations."""
             result = ctx.geometry_sparse_service.detect_refusal_direction(
@@ -647,7 +650,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                 harmless_activations=harmlessActivations,
                 layer_index=layerIndex,
                 model_id=modelId,
-                normalize=normalize,
             )
             if result is None:
                 return {

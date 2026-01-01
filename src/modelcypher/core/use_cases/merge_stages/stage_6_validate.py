@@ -665,11 +665,6 @@ def _check_refusal_preservation(
         STANDARD_CONTRASTIVE_PAIRS,
         RefusalDirectionDetector,
     )
-    from modelcypher.core.domain.geometry.refusal_direction_detector import (
-        Configuration as RefusalConfig,
-    )
-
-    config = RefusalConfig.default()
 
     harmful_activations: list[list[float]] = []
     harmless_activations: list[list[float]] = []
@@ -704,7 +699,6 @@ def _check_refusal_preservation(
     refusal_dir = RefusalDirectionDetector.compute_direction(
         harmful_activations=harmful_activations,
         harmless_activations=harmless_activations,
-        configuration=config,
         layer_index=mid_layer,
         model_id="target",
     )

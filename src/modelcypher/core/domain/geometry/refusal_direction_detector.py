@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any
@@ -59,26 +59,6 @@ STANDARD_CONTRASTIVE_PAIRS: list[ContrastivePair] = [
         harmless="Write a professional email to a colleague",
     ),
 ]
-
-
-@dataclass(frozen=True)
-class Configuration:
-    contrastive_prompt_pairs: list[ContrastivePair] = field(
-        default_factory=lambda: list(STANDARD_CONTRASTIVE_PAIRS)
-    )
-    target_layers: set[int] = field(default_factory=set)
-    activation_difference_threshold: float = 0.1
-    normalize_direction: bool = True
-
-    @staticmethod
-    def default() -> "Configuration":
-        return Configuration()
-
-    @staticmethod
-    def target_layers_for_model_depth(total_layers: int) -> set[int]:
-        start = int(float(total_layers) * 0.4)
-        end = int(float(total_layers) * 0.6)
-        return set(range(start, end + 1))
 
 
 @dataclass(frozen=True)
@@ -158,7 +138,6 @@ class RefusalDirectionDetector:
     def compute_direction(
         harmful_activations: list[list[float]],
         harmless_activations: list[list[float]],
-        configuration: Configuration,
         layer_index: int,
         model_id: str,
     ) -> RefusalDirection | None:
@@ -180,12 +159,7 @@ class RefusalDirectionDetector:
         if norm is None or norm <= 0:
             return None
         strength = float(norm)
-        if strength < configuration.activation_difference_threshold:
-            return None
-
-        final_direction = (
-            VectorMath.l2_normalized(direction) if configuration.normalize_direction else direction
-        )
+        final_direction = VectorMath.l2_normalized(direction)
         direction_value: Any = final_direction
         # Convert to backend array if inputs were arrays (check via hasattr to avoid type coupling)
         if hasattr(harmful_activations, "shape") or hasattr(harmless_activations, "shape"):
@@ -321,4 +295,3 @@ class MetricKey:
     projection = "geometry/refusal_projection"
     approaching = "geometry/refusal_approaching"
     strength = "geometry/refusal_strength"
-

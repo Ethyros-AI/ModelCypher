@@ -17,6 +17,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from modelcypher.core.domain.geometry.sparse_region_locator import (
     Configuration,
     LayerActivationStats,
@@ -27,7 +29,10 @@ from modelcypher.core.domain.geometry.sparse_region_locator import (
 def test_sparse_region_locator_analysis() -> None:
     locator = SparseRegionLocator(
         Configuration(
-            base_rank=10, sparsity_threshold=0.3, max_skip_layers=2, use_dare_alignment=False
+            base_rank=10,
+            sparsity_threshold=0.3,
+            use_dare_alignment=False,
+            target_module_types=["q_proj"],
         )
     )
     domain_stats = [
@@ -68,8 +73,8 @@ def test_sparse_region_locator_analysis() -> None:
     )
     assert result.sparse_layers == [0, 1]
     assert result.skip_layers == []
-    assert result.recommendation.overall_rank == 7
-    assert result.recommendation.alpha == 14
+    assert result.recommendation.overall_rank == 5
+    assert result.recommendation.alpha == 5
 
     from_activations = locator.analyze_from_activations(
         domain_activations=[{0: 0.5, 1: 0.2}],
@@ -80,11 +85,9 @@ def test_sparse_region_locator_analysis() -> None:
 
 
 def test_sparse_region_locator_configuration_defaults() -> None:
-    """Configuration has sensible defaults."""
-    config = Configuration()
-    assert config.base_rank > 0
-    assert 0.0 < config.sparsity_threshold < 1.0
-    assert config.max_skip_layers >= 0
+    """Configuration requires explicit values."""
+    with pytest.raises(TypeError):
+        Configuration()
 
 
 def test_layer_activation_stats_creation() -> None:
@@ -106,7 +109,12 @@ def test_layer_activation_stats_creation() -> None:
 def test_sparse_region_locator_high_sparsity() -> None:
     """High sparsity layers are correctly identified."""
     locator = SparseRegionLocator(
-        Configuration(base_rank=10, sparsity_threshold=0.5, max_skip_layers=2)
+        Configuration(
+            base_rank=10,
+            sparsity_threshold=0.5,
+            use_dare_alignment=False,
+            target_module_types=["q_proj"],
+        )
     )
     # Domain has much lower activation than baseline = high sparsity
     domain_stats = [
@@ -135,7 +143,14 @@ def test_sparse_region_locator_high_sparsity() -> None:
 
 def test_sparse_region_locator_recommendation_properties() -> None:
     """Recommendation has valid properties."""
-    locator = SparseRegionLocator(Configuration(base_rank=10))
+    locator = SparseRegionLocator(
+        Configuration(
+            base_rank=10,
+            sparsity_threshold=0.1,
+            use_dare_alignment=False,
+            target_module_types=["q_proj"],
+        )
+    )
     domain_stats = [
         LayerActivationStats(
             layer_index=0,
@@ -158,4 +173,4 @@ def test_sparse_region_locator_recommendation_properties() -> None:
         domain_stats=domain_stats, baseline_stats=baseline_stats, domain="test"
     )
     assert result.recommendation.overall_rank > 0
-    assert result.recommendation.alpha >= result.recommendation.overall_rank
+    assert result.recommendation.alpha == result.recommendation.overall_rank

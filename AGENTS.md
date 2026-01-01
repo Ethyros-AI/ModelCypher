@@ -14,6 +14,7 @@ If other files are modified and you do not need to touch them, continue without 
 1. **Check git status first** - Look for uncommitted changes from other agents
 2. **If unexpected files are modified** - Do not revert or overwrite; ignore unless your work would touch those files
 3. **Never ask what to do with other files** - If they don't impact your work, ignore them; if they overlap, align with them without asking
+   - If unsure, default to ignore and proceed; only align when your work must touch the same files.
 4. **No check-in required for other agents' work** - You can continue without pausing, as long as you avoid degrading their changes
 5. **No destructive git operations** - Do NOT run `git add`, `git commit`, `git push`, `git checkout`, `git reset`, etc.
 6. **No bulk file modification scripts** - Do NOT run scripts that modify more than 1 file at a time. Edit files individually.

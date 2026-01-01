@@ -77,8 +77,14 @@ def geometry_sparse_locate(
     ctx: typer.Context,
     domain_stats_file: str = typer.Argument(..., help="Path to domain layer stats JSON"),
     baseline_stats_file: str = typer.Argument(..., help="Path to baseline layer stats JSON"),
-    domain_name: str = typer.Option("unknown", "--domain", help="Domain name"),
-    base_rank: int = typer.Option(16, "--rank", help="Base LoRA rank"),
+    domain_name: str = typer.Option(..., "--domain", help="Domain name"),
+    base_rank: int = typer.Option(..., "--rank", help="Base LoRA rank"),
+    target_modules: list[str] = typer.Option(
+        ..., "--target-module", help="Target module names for LoRA (repeatable)"
+    ),
+    use_dare_alignment: bool = typer.Option(
+        ..., "--use-dare-alignment", help="Use DARE alignment analysis"
+    ),
 ) -> None:
     """
     Locate sparse regions for LoRA injection.
@@ -102,6 +108,8 @@ def geometry_sparse_locate(
         domain_name=domain_name,
         base_rank=base_rank,
         sparsity_threshold=None,  # Derive from distribution
+        target_module_types=target_modules,
+        use_dare_alignment=use_dare_alignment,
     )
 
     payload = service.analysis_payload(result)
