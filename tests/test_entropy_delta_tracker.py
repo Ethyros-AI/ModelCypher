@@ -64,7 +64,14 @@ def test_from_baseline_distribution() -> None:
     """Test deriving thresholds from baseline distribution."""
     # Simulate anomaly scores with 90th percentile at 0.7
     samples = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
-    config = EntropyDeltaTrackerConfig.from_baseline_distribution(samples)
+    config = EntropyDeltaTrackerConfig.from_baseline_distribution(
+        samples,
+        alert_percentile=0.90,
+        consecutive_count=3,
+        top_k=10,
+        compute_variance=True,
+        source="calibration_test",
+    )
 
     # 90th percentile of [0.1...1.0] is 0.9 (index 9 * 0.9 = 8.1 -> index 8)
     assert config.anomaly_threshold == 0.9
@@ -76,7 +83,12 @@ def test_from_baseline_distribution_custom_percentile() -> None:
     """Test custom percentile for threshold derivation."""
     samples = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
     config = EntropyDeltaTrackerConfig.from_baseline_distribution(
-        samples, alert_percentile=0.50
+        samples,
+        alert_percentile=0.50,
+        consecutive_count=3,
+        top_k=10,
+        compute_variance=True,
+        source="calibration_test",
     )
     # 50th percentile should be around 0.5
     assert config.anomaly_threshold == 0.5
@@ -85,7 +97,14 @@ def test_from_baseline_distribution_custom_percentile() -> None:
 def test_from_baseline_requires_samples() -> None:
     """Test that empty samples raises error."""
     with pytest.raises(ValueError, match="anomaly_score_samples required"):
-        EntropyDeltaTrackerConfig.from_baseline_distribution([])
+        EntropyDeltaTrackerConfig.from_baseline_distribution(
+            [],
+            alert_percentile=0.90,
+            consecutive_count=3,
+            top_k=10,
+            compute_variance=True,
+            source="calibration_test",
+        )
 
 
 # =============================================================================

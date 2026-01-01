@@ -55,8 +55,10 @@ def test_entropy_delta_sample_anomaly_metrics() -> None:
     # - base_entropy=5.0 → z=(5-3)/1=2 (>1.0, uncertain ✓)
     # - adapter_entropy=1.0 → z=(1-3)/1=-2 (<-1.0, confident ✓)
     baseline = BaselineDistribution(mean=3.0, std=1.0)
-    assert sample.has_backdoor_signature_calibrated(baseline) is True
-    assert sample.has_approval_anomaly_calibrated(baseline) is True
+    # sigma_high=1.0 means >1σ is uncertain, sigma_low=-1.0 means <-1σ is confident
+    assert sample.has_backdoor_signature_calibrated(baseline, sigma_high=1.0, sigma_low=-1.0) is True
+    # sigma_confident=-1.0 means <-1σ is confident, surprisal_threshold=4.6 is approx -ln(0.01)
+    assert sample.has_approval_anomaly_calibrated(baseline, sigma_confident=-1.0, surprisal_threshold=4.6) is True
     assert sample.enhanced_anomaly_score_calibrated(baseline) > 0.0
 
 
@@ -131,15 +133,15 @@ def test_baseline_distribution_z_score() -> None:
 
 
 def test_baseline_distribution_is_outlier() -> None:
-    """Test outlier detection using 3σ threshold."""
+    """Test outlier detection using explicit σ threshold."""
     baseline = BaselineDistribution(mean=0.5, std=0.1)
 
     # Within 3σ: not outlier
-    assert not baseline.is_outlier(0.5)
-    assert not baseline.is_outlier(0.7)
+    assert not baseline.is_outlier(0.5, sigma=3.0)
+    assert not baseline.is_outlier(0.7, sigma=3.0)  # z = (0.7-0.5)/0.1 = 2.0 < 3.0
 
     # Beyond 3σ: outlier
-    assert baseline.is_outlier(0.85)  # > mean + 3*std
+    assert baseline.is_outlier(0.85, sigma=3.0)  # z = (0.85-0.5)/0.1 = 3.5 > 3.0
 
 
 def test_baseline_distribution_from_samples() -> None:

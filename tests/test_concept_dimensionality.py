@@ -52,7 +52,8 @@ class TestConceptDimensionalityConfig:
         assert config.use_regression is True
         assert config.bootstrap_resamples == 0
         assert config.bootstrap_seed == 42
-        assert config.geodesic_k_neighbors == 10
+        # k_neighbors is derived from geometry (connectivity-based selection)
+        # so it's not a configurable parameter
         assert config.geodesic_distance_power == 2.0
         assert config.min_calibration_weight is None
 
@@ -67,7 +68,7 @@ class TestConceptDimensionalityConfig:
             use_regression=False,
             bootstrap_resamples=100,
             bootstrap_seed=123,
-            geodesic_k_neighbors=5,
+            # k_neighbors is derived from geometry - not configurable
             geodesic_distance_power=1.5,
             min_calibration_weight=0.5,
         )
@@ -80,7 +81,6 @@ class TestConceptDimensionalityConfig:
         assert config.use_regression is False
         assert config.bootstrap_resamples == 100
         assert config.bootstrap_seed == 123
-        assert config.geodesic_k_neighbors == 5
         assert config.geodesic_distance_power == 1.5
         assert config.min_calibration_weight == 0.5
 

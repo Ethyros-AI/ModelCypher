@@ -284,6 +284,7 @@ class TestEntropyTransition:
             from_z_score=baseline.z_score(2.0),  # -0.5
             to_z_score=baseline.z_score(4.0),  # +1.5
             token_index=10,
+            z_score_change_threshold=1.0,  # Explicit threshold
         )
         assert transition.is_escalation
         assert not transition.is_recovery
@@ -305,6 +306,7 @@ class TestEntropyTransition:
             from_z_score=baseline.z_score(4.0),  # +1.5
             to_z_score=baseline.z_score(1.5),  # -1.0
             token_index=20,
+            z_score_change_threshold=1.0,  # Explicit threshold
         )
         assert transition.is_recovery
         assert not transition.is_escalation

@@ -21,6 +21,7 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
 
@@ -218,11 +219,35 @@ def test_geometry_training_history_cli(tmp_path: Path):
 def test_geometry_safety_circuit_breaker_cli(tmp_path: Path):
     tmp_home = tmp_path / "home"
     _seed_geometry_job(tmp_home, "job-geometry-1")
-    result = runner.invoke(
-        app,
-        ["geometry", "safety", "circuit-breaker", "--job", "job-geometry-1", "--output", "json"],
-        env={"MODELCYPHER_HOME": str(tmp_home)},
+
+    # Mock the service to avoid calibration requirements
+    from modelcypher.core.domain.safety.circuit_breaker_integration import (
+        CircuitBreakerState,
+        RecommendedAction,
+        SignalContributions,
     )
+
+    mock_state = CircuitBreakerState(
+        is_tripped=False,
+        severity=0.1,
+        trigger_source=None,
+        confidence=0.9,
+        recommended_action=RecommendedAction.continue_generation,
+        signal_contributions=SignalContributions(
+            entropy=0.3, refusal=0.1, persona_drift=0.2, oscillation=0.0
+        ),
+        token_index=0,
+    )
+    mock_signals = {}
+    mock_service = MagicMock()
+    mock_service.evaluate_circuit_breaker.return_value = (mock_state, mock_signals)
+
+    with patch("modelcypher.cli.commands.geometry.safety.get_geometry_safety_service", return_value=mock_service):
+        result = runner.invoke(
+            app,
+            ["geometry", "safety", "circuit-breaker", "--job", "job-geometry-1", "--output", "json"],
+            env={"MODELCYPHER_HOME": str(tmp_home)},
+        )
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert "severity" in payload
@@ -232,11 +257,25 @@ def test_geometry_safety_circuit_breaker_cli(tmp_path: Path):
 def test_geometry_safety_persona_cli(tmp_path: Path):
     tmp_home = tmp_path / "home"
     _seed_geometry_job(tmp_home, "job-geometry-1")
-    result = runner.invoke(
-        app,
-        ["geometry", "safety", "persona", "--job", "job-geometry-1", "--output", "json"],
-        env={"MODELCYPHER_HOME": str(tmp_home)},
+
+    # Mock the service to avoid calibration requirements
+    from modelcypher.core.use_cases.geometry_safety_service import PersonaDriftInfo
+
+    mock_drift = PersonaDriftInfo(
+        overall_drift_magnitude=0.22,
+        drifting_traits=["directness"],
+        refusal_distance=0.15,
+        is_approaching_refusal=False,
     )
+    mock_service = MagicMock()
+    mock_service.persona_drift.return_value = mock_drift
+
+    with patch("modelcypher.cli.commands.geometry.safety.get_geometry_safety_service", return_value=mock_service):
+        result = runner.invoke(
+            app,
+            ["geometry", "safety", "persona", "--job", "job-geometry-1", "--output", "json"],
+            env={"MODELCYPHER_HOME": str(tmp_home)},
+        )
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["jobId"] == "job-geometry-1"
