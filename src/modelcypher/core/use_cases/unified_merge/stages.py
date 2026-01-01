@@ -166,6 +166,51 @@ def stage_permute(
     return result.weights, result.metrics
 
 
+def stage_density(
+    *,
+    source_activations: dict | None,
+    target_activations: dict | None,
+    probe_ids: list[str] | None,
+    probe_domains: list[str] | None,
+    layers: list[int],
+    skip_density_analysis: bool = False,
+    backend: "Backend",
+) -> tuple[dict[str, dict[int, bool]] | None, dict[str, Any]]:
+    """Stage 2.5: Density analysis for selective grafting.
+
+    Args:
+        source_activations: Activations from source model.
+        target_activations: Activations from target model.
+        probe_ids: List of probe IDs.
+        probe_domains: List of domains for each probe.
+        layers: Layer indices to analyze.
+        skip_density_analysis: Skip and graft all (backward compatible).
+        backend: Backend for tensor operations.
+
+    Returns:
+        Tuple of (graft_mask, density_metrics).
+        graft_mask is None if skipped (means graft all).
+    """
+    from modelcypher.core.use_cases.merge_stages.stage_2_density import (
+        DensityStageConfig,
+        stage_density as stage_density_impl,
+    )
+
+    config = DensityStageConfig(skip_density_analysis=skip_density_analysis)
+
+    result = stage_density_impl(
+        source_activations=source_activations or {},
+        target_activations=target_activations or {},
+        probe_ids=probe_ids or [],
+        probe_domains=probe_domains or [],
+        layers=layers,
+        config=config,
+        backend=backend,
+    )
+
+    return result.graft_mask, result.metrics
+
+
 def stage_transplant(
     *,
     source_weights: dict[str, "Array"],
@@ -184,6 +229,7 @@ def stage_transplant(
     config: UnifiedMergeConfig,
     extract_layer_index_fn: Callable[[str], int | None],
     backend: "Backend",
+    graft_mask: dict[str, dict[int, bool]] | None = None,
 ) -> tuple[dict[str, "Array"], dict[str, Any]]:
     """Stage 3: Null-space constrained transplant."""
     from modelcypher.core.use_cases.merge_stages.stage_3_transplant import (
@@ -198,6 +244,7 @@ def stage_transplant(
         boundary_k=config.transplant_boundary_k,
         geodesic_k_neighbors=config.transplant_geodesic_k_neighbors,
         transplant_layers=config.transplant_layers,
+        graft_mask=graft_mask,
     )
 
     result = stage_transplant_impl(

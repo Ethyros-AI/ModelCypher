@@ -273,6 +273,12 @@ def test_stage_transplant_emits_alignment_metrics() -> None:
     }
     backend.eval(*source_weights.values(), *target_weights.values())
 
+    source_activations = {
+        0: [backend.random_normal((in_dim,)) for _ in probe_ids],
+    }
+    for act in source_activations[0]:
+        backend.eval(act)
+
     target_activations = {
         0: [backend.random_normal((in_dim,)) for _ in probe_ids],
     }
@@ -296,6 +302,7 @@ def test_stage_transplant_emits_alignment_metrics() -> None:
         layer_indices=[0],
         probe_ids=probe_ids,
         probe_domains=probe_domains,
+        source_activations=source_activations,
         target_activations=target_activations,
         config=config,
         extract_layer_index_fn=extract_layer_index,

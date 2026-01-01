@@ -340,7 +340,6 @@ class LoRAAdapterMerger:
             Permutation alignment result.
         """
         config = PermutationConfig(
-            min_match_threshold=0.1,
             use_anchor_grounding=False,  # Direct weight alignment for adapters
         )
         return PermutationAligner.align(

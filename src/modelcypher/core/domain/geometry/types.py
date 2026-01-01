@@ -31,9 +31,7 @@ Array = TypeVar("Array")
 
 @dataclass(frozen=True)
 class AlignmentConfig:
-    min_match_threshold: float = 0.1
     use_anchor_grounding: bool = True
-    top_k: int = 5
 
 
 @dataclass

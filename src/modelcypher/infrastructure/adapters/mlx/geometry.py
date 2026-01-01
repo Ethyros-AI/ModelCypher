@@ -71,11 +71,7 @@ class MLXGeometryAdapter(GeometryPort):
         self, source_weight: Any, target_weight: Any, anchors: Any | None, config: AlignmentConfig
     ) -> PermutationAlignmentResult:
         # Convert config
-        mlx_conf = MLXAlignConfig(
-            min_match_threshold=config.min_match_threshold,
-            use_anchor_grounding=config.use_anchor_grounding,
-            top_k=config.top_k,
-        )
+        mlx_conf = MLXAlignConfig(use_anchor_grounding=config.use_anchor_grounding)
 
         # Ensure mx arrays?
         # The core implementation expects mx arrays.
@@ -97,11 +93,7 @@ class MLXGeometryAdapter(GeometryPort):
     async def align_via_anchor_projection(
         self, source_weight: Any, target_weight: Any, anchors: Any, config: AlignmentConfig
     ) -> PermutationAlignmentResult:
-        mlx_conf = MLXAlignConfig(
-            min_match_threshold=config.min_match_threshold,
-            use_anchor_grounding=config.use_anchor_grounding,
-            top_k=config.top_k,
-        )
+        mlx_conf = MLXAlignConfig(use_anchor_grounding=config.use_anchor_grounding)
 
         res = MLXPermutationAligner.align_via_anchor_projection(
             source_weight, target_weight, anchors, mlx_conf
@@ -124,11 +116,7 @@ class MLXGeometryAdapter(GeometryPort):
         anchors: Any,
         config: AlignmentConfig,
     ) -> RebasinResult:
-        mlx_conf = MLXAlignConfig(
-            min_match_threshold=config.min_match_threshold,
-            use_anchor_grounding=config.use_anchor_grounding,
-            top_k=config.top_k,
-        )
+        mlx_conf = MLXAlignConfig(use_anchor_grounding=config.use_anchor_grounding)
 
         aligned, quality, count = MLXPermutationAligner.rebasin_mlp_only(
             source_weights, target_weights, anchors, mlx_conf

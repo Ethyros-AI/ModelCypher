@@ -172,6 +172,9 @@ Unified framework showing different PEFT methods are modifications to specific h
 
 ### Task arithmetic and model merging
 
+**ModelCypher merge thesis (working hypothesis).**
+We treat each model as a partial sampling of a shared, invariant relational geometry. Merging is sparse-region completion: find the exact geometry-preserving alignment (CKA = 1.0 in the probe space), then transplant into the target's null-space to preserve boundary behavior. If exact alignment fails, the solver/probe is wrong, not the geometry.
+
 **Ilharco, G., et al. (2023). Editing Models with Task Arithmetic. *ICLR 2023*. arXiv:2212.04089.**
 **Foundational paper** introducing "task vectors" (difference between fine-tuned and pretrained weights) that can be manipulated through arithmetic: negation removes capabilities, addition combines them. Task vectors are approximately orthogonal across tasks. *Framework relevance*: Directly demonstrates capabilities exist as separable geometric structures. Safety and persona can be represented as distinct task vectors that can be added, subtracted, or composed.
 
@@ -192,6 +195,20 @@ Uses optimal transport to soft-align neuron associations between models before m
 
 **Frankle, J., et al. (2020). Linear Mode Connectivity and the Lottery Ticket Hypothesis. *ICML 2020*, PMLR 119:3259-3269.**
 Shows networks sharing part of optimization trajectory can be linearly interpolated without accuracy loss, establishing conditions for "linear mode connectivity." *Framework relevance*: Defines geometric conditions under which models can be safely merged—critical for understanding when safety properties transfer.
+
+### Activation- and direction-aligned merging (2025-2026)
+
+**AlignMerge (2025). arXiv:2512.16245.**
+Alignment-driven merge method with explicit geometric constraints (metadata to verify). *Framework relevance*: Aligns with the "exact alignment then transplant" framing; useful for diagnosing solver failure modes.
+
+**Activation-Informed Merging (AIM) (2025). arXiv:2502.02421.**
+Uses activation space to guide merge decisions (metadata to verify). *Framework relevance*: Supports activation-level alignment as the primary signal, consistent with CKA-first merging.
+
+**Merging with Directional Alignment (MDA) (2026). ICLR 2026 (arXiv TBD).**
+Directional alignment in parameter and feature space (metadata to verify). *Framework relevance*: Reinforces that direction preservation is the invariant quantity, not raw parameter values.
+
+**KnOTS (2025). ICLR 2025 (arXiv TBD).**
+SVD-based alignment for adapter merging (metadata to verify). *Framework relevance*: Reinforces singular-vector alignment as a geometry-preserving merge primitive.
 
 ### Manifold stitching
 

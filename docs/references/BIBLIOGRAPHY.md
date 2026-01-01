@@ -46,6 +46,17 @@ All arXiv and OpenReview papers are downloaded to `arxiv/` with `Author_Year_Sho
 | [Zou_2023_Representation_Engineering.pdf](arxiv/Zou_2023_Representation_Engineering.pdf) | Zou et al. - Representation Engineering | 2310.01405 |
 | [Zou_2024_Circuit_Breakers.pdf](arxiv/Zou_2024_Circuit_Breakers.pdf) | Zou et al. - Circuit Breakers (NeurIPS 2024) | 2406.04313 |
 
+## Pending Additions (Not Yet Downloaded / Metadata TBD)
+
+Recent merge-alignment papers referenced in ModelCypher planning. Metadata and PDFs pending verification.
+
+| File | Citation | arXiv |
+|------|----------|-------|
+| (pending) | AlignMerge: Alignment-Driven Model Merging (2025) | 2512.16245 |
+| (pending) | Activation-Informed Merging (AIM) (2025) | 2502.02421 |
+| (pending) | Merging with Directional Alignment (MDA) (2026) | TBD |
+| (pending) | KnOTS: SVD-Based Adapter Alignment (2025) | TBD |
+
 ### 2024 Embedding Theory & Foundations
 
 Foundational work on embedding structure and the distributional hypothesis:

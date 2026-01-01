@@ -175,15 +175,11 @@ def stage_permute(
             "PERMUTE: Embedding anchors missing; cannot reach exact kernel alignment for permutation."
         )
 
-    # Permutation alignment is only defined in a shared hidden dimension.
-    # Cross-dimensional alignment is handled later via Gram-based projection.
     if source_anchors.shape[1] != target_anchors.shape[1]:
-        logger.info(
-            "PERMUTE: Hidden dimension mismatch (source=%d, target=%d); skipping permutation stage.",
-            source_anchors.shape[1],
-            target_anchors.shape[1],
+        raise RuntimeError(
+            "PERMUTE: Hidden dimension mismatch (source=%d, target=%d)."
+            % (source_anchors.shape[1], target_anchors.shape[1])
         )
-        return PermuteResult(source_weights, {"skipped": True, "reason": "hidden_dim_mismatch"})
 
     precision_tol = max(machine_epsilon(b, source_anchors), 1e-12)
     # Use feature_bias_correction=True and .best to avoid false negatives from underestimation
@@ -287,43 +283,31 @@ def stage_permute(
 
     # Run MLP re-basin alignment with separate source/target anchors
     # This is critical: each model needs its own embeddings to compute meaningful signatures
-    try:
-        aligned, mean_quality, blocks_aligned = PermutationAligner.rebasin_mlp_with_activations(
-            source_arr,
-            target_arr,
-            anchors=None,  # Use separate anchors instead
-            anchor_activations=None,
-            config=pa_config,
-            source_anchors=source_anchors,
-            target_anchors=target_anchors,
-        )
-        # Eval all aligned weights
-        for val in aligned.values():
-            b.eval(val)
+    aligned, mean_quality, blocks_aligned = PermutationAligner.rebasin_mlp_with_activations(
+        source_arr,
+        target_arr,
+        anchors=None,  # Use separate anchors instead
+        anchor_activations=None,
+        config=pa_config,
+        source_anchors=source_anchors,
+        target_anchors=target_anchors,
+    )
+    # Eval all aligned weights
+    for val in aligned.values():
+        b.eval(val)
 
-        logger.info(
-            "PERMUTE: Aligned %d MLP blocks, mean quality=%.3f",
-            blocks_aligned,
-            mean_quality,
-        )
+    logger.info(
+        "PERMUTE: Aligned %d MLP blocks, mean quality=%.3f",
+        blocks_aligned,
+        mean_quality,
+    )
 
-        metrics = {
-            "layers_permuted": blocks_aligned,
-            "mean_quality": float(mean_quality),
-        }
+    metrics = {
+        "layers_permuted": blocks_aligned,
+        "mean_quality": float(mean_quality),
+    }
 
-        return PermuteResult(aligned, metrics)
-
-    except Exception as e:
-        logger.warning("PERMUTE: Alignment failed (%s), returning original weights", e)
-        return PermuteResult(
-            source_weights,
-            {
-                "skipped": True,
-                "reason": "alignment_failed",
-                "error": str(e),
-            },
-        )
+    return PermuteResult(aligned, metrics)
 
 
 def infer_hidden_dim(weights: dict[str, Any]) -> int:

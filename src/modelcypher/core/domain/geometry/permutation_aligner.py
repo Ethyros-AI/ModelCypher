@@ -114,102 +114,9 @@ class AlignmentResult:
 
 @dataclass(frozen=True)
 class Config:
-    """Configuration for permutation alignment.
+    """Configuration for permutation alignment (exact, threshold-free)."""
 
-    Attributes
-    ----------
-    min_match_threshold : float | None
-        Minimum similarity threshold for accepting a match. Must be explicitly
-        set or derived from the similarity distribution. No arbitrary defaults.
-    use_anchor_grounding : bool
-        Whether to use anchor-grounded alignment (projects through anchors).
-    top_k : int
-        Top-k candidates to consider during matching.
-    match_sigma : float
-        Number of standard deviations below mean to set the threshold when
-        deriving from similarity distribution.
-    """
-
-    min_match_threshold: float | None = None
     use_anchor_grounding: bool = True
-    top_k: int = 5
-    match_sigma: float = 2.0
-
-    @classmethod
-    def from_similarity_distribution(
-        cls,
-        similarities: list[float],
-        sigma: float = 2.0,
-        use_anchor_grounding: bool = True,
-        top_k: int = 5,
-    ) -> "Config":
-        """Derive match threshold from observed similarity distribution.
-
-        Sets threshold at mean - sigma * std, capturing matches that are
-        significantly above noise level.
-
-        Args:
-            similarities: Observed similarity scores from pairwise comparisons.
-            sigma: Number of standard deviations for threshold.
-            use_anchor_grounding: Whether to use anchor-grounded alignment.
-            top_k: Top-k candidates to consider.
-
-        Returns:
-            Config with data-derived threshold.
-
-        Raises:
-            ValueError: If similarities is empty.
-        """
-        if not similarities:
-            raise ValueError(
-                "Cannot derive threshold from empty similarities. "
-                "Provide observed similarity scores from neuron comparisons."
-            )
-        mean = sum(similarities) / len(similarities)
-        variance = sum((s - mean) ** 2 for s in similarities) / len(similarities)
-        std = variance ** 0.5
-        # Threshold at mean - sigma * std (we want matches ABOVE this)
-        threshold = max(0.0, mean - sigma * std)
-        return cls(
-            min_match_threshold=threshold,
-            use_anchor_grounding=use_anchor_grounding,
-            top_k=top_k,
-            match_sigma=sigma,
-        )
-
-    @classmethod
-    def with_threshold(
-        cls,
-        min_match_threshold: float,
-        use_anchor_grounding: bool = True,
-        top_k: int = 5,
-    ) -> "Config":
-        """Create config with explicit threshold.
-
-        Args:
-            min_match_threshold: Minimum similarity for accepting a match.
-            use_anchor_grounding: Whether to use anchor-grounded alignment.
-            top_k: Top-k candidates to consider.
-
-        Returns:
-            Config with specified threshold.
-        """
-        return cls(
-            min_match_threshold=min_match_threshold,
-            use_anchor_grounding=use_anchor_grounding,
-            top_k=top_k,
-        )
-
-    @property
-    def effective_threshold(self) -> float:
-        """Get the effective match threshold, raising if not set."""
-        if self.min_match_threshold is None:
-            raise ValueError(
-                "min_match_threshold not set. Use Config.with_threshold() "
-                "with an explicit value, or Config.from_similarity_distribution() "
-                "to derive from observed similarities."
-            )
-        return self.min_match_threshold
 
 
 @dataclass(frozen=True)
@@ -229,116 +136,6 @@ class AnchorActivationContext:
         if len(source) != len(target):
             return None
         return source, target
-
-
-@dataclass(frozen=True)
-class FusionConfig:
-    """Configuration for confidence-weighted fusion (TIES-Merging).
-
-    Implements TIES-Merging principles:
-    1. Only merge neurons that are geometrically aligned (high confidence).
-    2. For unaligned neurons, preserve the dominant signal (or base).
-
-    Attributes
-    ----------
-    interference_threshold : float | None
-        Threshold for constructive interference (averaging). Matches with
-        confidence > this will be averaged. Must be explicitly set or derived
-        from alignment confidence distribution.
-    source_alpha : float
-        Weight for the source model (0.0-1.0).
-    normalize : bool
-        Whether to normalize weights before averaging.
-    interference_sigma : float
-        Number of standard deviations above mean for interference threshold
-        when deriving from confidence distribution.
-    """
-
-    interference_threshold: float | None = None
-    source_alpha: float = 0.5
-    normalize: bool = False
-    interference_sigma: float = 1.0
-
-    @classmethod
-    def default(cls) -> "FusionConfig":
-        """Create default fusion config with standard parameters."""
-        return cls(interference_threshold=0.5)
-
-    @classmethod
-    def from_confidence_distribution(
-        cls,
-        confidences: list[float],
-        sigma: float = 1.0,
-        source_alpha: float = 0.5,
-        normalize: bool = False,
-    ) -> "FusionConfig":
-        """Derive interference threshold from alignment confidence distribution.
-
-        Sets threshold at mean + sigma * std, only averaging neurons that
-        are significantly well-aligned.
-
-        Args:
-            confidences: Alignment confidence scores from permutation alignment.
-            sigma: Number of standard deviations for threshold.
-            source_alpha: Weight for source model.
-            normalize: Whether to normalize before averaging.
-
-        Returns:
-            FusionConfig with data-derived threshold.
-
-        Raises:
-            ValueError: If confidences is empty.
-        """
-        if not confidences:
-            raise ValueError(
-                "Cannot derive threshold from empty confidences. "
-                "Provide alignment confidence scores from permutation alignment."
-            )
-        mean = sum(confidences) / len(confidences)
-        variance = sum((c - mean) ** 2 for c in confidences) / len(confidences)
-        std = variance ** 0.5
-        # Threshold at mean + sigma * std (only average high-confidence matches)
-        threshold = min(1.0, mean + sigma * std)
-        return cls(
-            interference_threshold=threshold,
-            source_alpha=source_alpha,
-            normalize=normalize,
-            interference_sigma=sigma,
-        )
-
-    @classmethod
-    def with_threshold(
-        cls,
-        interference_threshold: float,
-        source_alpha: float = 0.5,
-        normalize: bool = False,
-    ) -> "FusionConfig":
-        """Create config with explicit threshold.
-
-        Args:
-            interference_threshold: Threshold for constructive interference.
-            source_alpha: Weight for source model.
-            normalize: Whether to normalize before averaging.
-
-        Returns:
-            FusionConfig with specified threshold.
-        """
-        return cls(
-            interference_threshold=interference_threshold,
-            source_alpha=source_alpha,
-            normalize=normalize,
-        )
-
-    @property
-    def effective_threshold(self) -> float:
-        """Get the effective interference threshold, raising if not set."""
-        if self.interference_threshold is None:
-            raise ValueError(
-                "interference_threshold not set. Use FusionConfig.with_threshold() "
-                "with an explicit value, or FusionConfig.from_confidence_distribution() "
-                "to derive from alignment confidences."
-            )
-        return self.interference_threshold
 
 
 class PermutationAligner:
@@ -390,18 +187,11 @@ class PermutationAligner:
                     b.astype(target_weight, "float32"), b.transpose(anchors)
                 )
                 logger.debug(f"Anchor-grounded (input match): [{N}, {anchors.shape[0]}]")
-            elif source_out == anchor_dim:
-                logger.warning(
-                    f"Anchor dim {anchor_dim} matches output; using direct weight signatures for alignment"
-                )
-                source_signatures = b.astype(source_weight, "float32")
-                target_signatures = b.astype(target_weight, "float32")
             else:
-                logger.warning(
-                    f"Anchor dim {anchor_dim} doesn't match weight dims [{source_out}, {source_in}], using direct"
+                raise PermutationAlignerError(
+                    f"Anchor dim {anchor_dim} does not match weight dims "
+                    f"[{source_out}, {source_in}]"
                 )
-                source_signatures = b.astype(source_weight, "float32")
-                target_signatures = b.astype(target_weight, "float32")
         else:
             # Direct: use weight rows as signatures
             source_signatures = b.astype(source_weight, "float32")
@@ -409,9 +199,7 @@ class PermutationAligner:
             logger.debug(f"Using direct weight signatures: [{N}, {source_in}]")
 
         if source_signatures.shape[0] != N or target_signatures.shape[0] != N:
-            logger.warning("Anchor signatures shape mismatch; using direct weight signatures")
-            source_signatures = b.astype(source_weight, "float32")
-            target_signatures = b.astype(target_weight, "float32")
+            raise PermutationAlignerError("Anchor signatures shape mismatch")
 
         # Normalize signatures
         source_norms = (
@@ -581,19 +369,13 @@ class PermutationAligner:
         source_signatures = None
         target_signatures = None
 
-        if input_dim == anchor_dim:
-            source_signatures = b.matmul(b.astype(source_weight, "float32"), b.transpose(anchors))
-            target_signatures = b.matmul(b.astype(target_weight, "float32"), b.transpose(anchors))
-        else:
-            logger.warning(
-                f"Weight dim {input_dim} != anchor dim {anchor_dim}, using weight row norms"
+        if input_dim != anchor_dim:
+            raise PermutationAlignerError(
+                f"Weight dim {input_dim} != anchor dim {anchor_dim}"
             )
-            source_fp32 = b.astype(source_weight, "float32")
-            target_fp32 = b.astype(target_weight, "float32")
-            source_norms = b.sqrt(b.sum(source_fp32 * source_fp32, axis=1, keepdims=True))
-            target_norms = b.sqrt(b.sum(target_fp32 * target_fp32, axis=1, keepdims=True))
-            source_signatures = source_norms
-            target_signatures = target_norms
+
+        source_signatures = b.matmul(b.astype(source_weight, "float32"), b.transpose(anchors))
+        target_signatures = b.matmul(b.astype(target_weight, "float32"), b.transpose(anchors))
 
         b.eval(source_signatures, target_signatures)
         return PermutationAligner._align_from_signatures(
@@ -621,9 +403,8 @@ class PermutationAligner:
         target_anchor_dim = target_anchors.shape[1]
 
         if source_anchor_dim != input_dim or target_anchor_dim != input_dim:
-            logger.warning("Anchor activation dim mismatch. Returning projection alignment.")
-            return PermutationAligner.align_via_anchor_projection(
-                source_weight, target_weight, source_anchors, config, backend=b
+            raise PermutationAlignerError(
+                "Anchor activation dim mismatch."
             )
 
         source_signatures = b.matmul(
@@ -645,32 +426,15 @@ class PermutationAligner:
         config: Config,
         backend: "Backend | None" = None,
     ) -> AlignmentResult:
-        """Aligns neurons using signature similarity with GPU-batched greedy assignment.
-
-        SCALABILITY NOTE:
-        This method uses a batched greedy approach rather than Hungarian algorithm.
-        For MLP intermediate dimensions (N = 4096-14336 neurons), Hungarian O(N³) would be:
-          - N=4096:  68 billion operations
-          - N=8192: 550 billion operations
-          - N=14336: 2.9 trillion operations
-
-        The greedy approach:
-          1. Compute similarity in GPU batches
-          2. Sort by confidence and assign greedily
-          3. Recompute conflicts only when necessary
-
-        This is O(N² log N) with excellent GPU utilization, giving practical alignment
-        times of seconds rather than hours. The quality loss vs optimal is typically <1%
-        because high-similarity matches dominate.
-
-        For small N (direct .align() calls), the optimal Hungarian algorithm is used.
-        """
+        """Aligns neurons using exact Hungarian assignment over signature similarity."""
         b = backend or get_default_backend()
 
         if source_signatures.ndim != 2 or target_signatures.ndim != 2:
             raise ValueError("Signatures must be 2D matrices")
 
         N = source_signatures.shape[0]
+        if target_signatures.shape[0] != N:
+            raise PermutationAlignerError("Signature count mismatch")
 
         source_fp32 = b.astype(source_signatures, "float32")
         target_fp32 = b.astype(target_signatures, "float32")
@@ -682,121 +446,28 @@ class PermutationAligner:
         source_normalized = source_fp32 / source_norms
         target_normalized = target_fp32 / target_norms
 
-        # Batched Similarity
-        batch_size = 512
-        if N >= 4096:
-            batch_size = 128
-        if N >= 8000:
-            batch_size = 32
-        if N > 12000:
-            batch_size = 16
+        similarity = b.matmul(source_normalized, b.transpose(target_normalized))
+        b.eval(similarity)
 
-        logger.debug(f"Using batch size {batch_size} for N={N}")
+        sim_data = b.to_numpy(similarity).tolist()
+        max_abs_sim = max(abs(sim_data[i][j]) for i in range(N) for j in range(N))
+        cost_matrix = [[max_abs_sim - abs(sim_data[i][j]) for j in range(N)] for i in range(N)]
 
-        assignment = [-1] * N
+        assignment = PermutationAligner._hungarian_algorithm(cost_matrix)
+
         signs = [1.0] * N
         match_confidences = [0.0] * N
-        used_targets = set()
         sign_flip_count = 0
 
-        source_order = []
-
-        # Batched computation on GPU
-        for batch_start in range(0, N, batch_size):
-            batch_end = min(batch_start + batch_size, N)
-
-            source_slice = source_normalized[batch_start:batch_end]
-            sim_slice = b.matmul(source_slice, b.transpose(target_normalized))  # [batch, N]
-
-            abs_sim = b.abs(sim_slice)
-            best_targets_gpu = b.argmax(abs_sim, axis=1)  # [batch]
-            best_sims_gpu = b.max(abs_sim, axis=1)  # [batch]
-
-            # For signed sim, we need to gather
-            # Use indexing: sim_slice[batch_indices, best_targets_gpu]
-            batch_indices = b.arange(batch_end - batch_start)
-            best_signed_gpu = sim_slice[batch_indices, best_targets_gpu]
-
-            b.eval(best_targets_gpu, best_sims_gpu, best_signed_gpu)
-
-            best_targets = b.to_numpy(best_targets_gpu).tolist()
-            best_sims = b.to_numpy(best_sims_gpu).tolist()
-            best_signed = b.to_numpy(best_signed_gpu).tolist()
-
-            for i in range(len(best_targets)):
-                source_order.append(
-                    (batch_start + i, best_sims[i], int(best_targets[i]), best_signed[i])
-                )
-
-        # Sort
-        source_order.sort(key=lambda x: x[1], reverse=True)
-
-        needs_recompute = []
-
-        # Get effective threshold (raises if not configured)
-        threshold = config.effective_threshold
-
-        for src_idx, max_sim, best_target, signed_sim in source_order:
-            if max_sim < threshold:
-                continue
-
-            if best_target not in used_targets:
-                assignment[src_idx] = best_target
-                match_confidences[src_idx] = float(max_sim)
-                used_targets.add(best_target)
-                if signed_sim < 0:
+        for src_idx in range(N):
+            tgt_idx = assignment[src_idx]
+            if tgt_idx >= 0:
+                sim = sim_data[src_idx][tgt_idx]
+                match_confidences[src_idx] = abs(sim)
+                if sim < 0:
                     signs[src_idx] = -1.0
                     sign_flip_count += 1
-            else:
-                needs_recompute.append(src_idx)
 
-        # Recompute conflicts
-        if needs_recompute:
-            logger.debug(f"Recomputing {len(needs_recompute)} sources")
-            sim_full_arr = b.matmul(source_normalized, b.transpose(target_normalized))
-            b.eval(sim_full_arr)
-            sim_full = b.to_numpy(sim_full_arr).tolist()
-
-            for src_idx in needs_recompute:
-                row = sim_full[src_idx]
-                best_target = -1
-                best_sim = 0.0
-                best_abs = -float("inf")
-
-                for tgt_idx in range(N):
-                    if tgt_idx in used_targets:
-                        continue
-                    sim = row[tgt_idx]
-                    abs_sim_val = abs(sim)
-                    if abs_sim_val > best_abs:
-                        best_target = tgt_idx
-                        best_sim = sim
-                        best_abs = abs_sim_val
-
-                if best_target >= 0 and best_abs >= threshold:
-                    assignment[src_idx] = best_target
-                    match_confidences[src_idx] = float(best_abs)
-                    used_targets.add(best_target)
-                    if best_sim < 0:
-                        signs[src_idx] = -1.0
-                        sign_flip_count += 1
-
-        # Fill remaining
-        remaining_targets = set(range(N)) - used_targets
-        sorted_remaining = sorted(list(remaining_targets))
-
-        for src_idx in range(N):
-            if assignment[src_idx] < 0:
-                if src_idx in remaining_targets:
-                    assignment[src_idx] = src_idx
-                    remaining_targets.remove(src_idx)
-                elif sorted_remaining:
-                    tgt = sorted_remaining.pop(0)
-                    assignment[src_idx] = tgt
-                    match_confidences[src_idx] = 0.0
-                    remaining_targets.discard(tgt)
-
-        # Target arrays
         signs_target = [1.0] * N
         confidences_target = [0.0] * N
         for src, tgt in enumerate(assignment):
@@ -807,11 +478,8 @@ class PermutationAligner:
         avg_quality = sum(confidences_target) / max(1, N)
 
         if N > 4096:
-            # Sparse return
             return AlignmentResult(
-                permutation=b.astype(
-                    b.array(assignment), "float32"
-                ),  # abuse of notation, but keeps ID
+                permutation=b.astype(b.array(assignment), "float32"),
                 signs=b.astype(b.array(signs_target), "float32"),
                 match_quality=avg_quality,
                 match_confidences=confidences_target,
@@ -819,26 +487,22 @@ class PermutationAligner:
                 is_sparse_permutation=True,
                 assignment_indices=assignment,
             )
-        else:
-            # Dense return
-            perm_data = [0.0] * (N * N)
-            for src, tgt in enumerate(assignment):
-                if tgt >= 0:
-                    perm_data[tgt * N + src] = 1.0
-                else:
-                    # Identity fallback for safety
-                    perm_data[src * N + src] = 1.0
 
-            permutation = b.astype(b.reshape(b.array(perm_data), (N, N)), "float32")
-            sign_matrix = b.astype(b.diag(b.array(signs_target)), "float32")
+        perm_data = [0.0] * (N * N)
+        for src, tgt in enumerate(assignment):
+            if tgt >= 0:
+                perm_data[tgt * N + src] = 1.0
 
-            return AlignmentResult(
-                permutation=permutation,
-                signs=sign_matrix,
-                match_quality=avg_quality,
-                match_confidences=confidences_target,
-                sign_flip_count=sign_flip_count,
-            )
+        permutation = b.astype(b.reshape(b.array(perm_data), (N, N)), "float32")
+        sign_matrix = b.astype(b.diag(b.array(signs_target)), "float32")
+
+        return AlignmentResult(
+            permutation=permutation,
+            signs=sign_matrix,
+            match_quality=avg_quality,
+            match_confidences=confidences_target,
+            sign_flip_count=sign_flip_count,
+        )
 
     @staticmethod
     def rebasin_mlp_only(
@@ -1097,20 +761,14 @@ class PermutationAligner:
         source_weight: "Array",
         aligned_target_weight: "Array",
         alignment: AlignmentResult,
-        config: FusionConfig = FusionConfig(),
         backend: "Backend | None" = None,
     ) -> "Array":
-        """Fuses source and aligned target weights using confidence-weighted averaging.
-
-        Implements TIES-Merging principles:
-        1. Only merge neurons that are geometrically aligned (high confidence).
-        2. For unaligned neurons, preserve the dominant signal (or base).
+        """Fuses source and aligned target weights using confidence weights only.
 
         Args:
             source_weight: Base model weight [Out, In].
             aligned_target_weight: Aligned target weight [Out, In].
             alignment: Alignment result with match confidences.
-            config: Fusion configuration.
             backend: Optional backend for array operations.
 
         Returns:
@@ -1123,15 +781,9 @@ class PermutationAligner:
         # Broadcast confidence to shape [Out, 1] for row-wise masking
         mask = b.reshape(confidence, (-1, 1))
 
-        # Standard weighted average
-        alpha = config.source_alpha
-        avg = (source_weight * alpha) + (aligned_target_weight * (1 - alpha))
-
-        # Confidence-gated blend:
-        # If confidence is high, use average.
-        # If confidence is low, stick to source (base model stability).
-        # W_final = confidence * avg + (1 - confidence) * source
-        fused = (avg * mask) + (source_weight * (1 - mask))
+        # Confidence-weighted blend:
+        # W_final = confidence * target + (1 - confidence) * source
+        fused = (aligned_target_weight * mask) + (source_weight * (1 - mask))
 
         b.eval(fused)
         return fused
@@ -1256,14 +908,11 @@ class PermutationAligner:
         else:
             values = b.to_numpy(b.diag(signs)).tolist()
 
-        if len(values) == expected_count:
-            return values
-
-        logger.warning(
-            f"Sign vector size mismatch (expected {expected_count}, got {len(values)}); "
-            "falling back to +1"
-        )
-        return [1.0] * expected_count
+        if len(values) != expected_count:
+            raise PermutationAlignerError(
+                f"Sign vector size mismatch (expected {expected_count}, got {len(values)})"
+            )
+        return values
 
     @staticmethod
     def _hungarian_algorithm(cost_matrix: list[list[float]]) -> list[int]:

@@ -41,6 +41,7 @@ from .helpers import (
 )
 from .models import UnifiedMergeConfig, UnifiedMergeResult
 from .stages import (
+    stage_density,
     stage_permute,
     stage_probe,
     stage_transplant,
@@ -327,6 +328,35 @@ def run_merge(
             "Use `mc merge pipeline` (probe stage) to collect activations before merging."
         )
 
+    # =================================================================
+    # STAGE 2.5: DENSITY (Selective grafting based on knowledge density)
+    # =================================================================
+    # Compute which concepts to graft based on source/target density.
+    # Only graft where source is denser than target (fills gaps, no overwrites).
+    logger.info("STAGE 2.5: DENSITY (computing graft mask)")
+    graft_mask, density_metrics = stage_density(
+        source_activations=source_activations,
+        target_activations=target_activations,
+        probe_ids=probe_result.get("probe_ids"),
+        probe_domains=probe_result.get("probe_domains"),
+        layers=layer_indices,
+        skip_density_analysis=False,
+        backend=backend,
+    )
+
+    if graft_mask:
+        graft_count = sum(
+            sum(1 for v in layer_mask.values() if v)
+            for layer_mask in graft_mask.values()
+        )
+        logger.info(
+            "DENSITY: %d concepts marked for grafting, %d skipped (target dense)",
+            density_metrics.get("high_opportunity_count", graft_count),
+            density_metrics.get("no_graft_count", 0),
+        )
+    else:
+        logger.info("DENSITY: Graft all concepts (no density filtering)")
+
     logger.info("STAGE 3: TRANSPLANT (null-space constrained)")
     merged_weights, transplant_metrics = stage_transplant(
         source_weights=source_weights,
@@ -345,6 +375,7 @@ def run_merge(
         config=merge_config,
         extract_layer_index_fn=extract_layer_index,
         backend=backend,
+        graft_mask=graft_mask,
     )
 
     # =================================================================

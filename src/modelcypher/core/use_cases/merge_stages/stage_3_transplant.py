@@ -34,10 +34,8 @@ from typing import TYPE_CHECKING, Any, Callable, Iterable
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.cross_dimensional_projection import (
     ProjectionMethod,
-    project_cross_dimensional,
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
     machine_epsilon,
     safe_pinv,
 )
@@ -54,6 +52,9 @@ from modelcypher.core.use_cases.merge_stages.transplant_manifest import (
     TransplantManifest,
     WeightStatus,
     WeightTransformRecord,
+)
+from modelcypher.core.use_cases.merge_stages.stage_2_density import (
+    filter_core_probes_by_graft_mask,
 )
 from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
 
@@ -77,6 +78,12 @@ class TransplantStageConfig:
     # NOTE: Alpha interpolation was REMOVED. The null-space projection determines
     # preserved_fraction geometrically. Do NOT add hardcoded scalar overrides.
     # NOTE: strict_mode was REMOVED. All failures raise exceptions. No fallbacks.
+
+    # Graft mask from density analysis (stage 2).
+    # Maps probe_id -> layer -> should_graft.
+    # If None, graft all core probes (backward compatible).
+    # If set, only graft concepts with True in the mask.
+    graft_mask: dict[str, dict[int, bool]] | None = None
 
 
 @dataclass
@@ -319,62 +326,79 @@ def stage_transplant(
         logger.info("GLOBAL HIDDEN: Collected %d activations across %d layers",
                     len(all_src_acts), len(layer_indices))
 
-        if len(all_src_acts) >= 20:
-            src_concat = b.stack(all_src_acts, axis=0)
-            tgt_concat = b.stack(all_tgt_acts, axis=0)
-            src_concat = b.astype(src_concat, "float32")
-            tgt_concat = b.astype(tgt_concat, "float32")
-            b.eval(src_concat, tgt_concat)
+        if len(all_src_acts) < 2:
+            raise AlignmentFailureError(
+                stage="GLOBAL_TRAJECTORY_ALIGNMENT",
+                weight_key=None,
+                message="Insufficient activations for global hidden alignment",
+                context={
+                    "samples_used": len(all_src_acts),
+                    "required_min_samples": 2,
+                },
+            )
 
-            global_src_hidden_dim = int(src_concat.shape[1])
-            global_tgt_hidden_dim = int(tgt_concat.shape[1])
+        src_concat = b.stack(all_src_acts, axis=0)
+        tgt_concat = b.stack(all_tgt_acts, axis=0)
+        src_concat = b.astype(src_concat, "float32")
+        tgt_concat = b.astype(tgt_concat, "float32")
+        b.eval(src_concat, tgt_concat)
 
-            if global_src_hidden_dim != global_tgt_hidden_dim:
-                from modelcypher.core.domain.geometry.gram_aligner import GramAligner
-                aligner = GramAligner(b)
-                global_result = aligner.find_perfect_alignment(src_concat, tgt_concat)
+        global_src_hidden_dim = int(src_concat.shape[1])
+        global_tgt_hidden_dim = int(tgt_concat.shape[1])
 
-                if global_result.is_perfect:
-                    F = b.array(global_result.feature_transform)
-                    b.eval(F)
-                    global_hidden_stitch_output = b.transpose(F)  # F.T [tgt, src]
-                    F_pinv, pinv_diag = safe_pinv(b, F)
-                    global_hidden_stitch_input = b.transpose(F_pinv)  # pinv(F).T [src, tgt]
-                    b.eval(global_hidden_stitch_output, global_hidden_stitch_input)
-                    logger.info(
-                        "GLOBAL TRAJECTORY ALIGNMENT: CKA=%.4f (%d→%d) cond=%.2e rank=%d/%d",
-                        global_result.achieved_cka, global_src_hidden_dim,
-                        global_tgt_hidden_dim, pinv_diag.get("condition_number", 0),
-                        pinv_diag.get("effective_rank", 0), min(global_src_hidden_dim, global_tgt_hidden_dim)
-                    )
-                    metrics["global_trajectory_aligned"] = True
-                    metrics["global_trajectory_cka"] = float(global_result.achieved_cka)
-                else:
-                    # No fallbacks. CKA = 1.0 or FAIL.
-                    raise AlignmentFailureError(
-                        stage="GLOBAL_TRAJECTORY_ALIGNMENT",
-                        weight_key=None,
-                        message=f"Alignment algorithm bug: CKA={global_result.achieved_cka:.4f}. The geometry is invariant - this is a code/numerical issue, not model incompatibility.",
-                        context={
-                            "achieved_cka": float(global_result.achieved_cka),
-                            "source_dim": global_src_hidden_dim,
-                            "target_dim": global_tgt_hidden_dim,
-                            "samples_used": len(all_src_acts),
-                            "fix": "Check GramAligner numerical stability, sample count, or precision",
-                        },
-                    )
-            else:
-                # Same hidden dims: use IDENTITY stitch (no transformation)
-                # This is required for MLP dual-stitch to work when only intermediate differs
-                global_hidden_stitch_output = b.eye(global_src_hidden_dim)
-                global_hidden_stitch_input = b.eye(global_src_hidden_dim)
+        if global_src_hidden_dim != global_tgt_hidden_dim:
+            from modelcypher.core.domain.geometry.gram_aligner import GramAligner
+            aligner = GramAligner(b)
+            global_result = aligner.find_perfect_alignment(src_concat, tgt_concat)
+
+            if global_result.is_perfect:
+                F = b.array(global_result.feature_transform)
+                b.eval(F)
+                global_hidden_stitch_output = b.transpose(F)  # F.T [tgt, src]
+                F_pinv, pinv_diag = safe_pinv(b, F)
+                global_hidden_stitch_input = b.transpose(F_pinv)  # pinv(F).T [src, tgt]
                 b.eval(global_hidden_stitch_output, global_hidden_stitch_input)
                 logger.info(
-                    "GLOBAL: Same hidden dims (%d) - using identity stitch",
-                    global_src_hidden_dim
+                    "GLOBAL TRAJECTORY ALIGNMENT: CKA=%.4f (%d→%d) cond=%.2e rank=%d/%d",
+                    global_result.achieved_cka, global_src_hidden_dim,
+                    global_tgt_hidden_dim, pinv_diag.get("condition_number", 0),
+                    pinv_diag.get("effective_rank", 0), min(global_src_hidden_dim, global_tgt_hidden_dim)
                 )
                 metrics["global_trajectory_aligned"] = True
-                metrics["global_trajectory_cka"] = 1.0  # Identity = perfect
+                metrics["global_trajectory_cka"] = float(global_result.achieved_cka)
+            else:
+                # No fallbacks. CKA = 1.0 or FAIL.
+                raise AlignmentFailureError(
+                    stage="GLOBAL_TRAJECTORY_ALIGNMENT",
+                    weight_key=None,
+                    message=f"Alignment algorithm bug: CKA={global_result.achieved_cka:.4f}. The geometry is invariant - this is a code/numerical issue, not model incompatibility.",
+                    context={
+                        "achieved_cka": float(global_result.achieved_cka),
+                        "source_dim": global_src_hidden_dim,
+                        "target_dim": global_tgt_hidden_dim,
+                        "samples_used": len(all_src_acts),
+                        "fix": "Check GramAligner numerical stability, sample count, or precision",
+                    },
+                )
+        else:
+            # Same hidden dims: use IDENTITY stitch (no transformation)
+            # This is required for MLP dual-stitch to work when only intermediate differs
+            global_hidden_stitch_output = b.eye(global_src_hidden_dim)
+            global_hidden_stitch_input = b.eye(global_src_hidden_dim)
+            b.eval(global_hidden_stitch_output, global_hidden_stitch_input)
+            logger.info(
+                "GLOBAL: Same hidden dims (%d) - using identity stitch",
+                global_src_hidden_dim
+            )
+            metrics["global_trajectory_aligned"] = True
+            metrics["global_trajectory_cka"] = 1.0  # Identity = perfect
+    else:
+        raise AlignmentFailureError(
+            stage="GLOBAL_TRAJECTORY_ALIGNMENT",
+            weight_key=None,
+            message="Source activations are required for global hidden alignment",
+            context={},
+        )
 
     # ==========================================================================
     # GLOBAL ATTENTION ALIGNMENT: Compute ONE attention stitch for ALL layers
@@ -407,60 +431,70 @@ def stage_transplant(
         logger.info("GLOBAL ATTN: Collected %d activations across %d layers",
                     len(all_src_attn), len(layer_indices))
 
-        if len(all_src_attn) >= 20:
-            src_attn_concat = b.stack(all_src_attn, axis=0)
-            tgt_attn_concat = b.stack(all_tgt_attn, axis=0)
-            src_attn_concat = b.astype(src_attn_concat, "float32")
-            tgt_attn_concat = b.astype(tgt_attn_concat, "float32")
-            b.eval(src_attn_concat, tgt_attn_concat)
+        if len(all_src_attn) < 2:
+            raise AlignmentFailureError(
+                stage="GLOBAL_ATTENTION_ALIGNMENT",
+                weight_key=None,
+                message="Insufficient activations for global attention alignment",
+                context={
+                    "samples_used": len(all_src_attn),
+                    "required_min_samples": 2,
+                },
+            )
 
-            global_src_attn_dim = int(src_attn_concat.shape[1])
-            global_tgt_attn_dim = int(tgt_attn_concat.shape[1])
+        src_attn_concat = b.stack(all_src_attn, axis=0)
+        tgt_attn_concat = b.stack(all_tgt_attn, axis=0)
+        src_attn_concat = b.astype(src_attn_concat, "float32")
+        tgt_attn_concat = b.astype(tgt_attn_concat, "float32")
+        b.eval(src_attn_concat, tgt_attn_concat)
 
-            if global_src_attn_dim != global_tgt_attn_dim:
-                from modelcypher.core.domain.geometry.gram_aligner import GramAligner
-                aligner = GramAligner(b)
-                attn_result = aligner.find_perfect_alignment(src_attn_concat, tgt_attn_concat)
+        global_src_attn_dim = int(src_attn_concat.shape[1])
+        global_tgt_attn_dim = int(tgt_attn_concat.shape[1])
 
-                if attn_result.is_perfect:
-                    F_attn = b.array(attn_result.feature_transform)
-                    b.eval(F_attn)
-                    global_attention_stitch_output = b.transpose(F_attn)  # F.T [tgt, src]
-                    F_attn_pinv, attn_pinv_diag = safe_pinv(b, F_attn)
-                    global_attention_stitch_input = b.transpose(F_attn_pinv)  # pinv(F).T [src, tgt]
-                    b.eval(global_attention_stitch_output, global_attention_stitch_input)
-                    logger.info(
-                        "GLOBAL ATTENTION ALIGNMENT: CKA=%.4f (%d→%d) cond=%.2e",
-                        attn_result.achieved_cka, global_src_attn_dim,
-                        global_tgt_attn_dim, attn_pinv_diag.get("condition_number", 0)
-                    )
-                    metrics["global_attention_aligned"] = True
-                    metrics["global_attention_cka"] = float(attn_result.achieved_cka)
-                else:
-                    # No fallbacks. CKA = 1.0 or FAIL.
-                    raise AlignmentFailureError(
-                        stage="GLOBAL_ATTENTION_ALIGNMENT",
-                        weight_key=None,
-                        message=f"Alignment algorithm bug: CKA={attn_result.achieved_cka:.4f}. The geometry is invariant - this is a code/numerical issue.",
-                        context={
-                            "achieved_cka": float(attn_result.achieved_cka),
-                            "source_dim": global_src_attn_dim,
-                            "target_dim": global_tgt_attn_dim,
-                            "samples_used": len(all_src_attn),
-                            "fix": "Check GramAligner numerical stability, sample count, or precision",
-                        },
-                    )
-            else:
-                # Same attention dims: use IDENTITY stitch
-                global_attention_stitch_output = b.eye(global_src_attn_dim)
-                global_attention_stitch_input = b.eye(global_src_attn_dim)
+        if global_src_attn_dim != global_tgt_attn_dim:
+            from modelcypher.core.domain.geometry.gram_aligner import GramAligner
+            aligner = GramAligner(b)
+            attn_result = aligner.find_perfect_alignment(src_attn_concat, tgt_attn_concat)
+
+            if attn_result.is_perfect:
+                F_attn = b.array(attn_result.feature_transform)
+                b.eval(F_attn)
+                global_attention_stitch_output = b.transpose(F_attn)  # F.T [tgt, src]
+                F_attn_pinv, attn_pinv_diag = safe_pinv(b, F_attn)
+                global_attention_stitch_input = b.transpose(F_attn_pinv)  # pinv(F).T [src, tgt]
                 b.eval(global_attention_stitch_output, global_attention_stitch_input)
                 logger.info(
-                    "GLOBAL ATTN: Same attention dims (%d) - using identity stitch",
-                    global_src_attn_dim
+                    "GLOBAL ATTENTION ALIGNMENT: CKA=%.4f (%d→%d) cond=%.2e",
+                    attn_result.achieved_cka, global_src_attn_dim,
+                    global_tgt_attn_dim, attn_pinv_diag.get("condition_number", 0)
                 )
                 metrics["global_attention_aligned"] = True
-                metrics["global_attention_cka"] = 1.0  # Identity = perfect
+                metrics["global_attention_cka"] = float(attn_result.achieved_cka)
+            else:
+                # No fallbacks. CKA = 1.0 or FAIL.
+                raise AlignmentFailureError(
+                    stage="GLOBAL_ATTENTION_ALIGNMENT",
+                    weight_key=None,
+                    message=f"Alignment algorithm bug: CKA={attn_result.achieved_cka:.4f}. The geometry is invariant - this is a code/numerical issue.",
+                    context={
+                        "achieved_cka": float(attn_result.achieved_cka),
+                        "source_dim": global_src_attn_dim,
+                        "target_dim": global_tgt_attn_dim,
+                        "samples_used": len(all_src_attn),
+                        "fix": "Check GramAligner numerical stability, sample count, or precision",
+                    },
+                )
+        else:
+            # Same attention dims: use IDENTITY stitch
+            global_attention_stitch_output = b.eye(global_src_attn_dim)
+            global_attention_stitch_input = b.eye(global_src_attn_dim)
+            b.eval(global_attention_stitch_output, global_attention_stitch_input)
+            logger.info(
+                "GLOBAL ATTN: Same attention dims (%d) - using identity stitch",
+                global_src_attn_dim
+            )
+            metrics["global_attention_aligned"] = True
+            metrics["global_attention_cka"] = 1.0  # Identity = perfect
 
     # ==========================================================================
     # GLOBAL KV ALIGNMENT: Compute separate KV stitch for GQA models
@@ -495,60 +529,70 @@ def stage_transplant(
         logger.info("GLOBAL KV: Collected %d activations across %d layers",
                     len(all_src_kv), len(layer_indices))
 
-        if len(all_src_kv) >= 20:
-            src_kv_concat = b.stack(all_src_kv, axis=0)
-            tgt_kv_concat = b.stack(all_tgt_kv, axis=0)
-            src_kv_concat = b.astype(src_kv_concat, "float32")
-            tgt_kv_concat = b.astype(tgt_kv_concat, "float32")
-            b.eval(src_kv_concat, tgt_kv_concat)
+        if len(all_src_kv) < 2:
+            raise AlignmentFailureError(
+                stage="GLOBAL_KV_ALIGNMENT",
+                weight_key=None,
+                message="Insufficient activations for global KV alignment",
+                context={
+                    "samples_used": len(all_src_kv),
+                    "required_min_samples": 2,
+                },
+            )
 
-            global_src_kv_dim = int(src_kv_concat.shape[1])
-            global_tgt_kv_dim = int(tgt_kv_concat.shape[1])
+        src_kv_concat = b.stack(all_src_kv, axis=0)
+        tgt_kv_concat = b.stack(all_tgt_kv, axis=0)
+        src_kv_concat = b.astype(src_kv_concat, "float32")
+        tgt_kv_concat = b.astype(tgt_kv_concat, "float32")
+        b.eval(src_kv_concat, tgt_kv_concat)
 
-            if global_src_kv_dim != global_tgt_kv_dim:
-                from modelcypher.core.domain.geometry.gram_aligner import GramAligner
-                aligner = GramAligner(b)
-                kv_result = aligner.find_perfect_alignment(src_kv_concat, tgt_kv_concat)
+        global_src_kv_dim = int(src_kv_concat.shape[1])
+        global_tgt_kv_dim = int(tgt_kv_concat.shape[1])
 
-                if kv_result.is_perfect:
-                    F_kv = b.array(kv_result.feature_transform)
-                    b.eval(F_kv)
-                    global_kv_stitch_output = b.transpose(F_kv)  # F.T [tgt, src]
-                    F_kv_pinv, kv_pinv_diag = safe_pinv(b, F_kv)
-                    global_kv_stitch_input = b.transpose(F_kv_pinv)  # pinv(F).T [src, tgt]
-                    b.eval(global_kv_stitch_output, global_kv_stitch_input)
-                    logger.info(
-                        "GLOBAL KV ALIGNMENT: CKA=%.4f (%d→%d) cond=%.2e",
-                        kv_result.achieved_cka, global_src_kv_dim,
-                        global_tgt_kv_dim, kv_pinv_diag.get("condition_number", 0)
-                    )
-                    metrics["global_kv_aligned"] = True
-                    metrics["global_kv_cka"] = float(kv_result.achieved_cka)
-                else:
-                    # No fallbacks. CKA = 1.0 or FAIL.
-                    raise AlignmentFailureError(
-                        stage="GLOBAL_KV_ALIGNMENT",
-                        weight_key=None,
-                        message=f"Alignment algorithm bug: CKA={kv_result.achieved_cka:.4f}. The geometry is invariant - this is a code/numerical issue.",
-                        context={
-                            "achieved_cka": float(kv_result.achieved_cka),
-                            "source_dim": global_src_kv_dim,
-                            "target_dim": global_tgt_kv_dim,
-                            "samples_used": len(all_src_kv),
-                            "fix": "Check GramAligner numerical stability, sample count, or precision",
-                        },
-                    )
-            else:
-                # Same KV dims: use IDENTITY stitch
-                global_kv_stitch_output = b.eye(global_src_kv_dim)
-                global_kv_stitch_input = b.eye(global_src_kv_dim)
+        if global_src_kv_dim != global_tgt_kv_dim:
+            from modelcypher.core.domain.geometry.gram_aligner import GramAligner
+            aligner = GramAligner(b)
+            kv_result = aligner.find_perfect_alignment(src_kv_concat, tgt_kv_concat)
+
+            if kv_result.is_perfect:
+                F_kv = b.array(kv_result.feature_transform)
+                b.eval(F_kv)
+                global_kv_stitch_output = b.transpose(F_kv)  # F.T [tgt, src]
+                F_kv_pinv, kv_pinv_diag = safe_pinv(b, F_kv)
+                global_kv_stitch_input = b.transpose(F_kv_pinv)  # pinv(F).T [src, tgt]
                 b.eval(global_kv_stitch_output, global_kv_stitch_input)
                 logger.info(
-                    "GLOBAL KV: Same KV attention dims (%d) - using identity stitch",
-                    global_src_kv_dim
+                    "GLOBAL KV ALIGNMENT: CKA=%.4f (%d→%d) cond=%.2e",
+                    kv_result.achieved_cka, global_src_kv_dim,
+                    global_tgt_kv_dim, kv_pinv_diag.get("condition_number", 0)
                 )
                 metrics["global_kv_aligned"] = True
-                metrics["global_kv_cka"] = 1.0  # Identity = perfect
+                metrics["global_kv_cka"] = float(kv_result.achieved_cka)
+            else:
+                # No fallbacks. CKA = 1.0 or FAIL.
+                raise AlignmentFailureError(
+                    stage="GLOBAL_KV_ALIGNMENT",
+                    weight_key=None,
+                    message=f"Alignment algorithm bug: CKA={kv_result.achieved_cka:.4f}. The geometry is invariant - this is a code/numerical issue.",
+                    context={
+                        "achieved_cka": float(kv_result.achieved_cka),
+                        "source_dim": global_src_kv_dim,
+                        "target_dim": global_tgt_kv_dim,
+                        "samples_used": len(all_src_kv),
+                        "fix": "Check GramAligner numerical stability, sample count, or precision",
+                    },
+                )
+        else:
+            # Same KV dims: use IDENTITY stitch
+            global_kv_stitch_output = b.eye(global_src_kv_dim)
+            global_kv_stitch_input = b.eye(global_src_kv_dim)
+            b.eval(global_kv_stitch_output, global_kv_stitch_input)
+            logger.info(
+                "GLOBAL KV: Same KV attention dims (%d) - using identity stitch",
+                global_src_kv_dim
+            )
+            metrics["global_kv_aligned"] = True
+            metrics["global_kv_cka"] = 1.0  # Identity = perfect
 
     for layer_num, layer_idx in enumerate(layer_indices):
         # Skip layers already completed (checkpoint resume)
@@ -575,24 +619,26 @@ def stage_transplant(
         # Get REAL activations from collected probes (required)
         act_list = target_activations.get(layer_idx)
         if not act_list:
-            continue
+            raise AlignmentFailureError(
+                stage="LAYER_ACTIVATION_VALIDATION",
+                weight_key=None,
+                message="Missing target activations for layer",
+                context={"layer_idx": layer_idx},
+            )
 
         if len(act_list) != len(probe_ids):
-            logger.debug(
-                "LAYER %d: probe count mismatch (acts=%d, probes=%d); skipping",
-                layer_idx,
-                len(act_list),
-                len(probe_ids),
+            raise AlignmentFailureError(
+                stage="LAYER_ACTIVATION_VALIDATION",
+                weight_key=None,
+                message="Probe count mismatch for layer activations",
+                context={
+                    "layer_idx": layer_idx,
+                    "activations": len(act_list),
+                    "probes": len(probe_ids),
+                },
             )
-            continue
 
         metrics["layers_considered"] += 1
-
-        # Optional per-layer geometry analysis to align source before transplant.
-        shared_source_proj = None
-        shared_target_proj = None
-        transform_requirements: list[str] = []
-        layer_fisher_weights = None
 
         # Multi-space stitching: compute stitches for hidden, intermediate, AND attention dimensions
         # Hidden stitch: maps layer output activations (source hidden → target hidden)
@@ -622,130 +668,6 @@ def stage_transplant(
             target_intermediate_activations.get(layer_idx)
             if target_intermediate_activations else None
         )
-
-        src_act_list = source_activations.get(layer_idx) if source_activations else None
-
-        if src_analysis is not None and config.enable_shared_subspace:
-            from modelcypher.core.domain.geometry.shared_subspace_projector import (
-                AlignmentMethod,
-                SharedSubspaceProjector,
-            )
-            from modelcypher.core.domain.geometry.shared_subspace_projector import (
-                Config as SharedSubspaceConfig,
-            )
-
-            src_list = b.to_numpy(src_analysis).tolist()
-            tgt_list = b.to_numpy(tgt_analysis).tolist()
-            shared_result = SharedSubspaceProjector._discover_with_cca(
-                source_activations=src_list,
-                target_activations=tgt_list,
-                weights=None,
-                n=len(src_list),
-                d_source=len(src_list[0]) if src_list else 0,
-                d_target=len(tgt_list[0]) if tgt_list else 0,
-                config=SharedSubspaceConfig(alignment_method=AlignmentMethod.cca),
-                backend=b,
-            )
-            if shared_result and shared_result.is_valid:
-                shared_source_proj = b.array(shared_result.source_projection)
-                shared_target_proj = b.array(shared_result.target_projection)
-                b.eval(shared_source_proj, shared_target_proj)
-                metrics["shared_subspace_dimensions"].append(shared_result.shared_dimension)
-
-        if src_analysis is not None and config.enable_relative_representation:
-            from modelcypher.core.domain.geometry.relative_representation import (
-                align_relative_representations,
-                compute_relative_representation,
-            )
-            from modelcypher.core.domain.geometry.riemannian_utils import (
-                farthest_point_sampling,
-            )
-
-            n_anchors = min(config.analysis_anchor_count, analysis_samples)
-            if n_anchors >= 2:
-                anchor_idx = farthest_point_sampling(tgt_analysis, n_anchors, backend=b)
-                anchors = b.take(tgt_analysis, b.array(anchor_idx), axis=0)
-                b.eval(anchors)
-
-                # For cross-architecture, use GramAligner to find EXACT CKA=1.0 transform
-                src_d = int(src_analysis.shape[1])
-                tgt_d = int(tgt_analysis.shape[1])
-                if src_d != tgt_d:
-                    from modelcypher.core.domain.geometry.gram_aligner import GramAligner
-
-                    aligner = GramAligner(b)
-                    align_result = aligner.find_perfect_alignment(src_analysis, tgt_analysis)
-                    if not align_result.is_perfect:
-                        # INVARIANT GEOMETRY: CKA=1.0 or we have a bug.
-                        # No fallbacks - failing silently causes gibberish output.
-                        raise AlignmentFailureError(
-                            stage="RELATIVE_REP_ALIGNMENT",
-                            weight_key=key,
-                            message=f"GramAligner failed to achieve CKA=1.0 (got {align_result.achieved_cka:.4f})",
-                            context={
-                                "achieved_cka": align_result.achieved_cka,
-                                "source_dim": src_d,
-                                "target_dim": tgt_d,
-                                "fix": "Debug GramAligner - the perfect alignment EXISTS",
-                            },
-                        )
-                    F = b.array(align_result.feature_transform)
-                    src_for_rel = b.matmul(src_analysis, F)
-                    b.eval(src_for_rel)
-                    logger.debug(
-                        "GramAlign for relative rep: %d->%d, CKA=%.4f",
-                        src_d, tgt_d, align_result.achieved_cka
-                    )
-                else:
-                    src_for_rel = src_analysis
-
-                src_rel = compute_relative_representation(src_for_rel, anchors)
-                tgt_rel = compute_relative_representation(tgt_analysis, anchors)
-                b.eval(src_rel, tgt_rel)
-                _, rel_error = align_relative_representations(src_rel, tgt_rel)
-                metrics["relative_rep_errors"].append(rel_error)
-
-        if src_analysis is not None and config.enable_fisher_weighting:
-            # Fisher weighting requires same dimensions for per-feature weights
-            src_d = int(src_analysis.shape[1])
-            tgt_d = int(tgt_analysis.shape[1])
-            if src_d == tgt_d:
-                src_var = b.var(src_analysis, axis=0)
-                tgt_var = b.var(tgt_analysis, axis=0)
-                b.eval(src_var, tgt_var)
-                eps = division_epsilon(b, src_var)
-                src_fisher = 1.0 / (src_var + eps)
-                tgt_fisher = 1.0 / (tgt_var + eps)
-                total_fisher = src_fisher + tgt_fisher + eps
-                layer_fisher_weights = tgt_fisher / total_fisher
-                b.eval(layer_fisher_weights)
-                mean_arr = b.mean(layer_fisher_weights)
-                b.eval(mean_arr)
-                metrics["fisher_target_means"].append(float(b.to_numpy(mean_arr).item()))
-            else:
-                # Cross-architecture: use scalar Fisher based on total variance
-                src_total_var = b.var(src_analysis)
-                tgt_total_var = b.var(tgt_analysis)
-                b.eval(src_total_var, tgt_total_var)
-                eps = division_epsilon(b, src_total_var)
-                src_total_var_f = float(b.to_numpy(src_total_var))
-                tgt_total_var_f = float(b.to_numpy(tgt_total_var))
-                src_fisher_scalar = 1.0 / (src_total_var_f + eps)
-                tgt_fisher_scalar = 1.0 / (tgt_total_var_f + eps)
-                total_fisher_scalar = src_fisher_scalar + tgt_fisher_scalar + eps
-                fisher_weight_scalar = tgt_fisher_scalar / total_fisher_scalar
-                metrics["fisher_target_means"].append(fisher_weight_scalar)
-
-        if analyzer is not None:
-            relation = layer_relations.get(layer_idx)
-            if relation is not None:
-                analysis = analyzer.analyze(
-                    volume_a=relation.volume_a,
-                    volume_b=relation.volume_b,
-                    relation=relation,
-                )
-                transform_requirements = [t.value for t in analysis.transformations]
-                metrics["transform_requirements_by_layer"][layer_idx] = transform_requirements
 
         # =================================================================
         # GRAM ALIGNMENT: Find EXACT CKA = 1.0 transforms for hidden AND intermediate
@@ -782,46 +704,67 @@ def stage_transplant(
         # Note: Intermediate stitch is per-layer since each MLP has different internal geometry
         if src_inter_list is not None and tgt_inter_list is not None:
             n_inter_samples = min(len(src_inter_list), len(tgt_inter_list))
-            if n_inter_samples >= 10:
-                src_inter = b.stack(src_inter_list[:n_inter_samples], axis=0)
-                tgt_inter = b.stack(tgt_inter_list[:n_inter_samples], axis=0)
-                src_inter = b.astype(src_inter, "float32")
-                tgt_inter = b.astype(tgt_inter, "float32")
-                b.eval(src_inter, tgt_inter)
+            if n_inter_samples < 2:
+                raise AlignmentFailureError(
+                    stage="INTERMEDIATE_ALIGNMENT",
+                    weight_key=None,
+                    message="Insufficient activations for intermediate alignment",
+                    context={
+                        "samples_used": n_inter_samples,
+                        "required_min_samples": 2,
+                        "layer_idx": layer_idx,
+                    },
+                )
 
-                src_inter_dim = int(src_inter.shape[1])
-                tgt_inter_dim = int(tgt_inter.shape[1])
+            src_inter = b.stack(src_inter_list[:n_inter_samples], axis=0)
+            tgt_inter = b.stack(tgt_inter_list[:n_inter_samples], axis=0)
+            src_inter = b.astype(src_inter, "float32")
+            tgt_inter = b.astype(tgt_inter, "float32")
+            b.eval(src_inter, tgt_inter)
 
-                if src_inter_dim != tgt_inter_dim:
-                    # Use GramAligner - finds EXACT CKA = 1.0 transform
-                    aligner = GramAligner(b)
-                    inter_result = aligner.find_perfect_alignment(src_inter, tgt_inter)
+            src_inter_dim = int(src_inter.shape[1])
+            tgt_inter_dim = int(tgt_inter.shape[1])
 
-                    if inter_result.is_perfect:
-                        # feature_transform F is [d_source, d_target]
-                        # source @ F → target (activation alignment)
-                        #
-                        # For weight folding W_target = F_out.T @ W_source @ pinv(F_in).T:
-                        #   - F.T [d_target, d_source] for OUTPUT side (left multiply)
-                        #   - pinv(F).T [d_source, d_target] for INPUT side (right multiply)
-                        F = b.array(inter_result.feature_transform)
-                        b.eval(F)
-                        intermediate_stitch_output = b.transpose(F)  # F.T [tgt, src]
-                        F_pinv, inter_pinv_diag = safe_pinv(b, F)
-                        intermediate_stitch_input = b.transpose(F_pinv)  # pinv(F).T [src, tgt]
-                        b.eval(intermediate_stitch_output, intermediate_stitch_input)
-                        logger.info(
-                            "Layer %d: Intermediate GramAlign CKA=%.4f (%d→%d) cond=%.2e",
-                            layer_idx, inter_result.achieved_cka,
-                            src_inter_dim, tgt_inter_dim, inter_pinv_diag.get("condition_number", 0)
-                        )
-                        metrics.setdefault("intermediate_gram_aligned", 0)
-                        metrics["intermediate_gram_aligned"] += 1
-                    else:
-                        logger.warning(
-                            "Layer %d: Intermediate GramAlign failed (CKA=%.4f)",
-                            layer_idx, inter_result.achieved_cka
-                        )
+            if src_inter_dim != tgt_inter_dim:
+                # Use GramAligner - finds EXACT CKA = 1.0 transform
+                aligner = GramAligner(b)
+                inter_result = aligner.find_perfect_alignment(src_inter, tgt_inter)
+
+                if inter_result.is_perfect:
+                    # feature_transform F is [d_source, d_target]
+                    # source @ F → target (activation alignment)
+                    #
+                    # For weight folding W_target = F_out.T @ W_source @ pinv(F_in).T:
+                    #   - F.T [d_target, d_source] for OUTPUT side (left multiply)
+                    #   - pinv(F).T [d_source, d_target] for INPUT side (right multiply)
+                    F = b.array(inter_result.feature_transform)
+                    b.eval(F)
+                    intermediate_stitch_output = b.transpose(F)  # F.T [tgt, src]
+                    F_pinv, inter_pinv_diag = safe_pinv(b, F)
+                    intermediate_stitch_input = b.transpose(F_pinv)  # pinv(F).T [src, tgt]
+                    b.eval(intermediate_stitch_output, intermediate_stitch_input)
+                    logger.info(
+                        "Layer %d: Intermediate GramAlign CKA=%.4f (%d→%d) cond=%.2e",
+                        layer_idx, inter_result.achieved_cka,
+                        src_inter_dim, tgt_inter_dim, inter_pinv_diag.get("condition_number", 0)
+                    )
+                    metrics.setdefault("intermediate_gram_aligned", 0)
+                    metrics["intermediate_gram_aligned"] += 1
+                else:
+                    raise AlignmentFailureError(
+                        stage="INTERMEDIATE_ALIGNMENT",
+                        weight_key=None,
+                        message=f"GramAligner failed to achieve CKA=1.0 (got {inter_result.achieved_cka:.4f})",
+                        context={
+                            "achieved_cka": float(inter_result.achieved_cka),
+                            "source_dim": src_inter_dim,
+                            "target_dim": tgt_inter_dim,
+                        },
+                    )
+            else:
+                intermediate_stitch_output = b.eye(src_inter_dim)
+                intermediate_stitch_input = b.eye(src_inter_dim)
+                b.eval(intermediate_stitch_output, intermediate_stitch_input)
 
         # USE GLOBAL ATTENTION-ALIGNED stitch (computed once for all layers)
         # This ensures consistent alignment for attention weights across layers.
@@ -851,10 +794,28 @@ def stage_transplant(
         stacked = b.astype(stacked, "float32")
         b.eval(stacked)
 
+        # Filter core probes by graft mask (density-based selection)
+        # Only include probes where source is denser than target at this layer
+        effective_core_probes = filter_core_probes_by_graft_mask(
+            core_probe_ids=core_probe_ids,
+            probe_ids=probe_ids,
+            layer_idx=layer_idx,
+            graft_mask=config.graft_mask,
+        )
+
+        if not effective_core_probes:
+            logger.debug(
+                "Layer %d: All core probes filtered by graft mask (target already dense)",
+                layer_idx,
+            )
+            metrics.setdefault("layers_skipped_by_density", 0)
+            metrics["layers_skipped_by_density"] += 1
+            continue
+
         partition = partition_core_boundary(
             activations=stacked,
             probe_ids=probe_ids,
-            core_probe_ids=core_probe_ids,
+            core_probe_ids=effective_core_probes,
             boundary_k=config.boundary_k,
             geodesic_k_neighbors=config.geodesic_k_neighbors,
             backend=b,
@@ -955,25 +916,6 @@ def stage_transplant(
                 continue
 
             source_candidate = source_w
-            shared_subspace_applied = False
-
-            if shared_source_proj is not None and shared_target_proj is not None:
-                try:
-                    if (
-                        source_candidate.shape[1] == shared_source_proj.shape[0]
-                        and target_w.shape[1] == shared_target_proj.shape[0]
-                    ):
-                        source_shared = b.matmul(source_candidate, shared_source_proj)
-                        source_candidate = b.matmul(
-                            source_shared,
-                            b.transpose(shared_target_proj),
-                        )
-                        b.eval(source_candidate)
-                        shared_subspace_applied = True
-                        metrics["shared_subspace_applied"] += 1
-                except Exception as e:
-                    logger.debug("Shared subspace projection failed for %s: %s", key, e)
-
             if target_w.shape != source_candidate.shape:
                 # =================================================================
                 # MULTI-SPACE STITCHING: Apply pre-computed stitches to weights
@@ -987,8 +929,7 @@ def stage_transplant(
                 #   q_proj, k_proj, v_proj [hidden, head*num_heads] → [tgt_hidden, ...]
                 #   o_proj [head*num_heads, hidden] → [..., tgt_hidden]
 
-                # Use ORIGINAL source shape for dimension matching (source_candidate may
-                # have been partially transformed by shared_subspace)
+                # Use ORIGINAL source shape for dimension matching.
                 original_source_shape = source_w.shape
                 is_mlp = any(mlp_name in key for mlp_name in [
                     "gate_proj", "up_proj", "down_proj", "mlp.fc1", "mlp.fc2"
@@ -1240,34 +1181,6 @@ def stage_transplant(
             else:
                 source_aligned = source_candidate
 
-            if (
-                not shared_subspace_applied
-                and transform_requirements
-                and source_aligned.shape == target_w.shape
-                and "procrustes_rotation" in {t.lower() for t in transform_requirements}
-            ):
-                try:
-                    from modelcypher.core.domain.geometry.backend_matrix_utils import (
-                        BackendMatrixUtils,
-                    )
-
-                    rotation = BackendMatrixUtils(b).procrustes_rotation(
-                        source_aligned, target_w
-                    ).rotation
-                    source_aligned = b.matmul(source_aligned, rotation)
-                    b.eval(source_aligned)
-                    metrics["procrustes_applied"] += 1
-                except Exception as e:
-                    logger.debug("Procrustes alignment failed for %s: %s", key, e)
-
-            if layer_fisher_weights is not None:
-                if source_aligned.shape[1] == int(layer_fisher_weights.shape[0]):
-                    weights = b.reshape(layer_fisher_weights, (1, -1))
-                    delta = source_aligned - target_w
-                    source_aligned = target_w + delta * (1.0 - weights)
-                    b.eval(source_aligned)
-                    metrics["fisher_delta_scaled"] += 1
-
             try:
                 logger.debug("Computing transplant delta for %s", key)
                 result = compute_transplant_delta(
@@ -1397,22 +1310,6 @@ def stage_transplant(
     if metrics["cka_after"]:
         ckas = metrics["cka_after"]
         metrics["mean_cka_after"] = sum(ckas) / len(ckas)
-    if metrics["shared_subspace_dimensions"]:
-        dims = metrics["shared_subspace_dimensions"]
-        metrics["mean_shared_subspace_dimension"] = sum(dims) / len(dims)
-    if metrics["relative_rep_errors"]:
-        errors = metrics["relative_rep_errors"]
-        metrics["mean_relative_rep_error"] = sum(errors) / len(errors)
-    if metrics["fisher_target_means"]:
-        means = metrics["fisher_target_means"]
-        metrics["mean_fisher_target_weight"] = sum(means) / len(means)
-    if metrics["transform_requirements_by_layer"]:
-        counts: dict[str, int] = {}
-        for reqs in metrics["transform_requirements_by_layer"].values():
-            for req in reqs:
-                counts[req] = counts.get(req, 0) + 1
-        metrics["transform_requirements_counts"] = counts
-
     # Stage completion summary
     stage_elapsed = time.time() - stage_start_time
     metrics["total_time_seconds"] = stage_elapsed

@@ -175,57 +175,33 @@ class ModelNullSpaceProfile:
     graftable_layers: list[int]  # Layers with significant null space
 
 
-def _compute_spectral_gap_threshold(
+def _compute_numerical_rank(
     singular_values: list[float],
     eps: float,
 ) -> tuple[float, int]:
-    """Compute rank threshold from spectral gap.
+    """Compute numerical rank from singular values.
 
-    The spectral gap is the largest relative drop between consecutive singular values.
-    This naturally separates signal (large singular values) from noise (small ones).
+    The rank is the count of singular values above numerical precision.
+    No heuristics. No spectral gap guessing. Just: is σ_i > ε * σ_max?
 
     Args:
         singular_values: List of singular values in descending order.
         eps: Machine epsilon for the dtype.
 
     Returns:
-        (threshold, row_space_dim) where threshold is the cutoff value
-        and row_space_dim is the number of singular values above it.
+        (threshold, rank) where threshold is the cutoff value
+        and rank is the number of singular values above it.
     """
     if not singular_values or singular_values[0] <= 0:
         return 0.0, 0
 
-    n = len(singular_values)
-    if n == 1:
-        # Single singular value - it's either signal or noise based on magnitude
-        if singular_values[0] > eps:
-            return eps * singular_values[0], 1
-        return 0.0, 0
+    # Standard numerical rank: σ_i > max(m, n) * ε * σ_max
+    # We use ε * σ_max as threshold (caller provides appropriate ε)
+    max_sv = singular_values[0]
+    threshold = eps * max_sv
 
-    # Find largest spectral gap: max_i (σ_i / σ_{i+1})
-    # The gap indicates where signal ends and noise begins.
-    max_gap_ratio = 0.0
-    gap_idx = n  # Default: all are signal
-
-    for i in range(n - 1):
-        if singular_values[i + 1] > eps:
-            ratio = singular_values[i] / singular_values[i + 1]
-            if ratio > max_gap_ratio:
-                max_gap_ratio = ratio
-                gap_idx = i + 1  # Row space is [0, gap_idx)
-
-    # Threshold is geometric mean of values around the gap
-    if 0 < gap_idx < n and singular_values[gap_idx] > eps:
-        threshold = math.sqrt(singular_values[gap_idx - 1] * singular_values[gap_idx])
-    elif gap_idx == n:
-        # No significant gap found - use dtype-derived threshold
-        threshold = eps * singular_values[0]
-        # Count values above this threshold
-        gap_idx = sum(1 for s in singular_values if s > threshold)
-    else:
-        threshold = eps * singular_values[0]
-
-    return threshold, gap_idx
+    rank = sum(1 for s in singular_values if s > threshold)
+    return threshold, rank
 
 
 def _derive_min_samples(d: int) -> int:
@@ -360,8 +336,8 @@ class NullSpaceFilter:
             effective_threshold = self.config.rank_threshold * float(S_np[0]) if S_np else 0.0
             row_space_dim = sum(1 for s in S_np if s > effective_threshold)
         else:
-            # Derive threshold from spectral gap - the geometry tells us where signal ends
-            effective_threshold, row_space_dim = _compute_spectral_gap_threshold(S_np, eps)
+            # Count singular values above numerical precision
+            effective_threshold, row_space_dim = _compute_numerical_rank(S_np, eps)
 
         # Null space vectors are rows of Vh beyond row_space_dim
         null_vectors = Vh[row_space_dim:]  # Shape: [null_dim, d]
@@ -415,9 +391,8 @@ class NullSpaceFilter:
             threshold = self.config.rank_threshold * float(diag_R_np[0])
             row_space_dim = int(sum(1 for val in diag_R_np if val > threshold))
         else:
-            # Derive threshold from spectral gap of R diagonal
-            # For QR, diagonal of R behaves like singular values
-            threshold, row_space_dim = _compute_spectral_gap_threshold(diag_R_np, eps)
+            # Count values above numerical precision
+            threshold, row_space_dim = _compute_numerical_rank(diag_R_np, eps)
 
         # Null space vectors are columns of Q beyond row_space_dim
         null_vectors = backend.transpose(Q[:, row_space_dim:])  # Shape: [null_dim, d]
@@ -502,8 +477,8 @@ class NullSpaceFilter:
                 threshold = 0.0
             row_space_dim = sum(1 for s in singular_values_desc if s > threshold)
         else:
-            # Derive threshold from spectral gap
-            threshold, row_space_dim = _compute_spectral_gap_threshold(singular_values_desc, eps)
+            # Count values above numerical precision
+            threshold, row_space_dim = _compute_numerical_rank(singular_values_desc, eps)
 
         null_dim = d - row_space_dim
         # For eigenvalue method, null space corresponds to smallest eigenvalues (first in ascending order)
@@ -800,6 +775,6 @@ __all__ = [
     "ModelNullSpaceProfile",
     "filter_merge_delta_to_null_space",
     # Helper functions for threshold derivation (exposed for testing)
-    "_compute_spectral_gap_threshold",
+    "_compute_numerical_rank",
     "_derive_min_samples",
 ]

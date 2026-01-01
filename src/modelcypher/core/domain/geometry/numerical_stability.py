@@ -335,7 +335,9 @@ def canonicalize_svd_signs(
     if len(U_shape) < 2 or len(Vt_shape) < 2:
         return U, Vt
 
-    k = int(U_shape[1])  # Number of singular vectors
+    # Number of singular vectors to canonicalize
+    # U is [m, k_u] and Vt is [k_v, n] - we can only process min(k_u, k_v)
+    k = int(min(U_shape[1], Vt_shape[0]))
     if k == 0:
         return U, Vt
 
