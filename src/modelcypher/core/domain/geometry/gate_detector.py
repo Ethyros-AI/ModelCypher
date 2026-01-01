@@ -211,11 +211,11 @@ class GateDetector:
                 detected_gates=[],
             )
 
-        # When all similarities are identical AND low, it's ambiguous - return empty
-        # But if they're all high (e.g., perfect matches), keep them
+        # When all similarities are identical AND below midpoint, it's ambiguous - return empty
+        # Midpoint of [0, 1] is the geometric threshold for "similar" vs "not similar"
         if len(best_similarities) > 1 and max(best_similarities) == min(best_similarities):
-            # If all similarities are high (> 0.9), they're all valid detections
-            if max(best_similarities) <= 0.9:
+            # If all similarities are at or below midpoint, not clearly similar
+            if max(best_similarities) <= 0.5:
                 return DetectionResult(
                     model_id=model_id,
                     prompt_id=prompt_id,
@@ -226,7 +226,7 @@ class GateDetector:
         if len(best_similarities) == 1:
             detections = candidates
         elif max(best_similarities) == min(best_similarities):
-            # All similarities are equal and high (passed the <= 0.9 check above)
+            # All similarities are equal and above midpoint (passed the <= 0.5 check above)
             # Include all candidates since they're all equally valid
             detections = candidates
         else:

@@ -538,10 +538,7 @@ def null_space_filter(
 
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.backends.mlx_backend import MLXBackend
-    from modelcypher.core.domain.geometry.null_space_filter import (
-        NullSpaceFilter,
-        NullSpaceFilterConfig,
-    )
+    from modelcypher.core.domain.geometry.null_space_filter import NullSpaceFilter
 
     typer.echo(f"Analyzing null space for: {model_path}")
 
@@ -612,9 +609,8 @@ def null_space_filter(
         except Exception as e:
             logger.warning(f"Failed to extract: {e}")
 
-    # Compute null space profile - threshold derived from spectral gap
-    config = NullSpaceFilterConfig()  # rank_threshold=None - derived from data
-    filter = NullSpaceFilter(config)
+    # Compute null space profile - all params derived from spectral properties
+    filter = NullSpaceFilter(backend)
 
     # Stack activations using backend and convert to numpy for NullSpaceFilter
     layer_arrays = {

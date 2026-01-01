@@ -183,7 +183,6 @@ def build_layer_correlations(
     layer: int,
     mode: IntersectionSimilarityMode = IntersectionSimilarityMode.JACCARD,
     ensemble_weights: EnsembleWeights | None = None,
-    correlation_threshold: float = 0.3,
 ) -> list["DimensionCorrelation"]:
     """
     Build dimension correlations for a layer using the specified similarity mode.
@@ -194,10 +193,8 @@ def build_layer_correlations(
         layer: Layer index to analyze
         mode: Similarity mode to use
         ensemble_weights: Weights for ensemble mode
-        correlation_threshold: Minimum correlation to include
-
     Returns:
-        List of dimension correlations above threshold
+        List of dimension correlations
     """
     from modelcypher.core.domain.geometry.manifold_stitcher import DimensionCorrelation
 
@@ -279,7 +276,7 @@ def build_layer_correlations(
                 best_correlation = similarity
                 best_target_dim = t_dim
 
-        if best_correlation >= correlation_threshold and best_target_dim >= 0:
+        if best_target_dim >= 0:
             correlations.append(
                 DimensionCorrelation(
                     source_dim=s_dim,
@@ -298,7 +295,6 @@ def build_intersection_map(
     target_model: str,
     mode: IntersectionSimilarityMode = IntersectionSimilarityMode.JACCARD,
     ensemble_weights: EnsembleWeights | None = None,
-    correlation_threshold: float = 0.3,
 ) -> "IntersectionMap":
     """
     Build an intersection map between source and target fingerprints.
@@ -312,8 +308,6 @@ def build_intersection_map(
         target_model: Target model identifier
         mode: Similarity mode to use
         ensemble_weights: Weights for ensemble mode
-        correlation_threshold: Minimum correlation to include
-
     Returns:
         IntersectionMap with dimension correlations and layer confidences
     """
@@ -345,22 +339,18 @@ def build_intersection_map(
             layer=layer,
             mode=mode,
             ensemble_weights=ensemble_weights,
-            correlation_threshold=correlation_threshold,
         )
 
         dimension_correlations[layer] = correlations
 
-        # Count correlations by strength
-        strong = sum(1 for c in correlations if c.is_strong_correlation)
-        moderate = sum(1 for c in correlations if c.is_moderate_correlation)
-        weak = sum(1 for c in correlations if c.is_weak_correlation)
+        values = [c.correlation for c in correlations]
+        mean_corr = sum(values) / len(values) if values else 0.0
 
         layer_confidences.append(
             LayerConfidence(
                 layer=layer,
-                strong_correlations=strong,
-                moderate_correlations=moderate,
-                weak_correlations=weak,
+                confidence=mean_corr,
+                correlation_count=len(values),
             )
         )
 
@@ -449,17 +439,15 @@ def intersection_map_from_dict(payload: dict[str, Any]) -> "IntersectionMap":
         if not isinstance(entry, dict):
             continue
         layer = entry.get("layer")
-        strong = entry.get("strongCorrelations", entry.get("strong_correlations"))
-        moderate = entry.get("moderateCorrelations", entry.get("moderate_correlations"))
-        weak = entry.get("weakCorrelations", entry.get("weak_correlations"))
-        if layer is None or strong is None or moderate is None or weak is None:
+        confidence = entry.get("confidence")
+        count = entry.get("correlationCount", entry.get("correlation_count"))
+        if layer is None or confidence is None or count is None:
             continue
         layer_confidences.append(
             LayerConfidence(
                 layer=int(layer),
-                strong_correlations=int(strong),
-                moderate_correlations=int(moderate),
-                weak_correlations=int(weak),
+                confidence=float(confidence),
+                correlation_count=int(count),
             )
         )
 

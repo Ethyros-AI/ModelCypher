@@ -17,15 +17,13 @@
 
 """Geometry invariant layer mapping CLI commands.
 
-Provides commands for invariant-based layer mapping between models using
-multi-atlas triangulation scoring.
+Provides commands for invariant-based layer mapping between models.
 
 See UnifiedAtlasInventory for the full list of atlases and probe counts.
 Use `mc geometry invariant atlas-inventory` to view available probes.
 
 Commands:
     mc geometry invariant map-layers --source <path> --target <path>
-    mc geometry invariant map-layers --source <path> --target <path> --scope multiAtlas
     mc geometry invariant collapse-risk --model <path>
     mc geometry invariant atlas-inventory
 """
@@ -60,89 +58,21 @@ def geometry_invariant_map_layers(
     ctx: typer.Context,
     source: str = typer.Option(..., "--source", help="Path to source model"),
     target: str = typer.Option(..., "--target", help="Path to target model"),
-    families: str | None = typer.Option(
-        None,
-        "--families",
-        help="Comma-separated sequence families: fibonacci, lucas, tribonacci, primes, catalan, ramanujan, logic, ordering, arithmetic, causality",
-    ),
-    scope: str = typer.Option(
-        "sequenceInvariants",
-        "--scope",
-        help="Invariant scope: invariants, logicOnly, sequenceInvariants, multiAtlas (all probes)",
-    ),
-    atlas_sources: str | None = typer.Option(
-        None,
-        "--atlas-sources",
-        help=(
-            "Comma-separated atlas sources for multiAtlas scope: sequence, semantic, gate, "
-            "emotion, temporal, spatial, social, moral, compositional, philosophical, genealogy, "
-            "metaphor, syntax "
-            "(default: all)"
-        ),
-    ),
-    atlas_domains: str | None = typer.Option(
-        None,
-        "--atlas-domains",
-        help=(
-            "Comma-separated domains: mathematical, logical, linguistic, mental, "
-            "computational, structural, affective, relational, temporal, spatial, "
-            "moral, philosophical"
-        ),
-    ),
-    triangulation: bool = typer.Option(
-        True,
-        "--triangulation/--no-triangulation",
-        help="Enable cross-domain triangulation scoring",
-    ),
-    sample_layers: int = typer.Option(
-        12,
-        "--sample-layers",
-        help="Number of sample layers",
-    ),
 ) -> None:
-    """Map layers between models using multi-atlas triangulation.
+    """Map layers between models using the unified atlas.
 
     Uses probes from all atlases with cross-domain triangulation
     scoring to find corresponding layers between models.
 
-    Collapse threshold is derived from the activation variance
-    distribution across layers. No user parameters for thresholds.
-
-    Scopes:
-        invariants        - Default sequence families
-        logicOnly         - Logic family only
-        sequenceInvariants - All 70 sequence invariants
-        multiAtlas        - All probes from all atlases
-
     Example:
         mc geometry invariant map-layers --source ./model-a --target ./model-b
-        mc geometry invariant map-layers --source ./qwen --target ./llama --scope multiAtlas
-        mc geometry invariant map-layers --source ./model-a --target ./model-b --atlas-sources sequence,semantic
     """
     context = _context(ctx)
     service = InvariantLayerMappingService()
 
-    family_list = None
-    if families:
-        family_list = [f.strip() for f in families.split(",")]
-
-    atlas_source_list = None
-    if atlas_sources:
-        atlas_source_list = [s.strip() for s in atlas_sources.split(",")]
-
-    atlas_domain_list = None
-    if atlas_domains:
-        atlas_domain_list = [d.strip() for d in atlas_domains.split(",")]
-
     config = LayerMappingConfig(
         source_model_path=source,
         target_model_path=target,
-        invariant_scope=scope,
-        families=family_list,
-        use_triangulation=triangulation,
-        sample_layer_count=sample_layers,
-        atlas_sources=atlas_source_list,
-        atlas_domains=atlas_domain_list,
     )
 
     try:
@@ -155,30 +85,25 @@ def geometry_invariant_map_layers(
                 "INVARIANT LAYER MAPPING",
                 f"Source: {result.report.source_model}",
                 f"Target: {result.report.target_model}",
-                f"Invariant Scope: {result.report.config.invariant_scope.value}",
                 f"Invariants Used: {result.report.invariant_count}",
                 "",
                 "Results:",
                 f"  Mapped Layers: {summary.mapped_layers}",
-                f"  Skipped Layers: {summary.skipped_layers}",
                 f"  Mean Similarity: {summary.mean_similarity:.3f}",
                 f"  Alignment Quality: {summary.alignment_quality:.3f}",
                 "",
                 f"  Source Collapsed: {summary.source_collapsed_layers}",
                 f"  Target Collapsed: {summary.target_collapsed_layers}",
             ]
+            lines.extend(
+                [
+                    "",
+                    "Triangulation:",
+                    f"  Mean Multiplier: {summary.mean_triangulation_multiplier:.2f}",
+                ]
+            )
 
-            if summary.triangulation_quality != "none":
-                lines.extend(
-                    [
-                        "",
-                        "Triangulation:",
-                        f"  Quality: {summary.triangulation_quality}",
-                        f"  Mean Multiplier: {summary.mean_triangulation_multiplier:.2f}",
-                    ]
-                )
-
-            # Show multi-atlas metrics if using multiAtlas scope
+            # Show multi-atlas metrics
             if summary.total_probes_used > 70:
                 lines.extend(
                     [
@@ -194,10 +119,9 @@ def geometry_invariant_map_layers(
                 lines.append("")
                 lines.append("Layer Mappings (first 10):")
                 for m in result.report.mappings[:10]:
-                    skip_marker = " [skipped]" if m.is_skipped else ""
                     lines.append(
                         f"  L{m.source_layer} -> L{m.target_layer}: "
-                        f"sim={m.similarity:.3f} conf={m.confidence.value}{skip_marker}"
+                        f"sim={m.similarity:.3f}"
                     )
                 if len(result.report.mappings) > 10:
                     lines.append(f"  ... and {len(result.report.mappings) - 10} more")
@@ -217,24 +141,11 @@ def geometry_invariant_map_layers(
 def geometry_invariant_collapse_risk(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model", help="Path to model"),
-    families: str | None = typer.Option(
-        None,
-        "--families",
-        help="Comma-separated list of families (default: all)",
-    ),
-    sample_layers: int = typer.Option(
-        12,
-        "--sample-layers",
-        help="Number of sample layers",
-    ),
 ) -> None:
     """Analyze layer collapse risk for a model.
 
     Identifies layers where invariant activation is too sparse for
     reliable layer correspondence in merge operations.
-
-    Collapse threshold is derived from the activation variance
-    distribution. No user parameters for thresholds.
 
     Example:
         mc geometry invariant collapse-risk --model ./qwen2.5-7b
@@ -242,14 +153,8 @@ def geometry_invariant_collapse_risk(
     context = _context(ctx)
     service = InvariantLayerMappingService()
 
-    family_list = None
-    if families:
-        family_list = [f.strip() for f in families.split(",")]
-
     config = CollapseRiskConfig(
         model_path=model,
-        families=family_list,
-        sample_layer_count=sample_layers,
     )
 
     try:
@@ -298,7 +203,7 @@ def geometry_invariant_atlas_inventory(
 ) -> None:
     """Show inventory of available probes across all atlases.
 
-    Displays all probes available for multi-atlas layer mapping,
+    Displays all probes available for unified atlas layer mapping,
     grouped by atlas source and domain. Use --source or --domain
     to filter the output.
 
@@ -398,9 +303,7 @@ def geometry_invariant_atlas_inventory(
                 "  structural, affective, relational, temporal, spatial, moral, philosophical",
                 "",
                 "Usage:",
-                "  Full multi-atlas:    mc geometry invariant map-layers --scope multiAtlas ...",
-                "  Filter by source:    mc geometry invariant map-layers --scope multiAtlas --atlas-sources sequence,semantic ...",
-                "  Filter by domain:    mc geometry invariant map-layers --scope multiAtlas --atlas-domains mathematical,logical ...",
+                "  Full multi-atlas:    mc geometry invariant map-layers ...",
             ]
         )
 

@@ -127,14 +127,12 @@ def stage_analyze_interference(
     # null_space_filter - compute null space for this layer
     if tgt_acts and len(tgt_acts) >= 5 and not avoid_svd:
         try:
-            from modelcypher.core.domain.geometry.null_space_filter import (
-                NullSpaceFilter,
-                NullSpaceFilterConfig,
-            )
+            from modelcypher.core.domain.geometry.null_space_filter import NullSpaceFilter
 
             stacked = backend.stack(tgt_acts, axis=0)
             backend.eval(stacked)
-            nsf = NullSpaceFilter(NullSpaceFilterConfig(), backend=backend)
+            # All params derived from spectral properties - no configuration
+            nsf = NullSpaceFilter(backend=backend)
             projection = nsf.compute_null_space_projection(stacked)
             layer_geom.null_space_dim = projection.null_dim
             layer_geom.null_space_projection = projection.projection_matrix

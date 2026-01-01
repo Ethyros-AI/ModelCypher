@@ -48,17 +48,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from modelcypher.core.domain.agents.sequence_invariant_atlas import (
-    SequenceFamily,
-    SequenceInvariantInventory,
-)
 from modelcypher.core.domain.agents.unified_atlas import (
-    DEFAULT_ATLAS_SOURCES,
     AtlasDomain,
     AtlasProbe,
-    AtlasSource,
     UnifiedAtlasInventory,
 )
+from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_inventories
 from modelcypher.core.domain.geometry.dimension_blender import (
     DimensionBlendConfig,
     DimensionBlender,
@@ -73,9 +68,7 @@ from modelcypher.core.domain.geometry.fingerprint_cache import (
 from modelcypher.core.domain.geometry.invariant_layer_mapper import (
     ActivatedDimension,
     ActivationFingerprint,
-    Config,
     InvariantLayerMapper,
-    InvariantScope,
     ModelFingerprints,
     Report,
 )
@@ -94,32 +87,13 @@ class LayerMappingConfig:
 
     source_model_path: str
     target_model_path: str
-    invariant_scope: str = (
-        "sequenceInvariants"  # invariants, logicOnly, sequenceInvariants, multiAtlas
-    )
-    families: list[str] | None = None
-    use_triangulation: bool = True
-    collapse_threshold: float | None = None  # Derived from activation variance distribution
-    sample_layer_count: int = 12
-    # Multi-atlas configuration (only used when invariant_scope="multiAtlas")
-    atlas_sources: list[str] | None = (
-        None  # sequence_invariant, semantic_prime, computational_gate, emotion_concept, spatial_concept, metaphor_invariant, syntax_concept, ...
-    )
-    atlas_domains: list[str] | None = None  # mathematical, logical, linguistic, etc.
 
 
 @dataclass(frozen=True)
 class CollapseRiskConfig:
-    """Configuration for collapse risk analysis.
-
-    collapse_threshold defaults to None and is derived from the activation
-    variance distribution across layers.
-    """
+    """Configuration for collapse risk analysis."""
 
     model_path: str
-    families: list[str] | None = None
-    collapse_threshold: float | None = None  # Derived from variance distribution
-    sample_layer_count: int = 12
 
 
 @dataclass(frozen=True)
@@ -137,131 +111,6 @@ class CollapseRiskResult:
     layer_count: int
     collapsed_layers: int
     collapse_ratio: float
-
-
-def _parse_scope(scope_str: str) -> InvariantScope:
-    """Parse scope string to InvariantScope enum."""
-    scope_map = {
-        "invariants": InvariantScope.INVARIANTS,
-        "logiconly": InvariantScope.LOGIC_ONLY,
-        "logic_only": InvariantScope.LOGIC_ONLY,
-        "sequenceinvariants": InvariantScope.SEQUENCE_INVARIANTS,
-        "sequence_invariants": InvariantScope.SEQUENCE_INVARIANTS,
-        "multiatlas": InvariantScope.MULTI_ATLAS,
-        "multi_atlas": InvariantScope.MULTI_ATLAS,
-    }
-    normalized = scope_str.lower().replace("-", "").replace("_", "")
-    return scope_map.get(normalized, InvariantScope.SEQUENCE_INVARIANTS)
-
-
-def _parse_atlas_sources(sources: list[str] | None) -> frozenset[AtlasSource] | None:
-    """Parse atlas source string list to frozenset of AtlasSource."""
-    if not sources:
-        return None
-
-    source_map = {
-        "sequence_invariant": AtlasSource.SEQUENCE_INVARIANT,
-        "sequenceinvariant": AtlasSource.SEQUENCE_INVARIANT,
-        "sequence": AtlasSource.SEQUENCE_INVARIANT,
-        "semantic_prime": AtlasSource.SEMANTIC_PRIME,
-        "semanticprime": AtlasSource.SEMANTIC_PRIME,
-        "semantic": AtlasSource.SEMANTIC_PRIME,
-        "computational_gate": AtlasSource.COMPUTATIONAL_GATE,
-        "computationalgate": AtlasSource.COMPUTATIONAL_GATE,
-        "computational": AtlasSource.COMPUTATIONAL_GATE,
-        "gate": AtlasSource.COMPUTATIONAL_GATE,
-        "emotion_concept": AtlasSource.EMOTION_CONCEPT,
-        "emotionconcept": AtlasSource.EMOTION_CONCEPT,
-        "emotion": AtlasSource.EMOTION_CONCEPT,
-        "temporal_concept": AtlasSource.TEMPORAL_CONCEPT,
-        "temporalconcept": AtlasSource.TEMPORAL_CONCEPT,
-        "temporal": AtlasSource.TEMPORAL_CONCEPT,
-        "spatial_concept": AtlasSource.SPATIAL_CONCEPT,
-        "spatialconcept": AtlasSource.SPATIAL_CONCEPT,
-        "spatial": AtlasSource.SPATIAL_CONCEPT,
-        "social_concept": AtlasSource.SOCIAL_CONCEPT,
-        "socialconcept": AtlasSource.SOCIAL_CONCEPT,
-        "social": AtlasSource.SOCIAL_CONCEPT,
-        "moral_concept": AtlasSource.MORAL_CONCEPT,
-        "moralconcept": AtlasSource.MORAL_CONCEPT,
-        "moral": AtlasSource.MORAL_CONCEPT,
-        "compositional": AtlasSource.COMPOSITIONAL,
-        "philosophical_concept": AtlasSource.PHILOSOPHICAL_CONCEPT,
-        "philosophicalconcept": AtlasSource.PHILOSOPHICAL_CONCEPT,
-        "philosophical": AtlasSource.PHILOSOPHICAL_CONCEPT,
-        "philosophy": AtlasSource.PHILOSOPHICAL_CONCEPT,
-        "conceptual_genealogy": AtlasSource.CONCEPTUAL_GENEALOGY,
-        "conceptualgenealogy": AtlasSource.CONCEPTUAL_GENEALOGY,
-        "genealogy": AtlasSource.CONCEPTUAL_GENEALOGY,
-        "etymology": AtlasSource.CONCEPTUAL_GENEALOGY,
-        "metaphor_invariant": AtlasSource.METAPHOR_INVARIANT,
-        "metaphorinvariant": AtlasSource.METAPHOR_INVARIANT,
-        "metaphor": AtlasSource.METAPHOR_INVARIANT,
-        "syntax_concept": AtlasSource.SYNTAX_CONCEPT,
-        "syntaxconcept": AtlasSource.SYNTAX_CONCEPT,
-        "syntax": AtlasSource.SYNTAX_CONCEPT,
-        "grammar": AtlasSource.SYNTAX_CONCEPT,
-    }
-
-    result: set[AtlasSource] = set()
-    for name in sources:
-        normalized = name.strip().lower().replace("-", "").replace("_", "")
-        if normalized in source_map:
-            result.add(source_map[normalized])
-
-    return frozenset(result) if result else None
-
-
-def _parse_atlas_domains(domains: list[str] | None) -> frozenset[AtlasDomain] | None:
-    """Parse atlas domain string list to frozenset of AtlasDomain."""
-    if not domains:
-        return None
-
-    domain_map = {
-        "mathematical": AtlasDomain.MATHEMATICAL,
-        "math": AtlasDomain.MATHEMATICAL,
-        "logical": AtlasDomain.LOGICAL,
-        "logic": AtlasDomain.LOGICAL,
-        "linguistic": AtlasDomain.LINGUISTIC,
-        "language": AtlasDomain.LINGUISTIC,
-        "mental": AtlasDomain.MENTAL,
-        "cognitive": AtlasDomain.MENTAL,
-        "computational": AtlasDomain.COMPUTATIONAL,
-        "compute": AtlasDomain.COMPUTATIONAL,
-        "structural": AtlasDomain.STRUCTURAL,
-        "structure": AtlasDomain.STRUCTURAL,
-        "affective": AtlasDomain.AFFECTIVE,
-        "emotion": AtlasDomain.AFFECTIVE,
-        "relational": AtlasDomain.RELATIONAL,
-        "social": AtlasDomain.RELATIONAL,
-        "temporal": AtlasDomain.TEMPORAL,
-        "time": AtlasDomain.TEMPORAL,
-        "spatial": AtlasDomain.SPATIAL,
-        "space": AtlasDomain.SPATIAL,
-    }
-
-    result: set[AtlasDomain] = set()
-    for name in domains:
-        normalized = name.strip().lower().replace("-", "").replace("_", "")
-        if normalized in domain_map:
-            result.add(domain_map[normalized])
-
-    return frozenset(result) if result else None
-
-
-def _parse_families(families: list[str] | None) -> frozenset[SequenceFamily] | None:
-    """Parse family string list to frozenset of SequenceFamily."""
-    if not families:
-        return None
-
-    result: set[SequenceFamily] = set()
-    for name in families:
-        try:
-            result.add(SequenceFamily(name.strip().lower()))
-        except ValueError:
-            pass  # Skip invalid family names
-
-    return frozenset(result) if result else None
 
 
 class InvariantLayerMappingService:
@@ -295,6 +144,7 @@ class InvariantLayerMappingService:
         Args:
             cache: Optional fingerprint cache (uses shared singleton if None)
         """
+        register_default_atlas_inventories()
         self._cache = cache or ModelFingerprintCache.shared()
 
     def map_layers(self, config: LayerMappingConfig) -> LayerMappingResult:
@@ -312,38 +162,14 @@ class InvariantLayerMappingService:
         Raises:
             ValueError: If models cannot be loaded or probe extraction fails
         """
-        # Build mapper config
-        scope = _parse_scope(config.invariant_scope)
-        families = _parse_families(config.families)
-        atlas_sources = _parse_atlas_sources(config.atlas_sources)
-        atlas_domains = _parse_atlas_domains(config.atlas_domains)
-
-        # Build kwargs, only including collapse_threshold if explicitly set
-        # (None means derive from geometry via Config defaults)
-        config_kwargs = {
-            "invariant_scope": scope,
-            "family_allowlist": families,
-            "sample_layer_count": config.sample_layer_count,
-            "use_cross_domain_weighting": config.use_triangulation,
-            "multi_domain_bonus": config.use_triangulation,
-            "atlas_sources": atlas_sources,
-            "atlas_domains": atlas_domains,
-        }
-        if config.collapse_threshold is not None:
-            config_kwargs["collapse_threshold"] = config.collapse_threshold
-
-        mapper_config = Config(**config_kwargs)
-
         # Load fingerprints by running probes through models
         logger.info("Extracting fingerprints from source model...")
-        source_fingerprints = self._load_fingerprints(config.source_model_path, mapper_config)
+        source_fingerprints = self._load_fingerprints(config.source_model_path)
         logger.info("Extracting fingerprints from target model...")
-        target_fingerprints = self._load_fingerprints(config.target_model_path, mapper_config)
+        target_fingerprints = self._load_fingerprints(config.target_model_path)
 
         # Run mapping
-        report = InvariantLayerMapper.map_layers(
-            source_fingerprints, target_fingerprints, mapper_config
-        )
+        report = InvariantLayerMapper.map_layers(source_fingerprints, target_fingerprints)
 
         return LayerMappingResult(
             report=report,
@@ -361,21 +187,8 @@ class InvariantLayerMappingService:
         Returns:
             CollapseRiskResult with risk assessment and recommendations
         """
-        families = _parse_families(config.families)
-
-        # Build kwargs, only including collapse_threshold if explicitly set
-        config_kwargs = {
-            "invariant_scope": InvariantScope.SEQUENCE_INVARIANTS,
-            "family_allowlist": families,
-            "sample_layer_count": config.sample_layer_count,
-        }
-        if config.collapse_threshold is not None:
-            config_kwargs["collapse_threshold"] = config.collapse_threshold
-
-        mapper_config = Config(**config_kwargs)
-
         # Load fingerprints
-        fingerprints = self._load_fingerprints(config.model_path, mapper_config)
+        fingerprints = self._load_fingerprints(config.model_path)
 
         # Build profile to assess collapse
         invariant_ids, _, _ = InvariantLayerMapper._get_invariants()
@@ -395,7 +208,6 @@ class InvariantLayerMappingService:
     def _load_fingerprints(
         self,
         model_path: str,
-        config: Config | None = None,
         progress_callback: Callable[[int, int], None] | None = None,
     ) -> ModelFingerprints:
         """Load fingerprints for a model by running probes.
@@ -406,31 +218,11 @@ class InvariantLayerMappingService:
 
         Args:
             model_path: Path to the model directory
-            config: Mapper config to determine which probes to use
             progress_callback: Optional (current, total) progress callback
         """
         path = Path(model_path).expanduser().resolve()
 
-        # Build config hash for cache key
-        if config is None:
-            config = Config()
-
-        families_list = (
-            sorted(f.value for f in config.family_allowlist) if config.family_allowlist else None
-        )
-        sources_list = (
-            sorted(s.value for s in config.atlas_sources) if config.atlas_sources else None
-        )
-        domains_list = (
-            sorted(d.value for d in config.atlas_domains) if config.atlas_domains else None
-        )
-
-        config_hash = make_config_hash(
-            invariant_scope=config.invariant_scope.value,
-            families=families_list,
-            atlas_sources=sources_list,
-            atlas_domains=domains_list,
-        )
+        config_hash = make_config_hash(invariant_scope="all")
 
         # Check cache first
         cached = self._cache.load(str(path), config_hash)
@@ -452,9 +244,9 @@ class InvariantLayerMappingService:
                 pass
 
         # Get probe texts based on config
-        probe_texts = self._get_probe_texts(config)
+        probe_texts = self._get_probe_texts()
         if not probe_texts:
-            logger.warning("No probe texts found for config, returning empty fingerprints")
+            logger.warning("No probe texts found, returning empty fingerprints")
             return ModelFingerprints(
                 model_id=str(path),
                 layer_count=layer_count,
@@ -487,73 +279,17 @@ class InvariantLayerMappingService:
 
         return result
 
-    def _get_probe_texts(self, config: Config | None) -> dict[str, str]:
-        """Get probe texts based on mapper config.
-
-        Returns dict mapping probe_id -> probe_text.
-        """
-        if config is None:
-            config = Config()
-
-        scope = config.invariant_scope
-
-        if scope == InvariantScope.MULTI_ATLAS:
-            # Get all atlas probes
-            sources = config.atlas_sources or DEFAULT_ATLAS_SOURCES
-            probes = UnifiedAtlasInventory.probes_by_source(sources)
-
-            # Filter by domain if specified
-            if config.atlas_domains:
-                probes = [p for p in probes if p.domain in config.atlas_domains]
-
-            # Build probe texts from support_texts or name
-            result = {}
-            for probe in probes:
-                probe_id = f"{probe.source.value}:{probe.id}"
-                # Use first support text if available, else the name
-                if probe.support_texts:
-                    result[probe_id] = probe.support_texts[0]
-                else:
-                    result[probe_id] = probe.name
-            return result
-
-        elif scope == InvariantScope.SEQUENCE_INVARIANTS:
-            # Get sequence invariants
-            families = config.family_allowlist or frozenset(SequenceFamily)
-            invariants = SequenceInvariantInventory.probes_for_families(set(families))
-
-            result = {}
-            for inv in invariants:
-                probe_id = f"invariant:{inv.family.value}_{inv.id}"
-                # Use support texts from the invariant
-                if inv.support_texts:
-                    result[probe_id] = inv.support_texts[0]
-                else:
-                    result[probe_id] = inv.name
-            return result
-
-        elif scope == InvariantScope.LOGIC_ONLY:
-            invariants = SequenceInvariantInventory.probes_for_families({SequenceFamily.LOGIC})
-            result = {}
-            for inv in invariants:
-                probe_id = f"invariant:{inv.family.value}_{inv.id}"
-                if inv.support_texts:
-                    result[probe_id] = inv.support_texts[0]
-                else:
-                    result[probe_id] = inv.name
-            return result
-
-        else:
-            # Default invariants scope
-            invariants = SequenceInvariantInventory.all_probes()[:20]  # Subset for speed
-            result = {}
-            for inv in invariants:
-                probe_id = f"invariant:{inv.family.value}_{inv.id}"
-                if inv.support_texts:
-                    result[probe_id] = inv.support_texts[0]
-                else:
-                    result[probe_id] = inv.name
-            return result
+    def _get_probe_texts(self) -> dict[str, str]:
+        """Get probe texts from the full unified atlas."""
+        probes = UnifiedAtlasInventory.all_probes()
+        result: dict[str, str] = {}
+        for probe in probes:
+            probe_id = f"{probe.source.value}:{probe.id}"
+            if probe.support_texts:
+                result[probe_id] = probe.support_texts[0]
+            else:
+                result[probe_id] = probe.name
+        return result
 
     def _extract_fingerprints(
         self,
@@ -666,15 +402,12 @@ class InvariantLayerMappingService:
             "sourceModel": report.source_model,
             "targetModel": report.target_model,
             "invariantCount": report.invariant_count,
-            "invariantScope": report.config.invariant_scope.value,
             "mappedLayers": summary.mapped_layers,
-            "skippedLayers": summary.skipped_layers,
             "meanSimilarity": summary.mean_similarity,
             "alignmentQuality": summary.alignment_quality,
             "sourceCollapsedLayers": summary.source_collapsed_layers,
             "targetCollapsedLayers": summary.target_collapsed_layers,
             "meanTriangulationMultiplier": summary.mean_triangulation_multiplier,
-            "triangulationQuality": summary.triangulation_quality,
             # Multi-atlas metrics
             "atlasSourcesDetected": summary.atlas_sources_detected,
             "atlasDomainsDetected": summary.atlas_domains_detected,
@@ -684,8 +417,6 @@ class InvariantLayerMappingService:
                     "sourceLayer": m.source_layer,
                     "targetLayer": m.target_layer,
                     "similarity": m.similarity,
-                    "confidence": m.similarity,
-                    "isSkipped": m.is_skipped,
                 }
                 for m in report.mappings
             ],
@@ -712,13 +443,8 @@ class InvariantLayerMappingService:
     def to_intersection_map(result: LayerMappingResult) -> IntersectionMap:
         """Convert LayerMappingResult to IntersectionMap for merge integration.
 
-        This enables the merge engine to use per-layer confidence from
-        multi-atlas triangulation to drive adaptive alpha blending.
-
-        The conversion maps:
-        - Per-layer similarity → dimension correlation strength
-        - Mapping confidence → LayerConfidence (strong/moderate/weak)
-        - Triangulation multiplier → correlation boost
+        This enables the merge engine to use per-layer similarity from
+        multi-atlas triangulation as raw confidence for alpha blending.
 
         Args:
             result: Layer mapping result from map_layers()
@@ -736,48 +462,23 @@ class InvariantLayerMappingService:
         for mapping in report.mappings:
             layer = mapping.source_layer
 
-            # Classify mapping confidence into strong/moderate/weak
-            # Using raw similarity thresholds (default: high=0.75, medium=0.5)
             sim = mapping.similarity
-            strong = 0
-            moderate = 0
-            weak = 0
 
-            # Use similarity directly as the confidence signal
-            if sim >= 0.75:  # High confidence
-                strong = 1
-            elif sim >= 0.5:  # Medium confidence
-                moderate = 1
-            else:  # Low confidence
-                weak = 1
-
-            # Apply triangulation boost if available
-            # High triangulation quality means more reliable correlation
-            tri_mult = (
-                mapping.triangulation_multiplier
-                if hasattr(mapping, "triangulation_multiplier")
-                else 1.0
-            )
-
-            # Create layer confidence
-            # The LayerConfidence.__post_init__ computes confidence automatically
+            # Create layer confidence from raw similarity
             layer_confidences.append(
                 LayerConfidence(
                     layer=layer,
-                    strong_correlations=strong,
-                    moderate_correlations=moderate,
-                    weak_correlations=weak,
+                    confidence=sim,
+                    correlation_count=1,
                 )
             )
 
             # Create dimension correlation for this layer
-            # Use similarity as the correlation value, boosted by triangulation
-            boosted_correlation = min(1.0, sim * tri_mult)
             dimension_correlations[layer] = [
                 DimensionCorrelation(
                     source_dim=0,  # Placeholder - full layer mapping
                     target_dim=0,
-                    correlation=boosted_correlation,
+                    correlation=sim,
                 )
             ]
 
@@ -787,40 +488,20 @@ class InvariantLayerMappingService:
             dimension_correlations=dimension_correlations,
             overall_correlation=summary.alignment_quality,
             aligned_dimension_count=summary.mapped_layers,
-            total_source_dims=summary.mapped_layers + summary.skipped_layers,
-            total_target_dims=summary.mapped_layers + summary.skipped_layers,
+            total_source_dims=summary.mapped_layers,
+            total_target_dims=summary.mapped_layers,
             layer_confidences=layer_confidences,
         )
 
     @staticmethod
-    def confidence_based_alpha(
-        layer_confidence: LayerConfidence | None,
-        overall_confidence: float | None = None,
-    ) -> float:
-        """Compute alpha directly from confidence. No arbitrary scaling.
+    def confidence_based_alpha(layer_confidence: LayerConfidence) -> float:
+        """Compute alpha directly from confidence.
 
         alpha = 1.0 - confidence
         High confidence -> low alpha (trust source)
         Low confidence -> high alpha (trust target)
-
-        Args:
-            layer_confidence: Per-layer confidence from mapping
-            overall_confidence: Overall mapping confidence for deriving fallback
-
-        Raises:
-            ValueError: If no confidence data available (no fallbacks)
         """
-        if layer_confidence is not None:
-            return 1.0 - layer_confidence.confidence
-
-        # Derive from overall confidence - no arbitrary fallbacks
-        if overall_confidence is not None:
-            return 1.0 - overall_confidence
-
-        raise ValueError(
-            "Cannot compute alpha without confidence data. "
-            "Ensure layer mapping provides either per-layer or overall confidence."
-        )
+        return 1.0 - layer_confidence.confidence
 
     @staticmethod
     def alpha_by_layer(result: LayerMappingResult) -> dict[int, float]:
@@ -841,16 +522,13 @@ class InvariantLayerMappingService:
         intersection_map = InvariantLayerMappingService.to_intersection_map(result)
         confidence_by_layer = {lc.layer: lc for lc in intersection_map.layer_confidences}
 
-        # Use overall correlation as fallback basis for unmapped layers
-        overall_confidence = intersection_map.overall_correlation
-
         alpha_map: dict[int, float] = {}
         for mapping in result.report.mappings:
             layer = mapping.source_layer
             layer_conf = confidence_by_layer.get(layer)
-            alpha_map[layer] = InvariantLayerMappingService.confidence_based_alpha(
-                layer_conf, overall_confidence
-            )
+            if layer_conf is None:
+                raise ValueError("Missing per-layer confidence for alpha computation.")
+            alpha_map[layer] = InvariantLayerMappingService.confidence_based_alpha(layer_conf)
 
         return alpha_map
 
@@ -868,10 +546,8 @@ class InvariantLayerMappingService:
             "layerConfidences": [
                 {
                     "layer": lc.layer,
-                    "strongCorrelations": lc.strong_correlations,
-                    "moderateCorrelations": lc.moderate_correlations,
-                    "weakCorrelations": lc.weak_correlations,
                     "confidence": lc.confidence,
+                    "correlationCount": lc.correlation_count,
                 }
                 for lc in intersection_map.layer_confidences
             ],

@@ -31,14 +31,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.birkhoff_projector import (
-    BirkhoffProjector,
-    BirkhoffProjectorConfig,
-)
-from modelcypher.core.domain.geometry.null_space_filter import (
-    NullSpaceFilter,
-    NullSpaceFilterConfig,
-)
+from modelcypher.core.domain.geometry.birkhoff_projector import BirkhoffProjector
+from modelcypher.core.domain.geometry.null_space_filter import NullSpaceFilter
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 
 if TYPE_CHECKING:
@@ -133,9 +127,12 @@ def compute_transplant_delta(
     activations_core: "Array",
     activations_boundary: "Array",
     backend: "Backend | None" = None,
-    nullspace_config: NullSpaceFilterConfig | None = None,
 ) -> TransplantDeltaResult:
-    """Compute boundary-preserving transplant update for a single weight matrix."""
+    """Compute boundary-preserving transplant update for a single weight matrix.
+
+    All null-space filtering parameters are derived from the data's spectral
+    properties. No configuration needed - the geometry determines everything.
+    """
     b = backend or get_default_backend()
     # Convert all inputs to float32 - pinv requires float32 or float64
     weight_target = b.astype(b.array(weight_target), "float32")
@@ -189,7 +186,8 @@ def compute_transplant_delta(
     delta_core_t = b.matmul(core_pinv, core_output)
     b.eval(delta_core_t)
 
-    null_filter = NullSpaceFilter(config=nullspace_config, backend=b)
+    # Null-space filter - all params derived from spectral properties
+    null_filter = NullSpaceFilter(backend=b)
     null_projection = null_filter.compute_null_space_projection(activations_boundary)
     proj = null_projection.projection_matrix
     b.eval(proj)

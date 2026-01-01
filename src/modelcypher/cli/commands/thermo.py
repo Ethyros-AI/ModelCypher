@@ -114,9 +114,6 @@ def thermo_path_integration(
     ctx: typer.Context,
     prompt: str = typer.Argument(..., help="Prompt to analyze"),
     model: str = typer.Option(..., "--model", help="Path to model directory"),
-    gate_threshold: float = typer.Option(
-        0.55, "--gate-threshold", help="Gate detection threshold"
-    ),
     max_tokens: int = typer.Option(200, "--max-tokens", help="Max tokens for response"),
     temperature: float = typer.Option(0.0, "--temperature", help="Sampling temperature"),
     capture_trajectory: bool = typer.Option(
@@ -125,7 +122,11 @@ def thermo_path_integration(
         help="Include entropy trajectory in output",
     ),
 ) -> None:
-    """Integrate entropy trajectories with gate detections."""
+    """Integrate entropy trajectories with gate detections.
+
+    Returns ALL gates with their confidence scores.
+    The confidence scores ARE the signal - no threshold filtering.
+    """
     context = _context(ctx)
     from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
     from modelcypher.core.use_cases.thermo_service import ThermoService
@@ -134,7 +135,7 @@ def thermo_path_integration(
     result = service.path_integration(
         prompt=prompt,
         model_path=model,
-        gate_threshold=gate_threshold,
+        gate_threshold=0.0,  # Return all gates with confidence
         max_tokens=max_tokens,
         temperature=temperature,
         capture_trajectory=capture_trajectory,

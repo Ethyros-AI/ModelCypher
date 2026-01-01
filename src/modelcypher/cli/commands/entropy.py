@@ -17,16 +17,17 @@
 
 """Entropy analysis CLI commands.
 
-Provides commands for entropy pattern analysis, distress detection,
-baseline verification, sliding window tracking, and conversation analysis.
+All commands return raw statistics computed from the data itself.
+No user-configurable thresholds - the geometry IS the signal.
 
 Commands:
     mc entropy analyze <samples>
     mc entropy detect-distress <samples>
     mc entropy verify-baseline --mean ... --std-dev ... --max ... --min ... --observed ...
-    mc entropy window --size <n> --threshold <t>
+    mc entropy window <samples> --size <n>
     mc entropy conversation-track --session <file>
-    mc entropy dual-path --base <path> --adapter <path>
+    mc entropy dual-path <samples>
+    mc entropy calibrate --model <path> --prompts <path> --max-tokens <n> --temperature <t>
 """
 
 from __future__ import annotations
@@ -38,10 +39,6 @@ import typer
 
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
-from modelcypher.core.use_cases.entropy_probe_service import (
-    EntropyProbeService,
-    PatternAnalysisConfig,
-)
 from modelcypher.utils.errors import ErrorDetail
 
 app = typer.Typer(no_args_is_help=True)
@@ -57,23 +54,14 @@ def entropy_analyze(
     samples: str = typer.Argument(
         ..., help="JSON array of [entropy, variance] pairs, e.g. '[[3.5, 0.2], [3.6, 0.1]]'"
     ),
-    minimum_samples: int = typer.Option(..., "--min-samples", help="Minimum samples for trend"),
-    trend_threshold: float = typer.Option(..., "--trend-threshold", help="Trend slope threshold"),
-    distress_correlation_threshold: float = typer.Option(
-        ..., "--distress-correlation-threshold", help="Entropy/variance correlation threshold"
-    ),
-    high_volatility_threshold: float = typer.Option(
-        ..., "--high-volatility-threshold", help="Volatility threshold"
-    ),
-    anomaly_z_score_threshold: float = typer.Option(
-        ..., "--anomaly-z-score-threshold", help="Anomaly z-score threshold"
-    ),
 ) -> None:
-    """Analyze entropy/variance samples for patterns and trends."""
+    """Analyze entropy/variance samples - returns raw statistics.
+
+    No thresholds required. The data's own statistics are the signal.
+    """
     context = _context(ctx)
     import json as json_lib
-
-    service = EntropyProbeService()
+    import math
 
     try:
         sample_list = json_lib.loads(samples)
@@ -91,34 +79,56 @@ def entropy_analyze(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    config = PatternAnalysisConfig(
-        minimum_samples_for_trend=minimum_samples,
-        trend_threshold=trend_threshold,
-        distress_correlation_threshold=distress_correlation_threshold,
-        high_volatility_threshold=high_volatility_threshold,
-        anomaly_z_score_threshold=anomaly_z_score_threshold,
-    )
-    pattern = service.analyze_pattern(parsed_samples, config)
-    payload = service.pattern_payload(pattern)
+    if not parsed_samples:
+        write_output({"error": "No samples provided"}, context.output_format, context.pretty)
+        return
+
+    # Extract entropy and variance series
+    entropies = [s[0] for s in parsed_samples]
+    variances = [s[1] for s in parsed_samples]
+    n = len(entropies)
+
+    # Compute raw statistics from the data itself
+    entropy_mean = sum(entropies) / n
+    variance_mean = sum(variances) / n
+    entropy_std = math.sqrt(sum((e - entropy_mean) ** 2 for e in entropies) / n) if n > 1 else 0.0
+    variance_std = math.sqrt(sum((v - variance_mean) ** 2 for v in variances) / n) if n > 1 else 0.0
+
+    # Trend via linear regression slope
+    if n > 1:
+        x_mean = (n - 1) / 2
+        numerator = sum((i - x_mean) * (e - entropy_mean) for i, e in enumerate(entropies))
+        denominator = sum((i - x_mean) ** 2 for i in range(n))
+        trend_slope = numerator / denominator if denominator > 0 else 0.0
+    else:
+        trend_slope = 0.0
+
+    # Z-scores for each sample (computed from the data's own distribution)
+    z_scores = [(e - entropy_mean) / entropy_std if entropy_std > 0 else 0.0 for e in entropies]
+
+    payload = {
+        "sampleCount": n,
+        # Raw distribution statistics
+        "entropyMean": entropy_mean,
+        "entropyStdDev": entropy_std,
+        "entropyMin": min(entropies),
+        "entropyMax": max(entropies),
+        "varianceMean": variance_mean,
+        "varianceStdDev": variance_std,
+        # Trend (slope of linear fit)
+        "trendSlope": trend_slope,
+        # Z-scores relative to this data's own distribution
+        "zScores": z_scores,
+    }
 
     if context.output_format == "text":
-        trend_direction = "rising" if pattern.is_rising else "falling" if pattern.is_falling else "stable"
         lines = [
-            "ENTROPY PATTERN ANALYSIS",
-            f"Trend Slope: {pattern.trend_slope:.4f} ({trend_direction})",
-            f"Volatility: {pattern.volatility:.4f}",
-            f"Entropy Mean: {pattern.entropy_mean:.4f}",
-            f"Entropy StdDev: {pattern.entropy_std_dev:.4f}",
-            f"Variance Mean: {pattern.variance_mean:.4f}",
-            f"Entropy-Variance Correlation: {pattern.entropy_variance_correlation:.4f}",
-            f"Sustained High Count: {pattern.sustained_high_count}",
-            f"Sustained Significance: {pattern.sustained_significance:.2f}",
-            f"Peak Entropy: {pattern.peak_entropy:.4f}",
-            f"Min Entropy: {pattern.min_entropy:.4f}",
-            f"Sample Count: {pattern.sample_count}",
+            "ENTROPY ANALYSIS (raw statistics)",
+            f"Sample Count: {n}",
+            f"Entropy: mean={entropy_mean:.4f}, std={entropy_std:.4f}, min={min(entropies):.4f}, max={max(entropies):.4f}",
+            f"Variance: mean={variance_mean:.4f}, std={variance_std:.4f}",
+            f"Trend Slope: {trend_slope:.6f}",
         ]
-        if pattern.anomaly_indices:
-            lines.append(f"Anomaly Indices: {list(pattern.anomaly_indices)}")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -131,23 +141,20 @@ def entropy_detect_distress(
     samples: str = typer.Argument(
         ..., help="JSON array of [entropy, variance] pairs, e.g. '[[3.5, 0.2], [3.6, 0.1]]'"
     ),
-    minimum_samples: int = typer.Option(..., "--min-samples", help="Minimum samples for trend"),
-    trend_threshold: float = typer.Option(..., "--trend-threshold", help="Trend slope threshold"),
-    distress_correlation_threshold: float = typer.Option(
-        ..., "--distress-correlation-threshold", help="Entropy/variance correlation threshold"
-    ),
-    high_volatility_threshold: float = typer.Option(
-        ..., "--high-volatility-threshold", help="Volatility threshold"
-    ),
-    anomaly_z_score_threshold: float = typer.Option(
-        ..., "--anomaly-z-score-threshold", help="Anomaly z-score threshold"
-    ),
 ) -> None:
-    """Detect distress patterns in entropy/variance samples."""
+    """Analyze entropy/variance samples for distress indicators.
+
+    Returns raw distress metrics computed from the data itself:
+    - Trend slope (linear regression)
+    - Entropy-variance correlation (Pearson)
+    - Volatility (standard deviation of differences)
+    - Z-scores for each sample (from data's own distribution)
+
+    No thresholds - the measurements ARE the signal.
+    """
     context = _context(ctx)
     import json as json_lib
-
-    service = EntropyProbeService()
+    import math
 
     try:
         sample_list = json_lib.loads(samples)
@@ -165,29 +172,82 @@ def entropy_detect_distress(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    config = PatternAnalysisConfig(
-        minimum_samples_for_trend=minimum_samples,
-        trend_threshold=trend_threshold,
-        distress_correlation_threshold=distress_correlation_threshold,
-        high_volatility_threshold=high_volatility_threshold,
-        anomaly_z_score_threshold=anomaly_z_score_threshold,
-    )
-    distress = service.detect_distress(parsed_samples, config)
-    payload = service.distress_payload(distress)
+    if not parsed_samples:
+        write_output({"error": "No samples provided"}, context.output_format, context.pretty)
+        return
+
+    n = len(parsed_samples)
+    entropies = [s[0] for s in parsed_samples]
+    variances = [s[1] for s in parsed_samples]
+
+    # Basic statistics
+    entropy_mean = sum(entropies) / n
+    variance_mean = sum(variances) / n
+    entropy_std = math.sqrt(sum((e - entropy_mean) ** 2 for e in entropies) / n) if n > 1 else 0.0
+    variance_std = math.sqrt(sum((v - variance_mean) ** 2 for v in variances) / n) if n > 1 else 0.0
+
+    # Trend slope (linear regression on entropy)
+    if n > 1:
+        x_mean = (n - 1) / 2
+        numerator = sum((i - x_mean) * (e - entropy_mean) for i, e in enumerate(entropies))
+        denominator = sum((i - x_mean) ** 2 for i in range(n))
+        trend_slope = numerator / denominator if denominator > 0 else 0.0
+    else:
+        trend_slope = 0.0
+
+    # Pearson correlation between entropy and variance
+    if n > 1 and entropy_std > 0 and variance_std > 0:
+        covariance = sum(
+            (e - entropy_mean) * (v - variance_mean) for e, v in parsed_samples
+        ) / n
+        correlation = covariance / (entropy_std * variance_std)
+    else:
+        correlation = 0.0
+
+    # Volatility (std of consecutive differences)
+    if n > 1:
+        diffs = [entropies[i + 1] - entropies[i] for i in range(n - 1)]
+        diff_mean = sum(diffs) / len(diffs)
+        volatility = math.sqrt(sum((d - diff_mean) ** 2 for d in diffs) / len(diffs))
+    else:
+        volatility = 0.0
+
+    # Z-scores for each sample
+    z_scores = [(e - entropy_mean) / entropy_std if entropy_std > 0 else 0.0 for e in entropies]
+
+    # Count sustained high values (consecutive samples > 1 std above mean)
+    sustained_high_count = 0
+    current_run = 0
+    for z in z_scores:
+        if z > 1.0:
+            current_run += 1
+            sustained_high_count = max(sustained_high_count, current_run)
+        else:
+            current_run = 0
+
+    payload = {
+        "sampleCount": n,
+        "entropyMean": entropy_mean,
+        "entropyStdDev": entropy_std,
+        "varianceMean": variance_mean,
+        "varianceStdDev": variance_std,
+        "trendSlope": trend_slope,
+        "correlation": correlation,
+        "volatility": volatility,
+        "sustainedHighCount": sustained_high_count,
+        "zScores": z_scores,
+    }
 
     if context.output_format == "text":
-        if distress is None:
-            write_output("No distress detected", context.output_format, context.pretty)
-            return
         lines = [
-            "DISTRESS DETECTION RESULT",
-            "Detected: YES",
-            f"Confidence: {distress.confidence:.2%}",
-            f"Sustained High Count: {distress.sustained_high_count}",
-            f"Average Entropy: {distress.average_entropy:.4f}",
-            f"Average Variance: {distress.average_variance:.4f}",
-            f"Correlation: {distress.correlation:.4f}",
-            f"Indicators: {', '.join(distress.indicators)}",
+            "DISTRESS ANALYSIS (raw metrics)",
+            f"Sample Count: {n}",
+            f"Entropy: mean={entropy_mean:.4f}, std={entropy_std:.4f}",
+            f"Variance: mean={variance_mean:.4f}, std={variance_std:.4f}",
+            f"Trend Slope: {trend_slope:.6f}",
+            f"Entropy-Variance Correlation: {correlation:.4f}",
+            f"Volatility: {volatility:.4f}",
+            f"Max Sustained High Run: {sustained_high_count}",
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
@@ -207,46 +267,26 @@ def entropy_verify_baseline(
     observed_deltas: str = typer.Option(
         ..., "--observed", help="JSON array of observed delta values, e.g. '[0.1, 0.15, 0.12]'"
     ),
-    test_prompts: str = typer.Option(
-        ..., "--test-prompts", help="JSON array of verification prompts"
-    ),
-    failure_z_score: float = typer.Option(..., "--failure-z-score", help="Failure z-score"),
-    suspicious_z_score: float = typer.Option(
-        ..., "--suspicious-z-score", help="Suspicious z-score"
-    ),
-    minimum_sample_count: int = typer.Option(
-        ..., "--minimum-samples", help="Minimum sample count"
-    ),
-    include_adversarial: bool = typer.Option(
-        ..., "--include-adversarial/--no-include-adversarial", help="Include adversarial prompts"
-    ),
-    max_tokens_per_prompt: int = typer.Option(
-        ..., "--max-tokens-per-prompt", help="Max tokens per prompt"
-    ),
-    temperature: float = typer.Option(..., "--temperature", help="Generation temperature"),
-    prompt_timeout_seconds: float = typer.Option(
-        ..., "--prompt-timeout-seconds", help="Timeout per prompt in seconds"
-    ),
-    base_model_id: str = typer.Option(..., "--base-model", help="Base model identifier"),
-    adapter_path: str = typer.Option(..., "--adapter", help="Path to adapter"),
 ) -> None:
-    """Verify observed entropy deltas against declared baseline."""
+    """Compare observed entropy deltas against declared baseline.
+
+    Returns raw statistical comparison metrics:
+    - Z-score of observed mean vs declared mean
+    - Ratio of observed std vs declared std
+    - Whether observed range exceeds declared range
+    - Per-sample z-scores
+
+    No interpretation thresholds - the statistics ARE the signal.
+    """
     context = _context(ctx)
     import json as json_lib
-
-    service = EntropyProbeService()
+    import math
 
     try:
         deltas = json_lib.loads(observed_deltas)
         if not isinstance(deltas, list):
             raise ValueError("Observed deltas must be a JSON array")
         parsed_deltas = [float(d) for d in deltas]
-        prompt_values = json_lib.loads(test_prompts)
-        if not isinstance(prompt_values, list) or not all(
-            isinstance(p, str) for p in prompt_values
-        ):
-            raise ValueError("Test prompts must be a JSON array of strings")
-        prompt_tuple = tuple(prompt_values)
     except (json_lib.JSONDecodeError, TypeError, ValueError) as exc:
         error = ErrorDetail(
             code="MC-1052",
@@ -258,48 +298,66 @@ def entropy_verify_baseline(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    from modelcypher.core.domain.entropy.baseline_verification_probe import (
-        VerificationConfiguration,
-    )
+    if not parsed_deltas:
+        write_output({"error": "No observed deltas provided"}, context.output_format, context.pretty)
+        return
 
-    config = VerificationConfiguration.with_statistical_thresholds(
-        failure_z_score=failure_z_score,
-        suspicious_z_score=suspicious_z_score,
-        test_prompts=prompt_tuple,
-        include_adversarial=include_adversarial,
-        max_tokens_per_prompt=max_tokens_per_prompt,
-        minimum_sample_count=minimum_sample_count,
-        temperature=temperature,
-        prompt_timeout_seconds=prompt_timeout_seconds,
-    )
+    n = len(parsed_deltas)
 
-    result = service.verify_baseline(
-        declared_mean=declared_mean,
-        declared_std_dev=declared_std_dev,
-        declared_max=declared_max,
-        declared_min=declared_min,
-        observed_deltas=parsed_deltas,
-        config=config,
-        base_model_id=base_model_id,
-        adapter_path=adapter_path,
-    )
-    payload = service.verification_payload(result)
+    # Compute observed statistics
+    observed_mean = sum(parsed_deltas) / n
+    observed_std = math.sqrt(sum((d - observed_mean) ** 2 for d in parsed_deltas) / n) if n > 1 else 0.0
+    observed_min = min(parsed_deltas)
+    observed_max = max(parsed_deltas)
+
+    # Z-score: how many declared std devs is observed mean from declared mean
+    mean_z_score = (observed_mean - declared_mean) / declared_std_dev if declared_std_dev > 0 else 0.0
+
+    # Std dev ratio: observed variability vs declared
+    std_dev_ratio = observed_std / declared_std_dev if declared_std_dev > 0 else 0.0
+
+    # Range comparison
+    range_exceeded = observed_min < declared_min or observed_max > declared_max
+
+    # Per-sample z-scores (vs declared baseline)
+    sample_z_scores = [(d - declared_mean) / declared_std_dev if declared_std_dev > 0 else 0.0 for d in parsed_deltas]
+
+    # Divergence score: absolute mean difference normalized by declared std
+    divergence_score = abs(mean_z_score)
+
+    payload = {
+        "sampleCount": n,
+        "declared": {
+            "mean": declared_mean,
+            "stdDev": declared_std_dev,
+            "min": declared_min,
+            "max": declared_max,
+        },
+        "observed": {
+            "mean": observed_mean,
+            "stdDev": observed_std,
+            "min": observed_min,
+            "max": observed_max,
+        },
+        "meanZScore": mean_z_score,
+        "stdDevRatio": std_dev_ratio,
+        "rangeExceeded": range_exceeded,
+        "divergenceScore": divergence_score,
+        "sampleZScores": sample_z_scores,
+    }
 
     if context.output_format == "text":
         lines = [
-            "BASELINE VERIFICATION",
-            f"Declared Δ mean: {result.declared_baseline.delta_mean:.3f} ± {result.declared_baseline.delta_std_dev:.3f}",
-            f"Declared Δ range: [{result.declared_baseline.delta_min:.3f}, {result.declared_baseline.delta_max:.3f}]",
-            f"Observed Δ mean: {result.observed_baseline.delta_mean:.3f} ± {result.observed_baseline.delta_std_dev:.3f}",
-            f"Observed Δ range: [{result.observed_baseline.delta_min:.3f}, {result.observed_baseline.delta_max:.3f}]",
-            f"Mean Z-score: {result.comparison.mean_z_score:.2f}",
-            f"StdDev ratio: {result.comparison.std_dev_ratio:.2f}",
-            f"Range exceeded: {result.comparison.range_exceeded}",
-            f"Divergence score: {result.comparison.divergence_score:.3f}",
-            f"Sample count sufficient: {result.comparison.sample_count_sufficient}",
-            f"Total samples: {result.total_samples}",
-            f"Adversarial flags: {len(result.adversarial_flags)}",
-            f"Duration: {result.verification_duration:.1f}s",
+            "BASELINE VERIFICATION (raw comparison)",
+            f"Sample Count: {n}",
+            "",
+            f"Declared: mean={declared_mean:.4f}, std={declared_std_dev:.4f}, range=[{declared_min:.4f}, {declared_max:.4f}]",
+            f"Observed: mean={observed_mean:.4f}, std={observed_std:.4f}, range=[{observed_min:.4f}, {observed_max:.4f}]",
+            "",
+            f"Mean Z-score: {mean_z_score:.4f}",
+            f"StdDev Ratio: {std_dev_ratio:.4f}",
+            f"Range Exceeded: {range_exceeded}",
+            f"Divergence Score: {divergence_score:.4f}",
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
@@ -313,30 +371,24 @@ def entropy_window(
     samples: str = typer.Argument(
         ..., help="JSON array of [entropy, variance] pairs, e.g. '[[3.5, 0.2], [3.6, 0.1]]'"
     ),
-    size: int = typer.Option(..., "--size", help="Window size for sliding analysis"),
-    minimum_samples: int = typer.Option(..., "--minimum-samples", help="Minimum samples"),
-    sustained_high_count: int = typer.Option(
-        ..., "--sustained-high-count", help="Consecutive high samples threshold"
-    ),
-    high_threshold: float = typer.Option(..., "--high-threshold", help="High entropy threshold"),
-    circuit_threshold: float = typer.Option(
-        ..., "--circuit-threshold", help="Circuit breaker threshold"
-    ),
+    size: int = typer.Option(50, "--size", help="Window size for sliding analysis"),
 ) -> None:
-    """Analyze entropy using a sliding window tracker.
+    """Analyze entropy using a sliding window.
 
-    Provides real-time entropy monitoring with explicit thresholds
-    for detecting anomalies and state transitions.
+    Returns raw window statistics:
+    - Moving average over window
+    - Min/max in window
+    - Standard deviation
+    - Z-scores for each sample (from window's own distribution)
+    - Consecutive runs above 1σ
+
+    No thresholds - the window statistics ARE the signal.
 
     Examples:
-        mc entropy window '[[3.5, 0.2], [3.6, 0.1], [4.8, 0.5]]' --size 50 --minimum-samples 5 --sustained-high-count 3 --high-threshold 4.0 --circuit-threshold 5.0
+        mc entropy window '[[3.5, 0.2], [3.6, 0.1], [4.8, 0.5]]' --size 50
     """
     context = _context(ctx)
-
-    from modelcypher.core.domain.entropy.entropy_window import (
-        EntropyWindow,
-        EntropyWindowConfig,
-    )
+    import math
 
     try:
         sample_list = json.loads(samples)
@@ -354,46 +406,70 @@ def entropy_window(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    config = EntropyWindowConfig(
-        window_size=size,
-        minimum_samples=minimum_samples,
-        high_entropy_threshold=high_threshold,
-        circuit_breaker_threshold=circuit_threshold,
-        sustained_high_count=sustained_high_count,
-    )
-    window = EntropyWindow(config=config)
+    if not parsed_samples:
+        write_output({"error": "No samples provided"}, context.output_format, context.pretty)
+        return
 
-    # Add all samples to the window
-    for idx, (entropy, variance) in enumerate(parsed_samples):
-        window.add(entropy=entropy, variance=variance, token_index=idx)
+    # Extract entropies and use sliding window
+    entropies = [s[0] for s in parsed_samples]
+    variances = [s[1] for s in parsed_samples]
+    n = len(entropies)
 
-    status = window.status()
+    # Use window or full data if smaller
+    window_data = entropies[-size:] if len(entropies) > size else entropies
+    window_n = len(window_data)
+
+    # Window statistics
+    window_mean = sum(window_data) / window_n
+    window_std = math.sqrt(sum((e - window_mean) ** 2 for e in window_data) / window_n) if window_n > 1 else 0.0
+    window_min = min(window_data)
+    window_max = max(window_data)
+
+    # Z-scores for each sample in window
+    z_scores = [(e - window_mean) / window_std if window_std > 0 else 0.0 for e in window_data]
+
+    # Count max consecutive run above 1σ
+    max_consecutive_high = 0
+    current_run = 0
+    for z in z_scores:
+        if z > 1.0:
+            current_run += 1
+            max_consecutive_high = max(max_consecutive_high, current_run)
+        else:
+            current_run = 0
+
+    # Current (most recent) values
+    current_entropy = entropies[-1] if entropies else 0.0
+    current_variance = variances[-1] if variances else 0.0
+    current_z = z_scores[-1] if z_scores else 0.0
 
     payload = {
         "windowSize": size,
-        "sampleCount": status.sample_count,
-        "currentEntropy": status.current_entropy,
-        "movingAverage": status.moving_average,
-        "maxEntropy": status.max_entropy,
-        "minEntropy": status.min_entropy,
-        "consecutiveHighCount": status.consecutive_high_count,
-        "shouldTripCircuitBreaker": status.should_trip_circuit_breaker,
-        "tokenStart": status.token_start,
-        "tokenEnd": status.token_end,
+        "actualWindowSize": window_n,
+        "totalSamples": n,
+        "currentEntropy": current_entropy,
+        "currentVariance": current_variance,
+        "currentZScore": current_z,
+        "windowMean": window_mean,
+        "windowStdDev": window_std,
+        "windowMin": window_min,
+        "windowMax": window_max,
+        "maxConsecutiveHigh": max_consecutive_high,
+        "zScores": z_scores,
     }
 
     if context.output_format == "text":
         lines = [
-            "ENTROPY WINDOW ANALYSIS",
-            f"Window Size: {size}",
-            f"Samples Analyzed: {status.sample_count}",
+            "ENTROPY WINDOW ANALYSIS (raw statistics)",
+            f"Window Size: {window_n} (of {n} total samples)",
             "",
-            f"Current Entropy: {status.current_entropy:.4f}",
-            f"Moving Average: {status.moving_average:.4f}",
-            f"Max Entropy: {status.max_entropy:.4f}",
-            f"Min Entropy: {status.min_entropy:.4f}",
-            f"Consecutive High Count: {status.consecutive_high_count}",
-            f"Circuit Breaker: {'TRIPPED' if status.should_trip_circuit_breaker else 'OK'}",
+            f"Current Entropy: {current_entropy:.4f}",
+            f"Current Z-score: {current_z:.4f}",
+            "",
+            f"Window Mean: {window_mean:.4f}",
+            f"Window StdDev: {window_std:.4f}",
+            f"Window Range: [{window_min:.4f}, {window_max:.4f}]",
+            f"Max Consecutive >1σ: {max_consecutive_high}",
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
@@ -405,45 +481,30 @@ def entropy_window(
 def entropy_conversation_track(
     ctx: typer.Context,
     session: str = typer.Option(..., "--session", help="Path to session file (JSON with turns)"),
-    oscillation_threshold: float = typer.Option(
-        ..., "--oscillation-threshold", help="Oscillation amplitude threshold"
-    ),
-    drift_threshold: float = typer.Option(
-        ..., "--drift-threshold", help="Cumulative drift threshold"
-    ),
-    turn_spike_threshold: float = typer.Option(
-        ..., "--turn-spike-threshold", help="Turn-over-turn spike threshold"
-    ),
-    oscillation_window_size: int = typer.Option(
-        ..., "--oscillation-window-size", help="Oscillation window size (turns)"
-    ),
-    minimum_turns_for_analysis: int = typer.Option(
-        ..., "--minimum-turns", help="Minimum turns for analysis"
-    ),
-    recency_decay: float = typer.Option(
-        ..., "--recency-decay", help="Recency decay factor"
-    ),
 ) -> None:
-    """Track entropy patterns across a conversation session.
+    """Analyze entropy patterns across a conversation session.
 
-    Analyzes multi-turn conversations for oscillation patterns,
-    cumulative drift, and manipulation signals. Session file format:
+    Returns raw conversation statistics:
+    - Oscillation amplitude and frequency (from data)
+    - Cumulative drift
+    - Turn-over-turn deltas
+    - Z-scores for each turn (from conversation's own distribution)
+
+    Session file format (simplified):
     {
         "turns": [
-            {"token_count": 100, "avg_delta": 0.1, "anomaly_count": 0},
-            {"token_count": 50, "avg_delta": 0.15, "anomaly_count": 1}
+            {"avg_delta": 0.1},
+            {"avg_delta": 0.15}
         ]
     }
 
+    No thresholds - the conversation statistics ARE the signal.
+
     Examples:
-        mc entropy conversation-track --session ./session.json --oscillation-threshold 1.0 --drift-threshold 1.5 --turn-spike-threshold 0.4 --oscillation-window-size 5 --minimum-turns 3 --recency-decay 0.9
+        mc entropy conversation-track --session ./session.json
     """
     context = _context(ctx)
-
-    from modelcypher.core.domain.entropy.conversation_entropy_tracker import (
-        ConversationEntropyConfiguration,
-        ConversationEntropyTracker,
-    )
+    import math
 
     session_path = Path(session)
     if not session_path.exists():
@@ -476,112 +537,82 @@ def entropy_conversation_track(
             code="MC-1056",
             title="Empty session",
             detail="Session file contains no turns",
-            hint="Session file should have a 'turns' array with 'token_count', 'avg_delta' fields",
+            hint="Session file should have a 'turns' array with 'avg_delta' field",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    config = ConversationEntropyConfiguration.with_thresholds(
-        oscillation_threshold=oscillation_threshold,
-        drift_threshold=drift_threshold,
-        turn_spike_threshold=turn_spike_threshold,
-        oscillation_window_size=oscillation_window_size,
-        minimum_turns_for_analysis=minimum_turns_for_analysis,
-        recency_decay=recency_decay,
-    )
-    tracker = ConversationEntropyTracker(configuration=config)
-
-    # Process turns
-    assessment = None
-    from datetime import datetime
-
+    # Extract deltas from turns
+    deltas: list[float] = []
     for turn in turns:
-        if "token_count" not in turn or "avg_delta" not in turn:
-            raise ValueError(
-                "Each turn must include 'token_count' and 'avg_delta' fields"
+        if "avg_delta" not in turn:
+            error = ErrorDetail(
+                code="MC-1057",
+                title="Missing field",
+                detail="Each turn must include 'avg_delta' field",
+                trace_id=context.trace_id,
             )
-        if "max_anomaly_score" not in turn or "anomaly_count" not in turn:
-            raise ValueError(
-                "Each turn must include 'max_anomaly_score' and 'anomaly_count' fields"
-            )
-        if "circuit_breaker_tripped" not in turn or "security_assessment" not in turn:
-            raise ValueError(
-                "Each turn must include 'circuit_breaker_tripped' and 'security_assessment' fields"
-            )
-        if "timestamp" not in turn:
-            raise ValueError("Each turn must include ISO 'timestamp' field")
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
+        deltas.append(float(turn["avg_delta"]))
 
-        token_count = int(turn["token_count"])
-        avg_delta = float(turn["avg_delta"])
-        max_anomaly_score = float(turn["max_anomaly_score"])
-        anomaly_count = int(turn["anomaly_count"])
-        circuit_breaker_tripped = bool(turn["circuit_breaker_tripped"])
-        security_assessment = str(turn["security_assessment"])
-        timestamp = datetime.fromisoformat(str(turn["timestamp"]))
+    n = len(deltas)
 
-        assessment = tracker.record_turn(
-            token_count=token_count,
-            avg_delta=avg_delta,
-            max_anomaly_score=max_anomaly_score,
-            anomaly_count=anomaly_count,
-            circuit_breaker_tripped=circuit_breaker_tripped,
-            security_assessment=security_assessment,
-            timestamp=timestamp,
-        )
+    # Basic statistics
+    delta_mean = sum(deltas) / n
+    delta_std = math.sqrt(sum((d - delta_mean) ** 2 for d in deltas) / n) if n > 1 else 0.0
 
-    if assessment is None:
-        error = ErrorDetail(
-            code="MC-1056",
-            title="No assessment",
-            detail="No turns could be processed",
-            trace_id=context.trace_id,
-        )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
+    # Cumulative drift (sum of deltas)
+    cumulative_drift = sum(deltas)
 
-    mc = assessment.manipulation_components
+    # Turn-over-turn changes
+    turn_changes = [deltas[i + 1] - deltas[i] for i in range(n - 1)] if n > 1 else []
+    max_spike = max(abs(c) for c in turn_changes) if turn_changes else 0.0
+
+    # Oscillation: count sign changes in turn_changes
+    sign_changes = 0
+    for i in range(len(turn_changes) - 1):
+        if turn_changes[i] * turn_changes[i + 1] < 0:
+            sign_changes += 1
+    oscillation_frequency = sign_changes / len(turn_changes) if turn_changes else 0.0
+
+    # Oscillation amplitude: std of turn_changes
+    if turn_changes:
+        tc_mean = sum(turn_changes) / len(turn_changes)
+        oscillation_amplitude = math.sqrt(sum((c - tc_mean) ** 2 for c in turn_changes) / len(turn_changes))
+    else:
+        oscillation_amplitude = 0.0
+
+    # Z-scores for each turn
+    z_scores = [(d - delta_mean) / delta_std if delta_std > 0 else 0.0 for d in deltas]
+
     payload = {
         "sessionPath": str(session_path),
-        "turnCount": assessment.turn_count,
-        "oscillationAmplitude": assessment.oscillation_amplitude,
-        "oscillationFrequency": assessment.oscillation_frequency,
-        "cumulativeDrift": assessment.cumulative_drift,
-        "recentAnomalyCount": assessment.recent_anomaly_count,
-        "assessmentConfidence": assessment.assessment_confidence,
-        "isSufficientData": assessment.is_sufficient_data,
-        "manipulationComponents": {
-            "oscillationAmplitudeScore": mc.oscillation_amplitude_score,
-            "oscillationFrequencyScore": mc.oscillation_frequency_score,
-            "driftScore": mc.drift_score,
-            "anomalyScore": mc.anomaly_score,
-            "spikeScore": mc.spike_score,
-            "circuitBreakerTripped": mc.circuit_breaker_tripped,
-            "baselineOscillationExceeded": mc.baseline_oscillation_exceeded,
-        },
+        "turnCount": n,
+        "deltaMean": delta_mean,
+        "deltaStdDev": delta_std,
+        "deltaMin": min(deltas),
+        "deltaMax": max(deltas),
+        "cumulativeDrift": cumulative_drift,
+        "oscillationAmplitude": oscillation_amplitude,
+        "oscillationFrequency": oscillation_frequency,
+        "maxTurnSpike": max_spike,
+        "turnZScores": z_scores,
+        "turnChanges": turn_changes,
     }
 
     if context.output_format == "text":
         lines = [
-            "CONVERSATION ENTROPY TRACKING",
+            "CONVERSATION ENTROPY TRACKING (raw statistics)",
             f"Session: {session_path}",
-            f"Turns Analyzed: {assessment.turn_count}",
-            f"Sufficient Data: {'YES' if assessment.is_sufficient_data else 'NO'}",
+            f"Turns Analyzed: {n}",
             "",
-            f"Oscillation Amplitude: {assessment.oscillation_amplitude:.4f}",
-            f"Oscillation Frequency: {assessment.oscillation_frequency:.4f}",
-            f"Cumulative Drift: {assessment.cumulative_drift:.4f}",
-            f"Recent Anomalies: {assessment.recent_anomaly_count}",
-            f"Confidence: {assessment.assessment_confidence:.2%}",
-            "",
-            "MANIPULATION SIGNAL COMPONENTS:",
-            f"  Oscillation Amplitude Score: {mc.oscillation_amplitude_score:.4f}",
-            f"  Oscillation Frequency Score: {mc.oscillation_frequency_score:.4f}",
-            f"  Drift Score: {mc.drift_score:.4f}",
-            f"  Anomaly Score: {mc.anomaly_score:.4f}",
-            f"  Spike Score: {mc.spike_score:.4f}",
-            f"  Circuit Breaker: {'TRIPPED' if mc.circuit_breaker_tripped else 'OK'}",
-            f"  Baseline Oscillation Exceeded: {'YES' if mc.baseline_oscillation_exceeded else 'NO'}",
+            f"Delta: mean={delta_mean:.4f}, std={delta_std:.4f}, range=[{min(deltas):.4f}, {max(deltas):.4f}]",
+            f"Cumulative Drift: {cumulative_drift:.4f}",
+            f"Oscillation Amplitude: {oscillation_amplitude:.4f}",
+            f"Oscillation Frequency: {oscillation_frequency:.4f}",
+            f"Max Turn Spike: {max_spike:.4f}",
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
@@ -593,28 +624,24 @@ def entropy_conversation_track(
 def entropy_dual_path(
     ctx: typer.Context,
     samples: str = typer.Argument(..., help="JSON array of {base: [e, v], adapter: [e, v]} pairs"),
-    anomaly_threshold: float = typer.Option(
-        ..., "--anomaly-threshold", help="Anomaly score threshold"
-    ),
-    delta_threshold: float = typer.Option(
-        ..., "--delta-threshold", help="Entropy delta threshold"
-    ),
-    base_entropy_floor: float = typer.Option(
-        ..., "--base-entropy-floor", help="Base entropy floor for anomaly scoring"
-    ),
 ) -> None:
     """Analyze entropy divergence between base model and adapter.
 
-    Compares entropy patterns from base model and adapted model
-    to detect suspicious divergence that may indicate backdoors.
+    Returns raw dual-path statistics:
+    - Delta (adapter - base) for each sample
+    - Distribution statistics (mean, std, min, max)
+    - Z-scores for each sample
+    - Entropy reduction ratio where adapter < base
+
+    No thresholds - the deltas ARE the signal.
+
     Input format: [{"base": [entropy, variance], "adapter": [entropy, variance]}]
 
-    Anomaly scoring: High base entropy + low adapter entropy = suspicious
-
     Examples:
-        mc entropy dual-path '[{"base": [3.5, 0.2], "adapter": [3.8, 0.3]}]' --anomaly-threshold 0.5 --delta-threshold 1.0 --base-entropy-floor 2.0
+        mc entropy dual-path '[{"base": [3.5, 0.2], "adapter": [3.8, 0.3]}]'
     """
     context = _context(ctx)
+    import math
 
     try:
         sample_list = json.loads(samples)
@@ -631,62 +658,80 @@ def entropy_dual_path(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    # Analyze samples manually (EntropyDeltaTracker requires MLX arrays for live tracking)
+    if not sample_list:
+        write_output({"error": "No samples provided"}, context.output_format, context.pretty)
+        return
+
+    # Extract base and adapter entropies
+    base_entropies: list[float] = []
+    adapter_entropies: list[float] = []
     deltas: list[float] = []
-    anomaly_scores: list[float] = []
-    anomaly_indices: list[int] = []
 
-    for idx, sample in enumerate(sample_list):
+    for sample in sample_list:
         if "base" not in sample or "adapter" not in sample:
-            raise ValueError("Each sample must include 'base' and 'adapter' entries")
-        base = sample["base"]
-        adapter = sample["adapter"]
+            error = ErrorDetail(
+                code="MC-1058",
+                title="Missing field",
+                detail="Each sample must include 'base' and 'adapter' entries",
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
 
-        base_entropy = float(base[0])
-        adapter_entropy = float(adapter[0])
+        base_entropy = float(sample["base"][0])
+        adapter_entropy = float(sample["adapter"][0])
 
-        delta = adapter_entropy - base_entropy
-        deltas.append(delta)
+        base_entropies.append(base_entropy)
+        adapter_entropies.append(adapter_entropy)
+        deltas.append(adapter_entropy - base_entropy)
 
-        # Anomaly score: high when base is uncertain but adapter is confident
-        # (potential backdoor signature)
-        if base_entropy > base_entropy_floor and adapter_entropy < base_entropy:
-            # Normalized score based on entropy reduction
-            anomaly_score = min(1.0, (base_entropy - adapter_entropy) / base_entropy)
-        else:
-            anomaly_score = 0.0
+    n = len(deltas)
 
-        anomaly_scores.append(anomaly_score)
+    # Delta statistics
+    delta_mean = sum(deltas) / n
+    delta_std = math.sqrt(sum((d - delta_mean) ** 2 for d in deltas) / n) if n > 1 else 0.0
 
-        if anomaly_score >= anomaly_threshold:
-            anomaly_indices.append(idx)
+    # Z-scores for each delta
+    z_scores = [(d - delta_mean) / delta_std if delta_std > 0 else 0.0 for d in deltas]
 
-    # Compute statistics
-    avg_delta = sum(deltas) / len(deltas) if deltas else 0.0
-    max_anomaly = max(anomaly_scores) if anomaly_scores else 0.0
-    anomaly_count = len(anomaly_indices)
+    # Entropy reduction ratio: where adapter entropy < base entropy
+    # (potential backdoor signature: model becomes more confident after adapter)
+    reductions = [(base_entropies[i] - adapter_entropies[i]) / base_entropies[i]
+                  if base_entropies[i] > 0 and adapter_entropies[i] < base_entropies[i]
+                  else 0.0
+                  for i in range(n)]
+    max_reduction = max(reductions) if reductions else 0.0
+
+    # Base and adapter statistics
+    base_mean = sum(base_entropies) / n
+    adapter_mean = sum(adapter_entropies) / n
 
     payload = {
-        "sampleCount": len(sample_list),
-        "averageDelta": avg_delta,
-        "maxAnomalyScore": max_anomaly,
-        "anomalyCount": anomaly_count,
-        "anomalyIndices": anomaly_indices,
-        "anomalyThreshold": anomaly_threshold,
+        "sampleCount": n,
+        "baseMean": base_mean,
+        "adapterMean": adapter_mean,
+        "deltaMean": delta_mean,
+        "deltaStdDev": delta_std,
+        "deltaMin": min(deltas),
+        "deltaMax": max(deltas),
+        "maxEntropyReduction": max_reduction,
+        "deltas": deltas,
+        "zScores": z_scores,
+        "reductions": reductions,
     }
 
     if context.output_format == "text":
         lines = [
-            "DUAL-PATH ENTROPY ANALYSIS",
-            f"Samples Analyzed: {len(sample_list)}",
+            "DUAL-PATH ENTROPY ANALYSIS (raw statistics)",
+            f"Samples Analyzed: {n}",
             "",
-            f"Average Delta: {avg_delta:.4f}",
-            f"Max Anomaly Score: {max_anomaly:.4f}",
-            f"Anomaly Count: {anomaly_count}",
-            f"Anomaly Threshold: {anomaly_threshold:.4f}",
+            f"Base Mean Entropy: {base_mean:.4f}",
+            f"Adapter Mean Entropy: {adapter_mean:.4f}",
+            "",
+            f"Delta (adapter-base): mean={delta_mean:.4f}, std={delta_std:.4f}",
+            f"Delta Range: [{min(deltas):.4f}, {max(deltas):.4f}]",
+            f"Max Entropy Reduction: {max_reduction:.4f}",
         ]
-        if anomaly_indices:
-            lines.append(f"Anomaly Indices: {anomaly_indices}")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

@@ -17,16 +17,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any, ClassVar
+from typing import Any
 
 from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol, enum_key
 from modelcypher.core.domain.geometry.atlas_registry import get_atlas_probes
 
 __all__ = [
     # Configuration
-    "Thresholds",
     "StitchingConstants",
     "TriangulatedProbingConfig",
     # Enums
@@ -57,57 +56,18 @@ __all__ = [
 ]
 
 
-class Thresholds:
-    strong_correlation: ClassVar[float] = 0.75
-    moderate_correlation: ClassVar[float] = 0.5
-    strong_weight: ClassVar[float] = 1.0
-    moderate_weight: ClassVar[float] = 1.0
-    weak_weight: ClassVar[float] = 1.0
-
-
 @dataclass(frozen=True)
 class DimensionCorrelation:
     source_dim: int
     target_dim: int
     correlation: float
 
-    @property
-    def is_strong_correlation(self) -> bool:
-        return self.correlation > Thresholds.strong_correlation
-
-    @property
-    def is_moderate_correlation(self) -> bool:
-        return Thresholds.moderate_correlation < self.correlation <= Thresholds.strong_correlation
-
-    @property
-    def is_weak_correlation(self) -> bool:
-        return self.correlation <= Thresholds.moderate_correlation
-
 
 @dataclass(frozen=True)
 class LayerConfidence:
     layer: int
-    strong_correlations: int
-    moderate_correlations: int
-    weak_correlations: int
-    confidence: float = field(init=False)
-
-    def __post_init__(self) -> None:
-        total = self.strong_correlations + self.moderate_correlations + self.weak_correlations
-        if total > 0:
-            weighted = (
-                float(self.strong_correlations) * Thresholds.strong_weight
-                + float(self.moderate_correlations) * Thresholds.moderate_weight
-                + float(self.weak_correlations) * Thresholds.weak_weight
-            )
-            value = weighted / float(total)
-        else:
-            value = 0.0
-        object.__setattr__(self, "confidence", value)
-
-    @property
-    def total_correlations(self) -> int:
-        return self.strong_correlations + self.moderate_correlations + self.weak_correlations
+    confidence: float
+    correlation_count: int
 
 
 @dataclass(frozen=True)

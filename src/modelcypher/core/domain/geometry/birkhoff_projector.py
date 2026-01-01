@@ -37,16 +37,18 @@ Mathematical background:
     - Closed under multiplication: A, B in B_n => A @ B in B_n
 
 Usage:
-    projector = BirkhoffProjector(config)
+    projector = BirkhoffProjector(backend)
     result = projector.project(matrix)
     doubly_stochastic = result.projected_matrix  # Row/col sums = 1
+
+All parameters are derived from the data and dtype - no user configuration.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
@@ -61,35 +63,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-
-@dataclass(frozen=True)
-class BirkhoffProjectorConfig:
-    """Configuration for Birkhoff polytope projection.
-
-    All thresholds are derived from the data's dtype and spectral properties
-    unless explicitly overridden. This ensures deterministic, geometry-driven
-    behavior without arbitrary "vibes" values.
-    """
-
-    # Maximum Sinkhorn-Knopp iterations (DeepSeek mHC uses 20)
-    max_iterations: int = 20
-
-    # Convergence threshold for marginal deviation from 1.0.
-    # If None, derived from regularization_epsilon (sqrt of machine epsilon).
-    convergence_threshold: float | None = None
-
-    # Whether to enforce spectral norm <= 1.0 after Sinkhorn projection.
-    # This is the key stability guarantee from mHC.
-    enforce_spectral_bound: bool = True
-
-    # Maximum spectral norm allowed (1.0 for strict mHC, slightly higher for flexibility)
-    max_spectral_norm: float = 1.0
-
-    # Method for spectral norm computation and bounding
-    spectral_method: Literal["svd", "power_iteration"] = "svd"
-
-    # Power iteration count (if using power_iteration method)
-    power_iterations: int = 10
+# Hardcoded constants from DeepSeek mHC paper (arXiv:2512.24880)
+# These are NOT tunable - they are mathematically derived from the paper.
+_SINKHORN_MAX_ITERATIONS = 20  # Eq. 8-9 in mHC paper
+_MAX_SPECTRAL_NORM = 1.0  # Compositional stability guarantee
+_POWER_ITERATIONS = 10  # For power iteration fallback
 
 
 @dataclass
@@ -130,14 +108,11 @@ class BirkhoffProjector:
     The combination guarantees that chained transformations remain stable:
     if A, B are doubly stochastic with spectral norm <= 1, then A @ B
     has the same properties.
+
+    All parameters are derived from the data's dtype - no configuration required.
     """
 
-    def __init__(
-        self,
-        config: BirkhoffProjectorConfig | None = None,
-        backend: "Backend | None" = None,
-    ) -> None:
-        self.config = config or BirkhoffProjectorConfig()
+    def __init__(self, backend: "Backend | None" = None) -> None:
         self._backend = backend or get_default_backend()
 
     def project(
@@ -183,10 +158,8 @@ class BirkhoffProjector:
             M = backend.maximum(matrix, backend.full(matrix.shape, floor))
         backend.eval(M)
 
-        # Derive convergence threshold from dtype if not specified
-        threshold = self.config.convergence_threshold
-        if threshold is None:
-            threshold = regularization_epsilon(backend, matrix)
+        # Convergence threshold derived from dtype (sqrt of machine epsilon)
+        threshold = regularization_epsilon(backend, matrix)
 
         # Run Sinkhorn-Knopp iteration
         M, iterations, max_error = self._sinkhorn_knopp(M, n, threshold)
@@ -196,13 +169,9 @@ class BirkhoffProjector:
         # Compute spectral norm before bounding
         spectral_norm_before = self._compute_spectral_norm(M)
 
-        # Apply spectral norm bound if configured
-        spectral_clipped = False
-        if self.config.enforce_spectral_bound:
-            M, spectral_clipped = self.bound_spectral_norm(
-                M, self.config.max_spectral_norm
-            )
-            backend.eval(M)
+        # Always enforce spectral norm bound (mHC paper requirement)
+        M, spectral_clipped = self.bound_spectral_norm(M, _MAX_SPECTRAL_NORM)
+        backend.eval(M)
 
         spectral_norm_after = self._compute_spectral_norm(M)
 
@@ -237,7 +206,6 @@ class BirkhoffProjector:
             (projected_matrix, iterations_used, max_marginal_error)
         """
         backend = self._backend
-        max_iter = self.config.max_iterations
 
         # Numerical stability floor - derived from dtype
         eps = division_epsilon(backend, matrix)
@@ -246,7 +214,7 @@ class BirkhoffProjector:
         ones = backend.ones((n,))
         max_error = float("inf")
 
-        for iteration in range(max_iter):
+        for iteration in range(_SINKHORN_MAX_ITERATIONS):
             # Row normalization: M_ij / sum_j M_ij
             row_sums = backend.sum(M, axis=1, keepdims=True)
             row_sums = backend.maximum(row_sums, backend.full(row_sums.shape, eps))
@@ -281,30 +249,27 @@ class BirkhoffProjector:
                 return M, iteration + 1, max_error
 
         logger.debug(
-            f"Sinkhorn-Knopp reached max iterations ({max_iter}), "
+            f"Sinkhorn-Knopp reached max iterations ({_SINKHORN_MAX_ITERATIONS}), "
             f"final error={max_error:.2e}"
         )
-        return M, max_iter, max_error
+        return M, _SINKHORN_MAX_ITERATIONS, max_error
 
     def _compute_spectral_norm(self, matrix: "Array") -> float:
         """Compute spectral norm (largest singular value) of a matrix."""
         backend = self._backend
 
-        if self.config.spectral_method == "power_iteration":
-            return self._spectral_norm_power_iteration(matrix)
-
-        # SVD method (more accurate, slightly slower)
+        # SVD method (always used - more accurate than power iteration)
         try:
             _, S, _ = svd_via_eigh(backend, matrix, full_matrices=False)
             backend.eval(S)
             S_np = backend.to_numpy(S)
             return float(S_np[0]) if len(S_np) > 0 else 0.0
         except Exception as e:
-            logger.warning(f"SVD failed for spectral norm: {e}")
-            return float("inf")
+            logger.warning(f"SVD failed for spectral norm: {e}, using power iteration")
+            return self._spectral_norm_power_iteration(matrix)
 
     def _spectral_norm_power_iteration(self, matrix: "Array") -> float:
-        """Compute spectral norm via power iteration."""
+        """Compute spectral norm via power iteration (fallback)."""
         backend = self._backend
         n = int(matrix.shape[0])
 
@@ -314,11 +279,12 @@ class BirkhoffProjector:
         v = v / backend.norm(v)
         backend.eval(v)
 
-        for _ in range(self.config.power_iterations):
+        eps = tiny_value(backend, matrix)
+        for _ in range(_POWER_ITERATIONS):
             u = backend.matmul(matrix, v)
-            u = u / backend.maximum(backend.norm(u), backend.array(1e-10))
+            u = u / backend.maximum(backend.norm(u), backend.array(eps))
             v = backend.matmul(backend.transpose(matrix), u)
-            v = v / backend.maximum(backend.norm(v), backend.array(1e-10))
+            v = v / backend.maximum(backend.norm(v), backend.array(eps))
             backend.eval(u, v)
 
         # Spectral norm = ||M @ v||
@@ -331,7 +297,7 @@ class BirkhoffProjector:
     def bound_spectral_norm(
         self,
         matrix: "Array",
-        max_norm: float = 1.0,
+        max_norm: float = _MAX_SPECTRAL_NORM,
     ) -> tuple["Array", bool]:
         """Bound spectral norm by scaling singular values.
 
@@ -340,7 +306,7 @@ class BirkhoffProjector:
 
         Args:
             matrix: Matrix to bound.
-            max_norm: Maximum spectral norm allowed (default 1.0).
+            max_norm: Maximum spectral norm allowed (default 1.0 per mHC).
 
         Returns:
             (bounded_matrix, was_clipped)
@@ -353,44 +319,37 @@ class BirkhoffProjector:
             return matrix, False
 
         # Need to clip: scale the matrix
-        # For doubly stochastic matrices, simple scaling works because
-        # we can re-normalize after
         scale = max_norm / spectral_norm
 
-        if self.config.spectral_method == "svd":
-            # SVD-based clipping (more precise)
-            try:
-                U, S, Vh = svd_via_eigh(backend, matrix, full_matrices=False)
-                backend.eval(U, S, Vh)
+        # SVD-based clipping (more precise)
+        try:
+            U, S, Vh = svd_via_eigh(backend, matrix, full_matrices=False)
+            backend.eval(U, S, Vh)
 
-                # Scale singular values
-                S_clipped = S * scale
-                backend.eval(S_clipped)
+            # Scale singular values
+            S_clipped = S * scale
+            backend.eval(S_clipped)
 
-                # Reconstruct: U @ diag(S) @ Vh
-                # For square matrices: M = U @ (S * Vh)
-                S_diag = backend.reshape(S_clipped, (-1, 1))
-                M_clipped = backend.matmul(U, S_diag * Vh)
-                backend.eval(M_clipped)
+            # Reconstruct: U @ diag(S) @ Vh
+            S_diag = backend.reshape(S_clipped, (-1, 1))
+            M_clipped = backend.matmul(U, S_diag * Vh)
+            backend.eval(M_clipped)
 
-                return M_clipped, True
+            logger.debug(
+                f"Spectral norm clipped: {spectral_norm:.4f} -> {max_norm:.4f}"
+            )
+            return M_clipped, True
 
-            except Exception as e:
-                logger.warning(f"SVD clipping failed: {e}, using simple scaling")
-
-        # Simple scaling fallback
-        M_scaled = matrix * scale
-        backend.eval(M_scaled)
-
-        logger.debug(
-            f"Spectral norm clipped: {spectral_norm:.4f} -> {max_norm:.4f}"
-        )
-        return M_scaled, True
+        except Exception as e:
+            logger.warning(f"SVD clipping failed: {e}, using simple scaling")
+            # Simple scaling fallback
+            M_scaled = matrix * scale
+            backend.eval(M_scaled)
+            return M_scaled, True
 
     def project_weight_delta(
         self,
         delta: "Array",
-        reference_scale: float | None = None,
     ) -> BirkhoffProjectionResult:
         """Project a weight delta for use in merge pipeline.
 
@@ -399,7 +358,6 @@ class BirkhoffProjector:
 
         Args:
             delta: Weight delta [out_dim, in_dim].
-            reference_scale: Optional scale for normalization.
 
         Returns:
             BirkhoffProjectionResult with transformed delta.
@@ -448,7 +406,6 @@ class BirkhoffProjector:
 
         # For non-square matrices, we return the projected gram matrix
         # The caller decides how to apply it (e.g., sqrt factorization)
-        # Override the shape to reflect original for tracking
         return BirkhoffProjectionResult(
             projected_matrix=result.projected_matrix,
             converged=result.converged,
@@ -462,7 +419,6 @@ class BirkhoffProjector:
 
 
 __all__ = [
-    "BirkhoffProjectorConfig",
     "BirkhoffProjectionResult",
     "BirkhoffProjector",
 ]

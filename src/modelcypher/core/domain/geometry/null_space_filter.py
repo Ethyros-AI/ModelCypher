@@ -28,9 +28,12 @@ Mathematical guarantee:
     A @ (W + Δw_safe) = A @ W  when Δw_safe ∈ null(A)
 
 Usage:
-    filter = NullSpaceFilter(config)
+    filter = NullSpaceFilter(backend)
     result = filter.filter_delta(weight_delta, prior_activations)
     safe_delta = result.filtered_delta  # Guaranteed no interference
+
+All parameters are derived from the data's dtype and spectral properties.
+No user configuration - the geometry determines everything.
 """
 
 from __future__ import annotations
@@ -38,7 +41,6 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from enum import Enum
 from typing import Any
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -51,50 +53,6 @@ from modelcypher.core.domain.merging.exceptions import NullSpaceFilterError
 from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger(__name__)
-
-
-class NullSpaceMethod(str, Enum):
-    """Method for computing null space projection."""
-
-    SVD = "svd"  # Standard SVD-based null space
-    EIGENVALUE = "eigenvalue"  # Eigendecomposition of A^T @ A
-    QR = "qr"  # QR factorization (faster for tall matrices)
-
-
-@dataclass(frozen=True)
-class NullSpaceFilterConfig:
-    """Configuration for null-space filtering.
-
-    All thresholds are derived from the data's dtype and spectral properties
-    unless explicitly overridden. This ensures deterministic, geometry-driven
-    behavior without arbitrary "vibes" values.
-    """
-
-    # Threshold for considering singular values as "null".
-    # If None, derived from spectral gap: σ_i / σ_max where gap occurs.
-    # The spectral gap naturally separates signal from numerical noise.
-    rank_threshold: float | None = None
-
-    # Maximum dimension of null space to use (memory bound)
-    max_null_dim: int | None = None
-
-    # Minimum samples needed for reliable null space estimation.
-    # If None, derived from dimension: max(2, ceil(log2(d))).
-    min_samples: int | None = None
-
-    # Method for computing null space
-    method: NullSpaceMethod = NullSpaceMethod.SVD
-
-    # Regularization for numerical stability.
-    # If None, uses regularization_epsilon(backend, array) - sqrt(machine_epsilon).
-    regularization: float | None = None
-
-    # Whether to normalize activations before computing null space
-    normalize_activations: bool = True
-
-    # Fraction of variance to preserve in null space (alternative to spectral gap).
-    # If set, overrides spectral-gap-based rank_threshold.
-    variance_threshold: float | None = None
 
 
 @dataclass
@@ -219,14 +177,15 @@ class NullSpaceFilter:
 
     This ensures that merged weights don't interfere with prior task
     performance: if Δw ∈ null(A), then A @ (W + Δw) = A @ W.
+
+    All parameters are derived from the data's dtype and spectral properties.
+    No user configuration required - the geometry determines everything.
     """
 
     def __init__(
         self,
-        config: NullSpaceFilterConfig | None = None,
         backend: Backend | None = None,
     ) -> None:
-        self.config = config or NullSpaceFilterConfig()
         self._backend = backend or get_default_backend()
 
     def compute_null_space_projection(
@@ -235,6 +194,12 @@ class NullSpaceFilter:
     ) -> NullSpaceProjection:
         """
         Compute projection matrix onto null space of activation matrix.
+
+        All parameters are derived from the data:
+        - min_samples: log2(d) - information-theoretic minimum
+        - normalization: always applied for numerical stability
+        - regularization: sqrt(machine_epsilon) for dtype
+        - rank threshold: ε * σ_max where ε is machine epsilon
 
         Args:
             activation_matrix: Shape [n_samples, d] where each row is an activation.
@@ -249,12 +214,8 @@ class NullSpaceFilter:
         n_samples = int(activation_matrix.shape[0])
         d = int(activation_matrix.shape[1])
 
-        # Derive min_samples from dimension if not specified
-        min_samples = (
-            self.config.min_samples
-            if self.config.min_samples is not None
-            else _derive_min_samples(d)
-        )
+        # Derive min_samples from dimension - information-theoretic minimum
+        min_samples = _derive_min_samples(d)
 
         if n_samples < min_samples:
             logger.warning(
@@ -270,30 +231,24 @@ class NullSpaceFilter:
                 n_samples=n_samples,
             )
 
-        # Normalize activations if configured
-        if self.config.normalize_activations:
-            norms = backend.norm(activation_matrix, axis=1, keepdims=True)
-            backend.eval(norms)
-            # Use dtype-derived regularization
-            reg = (
-                self.config.regularization
-                if self.config.regularization is not None
-                else regularization_epsilon(backend, activation_matrix)
-            )
-            norms = backend.maximum(norms, backend.full(norms.shape, reg))
-            activation_matrix = activation_matrix / norms
-            backend.eval(activation_matrix)
+        # Always normalize activations for numerical stability
+        norms = backend.norm(activation_matrix, axis=1, keepdims=True)
+        backend.eval(norms)
+        # Regularization derived from dtype
+        reg = regularization_epsilon(backend, activation_matrix)
+        norms = backend.maximum(norms, backend.full(norms.shape, reg))
+        activation_matrix = activation_matrix / norms
+        backend.eval(activation_matrix)
 
-        # Compute null space using the specified method
-        if self.config.method == NullSpaceMethod.SVD:
-            return self._compute_via_svd(activation_matrix)
-        elif self.config.method == NullSpaceMethod.QR:
-            return self._compute_via_qr(activation_matrix)
-        else:
-            return self._compute_via_eigenvalue(activation_matrix)
+        # Always use SVD - most reliable and standard method
+        return self._compute_via_svd(activation_matrix)
 
     def _compute_via_svd(self, A: Any) -> NullSpaceProjection:
-        """Compute null space using SVD."""
+        """Compute null space using SVD.
+
+        Rank threshold is derived from machine epsilon - the only mathematically
+        justified cutoff for separating signal from numerical noise.
+        """
         backend = self._backend
         n_samples = int(A.shape[0])
         d = int(A.shape[1])
@@ -314,39 +269,17 @@ class NullSpaceFilter:
                 n_samples=n_samples,
             )
 
-        # Determine threshold
+        # Determine threshold from machine epsilon - the ONLY correct threshold
+        # Standard numerical rank: σ_i > ε * σ_max
         S_np = list(backend.to_numpy(S).tolist())
         eps = machine_epsilon(backend, A)
-
-        if self.config.variance_threshold is not None:
-            # Keep enough singular values to explain (1 - variance_threshold) of variance
-            total_var = float(sum(s**2 for s in S_np))
-            cumvar = 0.0
-            row_space_dim = 0
-            for i, s in enumerate(S_np):
-                cumvar += s**2
-                if cumvar / (total_var + eps) >= (1 - self.config.variance_threshold):
-                    row_space_dim = i + 1
-                    break
-            else:
-                row_space_dim = len(S_np)
-            effective_threshold = float(S_np[row_space_dim - 1]) if row_space_dim <= len(S_np) else 0.0
-        elif self.config.rank_threshold is not None:
-            # User-specified relative threshold
-            effective_threshold = self.config.rank_threshold * float(S_np[0]) if S_np else 0.0
-            row_space_dim = sum(1 for s in S_np if s > effective_threshold)
-        else:
-            # Count singular values above numerical precision
-            effective_threshold, row_space_dim = _compute_numerical_rank(S_np, eps)
+        effective_threshold, row_space_dim = _compute_numerical_rank(S_np, eps)
 
         # Null space vectors are rows of Vh beyond row_space_dim
         null_vectors = Vh[row_space_dim:]  # Shape: [null_dim, d]
         null_dim = int(null_vectors.shape[0]) if hasattr(null_vectors, 'shape') else 0
 
-        # Cap null dimension if configured
-        if self.config.max_null_dim is not None and null_dim > self.config.max_null_dim:
-            null_vectors = null_vectors[: self.config.max_null_dim]
-            null_dim = self.config.max_null_dim
+        # No max_null_dim cap - use the full null space from the geometry
 
         # Projection matrix: P = V_null @ V_null^T
         if null_dim > 0:
@@ -360,159 +293,6 @@ class NullSpaceFilter:
             row_space_dim=row_space_dim,
             singular_values=S,
             effective_threshold=effective_threshold,
-            n_samples=n_samples,
-        )
-
-    def _compute_via_qr(self, A: Any) -> NullSpaceProjection:
-        """Compute null space using QR factorization (faster for tall matrices)."""
-        backend = self._backend
-        A = backend.array(A)
-        backend.eval(A)
-
-        n_samples = int(A.shape[0])
-        d = int(A.shape[1])
-
-        # QR of A^T: A^T = Q @ R
-        # Null space of A is spanned by columns of Q corresponding to zero rows of R
-        Q, R = backend.qr(backend.transpose(A))
-        backend.eval(Q, R)
-
-        # Find rank by looking at diagonal of R
-        diag_R = backend.abs(backend.diag(R[: min(n_samples, d), : min(n_samples, d)]))
-        backend.eval(diag_R)
-        diag_R_np = list(backend.to_numpy(diag_R).tolist())
-        eps = machine_epsilon(backend, A)
-
-        if not diag_R_np:
-            threshold = 0.0
-            row_space_dim = 0
-        elif self.config.rank_threshold is not None:
-            # User-specified relative threshold
-            threshold = self.config.rank_threshold * float(diag_R_np[0])
-            row_space_dim = int(sum(1 for val in diag_R_np if val > threshold))
-        else:
-            # Count values above numerical precision
-            threshold, row_space_dim = _compute_numerical_rank(diag_R_np, eps)
-
-        # Null space vectors are columns of Q beyond row_space_dim
-        null_vectors = backend.transpose(Q[:, row_space_dim:])  # Shape: [null_dim, d]
-        null_dim = int(null_vectors.shape[0])
-
-        if self.config.max_null_dim is not None and null_dim > self.config.max_null_dim:
-            null_vectors = null_vectors[: self.config.max_null_dim]
-            null_dim = self.config.max_null_dim
-
-        if null_dim > 0:
-            projection_matrix = backend.matmul(backend.transpose(null_vectors), null_vectors)
-        else:
-            projection_matrix = backend.zeros((d, d))
-
-        # For consistency, compute SVD for singular values
-        try:
-            _, S, _ = svd_via_eigh(backend, A, full_matrices=False)
-            backend.eval(S)
-        except Exception:
-            S = backend.zeros((min(n_samples, d),))
-
-        return NullSpaceProjection(
-            projection_matrix=projection_matrix,
-            null_dim=null_dim,
-            row_space_dim=row_space_dim,
-            singular_values=S,
-            effective_threshold=threshold,
-            n_samples=n_samples,
-        )
-
-    def _compute_via_eigenvalue(self, A: Any) -> NullSpaceProjection:
-        """Compute null space using eigendecomposition of A^T @ A."""
-        backend = self._backend
-        A = backend.array(A)
-        backend.eval(A)
-
-        n_samples = int(A.shape[0])
-        d = int(A.shape[1])
-
-        # A^T @ A has same null space as A
-        ATA = backend.matmul(backend.transpose(A), A)
-        backend.eval(ATA)
-
-        try:
-            eigenvalues, eigenvectors = backend.eigh(ATA)
-            backend.eval(eigenvalues, eigenvectors)
-        except Exception:
-            logger.warning("Eigendecomposition failed, returning identity projection")
-            return NullSpaceProjection(
-                projection_matrix=backend.eye(d),
-                null_dim=d,
-                row_space_dim=0,
-                singular_values=backend.zeros((d,)),
-                effective_threshold=0.0,
-                n_samples=n_samples,
-            )
-
-        # Sort by eigenvalue (ascending - null space has smallest eigenvalues)
-        eigenvalues_np = backend.to_numpy(eigenvalues)
-        idx = sorted(range(len(eigenvalues_np)), key=lambda i: eigenvalues_np[i])
-        eigenvalues = backend.array([eigenvalues_np[i] for i in idx])
-        eigenvectors_np = backend.to_numpy(eigenvectors)
-        eigenvectors = backend.array(eigenvectors_np[:, idx])
-        backend.eval(eigenvalues, eigenvectors)
-
-        # Threshold for null space
-        # Eigenvalues of A^T @ A are squares of singular values
-        eigenvalues_np = backend.to_numpy(eigenvalues)
-        singular_values = backend.sqrt(backend.maximum(eigenvalues, backend.zeros(eigenvalues.shape)))
-        backend.eval(singular_values)
-        singular_values_np = list(backend.to_numpy(singular_values).tolist())
-        eps = machine_epsilon(backend, A)
-
-        # Singular values from eigh are in ascending order - reverse for descending
-        singular_values_desc = singular_values_np[::-1]
-
-        if self.config.rank_threshold is not None:
-            # User-specified relative threshold
-            if singular_values_desc and singular_values_desc[0] > 0:
-                threshold = self.config.rank_threshold * float(singular_values_desc[0])
-            else:
-                threshold = 0.0
-            row_space_dim = sum(1 for s in singular_values_desc if s > threshold)
-        else:
-            # Count values above numerical precision
-            threshold, row_space_dim = _compute_numerical_rank(singular_values_desc, eps)
-
-        null_dim = d - row_space_dim
-        # For eigenvalue method, null space corresponds to smallest eigenvalues (first in ascending order)
-        null_mask = [i < null_dim for i in range(d)]
-
-        if self.config.max_null_dim is not None and null_dim > self.config.max_null_dim:
-            # Take only the smallest eigenvalue directions
-            null_mask = [i < self.config.max_null_dim for i in range(d)]
-            null_dim = self.config.max_null_dim
-
-        # Extract null vectors
-        eigenvectors_np = backend.to_numpy(eigenvectors)
-        null_vectors_list = [eigenvectors_np[:, i] for i in range(d) if null_mask[i]]
-
-        if null_vectors_list:
-            null_vectors = backend.transpose(backend.array(null_vectors_list))  # Shape: [d, null_dim]
-        else:
-            null_vectors = backend.zeros((d, 0))
-        backend.eval(null_vectors)
-
-        if null_dim > 0:
-            projection_matrix = backend.matmul(null_vectors, backend.transpose(null_vectors))
-        else:
-            projection_matrix = backend.zeros((d, d))
-
-        # Reverse singular values for descending order like SVD
-        singular_values_reversed = backend.array(singular_values_np[::-1])
-
-        return NullSpaceProjection(
-            projection_matrix=projection_matrix,
-            null_dim=null_dim,
-            row_space_dim=row_space_dim,
-            singular_values=singular_values_reversed,
-            effective_threshold=threshold,
             n_samples=n_samples,
         )
 
@@ -652,16 +432,15 @@ class NullSpaceFilter:
     def compute_model_null_space_profile(
         self,
         layer_activations: dict[int, Any],
-        graft_threshold: float | None = None,
     ) -> ModelNullSpaceProfile:
         """
         Compute null space profile across all layers.
 
+        Graftable layers are those with above-mean null fraction - derived
+        from the geometry, not an arbitrary threshold.
+
         Args:
             layer_activations: Dict mapping layer index to activation matrix.
-            graft_threshold: Minimum null fraction for a layer to be "graftable".
-                If None, derived from mean null fraction across layers (layers
-                with above-average null space are graftable).
 
         Returns:
             ModelNullSpaceProfile with per-layer and aggregate statistics.
@@ -705,15 +484,9 @@ class NullSpaceFilter:
 
         mean_null_fraction = total_null_dim / total_dim if total_dim > 0 else 0.0
 
-        # Derive graft_threshold from geometry if not specified
-        # Layers with above-mean null fraction are naturally graftable
-        effective_graft_threshold = (
-            graft_threshold if graft_threshold is not None else mean_null_fraction
-        )
-
-        # Identify graftable layers
+        # Graft threshold derived from geometry: layers with above-mean null fraction
         for layer_idx, profile in per_layer.items():
-            if profile.null_fraction >= effective_graft_threshold:
+            if profile.null_fraction >= mean_null_fraction:
                 graftable_layers.append(layer_idx)
 
         return ModelNullSpaceProfile(
@@ -730,17 +503,18 @@ def filter_merge_delta_to_null_space(
     target_weights: Any,
     prior_activations: Any,
     alpha: float = 0.5,
-    config: NullSpaceFilterConfig | None = None,
 ) -> tuple[Any, NullSpaceFilterResult]:
     """
     Convenience function: Compute and filter merge delta to null space.
+
+    All parameters are derived from the data's spectral properties.
+    No configuration needed - the geometry determines everything.
 
     Args:
         source_weights: Weights from source model.
         target_weights: Weights from target model.
         prior_activations: Activations from target model on prior task.
         alpha: Merge coefficient (0 = target, 1 = source).
-        config: Optional filter configuration.
 
     Returns:
         Tuple of (merged_weights, filter_result).
@@ -754,9 +528,9 @@ def filter_merge_delta_to_null_space(
     delta = source_weights - target_weights
     backend.eval(delta)
 
-    # Filter to null space
-    filter = NullSpaceFilter(config)
-    result = filter.filter_delta(delta, prior_activations)
+    # Filter to null space - no config, all derived from geometry
+    null_filter = NullSpaceFilter(backend)
+    result = null_filter.filter_delta(delta, prior_activations)
 
     # Apply filtered delta
     merged = target_weights + alpha * result.filtered_delta
@@ -766,11 +540,9 @@ def filter_merge_delta_to_null_space(
 
 
 __all__ = [
-    "NullSpaceFilterConfig",
     "NullSpaceFilterResult",
     "NullSpaceProjection",
     "NullSpaceFilter",
-    "NullSpaceMethod",
     "LayerNullSpaceProfile",
     "ModelNullSpaceProfile",
     "filter_merge_delta_to_null_space",

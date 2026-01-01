@@ -20,10 +20,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 
-from modelcypher.core.domain.geometry.manifold_stitcher import (
-    IntersectionMap,
-    Thresholds,
-)
+from modelcypher.core.domain.geometry.manifold_stitcher import IntersectionMap
 from modelcypher.core.support import statistics
 
 
@@ -41,9 +38,6 @@ class OverallStats:
     standard_deviation_correlation: float | None
     min_correlation: float | None
     max_correlation: float | None
-    strong_count: int
-    moderate_count: int
-    weak_count: int
     histogram: list[HistogramBin]
 
 
@@ -56,9 +50,6 @@ class LayerStats:
     standard_deviation_correlation: float | None
     min_correlation: float | None
     max_correlation: float | None
-    strong_count: int
-    moderate_count: int
-    weak_count: int
 
 
 @dataclass(frozen=True)
@@ -101,21 +92,12 @@ class IntersectionMapAnalysis:
         for layer in layers:
             correlations = map_data.dimension_correlations.get(layer, [])
             values: list[float] = []
-            strong = 0
-            moderate = 0
-            weak = 0
 
             for pair in correlations:
                 value = float(pair.correlation)
                 if not (value == value):
                     continue
                 values.append(value)
-                if pair.is_strong_correlation:
-                    strong += 1
-                elif pair.is_moderate_correlation:
-                    moderate += 1
-                else:
-                    weak += 1
 
             all_correlations.extend(values)
             mean = sum(values) / float(len(values)) if values else 0.0
@@ -134,9 +116,6 @@ class IntersectionMapAnalysis:
                     standard_deviation_correlation=stdev,
                     min_correlation=min(values) if values else None,
                     max_correlation=max(values) if values else None,
-                    strong_count=strong,
-                    moderate_count=moderate,
-                    weak_count=weak,
                 )
             )
 
@@ -148,10 +127,6 @@ class IntersectionMapAnalysis:
             if len(all_correlations) > 1
             else None
         )
-
-        overall_strong = sum(item.strong_count for item in per_layer_stats)
-        overall_moderate = sum(item.moderate_count for item in per_layer_stats)
-        overall_weak = sum(item.weak_count for item in per_layer_stats)
 
         if all_correlations:
             min_val = min(all_correlations)
@@ -188,9 +163,6 @@ class IntersectionMapAnalysis:
                 standard_deviation_correlation=overall_stdev,
                 min_correlation=min(all_correlations) if all_correlations else None,
                 max_correlation=max(all_correlations) if all_correlations else None,
-                strong_count=overall_strong,
-                moderate_count=overall_moderate,
-                weak_count=overall_weak,
                 histogram=histogram,
             ),
             per_layer=per_layer_stats,
@@ -259,23 +231,15 @@ class IntersectionMapAnalysis:
                 f"- Min/Max: **{f3(analysis.overall_stats.min_correlation)} / "
                 f"{f3(analysis.overall_stats.max_correlation)}**\n"
             )
-        lines.append(
-            f"- Breakdown: strong={analysis.overall_stats.strong_count} "
-            f"(>{Thresholds.strong_correlation}), moderate={analysis.overall_stats.moderate_count} "
-            f"(>{Thresholds.moderate_correlation}), weak={analysis.overall_stats.weak_count}\n"
-        )
 
         lines.append("\n## Per-Layer Summary\n")
-        lines.append(
-            "| Layer | Confidence | Correlations | Mean corr | Strong | Moderate | Weak |\n"
-        )
-        lines.append("|---:|---:|---:|---:|---:|---:|---:|\n")
+        lines.append("| Layer | Confidence | Correlations | Mean corr |\n")
+        lines.append("|---:|---:|---:|---:|\n")
         for layer in sorted(analysis.per_layer, key=lambda item: item.layer):
             confidence = f3(layer.confidence) if layer.confidence is not None else "---"
             lines.append(
                 f"| {layer.layer} | {confidence} | {layer.count} | "
-                f"{f3(layer.mean_correlation)} | {layer.strong_count} | "
-                f"{layer.moderate_count} | {layer.weak_count} |\n"
+                f"{f3(layer.mean_correlation)} |\n"
             )
 
         lines.append("\n## Top Dimension Correspondences\n")

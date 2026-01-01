@@ -17,77 +17,10 @@
 
 """Geometry analysis CLI commands.
 
-This package contains all geometry-related CLI commands organized by domain:
-- atlas: Unified atlas probe analysis
-- concept: Concept-level detection and comparison
-- cross-cultural: Cross-cultural geometry alignment
-- emotion: Emotion concept analysis
-- invariant: Invariant-based layer mapping with triangulation scoring
-- manifold: Manifold clustering and dimension estimation
-- metrics: Geometry metrics (GW distance, intrinsic dimension, topology)
-- moral: Moral geometry (valence, agency, scope axes - Haidt's Moral Foundations)
-- persona: Persona vector extraction and drift monitoring
-- refinement: Refinement density analysis for model merging
-- refusal: Refusal direction detection
-- social: Social geometry (power hierarchies, kinship, formality)
-- sparse: Sparse region analysis for LoRA injection
-- spatial: 3D world model metrology (Euclidean, gravity, occlusion)
-- temporal: Temporal topology (direction, duration, causality)
-- transport: Transport-guided model merging
-- waypoint: Domain geometry waypoints for merge guidance
-- interference: Interference prediction for model merging
-
-Each module exports a Typer app that is registered as a sub-command of `mc geometry`.
+Only geometry metrics are exposed in the CLI. All configuration lives in
+geometry itself; user inputs are point clouds only.
 """
 
-from modelcypher.cli.commands.geometry import (
-    atlas,
-    baseline,
-    concept,
-    cross_cultural,
-    emotion,
-    interference,
-    invariant,
-    manifold,
-    metrics,
-    moral,
-    number_theory,
-    persona,
-    refinement,
-    refusal,
-    research,
-    social,
-    sparse,
-    spatial,
-    temporal,
-    transfer,
-    transport,
-    visualize,
-    waypoint,
-)
+from modelcypher.cli.commands.geometry import metrics
 
-__all__ = [
-    "atlas",
-    "baseline",
-    "concept",
-    "cross_cultural",
-    "emotion",
-    "interference",
-    "transfer",
-    "invariant",
-    "manifold",
-    "metrics",
-    "moral",
-    "number_theory",
-    "persona",
-    "refinement",
-    "refusal",
-    "research",
-    "social",
-    "sparse",
-    "spatial",
-    "temporal",
-    "transport",
-    "visualize",
-    "waypoint",
-]
+__all__ = ["metrics"]

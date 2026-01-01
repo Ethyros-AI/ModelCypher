@@ -32,7 +32,6 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from enum import Enum
 from typing import TypeAlias
 
 from modelcypher.core.domain.geometry.atlas_protocols import (
@@ -52,8 +51,6 @@ SequenceInvariant: TypeAlias = SequenceInvariantProtocol
 TriangulatedScore: TypeAlias = TriangulatedScoreProtocol
 
 __all__ = [
-    # Enums
-    "InvariantScope",
     # Config dataclasses
     # Result dataclasses
     "TriangulationProfile",
@@ -65,31 +62,6 @@ __all__ = [
     # Main class
     "InvariantLayerMapper",
 ]
-
-_DEFAULT_SEQUENCE_FAMILIES = frozenset(
-    [
-        "fibonacci",
-        "lucas",
-        "primes",
-        "catalan",
-        "ramanujan",
-        "logic",
-        "ordering",
-        "arithmetic",
-        "causality",
-    ]
-)
-_LOGIC_FAMILY_KEY = "logic"
-
-
-class InvariantScope(str, Enum):
-    """Scope of invariants to use for mapping."""
-
-    INVARIANTS = "invariants"
-    LOGIC_ONLY = "logicOnly"
-    SEQUENCE_INVARIANTS = "sequenceInvariants"  # Full 70-probe system with triangulation
-    MULTI_ATLAS = "multiAtlas"  # Full probe system across all atlases
-
 
 
 @dataclass(frozen=True)
@@ -237,8 +209,6 @@ class InvariantLayerMapper:
         Args:
             source: Fingerprints for source model
             target: Fingerprints for target model
-            config: Optional mapping configuration
-
         Returns:
             Report with layer mappings and statistics
 
@@ -366,13 +336,13 @@ class InvariantLayerMapper:
 
     @staticmethod
     def _invariant_anchor_ids() -> list[str]:
-        """Get invariant anchor IDs based on config."""
+        """Get invariant anchor IDs."""
         ids, _, _ = InvariantLayerMapper._get_invariants()
         return ids
 
     @staticmethod
     def _get_invariants() -> tuple[list[str], list[SequenceInvariant], list[AtlasProbe]]:
-        """Get invariant IDs, sequence invariants, and atlas probes for config.
+        """Get invariant IDs, sequence invariants, and atlas probes.
 
         Returns:
             Tuple of (probe_ids, sequence_invariants, atlas_probes)

@@ -96,9 +96,6 @@ def stage_permute(
     from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
     from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
     from modelcypher.core.domain.geometry.permutation_aligner import (
-        Config as PAConfig,
-    )
-    from modelcypher.core.domain.geometry.permutation_aligner import (
         PermutationAligner,
     )
 
@@ -278,9 +275,6 @@ def stage_permute(
             embed_cka,
         )
 
-    # Configure aligner - no arbitrary thresholds
-    pa_config = PAConfig(use_anchor_grounding=True)
-
     # Run MLP re-basin alignment with separate source/target anchors
     # This is critical: each model needs its own embeddings to compute meaningful signatures
     aligned, mean_quality, blocks_aligned = PermutationAligner.rebasin_mlp_with_activations(
@@ -288,7 +282,6 @@ def stage_permute(
         target_arr,
         source_anchors,
         target_anchors,
-        config=pa_config,
     )
     # Eval all aligned weights
     for val in aligned.values():

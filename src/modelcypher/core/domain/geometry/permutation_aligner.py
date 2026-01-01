@@ -113,13 +113,6 @@ class AlignmentResult:
 
 
 @dataclass(frozen=True)
-class Config:
-    """Configuration for permutation alignment (exact, threshold-free)."""
-
-    use_anchor_grounding: bool = True
-
-
-@dataclass(frozen=True)
 class AnchorActivationContext:
     """Anchor activation snapshots for layer-aware permutation alignment."""
 
@@ -150,7 +143,6 @@ class PermutationAligner:
         source_weight: "Array",
         target_weight: "Array",
         anchors: "Array | None" = None,
-        config: Config = Config(),
         backend: "Backend | None" = None,
     ) -> AlignmentResult:
         """
@@ -175,7 +167,7 @@ class PermutationAligner:
         source_signatures = None
         target_signatures = None
 
-        if config.use_anchor_grounding and anchors is not None:
+        if anchors is not None:
             # Anchor-grounded: project weights through anchors
             anchor_dim = anchors.shape[1]
             if source_in == anchor_dim:
@@ -347,7 +339,6 @@ class PermutationAligner:
         target_weight: "Array",
         source_anchors: "Array",
         target_anchors: "Array",
-        config: Config = Config(),
         backend: "Backend | None" = None,
     ) -> AlignmentResult:
         """Aligns neurons using per-layer anchor activations."""
@@ -375,14 +366,13 @@ class PermutationAligner:
         b.eval(source_signatures, target_signatures)
 
         return PermutationAligner._align_from_signatures(
-            source_signatures, target_signatures, config, backend=b
+            source_signatures, target_signatures, backend=b
         )
 
     @staticmethod
     def _align_from_signatures(
         source_signatures: "Array",
         target_signatures: "Array",
-        config: Config,
         backend: "Backend | None" = None,
     ) -> AlignmentResult:
         """Aligns neurons using exact Hungarian assignment over signature similarity."""
@@ -470,7 +460,6 @@ class PermutationAligner:
         source_anchors: "Array",
         target_anchors: "Array",
         anchor_activations: AnchorActivationContext | None = None,
-        config: Config = Config(),
         backend: "Backend | None" = None,
     ) -> "tuple[dict[str, Array], float, int]":
         """Performs MLP-only re-basin alignment with separate source/target anchors.
@@ -484,7 +473,6 @@ class PermutationAligner:
             source_anchors: Source model anchor embeddings [numAnchors, anchorDim].
             target_anchors: Target model anchor embeddings [numAnchors, anchorDim].
             anchor_activations: Optional per-layer anchor activation context.
-            config: Alignment configuration.
             backend: Optional backend for array operations.
 
         Returns:
@@ -544,14 +532,14 @@ class PermutationAligner:
                         activations[1], backend=b
                     )
                     alignment = PermutationAligner.align_via_anchor_activations(
-                        source_up, target_up, src_act, tgt_act, config, backend=b
+                        source_up, target_up, src_act, tgt_act, backend=b
                     )
                     use_per_layer = True
 
             if not use_per_layer:
                 # Use separate source/target anchors for proper cross-model alignment
                 alignment = PermutationAligner.align_via_anchor_activations(
-                    source_up, target_up, source_anchors, target_anchors, config, backend=b
+                    source_up, target_up, source_anchors, target_anchors, backend=b
                 )
 
             # Apply permutation (sparse or dense)

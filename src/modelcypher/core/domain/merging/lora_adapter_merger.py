@@ -52,9 +52,6 @@ from modelcypher.core.domain.geometry.permutation_aligner import (
     AlignmentResult,
     PermutationAligner,
 )
-from modelcypher.core.domain.geometry.permutation_aligner import (
-    Config as PermutationConfig,
-)
 from modelcypher.core.domain.merging.exceptions import MergeError
 
 if TYPE_CHECKING:
@@ -339,13 +336,10 @@ class LoRAAdapterMerger:
         AlignmentResult
             Permutation alignment result.
         """
-        config = PermutationConfig(
-            use_anchor_grounding=False,  # Direct weight alignment for adapters
-        )
+        # No anchors passed = direct weight alignment for adapters
         return PermutationAligner.align(
             source_weight=source,
             target_weight=target,
-            config=config,
             backend=backend,
         )
 

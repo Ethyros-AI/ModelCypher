@@ -98,43 +98,16 @@ class Result:
         return math.exp(-self.distance) if math.isfinite(self.distance) else 0.0
 
 
-@dataclass(frozen=True)
-class Config:
-    # Frank-Wolfe parameters
-    # 30 iterations with early stopping is sufficient for convergence
-    # (reduced from 100 - early stopping typically triggers at 10-20)
-    max_outer_iterations: int = 30
-    min_outer_iterations: int = 5
-    # Convergence thresholds - None means derive from dtype at runtime
-    convergence_threshold: float | None = None
-    relative_objective_threshold: float | None = None
-
-    # Linear OT subproblem (Sinkhorn)
-    # Small epsilon approximates exact EMD better
-    sinkhorn_epsilon: float = 0.001
-    # 50 iterations with early stopping is sufficient
-    # (reduced from 200 - Sinkhorn converges fast for well-conditioned problems)
-    sinkhorn_iterations: int = 50
-    # Sinkhorn convergence threshold - None means derive from dtype at runtime
-    sinkhorn_threshold: float | None = None
-
-    # Loss function
-    use_squared_loss: bool = True
-
-    # Random restarts to escape local minima (GW is non-convex)
-    # 10 restarts provides robust escape from local minima.
-    # PRECISION-CRITICAL: Fewer restarts can find worse local minima.
-    num_restarts: int = 10
-    seed: int | None = 42  # Fixed seed for reproducibility
-
-    # Symmetry: GW is mathematically symmetric (GW(A,B) = GW(B,A)), but
-    # non-convex optimization may find different local minima.
-    # When True, computes both directions and returns the minimum.
-    ensure_symmetry: bool = True
-
-    # k for geodesic k-NN graph (None = auto). Geodesic distance is always used
-    # because curvature is inherent in high-dimensional spaces.
-    geodesic_k_neighbors: int | None = None
+# Algorithm constants - derived from numerical analysis, not configurable
+# Frank-Wolfe: 30 iterations with early stopping (triggers at 10-20 typically)
+_MAX_OUTER_ITERATIONS = 30
+_MIN_OUTER_ITERATIONS = 5
+# Sinkhorn: small epsilon approximates exact EMD, 50 iterations sufficient
+_SINKHORN_EPSILON = 0.001
+_SINKHORN_ITERATIONS = 50
+# Random restarts to escape local minima (GW is non-convex)
+_NUM_RESTARTS = 10
+_RANDOM_SEED = 42
 
 
 class GromovWassersteinDistance:
@@ -147,18 +120,17 @@ class GromovWassersteinDistance:
         self,
         source_distances: "Array",
         target_distances: "Array",
-        config: Config = Config(),
     ) -> Result:
         """
         Compute Gromov-Wasserstein distance between two metric spaces.
 
         Uses Conditional Gradient (Frank-Wolfe) algorithm with multiple restarts
-        to escape local minima (GW is non-convex).
+        to escape local minima (GW is non-convex). All parameters are derived
+        from numerical precision of the input dtype - no configuration needed.
 
         Args:
             source_distances: Pairwise distance matrix for source [n, n]
             target_distances: Pairwise distance matrix for target [m, m]
-            config: Algorithm configuration
 
         Returns:
             Result with distance, coupling matrix, and convergence info
@@ -206,12 +178,11 @@ class GromovWassersteinDistance:
         # Multiple restarts to escape local minima
         best_result: Result | None = None
         total_iterations = 0
-        num_restarts = max(1, config.num_restarts)
 
-        if config.seed is not None:
-            backend.random_seed(config.seed)
+        # Fixed seed for reproducibility
+        backend.random_seed(_RANDOM_SEED)
 
-        for restart in range(num_restarts):
+        for restart in range(_NUM_RESTARTS):
             # Generate initial coupling
             if restart == 0:
                 # First: uniform coupling (outer product of marginals)
@@ -220,7 +191,7 @@ class GromovWassersteinDistance:
                 # Random perturbation of uniform, projected to valid transport polytope
                 T0 = self._random_coupling(n, m, backend)
 
-            result = self._frank_wolfe(C1, C2, p, q, T0, config)
+            result = self._frank_wolfe(C1, C2, p, q, T0)
             total_iterations += result.iterations
 
             if best_result is None or result.distance < best_result.distance:
@@ -584,7 +555,6 @@ class GromovWassersteinDistance:
         p: "Array",
         q: "Array",
         T0: "Array",
-        config: Config,
     ) -> Result:
         """
         Conditional Gradient (Frank-Wolfe) algorithm for GW.
@@ -594,32 +564,34 @@ class GromovWassersteinDistance:
         2. Solve linear OT to get descent direction
         3. Line search for step size
         4. Update coupling
+
+        All convergence thresholds are derived from the dtype's machine epsilon.
         """
         backend = self._backend
 
         # Initialize loss decomposition matrices
         constC, hC1, hC2 = self._init_loss_matrices(C1, C2, p, q)
 
-        # Derive convergence thresholds from dtype if not specified
+        # Derive convergence thresholds from dtype
         # Using sqrt(eps) as standard numerical tolerance for convergence
         dtype_eps = float(machine_epsilon(backend, T0))
-        conv_threshold = config.convergence_threshold if config.convergence_threshold is not None else dtype_eps ** 0.5
-        rel_threshold = config.relative_objective_threshold if config.relative_objective_threshold is not None else dtype_eps ** 0.5
-        sink_threshold = config.sinkhorn_threshold if config.sinkhorn_threshold is not None else dtype_eps
+        conv_threshold = dtype_eps**0.5
+        rel_threshold = dtype_eps**0.5
+        sink_threshold = dtype_eps
 
         T = T0
         prev_loss = float("inf")
         converged = False
         iterations = 0
 
-        for outer in range(config.max_outer_iterations):
+        for outer in range(_MAX_OUTER_ITERATIONS):
             iterations = outer + 1
 
             # Current loss
             loss = self._gw_loss(constC, hC1, hC2, T)
 
             # Check convergence
-            if iterations >= config.min_outer_iterations:
+            if iterations >= _MIN_OUTER_ITERATIONS:
                 abs_change = abs(loss - prev_loss)
                 # Use precision-aware epsilon for relative change
                 eps = division_epsilon(backend, T)
@@ -640,8 +612,8 @@ class GromovWassersteinDistance:
                 grad,
                 p,
                 q,
-                epsilon=config.sinkhorn_epsilon,
-                max_iterations=config.sinkhorn_iterations,
+                epsilon=_SINKHORN_EPSILON,
+                max_iterations=_SINKHORN_ITERATIONS,
                 threshold=sink_threshold,
             )
 
