@@ -37,6 +37,7 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING, Any, Sequence
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 if TYPE_CHECKING:
@@ -68,6 +69,13 @@ def _to_scalar(val: Any) -> float:
         result = val.tolist()
         return float(result) if not isinstance(result, list) else float(result[0])
     return float(val)
+
+
+def _angle_epsilon_from_values(values: list[float]) -> float:
+    """Derive an angle tolerance from backend dtype precision."""
+    backend = get_default_backend()
+    ref = backend.array(values if values else [1.0])
+    return division_epsilon(backend, ref)
 
 
 class VectorMath:
@@ -211,7 +219,7 @@ class VectorMath:
         v0: ArrayLike,
         v1: ArrayLike,
         t: float,
-        epsilon: float = 1e-6,
+        epsilon: float | None = None,
         interpolate_magnitude: bool = True,
     ) -> list[float]:
         """Spherical linear interpolation (SLERP) between two vectors.
@@ -229,6 +237,7 @@ class VectorMath:
             t: Interpolation factor in [0, 1]. t=0 returns v0, t=1 returns v1.
             epsilon: Threshold for near-parallel detection. When angle < epsilon,
                      falls back to linear interpolation to avoid numerical issues.
+                     If None, derived from dtype precision.
             interpolate_magnitude: If True (default), interpolate magnitudes
                 linearly. If False, return unit-normalized result.
 
@@ -254,6 +263,9 @@ class VectorMath:
 
         v0_list = _to_list(v0)
         v1_list = _to_list(v1)
+
+        if epsilon is None:
+            epsilon = _angle_epsilon_from_values(v0_list)
 
         # Compute magnitudes (will raise if zero)
         norm_v0 = VectorMath.l2_norm(v0_list)
@@ -308,7 +320,7 @@ class VectorMath:
         weights_a: dict[str, ArrayLike],
         weights_b: dict[str, ArrayLike],
         t: float,
-        epsilon: float = 1e-6,
+        epsilon: float | None = None,
         interpolate_magnitude: bool = True,
     ) -> dict[str, list[float]]:
         """Apply SLERP to dictionaries of weight vectors (per-layer merging).
@@ -319,7 +331,7 @@ class VectorMath:
             weights_a: First model's weights as {layer_name: vector}
             weights_b: Second model's weights as {layer_name: vector}
             t: Interpolation factor in [0, 1]
-            epsilon: Threshold for near-parallel detection
+            epsilon: Threshold for near-parallel detection. If None, derived from dtype.
             interpolate_magnitude: Whether to interpolate magnitudes
 
         Returns:
@@ -328,6 +340,12 @@ class VectorMath:
             Keys with incompatible vectors are skipped with a warning.
         """
         result: dict[str, list[float]] = {}
+        if epsilon is None:
+            sample = next(iter(weights_a.values()), None)
+            if sample is None:
+                sample = next(iter(weights_b.values()), None)
+            if sample is not None:
+                epsilon = _angle_epsilon_from_values(_to_list(sample))
         all_keys = set(weights_a.keys()) | set(weights_b.keys())
 
         for key in all_keys:
@@ -657,20 +675,20 @@ class BackendVectorMath:
             v1: Second vector (Backend array or convertible)
             t: Interpolation factor in [0, 1]
             epsilon: Threshold for near-parallel detection. If None, uses
-                     backend's machine epsilon.
+                     dtype-derived epsilon.
             interpolate_magnitude: If True, interpolate magnitudes linearly.
 
         Returns:
             Interpolated vector as Backend array, or None if invalid.
         """
-        if epsilon is None:
-            epsilon = self._finfo.eps * 100  # Reasonable threshold
-
         v0_arr = self._ensure_array(v0)
         v1_arr = self._ensure_array(v1)
 
         if v0_arr is None or v1_arr is None:
             return None
+
+        if epsilon is None:
+            epsilon = division_epsilon(self.backend, v0_arr)
 
         shape_v0 = self.backend.shape(v0_arr)
         shape_v1 = self.backend.shape(v1_arr)
@@ -753,14 +771,14 @@ class BackendVectorMath:
             Tuple of (interpolated_matrix, metrics), or None if invalid.
             Metrics include: angle_deg, interpolation_mode, magnitude_ratio.
         """
-        if epsilon is None:
-            epsilon = self._finfo.eps * 100
-
         m0_arr = self._ensure_array(m0)
         m1_arr = self._ensure_array(m1)
 
         if m0_arr is None or m1_arr is None:
             return None
+
+        if epsilon is None:
+            epsilon = division_epsilon(self.backend, m0_arr)
 
         shape_m0 = self.backend.shape(m0_arr)
         shape_m1 = self.backend.shape(m1_arr)

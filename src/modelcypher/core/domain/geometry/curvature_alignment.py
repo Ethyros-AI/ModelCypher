@@ -35,6 +35,9 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
 if TYPE_CHECKING:
     from modelcypher.core.domain.geometry.curvature_profile import (
         CurvatureProfile,
@@ -178,6 +181,11 @@ def _compute_layer_guidance(
     layer_idx: int,
 ) -> AlignmentGuidance:
     """Compute alignment guidance for a single layer pair."""
+    backend = get_default_backend()
+    eps = division_epsilon(
+        backend,
+        backend.array([src.ollivier_ricci_mean, tgt.ollivier_ricci_mean]),
+    )
 
     # 1. Intrinsic dimension scaling
     src_dim = src.intrinsic_dimension if src.intrinsic_dimension > 0 else 1.0
@@ -201,7 +209,7 @@ def _compute_layer_guidance(
 
         if same_sign:
             # Curvature correction based on magnitude difference
-            curvature_correction = curvature_diff / (abs(src_ricci) + abs(tgt_ricci) + 1e-6)
+            curvature_correction = curvature_diff / (abs(src_ricci) + abs(tgt_ricci) + eps)
         else:
             # Opposite signs = fundamentally different local geometry
             # Needs curvature flow to reconcile
@@ -328,6 +336,8 @@ def compute_layer_correspondence_by_curvature(
         Dict mapping source layer index -> target layer index
     """
     correspondence: dict[int, int] = {}
+    backend = get_default_backend()
+    eps = division_epsilon(backend, backend.array([0.0]))
 
     source_layers = source_profile.layer_curvatures
     target_layers = target_profile.layer_curvatures
@@ -370,7 +380,7 @@ def compute_layer_correspondence_by_curvature(
 
             # Feature distance
             feature_dist = sum(
-                abs(s - t) / (abs(s) + abs(t) + 1e-6)
+                abs(s - t) / (abs(s) + abs(t) + eps)
                 for s, t in zip(src_features, tgt_features)
             ) / 3
 

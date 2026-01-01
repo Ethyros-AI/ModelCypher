@@ -29,23 +29,18 @@ class DriftMethod(str, Enum):
     skipped = "skipped"
 
 
-class DriftVerdict(str, Enum):
-    """Verdict on semantic drift detection.
-
-    Note: 'drifted' means the model's semantic signature has changed from baseline.
-    This is informational, not a compatibility judgment. The cosine_similarity
-    value is the actual measurement - the verdict is just a convenience threshold.
-    """
-
-    stable = "stable"  # Similarity above configured threshold
-    drifted = "drifted"  # Similarity below configured threshold
-    unknown = "unknown"  # Could not compute (missing data)
-
-
 @dataclass(frozen=True)
 class SemanticPrimeDriftAssessment:
+    """Assessment of semantic drift via prime signatures.
+
+    Raw measurements:
+    - cosine_similarity: Similarity between baseline and observed signatures
+    - threshold: The configured threshold (for reference, not interpretation)
+
+    Callers should interpret similarity relative to their own baselines.
+    """
+
     method: DriftMethod
-    verdict: DriftVerdict
     cosine_similarity: float | None = None
     threshold: float | None = None
     note: str | None = None
@@ -72,14 +67,13 @@ class SemanticPrimeDriftDetector:
     ) -> SemanticPrimeDriftAssessment:
         if not self._config.enabled:
             return SemanticPrimeDriftAssessment(
-                method=DriftMethod.skipped, verdict=DriftVerdict.unknown, note="disabled"
+                method=DriftMethod.skipped, note="disabled"
             )
 
         observed = self._atlas.signature(observed_text)
         if observed is None:
             return SemanticPrimeDriftAssessment(
                 method=DriftMethod.skipped,
-                verdict=DriftVerdict.drifted if self._config.fail_closed else DriftVerdict.unknown,
                 note="no_signature",
             )
 
@@ -87,19 +81,11 @@ class SemanticPrimeDriftDetector:
         if similarity is None:
             return SemanticPrimeDriftAssessment(
                 method=DriftMethod.skipped,
-                verdict=DriftVerdict.drifted if self._config.fail_closed else DriftVerdict.unknown,
                 note="signature_computation_failed",
             )
 
-        verdict = (
-            DriftVerdict.stable
-            if similarity >= self._config.minimum_cosine_similarity
-            else DriftVerdict.drifted
-        )
         return SemanticPrimeDriftAssessment(
             method=DriftMethod.prime_signature,
-            verdict=verdict,
             cosine_similarity=float(similarity),
             threshold=self._config.minimum_cosine_similarity,
-            note="cosine_below_threshold" if verdict == DriftVerdict.drifted else None,
         )

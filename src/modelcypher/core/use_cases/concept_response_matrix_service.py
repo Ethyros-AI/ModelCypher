@@ -41,6 +41,7 @@ from modelcypher.core.domain.geometry.concept_response_matrix import (
     AnchorMetadata,
     ConceptResponseMatrix,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
     Configuration as LayerMatcherConfiguration,
 )
@@ -124,7 +125,7 @@ class KnowledgeDeltaMaskConfig:
     source_dense_percentile: float = 0.75
     density_ratio_percentile: float | None = None
     min_anchor_count: int = 1
-    epsilon: float = 1e-8
+    epsilon: float | None = None
 
 
 @dataclass(frozen=True)
@@ -423,6 +424,7 @@ class ConceptResponseMatrixService:
         source = ConceptResponseMatrix.load(str(expand_path(source_path)))
         target = ConceptResponseMatrix.load(str(expand_path(target_path)))
         cfg = config or KnowledgeDeltaMaskConfig()
+        backend = get_default_backend()
 
         _validate_percentile("target_sparse_percentile", cfg.target_sparse_percentile)
         _validate_percentile("source_dense_percentile", cfg.source_dense_percentile)
@@ -466,7 +468,12 @@ class ConceptResponseMatrixService:
             source_mean, source_std = _mean_std(source_norms)
             target_mean, target_std = _mean_std(target_norms)
             delta_mean = source_mean - target_mean
-            density_ratio = source_mean / (target_mean + cfg.epsilon)
+            eps = (
+                cfg.epsilon
+                if cfg.epsilon is not None
+                else division_epsilon(backend, backend.array([target_mean]))
+            )
+            density_ratio = source_mean / (target_mean + eps)
             coverage = anchor_count / float(len(common)) if common else 0.0
 
             raw_layers.append(

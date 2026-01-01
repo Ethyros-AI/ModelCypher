@@ -210,7 +210,6 @@ def social_probe_model(
         "anchors_probed": len(anchor_activations),
         "layer": layer,
         **report.to_dict(),
-        # Note: verdict removed per No Vibes rule - return raw social_manifold_score only
     }
 
     if context.output_format == "text":

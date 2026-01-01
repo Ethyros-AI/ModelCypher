@@ -38,4 +38,4 @@ ModelCypher includes `GradientSmoothnessEstimator` (`src/modelcypher/core/domain
 
 $$ \text{SNR} = \frac{\| \mu_g \|^2}{\sigma_g^2} $$
 
-We use these metrics to dynamically adjust the learning rate or trigger "Idle Training" pauses.
+We use these metrics to dynamically adjust the learning rate or trigger "Idle Training" mode.

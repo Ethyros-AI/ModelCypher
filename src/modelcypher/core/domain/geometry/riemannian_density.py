@@ -40,6 +40,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
+    regularization_epsilon,
     tiny_value,
 )
 
@@ -178,7 +179,7 @@ class RiemannianDensityConfig:
     # Degrees of freedom for Student-t (ignored for other types)
     student_t_df: float = 3.0
     # Regularization for covariance estimation (numerical precision floor)
-    covariance_regularization: float = 1e-6
+    covariance_regularization: float | None = None
     # Whether to use curvature correction for covariance
     use_curvature_correction: bool = True
     # Number of neighbors for local density estimation
@@ -249,7 +250,8 @@ class ConceptVolume:
                 object.__setattr__(self, "_precision", precision)
             except Exception:
                 # Regularize if singular
-                reg_cov = self.covariance + 1e-6 * backend.eye(self.dimension)
+                reg_eps = regularization_epsilon(backend, self.covariance)
+                reg_cov = self.covariance + reg_eps * backend.eye(self.dimension)
                 precision = backend.inv(reg_cov)
                 backend.eval(precision)
                 object.__setattr__(self, "_precision", precision)
@@ -719,7 +721,7 @@ class RiemannianDensityEstimator:
             return ConceptVolume(
                 concept_id=concept_id,
                 centroid=activations[0],
-                covariance=backend.eye(d) * 1e-6,
+                covariance=backend.eye(d) * regularization_epsilon(backend, activations),
                 geodesic_radius=0.0,
                 local_curvature=None,
                 num_samples=n,
@@ -736,7 +738,7 @@ class RiemannianDensityEstimator:
         result = rg.frechet_mean(
             activations,
             max_iterations=50,
-            tolerance=1e-5,
+            tolerance=regularization_epsilon(backend, activations),
         )
         centroid = result.mean
         backend.eval(centroid)
@@ -1005,7 +1007,12 @@ class RiemannianDensityEstimator:
         )
 
         # Regularize
-        cov = cov + self.config.covariance_regularization * backend.eye(d)
+        reg_eps = (
+            self.config.covariance_regularization
+            if self.config.covariance_regularization is not None
+            else regularization_epsilon(backend, cov)
+        )
+        cov = cov + reg_eps * backend.eye(d)
         backend.eval(cov)
 
         # Metric correction if available
@@ -1188,7 +1195,8 @@ class RiemannianDensityEstimator:
                 chol = backend.cholesky(covariance)
             except Exception:
                 # If Cholesky fails, use regularized covariance
-                reg_cov = covariance + 1e-6 * backend.eye(d)
+                reg_eps = regularization_epsilon(backend, covariance)
+                reg_cov = covariance + reg_eps * backend.eye(d)
                 chol = backend.cholesky(reg_cov)
 
             # Generate standard normal samples

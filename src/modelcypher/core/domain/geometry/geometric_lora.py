@@ -54,7 +54,9 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
+    condition_threshold,
     division_epsilon,
+    regularization_epsilon,
     tiny_value,
 )
 
@@ -66,11 +68,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# NOTE: AdaptationQuality enum removed - use mean_geometric_loss directly
-# Loss thresholds for reference:
-#   < 1e-6 = optimal (negligible error)
-#   < 1e-3 = good (tight distribution)
-#   >= 1e-3 = compressed/degraded (significant error)
+# NOTE: AdaptationQuality enum removed - use mean_geometric_loss directly.
 
 
 @dataclass(frozen=True)
@@ -81,8 +79,8 @@ class GeometricLoRAConfig:
     """
 
     auto_rank: bool = True
-    regularization: float = 1e-6
-    condition_threshold: float = 1e4  # Numerical stability (standard float32)
+    regularization: float | None = None
+    condition_threshold: float | None = None
     target_layers: list[int] | None = None
     target_projections: list[str] = field(default_factory=lambda: ["q_proj", "v_proj"])
 
@@ -137,7 +135,8 @@ class LayerLoRAWeights:
         sv_np = backend.to_numpy(self.singular_values)
         if len(sv_np) == 0:
             return 0.0
-        threshold = sv_np[0] / 1e4  # Condition number threshold
+        cond_thresh = condition_threshold(backend, self.singular_values)
+        threshold = sv_np[0] / cond_thresh
         return float((sv_np > threshold).sum())
 
     def to_dict(self) -> dict:
@@ -392,7 +391,10 @@ class GeometricLoRAGenerator:
         output_delta_col = backend.reshape(output_delta, (out_features, 1))
         rep_input_row = backend.reshape(representative_input, (1, in_features))
         delta_W_full = backend.matmul(output_delta_col, rep_input_row) / input_norm_sq
-        reg_matrix = self.config.regularization * backend.eye(out_features, in_features)
+        reg_value = self.config.regularization
+        if reg_value is None:
+            reg_value = regularization_epsilon(backend, current_weight)
+        reg_matrix = reg_value * backend.eye(out_features, in_features)
         delta_W_full = delta_W_full + reg_matrix
         backend.eval(delta_W_full)
 
@@ -451,7 +453,10 @@ class GeometricLoRAGenerator:
             return 1
 
         # Use condition number threshold (numerical stability)
-        threshold = first_sv / self.config.condition_threshold
+        cond_thresh = self.config.condition_threshold
+        if cond_thresh is None:
+            cond_thresh = condition_threshold(backend, singular_values)
+        threshold = first_sv / cond_thresh
         significant_mask = singular_values > threshold
         rank = max(1, int(backend.sum(significant_mask)))
         return min(rank, sv_len)

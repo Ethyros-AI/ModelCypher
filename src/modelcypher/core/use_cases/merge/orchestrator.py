@@ -102,6 +102,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
 from .models import LayerGeometry, MergeGeometry
 from .global_metrics import compute_global_metrics
@@ -136,7 +137,7 @@ class GeometricMergeOrchestrator:
     def __init__(self, backend: "Backend | None" = None) -> None:
         self._backend = backend or get_default_backend()
         self._cache: dict[str, Any] = {}
-        self._epsilon = 1e-6
+        self._epsilon = machine_epsilon(self._backend, self._backend.array([0.0]))
         self._avoid_svd = False
         self._metrics_cache: Any | None = None
 

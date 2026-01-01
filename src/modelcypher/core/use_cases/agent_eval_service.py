@@ -43,7 +43,6 @@ from modelcypher.core.domain.agents.agent_eval_suite_engine import (
 )
 from modelcypher.core.domain.agents.semantic_prime_atlas import SemanticPrimeAtlas
 from modelcypher.core.domain.agents.semantic_prime_drift import (
-    DriftVerdict,
     SemanticPrimeDriftConfig,
     SemanticPrimeDriftDetector,
 )
@@ -375,39 +374,39 @@ class AgentEvalService:
     ) -> dict[str, Any]:
         """Assess semantic drift between baseline and observed text.
 
-        Uses semantic prime decomposition to measure how much an agent's
+        Uses semantic prime signatures to measure how much an agent's
         response has drifted from expected baseline behavior.
 
         Args:
             baseline_text: The expected/baseline text
             observed_text: The observed/actual text to compare
-            threshold: Similarity threshold below which drift is flagged
+            threshold: Similarity threshold for comparison (returned as reference)
 
         Returns:
-            Dict with drift assessment including similarity and details
+            Dict with raw similarity measurement and threshold for reference
         """
         config = SemanticPrimeDriftConfig(
-            similarity_threshold=threshold,
-            alert_on_major_drift=True,
+            enabled=True,
+            minimum_cosine_similarity=threshold,
         )
-        detector = SemanticPrimeDriftDetector(config=config)
+        detector = SemanticPrimeDriftDetector(configuration=config)
         atlas = SemanticPrimeAtlas()
 
-        # Decompose both texts into semantic primes
-        baseline_primes = atlas.decompose(baseline_text)
-        observed_primes = atlas.decompose(observed_text)
+        # Get baseline signature
+        baseline_signature = atlas.signature(baseline_text)
+        if baseline_signature is None:
+            return {
+                "cosine_similarity": None,
+                "threshold": threshold,
+                "note": "baseline_signature_failed",
+            }
 
-        # Calculate similarity using the detector
-        result = detector.assess(
-            baseline_primes=baseline_primes,
-            observed_primes=observed_primes,
-        )
+        # Assess drift using the detector
+        result = detector.assess(baseline_signature, observed_text)
 
         return {
-            "similarity": result.similarity,
-            "is_drifted": result.verdict != DriftVerdict.stable,
-            "baseline_primes": baseline_primes,
-            "observed_primes": observed_primes,
-            "threshold": threshold,
-            "delta": abs(1.0 - result.similarity),
+            "cosine_similarity": result.cosine_similarity,
+            "threshold": result.threshold,
+            "method": result.method.value if result.method else None,
+            "note": result.note,
         }

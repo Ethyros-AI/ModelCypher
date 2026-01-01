@@ -842,9 +842,6 @@ def verify_prediction(
     transplant_metrics_file: str | None = typer.Option(
         None, "--transplant", "-t", help="JSON file with transplant_metrics (optional)"
     ),
-    safety_verdict: str = typer.Option(
-        "unknown", "--verdict", "-v", help="Safety verdict from merge"
-    ),
     registry_path: str = typer.Option(
         None, "--registry", "-r", help="Path to prediction registry"
     ),
@@ -900,7 +897,6 @@ def verify_prediction(
         merge_id=merge_id,
         geometry_metrics=geometry_metrics,
         transplant_metrics=transplant_metrics,
-        safety_verdict=safety_verdict,
     )
 
     if result is None:

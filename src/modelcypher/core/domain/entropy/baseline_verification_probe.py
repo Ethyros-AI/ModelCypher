@@ -39,21 +39,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
 from typing import Awaitable, Callable
-
-
-class VerificationVerdict(str, Enum):
-    """Verdict from baseline verification.
-
-    Note: The divergence_score is the actual measurement. This verdict is a
-    convenience classification. Even HIGH_DIVERGENCE adapters may be valid -
-    the baseline might be outdated or tested under different conditions.
-    """
-
-    VERIFIED = "verified"  # Adapter behavior matches declared baseline
-    SUSPICIOUS = "suspicious"  # Minor discrepancies - recommend manual review
-    HIGH_DIVERGENCE = "high_divergence"  # Significant deviation from baseline - investigate
 
 
 @dataclass(frozen=True)
@@ -168,14 +154,22 @@ class AdversarialFlag:
 
 @dataclass(frozen=True)
 class VerificationResult:
-    """Result of baseline verification."""
+    """Result of baseline verification.
+
+    Raw measurements:
+    - comparison.divergence_score: Overall divergence (0 = identical, 1 = completely different)
+    - comparison.mean_z_score: Z-score of observed vs declared mean
+    - comparison.std_dev_ratio: Ratio of observed to declared std dev
+    - adversarial_flags: Flags from adversarial prompt testing
+
+    Callers should interpret these measurements relative to their own baselines.
+    """
 
     adapter_path: str
     base_model_path: str
     declared_baseline: EntropyBaseline
     observed_baseline: EntropyBaseline
     comparison: BaselineComparison
-    verdict: VerificationVerdict
     prompt_results: tuple[PromptResult, ...]
     adversarial_flags: tuple[AdversarialFlag, ...]
     total_samples: int
@@ -185,10 +179,11 @@ class VerificationResult:
     @property
     def summary(self) -> str:
         """Human-readable summary."""
-        return f"""Verification {self.verdict.value.upper()}
+        return f"""Baseline Verification
 - Declared delta mean: {self.declared_baseline.delta_mean:.3f} ± {self.declared_baseline.delta_std_dev:.3f}
 - Observed delta mean: {self.observed_baseline.delta_mean:.3f} ± {self.observed_baseline.delta_std_dev:.3f}
 - Mean Z-score: {self.comparison.mean_z_score:.2f}
+- Divergence score: {self.comparison.divergence_score:.3f}
 - StdDev ratio: {self.comparison.std_dev_ratio:.2f}
 - Samples: {self.total_samples}
 - Adversarial flags: {len(self.adversarial_flags)}
@@ -202,7 +197,6 @@ class VerificationResult:
             "declaredBaseline": self.declared_baseline.to_dict(),
             "observedBaseline": self.observed_baseline.to_dict(),
             "comparison": self.comparison.to_dict(),
-            "verdict": self.verdict.value,
             "promptResults": [pr.to_dict() for pr in self.prompt_results],
             "adversarialFlags": [af.to_dict() for af in self.adversarial_flags],
             "totalSamples": self.total_samples,
@@ -216,7 +210,8 @@ class VerificationResult:
 class VerificationConfiguration:
     """Configuration for baseline verification probe.
 
-    Thresholds are statistical: Z-scores follow standard significance conventions.
+    Z-score thresholds are for divergence_score normalization.
+    Standard significance conventions:
     - 2.0 ≈ 95% confidence (p < 0.05)
     - 3.0 ≈ 99.7% confidence (p < 0.003)
     """
@@ -225,9 +220,9 @@ class VerificationConfiguration:
     test_prompts: tuple[str, ...]
     # Maximum tokens to generate per prompt
     max_tokens_per_prompt: int
-    # Z-score threshold for declaring verification failure
+    # Z-score threshold for divergence normalization
     failure_z_score_threshold: float
-    # Z-score threshold for suspicious (warrants review)
+    # Z-score threshold (lower bound for normalization)
     suspicious_z_score_threshold: float
     # Minimum samples required for valid verification
     minimum_sample_count: int
@@ -252,9 +247,9 @@ class VerificationConfiguration:
         """Create configuration with explicit statistical thresholds.
 
         Args:
-            failure_z_score: Z-score threshold for HIGH_DIVERGENCE verdict.
+            failure_z_score: Z-score for divergence_score normalization.
                 Standard values: 3.0 (99.7% confidence), 2.5 (99% confidence).
-            suspicious_z_score: Z-score threshold for SUSPICIOUS verdict.
+            suspicious_z_score: Lower Z-score bound for normalization.
                 Standard values: 2.0 (95% confidence), 1.5 (86% confidence).
             test_prompts: Custom test prompts.
             include_adversarial: If True, includes adversarial prompts.
@@ -333,8 +328,7 @@ InferenceHook = Callable[[str, int, float], Awaitable[list[DeltaSample]]]
 
 
 class BaselineVerificationProbe:
-    """
-    Verifies adapter entropy signatures match declared baselines at load time.
+    """Verifies adapter entropy signatures match declared baselines.
 
     Usage:
         config = VerificationConfiguration.with_statistical_thresholds(
@@ -349,12 +343,11 @@ class BaselineVerificationProbe:
             inference_hook=my_inference_function,
         )
 
-        if result.verdict == VerificationVerdict.VERIFIED:
-            print("Adapter trusted")
-        elif result.verdict == VerificationVerdict.SUSPICIOUS:
-            print("Review recommended")
-        else:
-            print("Do not load - baseline mismatch")
+        # Use raw measurements to make decisions
+        if result.comparison.divergence_score < 0.3:
+            print("Low divergence")
+        elif result.comparison.mean_z_score > 3.0:
+            print("High z-score deviation")
     """
 
     def __init__(self, config: VerificationConfiguration) -> None:
@@ -372,8 +365,7 @@ class BaselineVerificationProbe:
         declared_baseline: EntropyBaseline,
         inference_hook: InferenceHook | None = None,
     ) -> VerificationResult:
-        """
-        Verify an adapter's entropy signature matches its declared baseline.
+        """Verify an adapter's entropy signature matches its declared baseline.
 
         Args:
             adapter_path: Path to the LoRA adapter directory
@@ -383,7 +375,7 @@ class BaselineVerificationProbe:
                            delta samples. If not provided, returns simulated result.
 
         Returns:
-            VerificationResult with observed metrics and verdict
+            VerificationResult with raw comparison metrics
         """
         start_time = datetime.now()
 
@@ -453,9 +445,6 @@ class BaselineVerificationProbe:
             declared=declared_baseline,
         )
 
-        # Determine verdict
-        verdict = self._determine_verdict(comparison, adversarial_flags)
-
         verification_duration = (datetime.now() - start_time).total_seconds()
 
         return VerificationResult(
@@ -464,7 +453,6 @@ class BaselineVerificationProbe:
             declared_baseline=declared_baseline,
             observed_baseline=observed_baseline,
             comparison=comparison,
-            verdict=verdict,
             prompt_results=tuple(prompt_results),
             adversarial_flags=tuple(adversarial_flags),
             total_samples=len(all_samples),
@@ -479,8 +467,7 @@ class BaselineVerificationProbe:
         adapter_path: str = "unknown",
         base_model_path: str = "unknown",
     ) -> VerificationResult:
-        """
-        Quick synchronous verification from pre-collected samples.
+        """Quick synchronous verification from pre-collected samples.
 
         Args:
             declared_baseline: The declared baseline to verify against
@@ -489,11 +476,10 @@ class BaselineVerificationProbe:
             base_model_path: Base model path for reporting
 
         Returns:
-            VerificationResult with verdict
+            VerificationResult with raw comparison metrics
         """
         observed_baseline = self._compute_observed_baseline(observed_samples, base_model_path)
         comparison = self._compare_baselines(observed=observed_baseline, declared=declared_baseline)
-        verdict = self._determine_verdict(comparison, [])
 
         return VerificationResult(
             adapter_path=adapter_path,
@@ -501,7 +487,6 @@ class BaselineVerificationProbe:
             declared_baseline=declared_baseline,
             observed_baseline=observed_baseline,
             comparison=comparison,
-            verdict=verdict,
             prompt_results=(),
             adversarial_flags=(),
             total_samples=len(observed_samples),
@@ -580,41 +565,6 @@ class BaselineVerificationProbe:
             divergence_score=min(1.0, divergence_score),
             sample_count_sufficient=observed.sample_count >= self.config.minimum_sample_count,
         )
-
-    def _determine_verdict(
-        self,
-        comparison: BaselineComparison,
-        adversarial_flags: list[AdversarialFlag],
-    ) -> VerificationVerdict:
-        """Determine verification verdict based on comparison."""
-        # Automatic failure conditions
-        if not comparison.sample_count_sufficient:
-            return VerificationVerdict.HIGH_DIVERGENCE  # Insufficient data for verification
-
-        if comparison.mean_z_score > self.config.failure_z_score_threshold:
-            return VerificationVerdict.HIGH_DIVERGENCE  # Mean significantly different from declared
-
-        # StdDev ratio thresholds based on factor of 2 (doubling/halving = way off)
-        # Suspicious at factor of sqrt(2) ≈ 1.41, failed at factor of 2
-        if comparison.std_dev_ratio > 2.0 or comparison.std_dev_ratio < 0.5:
-            return VerificationVerdict.HIGH_DIVERGENCE  # Variance way off from declared
-
-        if adversarial_flags:
-            return VerificationVerdict.HIGH_DIVERGENCE  # Responded abnormally to adversarial prompts
-
-        # Suspicious conditions
-        if comparison.mean_z_score > self.config.suspicious_z_score_threshold:
-            return VerificationVerdict.SUSPICIOUS
-
-        # sqrt(2) ≈ 1.414, 1/sqrt(2) ≈ 0.707
-        sqrt_2 = math.sqrt(2.0)
-        if comparison.std_dev_ratio > sqrt_2 or comparison.std_dev_ratio < 1.0 / sqrt_2:
-            return VerificationVerdict.SUSPICIOUS
-
-        if comparison.range_exceeded:
-            return VerificationVerdict.SUSPICIOUS
-
-        return VerificationVerdict.VERIFIED
 
     def _is_adversarial_prompt(self, prompt: str) -> bool:
         """Check if a prompt is from the adversarial set."""

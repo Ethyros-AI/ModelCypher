@@ -140,7 +140,7 @@ class EntropyProbeService:
             config: Verification configuration derived from explicit thresholds
 
         Returns:
-            VerificationResult with verdict and statistics
+            VerificationResult with comparison metrics and statistics
         """
         declared_baseline = EntropyBaseline(
             delta_mean=declared_mean,

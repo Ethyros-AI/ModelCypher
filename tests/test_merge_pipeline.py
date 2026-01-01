@@ -105,7 +105,6 @@ class TestPostMergeValidation:
             merged_model="/path/to/merged",
             timestamp="2025-12-31T00:00:00",
             mean_confidence=0.85,
-            safety_verdict=0.8,
             geometry_metrics={"mean_preserved_fraction": 0.9},
             layers_transplanted=24,
             weights_transplanted=48,
@@ -115,7 +114,6 @@ class TestPostMergeValidation:
 
         assert validation.merged_model == "/path/to/merged"
         assert validation.mean_confidence == 0.85
-        assert validation.safety_verdict == 0.8
         assert validation.layers_transplanted == 24
         assert validation.mean_cka_after == 0.95
 
@@ -125,7 +123,6 @@ class TestPostMergeValidation:
             merged_model="/path/to/merged",
             timestamp="2025-12-31T00:00:00",
             mean_confidence=0.85,
-            safety_verdict=0.8,
             geometry_metrics={},
             layers_transplanted=0,
             weights_transplanted=0,
@@ -158,7 +155,6 @@ class TestPipelineResult:
             merged_model="/path/to/merged",
             timestamp="2025-12-31T00:00:00",
             mean_confidence=0.85,
-            safety_verdict=0.8,
             geometry_metrics={},
             layers_transplanted=24,
             weights_transplanted=48,
@@ -205,7 +201,6 @@ class TestPipelineResult:
             merged_model="/m",
             timestamp="2025-12-31T00:00:00",
             mean_confidence=0.85,
-            safety_verdict=0.8,
             geometry_metrics={},
             layers_transplanted=0,
             weights_transplanted=0,
@@ -335,7 +330,6 @@ class TestPipelineTimingFields:
             merged_model="/m",
             timestamp="2025-12-31T00:00:00",
             mean_confidence=0.0,
-            safety_verdict=0.8,
             geometry_metrics={},
             layers_transplanted=0,
             weights_transplanted=0,

@@ -398,7 +398,7 @@ class AdapterService:
         common_keys: set[str],
         paths: list[Path],
     ) -> dict:
-        """Compute ensemble routing recommendation based on adapter characteristics."""
+        """Compute ensemble metrics based on adapter characteristics."""
         backend = get_default_backend()
 
         # Compute per-adapter statistics
@@ -443,7 +443,6 @@ class AdapterService:
             weights.append(round(weight, 4))
 
         return {
-            "strategy": "weighted",
             "weights": weights,
             "adapter_stats": adapter_stats,
         }

@@ -90,14 +90,12 @@ class TestMergeVerification:
             actual_mean_confidence=0.85,
             actual_preserved_fraction=0.78,
             actual_cka_after=0.92,
-            actual_safety_verdict=0.8,
             layer_actuals={0: {"preserved_fraction": 0.8}},
             actual_transformation_counts={"alpha_scaling": 2},
         )
 
         assert verif.merge_id == "test123"
         assert verif.actual_preserved_fraction == 0.78
-        assert verif.actual_safety_verdict == 0.8  # Matches value passed in line 93
 
 
 class TestPredictionRegistry:
@@ -148,7 +146,6 @@ class TestPredictionRegistry:
             actual_mean_confidence=0.75,
             actual_preserved_fraction=0.65,
             actual_cka_after=0.85,
-            actual_safety_verdict=0.8,
             layer_actuals={},
             actual_transformation_counts={"alpha_scaling": 2},
         )
@@ -168,7 +165,6 @@ class TestPredictionRegistry:
             actual_mean_confidence=0.8,
             actual_preserved_fraction=0.75,
             actual_cka_after=0.9,
-            actual_safety_verdict=0.8,
             layer_actuals={},
             actual_transformation_counts={},
         )
@@ -235,7 +231,6 @@ class TestPredictionRegistry:
                 actual_mean_confidence=actual,
                 actual_preserved_fraction=actual,
                 actual_cka_after=0.85,
-                actual_safety_verdict=0.8,
                 layer_actuals={},
                 actual_transformation_counts={},
             )
@@ -274,7 +269,6 @@ class TestVerificationResult:
             actual_mean_confidence=0.7,
             actual_preserved_fraction=0.7,
             actual_cka_after=0.85,
-            actual_safety_verdict=0.8,
             layer_actuals={},
             actual_transformation_counts={"alpha_scaling": 2},
         )
@@ -314,7 +308,6 @@ class TestVerificationResult:
             actual_mean_confidence=0.5,
             actual_preserved_fraction=0.5,
             actual_cka_after=0.8,
-            actual_safety_verdict=0.8,
             layer_actuals={},
             actual_transformation_counts={
                 "alpha_scaling": 2,
@@ -377,7 +370,6 @@ class TestInterferenceVerificationService:
                 "preserved_fractions": [0.65],
                 "transform_requirements_counts": {},
             },
-            safety_verdict=0.65,  # Raw measurement: mean_preserved_fraction
         )
 
         assert result is not None
@@ -408,7 +400,6 @@ class TestInterferenceVerificationService:
             merge_id=pred1.merge_id,
             geometry_metrics={"mean_preserved_fraction": 0.5},
             transplant_metrics={},
-            safety_verdict=0.5,  # Raw measurement: mean_preserved_fraction
         )
 
         pending = service.list_pending_verifications()
@@ -432,7 +423,6 @@ class TestInterferenceVerificationService:
                 merge_id=pred.merge_id,
                 geometry_metrics={"mean_preserved_fraction": 0.65 + i * 0.05},
                 transplant_metrics={},
-                safety_verdict="healthy",
             )
 
         stats = service.get_calibration_stats()
@@ -475,7 +465,6 @@ class TestInterferenceVerificationService:
                 merge_id=pred.merge_id,
                 geometry_metrics={"mean_preserved_fraction": 0.7},
                 transplant_metrics={},
-                safety_verdict="healthy",
             )
 
         report_path = tmp_path / "calibration.json"

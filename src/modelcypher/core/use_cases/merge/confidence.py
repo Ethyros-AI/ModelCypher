@@ -119,11 +119,3 @@ def compute_mean_confidence(geometry_metrics: dict[str, float]) -> float:
         mean_preserved_fraction - the geometric reality of what was preserved
     """
     return geometry_metrics.get("mean_preserved_fraction", 0.0)
-
-
-# NOTE: compute_safety_verdict() was REMOVED.
-# Categorical verdicts ("healthy", "degenerate", "collapsed") violate the
-# "no vibes" principle. Use raw measurements from geometry_metrics instead:
-#   - geometry_metrics["mean_preserved_fraction"] - fraction of knowledge preserved
-#   - geometry_metrics["transplant_ratio"] - fraction of weights transplanted
-# Callers should interpret these values relative to their own baselines.

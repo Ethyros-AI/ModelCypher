@@ -48,6 +48,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.geometry.permutation_aligner import (
     AlignmentResult,
     PermutationAligner,
@@ -158,6 +159,7 @@ class LoRAAdapterMerger:
         # Load adapters
         payloads = [LoRAAdapterMerger._load_adapter(d) for d in adapter_directories]
         first = payloads[0]
+        scale_eps = machine_epsilon(b, b.array([first.scale]))
 
         # Validate compatibility
         for payload in payloads[1:]:
@@ -168,7 +170,7 @@ class LoRAAdapterMerger:
                 )
             if payload.rank != first.rank:
                 raise MergeError(f"Adapters use different ranks: {first.rank} vs {payload.rank}")
-            if abs(payload.scale - first.scale) > 1e-5:
+            if abs(payload.scale - first.scale) > scale_eps:
                 raise MergeError(f"Adapters use different scales: {first.scale} vs {payload.scale}")
             if set(payload.module_keys) != set(first.module_keys):
                 raise MergeError("Adapters do not have the same LoRA modules.")

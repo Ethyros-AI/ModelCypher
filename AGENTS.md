@@ -8,15 +8,14 @@ This document provides guidance for AI coding assistants (Claude, Gemini, Copilo
 
 ## Concurrency Rules
 
-Multiple AI agents work on this codebase concurrently. Before making changes:
-If other files are modified and you do not need to touch them, continue without pausing; only stop when overlap is required.
+Multiple AI agents work on this codebase concurrently. Do not pause or ask about unrelated changes; align directly when you must touch the same files.
 
-1. **Check git status first** - Look for uncommitted changes from other agents
-2. **If unexpected files are modified** - Do not revert or overwrite; ignore unless your work would touch those files
+1. **Git status is optional** - Use it for awareness only; never block progress on unrelated changes
+2. **If unexpected files are modified** - Do not revert or overwrite; ignore unless your work must touch those files
 3. **Never ask what to do with other files** - If they don't impact your work, ignore them; if they overlap, align with them without asking
    - If unsure, default to ignore and proceed; only align when your work must touch the same files.
-   - Do not mention unrelated modified files in responses; proceed unless overlap is required.
-4. **No check-in required for other agents' work** - You can continue without pausing, as long as you avoid degrading their changes
+   - Do not mention unrelated modified files in responses.
+4. **No check-in required for other agents' work** - Continue without pausing, as long as you avoid degrading their changes
 5. **No destructive git operations** - Do NOT run `git add`, `git commit`, `git push`, `git checkout`, `git reset`, etc.
 6. **No bulk file modification scripts** - Do NOT run scripts that modify more than 1 file at a time. Edit files individually.
 7. **When overlap is likely** - Research best practice and explain your choice in code comments so consensus is clear

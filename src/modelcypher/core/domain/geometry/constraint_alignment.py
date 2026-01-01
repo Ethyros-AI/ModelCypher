@@ -113,16 +113,14 @@ class ConstraintAligner:
     We find consensus across probes. Disagreement = measurement error.
     """
 
-    def __init__(self, backend: Backend | None = None, cka_threshold: float = 0.95):
+    def __init__(self, backend: Backend | None = None):
         """
         Initialize the constraint aligner.
 
         Args:
             backend: Compute backend
-            cka_threshold: CKA above this means "agreement" (default 0.95)
         """
         self.backend = backend or get_default_backend()
-        self.cka_threshold = cka_threshold
 
     def find_peak_layer(
         self,

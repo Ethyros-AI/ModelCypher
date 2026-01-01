@@ -457,7 +457,8 @@ def merge_weights(
                         target_norm = b.norm(target_f32)
                         b.eval(source_norm, target_norm)
 
-                        if float(source_norm) > 1e-6 and float(target_norm) > 1e-6:
+                        eps = division_epsilon(b, source_f32)
+                        if float(source_norm) > eps and float(target_norm) > eps:
                             source_unit = source_f32 / source_norm
                             target_unit = target_f32 / target_norm
 
@@ -471,7 +472,7 @@ def merge_weights(
 
                             theta = m.acos(dot_val)
 
-                            if abs(theta) > 1e-6:
+                            if abs(theta) > eps:
                                 # SLERP formula: (sin((1-t)*theta) * a + sin(t*theta) * b) / sin(theta)
                                 sin_theta = m.sin(theta)
                                 w_source = m.sin((1 - alpha) * theta) / sin_theta

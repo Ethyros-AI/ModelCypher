@@ -107,20 +107,27 @@ class LexicalStopWords:
     }
 
 
+class TaskDiversionMethod(str, Enum):
+    """Method used for task diversion detection."""
+
+    EMBEDDINGS = "embeddings"
+    LEXICAL_FALLBACK = "lexicalFallback"
+    SKIPPED = "skipped"
+
+
 @dataclass
 class TaskDiversionAssessment:
-    class Method(str, Enum):
-        EMBEDDINGS = "embeddings"
-        LEXICAL_FALLBACK = "lexicalFallback"
-        SKIPPED = "skipped"
+    """Assessment of task diversion via embedding or lexical similarity.
 
-    class Verdict(str, Enum):
-        ALIGNED = "aligned"
-        DIVERGED = "diverged"
-        UNKNOWN = "unknown"
+    Raw measurements:
+    - embedding_cosine_similarity: Cosine similarity via embeddings
+    - lexical_jaccard_similarity: Jaccard similarity via tokens
+    - threshold: The configured threshold (for reference, not interpretation)
 
-    method: Method
-    verdict: Verdict
+    Callers should interpret similarity relative to their own baselines.
+    """
+
+    method: TaskDiversionMethod
     embedding_cosine_similarity: float | None = None
     lexical_jaccard_similarity: float | None = None
     threshold: float | None = None
@@ -151,8 +158,7 @@ class TaskDiversionDetector:
     async def assess(self, expected_task: str, observed_text: str) -> TaskDiversionAssessment:
         if not self.config.enabled:
             return TaskDiversionAssessment(
-                method=TaskDiversionAssessment.Method.SKIPPED,
-                verdict=TaskDiversionAssessment.Verdict.UNKNOWN,
+                method=TaskDiversionMethod.SKIPPED,
                 note="disabled",
             )
 
@@ -161,10 +167,7 @@ class TaskDiversionDetector:
 
         if not expected_trimmed or not observed_trimmed:
             return TaskDiversionAssessment(
-                method=TaskDiversionAssessment.Method.SKIPPED,
-                verdict=TaskDiversionAssessment.Verdict.DIVERGED
-                if self.config.fail_closed
-                else TaskDiversionAssessment.Verdict.UNKNOWN,
+                method=TaskDiversionMethod.SKIPPED,
                 note="missing_text",
             )
 
@@ -176,50 +179,28 @@ class TaskDiversionDetector:
             embeddings = await self.embedder.embed([expected_capped, observed_capped])
             if len(embeddings) == 2:
                 similarity = VectorMath.cosine_similarity(embeddings[0], embeddings[1]) or 0.0
-                verdict = (
-                    TaskDiversionAssessment.Verdict.ALIGNED
-                    if similarity >= self.config.minimum_embedding_cosine_similarity
-                    else TaskDiversionAssessment.Verdict.DIVERGED
-                )
 
                 return TaskDiversionAssessment(
-                    method=TaskDiversionAssessment.Method.EMBEDDINGS,
-                    verdict=verdict,
+                    method=TaskDiversionMethod.EMBEDDINGS,
                     embedding_cosine_similarity=similarity,
                     threshold=self.config.minimum_embedding_cosine_similarity,
-                    note="cosine_below_threshold"
-                    if verdict == TaskDiversionAssessment.Verdict.DIVERGED
-                    else None,
                 )
         except Exception:
-            # print(f"Embedding scoring failed: {e}")
             pass
 
         # Fallback to Lexical
         if not self.config.enable_lexical_fallback:
             return TaskDiversionAssessment(
-                method=TaskDiversionAssessment.Method.SKIPPED,
-                verdict=TaskDiversionAssessment.Verdict.DIVERGED
-                if self.config.fail_closed
-                else TaskDiversionAssessment.Verdict.UNKNOWN,
+                method=TaskDiversionMethod.SKIPPED,
                 note="no_embedding_no_fallback",
             )
 
         lexical_similarity = self._lexical_jaccard_similarity(expected_trimmed, observed_trimmed)
-        verdict = (
-            TaskDiversionAssessment.Verdict.ALIGNED
-            if lexical_similarity >= self.config.minimum_lexical_jaccard_similarity
-            else TaskDiversionAssessment.Verdict.DIVERGED
-        )
 
         return TaskDiversionAssessment(
-            method=TaskDiversionAssessment.Method.LEXICAL_FALLBACK,
-            verdict=verdict,
+            method=TaskDiversionMethod.LEXICAL_FALLBACK,
             lexical_jaccard_similarity=lexical_similarity,
             threshold=self.config.minimum_lexical_jaccard_similarity,
-            note="lexical_below_threshold"
-            if verdict == TaskDiversionAssessment.Verdict.DIVERGED
-            else None,
         )
 
     def _lexical_jaccard_similarity(self, lhs: str, rhs: str) -> float:

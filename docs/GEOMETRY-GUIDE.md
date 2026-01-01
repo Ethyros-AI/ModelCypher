@@ -61,7 +61,7 @@ Analogies make high-dimensional geometry intuitive, but they are not mechanisms.
 They *can* help you:
 - detect that something changed (drift, instability, unusual updates),
 - localize where it changed (layers/components, when captured),
-- decide when to pause and investigate (circuit breaker style signals).
+- decide when to investigate (circuit breaker style signals).
 
 They *cannot*:
 - prove a model is "safe",

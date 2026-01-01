@@ -37,6 +37,7 @@ from modelcypher.core.domain.geometry.manifold_transfer import (
     AnchorDistanceProfile,
     TransferPoint,
 )
+from modelcypher.core.domain.geometry.numerical_stability import condition_threshold
 
 
 class TestGeometricLoRAConfig:
@@ -47,8 +48,8 @@ class TestGeometricLoRAConfig:
         config = GeometricLoRAConfig()
 
         assert config.auto_rank is True
-        assert config.regularization == 1e-6
-        assert config.condition_threshold == 1e4
+        assert config.regularization is None
+        assert config.condition_threshold is None
         assert "q_proj" in config.target_projections
         assert "v_proj" in config.target_projections
 
@@ -113,9 +114,13 @@ class TestLayerLoRAWeights:
 
     def test_effective_rank(self, sample_weights: LayerLoRAWeights) -> None:
         """Test effective rank computation."""
-        # With singular values [1.0, 0.5, 0.2, 0.1], all > 0.01
-        eff_rank = sample_weights.effective_rank
-        assert eff_rank == 4.0
+        backend = get_default_backend()
+        cond_thresh = condition_threshold(backend, sample_weights.singular_values)
+        threshold = float(backend.to_numpy(sample_weights.singular_values)[0]) / cond_thresh
+        expected = float(
+            (backend.to_numpy(sample_weights.singular_values) > threshold).sum()
+        )
+        assert sample_weights.effective_rank == expected
 
     def test_to_dict(self, sample_weights: LayerLoRAWeights) -> None:
         """Test serialization to dictionary."""
@@ -344,14 +349,16 @@ class TestGeometricLoRAGenerator:
         """Test automatic rank determination using condition number."""
         backend = get_default_backend()
         # Singular values with clear gap
-        # condition_threshold = 1e4, so threshold = 1.0 / 1e4 = 1e-4
         sv = backend.array([1.0, 0.5, 0.1, 0.001, 0.00001])
         backend.eval(sv)
 
         rank = generator._determine_rank(sv, backend)
 
-        # Values > 1e-4: 1.0, 0.5, 0.1, 0.001 → rank 4
-        assert rank == 4
+        cond_thresh = condition_threshold(backend, sv)
+        threshold = float(backend.to_numpy(sv)[0]) / cond_thresh
+        expected = int((backend.to_numpy(sv) > threshold).sum())
+        expected = max(1, min(expected, int(backend.shape(sv)[0])))
+        assert rank == expected
 
     def test_determine_rank_with_tight_condition(self) -> None:
         """Test rank determination with tighter condition threshold."""
@@ -363,106 +370,7 @@ class TestGeometricLoRAGenerator:
         backend.eval(sv)
 
         rank = generator._determine_rank(sv, backend)
-        # threshold = 1.0 / 100 = 0.01, values > 0.01: 1.0, 0.5, 0.1 → rank 3
         assert rank == 3
-
-    def test_geometric_loss_negligible(
-        self,
-        generator: GeometricLoRAGenerator,
-    ) -> None:
-        """Test negligible reconstruction error (< 1e-6)."""
-        backend = get_default_backend()
-        weights = [
-            LayerLoRAWeights(
-                layer_idx=0,
-                projection_name="q_proj",
-                A=backend.zeros((2, 64)),
-                B=backend.zeros((64, 2)),
-                rank=2,
-                singular_values=backend.array([1.0, 0.5]),
-                geometric_loss=1e-8,  # < 1e-6 = negligible
-            )
-        ]
-
-        losses = [w.geometric_loss for w in weights]
-        mean_loss = sum(losses) / len(losses)
-        assert mean_loss < 1e-6  # Negligible error
-
-    def test_geometric_loss_moderate(
-        self,
-        generator: GeometricLoRAGenerator,
-    ) -> None:
-        """Test moderate reconstruction error (tight distribution)."""
-        backend = get_default_backend()
-        weights = [
-            LayerLoRAWeights(
-                layer_idx=0,
-                projection_name="q_proj",
-                A=backend.zeros((2, 64)),
-                B=backend.zeros((64, 2)),
-                rank=2,
-                singular_values=backend.array([1.0, 0.5]),
-                geometric_loss=0.1,
-            ),
-            LayerLoRAWeights(
-                layer_idx=1,
-                projection_name="q_proj",
-                A=backend.zeros((2, 64)),
-                B=backend.zeros((64, 2)),
-                rank=2,
-                singular_values=backend.array([1.0, 0.5]),
-                geometric_loss=0.15,
-            ),
-        ]
-
-        losses = [w.geometric_loss for w in weights]
-        mean_loss = sum(losses) / len(losses)
-        median_loss = sorted(losses)[len(losses) // 2]
-        # Tight distribution: mean < 2 * median
-        assert mean_loss < median_loss * 2
-
-    def test_geometric_loss_degraded(
-        self,
-        generator: GeometricLoRAGenerator,
-    ) -> None:
-        """Test significant reconstruction error with outliers."""
-        backend = get_default_backend()
-        # 3 values: [0.01, 0.02, 10.0] → median = 0.02, mean ≈ 3.34
-        weights = [
-            LayerLoRAWeights(
-                layer_idx=0,
-                projection_name="q_proj",
-                A=backend.zeros((4, 64)),
-                B=backend.zeros((64, 4)),
-                rank=4,
-                singular_values=backend.array([1.0, 0.5, 0.2, 0.1]),
-                geometric_loss=0.01,
-            ),
-            LayerLoRAWeights(
-                layer_idx=1,
-                projection_name="q_proj",
-                A=backend.zeros((4, 64)),
-                B=backend.zeros((64, 4)),
-                rank=4,
-                singular_values=backend.array([1.0, 0.5, 0.2, 0.1]),
-                geometric_loss=0.02,
-            ),
-            LayerLoRAWeights(
-                layer_idx=2,
-                projection_name="q_proj",
-                A=backend.zeros((4, 64)),
-                B=backend.zeros((64, 4)),
-                rank=4,
-                singular_values=backend.array([1.0, 0.5, 0.2, 0.1]),
-                geometric_loss=10.0,  # Major outlier
-            ),
-        ]
-
-        losses = [w.geometric_loss for w in weights]
-        mean_loss = sum(losses) / len(losses)
-        median_loss = sorted(losses)[len(losses) // 2]
-        # Degraded: mean significantly higher due to outlier
-        assert mean_loss >= median_loss * 2
 
 
 class TestGenerateGeometricLoraFunction:
@@ -513,23 +421,3 @@ class TestGenerateGeometricLoraFunction:
 
         assert lora is not None
         assert lora.transfer_point.concept_id == "test"
-
-
-class TestGeometricLossThresholds:
-    """Tests for geometric loss-based quality assessment.
-
-    Loss thresholds for reference:
-        < 1e-6 = optimal (negligible error)
-        < 1e-3 = good (tight distribution)
-        >= 1e-3 = compressed/degraded (significant error)
-    """
-
-    def test_optimal_loss_threshold(self) -> None:
-        """Optimal is defined as geometric loss < 1e-6."""
-        optimal_loss = 1e-8
-        assert optimal_loss < 1e-6
-
-    def test_good_loss_threshold(self) -> None:
-        """Good is defined as geometric loss < 1e-3."""
-        good_loss = 1e-5
-        assert good_loss < 1e-3
