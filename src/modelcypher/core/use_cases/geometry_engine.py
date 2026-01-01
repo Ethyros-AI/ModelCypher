@@ -23,6 +23,10 @@ from typing import Any
 
 from modelcypher.core.domain.geometry import DoRADecomposition
 from modelcypher.core.domain.geometry.backend_matrix_utils import BackendMatrixUtils
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    regularization_epsilon,
+)
 from modelcypher.ports.backend import Array, Backend
 
 
@@ -322,11 +326,20 @@ class GeometryEngine:
 
 @dataclass(frozen=True)
 class SinkhornSolverConfig:
-    epsilon: float = 0.1
+    """Configuration for Sinkhorn optimal transport solver.
+
+    Tolerance fields (epsilon, convergence_threshold, stability_epsilon)
+    default to None and are derived from array dtype at runtime:
+    - epsilon: regularization_epsilon (sqrt(machine_eps)) - entropy regularization
+    - convergence_threshold: regularization_epsilon - iteration convergence
+    - stability_epsilon: division_epsilon (1000 * machine_eps) - numerical safety
+    """
+
+    epsilon: float | None = None
     max_iterations: int = 100
-    convergence_threshold: float = 1e-6
+    convergence_threshold: float | None = None
     use_log_domain: bool = True
-    stability_epsilon: float = 1e-9
+    stability_epsilon: float | None = None
     geodesic_k_neighbors: int | None = None
     geodesic_square: bool = True
     geodesic_normalize: bool = True
@@ -350,6 +363,23 @@ class SinkhornSolver:
         if target_marginal is not None:
             target_marginal = self.backend.array(target_marginal)
 
+        # Derive tolerances from array dtype if not provided
+        resolved_epsilon = (
+            config.epsilon
+            if config.epsilon is not None
+            else regularization_epsilon(self.backend, cost_matrix)
+        )
+        resolved_convergence = (
+            config.convergence_threshold
+            if config.convergence_threshold is not None
+            else regularization_epsilon(self.backend, cost_matrix)
+        )
+        resolved_stability = (
+            config.stability_epsilon
+            if config.stability_epsilon is not None
+            else division_epsilon(self.backend, cost_matrix)
+        )
+
         n = int(cost_matrix.shape[0])
         m = int(cost_matrix.shape[1])
         mu = (
@@ -365,19 +395,28 @@ class SinkhornSolver:
         self.backend.eval(mu, nu)
 
         if config.use_log_domain:
-            return self._solve_log_domain(cost_matrix, mu, nu, config)
-        return self._solve_standard(cost_matrix, mu, nu, config)
+            return self._solve_log_domain(
+                cost_matrix, mu, nu, resolved_epsilon, resolved_convergence,
+                resolved_stability, config.max_iterations
+            )
+        return self._solve_standard(
+            cost_matrix, mu, nu, resolved_epsilon, resolved_convergence,
+            resolved_stability, config.max_iterations
+        )
 
     def _solve_standard(
         self,
         cost_matrix: Array,
         mu: Array,
         nu: Array,
-        config: SinkhornSolverConfig,
+        epsilon: float,
+        convergence_threshold: float,
+        stability_epsilon: float,
+        max_iterations: int,
     ) -> SinkhornResult:
         n = int(cost_matrix.shape[0])
         m = int(cost_matrix.shape[1])
-        K = self.backend.exp(-cost_matrix / config.epsilon)
+        K = self.backend.exp(-cost_matrix / epsilon)
         self.backend.eval(K)
 
         u = self.backend.ones((n,), dtype="float32")
@@ -388,14 +427,14 @@ class SinkhornSolver:
         iterations = 0
         marginal_error = float("inf")
 
-        for i in range(config.max_iterations):
+        for i in range(max_iterations):
             iterations = i + 1
             Kv = self.backend.matmul(K, v.reshape((m, 1))).reshape((n,))
-            u_new = mu / self.backend.maximum(Kv, self.backend.array(config.stability_epsilon))
+            u_new = mu / self.backend.maximum(Kv, self.backend.array(stability_epsilon))
             KTu = self.backend.matmul(self.backend.transpose(K), u_new.reshape((n, 1))).reshape(
                 (m,)
             )
-            v_new = nu / self.backend.maximum(KTu, self.backend.array(config.stability_epsilon))
+            v_new = nu / self.backend.maximum(KTu, self.backend.array(stability_epsilon))
             Kv_new = self.backend.matmul(K, v_new.reshape((m, 1))).reshape((n,))
             row_marginal = u_new * Kv_new
             col_marginal = v_new * KTu
@@ -405,7 +444,7 @@ class SinkhornSolver:
             marginal_error = max(float(self._item(row_error)), float(self._item(col_error)))
             u = u_new
             v = v_new
-            if marginal_error < config.convergence_threshold:
+            if marginal_error < convergence_threshold:
                 converged = True
                 break
 
@@ -426,17 +465,20 @@ class SinkhornSolver:
         cost_matrix: Array,
         mu: Array,
         nu: Array,
-        config: SinkhornSolverConfig,
+        epsilon: float,
+        convergence_threshold: float,
+        stability_epsilon: float,
+        max_iterations: int,
     ) -> SinkhornResult:
         n = int(cost_matrix.shape[0])
         m = int(cost_matrix.shape[1])
         log_mu = self.backend.log(
-            self.backend.maximum(mu, self.backend.array(config.stability_epsilon))
+            self.backend.maximum(mu, self.backend.array(stability_epsilon))
         )
         log_nu = self.backend.log(
-            self.backend.maximum(nu, self.backend.array(config.stability_epsilon))
+            self.backend.maximum(nu, self.backend.array(stability_epsilon))
         )
-        logK = -cost_matrix / config.epsilon
+        logK = -cost_matrix / epsilon
         self.backend.eval(log_mu, log_nu, logK)
 
         f = self.backend.zeros((n,), dtype="float32")
@@ -447,7 +489,7 @@ class SinkhornSolver:
         iterations = 0
         marginal_error = float("inf")
 
-        for i in range(config.max_iterations):
+        for i in range(max_iterations):
             iterations = i + 1
             logK_plus_g = logK + g.reshape((1, m))
             f_new = log_mu - self._logsumexp(logK_plus_g, axis=1)
@@ -471,10 +513,7 @@ class SinkhornSolver:
 
             f = f_new
             g = g_new
-            if (
-                marginal_error < config.convergence_threshold
-                or max_diff < config.convergence_threshold
-            ):
+            if marginal_error < convergence_threshold or max_diff < convergence_threshold:
                 converged = True
                 break
 
@@ -504,8 +543,9 @@ class SinkhornSolver:
         s = source
         t = target
         if normalize:
-            s_norm = self.backend.sqrt(self.backend.sum(s * s, axis=1, keepdims=True) + 1e-8)
-            t_norm = self.backend.sqrt(self.backend.sum(t * t, axis=1, keepdims=True) + 1e-8)
+            div_eps = division_epsilon(self.backend, s)
+            s_norm = self.backend.sqrt(self.backend.sum(s * s, axis=1, keepdims=True) + div_eps)
+            t_norm = self.backend.sqrt(self.backend.sum(t * t, axis=1, keepdims=True) + div_eps)
             s = s / s_norm
             t = t / t_norm
             self.backend.eval(s, t)
@@ -518,8 +558,9 @@ class SinkhornSolver:
         return clamped
 
     def cosine_cost(self, source: Array, target: Array) -> Array:
-        s_norm = self.backend.sqrt(self.backend.sum(source * source, axis=1, keepdims=True) + 1e-8)
-        t_norm = self.backend.sqrt(self.backend.sum(target * target, axis=1, keepdims=True) + 1e-8)
+        div_eps = division_epsilon(self.backend, source)
+        s_norm = self.backend.sqrt(self.backend.sum(source * source, axis=1, keepdims=True) + div_eps)
+        t_norm = self.backend.sqrt(self.backend.sum(target * target, axis=1, keepdims=True) + div_eps)
         s = source / s_norm
         t = target / t_norm
         similarity = self.backend.matmul(s, self.backend.transpose(t))

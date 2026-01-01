@@ -766,24 +766,9 @@ class KnowledgeTransferReport:
         passed = sum(1 for r in self.probe_results if r.passed)
         return passed / len(self.probe_results)
 
-    @property
-    def status(self) -> str:
-        """Status classification based on overall retention.
-
-        Returns:
-            - "excellent": retention >= 95%
-            - "acceptable": retention >= 80%
-            - "degraded": 60% <= retention < 80%
-            - "failed": retention < 60%
-        """
-        retention = self.overall_retention
-        if retention >= 0.95:
-            return "excellent"
-        if retention >= 0.80:
-            return "acceptable"
-        if retention >= 0.60:
-            return "degraded"
-        return "failed"
+    # NOTE: The status property was removed to comply with "no vibes" principle.
+    # Validation returns raw measurements (overall_retention); callers decide interpretation.
+    # Removed thresholds: 0.95 (excellent), 0.80 (acceptable), 0.60 (degraded).
 
     compositional_consistency: float = 0.0
     """Consistency of semantic compositions (from CompositionalProbes)."""

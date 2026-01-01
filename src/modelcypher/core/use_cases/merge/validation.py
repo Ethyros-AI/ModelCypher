@@ -240,9 +240,10 @@ class MergeValidationService:
                 logger.warning(f"Task probes failed: {e}")
                 result.warnings.append(f"Task probes failed: {e}")
 
-        # 4. Geometric diagnosis (if enabled and degradation detected)
-        degraded = self._is_degraded(result)
-        if config.geometric_diagnosis and degraded and source_model and target_model:
+        # 4. Geometric diagnosis (if enabled)
+        # Run geometric diagnosis unconditionally when enabled - return raw measurements
+        # and let the caller decide what constitutes "degradation"
+        if config.geometric_diagnosis and source_model and target_model:
             try:
                 result.geometric_diagnosis = self.diagnose_geometry(
                     merged_model, source_model, target_model
@@ -502,42 +503,6 @@ class MergeValidationService:
 
         return max(0.0, min(1.0, score))
 
-    def _derive_thresholds(
-        self, result: MergeValidationResult
-    ) -> tuple[float, float, float, float]:
-        """Derive thresholds from source baseline. Geometry determines everything.
-
-        Returns:
-            (perplexity_threshold, perplexity_delta_threshold,
-             coherence_threshold, probe_pass_threshold)
-        """
-        if result.source_perplexity is None:
-            raise ValueError(
-                "Source perplexity required to derive thresholds. "
-                "Run validation on source model first."
-            )
-
-        # All thresholds derived from source baseline
-        ppl_thresh = result.source_perplexity * 1.5  # 50% degradation
-        ppl_delta_thresh = result.source_perplexity * 0.25  # 25% delta
-        coh_thresh = 0.5 * result.source_perplexity / 10.0  # Scales with source complexity
-        probe_thresh = 0.9  # 90% of probes must pass - geometry determines pass/fail
-
-        return ppl_thresh, ppl_delta_thresh, coh_thresh, probe_thresh
-
-    def _is_degraded(self, result: MergeValidationResult) -> bool:
-        """Check if model appears degraded based on initial metrics."""
-        if result.source_perplexity is None:
-            return False  # Can't determine without baseline
-
-        ppl_thresh, ppl_delta_thresh, coh_thresh, probe_thresh = self._derive_thresholds(result)
-
-        if result.perplexity is not None and result.perplexity > ppl_thresh:
-            return True
-        if result.perplexity_delta is not None and result.perplexity_delta > ppl_delta_thresh:
-            return True
-        if result.coherence_score is not None and result.coherence_score < coh_thresh:
-            return True
-        if result.task_probe_pass_rate is not None and result.task_probe_pass_rate < probe_thresh:
-            return True
-        return False
+    # NOTE: _derive_thresholds and _is_degraded were removed.
+    # Validation returns raw measurements; callers decide what constitutes degradation.
+    # Hardcoded thresholds (1.5x, 0.25x, 0.9) violated the "no vibes" principle.

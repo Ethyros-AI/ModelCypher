@@ -23,6 +23,7 @@ from typing import Any
 
 from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol, enum_key
 from modelcypher.core.domain.geometry.atlas_registry import get_atlas_probes
+from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
 
 __all__ = [
     # Configuration
@@ -704,11 +705,13 @@ class ManifoldStitcher:
             t_members = b.array([target_vecs[i][:shared_dim] for i in indices])
 
             # Compute cluster centroids using Fréchet mean (Riemannian center of mass)
+            # Use regularization_epsilon (sqrt(machine_eps)) for convergence tolerance
+            tol = regularization_epsilon(b, s_members)
             s_result = riemannian.frechet_mean(
-                s_members, max_iterations=20, tolerance=1e-5
+                s_members, max_iterations=20, tolerance=tol
             )
             t_result = riemannian.frechet_mean(
-                t_members, max_iterations=20, tolerance=1e-5
+                t_members, max_iterations=20, tolerance=tol
             )
             s_mean = s_result.mean
             t_mean = t_result.mean
@@ -887,7 +890,7 @@ class ManifoldStitcher:
                     result = riemannian.frechet_mean(
                         cluster_pts,
                         max_iterations=20,
-                        tolerance=1e-5,
+                        tolerance=regularization_epsilon(b, cluster_pts),
                     )
                     new_centroids.append(b.to_numpy(result.mean))
                 else:
@@ -901,19 +904,16 @@ class ManifoldStitcher:
             # Uses geodesic distance from current representative as primary signal
             for ci in range(k):
                 old_rep = centroid_reps[ci]
-                cent_pt = centroids_np[ci]
 
-                # Find nearest data point using geodesic proxy from old representative
+                # Find nearest data point using pure geodesic distance from old representative
+                # Euclidean mixing is incorrect on curved manifolds
                 best_idx = old_rep
                 best_dist = float("inf")
                 for pi in range(n):
-                    pt = pts_np[pi]
-                    euc_sq = sum((pt[d] - cent_pt[d]) ** 2 for d in range(d_dim))
-                    # Geodesic from old rep to candidate + small Euclidean to new centroid
+                    # Pure geodesic distance to old representative (data point)
                     geo_to_old_rep = geo_np[pi, old_rep]
-                    total_dist = geo_to_old_rep + 0.1 * (euc_sq**0.5)
-                    if total_dist < best_dist:
-                        best_dist = total_dist
+                    if geo_to_old_rep < best_dist:
+                        best_dist = geo_to_old_rep
                         best_idx = pi
 
                 centroid_reps[ci] = best_idx

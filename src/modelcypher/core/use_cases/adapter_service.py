@@ -28,6 +28,10 @@ from safetensors import safe_open
 from safetensors.numpy import save_file
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +139,8 @@ class AdapterService:
             # Convert to backend array, compute, and convert back to scalar
             tensor_backend = backend.array(tensor)
             abs_tensor = backend.abs(tensor_backend)
-            is_zero = abs_tensor < 1e-8
+            # Use machine_epsilon for zero check
+            is_zero = abs_tensor < machine_epsilon(backend, tensor_backend)
             zero_count_tensor = backend.sum(is_zero)
             backend.eval(zero_count_tensor)
             zero_count += int(backend.to_numpy(zero_count_tensor))
@@ -418,10 +423,20 @@ class AdapterService:
             )
 
         # Compute weights based on inverse norm (smaller norm = more specialized)
-        total_inv_norm = sum(1.0 / (s["total_norm"] + 1e-8) for s in adapter_stats)
+        # Derive division epsilon from the tensors we processed
+        sample_tensor = None
+        for weights_dict in all_weights:
+            for key in common_keys:
+                sample_tensor = backend.array(weights_dict[key])
+                break
+            if sample_tensor is not None:
+                break
+        div_eps = division_epsilon(backend, sample_tensor) if sample_tensor is not None else 1e-4
+
+        total_inv_norm = sum(1.0 / (s["total_norm"] + div_eps) for s in adapter_stats)
         weights = []
         for s in adapter_stats:
-            inv_norm = 1.0 / (s["total_norm"] + 1e-8)
+            inv_norm = 1.0 / (s["total_norm"] + div_eps)
             weight = inv_norm / total_inv_norm
             weights.append(round(weight, 4))
 

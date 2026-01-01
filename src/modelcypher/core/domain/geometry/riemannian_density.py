@@ -37,6 +37,11 @@ from enum import Enum
 from typing import TYPE_CHECKING, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+    tiny_value,
+)
 
 if TYPE_CHECKING:
     from modelcypher.core.ports.backend import Array, Backend
@@ -116,6 +121,9 @@ def _find_k_elbow(activations: "Array", backend: "Backend") -> int:
     # where f'(i) ≈ (f(i+1) - f(i-1)) / 2
     # and f''(i) ≈ f(i+1) - 2*f(i) + f(i-1)
 
+    # Derive tolerance from input array dtype
+    div_eps = division_epsilon(backend, activations)
+
     curvatures = []
     for i in range(1, len(mean_k_dists) - 1):
         y_prev = mean_k_dists[i - 1]
@@ -130,7 +138,7 @@ def _find_k_elbow(activations: "Array", backend: "Backend") -> int:
 
         # Curvature
         denom = (1 + dy * dy) ** 1.5
-        if denom > 1e-10:
+        if denom > div_eps:
             curv = abs(d2y) / denom
         else:
             curv = 0.0
@@ -293,8 +301,10 @@ class ConceptVolume:
         eigenvalues = backend.eigh(self.covariance)[0]
         backend.eval(eigenvalues)
         eig_np = backend.to_numpy(eigenvalues)
-        # Geometric mean via log: exp(mean(log(max(eig, 1e-10))))
-        log_eigs = [math.log(max(e, 1e-10)) for e in eig_np]
+        # Geometric mean via log: exp(mean(log(max(eig, tiny))))
+        # Use tiny_value to prevent log(0) while maintaining precision
+        tiny = tiny_value(backend, eigenvalues)
+        log_eigs = [math.log(max(e, tiny)) for e in eig_np]
         mean_log = sum(log_eigs) / len(log_eigs)
         return math.exp(mean_log) ** 0.5
 
@@ -352,7 +362,8 @@ class ConceptVolume:
         euc_dist = math.sqrt(float(backend.to_numpy(euc_dist_sq)))
 
         # Scale factor: geodesic / euclidean
-        if euc_dist < 1e-10:
+        # Use machine_epsilon for near-zero check
+        if euc_dist < machine_epsilon(backend, diff):
             return diff  # Point is at centroid
         scale = geo_dist_float / euc_dist
 
@@ -546,8 +557,8 @@ class ConceptVolume:
             backend.eval(euc_dist_sq)
             euc_dist = math.sqrt(float(backend.to_numpy(euc_dist_sq)))
 
-            # Scale factor
-            if euc_dist < 1e-10:
+            # Scale factor (use machine_epsilon for near-zero check)
+            if euc_dist < machine_epsilon(backend, diff_i):
                 scales.append(1.0)
             else:
                 scales.append(geo_dist_float / euc_dist)
@@ -828,7 +839,7 @@ class RiemannianDensityEstimator:
         diff_norm = backend.norm(diff)
         backend.eval(diff_norm)
         centroid_diff = float(backend.to_numpy(diff_norm))
-        if centroid_diff < 1e-10:
+        if centroid_diff < machine_epsilon(backend, diff):
             centroid_distance = 0.0
         else:
             centroid_a_2d = backend.reshape(volume_a.centroid, (1, -1))
@@ -1020,8 +1031,9 @@ class RiemannianDensityEstimator:
             eigenvalues, eigenvectors = backend.eigh(metric)
             backend.eval(eigenvalues, eigenvectors)
 
-            # Compute inverse sqrt of eigenvalues
-            inv_sqrt_eigs = 1.0 / backend.sqrt(backend.maximum(eigenvalues, backend.array(1e-10)))
+            # Compute inverse sqrt of eigenvalues (use tiny_value to prevent sqrt(0))
+            tiny = tiny_value(backend, eigenvalues)
+            inv_sqrt_eigs = 1.0 / backend.sqrt(backend.maximum(eigenvalues, backend.array(tiny)))
             inv_sqrt_metric = backend.matmul(
                 eigenvectors,
                 backend.matmul(backend.diag(inv_sqrt_eigs), backend.transpose(eigenvectors)),
@@ -1046,7 +1058,8 @@ class RiemannianDensityEstimator:
         backend = get_default_backend()
         K = local_curvature.mean_sectional
 
-        if abs(K) < 1e-10:
+        # Use machine_epsilon for near-zero curvature check
+        if abs(K) < machine_epsilon(backend, covariance):
             return covariance
 
         # Curvature correction factor
@@ -1238,8 +1251,10 @@ class RiemannianDensityEstimator:
         K_a = volume_a.local_curvature.mean_sectional
         K_b = volume_b.local_curvature.mean_sectional
 
-        # Normalized divergence
-        return abs(K_a - K_b) / (abs(K_a) + abs(K_b) + 1e-10)
+        # Normalized divergence (use division_epsilon for safe division)
+        backend = get_default_backend()
+        div_eps = division_epsilon(backend, volume_a.centroid)
+        return abs(K_a - K_b) / (abs(K_a) + abs(K_b) + div_eps)
 
     def _subspace_alignment(
         self,
