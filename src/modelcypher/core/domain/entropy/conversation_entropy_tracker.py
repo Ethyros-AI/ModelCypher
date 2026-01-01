@@ -88,12 +88,12 @@ class ConversationEntropyConfiguration:
         cls,
         delta_samples: list[float],
         *,
-        oscillation_percentile: float = 0.90,
-        drift_percentile: float = 0.95,
-        spike_percentile: float = 0.85,
-        oscillation_window_size: int = 5,
-        minimum_turns_for_analysis: int = 3,
-        recency_decay: float = 0.9,
+        oscillation_percentile: float,
+        drift_percentile: float,
+        spike_percentile: float,
+        oscillation_window_size: int,
+        minimum_turns_for_analysis: int,
+        recency_decay: float,
     ) -> "ConversationEntropyConfiguration":
         """Derive thresholds from baseline entropy delta measurements.
 
@@ -116,33 +116,33 @@ class ConversationEntropyConfiguration:
             if len(window) >= 2:
                 window_stds.append(statistics.stdev(window))
 
-        if window_stds:
-            sorted_stds = sorted(window_stds)
-            osc_idx = int(oscillation_percentile * (len(sorted_stds) - 1))
-            oscillation_threshold = sorted_stds[osc_idx]
-        else:
-            oscillation_threshold = statistics.stdev(delta_samples) if len(delta_samples) > 1 else 0.1
+        if not window_stds:
+            raise ValueError("Need enough delta samples to compute oscillation window statistics")
+
+        sorted_stds = sorted(window_stds)
+        osc_idx = int(oscillation_percentile * (len(sorted_stds) - 1))
+        oscillation_threshold = sorted_stds[osc_idx]
 
         # Compute drift threshold from delta magnitudes
         abs_deltas = [abs(d) for d in delta_samples]
         sorted_abs = sorted(abs_deltas)
         drift_idx = int(drift_percentile * (len(sorted_abs) - 1))
-        drift_threshold = sorted_abs[drift_idx] * 3.0  # 3x the baseline for significant drift
+        drift_threshold = sorted_abs[drift_idx]
 
         # Compute spike threshold from consecutive differences
         diffs = [abs(delta_samples[i] - delta_samples[i - 1]) for i in range(1, len(delta_samples))]
-        if diffs:
-            sorted_diffs = sorted(diffs)
-            spike_idx = int(spike_percentile * (len(sorted_diffs) - 1))
-            turn_spike_threshold = sorted_diffs[spike_idx]
-        else:
-            turn_spike_threshold = oscillation_threshold
+        if not diffs:
+            raise ValueError("Need at least two delta samples to compute spike threshold")
+
+        sorted_diffs = sorted(diffs)
+        spike_idx = int(spike_percentile * (len(sorted_diffs) - 1))
+        turn_spike_threshold = sorted_diffs[spike_idx]
 
         return cls(
             oscillation_window_size=oscillation_window_size,
             minimum_turns_for_analysis=minimum_turns_for_analysis,
             oscillation_threshold=oscillation_threshold,
-            drift_threshold=max(drift_threshold, 0.1),  # Ensure non-zero
+            drift_threshold=drift_threshold,
             turn_spike_threshold=turn_spike_threshold,
             recency_decay=recency_decay,
         )
@@ -153,10 +153,10 @@ class ConversationEntropyConfiguration:
         oscillation_threshold: float,
         drift_threshold: float,
         *,
-        turn_spike_threshold: float | None = None,
-        oscillation_window_size: int = 5,
-        minimum_turns_for_analysis: int = 3,
-        recency_decay: float = 0.9,
+        turn_spike_threshold: float,
+        oscillation_window_size: int,
+        minimum_turns_for_analysis: int,
+        recency_decay: float,
     ) -> "ConversationEntropyConfiguration":
         """Create configuration with explicit thresholds.
 
@@ -166,14 +166,14 @@ class ConversationEntropyConfiguration:
         Args:
             oscillation_threshold: Calibrated oscillation amplitude threshold.
             drift_threshold: Calibrated drift threshold.
-            turn_spike_threshold: Spike threshold (defaults to oscillation_threshold).
+            turn_spike_threshold: Spike threshold.
         """
         return cls(
             oscillation_window_size=oscillation_window_size,
             minimum_turns_for_analysis=minimum_turns_for_analysis,
             oscillation_threshold=oscillation_threshold,
             drift_threshold=drift_threshold,
-            turn_spike_threshold=turn_spike_threshold or oscillation_threshold,
+            turn_spike_threshold=turn_spike_threshold,
             recency_decay=recency_decay,
         )
 
@@ -417,11 +417,11 @@ class ConversationEntropyTracker:
         self,
         token_count: int,
         avg_delta: float,
-        max_anomaly_score: float = 0.0,
-        anomaly_count: int = 0,
-        circuit_breaker_tripped: bool = False,
-        security_assessment: str = "nominal",
-        timestamp: datetime | None = None,
+        max_anomaly_score: float,
+        anomaly_count: int,
+        circuit_breaker_tripped: bool,
+        security_assessment: str,
+        timestamp: datetime,
     ) -> ConversationAssessment:
         """Record a completed generation turn and return conversation-level assessment.
 
@@ -437,9 +437,6 @@ class ConversationEntropyTracker:
         Returns:
             Current conversation assessment including manipulation signals.
         """
-        if timestamp is None:
-            timestamp = datetime.now(timezone.utc)
-
         # Initialize conversation if needed
         if self._conversation_start is None:
             self._conversation_start = timestamp
@@ -662,4 +659,3 @@ class ConversationEntropyTracker:
             circuit_breaker_tripped=has_circuit_breaker_trip,
             baseline_oscillation_exceeded=baseline_exceeded,
         )
-

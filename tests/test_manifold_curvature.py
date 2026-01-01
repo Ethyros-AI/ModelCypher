@@ -38,7 +38,6 @@ from modelcypher.core.domain.geometry.manifold_curvature import (
     EdgeCurvature,
     LocalCurvature,
     ManifoldCurvatureProfile,
-    ManifoldHealth,
     NodeRicciCurvature,
     OllivierRicciConfig,
     OllivierRicciCurvature,
@@ -811,22 +810,6 @@ class TestOllivierRicciConfig:
             config.base_alpha = 0.9  # type: ignore
 
 
-class TestManifoldHealth:
-    """Tests for ManifoldHealth enum."""
-
-    def test_health_values(self) -> None:
-        """Should have correct string values."""
-        assert ManifoldHealth.HEALTHY.value == "healthy"
-        assert ManifoldHealth.DEGENERATE.value == "degenerate"
-        assert ManifoldHealth.COLLAPSED.value == "collapsed"
-
-    def test_health_is_string_enum(self) -> None:
-        """Should be usable as string."""
-        health = ManifoldHealth.HEALTHY
-        assert str(health) == "ManifoldHealth.HEALTHY"
-        assert health == "healthy"
-
-
 class TestOllivierRicciCurvature:
     """Tests for OllivierRicciCurvature class."""
 
@@ -906,8 +889,8 @@ class TestOllivierRicciCurvature:
         # (curvatures will be slightly different due to varying alpha)
         assert result_adaptive.mean_edge_curvature != result_fixed.mean_edge_curvature
 
-    def test_health_classification_healthy(self) -> None:
-        """Negative curvature should be classified as healthy."""
+    def test_random_gaussian_has_negative_curvature(self) -> None:
+        """Random high-dimensional Gaussian clouds have negative Ricci curvature."""
         backend = get_default_backend()
         backend.random_seed(111)
 
@@ -921,17 +904,6 @@ class TestOllivierRicciCurvature:
         # For random high-dimensional data, expect negative curvature
         # This is consistent with LLM manifold research
         assert result.mean_edge_curvature < 0.5  # Allow some tolerance
-
-    def test_health_classification_thresholds(self) -> None:
-        """Health thresholds should be correct."""
-        estimator = OllivierRicciCurvature()
-
-        # Test threshold boundaries
-        assert estimator._classify_health(-0.2) == ManifoldHealth.HEALTHY
-        assert estimator._classify_health(-0.1) == ManifoldHealth.DEGENERATE
-        assert estimator._classify_health(0.0) == ManifoldHealth.DEGENERATE
-        assert estimator._classify_health(0.1) == ManifoldHealth.DEGENERATE
-        assert estimator._classify_health(0.2) == ManifoldHealth.COLLAPSED
 
     def test_symmetrized_graph(self) -> None:
         """Symmetrize option should create undirected edges."""

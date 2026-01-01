@@ -47,7 +47,6 @@ from modelcypher.core.domain.geometry.domain_geometry_baselines import (
     BaselineRepository,
     DomainGeometryBaseline,
     DomainGeometryBaselineExtractor,
-    ManifoldHealthDistribution,
 )
 
 if TYPE_CHECKING:
@@ -86,11 +85,6 @@ def sample_baseline(temp_baseline_dir: Path) -> DomainGeometryBaseline:
         ollivier_ricci_std=0.045,
         ollivier_ricci_min=-0.35,
         ollivier_ricci_max=-0.12,
-        manifold_health_distribution=ManifoldHealthDistribution(
-            healthy=1.0,
-            degenerate=0.0,
-            collapsed=0.0,
-        ),
         domain_metrics={
             "euclidean_consistency": 0.76,
             "gravity_alignment": 0.89,
@@ -120,11 +114,6 @@ def populated_baseline_dir(temp_baseline_dir: Path) -> Path:
             ollivier_ricci_std=0.04,
             ollivier_ricci_min=-0.30,
             ollivier_ricci_max=-0.05,
-            manifold_health_distribution=ManifoldHealthDistribution(
-                healthy=0.9,
-                degenerate=0.08,
-                collapsed=0.02,
-            ),
             domain_metrics={f"{domain}_metric": 0.75},
             intrinsic_dimension_mean=12.0,
             intrinsic_dimension_std=2.0,
@@ -479,9 +468,6 @@ class TestDomainGeometryBaselinesModule:
             ollivier_ricci_std=0.05,
             ollivier_ricci_min=-0.3,
             ollivier_ricci_max=-0.1,
-            manifold_health_distribution=ManifoldHealthDistribution(
-                healthy=0.9, degenerate=0.08, collapsed=0.02
-            ),
             domain_metrics={},
             intrinsic_dimension_mean=10.0,
             intrinsic_dimension_std=1.0,
@@ -593,28 +579,6 @@ class TestDomainGeometryBaselineExtractor:
             assert len(activations[layer_idx].shape) == 2
 
 
-class TestManifoldHealthDistribution:
-    """Tests for ManifoldHealthDistribution dataclass."""
-
-    def test_distribution_to_dict(self):
-        """Distribution converts to dict correctly."""
-        dist = ManifoldHealthDistribution(healthy=0.8, degenerate=0.15, collapsed=0.05)
-        d = dist.to_dict()
-
-        assert d["healthy"] == 0.8
-        assert d["degenerate"] == 0.15
-        assert d["collapsed"] == 0.05
-
-    def test_distribution_from_dict(self):
-        """Distribution creates from dict correctly."""
-        d = {"healthy": 0.9, "degenerate": 0.08, "collapsed": 0.02}
-        dist = ManifoldHealthDistribution.from_dict(d)
-
-        assert dist.healthy == 0.9
-        assert dist.degenerate == 0.08
-        assert dist.collapsed == 0.02
-
-
 class TestDomainGeometryBaseline:
     """Tests for DomainGeometryBaseline dataclass."""
 
@@ -629,9 +593,6 @@ class TestDomainGeometryBaseline:
             ollivier_ricci_std=0.05,
             ollivier_ricci_min=-0.3,
             ollivier_ricci_max=-0.1,
-            manifold_health_distribution=ManifoldHealthDistribution(
-                healthy=0.9, degenerate=0.08, collapsed=0.02
-            ),
             domain_metrics={"metric1": 0.5},
             intrinsic_dimension_mean=10.0,
             intrinsic_dimension_std=1.0,
@@ -644,7 +605,6 @@ class TestDomainGeometryBaseline:
         assert d["domain"] == "spatial"
         assert d["model_family"] == "qwen"
         assert d["ollivier_ricci_mean"] == -0.2
-        assert d["manifold_health_distribution"]["healthy"] == 0.9
 
     def test_baseline_from_dict(self):
         """Baseline creates from dict correctly."""
@@ -657,7 +617,6 @@ class TestDomainGeometryBaseline:
             "ollivier_ricci_std": 0.04,
             "ollivier_ricci_min": -0.25,
             "ollivier_ricci_max": -0.05,
-            "manifold_health_distribution": {"healthy": 0.85, "degenerate": 0.1, "collapsed": 0.05},
             "domain_metrics": {"social_metric": 0.7},
             "intrinsic_dimension_mean": 11.0,
             "intrinsic_dimension_std": 1.5,
@@ -670,7 +629,6 @@ class TestDomainGeometryBaseline:
         assert baseline.domain == "social"
         assert baseline.model_family == "llama"
         assert baseline.ollivier_ricci_mean == -0.15
-        assert baseline.manifold_health_distribution.healthy == 0.85
 
     def test_baseline_save_and_load(self, tmp_path: Path):
         """Baseline can save and load from file."""
@@ -683,9 +641,6 @@ class TestDomainGeometryBaseline:
             ollivier_ricci_std=0.06,
             ollivier_ricci_min=-0.28,
             ollivier_ricci_max=-0.08,
-            manifold_health_distribution=ManifoldHealthDistribution(
-                healthy=0.88, degenerate=0.09, collapsed=0.03
-            ),
             domain_metrics={"temporal_metric": 0.65},
             intrinsic_dimension_mean=9.5,
             intrinsic_dimension_std=1.2,
@@ -780,9 +735,6 @@ class TestBaselineIntegration:
             ollivier_ricci_std=0.04,
             ollivier_ricci_min=-0.25,
             ollivier_ricci_max=-0.09,
-            manifold_health_distribution=ManifoldHealthDistribution(
-                healthy=0.87, degenerate=0.10, collapsed=0.03
-            ),
             domain_metrics={"moral_metric": 0.72},
             intrinsic_dimension_mean=11.0,
             intrinsic_dimension_std=1.8,
@@ -802,7 +754,6 @@ class TestBaselineIntegration:
         assert loaded.domain == original.domain
         assert loaded.model_family == original.model_family
         assert loaded.ollivier_ricci_mean == original.ollivier_ricci_mean
-        assert loaded.manifold_health_distribution.healthy == original.manifold_health_distribution.healthy
 
 
 # =============================================================================

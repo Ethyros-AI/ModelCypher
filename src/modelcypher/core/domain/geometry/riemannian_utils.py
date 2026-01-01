@@ -250,6 +250,15 @@ class RiemannianGeometry:
         points = backend.array(points)
         backend.eval(points)
 
+        # Validate input points for NaN
+        points_np = backend.to_numpy(points)
+        nan_count = sum(1 for row in points_np for v in row if math.isnan(float(v)))
+        if nan_count > 0:
+            raise ValueError(
+                f"Input points contain {nan_count} NaN values. "
+                f"This indicates corrupted activations from the model."
+            )
+
         n = int(points.shape[0])
         d = int(points.shape[1])
 
@@ -556,6 +565,22 @@ class RiemannianGeometry:
         euclidean_dist = self._euclidean_distance_matrix(points)
         backend.eval(euclidean_dist)
 
+        # Diagnostic: check euclidean distance matrix for NaN
+        euc_np = backend.to_numpy(euclidean_dist)
+        euc_nan_count = sum(1 for row in euc_np for v in row if math.isnan(float(v)))
+        if euc_nan_count > 0:
+            # Find which points have NaN
+            points_np = backend.to_numpy(points)
+            nan_rows = []
+            for i, row in enumerate(points_np):
+                row_nan = sum(1 for v in row if math.isnan(float(v)))
+                if row_nan > 0:
+                    nan_rows.append((i, row_nan))
+            logger.warning(
+                f"Euclidean distance matrix has {euc_nan_count} NaN values! "
+                f"Points shape: {points.shape}, NaN rows: {nan_rows[:5]}..."
+            )
+
         # Build k-NN adjacency and run Floyd-Warshall on backend (no scipy)
         # Use a reasonable sentinel value that's:
         # - Large enough to clearly indicate "no direct edge" in the k-NN graph
@@ -591,6 +616,16 @@ class RiemannianGeometry:
         adj = backend.minimum(adj, backend.transpose(adj))
         backend.eval(adj)
 
+        # Diagnostic: check adjacency matrix construction
+        adj_np = backend.to_numpy(adj)
+        edge_count = sum(1 for row in adj_np for v in row if math.isfinite(float(v)) and v < inf_val * 0.9)
+        inf_count_adj = sum(1 for row in adj_np for v in row if v >= inf_val * 0.9)
+        nan_count_adj = sum(1 for row in adj_np for v in row if math.isnan(float(v)))
+        logger.warning(
+            f"Adjacency matrix: n={n}, k={k_neighbors}, "
+            f"edges={edge_count}, inf_entries={inf_count_adj}, nan_entries={nan_count_adj}"
+        )
+
         # Floyd-Warshall on backend: dist[i,j] = min(dist[i,j], dist[i,k] + dist[k,j])
         # Vectorized per iteration of k
         geo_dist_arr = adj
@@ -608,6 +643,15 @@ class RiemannianGeometry:
                 backend.eval(geo_dist_arr)
 
         backend.eval(geo_dist_arr)
+
+        # Diagnostic: check geodesic matrix after Floyd-Warshall
+        geo_fw_np = backend.to_numpy(geo_dist_arr)
+        fw_finite = sum(1 for row in geo_fw_np for v in row if math.isfinite(float(v)) and v < inf_val * 0.9)
+        fw_inf = sum(1 for row in geo_fw_np for v in row if v >= inf_val * 0.9)
+        fw_nan = sum(1 for row in geo_fw_np for v in row if math.isnan(float(v)))
+        logger.warning(
+            f"After Floyd-Warshall: finite={fw_finite}, inf={fw_inf}, nan={fw_nan}"
+        )
 
         # Convert to numpy for connectivity check
         # Use .copy() because JAX/MLX arrays are read-only when converted to numpy
@@ -627,8 +671,6 @@ class RiemannianGeometry:
         # Check connectivity - inf values represent genuinely infinite geodesic distance
         # between disconnected manifold components. No fallback to Euclidean - this is
         # real structural information about the manifold.
-        import math
-
         inf_count = 0
         for i in range(n):
             for j in range(n):
@@ -637,9 +679,6 @@ class RiemannianGeometry:
         connected = inf_count == 0
 
         if not connected:
-            import logging
-
-            logger = logging.getLogger(__name__)
             n_disconnected = inf_count // 2  # symmetric, so divide by 2
             logger.debug(
                 f"k-NN graph has {n_disconnected} disconnected pairs "
@@ -716,8 +755,6 @@ class RiemannianGeometry:
         center_euc = euc_np[center_idx, :]
 
         # Sort by Euclidean distance and take k nearest
-        import math
-
         # argsort manually
         sorted_pairs = sorted(enumerate(center_euc), key=lambda x: x[1])
         sorted_idx = [p[0] for p in sorted_pairs]

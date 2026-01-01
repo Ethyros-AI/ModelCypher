@@ -41,7 +41,7 @@ from typing import TYPE_CHECKING, Awaitable, Callable
 from uuid import UUID, uuid4
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.entropy.entropy_tracker import LogitEntropyCalculator
+from modelcypher.core.domain.entropy.logit_entropy_calculator import LogitEntropyCalculator
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -72,11 +72,11 @@ class EntropyDeltaTrackerConfig:
         cls,
         anomaly_score_samples: list[float],
         *,
-        alert_percentile: float = 0.90,
-        consecutive_count: int = 3,
-        top_k: int = 10,
-        compute_variance: bool = True,
-        source: str = "EntropyDeltaTracker",
+        alert_percentile: float,
+        consecutive_count: int,
+        top_k: int | None,
+        compute_variance: bool,
+        source: str,
     ) -> "EntropyDeltaTrackerConfig":
         """Derive thresholds from baseline anomaly score distribution.
 
@@ -486,4 +486,3 @@ class EntropyDeltaTracker:
     def correlation_id(self) -> UUID | None:
         """Current session correlation ID."""
         return self._correlation_id
-

@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Domain Geometry Baselines: Empirical validation of LLM representation health.
+"""Domain Geometry Baselines: Empirical curvature profiles for LLM representations.
 
 This module provides tools for extracting and storing geometry baselines from
 reference LLMs across four domain geometries:
@@ -24,10 +24,9 @@ reference LLMs across four domain geometries:
 - Temporal: Time direction, duration, causality structure
 - Moral: Valence axis, agency, scope of ethical reasoning
 
-Key insight from SOTA research (NeurIPS 2024, Nature 2024):
-- Healthy LLM representations exhibit negative Ollivier-Ricci curvature (hyperbolic)
-- Positive curvature signals representation collapse
-- Baselines enable validation of model health before/after merging, fine-tuning
+The baselines capture raw Ollivier-Ricci curvature statistics per layer.
+Compare current model curvature against baselines to detect drift or
+changes from fine-tuning, merging, etc.
 
 References:
 - arXiv:2501.00919 (NeurIPS 2024): "Geometry matters: ORC reveals neural structure"
@@ -63,24 +62,6 @@ class DomainType(str, Enum):
     MORAL = "moral"
 
 
-@dataclass
-class ManifoldHealthDistribution:
-    """Distribution of manifold health classifications across layers."""
-
-    healthy: float = 0.0  # Fraction of layers classified as healthy
-    degenerate: float = 0.0  # Fraction of layers classified as degenerate
-    collapsed: float = 0.0  # Fraction of layers classified as collapsed
-
-    def to_dict(self) -> dict[str, float]:
-        return {"healthy": self.healthy, "degenerate": self.degenerate, "collapsed": self.collapsed}
-
-    @classmethod
-    def from_dict(cls, d: dict[str, float]) -> "ManifoldHealthDistribution":
-        return cls(
-            healthy=d.get("healthy", 0.0),
-            degenerate=d.get("degenerate", 0.0),
-            collapsed=d.get("collapsed", 0.0),
-        )
 
 
 @dataclass
@@ -98,11 +79,11 @@ class DomainGeometryBaseline:
     model_path: str  # Path to the model (for provenance)
 
     # Ollivier-Ricci curvature statistics (aggregated across layers)
+    # Raw values - compare against baselines for interpretation
     ollivier_ricci_mean: float
     ollivier_ricci_std: float
     ollivier_ricci_min: float
     ollivier_ricci_max: float
-    manifold_health_distribution: ManifoldHealthDistribution
 
     # Domain-specific metrics (varies by domain)
     # Spatial: euclidean_consistency, gravity_alignment, volumetric_density
@@ -134,7 +115,6 @@ class DomainGeometryBaseline:
             "ollivier_ricci_std": self.ollivier_ricci_std,
             "ollivier_ricci_min": self.ollivier_ricci_min,
             "ollivier_ricci_max": self.ollivier_ricci_max,
-            "manifold_health_distribution": self.manifold_health_distribution.to_dict(),
             "domain_metrics": self.domain_metrics,
             "intrinsic_dimension_mean": self.intrinsic_dimension_mean,
             "intrinsic_dimension_std": self.intrinsic_dimension_std,
@@ -156,9 +136,6 @@ class DomainGeometryBaseline:
             ollivier_ricci_std=d["ollivier_ricci_std"],
             ollivier_ricci_min=d["ollivier_ricci_min"],
             ollivier_ricci_max=d["ollivier_ricci_max"],
-            manifold_health_distribution=ManifoldHealthDistribution.from_dict(
-                d.get("manifold_health_distribution", {})
-            ),
             domain_metrics=d.get("domain_metrics", {}),
             intrinsic_dimension_mean=d.get("intrinsic_dimension_mean", 0.0),
             intrinsic_dimension_std=d.get("intrinsic_dimension_std", 0.0),
@@ -304,7 +281,6 @@ class DomainGeometryBaselineExtractor:
         )
 
         ricci_values = []
-        health_counts = {"healthy": 0, "degenerate": 0, "collapsed": 0}
         import math
 
         for layer_idx, activations in activations_by_layer.items():
@@ -316,7 +292,6 @@ class DomainGeometryBaselineExtractor:
                     logger.debug(f"Layer {layer_idx} returned NaN curvature, skipping")
                     continue
                 ricci_values.append(curvature)
-                health_counts[result.health.value] += 1
             except Exception as e:
                 logger.warning(f"Failed to compute ORC for layer {layer_idx}: {e}")
                 continue
@@ -327,11 +302,6 @@ class DomainGeometryBaselineExtractor:
 
         # Compute statistics (NaN values already filtered)
         total_layers = len(ricci_values)
-        health_dist = ManifoldHealthDistribution(
-            healthy=health_counts["healthy"] / total_layers,
-            degenerate=health_counts["degenerate"] / total_layers,
-            collapsed=health_counts["collapsed"] / total_layers,
-        )
 
         # Run domain-specific analyzer
         domain_metrics = self._run_domain_analyzer(domain, activations_by_layer)
@@ -355,7 +325,6 @@ class DomainGeometryBaselineExtractor:
             ollivier_ricci_std=float(b.std(ricci_arr)),
             ollivier_ricci_min=float(b.min(ricci_arr)),
             ollivier_ricci_max=float(b.max(ricci_arr)),
-            manifold_health_distribution=health_dist,
             domain_metrics=domain_metrics,
             intrinsic_dimension_mean=id_mean,
             intrinsic_dimension_std=id_std,
@@ -752,7 +721,6 @@ class DomainGeometryBaselineExtractor:
             ollivier_ricci_std=0.0,
             ollivier_ricci_min=0.0,
             ollivier_ricci_max=0.0,
-            manifold_health_distribution=ManifoldHealthDistribution(),
             domain_metrics={},
             extraction_date=datetime.now().isoformat(),
             extraction_config={"error": "extraction_failed"},

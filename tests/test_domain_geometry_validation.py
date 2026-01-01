@@ -45,13 +45,11 @@ from modelcypher.core.domain.geometry.domain_geometry_baselines import (
     DomainGeometryBaseline,
     DomainGeometryBaselineExtractor,
     DomainType,
-    ManifoldHealthDistribution,
 )
 from modelcypher.core.domain.geometry.domain_geometry_validator import (
     DomainGeometryValidator,
 )
 from modelcypher.core.domain.geometry.manifold_curvature import (
-    ManifoldHealth,
     OllivierRicciCurvature,
 )
 
@@ -72,7 +70,7 @@ def backend() -> "Backend":
 
 @pytest.fixture
 def sample_healthy_baseline() -> DomainGeometryBaseline:
-    """Create a sample healthy baseline for testing."""
+    """Create a sample baseline with negative curvature for testing."""
     return DomainGeometryBaseline(
         domain="spatial",
         model_family="qwen",
@@ -82,11 +80,6 @@ def sample_healthy_baseline() -> DomainGeometryBaseline:
         ollivier_ricci_std=0.08,
         ollivier_ricci_min=-0.35,
         ollivier_ricci_max=-0.12,
-        manifold_health_distribution=ManifoldHealthDistribution(
-            healthy=0.82,
-            degenerate=0.15,
-            collapsed=0.03,
-        ),
         domain_metrics={
             "euclidean_consistency": 0.76,
             "gravity_alignment": 0.89,
@@ -108,16 +101,11 @@ def sample_collapsed_baseline() -> DomainGeometryBaseline:
         domain="spatial",
         model_family="test",
         model_size="test",
-        model_path="/test/collapsed",
-        ollivier_ricci_mean=0.45,  # Positive = collapsed
+        model_path="/test/positive-curvature",
+        ollivier_ricci_mean=0.45,  # Positive curvature
         ollivier_ricci_std=0.12,
         ollivier_ricci_min=0.25,
         ollivier_ricci_max=0.65,
-        manifold_health_distribution=ManifoldHealthDistribution(
-            healthy=0.08,
-            degenerate=0.12,
-            collapsed=0.80,
-        ),
         domain_metrics={
             "euclidean_consistency": 0.21,
             "gravity_alignment": 0.15,
@@ -159,7 +147,6 @@ class TestDomainGeometryBaseline:
         assert b.model_family == "qwen"
         assert b.model_size == "0.5B"
         assert b.ollivier_ricci_mean == pytest.approx(-0.23)
-        assert b.manifold_health_distribution.healthy == pytest.approx(0.82)
 
     def test_baseline_serialization_roundtrip(
         self, sample_healthy_baseline: DomainGeometryBaseline
@@ -195,26 +182,6 @@ class TestDomainGeometryBaseline:
             )
         finally:
             path.unlink()
-
-
-class TestManifoldHealthDistribution:
-    """Tests for ManifoldHealthDistribution."""
-
-    def test_distribution_sums_to_one(self):
-        """Health distribution fractions should sum to approximately 1.0."""
-        dist = ManifoldHealthDistribution(healthy=0.7, degenerate=0.2, collapsed=0.1)
-        total = dist.healthy + dist.degenerate + dist.collapsed
-        assert total == pytest.approx(1.0)
-
-    def test_distribution_serialization(self):
-        """Distribution survives dict conversion."""
-        dist = ManifoldHealthDistribution(healthy=0.8, degenerate=0.15, collapsed=0.05)
-        data = dist.to_dict()
-        restored = ManifoldHealthDistribution.from_dict(data)
-
-        assert restored.healthy == dist.healthy
-        assert restored.degenerate == dist.degenerate
-        assert restored.collapsed == dist.collapsed
 
 
 # =============================================================================
@@ -310,34 +277,6 @@ class TestDomainGeometryBaselineExtractor:
 # =============================================================================
 
 
-class TestCurvatureInterpretation:
-    """Tests verifying curvature interpretation matches SOTA research."""
-
-    def test_health_classification_thresholds(self):
-        """Verify ManifoldHealth thresholds match SOTA expectations."""
-        # Per NeurIPS 2024 and Nature 2024:
-        # - Healthy LLMs exhibit hyperbolic (negative) curvature
-        # - Curvature < -0.1 is healthy
-        # - Curvature > 0.1 indicates collapse
-
-        assert ManifoldHealth.HEALTHY.value == "healthy"
-        assert ManifoldHealth.DEGENERATE.value == "degenerate"
-        assert ManifoldHealth.COLLAPSED.value == "collapsed"
-
-    def test_ollivier_ricci_health_classification(self, backend: "Backend"):
-        """OllivierRicciCurvature classifies health correctly."""
-        orc = OllivierRicciCurvature(backend=backend)
-
-        # Test the _classify_health method
-        assert orc._classify_health(-0.25) == ManifoldHealth.HEALTHY
-        assert orc._classify_health(-0.15) == ManifoldHealth.HEALTHY
-        assert orc._classify_health(-0.05) == ManifoldHealth.DEGENERATE
-        assert orc._classify_health(0.0) == ManifoldHealth.DEGENERATE
-        assert orc._classify_health(0.05) == ManifoldHealth.DEGENERATE
-        assert orc._classify_health(0.15) == ManifoldHealth.COLLAPSED
-        assert orc._classify_health(0.50) == ManifoldHealth.COLLAPSED
-
-
 # =============================================================================
 # Baseline Sanity Tests
 # =============================================================================
@@ -346,39 +285,21 @@ class TestCurvatureInterpretation:
 class TestBaselineSanity:
     """Tests verifying baseline data meets expected properties."""
 
-    def test_healthy_baseline_has_negative_ricci(
+    def test_baseline_has_negative_ricci(
         self, sample_healthy_baseline: DomainGeometryBaseline
     ):
-        """Healthy baselines should have negative mean Ricci curvature."""
+        """Test baseline has negative mean Ricci curvature."""
         assert sample_healthy_baseline.ollivier_ricci_mean < 0, (
             f"Expected negative Ricci curvature, got "
             f"{sample_healthy_baseline.ollivier_ricci_mean}"
         )
 
-    def test_healthy_baseline_has_majority_healthy_layers(
-        self, sample_healthy_baseline: DomainGeometryBaseline
-    ):
-        """Healthy baselines should have >50% healthy layers."""
-        health_pct = sample_healthy_baseline.manifold_health_distribution.healthy
-        assert health_pct > 0.5, (
-            f"Expected >50% healthy layers, got {health_pct:.0%}"
-        )
-
-    def test_healthy_baseline_has_low_collapsed_fraction(
-        self, sample_healthy_baseline: DomainGeometryBaseline
-    ):
-        """Healthy baselines should have <20% collapsed layers."""
-        collapsed_pct = sample_healthy_baseline.manifold_health_distribution.collapsed
-        assert collapsed_pct < 0.2, (
-            f"Expected <20% collapsed layers, got {collapsed_pct:.0%}"
-        )
-
-    def test_collapsed_baseline_has_positive_ricci(
+    def test_positive_curvature_baseline(
         self, sample_collapsed_baseline: DomainGeometryBaseline
     ):
-        """Collapsed baselines should have positive Ricci curvature."""
+        """Baseline with positive curvature should have positive Ricci."""
         assert sample_collapsed_baseline.ollivier_ricci_mean > 0, (
-            "Collapsed baseline should have positive curvature"
+            "Baseline with positive curvature should have positive mean"
         )
 
     def test_validate_baseline_sanity_rejects_empty(
@@ -397,7 +318,6 @@ class TestBaselineSanity:
             ollivier_ricci_std=0.0,
             ollivier_ricci_min=0.0,
             ollivier_ricci_max=0.0,
-            manifold_health_distribution=sample_collapsed_baseline.manifold_health_distribution,
             domain_metrics={},
             intrinsic_dimension_mean=0.0,
             intrinsic_dimension_std=0.0,
@@ -506,9 +426,6 @@ class TestCrossModelConsistency:
             ollivier_ricci_std=0.07,
             ollivier_ricci_min=-0.32,
             ollivier_ricci_max=-0.11,
-            manifold_health_distribution=ManifoldHealthDistribution(
-                healthy=0.80, degenerate=0.15, collapsed=0.05
-            ),
             domain_metrics={},
             layers_analyzed=24,
         )
@@ -522,9 +439,6 @@ class TestCrossModelConsistency:
             ollivier_ricci_std=0.09,
             ollivier_ricci_min=-0.38,
             ollivier_ricci_max=-0.14,
-            manifold_health_distribution=ManifoldHealthDistribution(
-                healthy=0.85, degenerate=0.12, collapsed=0.03
-            ),
             domain_metrics={},
             layers_analyzed=36,
         )
@@ -549,7 +463,6 @@ class TestCrossModelConsistency:
             ollivier_ricci_std=0.05,
             ollivier_ricci_min=-0.3,
             ollivier_ricci_max=-0.1,
-            manifold_health_distribution=ManifoldHealthDistribution(0.8, 0.15, 0.05),
             domain_metrics={
                 "euclidean_consistency": 0.85,
                 "gravity_alignment": 0.72,
@@ -566,7 +479,6 @@ class TestCrossModelConsistency:
             ollivier_ricci_std=0.05,
             ollivier_ricci_min=-0.3,
             ollivier_ricci_max=-0.1,
-            manifold_health_distribution=ManifoldHealthDistribution(0.8, 0.15, 0.05),
             domain_metrics={
                 "social_manifold_score": 0.78,
                 "power_axis_strength": 0.65,
@@ -629,7 +541,6 @@ class TestIntegrationWithRealActivations:
         # Should have valid structure from real activations
         assert baseline.domain == "spatial"
         assert isinstance(baseline.ollivier_ricci_mean, float)
-        assert isinstance(baseline.manifold_health_distribution, ManifoldHealthDistribution)
         assert baseline.layers_analyzed > 0
 
 

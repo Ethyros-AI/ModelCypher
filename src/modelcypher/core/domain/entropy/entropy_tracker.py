@@ -36,11 +36,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Callable
 
-from modelcypher.core.domain._backend import get_default_backend
 
 # Import calibration-based classes from model_state_classifier
+from modelcypher.core.domain.entropy.logit_entropy_calculator import LogitEntropyCalculator
 from modelcypher.core.domain.entropy.model_state_classifier import (
     CalibratedBaseline,
+    EntropyStateThresholds,
     ModelStateClassifier,
 )
 
@@ -67,6 +68,7 @@ class EntropyTransition:
     from_z_score: float
     to_z_score: float
     token_index: int
+    z_score_change_threshold: float
     timestamp: datetime = field(default_factory=datetime.now)
     reason: str | None = None
 
@@ -87,18 +89,18 @@ class EntropyTransition:
 
     @property
     def is_escalation(self) -> bool:
-        """Z-score increased by more than 1σ (statistically significant)."""
-        return self.z_score_delta > 1.0
+        """Z-score increased by more than configured threshold."""
+        return self.z_score_delta > self.z_score_change_threshold
 
     @property
     def is_recovery(self) -> bool:
-        """Z-score decreased by more than 1σ (statistically significant)."""
-        return self.z_score_delta < -1.0
+        """Z-score decreased by more than configured threshold."""
+        return self.z_score_delta < -self.z_score_change_threshold
 
     @property
     def is_significant(self) -> bool:
-        """Z-score changed by more than 1σ in either direction."""
-        return abs(self.z_score_delta) > 1.0
+        """Z-score changed by more than configured threshold."""
+        return abs(self.z_score_delta) > self.z_score_change_threshold
 
 
 
@@ -241,19 +243,27 @@ class EntropyWindowStatus:
 class EntropyWindow:
     """Sliding window for entropy statistics.
 
-    REQUIRES a calibrated baseline. Uses z-scores for all thresholds.
+    REQUIRES a calibrated baseline and explicit thresholds.
     """
 
-    def __init__(self, baseline: CalibratedBaseline, window_size: int = 20):
+    def __init__(
+        self,
+        baseline: CalibratedBaseline,
+        *,
+        window_size: int,
+        thresholds: EntropyStateThresholds,
+    ):
         """Create entropy window.
 
         Args:
             baseline: Calibrated baseline from EntropyCalibrationService. REQUIRED.
             window_size: Number of samples to track.
+            thresholds: Explicit thresholds for circuit breaker and z-score bands.
         """
         self.window_id = str(uuid.uuid4())
         self.window_size = window_size
         self._baseline = baseline
+        self._thresholds = thresholds
         self.samples: list[tuple[float, float, float, int]] = []  # (entropy, variance, z_score, tokenIndex)
         self.consecutive_high_count = 0
         self.circuit_breaker_tripped = False
@@ -265,18 +275,21 @@ class EntropyWindow:
         if len(self.samples) > self.window_size:
             self.samples.pop(0)
 
-        # Track consecutive high entropy (z > 1.5)
-        if z_score > 1.5:
+        # Track consecutive high entropy (explicit threshold)
+        if z_score > self._thresholds.z_uncertain:
             self.consecutive_high_count += 1
         else:
             self.consecutive_high_count = 0
 
         # Trip circuit breaker on sustained high entropy or extreme outlier
-        if self.consecutive_high_count >= 5 or z_score > 3.0:
+        if (
+            self.consecutive_high_count >= self._thresholds.sustained_high_count
+            or z_score > self._thresholds.z_extreme
+        ):
             self.circuit_breaker_tripped = True
 
         # Also check absolute threshold from calibration
-        if entropy >= self._baseline.percentile_95:
+        if entropy >= self._thresholds.entropy_circuit_breaker:
             self.circuit_breaker_tripped = True
 
         return self.status()
@@ -340,73 +353,6 @@ class EntropyWindow:
 # =============================================================================
 
 
-class LogitEntropyCalculator:
-    """Computes entropy and variance from logits."""
-
-    def __init__(self, top_k: int = 10, backend: "Backend | None" = None) -> None:
-        self.top_k = top_k
-        self._backend = backend or get_default_backend()
-
-    def compute(self, logits: "Array") -> tuple[float, float]:
-        """
-        Compute entropy and top-K variance from logits.
-
-        Args:
-            logits: Array of shape [..., vocab_size]
-
-        Returns:
-            Tuple of (entropy, top_k_variance)
-        """
-        b = self._backend
-
-        # Flatten if needed
-        if logits.ndim > 1:
-            logits = b.reshape(logits, (-1,))
-
-        logits_f32 = b.astype(logits, "float32")
-
-        # Full-vocab entropy: H = -sum(p * log(p))
-        probs = b.softmax(logits_f32)
-        log_probs = b.log(probs + 1e-10)
-        entropy = -b.sum(probs * log_probs)
-        b.eval(entropy)
-
-        # Top-K variance
-        k = min(self.top_k, logits.shape[-1])
-        top_k_logits = b.sort(logits_f32)[-k:]
-        variance = b.var(top_k_logits)
-        b.eval(variance)
-
-        entropy_np = b.to_numpy(entropy)
-        variance_np = b.to_numpy(variance)
-        return float(entropy_np.item()), float(variance_np.item())
-
-    def create_sample(
-        self,
-        entropy: float,
-        variance: float,
-        window_id: str,
-        token_start: int,
-        token_end: int,
-        latency_ms: float,
-        source: str,
-        correlation_id: str | None = None,
-        z_score: float | None = None,
-    ) -> EntropySample:
-        """Create an EntropySample from computed values."""
-        return EntropySample(
-            window_id=window_id,
-            token_start=token_start,
-            token_end=token_end,
-            logit_entropy=entropy,
-            top_k_variance=variance,
-            z_score=z_score,
-            latency_ms=latency_ms,
-            source=source,
-            correlation_id=correlation_id,
-        )
-
-
 # =============================================================================
 # EntropyPatternDetector (baseline-relative)
 # =============================================================================
@@ -419,14 +365,14 @@ class PatternConfig:
     Uses z-scores for thresholds. No magic numbers.
     """
 
-    min_samples: int = 5
-    high_z_score_threshold: float = 1.5
+    min_samples: int
+    high_z_score_threshold: float
     """Z-score threshold for high entropy (1.5σ above mean)."""
 
-    low_variance_threshold: float = 0.2
+    low_variance_threshold: float
     """Variance threshold (scale-independent, kept as is)."""
 
-    sustained_count: int = 3
+    sustained_count: int
 
 
 class EntropyPatternDetector:
@@ -435,7 +381,7 @@ class EntropyPatternDetector:
     REQUIRES a calibrated baseline for z-score computation.
     """
 
-    def __init__(self, baseline: CalibratedBaseline, config: PatternConfig | None = None):
+    def __init__(self, baseline: CalibratedBaseline, config: PatternConfig):
         """Create pattern detector.
 
         Args:
@@ -443,7 +389,7 @@ class EntropyPatternDetector:
             config: Optional pattern configuration.
         """
         self._baseline = baseline
-        self.config = config or PatternConfig()
+        self.config = config
 
     def detect_distress(
         self,
@@ -497,11 +443,14 @@ class EntropyPatternDetector:
 class EntropyTrackerConfig:
     """Configuration for EntropyTracker."""
 
-    top_k: int = 10
-    window_size: int = 20
-    emit_interval: int = 1
-    source: str = "EntropyTracker"
-    z_score_change_threshold: float = 1.0
+    top_k: int | None
+    window_size: int
+    emit_interval: int
+    source: str
+    z_score_change_threshold: float
+    distress_check_interval: int
+    state_thresholds: EntropyStateThresholds
+    pattern_config: PatternConfig
     """Z-score change threshold for significant transitions (1σ)."""
 
 
@@ -526,19 +475,23 @@ class EntropyTracker:
     def __init__(
         self,
         baseline: CalibratedBaseline,
-        config: EntropyTrackerConfig | None = None,
+        config: EntropyTrackerConfig,
     ):
         """Create entropy tracker.
 
         Args:
             baseline: Calibrated baseline from EntropyCalibrationService. REQUIRED.
-            config: Optional tracker configuration.
+            config: Tracker configuration (required).
         """
         self._baseline = baseline
-        self.config = config or EntropyTrackerConfig()
+        self.config = config
         self.calculator = LogitEntropyCalculator(top_k=self.config.top_k)
-        self.classifier = ModelStateClassifier(baseline)
-        self.pattern_detector = EntropyPatternDetector(baseline)
+        self.classifier = ModelStateClassifier(
+            baseline, thresholds=self.config.state_thresholds
+        )
+        self.pattern_detector = EntropyPatternDetector(
+            baseline, config=self.config.pattern_config
+        )
 
         # Session state
         self._window: EntropyWindow | None = None
@@ -570,7 +523,11 @@ class EntropyTracker:
     def start_session(self, correlation_id: str | None = None):
         """Start a new tracking session."""
         self._correlation_id = correlation_id or str(uuid.uuid4())
-        self._window = EntropyWindow(self._baseline, window_size=self.config.window_size)
+        self._window = EntropyWindow(
+            self._baseline,
+            window_size=self.config.window_size,
+            thresholds=self.config.state_thresholds,
+        )
         self._token_count = 0
         self._session_start = datetime.now()
         self._current_entropy = 0.0
@@ -646,16 +603,16 @@ class EntropyTracker:
 
         # Emit periodic samples
         if self._token_count % self.config.emit_interval == 0:
-            sample = self.calculator.create_sample(
-                entropy=entropy,
-                variance=variance,
+            sample = EntropySample(
                 window_id=status.window_id,
                 token_start=status.token_start,
                 token_end=status.token_end,
+                logit_entropy=entropy,
+                top_k_variance=variance,
+                z_score=z_score,
                 latency_ms=latency_ms,
                 source=self.config.source,
                 correlation_id=self._correlation_id,
-                z_score=z_score,
             )
             if self.on_entropy_sample:
                 self.on_entropy_sample(sample)
@@ -678,6 +635,7 @@ class EntropyTracker:
                 from_z_score=self._current_z_score,
                 to_z_score=z_score,
                 token_index=token_index,
+                z_score_change_threshold=self.config.z_score_change_threshold,
             )
             self._transition_history.append(transition)
             if len(self._transition_history) > self.config.window_size:
@@ -691,7 +649,7 @@ class EntropyTracker:
         self._current_z_score = z_score
 
         # Periodic distress check
-        if token_index - self._last_distress_check >= 5:
+        if token_index - self._last_distress_check >= self.config.distress_check_interval:
             self._last_distress_check = token_index
             distress = self.pattern_detector.detect_distress(
                 self._sample_history,
@@ -738,10 +696,3 @@ class EntropyTracker:
     def last_trajectory(self) -> list[tuple[float, float, float, int]]:
         """Trajectory buffer: (entropy, variance, z_score, token_index)."""
         return self._trajectory_buffer.copy()
-
-    @property
-    def requires_caution(self) -> bool:
-        """Check if current z-score warrants caution (> 1.5σ)."""
-        return self._current_z_score > 1.5 or self.classifier.requires_caution(
-            self._current_entropy, self._current_variance
-        )

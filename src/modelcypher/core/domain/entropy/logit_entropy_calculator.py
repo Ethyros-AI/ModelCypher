@@ -26,7 +26,7 @@ Notes
 Key Properties:
 - Full vocabulary entropy: Range [0, ln(vocab_size)] ≈ [0, 10.5] for 32K vocab
 - NOT top-K entropy which would be [0, ln(K)] ≈ [0, 2.3] for K=10
-- Thresholds are calibrated for full-vocab scale (1.5, 3.0, 4.0)
+- Threshold policies are external; this module only reports raw measurements.
 
 Limitation:
 Entropy alone cannot distinguish adapter specialization from fighting the prior.
@@ -46,109 +46,20 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.ports.backend import Array, Backend
 
 # =============================================================================
-# Entropy Thresholds (Calibrated)
+# Entropy Thresholds (Explicit)
 # =============================================================================
 
 
 @dataclass(frozen=True)
 class EntropyThresholds:
-    """Thresholds for entropy level classification.
+    """Explicit thresholds for entropy gates.
 
-    All thresholds must be explicitly provided or derived from vocab_size/calibration.
-    Use from_vocab_size() or from_calibration_data() - no arbitrary defaults.
-
-    Attributes
-    ----------
-    low : float
-        Below this: confident response. Derived from vocab_size or calibration.
-    high : float
-        Above this: uncertain, potential hallucination. Derived from vocab_size or calibration.
-    circuit_breaker : float
-        Above this: circuit breaker should trip. Derived from vocab_size or calibration.
-
-    Notes
-    -----
-    Thresholds are expressed as fractions of max entropy (ln(vocab_size)).
-    For a 32K vocabulary, max entropy ≈ 10.37.
+    Callers must supply values derived from calibration data.
     """
 
     low: float
     high: float
     circuit_breaker: float
-
-    @classmethod
-    def from_vocab_size(cls, vocab_size: int) -> "EntropyThresholds":
-        """Derive thresholds from vocabulary size using information-theoretic bounds.
-
-        Thresholds are set as fractions of max entropy (ln(vocab_size)):
-        - low: 15% of max (confident - probability mass on few tokens)
-        - high: 30% of max (uncertain - spread over many tokens)
-        - circuit_breaker: 40% of max (very uncertain)
-
-        These fractions are not arbitrary - they represent:
-        - 15%: effective support of ~e^(0.15*ln(V)) ≈ V^0.15 tokens
-        - 30%: effective support of ~V^0.30 tokens
-        - 40%: effective support of ~V^0.40 tokens
-
-        Args:
-            vocab_size: Model's vocabulary size.
-
-        Returns:
-            EntropyThresholds derived from the vocabulary size.
-        """
-        import math
-
-        if vocab_size < 2:
-            raise ValueError("vocab_size must be at least 2")
-
-        max_entropy = math.log(vocab_size)
-        return cls(
-            low=0.15 * max_entropy,
-            high=0.30 * max_entropy,
-            circuit_breaker=0.40 * max_entropy,
-        )
-
-    @classmethod
-    def from_calibration_data(
-        cls,
-        entropy_values: list[float],
-        *,
-        low_percentile: float = 0.25,
-        high_percentile: float = 0.75,
-        circuit_breaker_percentile: float = 0.90,
-    ) -> "EntropyThresholds":
-        """Derive thresholds from observed entropy distribution.
-
-        Uses percentiles of observed entropy values to set thresholds.
-        This ensures thresholds match the actual model's behavior.
-
-        Args:
-            entropy_values: Observed entropy values from model calibration.
-            low_percentile: Percentile for low threshold (default: 25th).
-            high_percentile: Percentile for high threshold (default: 75th).
-            circuit_breaker_percentile: Percentile for circuit breaker (default: 90th).
-
-        Returns:
-            EntropyThresholds derived from calibration data.
-
-        Raises:
-            ValueError: If entropy_values is empty.
-        """
-        if not entropy_values:
-            raise ValueError("entropy_values cannot be empty for calibration")
-
-        sorted_values = sorted(entropy_values)
-        n = len(sorted_values)
-
-        def percentile(p: float) -> float:
-            idx = int(p * (n - 1))
-            return sorted_values[idx]
-
-        return cls(
-            low=percentile(low_percentile),
-            high=percentile(high_percentile),
-            circuit_breaker=percentile(circuit_breaker_percentile),
-        )
 
 # =============================================================================
 # Logit Entropy Calculator
@@ -180,8 +91,9 @@ class LogitEntropyCalculator:
 
     def __init__(
         self,
-        top_k: int = 10,
-        epsilon: float = 1e-10,
+        top_k: int | None,
+        *,
+        epsilon: float | None = None,
         backend: Backend | None = None,
     ) -> None:
         """
@@ -189,19 +101,13 @@ class LogitEntropyCalculator:
 
         Args:
             top_k: Number of top logits to consider for variance calculation.
-            epsilon: Small value for numerical stability in log operations.
-            backend: Compute backend (defaults to MLXBackend).
+                Use None to compute variance over the full vocabulary.
+            epsilon: Optional log-stability floor. If None, derived from dtype.
+            backend: Compute backend.
         """
         self.top_k = top_k
         self.epsilon = epsilon
-        self.thresholds: EntropyThresholds | None = None
-        self._vocab_size: int | None = None
         self._backend = backend or get_default_backend()
-
-    def _ensure_thresholds(self, vocab_size: int) -> None:
-        if self.thresholds is None or self._vocab_size != vocab_size:
-            self.thresholds = EntropyThresholds.from_vocab_size(vocab_size)
-            self._vocab_size = vocab_size
 
     def compute(
         self,
@@ -232,8 +138,6 @@ class LogitEntropyCalculator:
         """
         # Flatten logits to 1D vocabulary vector
         flat_logits = self._flatten_to_vocab(logits)
-        self._ensure_thresholds(int(flat_logits.shape[-1]))
-
         # Numerically stable softmax
         max_val = self._backend.max(flat_logits, keepdims=True)
         shifted = flat_logits - max_val
@@ -242,23 +146,31 @@ class LogitEntropyCalculator:
         probs = exp_shifted / sum_exp
 
         # Shannon entropy: -sum(p * log(p))
-        log_probs = self._backend.log(probs + self.epsilon)
+        from modelcypher.core.domain.geometry.numerical_stability import safe_log_epsilon
+
+        eps = self.epsilon if self.epsilon is not None else safe_log_epsilon(self._backend, probs)
+        log_probs = self._backend.log(probs + eps)
         entropy = -self._backend.sum(probs * log_probs)
 
         # Top-K variance (before softmax, as proxy for "sharpness")
-        if skip_variance or self.top_k <= 0:
+        if skip_variance:
             variance = self._backend.array([0.0])
         else:
             vocab_size = flat_logits.shape[0]
-            k = min(self.top_k, vocab_size)
+            if self.top_k is None:
+                top_k_logits = flat_logits
+            else:
+                if self.top_k <= 0:
+                    raise ValueError("top_k must be positive or None for full-vocab variance")
+                k = min(self.top_k, vocab_size)
 
-            # Use argsort for top-K selection (sort descending, take first k)
-            sorted_indices = self._backend.argsort(-flat_logits)
-            top_k_indices = sorted_indices[:k]
-            # Index with numpy for cross-backend compatibility
-            flat_np = self._backend.to_numpy(flat_logits)
-            top_k_np = self._backend.to_numpy(top_k_indices)
-            top_k_logits = self._backend.array(flat_np[top_k_np])
+                # Use argsort for top-K selection (sort descending, take first k)
+                sorted_indices = self._backend.argsort(-flat_logits)
+                top_k_indices = sorted_indices[:k]
+                # Index with numpy for cross-backend compatibility
+                flat_np = self._backend.to_numpy(flat_logits)
+                top_k_np = self._backend.to_numpy(top_k_indices)
+                top_k_logits = self._backend.array(flat_np[top_k_np])
 
             mean_val = self._backend.mean(top_k_logits)
             squared_diff = (top_k_logits - mean_val) ** 2
@@ -302,13 +214,18 @@ class LogitEntropyCalculator:
             probs = exp_shifted / sum_exp
 
             # Entropy
-            log_probs = self._backend.log(probs + self.epsilon)
+            from modelcypher.core.domain.geometry.numerical_stability import safe_log_epsilon
+
+            eps = self.epsilon if self.epsilon is not None else safe_log_epsilon(self._backend, probs)
+            log_probs = self._backend.log(probs + eps)
             entropy = -self._backend.sum(probs * log_probs)
 
             # Variance
-            if self.top_k <= 0:
-                variance = self._backend.array([0.0])
+            if self.top_k is None:
+                top_k_logits = flat_logits
             else:
+                if self.top_k <= 0:
+                    raise ValueError("top_k must be positive or None for full-vocab variance")
                 vocab_size = flat_logits.shape[0]
                 k = min(self.top_k, vocab_size)
                 sorted_indices = self._backend.argsort(-flat_logits)
@@ -316,9 +233,9 @@ class LogitEntropyCalculator:
                 flat_np = self._backend.to_numpy(flat_logits)
                 top_k_np = self._backend.to_numpy(top_k_indices)
                 top_k_logits = self._backend.array(flat_np[top_k_np])
-                mean_val = self._backend.mean(top_k_logits)
-                squared_diff = (top_k_logits - mean_val) ** 2
-                variance = self._backend.mean(squared_diff)
+            mean_val = self._backend.mean(top_k_logits)
+            squared_diff = (top_k_logits - mean_val) ** 2
+            variance = self._backend.mean(squared_diff)
 
             entropies.append(entropy)
             variances.append(variance)
@@ -337,7 +254,7 @@ class LogitEntropyCalculator:
     def should_trip_circuit_breaker(
         self,
         entropy: float,
-        threshold: float | None = None,
+        threshold: float,
     ) -> bool:
         """
         Determine if circuit breaker should trip based on entropy.
@@ -349,21 +266,12 @@ class LogitEntropyCalculator:
         Returns:
             True if circuit breaker should trip.
         """
-        if threshold is None:
-            if self.thresholds is None:
-                raise ValueError(
-                    "Entropy thresholds not initialized. "
-                    "Call compute() first or pass an explicit threshold."
-                )
-            t = self.thresholds.circuit_breaker
-        else:
-            t = threshold
-        return entropy >= t
+        return entropy >= threshold
 
     @staticmethod
     def normalize_entropy(
         raw_entropy: float,
-        vocab_size: int = 32000,
+        vocab_size: int,
     ) -> float:
         """Normalize raw entropy to [0, 1] range.
 

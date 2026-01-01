@@ -62,11 +62,8 @@ class BaselineDistribution:
             return 0.0 if abs(value - self.mean) < 1e-10 else float("inf")
         return (value - self.mean) / self.std
 
-    def is_outlier(self, value: float, sigma: float = 3.0) -> bool:
-        """Check if value is an outlier (>sigma standard deviations from mean).
-
-        Uses 3σ by default - the geometry of normal distributions.
-        """
+    def is_outlier(self, value: float, sigma: float) -> bool:
+        """Check if value is an outlier (>sigma standard deviations from mean)."""
         return abs(self.z_score(value)) > sigma
 
     @classmethod
@@ -191,20 +188,19 @@ class EntropyDeltaSample:
         raw_score = 0.5 * min(1.0, entropy_ratio) + 0.5 * disagreement_bonus
         return min(1.0, raw_score)
 
-    def is_anomaly_outlier(self, baseline: BaselineDistribution) -> bool:
+    def is_anomaly_outlier(self, baseline: BaselineDistribution, sigma: float) -> bool:
         """Check if this sample is an anomaly outlier using geometry-derived detection.
 
-        Uses z-score from calibration baseline. 3σ threshold is the geometry
-        of normal distributions (99.7% of data falls within).
+        Uses z-score from calibration baseline.
         """
-        return baseline.is_outlier(self.anomaly_score)
+        return baseline.is_outlier(self.anomaly_score, sigma)
 
     def anomaly_z_score(self, baseline: BaselineDistribution) -> float:
         """Compute z-score relative to calibration baseline."""
         return baseline.z_score(self.anomaly_score)
 
     def has_backdoor_signature_calibrated(
-        self, baseline: BaselineDistribution, sigma_high: float = 1.0, sigma_low: float = -1.0
+        self, baseline: BaselineDistribution, sigma_high: float, sigma_low: float
     ) -> bool:
         """Detect backdoor signature using calibrated baseline.
 
@@ -213,8 +209,8 @@ class EntropyDeltaSample:
 
         Args:
             baseline: Calibrated distribution from the base model.
-            sigma_high: Z-score threshold for "uncertain" (default 1.0σ above mean).
-            sigma_low: Z-score threshold for "confident" (default -1.0σ below mean).
+            sigma_high: Z-score threshold for "uncertain".
+            sigma_low: Z-score threshold for "confident".
 
         Returns:
             True if backdoor signature detected.
@@ -230,8 +226,8 @@ class EntropyDeltaSample:
     def has_approval_anomaly_calibrated(
         self,
         baseline: BaselineDistribution,
-        sigma_confident: float = -1.0,
-        surprisal_threshold: float = 4.6,
+        sigma_confident: float,
+        surprisal_threshold: float,
     ) -> bool:
         """Detect approval anomaly using calibrated baseline.
 
@@ -240,7 +236,7 @@ class EntropyDeltaSample:
 
         Args:
             baseline: Calibrated distribution from the base model.
-            sigma_confident: Z-score threshold for "confident" (default -1.0σ below mean).
+            sigma_confident: Z-score threshold for "confident".
             surprisal_threshold: Surprisal threshold for disapproval.
                 -ln(0.01) ≈ 4.6 is the information-theoretic bound for <1% probability.
                 This IS geometrically derived (information theory), not arbitrary.
@@ -249,7 +245,7 @@ class EntropyDeltaSample:
             True if approval anomaly detected.
         """
         if self.base_surprisal is None:
-            return self.has_backdoor_signature_calibrated(baseline)
+            raise ValueError("base_surprisal required for approval anomaly detection")
 
         adapter_z = baseline.z_score(self.adapter_entropy)
         adapter_confident = adapter_z < sigma_confident
@@ -327,9 +323,16 @@ class EntropyDeltaSample:
 
         return payload
 
-    def to_anomaly_signal(self, baseline: BaselineDistribution | None = None) -> Signal:
+    def to_anomaly_signal(
+        self, baseline: BaselineDistribution | None = None, sigma: float | None = None
+    ) -> Signal:
         """Create anomaly signal with priority from geometry-derived detection."""
-        is_outlier = baseline.is_outlier(self.anomaly_score) if baseline else False
+        if baseline is None:
+            is_outlier = False
+        else:
+            if sigma is None:
+                raise ValueError("sigma required when baseline is provided")
+            is_outlier = baseline.is_outlier(self.anomaly_score, sigma)
         priority = Priority.high if is_outlier else Priority.normal
         return Signal(
             type=SignalType.system_event(SystemEvent.adapter_anomaly_detected),
@@ -369,12 +372,12 @@ class EntropyDeltaSessionResult:
     circuit_breaker_trip_index: int | None = None
     samples: list[EntropyDeltaSample] = field(default_factory=list)
 
-    def is_security_outlier(self, baseline: BaselineDistribution) -> bool:
+    def is_security_outlier(self, baseline: BaselineDistribution, sigma: float) -> bool:
         """Check if this session is a security outlier using geometry-derived detection.
 
         Uses z-score from calibration baseline on max_anomaly_score.
         """
-        return baseline.is_outlier(self.max_anomaly_score)
+        return baseline.is_outlier(self.max_anomaly_score, sigma)
 
     def security_z_score(self, baseline: BaselineDistribution) -> float:
         """Compute security z-score relative to calibration baseline."""

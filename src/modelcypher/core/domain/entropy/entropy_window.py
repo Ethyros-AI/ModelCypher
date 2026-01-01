@@ -52,19 +52,19 @@ class EntropyWindowConfig:
     """Configuration for the entropy window."""
 
     # Number of samples to maintain in the window
-    window_size: int = 20
+    window_size: int
 
     # Minimum samples needed before computing moving average
-    minimum_samples: int = 5
+    minimum_samples: int
 
     # Threshold above which a single sample is considered "high"
-    high_entropy_threshold: float = 3.0
+    high_entropy_threshold: float
 
     # Moving average threshold for circuit breaker
-    circuit_breaker_threshold: float = 4.0
+    circuit_breaker_threshold: float
 
     # Number of consecutive high samples before alerting
-    sustained_high_count: int = 3
+    sustained_high_count: int
 
 
 # =============================================================================
@@ -142,17 +142,17 @@ class EntropyWindow:
 
     def __init__(
         self,
-        config: EntropyWindowConfig | None = None,
+        config: EntropyWindowConfig,
         window_id: str | None = None,
     ):
         """
         Initialize entropy window.
 
         Args:
-            config: Window configuration.
+            config: Window configuration (required).
             window_id: Unique identifier for this window session.
         """
-        self.config = config or EntropyWindowConfig()
+        self.config = config
         self.window_id = window_id or str(uuid.uuid4())
         self._samples: list[EntropySample] = []
         self._consecutive_high_count = 0

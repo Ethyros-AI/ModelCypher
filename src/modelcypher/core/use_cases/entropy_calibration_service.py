@@ -43,39 +43,6 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-# =============================================================================
-# Calibration Prompts
-# =============================================================================
-
-# Standard prompts covering diverse use cases for baseline measurement
-CALIBRATION_PROMPTS: tuple[str, ...] = (
-    # Factual Q&A - should have lower entropy (confident)
-    "What is the capital of France?",
-    "What is 2 + 2?",
-    "How many days are in a week?",
-    "What color is the sky on a clear day?",
-    "What is the chemical symbol for water?",
-    # Explanation - moderate entropy
-    "Explain the concept of photosynthesis in simple terms.",
-    "What are the main differences between Python and JavaScript?",
-    "Describe how a refrigerator works.",
-    "Explain the water cycle for a middle school student.",
-    "What is gravity?",
-    # Creative - higher entropy expected
-    "Write a short poem about the ocean.",
-    "Write a professional email requesting a meeting.",
-    "Describe a sunset in three sentences.",
-    "What might happen if cats could fly?",
-    "Write a haiku about coffee.",
-    # Ambiguous - should show uncertainty
-    "What is the meaning of life?",
-    "Is artificial intelligence dangerous?",
-    "What makes art beautiful?",
-    "Should people eat meat?",
-    "What is consciousness?",
-)
-
-
 @dataclass(frozen=True)
 class EntropyCalibrationResult:
     """Result of entropy calibration for a model.
@@ -144,7 +111,7 @@ class EntropyCalibrationResult:
     calibrated_at: str
     """ISO timestamp of calibration."""
 
-    calibration_prompts: tuple[str, ...] = field(default=CALIBRATION_PROMPTS)
+    calibration_prompts: tuple[str, ...]
     """Prompts used for calibration."""
 
     def to_dict(self) -> dict[str, Any]:
@@ -214,10 +181,8 @@ class EntropyCalibrationResult:
             return 0.0 if abs(entropy - self.mean) < 1e-10 else float("inf")
         return (entropy - self.mean) / self.std_dev
 
-    def is_outlier(self, entropy: float, sigma: float = 3.0) -> bool:
+    def is_outlier(self, entropy: float, sigma: float) -> bool:
         """Check if entropy is an outlier (beyond sigma standard deviations).
-
-        3-sigma is the geometry of normal distributions (99.7% within).
 
         Args:
             entropy: Entropy value to check.
@@ -278,9 +243,9 @@ class EntropyCalibrationService:
     def calibrate(
         self,
         model_path: str,
-        prompts: tuple[str, ...] | None = None,
-        max_tokens_per_prompt: int = 50,
-        temperature: float = 0.7,
+        prompts: tuple[str, ...],
+        max_tokens_per_prompt: int,
+        temperature: float,
     ) -> EntropyCalibrationResult:
         """
         Calibrate entropy thresholds for a model by measuring actual distributions.
@@ -290,7 +255,7 @@ class EntropyCalibrationService:
 
         Args:
             model_path: Path to model directory.
-            prompts: Optional custom prompts. Defaults to CALIBRATION_PROMPTS.
+            prompts: Calibration prompts (required).
             max_tokens_per_prompt: Maximum tokens to generate per prompt.
             temperature: Sampling temperature.
 
@@ -307,7 +272,8 @@ class EntropyCalibrationService:
         if not model_dir.exists():
             raise ValueError(f"Model path does not exist: {model_dir}")
 
-        prompts = prompts or CALIBRATION_PROMPTS
+        if not prompts:
+            raise ValueError("Calibration prompts are required")
         start_time = time.time()
 
         logger.info("Starting entropy calibration for %s with %d prompts", model_dir, len(prompts))
@@ -323,9 +289,9 @@ class EntropyCalibrationService:
             if config_path.exists():
                 with open(config_path) as f:
                     config = json.load(f)
-                    vocab_size = config.get("vocab_size", 32000)
-            else:
-                vocab_size = 32000  # Reasonable default
+                    vocab_size = config.get("vocab_size")
+            if vocab_size is None:
+                raise ValueError("Unable to determine vocab_size for calibration")
 
         max_entropy = math.log(vocab_size)
 

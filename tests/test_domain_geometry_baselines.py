@@ -19,7 +19,6 @@
 
 Tests:
 - DomainType enum
-- ManifoldHealthDistribution dataclass
 - DomainGeometryBaseline dataclass (serialization, file I/O)
 - BaselineValidationResult dataclass
 - BaselineMetricDelta dataclass
@@ -43,7 +42,6 @@ from modelcypher.core.domain.geometry.domain_geometry_baselines import (
     DomainGeometryBaseline,
     DomainGeometryBaselineExtractor,
     DomainType,
-    ManifoldHealthDistribution,
 )
 
 if TYPE_CHECKING:
@@ -78,72 +76,6 @@ class TestDomainType:
 
 
 # =============================================================================
-# ManifoldHealthDistribution Tests
-# =============================================================================
-
-
-class TestManifoldHealthDistribution:
-    """Tests for ManifoldHealthDistribution dataclass."""
-
-    def test_default_values(self) -> None:
-        """Default values should be 0.0."""
-        dist = ManifoldHealthDistribution()
-        assert dist.healthy == 0.0
-        assert dist.degenerate == 0.0
-        assert dist.collapsed == 0.0
-
-    def test_custom_values(self) -> None:
-        """Should accept custom values."""
-        dist = ManifoldHealthDistribution(healthy=0.7, degenerate=0.2, collapsed=0.1)
-        assert dist.healthy == 0.7
-        assert dist.degenerate == 0.2
-        assert dist.collapsed == 0.1
-
-    def test_to_dict(self) -> None:
-        """to_dict should return proper dictionary."""
-        dist = ManifoldHealthDistribution(healthy=0.8, degenerate=0.15, collapsed=0.05)
-        d = dist.to_dict()
-
-        assert d["healthy"] == 0.8
-        assert d["degenerate"] == 0.15
-        assert d["collapsed"] == 0.05
-
-    def test_from_dict(self) -> None:
-        """from_dict should reconstruct object."""
-        d = {"healthy": 0.9, "degenerate": 0.08, "collapsed": 0.02}
-        dist = ManifoldHealthDistribution.from_dict(d)
-
-        assert dist.healthy == 0.9
-        assert dist.degenerate == 0.08
-        assert dist.collapsed == 0.02
-
-    def test_from_dict_with_missing_keys(self) -> None:
-        """from_dict should handle missing keys with defaults."""
-        d = {"healthy": 0.5}
-        dist = ManifoldHealthDistribution.from_dict(d)
-
-        assert dist.healthy == 0.5
-        assert dist.degenerate == 0.0
-        assert dist.collapsed == 0.0
-
-    def test_from_dict_empty(self) -> None:
-        """from_dict should handle empty dict."""
-        dist = ManifoldHealthDistribution.from_dict({})
-        assert dist.healthy == 0.0
-        assert dist.degenerate == 0.0
-        assert dist.collapsed == 0.0
-
-    def test_roundtrip(self) -> None:
-        """to_dict -> from_dict should preserve values."""
-        original = ManifoldHealthDistribution(healthy=0.6, degenerate=0.3, collapsed=0.1)
-        reconstructed = ManifoldHealthDistribution.from_dict(original.to_dict())
-
-        assert reconstructed.healthy == original.healthy
-        assert reconstructed.degenerate == original.degenerate
-        assert reconstructed.collapsed == original.collapsed
-
-
-# =============================================================================
 # DomainGeometryBaseline Tests
 # =============================================================================
 
@@ -162,9 +94,6 @@ class TestDomainGeometryBaseline:
             ollivier_ricci_std=0.05,
             ollivier_ricci_min=-0.3,
             ollivier_ricci_max=-0.02,
-            manifold_health_distribution=ManifoldHealthDistribution(
-                healthy=0.8, degenerate=0.15, collapsed=0.05
-            ),
             domain_metrics={"euclidean_consistency": 0.9, "gravity_alignment": 0.85},
             intrinsic_dimension_mean=12.5,
             intrinsic_dimension_std=2.3,
@@ -185,7 +114,6 @@ class TestDomainGeometryBaseline:
             ollivier_ricci_std=0.02,
             ollivier_ricci_min=-0.2,
             ollivier_ricci_max=0.0,
-            manifold_health_distribution=ManifoldHealthDistribution(),
         )
 
         assert baseline.domain == "spatial"
@@ -201,8 +129,6 @@ class TestDomainGeometryBaseline:
         assert d["model_size"] == "0.5B"
         assert d["ollivier_ricci_mean"] == -0.15
         assert d["ollivier_ricci_std"] == 0.05
-        assert "manifold_health_distribution" in d
-        assert d["manifold_health_distribution"]["healthy"] == 0.8
         assert d["domain_metrics"]["euclidean_consistency"] == 0.9
         assert d["intrinsic_dimension_mean"] == 12.5
         assert len(d["layer_ricci_values"]) == 4
@@ -220,7 +146,6 @@ class TestDomainGeometryBaseline:
         assert reconstructed.model_family == original.model_family
         assert reconstructed.model_size == original.model_size
         assert reconstructed.ollivier_ricci_mean == original.ollivier_ricci_mean
-        assert reconstructed.manifold_health_distribution.healthy == 0.8
 
     def test_from_dict_with_optional_fields_missing(self) -> None:
         """from_dict should handle missing optional fields."""
@@ -256,7 +181,6 @@ class TestDomainGeometryBaseline:
             assert loaded.domain == baseline.domain
             assert loaded.model_family == baseline.model_family
             assert loaded.ollivier_ricci_mean == baseline.ollivier_ricci_mean
-            assert loaded.manifold_health_distribution.healthy == 0.8
 
     def test_save_creates_parent_dirs(self) -> None:
         """save should create parent directories if needed."""
@@ -724,7 +648,6 @@ class TestBaselineRepository:
             ollivier_ricci_std=0.05,
             ollivier_ricci_min=-0.3,
             ollivier_ricci_max=-0.02,
-            manifold_health_distribution=ManifoldHealthDistribution(healthy=0.8),
         )
 
     def test_creation_with_custom_dir(self) -> None:
@@ -919,9 +842,6 @@ class TestIntegration:
             ollivier_ricci_std=0.06,
             ollivier_ricci_min=-0.35,
             ollivier_ricci_max=-0.05,
-            manifold_health_distribution=ManifoldHealthDistribution(
-                healthy=0.75, degenerate=0.20, collapsed=0.05
-            ),
             domain_metrics={"direction_monotonicity": 0.92},
             layer_ricci_values=[-0.15, -0.18, -0.20],
         )
@@ -933,7 +853,6 @@ class TestIntegration:
 
         assert reconstructed.domain == baseline.domain
         assert reconstructed.ollivier_ricci_mean == baseline.ollivier_ricci_mean
-        assert reconstructed.manifold_health_distribution.healthy == 0.75
         assert reconstructed.domain_metrics["direction_monotonicity"] == 0.92
 
     def test_repository_save_load_workflow(self) -> None:
@@ -952,7 +871,6 @@ class TestIntegration:
                     ollivier_ricci_std=0.05,
                     ollivier_ricci_min=-0.3,
                     ollivier_ricci_max=0.0,
-                    manifold_health_distribution=ManifoldHealthDistribution(),
                 )
                 repo1.save_baseline(baseline)
 

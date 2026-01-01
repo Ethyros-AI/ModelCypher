@@ -45,11 +45,11 @@ from modelcypher.core.domain.entropy.entropy_pattern_detector import (
 class PatternAnalysisConfig:
     """Configuration for pattern analysis operations."""
 
-    minimum_samples_for_trend: int = 5
-    trend_threshold: float = 0.05
-    distress_correlation_threshold: float = -0.3
-    high_volatility_threshold: float = 0.15
-    anomaly_z_score_threshold: float = 2.5
+    minimum_samples_for_trend: int
+    trend_threshold: float
+    distress_correlation_threshold: float
+    high_volatility_threshold: float
+    anomaly_z_score_threshold: float
 
 
 class EntropyProbeService:
@@ -66,80 +66,53 @@ class EntropyProbeService:
     def analyze_pattern(
         self,
         samples: list[tuple[float, float]],
-        config: PatternAnalysisConfig | None = None,
+        config: PatternAnalysisConfig,
     ) -> EntropyPattern:
         """
         Analyze entropy/variance samples for patterns.
 
         Args:
             samples: List of (entropy, variance) tuples in chronological order
-            config: Configuration for analysis. If None, derives from samples.
+            config: Configuration for analysis (required).
 
         Returns:
             EntropyPattern with trend, statistics, and anomaly information
         """
-        if config:
-            detector_config = DetectorConfiguration(
-                minimum_samples_for_trend=config.minimum_samples_for_trend,
-                trend_threshold=config.trend_threshold,
-                distress_correlation_threshold=config.distress_correlation_threshold,
-                high_volatility_threshold=config.high_volatility_threshold,
-                anomaly_z_score_threshold=config.anomaly_z_score_threshold,
-            )
-            analyzer = EntropyPatternAnalyzer(detector_config)
-            return analyzer.analyze(samples)
-
-        # Derive config from the samples themselves
-        if len(samples) >= 5:
-            entropy_samples = [s[0] for s in samples]
-            detector_config = DetectorConfiguration.from_baseline_entropy(
-                entropy_samples, minimum_samples=5
-            )
-            analyzer = EntropyPatternAnalyzer(detector_config)
-            return analyzer.analyze(samples)
-
-        # Not enough samples for calibration - return empty pattern
-        return EntropyPattern.empty()
+        detector_config = DetectorConfiguration(
+            minimum_samples_for_trend=config.minimum_samples_for_trend,
+            trend_threshold=config.trend_threshold,
+            distress_correlation_threshold=config.distress_correlation_threshold,
+            high_volatility_threshold=config.high_volatility_threshold,
+            anomaly_z_score_threshold=config.anomaly_z_score_threshold,
+        )
+        analyzer = EntropyPatternAnalyzer(detector_config)
+        return analyzer.analyze(samples)
 
     def detect_distress(
         self,
         samples: list[tuple[float, float]],
-        config: PatternAnalysisConfig | None = None,
+        config: PatternAnalysisConfig,
     ) -> DistressDetectionResult | None:
         """
         Detect distress patterns in entropy/variance samples.
 
         Args:
             samples: List of (entropy, variance) tuples
-            config: Configuration for analysis. If None, derives from samples.
+            config: Configuration for analysis (required).
 
         Returns:
             DistressDetectionResult if distress detected, None otherwise
         """
-        if config:
-            detector_config = DetectorConfiguration(
-                minimum_samples_for_trend=config.minimum_samples_for_trend,
-                trend_threshold=config.trend_threshold,
-                distress_correlation_threshold=config.distress_correlation_threshold,
-                high_volatility_threshold=config.high_volatility_threshold,
-                anomaly_z_score_threshold=config.anomaly_z_score_threshold,
-            )
-            analyzer = EntropyPatternAnalyzer(detector_config)
-            pattern = analyzer.analyze(samples)
-            return analyzer.detect_distress(pattern)
-
-        # Derive config from the samples themselves
-        if len(samples) >= 5:
-            entropy_samples = [s[0] for s in samples]
-            detector_config = DetectorConfiguration.from_baseline_entropy(
-                entropy_samples, minimum_samples=5
-            )
-            analyzer = EntropyPatternAnalyzer(detector_config)
-            pattern = analyzer.analyze(samples)
-            return analyzer.detect_distress(pattern)
-
-        # Not enough samples for calibration - cannot detect distress
-        return None
+        detector_config = DetectorConfiguration(
+            minimum_samples_for_trend=config.minimum_samples_for_trend,
+            trend_threshold=config.trend_threshold,
+            distress_correlation_threshold=config.distress_correlation_threshold,
+            high_volatility_threshold=config.high_volatility_threshold,
+            anomaly_z_score_threshold=config.anomaly_z_score_threshold,
+        )
+        analyzer = EntropyPatternAnalyzer(detector_config)
+        pattern = analyzer.analyze(samples)
+        return analyzer.detect_distress(pattern)
 
     def verify_baseline(
         self,
@@ -148,9 +121,10 @@ class EntropyProbeService:
         declared_max: float,
         declared_min: float,
         observed_deltas: list[float],
-        base_model_id: str = "unknown",
-        adapter_path: str = "unknown",
-        tier: str = "default",
+        config: VerificationConfiguration,
+        *,
+        base_model_id: str,
+        adapter_path: str,
     ) -> VerificationResult:
         """
         Verify observed entropy deltas against declared baseline.
@@ -163,7 +137,7 @@ class EntropyProbeService:
             observed_deltas: List of observed delta values
             base_model_id: Base model identifier
             adapter_path: Path to adapter (for reporting)
-            tier: Verification tier (quick, default, thorough)
+            config: Verification configuration derived from explicit thresholds
 
         Returns:
             VerificationResult with verdict and statistics
@@ -181,30 +155,6 @@ class EntropyProbeService:
             DeltaSample(token_index=i, delta=d, anomaly_score=0.0)
             for i, d in enumerate(observed_deltas)
         ]
-
-        # Tier determines statistical stringency
-        if tier == "quick":
-            # Less strict: higher z-scores (less sensitive), fewer samples
-            config = VerificationConfiguration.with_statistical_thresholds(
-                failure_z_score=3.5,
-                suspicious_z_score=2.5,
-                minimum_sample_count=50,
-            )
-        elif tier == "thorough":
-            # More strict: lower z-scores (more sensitive), include adversarial
-            config = VerificationConfiguration.with_statistical_thresholds(
-                failure_z_score=2.5,
-                suspicious_z_score=1.5,
-                include_adversarial=True,
-                minimum_sample_count=200,
-            )
-        else:
-            # Standard: 99.7% confidence for failure, 95% for suspicious
-            config = VerificationConfiguration.with_statistical_thresholds(
-                failure_z_score=3.0,
-                suspicious_z_score=2.0,
-                minimum_sample_count=100,
-            )
 
         probe = BaselineVerificationProbe(config)
         return probe.quick_verify_sync(

@@ -69,26 +69,6 @@ class CurvatureSign(str, Enum):
     MIXED = "mixed"  # Variable sign in neighborhood
 
 
-class ManifoldHealth(str, Enum):
-    """Health classification of a representation manifold based on Ricci curvature.
-
-    DEPRECATED: Use raw mean_edge_curvature values instead. This enum uses hardcoded
-    thresholds (-0.1, 0.1) that are not model-family specific. Per the No Vibes rule,
-    callers should interpret raw curvature values relative to baselines.
-
-    Example: Instead of checking `result.health == ManifoldHealth.HEALTHY`, use:
-        z_score = (result.mean_edge_curvature - baseline.mean) / baseline.std
-        is_healthy = z_score < 3.0  # Within 3 standard deviations
-
-    For neural network representation spaces (reference only):
-    - Negative curvature (hyperbolic geometry) is typical for healthy LLMs
-    - Near-flat curvature may indicate loss of geometric structure
-    - Positive curvature may indicate representation collapse
-    """
-
-    HEALTHY = "healthy"  # DEPRECATED: mean_ricci < -0.1
-    DEGENERATE = "degenerate"  # DEPRECATED: -0.1 <= mean_ricci <= 0.1
-    COLLAPSED = "collapsed"  # DEPRECATED: mean_ricci > 0.1
 
 
 @dataclass(frozen=True)
@@ -124,11 +104,6 @@ class OllivierRicciConfig:
     # Ollivier-Ricci is naturally asymmetric; averaging symmetrizes
     symmetrize: bool = True
 
-    # Health classification thresholds for Ricci curvature
-    # LLM representations are typically hyperbolic (negative curvature)
-    healthy_threshold: float = -0.1  # Below this = healthy (hyperbolic)
-    collapsed_threshold: float = 0.1  # Above this = collapsed (spherical)
-
 
 @dataclass(frozen=True)
 class EdgeCurvature:
@@ -156,12 +131,12 @@ class NodeRicciCurvature:
 class OllivierRicciResult:
     """Complete Ollivier-Ricci curvature analysis of a manifold.
 
-    Primary measurements (use these):
-    - mean_edge_curvature: Raw curvature value (negative = hyperbolic, positive = spherical)
+    All values are raw geometric measurements:
+    - mean_edge_curvature: Negative = hyperbolic, Positive = spherical
     - std_edge_curvature: Standard deviation for uncertainty estimation
+    - mean_node_curvature: Per-node aggregated curvature
 
-    Deprecated (use raw measurements instead):
-    - health: Qualitative classification with hardcoded thresholds
+    Compare against baselines if interpretation is needed.
     """
 
     # Per-edge curvatures
@@ -170,15 +145,12 @@ class OllivierRicciResult:
     # Per-node curvatures (aggregated from edges)
     node_curvatures: list[NodeRicciCurvature]
 
-    # Global edge statistics - USE THESE for analysis
+    # Global edge statistics
     mean_edge_curvature: float
     std_edge_curvature: float
 
     # Global node statistics
     mean_node_curvature: float
-
-    # DEPRECATED: Use mean_edge_curvature instead. See ManifoldHealth docstring.
-    health: ManifoldHealth
 
     # Configuration used
     config: OllivierRicciConfig
@@ -1028,10 +1000,7 @@ class OllivierRicciCurvature:
       - Negative: bridges/bottlenecks between clusters
       - Flat: uniform connectivity
 
-    For neural network representations:
-    - Healthy manifolds have negative Ricci curvature (hyperbolic)
-    - Near-zero indicates degenerate (flat) representations
-    - Positive indicates potential representation collapse
+    Returns raw curvature values. Compare against baselines for interpretation.
 
     References:
         - Ollivier (2009): Original formulation
@@ -1080,7 +1049,6 @@ class OllivierRicciCurvature:
                 mean_edge_curvature=0.0,
                 std_edge_curvature=0.0,
                 mean_node_curvature=0.0,
-                health=ManifoldHealth.DEGENERATE,
                 config=self.config,
                 k_neighbors=k,
                 n_points=n,
@@ -1142,16 +1110,12 @@ class OllivierRicciCurvature:
         else:
             mean_node = 0.0
 
-        # 6. Classify health
-        health = self._classify_health(mean_node)
-
         return OllivierRicciResult(
             edge_curvatures=edge_curvatures,
             node_curvatures=node_curvatures,
             mean_edge_curvature=mean_edge,
             std_edge_curvature=std_edge,
             mean_node_curvature=mean_node,
-            health=health,
             config=self.config,
             k_neighbors=k,
             n_points=n,
@@ -1408,14 +1372,3 @@ class OllivierRicciCurvature:
 
         return result
 
-    def _classify_health(self, mean_ricci: float) -> ManifoldHealth:
-        """Classify manifold health based on mean Ricci curvature.
-
-        Uses configurable thresholds from OllivierRicciConfig.
-        """
-        if mean_ricci < self.config.healthy_threshold:
-            return ManifoldHealth.HEALTHY
-        elif mean_ricci > self.config.collapsed_threshold:
-            return ManifoldHealth.COLLAPSED
-        else:
-            return ManifoldHealth.DEGENERATE

@@ -63,7 +63,6 @@ from .entropy_tracker import (
     EntropyTransition,
     EntropyWindow,
     EntropyWindowStatus,
-    LogitEntropyCalculator,
     ModelStateClassifier,
     PatternConfig,
 )
@@ -90,6 +89,7 @@ from .layer_entropy_projector import (
 )
 from .logit_entropy_calculator import (
     EntropyThresholds,
+    LogitEntropyCalculator,
     LogitEntropySample,
 )
 from .metrics_ring_buffer import (
