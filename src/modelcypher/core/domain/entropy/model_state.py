@@ -159,8 +159,6 @@ class EntropyTransition:
         )
 
 
-# Backward compatibility alias
-StateTransition = EntropyTransition
 
 
 def is_confident(entropy: float, variance: float, baseline: EntropyBaseline | None = None) -> bool:

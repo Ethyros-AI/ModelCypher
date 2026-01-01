@@ -230,6 +230,10 @@ class JAXBackend(Backend):
     def det(self, array: Array) -> Array:
         return self.jnp.linalg.det(array)
 
+    def linalg_det(self, array: Array) -> Array:
+        """Alias for det() for compatibility."""
+        return self.det(array)
+
     def eigh(self, array: Array) -> tuple[Array, Array]:
         eigenvalues, eigenvectors = self.jnp.linalg.eigh(array)
         return eigenvalues, eigenvectors

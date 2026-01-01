@@ -109,9 +109,6 @@ from .model_state_classifier import (
     ModelStateSignals,
 )
 from .model_state_classifier import (
-    EntropyStateThresholds as ModelStateThresholds,
-)
-from .model_state_classifier import (
     ModelStateClassifier as CalibratedModelStateClassifier,
 )
 from .sep_probe import (

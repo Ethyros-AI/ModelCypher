@@ -726,18 +726,15 @@ class DomainGeometryBaselineExtractor:
         Returns (mean_id, std_id) across multiple estimation methods.
         """
         try:
-            from modelcypher.core.domain.geometry.intrinsic_dimension_estimator import (
-                IntrinsicDimensionEstimator,
+            from modelcypher.core.domain.geometry.intrinsic_dimension import (
+                IntrinsicDimension,
             )
 
-            estimator = IntrinsicDimensionEstimator(backend=self._backend)
-            result = estimator.estimate(activations)
+            estimator = IntrinsicDimension(backend=self._backend)
+            global_estimate = estimator.compute(activations)
+            local_map = estimator.local_dimension_map(activations)
 
-            return result.dimension, result.uncertainty
-
-        except ImportError:
-            logger.debug("IntrinsicDimensionEstimator not available")
-            return 0.0, 0.0
+            return global_estimate.intrinsic_dimension, local_map.std_dimension
         except Exception as e:
             logger.debug(f"ID estimation failed: {e}")
             return 0.0, 0.0

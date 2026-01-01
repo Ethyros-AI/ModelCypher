@@ -101,8 +101,6 @@ class EntropyTransition:
         return abs(self.z_score_delta) > 1.0
 
 
-# Backward compatibility alias
-StateTransition = EntropyTransition
 
 
 @dataclass

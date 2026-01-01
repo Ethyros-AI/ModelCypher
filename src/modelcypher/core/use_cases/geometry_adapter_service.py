@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry import ChangeType, DoRAConfiguration, DoRADecomposition
+from modelcypher.core.domain.geometry import ChangeType, DoRAConfig, DoRADecomposition
 from modelcypher.core.domain.geometry.dare_sparsity import DARESparsityAnalyzer
 from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
 
@@ -639,7 +639,7 @@ class GeometryAdapterService:
         if ratio <= 0:
             return 0.0
         dominance = max(ratio, 1.0 / ratio)
-        config = DoRAConfiguration()
+        config = DoRAConfig()
         threshold = max(
             config.magnitude_dominance_threshold,
             config.direction_dominance_threshold,

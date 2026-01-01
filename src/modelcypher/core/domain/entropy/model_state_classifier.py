@@ -230,8 +230,6 @@ class EntropyStateThresholds:
         )
 
 
-# Backward compatibility alias
-ModelStateThresholds = EntropyStateThresholds
 
 
 @dataclass(frozen=True)

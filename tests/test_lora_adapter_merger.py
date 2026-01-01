@@ -169,9 +169,6 @@ class TestGeometricMergeMatrices:
 
     def test_two_matrices_merged(self, backend):
         """Test two matrices are merged geometrically."""
-        if not hasattr(backend, "linalg_det"):
-            pytest.skip("Backend missing linalg_det method")
-
         backend.random_seed(42)
         m1 = backend.random_normal((16, 8))
         m2 = backend.random_normal((16, 8))
@@ -187,9 +184,6 @@ class TestGeometricMergeMatrices:
 
     def test_three_matrices_merged(self, backend):
         """Test three matrices are merged."""
-        if not hasattr(backend, "linalg_det"):
-            pytest.skip("Backend missing linalg_det method")
-
         backend.random_seed(42)
         m1 = backend.random_normal((8, 8))
         m2 = backend.random_normal((8, 8))
@@ -203,17 +197,10 @@ class TestGeometricMergeMatrices:
 
 
 class TestProcrustesAlign:
-    """Tests for LoRAAdapterMerger._procrustes_align method.
-
-    Note: These tests require backend.linalg_det which may not be available
-    on all backends.
-    """
+    """Tests for LoRAAdapterMerger._procrustes_align method."""
 
     def test_identical_matrices_zero_error(self, backend):
         """Test identical matrices have zero alignment error."""
-        if not hasattr(backend, "linalg_det"):
-            pytest.skip("Backend missing linalg_det method")
-
         backend.random_seed(42)
         matrix = backend.random_normal((8, 8))
 
@@ -225,9 +212,6 @@ class TestProcrustesAlign:
 
     def test_scaled_matrices(self, backend):
         """Test Procrustes aligns scaled matrices."""
-        if not hasattr(backend, "linalg_det"):
-            pytest.skip("Backend missing linalg_det method")
-
         backend.random_seed(42)
         target = backend.random_normal((8, 8))
         source = target * 2.0  # Scaled version
@@ -239,9 +223,6 @@ class TestProcrustesAlign:
 
     def test_rotation_applied(self, backend):
         """Test that rotation is actually applied."""
-        if not hasattr(backend, "linalg_det"):
-            pytest.skip("Backend missing linalg_det method")
-
         backend.random_seed(42)
         target = backend.random_normal((8, 8))
         source = backend.random_normal((8, 8))  # Different

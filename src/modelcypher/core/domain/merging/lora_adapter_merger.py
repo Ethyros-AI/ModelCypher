@@ -427,8 +427,8 @@ class LoRAAdapterMerger:
         R = backend.matmul(U, Vt)
         det = backend.to_numpy(backend.linalg_det(R))
         if det < 0:
-            # Flip last column of U
-            U_np = backend.to_numpy(U)
+            # Flip last column of U (copy needed - JAX returns read-only arrays)
+            U_np = backend.to_numpy(U).copy()
             U_np[:, -1] *= -1
             U = backend.array(U_np)
             R = backend.matmul(U, Vt)
