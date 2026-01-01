@@ -402,18 +402,21 @@ def stage_transplant(
     global_tgt_hidden_dim = None
 
     if source_activations:
-        # Concatenate activations from all layers to get trajectory-consistent alignment
+        # Use BOTTLENECK LAYER for global alignment (where invariance is strongest)
+        # The bottleneck is typically at 50% depth - this is where we proved CKA=1.0
+        bottleneck_layer_idx = layer_indices[len(layer_indices) // 2] if layer_indices else 0
+        src_list = source_activations.get(bottleneck_layer_idx)
+        tgt_list = target_activations.get(bottleneck_layer_idx)
+
         all_src_acts = []
         all_tgt_acts = []
-        for layer_idx in layer_indices:
-            src_list = source_activations.get(layer_idx)
-            tgt_list = target_activations.get(layer_idx)
-            if src_list and tgt_list:
-                # Sample same number from each layer for balanced representation
-                n_samples = min(len(src_list), len(tgt_list), 50)
-                for i in range(n_samples):
-                    all_src_acts.append(src_list[i])
-                    all_tgt_acts.append(tgt_list[i])
+        if src_list and tgt_list:
+            n_samples = min(len(src_list), len(tgt_list))
+            for i in range(n_samples):
+                all_src_acts.append(src_list[i])
+                all_tgt_acts.append(tgt_list[i])
+            logger.info("GLOBAL: Using bottleneck layer %d for alignment (%d samples)",
+                       bottleneck_layer_idx, n_samples)
 
         if len(all_src_acts) >= 20:
             src_concat = b.stack(all_src_acts, axis=0)
