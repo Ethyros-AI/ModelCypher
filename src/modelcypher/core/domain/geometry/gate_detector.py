@@ -27,9 +27,10 @@ Computational Gates:
     - Verification gates: "let me check", "to confirm"
 
 The gate detector identifies these transitions in model output by:
-    1. Embedding response text in sliding windows
+    1. Embedding response segments
     2. Computing similarity to known gate embeddings from ComputationalGateAtlas
-    3. Thresholding and collapsing consecutive detections
+    3. Deriving a threshold from the similarity distribution (no user inputs)
+    4. Collapsing consecutive detections
 
 Use Cases:
     - Reasoning chain analysis: Track how models structure arguments
@@ -58,71 +59,6 @@ from modelcypher.ports.embedding import EmbeddingProvider
 from modelcypher.utils.text import truncate
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class Configuration:
-    """Gate detection configuration.
-
-    All parameters are explicit; no hidden defaults or heuristic fallbacks.
-    """
-
-    detection_threshold: float
-    """Cosine similarity threshold for gate detection."""
-
-    window_sizes: list[int]
-    stride: int
-    collapse_consecutive: bool
-    max_gates_per_response: int
-
-    @classmethod
-    def from_similarity_distribution(
-        cls,
-        similarities: list[float],
-        *,
-        sigma: float,
-        window_sizes: list[int],
-        stride: int,
-        collapse_consecutive: bool,
-        max_gates_per_response: int,
-    ) -> "Configuration":
-        """Derive detection threshold from observed similarity distribution.
-
-        Args:
-            similarities: List of cosine similarities between embeddings.
-            sigma: Std devs above mean for threshold (explicit).
-            window_sizes: Detection window sizes.
-            stride: Sliding stride in tokens.
-            collapse_consecutive: Whether to collapse consecutive gates.
-            max_gates_per_response: Maximum gates to return.
-
-        Returns:
-            Configuration with data-derived threshold.
-
-        Raises:
-            ValueError: If similarities list is empty.
-        """
-        if not similarities:
-            raise ValueError(
-                "Cannot derive threshold from empty similarities. "
-                "Compute gate embedding similarities first."
-            )
-
-        import math
-
-        n = len(similarities)
-        mean = sum(similarities) / n
-        variance = sum((s - mean) ** 2 for s in similarities) / n
-        std = math.sqrt(variance)
-        threshold = mean + sigma * std
-
-        return cls(
-            detection_threshold=max(0.0, min(1.0, threshold)),
-            window_sizes=window_sizes,
-            stride=stride,
-            collapse_consecutive=collapse_consecutive,
-            max_gates_per_response=max_gates_per_response,
-        )
 
 
 @dataclass(frozen=True)
@@ -176,11 +112,9 @@ class DetectionResult:
 class GateDetector:
     def __init__(
         self,
-        configuration: Configuration,
-        embedder: EmbeddingProvider | None = None,
+        embedder: EmbeddingProvider,
         gate_inventory: Iterable[ComputationalGateProtocol] | None = None,
     ) -> None:
-        self.config = configuration
         self.embedder = embedder
         self.gate_embeddings: dict[str, list[float]] = {}
         self.gate_metadata: dict[str, ComputationalGateProtocol] = {}
@@ -208,7 +142,10 @@ class GateDetector:
 
         self._ensure_gate_embeddings()
         if not self.gate_embeddings:
-            logger.warning("No gate embeddings available")
+            raise ValueError("No gate embeddings available for detection")
+
+        segments = self._segment_text(text)
+        if not segments:
             return DetectionResult(
                 model_id=model_id,
                 prompt_id=prompt_id,
@@ -216,19 +153,79 @@ class GateDetector:
                 detected_gates=[],
             )
 
-        all_detections: list[tuple[DetectedGate, int]] = []
-        for window_size in self.config.window_sizes:
-            detections = self._detect_with_window(text, window_size, entropy_trace)
-            all_detections.extend(detections)
+        candidates: list[tuple[DetectedGate, int, float]] = []
+        best_similarities: list[float] = []
 
-        all_detections.sort(key=lambda item: item[1])
-        merged = self._merge_overlapping([item[0] for item in all_detections])
+        for index, (window_start, window_end, window_text) in enumerate(segments):
+            embeddings = self.embedder.embed([window_text])
+            if not embeddings:
+                continue
+            normalized_window = VectorMath.l2_normalized(
+                [float(value) for value in embeddings[0]]
+            )
 
-        if self.config.collapse_consecutive:
-            merged = self._collapse_consecutive(merged)
+            best_gate_id = None
+            best_similarity = 0.0
+            for gate_id, gate_embedding in self.gate_embeddings.items():
+                similarity = VectorMath.dot(normalized_window, gate_embedding) or 0.0
+                if similarity > best_similarity:
+                    best_similarity = similarity
+                    best_gate_id = gate_id
 
-        if len(merged) > self.config.max_gates_per_response:
-            merged = merged[: self.config.max_gates_per_response]
+            if best_gate_id is None:
+                continue
+
+            best_similarities.append(best_similarity)
+            gate_meta = self.gate_metadata.get(best_gate_id)
+            if gate_meta is None:
+                continue
+
+            local_entropy = None
+            if entropy_trace and window_start < len(entropy_trace):
+                window_entropy = entropy_trace[
+                    window_start : min(window_end, len(entropy_trace))
+                ]
+                if window_entropy:
+                    local_entropy = sum(window_entropy) / float(len(window_entropy))
+
+            candidates.append(
+                (
+                    DetectedGate(
+                        gate_id=best_gate_id,
+                        gate_name=gate_meta.name,
+                        confidence=float(best_similarity),
+                        character_span=(window_start, window_end),
+                        trigger_text=truncate(window_text, 50),
+                        local_entropy=local_entropy,
+                    ),
+                    index,
+                    best_similarity,
+                )
+            )
+
+        if not best_similarities:
+            return DetectionResult(
+                model_id=model_id,
+                prompt_id=prompt_id,
+                response_text=text,
+                detected_gates=[],
+            )
+
+        if len(best_similarities) > 1 and max(best_similarities) == min(best_similarities):
+            return DetectionResult(
+                model_id=model_id,
+                prompt_id=prompt_id,
+                response_text=text,
+                detected_gates=[],
+            )
+
+        if len(best_similarities) == 1:
+            detections = candidates
+        else:
+            threshold = self._otsu_threshold(best_similarities)
+            detections = [c for c in candidates if c[2] > threshold]
+        detections.sort(key=lambda item: item[1])
+        merged = self._collapse_consecutive([item[0] for item in detections])
 
         return DetectionResult(
             model_id=model_id,
@@ -243,9 +240,6 @@ class GateDetector:
 
     def _ensure_gate_embeddings(self) -> None:
         if self.gate_embeddings:
-            return
-        if self.embedder is None:
-            logger.warning("No embedder available for gate detection")
             return
 
         for gate in self.gate_metadata.values():
@@ -270,90 +264,55 @@ class GateDetector:
 
         logger.info("Loaded %s gate embeddings", len(self.gate_embeddings))
 
-    def _detect_with_window(
-        self,
-        text: str,
-        window_size: int,
-        entropy_trace: list[float] | None,
-    ) -> list[tuple[DetectedGate, int]]:
-        if self.embedder is None:
-            return []
-
-        detections: list[tuple[DetectedGate, int]] = []
-        chars = list(text)
-        char_count = len(chars)
-        char_window_size = window_size * 4
-        char_stride = self.config.stride * 4
-
-        position = 0
-        while position + char_window_size <= char_count:
-            window_start = position
-            window_end = min(position + char_window_size, char_count)
-            window_text = "".join(chars[window_start:window_end])
-
-            embeddings = self.embedder.embed([window_text])
-            if not embeddings:
-                position += char_stride
-                continue
-            window_embedding = embeddings[0]
-            normalized_window = VectorMath.l2_normalized(
-                [float(value) for value in window_embedding]
-            )
-
-            best_gate_id = None
-            best_similarity = 0.0
-            for gate_id, gate_embedding in self.gate_embeddings.items():
-                similarity = VectorMath.dot(normalized_window, gate_embedding) or 0.0
-                if similarity > best_similarity:
-                    best_similarity = similarity
-                    best_gate_id = gate_id
-
-            if best_gate_id and best_similarity >= self.config.detection_threshold:
-                gate_meta = self.gate_metadata.get(best_gate_id)
-                if gate_meta is None:
-                    position += char_stride
-                    continue
-                local_entropy = None
-                if entropy_trace and window_start < len(entropy_trace):
-                    window_entropy = entropy_trace[
-                        window_start : min(window_end, len(entropy_trace))
-                    ]
-                    if window_entropy:
-                        local_entropy = sum(window_entropy) / float(len(window_entropy))
-                detections.append(
-                    (
-                        DetectedGate(
-                            gate_id=best_gate_id,
-                            gate_name=gate_meta.name,
-                            confidence=float(best_similarity),
-                            character_span=(window_start, window_end),
-                            trigger_text=truncate(window_text, 50),
-                            local_entropy=local_entropy,
-                        ),
-                        window_start,
-                    )
-                )
-
-            position += char_stride
-
-        return detections
+    @staticmethod
+    def _segment_text(text: str) -> list[tuple[int, int, str]]:
+        segments: list[tuple[int, int, str]] = []
+        start = 0
+        for idx, char in enumerate(text):
+            if char in ".!?\n":
+                end = idx + 1
+                if end > start:
+                    segment = text[start:end].strip()
+                    if segment:
+                        segments.append((start, end, segment))
+                start = end
+        if start < len(text):
+            segment = text[start:].strip()
+            if segment:
+                segments.append((start, len(text), segment))
+        return segments
 
     @staticmethod
-    def _merge_overlapping(gates: list[DetectedGate]) -> list[DetectedGate]:
-        if not gates:
-            return []
+    def _otsu_threshold(values: list[float]) -> float:
+        if not values:
+            raise ValueError("Cannot derive threshold from empty similarity values")
+        if len(values) == 1:
+            return values[0]
 
-        merged: list[DetectedGate] = []
-        current = gates[0]
-        for gate in gates[1:]:
-            if gate.character_span[0] < current.character_span[1]:
-                if gate.confidence > current.confidence:
-                    current = gate
-            else:
-                merged.append(current)
-                current = gate
-        merged.append(current)
-        return merged
+        sorted_vals = sorted(values)
+        total = sum(sorted_vals)
+        total_count = len(sorted_vals)
+
+        best_threshold = sorted_vals[0]
+        best_score = -1.0
+        sum_left = 0.0
+
+        for idx, value in enumerate(sorted_vals[:-1]):
+            sum_left += value
+            count_left = idx + 1
+            count_right = total_count - count_left
+            if count_right == 0:
+                break
+            mean_left = sum_left / count_left
+            mean_right = (total - sum_left) / count_right
+            weight_left = count_left / total_count
+            weight_right = count_right / total_count
+            score = weight_left * weight_right * (mean_left - mean_right) ** 2
+            if score > best_score:
+                best_score = score
+                best_threshold = value
+
+        return best_threshold
 
     @staticmethod
     def _collapse_consecutive(gates: list[DetectedGate]) -> list[DetectedGate]:

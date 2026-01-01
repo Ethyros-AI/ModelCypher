@@ -43,7 +43,6 @@ def infer_run(
         False, "--security-scan", help="Perform dual-path security analysis"
     ),
     max_tokens: int = typer.Option(512, "--max-tokens", help="Max tokens per response"),
-    temperature: float = typer.Option(0.7, "--temperature", help="Sampling temperature"),
     top_p: float = typer.Option(0.95, "--top-p", help="Top-p sampling"),
 ) -> None:
     """Execute inference with optional adapter and security scanning."""
@@ -57,7 +56,7 @@ def infer_run(
             adapter=adapter,
             security_scan=security_scan,
             max_tokens=max_tokens,
-            temperature=temperature,
+            temperature=0.0,  # Hardcoded for deterministic inference
             top_p=top_p,
         )
     except ValueError as exc:
@@ -130,7 +129,6 @@ def infer_suite(
     adapter: str | None = typer.Option(None, "--adapter", help="Path to adapter directory"),
     security_scan: bool = typer.Option(False, "--security-scan", help="Perform security analysis"),
     max_tokens: int = typer.Option(512, "--max-tokens", help="Default max tokens"),
-    temperature: float = typer.Option(0.7, "--temperature", help="Default temperature"),
 ) -> None:
     """Execute batched inference over a suite of prompts."""
     context = _context(ctx)
@@ -143,7 +141,7 @@ def infer_suite(
             adapter=adapter,
             security_scan=security_scan,
             max_tokens=max_tokens,
-            temperature=temperature,
+            temperature=0.0,  # Hardcoded for deterministic inference
         )
     except ValueError as exc:
         error = ErrorDetail(

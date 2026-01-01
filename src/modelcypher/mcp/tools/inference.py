@@ -46,17 +46,15 @@ def register_inference_tools(ctx: ServiceContext) -> None:
             model: str,
             prompt: str,
             maxTokens: int = 512,
-            temperature: float = 0.7,
             topP: float = 0.95,
         ) -> dict:
             if maxTokens <= 0:
                 raise ValueError("maxTokens must be a positive integer")
-            if temperature < 0.0 or temperature > 2.0:
-                raise ValueError("temperature must be between 0.0 and 2.0")
             if topP < 0.0 or topP > 1.0:
                 raise ValueError("topP must be between 0.0 and 1.0")
             model_path = require_existing_directory(model)
-            result = ctx.inference_engine.infer(model_path, prompt, maxTokens, temperature, topP)
+            # Temperature hardcoded to 0.0 for deterministic inference
+            result = ctx.inference_engine.infer(model_path, prompt, maxTokens, 0.0, topP)
             return {
                 "_schema": "mc.infer.v1",
                 "modelId": result["modelId"],
@@ -77,7 +75,6 @@ def register_inference_tools(ctx: ServiceContext) -> None:
             adapter: str | None = None,
             securityScan: bool = False,
             maxTokens: int = 512,
-            temperature: float = 0.7,
             topP: float = 0.95,
         ) -> dict:
             """Execute inference with optional adapter and security scanning."""
@@ -90,7 +87,7 @@ def register_inference_tools(ctx: ServiceContext) -> None:
                 adapter=adapter_path,
                 security_scan=securityScan,
                 max_tokens=maxTokens,
-                temperature=temperature,
+                temperature=0.0,  # Hardcoded for deterministic inference
                 top_p=topP,
             )
 
@@ -127,14 +124,14 @@ def register_inference_tools(ctx: ServiceContext) -> None:
             model: str,
             promptsFile: str,
             maxTokens: int = 512,
-            temperature: float = 0.7,
             topP: float = 0.95,
         ) -> dict:
             """Execute batched inference from a prompts file."""
             model_path = require_existing_directory(model)
             prompts_path = require_existing_path(promptsFile)
+            # Temperature hardcoded to 0.0 for deterministic inference
             result = ctx.inference_engine.run_batch(
-                model_path, prompts_path, maxTokens, temperature, topP
+                model_path, prompts_path, maxTokens, 0.0, topP
             )
             return {
                 "_schema": "mc.infer.batch.v1",
@@ -158,7 +155,6 @@ def register_inference_tools(ctx: ServiceContext) -> None:
             adapter: str | None = None,
             securityScan: bool = False,
             maxTokens: int = 512,
-            temperature: float = 0.7,
         ) -> dict:
             """Execute batched inference over a suite of prompts."""
             model_path = require_existing_directory(model)
@@ -171,7 +167,7 @@ def register_inference_tools(ctx: ServiceContext) -> None:
                 adapter=adapter_path,
                 security_scan=securityScan,
                 max_tokens=maxTokens,
-                temperature=temperature,
+                temperature=0.0,  # Hardcoded for deterministic inference
             )
 
             # Convert cases to dict format

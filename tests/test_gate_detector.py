@@ -34,7 +34,6 @@ from modelcypher.core.domain.agents.computational_gate_atlas import (
     ComputationalGateCategory,
 )
 from modelcypher.core.domain.geometry.gate_detector import (
-    Configuration,
     DetectedGate,
     GateDetector,
 )
@@ -100,21 +99,9 @@ def _make_gates() -> list[ComputationalGate]:
 
 
 def _make_detector(
-    threshold: float = 0.5,
-    window_sizes: list[int] | None = None,
-    collapse_consecutive: bool = True,
 ) -> GateDetector:
     """Create test detector with keyword embedder."""
-    if window_sizes is None:
-        window_sizes = [1]
     return GateDetector(
-        configuration=Configuration(
-            detection_threshold=threshold,
-            window_sizes=window_sizes,
-            stride=1,
-            collapse_consecutive=collapse_consecutive,
-            max_gates_per_response=50,
-        ),
         embedder=_KeywordEmbedder(),
         gate_inventory=_make_gates(),
     )
@@ -127,7 +114,7 @@ class TestBasicDetection:
         """Detector should find gates that match the text."""
         detector = _make_detector()
         result = detector.detect(
-            text="alpha alpha beta alpha",
+            text="alpha. beta.",
             model_id="model-1",
             prompt_id="prompt-1",
         )
@@ -140,7 +127,7 @@ class TestBasicDetection:
         """Mean confidence should be positive when gates are detected."""
         detector = _make_detector()
         result = detector.detect(
-            text="alpha beta",
+            text="alpha. beta.",
             model_id="m",
             prompt_id="p",
         )
@@ -157,7 +144,7 @@ class TestBasicDetection:
 
     def test_no_matching_text_returns_empty(self) -> None:
         """Text with no matching keywords should return empty gates."""
-        detector = _make_detector(threshold=0.9)  # High threshold
+        detector = _make_detector()
         result = detector.detect(
             text="xyz xyz xyz",  # No alpha/beta/gamma
             model_id="m",
@@ -170,30 +157,16 @@ class TestBasicDetection:
 class TestThresholdBehavior:
     """Tests for detection threshold behavior."""
 
-    def test_high_threshold_filters_weak_matches(self) -> None:
-        """High threshold should filter out weak matches."""
-        # With high threshold, only strong matches pass
-        detector_high = _make_detector(threshold=0.95)
-        detector_low = _make_detector(threshold=0.1)
-
-        text = "alpha beta gamma"
-        result_high = detector_high.detect(text=text, model_id="m", prompt_id="p")
-        result_low = detector_low.detect(text=text, model_id="m", prompt_id="p")
-
-        # Low threshold should detect >= high threshold
-        assert len(result_low.detected_gates) >= len(result_high.detected_gates)
-
     def test_zero_threshold_detects_all(self) -> None:
-        """Zero threshold should detect any non-zero similarity."""
-        detector = _make_detector(threshold=0.0)
+        """Derived threshold should include strong matches."""
+        detector = _make_detector()
         result = detector.detect(
-            text="alpha beta",
+            text="alpha. xyz.",
             model_id="m",
             prompt_id="p",
         )
 
-        # Should detect something
-        assert len(result.detected_gates) >= 0  # May detect based on implementation
+        assert len(result.detected_gates) > 0
 
 
 class TestCollapseConsecutive:
@@ -201,7 +174,7 @@ class TestCollapseConsecutive:
 
     def test_collapse_merges_consecutive_same_gates(self) -> None:
         """Consecutive same gates should be collapsed to one."""
-        detector = _make_detector(collapse_consecutive=True)
+        detector = _make_detector()
         # "alpha alpha alpha" should collapse to single alpha detection
         result = detector.detect(
             text="alpha alpha alpha",
@@ -215,41 +188,16 @@ class TestCollapseConsecutive:
 
     def test_no_collapse_keeps_consecutive(self) -> None:
         """Without collapse, consecutive gates are kept separate."""
-        detector = _make_detector(collapse_consecutive=False)
+        detector = _make_detector()
         result = detector.detect(
-            text="alpha alpha alpha",
+            text="alpha. alpha. alpha.",
             model_id="m",
             prompt_id="p",
         )
 
-        # Without collapse, may have multiple alpha detections
-        # (Actual count depends on window overlap)
-        assert result is not None
-
-
-class TestConfiguration:
-    """Tests for Configuration dataclass."""
-
-    def test_requires_explicit_values(self) -> None:
-        """Configuration should require explicit values."""
-        with pytest.raises(TypeError):
-            Configuration()  # type: ignore[call-arg]
-
-    def test_custom_configuration(self) -> None:
-        """Custom configuration values should be preserved."""
-        config = Configuration(
-            detection_threshold=0.8,
-            window_sizes=[5, 10],
-            stride=2,
-            collapse_consecutive=False,
-            max_gates_per_response=100,
-        )
-
-        assert config.detection_threshold == 0.8
-        assert config.window_sizes == [5, 10]
-        assert config.stride == 2
-        assert config.collapse_consecutive is False
-        assert config.max_gates_per_response == 100
+        # Consecutive identical gates collapse to one per sequence.
+        alpha_count = sum(1 for g in result.detected_gates if g.gate_id == "alpha")
+        assert alpha_count <= 1
 
 
 class TestDetectedGate:
@@ -367,28 +315,15 @@ class TestGateEmbeddings:
 
 
 class TestMaxGatesLimit:
-    """Tests for max_gates_per_response limit."""
+    """Tests for gate output limits."""
 
-    def test_max_gates_limits_output(self) -> None:
-        """Should limit detected gates to max_gates_per_response."""
-        # Create detector with low limit
-        detector = GateDetector(
-            configuration=Configuration(
-                detection_threshold=0.1,
-                window_sizes=[1],
-                stride=1,
-                collapse_consecutive=False,
-                max_gates_per_response=2,  # Only allow 2 gates
-            ),
-            embedder=_KeywordEmbedder(),
-            gate_inventory=_make_gates(),
-        )
-
-        # Long text that could match many times
+    def test_no_cap_truncation(self) -> None:
+        """Gate detection should not truncate detections arbitrarily."""
+        detector = _make_detector()
         result = detector.detect(
-            text="alpha beta alpha beta alpha beta alpha beta",
+            text="alpha. beta. alpha. beta.",
             model_id="m",
             prompt_id="p",
         )
 
-        assert len(result.detected_gates) <= 2
+        assert len(result.detected_gates) > 0

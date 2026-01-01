@@ -97,7 +97,6 @@ def ensemble_run(
     ensemble_id: str = typer.Argument(..., help="Ensemble ID"),
     prompt: str = typer.Option(..., "--prompt", help="Input prompt"),
     max_tokens: int = typer.Option(512, "--max-tokens", help="Maximum tokens to generate"),
-    temperature: float = typer.Option(0.7, "--temperature", help="Sampling temperature"),
 ) -> None:
     """Execute ensemble inference."""
     context = _context(ctx)
@@ -110,7 +109,7 @@ def ensemble_run(
             ensemble_id=ensemble_id,
             prompt=prompt,
             max_tokens=max_tokens,
-            temperature=temperature,
+            temperature=0.0,  # Hardcoded for deterministic inference
         )
     except ValueError as exc:
         error = ErrorDetail(

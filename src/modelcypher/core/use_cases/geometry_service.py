@@ -23,18 +23,7 @@ path comparison, and validation suite execution. Use this service to compare
 how different models process the same inputs.
 
 Example:
-    service = GeometryService(
-        detector=GateDetector(
-            configuration=GateConfig(
-                detection_threshold=gate_threshold,
-                window_sizes=window_sizes,
-                stride=stride,
-                collapse_consecutive=collapse_consecutive,
-                max_gates_per_response=max_gates_per_response,
-            ),
-            embedder=embedder,
-        )
-    )
+    service = GeometryService(embedder=embedder)
     result = service.compare_paths(model_a, model_b, prompt)
     print(result.comparison.cka_similarity)
 """
@@ -44,7 +33,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from modelcypher.core.domain.geometry.gate_detector import Configuration as GateConfig
 from modelcypher.core.domain.geometry.gate_detector import DetectionResult, GateDetector
 from modelcypher.core.domain.geometry.geometry_validation_suite import (
     Config as ValidationConfig,
@@ -79,19 +67,10 @@ class GeometryService:
     def __init__(
         self,
         detector: GateDetector | None = None,
-        *,
-        gate_config: GateConfig | None = None,
         embedder: EmbeddingProvider | None = None,
     ) -> None:
-        if detector is None:
-            if gate_config is None and embedder is None:
-                self.detector = None
-                return
-            if gate_config is None or embedder is None:
-                raise ValueError(
-                    "GeometryService requires GateDetector or (gate_config + embedder)."
-                )
-            detector = GateDetector(configuration=gate_config, embedder=embedder)
+        if detector is None and embedder is not None:
+            detector = GateDetector(embedder=embedder)
         self.detector = detector
 
     def validate(self, include_fixtures: bool = False) -> Report:
@@ -109,10 +88,11 @@ class GeometryService:
         text: str,
         model_id: str,
         prompt_id: str,
-        threshold: float | None = None,
         entropy_trace: list[float] | None = None,
     ) -> DetectionResult:
-        detector = self._detector_for_threshold(threshold)
+        if self.detector is None:
+            raise ValueError("GateDetector not configured. Provide embedder or detector.")
+        detector = self.detector
         return detector.detect(
             text=text,
             model_id=model_id,
@@ -127,10 +107,11 @@ class GeometryService:
         model_a: str,
         model_b: str,
         prompt_id: str = "compare",
-        threshold: float | None = None,
         comprehensive: bool = False,
     ) -> PathComparisonResult:
-        detector = self._detector_for_threshold(threshold)
+        if self.detector is None:
+            raise ValueError("GateDetector not configured. Provide embedder or detector.")
+        detector = self.detector
         result_a = detector.detect(text=text_a, model_id=model_a, prompt_id=prompt_id)
         result_b = detector.detect(text=text_b, model_id=model_b, prompt_id=prompt_id)
 
@@ -358,24 +339,6 @@ class GeometryService:
         if include_schema:
             payload = {"_schema": "mc.geometry.validation.v1", **payload}
         return payload
-
-    def _detector_for_threshold(self, threshold: float | None) -> GateDetector:
-        if self.detector is None:
-            raise ValueError("GateDetector not configured. Provide gate_config or detector.")
-        if threshold is None:
-            return self.detector
-        config = GateConfig(
-            detection_threshold=threshold,
-            window_sizes=self.detector.config.window_sizes,
-            stride=self.detector.config.stride,
-            collapse_consecutive=self.detector.config.collapse_consecutive,
-            max_gates_per_response=self.detector.config.max_gates_per_response,
-        )
-        return GateDetector(
-            configuration=config,
-            embedder=self.detector.embedder,
-            gate_inventory=self.detector.gate_metadata.values(),
-        )
 
     @staticmethod
     def _iso_timestamp(value: datetime) -> str:

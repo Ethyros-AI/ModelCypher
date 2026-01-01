@@ -168,7 +168,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         def mc_geometry_concept_detect(
             text: str,
             model: str | None = None,
-            threshold: float = 0.3,
             windowSizes: list[int] | None = None,
             stride: int = 5,
             maxConcepts: int = 30,
@@ -176,21 +175,29 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Detect concept sequence in text or model response.
 
+            Detection threshold is derived from concept embedding geometry.
             If `model` is set, `text` is treated as a prompt and the response is analyzed.
             """
+            from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
             from modelcypher.core.domain.geometry.concept_detector import (
-                ConceptDetector,
                 Configuration,
+                create_default_detector,
             )
 
+            embedder = EmbeddingDefaults.make_default_embedder()
+            if embedder is None:
+                raise ValueError(
+                    "No embedding provider available. Concept detection requires embeddings."
+                )
+
             config = Configuration(
-                detection_threshold=threshold,
+                detection_threshold=None,  # Derived from embeddings
                 window_sizes=tuple(windowSizes) if windowSizes else Configuration().window_sizes,
                 stride=stride,
                 collapse_consecutive=collapse,
                 max_concepts_per_response=maxConcepts,
             )
-            detector = ConceptDetector(config)
+            detector = create_default_detector(embedder, config)
 
             if model:
                 response = ctx.inference_engine.infer(
@@ -246,7 +253,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             modelA: str | None = None,
             modelB: str | None = None,
             prompt: str | None = None,
-            threshold: float = 0.3,
             windowSizes: list[int] | None = None,
             stride: int = 5,
             maxConcepts: int = 30,
@@ -254,21 +260,30 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Compare concept sequences between two texts or model responses.
 
+            Detection threshold is derived from concept embedding geometry.
             Provide textA/textB or modelA/modelB with a prompt.
             """
+            from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
             from modelcypher.core.domain.geometry.concept_detector import (
                 ConceptDetector,
                 Configuration,
+                create_default_detector,
             )
 
+            embedder = EmbeddingDefaults.make_default_embedder()
+            if embedder is None:
+                raise ValueError(
+                    "No embedding provider available. Concept detection requires embeddings."
+                )
+
             config = Configuration(
-                detection_threshold=threshold,
+                detection_threshold=None,  # Derived from embeddings
                 window_sizes=tuple(windowSizes) if windowSizes else Configuration().window_sizes,
                 stride=stride,
                 collapse_consecutive=collapse,
                 max_concepts_per_response=maxConcepts,
             )
-            detector = ConceptDetector(config)
+            detector = create_default_detector(embedder, config)
 
             if textA and textB:
                 text_to_analyze_a = textA

@@ -18,23 +18,29 @@
 """
 Concept Detector.
 
-Detects semantic concept activations in generated text.
+Detects semantic concept activations in generated text using embeddings.
+
 This is the concept-level analog to GateDetector, but operates at a higher
 level of abstraction. While gates detect syntactic/code patterns, concepts
 detect modality-invariant meaning like RECURRENCE, SYMMETRY, EMERGENCE.
 
 Detection Algorithm:
-The detector uses a sliding window approach with larger windows than
-GateDetector because concepts are expressed over longer spans:
+The detector uses a sliding window approach with embedding-based similarity:
 - Small windows (10-15 words) catch atomic concepts (RATIO, EQUIVALENCE)
 - Medium windows (15-25 words) catch compound concepts (RECURRENCE, TRANSFORMATION)
 - Large windows (25-40 words) catch abstract concepts (UNIVERSALITY, EMERGENCE)
 
-Cross-Modal Triangulation:
-Unlike gate detection which uses polyglot code examples, concept detection
-triangulates across modalities (CODE, MATH, NATURE, PHILOSOPHY, VISUAL).
+Embedding-Based Detection:
+Each concept has associated embeddings computed from support texts across modalities.
+Text windows are embedded and compared to concept embeddings via cosine similarity.
+The detection threshold is derived from the geometry of concept embeddings:
+- Intra-concept similarity: how similar are examples of the same concept
+- Inter-concept similarity: how similar are examples of different concepts
+- Threshold = midpoint between max intra-concept and min inter-concept distance
+
 This provides robustness: the same concept is detected whether expressed
-in mathematical notation or poetic description.
+in mathematical notation or poetic description, because the geometry of
+the embedding space captures semantic similarity across modalities.
 """
 
 from __future__ import annotations
@@ -42,6 +48,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from modelcypher.ports.embedding import EmbeddingProvider
 
 
 class ConceptCategory(str, Enum):
@@ -218,71 +228,182 @@ class ConceptComparisonResult:
         return len(self.aligned_concepts) / total
 
 
+@dataclass
+class ConceptEmbeddings:
+    """Embeddings for a single concept, including support examples.
+
+    Attributes:
+        concept_id: Unique identifier for the concept.
+        category: Concept category for grouping.
+        centroid: Mean embedding across all support texts.
+        support_embeddings: Individual embeddings for each support text.
+    """
+
+    concept_id: str
+    category: ConceptCategory
+    centroid: list[float]
+    support_embeddings: list[list[float]] = field(default_factory=list)
+
+
 class ConceptDetector:
     """
-    Detects semantic concept activations in generated text.
+    Detects semantic concept activations in generated text using embeddings.
 
     This class provides methods for detecting concepts in text using
-    sliding window analysis and optional embedding-based similarity.
+    sliding window analysis and embedding-based similarity. Detection
+    threshold is derived from the geometry of concept embeddings.
+
+    Requires:
+        - EmbeddingProvider for embedding text windows
+        - Concept embeddings with support examples for separability computation
     """
 
-    def __init__(self, config: Configuration | None = None):
-        """Initialize with optional configuration."""
+    def __init__(
+        self,
+        embedding_provider: "EmbeddingProvider",
+        config: Configuration | None = None,
+    ):
+        """Initialize with required embedding provider.
+
+        Args:
+            embedding_provider: Provider for text-to-embedding conversion.
+            config: Optional configuration overrides.
+
+        Raises:
+            ValueError: If embedding_provider is None.
+        """
+        if embedding_provider is None:
+            raise ValueError(
+                "EmbeddingProvider is required for embedding-based concept detection. "
+                "Concept detection operates on embedding geometry, not keywords."
+            )
+        self._embedding_provider = embedding_provider
         self.config = config or Configuration()
         self._derived_threshold: float | None = None
-        self._concept_embeddings: dict[str, list[float]] = {}
+        self._concept_embeddings: dict[str, ConceptEmbeddings] = {}
 
     @property
     def effective_threshold(self) -> float:
-        """Get the detection threshold (explicit or derived from embeddings)."""
+        """Get the detection threshold (explicit or derived from embeddings).
+
+        The threshold is derived from embedding separability:
+        threshold = (min_inter_similarity + max_intra_similarity) / 2
+
+        This ensures detection only fires when a text window is closer to
+        a concept than concepts are to each other.
+        """
         if self.config.detection_threshold is not None:
             return self.config.detection_threshold
         if self._derived_threshold is not None:
             return self._derived_threshold
         # Try to derive from concept embeddings
         if self._concept_embeddings:
-            self._derived_threshold = self._derive_threshold_from_embeddings()
+            self._derived_threshold = self._derive_threshold_from_separability()
             return self._derived_threshold
         raise ValueError(
             "Cannot derive detection threshold: no concept embeddings available. "
-            "Either set detection_threshold explicitly or call set_concept_embeddings() first."
+            "Call set_concept_embeddings() first. Concept detection requires "
+            "embeddings to operate on geometry, not keywords."
         )
 
-    def set_concept_embeddings(self, embeddings: dict[str, list[float]]) -> None:
-        """Set concept embeddings for threshold derivation."""
-        self._concept_embeddings = embeddings
+    def set_concept_embeddings(
+        self,
+        concepts: list[ConceptEmbeddings],
+    ) -> None:
+        """Set concept embeddings for detection and threshold derivation.
+
+        Args:
+            concepts: List of ConceptEmbeddings with support examples.
+
+        Raises:
+            ValueError: If concepts list is empty or has fewer than 2 concepts.
+        """
+        if not concepts:
+            raise ValueError(
+                "Cannot set empty concept embeddings. At least 2 concepts "
+                "are required for separability-based threshold computation."
+            )
+        if len(concepts) < 2:
+            raise ValueError(
+                "Cannot derive detection threshold: need at least 2 concepts "
+                "for separability computation."
+            )
+        self._concept_embeddings = {c.concept_id: c for c in concepts}
         self._derived_threshold = None  # Reset to re-derive
 
-    def _derive_threshold_from_embeddings(self) -> float:
-        """Derive detection threshold from inter-concept embedding similarities."""
+    def _derive_threshold_from_separability(self) -> float:
+        """Derive detection threshold from concept embedding separability.
+
+        Uses the geometry of concept embeddings to determine threshold:
+        - Computes inter-concept similarities (between different concepts)
+        - Computes intra-concept similarities (within same concept, if support examples exist)
+        - Threshold = midpoint between max_intra and min_inter
+
+        If intra-concept examples don't exist, uses inter-concept statistics
+        with a sigma-based threshold as fallback.
+
+        Returns:
+            Detection threshold derived from embedding geometry.
+
+        Raises:
+            ValueError: If concepts are not separable (min_inter <= max_intra).
+        """
         import math
 
         if len(self._concept_embeddings) < 2:
             raise ValueError(
-                "Cannot derive detection threshold: need at least 2 concept embeddings."
+                "Cannot derive detection threshold: need at least 2 concepts."
             )
 
-        # Compute pairwise cosine similarities
-        concept_ids = list(self._concept_embeddings.keys())
-        similarities: list[float] = []
+        concepts = list(self._concept_embeddings.values())
 
-        for i, cid_a in enumerate(concept_ids):
-            emb_a = self._concept_embeddings[cid_a]
-            for cid_b in concept_ids[i + 1 :]:
-                emb_b = self._concept_embeddings[cid_b]
-                sim = self._cosine_similarity(emb_a, emb_b)
-                similarities.append(sim)
+        # Compute inter-concept similarities (between different concepts)
+        inter_similarities: list[float] = []
+        for i, concept_a in enumerate(concepts):
+            for concept_b in concepts[i + 1 :]:
+                sim = self._cosine_similarity(concept_a.centroid, concept_b.centroid)
+                inter_similarities.append(sim)
 
-        if not similarities:
+        if not inter_similarities:
             raise ValueError(
-                "Cannot derive detection threshold: no pairwise similarities computed."
+                "Cannot derive detection threshold: no inter-concept similarities."
             )
 
-        n = len(similarities)
-        mean = sum(similarities) / n
-        variance = sum((s - mean) ** 2 for s in similarities) / n
-        std = math.sqrt(variance)
-        threshold = mean + self.config.detection_sigma * std
+        # Compute intra-concept similarities (within same concept)
+        intra_similarities: list[float] = []
+        for concept in concepts:
+            if len(concept.support_embeddings) >= 2:
+                # Compare support embeddings within this concept
+                for i, emb_a in enumerate(concept.support_embeddings):
+                    for emb_b in concept.support_embeddings[i + 1 :]:
+                        sim = self._cosine_similarity(emb_a, emb_b)
+                        intra_similarities.append(sim)
+
+        min_inter = min(inter_similarities)
+
+        if intra_similarities:
+            # Use separability-based threshold
+            max_intra = max(intra_similarities)
+
+            if min_inter <= max_intra:
+                raise ValueError(
+                    f"Concepts are not separable in embedding space: "
+                    f"min_inter_similarity ({min_inter:.4f}) <= max_intra_similarity ({max_intra:.4f}). "
+                    f"This means some concepts are more similar to each other than their "
+                    f"own support examples are to each other. Improve concept definitions "
+                    f"or use a different embedding model."
+                )
+
+            # Threshold is midpoint for optimal separation
+            threshold = (min_inter + max_intra) / 2
+        else:
+            # No intra-concept examples - use inter-concept statistics
+            n = len(inter_similarities)
+            mean = sum(inter_similarities) / n
+            variance = sum((s - mean) ** 2 for s in inter_similarities) / n
+            std = math.sqrt(variance)
+            # Threshold above mean by sigma standard deviations
+            threshold = mean + self.config.detection_sigma * std
 
         return max(0.0, min(1.0, threshold))
 
@@ -448,70 +569,50 @@ class ConceptDetector:
         character_span: tuple[int, int],
     ) -> DetectedConcept | None:
         """
-        Detect the best matching concept in a window.
+        Detect the best matching concept in a window using embedding similarity.
 
-        Uses keyword-based heuristic detection.
-        In the full implementation, this would use embedding similarity.
+        Embeds the text window and computes cosine similarity to all concept
+        centroids. Returns the highest-similarity concept if it exceeds the
+        detection threshold.
+
+        Args:
+            text: Text window to analyze.
+            character_span: Character positions (start, end) in original text.
+
+        Returns:
+            DetectedConcept if a concept is detected, None otherwise.
+
+        Raises:
+            ValueError: If concept embeddings are not set.
         """
-        text_lower = text.lower()
+        if not self._concept_embeddings:
+            raise ValueError(
+                "Cannot detect concepts: no concept embeddings set. "
+                "Call set_concept_embeddings() before detection."
+            )
 
-        # Heuristic concept detection based on keywords
-        concept_keywords = {
-            "recurrence": (
-                ConceptCategory.STRUCTURAL,
-                ["recurrence", "recursive", "repeating", "fibonacci", "sequence"],
-            ),
-            "symmetry": (
-                ConceptCategory.STRUCTURAL,
-                ["symmetry", "symmetric", "mirror", "reflection", "balanced"],
-            ),
-            "ratio": (
-                ConceptCategory.RELATIONAL,
-                ["ratio", "proportion", "golden", "phi", "scaling"],
-            ),
-            "equivalence": (
-                ConceptCategory.RELATIONAL,
-                ["equivalent", "equal", "same", "identical", "isomorphic"],
-            ),
-            "transformation": (
-                ConceptCategory.TRANSFORMATIONAL,
-                ["transform", "map", "convert", "change", "morphism"],
-            ),
-            "emergence": (
-                ConceptCategory.EMERGENT,
-                ["emerge", "arising", "self-organizing", "complex", "pattern"],
-            ),
-            "causality": (
-                ConceptCategory.FOUNDATIONAL,
-                ["cause", "effect", "because", "therefore", "implies"],
-            ),
-            "ordering": (
-                ConceptCategory.FOUNDATIONAL,
-                ["order", "sequence", "before", "after", "less than", "greater"],
-            ),
-        }
+        # Embed the text window
+        text_embeddings = self._embedding_provider.embed([text])
+        if not text_embeddings:
+            return None
+        text_embedding = text_embeddings[0]
 
-        best_concept: str | None = None
-        best_category: ConceptCategory | None = None
-        best_score = 0.0
+        # Find best matching concept
+        best_concept: ConceptEmbeddings | None = None
+        best_similarity = 0.0
 
-        for concept_id, (category, keywords) in concept_keywords.items():
-            score = sum(1 for kw in keywords if kw in text_lower)
-            normalized_score = score / len(keywords) if keywords else 0.0
+        for concept in self._concept_embeddings.values():
+            similarity = self._cosine_similarity(text_embedding, concept.centroid)
+            if similarity > best_similarity:
+                best_similarity = similarity
+                best_concept = concept
 
-            if (
-                normalized_score > best_score
-                and normalized_score >= self.effective_threshold
-            ):
-                best_score = normalized_score
-                best_concept = concept_id
-                best_category = category
-
-        if best_concept and best_category:
+        # Check if best match exceeds threshold
+        if best_concept is not None and best_similarity >= self.effective_threshold:
             return DetectedConcept(
-                concept_id=best_concept,
-                category=best_category,
-                confidence=best_score,
+                concept_id=best_concept.concept_id,
+                category=best_concept.category,
+                confidence=best_similarity,
                 character_span=character_span,
                 trigger_text=text[:100] + ("..." if len(text) > 100 else ""),
                 cross_modal_confidence=None,
@@ -597,3 +698,139 @@ class ConceptDetector:
             unique_to_a=tuple(sorted(set_a - set_b)),
             unique_to_b=tuple(sorted(set_b - set_a)),
         )
+
+
+# Default concept definitions with support texts for embedding
+DEFAULT_CONCEPT_DEFINITIONS: dict[str, tuple[ConceptCategory, list[str]]] = {
+    "recurrence": (
+        ConceptCategory.STRUCTURAL,
+        [
+            "The pattern repeats at regular intervals, each iteration building on the previous.",
+            "Fibonacci sequences emerge from recursive self-reference.",
+            "The function calls itself, establishing a recurrence relation.",
+            "Seasonal cycles return with predictable regularity.",
+        ],
+    ),
+    "symmetry": (
+        ConceptCategory.STRUCTURAL,
+        [
+            "The left side mirrors the right in perfect bilateral symmetry.",
+            "Rotational symmetry preserves the figure under transformation.",
+            "The equation remains unchanged when variables are swapped.",
+            "Nature exhibits symmetry in snowflakes and flower petals.",
+        ],
+    ),
+    "ratio": (
+        ConceptCategory.RELATIONAL,
+        [
+            "The golden ratio phi appears in growth patterns throughout nature.",
+            "The proportion of parts to whole reveals the underlying ratio.",
+            "Scale factors maintain constant ratios during transformation.",
+            "Musical harmony emerges from simple frequency ratios.",
+        ],
+    ),
+    "equivalence": (
+        ConceptCategory.RELATIONAL,
+        [
+            "These structures are isomorphic, equivalent in their essential properties.",
+            "The equation states that both sides are equal, expressing equivalence.",
+            "Different representations encode the same underlying information.",
+            "Logical equivalence means truth values always match.",
+        ],
+    ),
+    "transformation": (
+        ConceptCategory.TRANSFORMATIONAL,
+        [
+            "The morphism maps elements from one structure to another.",
+            "Linear transformations preserve vector space operations.",
+            "The function converts input to output through defined operations.",
+            "Metamorphosis transforms the organism through distinct stages.",
+        ],
+    ),
+    "emergence": (
+        ConceptCategory.EMERGENT,
+        [
+            "Complex patterns emerge from simple local interactions.",
+            "Self-organization arises without central control.",
+            "Collective behavior exhibits properties absent in individual components.",
+            "Novel features appear at higher levels of organization.",
+        ],
+    ),
+    "causality": (
+        ConceptCategory.FOUNDATIONAL,
+        [
+            "The cause precedes the effect in a deterministic chain.",
+            "Because the condition holds, the consequence follows.",
+            "Causal inference requires controlling for confounding variables.",
+            "The effect cannot occur without the necessary cause.",
+        ],
+    ),
+    "ordering": (
+        ConceptCategory.FOUNDATIONAL,
+        [
+            "Elements form a total ordering from least to greatest.",
+            "The sequence proceeds step by step in defined order.",
+            "Partial orders allow some elements to be incomparable.",
+            "The ranking establishes precedence among alternatives.",
+        ],
+    ),
+}
+
+
+def create_default_detector(
+    embedding_provider: "EmbeddingProvider",
+    config: Configuration | None = None,
+) -> ConceptDetector:
+    """Create a ConceptDetector with default concept embeddings.
+
+    This factory function creates a ready-to-use detector with the default
+    concept inventory embedded using the provided embedding provider.
+
+    Args:
+        embedding_provider: Provider for text-to-embedding conversion.
+        config: Optional configuration overrides.
+
+    Returns:
+        Configured ConceptDetector with concept embeddings set.
+
+    Example:
+        from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
+        from modelcypher.core.domain.geometry.concept_detector import create_default_detector
+
+        embedder = EmbeddingDefaults.make_default_embedder()
+        if embedder is None:
+            raise RuntimeError("No embedding provider available")
+
+        detector = create_default_detector(embedder)
+        result = detector.detect(text, model_id="model", prompt_id="prompt")
+    """
+    detector = ConceptDetector(embedding_provider, config)
+
+    # Build concept embeddings from default definitions
+    concept_embeddings: list[ConceptEmbeddings] = []
+
+    for concept_id, (category, support_texts) in DEFAULT_CONCEPT_DEFINITIONS.items():
+        # Embed all support texts for this concept
+        support_embeddings = embedding_provider.embed(support_texts)
+
+        # Compute centroid as mean of support embeddings
+        if support_embeddings:
+            n = len(support_embeddings)
+            dim = len(support_embeddings[0])
+            centroid = [
+                sum(emb[i] for emb in support_embeddings) / n for i in range(dim)
+            ]
+        else:
+            centroid = []
+
+        concept_embeddings.append(
+            ConceptEmbeddings(
+                concept_id=concept_id,
+                category=category,
+                centroid=centroid,
+                support_embeddings=support_embeddings,
+            )
+        )
+
+    detector.set_concept_embeddings(concept_embeddings)
+    return detector

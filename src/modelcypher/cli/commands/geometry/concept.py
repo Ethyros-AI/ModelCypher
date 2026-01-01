@@ -30,6 +30,7 @@ from modelcypher.cli.output import write_output
 from modelcypher.core.domain.geometry.concept_detector import (
     ConceptDetector,
     Configuration,
+    create_default_detector,
 )
 from modelcypher.utils.json import dump_json
 
@@ -41,7 +42,21 @@ def _context(ctx: typer.Context) -> CLIContext:
     return ctx.obj
 
 
+def _get_embedding_provider():
+    """Get the default embedding provider for concept detection."""
+    from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
+
+    embedder = EmbeddingDefaults.make_default_embedder()
+    if embedder is None:
+        raise RuntimeError(
+            "No embedding provider available. Concept detection requires embeddings. "
+            "Install mlx-embeddings or configure TC_EMBEDDING_API_URL."
+        )
+    return embedder
+
+
 def _parse_window_sizes(value: str | None) -> tuple[int, ...] | None:
+    """Parse comma-separated window sizes string into tuple."""
     if not value:
         return None
     sizes: list[int] = []
@@ -54,20 +69,25 @@ def _parse_window_sizes(value: str | None) -> tuple[int, ...] | None:
 
 
 def _build_detector(
-    threshold: float,
-    window_sizes: tuple[int, ...] | None,
-    stride: int,
-    collapse_consecutive: bool,
-    max_concepts: int,
-) -> ConceptDetector:
+    window_sizes: tuple[int, ...] | None = None,
+    stride: int = 5,
+    collapse_consecutive: bool = True,
+    max_concepts: int = 30,
+):
+    """Build a concept detector with default embeddings.
+
+    Note: threshold is now derived from embedding separability, not user-provided.
+    """
     config = Configuration(
-        detection_threshold=threshold,
+        # threshold derived from embeddings - not user parameter
+        detection_threshold=None,
         window_sizes=window_sizes or Configuration().window_sizes,
         stride=stride,
         collapse_consecutive=collapse_consecutive,
         max_concepts_per_response=max_concepts,
     )
-    return ConceptDetector(config)
+    embedder = _get_embedding_provider()
+    return create_default_detector(embedder, config)
 
 
 @app.command("detect")
@@ -75,7 +95,6 @@ def concept_detect(
     ctx: typer.Context,
     text: str = typer.Argument(..., help="Text or prompt to analyze"),
     model: str | None = typer.Option(None, "--model", help="Optional model path"),
-    threshold: float = typer.Option(0.3, "--threshold", help="Detection threshold (0-1)"),
     window_sizes: str | None = typer.Option(
         None, "--window-sizes", help="Comma-separated word window sizes (e.g., 10,20,30)"
     ),
@@ -88,10 +107,13 @@ def concept_detect(
     ),
     file: str | None = typer.Option(None, "--file", help="Optional output file"),
 ) -> None:
-    """Detect conceptual activations in text or model responses."""
+    """Detect conceptual activations in text or model responses.
+
+    Detection threshold is derived from concept embedding geometry,
+    not user-provided. This ensures reliable, reproducible detection.
+    """
     context = _context(ctx)
     detector = _build_detector(
-        threshold=threshold,
         window_sizes=_parse_window_sizes(window_sizes),
         stride=stride,
         collapse_consecutive=collapse,
@@ -170,7 +192,6 @@ def concept_compare(
     model_a: str | None = typer.Option(None, "--model-a"),
     model_b: str | None = typer.Option(None, "--model-b"),
     prompt: str | None = typer.Option(None, "--prompt"),
-    threshold: float = typer.Option(0.3, "--threshold", help="Detection threshold (0-1)"),
     window_sizes: str | None = typer.Option(
         None, "--window-sizes", help="Comma-separated word window sizes (e.g., 10,20,30)"
     ),
@@ -183,10 +204,13 @@ def concept_compare(
     ),
     file: str | None = typer.Option(None, "--file", help="Optional output file"),
 ) -> None:
-    """Compare conceptual sequences between two texts or models."""
+    """Compare conceptual sequences between two texts or models.
+
+    Detection threshold is derived from concept embedding geometry,
+    not user-provided. This ensures reliable, reproducible detection.
+    """
     context = _context(ctx)
     detector = _build_detector(
-        threshold=threshold,
         window_sizes=_parse_window_sizes(window_sizes),
         stride=stride,
         collapse_consecutive=collapse,
