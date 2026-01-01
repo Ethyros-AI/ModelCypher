@@ -34,9 +34,12 @@ if TYPE_CHECKING:
 
 @dataclass
 class CompareConfig:
-    """Configuration for comparison run."""
+    """Configuration for comparison run.
 
-    prompt: str = "Hello, how are you?"
+    prompt is REQUIRED - no default. Users must specify what to compare on.
+    """
+
+    prompt: str  # REQUIRED - no default prompt
     max_tokens: int = 100
     temperature: float = 0.7
 
@@ -95,18 +98,17 @@ class CompareService:
     def run(
         self,
         checkpoints: list[str],
-        config: CompareConfig | None = None,
+        config: CompareConfig,
     ) -> CompareRunResult:
         """Execute A/B comparison between checkpoints.
 
         Args:
             checkpoints: List of checkpoint paths to compare.
-            config: Optional comparison configuration.
+            config: Comparison configuration (REQUIRED - includes prompt).
 
         Returns:
             CompareRunResult with comparison_id.
         """
-        config = config or CompareConfig()
         comparison_id = f"cmp-{uuid.uuid4().hex[:8]}"
 
         import time

@@ -106,7 +106,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from .data_models import LayerGeometry, MergeGeometry
 from .global_metrics import compute_global_metrics
 from .infrastructure import setup_infrastructure
-from .stages import (
+from .analysis import (
     stage_analyze_geometry,
     stage_analyze_interference,
     stage_compute_alignment,

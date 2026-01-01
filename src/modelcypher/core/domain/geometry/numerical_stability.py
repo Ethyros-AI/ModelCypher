@@ -392,7 +392,7 @@ def safe_pinv(
         Cutoff for small singular values. Values below rcond * max(singular_values)
         are set to zero. Default is machine_epsilon * max(m, n).
     warn_on_ill_conditioned : bool
-        If True, log warning when condition number exceeds 1e6.
+        If True, log warning when condition number exceeds dtype limit.
 
     Returns
     -------
@@ -478,7 +478,8 @@ def safe_pinv(
         condition = max_sv / min_nonzero
         diagnostics["condition_number"] = condition
 
-        if warn_on_ill_conditioned and condition > 1e6:
+        cond_limit = condition_threshold(b, array)
+        if warn_on_ill_conditioned and condition > cond_limit:
             logger.warning(
                 "safe_pinv: Ill-conditioned matrix (cond=%.2e, rank=%d/%d, truncated=%d)",
                 condition, effective_rank, len(S_np), truncated
@@ -1226,12 +1227,17 @@ def solve_via_gram_alignment(
 
 def _determinant_sign(backend: Backend, R: Array) -> float:
     """Compute sign of determinant for small matrix."""
+    import numpy as np
+
     R_np = backend.to_numpy(R)
     k = int(backend.shape(R)[0])
 
     # LU-based sign computation
     work = R_np.copy()
     det_sign = 1.0
+
+    # Use dtype-specific singularity threshold
+    singular_threshold = np.finfo(work.dtype).tiny
 
     for col in range(k):
         # Find pivot
@@ -1240,7 +1246,7 @@ def _determinant_sign(backend: Backend, R: Array) -> float:
             if abs(work[row, col]) > abs(work[max_row, col]):
                 max_row = row
 
-        if abs(work[max_row, col]) < 1e-15:
+        if abs(work[max_row, col]) < singular_threshold:
             return 0.0  # Singular
 
         if max_row != col:
