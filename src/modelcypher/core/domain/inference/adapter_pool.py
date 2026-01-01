@@ -202,10 +202,10 @@ class AdapterSwapResult:
 
 @dataclass
 class AdapterPoolConfiguration:
-    max_pooled_normal: int = 4
-    max_pooled_warning: int = 2
-    max_pooled_critical: int = 1
-    target_swap_ms: float = 100.0
+    max_pooled_normal: int
+    max_pooled_warning: int
+    max_pooled_critical: int
+    target_swap_ms: float
 
 
 from modelcypher.core.domain.inference.types import AdapterPoolError
@@ -219,7 +219,7 @@ class MLXAdapterPool:
 
     def __init__(
         self,
-        config: AdapterPoolConfiguration = AdapterPoolConfiguration(),
+        config: AdapterPoolConfiguration,
         memory_manager: MemoryManaging | None = None,
     ):
         if memory_manager is None:

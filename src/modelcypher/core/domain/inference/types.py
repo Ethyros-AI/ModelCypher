@@ -22,7 +22,10 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from modelcypher.core.domain.inference.entropy_dynamics import EntropyDeltaTracker
 
 # --- Dual Path Types ---
 
@@ -39,22 +42,21 @@ class SecurityScanMetrics:
 @dataclass
 class DualPathGeneratorConfiguration:
     base_model_path: str
-    adapter_path: str | None = None
-    max_tokens: int = 256
-    temperature: float = 0.7
-    top_p: float = 0.95
-    repetition_penalty: float = 1.1
-    # Safety thresholds
-    max_kl_threshold: float = 5.0
-    burst_length_limit: int = 10
-    accumulated_kl_limit: float = 50.0
+    delta_tracker_config: "EntropyDeltaTracker.Configuration"
+    adapter_path: str | None
+    max_tokens: int
+    temperature: float
+    top_p: float
+    repetition_penalty: float
+    stop_sequences: list[str]
+    halt_on_circuit_breaker: bool
 
 
 # --- Comparison Types ---
 
 
 class ComparisonTimeouts:
-    def __init__(self, idle_sec: float = 1800, absolute_sec: float = 7200):
+    def __init__(self, idle_sec: float, absolute_sec: float):
         self.idle_sec = idle_sec
         self.absolute_sec = absolute_sec
 
@@ -97,10 +99,10 @@ class MemoryPressure(Enum):
 
 @dataclass
 class AdapterPoolConfiguration:
-    max_pooled_normal: int = 4
-    max_pooled_warning: int = 2
-    max_pooled_critical: int = 1
-    target_swap_ms: float = 100.0
+    max_pooled_normal: int
+    max_pooled_warning: int
+    max_pooled_critical: int
+    target_swap_ms: float
 
 
 @dataclass

@@ -491,25 +491,77 @@ def stage_transplant(
                 b.eval(anchors)
 
                 # For cross-architecture, project source to target dimension
-                # compute_relative_representation requires same d for cosine similarity
+                # Use AffineStitchingLayer for geometry-preserving transform
                 src_d = int(src_analysis.shape[1])
                 tgt_d = int(tgt_analysis.shape[1])
                 if src_d != tgt_d:
-                    from modelcypher.core.domain.geometry.numerical_stability import (
-                        svd_via_eigh,
+                    from modelcypher.core.domain.geometry.affine_stitching_layer import (
+                        AnchorPair,
+                        BackendAffineStitchingLayer,
                     )
 
-                    # Project source activations to target dimension via SVD
-                    _, _, Vt = svd_via_eigh(b, src_analysis, full_matrices=False)
-                    b.eval(Vt)
-                    k = min(tgt_d, int(Vt.shape[0]))
-                    V_k = b.transpose(Vt[:k, :])  # [src_d, k]
-                    src_projected = b.matmul(src_analysis, V_k)  # [n, k]
-                    if k < tgt_d:
-                        padding = b.zeros((int(src_analysis.shape[0]), tgt_d - k))
-                        src_projected = b.concatenate([src_projected, padding], axis=1)
-                    b.eval(src_projected)
-                    src_for_rel = src_projected
+                    # Build anchor pairs from corresponding activations
+                    n_samples = min(int(src_analysis.shape[0]), int(tgt_analysis.shape[0]))
+                    if n_samples >= 5:  # Minimum for affine training
+                        src_np = b.to_numpy(src_analysis[:n_samples])
+                        tgt_np = b.to_numpy(tgt_analysis[:n_samples])
+                        anchor_pairs = [
+                            AnchorPair(
+                                source_activation=src_np[i].tolist(),
+                                target_activation=tgt_np[i].tolist(),
+                                anchor_id=f"sample_{i}",
+                            )
+                            for i in range(n_samples)
+                        ]
+
+                        # Train affine stitching layer
+                        stitcher = BackendAffineStitchingLayer(b)
+                        stitch_result = stitcher.train(anchor_pairs)
+
+                        if stitch_result is not None and stitch_result.is_valid:
+                            # Apply learned affine transform
+                            weights = b.array(stitch_result.weights)
+                            bias = b.array(stitch_result.bias)
+                            src_projected = stitcher.apply(src_analysis, weights, bias)
+                            b.eval(src_projected)
+                            src_for_rel = src_projected
+                            logger.debug(
+                                "Affine stitch: %d->%d, forward_err=%.4f, backward_err=%.4f",
+                                src_d, tgt_d, stitch_result.forward_error, stitch_result.backward_error
+                            )
+                            metrics.setdefault("affine_stitch_applied", 0)
+                            metrics["affine_stitch_applied"] += 1
+                        else:
+                            # Fallback to SVD projection if stitch training fails
+                            from modelcypher.core.domain.geometry.numerical_stability import (
+                                svd_via_eigh,
+                            )
+                            _, _, Vt = svd_via_eigh(b, src_analysis, full_matrices=False)
+                            b.eval(Vt)
+                            k = min(tgt_d, int(Vt.shape[0]))
+                            V_k = b.transpose(Vt[:k, :])
+                            src_projected = b.matmul(src_analysis, V_k)
+                            if k < tgt_d:
+                                padding = b.zeros((int(src_analysis.shape[0]), tgt_d - k))
+                                src_projected = b.concatenate([src_projected, padding], axis=1)
+                            b.eval(src_projected)
+                            src_for_rel = src_projected
+                            logger.debug("Affine stitch failed, using SVD fallback")
+                    else:
+                        # Not enough samples for affine training, use SVD
+                        from modelcypher.core.domain.geometry.numerical_stability import (
+                            svd_via_eigh,
+                        )
+                        _, _, Vt = svd_via_eigh(b, src_analysis, full_matrices=False)
+                        b.eval(Vt)
+                        k = min(tgt_d, int(Vt.shape[0]))
+                        V_k = b.transpose(Vt[:k, :])
+                        src_projected = b.matmul(src_analysis, V_k)
+                        if k < tgt_d:
+                            padding = b.zeros((int(src_analysis.shape[0]), tgt_d - k))
+                            src_projected = b.concatenate([src_projected, padding], axis=1)
+                        b.eval(src_projected)
+                        src_for_rel = src_projected
                 else:
                     src_for_rel = src_analysis
 

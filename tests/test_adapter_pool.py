@@ -162,14 +162,10 @@ class TestAdapterSwapResult:
 class TestAdapterPoolConfiguration:
     """Tests for AdapterPoolConfiguration dataclass."""
 
-    def test_default_configuration(self):
-        """Test default configuration values."""
-        config = AdapterPoolConfiguration()
-
-        assert config.max_pooled_normal == 4
-        assert config.max_pooled_warning == 2
-        assert config.max_pooled_critical == 1
-        assert config.target_swap_ms == 100.0
+    def test_requires_explicit_values(self):
+        """AdapterPoolConfiguration requires explicit values."""
+        with pytest.raises(TypeError):
+            AdapterPoolConfiguration()
 
     def test_custom_configuration(self):
         """Test custom configuration values."""
@@ -261,7 +257,13 @@ class TestMLXAdapterPool:
     @pytest.fixture
     def pool(self, mock_memory):
         """Create adapter pool with mock memory."""
-        return MLXAdapterPool(memory_manager=mock_memory)
+        config = AdapterPoolConfiguration(
+            max_pooled_normal=4,
+            max_pooled_warning=2,
+            max_pooled_critical=1,
+            target_swap_ms=100.0,
+        )
+        return MLXAdapterPool(config=config, memory_manager=mock_memory)
 
     @pytest.mark.asyncio
     async def test_pool_initialization(self, pool):

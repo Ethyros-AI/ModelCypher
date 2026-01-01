@@ -19,7 +19,11 @@
 import uuid
 from typing import Any, AsyncGenerator
 
-from modelcypher.core.domain.inference.adapter_pool import AdapterPreloadPriority, MLXAdapterPool
+from modelcypher.core.domain.inference.adapter_pool import (
+    AdapterPoolConfiguration,
+    AdapterPreloadPriority,
+    MLXAdapterPool,
+)
 from modelcypher.core.domain.inference.comparison import CheckpointComparisonCoordinator
 
 # Import Implementations (Currently in core/domain/inference, acting as MLX internals)
@@ -34,8 +38,8 @@ from modelcypher.ports.async_inference import InferenceEnginePort
 
 
 class MLXInferenceAdapter(InferenceEnginePort):
-    def __init__(self):
-        self.adapter_pool = MLXAdapterPool()
+    def __init__(self, pool_config: AdapterPoolConfiguration):
+        self.adapter_pool = MLXAdapterPool(config=pool_config)
         self.comparison_coordinator = CheckpointComparisonCoordinator()
 
     async def generate_dual_path(
@@ -48,14 +52,14 @@ class MLXInferenceAdapter(InferenceEnginePort):
 
         impl_config = ImplConfig(
             base_model_path=config.base_model_path,
+            delta_tracker_config=config.delta_tracker_config,
             adapter_path=config.adapter_path,
             max_tokens=config.max_tokens,
             temperature=config.temperature,
             top_p=config.top_p,
             repetition_penalty=config.repetition_penalty,
-            max_kl_threshold=config.max_kl_threshold,
-            burst_length_limit=config.burst_length_limit,
-            accumulated_kl_limit=config.accumulated_kl_limit,
+            stop_sequences=config.stop_sequences,
+            halt_on_circuit_breaker=config.halt_on_circuit_breaker,
         )
 
         generator = DualPathGenerator(impl_config)
@@ -76,9 +80,14 @@ class MLXInferenceAdapter(InferenceEnginePort):
 
         impl_config = ImplConfig(
             base_model_path=checkpoints[0],  # Dummy base? Or allow None?
+            delta_tracker_config=config.delta_tracker_config,
             adapter_path=None,
             max_tokens=config.max_tokens,
             temperature=config.temperature,
+            top_p=config.top_p,
+            repetition_penalty=config.repetition_penalty,
+            stop_sequences=config.stop_sequences,
+            halt_on_circuit_breaker=config.halt_on_circuit_breaker,
         )
         # Note: ComparisonCoordinator takes list of checkpoints and config.
         # It handles iteration.

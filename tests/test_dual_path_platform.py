@@ -307,6 +307,13 @@ class TestDualPathGeneratorConfiguration:
         config = DualPathGeneratorConfiguration(
             base_model_path="/path/to/model",
             delta_tracker_config=tracker_config,
+            adapter_path=None,
+            max_tokens=512,
+            temperature=0.7,
+            top_p=0.95,
+            repetition_penalty=1.0,
+            stop_sequences=[],
+            halt_on_circuit_breaker=True,
         )
 
         assert config.base_model_path == "/path/to/model"
@@ -355,7 +362,13 @@ class TestDualPathGeneratorConfiguration:
         config = DualPathGeneratorConfiguration(
             base_model_path="/path/to/model",
             delta_tracker_config=tracker_config,
+            adapter_path=None,
+            max_tokens=128,
             temperature=0.0,
+            top_p=0.95,
+            repetition_penalty=1.0,
+            stop_sequences=[],
+            halt_on_circuit_breaker=True,
         )
 
         assert config.temperature == 0.0
