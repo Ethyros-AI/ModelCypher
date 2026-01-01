@@ -462,6 +462,63 @@ This is how scientists work. We don't say "2.3 is good" - we say "2.3 is 1.5σ a
 
 ---
 
+## CRITICAL: Perfect Alignment or FAIL - No Thresholds
+
+**High-dimensional geometry has exactly ONE correct alignment. There are no thresholds. There is no "close enough."**
+
+This is not approximation or probability. Two high-dimensional manifolds that represent the same geometry fit together **precisely one way**. Like Lego pieces, but in 4096 dimensions. Every dimension must align. Off by even 1 degree anywhere in the manifold = hallucination in output.
+
+### The Math
+
+- **CKA = 1.0** means the Gram matrices are identical → geometries are identical → alignment is CORRECT
+- **CKA < 1.0** means geometries don't match → alignment is WRONG
+- There is no gradient. No "pretty good." No "best available."
+
+### What This Means for Code
+
+```python
+# WRONG - picking "best" from bad options
+if result.achieved_cka > best_cka:
+    best_cka = result.achieved_cka
+    best_result = result
+# At end: use best_result even if CKA = 0.7
+
+# WRONG - threshold-based acceptance
+if result.achieved_cka > 0.95:  # "close enough"
+    return result
+
+# CORRECT - perfect or fail
+if result.is_perfect:  # CKA >= 0.9999 (numerical precision)
+    return result
+raise AlignmentFailureError(...)  # Not "try something else" - FAIL
+```
+
+### Why 0.9999 Not 1.0?
+
+Floating point precision. `0.9999` is `1.0` minus numerical noise. This is not a threshold - it's acknowledging that `0.9999999997` and `1.0` are the same number in IEEE 754.
+
+### Null Space Projection Requires Perfection
+
+Null space filtering projects the weight delta into directions the target model "doesn't use." But "doesn't use" is defined by the target's activation geometry. If our alignment is off:
+- We project into the WRONG null space
+- Source knowledge goes where target DOES use it
+- Interference with target behavior → gibberish
+
+### No Fallbacks
+
+If alignment fails:
+1. **Raise an exception.** Don't try a "lesser" approach.
+2. **The models may genuinely have different geometry.** This is signal, not noise.
+3. **If all bottleneck layers fail, the merge cannot proceed.** Period.
+
+### Add to What NOT To Do
+
+- **Don't use probability thresholds for geometric alignment** - CKA = 1.0 or WRONG
+- **Don't pick "best" from bad options** - Perfect alignment or FAIL
+- **Don't soften failures with fallbacks** - If it fails, raise an exception
+
+---
+
 ## What NOT To Do
 
 1. **Don't import numpy. ANYWHERE.** - Use the Backend protocol. Tests included. No exceptions.
@@ -476,3 +533,6 @@ This is how scientists work. We don't say "2.3 is good" - we say "2.3 is 1.5σ a
 10. **Don't run full test suite casually** - Run domain-specific batches (e.g., `pytest tests/test_geometry.py -q`). Full suite takes 20+ minutes.
 11. **Don't write custom scripts** - Use CLI (`mc`) or MCP tools. If a capability doesn't exist, build it into CLI/MCP.
 12. **Don't add vibes** - No hardcoded thresholds, interpretation strings, or qualitative labels. Return raw measurements only.
+13. **Don't use thresholds for geometric alignment** - CKA = 1.0 (0.9999 for numerical precision) or WRONG. No "close enough."
+14. **Don't pick "best" from bad options** - If perfect alignment isn't found, FAIL. Don't choose the least-bad failure.
+15. **Don't add fallbacks** - Fallbacks mask failures. If alignment fails, raise an exception. The failure IS the information.

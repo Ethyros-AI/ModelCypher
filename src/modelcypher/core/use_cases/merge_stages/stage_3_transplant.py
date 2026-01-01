@@ -421,21 +421,112 @@ def stage_transplant(
     global_tgt_hidden_dim = None
 
     if source_activations:
-        # Use BOTTLENECK LAYER for global alignment (where invariance is strongest)
-        # The bottleneck is typically at 50% depth - this is where we proved CKA=1.0
-        bottleneck_layer_idx = layer_indices[len(layer_indices) // 2] if layer_indices else 0
-        src_list = source_activations.get(bottleneck_layer_idx)
-        tgt_list = target_activations.get(bottleneck_layer_idx)
+        # MULTI-BOTTLENECK STRATEGY: Try 25%, 50%, 75% depth, take highest CKA
+        # Different architectures may have invariance strongest at different depths.
+        # By trying multiple positions, we find the best alignment point.
+        bottleneck_fractions = [0.25, 0.50, 0.75]
+        bottleneck_candidates = []
 
-        all_src_acts = []
-        all_tgt_acts = []
-        if src_list and tgt_list:
-            n_samples = min(len(src_list), len(tgt_list))
-            for i in range(n_samples):
-                all_src_acts.append(src_list[i])
-                all_tgt_acts.append(tgt_list[i])
-            logger.info("GLOBAL: Using bottleneck layer %d for alignment (%d samples)",
-                       bottleneck_layer_idx, n_samples)
+        for frac in bottleneck_fractions:
+            idx_pos = int(len(layer_indices) * frac) if layer_indices else 0
+            idx_pos = max(0, min(idx_pos, len(layer_indices) - 1)) if layer_indices else 0
+            candidate_layer_idx = layer_indices[idx_pos] if layer_indices else 0
+
+            src_list = source_activations.get(candidate_layer_idx)
+            tgt_list = target_activations.get(candidate_layer_idx)
+
+            if src_list and tgt_list:
+                n_samples = min(len(src_list), len(tgt_list))
+                if n_samples >= 20:
+                    bottleneck_candidates.append({
+                        "layer_idx": candidate_layer_idx,
+                        "fraction": frac,
+                        "src_list": src_list[:n_samples],
+                        "tgt_list": tgt_list[:n_samples],
+                        "n_samples": n_samples,
+                    })
+
+        if not bottleneck_candidates:
+            logger.warning("GLOBAL: No bottleneck candidates with sufficient samples")
+
+        # Try each bottleneck candidate - find FIRST perfect alignment or FAIL
+        # There is no "best" imperfect alignment. CKA = 1.0 or WRONG.
+        perfect_candidate = None
+        perfect_result = None
+        perfect_src_concat = None
+        perfect_tgt_concat = None
+        tried_ckas: list[tuple[int, float, float]] = []  # (layer_idx, fraction, cka)
+
+        for candidate in bottleneck_candidates:
+            src_concat = b.stack(candidate["src_list"], axis=0)
+            tgt_concat = b.stack(candidate["tgt_list"], axis=0)
+            src_concat = b.astype(src_concat, "float32")
+            tgt_concat = b.astype(tgt_concat, "float32")
+            b.eval(src_concat, tgt_concat)
+
+            cand_src_dim = int(src_concat.shape[1])
+            cand_tgt_dim = int(tgt_concat.shape[1])
+
+            if cand_src_dim != cand_tgt_dim:
+                from modelcypher.core.domain.geometry.gram_aligner import GramAligner
+                aligner = GramAligner(b)
+                result = aligner.find_perfect_alignment(src_concat, tgt_concat)
+                tried_ckas.append((candidate["layer_idx"], candidate["fraction"], result.achieved_cka))
+                logger.debug(
+                    "MULTI-BOTTLENECK: Layer %d (%.0f%% depth) CKA=%.4f %s",
+                    candidate["layer_idx"], candidate["fraction"] * 100, result.achieved_cka,
+                    "✓ PERFECT" if result.is_perfect else "✗ FAILED"
+                )
+                if result.is_perfect:
+                    # Found perfect alignment - use it
+                    perfect_candidate = candidate
+                    perfect_result = result
+                    perfect_src_concat = src_concat
+                    perfect_tgt_concat = tgt_concat
+                    break  # Don't search further
+            else:
+                # Same dimensions - identity is perfect by definition
+                tried_ckas.append((candidate["layer_idx"], candidate["fraction"], 1.0))
+                logger.debug(
+                    "MULTI-BOTTLENECK: Layer %d (%.0f%% depth) same dims=%d → IDENTITY (perfect)",
+                    candidate["layer_idx"], candidate["fraction"] * 100, cand_src_dim
+                )
+                perfect_candidate = candidate
+                perfect_result = None  # Signals identity
+                perfect_src_concat = src_concat
+                perfect_tgt_concat = tgt_concat
+                break  # Identity is always perfect
+
+        if perfect_candidate is not None:
+            logger.info(
+                "GLOBAL: Using bottleneck layer %d (%.0f%% depth) - PERFECT alignment (%d samples)",
+                perfect_candidate["layer_idx"], perfect_candidate["fraction"] * 100,
+                perfect_candidate["n_samples"]
+            )
+            all_src_acts = perfect_candidate["src_list"]
+            all_tgt_acts = perfect_candidate["tgt_list"]
+        else:
+            # No bottleneck achieved perfect alignment - this is a FAILURE
+            all_src_acts = []
+            all_tgt_acts = []
+            if config.strict_mode and bottleneck_candidates:
+                raise AlignmentFailureError(
+                    stage="MULTI_BOTTLENECK_ALIGNMENT",
+                    weight_key=None,
+                    message="No bottleneck layer achieved perfect alignment (CKA >= 0.9999)",
+                    context={
+                        "tried_bottlenecks": [
+                            {"layer": idx, "depth_fraction": frac, "achieved_cka": cka}
+                            for idx, frac, cka in tried_ckas
+                        ],
+                        "note": "Models may have genuinely different geometry - merge cannot proceed",
+                    },
+                )
+            elif bottleneck_candidates:
+                logger.error(
+                    "MULTI-BOTTLENECK: ALL bottleneck layers FAILED. Tried: %s",
+                    ", ".join(f"layer {idx} ({frac*100:.0f}%): CKA={cka:.4f}" for idx, frac, cka in tried_ckas)
+                )
 
         if len(all_src_acts) >= 20:
             src_concat = b.stack(all_src_acts, axis=0)
@@ -911,47 +1002,11 @@ def stage_transplant(
                     layer_idx, global_src_hidden_dim, global_tgt_hidden_dim
                 )
 
-        elif src_act_list is not None and act_list is not None:
-            # FALLBACK: Per-layer hidden alignment when global trajectory alignment failed
-            # This happens when models are sufficiently different that a single global
-            # alignment can't achieve CKA=1.0. We compute per-layer instead.
-            n_hidden_samples = min(len(src_act_list), len(act_list))
-            if n_hidden_samples >= 10:
-                src_hidden_stack = b.stack(src_act_list[:n_hidden_samples], axis=0)
-                tgt_hidden_stack = b.stack(act_list[:n_hidden_samples], axis=0)
-                src_hidden_stack = b.astype(src_hidden_stack, "float32")
-                tgt_hidden_stack = b.astype(tgt_hidden_stack, "float32")
-                b.eval(src_hidden_stack, tgt_hidden_stack)
-
-                src_hidden_dim = int(src_hidden_stack.shape[1])
-                tgt_hidden_dim = int(tgt_hidden_stack.shape[1])
-
-                if src_hidden_dim != tgt_hidden_dim:
-                    # Per-layer GramAlign for hidden dimensions
-                    aligner = GramAligner(b)
-                    hidden_result = aligner.find_perfect_alignment(
-                        src_hidden_stack, tgt_hidden_stack
-                    )
-
-                    if hidden_result.is_perfect:
-                        F = b.array(hidden_result.feature_transform)
-                        b.eval(F)
-                        hidden_stitch_output = b.transpose(F)  # F.T [tgt, src]
-                        F_pinv, layer_pinv_diag = safe_pinv(b, F)
-                        hidden_stitch_input = b.transpose(F_pinv)  # pinv(F).T [src, tgt]
-                        b.eval(hidden_stitch_output, hidden_stitch_input)
-                        logger.info(
-                            "Layer %d: Per-layer hidden GramAlign CKA=%.4f (%d→%d) cond=%.2e",
-                            layer_idx, hidden_result.achieved_cka,
-                            src_hidden_dim, tgt_hidden_dim, layer_pinv_diag.get("condition_number", 0)
-                        )
-                        metrics.setdefault("per_layer_hidden_aligned", 0)
-                        metrics["per_layer_hidden_aligned"] += 1
-                    else:
-                        logger.warning(
-                            "Layer %d: Per-layer hidden GramAlign failed (CKA=%.4f)",
-                            layer_idx, hidden_result.achieved_cka
-                        )
+        # NO PER-LAYER FALLBACK: If global alignment failed, we already raised an exception
+        # in the multi-bottleneck strategy above. Per-layer alignment breaks compositional
+        # structure - each layer would get a different F, causing activations to not compose
+        # correctly through the network. If we get here without global stitch, something
+        # is wrong and we should not silently continue.
 
         # Compute INTERMEDIATE alignment (source intermediate_dim → target intermediate_dim)
         # Note: Intermediate stitch is per-layer since each MLP has different internal geometry
