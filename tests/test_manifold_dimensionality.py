@@ -85,9 +85,7 @@ def test_summarize_prior_tension() -> None:
 
 def test_estimate_id() -> None:
     points = [[float(i), 0.0] for i in range(6)]
-    summary = ManifoldDimensionality.estimate_id(
-        points, bootstrap_resamples=None, use_regression=False
-    )
+    summary = ManifoldDimensionality.estimate_id(points, use_regression=False)
     assert summary.sample_count == 6
     assert summary.intrinsic_dimension > 0
 
@@ -200,12 +198,8 @@ class TestBackendManifoldDimensionality:
         """Backend ID estimate should match pure Python."""
         points = [[float(i), 0.0] for i in range(6)]
 
-        pure = ManifoldDimensionality.estimate_id(
-            points, bootstrap_resamples=None, use_regression=False
-        )
-        backend = md.estimate_id(
-            points, bootstrap_resamples=None, use_regression=False
-        )
+        pure = ManifoldDimensionality.estimate_id(points, use_regression=False)
+        backend = md.estimate_id(points, use_regression=False)
 
         assert pure.sample_count == backend.sample_count
         assert pure.intrinsic_dimension == pytest.approx(

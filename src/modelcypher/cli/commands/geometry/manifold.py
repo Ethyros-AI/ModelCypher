@@ -103,7 +103,6 @@ def geometry_manifold_cluster(
 def geometry_manifold_dimension(
     ctx: typer.Context,
     points_file: Path = typer.Option(..., "--points", "-p", help="JSON file with point vectors"),
-    bootstrap: int = typer.Option(0, "--bootstrap", "-b", help="Bootstrap samples (0 = none)"),
     regression: bool = typer.Option(
         True,
         "--regression/--no-regression",
@@ -121,7 +120,6 @@ def geometry_manifold_dimension(
     points = json.loads(Path(points_file).read_text())
     result = service.estimate_dimension(
         points=points,
-        bootstrap_samples=bootstrap,
         use_regression=regression,
     )
 
@@ -169,7 +167,7 @@ def geometry_manifold_query(
     if context.output_format == "text":
         lines = [
             "REGION QUERY RESULT",
-            f"Suggested Type: {result.suggested_type.value}",
+            f"Suggested Type: {result.suggested_character.value}",
             f"Within Region: {'Yes' if result.is_within_region else 'No'}",
             f"Distance: {result.distance:.4f}",
             f"Confidence: {result.confidence:.2%}",

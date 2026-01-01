@@ -111,8 +111,21 @@ def test_logit_entropy_thresholds():
 
 def test_logit_entropy_circuit_breaker():
     calculator = LogitEntropyCalculator()
-    assert calculator.should_trip_circuit_breaker(4.5) is True
-    assert calculator.should_trip_circuit_breaker(2.0) is False
+    thresholds = EntropyThresholds.from_vocab_size(32000)
+    assert (
+        calculator.should_trip_circuit_breaker(
+            4.5,
+            threshold=thresholds.circuit_breaker,
+        )
+        is True
+    )
+    assert (
+        calculator.should_trip_circuit_breaker(
+            2.0,
+            threshold=thresholds.circuit_breaker,
+        )
+        is False
+    )
 
 
 def test_logit_entropy_batch():

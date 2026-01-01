@@ -35,18 +35,20 @@ from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.manifold_stitcher import (
-    ContinuousFingerprint,
-    DimensionCorrelation,
+from modelcypher.core.domain.geometry.intersection_similarity import (
     EnsembleWeights,
-    LayerConfidence,
-    ManifoldStitcher,
-    Thresholds,
-    _ensure_proper_rotation,
     compute_cosine_similarity,
     compute_ensemble_similarity,
     compute_jaccard_similarity,
     compute_weighted_jaccard_similarity,
+)
+from modelcypher.core.domain.geometry.manifold_stitcher import (
+    ContinuousFingerprint,
+    DimensionCorrelation,
+    LayerConfidence,
+    ManifoldStitcher,
+    Thresholds,
+    _ensure_proper_rotation,
 )
 
 # =============================================================================

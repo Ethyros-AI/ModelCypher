@@ -266,7 +266,6 @@ class GeometryPersonaService:
     def estimate_dimension(
         self,
         points: list[list[float]],
-        bootstrap_samples: int = 0,
         use_regression: bool = True,
     ) -> IDEstimateSummary:
         """
@@ -274,17 +273,12 @@ class GeometryPersonaService:
 
         Args:
             points: List of feature vectors
-            bootstrap_samples: Number of bootstrap resamples (0 = no bootstrap)
             use_regression: Use regression-based estimation
 
         Returns:
             IDEstimateSummary with dimension estimate and confidence
         """
-        return ManifoldDimensionality.estimate_id(
-            points=points,
-            bootstrap_resamples=bootstrap_samples if bootstrap_samples > 0 else None,
-            use_regression=use_regression,
-        )
+        return ManifoldDimensionality.estimate_id(points=points, use_regression=use_regression)
 
     def query_region(
         self,
@@ -331,7 +325,7 @@ class GeometryPersonaService:
                 assessment_strength=centroid_data.get("assessment_strength", 0.0),
                 prompt_hash=centroid_data.get("prompt_hash", "centroid"),
             )
-            region_type = ManifoldRegion.RegionType(r.get("region_type", "transitional"))
+            region_type = ManifoldRegion.RegionCharacter(r.get("region_type", "transitional"))
             manifold_regions.append(
                 ManifoldRegion(
                     id=UUID(r.get("id", str(uuid4()))),
@@ -450,6 +444,6 @@ class GeometryPersonaService:
             else None,
             "distance": result.distance,
             "isWithinRegion": result.is_within_region,
-            "suggestedType": result.suggested_type.value,
+            "suggestedType": result.suggested_character.value,
             "confidence": result.confidence,
         }

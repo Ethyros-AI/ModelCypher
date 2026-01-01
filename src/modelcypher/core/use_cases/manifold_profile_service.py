@@ -182,22 +182,22 @@ class ManifoldProfileService:
 
         if query_result.nearest_region:
             region = query_result.nearest_region
-            if region.region_type == ManifoldRegion.RegionType.DENSE:
+            if region.region_type == ManifoldRegion.RegionCharacter.DENSE:
                 suggested_level = 0
                 reason = f"Point falls within dense region '{str(region.id)[:8]}'"
-            elif region.region_type == ManifoldRegion.RegionType.SPARSE:
+            elif region.region_type == ManifoldRegion.RegionCharacter.SPARSE:
                 suggested_level = max(historical_levels) if historical_levels else 1
                 reason = "Point falls within sparse region - historically uncertain behavior"
             else:
                 suggested_level = max(2, max(historical_levels) if historical_levels else 2)
-                reason = "Point falls within boundary region - transition zone"
+                reason = "Point falls within transitional region - transition zone"
         else:
             if historical_levels:
                 suggested_level = max(historical_levels)
                 reason = f"No matching region, but similar points triggered level {suggested_level}"
             else:
                 suggested_level = (
-                    0 if ManifoldRegion.classify(point) == ManifoldRegion.RegionType.DENSE else 1
+                    0 if ManifoldRegion.classify(point) == ManifoldRegion.RegionCharacter.DENSE else 1
                 )
                 reason = "No historical data - suggestion based on point features"
 
@@ -256,9 +256,9 @@ class ManifoldProfileService:
             f"- Last Updated: {profile.updated_at}",
             "",
             "## Region Distribution",
-            f"- Safe Regions: {stats.safe_region_count}",
+            f"- Dense Regions: {stats.dense_region_count}",
             f"- Sparse Regions: {stats.sparse_region_count}",
-            f"- Boundary Regions: {stats.boundary_region_count}",
+            f"- Transitional Regions: {stats.transitional_region_count}",
             "",
         ]
 

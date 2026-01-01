@@ -170,13 +170,8 @@ class ManifoldDimensionality:
     @staticmethod
     def estimate_id(
         points: list[list[float]],
-        bootstrap_resamples: int | None = None,
-        seed: int = 42,
         use_regression: bool = True,
     ) -> IDEstimateSummary:
-        # Note: bootstrap_resamples and seed are kept for API compatibility
-        # but TwoNNConfiguration doesn't currently support bootstrap CI
-        _ = bootstrap_resamples, seed  # Unused, kept for future compatibility
         estimate = IntrinsicDimension.compute_two_nn(
             points,
             configuration=TwoNNConfiguration(
@@ -368,8 +363,6 @@ class BackendManifoldDimensionality:
     def estimate_id(
         self,
         points: list[list[float]],
-        bootstrap_resamples: int | None = None,
-        seed: int = 42,
         use_regression: bool = True,
     ) -> IDEstimateSummary:
         """Estimate intrinsic dimensionality.
@@ -379,16 +372,11 @@ class BackendManifoldDimensionality:
 
         Args:
             points: Data points [n_samples, n_features].
-            bootstrap_resamples: Number of bootstrap resamples for CI (unused).
-            seed: Random seed for reproducibility (unused).
             use_regression: Whether to use regression-based estimation.
 
         Returns:
             IDEstimateSummary with intrinsic dimension estimate.
         """
-        # Note: bootstrap_resamples and seed are kept for API compatibility
-        # but TwoNNConfiguration doesn't currently support bootstrap CI
-        _ = bootstrap_resamples, seed  # Unused, kept for future compatibility
         estimate = IntrinsicDimension.compute_two_nn(
             points,
             configuration=TwoNNConfiguration(

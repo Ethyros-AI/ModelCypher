@@ -36,6 +36,7 @@ except ImportError:
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 
 from modelcypher.core.domain.entropy.logit_entropy_calculator import (
+    EntropyThresholds,
     LogitEntropyCalculator,
 )
 
@@ -134,16 +135,22 @@ class TestEntropyProperties:
         Classification is now done by comparing raw entropy values against these thresholds.
         """
         calc = LogitEntropyCalculator()
-        thresholds = calc.thresholds
+        thresholds = EntropyThresholds.from_vocab_size(100)
 
         # Verify threshold ordering - this is a structural invariant
         assert thresholds.low < thresholds.high < thresholds.circuit_breaker
 
         # Verify circuit breaker correctly identifies high entropy
         if entropy_value >= thresholds.circuit_breaker:
-            assert calc.should_trip_circuit_breaker(entropy_value)
+            assert calc.should_trip_circuit_breaker(
+                entropy_value,
+                threshold=thresholds.circuit_breaker,
+            )
         else:
-            assert not calc.should_trip_circuit_breaker(entropy_value)
+            assert not calc.should_trip_circuit_breaker(
+                entropy_value,
+                threshold=thresholds.circuit_breaker,
+            )
 
     @given(logits_array(), logits_array())
     @settings(max_examples=30, deadline=None)
@@ -184,9 +191,12 @@ class TestEntropyProperties:
         Tests the precise boundary condition for circuit breaker activation.
         """
         calc = LogitEntropyCalculator()
-        threshold = calc.thresholds.circuit_breaker
+        threshold = EntropyThresholds.from_vocab_size(100).circuit_breaker
 
-        should_trip = calc.should_trip_circuit_breaker(entropy_value)
+        should_trip = calc.should_trip_circuit_breaker(
+            entropy_value,
+            threshold=threshold,
+        )
 
         if entropy_value >= threshold:
             assert should_trip, f"Should trip at {entropy_value} >= {threshold}"

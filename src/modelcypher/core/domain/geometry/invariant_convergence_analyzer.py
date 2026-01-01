@@ -31,7 +31,7 @@ import logging
 from dataclasses import dataclass
 from enum import Enum
 
-from .manifold_stitcher import ContinuousModelFingerprints, ManifoldStitcher
+from .manifold_stitcher import ContinuousModelFingerprints
 from .vector_math import SparseVectorMath
 
 logger = logging.getLogger("modelcypher.geometry.invariant_convergence")
@@ -115,32 +115,6 @@ class Report:
     source_layer_count: int
     target_layer_count: int
     aligned_layers: list[AlignmentPair]
-
-
-# =============================================================================
-# Legacy Types (backward compatibility)
-# =============================================================================
-
-
-@dataclass
-class ConvergenceMetric:
-    """Single family convergence metric."""
-
-    sequence_family: str
-    step: int
-    alignment_score: float
-    variance: float
-    is_converged: bool
-
-
-@dataclass
-class ConvergenceReport:
-    """Legacy convergence report for training tracking."""
-
-    model_id: str
-    metrics: list[ConvergenceMetric]
-    overall_convergence: float
-    stable_families: list[str]
 
 
 # =============================================================================
@@ -346,78 +320,6 @@ class InvariantConvergenceAnalyzer:
                 lines.append(f"{family},{layer_label},{cosine:.6f}")
 
         return lines
-
-    # =========================================================================
-    # Legacy Interface (backward compatibility)
-    # =========================================================================
-
-    def analyze_convergence(
-        self,
-        baseline: ContinuousModelFingerprints,
-        current: ContinuousModelFingerprints,
-        step: int,
-        sequence_families: dict[str, list[str]],
-    ) -> ConvergenceReport:
-        """
-        Legacy interface for training-time convergence tracking.
-        """
-        metrics = []
-        stable_families = []
-
-        for family, prime_ids in sequence_families.items():
-            scores = []
-
-            base_fps = {fp.prime_id: fp for fp in baseline.fingerprints if fp.prime_id in prime_ids}
-            curr_fps = {fp.prime_id: fp for fp in current.fingerprints if fp.prime_id in prime_ids}
-
-            common_ids = set(base_fps.keys()) & set(curr_fps.keys())
-
-            for pid in common_ids:
-                layer_scores = []
-                base_fp = base_fps[pid]
-                curr_fp = curr_fps[pid]
-
-                common_layers = set(base_fp.activation_vectors.keys()) & set(
-                    curr_fp.activation_vectors.keys()
-                )
-                for layer in common_layers:
-                    res = ManifoldStitcher.compute_continuous_correlation(base_fp, curr_fp, layer)
-                    if res:
-                        layer_scores.append(res.alignment_score)
-
-                if layer_scores:
-                    scores.append(sum(layer_scores) / len(layer_scores))
-
-            if not scores:
-                continue
-
-            mean_score = sum(scores) / len(scores)
-            variance = sum((s - mean_score) ** 2 for s in scores) / len(scores)
-
-            threshold = self.thresholds.get(family, 0.7)
-            is_converged = mean_score >= threshold
-
-            if is_converged:
-                stable_families.append(family)
-
-            metrics.append(
-                ConvergenceMetric(
-                    sequence_family=family,
-                    step=step,
-                    alignment_score=mean_score,
-                    variance=variance,
-                    is_converged=is_converged,
-                )
-            )
-
-        overall = sum(m.alignment_score for m in metrics) / len(metrics) if metrics else 0.0
-
-        return ConvergenceReport(
-            model_id=current.model_id,
-            metrics=metrics,
-            overall_convergence=overall,
-            stable_families=stable_families,
-        )
 
     # =========================================================================
     # Internal Helpers

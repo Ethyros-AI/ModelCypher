@@ -53,10 +53,6 @@ class TransformationType(str, Enum):
     SEMANTIC_VERIFICATION = "semantic_verification"  # Verify with knowledge probes
 
 
-# Backward compatibility - old name pointed to different concept
-InterferenceMechanism = TransformationType
-
-
 @dataclass(frozen=True)
 class MergeAnalysisConfig:
     """Configuration for merge analysis.
@@ -124,10 +120,6 @@ class MergeAnalysisConfig:
         )
 
 
-# Backward compatibility alias
-InterferencePredictorConfig = MergeAnalysisConfig
-
-
 @dataclass
 class MergeAnalysisResult:
     """Geometric measurements and transformations for a volume pair."""
@@ -150,10 +142,6 @@ class MergeAnalysisResult:
 
     # Transformation descriptions (what the math will do)
     transformation_descriptions: list[str]
-
-
-# Backward compatibility alias
-InterferenceResult = MergeAnalysisResult
 
 
 @dataclass
@@ -186,10 +174,6 @@ class GlobalMergeAnalysisReport:
             for pair, result in self.pair_results.items()
             if transformation in result.transformations
         ]
-
-
-# Backward compatibility alias
-GlobalInterferenceReport = GlobalMergeAnalysisReport
 
 
 class MergeAnalyzer:
@@ -247,16 +231,6 @@ class MergeAnalyzer:
             measurement_confidence=confidence,
             transformation_descriptions=descriptions,
         )
-
-    # Backward compatibility
-    def predict(
-        self,
-        volume_a: ConceptVolume,
-        volume_b: ConceptVolume,
-        relation: ConceptVolumeRelation | None = None,
-    ) -> MergeAnalysisResult:
-        """Backward compatibility alias for analyze()."""
-        return self.analyze(volume_a, volume_b, relation)
 
     def analyze_global(
         self,
@@ -318,15 +292,6 @@ class MergeAnalyzer:
             mean_alignment=mean_alignment,
             transformation_summary=summary,
         )
-
-    # Backward compatibility
-    def predict_global(
-        self,
-        volumes: dict[str, ConceptVolume],
-        relations: dict[tuple[str, str], ConceptVolumeRelation] | None = None,
-    ) -> GlobalMergeAnalysisReport:
-        """Backward compatibility alias for analyze_global()."""
-        return self.analyze_global(volumes, relations)
 
     def _compute_overlap_score(self, relation: ConceptVolumeRelation) -> float:
         """Compute overlap score from relation metrics."""
@@ -455,10 +420,6 @@ class MergeAnalyzer:
         return "Transformations needed: " + ", ".join(parts)
 
 
-# Backward compatibility alias
-InterferencePredictor = MergeAnalyzer
-
-
 def quick_merge_analysis(
     source_activations: dict[str, "Array"],
     target_activations: dict[str, "Array"],
@@ -538,6 +499,3 @@ def quick_merge_analysis(
         transformation_summary=summary,
     )
 
-
-# Backward compatibility alias
-quick_interference_check = quick_merge_analysis

@@ -150,17 +150,6 @@ class EntropyThresholds:
             circuit_breaker=percentile(circuit_breaker_percentile),
         )
 
-    @classmethod
-    def default(cls) -> "EntropyThresholds":
-        """Legacy method. Prefer from_vocab_size() or from_calibration_data().
-
-        Returns thresholds calibrated for 32K vocabulary for backward compatibility.
-        """
-        # 32K vocab: max_entropy ≈ 10.37
-        # These match the legacy values: 1.5, 3.0, 4.0
-        return cls.from_vocab_size(32000)
-
-
 # =============================================================================
 # Logit Entropy Calculator
 # =============================================================================
@@ -205,8 +194,14 @@ class LogitEntropyCalculator:
         """
         self.top_k = top_k
         self.epsilon = epsilon
-        self.thresholds = EntropyThresholds.default()
+        self.thresholds: EntropyThresholds | None = None
+        self._vocab_size: int | None = None
         self._backend = backend or get_default_backend()
+
+    def _ensure_thresholds(self, vocab_size: int) -> None:
+        if self.thresholds is None or self._vocab_size != vocab_size:
+            self.thresholds = EntropyThresholds.from_vocab_size(vocab_size)
+            self._vocab_size = vocab_size
 
     def compute(
         self,
@@ -237,6 +232,7 @@ class LogitEntropyCalculator:
         """
         # Flatten logits to 1D vocabulary vector
         flat_logits = self._flatten_to_vocab(logits)
+        self._ensure_thresholds(int(flat_logits.shape[-1]))
 
         # Numerically stable softmax
         max_val = self._backend.max(flat_logits, keepdims=True)
@@ -353,7 +349,15 @@ class LogitEntropyCalculator:
         Returns:
             True if circuit breaker should trip.
         """
-        t = threshold if threshold is not None else self.thresholds.circuit_breaker
+        if threshold is None:
+            if self.thresholds is None:
+                raise ValueError(
+                    "Entropy thresholds not initialized. "
+                    "Call compute() first or pass an explicit threshold."
+                )
+            t = self.thresholds.circuit_breaker
+        else:
+            t = threshold
         return entropy >= t
 
     @staticmethod

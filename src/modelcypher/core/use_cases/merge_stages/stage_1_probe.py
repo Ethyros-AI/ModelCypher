@@ -308,12 +308,14 @@ def _probe_precise(
     b = backend or get_default_backend()
     from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
     from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
+    from modelcypher.core.domain.geometry.intersection_similarity import (
+        IntersectionSimilarityMode,
+        build_intersection_map,
+    )
     from modelcypher.core.domain.geometry.manifold_stitcher import (
         ActivatedDimension,
         ActivationFingerprint,
         IntersectionMap,
-        IntersectionSimilarityMode,
-        build_intersection_map,
     )
 
     probes = UnifiedAtlasInventory.all_probes()

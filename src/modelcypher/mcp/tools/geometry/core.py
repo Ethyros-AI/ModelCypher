@@ -763,13 +763,11 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_manifold_dimension(
             points: list[list[float]],
-            bootstrapSamples: int = 0,
             useRegression: bool = True,
         ) -> dict:
             """Estimate intrinsic dimension of a point cloud using TwoNN."""
             result = ctx.geometry_persona_service.estimate_dimension(
                 points=points,
-                bootstrap_samples=bootstrapSamples,
                 use_regression=useRegression,
             )
             payload = ctx.geometry_persona_service.dimension_payload(result)

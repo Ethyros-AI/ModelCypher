@@ -53,14 +53,6 @@ class ManifoldProfile:
         mean_intrinsic_dimension: float | None
         recent_point_count: int
 
-        # Backward compatibility aliases
-        @property
-        def safe_region_count(self) -> int:
-            return self.dense_region_count
-
-        @property
-        def boundary_region_count(self) -> int:
-            return self.transitional_region_count
 
     def compute_statistics(self) -> "ManifoldProfile.Statistics":
         dense_count = sum(
@@ -236,9 +228,6 @@ class ManifoldRegion:
         SPARSE = "sparse"  # Poorly sampled, high entropy
         TRANSITIONAL = "transitional"  # Region boundary, high variance
 
-    # Backward compatibility alias
-    RegionType = RegionCharacter
-
     id: UUID
     region_type: "ManifoldRegion.RegionCharacter"
     centroid: ManifoldPoint
@@ -310,11 +299,6 @@ class RegionQueryResult:
     is_within_region: bool
     suggested_character: ManifoldRegion.RegionCharacter
     confidence: float
-
-    # Backward compatibility alias
-    @property
-    def suggested_type(self) -> ManifoldRegion.RegionCharacter:
-        return self.suggested_character
 
 
 @dataclass(frozen=True)

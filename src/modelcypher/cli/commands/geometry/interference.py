@@ -67,7 +67,7 @@ def predict_interference(
         GeometryDomain,
     )
     from modelcypher.core.domain.geometry.interference_predictor import (
-        InterferencePredictor,
+        MergeAnalyzer,
         TransformationType,
     )
     from modelcypher.core.domain.geometry.riemannian_density import (
@@ -96,7 +96,7 @@ def predict_interference(
     # Extract activations for both models
     waypoint_service = get_domain_geometry_waypoint_service()
     density_estimator = RiemannianDensityEstimator()
-    predictor = InterferencePredictor()
+    predictor = MergeAnalyzer()
 
     # Collect activations per domain
     source_activations: dict[str, dict[str, Any]] = {}
@@ -153,7 +153,7 @@ def predict_interference(
         }
 
         for concept_id in common_concepts:
-            result = predictor.predict(source_volumes[concept_id], target_volumes[concept_id])
+            result = predictor.analyze(source_volumes[concept_id], target_volumes[concept_id])
             # Count transformations needed
             for t in result.transformations:
                 domain_analysis["transformation_counts"][t.value] += 1

@@ -322,6 +322,3 @@ class MetricKey:
     approaching = "geometry/refusal_approaching"
     strength = "geometry/refusal_strength"
 
-
-# Compatibility alias for legacy naming.
-RefusalDirectionConfig = Configuration

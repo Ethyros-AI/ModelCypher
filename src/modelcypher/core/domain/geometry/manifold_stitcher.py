@@ -54,16 +54,6 @@ __all__ = [
     # Main class
     "ManifoldStitcher",
     "output_layer_marker",
-    # Re-exports from intersection_similarity
-    "IntersectionSimilarityMode",
-    "EnsembleWeights",
-    "build_intersection_map",
-    "build_layer_correlations",
-    "compute_jaccard_similarity",
-    "compute_weighted_jaccard_similarity",
-    "compute_cosine_similarity",
-    "compute_ensemble_similarity",
-    "intersection_map_from_dict",
 ]
 
 
@@ -130,22 +120,6 @@ class IntersectionMap:
     total_source_dims: int
     total_target_dims: int
     layer_confidences: list[LayerConfidence]
-
-
-# =============================================================================
-# Re-exports from intersection_similarity.py for backward compatibility
-# =============================================================================
-
-from modelcypher.core.domain.geometry.intersection_similarity import (
-    EnsembleWeights,
-    IntersectionSimilarityMode,
-    build_intersection_map,
-    build_layer_correlations,
-    compute_cosine_similarity,
-    compute_ensemble_similarity,
-    compute_jaccard_similarity,
-    compute_weighted_jaccard_similarity,
-)
 
 
 class ProbeSpace(str, Enum):
@@ -543,19 +517,6 @@ class TriangulatedProbeBuilder:
             )
         source_keys = {enum_key(source) for source in sources}
         return [probe for probe in probes if enum_key(probe.source) in source_keys]
-
-    @staticmethod
-    def to_legacy_format(probes: list[AtlasProbeProtocol]) -> list[dict[str, str]]:
-        """Convert AtlasProbe objects to legacy dict format for compatibility."""
-        return [
-            {
-                "probe_id": probe.probe_id,
-                "probe_text": probe.support_texts[0] if probe.support_texts else "",
-                "primary_domain": enum_key(probe.source),
-                "cross_domain_weight": str(probe.cross_domain_weight),
-            }
-            for probe in probes
-        ]
 
     @staticmethod
     def compute_triangulation_score(
@@ -1284,8 +1245,3 @@ class ValidationResult:
     layer_deltas: list[LayerDelta]
     overall_similarity: float
 
-
-# Re-export from intersection_similarity.py for backward compatibility
-from modelcypher.core.domain.geometry.intersection_similarity import (
-    intersection_map_from_dict,
-)

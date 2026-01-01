@@ -444,11 +444,15 @@ class RiemannianGeometry:
         k_neighbors: int | None = None,
     ) -> GeodesicDistanceResult:
         """
-        Estimate geodesic distances using a k-NN graph and shortest paths.
+        Compute geodesic distances using a k-NN graph and shortest paths.
 
-        This implements the Isomap-style geodesic estimation:
+        This implements the Isomap-style geodesic computation:
         1. Build a k-NN graph where edge weights are Euclidean distances
-        2. Compute shortest paths (geodesics) using Dijkstra's algorithm
+        2. Compute shortest paths (geodesics) using Floyd-Warshall algorithm
+
+        When k_neighbors is None, the method finds the MINIMUM k that makes
+        the graph connected. This is a geometric property of the point cloud -
+        the connectivity threshold reveals the manifold's intrinsic structure.
 
         Uses session-scoped caching to avoid redundant computation when the
         same point set is used multiple times (e.g., in frechet_mean,
@@ -461,7 +465,9 @@ class RiemannianGeometry:
 
         Args:
             points: Point cloud [n, d]
-            k_neighbors: Number of neighbors for graph (default: min(10, n-1))
+            k_neighbors: Number of neighbors for graph. If None, automatically
+                         finds the minimum k that ensures graph connectivity.
+                         This is the geometric answer, not an arbitrary default.
 
         Returns:
             GeodesicDistanceResult with pairwise geodesic distances
@@ -482,9 +488,60 @@ class RiemannianGeometry:
                 connected=True,
             )
 
-        # Default k based on manifold dimension heuristics
-        if k_neighbors is None:
-            k_neighbors = min(10, n - 1)
+        # If k_neighbors specified, use it directly
+        if k_neighbors is not None:
+            k_neighbors = max(1, min(k_neighbors, n - 1))
+            return self._compute_geodesic_for_k(points, k_neighbors)
+
+        # Find minimum k for connectivity - this IS the geometric answer
+        # Binary search: start at k=1, double until connected, then binary search
+        k_low = 1
+        k_high = n - 1
+
+        # First, check if k=1 works (rare but possible for dense clouds)
+        result = self._compute_geodesic_for_k(points, k_low)
+        if result.connected:
+            return result
+
+        # Double k until connected to find upper bound
+        k_test = 2
+        while k_test < k_high:
+            result = self._compute_geodesic_for_k(points, k_test)
+            if result.connected:
+                k_high = k_test
+                break
+            k_low = k_test
+            k_test = min(k_test * 2, k_high)
+        else:
+            # Need maximum k
+            result = self._compute_geodesic_for_k(points, k_high)
+            if result.connected:
+                k_low = k_high // 2
+                k_high = k_high
+            else:
+                # Fully connected graph still disconnected - degenerate case
+                return result
+
+        # Binary search for minimum k that achieves connectivity
+        while k_low < k_high - 1:
+            k_mid = (k_low + k_high) // 2
+            result = self._compute_geodesic_for_k(points, k_mid)
+            if result.connected:
+                k_high = k_mid
+            else:
+                k_low = k_mid
+
+        # Return result for minimum connected k
+        return self._compute_geodesic_for_k(points, k_high)
+
+    def _compute_geodesic_for_k(
+        self,
+        points: "Array",
+        k_neighbors: int,
+    ) -> GeodesicDistanceResult:
+        """Compute geodesic distances for a specific k value."""
+        backend = self._backend
+        n = int(points.shape[0])
         k_neighbors = max(1, min(k_neighbors, n - 1))
 
         # Check cache first

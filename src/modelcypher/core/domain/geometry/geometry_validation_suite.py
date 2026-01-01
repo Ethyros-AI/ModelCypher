@@ -502,16 +502,6 @@ class GeometryValidationSuite:
             fixtures=fixtures if resolved.include_fixtures else None,
         )
 
-    @staticmethod
-    def run_static(config: Config | None = None) -> Report:
-        """Static method for backward compatibility.
-
-        Args:
-            config: Suite configuration (use with_parameters() to create).
-        """
-        suite = GeometryValidationSuite()
-        return suite.run(config)
-
     def _build_fixtures(self) -> Fixtures:
         backend = self._backend
 

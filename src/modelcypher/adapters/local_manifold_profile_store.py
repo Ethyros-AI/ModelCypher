@@ -351,7 +351,7 @@ class LocalManifoldProfileStore(ManifoldProfileStore):
         updated_at = payload.get("updatedAt") or payload.get("updated_at")
         return ManifoldRegion(
             id=UUID(payload["id"]),
-            region_type=ManifoldRegion.RegionType(region_type),
+            region_type=ManifoldRegion.RegionCharacter(region_type),
             centroid=self._point_from_dict(payload["centroid"]),
             member_count=int(payload.get("memberCount") or payload.get("member_count")),
             member_ids=[

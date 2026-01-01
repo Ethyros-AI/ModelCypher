@@ -53,7 +53,7 @@ def test_region_classification() -> None:
         assessment_strength=0.5,
         prompt_hash="p",
     )
-    assert ManifoldRegion.classify(point) == ManifoldRegion.RegionType.safe
+    assert ManifoldRegion.classify(point) == ManifoldRegion.RegionCharacter.DENSE
 
 
 def test_clusterer_groups_identical_points() -> None:

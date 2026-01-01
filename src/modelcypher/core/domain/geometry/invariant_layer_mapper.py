@@ -69,12 +69,6 @@ __all__ = [
     "ModelFingerprints",
     # Main class
     "InvariantLayerMapper",
-    # Re-exports from strategy_layer_mapper
-    "LayerCategoryScores",
-    "StrategyMappingResult",
-    "StrategyLayerMapper",
-    "compute_layer_alignment_confidence",
-    "select_optimal_strategy",
 ]
 
 _DEFAULT_SEQUENCE_FAMILIES = frozenset(
@@ -1286,17 +1280,3 @@ class InvariantLayerMapper:
 
         return max(0.0, min(1.0, dot / (math.sqrt(norm_a) * math.sqrt(norm_b))))
 
-
-# =============================================================================
-# Re-exports for backward compatibility
-# =============================================================================
-
-# These classes/functions have been moved to strategy_layer_mapper.py but are
-# re-exported here to maintain backward compatibility with existing imports.
-from modelcypher.core.domain.geometry.strategy_layer_mapper import (
-    LayerCategoryScores,
-    StrategyLayerMapper,
-    StrategyMappingResult,
-    compute_layer_alignment_confidence,
-    select_optimal_strategy,
-)

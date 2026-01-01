@@ -45,8 +45,8 @@ class TestEntropyThresholds:
     """Tests for EntropyThresholds."""
 
     def test_default_values(self):
-        """Default should derive from 32K vocab size."""
-        t = EntropyThresholds.default()
+        """Thresholds derived from 32K vocab size."""
+        t = EntropyThresholds.from_vocab_size(32000)
 
         # Default uses from_vocab_size(32000)
         # max_entropy = ln(32000) ≈ 10.37
@@ -201,14 +201,22 @@ class TestCircuitBreaker:
     def test_should_trip_circuit_breaker_false(self):
         """Entropy below threshold should not trip."""
         calc = LogitEntropyCalculator()
+        thresholds = EntropyThresholds.from_vocab_size(32000)
 
-        assert not calc.should_trip_circuit_breaker(3.0)
+        assert not calc.should_trip_circuit_breaker(
+            3.0,
+            threshold=thresholds.circuit_breaker,
+        )
 
     def test_should_trip_circuit_breaker_true(self):
         """Entropy above threshold should trip."""
         calc = LogitEntropyCalculator()
+        thresholds = EntropyThresholds.from_vocab_size(32000)
 
-        assert calc.should_trip_circuit_breaker(5.0)
+        assert calc.should_trip_circuit_breaker(
+            5.0,
+            threshold=thresholds.circuit_breaker,
+        )
 
 
 class TestLogitEntropySample:
