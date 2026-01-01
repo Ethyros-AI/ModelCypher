@@ -58,10 +58,6 @@ Array = TypeVar("Array")
 # Session-scoped cache for Gram matrices
 _cache = ComputationCache.shared()
 
-# Re-export for backwards compatibility
-ProcrustesResult = PairwiseProcrustesResult
-
-
 class BackendMatrixUtils:
     """Backend-aware matrix utilities for geometry operations.
 
@@ -244,7 +240,7 @@ class BackendMatrixUtils:
         source: Array,
         target: Array,
         allow_scaling: bool = False,
-    ) -> ProcrustesResult[Array]:
+    ) -> PairwiseProcrustesResult[Array]:
         """Compute optimal orthogonal rotation to align source to target.
 
         Finds the orthogonal matrix R that minimizes ||target - source @ R||_F.
@@ -261,7 +257,7 @@ class BackendMatrixUtils:
             allow_scaling: If True, also compute optimal scale factor
 
         Returns:
-            ProcrustesResult with rotation, scale, and residual
+            PairwiseProcrustesResult with rotation, scale, and residual
         """
         # Compute cross-covariance matrix: M = source.T @ target
         source_T = self.backend.transpose(source)
@@ -311,7 +307,7 @@ class BackendMatrixUtils:
         d = source.shape[1]
         translation = self.backend.zeros((d,))
 
-        return ProcrustesResult(
+        return PairwiseProcrustesResult(
             rotation=R,
             scale=scale,
             translation=translation,
@@ -324,7 +320,7 @@ class BackendMatrixUtils:
         target: Array,
         center: bool = True,
         allow_scaling: bool = False,
-    ) -> tuple[Array, ProcrustesResult[Array]]:
+    ) -> tuple[Array, PairwiseProcrustesResult[Array]]:
         """Align source to target using Procrustes analysis.
 
         Full Procrustes alignment with optional centering and scaling.
@@ -336,7 +332,7 @@ class BackendMatrixUtils:
             allow_scaling: If True, compute optimal scale factor
 
         Returns:
-            Tuple of (aligned_source, ProcrustesResult)
+            Tuple of (aligned_source, PairwiseProcrustesResult)
         """
         if center:
             source_mean = self.backend.mean(source, axis=0, keepdims=True)

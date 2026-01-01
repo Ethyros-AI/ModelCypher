@@ -381,8 +381,6 @@ class LayerMergeValidation:
         source_entropy: float,
         target_entropy: float,
         merged_entropy: float,
-        thresholds: EntropyThresholds | None = None,  # Ignored, kept for API compat
-        stability_multipliers: tuple[float, float, float] | None = None,  # Ignored
     ) -> LayerMergeValidation:
         """Compute validation from entropy measurements.
 
@@ -391,14 +389,10 @@ class LayerMergeValidation:
             source_entropy: Entropy of source model layer.
             target_entropy: Entropy of target model layer.
             merged_entropy: Entropy of merged layer.
-            thresholds: Deprecated, ignored. Kept for API compatibility.
-            stability_multipliers: Deprecated, ignored. Kept for API compatibility.
 
         Returns:
             LayerMergeValidation with raw measurements.
         """
-        # Suppress unused parameter warnings
-        _ = thresholds, stability_multipliers
 
         # Expected merged entropy is weighted average (assuming 50/50 blend)
         expected_entropy = (source_entropy + target_entropy) / 2
@@ -572,63 +566,33 @@ class EntropyMergeValidator:
     def __init__(
         self,
         config: EntropyMergeConfig | None = None,
-        *,
-        # Backward compatibility: individual parameters
-        thresholds: EntropyThresholds | None = None,
-        critical_bandwidth: float | None = None,
     ):
         """Initialize validator.
 
         Args:
-            config: Full configuration (preferred). If provided, other args ignored.
-            thresholds: (Deprecated) Entropy classification thresholds.
-            critical_bandwidth: (Deprecated) Bandwidth around phase boundary.
-
-        Prefer using config parameter for new code.
+            config: Full configuration.
         """
-        if config is not None:
-            self.config = config
-            self.thresholds = config.entropy_thresholds
-            self.critical_bandwidth = config.critical_bandwidth
-        else:
-            # Backward compatibility: create config from individual params
-            # Use standard values if not provided
-            if thresholds is None:
-                thresholds = EntropyThresholds(low=1.5, high=3.0, circuit_breaker=4.0)
-            if critical_bandwidth is None:
-                critical_bandwidth = 0.3
+        self.config = config
 
-            self.thresholds = thresholds
-            self.critical_bandwidth = critical_bandwidth
+    def _ensure_config_from_values(self, entropy_values: list[float]) -> EntropyMergeConfig:
+        if self.config is not None:
+            return self.config
+        if not entropy_values:
+            raise ValueError("entropy_values cannot be empty when deriving merge config")
+        mean = sum(entropy_values) / len(entropy_values)
+        variance = sum((v - mean) ** 2 for v in entropy_values) / len(entropy_values)
+        self.config = EntropyMergeConfig.from_entropy_statistics(mean, variance ** 0.5)
+        return self.config
 
-            # Derive phase adjustments and stability from thresholds
-            # Critical alpha = threshold_ratio indicates how much to reduce at boundary
-            threshold_ratio = thresholds.low / thresholds.high if thresholds.high > 0 else 0.5
-            spread = thresholds.high - thresholds.low
-
-            # Stability thresholds as fractions of the entropy spread
-            # stable_mult: delta < low * stable_mult → STABLE
-            # marginal_mult: delta < low * marginal_mult → MARGINAL
-            # unstable_mult: delta < high * unstable_mult → UNSTABLE
-            stable_mult = spread / thresholds.high if thresholds.high > 0 else 0.2
-            marginal_mult = (thresholds.low / thresholds.high) if thresholds.high > 0 else 0.5
-            unstable_mult = marginal_mult  # Same threshold for unstable
-
-            self.config = EntropyMergeConfig(
-                entropy_thresholds=thresholds,
-                critical_bandwidth=critical_bandwidth,
-                phase_adjustments=PhaseAdjustments(
-                    ordered_alpha=1.0,
-                    critical_alpha=threshold_ratio,  # Derived from threshold ratio
-                    disordered_alpha=(1.0 + threshold_ratio) / 2.0,  # Midpoint
-                    ordered_sigma=1.0,
-                    critical_sigma=1.0 / threshold_ratio if threshold_ratio > 0 else 2.0,
-                    disordered_sigma=(1.0 + 1.0 / threshold_ratio) / 2.0 if threshold_ratio > 0 else 1.5,
-                ),
-                high_risk_fraction=threshold_ratio,  # Derived from geometry
-                unstable_fraction=stable_mult,  # Derived from spread
-                stability_thresholds=(stable_mult, marginal_mult, unstable_mult),
+    def _ensure_config_from_profiles(
+        self, *profiles: ModelEntropyProfile
+    ) -> EntropyMergeConfig:
+        values: list[float] = []
+        for profile in profiles:
+            values.extend(
+                layer.mean_entropy for layer in profile.layer_profiles.values()
             )
+        return self._ensure_config_from_values(values)
 
     def classify_phase(self, entropy: float) -> Phase:
         """Classify entropy into thermodynamic phase.
@@ -642,14 +606,17 @@ class EntropyMergeValidator:
         Returns:
             Phase classification (ORDERED, CRITICAL, or DISORDERED).
         """
-        if entropy < self.thresholds.low:
+        if self.config is None:
+            raise ValueError("EntropyMergeConfig is required to classify phases")
+        thresholds = self.config.entropy_thresholds
+        if entropy < thresholds.low:
             return Phase.ORDERED
-        elif entropy >= self.thresholds.high:
+        elif entropy >= thresholds.high:
             return Phase.DISORDERED
         else:
             # Moderate zone - check if near the center (critical region)
-            moderate_center = (self.thresholds.low + self.thresholds.high) / 2
-            if abs(entropy - moderate_center) < self.critical_bandwidth:
+            moderate_center = (thresholds.low + thresholds.high) / 2
+            if abs(entropy - moderate_center) < self.config.critical_bandwidth:
                 return Phase.CRITICAL
             elif entropy < moderate_center:
                 return Phase.ORDERED
@@ -677,6 +644,8 @@ class EntropyMergeValidator:
                 entropy_variance=0.0,
                 phase=Phase.ORDERED,
             )
+
+        self._ensure_config_from_values(entropy_values)
 
         mean_entropy = sum(entropy_values) / len(entropy_values)
         variance = sum((e - mean_entropy) ** 2 for e in entropy_values) / len(entropy_values)
@@ -772,6 +741,10 @@ class EntropyMergeValidator:
 
         # Convert to ModelEntropyProfile format
         layer_profiles = {}
+        self._ensure_config_from_values(
+            [result.mean_entropy for result in profile_result.layer_results.values()]
+        )
+
         for layer_idx, result in profile_result.layer_results.items():
             phase = self.classify_phase(result.mean_entropy)
             layer_profiles[result.layer_name] = LayerEntropyProfile(
@@ -804,6 +777,7 @@ class EntropyMergeValidator:
                 num_layers = 32
 
         layer_profiles = {}
+        simulated_layers: list[tuple[str, float, float]] = []
         for i in range(num_layers):
             # Simulate typical entropy curve: high early, valley mid, rise late
             # Based on findings from Entropy-Lens paper
@@ -822,8 +796,12 @@ class EntropyMergeValidator:
             variance = 0.5 + abs(depth_ratio - 0.5) * 1.0
 
             layer_name = f"layers.{i}"
-            phase = self.classify_phase(mean_entropy)
+            simulated_layers.append((layer_name, mean_entropy, variance))
 
+        self._ensure_config_from_values([mean for _, mean, _ in simulated_layers])
+
+        for layer_name, mean_entropy, variance in simulated_layers:
+            phase = self.classify_phase(mean_entropy)
             layer_profiles[layer_name] = LayerEntropyProfile(
                 layer_name=layer_name,
                 mean_entropy=mean_entropy,
@@ -852,7 +830,8 @@ class EntropyMergeValidator:
             Dict mapping layer names to alpha adjustment factors.
         """
         adjustments = {}
-        phase_adj = self.config.phase_adjustments
+        config = self._ensure_config_from_profiles(source_profile, target_profile)
+        phase_adj = config.phase_adjustments
 
         # Get common layers
         common_layers = set(source_profile.layer_profiles.keys()) & set(
@@ -885,7 +864,8 @@ class EntropyMergeValidator:
             Dict mapping layer names to smoothing sigmas.
         """
         sigmas = {}
-        phase_adj = self.config.phase_adjustments
+        config = self._ensure_config_from_profiles(source_profile, target_profile)
+        phase_adj = config.phase_adjustments
 
         common_layers = set(source_profile.layer_profiles.keys()) & set(
             target_profile.layer_profiles.keys()
@@ -922,6 +902,9 @@ class EntropyMergeValidator:
         Returns:
             MergeEntropyValidation with stability assessment.
         """
+        config = self._ensure_config_from_values(
+            list(source_entropies.values()) + list(target_entropies.values())
+        )
         layer_validations = {}
 
         # Validate common layers
@@ -937,8 +920,6 @@ class EntropyMergeValidator:
                 source_entropy=source_entropies[layer_name],
                 target_entropy=target_entropies[layer_name],
                 merged_entropy=merged_entropies[layer_name],
-                thresholds=self.thresholds,
-                stability_multipliers=self.config.stability_thresholds,
             )
             layer_validations[layer_name] = validation
 
@@ -946,7 +927,7 @@ class EntropyMergeValidator:
             source_model=source_model,
             target_model=target_model,
             layer_validations=layer_validations,
-            unstable_fraction=self.config.unstable_fraction,
+            unstable_fraction=config.unstable_fraction,
         )
 
     def generate_merge_guidance(

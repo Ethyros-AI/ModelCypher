@@ -107,7 +107,8 @@ _ATTR_TO_MODULE = {
     "DimensionBlender": ("dimension_blender", "DimensionBlender"),
     # Backend-aware matrix utilities
     "BackendMatrixUtils": ("backend_matrix_utils", "BackendMatrixUtils"),
-    "ProcrustesResult": ("backend_matrix_utils", "ProcrustesResult"),
+    "ProcrustesResult": ("types", "ProcrustesResult"),
+    "PairwiseProcrustesResult": ("types", "PairwiseProcrustesResult"),
     # Signature base classes
     "SignatureMixin": ("signature_base", "SignatureMixin"),
     "LabeledSignatureMixin": ("signature_base", "LabeledSignatureMixin"),
@@ -132,11 +133,12 @@ def __dir__():
 
 # TYPE_CHECKING block for static analysis - these imports don't run at runtime
 if TYPE_CHECKING:
-    from .backend_matrix_utils import BackendMatrixUtils, ProcrustesResult
+    from .backend_matrix_utils import BackendMatrixUtils
     from .dimension_blender import DimensionBlender
     from .dora_decomposition import ChangeType, DoRADecomposition
     from .dora_decomposition import DoRAConfig as DoRAConfiguration
     from .path_geometry import PathNode, PathSignature
     from .permutation_aligner import PermutationAligner
     from .signature_base import LabeledSignatureMixin, SignatureMixin
+    from .types import PairwiseProcrustesResult, ProcrustesResult
     from .vector_math import VectorMath

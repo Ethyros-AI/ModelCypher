@@ -96,7 +96,7 @@ class TestConfig:
     """Tests for Config dataclass."""
 
     def test_default_values(self) -> None:
-        """Default config values."""
+        """Default config values - smoothness threshold must be explicitly set."""
         config = Config()
         assert config.max_iterations == 100
         assert config.convergence_threshold == 1e-4
@@ -104,7 +104,32 @@ class TestConfig:
         assert config.min_models == 2
         assert config.allow_scaling is False
         assert config.frechet_mean.enabled is True
+        assert config.per_layer_smoothness_threshold is None
+        # effective_smoothness_threshold should raise without explicit threshold
+        import pytest
+        with pytest.raises(ValueError, match="per_layer_smoothness_threshold not set"):
+            _ = config.effective_smoothness_threshold
+
+    def test_with_smoothness_threshold(self) -> None:
+        """Config.with_smoothness_threshold() creates config with threshold."""
+        config = Config.with_smoothness_threshold(0.7)
         assert config.per_layer_smoothness_threshold == 0.7
+        assert config.effective_smoothness_threshold == 0.7
+
+    def test_from_smoothness_distribution(self) -> None:
+        """Config.from_smoothness_distribution() derives threshold from data."""
+        # Smoothness ratios with mean ~0.6, std ~0.1
+        ratios = [0.5, 0.55, 0.6, 0.65, 0.7]
+        config = Config.from_smoothness_distribution(ratios, sigma=1.0)
+        assert config.per_layer_smoothness_threshold is not None
+        # Threshold should be mean - 1*std ≈ 0.6 - 0.063 ≈ 0.54
+        assert 0.4 < config.effective_smoothness_threshold < 0.7
+
+    def test_from_empty_smoothness_distribution_raises(self) -> None:
+        """Config.from_smoothness_distribution() raises on empty data."""
+        import pytest
+        with pytest.raises(ValueError, match="Cannot derive threshold from empty"):
+            Config.from_smoothness_distribution([])
 
     def test_custom_values(self) -> None:
         """Should accept custom values."""
@@ -582,8 +607,9 @@ class TestRotationContinuityAnalyzer:
             1: {"a": [0.9, 0.1], "b": [0.1, 0.9], "c": [0.5, 0.5]},
         }
         analyzer = RotationContinuityAnalyzer()
+        config = Config.with_smoothness_threshold(0.7)
         result = analyzer.compute_per_layer_alignments(
-            source_acts, target_acts, "source", "target"
+            source_acts, target_acts, "source", "target", config=config
         )
         assert result is not None
         assert result.source_model == "source"
@@ -619,8 +645,9 @@ class TestRotationContinuityAnalyzer:
             0: {"a": [1.0, 0.0, 0.0], "b": [0.0, 1.0, 0.0], "c": [0.5, 0.5, 0.0]},
         }
         analyzer = RotationContinuityAnalyzer()
+        config = Config.with_smoothness_threshold(0.7)
         result = analyzer.compute_per_layer_alignments(
-            source_acts, target_acts, "source", "target"
+            source_acts, target_acts, "source", "target", config=config
         )
         assert result is not None
         assert result.source_dimension == 2
@@ -640,8 +667,9 @@ class TestRotationContinuityAnalyzer:
             2: {"a": [0.9, 0.1], "b": [0.1, 0.9], "c": [0.5, 0.5]},
         }
         analyzer = RotationContinuityAnalyzer()
+        config = Config.with_smoothness_threshold(0.7)
         result = analyzer.compute_per_layer_alignments(
-            source_acts, target_acts, "source", "target"
+            source_acts, target_acts, "source", "target", config=config
         )
         assert result is not None
         assert result.smoothness_ratio >= 0  # Should be valid ratio
@@ -661,8 +689,9 @@ class TestRotationContinuityAnalyzer:
             1: {"a": [1.0, 0.0], "b": [0.0, 1.0], "c": [0.5, 0.5]},
         }
         analyzer = RotationContinuityAnalyzer()
+        config = Config.with_smoothness_threshold(0.7)
         result = analyzer.compute_per_layer_alignments(
-            source_acts, target_acts, "source", "target"
+            source_acts, target_acts, "source", "target", config=config
         )
         assert result is not None
         # Second layer should have angular deviation from first

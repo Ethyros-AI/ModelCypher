@@ -96,7 +96,7 @@ class Config:
     min_models: int = 2
     allow_scaling: bool = False
     frechet_mean: FrechetMeanConfig = FrechetMeanConfig()  # Fréchet mean by default
-    per_layer_smoothness_threshold: float = 0.7
+    per_layer_smoothness_threshold: float | None = None
     """Threshold for deciding per-layer vs global rotation alignment.
 
     When smoothness_ratio < this threshold, per-layer rotations are significantly
@@ -105,13 +105,18 @@ class Config:
 
     When smoothness_ratio >= this threshold, a single global rotation suffices.
 
-    Default 0.7 based on empirical observation that ratios below 0.7 typically
-    indicate meaningful structural differences requiring per-layer alignment.
+    Must be explicitly set or derived from observed smoothness ratios.
+    No arbitrary defaults - callers should measure baseline smoothness ratios
+    to calibrate this threshold for their model family.
     """
 
     @staticmethod
     def default() -> "Config":
-        """Default config with Fréchet mean enabled (curvature-aware)."""
+        """Default config with Fréchet mean enabled (curvature-aware).
+
+        Note: per_layer_smoothness_threshold is NOT set. Callers using
+        RotationContinuityAnalyzer must explicitly set this threshold.
+        """
         return Config()
 
     @staticmethod
@@ -120,6 +125,62 @@ class Config:
         is WRONG on curved manifolds. Use this only when you need to compare
         against Fréchet mean or for specific numerical debugging."""
         return Config(frechet_mean=FrechetMeanConfig(enabled=False))
+
+    @staticmethod
+    def with_smoothness_threshold(threshold: float) -> "Config":
+        """Create config with explicit smoothness threshold for rotation continuity.
+
+        Args:
+            threshold: Smoothness ratio threshold (0.0-1.0). When
+                smoothness_ratio < threshold, per-layer alignment is required.
+
+        Returns:
+            Config with specified smoothness threshold.
+        """
+        return Config(per_layer_smoothness_threshold=threshold)
+
+    @classmethod
+    def from_smoothness_distribution(
+        cls,
+        smoothness_ratios: list[float],
+        sigma: float = 1.0,
+    ) -> "Config":
+        """Derive smoothness threshold from observed ratio distribution.
+
+        Sets threshold at mean - sigma * std, identifying models whose
+        smoothness is significantly below typical.
+
+        Args:
+            smoothness_ratios: Observed smoothness ratios from model pairs.
+            sigma: Number of standard deviations for threshold.
+
+        Returns:
+            Config with data-derived threshold.
+
+        Raises:
+            ValueError: If smoothness_ratios is empty.
+        """
+        if not smoothness_ratios:
+            raise ValueError(
+                "Cannot derive threshold from empty smoothness ratios. "
+                "Provide observed ratios from model pair alignment comparisons."
+            )
+        mean = sum(smoothness_ratios) / len(smoothness_ratios)
+        variance = sum((r - mean) ** 2 for r in smoothness_ratios) / len(smoothness_ratios)
+        std = variance ** 0.5
+        threshold = max(0.0, mean - sigma * std)
+        return cls(per_layer_smoothness_threshold=threshold)
+
+    @property
+    def effective_smoothness_threshold(self) -> float:
+        """Get the effective smoothness threshold, raising if not set."""
+        if self.per_layer_smoothness_threshold is None:
+            raise ValueError(
+                "per_layer_smoothness_threshold not set. Use Config.with_smoothness_threshold() "
+                "with an explicit value, or Config.from_smoothness_distribution() to derive "
+                "from observed smoothness ratios."
+            )
+        return self.per_layer_smoothness_threshold
 
 
 @dataclass(frozen=True)
@@ -694,7 +755,8 @@ class RotationContinuityAnalyzer:
         mean_angular_velocity = sum(angular_devs) / max(len(angular_devs), 1)
 
         # Requires per-layer alignment if smoothness_ratio < threshold
-        requires_per_layer = smoothness_ratio < config.per_layer_smoothness_threshold
+        # Uses effective_smoothness_threshold which raises if not configured
+        requires_per_layer = smoothness_ratio < config.effective_smoothness_threshold
 
         return RotationContinuityResult(
             source_model=source_model,

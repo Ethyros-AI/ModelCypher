@@ -117,31 +117,23 @@ class EntropyTransition:
             return 0.0
         return self.entropy_delta / baseline.std
 
-    def is_escalation(self, baseline: EntropyBaseline | None = None, z_threshold: float = 1.0) -> bool:
+    def is_escalation(self, baseline: EntropyBaseline, z_threshold: float = 1.0) -> bool:
         """Entropy increased significantly (getting more uncertain).
 
         Args:
-            baseline: If provided, uses z-score based significance (recommended).
-                     If None, uses raw delta > 0.5 (legacy, model-dependent).
+            baseline: Uses z-score based significance.
             z_threshold: Z-score threshold for significance (default: 1.0 std dev).
         """
-        if baseline is not None:
-            return self.z_score_delta(baseline) > z_threshold
-        # Legacy fallback - avoid if possible
-        return self.entropy_delta > 0.5
+        return self.z_score_delta(baseline) > z_threshold
 
-    def is_recovery(self, baseline: EntropyBaseline | None = None, z_threshold: float = 1.0) -> bool:
+    def is_recovery(self, baseline: EntropyBaseline, z_threshold: float = 1.0) -> bool:
         """Entropy decreased significantly (getting more confident).
 
         Args:
-            baseline: If provided, uses z-score based significance (recommended).
-                     If None, uses raw delta < -0.5 (legacy, model-dependent).
+            baseline: Uses z-score based significance.
             z_threshold: Z-score threshold for significance (default: 1.0 std dev).
         """
-        if baseline is not None:
-            return self.z_score_delta(baseline) < -z_threshold
-        # Legacy fallback - avoid if possible
-        return self.entropy_delta < -0.5
+        return self.z_score_delta(baseline) < -z_threshold
 
     @property
     def description(self) -> str:
@@ -161,35 +153,25 @@ class EntropyTransition:
 
 
 
-def is_confident(entropy: float, variance: float, baseline: EntropyBaseline | None = None) -> bool:
+def is_confident(entropy: float, baseline: EntropyBaseline) -> bool:
     """Check if entropy indicates confident state.
 
     Args:
         entropy: Current entropy value.
-        variance: Current variance (unused, kept for API compatibility).
-        baseline: Model entropy baseline. If None, returns False (can't determine).
+        baseline: Model entropy baseline.
     """
-    if baseline is None:
-        # Without baseline, we can't determine confidence - different models
-        # have vastly different entropy ranges
-        return False
     return baseline.is_low(entropy)
 
-
-def is_uncertain(entropy: float, variance: float, baseline: EntropyBaseline | None = None) -> bool:
+def is_uncertain(entropy: float, baseline: EntropyBaseline) -> bool:
     """Check if entropy indicates uncertain state.
 
     Args:
         entropy: Current entropy value.
-        variance: Current variance (unused, kept for API compatibility).
-        baseline: Model entropy baseline. If None, returns False (can't determine).
+        baseline: Model entropy baseline.
     """
-    if baseline is None:
-        return False
     return baseline.is_high(entropy)
 
-
-def is_distressed(entropy: float, variance: float, baseline: EntropyBaseline | None = None) -> bool:
+def is_distressed(entropy: float, variance: float, baseline: EntropyBaseline) -> bool:
     """Check if entropy indicates distress (high entropy + low variance).
 
     High entropy with low variance suggests the model is "stuck" - uncertain
@@ -198,10 +180,8 @@ def is_distressed(entropy: float, variance: float, baseline: EntropyBaseline | N
     Args:
         entropy: Current entropy value.
         variance: Current variance.
-        baseline: Model entropy baseline. If None, returns False (can't determine).
+        baseline: Model entropy baseline.
     """
-    if baseline is None:
-        return False
     # High entropy (> 2 std above mean) + low variance relative to entropy
     # Variance should scale with entropy; low relative variance is suspicious
     is_high_entropy = baseline.z_score(entropy) > 2.0

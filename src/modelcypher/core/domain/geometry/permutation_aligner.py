@@ -114,11 +114,102 @@ class AlignmentResult:
 
 @dataclass(frozen=True)
 class Config:
-    """Configuration for permutation alignment."""
+    """Configuration for permutation alignment.
 
-    min_match_threshold: float = 0.1
+    Attributes
+    ----------
+    min_match_threshold : float | None
+        Minimum similarity threshold for accepting a match. Must be explicitly
+        set or derived from the similarity distribution. No arbitrary defaults.
+    use_anchor_grounding : bool
+        Whether to use anchor-grounded alignment (projects through anchors).
+    top_k : int
+        Top-k candidates to consider during matching.
+    match_sigma : float
+        Number of standard deviations below mean to set the threshold when
+        deriving from similarity distribution.
+    """
+
+    min_match_threshold: float | None = None
     use_anchor_grounding: bool = True
     top_k: int = 5
+    match_sigma: float = 2.0
+
+    @classmethod
+    def from_similarity_distribution(
+        cls,
+        similarities: list[float],
+        sigma: float = 2.0,
+        use_anchor_grounding: bool = True,
+        top_k: int = 5,
+    ) -> "Config":
+        """Derive match threshold from observed similarity distribution.
+
+        Sets threshold at mean - sigma * std, capturing matches that are
+        significantly above noise level.
+
+        Args:
+            similarities: Observed similarity scores from pairwise comparisons.
+            sigma: Number of standard deviations for threshold.
+            use_anchor_grounding: Whether to use anchor-grounded alignment.
+            top_k: Top-k candidates to consider.
+
+        Returns:
+            Config with data-derived threshold.
+
+        Raises:
+            ValueError: If similarities is empty.
+        """
+        if not similarities:
+            raise ValueError(
+                "Cannot derive threshold from empty similarities. "
+                "Provide observed similarity scores from neuron comparisons."
+            )
+        mean = sum(similarities) / len(similarities)
+        variance = sum((s - mean) ** 2 for s in similarities) / len(similarities)
+        std = variance ** 0.5
+        # Threshold at mean - sigma * std (we want matches ABOVE this)
+        threshold = max(0.0, mean - sigma * std)
+        return cls(
+            min_match_threshold=threshold,
+            use_anchor_grounding=use_anchor_grounding,
+            top_k=top_k,
+            match_sigma=sigma,
+        )
+
+    @classmethod
+    def with_threshold(
+        cls,
+        min_match_threshold: float,
+        use_anchor_grounding: bool = True,
+        top_k: int = 5,
+    ) -> "Config":
+        """Create config with explicit threshold.
+
+        Args:
+            min_match_threshold: Minimum similarity for accepting a match.
+            use_anchor_grounding: Whether to use anchor-grounded alignment.
+            top_k: Top-k candidates to consider.
+
+        Returns:
+            Config with specified threshold.
+        """
+        return cls(
+            min_match_threshold=min_match_threshold,
+            use_anchor_grounding=use_anchor_grounding,
+            top_k=top_k,
+        )
+
+    @property
+    def effective_threshold(self) -> float:
+        """Get the effective match threshold, raising if not set."""
+        if self.min_match_threshold is None:
+            raise ValueError(
+                "min_match_threshold not set. Use Config.with_threshold() "
+                "with an explicit value, or Config.from_similarity_distribution() "
+                "to derive from observed similarities."
+            )
+        return self.min_match_threshold
 
 
 @dataclass(frozen=True)
@@ -147,22 +238,102 @@ class FusionConfig:
     Implements TIES-Merging principles:
     1. Only merge neurons that are geometrically aligned (high confidence).
     2. For unaligned neurons, preserve the dominant signal (or base).
+
+    Attributes
+    ----------
+    interference_threshold : float | None
+        Threshold for constructive interference (averaging). Matches with
+        confidence > this will be averaged. Must be explicitly set or derived
+        from alignment confidence distribution.
+    source_alpha : float
+        Weight for the source model (0.0-1.0).
+    normalize : bool
+        Whether to normalize weights before averaging.
+    interference_sigma : float
+        Number of standard deviations above mean for interference threshold
+        when deriving from confidence distribution.
     """
 
-    interference_threshold: float = 0.5
-    """Threshold for constructive interference (averaging).
-    Matches with confidence > this will be averaged."""
-
+    interference_threshold: float | None = None
     source_alpha: float = 0.5
-    """Weight for the source model (0.0-1.0)."""
-
     normalize: bool = False
-    """Whether to normalize weights before averaging."""
+    interference_sigma: float = 1.0
 
-    @staticmethod
-    def default() -> FusionConfig:
-        """Default fusion configuration."""
-        return FusionConfig()
+    @classmethod
+    def from_confidence_distribution(
+        cls,
+        confidences: list[float],
+        sigma: float = 1.0,
+        source_alpha: float = 0.5,
+        normalize: bool = False,
+    ) -> "FusionConfig":
+        """Derive interference threshold from alignment confidence distribution.
+
+        Sets threshold at mean + sigma * std, only averaging neurons that
+        are significantly well-aligned.
+
+        Args:
+            confidences: Alignment confidence scores from permutation alignment.
+            sigma: Number of standard deviations for threshold.
+            source_alpha: Weight for source model.
+            normalize: Whether to normalize before averaging.
+
+        Returns:
+            FusionConfig with data-derived threshold.
+
+        Raises:
+            ValueError: If confidences is empty.
+        """
+        if not confidences:
+            raise ValueError(
+                "Cannot derive threshold from empty confidences. "
+                "Provide alignment confidence scores from permutation alignment."
+            )
+        mean = sum(confidences) / len(confidences)
+        variance = sum((c - mean) ** 2 for c in confidences) / len(confidences)
+        std = variance ** 0.5
+        # Threshold at mean + sigma * std (only average high-confidence matches)
+        threshold = min(1.0, mean + sigma * std)
+        return cls(
+            interference_threshold=threshold,
+            source_alpha=source_alpha,
+            normalize=normalize,
+            interference_sigma=sigma,
+        )
+
+    @classmethod
+    def with_threshold(
+        cls,
+        interference_threshold: float,
+        source_alpha: float = 0.5,
+        normalize: bool = False,
+    ) -> "FusionConfig":
+        """Create config with explicit threshold.
+
+        Args:
+            interference_threshold: Threshold for constructive interference.
+            source_alpha: Weight for source model.
+            normalize: Whether to normalize before averaging.
+
+        Returns:
+            FusionConfig with specified threshold.
+        """
+        return cls(
+            interference_threshold=interference_threshold,
+            source_alpha=source_alpha,
+            normalize=normalize,
+        )
+
+    @property
+    def effective_threshold(self) -> float:
+        """Get the effective interference threshold, raising if not set."""
+        if self.interference_threshold is None:
+            raise ValueError(
+                "interference_threshold not set. Use FusionConfig.with_threshold() "
+                "with an explicit value, or FusionConfig.from_confidence_distribution() "
+                "to derive from alignment confidences."
+            )
+        return self.interference_threshold
 
 
 class PermutationAligner:
@@ -557,8 +728,11 @@ class PermutationAligner:
 
         needs_recompute = []
 
+        # Get effective threshold (raises if not configured)
+        threshold = config.effective_threshold
+
         for src_idx, max_sim, best_target, signed_sim in source_order:
-            if max_sim < config.min_match_threshold:
+            if max_sim < threshold:
                 continue
 
             if best_target not in used_targets:
@@ -594,7 +768,7 @@ class PermutationAligner:
                         best_sim = sim
                         best_abs = abs_sim_val
 
-                if best_target >= 0 and best_abs >= config.min_match_threshold:
+                if best_target >= 0 and best_abs >= threshold:
                     assignment[src_idx] = best_target
                     match_confidences[src_idx] = float(best_abs)
                     used_targets.add(best_target)

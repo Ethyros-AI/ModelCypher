@@ -1410,6 +1410,10 @@ class RiemannianGeometry:
         The query is attached to the existing k-NN graph by its k closest
         neighbors, then shortest paths are computed exactly on the augmented
         discrete manifold. This is deterministic and preserves manifold geometry.
+
+        Adaptively increases k until all points are reachable from the query.
+        This is necessary because even though the full graph is connected,
+        a subset of k neighbors might not reach all points.
         """
         backend = self._backend
         points = backend.array(points)
@@ -1435,17 +1439,68 @@ class RiemannianGeometry:
         # Deterministic neighbor selection with index tie-breaker
         euc_list = backend.to_numpy(euc_dist).tolist()
         sorted_pairs = sorted(enumerate(euc_list), key=lambda x: (x[1], x[0]))
-        neighbors = [idx for idx, _ in sorted_pairs[:k_neighbors]]
 
-        neighbors_arr = backend.array(neighbors)
-        neighbor_dists = backend.take(euc_dist, neighbors_arr, axis=0)
-        geo_rows = backend.take(geo_result.distances, neighbors_arr, axis=0)
+        # Adaptive k: start with k_neighbors, increase until all points reachable
+        # This handles the case where the query's k nearest neighbors don't
+        # form a connected subgraph that reaches all points
+        current_k = k_neighbors
+        while current_k <= n:
+            neighbors = [idx for idx, _ in sorted_pairs[:current_k]]
 
-        # Exact geodesic distances for the augmented graph:
-        # d(q, i) = min_j (d(q, j) + d(j, i))
-        weights_col = backend.reshape(neighbor_dists, (len(neighbors), 1))
-        candidates = geo_rows + weights_col
-        geo_from_query = backend.min(candidates, axis=0)
+            neighbors_arr = backend.array(neighbors)
+            neighbor_dists = backend.take(euc_dist, neighbors_arr, axis=0)
+            geo_rows = backend.take(geo_result.distances, neighbors_arr, axis=0)
+
+            # Exact geodesic distances for the augmented graph:
+            # d(q, i) = min_j (d(q, j) + d(j, i))
+            weights_col = backend.reshape(neighbor_dists, (len(neighbors), 1))
+            candidates = geo_rows + weights_col
+            geo_from_query = backend.min(candidates, axis=0)
+
+            # Check if all points are reachable (no inf or nan values)
+            backend.eval(geo_from_query)
+            geo_np = backend.to_numpy(geo_from_query)
+            nonfinite_count = sum(
+                1 for g in geo_np.flatten() if not math.isfinite(float(g))
+            )
+
+            if nonfinite_count == 0:
+                # All points reachable with finite distances
+                return geo_from_query
+
+            # Increase k and retry
+            if current_k == n:
+                # Already using all points, can't increase further
+                break
+            current_k = min(current_k * 2, n)
+
+        # If we get here with non-finite values even after using all points,
+        # there's a fundamental issue with the geodesic matrix or query position
+        backend.eval(geo_from_query)
+        geo_final_np = backend.to_numpy(geo_from_query)
+        final_nonfinite = sum(
+            1 for g in geo_final_np.flatten() if not math.isfinite(float(g))
+        )
+
+        if final_nonfinite > 0:
+            # Check the underlying geodesic matrix for issues
+            geo_mat_np = backend.to_numpy(geo_result.distances)
+            mat_nonfinite = sum(
+                1 for row in geo_mat_np for g in row if not math.isfinite(float(g))
+            )
+
+            # Check euclidean distances for issues
+            euc_np = backend.to_numpy(euc_dist)
+            euc_nonfinite = sum(
+                1 for e in euc_np.flatten() if not math.isfinite(float(e))
+            )
+
+            logger.warning(
+                f"_geodesic_distances_from_query: {final_nonfinite}/{n} points unreachable "
+                f"even with k={current_k} neighbors. "
+                f"Geodesic matrix has {mat_nonfinite} non-finite values. "
+                f"Euclidean distances have {euc_nonfinite} non-finite values."
+            )
 
         return geo_from_query
 
@@ -1499,6 +1554,25 @@ class RiemannianGeometry:
                 indicating disconnected manifold components or coincident points.
         """
         backend = self._backend
+
+        # Validate inputs - NaN in mu or geo_from_mu causes downstream NaN propagation
+        backend.eval(mu, geo_from_mu)
+        mu_np = backend.to_numpy(mu)
+        geo_np = backend.to_numpy(geo_from_mu)
+
+        mu_nonfinite = sum(1 for v in mu_np.flatten() if not math.isfinite(float(v)))
+        geo_nonfinite = sum(1 for v in geo_np.flatten() if not math.isfinite(float(v)))
+
+        if mu_nonfinite > 0:
+            raise ValueError(
+                f"Input mu contains {mu_nonfinite} non-finite values. "
+                f"This indicates numerical instability in a previous iteration."
+            )
+        if geo_nonfinite > 0:
+            raise ValueError(
+                f"Input geo_from_mu contains {geo_nonfinite} non-finite values. "
+                f"This indicates disconnected manifold components."
+            )
 
         # Euclidean distances from mu
         diff = points - backend.reshape(mu, (1, -1))
@@ -1563,22 +1637,26 @@ class RiemannianGeometry:
         backend.eval(gradient)
         grad_np = backend.to_numpy(gradient)
 
-        # Check for inf in gradient (can happen with extreme curvature)
-        # IEEE 754: 0 * inf = nan, so we must handle inf before scaling
-        has_inf = any(math.isinf(float(g)) for g in grad_np.flatten())
+        # Check for non-finite values in gradient (inf or nan)
+        # These can happen with extreme curvature causing overflow
+        # IEEE 754: 0 * inf = nan, inf - inf = nan, so we must handle before scaling
+        has_nonfinite = any(
+            not math.isfinite(float(g)) for g in grad_np.flatten()
+        )
 
-        if has_inf:
-            # Gradient contains inf - this means extreme curvature caused overflow
-            # Replace inf with max finite value preserving sign, then renormalize
-            # This preserves the geometric DIRECTION while preventing nan propagation
+        if has_nonfinite:
+            # Gradient contains inf or nan - numerical overflow from extreme curvature
+            # Replace non-finite values while preserving geometric direction:
+            # - inf -> max finite value (preserves direction)
+            # - nan -> 0 (no contribution from this component)
             max_finite = 1e38  # Large but safely below float64 overflow
             grad_np_clipped = []
             for g in grad_np.flatten():
                 g_float = float(g)
-                if math.isinf(g_float):
-                    grad_np_clipped.append(max_finite if g_float > 0 else -max_finite)
-                elif math.isnan(g_float):
+                if math.isnan(g_float):
                     grad_np_clipped.append(0.0)  # nan -> no contribution
+                elif math.isinf(g_float):
+                    grad_np_clipped.append(max_finite if g_float > 0 else -max_finite)
                 else:
                     grad_np_clipped.append(g_float)
 
@@ -1604,6 +1682,22 @@ class RiemannianGeometry:
 
         # Update
         new_mu = mu + eta * gradient
+
+        # Validate output - if update produced NaN, keep old mean
+        backend.eval(new_mu)
+        new_mu_np = backend.to_numpy(new_mu)
+        new_mu_nonfinite = sum(
+            1 for v in new_mu_np.flatten() if not math.isfinite(float(v))
+        )
+
+        if new_mu_nonfinite > 0:
+            # Update would produce NaN - skip this iteration
+            # This can happen with extreme curvature even after gradient normalization
+            logger.warning(
+                f"Fréchet mean update would produce {new_mu_nonfinite} non-finite values. "
+                f"Skipping update to preserve numerical stability."
+            )
+            return mu
 
         return new_mu
 

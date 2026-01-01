@@ -55,11 +55,36 @@ class TestConfig:
     """Tests for Config dataclass."""
 
     def test_config_defaults(self) -> None:
-        """Default config values should be set correctly."""
+        """Default config has None threshold - must be explicitly set."""
         config = Config()
-        assert config.min_match_threshold == 0.1
+        assert config.min_match_threshold is None
         assert config.use_anchor_grounding is True
         assert config.top_k == 5
+        # effective_threshold should raise without explicit threshold
+        import pytest
+        with pytest.raises(ValueError, match="min_match_threshold not set"):
+            _ = config.effective_threshold
+
+    def test_config_with_threshold(self) -> None:
+        """Config.with_threshold() creates config with explicit threshold."""
+        config = Config.with_threshold(0.1)
+        assert config.min_match_threshold == 0.1
+        assert config.effective_threshold == 0.1
+
+    def test_config_from_similarity_distribution(self) -> None:
+        """Config.from_similarity_distribution() derives threshold from data."""
+        # Similarities with mean ~0.5, std ~0.1
+        similarities = [0.4, 0.45, 0.5, 0.55, 0.6]
+        config = Config.from_similarity_distribution(similarities, sigma=2.0)
+        assert config.min_match_threshold is not None
+        # Threshold should be mean - 2*std ≈ 0.5 - 2*0.063 ≈ 0.37
+        assert 0.2 < config.effective_threshold < 0.5
+
+    def test_config_from_empty_distribution_raises(self) -> None:
+        """Config.from_similarity_distribution() raises on empty data."""
+        import pytest
+        with pytest.raises(ValueError, match="Cannot derive threshold from empty"):
+            Config.from_similarity_distribution([])
 
     def test_config_custom_values(self) -> None:
         """Custom config values should be accepted."""
@@ -79,17 +104,36 @@ class TestFusionConfig:
     """Tests for FusionConfig dataclass."""
 
     def test_fusion_config_defaults(self) -> None:
-        """Default fusion config values should be set correctly."""
+        """Default fusion config has None threshold - must be explicitly set."""
         config = FusionConfig()
-        assert config.interference_threshold == 0.5
+        assert config.interference_threshold is None
         assert config.source_alpha == 0.5
         assert config.normalize is False
+        # effective_threshold should raise without explicit threshold
+        import pytest
+        with pytest.raises(ValueError, match="interference_threshold not set"):
+            _ = config.effective_threshold
 
-    def test_fusion_config_default_factory(self) -> None:
-        """FusionConfig.default() should return default config."""
-        config = FusionConfig.default()
+    def test_fusion_config_with_threshold(self) -> None:
+        """FusionConfig.with_threshold() creates config with explicit threshold."""
+        config = FusionConfig.with_threshold(0.5)
         assert config.interference_threshold == 0.5
-        assert config.source_alpha == 0.5
+        assert config.effective_threshold == 0.5
+
+    def test_fusion_config_from_confidence_distribution(self) -> None:
+        """FusionConfig.from_confidence_distribution() derives threshold from data."""
+        # Confidences with mean ~0.7, std ~0.1
+        confidences = [0.6, 0.65, 0.7, 0.75, 0.8]
+        config = FusionConfig.from_confidence_distribution(confidences, sigma=1.0)
+        assert config.interference_threshold is not None
+        # Threshold should be mean + 1*std ≈ 0.7 + 0.063 ≈ 0.77
+        assert 0.7 < config.effective_threshold < 0.9
+
+    def test_fusion_config_from_empty_distribution_raises(self) -> None:
+        """FusionConfig.from_confidence_distribution() raises on empty data."""
+        import pytest
+        with pytest.raises(ValueError, match="Cannot derive threshold from empty"):
+            FusionConfig.from_confidence_distribution([])
 
 
 class TestAnchorActivationContext:
@@ -493,8 +537,9 @@ class TestAnchorAlignment:
         anchors = b.random_normal((8, 32))
         b.eval(source, target, anchors)
 
+        config = Config.with_threshold(0.1)
         result = PermutationAligner.align_via_anchor_projection(
-            source, target, anchors, backend=b
+            source, target, anchors, config=config, backend=b
         )
 
         assert result is not None
@@ -512,9 +557,10 @@ class TestAnchorAlignment:
         anchors = b.random_normal((8, 16))  # Wrong dim
         b.eval(source, target, anchors)
 
+        config = Config.with_threshold(0.1)
         # Should not crash, uses fallback
         result = PermutationAligner.align_via_anchor_projection(
-            source, target, anchors, backend=b
+            source, target, anchors, config=config, backend=b
         )
         assert result is not None
 
@@ -528,8 +574,9 @@ class TestAnchorAlignment:
         target_anchors = b.random_normal((5, 32))
         b.eval(source, target, source_anchors, target_anchors)
 
+        config = Config.with_threshold(0.1)
         result = PermutationAligner.align_via_anchor_activations(
-            source, target, source_anchors, target_anchors, backend=b
+            source, target, source_anchors, target_anchors, config=config, backend=b
         )
 
         assert result is not None
@@ -577,8 +624,9 @@ class TestMlpRebasin:
             b.eval(v)
         b.eval(anchors)
 
+        config = Config.with_threshold(0.1)
         aligned, avg_quality, blocks_aligned = PermutationAligner.rebasin_mlp_only(
-            source_weights, target_weights, anchors, backend=b
+            source_weights, target_weights, anchors, config=config, backend=b
         )
 
         assert blocks_aligned == 1
@@ -620,8 +668,9 @@ class TestMlpRebasin:
             b.eval(v)
         b.eval(anchors)
 
+        config = Config.with_threshold(0.1)
         aligned, _, _ = PermutationAligner.rebasin_mlp_only(
-            source_weights, target_weights, anchors, backend=b
+            source_weights, target_weights, anchors, config=config, backend=b
         )
 
         # Non-MLP weights should be preserved

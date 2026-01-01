@@ -34,8 +34,8 @@ from modelcypher.core.domain._backend import get_default_backend
 if TYPE_CHECKING:
     from modelcypher.core.domain.geometry.domain_geometry_waypoints import (
         DomainGeometryWaypointService,
-        GeometryDomain,
     )
+    from modelcypher.core.domain.domains import AtlasDomain
 
 app = typer.Typer(help="Merge analysis for model alignment")
 logger = logging.getLogger(__name__)
@@ -63,9 +63,7 @@ def predict_interference(
     """Analyze merge effort and interference between source and target models."""
     context = _context(ctx)
 
-    from modelcypher.core.domain.geometry.domain_geometry_waypoints import (
-        GeometryDomain,
-    )
+    from modelcypher.core.domain.domains import AtlasDomain, resolve_domain
     from modelcypher.core.domain.geometry.interference_predictor import (
         MergeAnalyzer,
         TransformationType,
@@ -79,19 +77,35 @@ def predict_interference(
     typer.echo(f"  Target: {target_path}")
 
     # Parse domains
-    domain_list = None
+    supported = {
+        AtlasDomain.SPATIAL,
+        AtlasDomain.SOCIAL,
+        AtlasDomain.TEMPORAL,
+        AtlasDomain.MORAL,
+    }
     if domains:
-        domain_list = []
-        for d in domains.split(","):
-            try:
-                domain_list.append(GeometryDomain(d.strip().lower()))
-            except ValueError:
+        domain_list: list[AtlasDomain] = []
+        for raw in domains.split(","):
+            name = raw.strip()
+            if not name:
+                continue
+            resolved = resolve_domain(name)
+            if resolved is None:
                 typer.echo(
-                    f"Invalid domain: {d}. Valid: spatial, social, temporal, moral", err=True
+                    f"Invalid domain: {name}. Valid: spatial, social, temporal, moral",
+                    err=True,
                 )
                 raise typer.Exit(1)
+            if resolved not in supported:
+                typer.echo(
+                    f"Unsupported domain for waypoint analysis: {resolved.value}. "
+                    "Valid: spatial, social, temporal, moral",
+                    err=True,
+                )
+                raise typer.Exit(1)
+            domain_list.append(resolved)
     else:
-        domain_list = list(GeometryDomain)
+        domain_list = list(supported)
 
     # Extract activations for both models
     waypoint_service = get_domain_geometry_waypoint_service()
@@ -292,7 +306,7 @@ def predict_interference(
 
 def _extract_domain_activations(
     model_path: str,
-    domain: "GeometryDomain",
+    domain: "AtlasDomain",
     layer: int,
     service: "DomainGeometryWaypointService",
 ) -> dict[str, Any]:
@@ -300,25 +314,25 @@ def _extract_domain_activations(
 
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.backends.mlx_backend import MLXBackend
-    from modelcypher.core.domain.geometry.domain_geometry_waypoints import GeometryDomain
+    from modelcypher.core.domain.domains import AtlasDomain
 
     backend = MLXBackend()
     model, tokenizer = load_model_for_training(model_path)
 
     # Get probes for this domain
-    if domain == GeometryDomain.SPATIAL:
+    if domain == AtlasDomain.SPATIAL:
         from modelcypher.core.domain.agents.spatial_atlas import SpatialConceptInventory
 
         probes = [(p.id, p.prompt) for p in SpatialConceptInventory.all_concepts()]
-    elif domain == GeometryDomain.SOCIAL:
+    elif domain == AtlasDomain.SOCIAL:
         from modelcypher.core.domain.agents.social_atlas import SocialConceptInventory
 
         probes = [(p.id, p.prompt) for p in SocialConceptInventory.all_concepts()]
-    elif domain == GeometryDomain.TEMPORAL:
+    elif domain == AtlasDomain.TEMPORAL:
         from modelcypher.core.domain.agents.temporal_atlas import TemporalConceptInventory
 
         probes = [(p.id, p.prompt) for p in TemporalConceptInventory.all_concepts()]
-    elif domain == GeometryDomain.MORAL:
+    elif domain == AtlasDomain.MORAL:
         from modelcypher.core.domain.agents.moral_atlas import MoralConceptInventory
 
         probes = [(p.id, p.prompt) for p in MoralConceptInventory.all_concepts()]

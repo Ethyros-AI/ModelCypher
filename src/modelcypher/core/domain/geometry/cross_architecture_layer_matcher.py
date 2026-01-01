@@ -144,9 +144,37 @@ class Configuration:
     max_skip: int = 3
     skip_penalty: float = 0.0
     min_cka_threshold: float = 0.0
-    high_confidence_threshold: float = 0.75
-    medium_confidence_threshold: float = 0.5
+    high_confidence_threshold: float | None = None
+    medium_confidence_threshold: float | None = None
     anchor_category_weights: AnchorCategoryWeights | None = None
+
+    def __post_init__(self) -> None:
+        """Validate that thresholds are provided or will be derived."""
+        # Thresholds must be explicitly set or derived from CKA distribution
+        # No arbitrary defaults - callers must use with_thresholds() or from_cka_distribution()
+        pass
+
+    @property
+    def effective_high_threshold(self) -> float:
+        """Get the high confidence threshold, raising if not set."""
+        if self.high_confidence_threshold is None:
+            raise ValueError(
+                "high_confidence_threshold not set. Use Configuration.with_thresholds() "
+                "with explicit values, or Configuration.from_cka_distribution() to derive "
+                "thresholds from observed CKA scores."
+            )
+        return self.high_confidence_threshold
+
+    @property
+    def effective_medium_threshold(self) -> float:
+        """Get the medium confidence threshold, raising if not set."""
+        if self.medium_confidence_threshold is None:
+            raise ValueError(
+                "medium_confidence_threshold not set. Use Configuration.with_thresholds() "
+                "with explicit values, or Configuration.from_cka_distribution() to derive "
+                "thresholds from observed CKA scores."
+            )
+        return self.medium_confidence_threshold
 
     @classmethod
     def with_thresholds(
@@ -220,7 +248,11 @@ class Configuration:
             Configuration with distribution-derived thresholds.
         """
         if not cka_scores:
-            return cls(cka_weight=cka_weight, jaccard_weight=jaccard_weight)
+            raise ValueError(
+                "Cannot derive thresholds from empty CKA scores. "
+                "Provide observed CKA scores from layer comparisons, or use "
+                "Configuration.with_thresholds() with explicit threshold values."
+            )
 
         sorted_scores = sorted(cka_scores)
         n = len(sorted_scores)
@@ -511,8 +543,9 @@ class CrossArchitectureLayerMatcher:
 
         mean_cka = sum(mapping.cka for mapping in valid) / float(len(valid))
         # Count mappings above the configured high threshold (for diagnostic purposes)
+        # Use effective_high_threshold which raises if not configured
         above_threshold = sum(
-            1 for mapping in valid if mapping.cka >= config.high_confidence_threshold
+            1 for mapping in valid if mapping.cka >= config.effective_high_threshold
         )
         above_threshold_prop = float(above_threshold) / float(len(valid))
 

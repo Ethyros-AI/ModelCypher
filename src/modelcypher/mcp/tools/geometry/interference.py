@@ -70,9 +70,9 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
             """
 
             from modelcypher.backends.mlx_backend import MLXBackend
+            from modelcypher.core.domain.domains import AtlasDomain, resolve_domain
             from modelcypher.core.domain.geometry.domain_geometry_waypoints import (
                 DomainGeometryWaypointService,
-                GeometryDomain,
             )
             from modelcypher.core.domain.geometry.interference_predictor import (
                 MergeAnalyzer,
@@ -85,15 +85,23 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
             target_path = require_existing_directory(targetModel)
 
             # Parse domains
+            supported = {
+                AtlasDomain.SPATIAL,
+                AtlasDomain.SOCIAL,
+                AtlasDomain.TEMPORAL,
+                AtlasDomain.MORAL,
+            }
             domain_list = []
             if domains:
-                for d in domains:
-                    try:
-                        domain_list.append(GeometryDomain(d.strip().lower()))
-                    except ValueError:
-                        pass
+                for raw in domains:
+                    name = raw.strip()
+                    if not name:
+                        continue
+                    resolved = resolve_domain(name)
+                    if resolved is not None and resolved in supported:
+                        domain_list.append(resolved)
             if not domain_list:
-                domain_list = list(GeometryDomain)
+                domain_list = list(supported)
 
             DomainGeometryWaypointService()
             RiemannianDensityEstimator()

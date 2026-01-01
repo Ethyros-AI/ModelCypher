@@ -44,6 +44,27 @@ non_negative_entropy = st.floats(min_value=0.0, max_value=10.0, allow_nan=False,
 # Positive floats for config values
 positive_float = st.floats(min_value=0.01, max_value=5.0, allow_nan=False, allow_infinity=False)
 
+
+DEFAULT_ADJUSTMENTS = PhaseAdjustments(
+    ordered_alpha=1.0,
+    critical_alpha=0.7,
+    disordered_alpha=0.85,
+    ordered_sigma=1.0,
+    critical_sigma=2.0,
+    disordered_sigma=1.5,
+)
+
+
+def _make_config(thresholds: EntropyThresholds, bandwidth: float) -> EntropyMergeConfig:
+    return EntropyMergeConfig(
+        entropy_thresholds=thresholds,
+        critical_bandwidth=bandwidth,
+        phase_adjustments=DEFAULT_ADJUSTMENTS,
+        high_risk_fraction=0.3,
+        unstable_fraction=0.2,
+        stability_thresholds=(0.2, 0.5, 0.5),
+    )
+
 # Thresholds where low < high < circuit_breaker
 @st.composite
 def entropy_thresholds_strategy(draw):
@@ -83,9 +104,7 @@ class TestPhaseClassificationProperties:
         self, thresholds: EntropyThresholds, entropy: float, bandwidth: float
     ) -> None:
         """Every entropy value should be classified into exactly one phase."""
-        validator = EntropyMergeValidator(
-            thresholds=thresholds, critical_bandwidth=bandwidth
-        )
+        validator = EntropyMergeValidator(_make_config(thresholds, bandwidth))
 
         phase = validator.classify_phase(entropy)
 
@@ -101,9 +120,7 @@ class TestPhaseClassificationProperties:
         self, thresholds: EntropyThresholds, bandwidth: float
     ) -> None:
         """Entropy below low threshold should always be ORDERED."""
-        validator = EntropyMergeValidator(
-            thresholds=thresholds, critical_bandwidth=bandwidth
-        )
+        validator = EntropyMergeValidator(_make_config(thresholds, bandwidth))
 
         # Test at half the low threshold
         low_entropy = thresholds.low / 2
@@ -121,9 +138,7 @@ class TestPhaseClassificationProperties:
         self, thresholds: EntropyThresholds, bandwidth: float
     ) -> None:
         """Entropy at or above high threshold should be DISORDERED."""
-        validator = EntropyMergeValidator(
-            thresholds=thresholds, critical_bandwidth=bandwidth
-        )
+        validator = EntropyMergeValidator(_make_config(thresholds, bandwidth))
 
         # Test at exactly high threshold
         phase = validator.classify_phase(thresholds.high)
@@ -144,9 +159,7 @@ class TestPhaseClassificationProperties:
         moderate_center = (thresholds.low + thresholds.high) / 2
         bandwidth = (thresholds.high - thresholds.low) / 4  # Covers center
 
-        validator = EntropyMergeValidator(
-            thresholds=thresholds, critical_bandwidth=bandwidth
-        )
+        validator = EntropyMergeValidator(_make_config(thresholds, bandwidth))
 
         phase = validator.classify_phase(moderate_center)
         assert phase == Phase.CRITICAL

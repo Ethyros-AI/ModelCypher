@@ -393,7 +393,7 @@ class IntrinsicDimension:
         self,
         points: "Array",
         k: int = 10,
-        deficiency_threshold: float = 0.8,
+        deficiency_threshold: float | None = None,
     ) -> LocalDimensionMap:
         """
         Compute per-point intrinsic dimension estimates.
@@ -417,12 +417,23 @@ class IntrinsicDimension:
         Args:
             points: Point cloud [n, d]
             k: Number of neighbors for local estimation (must be >= 3)
-            deficiency_threshold: Threshold for deficiency detection (default 0.8)
-                Points with local ID < threshold * modal_dimension are flagged
+            deficiency_threshold: Threshold for deficiency detection.
+                Points with local ID < threshold * modal_dimension are flagged.
+                Must be explicitly provided - there is no default.
 
         Returns:
             LocalDimensionMap with per-point dimensions and deficiency indices
+
+        Raises:
+            ValueError: If deficiency_threshold is not provided.
         """
+        if deficiency_threshold is None:
+            raise ValueError(
+                "deficiency_threshold must be explicitly provided. "
+                "This is a ratio (0.0-1.0) that determines when local ID is "
+                "considered deficient relative to modal dimension. "
+                "Common values: 0.5 (50% of modal), 0.8 (80% of modal)."
+            )
         backend = self._backend
         points = backend.array(points)
         backend.eval(points)
@@ -554,7 +565,7 @@ class IntrinsicDimension:
     @staticmethod
     def detect_dimension_deficiency(
         points: "Array",
-        threshold: float = 0.8,
+        threshold: float,
         k: int = 10,
         backend: "Backend | None" = None,
     ) -> list[int]:
@@ -569,7 +580,9 @@ class IntrinsicDimension:
 
         Args:
             points: Point cloud [n, d]
-            threshold: Deficiency threshold (default 0.8)
+            threshold: Deficiency threshold. This is a ratio (0.0-1.0) that
+                determines when local ID is considered deficient relative to
+                modal dimension. Must be explicitly provided.
             k: Number of neighbors for local estimation
             backend: Backend to use
 

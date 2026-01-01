@@ -66,10 +66,20 @@ class ConceptModality(str, Enum):
 
 @dataclass(frozen=True)
 class Configuration:
-    """Configuration for concept detection."""
+    """Configuration for concept detection.
 
-    # Minimum similarity for concept detection
-    detection_threshold: float = 0.3
+    detection_threshold should be derived from the similarity distribution
+    of concept embeddings, not guessed. Use from_similarity_distribution().
+    """
+
+    detection_threshold: float | None = None
+    """Minimum similarity for concept detection.
+
+    If None, derived from concept embedding similarity distribution.
+    """
+
+    detection_sigma: float = 2.0
+    """Standard deviations above mean similarity for threshold derivation."""
 
     # Window sizes for multi-scale detection (in words, not tokens)
     window_sizes: tuple[int, ...] = (10, 20, 30)
@@ -85,6 +95,46 @@ class Configuration:
 
     # Hint about the source modality for weighted detection
     source_modality_hint: ConceptModality | None = None
+
+    @classmethod
+    def from_similarity_distribution(
+        cls,
+        similarities: list[float],
+        sigma: float = 2.0,
+        window_sizes: tuple[int, ...] = (10, 20, 30),
+    ) -> "Configuration":
+        """Derive detection threshold from observed similarity distribution.
+
+        Args:
+            similarities: List of cosine similarities between concept embeddings.
+            sigma: Std devs above mean for threshold.
+            window_sizes: Detection window sizes.
+
+        Returns:
+            Configuration with data-derived threshold.
+
+        Raises:
+            ValueError: If similarities list is empty.
+        """
+        if not similarities:
+            raise ValueError(
+                "Cannot derive threshold from empty similarities. "
+                "Compute concept embedding similarities first."
+            )
+
+        import math
+
+        n = len(similarities)
+        mean = sum(similarities) / n
+        variance = sum((s - mean) ** 2 for s in similarities) / n
+        std = math.sqrt(variance)
+        threshold = mean + sigma * std
+
+        return cls(
+            detection_threshold=max(0.0, min(1.0, threshold)),
+            detection_sigma=sigma,
+            window_sizes=window_sizes,
+        )
 
 
 @dataclass(frozen=True)
@@ -179,6 +229,74 @@ class ConceptDetector:
     def __init__(self, config: Configuration | None = None):
         """Initialize with optional configuration."""
         self.config = config or Configuration()
+        self._derived_threshold: float | None = None
+        self._concept_embeddings: dict[str, list[float]] = {}
+
+    @property
+    def effective_threshold(self) -> float:
+        """Get the detection threshold (explicit or derived from embeddings)."""
+        if self.config.detection_threshold is not None:
+            return self.config.detection_threshold
+        if self._derived_threshold is not None:
+            return self._derived_threshold
+        # Try to derive from concept embeddings
+        if self._concept_embeddings:
+            self._derived_threshold = self._derive_threshold_from_embeddings()
+            return self._derived_threshold
+        raise ValueError(
+            "Cannot derive detection threshold: no concept embeddings available. "
+            "Either set detection_threshold explicitly or call set_concept_embeddings() first."
+        )
+
+    def set_concept_embeddings(self, embeddings: dict[str, list[float]]) -> None:
+        """Set concept embeddings for threshold derivation."""
+        self._concept_embeddings = embeddings
+        self._derived_threshold = None  # Reset to re-derive
+
+    def _derive_threshold_from_embeddings(self) -> float:
+        """Derive detection threshold from inter-concept embedding similarities."""
+        import math
+
+        if len(self._concept_embeddings) < 2:
+            raise ValueError(
+                "Cannot derive detection threshold: need at least 2 concept embeddings."
+            )
+
+        # Compute pairwise cosine similarities
+        concept_ids = list(self._concept_embeddings.keys())
+        similarities: list[float] = []
+
+        for i, cid_a in enumerate(concept_ids):
+            emb_a = self._concept_embeddings[cid_a]
+            for cid_b in concept_ids[i + 1 :]:
+                emb_b = self._concept_embeddings[cid_b]
+                sim = self._cosine_similarity(emb_a, emb_b)
+                similarities.append(sim)
+
+        if not similarities:
+            raise ValueError(
+                "Cannot derive detection threshold: no pairwise similarities computed."
+            )
+
+        n = len(similarities)
+        mean = sum(similarities) / n
+        variance = sum((s - mean) ** 2 for s in similarities) / n
+        std = math.sqrt(variance)
+        threshold = mean + self.config.detection_sigma * std
+
+        return max(0.0, min(1.0, threshold))
+
+    @staticmethod
+    def _cosine_similarity(a: list[float], b: list[float]) -> float:
+        """Compute cosine similarity between two vectors."""
+        import math
+
+        dot = sum(x * y for x, y in zip(a, b))
+        norm_a = math.sqrt(sum(x * x for x in a))
+        norm_b = math.sqrt(sum(x * x for x in b))
+        if norm_a < 1e-10 or norm_b < 1e-10:
+            return 0.0
+        return dot / (norm_a * norm_b)
 
     def detect(
         self,
@@ -383,7 +501,7 @@ class ConceptDetector:
 
             if (
                 normalized_score > best_score
-                and normalized_score >= self.config.detection_threshold
+                and normalized_score >= self.effective_threshold
             ):
                 best_score = normalized_score
                 best_concept = concept_id

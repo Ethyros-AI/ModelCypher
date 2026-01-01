@@ -109,15 +109,23 @@ class NeuronSparsityConfig:
 
         Returns:
             NeuronSparsityConfig with data-derived thresholds.
+
+        Raises:
+            ValueError: If activations list is empty or contains no values.
         """
         if not activations or not any(activations):
-            # No data - return uncalibrated config
-            return cls(sparsity_sigma=sparsity_sigma, dead_neuron_sigma=dead_neuron_sigma)
+            raise ValueError(
+                "Cannot derive thresholds from empty activations. "
+                "Provide activation data from model inference."
+            )
 
         # Flatten all activations
         all_values = [abs(v) for row in activations for v in row if v is not None]
         if not all_values:
-            return cls(sparsity_sigma=sparsity_sigma, dead_neuron_sigma=dead_neuron_sigma)
+            raise ValueError(
+                "Cannot derive thresholds: all activation values are None. "
+                "Check activation extraction."
+            )
 
         # Activation threshold: noise floor based on distribution
         # Use median of small values as noise floor, or machine epsilon scaled
@@ -232,10 +240,10 @@ class NeuronSparsityMap:
         # Collect all sparsity scores
         all_scores = [n.sparsity_score for neurons in self.stats.values() for n in neurons]
         if not all_scores:
-            # Fallback to reasonable defaults
-            self._derived_sparsity_threshold = 0.8
-            self._derived_dead_threshold = 0.99
-            return self._derived_sparsity_threshold, self._derived_dead_threshold
+            raise ValueError(
+                "Cannot derive thresholds: no neuron statistics available. "
+                "Collect activation data first."
+            )
 
         n = len(all_scores)
         mean = sum(all_scores) / n
@@ -441,7 +449,10 @@ class NeuronActivationCollector:
                 all_values.extend(neuron_values)
 
         if not all_values:
-            return 1e-6  # Fallback to machine epsilon order
+            raise ValueError(
+                "Cannot derive activation threshold: no activations collected. "
+                "Add samples first."
+            )
 
         sorted_vals = sorted(all_values)
         n = len(sorted_vals)
@@ -690,18 +701,20 @@ def identify_domain_specific_neurons(
 
     # Derive threshold if not provided
     if specificity_threshold is None:
-        if all_specificities:
-            n = len(all_specificities)
-            mean = sum(all_specificities) / n
-            variance = sum((s - mean) ** 2 for s in all_specificities) / n
-            std = math.sqrt(variance)
-            specificity_threshold = mean + specificity_sigma * std
-            logger.debug(
-                f"Derived specificity threshold: {specificity_threshold:.4f} "
-                f"(mean={mean:.4f}, std={std:.4f})"
+        if not all_specificities:
+            raise ValueError(
+                "Cannot derive specificity threshold: no matching neurons between "
+                "baseline and domain maps. Check that maps have overlapping layers."
             )
-        else:
-            specificity_threshold = 0.0  # No data, accept everything
+        n = len(all_specificities)
+        mean = sum(all_specificities) / n
+        variance = sum((s - mean) ** 2 for s in all_specificities) / n
+        std = math.sqrt(variance)
+        specificity_threshold = mean + specificity_sigma * std
+        logger.debug(
+            f"Derived specificity threshold: {specificity_threshold:.4f} "
+            f"(mean={mean:.4f}, std={std:.4f})"
+        )
 
     # Second pass: filter by threshold
     domain_specific: dict[int, list[tuple[int, float]]] = {}

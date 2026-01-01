@@ -48,6 +48,20 @@ STANDARD_ADJUSTMENTS = PhaseAdjustments(
 )
 
 
+def _make_config(
+    thresholds: EntropyThresholds,
+    critical_bandwidth: float = 0.3,
+) -> EntropyMergeConfig:
+    return EntropyMergeConfig(
+        entropy_thresholds=thresholds,
+        critical_bandwidth=critical_bandwidth,
+        phase_adjustments=STANDARD_ADJUSTMENTS,
+        high_risk_fraction=0.3,
+        unstable_fraction=0.2,
+        stability_thresholds=(0.2, 0.5, 0.5),
+    )
+
+
 def _create_test_profile(name: str, num_layers: int) -> ModelEntropyProfile:
     """Create a test ModelEntropyProfile with deterministic entropy values.
 
@@ -311,7 +325,11 @@ class TestEntropyMergeValidator:
     @pytest.fixture
     def validator(self) -> EntropyMergeValidator:
         """Create default validator."""
-        return EntropyMergeValidator()
+        config = EntropyMergeConfig.from_entropy_statistics(
+            entropy_mean=2.25,
+            entropy_std=0.75,
+        )
+        return EntropyMergeValidator(config)
 
     # classify_entropy method removed - using raw entropy with classify_phase
     # Tests now verify phase classification directly from raw entropy values
@@ -432,7 +450,7 @@ class TestIntegrationWithThresholds:
     def test_custom_thresholds(self) -> None:
         """Validator should respect custom thresholds."""
         thresholds = EntropyThresholds(low=2.0, high=4.0, circuit_breaker=5.0)
-        validator = EntropyMergeValidator(thresholds=thresholds)
+        validator = EntropyMergeValidator(_make_config(thresholds, critical_bandwidth=0.2))
 
         # With higher thresholds, 1.5 is below low threshold (ORDERED)
         phase = validator.classify_phase(1.5)
@@ -445,7 +463,8 @@ class TestIntegrationWithThresholds:
 
     def test_custom_critical_bandwidth(self) -> None:
         """Validator should respect custom critical bandwidth."""
-        validator = EntropyMergeValidator(critical_bandwidth=0.5)
+        thresholds = EntropyThresholds(low=1.5, high=3.0, circuit_breaker=4.0)
+        validator = EntropyMergeValidator(_make_config(thresholds, critical_bandwidth=0.5))
 
         # With wider bandwidth, more values classify as CRITICAL
         # Center is 2.25, bandwidth 0.5 means [1.75, 2.75] is critical
@@ -553,8 +572,8 @@ class TestConfigBasedValidator:
         )
         validator = EntropyMergeValidator(config)
 
-        assert validator.thresholds.low == pytest.approx(1.5)
-        assert validator.thresholds.high == pytest.approx(2.5)
+        assert validator.config.entropy_thresholds.low == pytest.approx(1.5)
+        assert validator.config.entropy_thresholds.high == pytest.approx(2.5)
 
     def test_validator_config_adjustments_used(self) -> None:
         """Alpha adjustments should use config phase adjustments."""
@@ -587,16 +606,3 @@ class TestConfigBasedValidator:
         # Verify custom alpha adjustment is used
         adj = ordered_profile.alpha_adjustment(config.phase_adjustments)
         assert adj == 0.9  # Custom value, not default 1.0
-
-    def test_backward_compatible_api(self) -> None:
-        """Old API should still work."""
-        # Old-style initialization with keyword args
-        validator = EntropyMergeValidator(
-            thresholds=EntropyThresholds(low=2.0, high=4.0, circuit_breaker=5.0),
-            critical_bandwidth=0.5,
-        )
-
-        # Should have created config internally
-        assert validator.config is not None
-        assert validator.config.entropy_thresholds.low == 2.0
-        assert validator.config.critical_bandwidth == 0.5

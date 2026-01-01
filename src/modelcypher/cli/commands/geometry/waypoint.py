@@ -70,9 +70,7 @@ def waypoint_profile(
     context = _context(ctx)
 
     from modelcypher.cli.composition import get_domain_geometry_waypoint_service
-    from modelcypher.core.domain.geometry.domain_geometry_waypoints import (
-        GeometryDomain,
-    )
+    from modelcypher.core.domain.domains import AtlasDomain, resolve_domain
 
     typer.echo(f"Computing geometry profile for {model_path}...")
 
@@ -81,15 +79,32 @@ def waypoint_profile(
     # Parse domains
     domain_list = None
     if domains:
+        supported = {
+            AtlasDomain.SPATIAL,
+            AtlasDomain.SOCIAL,
+            AtlasDomain.TEMPORAL,
+            AtlasDomain.MORAL,
+        }
         domain_list = []
-        for d in domains.split(","):
-            try:
-                domain_list.append(GeometryDomain(d.strip().lower()))
-            except ValueError:
+        for raw in domains.split(","):
+            name = raw.strip()
+            if not name:
+                continue
+            resolved = resolve_domain(name)
+            if resolved is None:
                 typer.echo(
-                    f"Invalid domain: {d}. Valid: spatial, social, temporal, moral", err=True
+                    f"Invalid domain: {name}. Valid: spatial, social, temporal, moral",
+                    err=True,
                 )
                 raise typer.Exit(1)
+            if resolved not in supported:
+                typer.echo(
+                    f"Unsupported domain for waypoint analysis: {resolved.value}. "
+                    "Valid: spatial, social, temporal, moral",
+                    err=True,
+                )
+                raise typer.Exit(1)
+            domain_list.append(resolved)
 
     try:
         profile = service.compute_profile(model_path, layer, domain_list)
