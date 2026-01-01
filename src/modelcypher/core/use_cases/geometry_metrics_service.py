@@ -285,12 +285,12 @@ class GeometryMetricsService:
         estimate = computer.compute(pts, config, bootstrap=bootstrap_config)
 
         # Extract confidence intervals if available
-        if estimate.ci is not None:
-            lower = estimate.ci.lower
-            upper = estimate.ci.upper
-        else:
-            lower = estimate.intrinsic_dimension * 0.8
-            upper = estimate.intrinsic_dimension * 1.2
+        if estimate.ci is None:
+            raise ValueError(
+                "Intrinsic dimension confidence intervals require bootstrap_samples > 0."
+            )
+        lower = estimate.ci.lower
+        upper = estimate.ci.upper
 
         # Cache the result
         cached_result = CachedIDResult(

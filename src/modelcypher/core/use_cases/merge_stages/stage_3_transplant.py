@@ -742,23 +742,94 @@ def stage_transplant(
                     logger.debug("Shared subspace projection failed for %s: %s", key, e)
 
             if target_w.shape != source_candidate.shape:
-                try:
-                    logger.debug(
-                        "Projecting %s: source=%s -> target=%s",
-                        key,
-                        source_candidate.shape,
-                        target_w.shape,
-                    )
-                    projection = project_cross_dimensional(
-                        source=source_candidate,
-                        target=target_w,
-                        method=config.projection_method,
-                        backend=b,
-                    )
-                    source_aligned = projection.projected
-                    logger.debug("Projected %s successfully", key)
-                except Exception as e:
-                    logger.warning("Failed to project weight %s: %s", key, e)
+                # Cross-architecture: Use affine stitching on activations, not weight projection
+                # Weight projection corrupts CKA. Instead, verify CKA = 1.0 via stitch layer.
+                from modelcypher.core.domain.geometry.affine_stitching_layer import (
+                    AnchorPair,
+                    BackendAffineStitchingLayer,
+                )
+                from modelcypher.core.domain.geometry.cka import (
+                    HSICEstimator,
+                    compute_cka_backend,
+                )
+
+                # Build anchor pairs from layer activations
+                if src_analysis is not None and tgt_analysis is not None:
+                    n_samples = min(int(src_analysis.shape[0]), int(tgt_analysis.shape[0]))
+                    if n_samples >= 5:
+                        src_np = b.to_numpy(src_analysis[:n_samples])
+                        tgt_np = b.to_numpy(tgt_analysis[:n_samples])
+                        anchor_pairs = [
+                            AnchorPair(
+                                source_activation=src_np[i].tolist(),
+                                target_activation=tgt_np[i].tolist(),
+                                anchor_id=f"sample_{i}",
+                            )
+                            for i in range(n_samples)
+                        ]
+
+                        # Train affine stitching layer
+                        stitcher = BackendAffineStitchingLayer(b)
+                        stitch_result = stitcher.train(anchor_pairs)
+
+                        if stitch_result is not None and stitch_result.is_valid:
+                            # Apply stitch to source activations
+                            weights_stitch = b.array(stitch_result.weights)
+                            bias_stitch = b.array(stitch_result.bias)
+                            src_stitched = stitcher.apply(src_analysis[:n_samples], weights_stitch, bias_stitch)
+                            b.eval(src_stitched)
+
+                            # VERIFY CKA = 1.0 after stitching
+                            cka_after_stitch = compute_cka_backend(
+                                src_stitched,
+                                tgt_analysis[:n_samples],
+                                backend=b,
+                                estimator=HSICEstimator.BIASED,
+                                feature_bias_correction=False,
+                            )
+                            b.eval(cka_after_stitch)
+                            cka_val = float(b.to_numpy(cka_after_stitch))
+
+                            if cka_val >= 0.99:  # CKA preserved - stitch is geometry-preserving
+                                # FOLD stitch INTO source weights:
+                                # Stitch maps activations: src_dim -> tgt_dim
+                                # Weights operate ON activations: W @ activation
+                                #
+                                # source_candidate: [out, src_dim] operates on src_dim space
+                                # We need: [out, tgt_dim] to operate on tgt_dim space
+                                #
+                                # Use pseudo-inverse of stitch to project weight columns:
+                                # source_aligned = source_candidate @ pinv(W_stitch)
+                                #   [out, src_dim] @ [src_dim, tgt_dim] -> [out, tgt_dim]
+                                #
+                                # This preserves geometry because stitch is CKA-preserving
+                                W_stitch_pinv = b.pinv(weights_stitch)  # [src_dim, tgt_dim]
+                                b.eval(W_stitch_pinv)
+                                source_aligned = b.matmul(source_candidate, W_stitch_pinv)
+                                b.eval(source_aligned)
+
+                                logger.info(
+                                    "Folded stitch into weights: CKA=%.4f, %s->%s (layer %d, %s)",
+                                    cka_val, source_candidate.shape, source_aligned.shape, layer_idx, key
+                                )
+                                metrics.setdefault("stitch_folded_weights", 0)
+                                metrics["stitch_folded_weights"] += 1
+                            else:
+                                logger.warning(
+                                    "CKA dropped to %.4f after stitch (layer %d, %s) - skipping weight",
+                                    cka_val, layer_idx, key
+                                )
+                                metrics.setdefault("cka_violated_weights", 0)
+                                metrics["cka_violated_weights"] += 1
+                                continue  # Skip this weight - would corrupt geometry
+                        else:
+                            logger.warning("Affine stitch training failed for %s - skipping", key)
+                            continue
+                    else:
+                        logger.warning("Not enough samples for CKA verification - skipping %s", key)
+                        continue
+                else:
+                    logger.warning("Missing activations for CKA verification - skipping %s", key)
                     continue
             else:
                 source_aligned = source_candidate

@@ -78,7 +78,7 @@ def train_start(
     lora_alpha: float | None = typer.Option(None, "--lora-alpha"),
     lora_dropout: float | None = typer.Option(None, "--lora-dropout"),
     lora_targets: list[str] | None = typer.Option(None, "--lora-targets"),
-    out_dir: str | None = typer.Option(None, "--out"),
+    out_dir: str = typer.Option(..., "--out"),
     seed: int = typer.Option(..., "--seed"),
     deterministic: bool = typer.Option(..., "--deterministic/--stochastic"),
     detach: bool = typer.Option(False, "--detach"),
@@ -134,7 +134,7 @@ def train_start(
     config = TrainingConfig(
         model_id=model,
         dataset_path=dataset,
-        output_path=out_dir or "./output",
+        output_path=out_dir,
         hyperparameters=hyperparams,
         lora_config=lora_config,
         resume_from_checkpoint_path=resume_from,
@@ -183,7 +183,7 @@ def train_preflight(
     lora_alpha: float | None = typer.Option(None, "--lora-alpha"),
     lora_dropout: float | None = typer.Option(None, "--lora-dropout"),
     lora_targets: list[str] | None = typer.Option(None, "--lora-targets"),
-    out_dir: str | None = typer.Option(None, "--out"),
+    out_dir: str = typer.Option(..., "--out"),
     seed: int = typer.Option(..., "--seed"),
     deterministic: bool = typer.Option(..., "--deterministic/--stochastic"),
 ) -> None:
@@ -236,7 +236,7 @@ def train_preflight(
     config = TrainingConfig(
         model_id=model,
         dataset_path=dataset,
-        output_path=out_dir or "./output",
+        output_path=out_dir,
         hyperparameters=hyperparams,
         lora_config=lora_config,
         resume_from_checkpoint_path=resume_from,

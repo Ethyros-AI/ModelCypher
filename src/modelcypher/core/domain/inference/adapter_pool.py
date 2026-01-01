@@ -67,10 +67,11 @@ class SystemMemoryManager(MemoryManaging):
             # Fallback to platform-specific methods
             total, available = self._get_memory_fallback()
 
-        if total == 0:
-            # Can't determine memory - return conservative estimate
-            logger.warning("Could not determine system memory, using conservative defaults")
-            return MemoryStats(MemoryPressure.WARNING, 0, 0)
+        if total <= 0 or available <= 0:
+            raise RuntimeError(
+                "Unable to measure system memory. Install psutil or provide a MemoryManaging "
+                "implementation with explicit measurements."
+            )
 
         used_ratio = 1.0 - (available / total)
 
@@ -106,8 +107,7 @@ class SystemMemoryManager(MemoryManaging):
                 )
                 if result.returncode == 0:
                     total = int(result.stdout.strip())
-                    # Estimate 50% available as conservative fallback
-                    return total, total // 2
+                    return total, 0
             except Exception:
                 pass
 

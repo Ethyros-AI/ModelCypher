@@ -244,7 +244,7 @@ class TrainingEngine:
         try:
             steps_per_epoch = len(data_provider)
         except TypeError:
-            steps_per_epoch = 100  # Fallback estimate
+            raise ValueError("data_provider must define __len__ to compute steps_per_epoch")
 
         total_steps = epochs * steps_per_epoch
 
@@ -420,13 +420,13 @@ class TrainingEngine:
             )
             if metadata:
                 # Calculate epoch and step offset
-                try:
-                    steps_per_epoch = config.hyperparameters.epochs  # Simplified
-                    epoch_idx = metadata.step // max(steps_per_epoch, 1)
-                    step_offset = metadata.step % max(steps_per_epoch, 1)
-                except Exception:
-                    epoch_idx = 0
-                    step_offset = 0
+                steps_per_epoch = metadata.total_steps // max(
+                    metadata.train_config.hyperparameters.epochs, 1
+                )
+                if steps_per_epoch <= 0:
+                    raise ValueError("Checkpoint metadata missing steps_per_epoch.")
+                epoch_idx = metadata.step // steps_per_epoch
+                step_offset = metadata.step % steps_per_epoch
 
                 return ResumeState(
                     global_step=metadata.step,

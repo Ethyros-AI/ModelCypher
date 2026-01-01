@@ -127,7 +127,7 @@ def register_training_tools(ctx: ServiceContext) -> None:
             hyperparameters: dict,
             lora: dict | None = None,
             idempotencyKey: str | None = None,
-            autoEval: bool | None = None,
+            autoEval: bool,
             evalDataset: str | None = None,
             evalMetrics: list[str] | None = None,
             evalBatchSize: int | None = None,
@@ -185,7 +185,13 @@ def register_training_tools(ctx: ServiceContext) -> None:
                 ctx.set_idempotency("train_start", idempotencyKey, job_id)
 
             auto_eval_payload = None
-            if autoEval and evalDataset:
+            if autoEval:
+                if evalDataset is None:
+                    raise ValueError("evalDataset is required when autoEval is enabled")
+                if evalBatchSize is None:
+                    raise ValueError("evalBatchSize is required when autoEval is enabled")
+                if evalWait is None:
+                    raise ValueError("evalWait is required when autoEval is enabled")
                 auto_eval_payload = {
                     "enabled": True,
                     "evalDataset": evalDataset,

@@ -294,6 +294,7 @@ def validate_train(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model"),
     dataset: str = typer.Option(..., "--dataset"),
+    output_path: str = typer.Option(..., "--out"),
     learning_rate: float = typer.Option(..., "--learning-rate"),
     batch_size: int = typer.Option(..., "--batch-size"),
     sequence_length: int = typer.Option(..., "--sequence-length"),
@@ -342,7 +343,7 @@ def validate_train(
     config = TrainingConfig(
         model_id=model,
         dataset_path=dataset,
-        output_path=".",
+        output_path=output_path,
         hyperparameters=hyperparams,
     )
     result = service.preflight(config)
@@ -618,6 +619,7 @@ def estimate_train(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model"),
     dataset: str = typer.Option(..., "--dataset"),
+    output_path: str = typer.Option(..., "--out"),
     batch_size: int = typer.Option(..., "--batch-size"),
     sequence_length: int = typer.Option(..., "--sequence-length"),
     learning_rate: float = typer.Option(..., "--learning-rate"),
@@ -666,7 +668,7 @@ def estimate_train(
     config = TrainingConfig(
         model_id=model,
         dataset_path=dataset,
-        output_path=".",
+        output_path=output_path,
         hyperparameters=hyperparams,
     )
     result = service.preflight(config)

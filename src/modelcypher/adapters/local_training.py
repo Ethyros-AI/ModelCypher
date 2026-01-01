@@ -19,7 +19,6 @@ import asyncio
 import json
 import logging
 import multiprocessing
-import os
 import uuid
 from dataclasses import asdict
 from datetime import datetime
@@ -51,7 +50,6 @@ from modelcypher.core.domain.training import (
 from modelcypher.ports.backend import Backend
 from modelcypher.ports.training import TrainingEngine
 from modelcypher.utils.locks import FileLock, FileLockError
-from modelcypher.utils.paths import expand_path
 
 from .model_loader import load_model_for_training
 from .training_dataset import TrainingDataset
@@ -89,32 +87,10 @@ class LocalTrainingEngine(TrainingEngine):
         self._loop = None
 
     def preflight(self, config: Any) -> PreflightResult:
-        """Estimate resources before starting training.
-
-        Parameters
-        ----------
-        config : Any
-            Training configuration with dataset_path and hyperparameters.
-
-        Returns
-        -------
-        PreflightResult
-            Resource estimates including predicted batch size, VRAM requirements, and feasibility.
-        """
-        dataset_path = expand_path(config.dataset_path)
-        dataset_size = os.path.getsize(dataset_path) if dataset_path.exists() else 0
-
-        # Assume 4-bit model takes ~4.5GB, float16 takes ~15GB for 7B.
-        estimated_vram = 5 * 1024 * 1024 * 1024 + int(dataset_size * 1.5)
-        available_memory = self._available_memory_bytes()
-
-        can_proceed = estimated_vram < available_memory
-        batch_size = _get_hp_attr(config, "batch_size")
-        return PreflightResult(
-            predicted_batch_size=batch_size or 1,
-            estimated_vram_bytes=estimated_vram,
-            available_vram_bytes=available_memory,
-            can_proceed=can_proceed,
+        """Preflight requires explicit resource measurements."""
+        raise RuntimeError(
+            "Training preflight requires measured resource profiles. "
+            "Run geometry-backed calibration and supply explicit measurements."
         )
 
     def start(
@@ -390,19 +366,3 @@ class LocalTrainingEngine(TrainingEngine):
 
     def _event_log_path(self, job_id: str) -> Path:
         return self.paths.logs / f"{job_id}.events.jsonl"
-
-    @staticmethod
-    def _available_memory_bytes() -> int:
-        try:
-            # For Apple Silicon / Mac
-            import subprocess
-
-            output = subprocess.check_output(["sysctl", "hw.memsize"])
-            return int(output.decode().split(":")[1].strip())
-        except Exception:
-            try:
-                pages = os.sysconf("SC_PHYS_PAGES")
-                page_size = os.sysconf("SC_PAGE_SIZE")
-                return int(pages * page_size)
-            except (ValueError, AttributeError, OSError):
-                return 0
