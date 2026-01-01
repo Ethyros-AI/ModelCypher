@@ -29,10 +29,8 @@ from modelcypher.core.domain.geometry.sparse_region_locator import (
 def test_sparse_region_locator_analysis() -> None:
     locator = SparseRegionLocator(
         Configuration(
-            base_rank=10,
             sparsity_threshold=0.3,
             use_dare_alignment=False,
-            target_module_types=["q_proj"],
         )
     )
     domain_stats = [
@@ -73,8 +71,7 @@ def test_sparse_region_locator_analysis() -> None:
     )
     assert result.sparse_layers == [0, 1]
     assert result.skip_layers == []
-    assert result.recommendation.overall_rank == 5
-    assert result.recommendation.alpha == 5
+    assert result.sparsity_threshold == 0.3
 
     from_activations = locator.analyze_from_activations(
         domain_activations=[{0: 0.5, 1: 0.2}],
@@ -110,10 +107,8 @@ def test_sparse_region_locator_high_sparsity() -> None:
     """High sparsity layers are correctly identified."""
     locator = SparseRegionLocator(
         Configuration(
-            base_rank=10,
             sparsity_threshold=0.5,
             use_dare_alignment=False,
-            target_module_types=["q_proj"],
         )
     )
     # Domain has much lower activation than baseline = high sparsity
@@ -141,14 +136,12 @@ def test_sparse_region_locator_high_sparsity() -> None:
     assert 0 in result.sparse_layers
 
 
-def test_sparse_region_locator_recommendation_properties() -> None:
-    """Recommendation has valid properties."""
+def test_sparse_region_locator_threshold_properties() -> None:
+    """Threshold is recorded in analysis results."""
     locator = SparseRegionLocator(
         Configuration(
-            base_rank=10,
             sparsity_threshold=0.1,
             use_dare_alignment=False,
-            target_module_types=["q_proj"],
         )
     )
     domain_stats = [
@@ -172,5 +165,4 @@ def test_sparse_region_locator_recommendation_properties() -> None:
     result = locator.analyze(
         domain_stats=domain_stats, baseline_stats=baseline_stats, domain="test"
     )
-    assert result.recommendation.overall_rank > 0
-    assert result.recommendation.alpha == result.recommendation.overall_rank
+    assert result.sparsity_threshold == 0.1

@@ -238,6 +238,8 @@ def stage_transplant(
     source_activations: dict[int, list["Array"]] | None = None,
     source_intermediate_activations: dict[int, list["Array"]] | None = None,
     target_intermediate_activations: dict[int, list["Array"]] | None = None,
+    source_attention_activations: dict[int, list["Array"]] | None = None,
+    target_attention_activations: dict[int, list["Array"]] | None = None,
     backend: "Backend | None" = None,
 ) -> TransplantStageResult:
     """Stage 3: Null-space constrained transplant using probe activations."""
@@ -452,7 +454,93 @@ def stage_transplant(
                         global_result.achieved_cka
                     )
             else:
-                logger.info("GLOBAL: Same hidden dims (%d) - no alignment needed", global_src_hidden_dim)
+                # Same hidden dims: use IDENTITY stitch (no transformation)
+                # This is required for MLP dual-stitch to work when only intermediate differs
+                global_hidden_stitch_output = b.eye(global_src_hidden_dim)
+                global_hidden_stitch_input = b.eye(global_src_hidden_dim)
+                b.eval(global_hidden_stitch_output, global_hidden_stitch_input)
+                logger.info(
+                    "GLOBAL: Same hidden dims (%d) - using identity stitch",
+                    global_src_hidden_dim
+                )
+                metrics["global_trajectory_aligned"] = True
+                metrics["global_trajectory_cka"] = 1.0  # Identity = perfect
+
+    # ==========================================================================
+    # GLOBAL ATTENTION ALIGNMENT: Compute ONE attention stitch for ALL layers
+    # ==========================================================================
+    # Attention weights have a different dimension than hidden:
+    #   - q_proj/k_proj: [num_heads * head_dim, hidden_dim] (e.g., [960, 960] for SmolLM)
+    #   - o_proj: [hidden_dim, num_heads * head_dim]
+    # When head counts differ (e.g., SmolLM=15 heads → Qwen=14 heads):
+    #   - SmolLM attention dim = 15 * 64 = 960
+    #   - Qwen attention dim = 14 * 64 = 896
+    # GramAligner finds the transformation that achieves CKA=1.0 across these spaces.
+    global_attention_stitch_output = None
+    global_attention_stitch_input = None
+    global_src_attn_dim = None
+    global_tgt_attn_dim = None
+
+    if source_attention_activations and target_attention_activations:
+        # Use BOTTLENECK LAYER for global alignment (where invariance is strongest)
+        bottleneck_layer_idx = layer_indices[len(layer_indices) // 2] if layer_indices else 0
+        src_attn_list = source_attention_activations.get(bottleneck_layer_idx)
+        tgt_attn_list = target_attention_activations.get(bottleneck_layer_idx)
+
+        all_src_attn = []
+        all_tgt_attn = []
+        if src_attn_list and tgt_attn_list:
+            n_samples = min(len(src_attn_list), len(tgt_attn_list))
+            for i in range(n_samples):
+                all_src_attn.append(src_attn_list[i])
+                all_tgt_attn.append(tgt_attn_list[i])
+            logger.info("GLOBAL ATTN: Using bottleneck layer %d for alignment (%d samples)",
+                       bottleneck_layer_idx, n_samples)
+
+        if len(all_src_attn) >= 20:
+            src_attn_concat = b.stack(all_src_attn, axis=0)
+            tgt_attn_concat = b.stack(all_tgt_attn, axis=0)
+            src_attn_concat = b.astype(src_attn_concat, "float32")
+            tgt_attn_concat = b.astype(tgt_attn_concat, "float32")
+            b.eval(src_attn_concat, tgt_attn_concat)
+
+            global_src_attn_dim = int(src_attn_concat.shape[1])
+            global_tgt_attn_dim = int(tgt_attn_concat.shape[1])
+
+            if global_src_attn_dim != global_tgt_attn_dim:
+                from modelcypher.core.domain.geometry.gram_aligner import GramAligner
+                aligner = GramAligner(b)
+                attn_result = aligner.find_perfect_alignment(src_attn_concat, tgt_attn_concat)
+
+                if attn_result.is_perfect:
+                    F_attn = b.array(attn_result.feature_transform)
+                    b.eval(F_attn)
+                    global_attention_stitch_output = b.transpose(F_attn)  # F.T [tgt, src]
+                    global_attention_stitch_input = b.transpose(b.pinv(F_attn))  # pinv(F).T [src, tgt]
+                    b.eval(global_attention_stitch_output, global_attention_stitch_input)
+                    logger.info(
+                        "GLOBAL ATTENTION ALIGNMENT: CKA=%.4f (%d→%d) using %d samples",
+                        attn_result.achieved_cka, global_src_attn_dim,
+                        global_tgt_attn_dim, len(all_src_attn)
+                    )
+                    metrics["global_attention_aligned"] = True
+                    metrics["global_attention_cka"] = float(attn_result.achieved_cka)
+                else:
+                    logger.warning(
+                        "GLOBAL ATTENTION ALIGNMENT failed (CKA=%.4f)",
+                        attn_result.achieved_cka
+                    )
+            else:
+                # Same attention dims: use IDENTITY stitch
+                global_attention_stitch_output = b.eye(global_src_attn_dim)
+                global_attention_stitch_input = b.eye(global_src_attn_dim)
+                b.eval(global_attention_stitch_output, global_attention_stitch_input)
+                logger.info(
+                    "GLOBAL ATTN: Same attention dims (%d) - using identity stitch",
+                    global_src_attn_dim
+                )
+                metrics["global_attention_aligned"] = True
+                metrics["global_attention_cka"] = 1.0  # Identity = perfect
 
     for layer_num, layer_idx in enumerate(layer_indices):
         # Skip layers already completed (checkpoint resume)
@@ -498,9 +586,10 @@ def stage_transplant(
         transform_requirements: list[str] = []
         layer_fisher_weights = None
 
-        # Multi-space stitching: compute stitches for BOTH hidden AND intermediate dimensions
+        # Multi-space stitching: compute stitches for hidden, intermediate, AND attention dimensions
         # Hidden stitch: maps layer output activations (source hidden → target hidden)
         # Intermediate stitch: maps MLP internal activations (source intermediate → target intermediate)
+        # Attention stitch: maps attention head outputs (source num_heads*head_dim → target num_heads*head_dim)
         #
         # IMPORTANT: For weight folding, we need TWO transforms per space:
         #   - F.T for OUTPUT side (left multiply): maps source output → target output
@@ -511,6 +600,8 @@ def stage_transplant(
         hidden_stitch_input = None   # pinv(F).T for input side [src_hidden, tgt_hidden]
         intermediate_stitch_output = None  # F.T for output side
         intermediate_stitch_input = None   # pinv(F).T for input side
+        attention_stitch_output = None  # F.T for attention output [tgt_attn, src_attn]
+        attention_stitch_input = None   # pinv(F).T for attention input [src_attn, tgt_attn]
 
         # Get intermediate activations for this layer (MLP internal states)
         src_inter_list = (
@@ -683,6 +774,47 @@ def stage_transplant(
                     layer_idx, global_src_hidden_dim, global_tgt_hidden_dim
                 )
 
+        elif src_act_list is not None and act_list is not None:
+            # FALLBACK: Per-layer hidden alignment when global trajectory alignment failed
+            # This happens when models are sufficiently different that a single global
+            # alignment can't achieve CKA=1.0. We compute per-layer instead.
+            n_hidden_samples = min(len(src_act_list), len(act_list))
+            if n_hidden_samples >= 10:
+                src_hidden_stack = b.stack(src_act_list[:n_hidden_samples], axis=0)
+                tgt_hidden_stack = b.stack(act_list[:n_hidden_samples], axis=0)
+                src_hidden_stack = b.astype(src_hidden_stack, "float32")
+                tgt_hidden_stack = b.astype(tgt_hidden_stack, "float32")
+                b.eval(src_hidden_stack, tgt_hidden_stack)
+
+                src_hidden_dim = int(src_hidden_stack.shape[1])
+                tgt_hidden_dim = int(tgt_hidden_stack.shape[1])
+
+                if src_hidden_dim != tgt_hidden_dim:
+                    # Per-layer GramAlign for hidden dimensions
+                    aligner = GramAligner(b)
+                    hidden_result = aligner.find_perfect_alignment(
+                        src_hidden_stack, tgt_hidden_stack
+                    )
+
+                    if hidden_result.is_perfect:
+                        F = b.array(hidden_result.feature_transform)
+                        b.eval(F)
+                        hidden_stitch_output = b.transpose(F)  # F.T [tgt, src]
+                        hidden_stitch_input = b.transpose(b.pinv(F))  # pinv(F).T [src, tgt]
+                        b.eval(hidden_stitch_output, hidden_stitch_input)
+                        logger.info(
+                            "Layer %d: Per-layer hidden GramAlign CKA=%.4f (%d→%d)",
+                            layer_idx, hidden_result.achieved_cka,
+                            src_hidden_dim, tgt_hidden_dim
+                        )
+                        metrics.setdefault("per_layer_hidden_aligned", 0)
+                        metrics["per_layer_hidden_aligned"] += 1
+                    else:
+                        logger.warning(
+                            "Layer %d: Per-layer hidden GramAlign failed (CKA=%.4f)",
+                            layer_idx, hidden_result.achieved_cka
+                        )
+
         # Compute INTERMEDIATE alignment (source intermediate_dim → target intermediate_dim)
         # Note: Intermediate stitch is per-layer since each MLP has different internal geometry
         if src_inter_list is not None and tgt_inter_list is not None:
@@ -726,6 +858,18 @@ def stage_transplant(
                             "Layer %d: Intermediate GramAlign failed (CKA=%.4f)",
                             layer_idx, inter_result.achieved_cka
                         )
+
+        # USE GLOBAL ATTENTION-ALIGNED stitch (computed once for all layers)
+        # This ensures consistent alignment for attention weights across layers.
+        if global_attention_stitch_output is not None:
+            attention_stitch_output = global_attention_stitch_output
+            attention_stitch_input = global_attention_stitch_input
+            # Log only on first layer to avoid spam
+            if layer_num == 0:
+                logger.info(
+                    "Layer %d: Using GLOBAL attention stitch (%d→%d)",
+                    layer_idx, global_src_attn_dim, global_tgt_attn_dim
+                )
 
         stacked = b.stack(act_list, axis=0)
         # Convert to float32 for numerical stability in linalg operations.
@@ -941,74 +1085,125 @@ def stage_transplant(
 
                 elif hidden_stitch_output is not None and hidden_stitch_input is not None:
                     # =================================================================
-                    # ATTENTION HEAD STRUCTURE CHECK
+                    # ATTENTION WEIGHT STITCHING (replaces previous skip logic)
                     # =================================================================
-                    # For cross-architecture merges, attention weights (q_proj, k_proj,
-                    # v_proj, o_proj) have INCOMPATIBLE internal structure even if hidden
-                    # dimensions can be aligned.
+                    # A structural incompatibility IS a geometric one. Head count difference
+                    # is just another dimension mismatch that GramAligner can solve.
                     #
                     # Example: SmolLM (15 heads) → Qwen (14 heads)
-                    #   - q_proj [960, 960] → [896, 896] works dimensionally
-                    #   - But 960 = 15 * 64 (15 heads of 64 dims)
-                    #   - And 896 = 14 * 64 (14 heads of 64 dims)
-                    #   - The head boundaries are DIFFERENT!
+                    #   - q_proj [960, 960] → [896, 896]
+                    #   - 960 = 15 * 64 (SmolLM attention dim)
+                    #   - 896 = 14 * 64 (Qwen attention dim)
+                    #   - GramAligner finds F such that CKA(src_attn @ F, tgt_attn) = 1.0
                     #
-                    # GramAligner aligns hidden_dim but doesn't preserve head structure.
-                    # Transplanting attention weights causes gibberish output.
-                    #
-                    # SOLUTION: Skip attention weights for cross-architecture merges.
-                    # Only MLP weights (which don't have head structure) are safe.
+                    # Weight stitching for attention:
+                    #   - q_proj/k_proj/v_proj: [attn_dim, hidden_dim]
+                    #     → attention_stitch_output @ W @ hidden_stitch_input
+                    #   - o_proj: [hidden_dim, attn_dim]
+                    #     → hidden_stitch_output @ W @ attention_stitch_input
                     is_attention = any(attn_name in key for attn_name in [
                         "q_proj", "k_proj", "v_proj", "o_proj",
                         "self_attn", "query", "key", "value",
                     ])
 
-                    if is_attention:
+                    attention_stitch_applied = False
+
+                    if is_attention and attention_stitch_output is not None:
+                        # We have attention stitch - apply it!
+                        src_attn_dim = int(attention_stitch_output.shape[1])
+                        tgt_attn_dim = int(attention_stitch_output.shape[0])
+                        src_hidden_dim = int(hidden_stitch_output.shape[1])
+                        tgt_hidden_dim = int(hidden_stitch_output.shape[0])
+                        dim0, dim1 = int(original_source_shape[0]), int(original_source_shape[1])
+
+                        # Determine attention weight pattern
+                        is_qkv = any(n in key for n in ["q_proj", "k_proj", "v_proj", "query", "key", "value"])
+                        is_o = any(n in key for n in ["o_proj"])
+
+                        if is_qkv and dim0 == src_attn_dim and dim1 == src_hidden_dim:
+                            # q/k/v_proj: [attn, hidden] → attention_stitch_output @ W @ hidden_stitch_input
+                            source_aligned = b.matmul(attention_stitch_output, source_w)
+                            source_aligned = b.matmul(source_aligned, hidden_stitch_input)
+                            b.eval(source_aligned)
+                            logger.info(
+                                "Attention stitch (q/k/v): %s [%d,%d] → [%d,%d]",
+                                key, dim0, dim1, tgt_attn_dim, tgt_hidden_dim
+                            )
+                            metrics.setdefault("attention_stitched", 0)
+                            metrics["attention_stitched"] += 1
+                            attention_stitch_applied = True
+
+                        elif is_o and dim0 == src_hidden_dim and dim1 == src_attn_dim:
+                            # o_proj: [hidden, attn] → hidden_stitch_output @ W @ attention_stitch_input
+                            source_aligned = b.matmul(hidden_stitch_output, source_w)
+                            source_aligned = b.matmul(source_aligned, attention_stitch_input)
+                            b.eval(source_aligned)
+                            logger.info(
+                                "Attention stitch (o_proj): %s [%d,%d] → [%d,%d]",
+                                key, dim0, dim1, tgt_hidden_dim, tgt_attn_dim
+                            )
+                            metrics.setdefault("attention_stitched", 0)
+                            metrics["attention_stitched"] += 1
+                            attention_stitch_applied = True
+
+                        else:
+                            # Unexpected attention shape - log and try hidden-only stitch
+                            logger.warning(
+                                "Attention weight %s shape [%d,%d] doesn't match expected "
+                                "(attn=%d, hidden=%d) - trying hidden stitch",
+                                key, dim0, dim1, src_attn_dim, src_hidden_dim
+                            )
+                            # Fall through to hidden-only stitch below
+
+                    elif is_attention and attention_stitch_output is None:
+                        # No attention stitch available - skip (can't do anything meaningful)
                         logger.info(
-                            "Cross-arch: SKIPPING attention weight %s (head structure incompatible)",
+                            "Cross-arch: SKIPPING attention weight %s (no attention stitch available)",
                             key
                         )
-                        metrics.setdefault("attention_skipped_cross_arch", 0)
-                        metrics["attention_skipped_cross_arch"] += 1
+                        metrics.setdefault("attention_skipped_no_stitch", 0)
+                        metrics["attention_skipped_no_stitch"] += 1
                         continue
 
                     # Non-attention weight with hidden dimensions (e.g., layer norm)
-                    # W_target = hidden_stitch_output @ W @ hidden_stitch_input
-                    src_hidden_dim = int(hidden_stitch_output.shape[1])
-                    tgt_hidden_dim = int(hidden_stitch_output.shape[0])
-                    dim0, dim1 = int(original_source_shape[0]), int(original_source_shape[1])
+                    # Skip hidden stitch if attention stitch was already applied
+                    if not attention_stitch_applied:
+                        # W_target = hidden_stitch_output @ W @ hidden_stitch_input
+                        src_hidden_dim = int(hidden_stitch_output.shape[1])
+                        tgt_hidden_dim = int(hidden_stitch_output.shape[0])
+                        dim0, dim1 = int(original_source_shape[0]), int(original_source_shape[1])
 
-                    if dim0 == src_hidden_dim and dim1 == src_hidden_dim:
-                        # BOTH dimensions are hidden_dim
-                        source_aligned = b.matmul(hidden_stitch_output, source_w)
-                        source_aligned = b.matmul(source_aligned, hidden_stitch_input)
-                        b.eval(source_aligned)
-                        logger.info("Hidden stitch (both dims): [%d,%d] → [%d,%d]",
-                                    dim0, dim1, tgt_hidden_dim, tgt_hidden_dim)
+                        if dim0 == src_hidden_dim and dim1 == src_hidden_dim:
+                            # BOTH dimensions are hidden_dim
+                            source_aligned = b.matmul(hidden_stitch_output, source_w)
+                            source_aligned = b.matmul(source_aligned, hidden_stitch_input)
+                            b.eval(source_aligned)
+                            logger.info("Hidden stitch (both dims): [%d,%d] → [%d,%d]",
+                                        dim0, dim1, tgt_hidden_dim, tgt_hidden_dim)
 
-                    elif dim0 == src_hidden_dim:
-                        # Hidden dim is OUTPUT only (rows): hidden_stitch_output @ W
-                        source_aligned = b.matmul(hidden_stitch_output, source_w)
-                        b.eval(source_aligned)
-                        logger.info("Hidden stitch (output only): [%d,%d] → [%d,%d]",
-                                    dim0, dim1, tgt_hidden_dim, dim1)
+                        elif dim0 == src_hidden_dim:
+                            # Hidden dim is OUTPUT only (rows): hidden_stitch_output @ W
+                            source_aligned = b.matmul(hidden_stitch_output, source_w)
+                            b.eval(source_aligned)
+                            logger.info("Hidden stitch (output only): [%d,%d] → [%d,%d]",
+                                        dim0, dim1, tgt_hidden_dim, dim1)
 
-                    elif dim1 == src_hidden_dim:
-                        # Hidden dim is INPUT only (cols): W @ hidden_stitch_input
-                        source_aligned = b.matmul(source_w, hidden_stitch_input)
-                        b.eval(source_aligned)
-                        logger.info("Hidden stitch (input only): [%d,%d] → [%d,%d]",
-                                    dim0, dim1, dim0, tgt_hidden_dim)
+                        elif dim1 == src_hidden_dim:
+                            # Hidden dim is INPUT only (cols): W @ hidden_stitch_input
+                            source_aligned = b.matmul(source_w, hidden_stitch_input)
+                            b.eval(source_aligned)
+                            logger.info("Hidden stitch (input only): [%d,%d] → [%d,%d]",
+                                        dim0, dim1, dim0, tgt_hidden_dim)
 
-                    else:
-                        logger.warning(
-                            "Weight %s shape [%d,%d] doesn't match hidden_dim %d - skipping",
-                            key, dim0, dim1, src_hidden_dim
-                        )
-                        continue
+                        else:
+                            logger.warning(
+                                "Weight %s shape [%d,%d] doesn't match hidden_dim %d - skipping",
+                                key, dim0, dim1, src_hidden_dim
+                            )
+                            continue
 
-                    metrics.setdefault("hidden_stitch_applied", 0)
-                    metrics["hidden_stitch_applied"] += 1
+                        metrics.setdefault("hidden_stitch_applied", 0)
+                        metrics["hidden_stitch_applied"] += 1
 
                 else:
                     logger.warning(

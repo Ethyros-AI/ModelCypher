@@ -86,6 +86,29 @@ mc geometry metrics spectral-signature <points_file>
 mc geometry metrics dimension-constraint <points_file> --pad-dim <n>
 ```
 
+## Geometry Sparse Commands
+```bash
+mc geometry sparse domains
+mc geometry sparse locate <domain_stats.json> <baseline_stats.json> --domain <name> --use-dare-alignment
+mc geometry sparse neurons --model <path> [--domain <name> | --prompts <prompts.json>]
+```
+
+### Sparse Locate Output Schema
+```json
+{
+  "_schema": "mc.geometry.sparse_locate.v1",
+  "domain": "math",
+  "sparseLayers": [2, 3, 4],
+  "skipLayers": [0],
+  "sparsityThreshold": 0.3125,
+  "layerSparsity": { "0": 0.0, "1": 0.12, "2": 0.41 },
+  "dareAlignment": {
+    "highDroppabilityLayers": [2, 4],
+    "overlapWithSparse": 0.5
+  }
+}
+```
+
 ### Spectral Signature Output Schema
 ```json
 {

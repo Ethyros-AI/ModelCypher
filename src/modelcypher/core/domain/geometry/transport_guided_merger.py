@@ -85,17 +85,6 @@ class TransportGuidedMerger:
         mean_marginal_error: float
         failed_layers: list[str]
 
-        @property
-        def quality_score(self) -> float:
-            total_attempted = max(1, len(self.layer_results) + len(self.failed_layers))
-            success_rate = len(self.layer_results) / total_attempted
-
-            converged_count = sum(1 for r in self.layer_results.values() if r.converged)
-            convergence_rate = converged_count / max(1, len(self.layer_results))
-
-            distance_score = max(0.0, 1.0 - self.mean_gw_distance)
-            return (success_rate + convergence_rate + distance_score) / 3.0
-
     # MARK: - Core Synthesis
 
     def synthesize(

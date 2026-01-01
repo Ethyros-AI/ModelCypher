@@ -192,6 +192,10 @@ def run_merge(
         target_activations,
         source_intermediate_activations,
         target_intermediate_activations,
+        source_attention_activations,
+        target_attention_activations,
+        source_kv_activations,
+        target_kv_activations,
     ) = stage_probe(
         source_weights=source_weights,
         target_weights=loaded_target_weights,
@@ -250,6 +254,18 @@ def run_merge(
             "PROBE: Collected INTERMEDIATE activations for %d source layers, %d target layers",
             len(source_intermediate_activations),
             len(target_intermediate_activations),
+        )
+    if source_attention_activations and target_attention_activations:
+        logger.info(
+            "PROBE: Collected ATTENTION (Q) activations for %d source layers, %d target layers",
+            len(source_attention_activations),
+            len(target_attention_activations),
+        )
+    if source_kv_activations and target_kv_activations:
+        logger.info(
+            "PROBE: Collected ATTENTION (KV) activations for %d source layers, %d target layers",
+            len(source_kv_activations),
+            len(target_kv_activations),
         )
 
     # Clear GPU memory
@@ -322,6 +338,8 @@ def run_merge(
         target_activations=target_activations,
         source_intermediate_activations=source_intermediate_activations,
         target_intermediate_activations=target_intermediate_activations,
+        source_attention_activations=source_attention_activations,
+        target_attention_activations=target_attention_activations,
         config=merge_config,
         extract_layer_index_fn=extract_layer_index,
         backend=backend,

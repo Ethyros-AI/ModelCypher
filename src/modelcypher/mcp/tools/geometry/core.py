@@ -484,19 +484,15 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             domainStats: list[dict],
             baselineStats: list[dict],
             domainName: str,
-            baseRank: int,
             sparsityThreshold: float | None,
-            targetModuleTypes: list[str],
             useDareAlignment: bool,
         ) -> dict:
-            """Locate sparse regions suitable for LoRA injection."""
+            """Locate sparse regions in activation statistics."""
             result = ctx.geometry_sparse_service.locate_sparse_regions(
                 domain_stats=domainStats,
                 baseline_stats=baselineStats,
                 domain_name=domainName,
-                base_rank=baseRank,
                 sparsity_threshold=sparsityThreshold,
-                target_module_types=targetModuleTypes,
                 use_dare_alignment=useDareAlignment,
             )
             payload = ctx.geometry_sparse_service.analysis_payload(result)

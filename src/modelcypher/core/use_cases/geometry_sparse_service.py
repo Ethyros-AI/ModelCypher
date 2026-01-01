@@ -19,7 +19,7 @@
 Geometry Sparse Region Service.
 
 Exposes sparse region analysis as CLI/MCP-consumable operations.
-Identifies sparse regions suitable for LoRA injection and domain-specific training.
+Identifies sparse regions for domain-specific analysis.
 """
 
 from __future__ import annotations
@@ -103,34 +103,25 @@ class GeometrySparseService:
         domain_stats: list[dict],
         baseline_stats: list[dict],
         domain_name: str,
-        base_rank: int,
         sparsity_threshold: float | None,
-        target_module_types: list[str],
         use_dare_alignment: bool,
     ) -> AnalysisResult:
         """
-        Locate sparse regions suitable for LoRA injection.
+        Locate sparse regions in activation statistics.
 
         Args:
             domain_stats: List of layer activation stats for domain prompts
             baseline_stats: List of layer activation stats for baseline prompts
             domain_name: Name of the domain being analyzed
-            base_rank: Base LoRA rank to use
             sparsity_threshold: Threshold for considering a layer sparse
-            target_module_types: Target module names for LoRA placement
             use_dare_alignment: Whether to compute DARE alignment metrics
 
         Returns:
-            AnalysisResult with sparse layers and LoRA recommendation
+            AnalysisResult with sparse layers and alignment metrics
         """
-        if not target_module_types:
-            raise ValueError("Target module types are required for sparse region analysis")
-
         config = LocatorConfig(
-            base_rank=base_rank,
             sparsity_threshold=sparsity_threshold,
             use_dare_alignment=use_dare_alignment,
-            target_module_types=target_module_types,
         )
         locator = SparseRegionLocator(config)
 
@@ -218,19 +209,11 @@ class GeometrySparseService:
             "domain": result.domain,
             "sparseLayers": result.sparse_layers,
             "skipLayers": result.skip_layers,
+            "sparsityThreshold": result.sparsity_threshold,
             "layerSparsity": {str(k): v for k, v in result.layer_sparsity.items()},
-            "loraConfig": {
-                "overallRank": result.recommendation.overall_rank,
-                "alpha": result.recommendation.alpha,
-                "targetModules": result.recommendation.target_modules,
-                "rankByLayer": result.recommendation.rank_by_layer,
-                "skipLayers": result.recommendation.skip_layers,
-                "sparseRatio": result.recommendation.sparse_ratio,
-            },
             "dareAlignment": {
                 "highDroppabilityLayers": result.dare_alignment.high_droppability_layers,
                 "overlapWithSparse": result.dare_alignment.overlap_with_sparse,
-                "confidence": result.dare_alignment.confidence,
             }
             if result.dare_alignment
             else None,

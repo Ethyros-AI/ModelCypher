@@ -17,8 +17,7 @@
 
 """Geometry sparse region CLI commands.
 
-Provides commands for analyzing sparse regions in model representations
-for targeted LoRA injection.
+Provides commands for analyzing sparse regions in model representations.
 
 Commands:
     mc geometry sparse domains
@@ -78,16 +77,12 @@ def geometry_sparse_locate(
     domain_stats_file: str = typer.Argument(..., help="Path to domain layer stats JSON"),
     baseline_stats_file: str = typer.Argument(..., help="Path to baseline layer stats JSON"),
     domain_name: str = typer.Option(..., "--domain", help="Domain name"),
-    base_rank: int = typer.Option(..., "--rank", help="Base LoRA rank"),
-    target_modules: list[str] = typer.Option(
-        ..., "--target-module", help="Target module names for LoRA (repeatable)"
-    ),
     use_dare_alignment: bool = typer.Option(
         ..., "--use-dare-alignment", help="Use DARE alignment analysis"
     ),
 ) -> None:
     """
-    Locate sparse regions for LoRA injection.
+    Locate sparse regions for a domain.
 
     The sparsity threshold is derived from the activation distribution.
     No user-configurable threshold - the geometry determines it.
@@ -106,9 +101,7 @@ def geometry_sparse_locate(
         domain_stats=domain_stats,
         baseline_stats=baseline_stats,
         domain_name=domain_name,
-        base_rank=base_rank,
         sparsity_threshold=None,  # Derive from distribution
-        target_module_types=target_modules,
         use_dare_alignment=use_dare_alignment,
     )
 
@@ -120,10 +113,7 @@ def geometry_sparse_locate(
             f"Domain: {result.domain}",
             f"Sparse Layers: {len(result.sparse_layers)} {result.sparse_layers}",
             f"Skip Layers: {len(result.skip_layers)} {result.skip_layers}",
-            "",
-            "LORA PARAMETERS",
-            f"  Overall Rank: {result.recommendation.overall_rank}",
-            f"  Alpha: {result.recommendation.alpha}",
+            f"Sparsity Threshold: {result.sparsity_threshold:.4f}",
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return

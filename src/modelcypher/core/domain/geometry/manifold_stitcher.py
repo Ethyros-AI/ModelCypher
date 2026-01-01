@@ -1197,26 +1197,6 @@ class AlignmentCluster:
     procrustes_error: float
     member_count: int
 
-    def classification_for_thresholds(
-        self,
-        aligned_threshold: float = 0.3,
-        translatable_threshold: float = 0.7,
-    ) -> str:
-        """Classify alignment quality using caller-provided thresholds.
-
-        Args:
-            aligned_threshold: Error below this is "aligned" (well-aligned)
-            translatable_threshold: Error below this is "translatable" (moderately aligned)
-
-        Returns:
-            Classification label: "aligned", "translatable", or "divergent"
-        """
-        if self.procrustes_error < aligned_threshold:
-            return "aligned"
-        if self.procrustes_error < translatable_threshold:
-            return "translatable"
-        return "divergent"
-
 
 
 @dataclass
@@ -1248,4 +1228,3 @@ class ValidationResult:
     target_model: str
     layer_deltas: list[LayerDelta]
     overall_similarity: float
-

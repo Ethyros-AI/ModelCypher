@@ -17,6 +17,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from modelcypher.core.domain.geometry.sparse_region_validator import (
     BaselineMetrics,
     SparseRegionValidator,
@@ -44,8 +46,9 @@ def test_sparse_region_validator_analyze_results() -> None:
     result = validator.analyze_results(
         baseline=baseline, post_perturbation=post, perturbed_layers=[1, 2]
     )
-    assert result.capabilities_preserved is True
-    assert result.assessment.entropy_ok is True
+    assert result.entropy_delta == pytest.approx(0.02)
+    assert result.refusal_delta == pytest.approx(0.01)
+    assert result.coherence_change == pytest.approx(0.01)
 
 
 def test_sparse_region_validator_helpers() -> None:
@@ -68,4 +71,4 @@ def test_validation_report_contains_fields() -> None:
         baseline=baseline, post_perturbation=baseline, perturbed_layers=[0]
     )
     report = result.generate_report()
-    assert "Capability Preservation Validation Report" in report
+    assert "Sparse Region Validation Metrics" in report

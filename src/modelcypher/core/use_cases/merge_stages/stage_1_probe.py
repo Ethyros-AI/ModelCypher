@@ -84,6 +84,14 @@ class ProbeResult:
     # (e.g., 2560 for SmolLM, 4864 for Qwen) - for multi-space stitching
     source_intermediate_activations: dict[int, list[Any]] | None = None
     target_intermediate_activations: dict[int, list[Any]] | None = None
+    # Q Attention-space activations: shape [num_heads * head_dim] per sample
+    # (e.g., 960 for SmolLM=15*64, 896 for Qwen=14*64) - for q_proj/o_proj stitching
+    source_attention_activations: dict[int, list[Any]] | None = None
+    target_attention_activations: dict[int, list[Any]] | None = None
+    # KV Attention-space activations: shape [num_kv_heads * head_dim] per sample
+    # (e.g., 320 for SmolLM=5*64, 128 for Qwen=2*64) - for k_proj/v_proj stitching (GQA)
+    source_kv_activations: dict[int, list[Any]] | None = None
+    target_kv_activations: dict[int, list[Any]] | None = None
     probe_ids: list[str] | None = None
     probe_domains: list[str] | None = None
 
@@ -348,6 +356,12 @@ def _probe_precise(
     # Intermediate-space activations for multi-space stitching (cross-architecture merges)
     source_intermediate_activations: dict[int, list["Array"]] = {}
     target_intermediate_activations: dict[int, list["Array"]] = {}
+    # Q Attention-space activations for q_proj/o_proj stitching (cross-architecture merges)
+    source_attention_activations: dict[int, list["Array"]] = {}
+    target_attention_activations: dict[int, list["Array"]] = {}
+    # KV Attention-space activations for k_proj/v_proj stitching (GQA models)
+    source_kv_activations: dict[int, list["Array"]] = {}
+    target_kv_activations: dict[int, list["Array"]] = {}
     probe_ids: list[str] = []
     probe_domains: list[str] = []
 
@@ -424,6 +438,23 @@ def _probe_precise(
                 token_ids=target_ids,
             )
 
+            # Also collect attention activations for attention weight stitching
+            # Returns TWO dicts: Q activations and KV activations (for GQA models)
+            # Q: (e.g., 960=15*64 for SmolLM → 896=14*64 for Qwen) - for q_proj/o_proj
+            # KV: (e.g., 320=5*64 for SmolLM → 128=2*64 for Qwen) - for k_proj/v_proj
+            source_attention_acts, source_kv_acts = collect_attention_activations_mlx(
+                source_model,
+                source_tokenizer,
+                probe_text,
+                token_ids=source_ids,
+            )
+            target_attention_acts, target_kv_acts = collect_attention_activations_mlx(
+                target_model,
+                target_tokenizer,
+                probe_text,
+                token_ids=target_ids,
+            )
+
             source_activated: dict[int, list[ActivatedDimension]] = {}
             target_activated: dict[int, list[ActivatedDimension]] = {}
 
@@ -449,6 +480,28 @@ def _probe_precise(
                 if layer_idx not in target_intermediate_activations:
                     target_intermediate_activations[layer_idx] = []
                 target_intermediate_activations[layer_idx].append(act)
+
+            # Store Q attention activations for q_proj/o_proj stitching
+            for layer_idx, act in source_attention_acts.items():
+                if layer_idx not in source_attention_activations:
+                    source_attention_activations[layer_idx] = []
+                source_attention_activations[layer_idx].append(act)
+
+            for layer_idx, act in target_attention_acts.items():
+                if layer_idx not in target_attention_activations:
+                    target_attention_activations[layer_idx] = []
+                target_attention_activations[layer_idx].append(act)
+
+            # Store KV attention activations for k_proj/v_proj stitching (GQA models)
+            for layer_idx, act in source_kv_acts.items():
+                if layer_idx not in source_kv_activations:
+                    source_kv_activations[layer_idx] = []
+                source_kv_activations[layer_idx].append(act)
+
+            for layer_idx, act in target_kv_acts.items():
+                if layer_idx not in target_kv_activations:
+                    target_kv_activations[layer_idx] = []
+                target_kv_activations[layer_idx].append(act)
 
             source_fingerprints.append(
                 ActivationFingerprint(
@@ -654,6 +707,10 @@ def _probe_precise(
         target_activations=target_layer_activations,
         source_intermediate_activations=source_intermediate_activations,
         target_intermediate_activations=target_intermediate_activations,
+        source_attention_activations=source_attention_activations,
+        target_attention_activations=target_attention_activations,
+        source_kv_activations=source_kv_activations,
+        target_kv_activations=target_kv_activations,
         probe_ids=probe_ids,
         probe_domains=probe_domains,
     )
@@ -1041,3 +1098,100 @@ def collect_intermediate_activations_mlx(
         logger.warning("Intermediate activation collection failed: %s", e)
 
     return activations
+
+
+def collect_attention_activations_mlx(
+    model: Any,
+    tokenizer: Any,
+    text: str,
+    token_ids: list[int] | None = None,
+) -> tuple[dict[int, "Array"], dict[int, "Array"]]:
+    """
+    Collect per-layer attention Q and KV activations for a text input (MLX backend).
+
+    Returns TWO dicts:
+    1. Q activations: [num_heads * head_dim] (e.g., 960 for SmolLM, 896 for Qwen)
+    2. KV activations: [num_kv_heads * head_dim] (e.g., 320 for SmolLM, 128 for Qwen)
+
+    For Grouped Query Attention (GQA) models, Q and KV have different dimensions:
+    - SmolLM: Q = 15 heads × 64 = 960, KV = 5 heads × 64 = 320
+    - Qwen: Q = 14 heads × 64 = 896, KV = 2 heads × 64 = 128
+
+    We need separate GramAligner transforms for each:
+    - attention_stitch: For q_proj and o_proj (Q dimension)
+    - kv_stitch: For k_proj and v_proj (KV dimension)
+
+    Returns tuple of (q_activations, kv_activations) as MLX arrays directly.
+    """
+    import mlx.core as mx
+
+    if token_ids is None:
+        tokens = tokenizer.encode(text, add_special_tokens=True)
+        if isinstance(tokens, list):
+            token_ids = tokens
+        else:
+            token_ids = list(tokens.ids)
+    input_ids = mx.array([token_ids])
+
+    q_activations: dict[int, "Array"] = {}
+    kv_activations: dict[int, "Array"] = {}
+
+    try:
+        if not (hasattr(model, "model") and hasattr(model.model, "layers")):
+            logger.debug("Model structure not compatible with attention activation collection")
+            return q_activations, kv_activations
+
+        inner = model.model
+
+        # Get embeddings
+        if hasattr(inner, "embed_tokens"):
+            h = inner.embed_tokens(input_ids)
+        elif hasattr(inner, "wte"):
+            h = inner.wte(input_ids)
+        else:
+            logger.debug("Cannot find embedding layer")
+            return q_activations, kv_activations
+
+        for layer_idx, layer in enumerate(inner.layers):
+            # Apply input layer norm
+            if hasattr(layer, "input_layernorm"):
+                h_norm = layer.input_layernorm(h)
+            elif hasattr(layer, "ln_1"):
+                h_norm = layer.ln_1(h)
+            else:
+                h_norm = h
+
+            # Get attention module
+            attn = layer.self_attn if hasattr(layer, "self_attn") else getattr(layer, "attn", None)
+
+            if attn is not None:
+                # Compute Q, K, V projections
+                if hasattr(attn, "q_proj"):
+                    q = attn.q_proj(h_norm)
+                    k = attn.k_proj(h_norm)
+                    mx.eval(q)
+                    mx.eval(k)
+
+                    # Q activations: [batch, seq, num_heads * head_dim]
+                    # Mean pool over sequence to get [num_heads * head_dim]
+                    q_pooled = mx.mean(q, axis=(0, 1))
+                    mx.eval(q_pooled)
+                    q_activations[layer_idx] = q_pooled
+
+                    # K activations: [batch, seq, num_kv_heads * head_dim]
+                    # For GQA, this is smaller than Q (e.g., 320 vs 960)
+                    k_pooled = mx.mean(k, axis=(0, 1))
+                    mx.eval(k_pooled)
+                    kv_activations[layer_idx] = k_pooled
+
+            # Complete the layer forward for next iteration
+            result = layer(h)
+            if isinstance(result, tuple):
+                h = result[0]
+            else:
+                h = result
+
+    except Exception as e:
+        logger.warning("Attention activation collection failed: %s", e)
+
+    return q_activations, kv_activations

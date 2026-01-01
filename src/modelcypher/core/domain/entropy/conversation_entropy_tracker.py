@@ -36,26 +36,9 @@ import logging
 import math
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
 from uuid import UUID, uuid4
 
 logger = logging.getLogger(__name__)
-
-
-class ConversationRecommendation(str, Enum):
-    """Recommended action based on conversation analysis."""
-
-    CONTINUE = "continue"
-    """Continue normally."""
-
-    MONITOR = "monitor"
-    """Increase monitoring/logging."""
-
-    INTERVENE = "intervene"
-    """Intervene (e.g., change topic, add guardrails)."""
-
-    HALT = "halt"
-    """Halt conversation."""
 
 
 @dataclass(frozen=True)
@@ -245,8 +228,7 @@ class ManipulationSignalComponents:
 class ConversationAssessment:
     """Comprehensive conversation-level assessment.
 
-    Raw measurements - no pattern classification or recommendations computed internally.
-    Caller decides thresholds via recommendation_for_thresholds().
+    Raw measurements only - no pattern classification or recommendations computed internally.
 
     Attributes
     ----------
@@ -292,47 +274,6 @@ class ConversationAssessment:
             f"anomaly={c.anomaly_score:.2f}, spikes={c.spike_score:.2f}, "
             f"cb_tripped={c.circuit_breaker_tripped}"
         )
-
-    def recommendation_for_thresholds(
-        self,
-        oscillation_halt_threshold: float,
-        drift_monitor_threshold: float,
-        anomaly_count_intervene_threshold: int,
-    ) -> ConversationRecommendation:
-        """Compute recommendation using caller-provided thresholds.
-
-        Args:
-            oscillation_halt_threshold: Oscillation amplitude above which to HALT.
-            drift_monitor_threshold: Z-score drift above which to MONITOR.
-            anomaly_count_intervene_threshold: Anomaly count above which to INTERVENE.
-
-        Returns:
-            Recommended action based on thresholds and binary signals.
-
-        Binary signals (circuit_breaker_tripped, baseline_oscillation_exceeded)
-        are geometry-derived and don't require thresholds.
-        """
-        c = self.manipulation_components
-
-        # Binary signals from geometry - no thresholds needed
-        if c.circuit_breaker_tripped:
-            return ConversationRecommendation.HALT
-
-        if c.baseline_oscillation_exceeded:
-            return ConversationRecommendation.INTERVENE
-
-        # Caller-provided thresholds
-        if self.oscillation_amplitude > oscillation_halt_threshold:
-            return ConversationRecommendation.HALT
-
-        if self.recent_anomaly_count > anomaly_count_intervene_threshold:
-            return ConversationRecommendation.INTERVENE
-
-        if self.cumulative_drift > drift_monitor_threshold:
-            return ConversationRecommendation.MONITOR
-
-        return ConversationRecommendation.CONTINUE
-
 
 @dataclass
 class EntropyBaseline:

@@ -182,7 +182,7 @@ training:
   mc_checkpoint_export, mc_checkpoint_list, mc_checkpoint_delete, mc_geometry_training_status,
   mc_geometry_training_history, mc_geometry_validate, mc_geometry_crm_build, mc_geometry_crm_compare,
   mc_safety_circuit_breaker, mc_safety_persona_drift, mc_geometry_safety_jailbreak_test,
-  mc_geometry_dare_sparsity, mc_geometry_dora_decomposition, mc_calibration_run,
+  mc_geometry_dare_sparsity, mc_geometry_dora_decomposition, mc_geometry_sparse_domains, mc_geometry_sparse_locate, mc_geometry_sparse_neurons, mc_calibration_run,
   mc_calibration_status, mc_calibration_apply, mc_thermo_measure, mc_thermo_detect, mc_thermo_detect_batch, mc_storage_usage,
   mc_storage_cleanup, mc_research_sparse_region, mc_research_afm, mc_adapter_merge, mc_eval_run,
   mc_eval_list, mc_eval_show, mc_train_preflight, mc_train_export
@@ -195,7 +195,7 @@ monitoring:
   mc_inventory, mc_settings_snapshot, mc_job_status, mc_job_list, mc_job_detail, mc_system_status,
   mc_geometry_training_status, mc_geometry_training_history, mc_geometry_validate,
   mc_safety_circuit_breaker, mc_safety_persona_drift, mc_geometry_safety_jailbreak_test,
-  mc_geometry_dare_sparsity, mc_geometry_dora_decomposition
+  mc_geometry_dare_sparsity, mc_geometry_dora_decomposition, mc_geometry_sparse_domains, mc_geometry_sparse_locate, mc_geometry_sparse_neurons
 ```
 
 **Example Configuration:**
@@ -229,7 +229,7 @@ All tools include MCP annotations for AI client optimization:
 
 | Category | Tools | Annotations |
 |----------|-------|-------------|
-| Read-only | `mc_inventory`, `mc_settings_snapshot`, `mc_job_status`, `mc_job_list`, `mc_job_detail`, `mc_model_list`, `mc_system_status`, `mc_validate_train`, `mc_estimate_train`, `mc_geometry_validate`, `mc_geometry_training_status`, `mc_geometry_training_history`, `mc_geometry_gromov_wasserstein`, `mc_geometry_intrinsic_dimension`, `mc_geometry_topological_fingerprint`, `mc_geometry_spectral_signature`, `mc_geometry_dimension_constraint_invariance`, `mc_geometry_crm_compare`, `mc_safety_circuit_breaker`, `mc_safety_persona_drift`, `mc_geometry_dare_sparsity`, `mc_geometry_dora_decomposition` | `readOnly=true, idempotent=true` |
+| Read-only | `mc_inventory`, `mc_settings_snapshot`, `mc_job_status`, `mc_job_list`, `mc_job_detail`, `mc_model_list`, `mc_system_status`, `mc_validate_train`, `mc_estimate_train`, `mc_geometry_validate`, `mc_geometry_training_status`, `mc_geometry_training_history`, `mc_geometry_gromov_wasserstein`, `mc_geometry_intrinsic_dimension`, `mc_geometry_topological_fingerprint`, `mc_geometry_spectral_signature`, `mc_geometry_dimension_constraint_invariance`, `mc_geometry_crm_compare`, `mc_safety_circuit_breaker`, `mc_safety_persona_drift`, `mc_geometry_dare_sparsity`, `mc_geometry_dora_decomposition`, `mc_geometry_sparse_domains`, `mc_geometry_sparse_locate`, `mc_geometry_sparse_neurons` | `readOnly=true, idempotent=true` |
 | Mutating | `mc_train_start`, `mc_job_pause`, `mc_job_resume`, `mc_infer`, `mc_checkpoint_export`, `mc_geometry_crm_build` | `readOnly=false` |
 | Destructive | `mc_job_cancel` | `destructive=true, idempotent=true` |
 | Network | `mc_model_fetch`, `mc_model_search` | `openWorld=true, idempotent=true` |
@@ -1965,6 +1965,164 @@ Call mc_inventory first to see what models are available before starting trainin
 
 ---
 
+### mc_geometry_sparse_domains
+
+**Purpose:** List built-in sparse region domains for probing.
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "category": { "type": "string" }
+  }
+}
+```
+
+**Output:**
+```json
+{
+  "_schema": "mc.geometry.sparse_domains.v1",
+  "domains": [
+    {
+      "name": "math",
+      "description": "Mathematical reasoning prompts",
+      "category": "knowledge",
+      "probeCount": 32,
+      "expectedLayerRange": [0.25, 0.75]
+    }
+  ],
+  "count": 1
+}
+```
+
+---
+
+### mc_geometry_sparse_locate
+
+**Purpose:** Locate sparse layers by comparing domain vs baseline activations.
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "domainStats": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "layer_index": { "type": "integer" },
+          "mean_activation": { "type": "number" },
+          "max_activation": { "type": "number" },
+          "activation_variance": { "type": "number" },
+          "prompt_count": { "type": "integer" }
+        },
+        "required": ["layer_index", "mean_activation"]
+      }
+    },
+    "baselineStats": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "layer_index": { "type": "integer" },
+          "mean_activation": { "type": "number" },
+          "max_activation": { "type": "number" },
+          "activation_variance": { "type": "number" },
+          "prompt_count": { "type": "integer" }
+        },
+        "required": ["layer_index", "mean_activation"]
+      }
+    },
+    "domainName": { "type": "string" },
+    "sparsityThreshold": { "type": ["number", "null"] },
+    "useDareAlignment": { "type": "boolean" }
+  },
+  "required": ["domainStats", "baselineStats", "domainName", "useDareAlignment"]
+}
+```
+
+**Output:**
+```json
+{
+  "_schema": "mc.geometry.sparse_locate.v1",
+  "domain": "math",
+  "sparseLayers": [2, 3, 4],
+  "skipLayers": [0],
+  "sparsityThreshold": 0.3125,
+  "layerSparsity": { "0": 0.0, "1": 0.12, "2": 0.41 },
+  "dareAlignment": {
+    "highDroppabilityLayers": [2, 4],
+    "overlapWithSparse": 0.5
+  }
+}
+```
+
+---
+
+### mc_geometry_sparse_neurons
+
+**Purpose:** Analyze per-neuron sparsity for a model and domain.
+
+**Category:** Read-only
+
+**Input Schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "modelPath": { "type": "string" },
+    "domain": { "type": ["string", "null"] },
+    "promptsFile": { "type": ["string", "null"] },
+    "layerStart": { "type": "number" },
+    "layerEnd": { "type": "number" },
+    "sparsityThreshold": { "type": ["number", "null"] }
+  },
+  "required": ["modelPath"]
+}
+```
+
+**Output:**
+```json
+{
+  "_schema": "mc.geometry.sparse_neurons.v1",
+  "modelPath": "/path/to/model",
+  "domain": "math",
+  "config": {
+    "sparsityThreshold": null,
+    "activationThreshold": null,
+    "layerRange": [0.25, 0.75]
+  },
+  "summary": {
+    "num_layers": 24,
+    "total_neurons": 24576,
+    "total_sparse": 5120,
+    "sparse_fraction": 0.2083,
+    "total_dead": 120,
+    "dead_fraction": 0.0049,
+    "mean_sparsity": 0.42,
+    "std_sparsity": 0.11,
+    "total_prompts": 20,
+    "graft_candidates": 5120,
+    "thresholds": {
+      "sparsity": 0.65,
+      "dead_neuron": 0.82,
+      "sparsity_derived": true,
+      "dead_derived": true
+    }
+  },
+  "graftCandidates": { "12": [1, 9, 42] },
+  "deadNeurons": { "12": [7, 8] }
+}
+```
+
+---
+
 ## Resources Reference
 
 Resources provide read-only access to ModelCypher state via standard MCP resource URIs.
@@ -2122,6 +2280,9 @@ These tools never modify state and are safe to call whenever context is needed:
 - `mc_safety_persona_drift` – Persona drift analysis for a job.
 - `mc_geometry_dare_sparsity` – DARE sparsity analysis for adapter weights.
 - `mc_geometry_dora_decomposition` – DoRA magnitude/direction decomposition.
+- `mc_geometry_sparse_domains` – List built-in sparse region domains.
+- `mc_geometry_sparse_locate` – Locate sparse layers from domain vs baseline activations.
+- `mc_geometry_sparse_neurons` – Per-neuron sparsity analysis for a model.
 
 **Recommended usage:**
 
@@ -2372,6 +2533,14 @@ Note: Full geometry tool coverage (path, CRM, stitch, probes, manifold) is imple
 | `mc_geometry_null_space_profile` | Generate null-space profile for a model | Read-only |
 | `mc_geometry_safety_polytope_check` | Check if activations fall within safety polytope | Read-only |
 | `mc_geometry_safety_polytope_model` | Build safety polytope model from a reference model | Read-only |
+
+### Geometry Tools (Sparse Regions)
+
+| Tool | Purpose | Category |
+|------|---------|----------|
+| `mc_geometry_sparse_domains` | List built-in sparse region domains | Read-only |
+| `mc_geometry_sparse_locate` | Locate sparse layers from activation stats | Read-only |
+| `mc_geometry_sparse_neurons` | Per-neuron sparsity analysis for a model | Read-only |
 
 ### Thermo Tools
 

@@ -22,8 +22,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable
 
-from modelcypher.core.domain.geometry.sparse_region_locator import LoRAConfigRecommendation
-
 logger = logging.getLogger(__name__)
 
 
@@ -32,9 +30,6 @@ class Configuration:
     validation_prompts: int = 10
     max_tokens_per_prompt: int = 100
     perturbation_magnitude: float = 0.01
-    max_entropy_delta: float = 0.05
-    max_refusal_delta: float = 0.1
-    min_coherence_score: float = 0.7
 
 
 @dataclass(frozen=True)
@@ -48,44 +43,28 @@ class BaselineMetrics:
 
 
 @dataclass(frozen=True)
-class Assessment:
-    entropy_ok: bool
-    refusal_ok: bool
-    coherence_ok: bool
-    overall_confidence: float
-
-
-@dataclass(frozen=True)
 class ValidationResult:
-    capabilities_preserved: bool
     baseline: BaselineMetrics
     post_perturbation: BaselineMetrics
     entropy_delta: float
     refusal_delta: float
     coherence_change: float
-    assessment: Assessment
     perturbed_layers: list[int]
 
     def generate_report(self) -> str:
-        status = "PASSED" if self.capabilities_preserved else "FAILED"
         report_lines = [
-            "# Capability Preservation Validation Report",
-            "",
-            f"## Overall Result: {status}",
+            "# Sparse Region Validation Metrics",
             "",
             "## Metrics Comparison",
             "",
-            "| Metric | Baseline | Post-Perturbation | Delta | Status |",
-            "|--------|----------|-------------------|-------|--------|",
-            f"| Entropy | {self.baseline.mean_entropy:.3f} | {self.post_perturbation.mean_entropy:.3f} | {self.entropy_delta * 100:.1f}% | {'OK' if self.assessment.entropy_ok else 'FAIL'} |",
-            f"| Refusal Rate | {self.baseline.refusal_rate * 100:.1f}% | {self.post_perturbation.refusal_rate * 100:.1f}% | {self.refusal_delta * 100:.1f}% | {'OK' if self.assessment.refusal_ok else 'FAIL'} |",
-            f"| Coherence | {self.baseline.coherence_score:.2f} | {self.post_perturbation.coherence_score:.2f} | {self.coherence_change:+.2f} | {'OK' if self.assessment.coherence_ok else 'FAIL'} |",
+            "| Metric | Baseline | Post-Perturbation | Delta |",
+            "|--------|----------|-------------------|-------|",
+            f"| Entropy | {self.baseline.mean_entropy:.3f} | {self.post_perturbation.mean_entropy:.3f} | {self.entropy_delta * 100:.1f}% |",
+            f"| Refusal Rate | {self.baseline.refusal_rate * 100:.1f}% | {self.post_perturbation.refusal_rate * 100:.1f}% | {self.refusal_delta * 100:.1f}% |",
+            f"| Coherence | {self.baseline.coherence_score:.2f} | {self.post_perturbation.coherence_score:.2f} | {self.coherence_change:+.2f} |",
             "",
             "## Perturbed Layers",
             ", ".join(str(layer) for layer in self.perturbed_layers),
-            "",
-            "## Assessment",
-            f"- Confidence: {self.assessment.overall_confidence * 100:.0f}%",
         ]
 
         return "\n".join(report_lines)
@@ -122,7 +101,7 @@ class SparseRegionValidator:
 
     def validate(
         self,
-        recommendation: LoRAConfigRecommendation,
+        perturbed_layers: list[int],
         validation_prompts: list[str],
         measure_metrics: Callable[[list[str]], BaselineMetrics],
         apply_perturbation: Callable[[list[int], float], None],
@@ -143,11 +122,7 @@ class SparseRegionValidator:
 
         baseline = measure_metrics(prompts)
 
-        layers_to_perturb = sorted(
-            layer
-            for layer in recommendation.rank_by_layer.keys()
-            if layer not in recommendation.skip_layers
-        )
+        layers_to_perturb = sorted(set(perturbed_layers))
 
         if progress:
             progress(
@@ -205,37 +180,18 @@ class SparseRegionValidator:
 
         refusal_delta = abs(post_perturbation.refusal_rate - baseline.refusal_rate)
         coherence_change = post_perturbation.coherence_score - baseline.coherence_score
-
-        entropy_ok = entropy_delta <= self.config.max_entropy_delta
-        refusal_ok = refusal_delta <= self.config.max_refusal_delta
-        coherence_ok = post_perturbation.coherence_score >= self.config.min_coherence_score
-
-        passed_checks = sum(1 for flag in [entropy_ok, refusal_ok, coherence_ok] if flag)
-        overall_confidence = float(passed_checks) / 3.0
-
-        assessment = Assessment(
-            entropy_ok=entropy_ok,
-            refusal_ok=refusal_ok,
-            coherence_ok=coherence_ok,
-            overall_confidence=overall_confidence,
-        )
-
-        capabilities_preserved = entropy_ok and refusal_ok and coherence_ok
         logger.info(
-            "Validation complete: preserved=%s, entropy_delta=%.4f, refusal_delta=%.4f",
-            capabilities_preserved,
+            "Validation metrics computed: entropy_delta=%.4f, refusal_delta=%.4f",
             entropy_delta,
             refusal_delta,
         )
 
         return ValidationResult(
-            capabilities_preserved=capabilities_preserved,
             baseline=baseline,
             post_perturbation=post_perturbation,
             entropy_delta=entropy_delta,
             refusal_delta=refusal_delta,
             coherence_change=coherence_change,
-            assessment=assessment,
             perturbed_layers=perturbed_layers,
         )
 
