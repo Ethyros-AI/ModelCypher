@@ -27,6 +27,7 @@ Tests mathematical invariants that must hold for correct permutation alignment:
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
@@ -111,7 +112,7 @@ class TestPermutationValidity:
         perm = backend.to_numpy(result.permutation)
         row_sums = perm.sum(axis=1)
 
-        assert backend.allclose(backend.array(row_sums), backend.array(1.0), atol=1e-5), \
+        assert np.allclose(row_sums, 1.0, atol=1e-5), \
             f"Each row should sum to 1, got {row_sums}"
 
     def test_permutation_cols_sum_to_one(self, backend):
@@ -130,7 +131,7 @@ class TestPermutationValidity:
         perm = backend.to_numpy(result.permutation)
         col_sums = perm.sum(axis=0)
 
-        assert backend.allclose(backend.array(col_sums), backend.array(1.0), atol=1e-5), \
+        assert np.allclose(col_sums, 1.0, atol=1e-5), \
             f"Each column should sum to 1, got {col_sums}"
 
     def test_permutation_is_binary(self, backend):
@@ -152,9 +153,9 @@ class TestPermutationValidity:
         unique_values = np.unique(perm)
 
         # All values should be 0 or 1
-        assert backend.allclose(backend.array(unique_values), backend.array([0.0, 1.0])) or \
-               backend.allclose(backend.array(unique_values), backend.array([0.0])) or \
-               backend.allclose(backend.array(unique_values), backend.array([1.0])), \
+        assert np.allclose(unique_values, [0.0, 1.0]) or \
+               np.allclose(unique_values, [0.0]) or \
+               np.allclose(unique_values, [1.0]), \
             f"Permutation should be binary, got unique values {unique_values}"
 
 
@@ -185,7 +186,7 @@ class TestSignValidity:
             # Check off-diagonal elements are zero
             import numpy as np
             off_diag = signs - np.diag(np.diag(signs))
-            assert backend.allclose(backend.array(off_diag), backend.array(0.0)), \
+            assert np.allclose(off_diag, 0.0), \
                 "Sign matrix should be diagonal"
 
     def test_signs_are_plus_minus_one(self, backend):
@@ -210,7 +211,7 @@ class TestSignValidity:
             diag = signs
 
         # All diagonal elements should be ±1
-        assert backend.allclose(backend.abs(backend.array(diag)), backend.array(1.0)), \
+        assert np.allclose(np.abs(diag), 1.0), \
             f"Signs should be ±1, got {diag}"
 
 
@@ -363,7 +364,7 @@ class TestApplyCorrectness:
 
         weight_np = backend.to_numpy(weight)
         aligned_np = backend.to_numpy(aligned)
-        assert backend.allclose(backend.array(aligned_np), backend.array(weight_np), atol=1e-5), \
+        assert np.allclose(aligned_np, weight_np, atol=1e-5), \
             "Identity permutation should preserve weights"
 
 
@@ -487,7 +488,7 @@ class TestMutationDetection:
         identity = identity.astype(source_np.dtype)
 
         # Should have found a non-identity permutation
-        assert not backend.allclose(backend.array(perm), backend.array(identity), atol=0.1), \
+        assert not np.allclose(perm, identity, atol=0.1), \
             "Permutation should not be identity for shuffled weights"
 
     def test_negative_correlation_flips_sign(self, backend):

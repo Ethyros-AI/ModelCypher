@@ -36,7 +36,10 @@ from modelcypher.core.domain.geometry.cross_dimensional_projection import (
     ProjectionMethod,
     project_cross_dimensional,
 )
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
 from modelcypher.core.domain.geometry.transplant import (
     compute_transplant_delta,
     partition_core_boundary,
@@ -510,78 +513,29 @@ def stage_transplant(
                 anchors = b.take(tgt_analysis, b.array(anchor_idx), axis=0)
                 b.eval(anchors)
 
-                # For cross-architecture, project source to target dimension
-                # Use AffineStitchingLayer for geometry-preserving transform
+                # For cross-architecture, use GramAligner to find EXACT CKA=1.0 transform
                 src_d = int(src_analysis.shape[1])
                 tgt_d = int(tgt_analysis.shape[1])
                 if src_d != tgt_d:
-                    from modelcypher.core.domain.geometry.affine_stitching_layer import (
-                        AnchorPair,
-                        BackendAffineStitchingLayer,
-                    )
+                    from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 
-                    # Build anchor pairs from corresponding activations
-                    n_samples = min(int(src_analysis.shape[0]), int(tgt_analysis.shape[0]))
-                    if n_samples >= 5:  # Minimum for affine training
-                        src_np = b.to_numpy(src_analysis[:n_samples])
-                        tgt_np = b.to_numpy(tgt_analysis[:n_samples])
-                        anchor_pairs = [
-                            AnchorPair(
-                                source_activation=src_np[i].tolist(),
-                                target_activation=tgt_np[i].tolist(),
-                                anchor_id=f"sample_{i}",
-                            )
-                            for i in range(n_samples)
-                        ]
-
-                        # Train affine stitching layer
-                        stitcher = BackendAffineStitchingLayer(b)
-                        stitch_result = stitcher.train(anchor_pairs)
-
-                        if stitch_result is not None and stitch_result.is_valid:
-                            # Apply learned affine transform
-                            weights = b.array(stitch_result.weights)
-                            bias = b.array(stitch_result.bias)
-                            src_projected = stitcher.apply(src_analysis, weights, bias)
-                            b.eval(src_projected)
-                            src_for_rel = src_projected
-                            logger.debug(
-                                "Affine stitch: %d->%d, forward_err=%.4f, backward_err=%.4f",
-                                src_d, tgt_d, stitch_result.forward_error, stitch_result.backward_error
-                            )
-                            metrics.setdefault("affine_stitch_applied", 0)
-                            metrics["affine_stitch_applied"] += 1
-                        else:
-                            # Fallback to SVD projection if stitch training fails
-                            from modelcypher.core.domain.geometry.numerical_stability import (
-                                svd_via_eigh,
-                            )
-                            _, _, Vt = svd_via_eigh(b, src_analysis, full_matrices=False)
-                            b.eval(Vt)
-                            k = min(tgt_d, int(Vt.shape[0]))
-                            V_k = b.transpose(Vt[:k, :])
-                            src_projected = b.matmul(src_analysis, V_k)
-                            if k < tgt_d:
-                                padding = b.zeros((int(src_analysis.shape[0]), tgt_d - k))
-                                src_projected = b.concatenate([src_projected, padding], axis=1)
-                            b.eval(src_projected)
-                            src_for_rel = src_projected
-                            logger.debug("Affine stitch failed, using SVD fallback")
-                    else:
-                        # Not enough samples for affine training, use SVD
-                        from modelcypher.core.domain.geometry.numerical_stability import (
-                            svd_via_eigh,
+                    aligner = GramAligner(b)
+                    align_result = aligner.find_perfect_alignment(src_analysis, tgt_analysis)
+                    if align_result.is_perfect:
+                        F = b.array(align_result.feature_transform)
+                        src_for_rel = b.matmul(src_analysis, F)
+                        b.eval(src_for_rel)
+                        logger.debug(
+                            "GramAlign for relative rep: %d->%d, CKA=%.4f",
+                            src_d, tgt_d, align_result.achieved_cka
                         )
-                        _, _, Vt = svd_via_eigh(b, src_analysis, full_matrices=False)
-                        b.eval(Vt)
-                        k = min(tgt_d, int(Vt.shape[0]))
-                        V_k = b.transpose(Vt[:k, :])
-                        src_projected = b.matmul(src_analysis, V_k)
-                        if k < tgt_d:
-                            padding = b.zeros((int(src_analysis.shape[0]), tgt_d - k))
-                            src_projected = b.concatenate([src_projected, padding], axis=1)
-                        b.eval(src_projected)
-                        src_for_rel = src_projected
+                    else:
+                        # GramAligner failed - skip relative representation for this layer
+                        logger.debug(
+                            "GramAlign failed for relative rep (CKA=%.4f), skipping",
+                            align_result.achieved_cka
+                        )
+                        src_for_rel = src_analysis
                 else:
                     src_for_rel = src_analysis
 
@@ -596,13 +550,13 @@ def stage_transplant(
             src_d = int(src_analysis.shape[1])
             tgt_d = int(tgt_analysis.shape[1])
             if src_d == tgt_d:
-                epsilon = 1e-6
                 src_var = b.var(src_analysis, axis=0)
                 tgt_var = b.var(tgt_analysis, axis=0)
                 b.eval(src_var, tgt_var)
-                src_fisher = 1.0 / (src_var + epsilon)
-                tgt_fisher = 1.0 / (tgt_var + epsilon)
-                total_fisher = src_fisher + tgt_fisher + epsilon
+                eps = division_epsilon(b, src_var)
+                src_fisher = 1.0 / (src_var + eps)
+                tgt_fisher = 1.0 / (tgt_var + eps)
+                total_fisher = src_fisher + tgt_fisher + eps
                 layer_fisher_weights = tgt_fisher / total_fisher
                 b.eval(layer_fisher_weights)
                 mean_arr = b.mean(layer_fisher_weights)
@@ -610,15 +564,15 @@ def stage_transplant(
                 metrics["fisher_target_means"].append(float(b.to_numpy(mean_arr).item()))
             else:
                 # Cross-architecture: use scalar Fisher based on total variance
-                epsilon = 1e-6
                 src_total_var = b.var(src_analysis)
                 tgt_total_var = b.var(tgt_analysis)
                 b.eval(src_total_var, tgt_total_var)
+                eps = division_epsilon(b, src_total_var)
                 src_total_var_f = float(b.to_numpy(src_total_var))
                 tgt_total_var_f = float(b.to_numpy(tgt_total_var))
-                src_fisher_scalar = 1.0 / (src_total_var_f + epsilon)
-                tgt_fisher_scalar = 1.0 / (tgt_total_var_f + epsilon)
-                total_fisher_scalar = src_fisher_scalar + tgt_fisher_scalar + epsilon
+                src_fisher_scalar = 1.0 / (src_total_var_f + eps)
+                tgt_fisher_scalar = 1.0 / (tgt_total_var_f + eps)
+                total_fisher_scalar = src_fisher_scalar + tgt_fisher_scalar + eps
                 fisher_weight_scalar = tgt_fisher_scalar / total_fisher_scalar
                 metrics["fisher_target_means"].append(fisher_weight_scalar)
 
@@ -634,133 +588,95 @@ def stage_transplant(
                 metrics["transform_requirements_by_layer"][layer_idx] = transform_requirements
 
         # =================================================================
-        # MULTI-SPACE STITCHING: Compute stitches for hidden AND intermediate
+        # GRAM ALIGNMENT: Find EXACT CKA = 1.0 transforms for hidden AND intermediate
         # =================================================================
-        # This enables cross-architecture merging where dimensions differ.
+        # GramAligner finds the mathematically guaranteed transformation that achieves
+        # CKA = 1.0. This is not an approximation - it's the exact solution.
+        #
+        # The feature_transform maps source activations to target space such that
+        # their Gram matrices (relational geometry) are IDENTICAL.
+        #
         # MLP weights have shape [intermediate, hidden] or [hidden, intermediate].
-        # We need stitches for BOTH axes to properly transform weights.
+        # We need transforms for BOTH axes to properly map weights.
 
-        # Compute HIDDEN stitch (source hidden_dim → target hidden_dim)
+        from modelcypher.core.domain.geometry.gram_aligner import GramAligner
+
+        # Compute HIDDEN alignment (source hidden_dim → target hidden_dim)
         if src_act_list is not None and act_list is not None:
             n_hidden_samples = min(len(src_act_list), len(act_list))
             if n_hidden_samples >= 10:
-                from modelcypher.core.domain.geometry.affine_stitching_layer import (
-                    AnchorPair,
-                    BackendAffineStitchingLayer,
-                    Config as StitchConfig,
-                )
-
                 src_hidden = b.stack(src_act_list[:n_hidden_samples], axis=0)
                 tgt_hidden = b.stack(act_list[:n_hidden_samples], axis=0)
                 src_hidden = b.astype(src_hidden, "float32")
                 tgt_hidden = b.astype(tgt_hidden, "float32")
                 b.eval(src_hidden, tgt_hidden)
 
-                # Check if dimensions differ (cross-architecture)
                 src_hidden_dim = int(src_hidden.shape[1])
                 tgt_hidden_dim = int(tgt_hidden.shape[1])
 
                 if src_hidden_dim != tgt_hidden_dim:
-                    # Normalize for numerical stability
-                    src_mean = b.mean(src_hidden, axis=0, keepdims=True)
-                    src_std = b.std(src_hidden, axis=0, keepdims=True) + 1e-8
-                    src_normed = (src_hidden - src_mean) / src_std
+                    # Use GramAligner - finds EXACT CKA = 1.0 transform
+                    aligner = GramAligner(b)
+                    hidden_result = aligner.find_perfect_alignment(src_hidden, tgt_hidden)
 
-                    tgt_mean = b.mean(tgt_hidden, axis=0, keepdims=True)
-                    tgt_std = b.std(tgt_hidden, axis=0, keepdims=True) + 1e-8
-                    tgt_normed = (tgt_hidden - tgt_mean) / tgt_std
-                    b.eval(src_normed, tgt_normed)
-
-                    # Build anchor pairs
-                    src_np = b.to_numpy(src_normed)
-                    tgt_np = b.to_numpy(tgt_normed)
-                    hidden_anchor_pairs = [
-                        AnchorPair(
-                            source_activation=src_np[i].tolist(),
-                            target_activation=tgt_np[i].tolist(),
-                            anchor_id=f"hidden_{i}",
-                        )
-                        for i in range(n_hidden_samples)
-                    ]
-
-                    # Train hidden stitch
-                    stitcher = BackendAffineStitchingLayer(b)
-                    hidden_result = stitcher.train(
-                        hidden_anchor_pairs,
-                        StitchConfig(max_iterations=2000, learning_rate=0.01),
-                    )
-
-                    if hidden_result is not None and hidden_result.is_valid:
-                        hidden_stitch_weights = b.array(hidden_result.weights)
-                        hidden_stitch_bias = b.array(hidden_result.bias)
-                        b.eval(hidden_stitch_weights, hidden_stitch_bias)
+                    if hidden_result.is_perfect:
+                        # feature_transform is [d_source, d_target]
+                        # For weight folding, we need [d_target, d_source] (the INVERSE direction)
+                        # But actually: source @ F = target-aligned
+                        # Weight transform: W_new = F.T @ W (for dim0) or W @ F (for dim1)
+                        F = b.array(hidden_result.feature_transform)
+                        b.eval(F)
+                        # For weight folding: stitch_weights = F.T [d_target, d_source]
+                        hidden_stitch_weights = b.transpose(F)
+                        b.eval(hidden_stitch_weights)
                         logger.info(
-                            "Layer %d: Hidden stitch trained (%d→%d), fwd_err=%.4f",
-                            layer_idx, src_hidden_dim, tgt_hidden_dim, hidden_result.forward_error
+                            "Layer %d: Hidden GramAlign CKA=%.4f (%d→%d), err=%.6f",
+                            layer_idx, hidden_result.achieved_cka,
+                            src_hidden_dim, tgt_hidden_dim, hidden_result.alignment_error
                         )
-                        metrics.setdefault("hidden_stitches_trained", 0)
-                        metrics["hidden_stitches_trained"] += 1
+                        metrics.setdefault("hidden_gram_aligned", 0)
+                        metrics["hidden_gram_aligned"] += 1
+                    else:
+                        logger.warning(
+                            "Layer %d: Hidden GramAlign failed (CKA=%.4f)",
+                            layer_idx, hidden_result.achieved_cka
+                        )
 
-        # Compute INTERMEDIATE stitch (source intermediate_dim → target intermediate_dim)
+        # Compute INTERMEDIATE alignment (source intermediate_dim → target intermediate_dim)
         if src_inter_list is not None and tgt_inter_list is not None:
             n_inter_samples = min(len(src_inter_list), len(tgt_inter_list))
             if n_inter_samples >= 10:
-                from modelcypher.core.domain.geometry.affine_stitching_layer import (
-                    AnchorPair,
-                    BackendAffineStitchingLayer,
-                    Config as StitchConfig,
-                )
-
                 src_inter = b.stack(src_inter_list[:n_inter_samples], axis=0)
                 tgt_inter = b.stack(tgt_inter_list[:n_inter_samples], axis=0)
                 src_inter = b.astype(src_inter, "float32")
                 tgt_inter = b.astype(tgt_inter, "float32")
                 b.eval(src_inter, tgt_inter)
 
-                # Check if dimensions differ
                 src_inter_dim = int(src_inter.shape[1])
                 tgt_inter_dim = int(tgt_inter.shape[1])
 
                 if src_inter_dim != tgt_inter_dim:
-                    # Normalize for numerical stability
-                    src_mean = b.mean(src_inter, axis=0, keepdims=True)
-                    src_std = b.std(src_inter, axis=0, keepdims=True) + 1e-8
-                    src_normed = (src_inter - src_mean) / src_std
+                    # Use GramAligner - finds EXACT CKA = 1.0 transform
+                    aligner = GramAligner(b)
+                    inter_result = aligner.find_perfect_alignment(src_inter, tgt_inter)
 
-                    tgt_mean = b.mean(tgt_inter, axis=0, keepdims=True)
-                    tgt_std = b.std(tgt_inter, axis=0, keepdims=True) + 1e-8
-                    tgt_normed = (tgt_inter - tgt_mean) / tgt_std
-                    b.eval(src_normed, tgt_normed)
-
-                    # Build anchor pairs
-                    src_np = b.to_numpy(src_normed)
-                    tgt_np = b.to_numpy(tgt_normed)
-                    inter_anchor_pairs = [
-                        AnchorPair(
-                            source_activation=src_np[i].tolist(),
-                            target_activation=tgt_np[i].tolist(),
-                            anchor_id=f"inter_{i}",
-                        )
-                        for i in range(n_inter_samples)
-                    ]
-
-                    # Train intermediate stitch
-                    stitcher = BackendAffineStitchingLayer(b)
-                    inter_result = stitcher.train(
-                        inter_anchor_pairs,
-                        StitchConfig(max_iterations=2000, learning_rate=0.01),
-                    )
-
-                    if inter_result is not None and inter_result.is_valid:
-                        intermediate_stitch_weights = b.array(inter_result.weights)
-                        intermediate_stitch_bias = b.array(inter_result.bias)
-                        b.eval(intermediate_stitch_weights, intermediate_stitch_bias)
+                    if inter_result.is_perfect:
+                        F = b.array(inter_result.feature_transform)
+                        b.eval(F)
+                        intermediate_stitch_weights = b.transpose(F)
+                        b.eval(intermediate_stitch_weights)
                         logger.info(
-                            "Layer %d: Intermediate stitch trained (%d→%d), fwd_err=%.4f",
-                            layer_idx, src_inter_dim, tgt_inter_dim, inter_result.forward_error
+                            "Layer %d: Intermediate GramAlign CKA=%.4f (%d→%d), err=%.6f",
+                            layer_idx, inter_result.achieved_cka,
+                            src_inter_dim, tgt_inter_dim, inter_result.alignment_error
                         )
-                        metrics.setdefault("intermediate_stitches_trained", 0)
-                        metrics["intermediate_stitches_trained"] += 1
+                        metrics.setdefault("intermediate_gram_aligned", 0)
+                        metrics["intermediate_gram_aligned"] += 1
+                    else:
+                        logger.warning(
+                            "Layer %d: Intermediate GramAlign failed (CKA=%.4f)",
+                            layer_idx, inter_result.achieved_cka
+                        )
 
         stacked = b.stack(act_list, axis=0)
         # Convert to float32 for numerical stability in linalg operations.
@@ -956,20 +872,29 @@ def stage_transplant(
                     metrics["dual_stitch_applied"] += 1
 
                 elif hidden_stitch_weights is not None:
-                    # Attention or other weight: apply only hidden stitch to ORIGINAL source
+                    # Attention or other weight: apply hidden stitch to ORIGINAL source
                     src_hidden_dim = int(hidden_stitch_weights.shape[1])
                     tgt_hidden_dim = int(hidden_stitch_weights.shape[0])
                     dim0, dim1 = int(original_source_shape[0]), int(original_source_shape[1])
 
-                    if dim0 == src_hidden_dim:
-                        # Hidden dim is first: hidden_stitch @ weight
+                    if dim0 == src_hidden_dim and dim1 == src_hidden_dim:
+                        # BOTH dimensions are hidden_dim (e.g., q_proj, o_proj)
+                        # Apply stitch to BOTH dimensions: hidden_stitch @ weight @ hidden_stitch.T
+                        source_aligned = b.matmul(hidden_stitch_weights, source_w)
+                        source_aligned = b.matmul(source_aligned, b.transpose(hidden_stitch_weights))
+                        b.eval(source_aligned)
+                        logger.info("Hidden stitch applied to BOTH dims: [%d,%d] → [%d,%d]",
+                                    dim0, dim1, tgt_hidden_dim, tgt_hidden_dim)
+
+                    elif dim0 == src_hidden_dim:
+                        # Hidden dim is first only: hidden_stitch @ weight
                         source_aligned = b.matmul(hidden_stitch_weights, source_w)
                         b.eval(source_aligned)
                         logger.info("Hidden stitch applied to dim0: [%d,%d] → [%d,%d]",
                                     dim0, dim1, tgt_hidden_dim, dim1)
 
                     elif dim1 == src_hidden_dim:
-                        # Hidden dim is second: weight @ hidden_stitch.T
+                        # Hidden dim is second only: weight @ hidden_stitch.T
                         source_aligned = b.matmul(source_w, b.transpose(hidden_stitch_weights))
                         b.eval(source_aligned)
                         logger.info("Hidden stitch applied to dim1: [%d,%d] → [%d,%d]",

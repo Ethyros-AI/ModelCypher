@@ -52,7 +52,10 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -644,13 +647,13 @@ class SectionalCurvatureEstimator:
         median_dist = upper_tri[len(upper_tri) // 2]
 
         # Adaptive epsilon formula
-        # sqrt(machine_epsilon) for float32 ≈ 3e-4
+        # sqrt(machine_epsilon) ≈ 3e-4 for float32
         # Factor of d^0.25 accounts for high dimensionality
-        machine_eps = 1e-7  # float32 machine epsilon
-        epsilon = median_dist * (machine_eps ** 0.5) * (d ** 0.25)
+        eps = machine_epsilon(backend, neighbors)
+        epsilon = median_dist * (eps ** 0.5) * (d ** 0.25)
 
-        # Clamp to reasonable range
-        epsilon = max(1e-8, min(epsilon, 0.1))
+        # Clamp to reasonable range (eps to 0.1)
+        epsilon = max(eps, min(epsilon, 0.1))
 
         logger.debug(
             f"Adaptive epsilon: {epsilon:.2e} (scale={median_dist:.2e}, d={d})"

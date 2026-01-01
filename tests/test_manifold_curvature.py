@@ -583,8 +583,11 @@ class TestPrincipalCurvatureInvariants:
 
         if curvature.principal_curvatures is not None:
             pcs = curvature.principal_curvatures
+            # Use machine epsilon for float32 tolerance in sorting comparison
+            import numpy as np
+            eps = np.sqrt(np.finfo(np.float32).eps)
             for i in range(len(pcs) - 1):
-                assert pcs[i] >= pcs[i + 1] - 1e-10, (
+                assert pcs[i] >= pcs[i + 1] - eps, (
                     f"Principal curvatures not sorted: {pcs[i]} < {pcs[i + 1]}"
                 )
 

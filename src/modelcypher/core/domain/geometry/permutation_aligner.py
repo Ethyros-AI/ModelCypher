@@ -260,6 +260,11 @@ class FusionConfig:
     interference_sigma: float = 1.0
 
     @classmethod
+    def default(cls) -> "FusionConfig":
+        """Create default fusion config with standard parameters."""
+        return cls(interference_threshold=0.5)
+
+    @classmethod
     def from_confidence_distribution(
         cls,
         confidences: list[float],

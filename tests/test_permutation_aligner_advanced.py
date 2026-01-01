@@ -38,6 +38,7 @@ pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires
 from modelcypher.core.domain.geometry.permutation_aligner import (
     AlignmentResult,
     AnchorActivationContext,
+    Config,
     FusionConfig,
     PermutationAligner,
     PermutationAlignerError,
@@ -150,7 +151,12 @@ class TestPermutationAlignerRebasinMLP:
         """Create anchor embeddings."""
         return mx.random.normal((5, 4))  # 5 anchors, dim 4
 
-    def test_rebasin_mlp_returns_aligned_weights(self, mlp_weights, anchors):
+    @pytest.fixture
+    def config(self):
+        """Create alignment config with explicit threshold."""
+        return Config.with_threshold(min_match_threshold=0.3)
+
+    def test_rebasin_mlp_returns_aligned_weights(self, mlp_weights, anchors, config):
         """rebasin_mlp_only should return aligned MLP weights."""
         target_weights = {k: mx.random.normal(v.shape) for k, v in mlp_weights.items()}
 
@@ -158,6 +164,7 @@ class TestPermutationAlignerRebasinMLP:
             source_weights=mlp_weights,
             target_weights=target_weights,
             anchors=anchors,
+            config=config,
         )
 
         # Should have aligned the MLP blocks
@@ -170,7 +177,7 @@ class TestPermutationAlignerRebasinMLP:
         # Attention weights should also be present (copied unchanged)
         assert "model.layers.0.self_attn.q_proj.weight" in aligned
 
-    def test_rebasin_mlp_preserves_shapes(self, mlp_weights, anchors):
+    def test_rebasin_mlp_preserves_shapes(self, mlp_weights, anchors, config):
         """Aligned weights should have the same shapes as source."""
         target_weights = {k: mx.random.normal(v.shape) for k, v in mlp_weights.items()}
 
@@ -178,12 +185,13 @@ class TestPermutationAlignerRebasinMLP:
             source_weights=mlp_weights,
             target_weights=target_weights,
             anchors=anchors,
+            config=config,
         )
 
         for key, value in mlp_weights.items():
             assert aligned[key].shape == value.shape
 
-    def test_rebasin_mlp_handles_incomplete_blocks(self, anchors):
+    def test_rebasin_mlp_handles_incomplete_blocks(self, anchors, config):
         """Should gracefully skip incomplete MLP blocks."""
         # Missing gate_proj
         incomplete = {
@@ -199,6 +207,7 @@ class TestPermutationAlignerRebasinMLP:
             source_weights=incomplete,
             target_weights=target,
             anchors=anchors,
+            config=config,
         )
 
         # Should have 0 blocks aligned (incomplete)
@@ -225,6 +234,11 @@ class TestPermutationAlignerRebasinWithActivations:
         return mx.random.normal((5, 4))
 
     @pytest.fixture
+    def config(self):
+        """Create alignment config with explicit threshold."""
+        return Config.with_threshold(min_match_threshold=0.3)
+
+    @pytest.fixture
     def anchor_context(self):
         """Create anchor activation context."""
         return AnchorActivationContext(
@@ -237,7 +251,9 @@ class TestPermutationAlignerRebasinWithActivations:
             },
         )
 
-    def test_rebasin_with_activations_uses_context(self, mlp_weights, anchors, anchor_context):
+    def test_rebasin_with_activations_uses_context(
+        self, mlp_weights, anchors, anchor_context, config
+    ):
         """rebasin_mlp_with_activations should use per-layer anchor activations."""
         target_weights = {k: mx.random.normal(v.shape) for k, v in mlp_weights.items()}
 
@@ -246,6 +262,7 @@ class TestPermutationAlignerRebasinWithActivations:
             target_weights=target_weights,
             anchors=anchors,
             anchor_activations=anchor_context,
+            config=config,
         )
 
         assert blocks >= 0
@@ -310,9 +327,16 @@ class TestFusionConfig:
     def test_default_values(self):
         """Default FusionConfig should have expected values."""
         config = FusionConfig()
-        assert config.interference_threshold == 0.5
+        # interference_threshold is None by default - derived from data
+        assert config.interference_threshold is None
         assert config.source_alpha == 0.5
         assert config.normalize is False
+
+    def test_default_method_has_threshold(self):
+        """FusionConfig.default() should have threshold set."""
+        config = FusionConfig.default()
+        assert config.interference_threshold == 0.5
+        assert config.source_alpha == 0.5
 
     def test_custom_values(self):
         """FusionConfig should accept custom values."""

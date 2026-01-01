@@ -63,7 +63,8 @@ class TestFrechetMeanConfig:
         """Default config should have Fréchet mean enabled."""
         config = FrechetMeanConfig()
         assert config.enabled is True
-        assert config.k_neighbors == 10
+        # k_neighbors is None by default - computed from intrinsic dimension
+        assert config.k_neighbors is None
         assert config.max_iterations == 50
         assert config.tolerance == 1e-5
 

@@ -45,16 +45,15 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.cross_dimensional_projection import (
-    ProjectionMethod,
-    project_cross_dimensional,
-)
 from modelcypher.core.domain.geometry.intrinsic_dimension import (
     IntrinsicDimension,
     TwoNNConfiguration,
 )
 from modelcypher.core.domain.geometry.manifold_curvature import (
     OllivierRicciCurvature,
+)
+from modelcypher.core.domain.geometry.riemannian_utils import (
+    RiemannianGeometry,
 )
 
 if TYPE_CHECKING:
@@ -237,36 +236,47 @@ class DimensionCascade:
                 )
                 continue
 
-            logger.debug("Projecting %d -> %d via GRAM_TRANSPORT", current_dim, target_dim)
+            logger.debug("Projecting %d -> %d via Isomap", current_dim, target_dim)
 
-            # Use GRAM_TRANSPORT to find structure-preserving coupling
-            # This is THE key operation - GW on Gram matrices
-            result = project_cross_dimensional(
-                source=current,
-                target=self._create_target_basis(current, target_dim),
-                method=ProjectionMethod.GRAM_TRANSPORT,
-                backend=b,
-            )
-
-            # Store coupling for streaming reuse
-            if result.col_coupling is not None:
-                couplings[target_dim] = result.col_coupling
+            # Use Isomap for GEODESIC-preserving projection
+            # Isomap preserves manifold structure via geodesic distances
+            # PCA only preserves Euclidean variance - WRONG for curved manifolds
+            try:
+                projected, coupling_matrix = self._project_via_isomap(current, target_dim)
                 logger.debug(
-                    "Stored coupling: [%d, %d], alignment=%.4f",
-                    result.col_coupling.shape[0],
-                    result.col_coupling.shape[1],
-                    result.alignment_score,
+                    "Stored Isomap coupling: [%d, %d]",
+                    coupling_matrix.shape[0],
+                    coupling_matrix.shape[1],
+                )
+            except Exception as exc:
+                # Fall back to PCA if Isomap fails (e.g., disconnected graph)
+                logger.warning(
+                    "Isomap failed (%s), falling back to PCA", exc
+                )
+                projected, coupling_matrix = self._project_via_pca(current, target_dim)
+                logger.debug(
+                    "Stored PCA coupling: [%d, %d]",
+                    coupling_matrix.shape[0],
+                    coupling_matrix.shape[1],
                 )
 
-            projections[target_dim] = result.projected
-            geodesic_distortion[target_dim] = 1.0 - result.alignment_score
+            # Store coupling for streaming reuse
+            couplings[target_dim] = coupling_matrix
+            projections[target_dim] = projected
+
+            # Measure geodesic distortion: how well does embedding preserve distances?
+            # We compute correlation between original geodesic distances and
+            # embedded Euclidean distances
+            geodesic_distortion[target_dim] = self._measure_geodesic_distortion(
+                current, projected
+            )
 
             # Compute curvature at this dimension
             if config.compute_curvature and n_points > config.curvature_k:
                 k = min(config.curvature_k, n_points - 1)
                 try:
                     orc = OllivierRicciCurvature(b)
-                    orc_result = orc.compute(result.projected, k_neighbors=k)
+                    orc_result = orc.compute(projected, k_neighbors=k)
 
                     # Extract per-point curvatures
                     point_curvatures = b.array([
@@ -283,7 +293,7 @@ class DimensionCascade:
                 except Exception as exc:
                     logger.warning("Curvature computation failed at %dD: %s", target_dim, exc)
 
-            current = result.projected
+            current = projected
             current_dim = target_dim
 
         # Cache couplings for streaming
@@ -299,6 +309,270 @@ class DimensionCascade:
             geodesic_distortion=geodesic_distortion,
         )
 
+    def _project_via_pca(
+        self, points: "Array", target_dim: int
+    ) -> tuple["Array", "Array"]:
+        """
+        Project points to target dimension via PCA.
+
+        PCA preserves maximum variance and gives reliable 3D spread.
+        Returns both the projected points and the coupling matrix (V_k)
+        which can be reused for streaming projection.
+
+        Args:
+            points: Source points [n_points, source_dim]
+            target_dim: Target dimension
+
+        Returns:
+            Tuple of (projected points [n_points, target_dim],
+                      coupling matrix [source_dim, target_dim])
+        """
+        b = self.backend
+
+        # SVD requires float32 or higher precision
+        if 'float16' in str(points.dtype):
+            points_f32 = b.astype(points, "float32")
+            b.eval(points_f32)
+        else:
+            points_f32 = points
+
+        # SVD to find principal components
+        # points = U @ S @ Vt
+        # The projection matrix is V[:, :target_dim] = Vt[:target_dim, :].T
+        U, S, Vt = b.svd(points_f32, full_matrices=False)
+        b.eval(U, S, Vt)
+
+        # Coupling matrix: V_k is the projection from source_dim to target_dim
+        # This is REUSABLE for streaming: new_point @ V_k gives target_dim projection
+        V_k = b.transpose(Vt[:target_dim, :])  # [source_dim, target_dim]
+        b.eval(V_k)
+
+        # Project all points
+        projected = b.matmul(points_f32, V_k)  # [n_points, target_dim]
+        b.eval(projected)
+
+        return projected, V_k
+
+    def _project_via_isomap(
+        self, points: "Array", target_dim: int, k_neighbors: int | None = None
+    ) -> tuple["Array", "Array"]:
+        """
+        Project points via Isomap (geodesic-preserving embedding).
+
+        Isomap preserves geodesic distances on the manifold:
+        1. Build k-NN graph on high-D points
+        2. Compute geodesic distances via shortest paths (Floyd-Warshall)
+        3. Apply classical MDS to embed in target dimension
+        4. Derive linear coupling via least squares for streaming
+
+        The 3D positions reflect the ACTUAL manifold geometry, not
+        Euclidean variance like PCA.
+
+        Args:
+            points: Source points [n_points, source_dim]
+            target_dim: Target dimension
+            k_neighbors: k for geodesic graph (auto if None)
+
+        Returns:
+            Tuple of (projected points [n_points, target_dim],
+                      coupling matrix [source_dim, target_dim])
+        """
+        b = self.backend
+        n_points = points.shape[0]
+        source_dim = points.shape[1]
+
+        # Cast to float32 if needed
+        if 'float16' in str(points.dtype):
+            points = b.astype(points, "float32")
+            b.eval(points)
+
+        logger.debug("Computing geodesic distances for Isomap (n=%d)", n_points)
+
+        # Step 1: Compute geodesic distance matrix via k-NN graph
+        rg = RiemannianGeometry(b)
+        geo_result = rg.geodesic_distances(points, k_neighbors=k_neighbors)
+        geo_dist = geo_result.distances
+        b.eval(geo_dist)
+
+        logger.debug(
+            "Geodesic graph: k=%d, connected=%s",
+            geo_result.k_neighbors,
+            geo_result.connected,
+        )
+
+        # Step 2: Classical MDS on geodesic distances
+        # MDS finds embedding that preserves distances
+        #
+        # Algorithm:
+        # 1. D_sq = D² (element-wise)
+        # 2. J = I - (1/n) * ones  (centering matrix)
+        # 3. B = -0.5 * J @ D_sq @ J  (double centering)
+        # 4. B = V @ Λ @ V^T  (eigendecomposition)
+        # 5. Y = V_k @ sqrt(Λ_k)  (embedding)
+
+        # Element-wise square of distances
+        D_sq = geo_dist * geo_dist
+        b.eval(D_sq)
+
+        # Double centering: B = -0.5 * (I - 1/n) @ D_sq @ (I - 1/n)
+        # Efficient formulation:
+        # B_ij = -0.5 * (D²_ij - row_mean_i - col_mean_j + grand_mean)
+        row_mean = b.mean(D_sq, axis=1, keepdims=True)  # [n, 1]
+        col_mean = b.mean(D_sq, axis=0, keepdims=True)  # [1, n]
+        grand_mean = b.mean(D_sq)  # scalar
+        b.eval(row_mean, col_mean, grand_mean)
+
+        B = -0.5 * (D_sq - row_mean - col_mean + grand_mean)
+        b.eval(B)
+
+        # Make B symmetric (numerical stability)
+        B = 0.5 * (B + b.transpose(B))
+        b.eval(B)
+
+        # Step 3: Eigendecomposition of B
+        # B is symmetric positive semi-definite for valid distance matrices
+        # We need the top-k eigenvectors with largest eigenvalues
+        #
+        # Use SVD since it's more numerically stable than eig for large matrices
+        # For symmetric B: B = U @ S @ U^T (U = V^T)
+        U, S, Vt = b.svd(B, full_matrices=False)
+        b.eval(U, S, Vt)
+
+        # Take top-k eigenvectors (largest eigenvalues = first k from SVD)
+        U_k = U[:, :target_dim]  # [n, target_dim]
+        S_k = S[:target_dim]  # [target_dim]
+        b.eval(U_k, S_k)
+
+        # Eigenvalues should be non-negative for valid distance matrix
+        # Clamp small negatives to zero (numerical noise)
+        S_k = b.maximum(S_k, b.zeros_like(S_k))
+        b.eval(S_k)
+
+        # Step 4: Compute embedding
+        # Y = U_k @ diag(sqrt(S_k))
+        sqrt_S_k = b.sqrt(S_k)  # [target_dim]
+        b.eval(sqrt_S_k)
+
+        # Broadcast multiply: Y = U_k * sqrt_S_k
+        projected = U_k * sqrt_S_k[None, :]  # [n, target_dim]
+        b.eval(projected)
+
+        logger.debug(
+            "Isomap embedding: explained variance ratio = %.2f%%",
+            100.0 * float(b.to_numpy(b.sum(S_k))) / max(1e-10, float(b.to_numpy(b.sum(S)))),
+        )
+
+        # Step 5: Derive linear coupling for streaming
+        # We want W such that points @ W ≈ projected
+        # This is least squares: W = (X^T @ X)^-1 @ X^T @ Y
+        # Or equivalently: W = pinv(X) @ Y
+
+        # Use SVD-based pseudoinverse for numerical stability
+        # X = U_x @ S_x @ Vt_x
+        # pinv(X) = V_x @ (1/S_x) @ Ut_x
+        U_x, S_x, Vt_x = b.svd(points, full_matrices=False)
+        b.eval(U_x, S_x, Vt_x)
+
+        # Regularized inverse of singular values
+        eps = 1e-10
+        S_x_inv = 1.0 / (S_x + eps)
+        b.eval(S_x_inv)
+
+        # pinv(X) = V_x @ diag(S_x_inv) @ U_x^T
+        # W = pinv(X) @ projected
+        # W = (V_x @ diag(S_x_inv) @ U_x^T) @ projected
+        # W = V_x @ diag(S_x_inv) @ (U_x^T @ projected)
+
+        # U_x^T @ projected
+        Ut_proj = b.matmul(b.transpose(U_x), projected)  # [min(n,d), target_dim]
+        b.eval(Ut_proj)
+
+        # diag(S_x_inv) @ (U_x^T @ projected)
+        S_inv_Ut_proj = S_x_inv[:, None] * Ut_proj  # broadcast
+        b.eval(S_inv_Ut_proj)
+
+        # V_x @ ...
+        coupling = b.matmul(b.transpose(Vt_x), S_inv_Ut_proj)  # [source_dim, target_dim]
+        b.eval(coupling)
+
+        logger.debug(
+            "Isomap coupling: [%d, %d]",
+            coupling.shape[0],
+            coupling.shape[1],
+        )
+
+        return projected, coupling
+
+    def _measure_geodesic_distortion(
+        self, original: "Array", projected: "Array"
+    ) -> float:
+        """
+        Measure how well embedding preserves geodesic distances.
+
+        Computes 1 - correlation between original geodesic distances
+        and embedded Euclidean distances. Lower is better.
+
+        Returns:
+            Distortion in [0, 1] where 0 = perfect preservation
+        """
+        b = self.backend
+        n = original.shape[0]
+
+        if n < 3:
+            return 0.0
+
+        try:
+            # Compute geodesic distances in original space
+            rg = RiemannianGeometry(b)
+            geo_result = rg.geodesic_distances(original)
+            geo_dist = geo_result.distances
+            b.eval(geo_dist)
+
+            # Compute Euclidean distances in embedded space
+            # D_ij = ||y_i - y_j||
+            diff = projected[:, None, :] - projected[None, :, :]  # [n, n, d]
+            euc_dist = b.sqrt(b.sum(diff * diff, axis=2))  # [n, n]
+            b.eval(euc_dist)
+
+            # Flatten and compute correlation
+            geo_flat = b.reshape(geo_dist, (-1,))
+            euc_flat = b.reshape(euc_dist, (-1,))
+            b.eval(geo_flat, euc_flat)
+
+            # Pearson correlation
+            geo_mean = b.mean(geo_flat)
+            euc_mean = b.mean(euc_flat)
+            geo_centered = geo_flat - geo_mean
+            euc_centered = euc_flat - euc_mean
+            b.eval(geo_centered, euc_centered)
+
+            numerator = b.sum(geo_centered * euc_centered)
+            geo_std = b.sqrt(b.sum(geo_centered * geo_centered))
+            euc_std = b.sqrt(b.sum(euc_centered * euc_centered))
+            b.eval(numerator, geo_std, euc_std)
+
+            eps = 1e-10
+            correlation = numerator / (geo_std * euc_std + eps)
+            b.eval(correlation)
+
+            corr_val = float(b.to_numpy(correlation))
+
+            # Distortion = 1 - |correlation|
+            # Perfect embedding has correlation ±1, distortion 0
+            distortion = 1.0 - abs(corr_val)
+
+            logger.debug(
+                "Geodesic distortion: correlation=%.4f, distortion=%.4f",
+                corr_val,
+                distortion,
+            )
+
+            return max(0.0, min(1.0, distortion))
+
+        except Exception as exc:
+            logger.warning("Geodesic distortion measurement failed: %s", exc)
+            return 0.5  # Unknown distortion
+
     def _create_target_basis(self, points: "Array", target_dim: int) -> "Array":
         """
         Create target basis for GRAM_TRANSPORT projection.
@@ -313,28 +587,8 @@ class DimensionCascade:
         Returns:
             Target points in the principal subspace [n_points, target_dim]
         """
-        b = self.backend
-
-        # SVD requires float32 or higher precision
-        # Cast to float32 if needed (common for model activations in float16)
-        if 'float16' in str(points.dtype):
-            points_f32 = b.astype(points, "float32")
-            b.eval(points_f32)
-        else:
-            points_f32 = points
-
-        # SVD to find principal components
-        # points = U @ S @ Vt, we want U[:, :target_dim] @ S[:target_dim]
-        U, S, Vt = b.svd(points_f32, full_matrices=False)
-        b.eval(U, S, Vt)
-
-        # Project to top target_dim dimensions
-        # This is the PCA projection: points @ V[:, :target_dim]
-        V_k = b.transpose(Vt[:target_dim, :])  # [source_dim, target_dim]
-        target = b.matmul(points_f32, V_k)  # [n_points, target_dim]
-        b.eval(target)
-
-        return target
+        projected, _ = self._project_via_pca(points, target_dim)
+        return projected
 
     def project_token(
         self,
