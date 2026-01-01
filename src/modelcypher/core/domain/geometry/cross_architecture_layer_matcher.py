@@ -427,9 +427,48 @@ class CrossArchitectureLayerMatcher:
             anchors = anchors_by_category.get(category)
             if not anchors:
                 continue
-            matrix = source_crm.compute_cka_matrix(target_crm, anchor_ids=anchors)
+            matrix = CrossArchitectureLayerMatcher._compute_cka_matrix_for_anchors(
+                source_crm,
+                target_crm,
+                anchors,
+            )
             for i in range(rows):
                 for j in range(cols):
                     combined[i][j] += weight * matrix[i][j]
 
         return combined
+
+    @staticmethod
+    def _compute_cka_matrix_for_anchors(
+        source_crm: ConceptResponseMatrix,
+        target_crm: ConceptResponseMatrix,
+        anchors: list[str],
+    ) -> list[list[float]]:
+        """Compute CKA matrix restricted to a shared anchor list."""
+        rows = source_crm.layer_count
+        cols = target_crm.layer_count
+        matrix = [[0.0 for _ in range(cols)] for _ in range(rows)]
+
+        if not anchors:
+            return matrix
+
+        sorted_anchors = sorted(anchors)
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([1.0]))
+
+        for source_layer in range(rows):
+            source_acts = source_crm._extract_activations(source_layer, sorted_anchors)
+            if source_acts is None:
+                continue
+            for target_layer in range(cols):
+                target_acts = target_crm._extract_activations(target_layer, sorted_anchors)
+                if target_acts is None:
+                    continue
+                cka = float(source_crm.compute_linear_cka(source_acts, target_acts))
+                if cka < 0.0:
+                    cka = 0.0
+                if cka >= 1.0 - eps:
+                    cka = 1.0
+                matrix[source_layer][target_layer] = cka
+
+        return matrix

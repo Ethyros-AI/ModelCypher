@@ -32,6 +32,10 @@ from modelcypher.core.domain.geometry.cross_dimensional_projection import (
     ProjectionResult,
     project_cross_dimensional,
 )
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
 
 if TYPE_CHECKING:
     from modelcypher.core.ports.backend import Array, Backend
@@ -477,7 +481,8 @@ class TestProcrustes:
             source, target, method=ProjectionMethod.PROCRUSTES, backend=backend
         )
         # Should achieve high alignment for rotated data
-        assert result.alignment_score > 0.9
+        eps = machine_epsilon(backend, result.projected)
+        assert result.alignment_score >= 1.0 - eps
 
     def test_handles_reflection(self, backend: "Backend") -> None:
         """Procrustes should handle reflections correctly."""
@@ -504,7 +509,8 @@ class TestProcrustes:
         )
         assert result.projected.shape == (10, 12)
         # Score should reflect partial information content
-        assert result.alignment_score < 1.0
+        eps = machine_epsilon(backend, result.projected)
+        assert result.alignment_score <= 1.0 - eps
 
 
 # =============================================================================
@@ -559,8 +565,10 @@ class TestSVDProjection:
         target_fro = float(backend.to_numpy(backend.sqrt(backend.sum(target ** 2))))
         proj_fro = float(backend.to_numpy(backend.sqrt(backend.sum(result.projected ** 2))))
 
-        # Frobenius norms should be similar (within factor of 2)
-        assert 0.5 * target_fro < proj_fro < 2.0 * target_fro
+        # Frobenius norms should match target within precision limits
+        eps = division_epsilon(backend, result.projected)
+        rel_diff = abs(proj_fro - target_fro) / (target_fro + eps)
+        assert rel_diff <= eps
 
 
 # =============================================================================
@@ -753,7 +761,8 @@ class TestProperties:
 
         # Should be identical
         diff = abs(proj1_np - proj2_np).max()
-        assert diff < 1e-6, f"Results differ by {diff}"
+        eps = division_epsilon(backend, result1.projected)
+        assert diff <= eps, f"Results differ by {diff}"
 
 
 # =============================================================================

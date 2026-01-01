@@ -34,13 +34,17 @@ The transplant pipeline (stage_3_transplant.py) uses this for cross-arch merges.
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
+    compute_shared_relational_rank,
     division_epsilon,
+    machine_epsilon,
+    regularization_epsilon,
     svd_rank_threshold,
     svd_via_eigh,
 )
@@ -181,9 +185,6 @@ def _project_gram_transport(
     - Row dimension: π_row^T @ source projects rows (only if tractable)
     """
     from modelcypher.core.domain.geometry.gromov_wasserstein import (
-        Config as GWConfig,
-    )
-    from modelcypher.core.domain.geometry.gromov_wasserstein import (
         GromovWassersteinDistance,
     )
 
@@ -215,9 +216,8 @@ def _project_gram_transport(
             d_s, d_s, d_t, d_t
         )
 
-        # GW on column Grams - O(d_s² + d_t²) iterations
-        config = GWConfig(max_outer_iterations=50, num_restarts=3)
-        result = gw.compute(G_source_col, G_target_col, config)
+        # GW on column Grams
+        result = gw.compute(G_source_col, G_target_col)
         col_coupling = result.coupling  # [d_s, d_t]
         b.eval(col_coupling)
 
@@ -262,8 +262,7 @@ def _project_gram_transport(
             )
 
             # GW on row Grams
-            config = GWConfig(max_outer_iterations=50, num_restarts=3)
-            result = gw.compute(G_source_row, G_target_row, config)
+            result = gw.compute(G_source_row, G_target_row)
             row_coupling = result.coupling  # [m_s, m_t]
             b.eval(row_coupling)
 
@@ -327,11 +326,25 @@ def _project_gram_transport(
 
             # Configure low-rank GW for cross-architecture projection
             # Rank 100-200 is typically sufficient for preserving structure
+            svd_source = svd_via_eigh(b, projected, full_matrices=False)
+            svd_target = svd_via_eigh(b, target, full_matrices=False)
+            _, S_source, _ = svd_source
+            _, S_target, _ = svd_target
+            b.eval(S_source, S_target)
+            S_source_np = [float(v) for v in b.to_numpy(S_source)]
+            S_target_np = [float(v) for v in b.to_numpy(S_target)]
+            rank_eps = float(machine_epsilon(b, projected))
+            shared_rank, _ = compute_shared_relational_rank(
+                b,
+                S_source_np,
+                S_target_np,
+                rank_eps,
+            )
+            rank = max(1, min(shared_rank, int(G_source_row.shape[0]), int(G_target_row.shape[0])))
+
             lr_config = LowRankGWConfig(
-                rank=min(200, int(G_source_row.shape[0]), int(G_target_row.shape[0])),
-                reg=0.01,
-                max_iterations=100,
-                convergence_threshold=1e-5,
+                rank=rank,
+                reg=float(regularization_epsilon(b, G_source_row)),
             )
 
             lr_solver = LowRankGromovWasserstein(b)
@@ -343,7 +356,7 @@ def _project_gram_transport(
             projected = row_coupling.apply_left(projected, b)
             b.eval(projected)
 
-            total_score += (1.0 - row_result.distance) if row_result.distance < 1.0 else 0.0
+            total_score += math.exp(-row_result.distance) if math.isfinite(row_result.distance) else 0.0
             score_count += 1
 
             logger.info(
@@ -498,23 +511,9 @@ def _project_svd(
     # =========================================================================
     # STEP 1: SVD both matrices
     # =========================================================================
-    # For tall matrices (embeddings), use column-space SVD
-    eps_s = float(division_epsilon(b, source))
-    eps_t = float(division_epsilon(b, target))
-    if m_s > 4 * d_s:
-        # Column Gram: G = X^T @ X [d_s, d_s]
-        G_source = b.matmul(b.transpose(source), source)
-        _, S_s, Vt_s = svd_via_eigh(b, G_source, full_matrices=False)
-        S_s = b.sqrt(S_s + eps_s)
-    else:
-        _, S_s, Vt_s = svd_via_eigh(b, source, full_matrices=False)
-
-    if m_t > 4 * d_t:
-        G_target = b.matmul(b.transpose(target), target)
-        _, S_t, Vt_t = svd_via_eigh(b, G_target, full_matrices=False)
-        S_t = b.sqrt(S_t + eps_t)
-    else:
-        _, S_t, Vt_t = svd_via_eigh(b, target, full_matrices=False)
+    # Use a single stable path (svd_via_eigh) for all aspect ratios.
+    _, S_s, Vt_s = svd_via_eigh(b, source, full_matrices=False)
+    _, S_t, Vt_t = svd_via_eigh(b, target, full_matrices=False)
 
     b.eval(S_s, Vt_s, S_t, Vt_t)
 
@@ -577,21 +576,31 @@ def _project_svd(
             source_k = b.take(source_k, indices, axis=0)
             b.eval(source_k)
         else:
-            # Expand: add rows initialized to scaled target values
-            # Using zeros would create dead neurons. Instead, use a small
-            # fraction of target's SVD components for the new rows.
+            # Expand: initialize new rows from target subspace, scaled
+            # to match the source's average row norm in the shared space.
             n_new = m_t - m_s
             # Get target's projection to the shared subspace
             target_k = b.matmul(target, V_t_k)
             b.eval(target_k)
+            source_norms = b.norm(source_k, axis=1)
+            target_norms = b.norm(target_k, axis=1)
+            b.eval(source_norms, target_norms)
+            source_mean = (
+                float(b.to_numpy(b.mean(source_norms))) if int(source_norms.shape[0]) > 0 else 0.0
+            )
+            target_mean = (
+                float(b.to_numpy(b.mean(target_norms))) if int(target_norms.shape[0]) > 0 else 0.0
+            )
+            scale_eps = division_epsilon(b, target_k)
+            scale = source_mean / (target_mean + scale_eps) if source_mean > 0.0 else 0.0
             # Use the first n_new rows of target (scaled down) for expansion
             if n_new <= m_t:
-                expansion = target_k[:n_new, :] * 0.1  # Small contribution from target
+                expansion = target_k[:n_new, :] * scale
             else:
                 # Need more rows than target has - tile and truncate
                 repeats = (n_new // m_t) + 1
                 tiled = b.concatenate([target_k] * repeats, axis=0)
-                expansion = tiled[:n_new, :] * 0.1
+                expansion = tiled[:n_new, :] * scale
             b.eval(expansion)
             source_k = b.concatenate([source_k, expansion], axis=0)
             b.eval(source_k)
