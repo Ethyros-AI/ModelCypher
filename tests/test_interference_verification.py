@@ -508,7 +508,6 @@ class TestCalibrationStats:
                 actual_mean_confidence=0.5,
                 actual_preserved_fraction=0.5,
                 actual_cka_after=0.8,
-                actual_safety_verdict=0.8,
                 layer_actuals={},
                 actual_transformation_counts={"alpha_scaling": actual_alpha},
             )
@@ -550,7 +549,6 @@ class TestCalibrationStats:
                 actual_mean_confidence=0.5 + (i * 0.02),
                 actual_preserved_fraction=0.5 + (i * 0.02),
                 actual_cka_after=0.8,
-                actual_safety_verdict=0.8,
                 layer_actuals={},
                 actual_transformation_counts={},
             )

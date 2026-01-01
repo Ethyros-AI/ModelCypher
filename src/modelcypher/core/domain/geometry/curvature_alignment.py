@@ -69,10 +69,6 @@ class AlignmentGuidance:
     # Recommended alignment weight (how much to trust this layer's alignment)
     alignment_weight: float
 
-    # Flags for special handling
-    needs_projection: bool  # True if dimensions differ significantly
-    needs_curvature_flow: bool  # True if curvature profiles differ significantly
-
 
 @dataclass(frozen=True)
 class AlignmentPlan:
@@ -87,10 +83,6 @@ class AlignmentPlan:
     # Global statistics
     total_alignment_effort: float  # Sum of per-layer efforts
     mean_dimension_scale: float
-    critical_layers: list[int]  # Layers needing special attention
-
-    # Recommended strategy
-    recommended_strategy: str  # "procrustes", "curvature_flow", "hybrid"
 
 
 def compute_alignment_guidance(
@@ -116,7 +108,6 @@ def compute_alignment_guidance(
     target_layers = {lc.layer_idx: lc for lc in target_profile.layer_curvatures}
 
     guidance_list: list[AlignmentGuidance] = []
-    critical_layers: list[int] = []
 
     # Map layers by relative position (0.0 = first layer, 1.0 = last layer)
     for src_idx, src_lc in source_layers.items():
@@ -133,18 +124,12 @@ def compute_alignment_guidance(
                 dimension_scale=1.0,
                 curvature_correction=0.0,
                 alignment_weight=0.5,
-                needs_projection=False,
-                needs_curvature_flow=False,
             ))
             continue
 
         # Compute guidance for this layer pair
         guidance = _compute_layer_guidance(src_lc, tgt_lc, src_idx)
         guidance_list.append(guidance)
-
-        # Track critical layers (high effort or special handling needed)
-        if guidance.alignment_effort > 0.7 or guidance.needs_projection:
-            critical_layers.append(src_idx)
 
     # Compute global statistics
     total_effort = sum(g.alignment_effort for g in guidance_list)
@@ -153,25 +138,12 @@ def compute_alignment_guidance(
         if guidance_list else 1.0
     )
 
-    # Determine recommended strategy
-    high_effort_ratio = sum(1 for g in guidance_list if g.alignment_effort > 0.5) / max(1, len(guidance_list))
-    needs_projection_ratio = sum(1 for g in guidance_list if g.needs_projection) / max(1, len(guidance_list))
-
-    if needs_projection_ratio > 0.3:
-        strategy = "projection_first"  # Many layers need dimension alignment
-    elif high_effort_ratio > 0.5:
-        strategy = "curvature_flow"  # Many layers need curvature-aware alignment
-    else:
-        strategy = "procrustes"  # Standard Procrustes should work
-
     return AlignmentPlan(
         source_model=source_profile.model_path,
         target_model=target_profile.model_path,
         layer_guidance=guidance_list,
         total_alignment_effort=total_effort,
         mean_dimension_scale=mean_scale,
-        critical_layers=critical_layers,
-        recommended_strategy=strategy,
     )
 
 
@@ -191,10 +163,6 @@ def _compute_layer_guidance(
     src_dim = src.intrinsic_dimension if src.intrinsic_dimension > 0 else 1.0
     tgt_dim = tgt.intrinsic_dimension if tgt.intrinsic_dimension > 0 else 1.0
     dimension_scale = tgt_dim / src_dim
-
-    # Significant dimension difference suggests projection needed
-    dim_ratio = max(src_dim, tgt_dim) / min(src_dim, tgt_dim)
-    needs_projection = dim_ratio > 1.5
 
     # 2. Curvature correction
     # If curvatures have same sign, less correction needed
@@ -217,8 +185,6 @@ def _compute_layer_guidance(
     else:
         curvature_correction = 0.5  # Unknown, use moderate correction
 
-    needs_curvature_flow = curvature_correction > 0.8
-
     # 3. Alignment effort (0-1)
     # Higher effort = more transformation needed
     dim_effort = min(1.0, abs(math.log(dimension_scale)) / math.log(2))  # Double/half = effort 1.0
@@ -238,8 +204,6 @@ def _compute_layer_guidance(
         dimension_scale=dimension_scale,
         curvature_correction=curvature_correction,
         alignment_weight=alignment_weight,
-        needs_projection=needs_projection,
-        needs_curvature_flow=needs_curvature_flow,
     )
 
 
@@ -272,7 +236,7 @@ def curvature_weighted_procrustes(
     d_target = backend.shape(target_activations)[1]
 
     # Step 1: Dimension alignment if needed
-    if guidance.needs_projection and d_source != d_target:
+    if d_source != d_target:
         # Use truncated SVD for dimension reduction/expansion
         # This preserves the most important directions
         min_dim = min(d_source, d_target)

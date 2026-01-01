@@ -333,51 +333,63 @@ def jax_backend() -> Backend:
     return JAXBackend()
 
 
-@pytest.fixture(params=["mlx", "jax"])
-def any_backend(request) -> Backend:
-    """Parametrized fixture that runs tests on available backends.
+def _get_available_backends() -> list[str]:
+    """Get list of backends worth testing on this machine.
 
-    Use this for tests that should verify behavior consistency across backends.
-    Tests will be skipped for unavailable backends.
+    - MLX: Only on Apple Silicon (always GPU)
+    - JAX: Only if GPU/TPU available (skip CPU-only JAX)
+    """
+    backends = []
+    if HAS_MLX:
+        backends.append("mlx")
+    if HAS_JAX_GPU:
+        backends.append("jax")
+    # Fallback: if no GPU backends, allow JAX CPU for basic testing
+    if not backends and HAS_JAX:
+        backends.append("jax")
+    return backends
+
+
+_AVAILABLE_BACKENDS = _get_available_backends()
+
+
+@pytest.fixture(params=_AVAILABLE_BACKENDS if _AVAILABLE_BACKENDS else ["skip"])
+def any_backend(request) -> Backend:
+    """Parametrized fixture that runs tests on available GPU backends.
+
+    On Apple Silicon: Uses MLX only (GPU)
+    On Linux with GPU: Uses JAX only (GPU)
+    Avoids redundant CPU testing when GPU is available.
     """
     backend_name = request.param
 
-    if backend_name == "mlx":
-        if not HAS_MLX:
-            pytest.skip("MLX not available")
+    if backend_name == "skip":
+        pytest.skip("No backends available")
+    elif backend_name == "mlx":
         from modelcypher.backends.mlx_backend import MLXBackend
-
         return MLXBackend()
     elif backend_name == "jax":
-        if not HAS_JAX:
-            pytest.skip("JAX not available")
         from modelcypher.backends.jax_backend import JAXBackend
-
         return JAXBackend()
     else:
         raise ValueError(f"Unknown backend: {backend_name}")
 
 
-@pytest.fixture(params=["mlx", "jax"])
+@pytest.fixture(params=_AVAILABLE_BACKENDS if _AVAILABLE_BACKENDS else ["skip"])
 def accelerated_backend(request) -> Backend:
     """Parametrized fixture for GPU/accelerator backends only.
 
-    Use this for tests that specifically require hardware acceleration.
-    Skips entirely if no accelerators are available.
+    Uses same backend detection as any_backend - only tests on GPU backends.
     """
     backend_name = request.param
 
-    if backend_name == "mlx":
-        if not HAS_MLX:
-            pytest.skip("MLX not available")
+    if backend_name == "skip":
+        pytest.skip("No accelerated backends available")
+    elif backend_name == "mlx":
         from modelcypher.backends.mlx_backend import MLXBackend
-
         return MLXBackend()
     elif backend_name == "jax":
-        if not HAS_JAX_GPU:
-            pytest.skip("JAX GPU/TPU not available")
         from modelcypher.backends.jax_backend import JAXBackend
-
         return JAXBackend()
     else:
         raise ValueError(f"Unknown backend: {backend_name}")

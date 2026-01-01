@@ -26,7 +26,6 @@ from .baseline_verification_probe import (
     PromptResult,
     VerificationConfiguration,
     VerificationResult,
-    VerificationVerdict,
 )
 
 # Additional entropy modules (previously not exported)

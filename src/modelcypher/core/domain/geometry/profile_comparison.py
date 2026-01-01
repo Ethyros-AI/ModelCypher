@@ -144,13 +144,11 @@ class ProfileComparison:
     # === LAYER CORRESPONDENCE ===
     layer_mapping: dict[int, int] = field(default_factory=dict)  # source -> target
     layer_comparisons: list[LayerComparison] = field(default_factory=list)
-    critical_layers: list[int] = field(default_factory=list)  # High effort layers
 
     # === ALIGNMENT SUMMARY ===
     total_alignment_effort: float = 0.0
     mean_alignment_effort: float = 0.0
     max_alignment_effort: float = 0.0
-    recommended_strategy: str = "procrustes"  # "procrustes", "projection_first", "curvature_flow"
 
     # === BASELINE-RELATIVE Z-SCORES ===
     # These are only populated when a FamilyBaseline is provided
@@ -181,12 +179,10 @@ class ProfileComparison:
             # Layer correspondence
             "layer_mapping": self.layer_mapping,
             "layer_comparisons": [lc.to_dict() for lc in self.layer_comparisons],
-            "critical_layers": self.critical_layers,
             # Alignment
             "total_alignment_effort": self.total_alignment_effort,
             "mean_alignment_effort": self.mean_alignment_effort,
             "max_alignment_effort": self.max_alignment_effort,
-            "recommended_strategy": self.recommended_strategy,
             # Baseline-relative z-scores
             "sectional_z_score": self.sectional_z_score,
             "ricci_z_score": self.ricci_z_score,
@@ -215,11 +211,9 @@ class ProfileComparison:
                 LayerComparison.from_dict(lc)
                 for lc in d.get("layer_comparisons", [])
             ],
-            critical_layers=d.get("critical_layers", []),
             total_alignment_effort=d.get("total_alignment_effort", 0.0),
             mean_alignment_effort=d.get("mean_alignment_effort", 0.0),
             max_alignment_effort=d.get("max_alignment_effort", 0.0),
-            recommended_strategy=d.get("recommended_strategy", "procrustes"),
             sectional_z_score=d.get("sectional_z_score"),
             ricci_z_score=d.get("ricci_z_score"),
             dimension_z_score=d.get("dimension_z_score"),
@@ -339,29 +333,6 @@ def compare_profiles(
     mean_effort = total_effort / len(efforts) if efforts else 0.0
     max_effort = max(efforts) if efforts else 0.0
 
-    # Critical layers: those requiring high effort
-    critical_layers = [
-        lc.source_layer_idx
-        for lc in layer_comparisons
-        if lc.alignment_effort > 0.7
-    ]
-
-    # === RECOMMENDED STRATEGY ===
-    projection_ratio = sum(
-        1 for lc in layer_comparisons if lc.dimension_ratio > 1.5 or lc.dimension_ratio < 0.67
-    ) / max(1, len(layer_comparisons))
-
-    curvature_mismatch_ratio = sum(
-        1 for lc in layer_comparisons if not lc.curvature_sign_match
-    ) / max(1, len(layer_comparisons))
-
-    if projection_ratio > 0.3:
-        strategy = "projection_first"
-    elif curvature_mismatch_ratio > 0.3 or mean_effort > 0.5:
-        strategy = "curvature_flow"
-    else:
-        strategy = "procrustes"
-
     # === BASELINE-RELATIVE Z-SCORES ===
     sectional_z_score = None
     ricci_z_score = None
@@ -444,11 +415,9 @@ def compare_profiles(
         semantic_alignment=semantic_alignment,
         layer_mapping=layer_mapping,
         layer_comparisons=layer_comparisons,
-        critical_layers=critical_layers,
         total_alignment_effort=total_effort,
         mean_alignment_effort=mean_effort,
         max_alignment_effort=max_effort,
-        recommended_strategy=strategy,
         sectional_z_score=sectional_z_score,
         ricci_z_score=ricci_z_score,
         dimension_z_score=dimension_z_score,

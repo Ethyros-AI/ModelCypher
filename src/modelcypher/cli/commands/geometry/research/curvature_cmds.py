@@ -453,10 +453,8 @@ def register(app: typer.Typer) -> None:
         result = {
             "source_model": plan.source_model,
             "target_model": plan.target_model,
-            "recommended_strategy": plan.recommended_strategy,
             "total_alignment_effort": plan.total_alignment_effort,
             "mean_dimension_scale": plan.mean_dimension_scale,
-            "critical_layers": plan.critical_layers,
             "layer_correspondence": {str(k): v for k, v in correspondence.items()},
             "layer_guidance": [
                 {
@@ -465,8 +463,6 @@ def register(app: typer.Typer) -> None:
                     "dimension_scale": g.dimension_scale,
                     "curvature_correction": g.curvature_correction,
                     "alignment_weight": g.alignment_weight,
-                    "needs_projection": g.needs_projection,
-                    "needs_curvature_flow": g.needs_curvature_flow,
                 }
                 for g in plan.layer_guidance
             ],
@@ -486,28 +482,18 @@ def register(app: typer.Typer) -> None:
                 f"Source: {Path(source_profile).name} ({src.model_family} {src.model_size})",
                 f"Target: {Path(target_profile).name} ({tgt.model_family} {tgt.model_size})",
                 "",
-                f"RECOMMENDED STRATEGY: {plan.recommended_strategy}",
                 f"TOTAL ALIGNMENT EFFORT: {plan.total_alignment_effort:.2f}",
                 f"MEAN DIMENSION SCALE: {plan.mean_dimension_scale:.3f}",
                 "",
             ]
 
-            if plan.critical_layers:
-                lines.append(f"CRITICAL LAYERS: {plan.critical_layers}")
-                lines.append("")
-
             lines.append("PER-LAYER GUIDANCE:")
             for g in plan.layer_guidance:
-                flags = []
-                if g.needs_projection:
-                    flags.append("PROJECTION")
-                if g.needs_curvature_flow:
-                    flags.append("CURV_FLOW")
-                flag_str = f" [{', '.join(flags)}]" if flags else ""
                 lines.append(
                     f"  Layer {g.layer_idx}: effort={g.alignment_effort:.2f}, "
                     f"dim_scale={g.dimension_scale:.3f}, "
-                    f"weight={g.alignment_weight:.2f}{flag_str}"
+                    f"curvature_correction={g.curvature_correction:.3f}, "
+                    f"weight={g.alignment_weight:.2f}"
                 )
 
             write_output("\n".join(lines), context.output_format, context.pretty)
