@@ -230,21 +230,36 @@ class ManifoldViewer:
         # Build figure
         fig = go.Figure()
 
+        # Get k-NN neighbor indices from density result for topology visualization
+        # This shows the ACTUAL manifold structure - which points are neighbors
+        neighbor_indices = b.to_numpy(density_result.neighbors).astype(int)
+
         # Add point cloud
         if target_dim == 3:
-            # First add trajectory line connecting points in sequence
-            # This reveals the SHAPE - the path through concept space
+            # Draw k-NN graph edges - the TRUE manifold topology
+            # Each edge connects a point to its k nearest neighbors in the projected space
+            edge_x, edge_y, edge_z = [], [], []
+            for i in range(n_points):
+                for j_idx in range(neighbor_indices.shape[1]):
+                    j = neighbor_indices[i, j_idx]
+                    if j >= n_points:
+                        continue  # Skip invalid indices
+                    # Add edge as line segment with None separator
+                    edge_x.extend([points[i, 0], points[j, 0], None])
+                    edge_y.extend([points[i, 1], points[j, 1], None])
+                    edge_z.extend([points[i, 2], points[j, 2], None])
+
             fig.add_trace(go.Scatter3d(
-                x=points[:, 0],
-                y=points[:, 1],
-                z=points[:, 2],
+                x=edge_x,
+                y=edge_y,
+                z=edge_z,
                 mode="lines",
                 line=dict(
-                    color="rgba(100, 100, 100, 0.5)",
-                    width=2,
+                    color="rgba(100, 100, 100, 0.3)",
+                    width=1,
                 ),
                 hoverinfo="skip",
-                name="Trajectory Path",
+                name="Manifold Topology (k-NN)",
             ))
 
             # Then add the actual points with curvature coloring
@@ -275,17 +290,26 @@ class ManifoldViewer:
                 title=self.config.title,
             )
         elif target_dim == 2:
-            # First add trajectory line
+            # Draw k-NN graph edges - the TRUE manifold topology
+            edge_x, edge_y = [], []
+            for i in range(n_points):
+                for j_idx in range(neighbor_indices.shape[1]):
+                    j = neighbor_indices[i, j_idx]
+                    if j >= n_points:
+                        continue
+                    edge_x.extend([points[i, 0], points[j, 0], None])
+                    edge_y.extend([points[i, 1], points[j, 1], None])
+
             fig.add_trace(go.Scatter(
-                x=points[:, 0],
-                y=points[:, 1],
+                x=edge_x,
+                y=edge_y,
                 mode="lines",
                 line=dict(
-                    color="rgba(100, 100, 100, 0.5)",
-                    width=2,
+                    color="rgba(100, 100, 100, 0.3)",
+                    width=1,
                 ),
                 hoverinfo="skip",
-                name="Trajectory Path",
+                name="Manifold Topology (k-NN)",
             ))
 
             # Then add points with curvature coloring
@@ -336,6 +360,7 @@ class ManifoldViewer:
             "points": points.tolist(),
             "curvature": curvature.tolist() if curvature is not None else None,
             "density": density.tolist(),
+            "knn_neighbors": neighbor_indices.tolist(),  # k-NN graph topology
             "intrinsic_dim": cascade_result.intrinsic_dim,
             "original_dim": cascade_result.original_dim,
             "target_dim": target_dim,

@@ -437,10 +437,16 @@ def stage_transplant(
         # Multi-space stitching: compute stitches for BOTH hidden AND intermediate dimensions
         # Hidden stitch: maps layer output activations (source hidden → target hidden)
         # Intermediate stitch: maps MLP internal activations (source intermediate → target intermediate)
-        hidden_stitch_weights = None
-        hidden_stitch_bias = None
-        intermediate_stitch_weights = None
-        intermediate_stitch_bias = None
+        #
+        # IMPORTANT: For weight folding, we need TWO transforms per space:
+        #   - F.T for OUTPUT side (left multiply): maps source output → target output
+        #   - pinv(F).T for INPUT side (right multiply): inverse maps source input → target input
+        #
+        # Weight transform: W_target = F_out.T @ W_source @ pinv(F_in).T
+        hidden_stitch_output = None  # F.T for output side [tgt_hidden, src_hidden]
+        hidden_stitch_input = None   # pinv(F).T for input side [src_hidden, tgt_hidden]
+        intermediate_stitch_output = None  # F.T for output side
+        intermediate_stitch_input = None   # pinv(F).T for input side
 
         # Get intermediate activations for this layer (MLP internal states)
         src_inter_list = (
@@ -620,15 +626,17 @@ def stage_transplant(
                     hidden_result = aligner.find_perfect_alignment(src_hidden, tgt_hidden)
 
                     if hidden_result.is_perfect:
-                        # feature_transform is [d_source, d_target]
-                        # For weight folding, we need [d_target, d_source] (the INVERSE direction)
-                        # But actually: source @ F = target-aligned
-                        # Weight transform: W_new = F.T @ W (for dim0) or W @ F (for dim1)
+                        # feature_transform F is [d_source, d_target]
+                        # source @ F → target (activation alignment)
+                        #
+                        # For weight folding W_target = F_out.T @ W_source @ pinv(F_in).T:
+                        #   - F.T [d_target, d_source] for OUTPUT side (left multiply)
+                        #   - pinv(F).T [d_source, d_target] for INPUT side (right multiply)
                         F = b.array(hidden_result.feature_transform)
                         b.eval(F)
-                        # For weight folding: stitch_weights = F.T [d_target, d_source]
-                        hidden_stitch_weights = b.transpose(F)
-                        b.eval(hidden_stitch_weights)
+                        hidden_stitch_output = b.transpose(F)  # F.T [tgt, src]
+                        hidden_stitch_input = b.transpose(b.pinv(F))  # pinv(F).T [src, tgt]
+                        b.eval(hidden_stitch_output, hidden_stitch_input)
                         logger.info(
                             "Layer %d: Hidden GramAlign CKA=%.4f (%d→%d), err=%.6f",
                             layer_idx, hidden_result.achieved_cka,
