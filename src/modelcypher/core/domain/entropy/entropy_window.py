@@ -24,7 +24,7 @@ conditions are met.
 
 Notes
 -----
-- Window size of 20 tokens (configurable) balances responsiveness vs noise
+- Window size and thresholds are explicit inputs
 - Tracks both instantaneous and moving average entropy
 - Thread-safe via asyncio locks (or synchronous for simple use)
 
@@ -134,7 +134,15 @@ class EntropyWindow:
     Sliding window tracker for entropy measurements during inference.
 
     Usage:
-        window = EntropyWindow(config=EntropyWindowConfig(window_size=20))
+        window = EntropyWindow(
+            config=EntropyWindowConfig(
+                window_size=20,
+                minimum_samples=5,
+                high_entropy_threshold=3.0,
+                circuit_breaker_threshold=4.0,
+                sustained_high_count=3,
+            )
+        )
         status = window.add(entropy=2.45, variance=0.12, token_index=42)
         if status.should_trip_circuit_breaker:
             # Handle high entropy condition
@@ -194,13 +202,14 @@ class EntropyWindow:
         else:
             self._consecutive_high_count = 0
 
-        # Check circuit breaker conditions
-        avg = self._moving_average()
-        if (
-            avg >= self.config.circuit_breaker_threshold
-            or self._consecutive_high_count >= self.config.sustained_high_count
-        ):
-            self._circuit_breaker_tripped = True
+        # Check circuit breaker conditions once minimum samples are available
+        if len(self._samples) >= self.config.minimum_samples:
+            avg = self._moving_average()
+            if (
+                avg >= self.config.circuit_breaker_threshold
+                or self._consecutive_high_count >= self.config.sustained_high_count
+            ):
+                self._circuit_breaker_tripped = True
 
         return self._current_status()
 

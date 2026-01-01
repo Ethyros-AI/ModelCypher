@@ -695,19 +695,16 @@ def run_full_geometry_merge(
         "mean_intrinsic_dim": geometry.mean_intrinsic_dimension,
         "mean_shared_dim": geometry.mean_shared_dimension,
         "mean_ollivier_ricci": geometry.mean_ollivier_ricci,
-        "overall_manifold_health": geometry.overall_manifold_health,
         "curvature_alignment": geometry.curvature_alignment,
         **geometry.curvature_alignment_details,
     }
 
-    # Safety verdict derived from manifold health - no hardcoded strings
-    # This reflects the actual geometric state of the merged model
-    if geometry.overall_manifold_health == "collapsed":
-        safety_verdict_full = "collapsed"
-    elif geometry.overall_manifold_health == "degenerate":
-        safety_verdict_full = "degenerate"
+    # Safety verdict derived from curvature alignment
+    # High alignment = geometry is compatible; low = potential issues
+    if geometry.curvature_alignment < 0.3:
+        safety_verdict_full = "low_alignment"
     else:
-        safety_verdict_full = "healthy"
+        safety_verdict_full = "aligned"
 
     result = UnifiedMergeResult(
         merged_weights=merged_weights,

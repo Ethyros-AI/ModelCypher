@@ -240,14 +240,14 @@ class VerificationConfiguration:
     def with_statistical_thresholds(
         cls,
         *,
-        failure_z_score: float = 3.0,
-        suspicious_z_score: float = 2.0,
-        test_prompts: tuple[str, ...] | None = None,
-        include_adversarial: bool = False,
-        max_tokens_per_prompt: int = 50,
-        minimum_sample_count: int = 100,
-        temperature: float = 0.3,
-        prompt_timeout_seconds: float = 30.0,
+        failure_z_score: float,
+        suspicious_z_score: float,
+        test_prompts: tuple[str, ...],
+        include_adversarial: bool,
+        max_tokens_per_prompt: int,
+        minimum_sample_count: int,
+        temperature: float,
+        prompt_timeout_seconds: float,
     ) -> "VerificationConfiguration":
         """Create configuration with explicit statistical thresholds.
 
@@ -256,8 +256,8 @@ class VerificationConfiguration:
                 Standard values: 3.0 (99.7% confidence), 2.5 (99% confidence).
             suspicious_z_score: Z-score threshold for SUSPICIOUS verdict.
                 Standard values: 2.0 (95% confidence), 1.5 (86% confidence).
-            test_prompts: Custom test prompts. If None, uses default_test_prompts().
-            include_adversarial: If True and test_prompts is None, includes adversarial prompts.
+            test_prompts: Custom test prompts.
+            include_adversarial: If True, includes adversarial prompts.
             max_tokens_per_prompt: Maximum tokens to generate per prompt.
             minimum_sample_count: Minimum samples required for valid verification.
             temperature: Generation temperature (lower = more deterministic).
@@ -272,12 +272,9 @@ class VerificationConfiguration:
                 f"failure_z_score ({failure_z_score})"
             )
 
-        if test_prompts is None:
-            prompts = cls.default_test_prompts()
-            if include_adversarial:
-                prompts = prompts + cls.adversarial_prompts()
-        else:
-            prompts = test_prompts
+        prompts = test_prompts
+        if include_adversarial:
+            prompts = prompts + cls.adversarial_prompts()
 
         return cls(
             test_prompts=prompts,

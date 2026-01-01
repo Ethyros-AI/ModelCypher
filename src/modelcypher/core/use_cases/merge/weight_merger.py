@@ -84,8 +84,6 @@ def merge_weights(
         # Cross-architecture metrics
         "cross_arch_layer_mappings": 0,
         "cross_arch_dim_projections": 0,
-        # Manifold health metrics
-        "manifold_health_scaled": 0,
     }
     checkpoint_path = None
     weight_keys = [
@@ -379,28 +377,6 @@ def merge_weights(
                 if any(t.upper() == "ALPHA_SCALING" for t in layer_geom.transform_requirements):
                     alpha = alpha * (1.0 - layer_geom.interference_score)
                     metrics["alpha_scaled_by_interference"] += 1
-
-                # ============================================================
-                # A.7: Scale alpha by manifold health (Ollivier-Ricci)
-                # ============================================================
-                # Collapsed/degenerate manifolds need more conservative blending
-                if layer_geom.manifold_health == "collapsed":
-                    # Representation collapse detected - heavily trust target
-                    alpha = alpha * 0.3
-                    metrics["manifold_health_scaled"] = (
-                        metrics.get("manifold_health_scaled", 0) + 1
-                    )
-                    logger.debug(
-                        "Layer %d: collapsed manifold, reducing alpha to %.3f",
-                        layer_geom.layer_idx,
-                        alpha,
-                    )
-                elif layer_geom.manifold_health == "degenerate":
-                    # Nearly flat manifold - moderate conservatism
-                    alpha = alpha * 0.7
-                    metrics["manifold_health_scaled"] = (
-                        metrics.get("manifold_health_scaled", 0) + 1
-                    )
 
             if layer_scale != 1.0:
                 alpha = alpha * layer_scale
@@ -715,7 +691,7 @@ def merge_weights(
     logger.info(
         "MERGE: %d weights, %d rotations, %d Fisher, %d dimension, %d DARE | "
         "NEW: %d shared_subspace, %d curvature, %d verb_noun, %d intrinsic_scaled, %d embed_frechet | "
-        "CROSS-ARCH: %d layer_maps, %d dim_projects | HEALTH: %d scaled",
+        "CROSS-ARCH: %d layer_maps, %d dim_projects",
         metrics["weights_merged"],
         metrics["rotations_applied"],
         metrics["fisher_weights_used"],
@@ -728,7 +704,6 @@ def merge_weights(
         metrics["embedding_frechet_blends"],
         metrics["cross_arch_layer_mappings"],
         metrics["cross_arch_dim_projections"],
-        metrics["manifold_health_scaled"],
     )
 
     return merged, metrics

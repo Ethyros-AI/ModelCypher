@@ -151,11 +151,9 @@ def register(app: typer.Typer) -> None:
                     orc_result = orc_estimator.compute(stacked, k_neighbors=k_neighbors)
                     ricci_mean = orc_result.mean_edge_curvature
                     ricci_std = orc_result.std_edge_curvature
-                    manifold_health = orc_result.health.value
                 except Exception as e:
                     logger.debug(f"Ollivier-Ricci failed: {e}")
                     ricci_mean = ricci_std = 0.0
-                    manifold_health = "unknown"
 
                 # Compute intrinsic dimension
                 try:
@@ -179,7 +177,6 @@ def register(app: typer.Typer) -> None:
                     ollivier_ricci_std=ricci_std,
                     intrinsic_dimension=intrinsic_dim,
                     intrinsic_dimension_uncertainty=intrinsic_unc,
-                    manifold_health=manifold_health,
                 ))
 
                 logger.debug(

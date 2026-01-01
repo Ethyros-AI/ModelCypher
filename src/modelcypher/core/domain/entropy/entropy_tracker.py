@@ -367,7 +367,7 @@ class PatternConfig:
 
     min_samples: int
     high_z_score_threshold: float
-    """Z-score threshold for high entropy (1.5σ above mean)."""
+    """Z-score threshold for high entropy."""
 
     low_variance_threshold: float
     """Variance threshold (scale-independent, kept as is)."""
@@ -451,7 +451,7 @@ class EntropyTrackerConfig:
     distress_check_interval: int
     state_thresholds: EntropyStateThresholds
     pattern_config: PatternConfig
-    """Z-score change threshold for significant transitions (1σ)."""
+    """Z-score change threshold for significant transitions."""
 
 
 class EntropyTracker:

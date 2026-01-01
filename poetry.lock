@@ -4367,22 +4367,23 @@ diagrams = ["jinja2", "railroad-diagrams"]
 
 [[package]]
 name = "pypdf"
-version = "4.3.1"
+version = "6.5.0"
 description = "A pure-python PDF library capable of splitting, merging, cropping, and transforming PDF files"
 optional = true
-python-versions = ">=3.6"
+python-versions = ">=3.9"
 groups = ["main"]
 markers = "extra == \"docs\""
 files = [
-    {file = "pypdf-4.3.1-py3-none-any.whl", hash = "sha256:64b31da97eda0771ef22edb1bfecd5deee4b72c3d1736b7df2689805076d6418"},
-    {file = "pypdf-4.3.1.tar.gz", hash = "sha256:b2f37fe9a3030aa97ca86067a56ba3f9d3565f9a791b305c7355d8392c30d91b"},
+    {file = "pypdf-6.5.0-py3-none-any.whl", hash = "sha256:9cef8002aaedeecf648dfd9ff1ce38f20ae8d88e2534fced6630038906440b25"},
+    {file = "pypdf-6.5.0.tar.gz", hash = "sha256:9e78950906380ae4f2ce1d9039e9008098ba6366a4d9c7423c4bdbd6e6683404"},
 ]
 
 [package.extras]
-crypto = ["PyCryptodome ; python_version == \"3.6\"", "cryptography ; python_version >= \"3.7\""]
-dev = ["black", "flit", "pip-tools", "pre-commit (<2.18.0)", "pytest-cov", "pytest-socket", "pytest-timeout", "pytest-xdist", "wheel"]
+crypto = ["cryptography"]
+cryptodome = ["PyCryptodome"]
+dev = ["black", "flit", "pip-tools", "pre-commit", "pytest-cov", "pytest-socket", "pytest-timeout", "pytest-xdist", "wheel"]
 docs = ["myst_parser", "sphinx", "sphinx_rtd_theme"]
-full = ["Pillow (>=8.0.0)", "PyCryptodome ; python_version == \"3.6\"", "cryptography ; python_version >= \"3.7\""]
+full = ["Pillow (>=8.0.0)", "cryptography"]
 image = ["Pillow (>=8.0.0)"]
 
 [[package]]
@@ -6677,4 +6678,4 @@ jax = ["jax", "jaxlib"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.11"
-content-hash = "2e4c45bad5f07b352d057b7fdd6fd73c9ca3da861ba8aa03b69b3492d26133fb"
+content-hash = "e71ca132fbd597a6366028f27df010664c4cb5e614e1c57d29f76ba7c41ecae3"

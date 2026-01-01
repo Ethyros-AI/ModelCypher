@@ -35,10 +35,9 @@ class LayerGeometry:
     manifold_dimension: int = 0
     curvature: float = 0.0  # Sectional curvature
 
-    # Ollivier-Ricci curvature (Stage 2) - for manifold health
-    ollivier_ricci_mean: float = 0.0  # Mean edge curvature
+    # Ollivier-Ricci curvature (Stage 2) - raw geometric measurements
+    ollivier_ricci_mean: float = 0.0  # Mean edge curvature (negative = hyperbolic)
     ollivier_ricci_std: float = 0.0  # Std deviation of edge curvatures
-    manifold_health: str = "unknown"  # healthy, degenerate, collapsed
 
     # Shared structure (Stage 3)
     shared_dimension: int = 0
@@ -104,8 +103,7 @@ class MergeGeometry:
     refusal_preserved: bool = True
     safety_score: float = 1.0
 
-    # Manifold health (from Ollivier-Ricci curvature)
-    overall_manifold_health: str = "unknown"  # healthy, degenerate, collapsed
+    # Ollivier-Ricci curvature (raw geometric measurement)
     mean_ollivier_ricci: float = 0.0
 
     # Curvature alignment (for merge confidence)

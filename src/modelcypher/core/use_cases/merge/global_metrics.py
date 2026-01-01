@@ -49,34 +49,17 @@ def compute_global_metrics(geometry: MergeGeometry) -> None:
             sum(aligned_ckas) / len(aligned_ckas),
         )
 
-    # Aggregate Ollivier-Ricci curvature and manifold health
+    # Aggregate Ollivier-Ricci curvature (raw geometric measurement)
+    # Note: ollivier_ricci_mean != 0 indicates curvature was computed
     ricci_values = [
-        lg.ollivier_ricci_mean for lg in layer_geoms if lg.manifold_health != "unknown"
+        lg.ollivier_ricci_mean for lg in layer_geoms if lg.ollivier_ricci_mean != 0.0
     ]
     if ricci_values:
         geometry.mean_ollivier_ricci = sum(ricci_values) / len(ricci_values)
-
-        # Overall health is determined by the worst layer
-        # Collapsed > Degenerate > Healthy (ordered by severity)
-        health_counts = {"collapsed": 0, "degenerate": 0, "healthy": 0}
-        for lg in layer_geoms:
-            if lg.manifold_health in health_counts:
-                health_counts[lg.manifold_health] += 1
-
-        if health_counts["collapsed"] > 0:
-            geometry.overall_manifold_health = "collapsed"
-        elif health_counts["degenerate"] > len(layer_geoms) // 2:
-            geometry.overall_manifold_health = "degenerate"
-        else:
-            geometry.overall_manifold_health = "healthy"
-
         logger.info(
-            "MANIFOLD HEALTH: %s (mean_ricci=%.4f, healthy=%d, degenerate=%d, collapsed=%d)",
-            geometry.overall_manifold_health,
+            "OLLIVIER-RICCI: mean=%.4f (%d layers with curvature data)",
             geometry.mean_ollivier_ricci,
-            health_counts["healthy"],
-            health_counts["degenerate"],
-            health_counts["collapsed"],
+            len(ricci_values),
         )
 
     # Compute curvature alignment
@@ -84,12 +67,12 @@ def compute_global_metrics(geometry: MergeGeometry) -> None:
     _compute_curvature_alignment(geometry, layer_geoms)
 
     logger.info(
-        "MERGE GEOMETRY: %d layers, mean_intrinsic_dim=%.1f, mean_shared_dim=%.1f, CKA=%.4f, health=%s, curv_align=%.3f",
+        "MERGE GEOMETRY: %d layers, mean_intrinsic_dim=%.1f, mean_shared_dim=%.1f, CKA=%.4f, mean_ricci=%.4f, curv_align=%.3f",
         len(layer_geoms),
         geometry.mean_intrinsic_dimension,
         geometry.mean_shared_dimension,
         geometry.overall_cka,
-        geometry.overall_manifold_health,
+        geometry.mean_ollivier_ricci,
         geometry.curvature_alignment,
     )
 
@@ -103,7 +86,7 @@ def _compute_curvature_alignment(geometry: MergeGeometry, layer_geoms: list) -> 
     The score is computed from:
     - Consistency of curvature signs across layers
     - Variance in curvature values (low = more compatible)
-    - Overall health distribution
+    - Dimension consistency
 
     Returns a score from 0.0 (divergent) to 1.0 (highly aligned).
     """
@@ -111,7 +94,7 @@ def _compute_curvature_alignment(geometry: MergeGeometry, layer_geoms: list) -> 
 
     # Collect valid curvature values
     sectional = [lg.curvature for lg in layer_geoms if lg.curvature != 0]
-    ricci = [lg.ollivier_ricci_mean for lg in layer_geoms if lg.manifold_health != "unknown"]
+    ricci = [lg.ollivier_ricci_mean for lg in layer_geoms if lg.ollivier_ricci_mean != 0.0]
     dims = [lg.intrinsic_dimension for lg in layer_geoms if lg.intrinsic_dimension > 0]
 
     if not ricci:
@@ -121,9 +104,9 @@ def _compute_curvature_alignment(geometry: MergeGeometry, layer_geoms: list) -> 
         return
 
     # Component 1: Curvature consistency (0-1)
-    # Healthy LLMs have negative Ricci curvature - how consistent is this?
+    # LLM representations typically have negative Ricci curvature (hyperbolic)
     negative_ratio = sum(1 for r in ricci if r < 0) / len(ricci)
-    consistency_score = negative_ratio  # 1.0 = all negative (healthy)
+    consistency_score = negative_ratio  # 1.0 = all negative (hyperbolic)
 
     # Component 2: Curvature stability (0-1)
     # Low variance in curvature = more stable manifold = higher alignment

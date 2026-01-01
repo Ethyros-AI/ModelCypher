@@ -121,7 +121,6 @@ def baseline_extract(
         "model_size": baseline.model_size,
         "ollivier_ricci_mean": baseline.ollivier_ricci_mean,
         "ollivier_ricci_std": baseline.ollivier_ricci_std,
-        "manifold_health_distribution": baseline.manifold_health_distribution,
         "intrinsic_dimension_mean": baseline.intrinsic_dimension_mean,
         "domain_metrics": baseline.domain_metrics,
         "saved_path": str(saved_path),
@@ -138,14 +137,9 @@ def baseline_extract(
             f"Ollivier-Ricci Std: {baseline.ollivier_ricci_std:.4f}",
             f"Intrinsic Dimension: {baseline.intrinsic_dimension_mean:.1f}",
             "",
-            "-" * 50,
-            "Manifold Health Distribution:",
+            f"Saved to: {saved_path}",
+            "",
         ]
-        for health, pct in baseline.manifold_health_distribution.items():
-            lines.append(f"  {health:<12}: {pct:.1%}")
-        lines.append("")
-        lines.append(f"Saved to: {saved_path}")
-        lines.append("")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

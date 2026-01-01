@@ -164,43 +164,28 @@ d_geodesic(p, q) ≈ d_euclidean(p, q) * exp(|K| * d_euclidean / 2)
 
 ### Integration with ModelCypher
 
-**Current**: `manifold_curvature.py` computes sectional curvature.
+**Current**: `manifold_curvature.py` computes sectional and Ollivier-Ricci curvature.
 
-**Enhancement**: Add Ricci curvature and health metrics:
+**Implementation**: Returns raw curvature measurements (no classification):
 
 ```python
 @dataclass
-class RicciCurvatureResult:
-    mean_ricci: float              # Average Ricci curvature
-    ricci_by_direction: np.ndarray # Per-direction Ricci
-    hyperbolic_factor: float       # Correction for geodesic distances
-    manifold_health: str           # "healthy" / "degenerate" / "collapsed"
+class OllivierRicciResult:
+    """Raw curvature measurements - no health classification.
 
-def compute_ricci_curvature(
-    activations: mx.array,  # Shape: [n_samples, d]
-    n_directions: int = 10,
-) -> RicciCurvatureResult:
-    """Compute Ricci curvature as trace of sectional curvatures."""
-    sectional = compute_sectional_curvatures(activations, n_directions)
-    ricci = trace_over_planes(sectional)
-
-    # Negative Ricci is normal for LLMs; positive may indicate collapse
-    if mean(ricci) > 0:
-        health = "collapsed"
-    elif mean(ricci) > -0.1:
-        health = "degenerate"
-    else:
-        health = "healthy"
-
-    return RicciCurvatureResult(
-        mean_ricci=mean(ricci),
-        ricci_by_direction=ricci,
-        hyperbolic_factor=exp(abs(mean(ricci))),
-        manifold_health=health,
-    )
+    Interpretation is left to callers who compare against baselines.
+    Negative Ricci = hyperbolic geometry (typical for LLMs).
+    Positive Ricci = spherical geometry.
+    """
+    mean_edge_curvature: float     # Average Ollivier-Ricci curvature
+    std_edge_curvature: float      # Standard deviation
+    edge_curvatures: list          # Per-edge curvatures
+    node_curvatures: list          # Per-node curvatures
+    k_neighbors: int               # k used for k-NN graph
+    n_points: int                  # Number of points analyzed
 ```
 
-**File**: Extend `src/modelcypher/core/domain/geometry/manifold_curvature.py`
+**File**: `src/modelcypher/core/domain/geometry/manifold_curvature.py`
 
 ---
 

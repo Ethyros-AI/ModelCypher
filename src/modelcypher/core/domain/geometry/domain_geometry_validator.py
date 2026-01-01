@@ -210,21 +210,6 @@ class DomainGeometryValidator:
             baseline.ollivier_ricci_max if baseline else None,
         )
 
-        health = current.manifold_health_distribution
-        baseline_health = baseline.manifold_health_distribution if baseline else None
-        metrics["healthy_layer_fraction"] = self._metric_delta(
-            health.healthy,
-            baseline_health.healthy if baseline_health else None,
-        )
-        metrics["degenerate_layer_fraction"] = self._metric_delta(
-            health.degenerate,
-            baseline_health.degenerate if baseline_health else None,
-        )
-        metrics["collapsed_layer_fraction"] = self._metric_delta(
-            health.collapsed,
-            baseline_health.collapsed if baseline_health else None,
-        )
-
         metrics["intrinsic_dimension_mean"] = self._metric_delta(
             current.intrinsic_dimension_mean,
             baseline.intrinsic_dimension_mean if baseline else None,

@@ -38,7 +38,10 @@ import typer
 
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
-from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
+from modelcypher.core.use_cases.entropy_probe_service import (
+    EntropyProbeService,
+    PatternAnalysisConfig,
+)
 from modelcypher.utils.errors import ErrorDetail
 
 app = typer.Typer(no_args_is_help=True)
@@ -53,6 +56,17 @@ def entropy_analyze(
     ctx: typer.Context,
     samples: str = typer.Argument(
         ..., help="JSON array of [entropy, variance] pairs, e.g. '[[3.5, 0.2], [3.6, 0.1]]'"
+    ),
+    minimum_samples: int = typer.Option(..., "--min-samples", help="Minimum samples for trend"),
+    trend_threshold: float = typer.Option(..., "--trend-threshold", help="Trend slope threshold"),
+    distress_correlation_threshold: float = typer.Option(
+        ..., "--distress-correlation-threshold", help="Entropy/variance correlation threshold"
+    ),
+    high_volatility_threshold: float = typer.Option(
+        ..., "--high-volatility-threshold", help="Volatility threshold"
+    ),
+    anomaly_z_score_threshold: float = typer.Option(
+        ..., "--anomaly-z-score-threshold", help="Anomaly z-score threshold"
     ),
 ) -> None:
     """Analyze entropy/variance samples for patterns and trends."""
@@ -77,7 +91,14 @@ def entropy_analyze(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    pattern = service.analyze_pattern(parsed_samples)
+    config = PatternAnalysisConfig(
+        minimum_samples_for_trend=minimum_samples,
+        trend_threshold=trend_threshold,
+        distress_correlation_threshold=distress_correlation_threshold,
+        high_volatility_threshold=high_volatility_threshold,
+        anomaly_z_score_threshold=anomaly_z_score_threshold,
+    )
+    pattern = service.analyze_pattern(parsed_samples, config)
     payload = service.pattern_payload(pattern)
 
     if context.output_format == "text":
@@ -110,6 +131,17 @@ def entropy_detect_distress(
     samples: str = typer.Argument(
         ..., help="JSON array of [entropy, variance] pairs, e.g. '[[3.5, 0.2], [3.6, 0.1]]'"
     ),
+    minimum_samples: int = typer.Option(..., "--min-samples", help="Minimum samples for trend"),
+    trend_threshold: float = typer.Option(..., "--trend-threshold", help="Trend slope threshold"),
+    distress_correlation_threshold: float = typer.Option(
+        ..., "--distress-correlation-threshold", help="Entropy/variance correlation threshold"
+    ),
+    high_volatility_threshold: float = typer.Option(
+        ..., "--high-volatility-threshold", help="Volatility threshold"
+    ),
+    anomaly_z_score_threshold: float = typer.Option(
+        ..., "--anomaly-z-score-threshold", help="Anomaly z-score threshold"
+    ),
 ) -> None:
     """Detect distress patterns in entropy/variance samples."""
     context = _context(ctx)
@@ -133,7 +165,14 @@ def entropy_detect_distress(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    distress = service.detect_distress(parsed_samples)
+    config = PatternAnalysisConfig(
+        minimum_samples_for_trend=minimum_samples,
+        trend_threshold=trend_threshold,
+        distress_correlation_threshold=distress_correlation_threshold,
+        high_volatility_threshold=high_volatility_threshold,
+        anomaly_z_score_threshold=anomaly_z_score_threshold,
+    )
+    distress = service.detect_distress(parsed_samples, config)
     payload = service.distress_payload(distress)
 
     if context.output_format == "text":
@@ -168,11 +207,28 @@ def entropy_verify_baseline(
     observed_deltas: str = typer.Option(
         ..., "--observed", help="JSON array of observed delta values, e.g. '[0.1, 0.15, 0.12]'"
     ),
-    base_model_id: str = typer.Option("unknown", "--base-model", help="Base model identifier"),
-    adapter_path: str = typer.Option("unknown", "--adapter", help="Path to adapter"),
-    tier: str = typer.Option(
-        "default", "--tier", help="Verification tier: quick, default, thorough"
+    test_prompts: str = typer.Option(
+        ..., "--test-prompts", help="JSON array of verification prompts"
     ),
+    failure_z_score: float = typer.Option(..., "--failure-z-score", help="Failure z-score"),
+    suspicious_z_score: float = typer.Option(
+        ..., "--suspicious-z-score", help="Suspicious z-score"
+    ),
+    minimum_sample_count: int = typer.Option(
+        ..., "--minimum-samples", help="Minimum sample count"
+    ),
+    include_adversarial: bool = typer.Option(
+        ..., "--include-adversarial/--no-include-adversarial", help="Include adversarial prompts"
+    ),
+    max_tokens_per_prompt: int = typer.Option(
+        ..., "--max-tokens-per-prompt", help="Max tokens per prompt"
+    ),
+    temperature: float = typer.Option(..., "--temperature", help="Generation temperature"),
+    prompt_timeout_seconds: float = typer.Option(
+        ..., "--prompt-timeout-seconds", help="Timeout per prompt in seconds"
+    ),
+    base_model_id: str = typer.Option(..., "--base-model", help="Base model identifier"),
+    adapter_path: str = typer.Option(..., "--adapter", help="Path to adapter"),
 ) -> None:
     """Verify observed entropy deltas against declared baseline."""
     context = _context(ctx)
@@ -185,6 +241,12 @@ def entropy_verify_baseline(
         if not isinstance(deltas, list):
             raise ValueError("Observed deltas must be a JSON array")
         parsed_deltas = [float(d) for d in deltas]
+        prompt_values = json_lib.loads(test_prompts)
+        if not isinstance(prompt_values, list) or not all(
+            isinstance(p, str) for p in prompt_values
+        ):
+            raise ValueError("Test prompts must be a JSON array of strings")
+        prompt_tuple = tuple(prompt_values)
     except (json_lib.JSONDecodeError, TypeError, ValueError) as exc:
         error = ErrorDetail(
             code="MC-1052",
@@ -196,15 +258,30 @@ def entropy_verify_baseline(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
+    from modelcypher.core.domain.entropy.baseline_verification_probe import (
+        VerificationConfiguration,
+    )
+
+    config = VerificationConfiguration.with_statistical_thresholds(
+        failure_z_score=failure_z_score,
+        suspicious_z_score=suspicious_z_score,
+        test_prompts=prompt_tuple,
+        include_adversarial=include_adversarial,
+        max_tokens_per_prompt=max_tokens_per_prompt,
+        minimum_sample_count=minimum_sample_count,
+        temperature=temperature,
+        prompt_timeout_seconds=prompt_timeout_seconds,
+    )
+
     result = service.verify_baseline(
         declared_mean=declared_mean,
         declared_std_dev=declared_std_dev,
         declared_max=declared_max,
         declared_min=declared_min,
         observed_deltas=parsed_deltas,
+        config=config,
         base_model_id=base_model_id,
         adapter_path=adapter_path,
-        tier=tier,
     )
     payload = service.verification_payload(result)
 
@@ -236,20 +313,23 @@ def entropy_window(
     samples: str = typer.Argument(
         ..., help="JSON array of [entropy, variance] pairs, e.g. '[[3.5, 0.2], [3.6, 0.1]]'"
     ),
-    size: int = typer.Option(20, "--size", help="Window size for sliding analysis"),
-    high_threshold: float = typer.Option(3.0, "--high-threshold", help="High entropy threshold"),
+    size: int = typer.Option(..., "--size", help="Window size for sliding analysis"),
+    minimum_samples: int = typer.Option(..., "--minimum-samples", help="Minimum samples"),
+    sustained_high_count: int = typer.Option(
+        ..., "--sustained-high-count", help="Consecutive high samples threshold"
+    ),
+    high_threshold: float = typer.Option(..., "--high-threshold", help="High entropy threshold"),
     circuit_threshold: float = typer.Option(
-        4.0, "--circuit-threshold", help="Circuit breaker threshold"
+        ..., "--circuit-threshold", help="Circuit breaker threshold"
     ),
 ) -> None:
     """Analyze entropy using a sliding window tracker.
 
-    Provides real-time entropy monitoring with configurable thresholds
+    Provides real-time entropy monitoring with explicit thresholds
     for detecting anomalies and state transitions.
 
     Examples:
-        mc entropy window '[[3.5, 0.2], [3.6, 0.1], [4.8, 0.5]]' --size 50
-        mc entropy window '[[3.5, 0.2]]' --high-threshold 4.0
+        mc entropy window '[[3.5, 0.2], [3.6, 0.1], [4.8, 0.5]]' --size 50 --minimum-samples 5 --sustained-high-count 3 --high-threshold 4.0 --circuit-threshold 5.0
     """
     context = _context(ctx)
 
@@ -276,8 +356,10 @@ def entropy_window(
 
     config = EntropyWindowConfig(
         window_size=size,
+        minimum_samples=minimum_samples,
         high_entropy_threshold=high_threshold,
         circuit_breaker_threshold=circuit_threshold,
+        sustained_high_count=sustained_high_count,
     )
     window = EntropyWindow(config=config)
 
@@ -324,10 +406,22 @@ def entropy_conversation_track(
     ctx: typer.Context,
     session: str = typer.Option(..., "--session", help="Path to session file (JSON with turns)"),
     oscillation_threshold: float = typer.Option(
-        0.8, "--oscillation-threshold", help="Oscillation amplitude threshold"
+        ..., "--oscillation-threshold", help="Oscillation amplitude threshold"
     ),
     drift_threshold: float = typer.Option(
-        1.5, "--drift-threshold", help="Cumulative drift threshold"
+        ..., "--drift-threshold", help="Cumulative drift threshold"
+    ),
+    turn_spike_threshold: float = typer.Option(
+        ..., "--turn-spike-threshold", help="Turn-over-turn spike threshold"
+    ),
+    oscillation_window_size: int = typer.Option(
+        ..., "--oscillation-window-size", help="Oscillation window size (turns)"
+    ),
+    minimum_turns_for_analysis: int = typer.Option(
+        ..., "--minimum-turns", help="Minimum turns for analysis"
+    ),
+    recency_decay: float = typer.Option(
+        ..., "--recency-decay", help="Recency decay factor"
     ),
 ) -> None:
     """Track entropy patterns across a conversation session.
@@ -342,8 +436,7 @@ def entropy_conversation_track(
     }
 
     Examples:
-        mc entropy conversation-track --session ./session.json
-        mc entropy conversation-track --session ./session.json --oscillation-threshold 1.0
+        mc entropy conversation-track --session ./session.json --oscillation-threshold 1.0 --drift-threshold 1.5 --turn-spike-threshold 0.4 --oscillation-window-size 5 --minimum-turns 3 --recency-decay 0.9
     """
     context = _context(ctx)
 
@@ -392,18 +485,40 @@ def entropy_conversation_track(
     config = ConversationEntropyConfiguration.with_thresholds(
         oscillation_threshold=oscillation_threshold,
         drift_threshold=drift_threshold,
+        turn_spike_threshold=turn_spike_threshold,
+        oscillation_window_size=oscillation_window_size,
+        minimum_turns_for_analysis=minimum_turns_for_analysis,
+        recency_decay=recency_decay,
     )
     tracker = ConversationEntropyTracker(configuration=config)
 
     # Process turns
     assessment = None
+    from datetime import datetime
+
     for turn in turns:
-        token_count = turn.get("token_count", 100)
-        avg_delta = turn.get("avg_delta", 0.0)
-        max_anomaly_score = turn.get("max_anomaly_score", 0.0)
-        anomaly_count = turn.get("anomaly_count", 0)
-        circuit_breaker_tripped = turn.get("circuit_breaker_tripped", False)
-        security_assessment = turn.get("security_assessment", "nominal")
+        if "token_count" not in turn or "avg_delta" not in turn:
+            raise ValueError(
+                "Each turn must include 'token_count' and 'avg_delta' fields"
+            )
+        if "max_anomaly_score" not in turn or "anomaly_count" not in turn:
+            raise ValueError(
+                "Each turn must include 'max_anomaly_score' and 'anomaly_count' fields"
+            )
+        if "circuit_breaker_tripped" not in turn or "security_assessment" not in turn:
+            raise ValueError(
+                "Each turn must include 'circuit_breaker_tripped' and 'security_assessment' fields"
+            )
+        if "timestamp" not in turn:
+            raise ValueError("Each turn must include ISO 'timestamp' field")
+
+        token_count = int(turn["token_count"])
+        avg_delta = float(turn["avg_delta"])
+        max_anomaly_score = float(turn["max_anomaly_score"])
+        anomaly_count = int(turn["anomaly_count"])
+        circuit_breaker_tripped = bool(turn["circuit_breaker_tripped"])
+        security_assessment = str(turn["security_assessment"])
+        timestamp = datetime.fromisoformat(str(turn["timestamp"]))
 
         assessment = tracker.record_turn(
             token_count=token_count,
@@ -412,6 +527,7 @@ def entropy_conversation_track(
             anomaly_count=anomaly_count,
             circuit_breaker_tripped=circuit_breaker_tripped,
             security_assessment=security_assessment,
+            timestamp=timestamp,
         )
 
     if assessment is None:
@@ -478,9 +594,14 @@ def entropy_dual_path(
     ctx: typer.Context,
     samples: str = typer.Argument(..., help="JSON array of {base: [e, v], adapter: [e, v]} pairs"),
     anomaly_threshold: float = typer.Option(
-        0.6, "--anomaly-threshold", help="Anomaly score threshold"
+        ..., "--anomaly-threshold", help="Anomaly score threshold"
     ),
-    delta_threshold: float = typer.Option(1.0, "--delta-threshold", help="Entropy delta threshold"),
+    delta_threshold: float = typer.Option(
+        ..., "--delta-threshold", help="Entropy delta threshold"
+    ),
+    base_entropy_floor: float = typer.Option(
+        ..., "--base-entropy-floor", help="Base entropy floor for anomaly scoring"
+    ),
 ) -> None:
     """Analyze entropy divergence between base model and adapter.
 
@@ -491,8 +612,7 @@ def entropy_dual_path(
     Anomaly scoring: High base entropy + low adapter entropy = suspicious
 
     Examples:
-        mc entropy dual-path '[{"base": [3.5, 0.2], "adapter": [3.8, 0.3]}]'
-        mc entropy dual-path '[{"base": [4.5, 0.8], "adapter": [1.0, 0.1]}]' --anomaly-threshold 0.5
+        mc entropy dual-path '[{"base": [3.5, 0.2], "adapter": [3.8, 0.3]}]' --anomaly-threshold 0.5 --delta-threshold 1.0 --base-entropy-floor 2.0
     """
     context = _context(ctx)
 
@@ -517,8 +637,10 @@ def entropy_dual_path(
     anomaly_indices: list[int] = []
 
     for idx, sample in enumerate(sample_list):
-        base = sample.get("base", [0.0, 0.0])
-        adapter = sample.get("adapter", [0.0, 0.0])
+        if "base" not in sample or "adapter" not in sample:
+            raise ValueError("Each sample must include 'base' and 'adapter' entries")
+        base = sample["base"]
+        adapter = sample["adapter"]
 
         base_entropy = float(base[0])
         adapter_entropy = float(adapter[0])
@@ -528,7 +650,7 @@ def entropy_dual_path(
 
         # Anomaly score: high when base is uncertain but adapter is confident
         # (potential backdoor signature)
-        if base_entropy > 2.0 and adapter_entropy < base_entropy:
+        if base_entropy > base_entropy_floor and adapter_entropy < base_entropy:
             # Normalized score based on entropy reduction
             anomaly_score = min(1.0, (base_entropy - adapter_entropy) / base_entropy)
         else:
@@ -579,10 +701,11 @@ def entropy_calibrate(
         None,
         "--output-file",
         "-o",
-        help="Path to save calibration JSON (default: model_dir/entropy_calibration.json)",
+        help="Path to save calibration JSON (optional)",
     ),
-    max_tokens: int = typer.Option(50, "--max-tokens", help="Max tokens per prompt"),
-    temperature: float = typer.Option(0.7, "--temperature", help="Sampling temperature"),
+    prompts: str = typer.Option(..., "--prompts", help="Path to prompts JSON array"),
+    max_tokens: int = typer.Option(..., "--max-tokens", help="Max tokens per prompt"),
+    temperature: float = typer.Option(..., "--temperature", help="Sampling temperature"),
 ) -> None:
     """Calibrate entropy thresholds by measuring actual model distributions.
 
@@ -590,9 +713,8 @@ def entropy_calibrate(
     computes Shannon entropy, and derives empirical thresholds.
 
     Examples:
-        mc entropy calibrate --model /path/to/model
-        mc entropy calibrate --model /path/to/model --output-file ./calibration.json
-        mc entropy calibrate --model /path/to/model --max-tokens 100
+        mc entropy calibrate --model /path/to/model --prompts ./prompts.json --max-tokens 100 --temperature 0.7
+        mc entropy calibrate --model /path/to/model --prompts ./prompts.json --max-tokens 100 --temperature 0.7 --output-file ./calibration.json
     """
     context = _context(ctx)
 
@@ -603,8 +725,19 @@ def entropy_calibrate(
     service = EntropyCalibrationService()
 
     try:
+        prompt_path = Path(prompts)
+        if not prompt_path.exists():
+            raise ValueError(f"Prompts file does not exist: {prompt_path}")
+        prompt_data = json.loads(prompt_path.read_text(encoding="utf-8"))
+        if not isinstance(prompt_data, list) or not all(
+            isinstance(p, str) for p in prompt_data
+        ):
+            raise ValueError("Prompts file must contain a JSON array of strings")
+        prompt_tuple = tuple(prompt_data)
+
         result = service.calibrate(
             model_path=model,
+            prompts=prompt_tuple,
             max_tokens_per_prompt=max_tokens,
             temperature=temperature,
         )
@@ -628,21 +761,18 @@ def entropy_calibrate(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    # Save calibration if output path specified or default
-    if output is None:
-        output = str(Path(model).expanduser().resolve() / "entropy_calibration.json")
-
-    try:
-        service.save_calibration(result, output)
-    except Exception as exc:
-        error = ErrorDetail(
-            code="MC-1057",
-            title="Failed to save calibration",
-            detail=str(exc),
-            trace_id=context.trace_id,
-        )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
+    if output is not None:
+        try:
+            service.save_calibration(result, output)
+        except Exception as exc:
+            error = ErrorDetail(
+                code="MC-1057",
+                title="Failed to save calibration",
+                detail=str(exc),
+                trace_id=context.trace_id,
+            )
+            write_error(error.as_dict(), context.output_format, context.pretty)
+            raise typer.Exit(code=1)
 
     payload = {
         "modelId": result.model_id,
@@ -650,6 +780,7 @@ def entropy_calibrate(
         "maxTheoreticalEntropy": result.max_theoretical_entropy,
         "sampleCount": result.sample_count,
         "promptCount": result.prompt_count,
+        "calibrationPrompts": list(result.calibration_prompts),
         "statistics": {
             "mean": result.mean,
             "stdDev": result.std_dev,
@@ -663,11 +794,6 @@ def entropy_calibrate(
         "calibrationDurationSeconds": result.calibration_duration_seconds,
         "calibratedAt": result.calibrated_at,
         "outputPath": output,
-        "derivedThresholds": {
-            "low": result.percentile_25,
-            "high": result.percentile_75,
-            "circuitBreaker": result.percentile_95,
-        },
     }
 
     if context.output_format == "text":
@@ -696,14 +822,9 @@ def entropy_calibrate(
             f"  90th: {result.percentile_90:.4f}",
             f"  95th: {result.percentile_95:.4f}",
             f"  99th: {result.percentile_99:.4f}",
-            "",
-            "DERIVED THRESHOLDS (from percentiles):",
-            f"  Low (25th):           {result.percentile_25:.4f}",
-            f"  High (75th):          {result.percentile_75:.4f}",
-            f"  Circuit Breaker (95th): {result.percentile_95:.4f}",
-            "",
-            f"Calibration saved to: {output}",
         ]
+        if output is not None:
+            lines.extend(["", f"Calibration saved to: {output}"])
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

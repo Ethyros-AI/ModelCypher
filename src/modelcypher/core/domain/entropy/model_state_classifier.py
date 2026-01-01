@@ -33,11 +33,8 @@ The key measurements:
 - entropy_trend: Rate of change in entropy
 - entropy_variance_correlation: Relationship between the two axes
 
-These signals encode cognitive state. The combination matters:
-- Z-Score < -1σ + high variance: Unusually confident (rare)
-- Z-Score [-1σ, 1σ] + moderate variance: Normal generation
-- Z-Score > 1σ + moderate variance: Elevated uncertainty (epistemic)
-- Z-Score > 2σ + low variance: High distress (normative)
+These signals encode cognitive state. Interpret them using explicit,
+calibration-derived thresholds supplied by the caller.
 """
 
 from __future__ import annotations

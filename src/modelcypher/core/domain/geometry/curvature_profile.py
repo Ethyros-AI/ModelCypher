@@ -71,9 +71,6 @@ class LayerCurvature:
     intrinsic_dimension: float = 0.0
     intrinsic_dimension_uncertainty: float = 0.0
 
-    # Manifold health classification (for reference only)
-    manifold_health: str = "unknown"  # healthy, degenerate, collapsed
-
     def to_dict(self) -> dict[str, Any]:
         def safe_float(v: float) -> float | None:
             """Convert NaN/Inf to None for JSON serialization."""
@@ -92,7 +89,6 @@ class LayerCurvature:
             "ollivier_ricci_std": safe_float(self.ollivier_ricci_std),
             "intrinsic_dimension": safe_float(self.intrinsic_dimension),
             "intrinsic_dimension_uncertainty": safe_float(self.intrinsic_dimension_uncertainty),
-            "manifold_health": self.manifold_health,
         }
 
     @classmethod
@@ -113,7 +109,6 @@ class LayerCurvature:
             ollivier_ricci_std=safe_get("ollivier_ricci_std", 0.0),
             intrinsic_dimension=safe_get("intrinsic_dimension", 0.0),
             intrinsic_dimension_uncertainty=safe_get("intrinsic_dimension_uncertainty", 0.0),
-            manifold_health=d.get("manifold_health", "unknown"),
         )
 
 

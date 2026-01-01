@@ -139,33 +139,35 @@ class EntropyCalibrationResult:
             "tokensPerPrompt": self.tokens_per_prompt,
             "calibrationDurationSeconds": self.calibration_duration_seconds,
             "calibratedAt": self.calibrated_at,
+            "calibrationPrompts": list(self.calibration_prompts),
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "EntropyCalibrationResult":
         """Deserialize from dictionary."""
-        stats = data.get("statistics", {})
+        stats = data["statistics"]
         return cls(
             model_id=data["modelId"],
             vocab_size=data["vocabSize"],
             max_theoretical_entropy=data["maxTheoreticalEntropy"],
-            entropy_values=data.get("entropyValues", []),
-            mean=stats.get("mean", 0.0),
-            std_dev=stats.get("stdDev", 0.0),
-            min_value=stats.get("min", 0.0),
-            max_value=stats.get("max", 0.0),
-            percentile_10=stats.get("percentile10", 0.0),
-            percentile_25=stats.get("percentile25", 0.0),
-            percentile_50=stats.get("percentile50", 0.0),
-            percentile_75=stats.get("percentile75", 0.0),
-            percentile_90=stats.get("percentile90", 0.0),
-            percentile_95=stats.get("percentile95", 0.0),
-            percentile_99=stats.get("percentile99", 0.0),
-            sample_count=data.get("sampleCount", 0),
-            prompt_count=data.get("promptCount", 0),
-            tokens_per_prompt=data.get("tokensPerPrompt", []),
-            calibration_duration_seconds=data.get("calibrationDurationSeconds", 0.0),
-            calibrated_at=data.get("calibratedAt", ""),
+            entropy_values=data["entropyValues"],
+            mean=stats["mean"],
+            std_dev=stats["stdDev"],
+            min_value=stats["min"],
+            max_value=stats["max"],
+            percentile_10=stats["percentile10"],
+            percentile_25=stats["percentile25"],
+            percentile_50=stats["percentile50"],
+            percentile_75=stats["percentile75"],
+            percentile_90=stats["percentile90"],
+            percentile_95=stats["percentile95"],
+            percentile_99=stats["percentile99"],
+            sample_count=data["sampleCount"],
+            prompt_count=data["promptCount"],
+            tokens_per_prompt=data["tokensPerPrompt"],
+            calibration_duration_seconds=data["calibrationDurationSeconds"],
+            calibrated_at=data["calibratedAt"],
+            calibration_prompts=tuple(data["calibrationPrompts"]),
         )
 
     def z_score(self, entropy: float) -> float:

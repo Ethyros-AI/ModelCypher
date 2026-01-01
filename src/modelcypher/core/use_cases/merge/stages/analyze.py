@@ -98,14 +98,12 @@ def stage_analyze_geometry(
 
         layer_geom.ollivier_ricci_mean = result.mean_edge_curvature
         layer_geom.ollivier_ricci_std = result.std_edge_curvature
-        layer_geom.manifold_health = result.health.value
 
         logger.debug(
-            "Layer %d: Ollivier-Ricci=%.4f (std=%.4f), health=%s",
+            "Layer %d: Ollivier-Ricci=%.4f (std=%.4f)",
             layer_geom.layer_idx,
             layer_geom.ollivier_ricci_mean,
             layer_geom.ollivier_ricci_std,
-            layer_geom.manifold_health,
         )
     except Exception as e:
         logger.debug("Ollivier-Ricci failed for layer %d: %s", layer_geom.layer_idx, e)
