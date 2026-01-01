@@ -77,13 +77,13 @@ class FrechetMeanConfig:
     Attributes:
         enabled: Whether to use Fréchet mean instead of arithmetic mean.
             Default True - use Fréchet mean. Only set False for debugging.
-        k_neighbors: Number of neighbors for geodesic distance estimation.
+        k_neighbors: Number of neighbors for geodesic distance (None = derive from geometry).
         max_iterations: Maximum Fréchet mean iterations.
         tolerance: Convergence tolerance for Fréchet mean.
     """
 
     enabled: bool = True  # Fréchet mean by default - arithmetic mean is wrong
-    k_neighbors: int = 10
+    k_neighbors: int | None = None  # Derived from intrinsic dimension
     max_iterations: int = 50
     tolerance: float = 1e-5
 

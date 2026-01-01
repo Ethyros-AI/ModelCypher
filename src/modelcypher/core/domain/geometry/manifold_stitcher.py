@@ -690,7 +690,7 @@ class ManifoldStitcher:
         target_activations: dict[str, list[float]],
         cluster_count: int = 8,
         backend: "Backend | None" = None,
-        geodesic_k_neighbors: int = 10,
+        geodesic_k_neighbors: int | None = None,
     ) -> list["AlignmentCluster"]:  # Forward ref string since defined later
         """Clusters activations to identify alignment regions.
 
@@ -703,7 +703,7 @@ class ManifoldStitcher:
             target_activations: Target model activations (PrimeID -> vector)
             cluster_count: Number of clusters
             backend: Compute backend
-            geodesic_k_neighbors: k for geodesic distance estimation
+            geodesic_k_neighbors: k for geodesic (None = derive from geometry)
 
         Returns:
             List of alignment clusters with local rotations
@@ -715,6 +715,14 @@ class ManifoldStitcher:
 
         source_vecs = [source_activations[k] for k in keys]
         target_vecs = [target_activations[k] for k in keys]
+
+        # Derive k from geometry if not specified
+        if geodesic_k_neighbors is None:
+            from modelcypher.core.domain.geometry.intrinsic_dimension import (
+                compute_k_for_points,
+            )
+
+            geodesic_k_neighbors = compute_k_for_points(source_vecs, b)
 
         # Riemannian K-Means with geodesic distances
         assignments, _ = ManifoldStitcher.k_means(

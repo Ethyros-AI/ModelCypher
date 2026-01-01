@@ -98,7 +98,8 @@ class OllivierRicciConfig:
     sinkhorn_threshold: float = 1e-8
 
     # Number of neighbors for k-NN graph
-    k_neighbors: int = 10
+    # When None, derived from intrinsic dimension: k = max(3, 2 * ID)
+    k_neighbors: int | None = None
 
     # Whether to symmetrize curvature: kappa(x,y) = (kappa(x,y) + kappa(y,x)) / 2
     # Ollivier-Ricci is naturally asymmetric; averaging symmetrizes
@@ -268,6 +269,9 @@ class ManifoldCurvatureProfile:
             return None
 
         # Build point matrix for geodesic distance computation
+        from modelcypher.core.domain.geometry.intrinsic_dimension import (
+            compute_k_for_points,
+        )
         from modelcypher.core.domain.geometry.riemannian_utils import (
             geodesic_distance_matrix,
         )
@@ -284,10 +288,11 @@ class ManifoldCurvatureProfile:
         all_points_with_query = backend.concatenate([all_points, query_reshaped], axis=0)
         pts_arr = backend.astype(all_points_with_query, "float32")
 
+        # Derive k from geometry
+        k_geo = compute_k_for_points(pts_arr, backend)
+
         # Geodesic distance matrix - last row contains distances from query to all points
-        geo_dist = geodesic_distance_matrix(
-            pts_arr, k_neighbors=min(10, len(all_points) - 1), backend=backend
-        )
+        geo_dist = geodesic_distance_matrix(pts_arr, k_neighbors=k_geo, backend=backend)
         backend.eval(geo_dist)
         geo_dist_np = backend.to_numpy(geo_dist)
 
@@ -1031,6 +1036,9 @@ class OllivierRicciCurvature:
         Returns:
             OllivierRicciResult with edge/node curvatures and health classification
         """
+        from modelcypher.core.domain.geometry.intrinsic_dimension import (
+            compute_k_for_points,
+        )
         from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 
         backend = self._backend
@@ -1038,7 +1046,11 @@ class OllivierRicciCurvature:
         backend.eval(points)
 
         n = int(points.shape[0])
+
+        # Derive k from geometry if not specified
         k = k_neighbors or self.config.k_neighbors
+        if k is None:
+            k = compute_k_for_points(points, backend)
         k = min(k, n - 1)
 
         if n < 2:

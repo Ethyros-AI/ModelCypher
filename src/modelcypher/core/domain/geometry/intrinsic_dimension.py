@@ -79,6 +79,41 @@ def derive_k_from_intrinsic_dimension(intrinsic_dimension: float) -> int:
     return max(3, int(2 * intrinsic_dimension))
 
 
+def compute_k_for_points(
+    points: "list[list[float]] | Array",
+    backend: "Backend | None" = None,
+) -> int:
+    """Compute optimal k for k-NN from the geometry of the points.
+
+    This is the correct order of operations:
+    1. Compute intrinsic dimension using Euclidean TwoNN (no k needed)
+    2. Derive k = max(3, 2 * ID)
+
+    Use this function whenever you need k for geodesic distances, Fréchet mean,
+    ORC computation, or any other operation that requires a k-NN graph.
+
+    Args:
+        points: [N, D] array or list of points
+        backend: Backend to use (uses default if None)
+
+    Returns:
+        k value derived from the manifold geometry
+    """
+    b = backend or get_default_backend()
+    pts = b.array(points) if isinstance(points, list) else points
+
+    n = int(pts.shape[0])
+    if n < 3:
+        return max(1, n - 1)
+
+    estimator = IntrinsicDimension(b)
+    id_estimate = estimator.compute_euclidean(pts)
+    k = derive_k_from_intrinsic_dimension(id_estimate.intrinsic_dimension)
+
+    # Ensure k doesn't exceed n-1
+    return min(k, n - 1)
+
+
 @dataclass
 class GeodesicConfiguration:
     """Configuration for geodesic distance estimation.
@@ -323,10 +358,30 @@ class IntrinsicDimension:
             ci=ci,
         )
 
+    def _euclidean_distance_matrix_squared(self, points: "Array") -> "Array":
+        """Computes pairwise squared Euclidean distances.
+
+        This is used by compute_euclidean() for the initial ID estimate.
+        No k parameter is needed - we compute all pairwise distances.
+
+        Args:
+            points: [N, D] array of points
+
+        Returns:
+            [N, N] squared Euclidean distance matrix
+        """
+        backend = self._backend
+        # ||a - b||^2 = ||a||^2 + ||b||^2 - 2 * a.b
+        norms_sq = backend.sum(points * points, axis=1, keepdims=True)  # [N, 1]
+        dot_products = backend.matmul(points, backend.transpose(points))  # [N, N]
+        dist_sq = norms_sq + backend.transpose(norms_sq) - 2 * dot_products
+        # Ensure non-negative (numerical precision)
+        return backend.maximum(dist_sq, backend.zeros_like(dist_sq))
+
     def _geodesic_distance_matrix_squared(
         self,
         points: "Array",
-        k_neighbors: int = 10,
+        k_neighbors: int,
         distance_power: float = 2.0,
     ) -> "Array":
         """Computes pairwise squared geodesic distances via k-NN graph.
@@ -343,7 +398,7 @@ class IntrinsicDimension:
 
         Args:
             points: [N, D] array of points
-            k_neighbors: Number of neighbors for graph construction
+            k_neighbors: Number of neighbors for graph (derived from geometry, NOT a guess)
             distance_power: Power for distance weighting (2.0 = squared distances)
 
         Returns:

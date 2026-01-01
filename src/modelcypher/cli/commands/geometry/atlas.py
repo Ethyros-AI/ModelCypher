@@ -252,16 +252,14 @@ def atlas_dimensionality(
     )
 
     backend = MLXBackend()
-    # Allow Fréchet mean retries with a higher k if token graphs are disconnected.
-    frechet_max_k = max(k_neighbors, 20)
     provider = BackboneActivationProvider(
         tokenizer,
         embed_tokens,
         layers,
         norm,
         backend,
-        frechet_k_neighbors=k_neighbors,
-        frechet_max_k_neighbors=frechet_max_k,
+        frechet_k_neighbors=None,
+        frechet_max_k_neighbors=None,
     )
     analyzer = ConceptDimensionalityAnalyzer(backend=backend)
     config = ConceptDimensionalityConfig(
@@ -270,7 +268,7 @@ def atlas_dimensionality(
         max_total_texts=max_total_texts,
         use_regression=regression,
         bootstrap_resamples=bootstrap,
-        geodesic_k_neighbors=k_neighbors,
+        geodesic_k_neighbors=None,
         min_calibration_weight=min_calibration,
     )
     report = analyzer.analyze(
@@ -414,16 +412,14 @@ def atlas_dimensionality_study(
     )
 
     backend = MLXBackend()
-    # Allow Fréchet mean retries with a higher k if token graphs are disconnected.
-    frechet_max_k = max(k_neighbors, 20)
     provider = BackboneActivationProvider(
         tokenizer,
         embed_tokens,
         layers_module,
         norm,
         backend,
-        frechet_k_neighbors=k_neighbors,
-        frechet_max_k_neighbors=frechet_max_k,
+        frechet_k_neighbors=None,
+        frechet_max_k_neighbors=None,
     )
     analyzer = ConceptDimensionalityAnalyzer(backend=backend)
     config = ConceptDimensionalityConfig(
@@ -432,7 +428,7 @@ def atlas_dimensionality_study(
         max_total_texts=max_total_texts,
         use_regression=regression,
         bootstrap_resamples=bootstrap,
-        geodesic_k_neighbors=k_neighbors,
+        geodesic_k_neighbors=None,
         min_calibration_weight=min_calibration,
     )
 

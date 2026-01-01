@@ -354,10 +354,7 @@ def compute_volume(
 
     Shows the distributional properties of a concept in the model's
     latent space: centroid, covariance, geodesic radius, curvature.
-
-    Uses 10 prompt variations for reliable volume estimation.
     """
-    samples = 10  # Fixed for reproducibility
     context = _context(ctx)
 
     from modelcypher.adapters.model_loader import load_model_for_training
@@ -379,9 +376,7 @@ def compute_volume(
         f"When we say {concept}, we mean",
         f"The meaning of {concept} is",
     ]
-    # Duplicate to get more samples
-    prompts = base_prompts * (samples // len(base_prompts) + 1)
-    prompts = prompts[:samples]
+    prompts = base_prompts
 
     # Extract activations
     activations = []

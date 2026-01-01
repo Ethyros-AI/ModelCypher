@@ -43,6 +43,17 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ConceptDimensionalityConfig:
+    """Configuration for concept dimensionality analysis.
+
+    The k_neighbors for geodesic computation is NOT configurable - it is
+    derived from the geometry itself using the correct order of operations:
+    1. Compute ID with Euclidean TwoNN (no k needed)
+    2. k = max(3, 2 * ID)
+    3. Use that k for geodesic computation
+
+    See intrinsic_dimension.derive_k_from_intrinsic_dimension() for details.
+    """
+
     min_support_texts: int = 3
     max_support_texts: int = 6
     max_total_texts: int = 8
@@ -51,7 +62,6 @@ class ConceptDimensionalityConfig:
     use_regression: bool = True
     bootstrap_resamples: int = 0
     bootstrap_seed: int = 42
-    geodesic_k_neighbors: int = 10
     geodesic_distance_power: float = 2.0
     min_calibration_weight: float | None = None
 
@@ -332,12 +342,14 @@ class ConceptDimensionalityAnalyzer:
     ):
         if len(vectors) < 3:
             return None
-        k_neighbors = min(config.geodesic_k_neighbors, len(vectors) - 1)
-        k_neighbors = max(1, k_neighbors)
+        # k_neighbors is NOT passed - it is derived from the geometry:
+        # 1. Euclidean TwoNN → ID
+        # 2. k = max(3, 2 * ID)
+        # 3. Geodesic computation uses that k
         two_nn = TwoNNConfiguration(
             use_regression=config.use_regression,
             geodesic=GeodesicConfiguration(
-                k_neighbors=k_neighbors,
+                k_neighbors=None,  # Let the geometry determine k
                 distance_power=config.geodesic_distance_power,
             ),
         )

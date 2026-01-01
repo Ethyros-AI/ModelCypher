@@ -723,7 +723,7 @@ class RiemannianGeometry:
         self,
         points: "Array",
         center_idx: int,
-        k_neighbors: int = 10,
+        k_neighbors: int | None = None,
     ) -> CurvatureEstimate:
         """
         Estimate local sectional curvature at a point using geodesic defect.
@@ -739,7 +739,7 @@ class RiemannianGeometry:
         Args:
             points: Point cloud [n, d]
             center_idx: Index of the center point
-            k_neighbors: Number of neighbors to use for estimation
+            k_neighbors: Number of neighbors (if None, derived from geometry)
 
         Returns:
             CurvatureEstimate with estimated sectional curvature
@@ -757,6 +757,14 @@ class RiemannianGeometry:
                 is_negative=False,
                 confidence=0.0,
             )
+
+        # Derive k from geometry if not specified
+        if k_neighbors is None:
+            from modelcypher.core.domain.geometry.intrinsic_dimension import (
+                compute_k_for_points,
+            )
+
+            k_neighbors = compute_k_for_points(points, backend)
 
         # Get geodesic and Euclidean distances
         geo_result = self.geodesic_distances(points, k_neighbors=k_neighbors)
