@@ -60,70 +60,17 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 
-def derive_k_from_intrinsic_dimension(intrinsic_dimension: float) -> int:
-    """Derive optimal k for k-NN from intrinsic dimension.
-
-    The geometry tells us: k should scale with manifold dimension.
-    Too small k → disconnected graph, missing geodesics
-    Too large k → short-circuits that ignore curvature
-
-    The rule k = 2 * ID ensures enough neighbors to capture local structure
-    without over-connecting. Minimum k=3 for numerical stability.
-
-    Args:
-        intrinsic_dimension: Measured intrinsic dimension of the manifold
-
-    Returns:
-        k value for k-NN graph construction
-    """
-    return max(3, int(2 * intrinsic_dimension))
-
-
-def compute_k_for_points(
-    points: "list[list[float]] | Array",
-    backend: "Backend | None" = None,
-) -> int:
-    """Compute optimal k for k-NN from the geometry of the points.
-
-    This is the correct order of operations:
-    1. Compute intrinsic dimension using Euclidean TwoNN (no k needed)
-    2. Derive k = max(3, 2 * ID)
-
-    Use this function whenever you need k for geodesic distances, Fréchet mean,
-    ORC computation, or any other operation that requires a k-NN graph.
-
-    Args:
-        points: [N, D] array or list of points
-        backend: Backend to use (uses default if None)
-
-    Returns:
-        k value derived from the manifold geometry
-    """
-    b = backend or get_default_backend()
-    pts = b.array(points) if isinstance(points, list) else points
-
-    n = int(pts.shape[0])
-    if n < 3:
-        return max(1, n - 1)
-
-    estimator = IntrinsicDimension(b)
-    id_estimate = estimator.compute_euclidean(pts)
-    k = derive_k_from_intrinsic_dimension(id_estimate.intrinsic_dimension)
-
-    # Ensure k doesn't exceed n-1
-    return min(k, n - 1)
-
-
 @dataclass
 class GeodesicConfiguration:
     """Configuration for geodesic distance estimation.
 
     In high-dimensional spaces, curvature is inherent. Geodesic distance is
-    the correct metric. Geodesic distances are estimated via k-NN graph
+    the correct metric. Geodesic distances are computed via k-NN graph
     shortest paths (Isomap-style).
 
-    k_neighbors: When None, will be derived from intrinsic dimension.
-                 The correct order is: Euclidean TwoNN → ID → k = 2*ID → geodesic
+    k_neighbors: When None, uses connectivity-based selection (Berry & Sauer 2016).
+                 This binary searches for the minimum k that makes the graph connected,
+                 which is a geometric property of the point cloud itself.
     """
 
     k_neighbors: int | None = None
@@ -236,60 +183,6 @@ class IntrinsicDimension:
         computer = IntrinsicDimension(b)
         return computer.compute(pts, config)
 
-    def compute_euclidean(
-        self,
-        points: "Array",
-        use_regression: bool = True,
-        bootstrap: BootstrapConfiguration | None = None,
-    ) -> TwoNNEstimate:
-        """
-        Compute intrinsic dimension using EUCLIDEAN distances.
-
-        This is the first step in the correct order of operations:
-        1. Euclidean TwoNN → get initial ID estimate (no k needed)
-        2. Derive k = max(3, 2 * ID)
-        3. Use that k for geodesic computations
-
-        Euclidean TwoNN requires NO k parameter because it only needs the
-        2 nearest neighbors per point, which are found directly from the
-        pairwise distance matrix without building a k-NN graph.
-
-        Args:
-            points: [N, D] array of points
-            use_regression: Use regression variant (Facco et al.) vs MLE
-            bootstrap: Optional bootstrap configuration for confidence intervals
-
-        Returns:
-            TwoNNEstimate with intrinsic dimension (uses_geodesic=False)
-        """
-        N = points.shape[0]
-        if N < 3:
-            raise EstimatorError.insufficient_samples(N)
-
-        # Compute Euclidean distance matrix - no k needed!
-        dist_sq = self._euclidean_distance_matrix_squared(points)
-
-        mu = self._compute_two_nn_mu_from_distances(dist_sq)
-
-        dimension = self._compute_from_mu(mu, use_regression=use_regression)
-
-        ci = None
-        if bootstrap:
-            ci = self._bootstrap_two_nn(
-                mu,
-                use_regression=use_regression,
-                config=bootstrap,
-            )
-
-        return TwoNNEstimate(
-            intrinsic_dimension=dimension,
-            sample_count=N,
-            usable_count=mu.shape[0],
-            uses_regression=use_regression,
-            uses_geodesic=False,
-            ci=ci,
-        )
-
     def compute(
         self,
         points: "Array",
@@ -299,11 +192,10 @@ class IntrinsicDimension:
         """
         Compute intrinsic dimension using geodesic distances.
 
-        When k_neighbors is None in configuration, this method follows the
-        correct order of operations:
-        1. First compute ID using Euclidean TwoNN (no k needed)
-        2. Derive k = max(3, 2 * ID) from the geometry
-        3. Then compute with geodesic distances using that k
+        When k_neighbors is None in configuration, uses connectivity-based k
+        selection (Berry & Sauer 2016): binary search for the minimum k that
+        makes the k-NN graph connected. This is a geometric property of the
+        point cloud itself, not a heuristic.
 
         Args:
             points: [N, D] array of points
@@ -318,19 +210,10 @@ class IntrinsicDimension:
         if N < 3:
             raise EstimatorError.insufficient_samples(N)
 
-        # Determine k: either specified, or derived from Euclidean ID
+        # k_neighbors is either specified, or None for connectivity-based selection
         k_neighbors = configuration.geodesic.k_neighbors
-        if k_neighbors is None:
-            # Step 1: Compute ID with Euclidean distances (no k needed)
-            euclidean_estimate = self.compute_euclidean(
-                points, use_regression=configuration.use_regression
-            )
-            # Step 2: Derive k from the geometry
-            k_neighbors = derive_k_from_intrinsic_dimension(
-                euclidean_estimate.intrinsic_dimension
-            )
 
-        # Step 3: Compute with geodesic distances using geometry-derived k
+        # Compute with geodesic distances (k=None triggers connectivity-based selection)
         dist_sq = self._geodesic_distance_matrix_squared(
             points,
             k_neighbors=k_neighbors,
@@ -358,30 +241,10 @@ class IntrinsicDimension:
             ci=ci,
         )
 
-    def _euclidean_distance_matrix_squared(self, points: "Array") -> "Array":
-        """Computes pairwise squared Euclidean distances.
-
-        This is used by compute_euclidean() for the initial ID estimate.
-        No k parameter is needed - we compute all pairwise distances.
-
-        Args:
-            points: [N, D] array of points
-
-        Returns:
-            [N, N] squared Euclidean distance matrix
-        """
-        backend = self._backend
-        # ||a - b||^2 = ||a||^2 + ||b||^2 - 2 * a.b
-        norms_sq = backend.sum(points * points, axis=1, keepdims=True)  # [N, 1]
-        dot_products = backend.matmul(points, backend.transpose(points))  # [N, N]
-        dist_sq = norms_sq + backend.transpose(norms_sq) - 2 * dot_products
-        # Ensure non-negative (numerical precision)
-        return backend.maximum(dist_sq, backend.zeros_like(dist_sq))
-
     def _geodesic_distance_matrix_squared(
         self,
         points: "Array",
-        k_neighbors: int,
+        k_neighbors: int | None,
         distance_power: float = 2.0,
     ) -> "Array":
         """Computes pairwise squared geodesic distances via k-NN graph.
@@ -398,7 +261,8 @@ class IntrinsicDimension:
 
         Args:
             points: [N, D] array of points
-            k_neighbors: Number of neighbors for graph (derived from geometry, NOT a guess)
+            k_neighbors: Number of neighbors for graph. When None, uses connectivity-based
+                         selection (Berry & Sauer 2016) - the geometric answer.
             distance_power: Power for distance weighting (2.0 = squared distances)
 
         Returns:
@@ -408,11 +272,11 @@ class IntrinsicDimension:
 
         riemannian = RiemannianGeometry(backend=self._backend)
 
-        # Get geodesic distances (not squared)
+        # Get geodesic distances (k=None triggers connectivity-based selection)
         result = riemannian.geodesic_distances(points, k_neighbors=k_neighbors)
         geodesic_dist = result.distances
 
-        # Return squared distances for consistency with Euclidean version
+        # Return squared distances
         return geodesic_dist * geodesic_dist
 
     def _compute_two_nn_mu_from_distances(self, dist_sq: "Array") -> "Array":

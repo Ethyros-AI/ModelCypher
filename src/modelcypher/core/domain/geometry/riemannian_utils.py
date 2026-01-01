@@ -758,16 +758,10 @@ class RiemannianGeometry:
                 confidence=0.0,
             )
 
-        # Derive k from geometry if not specified
-        if k_neighbors is None:
-            from modelcypher.core.domain.geometry.intrinsic_dimension import (
-                compute_k_for_points,
-            )
-
-            k_neighbors = compute_k_for_points(points, backend)
-
-        # Get geodesic and Euclidean distances
+        # Get geodesic distances (k=None triggers connectivity-based selection)
         geo_result = self.geodesic_distances(points, k_neighbors=k_neighbors)
+        # Use the actual k from the result (may differ from input if None was passed)
+        k_neighbors = geo_result.k_neighbors
         euclidean_dist = self._euclidean_distance_matrix(points)
 
         # Compute precision-aware epsilon before numpy conversion

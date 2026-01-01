@@ -265,6 +265,105 @@ Extending to larger models:
 
 ---
 
+## Testable Predictions
+
+Based on our initial findings, we make the following falsifiable predictions:
+
+### P1: Bottleneck Dimension is Architecture-Invariant
+**Prediction**: All transformer-based LLMs will exhibit bottleneck dimensionality in the range 1.5-2.0D.
+
+**Test**: Run `mc geometry atlas dimensionality-study` across 10+ model families.
+
+**Falsification**: If bottleneck varies widely (e.g., 1D to 5D) with architecture, prediction fails.
+
+### P2: Bottleneck Dimension is Scale-Invariant
+**Prediction**: The ~1.6D bottleneck is independent of parameter count.
+
+**Test**: Compare SmolLM-360M, Qwen-0.5B, Llama-3B, Mistral-7B, Llama-70B.
+
+**Falsification**: If bottleneck scales with log(params), it's capacity-dependent, not intrinsic.
+
+### P3: Bottleneck Representations Are Cross-Architecturally Aligned
+**Prediction**: CKA between bottleneck layers of different architectures > 0.7.
+
+**Test**: `mc geometry baseline compare ModelA@bottleneck ModelB@bottleneck`
+
+**Falsification**: If CKA is low (~0.3), models find different compression points.
+
+### P4: Bottleneck Position is Proportionally Consistent
+**Prediction**: Bottleneck occurs at 40-60% of network depth across architectures.
+
+| Model | Layers | Bottleneck Layer | Bottleneck % |
+|-------|--------|-----------------|--------------|
+| SmolLM-360M | 9 | 8 | 89% |
+| Qwen-0.5B | 24 | 12 | 50% |
+
+*Note: SmolLM's final-layer bottleneck may indicate a "funnel" architecture vs Qwen's "hourglass."*
+
+### P5: Topological Invariants Match at Bottleneck
+**Prediction**: Betti numbers (β₀, β₁, β₂) at bottleneck are similar across architectures.
+
+**Test**: Persistent homology comparison at bottleneck layers.
+
+### P6: Domain-Specific Structure Vanishes at Bottleneck
+**Prediction**: All semantic domains (linguistic, spatial, logical, philosophical, etc.) converge to similar dimensionality at the bottleneck.
+
+**Evidence** (Qwen2.5-0.5B):
+
+| Domain | Layer 0 (Input) | Layer 12 (Bottleneck) | Compression |
+|--------|-----------------|----------------------|-------------|
+| philosophical | 11.80 | 1.81 | 85% |
+| relational | 10.16 | 1.56 | 85% |
+| logical | 6.77 | 1.38 | 80% |
+| spatial | 4.83 | 1.21 | 75% |
+| linguistic | 3.95 | 1.44 | 64% |
+
+**Interpretation**: At the bottleneck, domain-specific encoding overhead is stripped away, leaving only universal semantic structure. All domains converge to ~1.2-1.8D regardless of their input complexity.
+
+---
+
+## Theoretical Implications
+
+### The Universal Bottleneck Hypothesis
+
+Our cross-architecture experiments reveal a striking convergence: different model architectures compress to nearly identical intrinsic dimensionality (~1.6D) at their information bottleneck. This suggests:
+
+1. **Dimensionality is Invariant to Architecture**
+
+   Just as the Blue Brain Project found that neural circuits operate in ~11 dimensions regardless of brain region, LLMs may operate in a fixed low-dimensional conceptual space regardless of architecture.
+
+2. **The Platonic Manifold May Be Low-Dimensional**
+
+   If models converge to the same low-dimensional bottleneck, this compressed representation may be the "platonic geometry" itself—not a high-dimensional space that different models approximate, but a fundamentally compact manifold.
+
+3. **Brains as 3D Projections of ~2D Conceptual Space**
+
+   The original hypothesis was that brains project 4D+ conceptual space into 3D. Our findings suggest an even more parsimonious hypothesis: the "platonic" conceptual space may be ~2 dimensions (matching our ~1.6D bottleneck), and brains add spatial structure for efficient wiring rather than losing dimensions.
+
+4. **The "Hourglass" vs "Funnel" Distinction**
+
+   - **SmolLM (Funnel)**: Monotonically compresses input → output
+   - **Qwen (Hourglass)**: Compresses to bottleneck, then expands
+
+   Both reach the same bottleneck, suggesting the core computation happens at this compression point. The difference in output expansion may reflect architectural choices about token prediction strategy, not fundamental representational differences.
+
+### Connections to Information Theory
+
+The ~1.6D bottleneck may reflect the **intrinsic information dimension** of language semantics. This aligns with:
+
+- **Rate-distortion theory**: Optimal compression converges to the intrinsic complexity of the source
+- **Information bottleneck**: Deep networks naturally find minimal sufficient statistics
+- **Minimum description length**: The bottleneck may encode the most compact representation of meaning
+
+### Implications for Model Merging
+
+If all models converge to the same ~1.6D bottleneck geometry:
+1. **Merge at the bottleneck**: Aligning models at their low-dimensional compression point should be more stable
+2. **Dimension-independent comparison**: CKA on bottleneck representations may reveal "true" semantic similarity
+3. **Cross-architecture transplant**: Knowledge from one architecture should transfer cleanly at the bottleneck
+
+---
+
 ## Contributing
 
 If you're working on related research, we welcome collaboration:

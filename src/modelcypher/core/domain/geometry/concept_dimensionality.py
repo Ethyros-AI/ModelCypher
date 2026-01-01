@@ -46,12 +46,11 @@ class ConceptDimensionalityConfig:
     """Configuration for concept dimensionality analysis.
 
     The k_neighbors for geodesic computation is NOT configurable - it is
-    derived from the geometry itself using the correct order of operations:
-    1. Compute ID with Euclidean TwoNN (no k needed)
-    2. k = max(3, 2 * ID)
-    3. Use that k for geodesic computation
+    derived from the geometry itself using connectivity-based selection
+    (Berry & Sauer 2016): binary search for the minimum k that makes the
+    k-NN graph connected. This is a geometric property of the point cloud.
 
-    See intrinsic_dimension.derive_k_from_intrinsic_dimension() for details.
+    See riemannian_utils.geodesic_distances() for details.
     """
 
     min_support_texts: int = 3

@@ -223,12 +223,12 @@ class SpectralSignature:
         backend = self._backend
         n = int(points.shape[0])
         if k_neighbors is None:
-            # Derive k from geometry
-            from modelcypher.core.domain.geometry.intrinsic_dimension import (
-                compute_k_for_points,
-            )
+            # Use connectivity-based k selection (Berry & Sauer 2016)
+            from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 
-            k_neighbors = compute_k_for_points(points, backend)
+            rg = RiemannianGeometry(backend)
+            geo_result = rg.geodesic_distances(points, k_neighbors=None)
+            k_neighbors = geo_result.k_neighbors
         k_neighbors = max(1, min(k_neighbors, n - 1))
 
         euclidean_dist = self._euclidean_distance_matrix(points)

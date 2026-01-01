@@ -269,9 +269,6 @@ class ManifoldCurvatureProfile:
             return None
 
         # Build point matrix for geodesic distance computation
-        from modelcypher.core.domain.geometry.intrinsic_dimension import (
-            compute_k_for_points,
-        )
         from modelcypher.core.domain.geometry.riemannian_utils import (
             geodesic_distance_matrix,
         )
@@ -288,11 +285,9 @@ class ManifoldCurvatureProfile:
         all_points_with_query = backend.concatenate([all_points, query_reshaped], axis=0)
         pts_arr = backend.astype(all_points_with_query, "float32")
 
-        # Derive k from geometry
-        k_geo = compute_k_for_points(pts_arr, backend)
-
-        # Geodesic distance matrix - last row contains distances from query to all points
-        geo_dist = geodesic_distance_matrix(pts_arr, k_neighbors=k_geo, backend=backend)
+        # Geodesic distance matrix (k=None triggers connectivity-based selection)
+        # Last row contains distances from query to all points
+        geo_dist = geodesic_distance_matrix(pts_arr, k_neighbors=None, backend=backend)
         backend.eval(geo_dist)
         geo_dist_np = backend.to_numpy(geo_dist)
 
@@ -1036,9 +1031,6 @@ class OllivierRicciCurvature:
         Returns:
             OllivierRicciResult with edge/node curvatures and health classification
         """
-        from modelcypher.core.domain.geometry.intrinsic_dimension import (
-            compute_k_for_points,
-        )
         from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 
         backend = self._backend
@@ -1046,12 +1038,6 @@ class OllivierRicciCurvature:
         backend.eval(points)
 
         n = int(points.shape[0])
-
-        # Derive k from geometry if not specified
-        k = k_neighbors or self.config.k_neighbors
-        if k is None:
-            k = compute_k_for_points(points, backend)
-        k = min(k, n - 1)
 
         if n < 2:
             # Trivial case: no edges
@@ -1062,13 +1048,18 @@ class OllivierRicciCurvature:
                 std_edge_curvature=0.0,
                 mean_node_curvature=0.0,
                 config=self.config,
-                k_neighbors=k,
+                k_neighbors=1,
                 n_points=n,
             )
 
-        # 1. Compute geodesic distances using existing infrastructure
+        # Use specified k, or None for connectivity-based selection
+        k = k_neighbors or self.config.k_neighbors
+
+        # 1. Compute geodesic distances (k=None triggers connectivity-based selection)
         rg = RiemannianGeometry(backend)
         geo_result = rg.geodesic_distances(points, k_neighbors=k)
+        # Get actual k from result (may differ if None was passed)
+        k = geo_result.k_neighbors
         backend.eval(geo_result.distances)
 
         # 2. Build adjacency list from k-NN graph

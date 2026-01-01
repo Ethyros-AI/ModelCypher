@@ -716,20 +716,13 @@ class ManifoldStitcher:
         source_vecs = [source_activations[k] for k in keys]
         target_vecs = [target_activations[k] for k in keys]
 
-        # Derive k from geometry if not specified
-        if geodesic_k_neighbors is None:
-            from modelcypher.core.domain.geometry.intrinsic_dimension import (
-                compute_k_for_points,
-            )
-
-            geodesic_k_neighbors = compute_k_for_points(source_vecs, b)
-
         # Riemannian K-Means with geodesic distances
+        # (k=None triggers connectivity-based selection in k_means)
         assignments, _ = ManifoldStitcher.k_means(
             source_vecs,
             cluster_count,
             backend=b,
-            geodesic_k_neighbors=geodesic_k_neighbors,
+            geodesic_k_neighbors=geodesic_k_neighbors,  # Pass through, may be None
         )
 
         # Initialize Riemannian geometry for Fréchet means
@@ -832,23 +825,18 @@ class ManifoldStitcher:
         pts = b.array(points)
         d_dim = pts.shape[1]
 
-        # Derive k from geometry if not specified
-        if geodesic_k_neighbors is None:
-            from modelcypher.core.domain.geometry.intrinsic_dimension import (
-                compute_k_for_points,
-            )
-
-            geodesic_k_neighbors = compute_k_for_points(pts, b)
-
-        # Precompute geodesic distances and Riemannian geometry for Fréchet means
+        # Precompute geodesic distances (k=None triggers connectivity-based selection)
         from modelcypher.core.domain.geometry.riemannian_utils import (
             RiemannianGeometry,
         )
 
         riemannian = RiemannianGeometry(backend=b)
-        geodesic_result = riemannian.geodesic_distances(
-            pts, k_neighbors=min(geodesic_k_neighbors, n - 1)
-        )
+        # If geodesic_k_neighbors is specified, cap at n-1; otherwise let geodesic_distances
+        # do connectivity-based selection
+        k_to_use = min(geodesic_k_neighbors, n - 1) if geodesic_k_neighbors is not None else None
+        geodesic_result = riemannian.geodesic_distances(pts, k_neighbors=k_to_use)
+        # Get actual k from result (may differ if None was passed)
+        geodesic_k_neighbors = geodesic_result.k_neighbors
         geodesic_dist_matrix = geodesic_result.distances
         # Precompute numpy version for centroid representative updates
         geo_np = b.to_numpy(geodesic_dist_matrix)

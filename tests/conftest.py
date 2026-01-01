@@ -39,15 +39,13 @@ _EXPLICIT_MLX = _ENV_BACKEND == "mlx" or os.environ.get("MC_ENABLE_MLX", "").low
     "true",
     "yes",
 )
-if not _EXPLICIT_MLX:
-    os.environ.setdefault("MC_DISABLE_MLX", "1")
 
 
 def _detect_mlx_available() -> bool:
     """Detect if MLX is available (requires Apple Silicon)."""
     if os.environ.get("MC_DISABLE_MLX", "").lower() in ("1", "true", "yes"):
         return False
-    if not _EXPLICIT_MLX:
+    if _ENV_BACKEND in ("jax", "cuda"):
         return False
     if platform.system() != "Darwin":
         return False
@@ -55,7 +53,7 @@ def _detect_mlx_available() -> bool:
         return False
     from modelcypher.core.domain import _backend as backend_manager
 
-    return backend_manager.probe_mlx_available(explicit=True)
+    return backend_manager.probe_mlx_available(explicit=_EXPLICIT_MLX)
 
 
 def _detect_jax_available() -> bool:
