@@ -45,9 +45,7 @@ from modelcypher.core.domain.geometry.intersection_similarity import (
 from modelcypher.core.domain.geometry.manifold_stitcher import (
     ContinuousFingerprint,
     DimensionCorrelation,
-    LayerConfidence,
     ManifoldStitcher,
-    Thresholds,
     _ensure_proper_rotation,
 )
 
@@ -381,64 +379,6 @@ class TestProperRotation:
         diff = backend.abs(product - expected)
         backend.eval(diff)
         assert float(backend.max(diff)) < 1e-6
-
-
-# =============================================================================
-# LayerConfidence Tests
-# =============================================================================
-
-
-class TestLayerConfidence:
-    """Tests for LayerConfidence dataclass."""
-
-    @given(
-        st.integers(min_value=0, max_value=100),
-        st.integers(min_value=0, max_value=100),
-        st.integers(min_value=0, max_value=100),
-    )
-    @settings(max_examples=50, deadline=None)
-    def test_confidence_bounded_zero_one(self, strong: int, moderate: int, weak: int):
-        """LayerConfidence.confidence must be in [0, 1].
-
-        Mathematical property: Weighted average with weights in [0, 1].
-        """
-        lc = LayerConfidence(
-            layer=0,
-            strong_correlations=strong,
-            moderate_correlations=moderate,
-            weak_correlations=weak,
-        )
-        assert 0.0 <= lc.confidence <= 1.0
-
-    def test_confidence_all_strong_is_max(self):
-        """All strong correlations should give confidence = 1.0."""
-        lc = LayerConfidence(
-            layer=0,
-            strong_correlations=10,
-            moderate_correlations=0,
-            weak_correlations=0,
-        )
-        assert lc.confidence == pytest.approx(Thresholds.strong_weight)
-
-    def test_confidence_all_weak_is_min_nonzero(self):
-        """All weak correlations should give confidence = weak_weight."""
-        lc = LayerConfidence(
-            layer=0,
-            strong_correlations=0,
-            moderate_correlations=0,
-            weak_correlations=10,
-        )
-        assert lc.confidence == pytest.approx(Thresholds.weak_weight)
-
-    def test_confidence_empty_is_zero(self):
-        """No correlations should give confidence = 0."""
-        lc = LayerConfidence(
-            layer=0,
-            strong_correlations=0,
-            moderate_correlations=0,
-            weak_correlations=0,
-        )
-        assert lc.confidence == 0.0
 
 
 # =============================================================================

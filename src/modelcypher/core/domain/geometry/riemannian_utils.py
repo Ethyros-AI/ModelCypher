@@ -1809,7 +1809,7 @@ class RiemannianGeometry:
             eta = min(base_eta, max_step / grad_norm)
         elif math.isinf(grad_norm):
             # Gradient is still inf after clipping - use minimal step
-            eta = 1e-10
+            eta = machine_epsilon(backend, gradient)
         else:
             eta = base_eta
 

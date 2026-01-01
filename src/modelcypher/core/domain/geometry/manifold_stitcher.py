@@ -23,7 +23,10 @@ from typing import Any
 
 from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol, enum_key
 from modelcypher.core.domain.geometry.atlas_registry import get_atlas_probes
-from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    regularization_epsilon,
+)
 
 __all__ = [
     # Configuration
@@ -188,9 +191,10 @@ class ContinuousFingerprint:
             logits = arr
             max_val = b.max(logits)
             exp_acts = b.exp(logits - max_val)
-            probs = exp_acts / (b.sum(exp_acts) + 1e-10)
+            eps = division_epsilon(b, exp_acts)
+            probs = exp_acts / (b.sum(exp_acts) + eps)
 
-            log_probs = b.log(probs + 1e-10)
+            log_probs = b.log(probs + eps)
             entropy = -float(b.to_numpy(b.sum(probs * log_probs)).item())
             max_entropy = math.log(max(len(activations), 1))
             entropies[layer] = min(max(entropy / max_entropy, 0.0), 1.0) if max_entropy > 0 else 0.0

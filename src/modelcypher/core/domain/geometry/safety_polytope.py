@@ -546,17 +546,13 @@ def format_transformation_report(profile: ModelTransformationProfile) -> str:
     return "\n".join(lines)
 
 
-class SafetyVerdict(str, Enum):
-    """Safety verdict classification for numerical stability."""
-
-    SAFE = "safe"
-    CAUTION = "caution"
-    UNSAFE = "unsafe"
-    CRITICAL = "critical"
+# SafetyVerdict enum was REMOVED.
+# Verdicts are subjective interpretations. The geometry IS what it is.
+# Return raw measurements (interference, importance, instability, complexity).
+# Callers interpret measurements relative to their own baselines.
 
 
 __all__ = [
-    "SafetyVerdict",
     "TransformationType",
     "DiagnosticVector",
     "PolytopeBounds",

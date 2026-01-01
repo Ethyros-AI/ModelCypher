@@ -70,6 +70,10 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -541,7 +545,7 @@ def analyze_eigenvalues(
     eigenvalues = backend.array(ev_list[::-1])
 
     # Filter positive eigenvalues for stability
-    eps = 1e-10
+    eps = machine_epsilon(backend, eigenvalues)
     ev_list = backend.to_numpy(eigenvalues)
     pos_eigenvalues = [e for e in ev_list if e > eps]
 
@@ -610,8 +614,9 @@ def compare_distributions(
     ev1 = backend.to_numpy(dist1.eigenvalues)
     ev2 = backend.to_numpy(dist2.eigenvalues)
 
-    ev1_pos = [e for e in ev1 if e > 1e-10]
-    ev2_pos = [e for e in ev2 if e > 1e-10]
+    eps = machine_epsilon(backend, dist1.eigenvalues)
+    ev1_pos = [e for e in ev1 if e > eps]
+    ev2_pos = [e for e in ev2 if e > eps]
 
     sum1 = sum(ev1_pos)
     sum2 = sum(ev2_pos)
@@ -672,7 +677,7 @@ def generate_random_gaps(
     uniform = backend.random_uniform(low=0.0, high=1.0, shape=(n,))
     # Inverse CDF of exponential: -mean * ln(1 - u)
     # Add small epsilon to avoid log(0)
-    eps = 1e-10
+    eps = division_epsilon(backend, uniform)
     uniform_safe = backend.maximum(uniform, backend.full((n,), eps))
     one_minus_u = backend.full((n,), 1.0) - uniform_safe
     one_minus_u = backend.maximum(one_minus_u, backend.full((n,), eps))
@@ -1103,6 +1108,7 @@ def bootstrap_confidence_interval(
 def compute_cohens_d(
     values1: list[float],
     values2: list[float],
+    backend: "Backend | None" = None,
 ) -> EffectSize:
     """Compute Cohen's d effect size between two groups.
 
@@ -1113,6 +1119,7 @@ def compute_cohens_d(
     Returns:
     EffectSize with Cohen's d.
     """
+    backend = backend or get_default_backend()
     n1, n2 = len(values1), len(values2)
 
     if n1 < 2 or n2 < 2:
@@ -1127,7 +1134,8 @@ def compute_cohens_d(
     # Pooled standard deviation
     pooled_std = math.sqrt(((n1 - 1) * var1 + (n2 - 1) * var2) / (n1 + n2 - 2))
 
-    if pooled_std < 1e-10:
+    eps = machine_epsilon(backend, backend.array([0.0]))
+    if pooled_std < eps:
         d = 0.0
     else:
         d = (mean1 - mean2) / pooled_std
@@ -1214,7 +1222,7 @@ def run_hypothesis_test(
 
     # Compute effect size
     if prime_samples and baseline_samples:
-        effect = compute_cohens_d(prime_samples, baseline_samples)
+        effect = compute_cohens_d(prime_samples, baseline_samples, backend=backend)
         p_value = permutation_test(prime_samples, baseline_samples, backend=backend)
         ci = bootstrap_confidence_interval(
             [p - b for p, b in zip(prime_samples, baseline_samples)],
@@ -1223,7 +1231,8 @@ def run_hypothesis_test(
     else:
         # Single-value comparison
         diff = prime_value - baseline_value
-        effect = EffectSize.from_cohens_d(diff / (abs(baseline_value) + 1e-10))
+        eps = division_epsilon(backend, backend.array([baseline_value]))
+        effect = EffectSize.from_cohens_d(diff / (abs(baseline_value) + eps))
         p_value = 0.05  # Placeholder without samples
         ci = None
 
@@ -1503,7 +1512,8 @@ def run_perturbation_study(
                 # Box-Muller for Gaussian noise
                 u1 = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
                 u2 = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
-                u1_val = max(float(backend.to_numpy(u1)[0]), 1e-10)
+                u1_eps = division_epsilon(backend, u1)
+                u1_val = max(float(backend.to_numpy(u1)[0]), u1_eps)
                 u2_val = float(backend.to_numpy(u2)[0])
 
                 z = math.sqrt(-2 * math.log(u1_val)) * math.cos(2 * math.pi * u2_val)

@@ -176,13 +176,14 @@ class DensityEstimator:
         radii_sq = sorted_dist_sq[:, k]  # [n]
         b.eval(radii_sq)
 
-        radii = b.sqrt(radii_sq + 1e-10)
+        radius_eps = division_epsilon(b, radii_sq)
+        radii = b.sqrt(radii_sq + radius_eps)
         b.eval(radii)
 
         # Compute density as 1 / r^d (volume of d-dimensional ball)
         # Actually we use k / r^d for proper scaling
-        eps = division_epsilon(b, radii)
-        densities = k / (radii ** d + eps)
+        density_eps = division_epsilon(b, radii)
+        densities = k / (radii ** d + density_eps)
         b.eval(densities)
 
         # Normalize to [0, 1] if requested
@@ -192,7 +193,8 @@ class DensityEstimator:
             b.eval(min_density, max_density)
 
             range_density = max_density - min_density
-            if float(b.to_numpy(range_density)) > 1e-10:
+            range_eps = division_epsilon(b, range_density)
+            if float(b.to_numpy(range_density)) > range_eps:
                 densities = (densities - min_density) / range_density
                 b.eval(densities)
             else:
@@ -286,7 +288,8 @@ class DensityEstimator:
 
         k = min(config.k_neighbors, n_points - 1)
         kth_dist_sq = sorted_dists[:, k]
-        kth_dist = b.sqrt(kth_dist_sq + 1e-10)
+        distance_eps = division_epsilon(b, kth_dist_sq)
+        kth_dist = b.sqrt(kth_dist_sq + distance_eps)
         b.eval(kth_dist)
 
         # Density = k / r^3

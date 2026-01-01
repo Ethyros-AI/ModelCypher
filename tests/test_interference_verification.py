@@ -97,7 +97,7 @@ class TestMergeVerification:
 
         assert verif.merge_id == "test123"
         assert verif.actual_preserved_fraction == 0.78
-        assert verif.actual_safety_verdict == "healthy"
+        assert verif.actual_safety_verdict == 0.8  # Matches value passed in line 93
 
 
 class TestPredictionRegistry:
@@ -377,7 +377,7 @@ class TestInterferenceVerificationService:
                 "preserved_fractions": [0.65],
                 "transform_requirements_counts": {},
             },
-            safety_verdict="healthy",
+            safety_verdict=0.65,  # Raw measurement: mean_preserved_fraction
         )
 
         assert result is not None
@@ -408,7 +408,7 @@ class TestInterferenceVerificationService:
             merge_id=pred1.merge_id,
             geometry_metrics={"mean_preserved_fraction": 0.5},
             transplant_metrics={},
-            safety_verdict="healthy",
+            safety_verdict=0.5,  # Raw measurement: mean_preserved_fraction
         )
 
         pending = service.list_pending_verifications()

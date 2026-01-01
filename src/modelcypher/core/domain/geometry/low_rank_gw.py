@@ -43,6 +43,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -61,7 +62,7 @@ class LowRankCoupling:
         """Reconstruct full coupling matrix [n, m] (ONLY for small matrices)."""
         b = backend
         # P = Q @ diag(1/g) @ R^T
-        eps = 1e-10
+        eps = division_epsilon(b, self.g)
         g_safe = b.maximum(self.g, b.full(self.g.shape, eps))
         g_inv = 1.0 / g_safe
         Qg = self.Q * g_inv  # [n, r] * [r] broadcast
@@ -75,7 +76,7 @@ class LowRankCoupling:
         This is the key operation for weight projection.
         """
         b = backend
-        eps = 1e-10
+        eps = division_epsilon(b, self.g)
         # P^T @ X = R @ diag(1/g) @ Q^T @ X
         g_safe = b.maximum(self.g, b.full(self.g.shape, eps))
         g_inv = 1.0 / g_safe
@@ -88,7 +89,7 @@ class LowRankCoupling:
     def apply_right(self, X: "Array", backend: "Backend") -> "Array":
         """Apply coupling to project target to source: P @ X -> [n, ...]"""
         b = backend
-        eps = 1e-10
+        eps = division_epsilon(b, self.g)
         # P @ X = Q @ diag(1/g) @ R^T @ X
         g_safe = b.maximum(self.g, b.full(self.g.shape, eps))
         g_inv = 1.0 / g_safe
@@ -327,7 +328,6 @@ class LowRankGromovWasserstein:
     ) -> tuple["Array", "Array", "Array"]:
         """Initialize Q, g, R to satisfy marginal constraints."""
         b = backend
-        eps = 1e-10
 
         # Initialize Q and R to be positive with marginal-like structure
         # Q[i, k] ∝ a[i] * uniform_noise
@@ -340,6 +340,7 @@ class LowRankGromovWasserstein:
         R = p.reshape((-1, 1)) * noise_R
         g = b.ones((r,))
         b.eval(Q, R, g)
+        eps = division_epsilon(b, g)
 
         # Normalize to satisfy marginals approximately
         for _ in range(10):
@@ -395,7 +396,7 @@ class LowRankGromovWasserstein:
         b = backend
         n = int(C1.shape[0])
         m = int(C2.shape[0])
-        eps = 1e-10
+        eps = division_epsilon(b, g)
 
         # For very large matrices, use sampling
         max_direct_size = 5000
@@ -516,7 +517,7 @@ class LowRankGromovWasserstein:
         b = backend
         n = int(cost.shape[0])
         m = int(cost.shape[1])
-        eps = 1e-10
+        eps = division_epsilon(b, cost)
 
         # Kernel: K = exp(-cost / reg)
         # Stabilize by centering
@@ -632,7 +633,7 @@ class LowRankGromovWasserstein:
     ) -> float:
         """Compute marginal constraint violation."""
         b = backend
-        eps = 1e-10
+        eps = division_epsilon(b, g)
         g_safe = b.maximum(g, b.full(g.shape, eps))
         g_inv = 1.0 / g_safe
 
@@ -669,7 +670,7 @@ class LowRankGromovWasserstein:
         b = backend
         n = int(Q.shape[0])
         m = int(R.shape[0])
-        eps = 1e-10
+        eps = division_epsilon(b, g)
 
         # For moderate sizes, compute exactly
         max_exact = 2000
@@ -749,7 +750,7 @@ class LowRankGromovWasserstein:
     ) -> float:
         """Compute approximate GW distance using sampling."""
         b = backend
-        eps = 1e-10
+        eps = division_epsilon(b, g)
 
         sample_size = min(500, n, m)
 

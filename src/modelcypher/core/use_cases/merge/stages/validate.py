@@ -54,48 +54,57 @@ _RIDGE_TEST_PROMPTS = (
 
 @dataclass
 class BehavioralProbeResult:
-    """Result of behavioral probe validation."""
+    """Result of behavioral probe validation.
 
-    risk_score: float
-    status: str  # "passed", "warning", "blocked"
-    findings: list[str]
+    Returns raw measurements only. No status verdicts.
+    Callers interpret risk_score relative to their baselines.
+    """
+
+    risk_score: float  # Raw measurement - higher = more risk
+    findings: list[str]  # What was found (descriptive, not judgmental)
     probes_run: int
 
 
 @dataclass
 class CircuitBreakerResult:
-    """Result of circuit breaker evaluation."""
+    """Result of circuit breaker evaluation.
 
-    tripped: bool
-    severity: float
-    trigger_source: str | None
-    recommended_action: str
+    Returns raw measurements. tripped is a factual state, not a verdict.
+    """
+
+    tripped: bool  # Factual: did the breaker trip or not
+    severity: float  # Raw measurement
+    trigger_source: str | None  # What triggered it (if anything)
 
 
 @dataclass
 class RidgeResistanceResult:
-    """Result of ridge-crossing resistance validation."""
+    """Result of ridge-crossing resistance validation.
 
-    passed: bool
-    ridge_cross_rate: float
-    vulnerable_prompts: list[str]
+    Returns raw measurements only. No pass/fail verdicts.
+    """
+
+    ridge_cross_rate: float  # Raw measurement: fraction of prompts that crossed
+    vulnerable_prompts: list[str]  # Which prompts crossed (data)
     prompts_tested: int
 
 
 @dataclass
 class ValidateResult:
-    """Result of Stage 6 validation."""
+    """Result of Stage 6 validation.
 
-    metrics: dict[str, Any]
-    safety_verdict: str  # safe, caution, unsafe, critical
-    refusal_preserved: bool
+    Returns raw measurements only. No safety verdicts.
+    The geometry IS what it is - callers interpret relative to baselines.
+    """
 
-    # Extended safety results
+    metrics: dict[str, Any]  # All raw measurements
+    refusal_preserved: bool  # Factual: is refusal direction preserved
+
+    # Extended safety results (all raw measurements)
     behavioral_probe_result: BehavioralProbeResult | None = None
     circuit_breaker_result: CircuitBreakerResult | None = None
     ridge_resistance_result: RidgeResistanceResult | None = None
-    entropy_phase: str = "ordered"
-    final_safety_verdict: str = "safe"  # Composite of all checks
+    entropy_phase: str = "ordered"  # Thermodynamic phase (measurement)
 
 
 def stage_validate(

@@ -593,9 +593,14 @@ class TestEntropyMathematics:
         Center = 2.25, bandwidth = 0.3
         Critical zone: [1.95, 2.55]
         """
+        from modelcypher.core.domain.merging.entropy_merge_validator import (
+            EntropyMergeConfig,
+        )
         from modelcypher.core.domain.thermo.phase_transition_theory import Phase
 
-        validator = EntropyMergeValidator()
+        # Provide config so classify_phase has thresholds
+        config = EntropyMergeConfig.from_entropy_statistics(entropy_mean=2.0, entropy_std=1.0)
+        validator = EntropyMergeValidator(config=config)
 
         # Below critical zone -> ORDERED
         assert validator.classify_phase(1.0) == Phase.ORDERED
@@ -657,18 +662,14 @@ class TestEdgeCases:
     """Test edge cases and boundary conditions."""
 
     def test_empty_entropy_dict(self) -> None:
-        """Empty entropy dicts should return safe defaults."""
+        """Empty entropy dicts should raise ValueError (cannot derive config)."""
         validator = EntropyMergeValidator()
-        validation = validator.validate_merge(
-            source_entropies={},
-            target_entropies={},
-            merged_entropies={},
-        )
-
-        assert validation.mean_entropy_ratio == 0.0
-        assert validation.max_entropy_ratio == 0.0
-        assert validation.mean_knowledge_retention == 1.0
-        assert len(validation.layer_validations) == 0
+        with pytest.raises(ValueError, match="entropy_values cannot be empty"):
+            validator.validate_merge(
+                source_entropies={},
+                target_entropies={},
+                merged_entropies={},
+            )
 
     def test_single_layer_model(self) -> None:
         """Single layer models should work correctly."""
