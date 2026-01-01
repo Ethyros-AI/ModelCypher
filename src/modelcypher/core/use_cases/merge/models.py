@@ -105,7 +105,9 @@ class UnifiedMergeResult:
 
     # Stage 6: Safety validation metrics
     validation_metrics: dict[str, Any] = field(default_factory=dict)
-    safety_verdict: str = "not_validated"  # healthy, degenerate, collapsed
+    # Raw measurement: mean_preserved_fraction from transplant stage
+    # No categorical verdicts - callers interpret relative to their baselines
+    safety_verdict: float = 0.0
     refusal_preserved: bool = True
 
     # Geometric confidence signals (raw measurements, no interpretation)

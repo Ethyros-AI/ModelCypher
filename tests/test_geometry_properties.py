@@ -25,9 +25,6 @@ from hypothesis import strategies as st
 
 from modelcypher.core.domain.geometry.generalized_procrustes import Config, GeneralizedProcrustes
 from modelcypher.core.domain.geometry.gromov_wasserstein import (
-    Config as GWConfig,
-)
-from modelcypher.core.domain.geometry.gromov_wasserstein import (
     GromovWassersteinDistance,
 )
 
@@ -161,9 +158,8 @@ class TestGromovWassersteinProperties:
 
         gw = GromovWassersteinDistance()
         distances = gw.compute_pairwise_distances(points)
-        config = GWConfig(max_outer_iterations=10)
 
-        result = gw.compute(distances, distances, config)
+        result = gw.compute(distances, distances)
 
         # Implementation has fast-path for identical matrices returning 0
         # This is a fundamental mathematical property: d(X, X) = 0
@@ -180,8 +176,7 @@ class TestGromovWassersteinProperties:
         distances_a = gw.compute_pairwise_distances(points_a)
         distances_b = gw.compute_pairwise_distances(points_b)
 
-        config = GWConfig(max_outer_iterations=10)
-        result = gw.compute(distances_a, distances_b, config)
+        result = gw.compute(distances_a, distances_b)
 
         assert result.distance >= 0
 
@@ -196,8 +191,7 @@ class TestGromovWassersteinProperties:
         distances_a = gw.compute_pairwise_distances(points_a)
         distances_b = gw.compute_pairwise_distances(points_b)
 
-        config = GWConfig(max_outer_iterations=10)
-        result = gw.compute(distances_a, distances_b, config)
+        result = gw.compute(distances_a, distances_b)
 
         assert 0.0 <= result.normalized_distance <= 1.0
 
@@ -212,8 +206,7 @@ class TestGromovWassersteinProperties:
         distances_a = gw.compute_pairwise_distances(points_a)
         distances_b = gw.compute_pairwise_distances(points_b)
 
-        config = GWConfig(max_outer_iterations=10)
-        result = gw.compute(distances_a, distances_b, config)
+        result = gw.compute(distances_a, distances_b)
 
         assert 0.0 <= result.alignment_score <= 1.0
 
@@ -226,9 +219,8 @@ class TestGromovWassersteinProperties:
 
         gw = GromovWassersteinDistance()
         distances = gw.compute_pairwise_distances(points)
-        config = GWConfig(max_outer_iterations=5)
 
-        result = gw.compute(distances, distances, config)
+        result = gw.compute(distances, distances)
 
         n = len(points)
         if result.coupling is not None and hasattr(result.coupling, 'shape'):

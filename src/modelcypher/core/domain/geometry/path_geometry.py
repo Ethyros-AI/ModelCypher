@@ -308,7 +308,11 @@ class PathGeometry:
             vec_a = gate_embeddings.get(node_a.gate_id)
             vec_b = gate_embeddings.get(node_b.gate_id)
             if vec_a and vec_b:
-                return 1.0 - (VectorMath.cosine_similarity(vec_a, vec_b) or 0.0)
+                try:
+                    return 1.0 - VectorMath.cosine_similarity(vec_a, vec_b)
+                except ValueError:
+                    # Zero vector: undefined similarity, maximum distance
+                    return 1.0
             return 1.0
 
         dp[0][0] = dist(0, 0)

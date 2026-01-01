@@ -54,6 +54,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol, enum_key
 
 if TYPE_CHECKING:
@@ -433,7 +434,8 @@ class DimensionBlender:
 
         # Compute max confidence for normalization (data-driven, not arbitrary 0.5)
         max_confidence = max(all_confidences) if all_confidences else 1.0
-        max_confidence = max(max_confidence, 1e-10)  # Avoid division by zero
+        eps = division_epsilon(backend, backend.array([max_confidence]))
+        max_confidence = max(max_confidence, eps)  # Avoid division by zero
 
         classified_count = 0
         for dim_idx, scores in profile.dimension_scores.items():

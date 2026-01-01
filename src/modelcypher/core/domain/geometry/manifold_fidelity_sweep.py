@@ -423,7 +423,9 @@ class ManifoldFidelitySweep:
         var_y = sum((b - mean_y) ** 2 for b in dy)
 
         denom = math.sqrt(var_x * var_y)
-        return cov / denom if denom > 1e-10 else 0.0
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([denom]))
+        return cov / denom if denom > eps else 0.0
 
     def _compute_plateau(self, metrics: list[RankMetrics]) -> PlateauSummary:
         """Find plateau ranks where metrics stop improving."""

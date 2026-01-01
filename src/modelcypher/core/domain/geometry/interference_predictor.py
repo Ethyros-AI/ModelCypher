@@ -27,6 +27,9 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array
 
@@ -316,7 +319,9 @@ class MergeAnalyzer:
         r_b = relation.volume_b.effective_radius
         sum_radius = r_a + r_b
 
-        if sum_radius < 1e-10:
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([sum_radius]))
+        if sum_radius < eps:
             return 0.0
 
         # Normalize by sum of radii (touching spheres = 1.0)
@@ -348,7 +353,9 @@ class MergeAnalyzer:
 
         # Asymmetric Mahalanobis distances -> boundary smoothing
         mahal_sum = relation.mahalanobis_distance_ab + relation.mahalanobis_distance_ba
-        if mahal_sum > 1e-10:
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([mahal_sum]))
+        if mahal_sum > eps:
             mahal_asymmetry = abs(
                 relation.mahalanobis_distance_ab - relation.mahalanobis_distance_ba
             ) / mahal_sum
@@ -498,4 +505,3 @@ def quick_merge_analysis(
         mean_alignment=mean_alignment,
         transformation_summary=summary,
     )
-

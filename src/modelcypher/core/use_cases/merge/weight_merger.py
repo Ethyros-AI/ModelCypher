@@ -366,14 +366,14 @@ def merge_weights(
                     )
                     if ambient_dim > 0:
                         compression_ratio = layer_geom.intrinsic_dimension / ambient_dim
-                        if compression_ratio < 0.1:
-                            # Heavily compressed - trust target more for stability
-                            alpha = alpha * 0.5
-                            metrics["intrinsic_dim_scaled"] += 1
-                        elif compression_ratio > 0.5:
-                            # High-dimensional data - can blend more confidently
-                            alpha = min(1.0, alpha * 1.2)
-                            metrics["intrinsic_dim_scaled"] += 1
+                        # Continuous sigmoid scaling instead of discrete thresholds
+                        # cr near 0 → alpha_scale ≈ 0.5 (trust target more)
+                        # cr = 0.3 → alpha_scale = 0.85 (neutral point)
+                        # cr near 1 → alpha_scale ≈ 1.2 (blend more confidently)
+                        import math
+                        alpha_scale = 0.5 + 0.7 / (1.0 + math.exp(-10.0 * (compression_ratio - 0.3)))
+                        alpha = alpha * alpha_scale
+                        metrics["intrinsic_dim_scaled"] += 1
 
                 # Apply interference-based alpha scaling (from A.2 transform requirements)
                 if any(t.upper() == "ALPHA_SCALING" for t in layer_geom.transform_requirements):
@@ -442,11 +442,13 @@ def merge_weights(
                 # ============================================================
                 # A.3: Curvature-aware geodesic blending (SLERP)
                 # ============================================================
+                # No threshold - attempt SLERP whenever curvature is nonzero
+                # The curvature value itself is the signal; let geometry decide
                 if (
                     merged_w is None
                     and use_geodesic_blend
                     and layer_geom
-                    and abs(layer_geom.curvature) > 0.05
+                    and abs(layer_geom.curvature) > 0.0
                 ):
                     try:
                         # SLERP: Spherical linear interpolation for curved manifolds
@@ -601,8 +603,9 @@ def merge_weights(
 
                 b.eval(merged_w)
 
-                # Apply DARE sparsification if interference score is high
-                if layer_geom and layer_geom.interference_score > 0.5:
+                # Apply DARE sparsification with continuous scaling by interference
+                # No discrete threshold - intensity scales with interference_score
+                if layer_geom and layer_geom.interference_score > 0.0:
                     try:
                         from modelcypher.core.domain.geometry.dare_sparsity import (
                             Configuration as DAREConfig,
@@ -615,15 +618,21 @@ def merge_weights(
                         b.eval(delta)
                         b.to_numpy(delta)
 
+                        # Continuous sparsity scaling:
+                        # High interference → lower threshold → drop more
+                        # Low interference → higher threshold → drop less
+                        interference = layer_geom.interference_score
+                        sparsity_threshold = 0.01 + 0.09 * (1.0 - interference)
+
                         # Analyze sparsity
                         config = DAREConfig(
-                            sparsity_threshold=0.01,
+                            sparsity_threshold=sparsity_threshold,
                             droppable_percentile=0.9,
                         )
                         analyze_sparsity({"delta": delta}, config)
 
-                        # Drop low-magnitude components
-                        threshold = 0.01 * float(b.max(b.abs(delta)).item())
+                        # Drop low-magnitude components with interference-scaled threshold
+                        threshold = sparsity_threshold * float(b.max(b.abs(delta)).item())
                         mask = b.abs(delta) > threshold
                         b.eval(mask)
                         sparse_delta = delta * b.astype(mask, "float32")

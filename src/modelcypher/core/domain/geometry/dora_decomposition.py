@@ -42,6 +42,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -201,7 +202,8 @@ class DoRADecomposition:
         dot_arr = b.sum(base_flat * current_flat)
         b.eval(dot_arr)
         dot = float(b.to_numpy(dot_arr).item())
-        cosine = dot / (base_mag * current_mag + 1e-10)
+        eps = division_epsilon(b, base_flat)
+        cosine = dot / (base_mag * current_mag + eps)
         cosine = max(-1.0, min(1.0, cosine))  # Clamp
 
         directional_drift = 1.0 - cosine
@@ -232,6 +234,7 @@ class DoRADecomposition:
         Returns:
             DecompositionResult with analysis
         """
+        backend = get_default_backend()
         per_layer: dict[str, MagnitudeDirectionMetrics] = {}
         total_mag_change = 0.0
         total_dir_drift = 0.0
@@ -262,7 +265,8 @@ class DoRADecomposition:
             if metrics.magnitude_ratio > 1.2 or metrics.magnitude_ratio < 0.8:
                 sig_magnitude.append(name)
 
-        if total_weight < 1e-10:
+        eps = division_epsilon(backend, backend.array([total_weight]))
+        if total_weight < eps:
             return self._empty_result()
 
         overall_mag = total_mag_change / total_weight

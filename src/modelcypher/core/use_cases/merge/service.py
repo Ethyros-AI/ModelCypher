@@ -74,7 +74,7 @@ class PostMergeValidation:
 
     # Geometry from merge result
     mean_confidence: float  # = preserved_fraction
-    safety_verdict: str
+    safety_verdict: float  # Raw measurement, no categorical verdict
     geometry_metrics: dict[str, Any]
 
     # Transplant details

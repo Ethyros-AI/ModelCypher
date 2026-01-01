@@ -232,8 +232,13 @@ class LocalCurvature:
         """Measure of curvature variation across directions (0=isotropic)."""
         if self.max_sectional == self.min_sectional:
             return 0.0
+        backend = get_default_backend()
+        eps = division_epsilon(
+            backend,
+            backend.array([self.max_sectional, self.min_sectional]),
+        )
         return (self.max_sectional - self.min_sectional) / (
-            abs(self.max_sectional) + abs(self.min_sectional) + 1e-10
+            abs(self.max_sectional) + abs(self.min_sectional) + eps
         )
 
 
@@ -256,10 +261,12 @@ class ManifoldCurvatureProfile:
 
     def get_high_curvature_regions(self, threshold: float = 2.0) -> list[int]:
         """Get indices of points with curvature magnitude above threshold."""
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([self.global_mean]))
         return [
             i
             for i, lc in enumerate(self.local_curvatures)
-            if abs(lc.mean_sectional) > threshold * abs(self.global_mean + 1e-10)
+            if abs(lc.mean_sectional) > threshold * abs(self.global_mean + eps)
         ]
 
     def curvature_at_point(self, point: "Array", k: int = 3) -> LocalCurvature | None:
@@ -303,10 +310,12 @@ class ManifoldCurvatureProfile:
         nearest_indices = [idx for idx, _ in indexed_distances[:k]]
 
         # Weighted average by inverse geodesic distance
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array(distances))
         weights = []
         for idx in nearest_indices:
             d = distances[idx]
-            weights.append(1.0 / (d + 1e-10))
+            weights.append(1.0 / (d + eps))
 
         total_weight = sum(weights)
         weights = [w / total_weight for w in weights]
@@ -404,7 +413,8 @@ class SectionalCurvatureEstimator:
             backend.eval(u)
             u_norm = backend.norm(u)
             backend.eval(u_norm)
-            u = u / (float(backend.to_numpy(u_norm)) + 1e-10)
+            eps = division_epsilon(backend, u)
+            u = u / (float(backend.to_numpy(u_norm)) + eps)
 
             v = backend.random_normal((d,))
             backend.eval(u, v)
@@ -417,7 +427,7 @@ class SectionalCurvatureEstimator:
             v_norm = backend.norm(v)
             backend.eval(v_norm)
             v_norm_val = float(backend.to_numpy(v_norm))
-            if v_norm_val < 1e-10:
+            if v_norm_val < eps:
                 continue
             v = v / v_norm_val
 
@@ -927,7 +937,9 @@ class SectionalCurvatureEstimator:
             return None
 
         mean_scalar = sum(scalars) / len(scalars)
-        if abs(mean_scalar) < 1e-10:
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([mean_scalar]))
+        if abs(mean_scalar) < eps:
             return None
 
         # For positive curvature, estimate dimension from sphere formula
@@ -1377,4 +1389,3 @@ class OllivierRicciCurvature:
                 )
 
         return result
-

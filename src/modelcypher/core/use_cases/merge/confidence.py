@@ -121,34 +121,9 @@ def compute_mean_confidence(geometry_metrics: dict[str, float]) -> float:
     return geometry_metrics.get("mean_preserved_fraction", 0.0)
 
 
-def compute_safety_verdict(geometry_metrics: dict[str, float]) -> str:
-    """Derive safety verdict from geometric signals.
-
-    No magic thresholds - just describe what the geometry says.
-    The thresholds used ARE structural:
-    - transplant_ratio == 0: Nothing was transplanted (failed)
-    - mean_preserved_fraction < 0.1: Almost nothing preserved (collapsed)
-    - mean_preserved_fraction < 0.5: Less than half preserved (degenerate)
-
-    Args:
-        geometry_metrics: Output from compute_geometric_confidence_from_transplant
-
-    Returns:
-        Safety verdict string: "healthy", "degenerate", "collapsed", or "failed"
-    """
-    transplant_ratio = geometry_metrics.get("transplant_ratio", 0.0)
-    preserved = geometry_metrics.get("mean_preserved_fraction", 0.0)
-
-    # Structural thresholds based on what actually happened
-    if transplant_ratio == 0.0:
-        # Nothing was transplanted - operation failed
-        return "failed"
-    elif preserved < 0.1:
-        # Almost no knowledge survived
-        return "collapsed"
-    elif preserved < 0.5:
-        # Less than half survived
-        return "degenerate"
-    else:
-        # Majority of knowledge preserved
-        return "healthy"
+# NOTE: compute_safety_verdict() was REMOVED.
+# Categorical verdicts ("healthy", "degenerate", "collapsed") violate the
+# "no vibes" principle. Use raw measurements from geometry_metrics instead:
+#   - geometry_metrics["mean_preserved_fraction"] - fraction of knowledge preserved
+#   - geometry_metrics["transplant_ratio"] - fraction of weights transplanted
+# Callers should interpret these values relative to their own baselines.

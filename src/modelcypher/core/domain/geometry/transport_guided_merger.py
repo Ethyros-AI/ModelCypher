@@ -41,6 +41,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
 from modelcypher.core.domain.geometry.gromov_wasserstein import GromovWassersteinDistance
 from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
     machine_epsilon,
 )
 
@@ -326,14 +327,15 @@ class TransportGuidedMerger:
 
         # Row sums
         row_sums = backend.sum(coupling, axis=1, keepdims=True)
-        row_sums = backend.maximum(row_sums, backend.full(row_sums.shape, 1e-10))
+        eps = division_epsilon(backend, coupling)
+        row_sums = backend.maximum(row_sums, backend.full(row_sums.shape, eps))
 
         # Normalized probabilities
         probs = coupling / row_sums
 
         # Entropy per row: -sum(p * log(p))
         # Avoid log(0) by clamping
-        probs_safe = backend.maximum(probs, backend.full(probs.shape, 1e-20))
+        probs_safe = backend.maximum(probs, backend.full(probs.shape, eps))
         log_probs = backend.log(probs_safe)
         entropy_per_row = -backend.sum(probs * log_probs, axis=1)
 

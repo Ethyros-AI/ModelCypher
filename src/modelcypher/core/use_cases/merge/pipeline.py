@@ -412,12 +412,12 @@ def run_merge(
     from modelcypher.core.use_cases.merge.confidence import (
         compute_geometric_confidence_from_transplant,
         compute_mean_confidence,
-        compute_safety_verdict,
     )
 
     geometry_metrics = compute_geometric_confidence_from_transplant(transplant_metrics)
     mean_confidence = compute_mean_confidence(geometry_metrics)
-    safety_verdict = compute_safety_verdict(geometry_metrics)
+    # Raw measurement - no categorical verdict
+    safety_verdict = geometry_metrics.get("mean_preserved_fraction", 0.0)
 
     projection_losses = transplant_metrics.get("projection_losses", [])
     mean_error = sum(projection_losses) / len(projection_losses) if projection_losses else 0.0
@@ -735,12 +735,8 @@ def run_full_geometry_merge(
         **geometry.curvature_alignment_details,
     }
 
-    # Safety verdict derived from curvature alignment
-    # High alignment = geometry is compatible; low = potential issues
-    if geometry.curvature_alignment < 0.3:
-        safety_verdict_full = "low_alignment"
-    else:
-        safety_verdict_full = "aligned"
+    # Raw curvature alignment - no categorical verdict
+    # Callers interpret the value relative to their own baselines
 
     result = UnifiedMergeResult(
         merged_weights=merged_weights,
@@ -760,7 +756,7 @@ def run_full_geometry_merge(
         merge_strategy="full_geometry",
         output_path=output_path,
         vocab_aligned=vocab_aligned,
-        safety_verdict=safety_verdict_full,
+        safety_verdict=geometry.curvature_alignment,
         refusal_preserved=geometry.refusal_preserved,
         geometry_metrics=geometry_metrics_full,
     )
