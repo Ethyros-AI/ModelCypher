@@ -669,10 +669,17 @@ def stage_transplant(
                     inter_result = aligner.find_perfect_alignment(src_inter, tgt_inter)
 
                     if inter_result.is_perfect:
+                        # feature_transform F is [d_source, d_target]
+                        # source @ F → target (activation alignment)
+                        #
+                        # For weight folding W_target = F_out.T @ W_source @ pinv(F_in).T:
+                        #   - F.T [d_target, d_source] for OUTPUT side (left multiply)
+                        #   - pinv(F).T [d_source, d_target] for INPUT side (right multiply)
                         F = b.array(inter_result.feature_transform)
                         b.eval(F)
-                        intermediate_stitch_weights = b.transpose(F)
-                        b.eval(intermediate_stitch_weights)
+                        intermediate_stitch_output = b.transpose(F)  # F.T [tgt, src]
+                        intermediate_stitch_input = b.transpose(b.pinv(F))  # pinv(F).T [src, tgt]
+                        b.eval(intermediate_stitch_output, intermediate_stitch_input)
                         logger.info(
                             "Layer %d: Intermediate GramAlign CKA=%.4f (%d→%d), err=%.6f",
                             layer_idx, inter_result.achieved_cka,
@@ -834,13 +841,30 @@ def stage_transplant(
                     "gate_proj", "up_proj", "down_proj", "mlp.fc1", "mlp.fc2"
                 ])
 
-                if is_mlp and hidden_stitch_weights is not None and intermediate_stitch_weights is not None:
-                    # MLP weight: apply BOTH stitches to ORIGINAL source weight
-                    # (bypasses any partial transforms from shared_subspace)
-                    src_hidden_dim = int(hidden_stitch_weights.shape[1])
-                    tgt_hidden_dim = int(hidden_stitch_weights.shape[0])
-                    src_inter_dim = int(intermediate_stitch_weights.shape[1])
-                    tgt_inter_dim = int(intermediate_stitch_weights.shape[0])
+                # =================================================================
+                # MIRROR PROBLEM FIX: Correct weight folding transforms
+                # =================================================================
+                # GramAligner finds F such that: source @ F → target (activation alignment)
+                #
+                # For WEIGHT folding, we need the inverse on the INPUT side:
+                #   W_target = F_out.T @ W_source @ pinv(F_in).T
+                #
+                # Where:
+                #   - F_out.T [tgt_out, src_out] = stitch_output (left multiply for output dim)
+                #   - pinv(F_in).T [src_in, tgt_in] = stitch_input (right multiply for input dim)
+                #
+                # Weight shapes: [output_features, input_features]
+                #   - gate_proj/up_proj: [intermediate, hidden] (out=inter, in=hidden)
+                #   - down_proj:         [hidden, intermediate] (out=hidden, in=inter)
+                #   - attention:         [hidden, hidden] (both dims hidden)
+
+                if is_mlp and hidden_stitch_output is not None and intermediate_stitch_output is not None:
+                    # MLP weight: apply BOTH stitches with correct orientations
+                    # stitch_output for OUTPUT side (rows), stitch_input for INPUT side (cols)
+                    src_hidden_dim = int(hidden_stitch_output.shape[1])  # F.T is [tgt, src]
+                    tgt_hidden_dim = int(hidden_stitch_output.shape[0])
+                    src_inter_dim = int(intermediate_stitch_output.shape[1])
+                    tgt_inter_dim = int(intermediate_stitch_output.shape[0])
 
                     logger.info(
                         "MLP weight %s: applying dual stitch (hidden %d→%d, inter %d→%d)",
@@ -852,20 +876,22 @@ def stage_transplant(
 
                     if dim0 == src_inter_dim and dim1 == src_hidden_dim:
                         # gate_proj/up_proj: [intermediate, hidden] → [tgt_inter, tgt_hidden]
-                        # Apply: intermediate_stitch @ weight @ hidden_stitch.T
-                        source_aligned = b.matmul(intermediate_stitch_weights, source_w)
-                        source_aligned = b.matmul(source_aligned, b.transpose(hidden_stitch_weights))
+                        # Output=intermediate (rows), Input=hidden (cols)
+                        # W_target = inter_stitch_output @ W @ hidden_stitch_input
+                        source_aligned = b.matmul(intermediate_stitch_output, source_w)
+                        source_aligned = b.matmul(source_aligned, hidden_stitch_input)
                         b.eval(source_aligned)
-                        logger.info("Dual stitch (gate/up style): [%d,%d] → [%d,%d]",
+                        logger.info("Dual stitch (gate/up): [%d,%d] → [%d,%d]",
                                     dim0, dim1, tgt_inter_dim, tgt_hidden_dim)
 
                     elif dim0 == src_hidden_dim and dim1 == src_inter_dim:
                         # down_proj: [hidden, intermediate] → [tgt_hidden, tgt_inter]
-                        # Apply: hidden_stitch @ weight @ intermediate_stitch.T
-                        source_aligned = b.matmul(hidden_stitch_weights, source_w)
-                        source_aligned = b.matmul(source_aligned, b.transpose(intermediate_stitch_weights))
+                        # Output=hidden (rows), Input=intermediate (cols)
+                        # W_target = hidden_stitch_output @ W @ inter_stitch_input
+                        source_aligned = b.matmul(hidden_stitch_output, source_w)
+                        source_aligned = b.matmul(source_aligned, intermediate_stitch_input)
                         b.eval(source_aligned)
-                        logger.info("Dual stitch (down style): [%d,%d] → [%d,%d]",
+                        logger.info("Dual stitch (down): [%d,%d] → [%d,%d]",
                                     dim0, dim1, tgt_hidden_dim, tgt_inter_dim)
 
                     else:
@@ -879,33 +905,34 @@ def stage_transplant(
                     metrics.setdefault("dual_stitch_applied", 0)
                     metrics["dual_stitch_applied"] += 1
 
-                elif hidden_stitch_weights is not None:
-                    # Attention or other weight: apply hidden stitch to ORIGINAL source
-                    src_hidden_dim = int(hidden_stitch_weights.shape[1])
-                    tgt_hidden_dim = int(hidden_stitch_weights.shape[0])
+                elif hidden_stitch_output is not None and hidden_stitch_input is not None:
+                    # Attention or other weight: both dimensions are hidden
+                    # W_target = hidden_stitch_output @ W @ hidden_stitch_input
+                    src_hidden_dim = int(hidden_stitch_output.shape[1])
+                    tgt_hidden_dim = int(hidden_stitch_output.shape[0])
                     dim0, dim1 = int(original_source_shape[0]), int(original_source_shape[1])
 
                     if dim0 == src_hidden_dim and dim1 == src_hidden_dim:
-                        # BOTH dimensions are hidden_dim (e.g., q_proj, o_proj)
-                        # Apply stitch to BOTH dimensions: hidden_stitch @ weight @ hidden_stitch.T
-                        source_aligned = b.matmul(hidden_stitch_weights, source_w)
-                        source_aligned = b.matmul(source_aligned, b.transpose(hidden_stitch_weights))
+                        # BOTH dimensions are hidden_dim (e.g., attention weights)
+                        # W_target = hidden_stitch_output @ W @ hidden_stitch_input
+                        source_aligned = b.matmul(hidden_stitch_output, source_w)
+                        source_aligned = b.matmul(source_aligned, hidden_stitch_input)
                         b.eval(source_aligned)
-                        logger.info("Hidden stitch applied to BOTH dims: [%d,%d] → [%d,%d]",
+                        logger.info("Hidden stitch (both dims): [%d,%d] → [%d,%d]",
                                     dim0, dim1, tgt_hidden_dim, tgt_hidden_dim)
 
                     elif dim0 == src_hidden_dim:
-                        # Hidden dim is first only: hidden_stitch @ weight
-                        source_aligned = b.matmul(hidden_stitch_weights, source_w)
+                        # Hidden dim is OUTPUT only (rows): hidden_stitch_output @ W
+                        source_aligned = b.matmul(hidden_stitch_output, source_w)
                         b.eval(source_aligned)
-                        logger.info("Hidden stitch applied to dim0: [%d,%d] → [%d,%d]",
+                        logger.info("Hidden stitch (output only): [%d,%d] → [%d,%d]",
                                     dim0, dim1, tgt_hidden_dim, dim1)
 
                     elif dim1 == src_hidden_dim:
-                        # Hidden dim is second only: weight @ hidden_stitch.T
-                        source_aligned = b.matmul(source_w, b.transpose(hidden_stitch_weights))
+                        # Hidden dim is INPUT only (cols): W @ hidden_stitch_input
+                        source_aligned = b.matmul(source_w, hidden_stitch_input)
                         b.eval(source_aligned)
-                        logger.info("Hidden stitch applied to dim1: [%d,%d] → [%d,%d]",
+                        logger.info("Hidden stitch (input only): [%d,%d] → [%d,%d]",
                                     dim0, dim1, dim0, tgt_hidden_dim)
 
                     else:
