@@ -60,23 +60,27 @@ def train_start(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model"),
     dataset: str = typer.Option(..., "--dataset"),
-    learning_rate: float = typer.Option(1e-5, "--learning-rate"),
-    batch_size: int = typer.Option(4, "--batch-size"),
-    epochs: int = typer.Option(3, "--epochs"),
-    sequence_length: int = typer.Option(2048, "--sequence-length"),
-    grad_accum: int | None = typer.Option(None, "--grad-accum"),
-    warmup_steps: int | None = typer.Option(None, "--warmup-steps"),
-    weight_decay: float | None = typer.Option(None, "--weight-decay"),
-    gradient_clip: float | None = typer.Option(None, "--gradient-clip"),
+    learning_rate: float = typer.Option(..., "--learning-rate"),
+    batch_size: int = typer.Option(..., "--batch-size"),
+    epochs: int = typer.Option(..., "--epochs"),
+    sequence_length: int = typer.Option(..., "--sequence-length"),
+    grad_accum: int = typer.Option(..., "--grad-accum"),
+    warmup_steps: int = typer.Option(..., "--warmup-steps"),
+    weight_decay: float = typer.Option(..., "--weight-decay"),
+    gradient_checkpointing: bool = typer.Option(
+        ..., "--gradient-checkpointing/--no-gradient-checkpointing"
+    ),
+    mixed_precision: bool = typer.Option(..., "--mixed-precision/--no-mixed-precision"),
+    compute_precision: str = typer.Option(..., "--compute-precision"),
+    optimizer_type: str = typer.Option(..., "--optimizer-type"),
     resume_from: str | None = typer.Option(None, "--resume-from"),
     lora_rank: int | None = typer.Option(None, "--lora-rank"),
     lora_alpha: float | None = typer.Option(None, "--lora-alpha"),
-    lora_dropout: float = typer.Option(0.0, "--lora-dropout"),
+    lora_dropout: float | None = typer.Option(None, "--lora-dropout"),
     lora_targets: list[str] | None = typer.Option(None, "--lora-targets"),
-    lora_layers: int | None = typer.Option(None, "--lora-layers"),
     out_dir: str | None = typer.Option(None, "--out"),
-    seed: int | None = typer.Option(None, "--seed"),
-    deterministic: bool = typer.Option(False, "--deterministic"),
+    seed: int = typer.Option(..., "--seed"),
+    deterministic: bool = typer.Option(..., "--deterministic/--stochastic"),
     detach: bool = typer.Option(False, "--detach"),
     stream: bool = typer.Option(False, "--stream"),
 ) -> None:
@@ -87,29 +91,41 @@ def train_start(
         mc train start --model ./local-model --dataset ./data.jsonl --lora-rank 8 --lora-alpha 16
     """
     context = _context(ctx)
-    from modelcypher.core.domain.training import Hyperparameters, LoRAConfig, TrainingConfig
+    from modelcypher.core.domain.training import ComputePrecision, Hyperparameters, LoRAConfig, TrainingConfig
 
     # Build LoRA config if specified
     lora_config = None
     if lora_rank is not None:
+        if lora_alpha is None or lora_dropout is None or lora_targets is None:
+            raise typer.BadParameter(
+                "lora-alpha, lora-dropout, and lora-targets are required when lora-rank is set."
+            )
         lora_config = LoRAConfig(
             rank=lora_rank,
-            alpha=lora_alpha if lora_alpha is not None else 16.0,
+            alpha=lora_alpha,
             dropout=lora_dropout,
-            target_modules=lora_targets or ["q_proj", "v_proj"],
+            target_modules=lora_targets,
         )
 
     # Build hyperparameters
+    try:
+        precision = ComputePrecision(compute_precision)
+    except ValueError as exc:
+        raise typer.BadParameter(f"Invalid compute-precision: {compute_precision}") from exc
     hyperparams = Hyperparameters(
         batch_size=batch_size,
         learning_rate=learning_rate,
         epochs=epochs,
         sequence_length=sequence_length,
-        gradient_accumulation_steps=grad_accum if grad_accum is not None else 1,
-        warmup_steps=warmup_steps if warmup_steps is not None else 10,
-        weight_decay=weight_decay if weight_decay is not None else 0.01,
-        seed=seed if seed is not None else 42,
+        gradient_accumulation_steps=grad_accum,
+        gradient_checkpointing=gradient_checkpointing,
+        mixed_precision=mixed_precision,
+        compute_precision=precision,
+        warmup_steps=warmup_steps,
+        weight_decay=weight_decay,
+        seed=seed,
         deterministic=deterministic,
+        optimizer_type=optimizer_type,
     )
 
     # Build training config
@@ -147,23 +163,27 @@ def train_preflight(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model"),
     dataset: str = typer.Option(..., "--dataset"),
-    learning_rate: float = typer.Option(1e-5, "--learning-rate"),
-    batch_size: int = typer.Option(4, "--batch-size"),
-    epochs: int = typer.Option(3, "--epochs"),
-    sequence_length: int = typer.Option(2048, "--sequence-length"),
-    grad_accum: int | None = typer.Option(None, "--grad-accum"),
-    warmup_steps: int | None = typer.Option(None, "--warmup-steps"),
-    weight_decay: float | None = typer.Option(None, "--weight-decay"),
-    gradient_clip: float | None = typer.Option(None, "--gradient-clip"),
+    learning_rate: float = typer.Option(..., "--learning-rate"),
+    batch_size: int = typer.Option(..., "--batch-size"),
+    epochs: int = typer.Option(..., "--epochs"),
+    sequence_length: int = typer.Option(..., "--sequence-length"),
+    grad_accum: int = typer.Option(..., "--grad-accum"),
+    warmup_steps: int = typer.Option(..., "--warmup-steps"),
+    weight_decay: float = typer.Option(..., "--weight-decay"),
+    gradient_checkpointing: bool = typer.Option(
+        ..., "--gradient-checkpointing/--no-gradient-checkpointing"
+    ),
+    mixed_precision: bool = typer.Option(..., "--mixed-precision/--no-mixed-precision"),
+    compute_precision: str = typer.Option(..., "--compute-precision"),
+    optimizer_type: str = typer.Option(..., "--optimizer-type"),
     resume_from: str | None = typer.Option(None, "--resume-from"),
     lora_rank: int | None = typer.Option(None, "--lora-rank"),
     lora_alpha: float | None = typer.Option(None, "--lora-alpha"),
-    lora_dropout: float = typer.Option(0.0, "--lora-dropout"),
+    lora_dropout: float | None = typer.Option(None, "--lora-dropout"),
     lora_targets: list[str] | None = typer.Option(None, "--lora-targets"),
-    lora_layers: int | None = typer.Option(None, "--lora-layers"),
     out_dir: str | None = typer.Option(None, "--out"),
-    seed: int | None = typer.Option(None, "--seed"),
-    deterministic: bool = typer.Option(False, "--deterministic"),
+    seed: int = typer.Option(..., "--seed"),
+    deterministic: bool = typer.Option(..., "--deterministic/--stochastic"),
 ) -> None:
     """Run preflight checks before training.
 
@@ -171,29 +191,41 @@ def train_preflight(
         mc train preflight --model meta-llama/Llama-2-7b --dataset ./data.jsonl
     """
     context = _context(ctx)
-    from modelcypher.core.domain.training import Hyperparameters, LoRAConfig, TrainingConfig
+    from modelcypher.core.domain.training import ComputePrecision, Hyperparameters, LoRAConfig, TrainingConfig
 
     # Build LoRA config if specified
     lora_config = None
     if lora_rank is not None:
+        if lora_alpha is None or lora_dropout is None or lora_targets is None:
+            raise typer.BadParameter(
+                "lora-alpha, lora-dropout, and lora-targets are required when lora-rank is set."
+            )
         lora_config = LoRAConfig(
             rank=lora_rank,
-            alpha=lora_alpha if lora_alpha is not None else 16.0,
+            alpha=lora_alpha,
             dropout=lora_dropout,
-            target_modules=lora_targets or ["q_proj", "v_proj"],
+            target_modules=lora_targets,
         )
 
     # Build hyperparameters
+    try:
+        precision = ComputePrecision(compute_precision)
+    except ValueError as exc:
+        raise typer.BadParameter(f"Invalid compute-precision: {compute_precision}") from exc
     hyperparams = Hyperparameters(
         batch_size=batch_size,
         learning_rate=learning_rate,
         epochs=epochs,
         sequence_length=sequence_length,
-        gradient_accumulation_steps=grad_accum if grad_accum is not None else 1,
-        warmup_steps=warmup_steps if warmup_steps is not None else 10,
-        weight_decay=weight_decay if weight_decay is not None else 0.01,
-        seed=seed if seed is not None else 42,
+        gradient_accumulation_steps=grad_accum,
+        gradient_checkpointing=gradient_checkpointing,
+        mixed_precision=mixed_precision,
+        compute_precision=precision,
+        warmup_steps=warmup_steps,
+        weight_decay=weight_decay,
+        seed=seed,
         deterministic=deterministic,
+        optimizer_type=optimizer_type,
     )
 
     # Build training config

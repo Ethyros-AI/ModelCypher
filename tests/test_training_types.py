@@ -119,23 +119,14 @@ class TestPreflightResult:
 class TestHyperparameters:
     """Tests for Hyperparameters dataclass."""
 
-    def test_default_values(self):
-        """Test default values are set correctly."""
-        hp = Hyperparameters()
-
-        assert hp.batch_size == 4
-        assert hp.learning_rate == 3e-5
-        assert hp.epochs == 3
-        assert hp.sequence_length == 1024
-        assert hp.gradient_accumulation_steps == 1
-        assert hp.gradient_checkpointing is True
-        assert hp.mixed_precision is True
-        assert hp.compute_precision == ComputePrecision.FLOAT16
-        assert hp.warmup_steps == 10
-        assert hp.weight_decay == 0.01
-        assert hp.seed == 42
-        assert hp.deterministic is True
-        assert hp.optimizer_type == "adamw"
+    def test_requires_explicit_values(self):
+        """Hyperparameters require explicit values (no implicit defaults)."""
+        try:
+            Hyperparameters()
+        except TypeError:
+            assert True
+        else:
+            assert False, "Hyperparameters should require explicit values."
 
     def test_custom_values(self):
         """Test custom values override defaults."""
@@ -144,7 +135,15 @@ class TestHyperparameters:
             learning_rate=1e-4,
             epochs=10,
             sequence_length=2048,
+            gradient_accumulation_steps=2,
+            gradient_checkpointing=False,
+            mixed_precision=False,
             compute_precision=ComputePrecision.BFLOAT16,
+            warmup_steps=50,
+            weight_decay=0.1,
+            seed=123,
+            deterministic=False,
+            optimizer_type="adamw",
         )
 
         assert hp.batch_size == 8
@@ -157,14 +156,14 @@ class TestHyperparameters:
 class TestLoRAConfig:
     """Tests for LoRAConfig dataclass."""
 
-    def test_default_values(self):
-        """Test default values are set correctly."""
-        config = LoRAConfig()
-
-        assert config.rank == 8
-        assert config.alpha == 16.0
-        assert config.dropout == 0.05
-        assert config.target_modules == ["q_proj", "v_proj"]
+    def test_requires_explicit_values(self):
+        """LoRAConfig requires explicit values (no implicit defaults)."""
+        try:
+            LoRAConfig()
+        except TypeError:
+            assert True
+        else:
+            assert False, "LoRAConfig should require explicit values."
 
     def test_custom_values(self):
         """Test custom values override defaults."""
@@ -181,9 +180,19 @@ class TestLoRAConfig:
         assert config.target_modules == ["q_proj", "k_proj", "v_proj", "o_proj"]
 
     def test_target_modules_is_mutable_default(self):
-        """Test that target_modules default is a new list each time."""
-        config1 = LoRAConfig()
-        config2 = LoRAConfig()
+        """Test that target_modules is not shared across configs."""
+        config1 = LoRAConfig(
+            rank=8,
+            alpha=16.0,
+            dropout=0.05,
+            target_modules=["q_proj", "v_proj"],
+        )
+        config2 = LoRAConfig(
+            rank=8,
+            alpha=16.0,
+            dropout=0.05,
+            target_modules=["q_proj", "v_proj"],
+        )
 
         # Modify config1's list
         config1.target_modules.append("o_proj")
@@ -197,7 +206,21 @@ class TestTrainingConfig:
 
     def test_required_fields(self):
         """Test required fields."""
-        hp = Hyperparameters()
+        hp = Hyperparameters(
+            batch_size=4,
+            learning_rate=3e-5,
+            epochs=3,
+            sequence_length=1024,
+            gradient_accumulation_steps=1,
+            gradient_checkpointing=True,
+            mixed_precision=True,
+            compute_precision=ComputePrecision.FLOAT16,
+            warmup_steps=10,
+            weight_decay=0.01,
+            seed=42,
+            deterministic=True,
+            optimizer_type="adamw",
+        )
         config = TrainingConfig(
             model_id="meta-llama/Llama-2-7b",
             dataset_path="/data/train.jsonl",
@@ -212,8 +235,27 @@ class TestTrainingConfig:
 
     def test_optional_lora_config(self):
         """Test optional lora_config field."""
-        hp = Hyperparameters()
-        lora = LoRAConfig()
+        hp = Hyperparameters(
+            batch_size=4,
+            learning_rate=3e-5,
+            epochs=3,
+            sequence_length=1024,
+            gradient_accumulation_steps=1,
+            gradient_checkpointing=True,
+            mixed_precision=True,
+            compute_precision=ComputePrecision.FLOAT16,
+            warmup_steps=10,
+            weight_decay=0.01,
+            seed=42,
+            deterministic=True,
+            optimizer_type="adamw",
+        )
+        lora = LoRAConfig(
+            rank=8,
+            alpha=16.0,
+            dropout=0.05,
+            target_modules=["q_proj", "v_proj"],
+        )
         config = TrainingConfig(
             model_id="test-model",
             dataset_path="/data/train.jsonl",
@@ -226,7 +268,21 @@ class TestTrainingConfig:
 
     def test_optional_resume_checkpoint(self):
         """Test optional resume_from_checkpoint_path field."""
-        hp = Hyperparameters()
+        hp = Hyperparameters(
+            batch_size=4,
+            learning_rate=3e-5,
+            epochs=3,
+            sequence_length=1024,
+            gradient_accumulation_steps=1,
+            gradient_checkpointing=True,
+            mixed_precision=True,
+            compute_precision=ComputePrecision.FLOAT16,
+            warmup_steps=10,
+            weight_decay=0.01,
+            seed=42,
+            deterministic=True,
+            optimizer_type="adamw",
+        )
         config = TrainingConfig(
             model_id="test-model",
             dataset_path="/data/train.jsonl",
@@ -239,7 +295,21 @@ class TestTrainingConfig:
 
     def test_defaults_are_none(self):
         """Test optional fields default to None."""
-        hp = Hyperparameters()
+        hp = Hyperparameters(
+            batch_size=4,
+            learning_rate=3e-5,
+            epochs=3,
+            sequence_length=1024,
+            gradient_accumulation_steps=1,
+            gradient_checkpointing=True,
+            mixed_precision=True,
+            compute_precision=ComputePrecision.FLOAT16,
+            warmup_steps=10,
+            weight_decay=0.01,
+            seed=42,
+            deterministic=True,
+            optimizer_type="adamw",
+        )
         config = TrainingConfig(
             model_id="test-model",
             dataset_path="/data/train.jsonl",
@@ -311,7 +381,21 @@ class TestCheckpointMetadata:
 
     def test_required_fields(self):
         """Test required fields."""
-        hp = Hyperparameters()
+        hp = Hyperparameters(
+            batch_size=4,
+            learning_rate=3e-5,
+            epochs=3,
+            sequence_length=1024,
+            gradient_accumulation_steps=1,
+            gradient_checkpointing=True,
+            mixed_precision=True,
+            compute_precision=ComputePrecision.FLOAT16,
+            warmup_steps=10,
+            weight_decay=0.01,
+            seed=42,
+            deterministic=True,
+            optimizer_type="adamw",
+        )
         train_config = TrainingConfig(
             model_id="test-model",
             dataset_path="/data/train.jsonl",
@@ -342,7 +426,21 @@ class TestCheckpointMetadata:
 
     def test_optional_optimizer_file(self):
         """Test optional optimizer_file field."""
-        hp = Hyperparameters()
+        hp = Hyperparameters(
+            batch_size=4,
+            learning_rate=3e-5,
+            epochs=3,
+            sequence_length=1024,
+            gradient_accumulation_steps=1,
+            gradient_checkpointing=True,
+            mixed_precision=True,
+            compute_precision=ComputePrecision.FLOAT16,
+            warmup_steps=10,
+            weight_decay=0.01,
+            seed=42,
+            deterministic=True,
+            optimizer_type="adamw",
+        )
         train_config = TrainingConfig(
             model_id="test-model",
             dataset_path="/data/train.jsonl",
@@ -366,7 +464,21 @@ class TestCheckpointMetadata:
 
     def test_optimizer_file_default_none(self):
         """Test optimizer_file defaults to None."""
-        hp = Hyperparameters()
+        hp = Hyperparameters(
+            batch_size=4,
+            learning_rate=3e-5,
+            epochs=3,
+            sequence_length=1024,
+            gradient_accumulation_steps=1,
+            gradient_checkpointing=True,
+            mixed_precision=True,
+            compute_precision=ComputePrecision.FLOAT16,
+            warmup_steps=10,
+            weight_decay=0.01,
+            seed=42,
+            deterministic=True,
+            optimizer_type="adamw",
+        )
         train_config = TrainingConfig(
             model_id="test-model",
             dataset_path="/data/train.jsonl",

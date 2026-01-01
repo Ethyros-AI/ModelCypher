@@ -258,14 +258,9 @@ class LocalTrainingEngine(TrainingEngine):
             optimizer_type = _get_hp_attr(config, "optimizer_type")
             learning_rate = _get_hp_attr(config, "learning_rate")
             weight_decay = _get_hp_attr(config, "weight_decay")
-            if optimizer_type == "adamw":
-                optimizer = optim.AdamW(learning_rate=learning_rate, weight_decay=weight_decay)
-            elif optimizer_type == "adam":
-                optimizer = optim.Adam(learning_rate=learning_rate, weight_decay=weight_decay)
-            elif optimizer_type == "sgd":
-                optimizer = optim.SGD(learning_rate=learning_rate, weight_decay=weight_decay)
-            else:
+            if optimizer_type != "adamw":
                 raise ValueError(f"Unsupported optimizer_type: {optimizer_type}")
+            optimizer = optim.AdamW(learning_rate=learning_rate, weight_decay=weight_decay)
 
             # 4. Progress Bridge
             def progress_callback(progress: DomainTrainingProgress):

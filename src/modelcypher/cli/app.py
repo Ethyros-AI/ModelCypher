@@ -294,20 +294,48 @@ def validate_train(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model"),
     dataset: str = typer.Option(..., "--dataset"),
-    learning_rate: float = typer.Option(1e-5, "--learning-rate"),
-    batch_size: int = typer.Option(4, "--batch-size"),
-    sequence_length: int = typer.Option(2048, "--sequence-length"),
-    epochs: int = typer.Option(1, "--epochs"),
+    learning_rate: float = typer.Option(..., "--learning-rate"),
+    batch_size: int = typer.Option(..., "--batch-size"),
+    sequence_length: int = typer.Option(..., "--sequence-length"),
+    epochs: int = typer.Option(..., "--epochs"),
+    grad_accum: int = typer.Option(..., "--grad-accum"),
+    warmup_steps: int = typer.Option(..., "--warmup-steps"),
+    weight_decay: float = typer.Option(..., "--weight-decay"),
+    gradient_checkpointing: bool = typer.Option(
+        ..., "--gradient-checkpointing/--no-gradient-checkpointing"
+    ),
+    mixed_precision: bool = typer.Option(..., "--mixed-precision/--no-mixed-precision"),
+    compute_precision: str = typer.Option(..., "--compute-precision"),
+    optimizer_type: str = typer.Option(..., "--optimizer-type"),
+    seed: int = typer.Option(..., "--seed"),
+    deterministic: bool = typer.Option(..., "--deterministic/--stochastic"),
 ) -> None:
     context = _context(ctx)
     service = get_training_service()
-    from modelcypher.core.domain.training import Hyperparameters, TrainingConfig
+    from modelcypher.core.domain.training import (
+        ComputePrecision,
+        Hyperparameters,
+        TrainingConfig,
+    )
 
+    try:
+        precision = ComputePrecision(compute_precision)
+    except ValueError as exc:
+        raise typer.BadParameter(f"Invalid compute-precision: {compute_precision}") from exc
     hyperparams = Hyperparameters(
         batch_size=batch_size,
         learning_rate=learning_rate,
         epochs=epochs,
         sequence_length=sequence_length,
+        gradient_accumulation_steps=grad_accum,
+        gradient_checkpointing=gradient_checkpointing,
+        mixed_precision=mixed_precision,
+        compute_precision=precision,
+        warmup_steps=warmup_steps,
+        weight_decay=weight_decay,
+        seed=seed,
+        deterministic=deterministic,
+        optimizer_type=optimizer_type,
     )
     config = TrainingConfig(
         model_id=model,
@@ -331,6 +359,15 @@ def validate_train(
             "sequenceLength": sequence_length,
             "learningRate": learning_rate,
             "epochs": epochs,
+            "gradientAccumulationSteps": grad_accum,
+            "gradientCheckpointing": gradient_checkpointing,
+            "mixedPrecision": mixed_precision,
+            "computePrecision": precision.value,
+            "warmupSteps": warmup_steps,
+            "weightDecay": weight_decay,
+            "seed": seed,
+            "deterministic": deterministic,
+            "optimizerType": optimizer_type,
         },
         "warnings": [],
         "errors": [] if result["canProceed"] else ["Configuration may not fit in memory"],
@@ -579,19 +616,48 @@ def estimate_train(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model"),
     dataset: str = typer.Option(..., "--dataset"),
-    batch_size: int = typer.Option(1, "--batch-size"),
-    sequence_length: int = typer.Option(2048, "--sequence-length"),
-    dtype: str = typer.Option("fp16", "--dtype"),
+    batch_size: int = typer.Option(..., "--batch-size"),
+    sequence_length: int = typer.Option(..., "--sequence-length"),
+    learning_rate: float = typer.Option(..., "--learning-rate"),
+    epochs: int = typer.Option(..., "--epochs"),
+    grad_accum: int = typer.Option(..., "--grad-accum"),
+    warmup_steps: int = typer.Option(..., "--warmup-steps"),
+    weight_decay: float = typer.Option(..., "--weight-decay"),
+    gradient_checkpointing: bool = typer.Option(
+        ..., "--gradient-checkpointing/--no-gradient-checkpointing"
+    ),
+    mixed_precision: bool = typer.Option(..., "--mixed-precision/--no-mixed-precision"),
+    compute_precision: str = typer.Option(..., "--compute-precision"),
+    optimizer_type: str = typer.Option(..., "--optimizer-type"),
+    seed: int = typer.Option(..., "--seed"),
+    deterministic: bool = typer.Option(..., "--deterministic/--stochastic"),
 ) -> None:
     context = _context(ctx)
     service = get_training_service()
-    from modelcypher.core.domain.training import Hyperparameters, TrainingConfig
+    from modelcypher.core.domain.training import (
+        ComputePrecision,
+        Hyperparameters,
+        TrainingConfig,
+    )
 
+    try:
+        precision = ComputePrecision(compute_precision)
+    except ValueError as exc:
+        raise typer.BadParameter(f"Invalid compute-precision: {compute_precision}") from exc
     hyperparams = Hyperparameters(
         batch_size=batch_size,
-        learning_rate=1e-5,
-        epochs=1,
+        learning_rate=learning_rate,
+        epochs=epochs,
         sequence_length=sequence_length,
+        gradient_accumulation_steps=grad_accum,
+        gradient_checkpointing=gradient_checkpointing,
+        mixed_precision=mixed_precision,
+        compute_precision=precision,
+        warmup_steps=warmup_steps,
+        weight_decay=weight_decay,
+        seed=seed,
+        deterministic=deterministic,
+        optimizer_type=optimizer_type,
     )
     config = TrainingConfig(
         model_id=model,
@@ -617,7 +683,7 @@ def estimate_train(
         "powerSource": "unknown",
         "thermalState": "unknown",
         "etaSeconds": None,
-        "notes": [f"dtype={dtype}"],
+        "notes": [f"computePrecision={precision.value}"],
     }
     write_output(payload, context.output_format, context.pretty)
 

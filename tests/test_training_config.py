@@ -80,23 +80,10 @@ class TestTrainingStatus:
 class TestHyperparameters:
     """Tests for Hyperparameters dataclass."""
 
-    def test_default_values(self):
-        """Default hyperparameters should be sensible."""
-        hp = Hyperparameters()
-
-        assert hp.batch_size == 4
-        assert hp.learning_rate == 3e-5
-        assert hp.epochs == 3
-        assert hp.sequence_length == 1024
-        assert hp.gradient_accumulation_steps == 1
-        assert hp.gradient_checkpointing is True
-        assert hp.mixed_precision is True
-        assert hp.compute_precision == ComputePrecision.FLOAT16
-        assert hp.warmup_steps == 10
-        assert hp.weight_decay == 0.01
-        assert hp.seed == 42
-        assert hp.deterministic is True
-        assert hp.optimizer_type == "adamw"
+    def test_requires_explicit_values(self):
+        """Hyperparameters require explicit values (no implicit defaults)."""
+        with pytest.raises(TypeError):
+            Hyperparameters()
 
     def test_custom_values(self):
         """Custom hyperparameters should be preserved."""
@@ -126,14 +113,10 @@ class TestHyperparameters:
 class TestLoRAConfig:
     """Tests for LoRAConfig dataclass."""
 
-    def test_default_values(self):
-        """Default LoRA config should have sensible defaults."""
-        cfg = LoRAConfig()
-
-        assert cfg.rank == 8
-        assert cfg.alpha == 16.0
-        assert cfg.dropout == 0.05
-        assert cfg.target_modules == ["q_proj", "v_proj"]
+    def test_requires_explicit_values(self):
+        """LoRAConfig requires explicit values (no implicit defaults)."""
+        with pytest.raises(TypeError):
+            LoRAConfig()
 
     def test_custom_values(self):
         """Custom LoRA config should be preserved."""
@@ -155,7 +138,21 @@ class TestTrainingConfig:
 
     def test_minimal_config(self):
         """Training config with minimal required fields."""
-        hp = Hyperparameters()
+        hp = Hyperparameters(
+            batch_size=4,
+            learning_rate=3e-5,
+            epochs=3,
+            sequence_length=1024,
+            gradient_accumulation_steps=1,
+            gradient_checkpointing=True,
+            mixed_precision=True,
+            compute_precision=ComputePrecision.FLOAT16,
+            warmup_steps=10,
+            weight_decay=0.01,
+            seed=42,
+            deterministic=True,
+            optimizer_type="adamw",
+        )
         cfg = TrainingConfig(
             model_id="meta-llama/Llama-2-7b",
             dataset_path="/path/to/dataset",
@@ -169,8 +166,27 @@ class TestTrainingConfig:
 
     def test_full_config(self):
         """Training config with all optional fields."""
-        hp = Hyperparameters(epochs=10)
-        lora = LoRAConfig(rank=32)
+        hp = Hyperparameters(
+            batch_size=4,
+            learning_rate=3e-5,
+            epochs=10,
+            sequence_length=1024,
+            gradient_accumulation_steps=1,
+            gradient_checkpointing=True,
+            mixed_precision=True,
+            compute_precision=ComputePrecision.FLOAT16,
+            warmup_steps=10,
+            weight_decay=0.01,
+            seed=42,
+            deterministic=True,
+            optimizer_type="adamw",
+        )
+        lora = LoRAConfig(
+            rank=32,
+            alpha=16.0,
+            dropout=0.05,
+            target_modules=["q_proj", "v_proj"],
+        )
         cfg = TrainingConfig(
             model_id="meta-llama/Llama-2-7b",
             dataset_path="/path/to/dataset",

@@ -380,41 +380,68 @@ class CheckpointManager:
         if data is None:
             return None
 
-        try:
-            hp_data = data.get("hyperparameters", {})
-            hyperparameters = Hyperparameters(
-                batch_size=hp_data.get("batch_size", 4),
-                learning_rate=hp_data.get("learning_rate", 3e-5),
-                epochs=hp_data.get("epochs", 3),
-                sequence_length=hp_data.get("sequence_length", 1024),
-                gradient_accumulation_steps=hp_data.get("gradient_accumulation_steps", 1),
-                gradient_checkpointing=hp_data.get("gradient_checkpointing", True),
-                mixed_precision=hp_data.get("mixed_precision", True),
-                compute_precision=ComputePrecision(hp_data.get("compute_precision", "float16")),
-                warmup_steps=hp_data.get("warmup_steps", 10),
-                weight_decay=hp_data.get("weight_decay", 0.01),
-                seed=hp_data.get("seed", 42),
-                deterministic=hp_data.get("deterministic", True),
-                optimizer_type=hp_data.get("optimizer_type", "adamw"),
+        hp_data = data.get("hyperparameters")
+        if not isinstance(hp_data, dict):
+            raise ValueError("Checkpoint metadata missing hyperparameters.")
+        required_hp = {
+            "batch_size",
+            "learning_rate",
+            "epochs",
+            "sequence_length",
+            "gradient_accumulation_steps",
+            "gradient_checkpointing",
+            "mixed_precision",
+            "compute_precision",
+            "warmup_steps",
+            "weight_decay",
+            "seed",
+            "deterministic",
+            "optimizer_type",
+        }
+        missing_hp = sorted(k for k in required_hp if k not in hp_data)
+        if missing_hp:
+            raise ValueError(f"Checkpoint hyperparameters missing fields: {missing_hp}")
+
+        hyperparameters = Hyperparameters(
+            batch_size=hp_data["batch_size"],
+            learning_rate=hp_data["learning_rate"],
+            epochs=hp_data["epochs"],
+            sequence_length=hp_data["sequence_length"],
+            gradient_accumulation_steps=hp_data["gradient_accumulation_steps"],
+            gradient_checkpointing=hp_data["gradient_checkpointing"],
+            mixed_precision=hp_data["mixed_precision"],
+            compute_precision=ComputePrecision(hp_data["compute_precision"]),
+            warmup_steps=hp_data["warmup_steps"],
+            weight_decay=hp_data["weight_decay"],
+            seed=hp_data["seed"],
+            deterministic=hp_data["deterministic"],
+            optimizer_type=hp_data["optimizer_type"],
+        )
+
+        lora_config = None
+        lora_data = data.get("lora_config")
+        if lora_data is not None:
+            if not isinstance(lora_data, dict):
+                raise ValueError("Checkpoint lora_config must be a dict.")
+            required_lora = {"rank", "alpha", "dropout", "target_modules"}
+            missing_lora = sorted(k for k in required_lora if k not in lora_data)
+            if missing_lora:
+                raise ValueError(f"Checkpoint lora_config missing fields: {missing_lora}")
+            lora_config = LoRAConfig(
+                rank=lora_data["rank"],
+                alpha=lora_data["alpha"],
+                dropout=lora_data["dropout"],
+                target_modules=lora_data["target_modules"],
             )
 
-            lora_config = None
-            lora_data = data.get("lora_config")
-            if lora_data:
-                lora_config = LoRAConfig(
-                    rank=lora_data.get("rank", 8),
-                    alpha=lora_data.get("alpha", 16.0),
-                    dropout=lora_data.get("dropout", 0.05),
-                    target_modules=lora_data.get("target_modules", ["q_proj", "v_proj"]),
-                )
+        if "model_id" not in data or "dataset_path" not in data or "output_path" not in data:
+            raise ValueError("Checkpoint metadata missing model_id, dataset_path, or output_path.")
 
-            return TrainingConfig(
-                model_id=data.get("model_id", ""),
-                dataset_path=data.get("dataset_path", ""),
-                output_path=data.get("output_path", ""),
-                hyperparameters=hyperparameters,
-                lora_config=lora_config,
-                resume_from_checkpoint_path=data.get("resume_from_checkpoint_path"),
-            )
-        except Exception:
-            return None
+        return TrainingConfig(
+            model_id=data["model_id"],
+            dataset_path=data["dataset_path"],
+            output_path=data["output_path"],
+            hyperparameters=hyperparameters,
+            lora_config=lora_config,
+            resume_from_checkpoint_path=data.get("resume_from_checkpoint_path"),
+        )
