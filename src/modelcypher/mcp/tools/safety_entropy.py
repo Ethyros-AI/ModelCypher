@@ -99,12 +99,19 @@ def register_safety_tools(ctx: ServiceContext) -> None:
         def mc_safety_persona_drift(
             baselinePersona: dict,
             currentBehavior: list[str],
+            traitThreshold: float = 0.5,
         ) -> dict:
-            """Detect persona drift between baseline and current behavior."""
+            """Detect persona drift between baseline and current behavior.
 
-            # Extract baseline traits (expected traits are keys with positive values)
+            Args:
+                baselinePersona: Mapping of trait names to numeric scores.
+                currentBehavior: List of behavior text samples.
+                traitThreshold: Score threshold for considering a trait present (default 0.5).
+            """
+
+            # Extract baseline traits (expected traits are keys with value above threshold)
             baseline_traits = set(
-                k for k, v in baselinePersona.items() if isinstance(v, (int, float)) and v > 0.5
+                k for k, v in baselinePersona.items() if isinstance(v, (int, float)) and v > traitThreshold
             )
 
             # Check which baseline traits are missing from current behavior

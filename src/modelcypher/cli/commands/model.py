@@ -498,9 +498,9 @@ def model_validate_knowledge(
 
     typer.echo("\n  Per-Domain Retention:", err=True)
     for domain, domain_result in result.report.per_domain.items():
-        status_icon = "✓" if domain_result.retention_score >= 0.8 else "✗"
+        # Show raw retention score - let user interpret based on their context
         typer.echo(
-            f"    {status_icon} {domain.value}: {domain_result.retention_score:.1%} "
+            f"    {domain.value}: {domain_result.retention_score:.1%} "
             f"({domain_result.probes_tested} probes)",
             err=True,
         )

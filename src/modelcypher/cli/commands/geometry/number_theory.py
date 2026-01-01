@@ -713,18 +713,8 @@ def perturbation_study(
             "stability_score": r.stability_score,
         })
 
-    # Evaluate H8
-    # Primes should be more stable than random under noise
-    # Check if stability degrades gracefully
-    high_noise_stability = next(
-        (r.stability_score for r in results if r.noise_level >= 0.5), 0.0
-    )
-    h8_passed = high_noise_stability > 0.5  # At least 50% stable at high noise
-
-    payload["h8_perturbation_robustness"] = {
-        "passed": h8_passed,
-        "high_noise_stability": high_noise_stability,
-    }
+    # Raw measurements only - user interprets the stability curve
+    # No "passed/failed" interpretation, no arbitrary thresholds
 
     # Save if requested
     if output_file:
@@ -759,8 +749,8 @@ def perturbation_study(
             "H8: PERTURBATION ROBUSTNESS",
             "-" * 70,
             "",
-            f"  High noise stability (>0.5 noise): {high_noise_stability:.3f}",
-            f"  Status: {'✓ PASSED' if h8_passed else '✗ FAILED'}",
+            f"  High noise threshold: {high_noise_threshold:.2f}",
+            f"  Stability at high noise: {high_noise_stability:.3f}",
             "",
             "=" * 70,
         ])

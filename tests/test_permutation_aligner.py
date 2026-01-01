@@ -38,7 +38,6 @@ from modelcypher.core.domain.geometry.permutation_aligner import (
     AlignmentResult,
     AnchorActivationContext,
     Config,
-    FusionConfig,
     PermutationAligner,
 )
 
@@ -55,85 +54,20 @@ class TestConfig:
     """Tests for Config dataclass."""
 
     def test_config_defaults(self) -> None:
-        """Default config has None threshold - must be explicitly set."""
+        """Default config has anchor grounding enabled."""
         config = Config()
-        assert config.min_match_threshold is None
         assert config.use_anchor_grounding is True
-        assert config.top_k == 5
-        # effective_threshold should raise without explicit threshold
-        import pytest
-        with pytest.raises(ValueError, match="min_match_threshold not set"):
-            _ = config.effective_threshold
-
-    def test_config_with_threshold(self) -> None:
-        """Config.with_threshold() creates config with explicit threshold."""
-        config = Config.with_threshold(0.1)
-        assert config.min_match_threshold == 0.1
-        assert config.effective_threshold == 0.1
-
-    def test_config_from_similarity_distribution(self) -> None:
-        """Config.from_similarity_distribution() derives threshold from data."""
-        # Similarities with mean ~0.5, std ~0.1
-        similarities = [0.4, 0.45, 0.5, 0.55, 0.6]
-        config = Config.from_similarity_distribution(similarities, sigma=2.0)
-        assert config.min_match_threshold is not None
-        # Threshold should be mean - 2*std ≈ 0.5 - 2*0.063 ≈ 0.37
-        assert 0.2 < config.effective_threshold < 0.5
-
-    def test_config_from_empty_distribution_raises(self) -> None:
-        """Config.from_similarity_distribution() raises on empty data."""
-        import pytest
-        with pytest.raises(ValueError, match="Cannot derive threshold from empty"):
-            Config.from_similarity_distribution([])
 
     def test_config_custom_values(self) -> None:
         """Custom config values should be accepted."""
-        config = Config(min_match_threshold=0.5, use_anchor_grounding=False, top_k=10)
-        assert config.min_match_threshold == 0.5
+        config = Config(use_anchor_grounding=False)
         assert config.use_anchor_grounding is False
-        assert config.top_k == 10
 
     def test_config_is_frozen(self) -> None:
         """Config should be immutable (frozen)."""
         config = Config()
         with pytest.raises((TypeError, AttributeError)):
-            config.min_match_threshold = 0.5  # type: ignore
-
-
-class TestFusionConfig:
-    """Tests for FusionConfig dataclass."""
-
-    def test_fusion_config_defaults(self) -> None:
-        """Default fusion config has None threshold - must be explicitly set."""
-        config = FusionConfig()
-        assert config.interference_threshold is None
-        assert config.source_alpha == 0.5
-        assert config.normalize is False
-        # effective_threshold should raise without explicit threshold
-        import pytest
-        with pytest.raises(ValueError, match="interference_threshold not set"):
-            _ = config.effective_threshold
-
-    def test_fusion_config_with_threshold(self) -> None:
-        """FusionConfig.with_threshold() creates config with explicit threshold."""
-        config = FusionConfig.with_threshold(0.5)
-        assert config.interference_threshold == 0.5
-        assert config.effective_threshold == 0.5
-
-    def test_fusion_config_from_confidence_distribution(self) -> None:
-        """FusionConfig.from_confidence_distribution() derives threshold from data."""
-        # Confidences with mean ~0.7, std ~0.1
-        confidences = [0.6, 0.65, 0.7, 0.75, 0.8]
-        config = FusionConfig.from_confidence_distribution(confidences, sigma=1.0)
-        assert config.interference_threshold is not None
-        # Threshold should be mean + 1*std ≈ 0.7 + 0.063 ≈ 0.77
-        assert 0.7 < config.effective_threshold < 0.9
-
-    def test_fusion_config_from_empty_distribution_raises(self) -> None:
-        """FusionConfig.from_confidence_distribution() raises on empty data."""
-        import pytest
-        with pytest.raises(ValueError, match="Cannot derive threshold from empty"):
-            FusionConfig.from_confidence_distribution([])
+            config.use_anchor_grounding = False  # type: ignore
 
 
 class TestAnchorActivationContext:
@@ -537,7 +471,7 @@ class TestAnchorAlignment:
         anchors = b.random_normal((8, 32))
         b.eval(source, target, anchors)
 
-        config = Config.with_threshold(0.1)
+        config = Config()
         result = PermutationAligner.align_via_anchor_projection(
             source, target, anchors, config=config, backend=b
         )
@@ -549,7 +483,11 @@ class TestAnchorAlignment:
     def test_align_via_anchor_projection_dim_mismatch(
         self, any_backend: "Backend"
     ) -> None:
-        """Dimension mismatch should fall back gracefully."""
+        """Dimension mismatch should raise PermutationAlignerError."""
+        from modelcypher.core.domain.geometry.permutation_aligner import (
+            PermutationAlignerError,
+        )
+
         b = any_backend
         b.random_seed(42)
         source = b.random_normal((10, 32))
@@ -557,12 +495,12 @@ class TestAnchorAlignment:
         anchors = b.random_normal((8, 16))  # Wrong dim
         b.eval(source, target, anchors)
 
-        config = Config.with_threshold(0.1)
-        # Should not crash, uses fallback
-        result = PermutationAligner.align_via_anchor_projection(
-            source, target, anchors, config=config, backend=b
-        )
-        assert result is not None
+        config = Config()
+        # Should raise on dimension mismatch
+        with pytest.raises(PermutationAlignerError, match="Weight dim 32 != anchor dim 16"):
+            PermutationAligner.align_via_anchor_projection(
+                source, target, anchors, config=config, backend=b
+            )
 
     def test_align_via_anchor_activations(self, any_backend: "Backend") -> None:
         """Should align using per-model anchor activations."""
@@ -574,7 +512,7 @@ class TestAnchorAlignment:
         target_anchors = b.random_normal((5, 32))
         b.eval(source, target, source_anchors, target_anchors)
 
-        config = Config.with_threshold(0.1)
+        config = Config()
         result = PermutationAligner.align_via_anchor_activations(
             source, target, source_anchors, target_anchors, config=config, backend=b
         )
@@ -624,7 +562,7 @@ class TestMlpRebasin:
             b.eval(v)
         b.eval(anchors)
 
-        config = Config.with_threshold(0.1)
+        config = Config()
         aligned, avg_quality, blocks_aligned = PermutationAligner.rebasin_mlp_only(
             source_weights, target_weights, anchors, config=config, backend=b
         )
@@ -668,7 +606,7 @@ class TestMlpRebasin:
             b.eval(v)
         b.eval(anchors)
 
-        config = Config.with_threshold(0.1)
+        config = Config()
         aligned, _, _ = PermutationAligner.rebasin_mlp_only(
             source_weights, target_weights, anchors, config=config, backend=b
         )
@@ -711,10 +649,10 @@ class TestMlpRebasin:
 
 
 class TestFusion:
-    """Tests for TIES-Merging fusion."""
+    """Tests for confidence-weighted fusion."""
 
-    def test_fuse_basic(self, any_backend: "Backend") -> None:
-        """Basic fusion should produce weighted average."""
+    def test_fuse_high_confidence_uses_target(self, any_backend: "Backend") -> None:
+        """High confidence should use target weights."""
         b = any_backend
         b.random_seed(42)
 
@@ -730,12 +668,11 @@ class TestFusion:
             sign_flip_count=0,
         )
 
-        config = FusionConfig(source_alpha=0.5)
-        fused = PermutationAligner.fuse(source, target, alignment, config, backend=b)
+        fused = PermutationAligner.fuse(source, target, alignment, backend=b)
         b.eval(fused)
 
-        # With 100% confidence and 0.5 alpha, should be average
-        expected = (b.to_numpy(source) + b.to_numpy(target)) / 2
+        # With 100% confidence, fused = target
+        expected = b.to_numpy(target)
         actual = b.to_numpy(fused)
         assert abs(actual - expected).max() < 1e-5
 
@@ -758,14 +695,39 @@ class TestFusion:
             sign_flip_count=0,
         )
 
-        config = FusionConfig(source_alpha=0.5)
-        fused = PermutationAligner.fuse(source, target, alignment, config, backend=b)
+        fused = PermutationAligner.fuse(source, target, alignment, backend=b)
         b.eval(fused)
 
-        # With 0% confidence, should preserve source
+        # With 0% confidence, fused = source
         source_np = b.to_numpy(source)
         fused_np = b.to_numpy(fused)
         assert abs(fused_np - source_np).max() < 1e-5
+
+    def test_fuse_partial_confidence_blends(self, any_backend: "Backend") -> None:
+        """Partial confidence should blend source and target."""
+        b = any_backend
+        b.random_seed(42)
+
+        source = b.random_normal((4, 8))
+        target = b.random_normal((4, 8))
+        b.eval(source, target)
+
+        # 50% confidence on all rows
+        alignment = AlignmentResult(
+            permutation=b.eye(4),
+            signs=b.eye(4),
+            match_quality=0.5,
+            match_confidences=[0.5, 0.5, 0.5, 0.5],
+            sign_flip_count=0,
+        )
+
+        fused = PermutationAligner.fuse(source, target, alignment, backend=b)
+        b.eval(fused)
+
+        # With 50% confidence, fused = 0.5 * target + 0.5 * source
+        expected = (b.to_numpy(source) + b.to_numpy(target)) / 2
+        actual = b.to_numpy(fused)
+        assert abs(actual - expected).max() < 1e-5
 
 
 # =============================================================================

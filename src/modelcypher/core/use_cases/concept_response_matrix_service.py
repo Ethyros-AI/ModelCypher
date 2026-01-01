@@ -314,9 +314,7 @@ class ConceptResponseMatrixService:
         Args:
             source_path: Path to source CRM file.
             target_path: Path to target CRM file.
-            layer_matcher_config: Configuration for layer matching (use
-                LayerMatcherConfiguration.with_thresholds() or
-                LayerMatcherConfiguration.from_cka_distribution() to create).
+            layer_matcher_config: Configuration for layer matching.
             config: Optional shared subspace configuration.
 
         Returns:
@@ -389,7 +387,8 @@ class ConceptResponseMatrixService:
 
         h2_validation = {
             "meanCKA": matcher.h2_validation.mean_cka,
-            "highConfidenceProportion": matcher.h2_validation.cka_above_threshold_proportion,
+            "minCKA": matcher.h2_validation.min_cka,
+            "maxCKA": matcher.h2_validation.max_cka,
             "positionCorrelation": matcher.h2_validation.position_correlation,
         }
 

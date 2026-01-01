@@ -37,9 +37,7 @@ Theoretical Foundation:
 
 Algorithm:
     1. Compute CKA similarity matrix between all layer pairs
-    2. Optionally incorporate sparse fingerprint Jaccard similarity
-    3. Use dynamic programming for monotonic alignment (layers must correspond in order)
-    4. Classify matches by confidence level
+    2. Use dynamic programming for monotonic alignment (layers must correspond in order)
 
     Unlike greedy matching, DP-based alignment respects the sequential nature of neural
     network layers - earlier layers in model A should map to earlier layers in model B.
@@ -120,154 +118,9 @@ class AnchorCategoryWeights:
 
 @dataclass(frozen=True)
 class Configuration:
-    """Configuration for cross-architecture layer matching.
+    """Configuration for cross-architecture layer matching."""
 
-    Attributes:
-        cka_weight: Weight for dense CKA similarity (0-1).
-        jaccard_weight: Weight for sparse Jaccard similarity (0-1).
-        max_skip: Maximum consecutive layers that can be skipped.
-        skip_penalty: Penalty per skipped layer (subtracted from score).
-        min_cka_threshold: Minimum CKA for diagnostic flagging.
-        high_confidence_threshold: CKA threshold for "high confidence" label.
-        medium_confidence_threshold: CKA threshold for "medium confidence" label.
-        anchor_category_weights: Optional per-anchor-category weights.
-    """
-
-    cka_weight: float = 0.5
-    jaccard_weight: float = 0.5
-    max_skip: int = 3
-    skip_penalty: float = 0.0
-    min_cka_threshold: float = 0.0
-    high_confidence_threshold: float | None = None
-    medium_confidence_threshold: float | None = None
     anchor_category_weights: AnchorCategoryWeights | None = None
-
-    def __post_init__(self) -> None:
-        """Validate configuration and warn about threshold settings."""
-        # INVARIANT GEOMETRY: All CKAs should be 1.0 (0.9999 machine epsilon).
-        # Warn if min_cka_threshold is set below machine epsilon, as this
-        # suggests tolerance for imperfect alignment (which is an algorithm bug).
-        if 0.0 < self.min_cka_threshold < 0.9999:
-            logger.warning(
-                "min_cka_threshold=%.4f is below machine epsilon (0.9999). "
-                "Per invariant geometry principle, CKA should be 1.0 for all matches. "
-                "CKA < 0.9999 indicates an algorithm bug, not model incompatibility.",
-                self.min_cka_threshold,
-            )
-
-    @property
-    def effective_high_threshold(self) -> float:
-        """Get the high confidence threshold, raising if not set."""
-        if self.high_confidence_threshold is None:
-            raise ValueError(
-                "high_confidence_threshold not set. Use Configuration.with_thresholds() "
-                "with explicit values, or Configuration.from_cka_distribution() to derive "
-                "thresholds from observed CKA scores."
-            )
-        return self.high_confidence_threshold
-
-    @property
-    def effective_medium_threshold(self) -> float:
-        """Get the medium confidence threshold, raising if not set."""
-        if self.medium_confidence_threshold is None:
-            raise ValueError(
-                "medium_confidence_threshold not set. Use Configuration.with_thresholds() "
-                "with explicit values, or Configuration.from_cka_distribution() to derive "
-                "thresholds from observed CKA scores."
-            )
-        return self.medium_confidence_threshold
-
-    @classmethod
-    def with_thresholds(
-        cls,
-        *,
-        high_confidence_threshold: float,
-        medium_confidence_threshold: float,
-        min_cka_threshold: float = 0.0,
-        cka_weight: float = 0.5,
-        jaccard_weight: float = 0.5,
-        max_skip: int = 3,
-        skip_penalty: float = 0.0,
-        anchor_category_weights: AnchorCategoryWeights | None = None,
-    ) -> "Configuration":
-        """Create configuration with explicit thresholds.
-
-        Use this when you have calibrated thresholds from prior analysis.
-
-        Args:
-            high_confidence_threshold: CKA threshold for high confidence.
-            medium_confidence_threshold: CKA threshold for medium confidence.
-            min_cka_threshold: Minimum CKA for valid match.
-            cka_weight: Weight for dense CKA similarity.
-            jaccard_weight: Weight for sparse Jaccard similarity.
-            max_skip: Maximum consecutive layers that can be skipped.
-            skip_penalty: Penalty per skipped layer.
-            anchor_category_weights: Optional per-anchor-category weights.
-
-        Returns:
-            Configuration with specified thresholds.
-        """
-        if medium_confidence_threshold >= high_confidence_threshold:
-            raise ValueError(
-                f"medium_confidence_threshold ({medium_confidence_threshold}) must be < "
-                f"high_confidence_threshold ({high_confidence_threshold})"
-            )
-        return cls(
-            cka_weight=cka_weight,
-            jaccard_weight=jaccard_weight,
-            max_skip=max_skip,
-            skip_penalty=skip_penalty,
-            min_cka_threshold=min_cka_threshold,
-            high_confidence_threshold=high_confidence_threshold,
-            medium_confidence_threshold=medium_confidence_threshold,
-            anchor_category_weights=anchor_category_weights,
-        )
-
-    @classmethod
-    def from_cka_distribution(
-        cls,
-        cka_scores: list[float],
-        *,
-        high_percentile: float = 0.75,
-        medium_percentile: float = 0.50,
-        cka_weight: float = 0.5,
-        jaccard_weight: float = 0.5,
-    ) -> "Configuration":
-        """Derive confidence thresholds from observed CKA score distribution.
-
-        Instead of arbitrary 0.75/0.5 cutoffs, derives thresholds from
-        the actual distribution of CKA scores observed between layers.
-
-        Args:
-            cka_scores: List of CKA scores from layer comparisons.
-            high_percentile: Percentile for high confidence threshold.
-            medium_percentile: Percentile for medium confidence threshold.
-            cka_weight: Weight for dense CKA similarity.
-            jaccard_weight: Weight for sparse Jaccard similarity.
-
-        Returns:
-            Configuration with distribution-derived thresholds.
-        """
-        if not cka_scores:
-            raise ValueError(
-                "Cannot derive thresholds from empty CKA scores. "
-                "Provide observed CKA scores from layer comparisons, or use "
-                "Configuration.with_thresholds() with explicit threshold values."
-            )
-
-        sorted_scores = sorted(cka_scores)
-        n = len(sorted_scores)
-
-        def percentile(p: float) -> float:
-            idx = int(p * (n - 1))
-            return sorted_scores[idx]
-
-        return cls(
-            cka_weight=cka_weight,
-            jaccard_weight=jaccard_weight,
-            high_confidence_threshold=percentile(high_percentile),
-            medium_confidence_threshold=percentile(medium_percentile),
-        )
 
 
 # ConfidenceLevel enum removed - use raw CKA values directly.
@@ -286,9 +139,7 @@ class LayerMapping:
     cka : float
         CKA similarity (0-1), which measures the confidence.
     combined_score : float
-        Combined CKA + Jaccard score when available.
-    is_skipped : bool
-        Whether this mapping was skipped due to low CKA.
+        Combined score (CKA only).
     """
 
     source_layer: int
@@ -307,15 +158,18 @@ class H2ValidationResult:
     Attributes
     ----------
     mean_cka : float
-        Mean CKA across valid mappings, which measures the confidence signal.
-    cka_above_threshold_proportion : float
-        Proportion of mappings above the configured high threshold (for diagnostics).
+        Mean CKA across mappings.
+    min_cka : float
+        Minimum CKA across mappings.
+    max_cka : float
+        Maximum CKA across mappings.
     position_correlation : float
         Correlation between source and target layer positions.
     """
 
     mean_cka: float
-    cka_above_threshold_proportion: float
+    min_cka: float
+    max_cka: float
     position_correlation: float
 
 
@@ -360,9 +214,8 @@ class CrossArchitectureLayerMatcher:
         Args:
             source_crm: Concept response matrix from source model.
             target_crm: Concept response matrix from target model.
-            configuration: Matching configuration (use with_thresholds() or
-                from_cka_distribution() to create).
-            jaccard_matrix: Optional Jaccard similarity matrix from sparse fingerprints.
+        configuration: Matching configuration.
+            jaccard_matrix: Optional Jaccard similarity matrix (diagnostics only).
 
         Returns:
             Complete matching result with validation metrics.
@@ -378,27 +231,9 @@ class CrossArchitectureLayerMatcher:
         source_count = source_crm.layer_count
         target_count = target_crm.layer_count
 
-        # Step 2: Combine CKA and Jaccard if provided
-        if (
-            jaccard_matrix is not None
-            and len(jaccard_matrix) == source_count
-            and jaccard_matrix
-            and len(jaccard_matrix[0]) == target_count
-        ):
-            combined_matrix = CrossArchitectureLayerMatcher._combine_matrices(
-                cka_matrix,
-                jaccard_matrix,
-                config.cka_weight,
-                config.jaccard_weight,
-            )
-        else:
-            combined_matrix = cka_matrix
+        combined_matrix = cka_matrix
 
-        dp_path, _ = CrossArchitectureLayerMatcher._dynamic_programming_alignment(
-            combined_matrix,
-            max_skip=config.max_skip,
-            skip_penalty=config.skip_penalty,
-        )
+        dp_path, _ = CrossArchitectureLayerMatcher._dynamic_programming_alignment(cka_matrix)
 
         mappings: list[LayerMapping] = []
         for source, target in dp_path:
@@ -418,21 +253,18 @@ class CrossArchitectureLayerMatcher:
                     target_layer=target,
                     cka=float(cka),
                     combined_score=float(combined),
-                    is_skipped=cka < config.min_cka_threshold,
+                    is_skipped=False,
                 )
             )
 
-        h2_validation = CrossArchitectureLayerMatcher._validate_h2(mappings, config)
-        valid_mappings = [mapping for mapping in mappings if not mapping.is_skipped]
+        h2_validation = CrossArchitectureLayerMatcher._validate_h2(mappings)
         alignment_quality = (
-            sum(mapping.cka for mapping in valid_mappings) / float(len(valid_mappings))
-            if valid_mappings
-            else 0.0
+            sum(mapping.cka for mapping in mappings) / float(len(mappings)) if mappings else 0.0
         )
 
         visualization = VisualizationData(
             cka_matrix=cka_matrix,
-            combined_matrix=combined_matrix if jaccard_matrix is not None else None,
+            combined_matrix=combined_matrix,
             alignment_path=dp_path,
             source_layer_count=source_count,
             target_layer_count=target_count,
@@ -448,27 +280,8 @@ class CrossArchitectureLayerMatcher:
         )
 
     @staticmethod
-    def _combine_matrices(
-        cka: list[list[float]],
-        jaccard: list[list[float]],
-        cka_weight: float,
-        jaccard_weight: float,
-    ) -> list[list[float]]:
-        rows = len(cka)
-        if rows == 0:
-            return cka
-        cols = len(cka[0])
-        combined = [[0.0 for _ in range(cols)] for _ in range(rows)]
-        for i in range(rows):
-            for j in range(cols):
-                combined[i][j] = cka_weight * cka[i][j] + jaccard_weight * jaccard[i][j]
-        return combined
-
-    @staticmethod
     def _dynamic_programming_alignment(
         similarity_matrix: list[list[float]],
-        max_skip: int,
-        skip_penalty: float,
     ) -> tuple[list[tuple[int, int]], float]:
         m = len(similarity_matrix)
         if m == 0:
@@ -484,35 +297,17 @@ class CrossArchitectureLayerMatcher:
             dp[0][j] = float(similarity_matrix[0][j])
 
         for i in range(1, m):
+            best_prev_score = float("-inf")
+            best_prev_j = 0
             for j in range(n):
-                score = float(similarity_matrix[i][j])
-                for j_prev in range(0, j + 1):
-                    skip_count = j - j_prev
-                    if skip_count <= max_skip:
-                        penalty = float(skip_count) * skip_penalty
-                        candidate = dp[i - 1][j_prev] + score - penalty
-                        if candidate > dp[i][j]:
-                            dp[i][j] = candidate
-                            parent[i][j] = (i - 1, j_prev)
+                if dp[i - 1][j] > best_prev_score:
+                    best_prev_score = dp[i - 1][j]
+                    best_prev_j = j
+                dp[i][j] = float(similarity_matrix[i][j]) + best_prev_score
+                parent[i][j] = (i - 1, best_prev_j)
 
-                for i_prev in range(max(0, i - max_skip), i):
-                    skip_count = i - i_prev
-                    if skip_count <= max_skip:
-                        penalty = float(skip_count) * skip_penalty
-                        for j_prev in range(0, j + 1):
-                            target_skip = j - j_prev
-                            total_penalty = penalty + float(target_skip) * skip_penalty
-                            candidate = dp[i_prev][j_prev] + score - total_penalty
-                            if candidate > dp[i][j]:
-                                dp[i][j] = candidate
-                                parent[i][j] = (i_prev, j_prev)
-
-        best_j = 0
-        best_score = float("-inf")
-        for j in range(n):
-            if dp[m - 1][j] > best_score:
-                best_score = dp[m - 1][j]
-                best_j = j
+        best_j = max(range(n), key=lambda j: dp[m - 1][j])
+        best_score = dp[m - 1][best_j]
 
         path: list[tuple[int, int]] = []
         current: tuple[int, int] | None = (m - 1, best_j)
@@ -526,39 +321,33 @@ class CrossArchitectureLayerMatcher:
     # _classify_confidence method removed - use raw CKA values directly.
 
     @staticmethod
-    def _validate_h2(
-        mappings: list[LayerMapping], config: Configuration
-    ) -> H2ValidationResult:
+    def _validate_h2(mappings: list[LayerMapping]) -> H2ValidationResult:
         """Compute layer correspondence statistics using raw CKA values.
 
-        Uses configured threshold to compute proportion above threshold for diagnostics.
         Returns raw measurements - callers determine validation thresholds.
         """
-        valid = [mapping for mapping in mappings if not mapping.is_skipped]
-        if not valid:
+        if not mappings:
             return H2ValidationResult(
                 mean_cka=0.0,
-                cka_above_threshold_proportion=0.0,
+                min_cka=0.0,
+                max_cka=0.0,
                 position_correlation=0.0,
             )
 
-        mean_cka = sum(mapping.cka for mapping in valid) / float(len(valid))
-        # Count mappings above the configured high threshold (for diagnostic purposes)
-        # Use effective_high_threshold which raises if not configured
-        above_threshold = sum(
-            1 for mapping in valid if mapping.cka >= config.effective_high_threshold
-        )
-        above_threshold_prop = float(above_threshold) / float(len(valid))
+        mean_cka = sum(mapping.cka for mapping in mappings) / float(len(mappings))
+        min_cka = min(mapping.cka for mapping in mappings)
+        max_cka = max(mapping.cka for mapping in mappings)
 
-        source_positions = [float(mapping.source_layer) for mapping in valid]
-        target_positions = [float(mapping.target_layer) for mapping in valid]
+        source_positions = [float(mapping.source_layer) for mapping in mappings]
+        target_positions = [float(mapping.target_layer) for mapping in mappings]
         position_corr = CrossArchitectureLayerMatcher._spearman_correlation(
             source_positions, target_positions
         )
 
         return H2ValidationResult(
             mean_cka=float(mean_cka),
-            cka_above_threshold_proportion=float(above_threshold_prop),
+            min_cka=float(min_cka),
+            max_cka=float(max_cka),
             position_correlation=float(position_corr),
         )
 

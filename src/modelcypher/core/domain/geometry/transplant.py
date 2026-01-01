@@ -31,6 +31,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.birkhoff_projector import (
+    BirkhoffProjector,
+    BirkhoffProjectorConfig,
+)
 from modelcypher.core.domain.geometry.null_space_filter import (
     NullSpaceFilter,
     NullSpaceFilterConfig,

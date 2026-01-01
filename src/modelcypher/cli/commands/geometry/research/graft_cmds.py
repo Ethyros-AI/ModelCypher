@@ -354,9 +354,6 @@ def register(app: typer.Typer) -> None:
         layers: list[int] | None = typer.Option(
             None, "--layer", "-l", help="Specific layers to analyze"
         ),
-        density_threshold: float = typer.Option(
-            0.5, "--density-threshold", help="Density threshold for sparse/dense classification"
-        ),
         max_probes: int = typer.Option(
             50, "--max-probes", help="Maximum probes to analyze"
         ),
@@ -456,18 +453,19 @@ def register(app: typer.Typer) -> None:
         # Compute knowledge diff
         diff = differ.diff(source_profile, target_profile)
 
-        # Identify transfer candidates: high opportunity concepts
+        # Transfer candidates: concepts where geometry indicates source can help target
+        # The opportunity_score IS the geometric signal: positive = source denser than target
+        # No arbitrary thresholds - the geometry determines the boundary
         transfer_candidates = [
             opp
             for opp in diff.ranked_opportunities
-            if opp.target_density < density_threshold
-            and opp.opportunity_score > 0.1
+            if opp.opportunity_score > 0  # Natural geometric boundary
         ]
 
-        # Identify stability checks: dense concepts (should not change)
+        # Stability checks: concepts where target is already denser (negative opportunity)
         stability_checks = [
             opp for opp in diff.ranked_opportunities
-            if opp.target_density >= density_threshold
+            if opp.opportunity_score <= 0  # Target is already at or above source density
         ]
 
         # Group transfer candidates by layer

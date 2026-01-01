@@ -81,7 +81,6 @@ def stage_layer_correspondence(
         # First, compute a CKA matrix manually since we don't have full CRMs
         from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
         from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
-            Configuration,
             CrossArchitectureLayerMatcher,
         )
 
@@ -156,20 +155,9 @@ def stage_layer_correspondence(
 
             cka_matrix.append(row)
 
-        # Use dynamic programming to find optimal monotonic alignment
-        # Exact kernel alignment requires CKA = 1.0 (within machine precision)
-        # high_confidence = 1.0 - eps, medium = 0.9999 (still strict)
-        config = Configuration.with_thresholds(
-            high_confidence_threshold=1.0 - 1e-6,
-            medium_confidence_threshold=1.0 - 1e-4,
-            max_skip=3,
-        )
-
         # Use DP alignment directly since we have the CKA matrix
         dp_path, alignment_score = CrossArchitectureLayerMatcher._dynamic_programming_alignment(
             cka_matrix,
-            max_skip=config.max_skip,
-            skip_penalty=config.skip_penalty,
         )
 
         # Build correspondence dict from DP path

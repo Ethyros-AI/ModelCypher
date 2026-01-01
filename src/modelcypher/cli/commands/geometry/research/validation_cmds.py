@@ -179,7 +179,7 @@ def register(app: typer.Typer) -> None:
                 else:
                     non_target_changes.append(abs(delta))
 
-            # Compute summary statistics
+            # Compute summary statistics (raw measurements only, no interpretation)
             mean_target_improvement = (
                 sum(target_improvements) / len(target_improvements)
                 if target_improvements else 0.0
@@ -189,10 +189,9 @@ def register(app: typer.Typer) -> None:
                 if non_target_changes else 0.0
             )
 
-            # Determine success
-            transplant_succeeded = mean_target_improvement > 0
-            no_interference = mean_non_target_change < 0.05  # Less than 5% change
-
+            # Return raw measurements - let users interpret based on their context
+            # Positive target improvement = target domains improved
+            # Low non-target change = minimal interference (user decides threshold)
             result = {
                 "_schema": "mc.geometry.research.validate_transplant.v1",
                 "originalProfile": str(original_profile),
@@ -203,9 +202,8 @@ def register(app: typer.Typer) -> None:
                 "summary": {
                     "meanTargetImprovement": mean_target_improvement,
                     "meanNonTargetChange": mean_non_target_change,
-                    "transplantSucceeded": transplant_succeeded,
-                    "noInterference": no_interference,
-                    "overallSuccess": transplant_succeeded and no_interference,
+                    "targetImprovementCount": len(target_improvements),
+                    "nonTargetChangeCount": len(non_target_changes),
                 },
             }
 
