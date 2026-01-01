@@ -41,8 +41,7 @@ class TestSinkhornKnopp:
     def test_converges_to_doubly_stochastic(self) -> None:
         """Projected matrix should have row/column sums = 1."""
         backend = get_default_backend()
-        config = BirkhoffProjectorConfig()
-        projector = BirkhoffProjector(config, backend)
+        projector = BirkhoffProjector(backend)
 
         backend.random_seed(42)
         M = backend.random_normal((10, 10))
@@ -69,8 +68,7 @@ class TestSinkhornKnopp:
     def test_converges_within_20_iterations(self) -> None:
         """Should converge within DeepSeek's default 20 iterations."""
         backend = get_default_backend()
-        config = BirkhoffProjectorConfig(max_iterations=20)
-        projector = BirkhoffProjector(config, backend)
+        projector = BirkhoffProjector(backend)
 
         backend.random_seed(123)
         M = backend.random_normal((8, 8))
@@ -87,8 +85,7 @@ class TestSinkhornKnopp:
     def test_idempotent_projection(self) -> None:
         """Projecting a doubly stochastic matrix should return itself (approximately)."""
         backend = get_default_backend()
-        config = BirkhoffProjectorConfig()
-        projector = BirkhoffProjector(config, backend)
+        projector = BirkhoffProjector(backend)
 
         # Create a known doubly stochastic matrix (uniform)
         n = 5
@@ -108,8 +105,7 @@ class TestSinkhornKnopp:
     def test_preserves_permutation_matrices(self) -> None:
         """Permutation matrices are vertices of Birkhoff polytope - should be preserved."""
         backend = get_default_backend()
-        config = BirkhoffProjectorConfig(enforce_spectral_bound=False)
-        projector = BirkhoffProjector(config, backend)
+        projector = BirkhoffProjector(backend)
 
         # Create a permutation matrix (cycle)
         n = 4
@@ -138,8 +134,7 @@ class TestSinkhornKnopp:
     def test_all_entries_nonnegative(self) -> None:
         """All entries should be non-negative."""
         backend = get_default_backend()
-        config = BirkhoffProjectorConfig()
-        projector = BirkhoffProjector(config, backend)
+        projector = BirkhoffProjector(backend)
 
         backend.random_seed(456)
         M = backend.random_normal((6, 6))
@@ -160,8 +155,7 @@ class TestSpectralBounding:
     def test_bounds_spectral_norm_to_one(self) -> None:
         """Spectral norm should be <= 1.0 after bounding."""
         backend = get_default_backend()
-        config = BirkhoffProjectorConfig(enforce_spectral_bound=True, max_spectral_norm=1.0)
-        projector = BirkhoffProjector(config, backend)
+        projector = BirkhoffProjector(backend)
 
         # Create matrix with large spectral norm
         backend.random_seed(789)
@@ -182,8 +176,7 @@ class TestSpectralBounding:
     def test_spectral_norm_tracking(self) -> None:
         """Result should track spectral norm before and after."""
         backend = get_default_backend()
-        config = BirkhoffProjectorConfig(enforce_spectral_bound=True)
-        projector = BirkhoffProjector(config, backend)
+        projector = BirkhoffProjector(backend)
 
         backend.random_seed(101)
         M = backend.random_normal((5, 5)) * 3.0
@@ -200,8 +193,7 @@ class TestSpectralBounding:
     def test_no_clipping_when_already_bounded(self) -> None:
         """No clipping should occur when spectral norm is already <= max."""
         backend = get_default_backend()
-        config = BirkhoffProjectorConfig(enforce_spectral_bound=True, max_spectral_norm=2.0)
-        projector = BirkhoffProjector(config, backend)
+        projector = BirkhoffProjector(backend)
 
         # Small matrix will have small spectral norm after Sinkhorn
         n = 3
@@ -210,8 +202,8 @@ class TestSpectralBounding:
 
         result = projector.project(M, ensure_positive=False)
 
-        # Uniform matrix has spectral norm = 1, should not be clipped with max=2.0
-        assert not result.spectral_clipped or result.spectral_norm_before <= 2.0
+        # Uniform matrix has spectral norm = 1, should not be clipped
+        assert not result.spectral_clipped
 
 
 class TestCompositionalClosure:
@@ -220,8 +212,7 @@ class TestCompositionalClosure:
     def test_product_remains_doubly_stochastic(self) -> None:
         """A @ B should be doubly stochastic if A, B are."""
         backend = get_default_backend()
-        config = BirkhoffProjectorConfig()
-        projector = BirkhoffProjector(config, backend)
+        projector = BirkhoffProjector(backend)
 
         backend.random_seed(202)
         A = backend.random_normal((6, 6))
@@ -253,8 +244,7 @@ class TestCompositionalClosure:
     def test_chained_products_stable(self) -> None:
         """Multiple chained products should remain stable."""
         backend = get_default_backend()
-        config = BirkhoffProjectorConfig()
-        projector = BirkhoffProjector(config, backend)
+        projector = BirkhoffProjector(backend)
 
         n = 5
         num_matrices = 10
@@ -296,8 +286,7 @@ class TestNonSquareHandling:
     def test_weight_delta_nonsquare(self) -> None:
         """Non-square weight deltas should be handled via Gram matrix."""
         backend = get_default_backend()
-        config = BirkhoffProjectorConfig()
-        projector = BirkhoffProjector(config, backend)
+        projector = BirkhoffProjector(backend)
 
         backend.random_seed(404)
         # Wide matrix (out < in)
@@ -319,8 +308,7 @@ class TestNonSquareHandling:
     def test_square_weight_delta(self) -> None:
         """Square weight deltas should use direct projection."""
         backend = get_default_backend()
-        config = BirkhoffProjectorConfig()
-        projector = BirkhoffProjector(config, backend)
+        projector = BirkhoffProjector(backend)
 
         backend.random_seed(505)
         delta = backend.random_normal((6, 6))
@@ -337,8 +325,7 @@ class TestNumericalStability:
     def test_handles_near_zero_matrix(self) -> None:
         """Should handle matrices with very small values."""
         backend = get_default_backend()
-        config = BirkhoffProjectorConfig()
-        projector = BirkhoffProjector(config, backend)
+        projector = BirkhoffProjector(backend)
 
         # Very small matrix values
         M = backend.ones((4, 4)) * 1e-10
@@ -355,8 +342,7 @@ class TestNumericalStability:
     def test_handles_large_matrix(self) -> None:
         """Should handle matrices with moderately large values."""
         backend = get_default_backend()
-        config = BirkhoffProjectorConfig()
-        projector = BirkhoffProjector(config, backend)
+        projector = BirkhoffProjector(backend)
 
         # Moderately large matrix values (avoid extreme values that cause MLX issues)
         backend.random_seed(606)
@@ -378,64 +364,10 @@ class TestNumericalStability:
     def test_rejects_non_square(self) -> None:
         """project() should reject non-square matrices."""
         backend = get_default_backend()
-        config = BirkhoffProjectorConfig()
-        projector = BirkhoffProjector(config, backend)
+        projector = BirkhoffProjector(backend)
 
         M = backend.ones((3, 5))
         backend.eval(M)
 
         with pytest.raises(ValueError, match="square matrix"):
             projector.project(M)
-
-
-class TestConfiguration:
-    """Test configuration options."""
-
-    def test_custom_max_iterations(self) -> None:
-        """Custom max_iterations should be respected."""
-        backend = get_default_backend()
-        config = BirkhoffProjectorConfig(max_iterations=5)
-        projector = BirkhoffProjector(config, backend)
-
-        backend.random_seed(707)
-        M = backend.random_normal((10, 10))
-        backend.eval(M)
-
-        result = projector.project(M)
-
-        # May or may not converge, but should not exceed 5 iterations
-        assert result.iterations_used <= 5
-
-    def test_spectral_bound_disabled(self) -> None:
-        """Spectral bounding can be disabled."""
-        backend = get_default_backend()
-        config = BirkhoffProjectorConfig(enforce_spectral_bound=False)
-        projector = BirkhoffProjector(config, backend)
-
-        backend.random_seed(808)
-        M = backend.random_normal((5, 5)) * 10.0
-        backend.eval(M)
-
-        result = projector.project(M)
-
-        # Spectral clipping should not have been applied
-        assert not result.spectral_clipped
-
-    def test_power_iteration_method(self) -> None:
-        """Power iteration method should work."""
-        backend = get_default_backend()
-        config = BirkhoffProjectorConfig(
-            spectral_method="power_iteration",
-            power_iterations=20,
-        )
-        projector = BirkhoffProjector(config, backend)
-
-        backend.random_seed(909)
-        M = backend.random_normal((5, 5))
-        backend.eval(M)
-
-        result = projector.project(M)
-
-        # Should still produce valid result
-        assert result.converged
-        assert result.spectral_norm_after > 0

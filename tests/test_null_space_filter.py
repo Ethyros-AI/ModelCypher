@@ -29,7 +29,6 @@ from hypothesis import strategies as st
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.null_space_filter import (
     NullSpaceFilter,
-    NullSpaceMethod,
     filter_merge_delta_to_null_space,
 )
 # NOTE: NullSpaceFilterConfig was REMOVED. All parameters derived from spectral gap.
@@ -72,7 +71,7 @@ class TestNullSpaceProjection:
         A = backend.random_normal((30, 20))
         backend.eval(A)
 
-        projection = filter.compute_null_space_projection(A)
+        projection = null_filter.compute_null_space_projection(A)
 
         # With full rank, null space should be small or empty
         # Just verify the function works without crashing
@@ -87,7 +86,7 @@ class TestNullSpaceProjection:
         backend.random_seed(42)
         A = backend.random_normal((30, 20))
         backend.eval(A)
-        projection = filter.compute_null_space_projection(A)
+        projection = null_filter.compute_null_space_projection(A)
 
         P = projection.projection_matrix
         P_squared = P @ P
@@ -105,7 +104,7 @@ class TestNullSpaceProjection:
         backend.random_seed(42)
         A = backend.random_normal((25, 15))
         backend.eval(A)
-        projection = filter.compute_null_space_projection(A)
+        projection = null_filter.compute_null_space_projection(A)
 
         P = projection.projection_matrix
         P_T = backend.transpose(P)
@@ -189,7 +188,7 @@ class TestNullSpaceFiltering:
         backend.eval(A)
         backend.eval(delta)
 
-        result = filter.filter_delta(delta, A)
+        result = null_filter.filter_delta(delta, A)
 
         assert 0.0 <= result.preserved_fraction <= 1.0
         assert 0.0 <= result.projection_loss <= 1.0
@@ -206,7 +205,7 @@ class TestNullSpaceFiltering:
         backend.eval(A)
         backend.eval(delta)
 
-        result = filter.filter_delta(delta, A)
+        result = null_filter.filter_delta(delta, A)
 
         backend.eval(result.filtered_delta)
         zero_arr = backend.zeros_like(result.filtered_delta)
@@ -223,8 +222,7 @@ class TestNullSpaceFiltering:
         should be projected out (low preserved_fraction).
         """
         backend = get_default_backend()
-        config = NullSpaceFilterConfig()  # Default SVD method
-        filter = NullSpaceFilter(config)
+        null_filter = NullSpaceFilter(backend)
 
         d = 10
         # Many more samples than dimensions → full rank, small null space
@@ -234,7 +232,7 @@ class TestNullSpaceFiltering:
         backend.eval(A)
         backend.eval(delta)
 
-        result = filter.filter_delta(delta, A)
+        result = null_filter.filter_delta(delta, A)
 
         # With full rank activations, null space should be very small
         # Preserved fraction should be low (most of delta projected out)
@@ -266,7 +264,7 @@ class TestNullSpaceFiltering:
         backend.eval(delta)
 
         with pytest.raises(NullSpaceFilterError) as exc_info:
-            filter.filter_delta(delta, A)
+            null_filter.filter_delta(delta, A)
 
         assert "Activation dim" in str(exc_info.value)
         assert exc_info.value.context["activation_dim"] == 20
@@ -339,9 +337,8 @@ class TestMergeIntegration:
         backend.eval(target)
         backend.eval(activations)
 
-        config = NullSpaceFilterConfig(min_samples=1)
         merged, result = filter_merge_delta_to_null_space(
-            source, target, activations, alpha=1.0, config=config
+            source, target, activations, alpha=1.0
         )
 
         backend.eval(merged)
@@ -379,7 +376,7 @@ class TestModelProfile:
             2: act2,
         }
 
-        profile = filter.compute_model_null_space_profile(layer_activations)
+        profile = null_filter.compute_model_null_space_profile(layer_activations)
 
         assert len(profile.per_layer) == 3
         assert profile.total_null_dim >= 0
@@ -406,7 +403,7 @@ class TestModelProfile:
             1: act1,
         }
 
-        profile = filter.compute_model_null_space_profile(layer_activations, graft_threshold=0.4)
+        profile = null_filter.compute_model_null_space_profile(layer_activations)
 
         # Layer 1 should be graftable (50% > 40% threshold)
         assert 1 in profile.graftable_layers
@@ -431,7 +428,7 @@ class TestPropertyBased:
         backend.eval(A)
         backend.eval(delta)
 
-        result = filter.filter_delta(delta, A)
+        result = null_filter.filter_delta(delta, A)
 
         total = result.projection_loss + result.preserved_fraction
         assert abs(total - 1.0) < 1e-6, f"Total was {total}"
@@ -451,7 +448,7 @@ class TestPropertyBased:
         backend.eval(A)
         backend.eval(delta)
 
-        result = filter.filter_delta(delta, A)
+        result = null_filter.filter_delta(delta, A)
 
         assert result.filtered_norm <= result.original_norm + 1e-6
 
@@ -462,8 +459,7 @@ class TestEdgeCases:
     def test_single_sample_activation(self):
         """Single sample should still work."""
         backend = get_default_backend()
-        config = NullSpaceFilterConfig(min_samples=1)
-        filter = NullSpaceFilter(config)
+        filter = NullSpaceFilter(backend)
 
         backend.random_seed(42)
         A = backend.random_normal((1, 10))
@@ -485,7 +481,7 @@ class TestEdgeCases:
         backend.eval(A)
         backend.eval(delta)
 
-        result = filter.filter_delta(delta, A)
+        result = null_filter.filter_delta(delta, A)
 
         # Should have large null space (500 - rank(A) ~ 400)
         assert result.null_space_dim >= 350
@@ -498,7 +494,7 @@ class TestEdgeCases:
         A = backend.zeros((30, 20))
         backend.eval(A)
 
-        projection = filter.compute_null_space_projection(A)
+        projection = null_filter.compute_null_space_projection(A)
 
         # All of space is null
         assert projection.null_dim == 20
@@ -522,7 +518,7 @@ class TestEdgeCases:
 
         # Should not crash (may produce warnings)
         try:
-            result = filter.filter_delta(delta, A)
+            result = null_filter.filter_delta(delta, A)
             # If it doesn't crash, check result is reasonable
             backend.eval(result.filtered_delta)
             has_nan = backend.any(backend.isnan(result.filtered_delta))

@@ -53,16 +53,14 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class KnowledgeTransferConfig:
-    """Configuration for knowledge transfer validation."""
+    """Configuration for knowledge transfer validation.
+
+    NOTE: No thresholds - return raw retention scores.
+    Users interpret results in their domain context.
+    """
 
     # Domains to test
     domains: list[KnowledgeDomain] = field(default_factory=lambda: list(KnowledgeDomain))
-
-    # Probe execution
-
-    # Thresholds
-    retention_threshold: float = 0.8
-    domain_failure_threshold: float = 0.6
 
     # Options
     include_variations: bool = True
