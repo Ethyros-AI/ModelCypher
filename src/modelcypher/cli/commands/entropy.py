@@ -215,16 +215,6 @@ def entropy_detect_distress(
     # Z-scores for each sample
     z_scores = [(e - entropy_mean) / entropy_std if entropy_std > 0 else 0.0 for e in entropies]
 
-    # Count sustained high values (consecutive samples > 1 std above mean)
-    sustained_high_count = 0
-    current_run = 0
-    for z in z_scores:
-        if z > 1.0:
-            current_run += 1
-            sustained_high_count = max(sustained_high_count, current_run)
-        else:
-            current_run = 0
-
     payload = {
         "sampleCount": n,
         "entropyMean": entropy_mean,
@@ -234,7 +224,6 @@ def entropy_detect_distress(
         "trendSlope": trend_slope,
         "correlation": correlation,
         "volatility": volatility,
-        "sustainedHighCount": sustained_high_count,
         "zScores": z_scores,
     }
 
@@ -247,7 +236,6 @@ def entropy_detect_distress(
             f"Trend Slope: {trend_slope:.6f}",
             f"Entropy-Variance Correlation: {correlation:.4f}",
             f"Volatility: {volatility:.4f}",
-            f"Max Sustained High Run: {sustained_high_count}",
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
@@ -428,16 +416,6 @@ def entropy_window(
     # Z-scores for each sample in window
     z_scores = [(e - window_mean) / window_std if window_std > 0 else 0.0 for e in window_data]
 
-    # Count max consecutive run above 1σ
-    max_consecutive_high = 0
-    current_run = 0
-    for z in z_scores:
-        if z > 1.0:
-            current_run += 1
-            max_consecutive_high = max(max_consecutive_high, current_run)
-        else:
-            current_run = 0
-
     # Current (most recent) values
     current_entropy = entropies[-1] if entropies else 0.0
     current_variance = variances[-1] if variances else 0.0
@@ -454,7 +432,6 @@ def entropy_window(
         "windowStdDev": window_std,
         "windowMin": window_min,
         "windowMax": window_max,
-        "maxConsecutiveHigh": max_consecutive_high,
         "zScores": z_scores,
     }
 
@@ -469,7 +446,6 @@ def entropy_window(
             f"Window Mean: {window_mean:.4f}",
             f"Window StdDev: {window_std:.4f}",
             f"Window Range: [{window_min:.4f}, {window_max:.4f}]",
-            f"Max Consecutive >1σ: {max_consecutive_high}",
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return

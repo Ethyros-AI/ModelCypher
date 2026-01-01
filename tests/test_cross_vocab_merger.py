@@ -36,30 +36,16 @@ class TestCrossVocabMergeConfig:
     def test_defaults(self):
         config = CrossVocabMergeConfig()
         assert config.projection_strategy == ProjectionStrategy.PROCRUSTES
-        assert config.high_similarity_threshold == 0.95
-        assert config.similarity_threshold == 0.8
-        assert config.confidence_threshold == 0.5
         assert config.blend_alpha == 0.5
         assert config.preserve_special_tokens is True
-        assert config.use_embedding_similarity is True
-        assert config.exact_match_only is False
         assert config.max_alignments_per_token == 3
         assert config.anchor_count == 1000
-        assert config.regularization == 1e-6
+        assert config.regularization is None
+        assert config.similarity_batch_size == 128
 
     def test_custom_projection_strategy(self):
         config = CrossVocabMergeConfig(projection_strategy=ProjectionStrategy.PCA)
         assert config.projection_strategy == ProjectionStrategy.PCA
-
-    def test_custom_thresholds(self):
-        config = CrossVocabMergeConfig(
-            high_similarity_threshold=0.99,
-            similarity_threshold=0.9,
-            confidence_threshold=0.6,
-        )
-        assert config.high_similarity_threshold == 0.99
-        assert config.similarity_threshold == 0.9
-        assert config.confidence_threshold == 0.6
 
     def test_custom_blend_alpha(self):
         config = CrossVocabMergeConfig(blend_alpha=0.7)
@@ -69,71 +55,9 @@ class TestCrossVocabMergeConfig:
         config = CrossVocabMergeConfig(preserve_special_tokens=False)
         assert config.preserve_special_tokens is False
 
-    def test_custom_exact_match_only(self):
-        config = CrossVocabMergeConfig(exact_match_only=True)
-        assert config.exact_match_only is True
-
     def test_custom_anchor_count(self):
         config = CrossVocabMergeConfig(anchor_count=500)
         assert config.anchor_count == 500
-
-
-class TestCrossVocabMergeConfigFromSimilarityDistribution:
-    """Tests for from_similarity_distribution class method."""
-
-    def test_empty_similarities_returns_defaults(self):
-        config = CrossVocabMergeConfig.from_similarity_distribution([])
-        assert config.projection_strategy == ProjectionStrategy.PROCRUSTES
-        assert config.blend_alpha == 0.5
-
-    def test_custom_strategy_preserved(self):
-        config = CrossVocabMergeConfig.from_similarity_distribution(
-            [], projection_strategy=ProjectionStrategy.CCA
-        )
-        assert config.projection_strategy == ProjectionStrategy.CCA
-
-    def test_custom_blend_alpha_preserved(self):
-        config = CrossVocabMergeConfig.from_similarity_distribution(
-            [], blend_alpha=0.8
-        )
-        assert config.blend_alpha == 0.8
-
-    def test_derives_thresholds_from_distribution(self):
-        # Create a distribution from 0.0 to 1.0
-        similarities = [i / 100.0 for i in range(101)]
-
-        config = CrossVocabMergeConfig.from_similarity_distribution(similarities)
-
-        # With 101 values (0.00, 0.01, ..., 1.00), percentiles are:
-        # 95th percentile should be around 0.95
-        # 80th percentile should be around 0.80
-        # 50th percentile should be around 0.50
-        assert abs(config.high_similarity_threshold - 0.95) < 0.02
-        assert abs(config.similarity_threshold - 0.80) < 0.02
-        assert abs(config.confidence_threshold - 0.50) < 0.02
-
-    def test_custom_percentiles(self):
-        similarities = [i / 100.0 for i in range(101)]
-
-        config = CrossVocabMergeConfig.from_similarity_distribution(
-            similarities,
-            high_similarity_percentile=0.90,
-            similar_percentile=0.70,
-            approximate_percentile=0.30,
-        )
-
-        assert abs(config.high_similarity_threshold - 0.90) < 0.02
-        assert abs(config.similarity_threshold - 0.70) < 0.02
-        assert abs(config.confidence_threshold - 0.30) < 0.02
-
-    def test_single_value_distribution(self):
-        # Edge case: single value
-        config = CrossVocabMergeConfig.from_similarity_distribution([0.5])
-
-        # All percentiles should be 0.5
-        assert config.high_similarity_threshold == 0.5
-        assert config.similarity_threshold == 0.5
-        assert config.confidence_threshold == 0.5
 
 
 class TestCrossVocabMergeConfigToProjectionConfig:
@@ -549,17 +473,6 @@ class TestCrossVocabMergerAnalyzeMergeQuality:
 
         assert "alignment_score" in quality
         assert "vocab_overlap_ratio" in quality
-
-    def test_contains_overall_score(self, merger, backend):
-        backend.random_seed(42)
-        source = backend.random_normal((10, 16))
-        target = backend.random_normal((10, 16))
-
-        result = merger.merge(source, target)
-        quality = merger.analyze_merge_quality(result)
-
-        assert "overall_quality_score" in quality
-        assert 0.0 <= quality["overall_quality_score"] <= 1.0
 
     def test_contains_warnings_count(self, merger, backend):
         backend.random_seed(42)

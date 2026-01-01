@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 from .alignment_map import (
     AlignmentQuality,
@@ -280,8 +281,10 @@ class CrossVocabMerger:
             target_for_sim = target_embeddings
 
         # Normalize embeddings for cosine similarity
-        source_norms = b.norm(source_for_sim, axis=1, keepdims=True) + self.config.regularization
-        target_norms = b.norm(target_for_sim, axis=1, keepdims=True) + self.config.regularization
+        eps = division_epsilon(b, source_for_sim)
+        norm_eps = self.config.regularization if self.config.regularization is not None else eps
+        source_norms = b.norm(source_for_sim, axis=1, keepdims=True) + norm_eps
+        target_norms = b.norm(target_for_sim, axis=1, keepdims=True) + norm_eps
         source_normalized = source_for_sim / source_norms
         target_normalized = target_for_sim / target_norms
 
@@ -403,7 +406,7 @@ class CrossVocabMerger:
         target_indices = []
 
         for alignment in alignment_map.iter_alignments():
-            if alignment.quality == AlignmentQuality.EXACT:
+            if alignment.quality in (AlignmentQuality.EXACT, AlignmentQuality.SIMILAR):
                 if len(alignment.target_ids) == 1:
                     source_indices.append(alignment.source_id)
                     target_indices.append(alignment.target_ids[0])
@@ -470,13 +473,6 @@ class CrossVocabMerger:
                 # Blend based on alignment provenance and confidence
                 effective_alpha = alpha * alignment.confidence
 
-                if alignment.quality == AlignmentQuality.EXACT:
-                    # For exact matches, use higher source weight
-                    effective_alpha = max(alpha, 0.7) * alignment.confidence
-                elif alignment.quality == AlignmentQuality.INTERPOLATED:
-                    # For interpolated, use lower source weight
-                    effective_alpha = min(alpha, 0.3) * alignment.confidence
-
                 blended = effective_alpha * source_vec + (1 - effective_alpha) * target_vec
                 merged_np[target_id] = blended
 
@@ -540,6 +536,7 @@ class CrossVocabMerger:
         return {
             "alignment_coverage": alignment.coverage,
             "alignment_confidence": alignment.mean_confidence,
+            "alignment_quality_distribution": alignment.quality_distribution(),
             "projection_alignment_score": projection.alignment_score,
             "projection_reconstruction_error": projection.reconstruction_error,
             "alignment_score": result.alignment.alignment_score,

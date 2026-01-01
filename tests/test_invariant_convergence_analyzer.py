@@ -183,11 +183,14 @@ class TestInvariantConvergenceAnalyzer:
         assert abs(result) < 0.001
 
     def test_cosine_sparse_empty(self):
-        """Empty vectors should return None."""
+        """Empty vectors should raise ValueError."""
+        import pytest
         analyzer = InvariantConvergenceAnalyzer()
 
-        assert analyzer._cosine_sparse({}, {0: 1.0}) is None
-        assert analyzer._cosine_sparse({0: 1.0}, {}) is None
+        with pytest.raises(ValueError, match="empty"):
+            analyzer._cosine_sparse({}, {0: 1.0})
+        with pytest.raises(ValueError, match="empty"):
+            analyzer._cosine_sparse({0: 1.0}, {})
 
     def test_average_sparse_single(self):
         """Averaging single vector should return itself."""

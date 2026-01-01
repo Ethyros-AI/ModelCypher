@@ -190,8 +190,9 @@ class VectorMath:
             norm_a_sq += x * x
             norm_b_sq += y * y
 
-        if norm_a_sq <= 0 or norm_b_sq <= 0:
-            raise ValueError("Cannot compute cosine similarity of zero vector")
+        eps = _angle_epsilon_from_values(a_list + b_list)
+        if norm_a_sq <= eps or norm_b_sq <= eps:
+            return 0.0
 
         return dot_product / (math.sqrt(norm_a_sq) * math.sqrt(norm_b_sq))
 

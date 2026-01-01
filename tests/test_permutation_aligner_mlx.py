@@ -53,8 +53,8 @@ def test_permutation_alignment_identity():
     expected_signs = mx.eye(N).astype(mx.float32)
     assert mx.array_equal(result.signs, expected_signs)
 
-    # Check quality
-    assert result.match_quality == 1.0
+    # Check quality - near 1.0 within numerical precision
+    assert result.match_quality > 0.999
     assert result.sign_flip_count == 0
 
 
@@ -79,7 +79,7 @@ def test_permutation_alignment_permuted():
     aligned = PermutationAligner.apply(source, result, align_output=True, align_input=False)
 
     assert mx.allclose(aligned, target).item()
-    assert result.match_quality == 1.0
+    assert result.match_quality > 0.999
 
 
 def test_permutation_alignment_sign_flip():

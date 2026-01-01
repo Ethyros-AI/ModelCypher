@@ -273,10 +273,6 @@ class EuclideanConsistencyResult:
     dimensionality_estimate: float
     axis_orthogonality: dict[str, float]
 
-    @property
-    def is_euclidean(self) -> bool:
-        """Backward compat."""
-        return self.consistency_score > 0.6 and self.triangle_inequality_violations == 0
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""

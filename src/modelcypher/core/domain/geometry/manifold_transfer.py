@@ -212,13 +212,6 @@ class TransferPoint:
         )
     )
 
-    @property
-    def is_reliable(self) -> bool:
-        """Check if projection is reliable enough for downstream use.
-
-        Threshold: stress < 0.3 (historically 'good' quality).
-        """
-        return self.stress < 0.3
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
@@ -238,27 +231,27 @@ class TransferPoint:
 
 @dataclass
 class TransferReport:
-    """Report on cross-manifold transfer for multiple concepts."""
+    """Report on cross-manifold transfer for multiple concepts.
+
+    Contains raw stress distribution metrics. Callers should interpret
+    stress values relative to baselines for their specific use case.
+    """
 
     transfers: list[TransferPoint]
     source_model_id: str
     target_model_id: str
     mean_stress: float
     max_stress: float
-    num_reliable: int
-    num_unreliable: int
+    min_stress: float
+    median_stress: float
+    std_stress: float
     source_mean_curvature: float | None
     target_mean_curvature: float | None
 
     @property
-    def success_rate(self) -> float:
-        """Fraction of reliable transfers."""
-        total = len(self.transfers)
-        return self.num_reliable / total if total > 0 else 0.0
-
-    def get_reliable_transfers(self) -> list[TransferPoint]:
-        """Get only reliable transfer points."""
-        return [t for t in self.transfers if t.is_reliable]
+    def transfer_count(self) -> int:
+        """Total number of transfer points."""
+        return len(self.transfers)
 
 
 class CrossManifoldProjector:
@@ -605,9 +598,8 @@ class CrossManifoldProjector:
             except Exception as e:
                 logger.warning(f"Failed to transfer {profile.concept_id}: {e}")
 
-        # Compute statistics
+        # Compute stress distribution statistics (raw measurements)
         stresses = [t.stress for t in transfers]
-        num_reliable = sum(1 for t in transfers if t.is_reliable)
 
         source_curvatures = [
             p.source_curvature.mean_sectional for p in profiles if p.source_curvature is not None
@@ -625,9 +617,21 @@ class CrossManifoldProjector:
             stresses_arr = backend.array(stresses)
             mean_stress = float(backend.to_numpy(backend.mean(stresses_arr)))
             max_stress = float(backend.to_numpy(backend.max(stresses_arr)))
+            min_stress = float(backend.to_numpy(backend.min(stresses_arr)))
+            std_stress = float(backend.to_numpy(backend.std(stresses_arr)))
+            # Compute median via sorting
+            sorted_stresses = sorted(stresses)
+            n = len(sorted_stresses)
+            if n % 2 == 1:
+                median_stress = sorted_stresses[n // 2]
+            else:
+                median_stress = (sorted_stresses[n // 2 - 1] + sorted_stresses[n // 2]) / 2.0
         else:
             mean_stress = 0.0
             max_stress = 0.0
+            min_stress = 0.0
+            median_stress = 0.0
+            std_stress = 0.0
 
         return TransferReport(
             transfers=transfers,
@@ -635,8 +639,9 @@ class CrossManifoldProjector:
             target_model_id=target_model_id,
             mean_stress=mean_stress,
             max_stress=max_stress,
-            num_reliable=num_reliable,
-            num_unreliable=len(transfers) - num_reliable,
+            min_stress=min_stress,
+            median_stress=median_stress,
+            std_stress=std_stress,
             source_mean_curvature=source_mean_curvature,
             target_mean_curvature=target_mean_curvature,
         )

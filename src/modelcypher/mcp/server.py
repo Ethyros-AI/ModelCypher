@@ -17,69 +17,84 @@
 
 from __future__ import annotations
 
-import json
+import os
+import re
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from modelcypher.core.use_cases.geometry_metrics_service import GeometryMetricsService
+from modelcypher.infrastructure.container import PortRegistry
+from modelcypher.infrastructure.service_factory import ServiceFactory
+from modelcypher.mcp.security import ConfirmationManager, SecurityConfig
+from modelcypher.mcp.tools.agent import register_agent_tools
+from modelcypher.mcp.tools.common import ServiceContext
+from modelcypher.mcp.tools.evaluation import register_evaluation_tools
+from modelcypher.mcp.tools.geometry import register_all_geometry_tools
+from modelcypher.mcp.tools.inference import register_inference_tools
+from modelcypher.mcp.tools.merge_entropy import register_merge_entropy_tools
+from modelcypher.mcp.tools.model import register_model_tools
+from modelcypher.mcp.tools.safety_entropy import (
+    register_entropy_tools,
+    register_safety_tools,
+)
+from modelcypher.mcp.tools.tasks import register_task_tools
+from modelcypher.mcp.tools.thermo import register_thermo_tools
+from modelcypher.mcp.tools.training import register_training_tools
 
-READ_ONLY_ANNOTATIONS = {"readOnlyHint": True, "idempotentHint": True, "openWorldHint": False}
-
-mcp = FastMCP("ModelCypher")
-service = GeometryMetricsService()
-
-
-def _load_points(path: str) -> list[list[float]]:
-    raw = json.loads(Path(path).read_text())
-    if isinstance(raw, dict):
-        return [raw[key] for key in sorted(raw.keys())]
-    return raw
-
-
-@mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-def mc_geometry_gromov_wasserstein(source_file: str, target_file: str) -> dict:
-    """Compute Gromov-Wasserstein distance between two point clouds."""
-    source_points = _load_points(source_file)
-    target_points = _load_points(target_file)
-    result = service.compute_gromov_wasserstein(source_points=source_points, target_points=target_points)
-    payload = service.gromov_wasserstein_payload(result)
-    payload["_schema"] = "mc.geometry.gromov_wasserstein.v1"
-    return payload
+_TOOL_NAME_PATTERN = re.compile(r"""['"](mc_[a-zA-Z0-9_]+)['"]""")
 
 
-@mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-def mc_geometry_intrinsic_dimension(points_file: str) -> dict:
-    """Estimate intrinsic dimension of a point cloud using TwoNN."""
-    points = _load_points(points_file)
-    result = service.estimate_intrinsic_dimension(points=points)
-    payload = service.intrinsic_dimension_payload(result)
-    payload["_schema"] = "mc.geometry.intrinsic_dimension.v1"
-    return payload
+def _discover_tool_names() -> set[str]:
+    tool_dir = Path(__file__).resolve().parent / "tools"
+    tool_names: set[str] = set()
+    for path in tool_dir.rglob("*.py"):
+        if path.name in {"__init__.py", "common.py"}:
+            continue
+        text = path.read_text(encoding="utf-8")
+        tool_names.update(_TOOL_NAME_PATTERN.findall(text))
+    return tool_names
 
 
-@mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-def mc_geometry_topological_fingerprint(points_file: str) -> dict:
-    """Compute topological fingerprint using persistent homology."""
-    points = _load_points(points_file)
-    result = service.compute_topological_fingerprint(points=points)
-    payload = service.topological_fingerprint_payload(result)
-    payload["_schema"] = "mc.geometry.topological_fingerprint.v1"
-    return payload
+TOOL_PROFILES: dict[str, set[str]] = {
+    "full": _discover_tool_names(),
+}
 
 
-@mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-def mc_geometry_spectral_signature(points_file: str) -> dict:
-    """Compute spectral signature of a point cloud."""
-    points = _load_points(points_file)
-    result = service.compute_spectral_signature(points=points)
-    payload = service.spectral_signature_payload(result)
-    payload["_schema"] = "mc.geometry.spectral_signature.v1"
-    return payload
+def build_server(profile: str | None = None) -> FastMCP:
+    profile_name = profile or os.environ.get("MC_MCP_PROFILE", "full")
+    tool_set = set(TOOL_PROFILES.get(profile_name, TOOL_PROFILES["full"]))
+
+    mcp = FastMCP("ModelCypher")
+    registry = PortRegistry.create_production()
+    factory = ServiceFactory(registry)
+    security_config = SecurityConfig.from_env()
+    confirmation_manager = ConfirmationManager(security_config)
+    ctx = ServiceContext(
+        mcp=mcp,
+        tool_set=tool_set,
+        security_config=security_config,
+        confirmation_manager=confirmation_manager,
+        registry=registry,
+        factory=factory,
+    )
+
+    register_all_geometry_tools(ctx)
+    register_model_tools(ctx)
+    register_inference_tools(ctx)
+    register_training_tools(ctx)
+    register_task_tools(ctx)
+    register_merge_entropy_tools(ctx)
+    register_safety_tools(ctx)
+    register_entropy_tools(ctx)
+    register_agent_tools(ctx)
+    register_thermo_tools(ctx)
+    register_evaluation_tools(ctx)
+
+    return mcp
 
 
 def main() -> None:
-    mcp.run()
+    build_server().run()
 
 
 if __name__ == "__main__":

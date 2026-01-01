@@ -88,16 +88,6 @@ def test_entropy_analyze_basic():
             "entropy",
             "analyze",
             samples,
-            "--min-samples",
-            "3",
-            "--trend-threshold",
-            "0.1",
-            "--distress-correlation-threshold",
-            "0.7",
-            "--high-volatility-threshold",
-            "0.5",
-            "--anomaly-z-score-threshold",
-            "2.0",
             "--output",
             "json",
         ],
@@ -118,16 +108,6 @@ def test_entropy_analyze_invalid_samples():
             "entropy",
             "analyze",
             "not valid json",
-            "--min-samples",
-            "3",
-            "--trend-threshold",
-            "0.1",
-            "--distress-correlation-threshold",
-            "0.7",
-            "--high-volatility-threshold",
-            "0.5",
-            "--anomaly-z-score-threshold",
-            "2.0",
             "--output",
             "json",
         ],
@@ -145,16 +125,6 @@ def test_entropy_detect_distress_nominal():
             "entropy",
             "detect-distress",
             samples,
-            "--min-samples",
-            "3",
-            "--trend-threshold",
-            "0.1",
-            "--distress-correlation-threshold",
-            "0.7",
-            "--high-volatility-threshold",
-            "0.5",
-            "--anomaly-z-score-threshold",
-            "2.0",
             "--output",
             "json",
         ],
@@ -179,33 +149,14 @@ def test_entropy_verify_baseline():
             "0.0",
             "--observed",
             "[0.08, 0.12, 0.09, 0.11]",
-            "--test-prompts",
-            '["test prompt 1", "test prompt 2"]',
-            "--failure-z-score",
-            "3.0",
-            "--suspicious-z-score",
-            "2.0",
-            "--minimum-samples",
-            "3",
-            "--no-include-adversarial",
-            "--max-tokens-per-prompt",
-            "100",
-            "--temperature",
-            "0.0",
-            "--prompt-timeout-seconds",
-            "30.0",
-            "--base-model",
-            "test-model",
-            "--adapter",
-            "test-adapter",
             "--output",
             "json",
         ],
     )
     assert result.exit_code == 0
     data = json.loads(result.stdout)
-    assert "comparison" in data
-    assert "observedBaseline" in data
+    assert "declared" in data
+    assert "observed" in data
 
 
 def test_entropy_window_basic():
@@ -220,14 +171,6 @@ def test_entropy_window_basic():
             samples,
             "--size",
             "10",
-            "--minimum-samples",
-            "3",
-            "--sustained-high-count",
-            "3",
-            "--high-threshold",
-            "4.0",
-            "--circuit-threshold",
-            "5.0",
             "--output",
             "json",
         ],
@@ -235,13 +178,13 @@ def test_entropy_window_basic():
     assert result.exit_code == 0
     data = json.loads(result.stdout)
     assert "currentEntropy" in data  # Actual geometric measurement
-    assert "sampleCount" in data
-    assert "movingAverage" in data
+    assert "totalSamples" in data
+    assert "windowMean" in data
 
 
 def test_entropy_window_with_circuit_breaker():
-    """Test entropy window with high entropy triggering circuit breaker."""
-    # High entropy samples that should trip the circuit breaker
+    """Test entropy window with high entropy samples."""
+    # High entropy samples should still yield raw statistics
     samples = "[[5.0, 1.0], [5.2, 1.1], [5.5, 1.2], [5.8, 1.3], [6.0, 1.5]]"
 
     result = runner.invoke(
@@ -252,21 +195,13 @@ def test_entropy_window_with_circuit_breaker():
             samples,
             "--size",
             "5",
-            "--minimum-samples",
-            "3",
-            "--sustained-high-count",
-            "3",
-            "--high-threshold",
-            "4.0",
-            "--circuit-threshold",
-            "5.0",
             "--output",
             "json",
         ],
     )
     assert result.exit_code == 0
     data = json.loads(result.stdout)
-    assert "shouldTripCircuitBreaker" in data
+    assert "currentEntropy" in data
 
 
 def test_entropy_conversation_track(tmp_path):
@@ -312,18 +247,6 @@ def test_entropy_conversation_track(tmp_path):
             "conversation-track",
             "--session",
             str(session_file),
-            "--oscillation-threshold",
-            "1.0",
-            "--drift-threshold",
-            "1.5",
-            "--turn-spike-threshold",
-            "0.4",
-            "--oscillation-window-size",
-            "5",
-            "--minimum-turns",
-            "3",
-            "--recency-decay",
-            "0.9",
             "--output",
             "json",
         ],
@@ -332,7 +255,7 @@ def test_entropy_conversation_track(tmp_path):
     data = json.loads(result.stdout)
     assert "turnCount" in data
     assert "oscillationAmplitude" in data  # Actual geometric measurement
-    assert "manipulationComponents" in data  # Raw signal components
+    assert "turnChanges" in data  # Raw signal components
     assert data["turnCount"] == 3
 
 
@@ -345,18 +268,6 @@ def test_entropy_conversation_track_missing_file():
             "conversation-track",
             "--session",
             "/nonexistent/session.json",
-            "--oscillation-threshold",
-            "1.0",
-            "--drift-threshold",
-            "1.5",
-            "--turn-spike-threshold",
-            "0.4",
-            "--oscillation-window-size",
-            "5",
-            "--minimum-turns",
-            "3",
-            "--recency-decay",
-            "0.9",
             "--output",
             "json",
         ],
@@ -374,21 +285,15 @@ def test_entropy_dual_path_nominal():
             "entropy",
             "dual-path",
             samples,
-            "--anomaly-threshold",
-            "0.5",
-            "--delta-threshold",
-            "1.0",
-            "--base-entropy-floor",
-            "2.0",
             "--output",
             "json",
         ],
     )
     assert result.exit_code == 0
     data = json.loads(result.stdout)
-    assert "averageDelta" in data  # Raw geometric measurement
-    assert "anomalyCount" in data
-    assert data["anomalyCount"] == 0  # Normal divergence should have no anomalies
+    assert "deltaMean" in data  # Raw geometric measurement
+    assert "deltas" in data
+    assert len(data["deltas"]) == 1
 
 
 def test_entropy_dual_path_suspicious():
@@ -402,20 +307,15 @@ def test_entropy_dual_path_suspicious():
             "entropy",
             "dual-path",
             samples,
-            "--anomaly-threshold",
-            "0.5",
-            "--delta-threshold",
-            "1.0",
-            "--base-entropy-floor",
-            "2.0",
             "--output",
             "json",
         ],
     )
     assert result.exit_code == 0
     data = json.loads(result.stdout)
-    assert "anomalyCount" in data
-    assert data["anomalyCount"] >= 1
+    assert "deltaMean" in data
+    assert "deltas" in data
+    assert len(data["deltas"]) == 1
 
 
 # === Agent Commands ===
@@ -602,14 +502,6 @@ def test_entropy_window_text_output():
             samples,
             "--size",
             "10",
-            "--minimum-samples",
-            "2",
-            "--sustained-high-count",
-            "3",
-            "--high-threshold",
-            "4.0",
-            "--circuit-threshold",
-            "5.0",
             "--output",
             "text",
         ],
@@ -628,12 +520,6 @@ def test_entropy_dual_path_text_output():
             "entropy",
             "dual-path",
             samples,
-            "--anomaly-threshold",
-            "0.5",
-            "--delta-threshold",
-            "1.0",
-            "--base-entropy-floor",
-            "2.0",
             "--output",
             "text",
         ],

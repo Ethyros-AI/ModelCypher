@@ -101,24 +101,9 @@ class Result:
     sample_count: int
 
     @property
-    def is_valid(self) -> bool:
-        """Check if the stitch result is valid.
-
-        For cross-dimension stitching (source_dim != target_dim), we only require
-        forward reconstruction error < 0.5 because the system is underdetermined
-        (more parameters than samples) and backward reconstruction isn't guaranteed.
-
-        For same-dimension stitching, we require both forward and backward errors < 0.5.
-        """
-        if not bool(self.weights):
-            return False
-        if self.forward_error >= 0.5:
-            return False
-        # Cross-dimension: only require forward error to be low
-        if self.source_dimension != self.target_dimension:
-            return True
-        # Same-dimension: require both forward and backward to be low
-        return self.backward_error < 0.5
+    def has_weights(self) -> bool:
+        """Check if weights were successfully computed."""
+        return bool(self.weights)
 
     @property
     def h4_metrics(self) -> H4ValidationMetrics:

@@ -68,8 +68,8 @@ class Config:
 def validate_crm_uses_atlas(
     crm: ConceptResponseMatrix,
     atlas_probe_ids: set[str] | None = None,
-) -> tuple[bool, dict]:
-    """Check if ConceptResponseMatrix was built using unified atlas probes.
+) -> dict:
+    """Measure ConceptResponseMatrix coverage of unified atlas probes.
 
     The unified atlas provides N probes across all sources for cross-domain
     triangulation. CRM data built from atlas probes enables more robust
@@ -79,12 +79,13 @@ def validate_crm_uses_atlas(
         crm: The ConceptResponseMatrix to validate
 
     Returns:
-        Tuple of (is_valid, details) where details contains:
-        - atlas_ids: Set of atlas probe IDs
-        - crm_ids: Set of CRM concept IDs
-        - overlap: Number of matching IDs
+        Dict with raw coverage measurements (no validity judgment):
+        - atlas_probe_count: Number of atlas probes
+        - crm_concept_count: Number of CRM concepts
+        - overlap_count: Number of matching IDs
         - coverage: Fraction of atlas IDs present in CRM
-        - is_subset: Whether CRM uses a subset of atlas
+        - has_all_atlas: Whether CRM contains all atlas probes
+        - uses_atlas_subset: Whether CRM uses only atlas probes
     """
     if atlas_probe_ids is None:
         atlas_probe_ids = {probe.probe_id for probe in get_atlas_probes()}
@@ -94,23 +95,14 @@ def validate_crm_uses_atlas(
     overlap = len(atlas_ids & crm_ids)
     coverage = overlap / len(atlas_ids) if atlas_ids else 0.0
 
-    # Valid if CRM uses atlas probes (either as subset or superset)
-    is_valid = (
-        atlas_ids.issubset(crm_ids)  # CRM has all atlas probes
-        or crm_ids.issubset(atlas_ids)  # CRM uses subset of atlas
-        or coverage > 0.5  # At least 50% overlap
-    )
-
-    details = {
+    return {
         "atlas_probe_count": len(atlas_ids),
         "crm_concept_count": len(crm_ids),
         "overlap_count": overlap,
         "coverage": coverage,
-        "is_subset": crm_ids.issubset(atlas_ids),
-        "is_superset": atlas_ids.issubset(crm_ids),
+        "has_all_atlas": atlas_ids.issubset(crm_ids),
+        "uses_atlas_subset": crm_ids.issubset(atlas_ids),
     }
-
-    return is_valid, details
 
 
 @dataclass(frozen=True)
@@ -135,12 +127,9 @@ class Result:
     method: AlignmentMethod
 
     @property
-    def is_valid(self) -> bool:
-        return (
-            self.shared_dimension > 0
-            and self.alignment_error < 0.5
-            and self.shared_variance_ratio > 0.5
-        )
+    def has_shared_structure(self) -> bool:
+        """Check if any shared structure was found (shared_dimension > 0)."""
+        return self.shared_dimension > 0
 
     @property
     def h3_metrics(self) -> H3ValidationMetrics:

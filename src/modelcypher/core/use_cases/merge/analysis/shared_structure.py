@@ -75,7 +75,7 @@ def stage_find_shared_structure(
                 backend=backend,
             )
 
-            if result and result.is_valid:
+            if result and result.has_shared_structure:
                 layer_geom.shared_dimension = result.shared_dimension
                 layer_geom.alignment_strengths = result.alignment_strengths
                 layer_geom.source_projection = backend.array(result.source_projection)

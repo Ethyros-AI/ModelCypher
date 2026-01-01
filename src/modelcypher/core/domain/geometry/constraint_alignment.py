@@ -324,8 +324,8 @@ def diagnose_probe_conflict(
             if layer == primary:
                 continue
             strength = sum(a * a for a in acts) ** 0.5
-            # Secondary peak if within 80% of primary
-            if strength > secondary_strength and strength > 0.8 * primary_strength:
+            # Track the second-highest activation layer
+            if strength > secondary_strength:
                 secondary_strength = strength
                 secondary_layer = layer
 
@@ -352,11 +352,16 @@ def diagnose_probe_conflict(
         "issues": [],
     }
 
-    # Diagnose issues
-    if source_strength < 0.1:
-        diagnosis["issues"].append("WEAK_SOURCE_ACTIVATION: Probe text may not capture concept well")
-    if target_strength < 0.1:
-        diagnosis["issues"].append("WEAK_TARGET_ACTIVATION: Probe text may not capture concept well")
+    # Add secondary peak info for caller interpretation (no arbitrary thresholds)
+    diagnosis["source_secondary_layer"] = source_secondary
+    diagnosis["source_secondary_strength"] = source_secondary_strength
+    diagnosis["target_secondary_layer"] = target_secondary
+    diagnosis["target_secondary_strength"] = target_secondary_strength
+    # Ratio of secondary to primary - callers can interpret based on their baselines
+    if source_strength > 0:
+        diagnosis["source_secondary_ratio"] = source_secondary_strength / source_strength
+    if target_strength > 0:
+        diagnosis["target_secondary_ratio"] = target_secondary_strength / target_strength
     if source_secondary >= 0:
         diagnosis["issues"].append(
             f"AMBIGUOUS_SOURCE: Secondary peak at layer {source_secondary} "

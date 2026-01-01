@@ -110,7 +110,7 @@ class CRMSharedSubspaceSummary:
     top_correlation: float
     sample_count: int
     method: str
-    is_valid: bool
+    has_shared_structure: bool
     layer_count: int
     alignment_quality: float
     h2_validation: dict[str, float | bool | str]
@@ -354,7 +354,7 @@ class ConceptResponseMatrixService:
                     "sharedVarianceRatio": float(result.shared_variance_ratio),
                     "topCorrelation": top_corr,
                     "sampleCount": int(result.sample_count),
-                    "isValid": bool(result.is_valid),
+                    "hasSharedStructure": bool(result.has_shared_structure),
                 }
             )
             results.append(result)
@@ -384,7 +384,7 @@ class ConceptResponseMatrixService:
         sample_count = int(backend.mean(sample_counts)) if results else 0
 
         method = results[0].method.value if results else "cca"
-        is_valid = all(res.is_valid for res in results)
+        has_shared_structure = all(res.has_shared_structure for res in results)
 
         h2_validation = {
             "meanCKA": matcher.h2_validation.mean_cka,
@@ -402,7 +402,7 @@ class ConceptResponseMatrixService:
             top_correlation=top_correlation,
             sample_count=sample_count,
             method=method,
-            is_valid=is_valid,
+            has_shared_structure=has_shared_structure,
             layer_count=len(results),
             alignment_quality=matcher.alignment_quality,
             h2_validation=h2_validation,

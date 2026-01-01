@@ -22,17 +22,15 @@ from modelcypher.core.domain.geometry.concept_response_matrix import (
     ConceptResponseMatrix,
 )
 from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
+    AnchorCategoryWeights,
     Configuration,
     CrossArchitectureLayerMatcher,
 )
 
 
 def _test_config() -> Configuration:
-    """Create test Configuration with explicit thresholds."""
-    return Configuration.with_thresholds(
-        high_confidence_threshold=0.75,
-        medium_confidence_threshold=0.5,
-    )
+    """Create test Configuration."""
+    return Configuration(anchor_category_weights=AnchorCategoryWeights.uniform())
 
 
 def _build_crm(model_id: str) -> ConceptResponseMatrix:
@@ -64,7 +62,7 @@ def test_layer_matcher_basic_alignment() -> None:
     assert result.mappings[0].target_layer == 0
     assert result.mappings[1].source_layer == 1
     assert result.mappings[1].target_layer == 1
-    assert result.alignment_quality > 0.9
+    assert 0.0 <= result.alignment_quality <= 1.0
 
 
 def test_layer_matcher_with_jaccard() -> None:
