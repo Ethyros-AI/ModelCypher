@@ -54,7 +54,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    regularization_epsilon,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array
@@ -72,14 +75,6 @@ from .riemannian_density import (
 logger = logging.getLogger(__name__)
 
 
-# NOTE: ProjectionQuality enum removed - use TransferPoint.stress directly
-# Stress thresholds for reference:
-#   < 0.1 = excellent preservation
-#   < 0.3 = good preservation (is_reliable threshold)
-#   < 0.5 = marginal preservation
-#   >= 0.5 = poor preservation
-
-
 @dataclass(frozen=True)
 class CrossManifoldConfig:
     """Configuration for cross-manifold projection.
@@ -94,12 +89,12 @@ class CrossManifoldConfig:
     """
 
     max_iterations: int = 1000
-    convergence_tolerance: float = 1e-6
+    convergence_tolerance: float | None = None
     learning_rate: float = 0.01
     min_anchors: int = 10
     distance_weight_decay: float = 0.1
     use_curvature_correction: bool = True
-    stress_regularization: float = 1e-8
+    stress_regularization: float | None = None
 
 
 @dataclass
@@ -437,6 +432,11 @@ class CrossManifoldProjector:
         backend.eval(target_centroids_arr)
         d = int(target_centroids_arr.shape[1])
         eps = division_epsilon(backend, target_centroids_arr)
+        convergence_tolerance = (
+            self.config.convergence_tolerance
+            if self.config.convergence_tolerance is not None
+            else regularization_epsilon(backend, target_centroids_arr)
+        )
         n_anchors = len(matching_anchor_ids)
         k_neighbors = min(max(3, n_anchors // 3), n_anchors)
 
@@ -480,7 +480,7 @@ class CrossManifoldProjector:
                 best_position = position
 
             # Check convergence
-            if stress < self.config.convergence_tolerance:
+            if stress < convergence_tolerance:
                 break
 
             # Compute gradient in tangent space (local linear approximation)

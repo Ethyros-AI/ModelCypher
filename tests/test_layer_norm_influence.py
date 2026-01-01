@@ -18,6 +18,7 @@
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.spectral_analysis import (
     SpectralConfig,
     compute_spectral_metrics,
@@ -78,13 +79,14 @@ def test_layer_norm_zero_norm_stability():
     source_np = backend.to_numpy(source_ln)
     target_np = backend.to_numpy(target_ln)
 
-    config = SpectralConfig(epsilon=1e-6)
+    config = SpectralConfig()
     metrics = compute_spectral_metrics(source_np, target_np, config=config)
 
     # target_spectral_norm should be clamped to epsilon
-    assert metrics.target_spectral_norm == config.epsilon
+    eps = division_epsilon(backend, target_ln)
+    assert metrics.target_spectral_norm == eps
     # sqrt(5) / epsilon
-    expected_ratio = float(backend.to_numpy(backend.sqrt(backend.array(5.0)))) / config.epsilon
+    expected_ratio = float(backend.to_numpy(backend.sqrt(backend.array(5.0)))) / eps
     assert metrics.spectral_ratio == pytest.approx(expected_ratio)
 
 

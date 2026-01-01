@@ -120,8 +120,8 @@ class AlignmentResult:
     how we got there.
 
     All thresholds are derived from dtype, not hardcoded. The precision_threshold
-    field stores sqrt(machine_epsilon) for the input dtype, which is used to
-    determine "perfect" alignment and "converged" status.
+    field stores the dtype-derived tolerance used to determine "perfect" alignment
+    and "converged" status.
     """
 
     # The transformation that achieves CKA = 1.0
@@ -141,21 +141,18 @@ class AlignmentResult:
     # Final alignment error (should be ~0)
     alignment_error: float
 
-    # Diagnostic signal describing any residual gap
-    diagnostic: "AlignmentSignal | None" = None
-
     # Dtype-derived precision threshold: sqrt(machine_epsilon)
     # Used to determine is_perfect and is_converged
-    # Default assumes float32 (sqrt(1.2e-7) ≈ 3.5e-4)
-    precision_threshold: float = 3.5e-4
+    precision_threshold: float
+
+    # Diagnostic signal describing any residual gap
+    diagnostic: "AlignmentSignal | None" = None
 
     @property
     def is_perfect(self) -> bool:
         """True if CKA = 1.0 within dtype precision.
 
         Uses sqrt(machine_epsilon) as the threshold, derived from the input dtype.
-        For float32: 1.0 - 3.5e-4 ≈ 0.99965
-        For float64: 1.0 - 1.5e-8 ≈ 0.99999998
         """
         return self.achieved_cka >= (1.0 - self.precision_threshold)
 
@@ -201,8 +198,8 @@ class GramAligner:
         backend: "Backend | None" = None,
         max_iterations: int = 1000,
         max_rounds: int = 1,
-        tolerance: float = 1e-6,  # IGNORED - derived from dtype
-        regularization: float = 1e-8,  # IGNORED - derived from dtype
+        tolerance: float | None = None,  # IGNORED - derived from dtype
+        regularization: float | None = None,  # IGNORED - derived from dtype
     ) -> None:
         """Initialize the aligner.
 
@@ -712,8 +709,9 @@ class GramAligner:
             eig_t, V_t = b.eigh(K_t_c)
         b.eval(eig_s, V_s, eig_t, V_t)
 
+        regularization = self._regularization if self._regularization is not None else 0.0
         eps = max(
-            self._regularization,
+            regularization,
             machine_epsilon(b, K_s_c),
             machine_epsilon(b, K_t_c),
         )

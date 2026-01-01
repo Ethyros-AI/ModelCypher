@@ -51,7 +51,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import svd_via_eigh
+from modelcypher.core.domain.geometry.numerical_stability import (
+    condition_threshold,
+    division_epsilon,
+    svd_via_eigh,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -81,16 +85,6 @@ class SpectralMetrics:
     # Frobenius norm of the difference
     delta_frobenius: float
 
-    @property
-    def is_ill_conditioned(self) -> bool:
-        """Check if target matrix is ill-conditioned (condition > 100)."""
-        return self.condition_number > 100.0
-
-    @property
-    def has_high_mismatch(self) -> bool:
-        """Check if spectral mismatch is high (confidence < 0.5)."""
-        return self.spectral_confidence < 0.5
-
 
 @dataclass(frozen=True)
 class SpectralConfig:
@@ -104,10 +98,10 @@ class SpectralConfig:
     penalty_strength: float = 0.5
 
     # Epsilon for numerical stability
-    epsilon: float = 1e-6
+    epsilon: float | None = None
 
     # Maximum condition number before clamping
-    max_condition_number: float = 1e6
+    max_condition_number: float | None = None
 
     # Whether to use full SVD (slower but more accurate) or just top-k
     use_full_svd: bool = False
@@ -120,8 +114,8 @@ class SpectralConfig:
         cls,
         *,
         penalty_strength: float = 0.5,
-        epsilon: float = 1e-6,
-        max_condition_number: float = 1e6,
+        epsilon: float | None = None,
+        max_condition_number: float | None = None,
         use_full_svd: bool = False,
         top_k: int = 10,
     ) -> "SpectralConfig":
@@ -139,10 +133,12 @@ class SpectralConfig:
         """
         if penalty_strength < 0 or penalty_strength > 1:
             raise ValueError(f"penalty_strength must be in [0, 1], got {penalty_strength}")
-        if epsilon <= 0:
+        if epsilon is not None and epsilon <= 0:
             raise ValueError(f"epsilon must be > 0, got {epsilon}")
-        if max_condition_number <= 0:
-            raise ValueError(f"max_condition_number must be > 0, got {max_condition_number}")
+        if max_condition_number is not None and max_condition_number <= 0:
+            raise ValueError(
+                f"max_condition_number must be > 0, got {max_condition_number}"
+            )
         if top_k < 1:
             raise ValueError(f"top_k must be >= 1, got {top_k}")
         return cls(
@@ -181,6 +177,12 @@ def compute_spectral_metrics(
     """
 
     b = backend or get_default_backend()
+    eps = config.epsilon if config.epsilon is not None else division_epsilon(b, target_weight)
+    max_condition_number = (
+        config.max_condition_number
+        if config.max_condition_number is not None
+        else condition_threshold(b, target_weight)
+    )
 
     # Handle 1D weights (biases, layernorms)
     if source_weight.ndim == 1:
@@ -189,11 +191,11 @@ def compute_spectral_metrics(
         target_norm = _to_float(b.norm(target_weight))
         delta_norm = _to_float(b.norm(source_weight - target_weight))
 
-        if target_norm < config.epsilon:
-            target_norm = config.epsilon
+        if target_norm < eps:
+            target_norm = eps
 
         ratio = source_norm / target_norm
-        confidence = min(ratio, 1.0 / max(ratio, config.epsilon))
+        confidence = min(ratio, 1.0 / max(ratio, eps))
 
         return SpectralMetrics(
             condition_number=1.0,  # 1D vectors don't have condition numbers
@@ -229,9 +231,9 @@ def compute_spectral_metrics(
     source_s_np = b.to_numpy(source_s)
     target_s_np = b.to_numpy(target_s)
 
-    source_spectral = float(source_s_np[0]) if len(source_s_np) > 0 else config.epsilon
-    target_spectral = float(target_s_np[0]) if len(target_s_np) > 0 else config.epsilon
-    target_min_s = float(target_s_np[-1]) if len(target_s_np) > 0 else config.epsilon
+    source_spectral = float(source_s_np[0]) if len(source_s_np) > 0 else eps
+    target_spectral = float(target_s_np[0]) if len(target_s_np) > 0 else eps
+    target_min_s = float(target_s_np[-1]) if len(target_s_np) > 0 else eps
 
     # Delta Frobenius norm
     delta_arr = b.norm(source_arr - target_arr)
@@ -239,11 +241,11 @@ def compute_spectral_metrics(
     delta_frobenius = _to_float(delta_arr)
 
     # Condition number of target
-    condition_number = target_spectral / max(target_min_s, config.epsilon)
-    condition_number = min(condition_number, config.max_condition_number)
+    condition_number = target_spectral / max(target_min_s, eps)
+    condition_number = min(condition_number, max_condition_number)
 
     # Spectral ratio
-    spectral_ratio = source_spectral / max(target_spectral, config.epsilon)
+    spectral_ratio = source_spectral / max(target_spectral, eps)
 
     # Spectral confidence (symmetric)
     if spectral_ratio > 0:
@@ -353,15 +355,6 @@ def compute_spectral_alpha_adjustments(
         )
         adjusted_alphas[name] = adjusted
 
-        if spectral.is_ill_conditioned:
-            logger.debug(
-                "%s: ill-conditioned (cond=%.1f), alpha %.3f → %.3f",
-                name,
-                spectral.condition_number,
-                base_alpha,
-                adjusted,
-            )
-
     return adjusted_alphas, metrics
 
 
@@ -378,8 +371,6 @@ def spectral_summary(metrics: dict[str, SpectralMetrics]) -> dict:
     if not metrics:
         return {
             "total_weights": 0,
-            "ill_conditioned_count": 0,
-            "high_mismatch_count": 0,
             "mean_confidence": 0.0,
             "mean_condition_number": 0.0,
         }
@@ -389,8 +380,6 @@ def spectral_summary(metrics: dict[str, SpectralMetrics]) -> dict:
 
     return {
         "total_weights": len(metrics),
-        "ill_conditioned_count": sum(1 for m in metrics.values() if m.is_ill_conditioned),
-        "high_mismatch_count": sum(1 for m in metrics.values() if m.has_high_mismatch),
         "mean_confidence": sum(confidences) / len(confidences),
         "min_confidence": min(confidences),
         "max_confidence": max(confidences),

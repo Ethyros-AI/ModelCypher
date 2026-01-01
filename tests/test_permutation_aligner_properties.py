@@ -35,7 +35,6 @@ from hypothesis import strategies as st
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.permutation_aligner import (
     AlignmentResult,
-    Config,
     PermutationAligner,
 )
 
@@ -68,7 +67,6 @@ class TestPermutationValidity:
         result = PermutationAligner.align(
             source_weight=weight,
             target_weight=weight,
-            config=Config(min_match_threshold=0.1),
             backend=backend,
         )
 

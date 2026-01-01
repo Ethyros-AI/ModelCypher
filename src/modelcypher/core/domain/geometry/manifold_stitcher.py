@@ -25,7 +25,6 @@ from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol,
 from modelcypher.core.domain.geometry.atlas_registry import get_atlas_probes
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
-    machine_epsilon,
     regularization_epsilon,
 )
 

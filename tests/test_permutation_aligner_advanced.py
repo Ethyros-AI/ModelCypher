@@ -38,7 +38,6 @@ pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires
 from modelcypher.core.domain.geometry.permutation_aligner import (
     AlignmentResult,
     AnchorActivationContext,
-    Config,
     PermutationAligner,
     PermutationAlignerError,
 )
@@ -145,11 +144,6 @@ class TestPermutationAlignerRebasinWithActivations:
         return mx.random.normal((5, 4))
 
     @pytest.fixture
-    def config(self):
-        """Create alignment config."""
-        return Config()
-
-    @pytest.fixture
     def anchor_context(self):
         """Create anchor activation context."""
         return AnchorActivationContext(
@@ -163,7 +157,7 @@ class TestPermutationAlignerRebasinWithActivations:
         )
 
     def test_rebasin_with_activations_uses_context(
-        self, mlp_weights, source_anchors, target_anchors, anchor_context, config
+        self, mlp_weights, source_anchors, target_anchors, anchor_context
     ):
         """rebasin_mlp_with_activations should use per-layer anchor activations."""
         target_weights = {k: mx.random.normal(v.shape) for k, v in mlp_weights.items()}
@@ -174,7 +168,6 @@ class TestPermutationAlignerRebasinWithActivations:
             source_anchors=source_anchors,
             target_anchors=target_anchors,
             anchor_activations=anchor_context,
-            config=config,
         )
 
         assert blocks >= 0
@@ -182,7 +175,7 @@ class TestPermutationAlignerRebasinWithActivations:
         assert aligned is not None
 
     def test_rebasin_with_separate_anchors(
-        self, mlp_weights, source_anchors, target_anchors, config
+        self, mlp_weights, source_anchors, target_anchors
     ):
         """rebasin_mlp_with_activations should work with separate anchors (no per-layer context)."""
         target_weights = {k: mx.random.normal(v.shape) for k, v in mlp_weights.items()}
@@ -192,7 +185,6 @@ class TestPermutationAlignerRebasinWithActivations:
             target_weights=target_weights,
             source_anchors=source_anchors,
             target_anchors=target_anchors,
-            config=config,
         )
 
         assert blocks >= 0

@@ -44,6 +44,7 @@ from modelcypher.core.domain.geometry.manifold_curvature import (
     SectionalCurvatureEstimator,
     compute_curvature_divergence,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 # =============================================================================
 # Test Fixtures
@@ -169,7 +170,9 @@ class TestCurvatureAnisotropy:
         """Large difference between min and max should give high anisotropy."""
         lc = make_local_curvature(mean=0.0, min_val=-1.0, max_val=1.0)
         # (max - min) / (|max| + |min|) = 2 / 2 = 1
-        assert lc.curvature_anisotropy == pytest.approx(1.0)
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([1.0]))
+        assert abs(lc.curvature_anisotropy - 1.0) <= eps
 
 
 # =============================================================================

@@ -37,6 +37,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -53,7 +54,7 @@ class TangentConfig:
     neighbor_count: int = 8
     tangent_rank: int = 4
     min_anchor_count: int = 8
-    epsilon: float = 1e-6
+    epsilon: float | None = None
 
     @classmethod
     def with_parameters(
@@ -62,7 +63,7 @@ class TangentConfig:
         neighbor_count: int = 8,
         tangent_rank: int = 4,
         min_anchor_count: int = 8,
-        epsilon: float = 1e-6,
+        epsilon: float | None = None,
     ) -> "TangentConfig":
         """Create configuration with explicit parameters.
 
@@ -70,7 +71,7 @@ class TangentConfig:
             neighbor_count: Number of neighbors for k-NN tangent computation.
             tangent_rank: Rank of tangent space (number of principal directions).
             min_anchor_count: Minimum anchors required for alignment.
-            epsilon: Numerical stability threshold.
+        epsilon: Numerical stability threshold (dtype-derived if None).
 
         Returns:
             Configuration with specified parameters.
@@ -173,6 +174,11 @@ class TangentSpaceAlignment:
 
         neighbor_count = min(max(2, self.config.neighbor_count), n_anchors - 1)
         tangent_rank = min(max(1, self.config.tangent_rank), neighbor_count)
+        eps = (
+            self.config.epsilon
+            if self.config.epsilon is not None
+            else division_epsilon(self._backend, source_points)
+        )
 
         # Compute k-nearest neighbors for each point
         source_neighbors = self._compute_neighbors(source_points, neighbor_count)
@@ -184,16 +190,16 @@ class TangentSpaceAlignment:
 
         for i in range(n_anchors):
             source_basis = self._compute_tangent_basis(
-                source_points, i, source_neighbors[i], tangent_rank
+                source_points, i, source_neighbors[i], tangent_rank, eps
             )
             target_basis = self._compute_tangent_basis(
-                target_points, i, target_neighbors[i], tangent_rank
+                target_points, i, target_neighbors[i], tangent_rank, eps
             )
 
             if source_basis is None or target_basis is None:
                 continue
 
-            principal_cosines = self._principal_cosines(source_basis, target_basis)
+            principal_cosines = self._principal_cosines(source_basis, target_basis, eps)
             if not principal_cosines:
                 continue
 
@@ -258,6 +264,7 @@ class TangentSpaceAlignment:
         anchor_idx: int,
         neighbor_indices: list[int],
         rank: int,
+        epsilon: float,
     ) -> "Array | None":
         """
         Compute local tangent basis at an anchor point.
@@ -296,7 +303,7 @@ class TangentSpaceAlignment:
             if s_max <= 0:
                 return None
 
-            relative_threshold = self.config.epsilon * s_max
+            relative_threshold = epsilon * s_max
             valid_count = sum(1 for v in s_list[:rank] if v > relative_threshold)
 
             if valid_count == 0:
@@ -313,6 +320,7 @@ class TangentSpaceAlignment:
         self,
         basis_a: "Array",
         basis_b: "Array",
+        epsilon: float,
     ) -> list[float]:
         """
         Compute principal cosines (canonical correlations) between two bases.
@@ -338,7 +346,7 @@ class TangentSpaceAlignment:
             b.eval(s)
 
             cosines = b.to_numpy(s).tolist()
-            return [max(0.0, min(1.0 + self.config.epsilon, c)) for c in cosines[:rank]]
+            return [max(0.0, min(1.0 + epsilon, c)) for c in cosines[:rank]]
 
         except Exception:
             return []

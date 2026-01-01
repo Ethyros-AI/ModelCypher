@@ -43,7 +43,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    regularization_epsilon,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -124,11 +127,11 @@ class LowRankGWConfig:
 
     # Outer iterations (GW loop)
     max_iterations: int = 100
-    convergence_threshold: float = 1e-5
+    convergence_threshold: float | None = None
 
     # Inner iterations (Sinkhorn-like for each GW step)
     max_inner_iterations: int = 50
-    inner_threshold: float = 1e-4
+    inner_threshold: float | None = None
 
     # Initialization
     seed: int | None = 42
@@ -215,7 +218,7 @@ class LowRankGromovWasserstein:
             max_diff = b.max(diff)
             b.eval(max_diff)
             # Use precision-aware threshold
-            eps = 1e-6
+            eps = regularization_epsilon(b, C1)
             if float(b.to_numpy(max_diff)) < eps:
                 # Identical matrices: return identity coupling (represented in low-rank form)
                 # P = I/n can be expressed as P = Q @ diag(1/g) @ R^T where:
@@ -257,6 +260,16 @@ class LowRankGromovWasserstein:
         prev_distance = float("inf")
         converged = False
         iterations = 0
+        convergence_threshold = (
+            config.convergence_threshold
+            if config.convergence_threshold is not None
+            else regularization_epsilon(b, C1)
+        )
+        inner_threshold = (
+            config.inner_threshold
+            if config.inner_threshold is not None
+            else regularization_epsilon(b, C1)
+        )
 
         for it in range(config.max_iterations):
             iterations = it + 1
@@ -269,7 +282,7 @@ class LowRankGromovWasserstein:
             # Solve low-rank OT with this cost using Sinkhorn
             Q_new, g_new, R_new = self._lowrank_sinkhorn(
                 cost, a, p, r, config.reg,
-                config.max_inner_iterations, config.inner_threshold, b
+                config.max_inner_iterations, inner_threshold, b
             )
             b.eval(Q_new, g_new, R_new)
 
@@ -290,7 +303,7 @@ class LowRankGromovWasserstein:
             distance = self._compute_gw_distance(Q, g, R, C1, C2, b)
 
             # Check convergence
-            if abs(distance - prev_distance) < config.convergence_threshold:
+            if abs(distance - prev_distance) < convergence_threshold:
                 converged = True
                 break
 

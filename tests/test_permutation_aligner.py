@@ -18,7 +18,7 @@
 """Comprehensive tests for permutation_aligner.py.
 
 Tests cover:
-- AlignmentResult and Config dataclasses
+- AlignmentResult dataclass
 - PermutationAligner.align() with various inputs
 - PermutationAligner.apply() for dense and sparse permutations
 - Anchor-based alignment methods
@@ -37,7 +37,6 @@ import pytest
 from modelcypher.core.domain.geometry.permutation_aligner import (
     AlignmentResult,
     AnchorActivationContext,
-    Config,
     PermutationAligner,
 )
 
@@ -48,26 +47,6 @@ if TYPE_CHECKING:
 # =============================================================================
 # Dataclass Tests
 # =============================================================================
-
-
-class TestConfig:
-    """Tests for Config dataclass."""
-
-    def test_config_defaults(self) -> None:
-        """Default config has anchor grounding enabled."""
-        config = Config()
-        assert config.use_anchor_grounding is True
-
-    def test_config_custom_values(self) -> None:
-        """Custom config values should be accepted."""
-        config = Config(use_anchor_grounding=False)
-        assert config.use_anchor_grounding is False
-
-    def test_config_is_frozen(self) -> None:
-        """Config should be immutable (frozen)."""
-        config = Config()
-        with pytest.raises((TypeError, AttributeError)):
-            config.use_anchor_grounding = False  # type: ignore
 
 
 class TestAnchorActivationContext:
@@ -193,7 +172,7 @@ class TestPermutationAlignerAlign:
         weight = b.random_normal((10, 20))
         b.eval(weight)
 
-        result = PermutationAligner.align(weight, weight, config=Config(), backend=b)
+        result = PermutationAligner.align(weight, weight, backend=b)
 
         assert result.match_quality > 0.9  # Should be very high
         assert result.sign_flip_count == 0  # No flips needed
@@ -212,7 +191,7 @@ class TestPermutationAlignerAlign:
         target = b.array(target_np)
         b.eval(target)
 
-        result = PermutationAligner.align(source, target, config=Config(), backend=b)
+        result = PermutationAligner.align(source, target, backend=b)
 
         assert result.match_quality > 0.9
         assert b.shape(result.permutation) == (8, 8)
@@ -258,7 +237,7 @@ class TestPermutationAlignerAlign:
         b.eval(source, target, anchors)
 
         result = PermutationAligner.align(
-            source, target, anchors=anchors, config=Config(use_anchor_grounding=True), backend=b
+            source, target, anchors=anchors, backend=b
         )
 
         assert result is not None
@@ -472,9 +451,8 @@ class TestAnchorAlignment:
         target_anchors = b.random_normal((5, 32))
         b.eval(source, target, source_anchors, target_anchors)
 
-        config = Config()
         result = PermutationAligner.align_via_anchor_activations(
-            source, target, source_anchors, target_anchors, config=config, backend=b
+            source, target, source_anchors, target_anchors, backend=b
         )
 
         assert result is not None
@@ -496,10 +474,9 @@ class TestAnchorAlignment:
         target_anchors = b.random_normal((5, 16))  # Wrong dim
         b.eval(source, target, source_anchors, target_anchors)
 
-        config = Config()
         with pytest.raises(PermutationAlignerError, match="Anchor activation dim mismatch"):
             PermutationAligner.align_via_anchor_activations(
-                source, target, source_anchors, target_anchors, config=config, backend=b
+                source, target, source_anchors, target_anchors, backend=b
             )
 
 
