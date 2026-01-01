@@ -512,7 +512,7 @@ class ConceptVolume:
         centroid_arr = backend.array(self.centroid)
         diff = points_arr - centroid_arr  # (n, d)
 
-        # If no geodesic context or raw activations, use Euclidean
+        # Geodesic context is required - no Euclidean fallback on curved manifolds
         if self._geodesic_context is None or self.raw_activations is None:
             raise ValueError(
                 "Geodesic context required for Riemannian log map. "

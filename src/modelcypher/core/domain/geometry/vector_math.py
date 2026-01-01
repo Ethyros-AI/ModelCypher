@@ -26,6 +26,10 @@ Two implementations are provided:
 - BackendVectorMath: GPU-accelerated via Backend protocol (preferred)
 
 Use get_vector_math() to get the best available implementation.
+
+NOTE: For cross-dimensional comparison of activation matrices (n_samples x n_features),
+use CKA from modelcypher.core.domain.geometry.cka - it works via Gram matrices
+which are dimension-independent. Single-vector operations require matching dimensions.
 """
 
 from __future__ import annotations
@@ -68,7 +72,7 @@ class VectorMath:
     """Vector math utilities for dense vectors."""
 
     @staticmethod
-    def dot(a: ArrayLike, b: ArrayLike) -> float | None:
+    def dot(a: ArrayLike, b: ArrayLike) -> float:
         """Compute dot product of two vectors.
 
         Args:
@@ -76,35 +80,44 @@ class VectorMath:
             b: Second vector (list or MLX array)
 
         Returns:
-            Dot product, or None if vectors are empty or different lengths.
+            Dot product.
+
+        Raises:
+            ValueError: If vectors are empty or have different lengths.
         """
         len_a = _len(a)
         len_b = _len(b)
-        if len_a != len_b or len_a == 0:
-            return None
+        if len_a == 0:
+            raise ValueError("Cannot compute dot product of empty vectors")
+        if len_a != len_b:
+            raise ValueError(
+                f"Dot product requires matching dimensions: got {len_a} vs {len_b}. "
+                "For cross-dimensional comparison, use CKA on activation matrices."
+            )
 
         a_list = _to_list(a)
         b_list = _to_list(b)
         return sum(x * y for x, y in zip(a_list, b_list))
 
     @staticmethod
-    def l2_norm(a: ArrayLike) -> float | None:
+    def l2_norm(a: ArrayLike) -> float:
         """Compute L2 norm of a vector.
 
         Args:
             a: Vector (list or MLX array)
 
         Returns:
-            L2 norm, or None if vector is empty or all zeros.
+            L2 norm (0.0 for zero vector).
+
+        Raises:
+            ValueError: If vector is empty.
         """
         if _len(a) == 0:
-            return None
+            raise ValueError("Cannot compute L2 norm of empty vector")
 
         a_list = _to_list(a)
         sum_squares = sum(x * x for x in a_list)
-        if sum_squares <= 0:
-            return None
-        return math.sqrt(sum_squares)
+        return math.sqrt(max(0.0, sum_squares))
 
     @staticmethod
     def l2_normalized(a: ArrayLike) -> list[float]:
@@ -114,17 +127,20 @@ class VectorMath:
             a: Vector (list or MLX array)
 
         Returns:
-            Normalized vector as Python list.
+            Normalized vector as Python list (unchanged if zero vector).
+
+        Raises:
+            ValueError: If vector is empty.
         """
         a_list = _to_list(a)
         norm = VectorMath.l2_norm(a_list)
-        if norm is None or norm <= 0:
-            return a_list
+        if norm <= 0:
+            return a_list  # Return unchanged for zero vector
         inv_norm = 1.0 / norm
         return [x * inv_norm for x in a_list]
 
     @staticmethod
-    def cosine_similarity(a: ArrayLike, b: ArrayLike) -> float | None:
+    def cosine_similarity(a: ArrayLike, b: ArrayLike) -> float:
         """Compute cosine similarity between two vectors.
 
         Uses single-pass computation for efficiency.
@@ -134,12 +150,20 @@ class VectorMath:
             b: Second vector (list or MLX array)
 
         Returns:
-            Cosine similarity in [-1, 1], or None if vectors are invalid.
+            Cosine similarity in [-1, 1].
+
+        Raises:
+            ValueError: If vectors are empty, have different lengths, or are zero.
         """
         len_a = _len(a)
         len_b = _len(b)
-        if len_a != len_b or len_a == 0:
-            return None
+        if len_a == 0:
+            raise ValueError("Cannot compute cosine similarity of empty vectors")
+        if len_a != len_b:
+            raise ValueError(
+                f"Cosine similarity requires matching dimensions: got {len_a} vs {len_b}. "
+                "For cross-dimensional comparison, use CKA on activation matrices."
+            )
 
         a_list = _to_list(a)
         b_list = _to_list(b)
@@ -157,7 +181,7 @@ class VectorMath:
             norm_b_sq += y * y
 
         if norm_a_sq <= 0 or norm_b_sq <= 0:
-            return None
+            raise ValueError("Cannot compute cosine similarity of zero vector")
 
         return dot_product / (math.sqrt(norm_a_sq) * math.sqrt(norm_b_sq))
 
@@ -172,11 +196,12 @@ class VectorMath:
             b: Second vector (list or MLX array)
 
         Returns:
-            Cosine similarity clamped to [0, 1], or 0.0 if invalid.
+            Cosine similarity clamped to [0, 1].
+
+        Raises:
+            ValueError: If vectors are empty, have different lengths, or are zero.
         """
         result = VectorMath.cosine_similarity(a, b)
-        if result is None:
-            return 0.0
         return max(0.0, min(1.0, result))
 
     @staticmethod
@@ -186,7 +211,7 @@ class VectorMath:
         t: float,
         epsilon: float = 1e-6,
         interpolate_magnitude: bool = True,
-    ) -> list[float] | None:
+    ) -> list[float]:
         """Spherical linear interpolation (SLERP) between two vectors.
 
         SLERP follows the geodesic (great circle arc) on the hypersphere,
@@ -206,8 +231,10 @@ class VectorMath:
                 linearly. If False, return unit-normalized result.
 
         Returns:
-            Interpolated vector as Python list, or None if vectors are invalid
-            (empty, different lengths, or zero-norm).
+            Interpolated vector as Python list.
+
+        Raises:
+            ValueError: If vectors are empty, have different lengths, or are zero.
 
         References:
             Shoemake, K. (1985). "Animating Rotation with Quaternion Curves."
@@ -215,17 +242,22 @@ class VectorMath:
         """
         len_v0 = _len(v0)
         len_v1 = _len(v1)
-        if len_v0 != len_v1 or len_v0 == 0:
-            return None
+        if len_v0 == 0:
+            raise ValueError("Cannot SLERP empty vectors")
+        if len_v0 != len_v1:
+            raise ValueError(
+                f"SLERP requires matching dimensions: got {len_v0} vs {len_v1}. "
+                "For cross-dimensional comparison, use CKA on activation matrices."
+            )
 
         v0_list = _to_list(v0)
         v1_list = _to_list(v1)
 
-        # Compute magnitudes
+        # Compute magnitudes (will raise if zero)
         norm_v0 = VectorMath.l2_norm(v0_list)
         norm_v1 = VectorMath.l2_norm(v1_list)
-        if norm_v0 is None or norm_v1 is None:
-            return None
+        if norm_v0 <= 0 or norm_v1 <= 0:
+            raise ValueError("Cannot SLERP zero vectors")
 
         # Normalize inputs
         inv_norm_v0 = 1.0 / norm_v0
@@ -341,12 +373,22 @@ class VectorMath:
         return ranks
 
     @staticmethod
-    def spearman_correlation(a: ArrayLike, b: ArrayLike) -> float | None:
-        """Compute Spearman rank correlation (Pearson on ranks)."""
+    def spearman_correlation(a: ArrayLike, b: ArrayLike) -> float:
+        """Compute Spearman rank correlation (Pearson on ranks).
+
+        Raises:
+            ValueError: If vectors have different lengths, fewer than 2 elements,
+                        or constant values (zero variance).
+        """
         len_a = _len(a)
         len_b = _len(b)
-        if len_a != len_b or len_a < 2:
-            return None
+        if len_a < 2:
+            raise ValueError("Spearman correlation requires at least 2 elements")
+        if len_a != len_b:
+            raise ValueError(
+                f"Spearman correlation requires matching dimensions: got {len_a} vs {len_b}. "
+                "For cross-dimensional comparison, use CKA on activation matrices."
+            )
 
         a_list = _to_list(a)
         b_list = _to_list(b)
@@ -368,7 +410,7 @@ class VectorMath:
             den_b += db * db
 
         if den_a <= 0.0 or den_b <= 0.0:
-            return None
+            raise ValueError("Spearman correlation undefined for constant vectors (zero variance)")
         return num / math.sqrt(den_a * den_b)
 
 
@@ -385,44 +427,50 @@ class SparseVectorMath:
     """
 
     @staticmethod
-    def l2_norm(vector: SparseVector) -> float | None:
+    def l2_norm(vector: SparseVector) -> float:
         """Compute L2 norm of a sparse vector.
 
         Args:
             vector: Dict mapping keys to float values.
 
         Returns:
-            L2 norm, or None if vector is empty or all zeros.
+            L2 norm (0.0 for zero vector).
+
+        Raises:
+            ValueError: If vector is empty (no keys).
         """
         if not vector:
-            return None
+            raise ValueError("Cannot compute L2 norm of empty sparse vector")
         sum_squares = sum(v * v for v in vector.values())
-        if sum_squares <= 0:
-            return None
-        return math.sqrt(sum_squares)
+        return math.sqrt(max(0.0, sum_squares))
 
     @staticmethod
-    def cosine_similarity(a: SparseVector, b: SparseVector) -> float | None:
+    def cosine_similarity(a: SparseVector, b: SparseVector) -> float:
         """Compute cosine similarity between sparse vectors.
 
         This is the canonical implementation for sparse cosine similarity.
         Works with any hashable key type (str for labels, int for indices).
+        Sparse vectors with different key sets are valid - similarity is
+        computed on the intersection (non-overlapping dimensions contribute 0).
 
         Args:
             a: First sparse vector as dict.
             b: Second sparse vector as dict.
 
         Returns:
-            Cosine similarity in [-1, 1], or None if vectors are invalid.
+            Cosine similarity in [-1, 1] (0.0 if no key overlap).
+
+        Raises:
+            ValueError: If either vector is empty or zero.
         """
         if not a or not b:
-            return None
+            raise ValueError("Cannot compute cosine similarity of empty sparse vectors")
 
         norm_a = SparseVectorMath.l2_norm(a)
         norm_b = SparseVectorMath.l2_norm(b)
 
-        if norm_a is None or norm_b is None or norm_a <= 0 or norm_b <= 0:
-            return None
+        if norm_a <= 0 or norm_b <= 0:
+            raise ValueError("Cannot compute cosine similarity of zero sparse vectors")
 
         # Iterate over smaller dict for efficiency
         smaller, larger = (a, b) if len(a) <= len(b) else (b, a)
@@ -455,7 +503,7 @@ class BackendVectorMath:
         # Cache finfo for numerical stability
         self._finfo = backend.finfo()
 
-    def dot(self, a: Any, b: Any) -> float | None:
+    def dot(self, a: Any, b: Any) -> float:
         """Compute dot product using backend operations.
 
         Args:
@@ -463,48 +511,60 @@ class BackendVectorMath:
             b: Second vector (Backend array or convertible)
 
         Returns:
-            Dot product as Python float, or None if invalid.
+            Dot product as Python float.
+
+        Raises:
+            ValueError: If arrays are invalid, have different shapes, or are empty.
         """
         # Convert to backend arrays if needed
         a_arr = self._ensure_array(a)
         b_arr = self._ensure_array(b)
 
         if a_arr is None or b_arr is None:
-            return None
+            raise ValueError("Cannot compute dot product of invalid arrays")
 
         shape_a = self.backend.shape(a_arr)
         shape_b = self.backend.shape(b_arr)
 
-        if len(shape_a) != 1 or len(shape_b) != 1 or shape_a[0] != shape_b[0]:
-            return None
+        if len(shape_a) != 1 or len(shape_b) != 1:
+            raise ValueError("Dot product requires 1D arrays")
         if shape_a[0] == 0:
-            return None
+            raise ValueError("Cannot compute dot product of empty arrays")
+        if shape_a[0] != shape_b[0]:
+            raise ValueError(
+                f"Dot product requires matching dimensions: got {shape_a[0]} vs {shape_b[0]}. "
+                "For cross-dimensional comparison, use CKA on activation matrices."
+            )
 
         result = self.backend.dot(a_arr, b_arr)
         self.backend.eval(result)
         return _to_scalar(result)
 
-    def l2_norm(self, a: Any) -> float | None:
+    def l2_norm(self, a: Any) -> float:
         """Compute L2 norm using backend operations.
 
         Args:
             a: Vector (Backend array or convertible)
 
         Returns:
-            L2 norm as Python float, or None if invalid.
+            L2 norm as Python float (0.0 for zero vector).
+
+        Raises:
+            ValueError: If array is invalid or empty.
         """
         a_arr = self._ensure_array(a)
         if a_arr is None:
-            return None
+            raise ValueError("Cannot compute L2 norm of invalid array")
 
         shape = self.backend.shape(a_arr)
-        if len(shape) != 1 or shape[0] == 0:
-            return None
+        if len(shape) != 1:
+            raise ValueError("L2 norm requires 1D array")
+        if shape[0] == 0:
+            raise ValueError("Cannot compute L2 norm of empty array")
 
         result = self.backend.norm(a_arr)
         self.backend.eval(result)
-        val = _to_scalar(result)
-        return val if val > 0 else None
+        return max(0.0, _to_scalar(result))
 
     def l2_normalized(self, a: Any) -> Any:
         """Return L2-normalized vector using backend operations.
@@ -528,7 +588,7 @@ class BackendVectorMath:
 
         return a_arr / norm
 
-    def cosine_similarity(self, a: Any, b: Any) -> float | None:
+    def cosine_similarity(self, a: Any, b: Any) -> float:
         """Compute cosine similarity using backend operations.
 
         Args:
@@ -536,21 +596,29 @@ class BackendVectorMath:
             b: Second vector (Backend array or convertible)
 
         Returns:
-            Cosine similarity in [-1, 1], or None if invalid.
+            Cosine similarity in [-1, 1].
+
+        Raises:
+            ValueError: If arrays are invalid, have different shapes, are empty, or zero.
         """
         a_arr = self._ensure_array(a)
         b_arr = self._ensure_array(b)
 
         if a_arr is None or b_arr is None:
-            return None
+            raise ValueError("Cannot compute cosine similarity of invalid arrays")
 
         shape_a = self.backend.shape(a_arr)
         shape_b = self.backend.shape(b_arr)
 
-        if len(shape_a) != 1 or len(shape_b) != 1 or shape_a[0] != shape_b[0]:
-            return None
+        if len(shape_a) != 1 or len(shape_b) != 1:
+            raise ValueError("Cosine similarity requires 1D arrays")
         if shape_a[0] == 0:
-            return None
+            raise ValueError("Cannot compute cosine similarity of empty arrays")
+        if shape_a[0] != shape_b[0]:
+            raise ValueError(
+                f"Cosine similarity requires matching dimensions: got {shape_a[0]} vs {shape_b[0]}. "
+                "For cross-dimensional comparison, use CKA on activation matrices."
+            )
 
         # Compute norms
         norm_a = self.backend.norm(a_arr)
@@ -561,7 +629,7 @@ class BackendVectorMath:
         norm_b_val = _to_scalar(norm_b)
 
         if norm_a_val <= self._finfo.eps or norm_b_val <= self._finfo.eps:
-            return None
+            raise ValueError("Cannot compute cosine similarity of zero vector")
 
         # Compute dot product
         dot = self.backend.dot(a_arr, b_arr)

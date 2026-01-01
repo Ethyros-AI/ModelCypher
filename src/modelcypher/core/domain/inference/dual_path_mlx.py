@@ -42,6 +42,7 @@ from typing import TYPE_CHECKING, Any, AsyncGenerator
 # These cannot be abstracted via Backend protocol
 # from mlx_lm import load  # Moved to lazy import inside DualPathGenerator
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -274,9 +275,10 @@ class DualPathGenerator:
 
             # Surprisal = -log(P(token))
             token_prob = float(b.to_numpy(probs_base[token_id]))
+            eps = division_epsilon(b, probs_base)
             surprisal = (
                 -1.0 * float(b.to_numpy(b.log(b.array([token_prob]))))
-                if token_prob > 1e-10
+                if token_prob > eps
                 else 100.0
             )
 

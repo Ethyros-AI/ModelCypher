@@ -24,7 +24,7 @@ from datetime import datetime
 
 import pytest
 
-from modelcypher.core.use_cases.merge_pipeline_service import (
+from modelcypher.core.use_cases.merge.service import (
     MergePipelineService,
     PostMergeValidation,
     PreMergeAnalysis,

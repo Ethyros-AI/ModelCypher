@@ -38,7 +38,7 @@ def test_save_weights_mixed_mlx_and_numpy_does_not_use_mx_save(tmp_path):
 
     import numpy as np
 
-    from modelcypher.core.use_cases.unified_geometric_merge import UnifiedGeometricMerger
+    from modelcypher.core.use_cases.merge import UnifiedGeometricMerger
 
     merger = UnifiedGeometricMerger(model_loader=_MockLoader())
 

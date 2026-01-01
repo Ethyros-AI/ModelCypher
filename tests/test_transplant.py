@@ -36,7 +36,7 @@ from modelcypher.core.domain.geometry.transplant import (
     compute_transplant_delta,
     partition_core_boundary,
 )
-from modelcypher.core.use_cases.merge_stages.stage_3_transplant import (
+from modelcypher.core.use_cases.merge.stages.transplant import (
     TransplantStageConfig,
     stage_transplant,
 )

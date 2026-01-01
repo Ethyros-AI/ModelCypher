@@ -71,7 +71,6 @@ __all__ = [
     "UnifiedGeometricMerger",
     "UnifiedMergeConfig",
     "UnifiedMergeResult",
-    "unified_merge",
 ]
 
 
@@ -163,10 +162,7 @@ class UnifiedGeometricMerger:
         source_tokenizer: Any | None,
         target_tokenizer: Any | None,
         alignment_map: Any | None = None,
-        config_override: UnifiedMergeConfig | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any], dict | None, dict | None]:
-        # ProbeConfig was REMOVED. Probe always uses precise mode with all probes.
-        # config_override is kept for API compatibility but ignored.
         return merge_stages.stage_probe(
             source_weights=source_weights,
             target_weights=target_weights,
@@ -184,10 +180,7 @@ class UnifiedGeometricMerger:
         target_weights: dict[str, Any],
         intersection_map_obj: Any | None,
         layer_confidences: dict[int, float],
-        enable_permutation: bool = True,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        # PermuteConfig was REMOVED. Permutation always runs.
-        # enable_permutation is kept for API compatibility but ignored.
         return merge_stages.stage_permute(
             source_weights=source_weights,
             target_weights=target_weights,
@@ -271,26 +264,3 @@ class UnifiedGeometricMerger:
         target_weights: dict[str, "Array"],
     ) -> CrossArchitectureInfo:
         return merge_helpers.detect_cross_architecture(source_weights, target_weights)
-
-
-def unified_merge(
-    source: str,
-    target: str,
-    output_dir: str,
-    model_loader: "ModelLoaderPort",
-    config: UnifiedMergeConfig | None = None,
-    dry_run: bool = False,
-) -> UnifiedMergeResult:
-    """
-    Execute unified geometric merge.
-
-    Convenience function that creates the merger and runs the merge.
-    """
-    merger = UnifiedGeometricMerger(model_loader=model_loader, config=config)
-
-    return merger.merge(
-        source_path=source,
-        target_path=target,
-        output_dir=output_dir,
-        dry_run=dry_run,
-    )

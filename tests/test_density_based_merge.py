@@ -45,7 +45,7 @@ from modelcypher.core.domain.geometry.knowledge_diff import (
     KnowledgeDiffer,
     compute_graft_mask,
 )
-from modelcypher.core.use_cases.merge_stages.stage_2_density import (
+from modelcypher.core.use_cases.merge.stages.density import (
     filter_core_probes_by_graft_mask,
     stage_density,
 )

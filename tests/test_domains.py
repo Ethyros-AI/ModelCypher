@@ -225,12 +225,12 @@ class TestListFunctions:
 
 
 class TestMergePipelineServiceIntegration:
-    """Tests ensuring merge_pipeline_service uses unified domains correctly."""
+    """Tests ensuring merge service uses unified domains correctly."""
 
     def test_merge_pipeline_imports_from_domains(self):
-        """merge_pipeline_service should import from domains module."""
+        """merge service should import from domains module."""
         # This test verifies the import works without errors
-        from modelcypher.core.use_cases.merge_pipeline_service import MergePipelineService
+        from modelcypher.core.use_cases.merge.service import MergePipelineService
 
         assert MergePipelineService is not None
 

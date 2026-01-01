@@ -4,7 +4,7 @@
 
 The "geometric zipper" is a layer-propagation mechanism ensuring that transformations applied at layer N are properly compensated at layer N+1, maintaining functional equivalence during model merging.
 
-This document describes the implementation in `unified_geometric_merge.py` based on the Git Re-Basin algorithm.
+This document describes the implementation in `merge/stages/permute.py` based on the Git Re-Basin algorithm.
 
 ---
 
@@ -70,19 +70,17 @@ P[col_ind, row_ind] = 1.0  # P @ source aligns neurons to target
 
 ### Location
 
-`src/modelcypher/core/use_cases/unified_geometric_merge.py`
+`src/modelcypher/core/use_cases/merge/stages/permute.py`
+`src/modelcypher/core/domain/geometry/permutation_aligner.py`
 
 ### Key Methods
 
-1. **`_compute_weight_matching_permutation(source_w, target_w)`**
-   - Computes optimal permutation matrix using LAP
-   - Falls back to greedy matching when scipy unavailable
-   - Returns P ∈ ℝ^{n×n} permutation matrix
+1. **`PermutationAligner.align(source_w, target_w, anchors=None)`**
+   - Computes optimal permutation and sign alignment using the Hungarian algorithm
+   - Returns permutation/sign alignment plus match-quality metrics
 
-2. **`_compute_full_rank_rotation(source_w, target_w)`**
-   - Continuous relaxation via Orthogonal Procrustes
-   - R = UV^T where M = target @ source^T = UΣV^T
-   - Returns R ∈ O(n) orthogonal matrix
+2. **`stage_permute(...)`**
+   - Orchestrates anchor selection and applies permutation alignment across MLP weights
 
 ### Zipper Flow in Merge Loop
 
@@ -104,12 +102,7 @@ For each weight in model:
 
 ### Configuration
 
-```python
-@dataclass
-class UnifiedMergeConfig:
-    enable_zipper: bool = True
-    zipper_use_weight_matching: bool = True  # True=permutation, False=rotation
-```
+Permutation alignment is always run; there is no configuration toggle.
 
 ---
 

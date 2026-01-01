@@ -48,6 +48,11 @@ import jax.numpy as jnp
 logger = logging.getLogger(__name__)
 
 
+def _division_epsilon_for_dtype(array: jnp.ndarray) -> float:
+    eps = jnp.finfo(array.dtype).eps
+    return float(jnp.sqrt(eps))
+
+
 @dataclass
 class SecurityScanMetricsJAX:
     """Security scan metrics for JAX dual-path generation."""
@@ -138,8 +143,10 @@ def compute_entropy_jax(
     # Softmax for probabilities
     probs = jax.nn.softmax(top_logits)
 
+    eps = _division_epsilon_for_dtype(probs)
+
     # Entropy: H = -sum(p * log(p))
-    log_probs = jnp.log(probs + 1e-10)
+    log_probs = jnp.log(probs + eps)
     entropy = float(-jnp.sum(probs * log_probs))
 
     # Variance of log probabilities
@@ -173,8 +180,10 @@ def compute_kl_divergence_jax(
     p = jax.nn.softmax(logits_p)
     q = jax.nn.softmax(logits_q)
 
+    eps = _division_epsilon_for_dtype(p)
+
     # KL divergence
-    kl = float(jnp.sum(p * (jnp.log(p + 1e-10) - jnp.log(q + 1e-10))))
+    kl = float(jnp.sum(p * (jnp.log(p + eps) - jnp.log(q + eps))))
 
     return max(0.0, kl)
 
@@ -372,8 +381,9 @@ class DualPathGeneratorJAX:
 
             # Compute base model approval
             probs_base = jax.nn.softmax(logits_base[0])
+            eps = _division_epsilon_for_dtype(probs_base)
             token_prob = float(probs_base[token_id])
-            surprisal = float(-jnp.log(probs_base[token_id] + 1e-10))
+            surprisal = float(-jnp.log(probs_base[token_id] + eps))
 
             _, normalized_approval, top_k_hit = compute_token_rank_metrics_jax(
                 probs_base, token_id, top_k=10
@@ -491,7 +501,8 @@ class DualPathGeneratorJAX:
 
         # Sample
         probs = jax.nn.softmax(scaled_logits)
-        return int(jax.random.categorical(rng_key, jnp.log(probs + 1e-10)))
+        eps = _division_epsilon_for_dtype(probs)
+        return int(jax.random.categorical(rng_key, jnp.log(probs + eps)))
 
     def _check_anomaly(self, sample: EntropyDeltaSampleJAX) -> bool:
         """Check if sample represents an anomaly."""

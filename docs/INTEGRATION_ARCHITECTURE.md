@@ -79,7 +79,7 @@ for probe in probes:
 | Module | Location | Uses Atlas? | What It Uses Instead |
 |--------|----------|-------------|---------------------|
 | `merge_engine.py` | use_cases | **NO** | `AnchorExtractor` (primes + gates only) |
-| `unified_geometric_merge.py` | use_cases | **NO** | CKA on raw weights |
+| `merge/merger.py` | use_cases | **NO** | CKA on raw weights |
 | `manifold_stitcher.py` | geometry | **NO** | `TriangulatedProbeBuilder` (39 hardcoded probes) |
 | `anchor_extractor.py` | use_cases | **PARTIAL** | `SemanticPrimeFrames` + `ComputationalGateInventory` |
 | `rotational_merger.py` | merging | **NO** | External anchor embeddings |
@@ -96,7 +96,7 @@ UnifiedAtlasInventory
          ├──► merge_engine.py::RotationalMerger
          │    └─ SharedAnchors should be built from atlas probes
          │
-         ├──► unified_geometric_merge.py::_stage_probe()
+         ├──► merge/merger.py::_stage_probe()
          │    └─ Fingerprinting should use atlas probes for intersection map
          │
          ├──► manifold_stitcher.py::TriangulatedProbeBuilder
@@ -246,13 +246,13 @@ def build_triangulated_probes() -> list[AtlasProbe]:
     return UnifiedAtlasInventory.all_probes()
 ```
 
-### 3. unified_geometric_merge.py: Use Atlas for Fingerprinting
+### 3. merge/stages/probe.py: Use Atlas for Fingerprinting
 
 **Current:** `_stage_probe()` computes CKA on raw weights
 **Should:** Use atlas probes to build semantic intersection map
 
 ```python
-# In unified_geometric_merge.py::_stage_probe()
+# In merge/stages/probe.py::stage_probe()
 
 from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
 

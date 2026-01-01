@@ -78,7 +78,7 @@ class DensityConfiguration:
 
     k_neighbors: int = 10
     normalize: bool = True
-    use_geodesic: bool = False  # Euclidean is fine for projected 3D space
+    use_geodesic: bool = True  # Geodesic is correct on curved manifolds
 
 
 class DensityEstimator:

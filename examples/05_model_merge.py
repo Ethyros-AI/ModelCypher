@@ -21,10 +21,10 @@
 Model Merge Example
 
 This example demonstrates how to merge two models using geometric alignment.
-The geometric merge uses Procrustes analysis to align representations and
-Fréchet mean to blend singular values along the geodesic.
+The merge uses Gram alignment and null-space constrained transplant to preserve
+target boundaries while grafting dense source regions.
 
-Pipeline: VOCAB → PROBE → PERMUTE → ROTATE → BLEND → PROPAGATE → VALIDATE
+Pipeline: VOCAB → PROBE → DENSITY → PERMUTE → TRANSPLANT → VALIDATE
 
 Usage:
     python examples/05_model_merge.py source_model target_model -o merged_output
@@ -38,7 +38,7 @@ import argparse
 from pathlib import Path
 
 from modelcypher.cli.composition import get_geometric_merger
-from modelcypher.core.use_cases.unified_geometric_merge import UnifiedMergeConfig
+from modelcypher.core.use_cases.merge import UnifiedMergeConfig
 
 
 def main():
@@ -69,11 +69,6 @@ def main():
         default="precise",
         help="Probe mode: precise (CKA on activations) or fast (weight-level). Default: precise",
     )
-    parser.add_argument(
-        "--transport-guided",
-        action="store_true",
-        help="Use Gromov-Wasserstein instead of Procrustes for alignment",
-    )
     args = parser.parse_args()
 
     # Validate paths
@@ -94,10 +89,9 @@ def main():
     print(f"Target model: {target_path}")
     print(f"Output: {args.output}")
     print(f"Probe mode: {args.probe_mode}")
-    print(f"Transport-guided: {args.transport_guided}")
     print(f"Dry run: {args.dry_run}")
     print()
-    print("Pipeline: VOCAB → PROBE → PERMUTE → ROTATE → BLEND → PROPAGATE → VALIDATE")
+    print("Pipeline: VOCAB → PROBE → DENSITY → PERMUTE → TRANSPLANT → VALIDATE")
     print()
 
     # Initialize merger with dependency injection
@@ -106,11 +100,10 @@ def main():
     # Configure merge (optional - defaults are sensible)
     merger.config = UnifiedMergeConfig(
         probe_mode=args.probe_mode,
-        use_transport_guided=args.transport_guided,
     )
 
     print("Running geometric merge...")
-    print("  Using Procrustes alignment and Fréchet mean blending.")
+    print("  Using Gram alignment and null-space transplant.")
     print()
 
     result = merger.merge(

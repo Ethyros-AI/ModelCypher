@@ -21,12 +21,12 @@ for the transformation until CKA reaches 1.0, then merge.
 ## Implementation touchpoints
 
 Binary + vocabulary exact kernel alignment (1D -> 2D):
-- `src/modelcypher/core/use_cases/merge_stages/stage_0_vocabulary.py`
+- `src/modelcypher/core/use_cases/merge/stages/vocabulary.py`
   - Byte anchors (0-255) are aligned with `GramAligner`.
   - UnifiedAtlas anchors are kernel-aligned for vocabulary alignment.
 
 Activation exact kernel alignment (3D+):
-- `src/modelcypher/core/use_cases/merge_stages/stage_1_probe.py`
+- `src/modelcypher/core/use_cases/merge/stages/probe.py`
   - Probes run on each model's tokenizer; activations are compared on shared texts.
 - `src/modelcypher/core/domain/geometry/gram_aligner.py`
   - Finds the exact feature transform that achieves CKA = 1.0.

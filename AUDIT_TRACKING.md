@@ -42,12 +42,12 @@
 | 02_safety_audit.py | Demo safety audit via SafetyProbeService & EntropyProbeService | Yes | No | **AUDITED** |
 | 03_adapter_blending.py | Demo adapter blending via AdapterService | Yes | No | **AUDITED** |
 | 04_entropy_analysis.py | Demo entropy analysis via ThermoService | Yes | No | **AUDITED** |
-| 05_model_merge.py | Demo model merging | **BROKEN** | No | **ISSUE #1** |
+| 05_model_merge.py | Demo model merging | Yes | No | **AUDITED** |
 
 ### Notes for examples/:
 - Examples 01-04 correctly import from use_cases layer
 - No duplicate functions within examples
-- **ISSUE #1**: `05_model_merge.py` imports non-existent `ModelMergeService` and `GeometricMergeConfig` from `model_merge_service.py` which doesn't exist. Should use `UnifiedGeometricMerger` from `unified_geometric_merge.py` or `GeometricMergeOrchestrator` from `geometric_merge_orchestrator.py`
+- **RESOLVED**: `05_model_merge.py` now imports `UnifiedMergeConfig` from `modelcypher.core.use_cases.merge`.
 
 ---
 

@@ -614,24 +614,10 @@ class GeometryAdapterService:
         b.eval(delta)
         return delta
 
-    @staticmethod
-    def dare_merge_readiness(effective_sparsity: float) -> str:
-        if effective_sparsity >= 0.99:
-            return "too_sparse"
-        if effective_sparsity >= 0.80:
-            return "ready"
-        return "needs_more_training"
-
-    @staticmethod
-    def dora_learning_type(result: DoRADecomposition.DecompositionResult) -> str:
-        change_type = result.dominant_change_type
-        if change_type == ChangeType.MAGNITUDE_DOMINATED:
-            return "magnitude_dominant"
-        if change_type == ChangeType.DIRECTION_DOMINATED:
-            return "direction_dominant"
-        if change_type == ChangeType.MINIMAL:
-            return "minimal"
-        return "balanced"
+    # NOTE: dare_merge_readiness was removed (returned vibes like "too_sparse", "ready").
+    # Use raw effective_sparsity value; caller decides interpretation.
+    # NOTE: dora_learning_type was removed (returned vibes like "magnitude_dominant").
+    # Use raw magnitude_to_direction_ratio value; caller decides interpretation.
 
     @staticmethod
     def dora_learning_type_confidence(result: DoRADecomposition.DecompositionResult) -> float:

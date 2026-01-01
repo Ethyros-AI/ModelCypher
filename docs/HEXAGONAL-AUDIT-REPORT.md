@@ -51,7 +51,7 @@ ModelCypher demonstrates **perfect compliance** with hexagonal architecture (Por
 | `backends/jax_backend.py` | 35 | `_np_interop` - Backend protocol `to_numpy()` | Acceptable |
 | `adapters/local_exporter.py` | 23 | `_np_io` - NPZ file format | Acceptable |
 | `use_cases/geometry_adapter_service.py` | 458, 527 | `_np_io` - NPZ checkpoint load | Acceptable |
-| `use_cases/unified_geometric_merge.py` | 501 | `_np_for_save` - NPZ file save | Acceptable |
+| `use_cases/merge/merger.py` | 501 | `_np_for_save` - NPZ file save | Acceptable |
 
 All imports use:
 - Underscore prefix naming convention (`_np_*`)

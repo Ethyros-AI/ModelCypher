@@ -48,6 +48,11 @@ import torch.nn.functional as F
 logger = logging.getLogger(__name__)
 
 
+def _division_epsilon_for_dtype(tensor: torch.Tensor) -> float:
+    eps = torch.finfo(tensor.dtype).eps
+    return float(eps ** 0.5)
+
+
 @dataclass
 class SecurityScanMetricsCUDA:
     """Security scan metrics for CUDA dual-path generation."""
@@ -138,8 +143,10 @@ def compute_entropy_cuda(
     # Softmax for probabilities
     probs = F.softmax(top_logits, dim=-1)
 
+    eps = _division_epsilon_for_dtype(probs)
+
     # Entropy: H = -sum(p * log(p))
-    log_probs = torch.log(probs + 1e-10)
+    log_probs = torch.log(probs + eps)
     entropy = -torch.sum(probs * log_probs).item()
 
     # Variance of log probabilities
@@ -173,8 +180,10 @@ def compute_kl_divergence_cuda(
     p = F.softmax(logits_p, dim=-1)
     q = F.softmax(logits_q, dim=-1)
 
+    eps = _division_epsilon_for_dtype(p)
+
     # KL divergence
-    kl = torch.sum(p * (torch.log(p + 1e-10) - torch.log(q + 1e-10))).item()
+    kl = torch.sum(p * (torch.log(p + eps) - torch.log(q + eps))).item()
 
     return max(0.0, kl)
 
@@ -387,8 +396,9 @@ class DualPathGeneratorCUDA:
 
                 # Compute base model approval
                 probs_base = F.softmax(logits_base[0], dim=-1)
+                eps = _division_epsilon_for_dtype(probs_base)
                 token_prob = probs_base[token_id].item()
-                surprisal = -torch.log(probs_base[token_id] + 1e-10).item()
+                surprisal = -torch.log(probs_base[token_id] + eps).item()
 
                 _, normalized_approval, top_k_hit = compute_token_rank_metrics_cuda(
                     probs_base, token_id, top_k=10

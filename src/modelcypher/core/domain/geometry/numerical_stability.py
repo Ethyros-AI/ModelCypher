@@ -66,19 +66,19 @@ def machine_epsilon(backend: Backend, array: Array) -> float:
 def division_epsilon(backend: Backend, array: Array) -> float:
     """Get epsilon for safe division operations.
 
-    Scaled up from machine epsilon to provide numerical headroom.
+    Uses sqrt(eps) to provide numerical headroom.
     Use when dividing to prevent division by zero.
     """
-    return backend.finfo(array.dtype).eps * 1e3
+    return math.sqrt(backend.finfo(array.dtype).eps)
 
 
 def regularization_epsilon(backend: Backend, array: Array) -> float:
     """Get epsilon for matrix regularization.
 
-    Uses sqrt(eps) which is the standard choice for regularization
-    in numerical linear algebra (Tikhonov regularization, ridge).
+    Uses eps^0.75 to scale regularization above division safety
+    while remaining tied to dtype precision.
     """
-    return math.sqrt(backend.finfo(array.dtype).eps)
+    return backend.finfo(array.dtype).eps ** 0.75
 
 
 def condition_threshold(backend: Backend, array: Array) -> float:
@@ -1227,7 +1227,8 @@ def solve_via_gram_alignment(
 
 def _determinant_sign(backend: Backend, R: Array) -> float:
     """Compute sign of determinant for small matrix."""
-    import numpy as np
+    # Derive singularity threshold from backend array dtype BEFORE converting to numpy
+    singular_threshold = float(tiny_value(backend, R))
 
     R_np = backend.to_numpy(R)
     k = int(backend.shape(R)[0])
@@ -1235,9 +1236,6 @@ def _determinant_sign(backend: Backend, R: Array) -> float:
     # LU-based sign computation
     work = R_np.copy()
     det_sign = 1.0
-
-    # Use dtype-specific singularity threshold
-    singular_threshold = np.finfo(work.dtype).tiny
 
     for col in range(k):
         # Find pivot

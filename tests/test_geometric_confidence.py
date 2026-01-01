@@ -25,7 +25,7 @@ Key principles verified:
 
 import pytest
 
-from modelcypher.core.use_cases.unified_merge.geometric_confidence import (
+from modelcypher.core.use_cases.merge.confidence import (
     compute_geometric_confidence_from_transplant,
     compute_mean_confidence,
     compute_safety_verdict,

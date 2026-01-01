@@ -99,12 +99,9 @@ The merged model produces **gibberish**.
 
 ## Code Changes Required
 
-Fixed CKA tolerance in `unified_geometric_merge.py:560-566`:
+CKA tolerance now derives from dtype in `src/modelcypher/core/use_cases/merge/pipeline.py`:
 ```python
-# Before (too strict):
-phase_tol = machine_epsilon(self._backend, sample_array)
+from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
 
-# After (allows numerical precision):
-base_eps = machine_epsilon(self._backend, sample_array)
-phase_tol = max(base_eps * 100, 1e-5)
+phase_tol = regularization_epsilon(backend, sample_array)
 ```

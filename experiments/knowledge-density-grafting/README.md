@@ -114,10 +114,10 @@ The merged model produces incoherent output. This validates the hypothesis that 
 
 | File | Change |
 |------|--------|
-| `unified_geometric_merge.py:560-566` | Fixed CKA tolerance to 1e-5 |
+| `src/modelcypher/core/use_cases/merge/pipeline.py` | CKA tolerance uses dtype-derived epsilon |
 | `cka.py` | Added `.best` property for corrected CKA |
 | `gram_aligner.py` | Added bfloat16 → float32 casting for eigh() |
-| `geometric_merge_orchestrator.py` | Cross-architecture tolerance of 1e-2 |
+| `src/modelcypher/core/use_cases/merge/orchestrator.py` | Cross-architecture tolerance of 1e-2 |
 
 ## Reproducibility
 

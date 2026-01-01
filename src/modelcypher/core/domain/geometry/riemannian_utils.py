@@ -672,25 +672,24 @@ class RiemannianGeometry:
         )
 
         # Convert to numpy for connectivity check
-        # Use .copy() because JAX/MLX arrays are read-only when converted to numpy
-        geo_np = backend.to_numpy(geo_dist_arr).copy()
-
         # Derive near-zero threshold from dtype
         near_zero_eps = float(machine_epsilon(backend, geo_dist_arr))
 
-        # Mark distances >= inf_val as true infinity (disconnected)
-        # Vectorized numpy operations at I/O boundary
-        import numpy as np
+        # Check connectivity BEFORE converting to numpy - use backend operations
+        # inf values represent genuinely infinite geodesic distance between
+        # disconnected manifold components. No fallback to Euclidean.
+        near_inf_mask = backend.greater_equal(geo_dist_arr, inf_val * 0.9)
+        backend.eval(near_inf_mask)
+        inf_count = int(backend.to_numpy(backend.sum(near_inf_mask)))
 
-        near_inf_mask = geo_np >= inf_val * 0.9
-        near_zero_mask = geo_np < near_zero_eps
-        geo_np[near_inf_mask] = float("inf")
-        geo_np[near_zero_mask] = 0.0
+        # Use .copy() because JAX/MLX arrays are read-only when converted to numpy
+        geo_np = backend.to_numpy(geo_dist_arr).copy()
 
-        # Check connectivity - inf values represent genuinely infinite geodesic distance
-        # between disconnected manifold components. No fallback to Euclidean - this is
-        # real structural information about the manifold.
-        inf_count = int(np.sum(np.isinf(geo_np)))
+        # Mark distances >= inf_val as true infinity and small values as zero
+        near_inf_mask_np = geo_np >= inf_val * 0.9
+        near_zero_mask_np = geo_np < near_zero_eps
+        geo_np[near_inf_mask_np] = float("inf")
+        geo_np[near_zero_mask_np] = 0.0
         connected = inf_count == 0
 
         if not connected:
@@ -1453,8 +1452,7 @@ class RiemannianGeometry:
         # Force float32 to avoid bfloat16 precision issues
         # bfloat16 has limited precision that can cause NaN in distance computations
         if hasattr(backend, 'astype'):
-            import numpy as np
-            points = backend.astype(points, np.float32)
+            points = backend.astype(points, "float32")
 
         norms = backend.sum(points * points, axis=1, keepdims=True)
         dots = backend.matmul(points, backend.transpose(points))
@@ -1488,8 +1486,7 @@ class RiemannianGeometry:
             problem_cols = set(j for _, j in nan_entries)
             problem_rows = set(i for i, _ in nan_entries)
 
-            # Get details about problematic points
-            import numpy as np
+            # Get details about problematic points (norms_np is already a numpy array)
             norms_flat = norms_np.flatten()
             problem_norms = {idx: float(norms_flat[idx]) for idx in list(problem_cols | problem_rows)[:5]}
 

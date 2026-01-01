@@ -30,7 +30,7 @@ from pathlib import Path
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.use_cases.unified_geometric_merge import (
+from modelcypher.core.use_cases.merge import (
     UnifiedGeometricMerger,
     UnifiedMergeConfig,
     UnifiedMergeResult,
@@ -273,9 +273,7 @@ class TestStageValidate:
 
     def test_validate_always_runs(self):
         """Test validation always runs all checks (ValidateConfig was REMOVED)."""
-        from modelcypher.core.use_cases.merge_stages.stage_6_validate import (
-            stage_validate,
-        )
+        from modelcypher.core.use_cases.merge.stages.validate import stage_validate
 
         result = stage_validate(
             merged_weights={},

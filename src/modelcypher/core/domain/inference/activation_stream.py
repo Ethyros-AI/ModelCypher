@@ -36,6 +36,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -254,15 +255,17 @@ class ActivationStream:
         total = b.sum(abs_hidden)
         b.eval(total)
 
+        eps = division_epsilon(b, abs_hidden)
+
         # Avoid division by zero
-        if float(b.to_numpy(total)) < 1e-10:
+        if float(b.to_numpy(total)) < eps:
             return 0.0
 
         probs = abs_hidden / total
 
         # Shannon entropy: -Σ p log p
         # Add small epsilon to avoid log(0)
-        log_probs = b.log(probs + 1e-10)
+        log_probs = b.log(probs + eps)
         entropy_tensor = -b.sum(probs * log_probs)
         b.eval(entropy_tensor)
 

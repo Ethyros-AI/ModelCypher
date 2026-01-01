@@ -431,7 +431,9 @@ class AdapterService:
                 break
             if sample_tensor is not None:
                 break
-        div_eps = division_epsilon(backend, sample_tensor) if sample_tensor is not None else 1e-4
+        if sample_tensor is None:
+            sample_tensor = backend.array(0.0)
+        div_eps = division_epsilon(backend, sample_tensor)
 
         total_inv_norm = sum(1.0 / (s["total_norm"] + div_eps) for s in adapter_stats)
         weights = []

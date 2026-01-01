@@ -17,7 +17,7 @@
 
 """Geometric merge orchestration package."""
 
-from .merger import UnifiedGeometricMerger, unified_merge
+from .merger import UnifiedGeometricMerger
 from .models import (
     CrossArchitectureInfo,
     LayerGeometry,
@@ -31,7 +31,6 @@ from .validation import MergeValidationService
 
 __all__ = [
     "UnifiedGeometricMerger",
-    "unified_merge",
     "UnifiedMergeConfig",
     "UnifiedMergeResult",
     "CrossArchitectureInfo",

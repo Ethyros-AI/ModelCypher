@@ -17,7 +17,7 @@
 
 import numpy as np
 
-from modelcypher.core.use_cases.unified_geometric_merge import UnifiedGeometricMerger
+from modelcypher.core.use_cases.merge import UnifiedGeometricMerger
 
 
 class _MockLoader:
@@ -52,4 +52,3 @@ def test_infer_hidden_dim_falls_back_to_attention_projection():
     }
 
     assert merger._infer_hidden_dim(weights) == 3584
-
