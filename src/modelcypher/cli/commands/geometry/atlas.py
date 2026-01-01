@@ -268,7 +268,6 @@ def atlas_dimensionality(
         max_total_texts=max_total_texts,
         use_regression=regression,
         bootstrap_resamples=bootstrap,
-        geodesic_k_neighbors=None,
         min_calibration_weight=min_calibration,
     )
     report = analyzer.analyze(
@@ -428,7 +427,6 @@ def atlas_dimensionality_study(
         max_total_texts=max_total_texts,
         use_regression=regression,
         bootstrap_resamples=bootstrap,
-        geodesic_k_neighbors=None,
         min_calibration_weight=min_calibration,
     )
 

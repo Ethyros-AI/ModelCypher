@@ -29,7 +29,9 @@ Usage in CLI commands:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -197,11 +199,18 @@ def get_domain_geometry_waypoint_service():
 def get_system_service():
     """Get SystemService with proper dependency injection."""
     from modelcypher.core.use_cases.system_service import SystemService
+    from modelcypher.utils.paths import get_modelcypher_home
 
-    registry = _get_registry()
-    return SystemService(
-        model_store=registry.model_store,
-    )
+    @dataclass(frozen=True)
+    class _SystemPaths:
+        base: Path
+
+    @dataclass(frozen=True)
+    class _SystemStore:
+        paths: _SystemPaths
+
+    store = _SystemStore(paths=_SystemPaths(base=get_modelcypher_home()))
+    return SystemService(model_store=store)
 
 
 # --- Utility Functions ---

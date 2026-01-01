@@ -1146,6 +1146,9 @@ class RiemannianDensityEstimator:
         dim_a = int(volume_a.covariance.shape[0])
         dim_b = int(volume_b.covariance.shape[0])
 
+        # Always log dimensions for debugging cross-architecture issues
+        logger.info(f"Subspace alignment: dim_a={dim_a}, dim_b={dim_b}")
+
         if dim_a == dim_b:
             # Same dimension: use principal angles
             _, Va = backend.eigh(volume_a.covariance)
@@ -1176,6 +1179,13 @@ class RiemannianDensityEstimator:
                 )
                 return 0.0
 
+            # Debug: log shapes
+            logger.debug(
+                f"Cross-dim subspace alignment: "
+                f"raw_a={volume_a.raw_activations.shape}, "
+                f"raw_b={volume_b.raw_activations.shape}"
+            )
+
             # Compute Gram matrices: K = X @ X^T → [n_samples, n_samples]
             # These have the SAME dimensions regardless of feature dimension
             gram_a = backend.matmul(
@@ -1188,7 +1198,10 @@ class RiemannianDensityEstimator:
             )
             backend.eval(gram_a, gram_b)
 
+            logger.debug(f"Gram matrices: gram_a={gram_a.shape}, gram_b={gram_b.shape}")
+
             result = compute_cka_from_grams(gram_a, gram_b, backend=backend)
+            logger.debug(f"CKA result: {result}")
 
         # Clamp to [0, 1] to handle floating point precision
         return max(0.0, min(1.0, result))
