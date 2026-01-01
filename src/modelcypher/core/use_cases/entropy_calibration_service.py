@@ -24,9 +24,7 @@ empirically-grounded thresholds. No magic numbers - only measured data.
 Usage:
     service = EntropyCalibrationService()
     result = service.calibrate(model_path="/path/to/model")
-
-    # Use calibrated thresholds
-    thresholds = EntropyThresholds.from_calibration_data(result.entropy_values)
+    # Use result.entropy_values and percentiles to derive thresholds explicitly
 """
 
 from __future__ import annotations

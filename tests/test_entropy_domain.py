@@ -317,7 +317,9 @@ def test_entropy_window_sliding():
 
     config = EntropyWindowConfig(
         window_size=5,
+        minimum_samples=1,
         high_entropy_threshold=3.0,
+        circuit_breaker_threshold=4.0,
         sustained_high_count=1,  # Trip on any high sample
     )
     window = EntropyWindow(config=config)
@@ -356,6 +358,6 @@ def test_logit_entropy_threshold_customization():
     assert thresholds.circuit_breaker == 3.0
 
     # Circuit breaker uses the threshold
-    calculator = LogitEntropyCalculator()
+    calculator = LogitEntropyCalculator(top_k=10)
     assert calculator.should_trip_circuit_breaker(3.5, threshold=thresholds.circuit_breaker)
     assert not calculator.should_trip_circuit_breaker(2.5, threshold=thresholds.circuit_breaker)

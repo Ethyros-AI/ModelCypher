@@ -27,6 +27,7 @@ to detect distress patterns and trigger appropriate responses.
 from __future__ import annotations
 
 import math
+from datetime import datetime, timezone
 import pytest
 
 from modelcypher.core.domain.entropy.conversation_entropy_tracker import (
@@ -60,7 +61,7 @@ class TestEntropyCalculationIntegration:
     def test_calculate_entropy_from_logits(self) -> None:
         """Entropy calculation should work on typical logit distributions."""
         backend = get_default_backend()
-        calculator = LogitEntropyCalculator(backend=backend)
+        calculator = LogitEntropyCalculator(top_k=10, backend=backend)
 
         # Typical logit distribution (softmax input)
         logits = backend.array([2.0, 1.5, 0.5, -0.5, -1.0])
@@ -73,7 +74,7 @@ class TestEntropyCalculationIntegration:
     def test_entropy_tracks_uncertainty(self) -> None:
         """Higher uncertainty distributions should have higher entropy."""
         backend = get_default_backend()
-        calculator = LogitEntropyCalculator(backend=backend)
+        calculator = LogitEntropyCalculator(top_k=10, backend=backend)
 
         # Low uncertainty (one dominant logit)
         low_uncertainty = backend.array([10.0, 0.0, 0.0, 0.0, 0.0])
@@ -90,7 +91,7 @@ class TestEntropyCalculationIntegration:
     def test_entropy_always_non_negative(self, seed: int) -> None:
         """Entropy should always be non-negative."""
         backend = get_default_backend()
-        calculator = LogitEntropyCalculator(backend=backend)
+        calculator = LogitEntropyCalculator(top_k=10, backend=backend)
 
         backend.random_seed(seed)
         logits = backend.random_normal((20,))
@@ -113,8 +114,10 @@ class TestEntropyWindowIntegration:
         """Window should track entropy samples over time."""
         config = EntropyWindowConfig(
             window_size=10,
+            minimum_samples=1,
             high_entropy_threshold=3.0,
             circuit_breaker_threshold=4.0,
+            sustained_high_count=3,
         )
         window = EntropyWindow(config)
 
@@ -134,8 +137,10 @@ class TestEntropyWindowIntegration:
         """Window should detect high entropy levels."""
         config = EntropyWindowConfig(
             window_size=5,
+            minimum_samples=1,
             high_entropy_threshold=2.0,
             circuit_breaker_threshold=4.0,
+            sustained_high_count=3,
         )
         window = EntropyWindow(config)
 
@@ -152,8 +157,10 @@ class TestEntropyWindowIntegration:
         """Circuit breaker should trip on extreme entropy."""
         config = EntropyWindowConfig(
             window_size=5,
+            minimum_samples=1,
             high_entropy_threshold=3.0,
             circuit_breaker_threshold=4.0,
+            sustained_high_count=3,
         )
         window = EntropyWindow(config)
 
@@ -179,8 +186,13 @@ class TestConversationTrackingIntegration:
         config = ConversationEntropyConfiguration.with_thresholds(
             oscillation_threshold=0.8,
             drift_threshold=1.5,
+            turn_spike_threshold=0.6,
+            oscillation_window_size=4,
+            minimum_turns_for_analysis=3,
+            recency_decay=0.9,
         )
         tracker = ConversationEntropyTracker(configuration=config)
+        timestamp = datetime.now(timezone.utc)
 
         # Normal conversation with stable entropy deltas
         for i in range(4):
@@ -189,6 +201,9 @@ class TestConversationTrackingIntegration:
                 avg_delta=0.1,  # Small, stable deltas
                 max_anomaly_score=0.1,
                 anomaly_count=0,
+                circuit_breaker_tripped=False,
+                security_assessment="",
+                timestamp=timestamp,
             )
 
         # Should have low oscillation/drift values (normal conversation)
@@ -202,8 +217,13 @@ class TestConversationTrackingIntegration:
         config = ConversationEntropyConfiguration.with_thresholds(
             oscillation_threshold=0.3,  # Lower threshold for easier detection
             drift_threshold=2.0,
+            turn_spike_threshold=0.5,
+            oscillation_window_size=4,
+            minimum_turns_for_analysis=3,
+            recency_decay=0.9,
         )
         tracker = ConversationEntropyTracker(configuration=config)
+        timestamp = datetime.now(timezone.utc)
 
         # Oscillating entropy deltas (potential manipulation)
         for i in range(6):
@@ -213,6 +233,9 @@ class TestConversationTrackingIntegration:
                 avg_delta=delta,
                 max_anomaly_score=0.5,
                 anomaly_count=1,
+                circuit_breaker_tripped=False,
+                security_assessment="",
+                timestamp=timestamp,
             )
 
         # Should detect elevated oscillation via raw measurements
@@ -227,8 +250,13 @@ class TestConversationTrackingIntegration:
         config = ConversationEntropyConfiguration.with_thresholds(
             oscillation_threshold=1.0,
             drift_threshold=0.5,  # Lower threshold for easier detection
+            turn_spike_threshold=0.5,
+            oscillation_window_size=4,
+            minimum_turns_for_analysis=3,
+            recency_decay=0.9,
         )
         tracker = ConversationEntropyTracker(configuration=config)
+        timestamp = datetime.now(timezone.utc)
 
         # Drifting entropy (gradually increasing deltas)
         for i in range(10):
@@ -238,6 +266,9 @@ class TestConversationTrackingIntegration:
                 avg_delta=delta,
                 max_anomaly_score=0.2,
                 anomaly_count=0,
+                circuit_breaker_tripped=False,
+                security_assessment="",
+                timestamp=timestamp,
             )
 
         # Should detect drift via raw measurements
@@ -308,11 +339,13 @@ class TestFullEntropyWorkflow:
 
     def test_workflow_normal_operation(self) -> None:
         """Full workflow should work for normal operation."""
-        calculator = LogitEntropyCalculator(backend=get_default_backend())
+        calculator = LogitEntropyCalculator(top_k=10, backend=get_default_backend())
         window_config = EntropyWindowConfig(
             window_size=10,
+            minimum_samples=1,
             high_entropy_threshold=3.0,
             circuit_breaker_threshold=4.0,
+            sustained_high_count=5,
         )
         window = EntropyWindow(window_config)
 
@@ -344,7 +377,7 @@ class TestFullEntropyWorkflow:
 
     def test_workflow_with_phase_classification(self) -> None:
         """Workflow should integrate phase classification."""
-        LogitEntropyCalculator(backend=get_default_backend())
+        LogitEntropyCalculator(top_k=10, backend=get_default_backend())
 
         # Generate and analyze samples
         backend = get_default_backend()
@@ -375,16 +408,22 @@ class TestFullEntropyWorkflow:
 
     def test_workflow_distress_detection_to_circuit_breaker(self) -> None:
         """Distress detection should propagate to circuit breaker."""
-        calculator = LogitEntropyCalculator(backend=get_default_backend())
+        calculator = LogitEntropyCalculator(top_k=10, backend=get_default_backend())
         window_config = EntropyWindowConfig(
             window_size=5,
+            minimum_samples=1,
             high_entropy_threshold=2.0,
             circuit_breaker_threshold=3.0,
+            sustained_high_count=2,
         )
         window = EntropyWindow(window_config)
         conv_config = ConversationEntropyConfiguration.with_thresholds(
             oscillation_threshold=0.5,
             drift_threshold=1.0,
+            turn_spike_threshold=0.4,
+            oscillation_window_size=4,
+            minimum_turns_for_analysis=3,
+            recency_decay=0.9,
         )
         tracker = ConversationEntropyTracker(configuration=conv_config)
 
@@ -403,11 +442,20 @@ class TestFullEntropyWorkflow:
                 avg_delta=entropy / 2.0,
                 max_anomaly_score=0.3,
                 anomaly_count=0,
+                circuit_breaker_tripped=False,
+                security_assessment="",
+                timestamp=datetime.now(timezone.utc),
             )
 
         window_status = window.status()
         conv_assessment = tracker.record_turn(
-            token_count=50, avg_delta=0.5, max_anomaly_score=0.3, anomaly_count=0
+            token_count=50,
+            avg_delta=0.5,
+            max_anomaly_score=0.3,
+            anomaly_count=0,
+            circuit_breaker_tripped=False,
+            security_assessment="",
+            timestamp=datetime.now(timezone.utc),
         )
 
         # High entropy should be above threshold (raw value check)
@@ -427,7 +475,7 @@ class TestEntropyWorkflowErrorHandling:
     def test_empty_logits_handled(self) -> None:
         """Empty logits should raise ValueError (no valid entropy for empty array)."""
         backend = get_default_backend()
-        calculator = LogitEntropyCalculator(backend=backend)
+        calculator = LogitEntropyCalculator(top_k=10, backend=backend)
 
         logits = backend.array([])
 
@@ -438,7 +486,7 @@ class TestEntropyWorkflowErrorHandling:
     def test_single_logit_handled(self) -> None:
         """Single logit should be handled gracefully."""
         backend = get_default_backend()
-        calculator = LogitEntropyCalculator(backend=backend)
+        calculator = LogitEntropyCalculator(top_k=10, backend=backend)
 
         logits = backend.array([1.0])
         entropy, variance = calculator.compute(logits)
@@ -450,7 +498,7 @@ class TestEntropyWorkflowErrorHandling:
     def test_extreme_logits_handled(self) -> None:
         """Extreme logit values should be handled gracefully."""
         backend = get_default_backend()
-        calculator = LogitEntropyCalculator(backend=backend)
+        calculator = LogitEntropyCalculator(top_k=10, backend=backend)
 
         # Very large logits (but not extreme enough to cause overflow)
         large_logits = backend.array([100.0, -100.0, 0.0])
@@ -465,6 +513,10 @@ class TestEntropyWorkflowErrorHandling:
         config = ConversationEntropyConfiguration.with_thresholds(
             oscillation_threshold=0.8,
             drift_threshold=1.5,
+            turn_spike_threshold=0.6,
+            oscillation_window_size=4,
+            minimum_turns_for_analysis=3,
+            recency_decay=0.9,
         )
         tracker = ConversationEntropyTracker(configuration=config)
 
@@ -474,6 +526,9 @@ class TestEntropyWorkflowErrorHandling:
             avg_delta=0.0,
             max_anomaly_score=0.0,
             anomaly_count=0,
+            circuit_breaker_tripped=False,
+            security_assessment="",
+            timestamp=datetime.now(timezone.utc),
         )
 
         # Should return assessment without crashing
@@ -493,7 +548,7 @@ class TestEntropyWorkflowInvariants:
     def test_entropy_always_bounded(self, seed: int) -> None:
         """Entropy should always be bounded by log(vocab_size)."""
         backend = get_default_backend()
-        calculator = LogitEntropyCalculator(backend=backend)
+        calculator = LogitEntropyCalculator(top_k=10, backend=backend)
 
         backend.random_seed(seed)
         vocab_size = int(backend.to_numpy(backend.random_randint(10, 1000, (1,)))[0])
@@ -507,7 +562,13 @@ class TestEntropyWorkflowInvariants:
 
     def test_window_moving_average_stable(self) -> None:
         """Moving average should be stable over time."""
-        config = EntropyWindowConfig(window_size=10)
+        config = EntropyWindowConfig(
+            window_size=10,
+            minimum_samples=1,
+            high_entropy_threshold=3.0,
+            circuit_breaker_threshold=4.0,
+            sustained_high_count=3,
+        )
         window = EntropyWindow(config)
 
         # Add constant entropy
@@ -539,7 +600,8 @@ class TestEntropyWorkflowInvariants:
         Raw entropy IS the measurement. Caller applies thresholds.
         """
         backend = get_default_backend()
-        calculator = LogitEntropyCalculator(backend=backend)
+        calculator = LogitEntropyCalculator(top_k=10, backend=backend)
+        threshold = 3.5
 
         backend.random_seed(seed)
         logits = backend.random_normal((100,))
@@ -547,8 +609,7 @@ class TestEntropyWorkflowInvariants:
         entropy, _ = calculator.compute(logits)
 
         # Circuit breaker uses explicit threshold comparison
-        should_trip = calculator.should_trip_circuit_breaker(entropy)
-        threshold = calculator.thresholds.circuit_breaker
+        should_trip = calculator.should_trip_circuit_breaker(entropy, threshold=threshold)
 
         # Decision should match threshold comparison
         if entropy >= threshold:

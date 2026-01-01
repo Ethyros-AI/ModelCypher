@@ -56,11 +56,11 @@ class TestLogitEntropyCalculator:
     """Tests for LogitEntropyCalculator."""
 
     def test_initialization(self):
-        """Should initialize with default top_k."""
+        """Should initialize with explicit top_k."""
         calc = LogitEntropyCalculator(top_k=10)
 
         assert calc.top_k == 10
-        assert calc.epsilon > 0
+        assert calc.epsilon is None
 
     def test_custom_top_k(self):
         """Should accept custom top_k."""
@@ -165,7 +165,7 @@ class TestCircuitBreaker:
     def test_should_trip_circuit_breaker_false(self):
         """Entropy below threshold should not trip."""
         calc = LogitEntropyCalculator(top_k=10)
-        thresholds = EntropyThresholds.from_vocab_size(32000)
+        thresholds = EntropyThresholds(low=1.0, high=2.0, circuit_breaker=4.0)
 
         assert not calc.should_trip_circuit_breaker(
             3.0,
@@ -175,7 +175,7 @@ class TestCircuitBreaker:
     def test_should_trip_circuit_breaker_true(self):
         """Entropy above threshold should trip."""
         calc = LogitEntropyCalculator(top_k=10)
-        thresholds = EntropyThresholds.from_vocab_size(32000)
+        thresholds = EntropyThresholds(low=1.0, high=2.0, circuit_breaker=4.0)
 
         assert calc.should_trip_circuit_breaker(
             5.0,

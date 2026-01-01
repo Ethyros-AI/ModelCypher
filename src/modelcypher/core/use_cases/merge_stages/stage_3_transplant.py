@@ -135,29 +135,70 @@ def _compute_alignment_metrics(
     weight_source: "Array",
     backend: "Backend",
 ) -> dict[str, float]:
-    """Measure core alignment shift toward the source for a single weight."""
+    """Measure core alignment shift toward the source for a single weight.
+
+    For cross-architecture merges where dimensions don't match, we project
+    activations to the weight's input dimension using SVD before computing
+    output activations. This preserves the geometric comparison while handling
+    dimension mismatches.
+    """
     from modelcypher.core.domain.geometry.cka import compute_cka
 
-    output_before = backend.matmul(core_acts, backend.transpose(weight_before))
-    output_after = backend.matmul(core_acts, backend.transpose(weight_after))
-    output_source = backend.matmul(core_acts, backend.transpose(weight_source))
-    backend.eval(output_before, output_after, output_source)
+    b = backend
 
-    dist_before_arr = backend.norm(output_before - output_source)
-    dist_after_arr = backend.norm(output_after - output_source)
-    backend.eval(dist_before_arr, dist_after_arr)
+    # Get dimensions
+    act_dim = int(core_acts.shape[1])  # activation feature dimension
+    weight_in_dim = int(weight_before.shape[1])  # weight input dimension
 
-    dist_before = float(backend.to_numpy(dist_before_arr))
-    dist_after = float(backend.to_numpy(dist_after_arr))
+    # Project activations if dimensions don't match
+    if act_dim != weight_in_dim:
+        # Use SVD to project activations to weight's input dimension
+        # This preserves the most important variance while matching dimensions
+        from modelcypher.core.domain.geometry.numerical_stability import svd_via_eigh
 
-    eps = float(machine_epsilon(backend, weight_before))
+        if act_dim > weight_in_dim:
+            # Truncate: project to lower dimension via top-k singular vectors
+            _, _, Vt = svd_via_eigh(b, core_acts, full_matrices=False)
+            b.eval(Vt)
+            # Vt.shape is [min(n,d), d] - take top weight_in_dim rows
+            k = min(weight_in_dim, int(Vt.shape[0]))
+            V_k = b.transpose(Vt[:k, :])  # [act_dim, k]
+            core_acts_proj = b.matmul(core_acts, V_k)  # [n, k]
+
+            # Pad if k < weight_in_dim (due to rank deficiency)
+            if k < weight_in_dim:
+                padding = b.zeros((int(core_acts.shape[0]), weight_in_dim - k))
+                core_acts_proj = b.concatenate([core_acts_proj, padding], axis=1)
+            b.eval(core_acts_proj)
+        else:
+            # Expand: pad with zeros (geometrically neutral)
+            # New dimensions have no information, which is correct
+            padding = b.zeros((int(core_acts.shape[0]), weight_in_dim - act_dim))
+            core_acts_proj = b.concatenate([core_acts, padding], axis=1)
+            b.eval(core_acts_proj)
+
+        core_acts = core_acts_proj
+
+    output_before = b.matmul(core_acts, b.transpose(weight_before))
+    output_after = b.matmul(core_acts, b.transpose(weight_after))
+    output_source = b.matmul(core_acts, b.transpose(weight_source))
+    b.eval(output_before, output_after, output_source)
+
+    dist_before_arr = b.norm(output_before - output_source)
+    dist_after_arr = b.norm(output_after - output_source)
+    b.eval(dist_before_arr, dist_after_arr)
+
+    dist_before = float(b.to_numpy(dist_before_arr))
+    dist_after = float(b.to_numpy(dist_after_arr))
+
+    eps = float(machine_epsilon(b, weight_before))
     if dist_before > eps:
         alignment_improvement = (dist_before - dist_after) / dist_before
     else:
         alignment_improvement = 0.0
 
-    cka_before = compute_cka(output_before, output_source, backend=backend)
-    cka_after = compute_cka(output_after, output_source, backend=backend)
+    cka_before = compute_cka(output_before, output_source, backend=b)
+    cka_after = compute_cka(output_after, output_source, backend=b)
 
     return {
         "core_dist_to_source_before": dist_before,

@@ -740,13 +740,11 @@ class BaselineRepository:
 
         Args:
             baseline_dir: Directory containing baseline JSON files.
-                         Defaults to modelcypher/data/baseline_data/
+                         Defaults to ~/.modelcypher/baselines/
         """
         if baseline_dir is None:
-            # Default to package data directory
-            import modelcypher
-            pkg_dir = Path(modelcypher.__file__).parent
-            baseline_dir = pkg_dir / "data" / "baseline_data"
+            # Default to user config directory (writable, not in package)
+            baseline_dir = Path.home() / ".modelcypher" / "baselines"
 
         self._baseline_dir = Path(baseline_dir)
         self._cache: dict[str, DomainGeometryBaseline] = {}

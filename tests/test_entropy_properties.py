@@ -81,7 +81,7 @@ class TestEntropyProperties:
     @settings(max_examples=50, deadline=None)
     def test_entropy_is_non_negative(self, logits):
         """Entropy should always be non-negative."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         entropy, _ = calc.compute(logits)
 
@@ -91,7 +91,7 @@ class TestEntropyProperties:
     @settings(max_examples=30, deadline=None)
     def test_uniform_distribution_maximum_entropy(self, logits):
         """Uniform distribution should have maximum entropy."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         entropy, _ = calc.compute(logits)
 
@@ -106,7 +106,7 @@ class TestEntropyProperties:
     @settings(max_examples=30, deadline=None)
     def test_peaked_distribution_low_entropy(self, logits):
         """Highly peaked distribution should have low entropy."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         entropy, _ = calc.compute(logits)
 
@@ -120,7 +120,7 @@ class TestEntropyProperties:
     @settings(max_examples=50, deadline=None)
     def test_variance_is_non_negative(self, logits):
         """Variance should always be non-negative."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         _, variance = calc.compute(logits)
 
@@ -134,8 +134,8 @@ class TestEntropyProperties:
         Tests the mathematical property that entropy thresholds are properly ordered.
         Classification is now done by comparing raw entropy values against these thresholds.
         """
-        calc = LogitEntropyCalculator()
-        thresholds = EntropyThresholds.from_vocab_size(100)
+        calc = LogitEntropyCalculator(top_k=10)
+        thresholds = EntropyThresholds(low=1.0, high=2.0, circuit_breaker=4.0)
 
         # Verify threshold ordering - this is a structural invariant
         assert thresholds.low < thresholds.high < thresholds.circuit_breaker
@@ -156,7 +156,7 @@ class TestEntropyProperties:
     @settings(max_examples=30, deadline=None)
     def test_batch_compute_length_matches(self, logits_a, logits_b):
         """Batch compute should return correct number of results."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         batch = [logits_a, logits_b]
         results = calc.compute_batch(batch)
@@ -167,7 +167,7 @@ class TestEntropyProperties:
     @settings(max_examples=30, deadline=None)
     def test_batch_compute_empty_batch(self, batch):
         """Batch compute should handle any size batch."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         results = calc.compute_batch(batch)
 
@@ -177,7 +177,7 @@ class TestEntropyProperties:
     @settings(max_examples=50, deadline=None)
     def test_skip_variance_returns_zero(self, logits):
         """When skipping variance, should return 0."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         _, variance = calc.compute(logits, skip_variance=True)
 
@@ -190,8 +190,8 @@ class TestEntropyProperties:
 
         Tests the precise boundary condition for circuit breaker activation.
         """
-        calc = LogitEntropyCalculator()
-        threshold = EntropyThresholds.from_vocab_size(100).circuit_breaker
+        calc = LogitEntropyCalculator(top_k=10)
+        threshold = EntropyThresholds(low=1.0, high=2.0, circuit_breaker=4.0).circuit_breaker
 
         should_trip = calc.should_trip_circuit_breaker(
             entropy_value,
