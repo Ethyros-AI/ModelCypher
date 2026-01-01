@@ -903,13 +903,16 @@ def stage_transplant(
                 #   q_proj, k_proj, v_proj [hidden, head*num_heads] → [tgt_hidden, ...]
                 #   o_proj [head*num_heads, hidden] → [..., tgt_hidden]
 
-                weight_shape = source_candidate.shape
+                # Use ORIGINAL source shape for dimension matching (source_candidate may
+                # have been partially transformed by shared_subspace)
+                original_source_shape = source_w.shape
                 is_mlp = any(mlp_name in key for mlp_name in [
                     "gate_proj", "up_proj", "down_proj", "mlp.fc1", "mlp.fc2"
                 ])
 
                 if is_mlp and hidden_stitch_weights is not None and intermediate_stitch_weights is not None:
-                    # MLP weight: apply BOTH stitches
+                    # MLP weight: apply BOTH stitches to ORIGINAL source weight
+                    # (bypasses any partial transforms from shared_subspace)
                     src_hidden_dim = int(hidden_stitch_weights.shape[1])
                     tgt_hidden_dim = int(hidden_stitch_weights.shape[0])
                     src_inter_dim = int(intermediate_stitch_weights.shape[1])
@@ -920,13 +923,13 @@ def stage_transplant(
                         key, src_hidden_dim, tgt_hidden_dim, src_inter_dim, tgt_inter_dim
                     )
 
-                    # Determine which dimension is which
-                    dim0, dim1 = int(weight_shape[0]), int(weight_shape[1])
+                    # Determine which dimension is which from ORIGINAL source shape
+                    dim0, dim1 = int(original_source_shape[0]), int(original_source_shape[1])
 
                     if dim0 == src_inter_dim and dim1 == src_hidden_dim:
                         # gate_proj/up_proj: [intermediate, hidden] → [tgt_inter, tgt_hidden]
                         # Apply: intermediate_stitch @ weight @ hidden_stitch.T
-                        source_aligned = b.matmul(intermediate_stitch_weights, source_candidate)
+                        source_aligned = b.matmul(intermediate_stitch_weights, source_w)
                         source_aligned = b.matmul(source_aligned, b.transpose(hidden_stitch_weights))
                         b.eval(source_aligned)
                         logger.info("Dual stitch (gate/up style): [%d,%d] → [%d,%d]",
@@ -935,7 +938,7 @@ def stage_transplant(
                     elif dim0 == src_hidden_dim and dim1 == src_inter_dim:
                         # down_proj: [hidden, intermediate] → [tgt_hidden, tgt_inter]
                         # Apply: hidden_stitch @ weight @ intermediate_stitch.T
-                        source_aligned = b.matmul(hidden_stitch_weights, source_candidate)
+                        source_aligned = b.matmul(hidden_stitch_weights, source_w)
                         source_aligned = b.matmul(source_aligned, b.transpose(intermediate_stitch_weights))
                         b.eval(source_aligned)
                         logger.info("Dual stitch (down style): [%d,%d] → [%d,%d]",
@@ -953,21 +956,21 @@ def stage_transplant(
                     metrics["dual_stitch_applied"] += 1
 
                 elif hidden_stitch_weights is not None:
-                    # Attention or other weight: apply only hidden stitch
+                    # Attention or other weight: apply only hidden stitch to ORIGINAL source
                     src_hidden_dim = int(hidden_stitch_weights.shape[1])
                     tgt_hidden_dim = int(hidden_stitch_weights.shape[0])
-                    dim0, dim1 = int(weight_shape[0]), int(weight_shape[1])
+                    dim0, dim1 = int(original_source_shape[0]), int(original_source_shape[1])
 
                     if dim0 == src_hidden_dim:
                         # Hidden dim is first: hidden_stitch @ weight
-                        source_aligned = b.matmul(hidden_stitch_weights, source_candidate)
+                        source_aligned = b.matmul(hidden_stitch_weights, source_w)
                         b.eval(source_aligned)
                         logger.info("Hidden stitch applied to dim0: [%d,%d] → [%d,%d]",
                                     dim0, dim1, tgt_hidden_dim, dim1)
 
                     elif dim1 == src_hidden_dim:
                         # Hidden dim is second: weight @ hidden_stitch.T
-                        source_aligned = b.matmul(source_candidate, b.transpose(hidden_stitch_weights))
+                        source_aligned = b.matmul(source_w, b.transpose(hidden_stitch_weights))
                         b.eval(source_aligned)
                         logger.info("Hidden stitch applied to dim1: [%d,%d] → [%d,%d]",
                                     dim0, dim1, dim0, tgt_hidden_dim)

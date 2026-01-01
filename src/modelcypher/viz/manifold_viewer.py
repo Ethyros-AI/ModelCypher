@@ -232,6 +232,22 @@ class ManifoldViewer:
 
         # Add point cloud
         if target_dim == 3:
+            # First add trajectory line connecting points in sequence
+            # This reveals the SHAPE - the path through concept space
+            fig.add_trace(go.Scatter3d(
+                x=points[:, 0],
+                y=points[:, 1],
+                z=points[:, 2],
+                mode="lines",
+                line=dict(
+                    color="rgba(100, 100, 100, 0.5)",
+                    width=2,
+                ),
+                hoverinfo="skip",
+                name="Trajectory Path",
+            ))
+
+            # Then add the actual points with curvature coloring
             fig.add_trace(go.Scatter3d(
                 x=points[:, 0],
                 y=points[:, 1],
@@ -259,6 +275,20 @@ class ManifoldViewer:
                 title=self.config.title,
             )
         elif target_dim == 2:
+            # First add trajectory line
+            fig.add_trace(go.Scatter(
+                x=points[:, 0],
+                y=points[:, 1],
+                mode="lines",
+                line=dict(
+                    color="rgba(100, 100, 100, 0.5)",
+                    width=2,
+                ),
+                hoverinfo="skip",
+                name="Trajectory Path",
+            ))
+
+            # Then add points with curvature coloring
             fig.add_trace(go.Scatter(
                 x=points[:, 0],
                 y=points[:, 1],
