@@ -124,27 +124,70 @@ def predict_interference(
     # Predict interference per domain
     domain_results: dict[str, dict] = {}
 
+    from modelcypher.core.domain._backend import get_default_backend
+    from modelcypher.core.domain.geometry.cka import compute_cka_backend, HSICEstimator
+
+    backend = get_default_backend()
+
     for domain_name, source_acts in source_activations.items():
         target_acts = target_activations.get(domain_name, {})
         if not source_acts or not target_acts:
             continue
 
-        # Estimate volumes
+        # Find common concepts between source and target
+        common_concepts = sorted(set(source_acts.keys()) & set(target_acts.keys()))
+        if len(common_concepts) < 2:
+            logger.warning(f"Need at least 2 common concepts for CKA, got {len(common_concepts)}")
+            continue
+
+        # Stack all concept activations into domain-level matrices
+        # Each row = one concept's activation, giving us n_concepts samples for CKA
+        source_stacked = []
+        target_stacked = []
+        for concept_id in common_concepts:
+            src_arr = source_acts[concept_id]
+            tgt_arr = target_acts[concept_id]
+            # Flatten to 1D if needed
+            if src_arr.ndim > 1:
+                src_arr = backend.reshape(src_arr, (-1,))
+            if tgt_arr.ndim > 1:
+                tgt_arr = backend.reshape(tgt_arr, (-1,))
+            source_stacked.append(src_arr)
+            target_stacked.append(tgt_arr)
+
+        # Stack into [n_concepts, hidden_dim] - may have different hidden dims
+        source_matrix = backend.stack(source_stacked, axis=0)
+        target_matrix = backend.stack(target_stacked, axis=0)
+        backend.eval(source_matrix, target_matrix)
+
+        # Compute domain-level CKA (dimension-agnostic)
+        # Use BIASED estimator without feature correction to avoid eigh on potentially
+        # ill-conditioned centered Gram matrices
+        domain_cka = compute_cka_backend(
+            source_matrix,
+            target_matrix,
+            backend=backend,
+            estimator=HSICEstimator.BIASED,
+            feature_bias_correction=False,
+        )
+        logger.info(f"Domain {domain_name} CKA: {domain_cka:.4f} ({len(common_concepts)} concepts)")
+
+        # Also create per-concept volumes for detailed analysis
         source_volumes = {}
         target_volumes = {}
-        common_concepts = set(source_acts.keys()) & set(target_acts.keys())
 
         for concept_id in common_concepts:
             src_arr = source_acts[concept_id]
             tgt_arr = target_acts[concept_id]
 
-            # Need multiple samples for volume estimation
+            # Need 2D for volume estimation
             if src_arr.ndim == 1:
-                src_arr = src_arr.reshape(1, -1)
+                src_arr = backend.reshape(src_arr, (1, -1))
             if tgt_arr.ndim == 1:
-                tgt_arr = tgt_arr.reshape(1, -1)
+                tgt_arr = backend.reshape(tgt_arr, (1, -1))
 
-            # Enable store_raw_activations for cross-dimensional CKA comparison
+            # Note: Per-concept CKA will return 0.0 (only 1 sample per concept)
+            # But we use domain-level CKA above for the actual alignment metric
             source_volumes[concept_id] = density_estimator.estimate_concept_volume(
                 f"source:{concept_id}", src_arr, store_raw_activations=True
             )
@@ -181,15 +224,17 @@ def predict_interference(
                 )
 
         # Compute domain-level metrics
+        # Use domain-level CKA for alignment (dimension-agnostic, works for cross-architecture)
+        # Per-concept CKA is 0.0 because each concept has only 1 sample
         if domain_analysis["overlap_scores"]:
-            backend = get_default_backend()
             overlap_arr = backend.array(domain_analysis["overlap_scores"])
-            align_arr = backend.array(domain_analysis["alignment_scores"])
             domain_analysis["mean_overlap"] = float(backend.mean(overlap_arr))
-            domain_analysis["mean_alignment"] = float(backend.mean(align_arr))
         else:
             domain_analysis["mean_overlap"] = 0.0
-            domain_analysis["mean_alignment"] = 1.0
+
+        # Use domain-level CKA for alignment (computed above)
+        domain_analysis["mean_alignment"] = domain_cka
+        domain_analysis["domain_cka"] = domain_cka
 
         del domain_analysis["overlap_scores"]  # Don't need raw lists in output
         del domain_analysis["alignment_scores"]

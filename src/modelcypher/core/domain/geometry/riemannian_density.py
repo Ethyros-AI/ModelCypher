@@ -805,12 +805,13 @@ class RiemannianDensityEstimator:
 
         # Compute CKA - this is dimension-agnostic
         # CKA uses Gram matrices K = X @ X.T (n x n) not raw dimensions
+        # Use BIASED estimator to avoid eigh on potentially ill-conditioned matrices
         cka_similarity = compute_cka_backend(
             volume_a.raw_activations,
             volume_b.raw_activations,
             backend=backend,
-            estimator=HSICEstimator.AUTO,
-            feature_bias_correction=True,
+            estimator=HSICEstimator.BIASED,
+            feature_bias_correction=False,
         )
 
         # CKA measures representational similarity:
@@ -1145,9 +1146,6 @@ class RiemannianDensityEstimator:
 
         dim_a = int(volume_a.covariance.shape[0])
         dim_b = int(volume_b.covariance.shape[0])
-
-        # Always log dimensions for debugging cross-architecture issues
-        logger.info(f"Subspace alignment: dim_a={dim_a}, dim_b={dim_b}")
 
         if dim_a == dim_b:
             # Same dimension: use principal angles

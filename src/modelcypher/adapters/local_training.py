@@ -44,9 +44,7 @@ from modelcypher.core.domain.training import (
 from modelcypher.core.domain.training import (
     TrainingConfig as DomainTrainingConfig,
 )
-from modelcypher.core.domain.training import (
-    TrainingEngine as DomainTrainingEngine,
-)
+from modelcypher.core.domain.training._platform import get_training_engine
 from modelcypher.core.domain.training import (
     TrainingProgress as DomainTrainingProgress,
 )
@@ -86,7 +84,7 @@ class LocalTrainingEngine(TrainingEngine):
         self.backend = backend or default_backend()
         self.paths = self.store.paths
         self.lock = FileLock(self.paths.base / "training.lock")
-        self.domain_engine = DomainTrainingEngine()
+        self.domain_engine = get_training_engine()
         self._loop = None
 
     def preflight(self, config: Any) -> PreflightResult:

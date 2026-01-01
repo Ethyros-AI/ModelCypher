@@ -23,9 +23,7 @@
 # - JAX (TPU/GPU): *_jax.py files
 # - Use _platform module for automatic selection
 
-import logging
-
-# Platform selection (auto-detects MLX on macOS, CUDA on Linux, JAX on TPU)
+# Avoid importing platform-specific engines here to prevent early MLX initialization.
 from ._platform import (
     get_checkpoint_manager,
     get_evaluation_engine,
@@ -78,52 +76,3 @@ from .types import (
     TrainingStatus,
 )
 from .validation import TrainingHyperparameterValidator
-
-logger = logging.getLogger(__name__)
-
-_training_platform = get_training_platform()
-
-if _training_platform == "mlx":
-    from .checkpoints_mlx import CheckpointManager
-    from .engine_mlx import TrainingEngine, TrainingError
-    from .evaluation_mlx import *  # noqa: F401,F403
-    from .evaluation_mlx import EvaluationEngine
-    from .lora_mlx import *  # noqa: F401,F403
-    from .lora_mlx import LoRAConfig as LoRAConfig
-    from .loss_landscape_mlx import *  # noqa: F401,F403
-    from .loss_landscape_mlx import LossLandscapeComputer
-elif _training_platform == "cuda":
-    from .checkpoints_cuda import CheckpointManagerCUDA as CheckpointManager
-    from .engine_cuda import TrainingEngineCUDA as TrainingEngine
-    from .engine_cuda import TrainingErrorCUDA as TrainingError
-    from .evaluation_cuda import *  # noqa: F401,F403
-    from .evaluation_cuda import EvaluationEngineCUDA as EvaluationEngine
-    from .lora_cuda import *  # noqa: F401,F403
-    from .lora_cuda import LoRAConfigCUDA as LoRAConfig
-    from .loss_landscape_cuda import *  # noqa: F401,F403
-    from .loss_landscape_cuda import LossLandscapeComputerCUDA as LossLandscapeComputer
-elif _training_platform == "jax":
-    try:
-        from .checkpoints_jax import CheckpointManagerJAX as CheckpointManager
-        from .engine_jax import TrainingEngineJAX as TrainingEngine
-        from .engine_jax import TrainingErrorJAX as TrainingError
-        from .evaluation_jax import *  # noqa: F401,F403
-        from .evaluation_jax import EvaluationEngineJAX as EvaluationEngine
-        from .lora_jax import *  # noqa: F401,F403
-        from .lora_jax import LoRAConfigJAX as LoRAConfig
-        from .loss_landscape_jax import *  # noqa: F401,F403
-        from .loss_landscape_jax import LossLandscapeComputerJAX as LossLandscapeComputer
-    except ImportError as exc:
-        # Optional JAX training deps (e.g., optax) may be missing in test environments.
-        logger.warning("JAX training backend unavailable: %s", exc)
-        CheckpointManager = None
-        TrainingEngine = None
-        TrainingError = None
-        EvaluationEngine = None
-        LossLandscapeComputer = None
-else:
-    CheckpointManager = None
-    TrainingEngine = None
-    TrainingError = None
-    EvaluationEngine = None
-    LossLandscapeComputer = None

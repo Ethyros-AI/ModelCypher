@@ -679,21 +679,18 @@ class RiemannianGeometry:
         near_zero_eps = float(machine_epsilon(backend, geo_dist_arr))
 
         # Mark distances >= inf_val as true infinity (disconnected)
-        for i in range(n):
-            for j in range(n):
-                if geo_np[i, j] >= inf_val * 0.9:  # Near our pseudo-infinity
-                    geo_np[i, j] = float("inf")
-                elif geo_np[i, j] < near_zero_eps:  # Near-zero distances are truly zero
-                    geo_np[i, j] = 0.0
+        # Vectorized numpy operations at I/O boundary
+        import numpy as np
+
+        near_inf_mask = geo_np >= inf_val * 0.9
+        near_zero_mask = geo_np < near_zero_eps
+        geo_np[near_inf_mask] = float("inf")
+        geo_np[near_zero_mask] = 0.0
 
         # Check connectivity - inf values represent genuinely infinite geodesic distance
         # between disconnected manifold components. No fallback to Euclidean - this is
         # real structural information about the manifold.
-        inf_count = 0
-        for i in range(n):
-            for j in range(n):
-                if math.isinf(geo_np[i, j]):
-                    inf_count += 1
+        inf_count = int(np.sum(np.isinf(geo_np)))
         connected = inf_count == 0
 
         if not connected:

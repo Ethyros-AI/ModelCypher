@@ -28,6 +28,7 @@ Platform-Specific Implementations:
 from __future__ import annotations
 
 # Platform selection (auto-detects MLX on macOS, CUDA on Linux, JAX on TPU)
+# Avoid importing platform-specific generators here to prevent early MLX initialization.
 from ._platform import (
     get_dual_path_config_class,
     get_dual_path_generator_class,
@@ -38,39 +39,3 @@ from .adapter_pool import *  # noqa: F401,F403
 from .comparison import *  # noqa: F401,F403
 from .entropy_dynamics import *  # noqa: F401,F403
 from .types import *  # noqa: F401,F403
-
-_inference_platform = get_inference_platform()
-
-if _inference_platform == "mlx":
-    from .dual_path_mlx import *  # noqa: F401,F403
-    from .dual_path_mlx import (
-        DualPathGenerator,
-        DualPathGeneratorConfiguration,
-        SecurityScanMetrics,
-    )
-elif _inference_platform == "cuda":
-    from .dual_path_cuda import *  # noqa: F401,F403
-    from .dual_path_cuda import (
-        DualPathGeneratorConfigurationCUDA as DualPathGeneratorConfiguration,
-    )
-    from .dual_path_cuda import (
-        DualPathGeneratorCUDA as DualPathGenerator,
-    )
-    from .dual_path_cuda import (
-        SecurityScanMetricsCUDA as SecurityScanMetrics,
-    )
-elif _inference_platform == "jax":
-    from .dual_path_jax import *  # noqa: F401,F403
-    from .dual_path_jax import (
-        DualPathGeneratorConfigurationJAX as DualPathGeneratorConfiguration,
-    )
-    from .dual_path_jax import (
-        DualPathGeneratorJAX as DualPathGenerator,
-    )
-    from .dual_path_jax import (
-        SecurityScanMetricsJAX as SecurityScanMetrics,
-    )
-else:
-    DualPathGenerator = None
-    DualPathGeneratorConfiguration = None
-    SecurityScanMetrics = None
