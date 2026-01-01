@@ -62,6 +62,7 @@ from modelcypher.cli.commands.geometry import (
     temporal,
     transfer,
     transport,
+    visualize,
     waypoint,
 )
 
@@ -87,5 +88,6 @@ __all__ = [
     "spatial",
     "temporal",
     "transport",
+    "visualize",
     "waypoint",
 ]

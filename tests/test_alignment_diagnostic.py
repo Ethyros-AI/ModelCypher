@@ -441,8 +441,12 @@ class TestAlignmentSignalPatternDetection:
     def test_scale_mismatch_detected(self, backend):
         """Test scaled matrices detect scale pattern."""
         backend.random_seed(42)
-        # Use a larger, well-conditioned matrix to avoid rank issues
-        source = backend.random_normal((20, 16))
+        # Use orthogonal matrix via QR decomposition to guarantee full rank
+        random_matrix = backend.random_normal((20, 16))
+        q, r = backend.qr(random_matrix)
+        # Take first 16 columns of Q (orthonormal, full rank)
+        source = q[:, :16]
+        backend.eval(source)
         # Scale target by 5x - significant scale mismatch but keeps rank
         target = source * 5.0
 

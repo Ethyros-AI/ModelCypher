@@ -753,22 +753,33 @@ def stage_transplant(
                     compute_cka_backend,
                 )
 
-                # Build anchor pairs from layer activations
-                if src_analysis is not None and tgt_analysis is not None:
-                    n_samples = min(int(src_analysis.shape[0]), int(tgt_analysis.shape[0]))
-                    if n_samples >= 5:
+                # Build anchor pairs from FULL atlas (not limited by analysis_max_samples)
+                # Cross-architecture stitch needs ALL probes to avoid overfitting
+                if src_act_list is not None and act_list is not None:
+                    # Use ALL activations from the full atlas
+                    full_n_samples = min(len(src_act_list), len(act_list))
+                    if full_n_samples >= 10:
+                        # Stack FULL activation lists
+                        src_full = b.stack(src_act_list[:full_n_samples], axis=0)
+                        tgt_full = b.stack(act_list[:full_n_samples], axis=0)
+                        src_full = b.astype(src_full, "float32")
+                        tgt_full = b.astype(tgt_full, "float32")
+                        b.eval(src_full, tgt_full)
+
+                        logger.info(
+                            "Using FULL atlas for stitch: n_samples=%d (src_dim=%d, tgt_dim=%d)",
+                            full_n_samples, int(src_full.shape[1]), int(tgt_full.shape[1])
+                        )
+
                         # NORMALIZE for numerical stability (geometry is scale-invariant)
                         # Different models have wildly different activation scales
-                        src_sub = src_analysis[:n_samples]
-                        tgt_sub = tgt_analysis[:n_samples]
+                        src_mean = b.mean(src_full, axis=0, keepdims=True)
+                        src_std = b.std(src_full, axis=0, keepdims=True) + 1e-8
+                        src_normed = (src_full - src_mean) / src_std
 
-                        src_mean = b.mean(src_sub, axis=0, keepdims=True)
-                        src_std = b.std(src_sub, axis=0, keepdims=True) + 1e-8
-                        src_normed = (src_sub - src_mean) / src_std
-
-                        tgt_mean = b.mean(tgt_sub, axis=0, keepdims=True)
-                        tgt_std = b.std(tgt_sub, axis=0, keepdims=True) + 1e-8
-                        tgt_normed = (tgt_sub - tgt_mean) / tgt_std
+                        tgt_mean = b.mean(tgt_full, axis=0, keepdims=True)
+                        tgt_std = b.std(tgt_full, axis=0, keepdims=True) + 1e-8
+                        tgt_normed = (tgt_full - tgt_mean) / tgt_std
                         b.eval(src_normed, tgt_normed)
 
                         src_np = b.to_numpy(src_normed)
@@ -779,8 +790,9 @@ def stage_transplant(
                                 target_activation=tgt_np[i].tolist(),
                                 anchor_id=f"sample_{i}",
                             )
-                            for i in range(n_samples)
+                            for i in range(full_n_samples)
                         ]
+                        n_samples = full_n_samples
 
                         # Train affine stitching layer (more iterations for convergence)
                         from modelcypher.core.domain.geometry.affine_stitching_layer import (
@@ -796,7 +808,7 @@ def stage_transplant(
                         if stitch_result is None:
                             logger.warning(
                                 "Stitch returned None for %s: n_samples=%d, src_dim=%d, tgt_dim=%d",
-                                key, n_samples, int(src_sub.shape[1]), int(tgt_sub.shape[1])
+                                key, n_samples, int(src_full.shape[1]), int(tgt_full.shape[1])
                             )
                         elif not stitch_result.is_valid:
                             logger.warning(
@@ -811,12 +823,16 @@ def stage_transplant(
                                 key, stitch_result.forward_error, stitch_result.backward_error, n_samples
                             )
                             # Apply stitch to NORMALIZED source activations
+                            logger.info("Converting stitch weights to backend array for %s...", key)
                             weights_stitch = b.array(stitch_result.weights)
                             bias_stitch = b.array(stitch_result.bias)
+                            logger.info("Applying stitch for %s: W=%s, b=%s", key, weights_stitch.shape, bias_stitch.shape)
                             src_stitched = stitcher.apply(src_normed, weights_stitch, bias_stitch)
                             b.eval(src_stitched)
+                            logger.info("Stitch applied for %s: src_stitched=%s", key, src_stitched.shape)
 
                             # VERIFY CKA = 1.0 after stitching (use normalized target)
+                            logger.info("Computing CKA for %s (src=%s, tgt=%s)...", key, src_stitched.shape, tgt_normed.shape)
                             cka_after_stitch = compute_cka_backend(
                                 src_stitched,
                                 tgt_normed,
@@ -824,8 +840,13 @@ def stage_transplant(
                                 estimator=HSICEstimator.BIASED,
                                 feature_bias_correction=False,
                             )
-                            b.eval(cka_after_stitch)
-                            cka_val = float(cka_after_stitch.item()) if hasattr(cka_after_stitch, 'item') else float(b.to_numpy(cka_after_stitch))
+                            logger.info("CKA computed for %s, converting to float...", key)
+                            # Handle case where CKA returns a float directly or a tensor
+                            if isinstance(cka_after_stitch, (int, float)):
+                                cka_val = float(cka_after_stitch)
+                            else:
+                                b.eval(cka_after_stitch)
+                                cka_val = float(cka_after_stitch.item()) if hasattr(cka_after_stitch, 'item') else float(b.to_numpy(cka_after_stitch))
                             logger.info("CKA after stitch for %s: %.4f", key, cka_val)
 
                             if cka_val >= 0.99:  # CKA preserved - stitch is geometry-preserving

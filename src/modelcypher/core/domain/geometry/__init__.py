@@ -92,6 +92,9 @@ _SUBMODULES = {
     "dimension_blender",
     "relative_representation",
     "wudi_interference",
+    # Real-time visualization support
+    "dimension_cascade",
+    "density_estimator",
 }
 
 # Attribute to submodule mapping for commonly used classes
@@ -112,6 +115,13 @@ _ATTR_TO_MODULE = {
     # Signature base classes
     "SignatureMixin": ("signature_base", "SignatureMixin"),
     "LabeledSignatureMixin": ("signature_base", "LabeledSignatureMixin"),
+    # Dimension cascade for real-time visualization
+    "DimensionCascade": ("dimension_cascade", "DimensionCascade"),
+    "CascadeResult": ("dimension_cascade", "CascadeResult"),
+    "CascadeConfiguration": ("dimension_cascade", "CascadeConfiguration"),
+    # Density estimation for visualization
+    "DensityEstimator": ("density_estimator", "DensityEstimator"),
+    "DensityResult": ("density_estimator", "DensityResult"),
 }
 
 
