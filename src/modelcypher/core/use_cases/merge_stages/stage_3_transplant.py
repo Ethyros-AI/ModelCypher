@@ -39,6 +39,7 @@ from modelcypher.core.domain.geometry.cross_dimensional_projection import (
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
+    safe_pinv,
 )
 from modelcypher.core.domain.geometry.transplant import (
     compute_transplant_delta,
@@ -254,6 +255,8 @@ def stage_transplant(
     target_intermediate_activations: dict[int, list["Array"]] | None = None,
     source_attention_activations: dict[int, list["Array"]] | None = None,
     target_attention_activations: dict[int, list["Array"]] | None = None,
+    source_kv_activations: dict[int, list["Array"]] | None = None,
+    target_kv_activations: dict[int, list["Array"]] | None = None,
     backend: "Backend | None" = None,
 ) -> TransplantStageResult:
     """Stage 3: Null-space constrained transplant using probe activations."""
@@ -291,7 +294,7 @@ def stage_transplant(
     if not target_activations:
         error_msg = (
             "Transplant requires real activations collected from probe runs. "
-            "Use `mc geometry transplant run` to collect activations before merging."
+            "Use `mc merge pipeline` (probe stage) to collect activations before merging."
         )
         logger.error(error_msg)
         raise RuntimeError(error_msg)
@@ -453,12 +456,14 @@ def stage_transplant(
                     F = b.array(global_result.feature_transform)
                     b.eval(F)
                     global_hidden_stitch_output = b.transpose(F)  # F.T [tgt, src]
-                    global_hidden_stitch_input = b.transpose(b.pinv(F))  # pinv(F).T [src, tgt]
+                    F_pinv, pinv_diag = safe_pinv(b, F)
+                    global_hidden_stitch_input = b.transpose(F_pinv)  # pinv(F).T [src, tgt]
                     b.eval(global_hidden_stitch_output, global_hidden_stitch_input)
                     logger.info(
-                        "GLOBAL TRAJECTORY ALIGNMENT: CKA=%.4f (%d→%d) using %d samples",
+                        "GLOBAL TRAJECTORY ALIGNMENT: CKA=%.4f (%d→%d) cond=%.2e rank=%d/%d",
                         global_result.achieved_cka, global_src_hidden_dim,
-                        global_tgt_hidden_dim, len(all_src_acts)
+                        global_tgt_hidden_dim, pinv_diag.get("condition_number", 0),
+                        pinv_diag.get("effective_rank", 0), min(global_src_hidden_dim, global_tgt_hidden_dim)
                     )
                     metrics["global_trajectory_aligned"] = True
                     metrics["global_trajectory_cka"] = float(global_result.achieved_cka)
@@ -542,12 +547,13 @@ def stage_transplant(
                     F_attn = b.array(attn_result.feature_transform)
                     b.eval(F_attn)
                     global_attention_stitch_output = b.transpose(F_attn)  # F.T [tgt, src]
-                    global_attention_stitch_input = b.transpose(b.pinv(F_attn))  # pinv(F).T [src, tgt]
+                    F_attn_pinv, attn_pinv_diag = safe_pinv(b, F_attn)
+                    global_attention_stitch_input = b.transpose(F_attn_pinv)  # pinv(F).T [src, tgt]
                     b.eval(global_attention_stitch_output, global_attention_stitch_input)
                     logger.info(
-                        "GLOBAL ATTENTION ALIGNMENT: CKA=%.4f (%d→%d) using %d samples",
+                        "GLOBAL ATTENTION ALIGNMENT: CKA=%.4f (%d→%d) cond=%.2e",
                         attn_result.achieved_cka, global_src_attn_dim,
-                        global_tgt_attn_dim, len(all_src_attn)
+                        global_tgt_attn_dim, attn_pinv_diag.get("condition_number", 0)
                     )
                     metrics["global_attention_aligned"] = True
                     metrics["global_attention_cka"] = float(attn_result.achieved_cka)
@@ -579,6 +585,97 @@ def stage_transplant(
                 )
                 metrics["global_attention_aligned"] = True
                 metrics["global_attention_cka"] = 1.0  # Identity = perfect
+
+    # ==========================================================================
+    # GLOBAL KV ALIGNMENT: Compute separate KV stitch for GQA models
+    # ==========================================================================
+    # GQA (Grouped Query Attention) models have different head counts for Q vs K/V:
+    #   - SmolLM: Q = 15 heads × 64 = 960, KV = 5 heads × 64 = 320
+    #   - Qwen: Q = 14 heads × 64 = 896, KV = 2 heads × 64 = 128
+    #
+    # k_proj and v_proj weights have shape [kv_attention_dim, hidden_dim], NOT
+    # [q_attention_dim, hidden_dim]. We MUST compute a separate stitch for KV.
+    #
+    # Without this, merged models output gibberish because K/V dimension mismatch
+    # causes attention score computation to fail or produce garbage.
+    global_kv_stitch_output = None
+    global_kv_stitch_input = None
+    global_src_kv_dim = None
+    global_tgt_kv_dim = None
+
+    if source_kv_activations and target_kv_activations:
+        # Use BOTTLENECK LAYER for global KV alignment
+        bottleneck_layer_idx = layer_indices[len(layer_indices) // 2] if layer_indices else 0
+        src_kv_list = source_kv_activations.get(bottleneck_layer_idx)
+        tgt_kv_list = target_kv_activations.get(bottleneck_layer_idx)
+
+        all_src_kv = []
+        all_tgt_kv = []
+        if src_kv_list and tgt_kv_list:
+            n_samples = min(len(src_kv_list), len(tgt_kv_list))
+            for i in range(n_samples):
+                all_src_kv.append(src_kv_list[i])
+                all_tgt_kv.append(tgt_kv_list[i])
+            logger.info("GLOBAL KV: Using bottleneck layer %d for alignment (%d samples)",
+                       bottleneck_layer_idx, n_samples)
+
+        if len(all_src_kv) >= 20:
+            src_kv_concat = b.stack(all_src_kv, axis=0)
+            tgt_kv_concat = b.stack(all_tgt_kv, axis=0)
+            src_kv_concat = b.astype(src_kv_concat, "float32")
+            tgt_kv_concat = b.astype(tgt_kv_concat, "float32")
+            b.eval(src_kv_concat, tgt_kv_concat)
+
+            global_src_kv_dim = int(src_kv_concat.shape[1])
+            global_tgt_kv_dim = int(tgt_kv_concat.shape[1])
+
+            if global_src_kv_dim != global_tgt_kv_dim:
+                from modelcypher.core.domain.geometry.gram_aligner import GramAligner
+                aligner = GramAligner(b)
+                kv_result = aligner.find_perfect_alignment(src_kv_concat, tgt_kv_concat)
+
+                if kv_result.is_perfect:
+                    F_kv = b.array(kv_result.feature_transform)
+                    b.eval(F_kv)
+                    global_kv_stitch_output = b.transpose(F_kv)  # F.T [tgt, src]
+                    F_kv_pinv, kv_pinv_diag = safe_pinv(b, F_kv)
+                    global_kv_stitch_input = b.transpose(F_kv_pinv)  # pinv(F).T [src, tgt]
+                    b.eval(global_kv_stitch_output, global_kv_stitch_input)
+                    logger.info(
+                        "GLOBAL KV ALIGNMENT: CKA=%.4f (%d→%d) cond=%.2e",
+                        kv_result.achieved_cka, global_src_kv_dim,
+                        global_tgt_kv_dim, kv_pinv_diag.get("condition_number", 0)
+                    )
+                    metrics["global_kv_aligned"] = True
+                    metrics["global_kv_cka"] = float(kv_result.achieved_cka)
+                else:
+                    if config.strict_mode:
+                        raise AlignmentFailureError(
+                            stage="GLOBAL_KV_ALIGNMENT",
+                            weight_key=None,
+                            message=f"Global KV alignment failed: CKA={kv_result.achieved_cka:.4f} < 0.9999",
+                            context={
+                                "achieved_cka": float(kv_result.achieved_cka),
+                                "source_dim": global_src_kv_dim,
+                                "target_dim": global_tgt_kv_dim,
+                                "samples_used": len(all_src_kv),
+                            },
+                        )
+                    logger.warning(
+                        "GLOBAL KV ALIGNMENT failed (CKA=%.4f)",
+                        kv_result.achieved_cka
+                    )
+            else:
+                # Same KV dims: use IDENTITY stitch
+                global_kv_stitch_output = b.eye(global_src_kv_dim)
+                global_kv_stitch_input = b.eye(global_src_kv_dim)
+                b.eval(global_kv_stitch_output, global_kv_stitch_input)
+                logger.info(
+                    "GLOBAL KV: Same KV attention dims (%d) - using identity stitch",
+                    global_src_kv_dim
+                )
+                metrics["global_kv_aligned"] = True
+                metrics["global_kv_cka"] = 1.0  # Identity = perfect
 
     for layer_num, layer_idx in enumerate(layer_indices):
         # Skip layers already completed (checkpoint resume)
@@ -638,8 +735,10 @@ def stage_transplant(
         hidden_stitch_input = None   # pinv(F).T for input side [src_hidden, tgt_hidden]
         intermediate_stitch_output = None  # F.T for output side
         intermediate_stitch_input = None   # pinv(F).T for input side
-        attention_stitch_output = None  # F.T for attention output [tgt_attn, src_attn]
-        attention_stitch_input = None   # pinv(F).T for attention input [src_attn, tgt_attn]
+        attention_stitch_output = None  # F.T for Q attention output [tgt_attn, src_attn]
+        attention_stitch_input = None   # pinv(F).T for Q attention input [src_attn, tgt_attn]
+        kv_stitch_output = None  # F.T for KV attention output [tgt_kv, src_kv] (GQA)
+        kv_stitch_input = None   # pinv(F).T for KV attention input [src_kv, tgt_kv] (GQA)
 
         # Get intermediate activations for this layer (MLP internal states)
         src_inter_list = (
@@ -838,12 +937,13 @@ def stage_transplant(
                         F = b.array(hidden_result.feature_transform)
                         b.eval(F)
                         hidden_stitch_output = b.transpose(F)  # F.T [tgt, src]
-                        hidden_stitch_input = b.transpose(b.pinv(F))  # pinv(F).T [src, tgt]
+                        F_pinv, layer_pinv_diag = safe_pinv(b, F)
+                        hidden_stitch_input = b.transpose(F_pinv)  # pinv(F).T [src, tgt]
                         b.eval(hidden_stitch_output, hidden_stitch_input)
                         logger.info(
-                            "Layer %d: Per-layer hidden GramAlign CKA=%.4f (%d→%d)",
+                            "Layer %d: Per-layer hidden GramAlign CKA=%.4f (%d→%d) cond=%.2e",
                             layer_idx, hidden_result.achieved_cka,
-                            src_hidden_dim, tgt_hidden_dim
+                            src_hidden_dim, tgt_hidden_dim, layer_pinv_diag.get("condition_number", 0)
                         )
                         metrics.setdefault("per_layer_hidden_aligned", 0)
                         metrics["per_layer_hidden_aligned"] += 1
@@ -882,12 +982,13 @@ def stage_transplant(
                         F = b.array(inter_result.feature_transform)
                         b.eval(F)
                         intermediate_stitch_output = b.transpose(F)  # F.T [tgt, src]
-                        intermediate_stitch_input = b.transpose(b.pinv(F))  # pinv(F).T [src, tgt]
+                        F_pinv, inter_pinv_diag = safe_pinv(b, F)
+                        intermediate_stitch_input = b.transpose(F_pinv)  # pinv(F).T [src, tgt]
                         b.eval(intermediate_stitch_output, intermediate_stitch_input)
                         logger.info(
-                            "Layer %d: Intermediate GramAlign CKA=%.4f (%d→%d), err=%.6f",
+                            "Layer %d: Intermediate GramAlign CKA=%.4f (%d→%d) cond=%.2e",
                             layer_idx, inter_result.achieved_cka,
-                            src_inter_dim, tgt_inter_dim, inter_result.alignment_error
+                            src_inter_dim, tgt_inter_dim, inter_pinv_diag.get("condition_number", 0)
                         )
                         metrics.setdefault("intermediate_gram_aligned", 0)
                         metrics["intermediate_gram_aligned"] += 1
@@ -905,8 +1006,19 @@ def stage_transplant(
             # Log only on first layer to avoid spam
             if layer_num == 0:
                 logger.info(
-                    "Layer %d: Using GLOBAL attention stitch (%d→%d)",
+                    "Layer %d: Using GLOBAL Q attention stitch (%d→%d)",
                     layer_idx, global_src_attn_dim, global_tgt_attn_dim
+                )
+
+        # USE GLOBAL KV-ALIGNED stitch for GQA models (k_proj/v_proj have different dims)
+        if global_kv_stitch_output is not None:
+            kv_stitch_output = global_kv_stitch_output
+            kv_stitch_input = global_kv_stitch_input
+            # Log only on first layer to avoid spam
+            if layer_num == 0:
+                logger.info(
+                    "Layer %d: Using GLOBAL KV stitch (%d→%d)",
+                    layer_idx, global_src_kv_dim, global_tgt_kv_dim
                 )
 
         stacked = b.stack(act_list, axis=0)
@@ -1154,21 +1266,43 @@ def stage_transplant(
                         tgt_hidden_dim = int(hidden_stitch_output.shape[0])
                         dim0, dim1 = int(original_source_shape[0]), int(original_source_shape[1])
 
+                        # Get KV stitch dimensions for GQA detection
+                        # GQA models: K/V have fewer heads than Q (e.g., SmolLM: Q=960, KV=320)
+                        src_kv_dim = int(kv_stitch_output.shape[1]) if kv_stitch_output is not None else src_attn_dim
+                        tgt_kv_dim = int(kv_stitch_output.shape[0]) if kv_stitch_output is not None else tgt_attn_dim
+
                         # Determine attention weight pattern
-                        is_qkv = any(n in key for n in ["q_proj", "k_proj", "v_proj", "query", "key", "value"])
+                        # GQA: q_proj uses Q-attention dim, k_proj/v_proj use KV-attention dim
+                        is_q = any(n in key for n in ["q_proj", "query"])
+                        is_kv = any(n in key for n in ["k_proj", "v_proj", "key", "value"])
                         is_o = any(n in key for n in ["o_proj"])
 
-                        if is_qkv and dim0 == src_attn_dim and dim1 == src_hidden_dim:
-                            # q/k/v_proj: [attn, hidden] → attention_stitch_output @ W @ hidden_stitch_input
+                        if is_q and dim0 == src_attn_dim and dim1 == src_hidden_dim:
+                            # q_proj: [Q_attn, hidden] → attention_stitch @ W @ hidden_stitch
                             source_aligned = b.matmul(attention_stitch_output, source_w)
                             source_aligned = b.matmul(source_aligned, hidden_stitch_input)
                             b.eval(source_aligned)
                             logger.info(
-                                "Attention stitch (q/k/v): %s [%d,%d] → [%d,%d]",
+                                "Attention stitch (q_proj): %s [%d,%d] → [%d,%d]",
                                 key, dim0, dim1, tgt_attn_dim, tgt_hidden_dim
                             )
                             metrics.setdefault("attention_stitched", 0)
                             metrics["attention_stitched"] += 1
+                            attention_stitch_applied = True
+
+                        elif is_kv and dim0 == src_kv_dim and dim1 == src_hidden_dim:
+                            # k_proj/v_proj (GQA): [KV_attn, hidden] → kv_stitch @ W @ hidden_stitch
+                            kv_out = kv_stitch_output if kv_stitch_output is not None else attention_stitch_output
+                            source_aligned = b.matmul(kv_out, source_w)
+                            source_aligned = b.matmul(source_aligned, hidden_stitch_input)
+                            b.eval(source_aligned)
+                            stitch_type = "KV stitch" if kv_stitch_output is not None else "attention stitch"
+                            logger.info(
+                                "%s (k/v_proj): %s [%d,%d] → [%d,%d]",
+                                stitch_type, key, dim0, dim1, tgt_kv_dim, tgt_hidden_dim
+                            )
+                            metrics.setdefault("kv_stitched", 0)
+                            metrics["kv_stitched"] += 1
                             attention_stitch_applied = True
 
                         elif is_o and dim0 == src_hidden_dim and dim1 == src_attn_dim:

@@ -12,10 +12,11 @@ Same-architecture models with identical vocabulary and dimensions should merge s
 Ran geometric merge pipeline with default (uniform) blending:
 
 ```bash
-mc model merge \
+mc merge pipeline \
   --source /Volumes/CodeCypher/models/mlx-community/Qwen2.5-Coder-3B-Instruct-bf16 \
   --target /Volumes/CodeCypher/models/mlx-community/Qwen2.5-3B-Instruct-bf16 \
-  --output-dir merged-coder-to-chat/
+  --output-dir merged-coder-to-chat/ \
+  --transplant-domains coding
 ```
 
 ## Results

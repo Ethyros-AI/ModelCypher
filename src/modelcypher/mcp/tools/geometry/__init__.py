@@ -18,7 +18,7 @@
 """Geometry MCP tools package.
 
 This package contains geometry-related MCP tools organized by functional area:
-- core: Path detection, metrics, sparse regions, personas, manifold, transport
+- core: Path detection, metrics, sparse regions, personas, manifold
 - invariant: Invariant layer mapping and atlas tools
 - safety: Jailbreak testing, DARE sparsity, DoRA decomposition
 - primes: Semantic prime probing and comparison

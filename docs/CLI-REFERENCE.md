@@ -236,12 +236,6 @@ Use `primes.json` directly; the command consumes activation dict values as point
 mc geometry cross-cultural analyze <input_json>
 ```
 
-## Geometry Transplant Commands
-```bash
-mc geometry transplant run --source <path> --target <path> --output-dir <path> --core-domain <domain>
-mc geometry transplant run --source <path> --target <path> --output-dir <path> --core-domain <domain> --target-layer <n>
-```
-
 ## Geometry Primes Commands
 ```bash
 mc geometry primes probe-model <model_path> --layer <n>
@@ -372,123 +366,28 @@ Compare measurements against model family baselines to determine significance.
 mc safety adapter-probe --adapter <path>    # Run adapter safety probes
 ```
 
-### Model Merge Commands
+### Merge Pipeline Command
 
 Merge uses **null-space constrained transplant** (validated by AlphaEdit, ICLR 2025 Outstanding Paper).
 The mathematical guarantee: `A_boundary @ W' = A_boundary @ W_target` (boundary preservation).
 
 ```bash
 # Basic transplant (requires --transplant-domains)
-mc model merge --source <path> --target <path> --output-dir <path> --transplant-domains mathematical
+mc merge pipeline --source <path> --target <path> --output-dir <path> --transplant-domains mathematical
 
 # Multiple domains
-mc model merge --source <path> --target <path> --output-dir <path> --transplant-domains mathematical,logical
+mc merge pipeline --source <path> --target <path> --output-dir <path> --transplant-domains mathematical,logical
 
 # With boundary tuning
-mc model merge --source <path> --target <path> --output-dir <path> --transplant-domains <domains> --transplant-boundary-k <k> --transplant-geodesic-k <k>
+mc merge pipeline --source <path> --target <path> --output-dir <path> --transplant-domains <domains> --transplant-boundary-k <k> --transplant-geodesic-k <k>
 
 # With per-layer alpha mask
-mc model merge --source <path> --target <path> --output-dir <path> --transplant-domains <domains> --knowledge-delta-mask <mask.json>
+mc merge pipeline --source <path> --target <path> --output-dir <path> --transplant-domains <domains> --knowledge-delta-mask <mask.json>
 ```
 
 **Pipeline**: `VOCAB → PROBE → TRANSPLANT → VALIDATE`
 
 **Note**: Alpha-blending (`rotate_blend`) was removed - it produces gibberish even for same-architecture models.
-
-### Program Commands (Multi-Donor Transplant)
-
-Multi-donor transplant programs automate sequential transplants from multiple donor models into base models. Programs are defined in YAML config files.
-
-```bash
-# Execute a program
-mc program run ./configs/program_a.yaml
-mc program run ./configs/program_a.yaml --parallel --max-workers 2
-mc program run ./configs/program_a.yaml --dry-run
-mc program run ./configs/program_a.yaml --base qwen3-8b  # Only process one base
-
-# Resume from checkpoint
-mc program run ./configs/program_a.yaml --resume
-
-# Status and listing
-mc program status <program_id>
-mc program list
-mc program show ./configs/program_a.yaml
-
-# Compare results across programs
-mc program compare A:./out-A B:./out-B C:./out-C
-mc program compare ./out-A ./out-B --output-json comparison.json --output-md comparison.md
-```
-
-#### Program Config Schema (YAML)
-
-```yaml
-_schema: "mc.program.transplant.v1"
-name: "Program A - Permissive Multi-Specialist"
-description: |
-  Multi-donor transplant into Qwen3/Ministral bases.
-
-bases:
-  - id: "qwen3-8b"
-    source: "Qwen/Qwen3-8B"
-    alias: "qwen3"  # optional short name for output dirs
-
-donors:
-  - id: "deepseek-v3"
-    source: "deepseek-ai/DeepSeek-V3.2"
-    domains: ["reasoning", "logical"]
-    priority: 3  # higher priority donors applied first
-  - id: "devstral-coding"
-    source: "mistralai/Devstral-Small-2507"
-    domains: ["coding"]
-    priority: 2
-
-evaluation:
-  after_each_donor: true
-  after_program_complete: true
-  benchmarks: ["mmlu_pro", "gpqa_diamond"]
-  smoke_test_prompts:
-    - "What is 15 * 17?"
-    - "Write a Python function that reverses a string."
-
-output:
-  base_dir: "~/.modelcypher/merged/program-A"
-```
-
-#### Predefined Programs
-
-ModelCypher includes three predefined programs (all MIT/Apache-2.0 licensed for redistribution):
-
-| Program | Base | Focus | Description |
-|---------|------|-------|-------------|
-| A | Qwen3-8B, Ministral | General | Multi-specialist with math, code, medical, legal |
-| B | Ministral | Mistral-centric | Same-tokenizer donors for maximum tokenizer alignment |
-| C | Qwen3-8B, Granite | Qwen-centric | Same-tokenizer Qwen ecosystem |
-
-Programs located at: `src/modelcypher/data/programs/`
-
-#### Program Result Schema
-
-```json
-{
-  "_schema": "mc.result.multi_donor.v1",
-  "program_id": "abc123",
-  "program_name": "Program A",
-  "base_results": [
-    {
-      "base_id": "qwen3-8b",
-      "base_alias": "qwen3",
-      "output_path": "~/.modelcypher/merged/program-A/qwen3/final",
-      "total_cka_improvement": 0.15,
-      "mean_boundary_preserved": 0.92,
-      "total_donors_applied": 5,
-      "status": "completed",
-      "donor_stages": [...]
-    }
-  ],
-  "total_duration_seconds": 3600.0,
-  "status": "completed"
-}
-```
 
 ### Entropy Commands
 ```bash

@@ -59,7 +59,8 @@ Apply targeted grafts using `--knowledge-delta-mask`:
 - alpha>0.0 for sparse layers (graft)
 
 ```bash
-mc model merge --source $SOURCE --target $TARGET --knowledge-delta-mask mask.json
+mc merge pipeline --source $SOURCE --target $TARGET --output-dir $OUTPUT \
+  --transplant-domains <domains> --knowledge-delta-mask mask.json
 ```
 
 ## Results

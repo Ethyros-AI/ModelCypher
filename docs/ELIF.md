@@ -345,7 +345,7 @@ Concrete CLI entry points (see `docs/CLI-REFERENCE.md`):
 - CRM‑based per‑layer gating:
   - `mc geometry crm delta-mask`
 - Merge and validate:
-  - `mc model merge`
+  - `mc merge pipeline`
   - `mc geometry validate`
 
 ---

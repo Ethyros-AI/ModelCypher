@@ -324,7 +324,7 @@ def run_merge(
     if not target_activations:
         raise RuntimeError(
             "Transplant requires probe activations. "
-            "Use `mc geometry transplant run` to collect activations before merging."
+            "Use `mc merge pipeline` (probe stage) to collect activations before merging."
         )
 
     logger.info("STAGE 3: TRANSPLANT (null-space constrained)")
@@ -340,6 +340,8 @@ def run_merge(
         target_intermediate_activations=target_intermediate_activations,
         source_attention_activations=source_attention_activations,
         target_attention_activations=target_attention_activations,
+        source_kv_activations=source_kv_activations,
+        target_kv_activations=target_kv_activations,
         config=merge_config,
         extract_layer_index_fn=extract_layer_index,
         backend=backend,

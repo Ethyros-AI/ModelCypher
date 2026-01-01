@@ -79,14 +79,14 @@ class HelpService:
                 "and track progress via `mc train status`."
             )
         elif "merge" in question_lower:
-            related_commands = ["mc model merge", "mc merge validate", "mc merge diagnose"]
+            related_commands = ["mc merge pipeline", "mc merge validate", "mc merge diagnose"]
             examples = [
-                "mc model merge --source ./model-a --target ./model-b --output ./merged",
+                "mc merge pipeline --source ./model-a --target ./model-b --output-dir ./merged --transplant-domains math",
                 "mc merge validate --merged ./merged",
             ]
             answer = (
                 "Merge workflows use geometry-first validation. "
-                "Run `mc model merge` to combine models, then `mc merge validate` or "
+                "Run `mc merge pipeline` to combine models, then `mc merge validate` or "
                 "`mc merge diagnose` to inspect alignment."
             )
         elif "model" in question_lower:
@@ -526,8 +526,6 @@ class HelpService:
             "geometry_spatial_euclidean": "mc.geometry.spatial.euclidean.v1",
             "geometry_spatial_gravity": "mc.geometry.spatial.gravity.v1",
             "geometry_spatial_probe_model": "mc.geometry.spatial.probe_model.v1",
-            "geometry_stitch_analyze": None,
-            "geometry_stitch_apply": None,
             "geometry_temporal_analyze": "mc.geometry.temporal.analyze.v1",
             "geometry_temporal_anchors": "mc.geometry.temporal.anchors.v1",
             "geometry_temporal_probe_model": "mc.geometry.temporal.probe_model.v1",
@@ -537,8 +535,6 @@ class HelpService:
             "geometry_transfer_compare": None,
             "geometry_transfer_profile": None,
             "geometry_transfer_project": None,
-            "geometry_transport_merge": None,
-            "geometry_transport_synthesize": None,
             "geometry_waypoint_alpha_profile": "mc.geometry.waypoint.alpha_profile.v1",
             "geometry_waypoint_audit": "mc.geometry.waypoint.audit.v1",
             "geometry_waypoint_profile": "mc.geometry.waypoint.profile.v1",
@@ -571,7 +567,7 @@ _mc_completions() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="model system geometry adapter entropy thermo safety agent stability dashboard storage ensemble infer agent-eval research help inventory explain train job checkpoint eval compare validate estimate calibration"
+    commands="model merge system geometry adapter entropy thermo safety agent stability dashboard storage ensemble infer agent-eval research help inventory explain train job checkpoint eval compare validate estimate calibration"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- ${cur}) )

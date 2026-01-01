@@ -682,170 +682,6 @@ Call mc_inventory first to see what models are available before starting trainin
 
 ---
 
-### mc_program_run
-
-**Purpose:** Execute a multi-donor transplant program.
-
-**Category:** MUTATING - creates merged models
-
-**Input Schema:**
-```json
-{
-  "type": "object",
-  "properties": {
-    "config_path": {
-      "type": "string",
-      "description": "Path to program YAML config file"
-    },
-    "parallel": {
-      "type": "boolean",
-      "default": false,
-      "description": "Process base models in parallel"
-    },
-    "max_workers": {
-      "type": "integer",
-      "default": 2,
-      "description": "Max parallel workers (requires parallel=true)"
-    },
-    "dry_run": {
-      "type": "boolean",
-      "default": false,
-      "description": "Validate without execution"
-    },
-    "base_filter": {
-      "type": "string",
-      "description": "Only process specific base model (by ID)"
-    }
-  },
-  "required": ["config_path"]
-}
-```
-
-**Output:**
-```json
-{
-  "_schema": "mc.result.multi_donor.v1",
-  "program_id": "abc123",
-  "program_name": "Program A",
-  "base_results": [...],
-  "total_duration_seconds": 3600.0,
-  "status": "completed"
-}
-```
-
----
-
-### mc_program_status
-
-**Purpose:** Get status of a running or completed program.
-
-**Category:** Read-only
-
-**Input Schema:**
-```json
-{
-  "type": "object",
-  "properties": {
-    "program_id": {
-      "type": "string",
-      "description": "Program ID to check status"
-    }
-  },
-  "required": ["program_id"]
-}
-```
-
-**Output:**
-```json
-{
-  "program_id": "abc123",
-  "program_name": "Program A",
-  "status": "in_progress",
-  "started_at": "2025-01-01T12:00:00",
-  "updated_at": "2025-01-01T12:30:00",
-  "base_progress": [
-    {
-      "base_index": 0,
-      "base_id": "qwen3-8b",
-      "completed_donors": 2,
-      "total_donors": 5,
-      "status": "in_progress"
-    }
-  ]
-}
-```
-
----
-
-### mc_program_list
-
-**Purpose:** List all programs (running, completed, failed).
-
-**Category:** Read-only
-
-**Input Schema:**
-```json
-{
-  "type": "object",
-  "properties": {}
-}
-```
-
-**Output:**
-```json
-[
-  {
-    "program_id": "abc123",
-    "program_name": "Program A",
-    "status": "completed",
-    "started_at": "2025-01-01T12:00:00",
-    "updated_at": "2025-01-01T13:00:00"
-  }
-]
-```
-
----
-
-### mc_program_show
-
-**Purpose:** Show details of a program configuration.
-
-**Category:** Read-only
-
-**Input Schema:**
-```json
-{
-  "type": "object",
-  "properties": {
-    "config_path": {
-      "type": "string",
-      "description": "Path to program YAML config file"
-    }
-  },
-  "required": ["config_path"]
-}
-```
-
-**Output:**
-```json
-{
-  "name": "Program A - Permissive Multi-Specialist",
-  "description": "Multi-donor transplant...",
-  "bases": [
-    {"id": "qwen3-8b", "source": "Qwen/Qwen3-8B", "alias": "qwen3"}
-  ],
-  "donors": [
-    {"id": "deepseek-v3", "source": "deepseek-ai/DeepSeek-V3.2", "domains": ["reasoning", "logical"], "priority": 3}
-  ],
-  "evaluation": {
-    "after_each_donor": true,
-    "benchmarks": ["mmlu_pro"]
-  }
-}
-```
-
----
-
 ### mc_infer
 
 **Purpose:** Run inference with a model.
@@ -2522,7 +2358,7 @@ Phase 2 adds comprehensive safety, entropy, and agent tools for deeper model ana
 | `mc_geometry_spatial_cross_grounding_feasibility` | Estimate feasibility of cross-grounding transfer | Read-only |
 | `mc_geometry_spatial_cross_grounding_transfer` | Transfer knowledge via cross-grounding | Read-only |
 
-Note: Full geometry tool coverage (path, CRM, stitch, probes, manifold) is implemented in `src/modelcypher/mcp/tools/geometry/`.
+Note: Full geometry tool coverage (path, CRM, probes, manifold) is implemented in `src/modelcypher/mcp/tools/geometry/`.
 
 ### Geometry Tools (Interference + Null Space)
 
@@ -2565,7 +2401,7 @@ src/modelcypher/mcp/
 ├── server.py              # Core server
 └── tools/
     ├── common.py          # ServiceContext, helpers, annotations
-    ├── geometry.py        # Geometry tools (path, CRM, stitch, etc.)
+    ├── geometry.py        # Geometry tools (path, CRM, probes, etc.)
     ├── safety_entropy.py  # Safety and entropy tools
     └── agent.py           # Agent trace tools
 ```
@@ -2576,7 +2412,6 @@ Each tool module exports registration functions:
 - `register_geometry_safety_tools(ctx)` - Jailbreak testing, DARE, DoRA
 - `register_geometry_primes_tools(ctx)` - Semantic prime analysis
 - `register_geometry_crm_tools(ctx)` - Concept response matrix
-- `register_geometry_stitch_tools(ctx)` - Manifold stitching and refinement
 - `register_geometry_spatial_tools(ctx)` - 3D spatial metrology and cross-grounding
 - `register_geometry_interference_tools(ctx)` - Interference prediction and null-space filtering
 - `register_safety_tools(ctx)` - Adapter safety probes

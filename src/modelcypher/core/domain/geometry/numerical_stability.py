@@ -42,6 +42,8 @@ __all__ = [
     "compute_pearson_correlation",
     # Matrix decomposition
     "svd_via_eigh",
+    "canonicalize_svd_signs",
+    "safe_pinv",
     "solve_full_row_rank_via_qr",
     "solve_via_truncated_svd",
     "solve_via_gram_alignment",
@@ -278,9 +280,224 @@ def svd_via_eigh(
         b.eval(S)
 
     if full_matrices:
+        U, Vt = canonicalize_svd_signs(b, U, Vt)
         return U, S, Vt
 
-    return U[:, :k], S[:k], Vt[:k, :]
+    U_out = U[:, :k]
+    Vt_out = Vt[:k, :]
+    U_out, Vt_out = canonicalize_svd_signs(b, U_out, Vt_out)
+    return U_out, S[:k], Vt_out
+
+
+def canonicalize_svd_signs(
+    backend: Backend,
+    U: Array,
+    Vt: Array,
+) -> tuple[Array, Array]:
+    """Canonicalize SVD signs to ensure deterministic decomposition.
+
+    SVD has an inherent sign ambiguity: for each singular vector pair (u_i, v_i),
+    flipping both signs gives an equally valid decomposition:
+        A = U @ S @ Vt = (-U[:, i]) @ S @ (-Vt[i, :])
+
+    This causes phase inconsistencies when aligning different layers or models,
+    as each SVD call may choose a different sign convention.
+
+    This function enforces a deterministic sign convention:
+    - For each singular vector, find the element with largest absolute value
+    - If that element is negative, flip the signs of both U[:, i] and Vt[i, :]
+    - This ensures the "dominant direction" of each vector is positive
+
+    Mathematical guarantee:
+    - The product U @ Vt (and hence A = U @ S @ Vt) is unchanged
+    - The sign choice is deterministic given the input matrix
+    - Different matrices with similar structure will have consistent phase
+
+    Parameters
+    ----------
+    backend : Backend
+        Compute backend.
+    U : Array
+        Left singular vectors [m, k] where k is the number of singular values.
+    Vt : Array
+        Right singular vectors (transposed) [k, n].
+
+    Returns
+    -------
+    tuple[Array, Array]
+        (U_canonical, Vt_canonical) with deterministic signs.
+    """
+    b = backend
+
+    U_shape = b.shape(U)
+    Vt_shape = b.shape(Vt)
+
+    if len(U_shape) < 2 or len(Vt_shape) < 2:
+        return U, Vt
+
+    k = int(U_shape[1])  # Number of singular vectors
+    if k == 0:
+        return U, Vt
+
+    # Convert to numpy for sign determination (small k typically)
+    U_np = b.to_numpy(U).copy()
+    Vt_np = b.to_numpy(Vt).copy()
+
+    for i in range(k):
+        # Find the element with largest absolute value in U[:, i]
+        u_col = U_np[:, i]
+        max_idx = int(abs(u_col).argmax())
+        max_val = u_col[max_idx]
+
+        # If the dominant element is negative, flip both U[:, i] and Vt[i, :]
+        if max_val < 0:
+            U_np[:, i] = -U_np[:, i]
+            Vt_np[i, :] = -Vt_np[i, :]
+
+    # Convert back to backend arrays
+    U_canonical = b.array(U_np)
+    Vt_canonical = b.array(Vt_np)
+    b.eval(U_canonical, Vt_canonical)
+
+    return U_canonical, Vt_canonical
+
+
+def safe_pinv(
+    backend: Backend,
+    array: Array,
+    *,
+    rcond: float | None = None,
+    warn_on_ill_conditioned: bool = True,
+) -> tuple[Array, dict]:
+    """Compute pseudo-inverse with conditioning diagnostics.
+
+    Standard pinv can produce numerically unstable results when the matrix
+    is ill-conditioned (has very small singular values). This function:
+    1. Computes SVD to determine condition number
+    2. Applies rank truncation based on rcond threshold
+    3. Returns diagnostics for debugging merge failures
+
+    The pseudo-inverse is computed as: pinv(A) = V @ S^{-1} @ U^T
+    where small singular values (< rcond * max_singular_value) are zeroed.
+
+    Parameters
+    ----------
+    backend : Backend
+        Compute backend.
+    array : Array
+        Matrix to invert [m, n].
+    rcond : float, optional
+        Cutoff for small singular values. Values below rcond * max(singular_values)
+        are set to zero. Default is machine_epsilon * max(m, n).
+    warn_on_ill_conditioned : bool
+        If True, log warning when condition number exceeds 1e6.
+
+    Returns
+    -------
+    tuple[Array, dict]
+        (pinv_result, diagnostics) where diagnostics contains:
+        - condition_number: ratio of max/min non-zero singular value
+        - effective_rank: number of non-zero singular values after truncation
+        - truncated_count: number of singular values zeroed
+        - max_sv: maximum singular value
+        - min_sv: minimum non-zero singular value
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+    b = backend
+
+    # Ensure float32/float64 for numerical stability
+    original_dtype = str(array.dtype)
+    if "bfloat" in original_dtype or "float16" in original_dtype:
+        array = b.astype(array, "float32")
+        b.eval(array)
+
+    shape = b.shape(array)
+    m, n = int(shape[0]), int(shape[1]) if len(shape) > 1 else 1
+
+    # Default rcond based on precision
+    if rcond is None:
+        eps = machine_epsilon(b, array)
+        rcond = eps * max(m, n)
+
+    diagnostics: dict = {
+        "condition_number": float("inf"),
+        "effective_rank": 0,
+        "truncated_count": 0,
+        "max_sv": 0.0,
+        "min_sv": 0.0,
+        "shape": [m, n],
+    }
+
+    # Compute SVD
+    U, S, Vt = svd_via_eigh(b, array, full_matrices=False)
+    b.eval(U, S, Vt)
+
+    # Get singular values as list
+    S_np = [float(v) for v in b.to_numpy(S)]
+    if not S_np:
+        # Zero matrix - return zero pseudo-inverse
+        pinv_result = b.zeros((n, m))
+        b.eval(pinv_result)
+        return pinv_result, diagnostics
+
+    max_sv = max(S_np)
+    diagnostics["max_sv"] = max_sv
+
+    if max_sv == 0:
+        # Zero matrix
+        pinv_result = b.zeros((n, m))
+        b.eval(pinv_result)
+        return pinv_result, diagnostics
+
+    # Determine cutoff and truncate
+    cutoff = rcond * max_sv
+    S_inv_list = []
+    truncated = 0
+    min_nonzero = float("inf")
+
+    for sv in S_np:
+        if sv > cutoff:
+            S_inv_list.append(1.0 / sv)
+            if sv < min_nonzero:
+                min_nonzero = sv
+        else:
+            S_inv_list.append(0.0)
+            truncated += 1
+
+    effective_rank = len(S_np) - truncated
+    diagnostics["effective_rank"] = effective_rank
+    diagnostics["truncated_count"] = truncated
+    diagnostics["min_sv"] = min_nonzero if min_nonzero < float("inf") else 0.0
+
+    # Condition number
+    if min_nonzero < float("inf") and min_nonzero > 0:
+        condition = max_sv / min_nonzero
+        diagnostics["condition_number"] = condition
+
+        if warn_on_ill_conditioned and condition > 1e6:
+            logger.warning(
+                "safe_pinv: Ill-conditioned matrix (cond=%.2e, rank=%d/%d, truncated=%d)",
+                condition, effective_rank, len(S_np), truncated
+            )
+
+    # Compute pseudo-inverse: V @ diag(S_inv) @ U^T
+    S_inv = b.array(S_inv_list)
+    b.eval(S_inv)
+
+    # V = Vt^T [n, k], U^T [k, m]
+    V = b.transpose(Vt)  # [n, k]
+
+    # V @ diag(S_inv) [n, k]
+    V_scaled = V * b.reshape(S_inv, (1, -1))
+    b.eval(V_scaled)
+
+    # (V @ diag(S_inv)) @ U^T [n, m]
+    pinv_result = b.matmul(V_scaled, b.transpose(U))
+    b.eval(pinv_result)
+
+    return pinv_result, diagnostics
 
 
 def solve_full_row_rank_via_qr(
