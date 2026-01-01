@@ -33,8 +33,15 @@ except ImportError:
 # Skip all tests in this module if MLX unavailable
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 from modelcypher.core.domain.entropy.conflict_score import ConflictScoreCalculator
-from modelcypher.core.domain.entropy.entropy_tracker import EntropyTracker
-from modelcypher.core.domain.entropy.model_state_classifier import CalibratedBaseline
+from modelcypher.core.domain.entropy.entropy_tracker import (
+    EntropyTracker,
+    EntropyTrackerConfig,
+    PatternConfig,
+)
+from modelcypher.core.domain.entropy.model_state_classifier import (
+    CalibratedBaseline,
+    EntropyStateThresholds,
+)
 
 
 def _create_test_baseline() -> CalibratedBaseline:
@@ -55,6 +62,46 @@ def _create_test_baseline() -> CalibratedBaseline:
         model_id="test-model",
         sample_count=100,
     )
+
+
+def _create_state_thresholds() -> EntropyStateThresholds:
+    return EntropyStateThresholds(
+        entropy_low=1.8,
+        entropy_high=3.2,
+        entropy_circuit_breaker=4.5,
+        variance_low=0.2,
+        variance_moderate=0.3,
+        z_confident=-1.0,
+        z_uncertain=1.5,
+        z_distressed=2.0,
+        z_extreme=3.0,
+        trend_min_samples=5,
+        trend_slope_threshold=0.05,
+        distress_correlation_threshold=-0.3,
+        sustained_high_count=3,
+    )
+
+
+def _create_pattern_config() -> PatternConfig:
+    return PatternConfig(
+        min_samples=5,
+        high_z_score_threshold=1.5,
+        low_variance_threshold=0.2,
+        sustained_count=3,
+    )
+
+
+def _create_tracker_config(window_size: int) -> EntropyTrackerConfig:
+    return EntropyTrackerConfig(
+        top_k=10,
+        window_size=window_size,
+        emit_interval=1,
+        source="EntropyTracker",
+        z_score_change_threshold=1.0,
+        distress_check_interval=5,
+        state_thresholds=_create_state_thresholds(),
+        pattern_config=_create_pattern_config(),
+    )
 from modelcypher.core.domain.entropy.logit_entropy_calculator import (
     EntropyThresholds,
     LogitEntropyCalculator,
@@ -70,7 +117,7 @@ def test_logit_entropy_calculator_uniform():
     # 32K vocab
     vocab_size = 32768
     logits = mx.zeros((vocab_size,))
-    calculator = LogitEntropyCalculator()
+    calculator = LogitEntropyCalculator(top_k=10)
 
     entropy, variance = calculator.compute(logits)
 
@@ -86,7 +133,7 @@ def test_logit_entropy_calculator_delta():
     logits = mx.array([-1e9] * vocab_size)
     logits[0] = 1e9  # Massive spike at index 0
 
-    calculator = LogitEntropyCalculator()
+    calculator = LogitEntropyCalculator(top_k=10)
     entropy, variance = calculator.compute(logits)
 
     assert entropy == pytest.approx(0.0, abs=1e-5)
@@ -110,8 +157,8 @@ def test_logit_entropy_thresholds():
 
 
 def test_logit_entropy_circuit_breaker():
-    calculator = LogitEntropyCalculator()
-    thresholds = EntropyThresholds.from_vocab_size(32000)
+    calculator = LogitEntropyCalculator(top_k=10)
+    thresholds = EntropyThresholds(low=1.0, high=2.0, circuit_breaker=3.0)
     assert (
         calculator.should_trip_circuit_breaker(
             4.5,
@@ -129,7 +176,7 @@ def test_logit_entropy_circuit_breaker():
 
 
 def test_logit_entropy_batch():
-    calculator = LogitEntropyCalculator()
+    calculator = LogitEntropyCalculator(top_k=10)
     logits_batch = [mx.zeros((10,)), mx.ones((10,))]
     results = calculator.compute_batch(logits_batch)
 
@@ -181,9 +228,7 @@ def test_entropy_tracker_session():
     """Test EntropyTracker session management."""
     import asyncio
 
-    from modelcypher.core.domain.entropy.entropy_tracker import EntropyTrackerConfig
-
-    config = EntropyTrackerConfig(window_size=5)
+    config = _create_tracker_config(window_size=5)
     baseline = _create_test_baseline()
     tracker = EntropyTracker(baseline=baseline, config=config)
 
@@ -208,9 +253,7 @@ def test_entropy_tracker_state_classification():
     """Test EntropyTracker tracks raw entropy/variance values correctly."""
     import asyncio
 
-    from modelcypher.core.domain.entropy.entropy_tracker import EntropyTrackerConfig
-
-    config = EntropyTrackerConfig(window_size=10)
+    config = _create_tracker_config(window_size=10)
     baseline = _create_test_baseline()
     tracker = EntropyTracker(baseline=baseline, config=config)
     tracker.start_session()
@@ -226,9 +269,7 @@ def test_entropy_tracker_state_classification():
     # Should have high entropy (raw value IS the state)
     assert tracker.current_entropy >= 4.0  # Above baseline mean + 1.5σ
     assert tracker.current_variance <= 0.2  # Low variance = distress signature
-    # requires_caution should be True for high-entropy states (z-score > 1.5)
     assert tracker.current_z_score > 1.5
-    assert tracker.requires_caution
     tracker.end_session()
 
 

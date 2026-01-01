@@ -42,12 +42,15 @@ from modelcypher.core.domain.entropy import (
     EntropySample,
     EntropyTracker,
     EntropyTransition,
+    EntropyTrackerConfig,
     ExtractorConfig,
     HiddenStateExtractor,
+    PatternConfig,
     SEPProbe,
     SEPProbeConfig,
 )
 from modelcypher.core.domain.entropy.model_state_classifier import (
+    EntropyStateThresholds,
     ModelStateClassifier,
 )
 
@@ -69,6 +72,46 @@ def _create_test_baseline() -> CalibratedBaseline:
         vocab_size=32768,
         model_id="test-model",
         sample_count=100,
+    )
+
+
+def _create_test_thresholds() -> EntropyStateThresholds:
+    return EntropyStateThresholds(
+        entropy_low=1.8,
+        entropy_high=3.2,
+        entropy_circuit_breaker=4.5,
+        variance_low=0.2,
+        variance_moderate=0.3,
+        z_confident=-1.0,
+        z_uncertain=1.5,
+        z_distressed=2.0,
+        z_extreme=3.0,
+        trend_min_samples=5,
+        trend_slope_threshold=0.05,
+        distress_correlation_threshold=-0.3,
+        sustained_high_count=3,
+    )
+
+
+def _create_test_pattern_config() -> PatternConfig:
+    return PatternConfig(
+        min_samples=5,
+        high_z_score_threshold=1.5,
+        low_variance_threshold=0.2,
+        sustained_count=3,
+    )
+
+
+def _create_tracker_config() -> EntropyTrackerConfig:
+    return EntropyTrackerConfig(
+        top_k=10,
+        window_size=20,
+        emit_interval=1,
+        source="EntropyTracker",
+        z_score_change_threshold=1.0,
+        distress_check_interval=5,
+        state_thresholds=_create_test_thresholds(),
+        pattern_config=_create_test_pattern_config(),
     )
 
 
@@ -126,7 +169,7 @@ class TestEntropyTracker:
 
     def test_session_lifecycle(self):
         baseline = _create_test_baseline()
-        tracker = EntropyTracker(baseline=baseline)
+        tracker = EntropyTracker(baseline=baseline, config=_create_tracker_config())
         assert not tracker.is_session_active
 
         tracker.start_session()
@@ -141,7 +184,7 @@ class TestEntropyTracker:
     def test_state_classification(self):
         """ModelStateClassifier uses baseline-relative z-scores for classification."""
         baseline = _create_test_baseline()
-        classifier = ModelStateClassifier(baseline)
+        classifier = ModelStateClassifier(baseline, thresholds=_create_test_thresholds())
 
         # Low entropy (z-score < -1) = confident
         # With mean=2.5, std=1.0, entropy=1.0 gives z=-1.5

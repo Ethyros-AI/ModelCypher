@@ -59,7 +59,6 @@ def simple_layer_curvature():
         ollivier_ricci_mean=-0.15,
         ollivier_ricci_std=0.08,
         intrinsic_dimension=64.0,
-        manifold_health="healthy",
     )
 
 
@@ -73,7 +72,6 @@ def similar_layer_curvature():
         ollivier_ricci_mean=-0.18,
         ollivier_ricci_std=0.09,
         intrinsic_dimension=68.0,
-        manifold_health="healthy",
     )
 
 
@@ -87,7 +85,6 @@ def different_layer_curvature():
         ollivier_ricci_mean=0.25,
         ollivier_ricci_std=0.12,
         intrinsic_dimension=32.0,
-        manifold_health="degenerate",
     )
 
 
@@ -102,7 +99,6 @@ def source_profile():
             ollivier_ricci_mean=-0.15 - i * 0.02,
             ollivier_ricci_std=0.08,
             intrinsic_dimension=64.0 + i * 4,
-            manifold_health="healthy",
         )
         for i in range(4)
     ]
@@ -126,7 +122,6 @@ def target_profile_similar():
             ollivier_ricci_mean=-0.16 - i * 0.02,
             ollivier_ricci_std=0.09,
             intrinsic_dimension=66.0 + i * 4,
-            manifold_health="healthy",
         )
         for i in range(4)
     ]
@@ -150,7 +145,6 @@ def target_profile_different():
             ollivier_ricci_mean=0.2 + i * 0.03,
             ollivier_ricci_std=0.15,
             intrinsic_dimension=32.0 + i * 2,  # Much smaller dimension
-            manifold_health="degenerate",
         )
         for i in range(6)  # Different layer count
     ]

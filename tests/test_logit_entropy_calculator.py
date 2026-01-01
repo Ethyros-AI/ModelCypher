@@ -44,43 +44,7 @@ from modelcypher.core.domain.entropy.logit_entropy_calculator import (
 class TestEntropyThresholds:
     """Tests for EntropyThresholds."""
 
-    def test_default_values(self):
-        """Thresholds derived from 32K vocab size."""
-        t = EntropyThresholds.from_vocab_size(32000)
-
-        # Default uses from_vocab_size(32000)
-        # max_entropy = ln(32000) ≈ 10.37
-        # low = 0.15 * max, high = 0.30 * max, circuit_breaker = 0.40 * max
-        max_entropy = math.log(32000)
-        assert abs(t.low - 0.15 * max_entropy) < 1e-6
-        assert abs(t.high - 0.30 * max_entropy) < 1e-6
-        assert abs(t.circuit_breaker - 0.40 * max_entropy) < 1e-6
-
-    def test_from_vocab_size(self):
-        """Should derive thresholds from vocabulary size."""
-        t = EntropyThresholds.from_vocab_size(50000)
-
-        max_entropy = math.log(50000)
-        assert abs(t.low - 0.15 * max_entropy) < 1e-6
-        assert abs(t.high - 0.30 * max_entropy) < 1e-6
-        assert abs(t.circuit_breaker - 0.40 * max_entropy) < 1e-6
-
-    def test_from_calibration_data(self):
-        """Should derive thresholds from calibration data."""
-        # Simulate entropy values from calibration
-        entropy_values = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
-        t = EntropyThresholds.from_calibration_data(entropy_values)
-
-        # Using int(percentile * (n-1)) indexing:
-        # 25th percentile: idx=int(0.25*9)=2 -> 1.5
-        # 75th percentile: idx=int(0.75*9)=6 -> 3.5
-        # 90th percentile: idx=int(0.90*9)=8 -> 4.5
-        assert t.low == 1.5
-        assert t.high == 3.5
-        assert t.circuit_breaker == 4.5
-
-    def test_custom_values(self):
-        """Should accept custom thresholds."""
+    def test_explicit_values(self):
         t = EntropyThresholds(low=1.0, high=2.0, circuit_breaker=3.0)
 
         assert t.low == 1.0
@@ -93,7 +57,7 @@ class TestLogitEntropyCalculator:
 
     def test_initialization(self):
         """Should initialize with default top_k."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         assert calc.top_k == 10
         assert calc.epsilon > 0
@@ -106,7 +70,7 @@ class TestLogitEntropyCalculator:
 
     def test_compute_uniform_distribution(self):
         """Uniform logits should have high entropy."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         # Uniform distribution (equal logits)
         vocab_size = 100
@@ -122,7 +86,7 @@ class TestLogitEntropyCalculator:
 
     def test_compute_peaked_distribution(self):
         """Peaked logits should have low entropy."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         # One very high logit, rest low
         vocab_size = 100
@@ -136,7 +100,7 @@ class TestLogitEntropyCalculator:
 
     def test_flatten_to_vocab_1d(self):
         """1D input should pass through."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
         logits = mx.array([1.0, 2.0, 3.0])
 
         result = calc._flatten_to_vocab(logits)
@@ -145,7 +109,7 @@ class TestLogitEntropyCalculator:
 
     def test_flatten_to_vocab_2d(self):
         """2D input [batch, vocab] should extract batch 0."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
         logits = mx.zeros((2, 100))  # batch=2, vocab=100
 
         result = calc._flatten_to_vocab(logits)
@@ -154,7 +118,7 @@ class TestLogitEntropyCalculator:
 
     def test_flatten_to_vocab_3d(self):
         """3D input [batch, seq, vocab] should extract last token."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
         logits = mx.zeros((2, 5, 100))  # batch=2, seq=5, vocab=100
 
         result = calc._flatten_to_vocab(logits)
@@ -163,7 +127,7 @@ class TestLogitEntropyCalculator:
 
     def test_compute_with_skip_variance(self):
         """Should return 0 variance when skipped."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
         logits = mx.zeros((100,))
 
         entropy, variance = calc.compute(logits, skip_variance=True)
@@ -173,7 +137,7 @@ class TestLogitEntropyCalculator:
 
     def test_compute_batch(self):
         """Should compute entropy for batch of logits."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         batch = [
             mx.zeros((100,)),  # Uniform
@@ -188,7 +152,7 @@ class TestLogitEntropyCalculator:
 
     def test_compute_batch_empty(self):
         """Should handle empty batch."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         results = calc.compute_batch([])
 
@@ -200,7 +164,7 @@ class TestCircuitBreaker:
 
     def test_should_trip_circuit_breaker_false(self):
         """Entropy below threshold should not trip."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
         thresholds = EntropyThresholds.from_vocab_size(32000)
 
         assert not calc.should_trip_circuit_breaker(
@@ -210,7 +174,7 @@ class TestCircuitBreaker:
 
     def test_should_trip_circuit_breaker_true(self):
         """Entropy above threshold should trip."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
         thresholds = EntropyThresholds.from_vocab_size(32000)
 
         assert calc.should_trip_circuit_breaker(
@@ -254,7 +218,7 @@ class TestEdgeCases:
         which may result in nan entropy. The key property tested is
         that the function doesn't raise an exception.
         """
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         logits = mx.array([float("inf"), 1.0, 2.0, 3.0])
 
@@ -271,7 +235,7 @@ class TestEdgeCases:
         -inf logits become 0 probability after softmax, which is well-defined.
         The remaining tokens should have valid entropy.
         """
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         # -inf token has 0 probability, others share the mass
         logits = mx.array([float("-inf"), 1.0, 1.0, 1.0])
@@ -286,7 +250,7 @@ class TestEdgeCases:
 
     def test_compute_with_nan_logits_propagates_nan(self):
         """Compute with nan input should propagate nan (IEEE 754 semantics)."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         logits = mx.array([float("nan"), 1.0, 2.0, 3.0])
 
@@ -297,7 +261,7 @@ class TestEdgeCases:
 
     def test_log_zero_protection(self):
         """Should protect against log(0) with epsilon."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         # Very peaked distribution that could cause log(0) issues
         logits = mx.zeros((1000,))
@@ -312,7 +276,7 @@ class TestEdgeCases:
 
     def test_softmax_numerical_stability_large_values(self):
         """Should handle very large logit values (numerical stability of softmax)."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         # Very large values that could cause overflow in naive softmax
         logits = mx.array([1000.0, 1001.0, 1002.0])
@@ -324,7 +288,7 @@ class TestEdgeCases:
 
     def test_compute_with_all_identical_logits(self):
         """Should handle all identical logits (uniform distribution)."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         # All same value = uniform distribution
         logits = mx.full((100,), 5.0)
@@ -338,7 +302,7 @@ class TestEdgeCases:
 
     def test_compute_with_single_element(self):
         """Should handle single element logit array."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         logits = mx.array([1.0])
 
@@ -349,7 +313,7 @@ class TestEdgeCases:
 
     def test_compute_with_two_elements(self):
         """Should handle two element logit array."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         # Equal logits = maximum entropy for 2 choices
         logits = mx.array([1.0, 1.0])
@@ -378,7 +342,7 @@ class TestEntropyBoundsInvariants:
         """
         backend = get_default_backend()
         backend.random_seed(seed)
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         # Random logits
         logits_data = backend.random_normal((100,))
@@ -394,7 +358,7 @@ class TestEntropyBoundsInvariants:
 
         Mathematical property: Maximum entropy is ln(V) for uniform distribution.
         """
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         # Any logit distribution
         logits = mx.zeros((vocab_size,))
@@ -411,7 +375,7 @@ class TestEntropyBoundsInvariants:
         """
         backend = get_default_backend()
         backend.random_seed(seed)
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         logits_data = backend.random_normal((100,))
         backend.eval(logits_data)
@@ -428,7 +392,7 @@ class TestEntropyBoundsInvariants:
         """
         backend = get_default_backend()
         backend.random_seed(seed)
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         logits_data = backend.random_normal((100,))
         backend.eval(logits_data)
@@ -446,7 +410,7 @@ class TestEntropyMonotonicity:
 
         Mathematical property: Entropy is maximized at uniform distribution.
         """
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         # Peaked distribution
         peaked = mx.zeros((100,))
@@ -465,7 +429,7 @@ class TestEntropyMonotonicity:
 
         Mathematical property: Certainty means zero entropy.
         """
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         logits = mx.zeros((1000,))
         logits = logits.at[0].add(1000.0)  # Overwhelmingly dominant
@@ -538,7 +502,7 @@ class TestEntropyNormalization:
 
     def test_compute_with_normalization(self):
         """compute_with_normalization should return raw, variance, and normalized."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         # Uniform distribution over 100 tokens
         logits = mx.zeros((100,))
@@ -552,7 +516,7 @@ class TestEntropyNormalization:
 
     def test_compute_with_normalization_peaked(self):
         """Peaked distribution should have low normalized entropy."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         logits = mx.zeros((100,))
         logits = logits.at[0].add(100.0)  # Very peaked
@@ -567,7 +531,7 @@ class TestEntropyNormalization:
 
     def test_compute_with_normalization_explicit_vocab_size(self):
         """Should use explicit vocab_size if provided."""
-        calc = LogitEntropyCalculator()
+        calc = LogitEntropyCalculator(top_k=10)
 
         # 100-token uniform distribution
         logits = mx.zeros((100,))

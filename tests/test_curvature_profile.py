@@ -63,7 +63,6 @@ class TestLayerCurvature:
         assert lc.ollivier_ricci_mean == 0.0
         assert lc.intrinsic_dimension == 0.0
         assert lc.dominant_sign == "unknown"
-        assert lc.manifold_health == "unknown"
 
     def test_custom_values(self):
         """LayerCurvature stores custom values correctly."""
@@ -78,14 +77,12 @@ class TestLayerCurvature:
             ollivier_ricci_std=0.03,
             intrinsic_dimension=256.5,
             intrinsic_dimension_uncertainty=12.3,
-            manifold_health="healthy",
         )
         assert lc.layer_idx == 10
         assert lc.sectional_mean == -0.05
         assert lc.dominant_sign == "negative"
         assert lc.ollivier_ricci_mean == -0.12
         assert lc.intrinsic_dimension == 256.5
-        assert lc.manifold_health == "healthy"
 
     def test_to_dict(self):
         """LayerCurvature serializes to dictionary."""
@@ -114,7 +111,6 @@ class TestLayerCurvature:
             "ollivier_ricci_std": 0.02,
             "intrinsic_dimension": 128.0,
             "intrinsic_dimension_uncertainty": 5.0,
-            "manifold_health": "healthy",
         }
         lc = LayerCurvature.from_dict(d)
         assert lc.layer_idx == 7
@@ -142,13 +138,12 @@ class TestLayerCurvature:
             ollivier_ricci_std=0.02,
             intrinsic_dimension=192.0,
             intrinsic_dimension_uncertainty=8.5,
-            manifold_health="degenerate",
         )
         restored = LayerCurvature.from_dict(original.to_dict())
         assert restored.layer_idx == original.layer_idx
         assert restored.sectional_mean == original.sectional_mean
         assert restored.dominant_sign == original.dominant_sign
-        assert restored.manifold_health == original.manifold_health
+        assert restored.ollivier_ricci_mean == original.ollivier_ricci_mean
 
 
 # =============================================================================

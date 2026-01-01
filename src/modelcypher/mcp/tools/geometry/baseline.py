@@ -130,7 +130,6 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
                 "modelSize": baseline.model_size,
                 "ollivierRicciMean": baseline.ollivier_ricci_mean,
                 "ollivierRicciStd": baseline.ollivier_ricci_std,
-                "manifoldHealthDistribution": baseline.manifold_health_distribution.to_dict(),
                 "intrinsicDimension": baseline.intrinsic_dimension_mean,
                 "domainMetrics": baseline.domain_metrics,
                 "savedPath": str(saved_path),
