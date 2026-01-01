@@ -31,7 +31,6 @@ import pytest
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.birkhoff_projector import (
     BirkhoffProjector,
-    BirkhoffProjectorConfig,
 )
 from modelcypher.core.domain.geometry.numerical_stability import svd_via_eigh
 

@@ -172,7 +172,7 @@ def stage_density(
     probe_domains: list[str] | None,
     layers: list[int],
     backend: "Backend",
-) -> tuple[dict[str, dict[int, bool]] | None, dict[str, Any]]:
+) -> tuple[dict[str, dict[int, bool]], dict[str, Any]]:
     """Stage 2.5: Density analysis for selective grafting.
 
     Args:

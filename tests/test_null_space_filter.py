@@ -29,29 +29,31 @@ from hypothesis import strategies as st
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.null_space_filter import (
     NullSpaceFilter,
-    NullSpaceFilterConfig,
     NullSpaceMethod,
     filter_merge_delta_to_null_space,
 )
+# NOTE: NullSpaceFilterConfig was REMOVED. All parameters derived from spectral gap.
 
 
 class TestNullSpaceProjection:
-    """Test null space computation."""
+    """Test null space computation.
 
-    def test_identity_projection_for_empty_activations(self):
-        """Empty activations should give identity projection (full null space)."""
+    NOTE: NullSpaceFilterConfig was REMOVED. All parameters (min_samples,
+    normalization, regularization, rank threshold) are now derived from the
+    data's dtype and spectral properties.
+    """
+
+    def test_identity_projection_for_few_samples(self):
+        """Few samples should give identity projection (full null space)."""
         backend = get_default_backend()
-        config = NullSpaceFilterConfig(min_samples=0)
-        NullSpaceFilter(config)
 
-        # Very few samples
+        # Very few samples - min_samples is now derived from log2(d)
         backend.random_seed(42)
-        A = backend.random_normal((2, 10))
+        A = backend.random_normal((2, 10))  # 2 samples, 10 dims, needs log2(10)~4 samples
         backend.eval(A)
-        config_low = NullSpaceFilterConfig(min_samples=5)
-        filter_low = NullSpaceFilter(config_low)
+        null_filter = NullSpaceFilter(backend)
 
-        projection = filter_low.compute_null_space_projection(A)
+        projection = null_filter.compute_null_space_projection(A)
 
         # Should return identity-like projection due to insufficient samples
         assert projection.null_dim == 10  # Full dimension
@@ -63,8 +65,7 @@ class TestNullSpaceProjection:
     def test_null_space_orthogonal_to_row_space(self):
         """Null space vectors should be orthogonal to all rows of A."""
         backend = get_default_backend()
-        config = NullSpaceFilterConfig()
-        filter = NullSpaceFilter(config)
+        null_filter = NullSpaceFilter(backend)
 
         # Create simple full-rank matrix
         backend.random_seed(42)
@@ -81,8 +82,7 @@ class TestNullSpaceProjection:
     def test_projection_is_idempotent(self):
         """Projecting twice should give same result as projecting once."""
         backend = get_default_backend()
-        config = NullSpaceFilterConfig()
-        filter = NullSpaceFilter(config)
+        null_filter = NullSpaceFilter(backend)
 
         backend.random_seed(42)
         A = backend.random_normal((30, 20))
@@ -100,8 +100,7 @@ class TestNullSpaceProjection:
     def test_projection_is_symmetric(self):
         """Projection matrix should be symmetric."""
         backend = get_default_backend()
-        config = NullSpaceFilterConfig()
-        filter = NullSpaceFilter(config)
+        null_filter = NullSpaceFilter(backend)
 
         backend.random_seed(42)
         A = backend.random_normal((25, 15))
@@ -114,17 +113,16 @@ class TestNullSpaceProjection:
         backend.eval(P_T)
         assert float(backend.to_numpy(backend.max(backend.abs(P - P_T)))) < 1e-6
 
-    @pytest.mark.parametrize("method", list(NullSpaceMethod))
-    def test_methods_give_similar_results(self, method):
-        """All methods should compute similar null spaces."""
+    def test_null_space_preserves_dimension_invariant(self):
+        """null_dim + row_space_dim should equal total dimension."""
+        # NOTE: NullSpaceMethod is no longer configurable - method is derived from matrix size.
         backend = get_default_backend()
-        config = NullSpaceFilterConfig(method=method)
-        filter = NullSpaceFilter(config)
+        null_filter = NullSpaceFilter(backend)
 
         backend.random_seed(42)
         A = backend.random_normal((30, 20))
         backend.eval(A)
-        projection = filter.compute_null_space_projection(A)
+        projection = null_filter.compute_null_space_projection(A)
 
         # Basic sanity checks
         assert projection.null_dim >= 0
@@ -146,8 +144,8 @@ class TestNullSpaceFiltering:
         For null space to exist: n_samples < d (rank-deficient A).
         """
         backend = get_default_backend()
-        config = NullSpaceFilterConfig()  # Default SVD method
-        filter = NullSpaceFilter(config)
+        # NOTE: NullSpaceFilterConfig was REMOVED - method derived from matrix size
+        null_filter = NullSpaceFilter(backend)
 
         # n_samples < d ensures non-trivial null space
         d = 50  # Weight dimension
@@ -161,7 +159,7 @@ class TestNullSpaceFiltering:
         backend.eval(delta)
 
         # Filter delta to null space of A
-        result = filter.filter_delta(delta, A)
+        result = null_filter.filter_delta(delta, A)
 
         if result.filtering_applied and result.null_space_dim > 0:
             delta_safe = result.filtered_delta
@@ -183,8 +181,7 @@ class TestNullSpaceFiltering:
     def test_preservation_fraction_bounded(self):
         """Preserved fraction should be in [0, 1]."""
         backend = get_default_backend()
-        config = NullSpaceFilterConfig()
-        filter = NullSpaceFilter(config)
+        null_filter = NullSpaceFilter(backend)
 
         backend.random_seed(42)
         A = backend.random_normal((30, 20))
@@ -201,8 +198,7 @@ class TestNullSpaceFiltering:
     def test_zero_delta_gives_zero_filtered(self):
         """Zero delta should give zero filtered delta."""
         backend = get_default_backend()
-        config = NullSpaceFilterConfig()
-        filter = NullSpaceFilter(config)
+        null_filter = NullSpaceFilter(backend)
 
         backend.random_seed(42)
         A = backend.random_normal((30, 20))
@@ -261,8 +257,7 @@ class TestNullSpaceFiltering:
         from modelcypher.core.domain.merging.exceptions import NullSpaceFilterError
 
         backend = get_default_backend()
-        config = NullSpaceFilterConfig()
-        filter = NullSpaceFilter(config)
+        null_filter = NullSpaceFilter(backend)
 
         backend.random_seed(42)
         A = backend.random_normal((30, 20))
@@ -365,8 +360,7 @@ class TestModelProfile:
     def test_compute_model_profile(self):
         """Test computing null space profile across layers."""
         backend = get_default_backend()
-        config = NullSpaceFilterConfig()
-        filter = NullSpaceFilter(config)
+        null_filter = NullSpaceFilter(backend)
 
         # Simulate layer activations with varying null space
         backend.random_seed(42)
@@ -395,8 +389,7 @@ class TestModelProfile:
     def test_graftable_layers_threshold(self):
         """Test that graft threshold correctly identifies layers."""
         backend = get_default_backend()
-        config = NullSpaceFilterConfig()
-        filter = NullSpaceFilter(config)
+        null_filter = NullSpaceFilter(backend)
 
         # Layer 0: full rank (not graftable)
         # Layer 1: half null (graftable at 0.1 threshold)
@@ -430,8 +423,7 @@ class TestPropertyBased:
     def test_projection_loss_plus_preserved_equals_one(self, n_samples, d):
         """projection_loss + preserved_fraction should always equal 1."""
         backend = get_default_backend()
-        config = NullSpaceFilterConfig()
-        filter = NullSpaceFilter(config)
+        null_filter = NullSpaceFilter(backend)
 
         backend.random_seed(42)
         A = backend.random_normal((n_samples, d))
@@ -451,8 +443,7 @@ class TestPropertyBased:
     def test_filtered_norm_leq_original_norm(self, d):
         """Filtered delta should never have larger norm than original."""
         backend = get_default_backend()
-        config = NullSpaceFilterConfig()
-        filter = NullSpaceFilter(config)
+        null_filter = NullSpaceFilter(backend)
 
         backend.random_seed(42)
         A = backend.random_normal((50, d))
@@ -486,8 +477,7 @@ class TestEdgeCases:
     def test_very_high_dimensional(self):
         """High dimensional space should work."""
         backend = get_default_backend()
-        config = NullSpaceFilterConfig()
-        filter = NullSpaceFilter(config)
+        null_filter = NullSpaceFilter(backend)
 
         backend.random_seed(42)
         A = backend.random_normal((100, 500))
@@ -503,8 +493,7 @@ class TestEdgeCases:
     def test_zero_activations(self):
         """All-zero activations should give full null space."""
         backend = get_default_backend()
-        config = NullSpaceFilterConfig()
-        filter = NullSpaceFilter(config)
+        null_filter = NullSpaceFilter(backend)
 
         A = backend.zeros((30, 20))
         backend.eval(A)
@@ -518,8 +507,7 @@ class TestEdgeCases:
     def test_nan_handling(self):
         """NaN in activations should be handled gracefully."""
         backend = get_default_backend()
-        config = NullSpaceFilterConfig()
-        filter = NullSpaceFilter(config)
+        null_filter = NullSpaceFilter(backend)
 
         backend.random_seed(42)
         A = backend.random_normal((30, 20))

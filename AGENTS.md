@@ -582,6 +582,75 @@ When you invent a heuristic:
 
 ---
 
+## CRITICAL: Docstrings Are Not History Lessons
+
+**Docstrings describe what code DOES, not what it USED TO DO or why it changed.**
+
+### Bad Docstrings (Don't Do This)
+
+```python
+# WRONG - history lesson
+def compute_null_space(matrix):
+    """
+    Compute null space projection.
+
+    NOTE: NullSpaceFilterConfig was REMOVED. All parameters are now
+    derived from spectral gap. The old config had min_samples, method,
+    and threshold parameters that were eliminated in the refactor.
+    """
+
+# WRONG - changelog in docstring
+class NullSpaceFilter:
+    """
+    Filter for null space projection.
+
+    Changes:
+    - Removed config parameter (now derived from data)
+    - Removed method selection (always SVD)
+    - Added automatic threshold derivation
+    """
+```
+
+### Good Docstrings (Do This)
+
+Follow Google style. State what it does, args, returns. Nothing else.
+
+```python
+def compute_null_space(matrix: Array) -> NullSpaceProjection:
+    """Compute projection matrix onto null space of activation matrix.
+
+    Args:
+        matrix: Activation matrix of shape [n_samples, d].
+
+    Returns:
+        NullSpaceProjection with projection matrix and metadata.
+
+    Raises:
+        ValueError: If matrix has fewer than 2 samples.
+    """
+
+class NullSpaceFilter:
+    """Filters weight updates to the null space of prior activations.
+
+    Ensures merged weights don't interfere with prior task performance:
+    if delta is in null(A), then A @ (W + delta) = A @ W.
+    """
+```
+
+### Rules
+
+1. **One line summary** - What it does, imperative mood ("Compute X", not "Computes X")
+2. **Args section** - Parameter name, type hint already in signature, brief description
+3. **Returns section** - What comes back
+4. **Raises section** - Only if non-obvious exceptions
+5. **No history** - Don't explain what was removed, changed, or refactored
+6. **No implementation details** - Don't describe HOW, just WHAT
+7. **No TODOs** - Put those in issues or comments, not docstrings
+
+If you need to document WHY something was removed, use a code comment at the call site or in CHANGELOG.md.
+
+---
+
 ## What NOT To Do
 
 1. **Don't import numpy. ANYWHERE.** - Use the Backend protocol. Tests included. No exceptions.
@@ -601,3 +670,4 @@ When you invent a heuristic:
 15. **Don't add fallbacks** - Fallbacks mask failures. If alignment fails, raise an exception. The failure IS the information.
 16. **Don't invent heuristics** - "Standard heuristic" requires a citation. If you can't cite it, you made it up. Derive from data or ask.
 17. **Don't dress arbitrary numbers as math** - "5th percentile" is just 0.05 in a costume. "Geometric midpoint" is just 0.5. The disguise doesn't make it derived.
+18. **Don't write history lessons in docstrings** - "NOTE: X was REMOVED" belongs in git history, not docstrings. Docstrings say what code does NOW.

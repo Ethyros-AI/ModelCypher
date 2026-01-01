@@ -333,7 +333,7 @@ def run_merge(
             density_metrics.get("nonpositive_opportunity_count", 0),
         )
     else:
-        logger.info("DENSITY: Graft all concepts (no density filtering)")
+        logger.info("DENSITY: No graft opportunities (mask empty)")
 
     logger.info("STAGE 3: TRANSPLANT (null-space constrained)")
     merged_weights, transplant_metrics = stage_transplant(

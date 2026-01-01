@@ -55,15 +55,14 @@ class DensityStageResult:
     """Result of density analysis stage."""
 
     # Density profiles for both models
-    source_profile: ModelDensityProfile | None
-    target_profile: ModelDensityProfile | None
+    source_profile: ModelDensityProfile
+    target_profile: ModelDensityProfile
 
     # Knowledge diff showing graft opportunities
-    knowledge_diff: KnowledgeDiff | None
+    knowledge_diff: KnowledgeDiff
 
     # The graft mask: probe_id -> layer -> should_graft
-    # If None, transplant ALL concepts (backward compatible)
-    graft_mask: dict[str, dict[int, bool]] | None
+    graft_mask: dict[str, dict[int, bool]]
 
     # Metrics
     metrics: dict[str, float | int]

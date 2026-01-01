@@ -67,7 +67,6 @@ logger = logging.getLogger(__name__)
 # These are NOT tunable - they are mathematically derived from the paper.
 _SINKHORN_MAX_ITERATIONS = 20  # Eq. 8-9 in mHC paper
 _MAX_SPECTRAL_NORM = 1.0  # Compositional stability guarantee
-_POWER_ITERATIONS = 10  # For power iteration fallback
 
 
 @dataclass
@@ -258,41 +257,11 @@ class BirkhoffProjector:
         """Compute spectral norm (largest singular value) of a matrix."""
         backend = self._backend
 
-        # SVD method (always used - more accurate than power iteration)
-        try:
-            _, S, _ = svd_via_eigh(backend, matrix, full_matrices=False)
-            backend.eval(S)
-            S_np = backend.to_numpy(S)
-            return float(S_np[0]) if len(S_np) > 0 else 0.0
-        except Exception as e:
-            logger.warning(f"SVD failed for spectral norm: {e}, using power iteration")
-            return self._spectral_norm_power_iteration(matrix)
-
-    def _spectral_norm_power_iteration(self, matrix: "Array") -> float:
-        """Compute spectral norm via power iteration (fallback)."""
-        backend = self._backend
-        n = int(matrix.shape[0])
-
-        # Initialize random vector
-        backend.random_seed(42)  # Deterministic for reproducibility
-        v = backend.random_normal((n,))
-        v = v / backend.norm(v)
-        backend.eval(v)
-
-        eps = tiny_value(backend, matrix)
-        for _ in range(_POWER_ITERATIONS):
-            u = backend.matmul(matrix, v)
-            u = u / backend.maximum(backend.norm(u), backend.array(eps))
-            v = backend.matmul(backend.transpose(matrix), u)
-            v = v / backend.maximum(backend.norm(v), backend.array(eps))
-            backend.eval(u, v)
-
-        # Spectral norm = ||M @ v||
-        Mv = backend.matmul(matrix, v)
-        backend.eval(Mv)
-        norm = backend.norm(Mv)
-        backend.eval(norm)
-        return float(backend.to_numpy(norm))
+        # SVD method (required - no fallback)
+        _, S, _ = svd_via_eigh(backend, matrix, full_matrices=False)
+        backend.eval(S)
+        S_np = backend.to_numpy(S)
+        return float(S_np[0]) if len(S_np) > 0 else 0.0
 
     def bound_spectral_norm(
         self,
@@ -321,31 +290,23 @@ class BirkhoffProjector:
         # Need to clip: scale the matrix
         scale = max_norm / spectral_norm
 
-        # SVD-based clipping (more precise)
-        try:
-            U, S, Vh = svd_via_eigh(backend, matrix, full_matrices=False)
-            backend.eval(U, S, Vh)
+        # SVD-based clipping (required - no fallback)
+        U, S, Vh = svd_via_eigh(backend, matrix, full_matrices=False)
+        backend.eval(U, S, Vh)
 
-            # Scale singular values
-            S_clipped = S * scale
-            backend.eval(S_clipped)
+        # Scale singular values
+        S_clipped = S * scale
+        backend.eval(S_clipped)
 
-            # Reconstruct: U @ diag(S) @ Vh
-            S_diag = backend.reshape(S_clipped, (-1, 1))
-            M_clipped = backend.matmul(U, S_diag * Vh)
-            backend.eval(M_clipped)
+        # Reconstruct: U @ diag(S) @ Vh
+        S_diag = backend.reshape(S_clipped, (-1, 1))
+        M_clipped = backend.matmul(U, S_diag * Vh)
+        backend.eval(M_clipped)
 
-            logger.debug(
-                f"Spectral norm clipped: {spectral_norm:.4f} -> {max_norm:.4f}"
-            )
-            return M_clipped, True
-
-        except Exception as e:
-            logger.warning(f"SVD clipping failed: {e}, using simple scaling")
-            # Simple scaling fallback
-            M_scaled = matrix * scale
-            backend.eval(M_scaled)
-            return M_scaled, True
+        logger.debug(
+            f"Spectral norm clipped: {spectral_norm:.4f} -> {max_norm:.4f}"
+        )
+        return M_clipped, True
 
     def project_weight_delta(
         self,
