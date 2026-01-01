@@ -64,11 +64,15 @@ def geometry_path_detect(
     """
     context = _context(ctx)
     embedder = EmbeddingDefaults.make_default_embedder()
+    if embedder is None:
+        raise typer.BadParameter(
+            "No embedding provider available. Path detection requires embeddings."
+        )
     service = GeometryService(embedder=embedder)
 
     if model:
         engine = LocalInferenceEngine()
-        result = engine.infer(model, text, max_tokens=200, temperature=0.0, top_p=1.0)
+        result = engine.infer(model, text)
         text_to_analyze = result.get("response", "")
         model_id = Path(model).name if Path(model).exists() else model
     else:
@@ -128,6 +132,10 @@ def geometry_path_compare(
     """
     context = _context(ctx)
     embedder = EmbeddingDefaults.make_default_embedder()
+    if embedder is None:
+        raise typer.BadParameter(
+            "No embedding provider available. Path detection requires embeddings."
+        )
     service = GeometryService(embedder=embedder)
 
     if text_a and text_b:
@@ -137,8 +145,8 @@ def geometry_path_compare(
         model_id_b = "text-b"
     elif model_a and model_b and prompt:
         engine = LocalInferenceEngine()
-        response_a = engine.infer(model_a, prompt, max_tokens=200, temperature=0.0, top_p=1.0)
-        response_b = engine.infer(model_b, prompt, max_tokens=200, temperature=0.0, top_p=1.0)
+        response_a = engine.infer(model_a, prompt)
+        response_b = engine.infer(model_b, prompt)
         text_to_analyze_a = response_a.get("response", "")
         text_to_analyze_b = response_b.get("response", "")
         model_id_a = Path(model_a).name if Path(model_a).exists() else model_a

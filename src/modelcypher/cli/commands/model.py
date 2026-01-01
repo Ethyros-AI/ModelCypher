@@ -158,8 +158,6 @@ def _run_smoke_test(model_path: str, context: Any) -> dict:
             result = engine.run(
                 model=model_path,
                 prompt=prompt,
-                max_tokens=30,
-                temperature=0.7,
             )
             response = result.text if hasattr(result, "text") else str(result)
             tps = result.tokens_per_second if hasattr(result, "tokens_per_second") else 0

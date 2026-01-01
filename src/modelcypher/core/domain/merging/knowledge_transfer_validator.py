@@ -75,10 +75,6 @@ class KnowledgeValidationConfig:
         Minimum number of probes per domain.
     use_variations : bool
         Whether to test paraphrased variations of prompts.
-    max_response_length : int
-        Maximum tokens for response generation.
-    temperature : float
-        Generation temperature (0 for deterministic).
 
     Notes
     -----
@@ -95,8 +91,6 @@ class KnowledgeValidationConfig:
     domains: list[KnowledgeDomain] = field(default_factory=lambda: list(KnowledgeDomain))
     min_probes_per_domain: int = 5
     use_variations: bool = True
-    max_response_length: int = 256
-    temperature: float = 0.0
 
     @classmethod
     def from_calibration_data(
@@ -259,9 +253,9 @@ class KnowledgeValidationConfig:
 
         Notes
         -----
-        Returns thresholds of 95%/80%/60% for backward compatibility.
-        For data-driven thresholds, consider using from_calibration_data()
-        or from_baseline_variance() instead.
+        Returns explicit thresholds of 95%/80%/60%.
+        For data-driven thresholds, use from_calibration_data()
+        or from_baseline_variance().
         """
         return cls.with_explicit_thresholds(
             excellent=0.95,

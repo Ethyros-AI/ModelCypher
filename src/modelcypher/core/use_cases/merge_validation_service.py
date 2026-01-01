@@ -284,7 +284,7 @@ class MergeValidationService:
         self,
         model: str,
         prompts: list[str],
-        max_tokens: int = 50,
+        max_tokens: int | None = None,
     ) -> float:
         """
         Compute coherence score via sentence completion.
@@ -299,8 +299,6 @@ class MergeValidationService:
                     model,
                     prompt,
                     max_tokens=max_tokens,
-                    temperature=0.0,  # Deterministic
-                    top_p=1.0,
                 )
                 # Score based on response quality heuristics
                 response = result.get("response", "")
@@ -326,15 +324,11 @@ class MergeValidationService:
             name = probe.get("name", "unnamed")
             prompt = probe.get("prompt", "")
             expected_pattern = probe.get("expected_pattern", "")
-            max_tokens = probe.get("max_tokens", 200)
 
             try:
                 result = self._inference_engine.infer(
                     model,
                     prompt,
-                    max_tokens=max_tokens,
-                    temperature=0.0,
-                    top_p=1.0,
                 )
                 output = result.get("response", "")
 

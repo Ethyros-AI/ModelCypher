@@ -48,10 +48,6 @@ from ..common import (
 if TYPE_CHECKING:
     pass
 
-# Constants
-DEFAULT_PATH_MAX_TOKENS = 200
-
-
 def register_geometry_tools(ctx: ServiceContext) -> None:
     """Register geometry-related MCP tools."""
     mcp = ctx.mcp
@@ -86,26 +82,31 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             If `model` is set, `text` is treated as a prompt and the model
             response is analyzed. Otherwise, `text` is analyzed directly.
             """
-            if model:
-                response = ctx.inference_engine.infer(
-                    model,
-                    text,
-                    max_tokens=DEFAULT_PATH_MAX_TOKENS,
-                    temperature=0.0,
-                    top_p=1.0,
+            from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
+            from modelcypher.core.use_cases.geometry_service import GeometryService
+
+            embedder = EmbeddingDefaults.make_default_embedder()
+            if embedder is None:
+                raise ValueError(
+                    "No embedding provider available. Path detection requires embeddings."
                 )
+
+            service = GeometryService(embedder=embedder)
+
+            if model:
+                response = ctx.inference_engine.infer(model, text)
                 text_to_analyze = response.get("response", "")
                 model_id = Path(model).name if Path(model).exists() else model
             else:
                 text_to_analyze = text
                 model_id = "input-text"
-            detection = ctx.geometry_service.detect_path(
+            detection = service.detect_path(
                 text_to_analyze,
                 model_id=model_id,
                 prompt_id="mcp-path-detect",
                 entropy_trace=entropyTrace,
             )
-            payload = ctx.geometry_service.detection_payload(detection)
+            payload = service.detection_payload(detection)
             payload["_schema"] = "mc.geometry.path.detect.v1"
             return payload
 
@@ -121,31 +122,30 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             comprehensive: bool = False,
         ) -> dict:
             """Compare path geometry between two texts or model responses."""
+            from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
+            from modelcypher.core.use_cases.geometry_service import GeometryService
+
+            embedder = EmbeddingDefaults.make_default_embedder()
+            if embedder is None:
+                raise ValueError(
+                    "No embedding provider available. Path detection requires embeddings."
+                )
+
+            service = GeometryService(embedder=embedder)
+
             if textA and textB:
                 text_to_analyze_a, text_to_analyze_b = textA, textB
                 model_id_a, model_id_b = "text-a", "text-b"
             elif modelA and modelB and prompt:
-                response_a = ctx.inference_engine.infer(
-                    modelA,
-                    prompt,
-                    max_tokens=DEFAULT_PATH_MAX_TOKENS,
-                    temperature=0.0,
-                    top_p=1.0,
-                )
-                response_b = ctx.inference_engine.infer(
-                    modelB,
-                    prompt,
-                    max_tokens=DEFAULT_PATH_MAX_TOKENS,
-                    temperature=0.0,
-                    top_p=1.0,
-                )
+                response_a = ctx.inference_engine.infer(modelA, prompt)
+                response_b = ctx.inference_engine.infer(modelB, prompt)
                 text_to_analyze_a = response_a.get("response", "")
                 text_to_analyze_b = response_b.get("response", "")
                 model_id_a = Path(modelA).name if Path(modelA).exists() else modelA
                 model_id_b = Path(modelB).name if Path(modelB).exists() else modelB
             else:
                 raise ValueError("Provide textA/textB or modelA/modelB with prompt.")
-            result = ctx.geometry_service.compare_paths(
+            result = service.compare_paths(
                 text_a=text_to_analyze_a,
                 text_b=text_to_analyze_b,
                 model_a=model_id_a,
@@ -153,7 +153,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                 prompt_id="mcp-path-compare",
                 comprehensive=comprehensive,
             )
-            payload = ctx.geometry_service.path_comparison_payload(result)
+            payload = service.path_comparison_payload(result)
             payload["_schema"] = "mc.geometry.path.compare.v1"
             return payload
 
@@ -166,14 +166,12 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Detect concept sequence in text or model response.
 
-            All parameters (threshold, window sizes, stride) are derived from
-            concept embedding geometry. If `model` is set, `text` is treated
-            as a prompt and the response is analyzed.
+            Detection is derived from probe embedding geometry. If `model` is set,
+            `text` is treated as a prompt and the response is analyzed.
             """
             from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
-            from modelcypher.core.domain.geometry.concept_detector import (
-                create_default_detector,
-            )
+            from modelcypher.core.domain.geometry.atlas_registry import get_atlas_probes
+            from modelcypher.core.domain.geometry.concept_detector import ConceptDetector
 
             embedder = EmbeddingDefaults.make_default_embedder()
             if embedder is None:
@@ -181,16 +179,16 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                     "No embedding provider available. Concept detection requires embeddings."
                 )
 
-            detector = create_default_detector(embedder)
+            probes = get_atlas_probes()
+            if not probes:
+                raise ValueError(
+                    "No atlas probes registered for concept detection. "
+                    "Call register_default_atlas_inventories() before use."
+                )
+            detector = ConceptDetector(embedder, probes)
 
             if model:
-                response = ctx.inference_engine.infer(
-                    model,
-                    text,
-                    max_tokens=DEFAULT_PATH_MAX_TOKENS,
-                    temperature=0.0,
-                    top_p=1.0,
-                )
+                response = ctx.inference_engine.infer(model, text)
                 text_to_analyze = response.get("response", "")
                 model_id = Path(model).name if Path(model).exists() else model
             else:
@@ -212,7 +210,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                 "detectedConcepts": [
                     {
                         "conceptId": concept.concept_id,
-                        "category": concept.category.value,
+                        "category": concept.category,
                         "confidence": concept.confidence,
                         "characterSpan": {
                             "lowerBound": concept.character_span[0],
@@ -240,15 +238,12 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Compare concept sequences between two texts or model responses.
 
-            All parameters (threshold, window sizes, stride) are derived from
-            concept embedding geometry. Provide textA/textB or modelA/modelB
-            with a prompt.
+            Detection is derived from probe embedding geometry. Provide textA/textB
+            or modelA/modelB with a prompt.
             """
             from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
-            from modelcypher.core.domain.geometry.concept_detector import (
-                ConceptDetector,
-                create_default_detector,
-            )
+            from modelcypher.core.domain.geometry.atlas_registry import get_atlas_probes
+            from modelcypher.core.domain.geometry.concept_detector import ConceptDetector
 
             embedder = EmbeddingDefaults.make_default_embedder()
             if embedder is None:
@@ -256,7 +251,13 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                     "No embedding provider available. Concept detection requires embeddings."
                 )
 
-            detector = create_default_detector(embedder)
+            probes = get_atlas_probes()
+            if not probes:
+                raise ValueError(
+                    "No atlas probes registered for concept detection. "
+                    "Call register_default_atlas_inventories() before use."
+                )
+            detector = ConceptDetector(embedder, probes)
 
             if textA and textB:
                 text_to_analyze_a = textA
@@ -264,20 +265,8 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                 model_id_a = "text-a"
                 model_id_b = "text-b"
             elif modelA and modelB and prompt:
-                response_a = ctx.inference_engine.infer(
-                    modelA,
-                    prompt,
-                    max_tokens=DEFAULT_PATH_MAX_TOKENS,
-                    temperature=0.0,
-                    top_p=1.0,
-                )
-                response_b = ctx.inference_engine.infer(
-                    modelB,
-                    prompt,
-                    max_tokens=DEFAULT_PATH_MAX_TOKENS,
-                    temperature=0.0,
-                    top_p=1.0,
-                )
+                response_a = ctx.inference_engine.infer(modelA, prompt)
+                response_b = ctx.inference_engine.infer(modelB, prompt)
                 text_to_analyze_a = response_a.get("response", "")
                 text_to_analyze_b = response_b.get("response", "")
                 model_id_a = Path(modelA).name if Path(modelA).exists() else modelA
@@ -606,7 +595,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             for prompt in prompts[: config.min_prompts]:
                 try:
                     # Run inference to trigger activation capture
-                    engine.infer(str(model_path), prompt, max_tokens=50, temperature=0.0)
+                    engine.infer(str(model_path), prompt)
                 except Exception:
                     pass  # Continue with other prompts
                 extractor.finalize_prompt_activations()

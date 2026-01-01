@@ -28,9 +28,7 @@ class InferenceEngine(Protocol):
         self,
         model: str,
         prompt: str,
-        max_tokens: int,
-        temperature: float,
-        top_p: float,
+        max_tokens: int | None = None,
     ) -> dict:
         """Run inference and return structured results."""
         ...

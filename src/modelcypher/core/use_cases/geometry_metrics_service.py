@@ -162,8 +162,6 @@ class GeometryMetricsService:
         self,
         source_points: list[list[float]],
         target_points: list[list[float]],
-        epsilon: float = 0.05,
-        max_iterations: int = 50,
     ) -> GromovWassersteinResult:
         """
         Compute Gromov-Wasserstein distance between two point clouds.
@@ -173,17 +171,27 @@ class GeometryMetricsService:
 
         Results are cached to avoid redundant O(n^3-n^4) computations.
 
+        Entropic regularization and convergence parameters are determined
+        by the domain layer defaults, which use adaptive convergence with
+        thresholds derived from dtype precision.
+
         Args:
             source_points: First point cloud (N x D)
             target_points: Second point cloud (M x D)
-            epsilon: Entropic regularization parameter
-            max_iterations: Maximum outer iterations
 
         Returns:
             GromovWassersteinResult with distance metrics
         """
-        # Check cache first
-        cached = self._cache.get_gw_result(source_points, target_points, epsilon, max_iterations)
+        # Use domain defaults for all parameters
+        config = GWConfig()
+
+        # Check cache first (use config defaults for cache key)
+        cached = self._cache.get_gw_result(
+            source_points,
+            target_points,
+            config.sinkhorn_epsilon,
+            config.max_outer_iterations,
+        )
         if cached is not None:
             return self._gw_result_from_cached(cached)
 
@@ -192,10 +200,6 @@ class GeometryMetricsService:
 
         backend = get_default_backend()
         gw = GromovWassersteinDistance(backend=backend)
-        config = GWConfig(
-            sinkhorn_epsilon=epsilon,
-            max_outer_iterations=max_iterations,
-        )
 
         pts_source = backend.array(source_points)
         pts_target = backend.array(target_points)
@@ -218,7 +222,11 @@ class GeometryMetricsService:
             coupling_shape=(len(source_points), len(target_points)),
         )
         self._cache.set_gw_result(
-            source_points, target_points, epsilon, max_iterations, cached_result
+            source_points,
+            target_points,
+            config.sinkhorn_epsilon,
+            config.max_outer_iterations,
+            cached_result,
         )
 
         return self._gw_result_from_cached(cached_result)

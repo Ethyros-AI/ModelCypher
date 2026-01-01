@@ -46,7 +46,6 @@ from modelcypher.mcp.security import (
 from modelcypher.utils.json import dump_json
 
 IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60
-DEFAULT_PATH_THRESHOLD = 0.55
 DEFAULT_PATH_MAX_TOKENS = 200
 
 
@@ -387,6 +386,11 @@ NETWORK_ANNOTATIONS = {"readOnlyHint": False, "idempotentHint": True, "openWorld
 
 
 def build_server() -> FastMCP:
+    # Bootstrap atlas inventories for concept detection and geometry tools
+    from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_inventories
+
+    register_default_atlas_inventories()
+
     profile = os.environ.get("MC_MCP_PROFILE", "full")
     tool_set = TOOL_PROFILES.get(profile, TOOL_PROFILES["full"])
 
@@ -774,7 +778,6 @@ def build_server() -> FastMCP:
         def mc_merge_coherence(
             model: str,
             prompts: list[str],
-            maxTokens: int = 50,
         ) -> dict:
             """
             Score coherence of model responses to given prompts.
@@ -787,7 +790,7 @@ def build_server() -> FastMCP:
             if not prompts or len(prompts) == 0:
                 raise ValueError("At least one prompt required")
 
-            score = merge_validation_service.compute_coherence(model_path, prompts, maxTokens)
+            score = merge_validation_service.compute_coherence(model_path, prompts)
 
             return {
                 "_schema": "mc.merge.coherence.v1",
@@ -1267,15 +1270,11 @@ def build_server() -> FastMCP:
         def mc_ensemble_run(
             ensembleId: str,
             prompt: str,
-            maxTokens: int = 512,
-            temperature: float = 0.7,
         ) -> dict:
             """Execute ensemble inference."""
             result = ensemble_service.run(
                 ensemble_id=ensembleId,
                 prompt=prompt,
-                max_tokens=maxTokens,
-                temperature=temperature,
             )
 
             return {

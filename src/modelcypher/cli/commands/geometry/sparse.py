@@ -256,7 +256,7 @@ def geometry_sparse_neurons(
             # Run inference - note: full activation capture requires
             # integration with the inference engine's forward pass
             try:
-                engine.infer(model, prompt, max_tokens=50, temperature=0.0)
+                engine.infer(model, prompt)
             except Exception as infer_err:
                 typer.echo(f"  Warning: Inference failed for prompt {i + 1}: {infer_err}", err=True)
 

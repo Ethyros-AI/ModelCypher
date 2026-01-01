@@ -319,15 +319,11 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
 
             # Create generators for each model
             def source_generate(prompt: str) -> str:
-                result = ctx.inference_engine.infer(
-                    sourceModel, prompt, max_tokens=100, temperature=0.0
-                )
+                result = ctx.inference_engine.infer(sourceModel, prompt)
                 return result.get("response", "")
 
             def merged_generate(prompt: str) -> str:
-                result = ctx.inference_engine.infer(
-                    mergedModel, prompt, max_tokens=100, temperature=0.0
-                )
+                result = ctx.inference_engine.infer(mergedModel, prompt)
                 return result.get("response", "")
 
             # Run probes on both models

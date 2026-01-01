@@ -33,7 +33,7 @@ import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from modelcypher.ports import InferenceEngine
@@ -59,9 +59,6 @@ class KnowledgeTransferConfig:
     domains: list[KnowledgeDomain] = field(default_factory=lambda: list(KnowledgeDomain))
 
     # Probe execution
-    max_tokens: int = 200
-    temperature: float = 0.0
-    timeout_per_probe: float = 30.0
 
     # Thresholds
     retention_threshold: float = 0.8
@@ -69,7 +66,6 @@ class KnowledgeTransferConfig:
 
     # Options
     include_variations: bool = True
-    parallel_execution: bool = False
     custom_probes: list[KnowledgeProbe] | None = None
 
     # Comparison models
@@ -206,15 +202,10 @@ class KnowledgeTransferService:
                 warnings=warnings,
             )
 
-        # Create inference function
-        self._create_inference_fn(config)
-
         validation_config = KnowledgeValidationConfig.from_standard_testing(
             domains=config.domains
         )
         validation_config.use_variations = config.include_variations
-        validation_config.max_response_length = config.max_tokens
-        validation_config.temperature = config.temperature
 
         # Run probes on source model first (for baseline)
         source_probe_results: list = []
@@ -314,15 +305,6 @@ class KnowledgeTransferService:
                 corpus.add_probe(probe)
         return corpus
 
-    def _create_inference_fn(self, config: KnowledgeTransferConfig) -> Callable[[str], str]:
-        """Create generic inference function."""
-
-        def infer(prompt: str) -> str:
-            # This shouldn't be called directly - use model-specific fn
-            raise NotImplementedError("Use model-specific inference function")
-
-        return infer
-
     def _create_model_infer_fn(
         self, model_path: str, config: KnowledgeTransferConfig
     ) -> Callable[[str], str]:
@@ -333,9 +315,6 @@ class KnowledgeTransferService:
                 result = self._inference_engine.infer(
                     model_path,
                     prompt,
-                    max_tokens=config.max_tokens,
-                    temperature=config.temperature,
-                    top_p=1.0,
                 )
                 return result.get("response", "")
             except Exception as e:

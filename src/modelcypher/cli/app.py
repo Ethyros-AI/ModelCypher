@@ -658,9 +658,6 @@ def infer(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model"),
     prompt: str = typer.Option(..., "--prompt"),
-    max_tokens: int = typer.Option(512, "--max-tokens"),
-    temperature: float = typer.Option(0.7, "--temperature"),
-    top_p: float = typer.Option(0.95, "--top-p"),
     scan: bool = typer.Option(False, "--scan", help="Run security scan on output"),
 ) -> None:
     context = _context(ctx)
@@ -672,9 +669,6 @@ def infer(
     result = engine.run(
         model=model,
         prompt=prompt,
-        max_tokens=max_tokens,
-        temperature=temperature,
-        top_p=top_p,
         security_scan=scan,
     )
 

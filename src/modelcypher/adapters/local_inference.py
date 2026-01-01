@@ -196,6 +196,7 @@ class LocalInferenceEngine(HiddenStateEngine):
         self.base_path = base_path or get_modelcypher_home()
         self.lock = FileLock(self.base_path / "training.lock")
         self._model_cache: dict[tuple[str, str | None], _ModelCacheEntry] = {}
+        self._model_context_cache: dict[str, int] = {}
         self._mx = None
         self._safe = None
         self._mlx_load = None
@@ -260,9 +261,9 @@ class LocalInferenceEngine(HiddenStateEngine):
         self._model_cache[cache_key] = entry
         return entry
 
-    def _build_sampler(self, temperature: float, top_p: float) -> Callable[[Any], Any]:
+    def _build_sampler(self) -> Callable[[Any], Any]:
         self._ensure_mlx()
-        return self._mlx_make_sampler(temp=temperature, top_p=top_p)
+        return self._mlx_make_sampler(temp=0.0, top_p=1.0)
 
     @staticmethod
     def _generate_text_stub(prompt: str, max_tokens: int) -> str:
@@ -271,17 +272,122 @@ class LocalInferenceEngine(HiddenStateEngine):
         generated = words + [suffix] * min(max_tokens, STUB_MAX_TOKENS)
         return " ".join(generated)
 
+    def _resolve_max_tokens(
+        self,
+        model_path: Path,
+        prompt: str,
+        tokenizer: Any,
+        max_tokens: int | None,
+    ) -> int:
+        if max_tokens is not None:
+            available = self._available_context_tokens(model_path, prompt, tokenizer)
+            if max_tokens > available:
+                raise ValueError(
+                    f"Requested max_tokens ({max_tokens}) exceeds available context ({available})."
+                )
+            return max_tokens
+
+        available = self._available_context_tokens(model_path, prompt, tokenizer)
+        if available <= 0:
+            raise ValueError("Prompt length exceeds model context length.")
+        return available
+
+    def _available_context_tokens(
+        self,
+        model_path: Path,
+        prompt: str,
+        tokenizer: Any,
+    ) -> int:
+        context_limit = self._resolve_context_limit(model_path, tokenizer)
+        if context_limit is None:
+            raise ValueError(
+                "Model context length missing. Provide a config.json with a context limit."
+            )
+        token_ids = self._encode_prompt(tokenizer, prompt)
+        return context_limit - len(token_ids)
+
+    def _resolve_context_limit(self, model_path: Path, tokenizer: Any) -> int | None:
+        cache_key = str(model_path)
+        cached = self._model_context_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        candidates: list[int] = []
+        for attr in (
+            "model_max_length",
+            "max_length",
+            "max_seq_len",
+            "max_sequence_length",
+            "n_ctx",
+            "context_length",
+            "max_context_length",
+        ):
+            value = getattr(tokenizer, attr, None)
+            if isinstance(value, (int, float)):
+                int_value = int(value)
+                if 0 < int_value < 10**7:
+                    candidates.append(int_value)
+
+        config_value = self._context_from_config(model_path)
+        if config_value is not None:
+            candidates.append(config_value)
+
+        if not candidates:
+            return None
+
+        resolved = min(candidates)
+        self._model_context_cache[cache_key] = resolved
+        return resolved
+
+    @staticmethod
+    def _encode_prompt(tokenizer: Any, prompt: str) -> list[int]:
+        bos_token = getattr(tokenizer, "bos_token", None)
+        add_special_tokens = bos_token is None or not prompt.startswith(bos_token or "")
+        try:
+            return tokenizer.encode(prompt, add_special_tokens=add_special_tokens)
+        except TypeError:
+            return tokenizer.encode(prompt)
+
+    @staticmethod
+    def _context_from_config(model_path: Path) -> int | None:
+        config_path = model_path / "config.json"
+        if not config_path.exists():
+            return None
+        try:
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return None
+
+        for key in (
+            "max_position_embeddings",
+            "max_sequence_length",
+            "max_seq_len",
+            "max_seq_length",
+            "context_length",
+            "max_context_length",
+            "n_ctx",
+            "model_max_length",
+            "seq_length",
+        ):
+            value = config.get(key)
+            if isinstance(value, (int, float)):
+                int_value = int(value)
+                if int_value > 0:
+                    return int_value
+        return None
+
     def _generate_text_mlx(
         self,
         model_path: Path,
         prompt: str,
-        max_tokens: int,
-        temperature: float,
-        top_p: float,
+        max_tokens: int | None,
         adapter: str | None,
     ) -> _GenerationResult:
         entry = self._load_model(model_path, adapter)
-        sampler = self._build_sampler(temperature, top_p)
+        resolved_max_tokens = self._resolve_max_tokens(
+            model_path, prompt, entry.tokenizer, max_tokens
+        )
+        sampler = self._build_sampler()
         start = time.time()
         first_token_time: float | None = None
         text = ""
@@ -291,7 +397,7 @@ class LocalInferenceEngine(HiddenStateEngine):
             entry.model,
             entry.tokenizer,
             prompt,
-            max_tokens=max_tokens,
+            max_tokens=resolved_max_tokens,
             sampler=sampler,
         ):
             if first_token_time is None and response.generation_tokens > 0:
@@ -326,9 +432,7 @@ class LocalInferenceEngine(HiddenStateEngine):
         self,
         model_path: Path,
         prompt: str,
-        max_tokens: int,
-        temperature: float,
-        top_p: float,
+        max_tokens: int | None,
         adapter: str | None,
     ) -> _GenerationResult:
         if self._validate_model_assets(model_path):
@@ -336,16 +440,15 @@ class LocalInferenceEngine(HiddenStateEngine):
                 model_path=model_path,
                 prompt=prompt,
                 max_tokens=max_tokens,
-                temperature=temperature,
-                top_p=top_p,
                 adapter=adapter,
             )
+        resolved_max_tokens = max_tokens or STUB_MAX_TOKENS
         start = time.time()
-        response = self._generate_text_stub(prompt, max_tokens=max_tokens)
+        response = self._generate_text_stub(prompt, max_tokens=resolved_max_tokens)
         duration = max(time.time() - start, 1e-6)
         token_count = len(response.split())
         tokens_per_second = float(token_count) / duration
-        stop_reason = "length" if token_count >= max_tokens else "stop"
+        stop_reason = "length" if token_count >= resolved_max_tokens else "stop"
         return _GenerationResult(
             text=response,
             token_count=token_count,
@@ -359,9 +462,7 @@ class LocalInferenceEngine(HiddenStateEngine):
         self,
         model: str,
         prompt: str,
-        max_tokens: int,
-        temperature: float,
-        top_p: float,
+        max_tokens: int | None = None,
     ) -> dict:
         model_path = Path(model).expanduser().resolve()
         if not model_path.exists():
@@ -377,8 +478,6 @@ class LocalInferenceEngine(HiddenStateEngine):
                 model_path=model_path,
                 prompt=prompt,
                 max_tokens=max_tokens,
-                temperature=temperature,
-                top_p=top_p,
                 adapter=None,
             )
             return {
@@ -467,18 +566,14 @@ class LocalInferenceEngine(HiddenStateEngine):
         self,
         model: str,
         prompts_file: str,
-        max_tokens: int = 512,
-        temperature: float = 0.7,
-        top_p: float = 0.95,
+        max_tokens: int | None = None,
     ) -> BatchInferResult:
         """Execute batched inference from a prompts file.
 
         Args:
             model: Model identifier or path
             prompts_file: Path to file containing prompts (one per line or JSONL)
-            max_tokens: Maximum tokens per response
-            temperature: Sampling temperature
-            top_p: Top-p sampling parameter
+            max_tokens: Token limit per response (if None, derived from model context)
 
         Returns:
             BatchInferResult with all inference results
@@ -505,7 +600,7 @@ class LocalInferenceEngine(HiddenStateEngine):
 
         for i, prompt in enumerate(prompts):
             try:
-                result = self.infer(model, prompt, max_tokens, temperature, top_p)
+                result = self.infer(model, prompt, max_tokens=max_tokens)
                 results.append(
                     {
                         "index": i,
@@ -548,16 +643,14 @@ class LocalInferenceEngine(HiddenStateEngine):
         self,
         model: str,
         suite_config: str,
-        max_tokens: int = 512,
-        temperature: float = 0.7,
+        max_tokens: int | None = None,
     ) -> SuiteInferResult:
         """Execute inference suite from a configuration file.
 
         Args:
             model: Model identifier or path
             suite_config: Path to suite configuration (JSON)
-            max_tokens: Default max tokens per response
-            temperature: Default sampling temperature
+            max_tokens: Token limit per response (if None, derived from model context)
 
         Returns:
             SuiteInferResult with test results and summary
@@ -590,11 +683,10 @@ class LocalInferenceEngine(HiddenStateEngine):
             test_name = test.get("name", f"test_{i}")
             prompt = test.get("prompt", "")
             expected = test.get("expected", None)
-            test_max_tokens = test.get("max_tokens", max_tokens)
-            test_temp = test.get("temperature", temperature)
+            test_max_tokens = max_tokens
 
             try:
-                result = self.infer(model, prompt, test_max_tokens, test_temp, 0.95)
+                result = self.infer(model, prompt, max_tokens=test_max_tokens)
                 response = result["response"]
 
                 # Check if expected pattern is in response
@@ -780,9 +872,7 @@ class LocalInferenceEngine(HiddenStateEngine):
         prompt: str,
         adapter: str | None = None,
         security_scan: bool = False,
-        max_tokens: int = 512,
-        temperature: float = 0.7,
-        top_p: float = 0.95,
+        max_tokens: int | None = None,
     ) -> InferenceResult:
         """Execute inference with optional adapter and security scanning.
 
@@ -791,9 +881,7 @@ class LocalInferenceEngine(HiddenStateEngine):
             prompt: Input prompt
             adapter: Optional path to adapter directory
             security_scan: Whether to perform dual-path security analysis
-            max_tokens: Maximum tokens to generate
-            temperature: Sampling temperature
-            top_p: Top-p sampling parameter
+            max_tokens: Token limit (if None, derived from model context)
 
         Returns:
             InferenceResult with metrics and optional security summary
@@ -821,8 +909,6 @@ class LocalInferenceEngine(HiddenStateEngine):
                 model_path=model_path,
                 prompt=prompt,
                 max_tokens=max_tokens,
-                temperature=temperature,
-                top_p=top_p,
                 adapter=adapter,
             )
 
@@ -851,8 +937,7 @@ class LocalInferenceEngine(HiddenStateEngine):
         suite_file: str,
         adapter: str | None = None,
         security_scan: bool = False,
-        max_tokens: int = 512,
-        temperature: float = 0.7,
+        max_tokens: int | None = None,
     ) -> InferenceSuiteResult:
         """Execute batched inference over a suite of prompts.
 
@@ -864,8 +949,7 @@ class LocalInferenceEngine(HiddenStateEngine):
             suite_file: Path to suite file containing prompts
             adapter: Optional path to adapter directory
             security_scan: Whether to perform security analysis
-            max_tokens: Default max tokens per response
-            temperature: Default sampling temperature
+            max_tokens: Token limit per response (if None, derived from model context)
 
         Returns:
             InferenceSuiteResult with all case results
@@ -886,7 +970,7 @@ class LocalInferenceEngine(HiddenStateEngine):
                 config = json.loads(suite_path.read_text(encoding="utf-8"))
                 if isinstance(config, dict) and "tests" in config:
                     return self._run_suite_config(
-                        model, suite_path, config, adapter, security_scan, max_tokens, temperature
+                        model, suite_path, config, adapter, security_scan, max_tokens
                     )
                 elif isinstance(config, list):
                     # JSON array of prompts
@@ -918,9 +1002,7 @@ class LocalInferenceEngine(HiddenStateEngine):
             prompt = item.get("prompt", "") if isinstance(item, dict) else str(item)
             name = item.get("name", f"case_{i}") if isinstance(item, dict) else f"case_{i}"
             expected = item.get("expected") if isinstance(item, dict) else None
-            case_max_tokens = (
-                item.get("max_tokens", max_tokens) if isinstance(item, dict) else max_tokens
-            )
+            case_max_tokens = max_tokens
 
             try:
                 result = self.run(
@@ -929,7 +1011,6 @@ class LocalInferenceEngine(HiddenStateEngine):
                     adapter=adapter,
                     security_scan=security_scan,
                     max_tokens=case_max_tokens,
-                    temperature=temperature,
                 )
 
                 # Check expected if provided
@@ -1000,8 +1081,7 @@ class LocalInferenceEngine(HiddenStateEngine):
         config: dict[str, Any],
         adapter: str | None,
         security_scan: bool,
-        max_tokens: int,
-        temperature: float,
+        max_tokens: int | None = None,
     ) -> InferenceSuiteResult:
         """Run suite from a structured config with tests."""
         tests = config.get("tests", [])
@@ -1019,8 +1099,7 @@ class LocalInferenceEngine(HiddenStateEngine):
             name = test.get("name", f"test_{i}")
             prompt = test.get("prompt", "")
             expected = test.get("expected")
-            test_max_tokens = test.get("max_tokens", max_tokens)
-            test_temp = test.get("temperature", temperature)
+            test_max_tokens = max_tokens
 
             try:
                 result = self.run(
@@ -1029,7 +1108,6 @@ class LocalInferenceEngine(HiddenStateEngine):
                     adapter=adapter,
                     security_scan=security_scan,
                     max_tokens=test_max_tokens,
-                    temperature=test_temp,
                 )
 
                 # Check expected if provided

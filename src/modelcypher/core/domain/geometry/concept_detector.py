@@ -29,6 +29,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Iterable
 
+import logging
+
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol
 from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
@@ -38,6 +40,8 @@ from modelcypher.utils.text import truncate
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
     from modelcypher.ports.embedding import EmbeddingProvider
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -252,15 +256,19 @@ class ConceptDetector:
         for probe in self._probes:
             texts = [text.strip() for text in probe.support_texts if text.strip()]
             if not texts:
-                raise ValueError(
-                    f"Probe {probe.probe_id} has no support_texts for embedding geometry."
+                logger.warning(
+                    "Probe %s has no support_texts; skipping from concept detection.",
+                    probe.probe_id,
                 )
+                continue
 
             embeddings = self._embedding_provider.embed(texts)
             if not embeddings:
-                raise ValueError(
-                    f"Embedding provider returned no embeddings for probe {probe.probe_id}."
+                logger.warning(
+                    "Embedding provider returned no embeddings for probe %s; skipping.",
+                    probe.probe_id,
                 )
+                continue
 
             normalized_support = [
                 VectorMath.l2_normalized([float(value) for value in embedding])
@@ -282,6 +290,8 @@ class ConceptDetector:
                 )
             )
 
+        if not probe_embeddings:
+            raise ValueError("No probe embeddings available for concept detection.")
         return probe_embeddings
 
     def _frechet_centroid(self, embeddings: list[list[float]]) -> list[float]:

@@ -56,8 +56,6 @@ def geometry_metrics_gromov_wasserstein(
     target_file: str = typer.Argument(
         ..., help="Path to target point cloud (JSON array of arrays)"
     ),
-    epsilon: float = typer.Option(0.05, "--epsilon", help="Entropic regularization parameter"),
-    max_iterations: int = typer.Option(50, "--max-iterations", help="Maximum outer iterations"),
 ) -> None:
     """
     Compute Gromov-Wasserstein distance between two point clouds.
@@ -65,6 +63,9 @@ def geometry_metrics_gromov_wasserstein(
     Measures structural similarity of representation spaces without requiring
     point-to-point correspondence. Smaller values indicate closer structure
     under this metric.
+
+    Entropic regularization and convergence are determined adaptively from
+    the geometry of the input data. No user parameters.
 
     Input files should contain JSON arrays of point arrays, e.g.:
     [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], ...]
@@ -79,8 +80,6 @@ def geometry_metrics_gromov_wasserstein(
     result = service.compute_gromov_wasserstein(
         source_points=source_points,
         target_points=target_points,
-        epsilon=epsilon,
-        max_iterations=max_iterations,
     )
 
     payload = service.gromov_wasserstein_payload(result)

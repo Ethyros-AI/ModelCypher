@@ -289,14 +289,14 @@ def waypoint_alpha_profile(
     ctx: typer.Context,
     source_path: str = typer.Argument(..., help="Path to source model"),
     target_path: str = typer.Argument(..., help="Path to target model"),
-    base_alpha: float = typer.Option(0.5, "--base-alpha", help="Base alpha value"),
-    strength: float = typer.Option(0.5, "--strength", help="Domain adjustment strength (0-1)"),
     layer: int = typer.Option(-1, "--layer", help="Layer to analyze (-1 for last)"),
 ) -> None:
     """
     Compute domain-aware alpha profile for merging.
 
-    Runs geometry audit and computes per-domain alpha values from geometry.
+    Runs geometry audit and computes per-domain alpha values derived
+    entirely from the geometric relationship between source and target.
+    No user parameters - the geometry determines optimal alpha per domain.
     """
     context = _context(ctx)
 
@@ -308,11 +308,7 @@ def waypoint_alpha_profile(
 
     try:
         audit = service.pre_merge_audit(source_path, target_path, layer)
-        raw_profile = service.compute_domain_alpha_profile(audit)
-        alpha_profile = {
-            domain: base_alpha + (alpha - base_alpha) * strength
-            for domain, alpha in raw_profile.items()
-        }
+        alpha_profile = service.compute_domain_alpha_profile(audit)
     except Exception as e:
         typer.echo(f"Error computing alpha profile: {e}", err=True)
         raise typer.Exit(1)
@@ -321,8 +317,6 @@ def waypoint_alpha_profile(
         "_schema": "mc.geometry.waypoint.alpha_profile.v1",
         "sourceModel": source_path,
         "targetModel": target_path,
-        "baseAlpha": base_alpha,
-        "strength": strength,
         "alphaProfile": {d.value: a for d, a in alpha_profile.items()},
     }
 
@@ -334,14 +328,12 @@ def waypoint_alpha_profile(
             "",
             f"Source: {Path(source_path).name}",
             f"Target: {Path(target_path).name}",
-            f"Base α: {base_alpha:.2f}  Strength: {strength:.2f}",
             "",
             "-" * 50,
             "Alpha by Domain (geometry-derived):",
         ]
         for domain, alpha in alpha_profile.items():
-            delta = alpha - base_alpha
-            lines.append(f"  {domain.value:<10}: alpha={alpha:.2f} delta={delta:+.2f}")
+            lines.append(f"  {domain.value:<10}: alpha={alpha:.3f}")
 
         lines.append("")
         write_output("\n".join(lines), context.output_format, context.pretty)

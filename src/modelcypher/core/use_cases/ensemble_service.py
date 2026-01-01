@@ -253,16 +253,12 @@ class EnsembleService:
         self,
         ensemble_id: str,
         prompt: str,
-        max_tokens: int = 512,
-        temperature: float = 0.7,
     ) -> EnsembleInferenceResult:
         """Execute ensemble inference.
 
         Args:
             ensemble_id: The ensemble identifier
             prompt: Input prompt
-            max_tokens: Maximum tokens to generate per model
-            temperature: Sampling temperature
 
         Returns:
             EnsembleInferenceResult with aggregated response
@@ -288,8 +284,6 @@ class EnsembleService:
                 result = self._inference_engine.run(
                     model=model_path,
                     prompt=prompt,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
                 )
                 contributions.append(
                     ModelContribution(
