@@ -354,7 +354,6 @@ def _build_density_profile_from_activations(
 
 def filter_core_probes_by_graft_mask(
     core_probe_ids: set[str],
-    probe_ids: list[str],
     layer_idx: int,
     graft_mask: dict[str, dict[int, bool]],
 ) -> set[str]:

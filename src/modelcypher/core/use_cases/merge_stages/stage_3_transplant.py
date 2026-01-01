@@ -82,7 +82,7 @@ class TransplantStageConfig:
     # If None, graft all core probes.
     graft_mask: dict[str, dict[int, bool]] | None = None
 
-    # NOTE: boundary_k and geodesic_k_neighbors REMOVED - derived from geodesic connectivity
+    # NOTE: boundary_k and geodesic_k_neighbors REMOVED - boundary is full complement
     # NOTE: projection_method REMOVED - always use GRAM_TRANSPORT
     # NOTE: transplant_layers REMOVED - always transplant all layers
     # NOTE: Alpha interpolation was REMOVED - null-space projection determines preserved_fraction
@@ -237,9 +237,6 @@ def stage_transplant(
         "cka_before": [],
         "cka_after": [],
         "core_probes": 0,
-        # boundary_k and geodesic_k_neighbors are derived from geodesic connectivity
-        "boundary_k": "auto",
-        "geodesic_k_neighbors": "auto",
     }
 
     # REQUIRE real activations collected from probe runs.
@@ -802,7 +799,6 @@ def stage_transplant(
         # Only include probes where source is denser than target at this layer
         effective_core_probes = filter_core_probes_by_graft_mask(
             core_probe_ids=core_probe_ids,
-            probe_ids=probe_ids,
             layer_idx=layer_idx,
             graft_mask=config.graft_mask,
         )
@@ -822,8 +818,6 @@ def stage_transplant(
             activations=stacked,
             probe_ids=probe_ids,
             core_probe_ids=effective_core_probes,
-            boundary_k=None,  # Derived from geodesic connectivity
-            geodesic_k_neighbors=None,  # Derived from geodesic connectivity
             backend=b,
         )
 
@@ -1091,13 +1085,19 @@ def stage_transplant(
                             attention_stitch_applied = True
 
                         else:
-                            # Unexpected attention shape - log and try hidden-only stitch
-                            logger.warning(
-                                "Attention weight %s shape [%d,%d] doesn't match expected "
-                                "(attn=%d, hidden=%d) - trying hidden stitch",
-                                key, dim0, dim1, src_attn_dim, src_hidden_dim
+                            raise DimensionMismatchError(
+                                stage="ATTENTION_WEIGHT_STITCH",
+                                weight_key=key,
+                                message=(
+                                    "Attention weight shape does not match expected "
+                                    f"(attn={src_attn_dim}, hidden={src_hidden_dim})"
+                                ),
+                                context={
+                                    "weight_shape": [dim0, dim1],
+                                    "expected_attn_dim": src_attn_dim,
+                                    "expected_hidden_dim": src_hidden_dim,
+                                },
                             )
-                            # Fall through to hidden-only stitch below
 
                     elif is_attention and attention_stitch_output is None:
                         # No attention stitch available - this is a critical failure. No fallbacks.

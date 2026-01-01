@@ -39,10 +39,12 @@ References:
 """
 
 from .stage_0_vocabulary import (
-    VocabularyConfig,
     VocabularyResult,
     stage_vocabulary_align,
 )
+# NOTE: VocabularyConfig is INTERNAL ONLY. All defaults are optimal.
+# Users should not configure vocabulary alignment - it just works.
+from .stage_0_vocabulary import VocabularyConfig as _VocabularyConfig
 from .stage_1_probe import (
     ProbeResult,
     collect_layer_activations_mlx,
@@ -62,15 +64,15 @@ from .stage_3_transplant import (
     stage_transplant,
 )
 from .stage_6_validate import (
-    ValidateConfig,
     ValidateResult,
     stage_validate,
 )
+# NOTE: ValidateConfig was REMOVED. Validation always runs all checks.
+# entropy_phase is passed directly to stage_validate (input data, not config).
 
 __all__ = [
-    # Stage 0: Vocabulary
+    # Stage 0: Vocabulary (VocabularyConfig INTERNAL ONLY - not exported)
     "stage_vocabulary_align",
-    "VocabularyConfig",
     "VocabularyResult",
     # Stage 1: Probe (ProbeConfig REMOVED - always precise mode, all probes)
     "stage_probe",
@@ -84,8 +86,7 @@ __all__ = [
     "stage_transplant",
     "TransplantStageConfig",
     "TransplantStageResult",
-    # Stage 4: Validate
+    # Stage 4: Validate (ValidateConfig REMOVED - always runs all checks)
     "stage_validate",
-    "ValidateConfig",
     "ValidateResult",
 ]

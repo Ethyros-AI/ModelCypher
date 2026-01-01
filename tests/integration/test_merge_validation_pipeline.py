@@ -219,7 +219,6 @@ class TestTransplantPipeline:
             activations,
             probe_ids,
             core_probe_ids,
-            boundary_k=3,
             backend=backend,
         )
 
@@ -231,7 +230,7 @@ class TestTransplantPipeline:
         assert all(i < 5 for i in partition.core_indices)
 
         # Boundary should be identified
-        assert len(partition.boundary_indices) > 0
+        assert len(partition.boundary_indices) == 15
 
         # Core and boundary should be disjoint
         core_set = set(partition.core_indices)

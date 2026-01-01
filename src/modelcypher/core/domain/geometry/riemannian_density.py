@@ -634,18 +634,11 @@ class RiemannianDensityEstimator:
         backend.eval(centroid)
 
         # Compute geodesic context for proper log map in density_at
-        # This k-NN graph is reused for all density computations
-        # k is derived from config if provided, otherwise from data:
-        # - Minimum 3 neighbors for stable local structure
-        # - Maximum n-1 (all other points)
-        # - Scale with sqrt(n) to balance connectivity vs locality
+        # k is derived from the data using elbow detection on k-NN distances
         if self.config.k_neighbors is not None:
             k_neighbors = min(self.config.k_neighbors, n - 1) if n > 1 else 1
         else:
-            # sqrt(n) scaling: balances graph connectivity with local structure
-            # For n=100, k≈10; for n=1000, k≈32; for n=10000, k≈100
-            import math
-            k_neighbors = min(max(3, int(math.sqrt(n))), n - 1) if n > 1 else 1
+            k_neighbors = _find_k_elbow(activations, backend)
         geodesic_context = rg.geodesic_distances(activations, k_neighbors=k_neighbors)
 
         # Estimate local curvature at centroid

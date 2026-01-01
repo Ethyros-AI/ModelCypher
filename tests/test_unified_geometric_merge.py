@@ -286,32 +286,25 @@ class TestResultConversion:
 class TestStageValidate:
     """Test Stage 6: VALIDATE (Safety)."""
 
-    def test_validate_disabled(self):
-        """Test validation when disabled."""
+    # NOTE: ValidateConfig was REMOVED. Validation always runs all checks.
+    # The test_validate_disabled test was removed since validation cannot be disabled.
+    # The test_validate_config_defaults test was removed since there's no config.
+
+    def test_validate_always_runs(self):
+        """Test validation always runs all checks (ValidateConfig was REMOVED)."""
         from modelcypher.core.use_cases.merge_stages.stage_6_validate import (
-            ValidateConfig,
             stage_validate,
         )
 
-        config = ValidateConfig(enable_safety_validation=False)
         result = stage_validate(
             merged_weights={},
             source_weights={},
             target_weights={},
             layer_confidences={},
-            config=config,
             layer_indices=[],
             hidden_dim=896,
         )
 
-        assert result.safety_verdict == "not_validated"
-        assert result.metrics.get("skipped") is True
-
-    def test_validate_config_defaults(self):
-        """Test validation config has reasonable defaults."""
-        from modelcypher.core.use_cases.merge_stages.stage_6_validate import (
-            ValidateConfig,
-        )
-
-        config = ValidateConfig()
-        assert config.enable_safety_validation is True
+        # Validation always runs - no "skipped" or "not_validated" state
+        assert result.safety_verdict in ("safe", "caution", "unsafe", "critical")
+        assert result.metrics.get("skipped") is not True

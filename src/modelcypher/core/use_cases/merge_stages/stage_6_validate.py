@@ -338,90 +338,87 @@ def stage_validate(
     # =========================================================================
     # 3. BEHAVIORAL PROBES CHECK (SemanticDrift, CanaryQA, RedTeam)
     # =========================================================================
+    # Behavioral probes always enabled - no enable_behavioral_probes toggle
     behavioral_result: BehavioralProbeResult | None = None
 
-    if config.enable_behavioral_probes:
-        logger.info("VALIDATE: Running behavioral probes...")
-        behavioral_result = _run_behavioral_probes(
-            merged_model_name="merged_model",
-        )
-        metrics["behavioral_probes"] = {
-            "risk_score": behavioral_result.risk_score,
-            "status": behavioral_result.status,
-            "probes_run": behavioral_result.probes_run,
-            "findings": behavioral_result.findings,
-        }
+    logger.info("VALIDATE: Running behavioral probes...")
+    behavioral_result = _run_behavioral_probes(
+        merged_model_name="merged_model",
+    )
+    metrics["behavioral_probes"] = {
+        "risk_score": behavioral_result.risk_score,
+        "status": behavioral_result.status,
+        "probes_run": behavioral_result.probes_run,
+        "findings": behavioral_result.findings,
+    }
 
-        if behavioral_result.status == "blocked":
-            logger.warning(
-                "VALIDATE: Behavioral probes BLOCKED (risk=%.3f)",
-                behavioral_result.risk_score,
-            )
-        elif behavioral_result.status == "warning":
-            logger.warning(
-                "VALIDATE: Behavioral probes WARNING (risk=%.3f)",
-                behavioral_result.risk_score,
-            )
-        else:
-            logger.info(
-                "VALIDATE: Behavioral probes PASSED (risk=%.3f)",
-                behavioral_result.risk_score,
-            )
+    if behavioral_result.status == "blocked":
+        logger.warning(
+            "VALIDATE: Behavioral probes BLOCKED (risk=%.3f)",
+            behavioral_result.risk_score,
+        )
+    elif behavioral_result.status == "warning":
+        logger.warning(
+            "VALIDATE: Behavioral probes WARNING (risk=%.3f)",
+            behavioral_result.risk_score,
+        )
     else:
-        metrics["behavioral_probes"] = {"skipped": True, "reason": "disabled"}
+        logger.info(
+            "VALIDATE: Behavioral probes PASSED (risk=%.3f)",
+            behavioral_result.risk_score,
+        )
 
     # =========================================================================
     # 4. CIRCUIT BREAKER EVALUATION (Multi-signal safety)
     # =========================================================================
+    # Circuit breaker always enabled - no enable_circuit_breaker toggle
     circuit_breaker_result: CircuitBreakerResult | None = None
 
-    if config.enable_circuit_breaker:
-        logger.info("VALIDATE: Evaluating circuit breaker signals...")
+    logger.info("VALIDATE: Evaluating circuit breaker signals...")
 
-        # Compute signals from validation data
-        entropy_signal = _compute_entropy_signal(config.entropy_phase)
-        # Refusal distance: 1.0 = preserved, 0.0 = not preserved
-        # No arbitrary intermediate values - it's binary from the check
-        refusal_distance = 1.0 if refusal_preserved else 0.0
-        probe_drift = behavioral_result.risk_score if behavioral_result else 0.0
+    # Compute signals from validation data
+    entropy_signal = _compute_entropy_signal(entropy_phase)
+    # Refusal distance: 1.0 = preserved, 0.0 = not preserved
+    # No arbitrary intermediate values - it's binary from the check
+    refusal_distance = 1.0 if refusal_preserved else 0.0
+    probe_drift = behavioral_result.risk_score if behavioral_result else 0.0
 
-        circuit_breaker_result = _evaluate_circuit_breaker(
-            entropy_signal=entropy_signal,
-            refusal_distance=refusal_distance,
-            persona_drift_magnitude=probe_drift,
+    circuit_breaker_result = _evaluate_circuit_breaker(
+        entropy_signal=entropy_signal,
+        refusal_distance=refusal_distance,
+        persona_drift_magnitude=probe_drift,
+    )
+
+    metrics["circuit_breaker"] = {
+        "tripped": circuit_breaker_result.tripped,
+        "severity": circuit_breaker_result.severity,
+        "trigger_source": circuit_breaker_result.trigger_source,
+        "recommended_action": circuit_breaker_result.recommended_action,
+    }
+
+    if circuit_breaker_result.tripped:
+        logger.warning(
+            "VALIDATE: Circuit breaker TRIPPED (severity=%.3f, source=%s)",
+            circuit_breaker_result.severity,
+            circuit_breaker_result.trigger_source,
         )
-
-        metrics["circuit_breaker"] = {
-            "tripped": circuit_breaker_result.tripped,
-            "severity": circuit_breaker_result.severity,
-            "trigger_source": circuit_breaker_result.trigger_source,
-            "recommended_action": circuit_breaker_result.recommended_action,
-        }
-
-        if circuit_breaker_result.tripped:
-            logger.warning(
-                "VALIDATE: Circuit breaker TRIPPED (severity=%.3f, source=%s)",
-                circuit_breaker_result.severity,
-                circuit_breaker_result.trigger_source,
-            )
-        else:
-            logger.info(
-                "VALIDATE: Circuit breaker OK (severity=%.3f)",
-                circuit_breaker_result.severity,
-            )
     else:
-        metrics["circuit_breaker"] = {"skipped": True, "reason": "disabled"}
+        logger.info(
+            "VALIDATE: Circuit breaker OK (severity=%.3f)",
+            circuit_breaker_result.severity,
+        )
 
     # =========================================================================
     # 5. RIDGE-CROSSING RESISTANCE VALIDATION (Post-merge thermodynamic check)
     # =========================================================================
+    # Ridge validation always enabled - no enable_ridge_validation toggle
     ridge_result: RidgeResistanceResult | None = None
 
-    if config.enable_ridge_validation and merged_model_path is not None:
+    if merged_model_path is not None:
         logger.info("VALIDATE: Checking ridge-crossing resistance...")
         ridge_result = _validate_ridge_resistance(
             merged_model_path=merged_model_path,
-            test_prompts=list(config.ridge_test_prompts),
+            test_prompts=list(_RIDGE_TEST_PROMPTS),
         )
 
         metrics["ridge_resistance"] = {
@@ -443,11 +440,7 @@ def stage_validate(
                 len(ridge_result.vulnerable_prompts),
             )
     else:
-        metrics["ridge_resistance"] = {"skipped": True}
-        if not config.enable_ridge_validation:
-            metrics["ridge_resistance"]["reason"] = "disabled"
-        else:
-            metrics["ridge_resistance"]["reason"] = "no_model_path"
+        metrics["ridge_resistance"] = {"skipped": True, "reason": "no_model_path"}
 
     # =========================================================================
     # DETERMINE FINAL VERDICT (Composite of all checks)
@@ -457,7 +450,7 @@ def stage_validate(
         refusal_preserved=refusal_preserved,
         behavioral_result=behavioral_result,
         circuit_breaker_result=circuit_breaker_result,
-        entropy_phase=config.entropy_phase,
+        entropy_phase=entropy_phase,
         ridge_result=ridge_result,
     )
 
@@ -474,14 +467,9 @@ def stage_validate(
     metrics["final_verdict"] = final_safety_verdict
     metrics["legacy_verdict"] = safety_verdict
     metrics["refusal_preserved"] = refusal_preserved
-    metrics["entropy_phase"] = config.entropy_phase
+    metrics["entropy_phase"] = entropy_phase
 
-    if config.validation_fail_on_unsafe and final_safety_verdict in ("unsafe", "critical"):
-        raise ValueError(
-            f"Merge validation failed with verdict: {final_safety_verdict}. "
-            f"Numerical: {numerical_verdict.value}, Refusal preserved: {refusal_preserved}, "
-            f"Circuit breaker: {circuit_breaker_result.tripped if circuit_breaker_result else 'N/A'}"
-        )
+    # validation_fail_on_unsafe was REMOVED - validation returns results, doesn't raise
 
     logger.info("VALIDATE: Final verdict = %s", final_safety_verdict.upper())
 
@@ -492,7 +480,7 @@ def stage_validate(
         behavioral_probe_result=behavioral_result,
         circuit_breaker_result=circuit_breaker_result,
         ridge_resistance_result=ridge_result,
-        entropy_phase=config.entropy_phase,
+        entropy_phase=entropy_phase,
         final_safety_verdict=final_safety_verdict,
     )
 

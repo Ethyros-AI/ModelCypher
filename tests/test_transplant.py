@@ -32,7 +32,6 @@ from modelcypher.core.domain.geometry.constrained_transplant import (
     verify_boundary_invariance,
 )
 from modelcypher.core.domain.geometry.transplant import (
-    CoreBoundaryPartition,
     TransplantDeltaResult,
     compute_transplant_delta,
     partition_core_boundary,
@@ -80,7 +79,7 @@ class TestPartitionCoreBoundary:
         assert result.boundary_indices == []
 
     def test_partition_finds_boundary_neighbors(self) -> None:
-        """Boundary should include geodesic neighbors of core probes."""
+        """Boundary should include every non-core probe."""
         backend = get_default_backend()
         backend.random_seed(42)
 
@@ -95,36 +94,14 @@ class TestPartitionCoreBoundary:
             activations=activations,
             probe_ids=probe_ids,
             core_probe_ids=core_probe_ids,
-            boundary_k=3,  # find 3 nearest neighbors per core
             backend=backend,
         )
 
         assert result.core_indices == [0, 1]
-        assert len(result.boundary_indices) > 0
+        assert len(result.boundary_indices) == 8
         # Boundary should not include core indices
         assert 0 not in result.boundary_indices
         assert 1 not in result.boundary_indices
-
-    def test_partition_boundary_k_limits_neighbors(self) -> None:
-        """boundary_k should limit number of neighbors per core probe."""
-        backend = get_default_backend()
-        backend.random_seed(42)
-        activations = backend.random_normal((20, 64))
-        backend.eval(activations)
-
-        probe_ids = [f"probe_{i}" for i in range(20)]
-        core_probe_ids = {"probe_5"}  # single core probe
-
-        result = partition_core_boundary(
-            activations=activations,
-            probe_ids=probe_ids,
-            core_probe_ids=core_probe_ids,
-            boundary_k=5,
-            backend=backend,
-        )
-
-        assert result.core_indices == [5]
-        assert len(result.boundary_indices) == 5
 
 
 class TestComputeTransplantDelta:
@@ -286,9 +263,10 @@ def test_stage_transplant_emits_alignment_metrics() -> None:
             return int(match.group(1))
         return None
 
+    graft_mask = {probe_id: {0: True} for probe_id in probe_ids}
     config = TransplantStageConfig(
         core_domains=("math",),
-        boundary_k=1,
+        graft_mask=graft_mask,
     )
 
     result = stage_transplant(
@@ -329,7 +307,10 @@ def test_stage_transplant_requires_real_activations() -> None:
             return int(match.group(1))
         return None
 
-    config = TransplantStageConfig(core_domains=("math",), boundary_k=1)
+    config = TransplantStageConfig(
+        core_domains=("math",),
+        graft_mask={"p0": {0: True}},
+    )
 
     with pytest.raises(RuntimeError, match="requires real activations"):
         stage_transplant(

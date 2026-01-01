@@ -284,7 +284,6 @@ class TestGraftMaskFiltering:
 
         filtered = filter_core_probes_by_graft_mask(
             core_probe_ids=core_probes,
-            probe_ids=probe_ids,
             layer_idx=5,
             graft_mask=graft_mask,
         )
@@ -303,7 +302,6 @@ class TestGraftMaskFiltering:
 
         filtered = filter_core_probes_by_graft_mask(
             core_probe_ids=core_probes,
-            probe_ids=probe_ids,
             layer_idx=5,
             graft_mask=graft_mask,
         )
@@ -322,7 +320,6 @@ class TestGraftMaskFiltering:
 
         filtered = filter_core_probes_by_graft_mask(
             core_probe_ids=core_probes,
-            probe_ids=probe_ids,
             layer_idx=5,
             graft_mask=graft_mask,
         )
