@@ -470,8 +470,20 @@ class DimensionCascade:
         # Use SVD-based pseudoinverse for numerical stability
         # X = U_x @ S_x @ Vt_x
         # pinv(X) = V_x @ (1/S_x) @ Ut_x
-        U_x, S_x, Vt_x = b.svd(points, full_matrices=False)
-        b.eval(U_x, S_x, Vt_x)
+        U_x_full, S_x, Vt_x_full = b.svd(points, full_matrices=False)
+        b.eval(U_x_full, S_x, Vt_x_full)
+
+        # MLX backend may return full U or Vt even with full_matrices=False
+        # We need to slice to the reduced form based on min(n, d)
+        k = len(b.to_numpy(S_x))  # Number of singular values = min(n, d)
+        U_x = U_x_full[:, :k]  # [n, k]
+        Vt_x = Vt_x_full[:k, :]  # [k, d]
+        b.eval(U_x, Vt_x)
+
+        logger.debug(
+            "Pseudoinverse shapes: U_x=%s, S_x=%s, Vt_x=%s",
+            U_x.shape, S_x.shape, Vt_x.shape,
+        )
 
         # Regularized inverse of singular values
         eps = 1e-10
@@ -483,16 +495,16 @@ class DimensionCascade:
         # W = (V_x @ diag(S_x_inv) @ U_x^T) @ projected
         # W = V_x @ diag(S_x_inv) @ (U_x^T @ projected)
 
-        # U_x^T @ projected
-        Ut_proj = b.matmul(b.transpose(U_x), projected)  # [min(n,d), target_dim]
+        # U_x^T @ projected: [k, n] @ [n, target_dim] = [k, target_dim]
+        Ut_proj = b.matmul(b.transpose(U_x), projected)
         b.eval(Ut_proj)
 
-        # diag(S_x_inv) @ (U_x^T @ projected)
-        S_inv_Ut_proj = S_x_inv[:, None] * Ut_proj  # broadcast
+        # diag(S_x_inv) @ (U_x^T @ projected): [k] * [k, target_dim] = [k, target_dim]
+        S_inv_Ut_proj = S_x_inv[:, None] * Ut_proj
         b.eval(S_inv_Ut_proj)
 
-        # V_x @ ...
-        coupling = b.matmul(b.transpose(Vt_x), S_inv_Ut_proj)  # [source_dim, target_dim]
+        # V_x @ ...: [d, k] @ [k, target_dim] = [d, target_dim]
+        coupling = b.matmul(b.transpose(Vt_x), S_inv_Ut_proj)
         b.eval(coupling)
 
         logger.debug(
