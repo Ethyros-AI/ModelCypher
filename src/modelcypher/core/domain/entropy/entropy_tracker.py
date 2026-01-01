@@ -36,7 +36,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Callable
 
-
 # Import calibration-based classes from model_state_classifier
 from modelcypher.core.domain.entropy.logit_entropy_calculator import LogitEntropyCalculator
 from modelcypher.core.domain.entropy.model_state_classifier import (
@@ -46,7 +45,7 @@ from modelcypher.core.domain.entropy.model_state_classifier import (
 )
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Array, Backend
+    from modelcypher.ports.backend import Array
 
 
 # =============================================================================

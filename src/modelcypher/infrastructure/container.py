@@ -92,7 +92,6 @@ class PortRegistry:
         This method imports and instantiates all concrete adapters.
         It's the single point where adapter dependencies are resolved.
         """
-        from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_inventories
         from modelcypher.adapters.filesystem_storage import FileSystemStore
         from modelcypher.adapters.hf_hub import HfHubAdapter
         from modelcypher.adapters.hf_model_search import HfModelSearchAdapter
@@ -104,6 +103,7 @@ class PortRegistry:
         from modelcypher.adapters.local_training import LocalTrainingEngine
         from modelcypher.adapters.mlx_model_loader import MLXModelLoader
         from modelcypher.backends import default_backend
+        from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_inventories
 
         register_default_atlas_inventories()
 

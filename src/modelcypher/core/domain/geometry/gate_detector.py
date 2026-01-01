@@ -50,10 +50,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Iterable
 
-from modelcypher.core.domain.geometry.path_geometry import PathNode, PathSignature
-from modelcypher.core.domain.geometry.vector_math import VectorMath
 from modelcypher.core.domain.geometry.atlas_protocols import ComputationalGateProtocol
 from modelcypher.core.domain.geometry.atlas_registry import get_gate_inventory
+from modelcypher.core.domain.geometry.path_geometry import PathNode, PathSignature
+from modelcypher.core.domain.geometry.vector_math import VectorMath
 from modelcypher.ports.embedding import EmbeddingProvider
 from modelcypher.utils.text import truncate
 

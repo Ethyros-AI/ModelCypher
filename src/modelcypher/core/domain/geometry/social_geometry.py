@@ -37,7 +37,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain.geometry.atlas_protocols import (
-    SocialConceptProtocol,
     axis_key,
 )
 from modelcypher.core.domain.geometry.atlas_registry import get_social_concepts

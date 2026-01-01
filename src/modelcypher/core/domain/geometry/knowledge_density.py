@@ -41,6 +41,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol
 from modelcypher.core.domain.geometry.concept_dimensionality import (
     ConceptDimensionalityAnalyzer,
     ConceptDimensionalityConfig,
@@ -49,7 +50,6 @@ from modelcypher.core.domain.geometry.concept_dimensionality import (
 from modelcypher.core.domain.geometry.intrinsic_dimension import (
     IntrinsicDimension,
 )
-from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.geometry.probe_calibration import ActivationProvider

@@ -39,7 +39,6 @@ from modelcypher.core.domain.geometry.model_profile import (
 )
 
 if TYPE_CHECKING:
-    from modelcypher.core.domain.geometry.curvature_alignment import AlignmentPlan
     from modelcypher.core.domain.geometry.curvature_profile import FamilyBaseline
 
 logger = logging.getLogger(__name__)

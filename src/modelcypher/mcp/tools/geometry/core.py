@@ -40,11 +40,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..common import (
-    MUTATING_ANNOTATIONS,
     READ_ONLY_ANNOTATIONS,
     ServiceContext,
     require_existing_directory,
-    require_existing_path,
 )
 
 if TYPE_CHECKING:

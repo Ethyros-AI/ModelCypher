@@ -25,19 +25,8 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
-from modelcypher.core.domain.model_search import (
-    ModelSearchError,
-    ModelSearchFilters,
-    ModelSearchLibraryFilter,
-    ModelSearchQuantization,
-    ModelSearchSortOption,
-)
-from modelcypher.core.domain.training import TrainingConfig
 from modelcypher.core.use_cases.concept_response_matrix_service import (
     ConceptResponseMatrixService,
-)
-from modelcypher.core.use_cases.evaluation_service import (
-    EvalConfig,
 )
 from modelcypher.core.use_cases.geometry_service import GeometryService
 from modelcypher.core.use_cases.geometry_stitch_service import GeometryStitchService
@@ -46,7 +35,6 @@ from modelcypher.core.use_cases.merge_validation_service import (
 )
 from modelcypher.core.use_cases.model_probe_service import ModelProbeService
 from modelcypher.core.use_cases.settings_service import SettingsService
-from modelcypher.core.use_cases.unified_geometric_merge import UnifiedGeometricMerger
 from modelcypher.infrastructure.container import PortRegistry
 from modelcypher.infrastructure.service_factory import ServiceFactory
 from modelcypher.mcp.security import (
@@ -1473,6 +1461,7 @@ def build_server() -> FastMCP:
     # Register modular tools (extracted from this file for maintainability)
     from modelcypher.mcp.tools.agent import register_agent_tools
     from modelcypher.mcp.tools.common import ServiceContext
+    from modelcypher.mcp.tools.evaluation import register_evaluation_tools
     from modelcypher.mcp.tools.geometry import (
         register_geometry_baseline_tools,
         register_geometry_crm_tools,
@@ -1484,15 +1473,14 @@ def build_server() -> FastMCP:
         register_geometry_stitch_tools,
         register_geometry_tools,
     )
+    from modelcypher.mcp.tools.inference import register_inference_tools
     from modelcypher.mcp.tools.merge_entropy import register_merge_entropy_tools
     from modelcypher.mcp.tools.model import register_model_tools
     from modelcypher.mcp.tools.program import register_program_tools
-    from modelcypher.mcp.tools.training import register_training_tools
-    from modelcypher.mcp.tools.evaluation import register_evaluation_tools
-    from modelcypher.mcp.tools.thermo import register_thermo_tools
-    from modelcypher.mcp.tools.inference import register_inference_tools
     from modelcypher.mcp.tools.safety_entropy import register_entropy_tools, register_safety_tools
     from modelcypher.mcp.tools.tasks import register_task_tools
+    from modelcypher.mcp.tools.thermo import register_thermo_tools
+    from modelcypher.mcp.tools.training import register_training_tools
 
     service_context = ServiceContext(
         mcp=mcp,

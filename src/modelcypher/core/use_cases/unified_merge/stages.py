@@ -81,6 +81,8 @@ def stage_probe(
     from modelcypher.core.use_cases.merge_stages.stage_1_probe import (
         ProbeConfig,
         collect_layer_activations_mlx,
+    )
+    from modelcypher.core.use_cases.merge_stages.stage_1_probe import (
         stage_probe as stage_probe_impl,
     )
 
@@ -144,6 +146,8 @@ def stage_permute(
     from modelcypher.core.use_cases.merge_stages.stage_2_permute import (
         PermuteConfig,
         infer_hidden_dim,
+    )
+    from modelcypher.core.use_cases.merge_stages.stage_2_permute import (
         stage_permute as stage_permute_impl,
     )
 
@@ -178,6 +182,8 @@ def stage_transplant(
     """Stage 3: Null-space constrained transplant."""
     from modelcypher.core.use_cases.merge_stages.stage_3_transplant import (
         TransplantStageConfig,
+    )
+    from modelcypher.core.use_cases.merge_stages.stage_3_transplant import (
         stage_transplant as stage_transplant_impl,
     )
 

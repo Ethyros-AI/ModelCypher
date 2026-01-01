@@ -49,6 +49,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+
 from .unified_merge import helpers as merge_helpers
 from .unified_merge import stages as merge_stages
 from .unified_merge.models import (

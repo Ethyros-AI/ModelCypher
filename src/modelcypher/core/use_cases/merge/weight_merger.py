@@ -21,7 +21,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .data_models import MergeGeometry
 

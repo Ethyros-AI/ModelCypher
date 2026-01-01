@@ -49,12 +49,12 @@ from modelcypher.core.domain.geometry.intrinsic_dimension import (
     TwoNNConfiguration,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
-from modelcypher.core.domain.geometry.topological_fingerprint import (
-    TopologicalFingerprint,
-)
 from modelcypher.core.domain.geometry.spectral_signature import (
     SpectralSignature,
     SpectralSignatureConfig,
+)
+from modelcypher.core.domain.geometry.topological_fingerprint import (
+    TopologicalFingerprint,
 )
 
 

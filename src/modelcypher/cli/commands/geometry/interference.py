@@ -32,10 +32,10 @@ from modelcypher.cli.output import write_output
 from modelcypher.core.domain._backend import get_default_backend
 
 if TYPE_CHECKING:
+    from modelcypher.core.domain.domains import AtlasDomain
     from modelcypher.core.domain.geometry.domain_geometry_waypoints import (
         DomainGeometryWaypointService,
     )
-    from modelcypher.core.domain.domains import AtlasDomain
 
 app = typer.Typer(help="Merge analysis for model alignment")
 logger = logging.getLogger(__name__)

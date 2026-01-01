@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import typer
@@ -75,7 +74,6 @@ def inspect_profile(
     """
     from modelcypher.core.domain.geometry.model_profile import (
         ModelProfile,
-        ProfileSection,
     )
 
     context = _context(ctx)
@@ -293,7 +291,6 @@ def merge_profiles(
 
 def _build_summary(profile: "ModelProfile") -> dict[str, Any]:
     """Build summary view of profile."""
-    from modelcypher.core.domain.geometry.model_profile import ModelProfile
 
     summary: dict[str, Any] = {
         "model_path": profile.model_path,

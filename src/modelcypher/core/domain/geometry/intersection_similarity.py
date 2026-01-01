@@ -318,7 +318,6 @@ def build_intersection_map(
         IntersectionMap with dimension correlations and layer confidences
     """
     from modelcypher.core.domain.geometry.manifold_stitcher import (
-        DimensionCorrelation,
         IntersectionMap,
         LayerConfidence,
     )

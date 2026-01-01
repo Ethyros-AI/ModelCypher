@@ -22,11 +22,11 @@ import random
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
 from modelcypher.core.domain.geometry.backend_matrix_utils import (
     compute_frobenius_norm_squared,
     reshape_flat_to_matrix,
 )
+from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend

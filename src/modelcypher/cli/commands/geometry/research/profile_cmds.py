@@ -26,7 +26,13 @@ import typer
 from modelcypher.cli.output import write_output
 from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
 
-from .common import cleanup_memory, get_context, load_model_and_provider, parse_domains, parse_sources
+from .common import (
+    cleanup_memory,
+    get_context,
+    load_model_and_provider,
+    parse_domains,
+    parse_sources,
+)
 
 logger = logging.getLogger(__name__)
 

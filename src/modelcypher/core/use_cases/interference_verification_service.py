@@ -42,7 +42,6 @@ from modelcypher.core.domain.geometry.prediction_registry import (
 
 if TYPE_CHECKING:
     from modelcypher.core.use_cases.unified_merge.models import UnifiedMergeResult
-    from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
 

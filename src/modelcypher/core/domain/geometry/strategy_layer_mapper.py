@@ -31,7 +31,6 @@ if TYPE_CHECKING:
     from modelcypher.core.domain.geometry.invariant_layer_mapper import (
         Config,
         CRMMappingConfig,
-        InvariantLayerMapper,
         LayerMapping,
         LayerMappingStrategy,
         LayerProfile,
@@ -144,7 +143,6 @@ class StrategyLayerMapper:
         from modelcypher.core.domain.geometry.invariant_layer_mapper import (
             CRMMappingConfig,
             InvariantLayerMapper,
-            LayerMapping,
             LayerMappingStrategy,
             Summary,
         )

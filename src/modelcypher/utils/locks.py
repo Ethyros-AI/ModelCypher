@@ -21,6 +21,9 @@ import time
 from pathlib import Path
 
 
+from typing import TextIO
+
+
 class FileLockError(RuntimeError):
     pass
 
@@ -28,7 +31,7 @@ class FileLockError(RuntimeError):
 class FileLock:
     def __init__(self, path: Path) -> None:
         self.path = path
-        self.handle = None
+        self.handle: TextIO | None = None
 
     def acquire(self, timeout: float = 0.0) -> None:
         import fcntl

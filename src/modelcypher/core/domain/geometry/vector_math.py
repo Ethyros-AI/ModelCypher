@@ -660,7 +660,7 @@ class BackendVectorMath:
         m1: Any,
         t: float,
         epsilon: float | None = None,
-    ) -> tuple[Any, dict[str, float]] | None:
+    ) -> tuple[Any, dict[str, float | str]] | None:
         """Spherical linear interpolation for 2D weight matrices.
 
         Treats each matrix as a high-dimensional vector and applies SLERP.
@@ -727,7 +727,7 @@ class BackendVectorMath:
         theta = math.acos(dot_val)
         angle_deg = math.degrees(theta)
 
-        metrics = {
+        metrics: dict[str, float | str] = {
             "angle_deg": angle_deg,
             "magnitude_ratio": norm_v0_val / (norm_v1_val + 1e-10),
             "cosine_similarity": dot_val,

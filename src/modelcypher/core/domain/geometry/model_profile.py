@@ -46,7 +46,6 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from modelcypher.core.domain.geometry.curvature_profile import (
         CurvatureProfile,
-        FamilyBaseline,
     )
     from modelcypher.core.domain.geometry.knowledge_density import ModelDensityProfile
     from modelcypher.core.domain.geometry.topological_fingerprint import Fingerprint

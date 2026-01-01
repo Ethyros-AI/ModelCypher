@@ -35,7 +35,6 @@ from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_in
 
 register_default_atlas_inventories()
 
-from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
 from modelcypher.adapters.local_inference import LocalInferenceEngine
 from modelcypher.cli.commands import adapter as adapter_commands
 from modelcypher.cli.commands import agent as agent_commands

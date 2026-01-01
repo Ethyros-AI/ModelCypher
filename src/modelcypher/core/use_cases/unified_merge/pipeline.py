@@ -22,7 +22,7 @@ import time
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 
@@ -487,7 +487,6 @@ def run_full_geometry_merge(
         if source_model and target_model and source_tokenizer and target_tokenizer:
             from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
             from modelcypher.core.domain.vocabulary.alignment_map import AlignmentQuality
-
             from modelcypher.core.use_cases.merge_stages.stage_1_probe import (
                 _encode_probe_ids,
                 build_token_id_map,

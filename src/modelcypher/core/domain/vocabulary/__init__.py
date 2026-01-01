@@ -52,8 +52,8 @@ from .embedding_projector import (
 )
 from .vocabulary_analyzer import (
     TokenizerType,
-    VocabularyAnalyzer,
     VocabularyAlignment,
+    VocabularyAnalyzer,
     VocabularyStats,
 )
 

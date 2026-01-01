@@ -43,8 +43,8 @@ from .embedding_projector import (
     ProjectionStrategy,
 )
 from .vocabulary_analyzer import (
-    VocabularyAnalyzer,
     VocabularyAlignment,
+    VocabularyAnalyzer,
     VocabularyStats,
 )
 

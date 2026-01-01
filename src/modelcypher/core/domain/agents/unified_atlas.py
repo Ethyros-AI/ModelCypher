@@ -123,7 +123,6 @@ class AtlasSource(str, Enum):
 # Import AtlasDomain from the canonical location
 from modelcypher.core.domain.domains import AtlasDomain
 
-
 # Domain mapping for each atlas category
 _SEQUENCE_DOMAIN_MAP: dict[SequenceFamily, AtlasDomain] = {
     SequenceFamily.FIBONACCI: AtlasDomain.MATHEMATICAL,

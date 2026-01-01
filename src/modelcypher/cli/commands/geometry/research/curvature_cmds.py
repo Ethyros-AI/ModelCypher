@@ -24,7 +24,6 @@ representations are encoded (geometry) rather than WHAT (semantics).
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 
@@ -66,10 +65,17 @@ def register(app: typer.Typer) -> None:
         """
         context = get_context(ctx)
 
+        from datetime import datetime
+
+        from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
         from modelcypher.core.domain.geometry.curvature_profile import (
             CurvatureProfile,
             LayerCurvature,
             parse_model_info,
+        )
+        from modelcypher.core.domain.geometry.intrinsic_dimension import (
+            IntrinsicDimension,
+            TwoNNConfiguration,
         )
         from modelcypher.core.domain.geometry.manifold_curvature import (
             CurvatureConfig,
@@ -77,12 +83,6 @@ def register(app: typer.Typer) -> None:
             OllivierRicciCurvature,
             SectionalCurvatureEstimator,
         )
-        from modelcypher.core.domain.geometry.intrinsic_dimension import (
-            IntrinsicDimension,
-            TwoNNConfiguration,
-        )
-        from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
-        from datetime import datetime
 
         # Parse model info
         model_family, model_size = parse_model_info(model_path)

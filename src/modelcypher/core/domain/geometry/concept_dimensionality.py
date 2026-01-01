@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol, enum_key
 from modelcypher.core.domain.geometry.intrinsic_dimension import (
     BootstrapConfiguration,
     GeodesicConfiguration,
@@ -33,7 +34,6 @@ from modelcypher.core.domain.geometry.intrinsic_dimension import (
 )
 from modelcypher.core.domain.geometry.probe_calibration import ActivationProvider
 from modelcypher.core.domain.geometry.vector_math import VectorMath
-from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol, enum_key
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend

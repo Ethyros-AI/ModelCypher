@@ -23,13 +23,9 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.backend_matrix_utils import (
-    reshape_flat_to_matrix,
-    transpose_flat_matrix,
-)
+from modelcypher.core.domain.geometry.atlas_registry import get_atlas_probes
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
 from modelcypher.core.domain.geometry.geometry_fingerprint import GeometricFingerprint
-from modelcypher.core.domain.geometry.atlas_registry import get_atlas_probes
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend

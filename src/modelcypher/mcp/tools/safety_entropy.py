@@ -252,8 +252,10 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
             anomalyZScoreThreshold: float,
         ) -> dict:
             """Analyze entropy/variance samples for patterns and trends."""
-            from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
-            from modelcypher.core.use_cases.entropy_probe_service import PatternAnalysisConfig
+            from modelcypher.core.use_cases.entropy_probe_service import (
+                EntropyProbeService,
+                PatternAnalysisConfig,
+            )
 
             parsed_samples = [(s[0], s[1]) for s in samples]
             config = PatternAnalysisConfig(
@@ -280,8 +282,10 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
             anomalyZScoreThreshold: float,
         ) -> dict:
             """Detect distress patterns in entropy samples."""
-            from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
-            from modelcypher.core.use_cases.entropy_probe_service import PatternAnalysisConfig
+            from modelcypher.core.use_cases.entropy_probe_service import (
+                EntropyProbeService,
+                PatternAnalysisConfig,
+            )
 
             parsed_samples = [(s[0], s[1]) for s in samples]
             config = PatternAnalysisConfig(
@@ -317,10 +321,10 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
             adapterPath: str,
         ) -> dict:
             """Verify observed entropy deltas against declared baseline."""
-            from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
             from modelcypher.core.domain.entropy.baseline_verification_probe import (
                 VerificationConfiguration,
             )
+            from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
 
             config = VerificationConfiguration.with_statistical_thresholds(
                 failure_z_score=failureZScore,

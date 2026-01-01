@@ -39,11 +39,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.riemannian_utils import safe_arithmetic_mean
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Array, Backend
+    pass
 
 logger = logging.getLogger(__name__)
 

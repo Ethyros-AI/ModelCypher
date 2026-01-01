@@ -33,7 +33,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TypeAlias
 
 from modelcypher.core.domain.geometry.atlas_protocols import (
     AtlasProbeProtocol,

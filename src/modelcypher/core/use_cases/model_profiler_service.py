@@ -34,19 +34,16 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain.geometry.model_profile import (
-    LayerProfile,
     ModelProfile,
     ProfileSection,
 )
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.geometry.curvature_profile import CurvatureProfile
-    from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger(__name__)
 
