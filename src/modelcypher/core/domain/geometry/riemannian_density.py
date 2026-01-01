@@ -1177,13 +1177,6 @@ class RiemannianDensityEstimator:
                 )
                 return 0.0
 
-            # Debug: log shapes
-            logger.debug(
-                f"Cross-dim subspace alignment: "
-                f"raw_a={volume_a.raw_activations.shape}, "
-                f"raw_b={volume_b.raw_activations.shape}"
-            )
-
             # Compute Gram matrices: K = X @ X^T → [n_samples, n_samples]
             # These have the SAME dimensions regardless of feature dimension
             gram_a = backend.matmul(
@@ -1196,10 +1189,7 @@ class RiemannianDensityEstimator:
             )
             backend.eval(gram_a, gram_b)
 
-            logger.debug(f"Gram matrices: gram_a={gram_a.shape}, gram_b={gram_b.shape}")
-
             result = compute_cka_from_grams(gram_a, gram_b, backend=backend)
-            logger.debug(f"CKA result: {result}")
 
         # Clamp to [0, 1] to handle floating point precision
         return max(0.0, min(1.0, result))

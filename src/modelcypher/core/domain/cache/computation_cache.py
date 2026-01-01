@@ -168,6 +168,14 @@ class ComputationCache:
 
     # --- Key Generation ---
 
+    def _backend_id(self, backend: "Backend") -> str:
+        """Get a short identifier for the backend type.
+
+        This ensures cached values are not returned to a different backend,
+        which would cause type errors (e.g., MLX array passed to JAX function).
+        """
+        return type(backend).__name__[:3].lower()  # "mlx", "jax", "cud"
+
     def make_array_key(self, arr: "Array", backend: "Backend") -> str:
         """
         Create a hash key from an array's content.
@@ -271,7 +279,8 @@ class ComputationCache:
     ) -> str:
         """Create cache key for Gram matrix computation."""
         base_key = self.make_array_key(arr, backend)
-        return f"gram_{kernel_type}_{base_key}"
+        bid = self._backend_id(backend)
+        return f"gram_{bid}_{kernel_type}_{base_key}"
 
     def make_centered_gram_key(self, gram_key: str) -> str:
         """Create cache key for centered Gram matrix."""
@@ -285,7 +294,8 @@ class ComputationCache:
     ) -> str:
         """Create cache key for geodesic distance matrix."""
         base_key = self.make_array_key(arr, backend)
-        return f"geodesic_k{k_neighbors}_{base_key}"
+        bid = self._backend_id(backend)
+        return f"geodesic_{bid}_k{k_neighbors}_{base_key}"
 
     def make_svd_key(
         self,
@@ -295,7 +305,8 @@ class ComputationCache:
     ) -> str:
         """Create cache key for SVD computation."""
         base_key = self.make_array_key(arr, backend)
-        return f"svd_full{full_matrices}_{base_key}"
+        bid = self._backend_id(backend)
+        return f"svd_{bid}_full{full_matrices}_{base_key}"
 
     def make_frechet_key(
         self,
@@ -306,9 +317,10 @@ class ComputationCache:
     ) -> str:
         """Create cache key for Fréchet mean computation."""
         base_key = self.make_array_key(arr, backend)
+        bid = self._backend_id(backend)
         weights_suffix = f"_w{weights_key}" if weights_key else ""
         k_suffix = f"_k{k_neighbors}" if k_neighbors is not None else ""
-        return f"frechet_{base_key}{weights_suffix}{k_suffix}"
+        return f"frechet_{bid}_{base_key}{weights_suffix}{k_suffix}"
 
     # --- Gram Matrix Cache ---
 

@@ -86,17 +86,8 @@ def predict_interference(
                 continue
             resolved = resolve_domain(name)
             if resolved is None:
-                typer.echo(
-                    f"Invalid domain: {name}. Valid: spatial, social, temporal, moral",
-                    err=True,
-                )
-                raise typer.Exit(1)
-            if resolved not in supported:
-                typer.echo(
-                    f"Unsupported domain for waypoint analysis: {resolved.value}. "
-                    "Valid: spatial, social, temporal, moral",
-                    err=True,
-                )
+                valid_domains = ", ".join(d.value for d in AtlasDomain)
+                typer.echo(f"Invalid domain: {name}. Valid: {valid_domains}", err=True)
                 raise typer.Exit(1)
             domain_list.append(resolved)
     else:
@@ -160,9 +151,8 @@ def predict_interference(
         target_matrix = backend.stack(target_stacked, axis=0)
         backend.eval(source_matrix, target_matrix)
 
+        # No normalization - CKA is scale-invariant via Gram matrix normalization
         # Compute domain-level CKA (dimension-agnostic)
-        # Use BIASED estimator without feature correction to avoid eigh on potentially
-        # ill-conditioned centered Gram matrices
         domain_cka = compute_cka_backend(
             source_matrix,
             target_matrix,
@@ -350,34 +340,37 @@ def _extract_domain_activations(
     layer: int,
     service: "DomainGeometryWaypointService",
 ) -> dict[str, Any]:
-    """Extract activations for probes in a specific domain."""
+    """Extract activations for probes in a specific domain.
+
+    Uses the UnifiedAtlas to get probes for ALL domains, not just a hardcoded subset.
+    """
 
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.backends.mlx_backend import MLXBackend
-    from modelcypher.core.domain.domains import AtlasDomain
+    from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlas
 
     backend = MLXBackend()
     model, tokenizer = load_model_for_training(model_path)
 
-    # Get probes for this domain
-    if domain == AtlasDomain.SPATIAL:
-        from modelcypher.core.domain.agents.spatial_atlas import SpatialConceptInventory
+    # Get ALL probes for this domain from the UnifiedAtlas
+    atlas = UnifiedAtlas()
+    all_probes = atlas.all_probes()
 
-        probes = [(p.id, p.prompt) for p in SpatialConceptInventory.all_concepts()]
-    elif domain == AtlasDomain.SOCIAL:
-        from modelcypher.core.domain.agents.social_atlas import SocialConceptInventory
+    # Filter to probes matching this domain
+    domain_probes = [p for p in all_probes if p.domain == domain]
 
-        probes = [(p.id, p.prompt) for p in SocialConceptInventory.all_concepts()]
-    elif domain == AtlasDomain.TEMPORAL:
-        from modelcypher.core.domain.agents.temporal_atlas import TemporalConceptInventory
-
-        probes = [(p.id, p.prompt) for p in TemporalConceptInventory.all_concepts()]
-    elif domain == AtlasDomain.MORAL:
-        from modelcypher.core.domain.agents.moral_atlas import MoralConceptInventory
-
-        probes = [(p.id, p.prompt) for p in MoralConceptInventory.all_concepts()]
-    else:
+    if not domain_probes:
+        logger.warning(f"No probes found for domain {domain.value}")
         return {}
+
+    # Convert to (id, prompt) format - use support_texts[0] if available, else description
+    probes = []
+    for p in domain_probes:
+        if p.support_texts:
+            prompt = p.support_texts[0]
+        else:
+            prompt = f"The concept of {p.name} means"
+        probes.append((p.id, prompt))
 
     return service._extract_activations(model, tokenizer, layer, probes, backend)
 
