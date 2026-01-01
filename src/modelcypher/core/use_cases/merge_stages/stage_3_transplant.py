@@ -757,8 +757,22 @@ def stage_transplant(
                 if src_analysis is not None and tgt_analysis is not None:
                     n_samples = min(int(src_analysis.shape[0]), int(tgt_analysis.shape[0]))
                     if n_samples >= 5:
-                        src_np = b.to_numpy(src_analysis[:n_samples])
-                        tgt_np = b.to_numpy(tgt_analysis[:n_samples])
+                        # NORMALIZE for numerical stability (geometry is scale-invariant)
+                        # Different models have wildly different activation scales
+                        src_sub = src_analysis[:n_samples]
+                        tgt_sub = tgt_analysis[:n_samples]
+
+                        src_mean = b.mean(src_sub, axis=0, keepdims=True)
+                        src_std = b.std(src_sub, axis=0, keepdims=True) + 1e-8
+                        src_normed = (src_sub - src_mean) / src_std
+
+                        tgt_mean = b.mean(tgt_sub, axis=0, keepdims=True)
+                        tgt_std = b.std(tgt_sub, axis=0, keepdims=True) + 1e-8
+                        tgt_normed = (tgt_sub - tgt_mean) / tgt_std
+                        b.eval(src_normed, tgt_normed)
+
+                        src_np = b.to_numpy(src_normed)
+                        tgt_np = b.to_numpy(tgt_normed)
                         anchor_pairs = [
                             AnchorPair(
                                 source_activation=src_np[i].tolist(),
@@ -768,27 +782,33 @@ def stage_transplant(
                             for i in range(n_samples)
                         ]
 
-                        # Train affine stitching layer
+                        # Train affine stitching layer (more iterations for convergence)
+                        from modelcypher.core.domain.geometry.affine_stitching_layer import (
+                            Config as StitchConfig,
+                        )
                         stitcher = BackendAffineStitchingLayer(b)
-                        stitch_result = stitcher.train(anchor_pairs)
+                        stitch_result = stitcher.train(
+                            anchor_pairs,
+                            StitchConfig(max_iterations=2000, learning_rate=0.01),
+                        )
 
                         if stitch_result is not None and stitch_result.is_valid:
-                            # Apply stitch to source activations
+                            # Apply stitch to NORMALIZED source activations
                             weights_stitch = b.array(stitch_result.weights)
                             bias_stitch = b.array(stitch_result.bias)
-                            src_stitched = stitcher.apply(src_analysis[:n_samples], weights_stitch, bias_stitch)
+                            src_stitched = stitcher.apply(src_normed, weights_stitch, bias_stitch)
                             b.eval(src_stitched)
 
-                            # VERIFY CKA = 1.0 after stitching
+                            # VERIFY CKA = 1.0 after stitching (use normalized target)
                             cka_after_stitch = compute_cka_backend(
                                 src_stitched,
-                                tgt_analysis[:n_samples],
+                                tgt_normed,
                                 backend=b,
                                 estimator=HSICEstimator.BIASED,
                                 feature_bias_correction=False,
                             )
                             b.eval(cka_after_stitch)
-                            cka_val = float(b.to_numpy(cka_after_stitch))
+                            cka_val = float(cka_after_stitch.item()) if hasattr(cka_after_stitch, 'item') else float(b.to_numpy(cka_after_stitch))
 
                             if cka_val >= 0.99:  # CKA preserved - stitch is geometry-preserving
                                 # FOLD stitch INTO source weights:

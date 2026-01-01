@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -29,21 +30,10 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class Configuration:
-    base_rank: int = 16
-    sparsity_threshold: float = 0.3
-    max_skip_layers: int = 4
-    use_dare_alignment: bool = True
-    target_module_types: list[str] = field(
-        default_factory=lambda: [
-            "q_proj",
-            "k_proj",
-            "v_proj",
-            "o_proj",
-            "gate_proj",
-            "up_proj",
-            "down_proj",
-        ]
-    )
+    base_rank: int
+    sparsity_threshold: float | None
+    use_dare_alignment: bool
+    target_module_types: list[str]
 
 
 @dataclass(frozen=True)
@@ -170,15 +160,27 @@ class AnalysisResult:
 
 
 class SparseRegionLocator:
-    def __init__(self, configuration: Configuration | None = None) -> None:
-        self.config = configuration or Configuration()
+    def __init__(self, configuration: Configuration) -> None:
+        self.config = configuration
+
+    @staticmethod
+    def _derive_sparsity_threshold(values: list[float]) -> float:
+        if len(values) < 2:
+            raise ValueError("Need at least two sparsity values to derive a threshold")
+        sorted_vals = sorted(values)
+        gaps = [sorted_vals[i + 1] - sorted_vals[i] for i in range(len(sorted_vals) - 1)]
+        max_gap = max(gaps)
+        if max_gap <= 0:
+            raise ValueError("Sparsity values have no separable gap for threshold derivation")
+        gap_index = gaps.index(max_gap)
+        return (sorted_vals[gap_index] + sorted_vals[gap_index + 1]) / 2.0
 
     def analyze(
         self,
         domain_stats: list[LayerActivationStats],
         baseline_stats: list[LayerActivationStats],
+        domain: str,
         dare_analysis: SparsityAnalysis | None = None,
-        domain: str = "unknown",
     ) -> AnalysisResult:
         domain_by_layer = {stat.layer_index: stat for stat in domain_stats}
         baseline_by_layer = {stat.layer_index: stat for stat in baseline_stats}
@@ -190,20 +192,32 @@ class SparseRegionLocator:
             baseline_stat = baseline_by_layer.get(layer)
             if domain_stat is None or baseline_stat is None:
                 continue
-            if baseline_stat.mean_activation > 0.0001:
-                ratio = domain_stat.mean_activation / baseline_stat.mean_activation
-                sparsity = max(0.0, min(1.0, 1.0 - ratio))
-            else:
-                sparsity = 0.5
+            if baseline_stat.mean_activation <= 0:
+                raise ValueError(
+                    "Baseline mean activation must be positive to compute sparsity ratios"
+                )
+            ratio = domain_stat.mean_activation / baseline_stat.mean_activation
+            sparsity = max(0.0, min(1.0, 1.0 - ratio))
             layer_sparsity[layer] = sparsity
+
+        if not layer_sparsity:
+            raise ValueError("No comparable layer statistics available for sparsity analysis")
+
+        if self.config.sparsity_threshold is None:
+            sparsity_threshold = self._derive_sparsity_threshold(list(layer_sparsity.values()))
+        else:
+            sparsity_threshold = self.config.sparsity_threshold
 
         sparse_layers = sorted(
             layer
             for layer, sparsity in layer_sparsity.items()
-            if sparsity >= self.config.sparsity_threshold
+            if sparsity >= sparsity_threshold
         )
-        skip_candidates = [layer for layer, sparsity in layer_sparsity.items() if sparsity < 0.1]
-        skip_layers = sorted(skip_candidates)[: self.config.max_skip_layers]
+        min_sparsity = min(layer_sparsity.values())
+        eps = sys.float_info.epsilon
+        skip_layers = sorted(
+            layer for layer, sparsity in layer_sparsity.items() if sparsity <= min_sparsity + eps
+        )
 
         dare_alignment = (
             self._compute_dare_alignment(sparse_layers, dare_analysis)
@@ -237,16 +251,16 @@ class SparseRegionLocator:
         self,
         domain_activations: list[dict[int, float]],
         baseline_activations: list[dict[int, float]],
+        domain: str,
         dare_analysis: SparsityAnalysis | None = None,
-        domain: str = "unknown",
     ) -> AnalysisResult:
         domain_stats = self._aggregate_activations(domain_activations)
         baseline_stats = self._aggregate_activations(baseline_activations)
         return self.analyze(
             domain_stats=domain_stats,
             baseline_stats=baseline_stats,
-            dare_analysis=dare_analysis,
             domain=domain,
+            dare_analysis=dare_analysis,
         )
 
     def _aggregate_activations(
@@ -323,14 +337,13 @@ class SparseRegionLocator:
         for layer, sparsity in layer_sparsity.items():
             if layer in skip_layers:
                 continue
-            factor = 1.0 - sparsity + 0.2
-            rank = int(float(self.config.base_rank) * factor)
-            rank = max(4, min(self.config.base_rank * 2, rank))
+            rank = int(round(float(self.config.base_rank) * (1.0 - sparsity)))
+            rank = max(1, rank)
             rank_by_layer[layer] = rank
 
         ranks = sorted(rank_by_layer.values())
         overall_rank = ranks[len(ranks) // 2] if ranks else self.config.base_rank
-        alpha = overall_rank * 2
+        alpha = overall_rank
 
         sparse_ratio = float(len(sparse_layers)) / float(max(1, len(layer_sparsity)))
 

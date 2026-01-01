@@ -29,6 +29,7 @@ from modelcypher.core.domain.geometry.sparse_region_domains import (
     SparseRegionDomains,
 )
 from modelcypher.core.domain.geometry.sparse_region_locator import (
+    Configuration as LocatorConfiguration,
     LayerActivationStats,
     SparseRegionLocator,
 )
@@ -38,11 +39,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class Configuration:
-    prompts_per_domain: int = 8
-    max_tokens_per_prompt: int = 50
-    temperature: float = 0.1
-    capture_all_layers: bool = True
-    warmup_prompts: int = 1
+    prompts_per_domain: int
+    max_tokens_per_prompt: int
 
 
 @dataclass(frozen=True)
@@ -105,8 +103,8 @@ class DomainProbeResult:
 
 
 class SparseRegionProber:
-    def __init__(self, configuration: Configuration | None = None) -> None:
-        self.config = configuration or Configuration()
+    def __init__(self, configuration: Configuration) -> None:
+        self.config = configuration
 
     def probe(
         self,
@@ -194,6 +192,7 @@ class SparseRegionProber:
         domain: DomainDefinition,
         total_layers: int,
         generate_tokens: Callable[[str, int, Callable[[dict[int, float]], None]], int],
+        locator_config: LocatorConfiguration,
         dare_analysis=None,
         progress: Callable[[ProbeProgress], None] | None = None,
     ):
@@ -232,7 +231,7 @@ class SparseRegionProber:
             ),
         )
 
-        locator = SparseRegionLocator()
+        locator = SparseRegionLocator(locator_config)
         return locator.analyze(
             domain_stats=domain_result.layer_stats,
             baseline_stats=baseline.layer_stats,

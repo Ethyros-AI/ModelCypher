@@ -48,19 +48,19 @@ class MergeValidationConfig:
     """
 
     # Perplexity evaluation
-    perplexity_dataset: str | None = None
-    perplexity_max_samples: int = 100
-    perplexity_batch_size: int = 4
+    perplexity_dataset: str | None
+    perplexity_max_samples: int
+    perplexity_batch_size: int
 
     # Coherence scoring
-    coherence_prompts: list[str] | None = None
-    coherence_max_tokens: int = 50
+    coherence_prompts: list[str] | None
+    coherence_max_tokens: int
 
     # Task probes: list of {name, prompt, expected_pattern}
-    task_probes: list[dict] | None = None
+    task_probes: list[dict] | None
 
     # Geometric diagnosis
-    geometric_diagnosis: bool = True
+    geometric_diagnosis: bool
 
 
 @dataclass
@@ -170,7 +170,7 @@ class MergeValidationService:
         merged_model: str,
         source_model: str | None = None,
         target_model: str | None = None,
-        config: MergeValidationConfig | None = None,
+        config: MergeValidationConfig,
     ) -> MergeValidationResult:
         """
         Execute full merge validation suite.
@@ -184,7 +184,6 @@ class MergeValidationService:
         Returns:
             MergeValidationResult with all metrics and diagnosis.
         """
-        config = config or MergeValidationConfig()
         validation_id = f"val-{uuid.uuid4().hex[:8]}"
 
         result = MergeValidationResult(

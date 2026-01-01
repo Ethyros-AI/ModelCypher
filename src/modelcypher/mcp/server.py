@@ -733,11 +733,15 @@ def build_server() -> FastMCP:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_merge_validate(
             merged: str,
-            source: str | None = None,
-            target: str | None = None,
-            coherencePrompts: list[str] | None = None,
-            taskProbes: list[dict] | None = None,
-            geometricDiagnosis: bool = True,
+            source: str | None,
+            target: str | None,
+            perplexityDataset: str | None,
+            perplexityMaxSamples: int,
+            perplexityBatchSize: int,
+            coherencePrompts: list[str] | None,
+            coherenceMaxTokens: int,
+            taskProbes: list[dict] | None,
+            geometricDiagnosis: bool,
         ) -> dict:
             """
             Run full merge validation suite on a merged model.
@@ -754,7 +758,11 @@ def build_server() -> FastMCP:
             target_path = _require_existing_directory(target) if target else None
 
             config = MergeValidationConfig(
+                perplexity_dataset=perplexityDataset,
+                perplexity_max_samples=perplexityMaxSamples,
+                perplexity_batch_size=perplexityBatchSize,
                 coherence_prompts=coherencePrompts,
+                coherence_max_tokens=coherenceMaxTokens,
                 task_probes=taskProbes,
                 geometric_diagnosis=geometricDiagnosis,
             )

@@ -165,18 +165,15 @@ def get_geometry_safety_service(
         GeometrySafetyService,
     )
 
-    if drift_samples is None and safe_delta_h_samples is None and attack_entropy_samples is None:
-        config = GeometrySafetyConfig.default()
-    elif drift_samples is None or safe_delta_h_samples is None or attack_entropy_samples is None:
+    if drift_samples is None or safe_delta_h_samples is None or attack_entropy_samples is None:
         raise ValueError(
-            "Provide all calibration samples or none for default calibration."
+            "Provide all calibration samples; geometry safety requires calibration-derived thresholds."
         )
-    else:
-        config = GeometrySafetyConfig.from_calibration_data(
-            drift_samples=drift_samples,
-            safe_delta_h_samples=safe_delta_h_samples,
-            attack_entropy_samples=attack_entropy_samples,
-        )
+    config = GeometrySafetyConfig.from_calibration_data(
+        drift_samples=drift_samples,
+        safe_delta_h_samples=safe_delta_h_samples,
+        attack_entropy_samples=attack_entropy_samples,
+    )
     return GeometrySafetyService(
         training_service=get_geometry_training_service(),
         config=config,

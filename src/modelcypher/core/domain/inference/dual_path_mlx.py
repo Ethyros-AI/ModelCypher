@@ -126,13 +126,13 @@ class SecurityScanMetrics:
 class DualPathGeneratorConfiguration:
     base_model_path: str
     delta_tracker_config: EntropyDeltaTracker.Configuration
-    adapter_path: str | None = None
     max_tokens: int
     temperature: float
     top_p: float
     repetition_penalty: float
     stop_sequences: list[str]
     halt_on_circuit_breaker: bool
+    adapter_path: str | None = None
 
 
 class DualPathGenerator:

@@ -32,9 +32,6 @@ from modelcypher.core.domain.geometry.refusal_direction_detector import (
     RefusalDirection,
     RefusalDirectionDetector,
 )
-from modelcypher.core.domain.geometry.refusal_direction_detector import (
-    Configuration as RefusalConfig,
-)
 from modelcypher.core.domain.geometry.sparse_region_domains import (
     DomainCategory,
     DomainDefinition,
@@ -105,9 +102,11 @@ class GeometrySparseService:
         self,
         domain_stats: list[dict],
         baseline_stats: list[dict],
-        domain_name: str = "unknown",
-        base_rank: int = 16,
-        sparsity_threshold: float = 0.3,
+        domain_name: str,
+        base_rank: int,
+        sparsity_threshold: float | None,
+        target_module_types: list[str],
+        use_dare_alignment: bool,
     ) -> AnalysisResult:
         """
         Locate sparse regions suitable for LoRA injection.
@@ -125,6 +124,8 @@ class GeometrySparseService:
         config = LocatorConfig(
             base_rank=base_rank,
             sparsity_threshold=sparsity_threshold,
+            use_dare_alignment=use_dare_alignment,
+            target_module_types=target_module_types,
         )
         locator = SparseRegionLocator(config)
 
@@ -162,7 +163,6 @@ class GeometrySparseService:
         harmless_activations: list[list[float]],
         layer_index: int,
         model_id: str,
-        normalize: bool = True,
     ) -> RefusalDirection | None:
         """
         Compute refusal direction from contrastive activations.
@@ -177,11 +177,9 @@ class GeometrySparseService:
         Returns:
             RefusalDirection if computation succeeds, None otherwise
         """
-        config = RefusalConfig(normalize_direction=normalize)
         return RefusalDirectionDetector.compute_direction(
             harmful_activations=harmful_activations,
             harmless_activations=harmless_activations,
-            configuration=config,
             layer_index=layer_index,
             model_id=model_id,
         )
