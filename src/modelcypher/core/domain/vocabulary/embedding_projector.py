@@ -30,6 +30,10 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    regularization_epsilon,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -52,7 +56,7 @@ class ProjectionConfig:
     """Configuration for embedding projection."""
 
     strategy: ProjectionStrategy = ProjectionStrategy.PROCRUSTES
-    regularization: float = 1e-6  # Regularization for stability
+    regularization: float | None = None  # Dtype-derived when unset
     n_components: int | None = None  # For PCA, limit components
     preserve_norms: bool = True  # Scale to preserve embedding norms
     anchor_count: int = 1000  # Number of anchors for alignment
@@ -100,6 +104,16 @@ class EmbeddingProjector:
     ) -> None:
         self.config = config or ProjectionConfig()
         self._backend = backend or get_default_backend()
+
+    def _division_eps(self, array: "Array") -> float:
+        if self.config.regularization is not None:
+            return self.config.regularization
+        return division_epsilon(self._backend, array)
+
+    def _regularization_eps(self, array: "Array") -> float:
+        if self.config.regularization is not None:
+            return self.config.regularization
+        return regularization_epsilon(self._backend, array)
 
     def project(
         self,
@@ -309,7 +323,8 @@ class EmbeddingProjector:
         # Scale to preserve norms if configured
         if self.config.preserve_norms:
             source_norms = b.norm(source, axis=1)
-            projected_norms = b.norm(projected, axis=1) + self.config.regularization
+            norm_eps = self._division_eps(projected)
+            projected_norms = b.norm(projected, axis=1) + norm_eps
             scale = source_norms / projected_norms
             projected = projected * b.reshape(scale, (-1, 1))
 
@@ -357,7 +372,7 @@ class EmbeddingProjector:
         Y_centered = Y - Y_mean
 
         # Compute covariances with regularization
-        reg = self.config.regularization
+        reg = self._regularization_eps(X)
         Cxx = b.matmul(X_centered.T, X_centered) / n_shared + reg * b.eye(source_dim)
         Cyy = b.matmul(Y_centered.T, Y_centered) / n_shared + reg * b.eye(target_dim)
         Cxy = b.matmul(X_centered.T, Y_centered) / n_shared
@@ -474,6 +489,7 @@ class EmbeddingProjector:
         # Sinkhorn algorithm for optimal transport
         reg = 0.1  # Entropic regularization
         K = b.exp(-C / reg)
+        div_eps = self._division_eps(K)
 
         # Initialize
         u = b.ones((n_source,)) / n_source
@@ -481,14 +497,14 @@ class EmbeddingProjector:
 
         # Sinkhorn iterations
         for _ in range(100):
-            u = 1.0 / (b.matmul(K, v) + self.config.regularization)
-            v = 1.0 / (b.matmul(K.T, u) + self.config.regularization)
+            u = 1.0 / (b.matmul(K, v) + div_eps)
+            v = 1.0 / (b.matmul(K.T, u) + div_eps)
 
         # Transport plan
         P = b.reshape(u, (-1, 1)) * K * b.reshape(v, (1, -1))
 
         # Barycentric projection: projected[i] = sum_j P[i,j] * target[j]
-        P_normalized = P / (b.sum(P, axis=1, keepdims=True) + self.config.regularization)
+        P_normalized = P / (b.sum(P, axis=1, keepdims=True) + div_eps)
         projected_sample = b.matmul(P_normalized, target_reduced)
 
         # Extend to full source vocabulary via nearest-neighbor interpolation
@@ -498,12 +514,13 @@ class EmbeddingProjector:
         # A @ source_reduced ≈ projected_sample
         # A = projected_sample @ pinv(source_reduced)
         # Note: This computation is for documentation - actual projection uses Procrustes below
+        reg_eps = self._regularization_eps(source_reduced)
         b.matmul(
             b.matmul(
                 source_reduced.T,
                 b.inv(
                     b.matmul(source_reduced, source_reduced.T)
-                    + self.config.regularization * b.eye(n_source)
+                    + reg_eps * b.eye(n_source)
                 ),
             ),
             b.eye(n_source),
@@ -573,8 +590,9 @@ class EmbeddingProjector:
         mse = float(b.to_numpy(b.mean((projected_shared - target_shared) ** 2)))
 
         # Cosine similarity
-        proj_norms = b.norm(projected_shared, axis=1) + self.config.regularization
-        target_norms = b.norm(target_shared, axis=1) + self.config.regularization
+        norm_eps = self._division_eps(projected_shared)
+        proj_norms = b.norm(projected_shared, axis=1) + norm_eps
+        target_norms = b.norm(target_shared, axis=1) + norm_eps
         cosine = b.sum(projected_shared * target_shared, axis=1) / (proj_norms * target_norms)
         mean_cosine = float(b.to_numpy(b.mean(cosine)))
 
@@ -582,7 +600,7 @@ class EmbeddingProjector:
         source_norms = b.norm(source_shared, axis=1)
         proj_norms_actual = b.norm(projected_shared, axis=1)
         norm_ratio = float(
-            b.to_numpy(b.mean(proj_norms_actual / (source_norms + self.config.regularization)))
+            b.to_numpy(b.mean(proj_norms_actual / (source_norms + norm_eps)))
         )
 
         return {

@@ -145,12 +145,10 @@ def pipeline(
                 "layerCount": result.merge_result.get("layer_count"),
                 "weightCount": result.merge_result.get("weight_count"),
                 "meanConfidence": result.merge_result.get("mean_confidence"),
-                # safetyVerdict removed - use geometry_metrics["mean_preserved_fraction"]
                 "vocabAligned": result.merge_result.get("vocab_aligned"),
             },
             "postMerge": {
                 "meanConfidence": result.post_merge.mean_confidence,
-                # safetyVerdict removed - use meanPreservedFraction
                 "layersTransplanted": result.post_merge.layers_transplanted,
                 "weightsTransplanted": result.post_merge.weights_transplanted,
                 "meanPreservedFraction": result.post_merge.mean_preserved_fraction,

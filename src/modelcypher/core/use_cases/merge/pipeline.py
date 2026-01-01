@@ -435,7 +435,6 @@ def run_merge(
         merge_strategy="transplant",
         output_path=final_output_path,
         vocab_aligned=vocab_aligned,
-        # safety_verdict removed - use geometry_metrics["mean_preserved_fraction"]
         refusal_preserved=True,
         geometry_metrics=geometry_metrics,
     )
@@ -755,7 +754,6 @@ def run_full_geometry_merge(
         merge_strategy="full_geometry",
         output_path=output_path,
         vocab_aligned=vocab_aligned,
-        # safety_verdict removed - curvature_alignment is in geometry_metrics
         refusal_preserved=geometry.refusal_preserved,
         geometry_metrics=geometry_metrics_full,
     )

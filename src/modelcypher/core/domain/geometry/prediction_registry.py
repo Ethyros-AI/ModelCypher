@@ -75,7 +75,6 @@ class MergeVerification:
     actual_mean_confidence: float
     actual_preserved_fraction: float
     actual_cka_after: float
-    actual_safety_verdict: float  # Raw measurement, no categorical verdict
 
     # Per-layer actuals (for layer-level comparison)
     layer_actuals: dict[int, dict[str, float]]

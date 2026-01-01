@@ -228,7 +228,6 @@ class InterferenceVerificationService:
             actual_mean_confidence=merge_result.mean_confidence,
             actual_preserved_fraction=geometry_metrics.get("mean_preserved_fraction", 0.0),
             actual_cka_after=geometry_metrics.get("mean_cka_after", 0.0),
-            actual_safety_verdict=merge_result.safety_verdict,
             layer_actuals=layer_actuals,
             actual_transformation_counts=actual_transformation_counts,
         )
@@ -243,7 +242,6 @@ class InterferenceVerificationService:
         merge_id: str,
         geometry_metrics: dict[str, Any],
         transplant_metrics: dict[str, Any],
-        safety_verdict: float,
     ) -> VerificationResult | None:
         """Verify using raw metrics instead of UnifiedMergeResult.
 
@@ -253,7 +251,6 @@ class InterferenceVerificationService:
             merge_id: ID of the prediction to verify
             geometry_metrics: Geometry metrics dict
             transplant_metrics: Transplant metrics dict
-            safety_verdict: Raw safety measurement (mean_preserved_fraction)
 
         Returns:
             VerificationResult if prediction exists, None otherwise
@@ -274,7 +271,6 @@ class InterferenceVerificationService:
             actual_mean_confidence=geometry_metrics.get("mean_preserved_fraction", 0.0),
             actual_preserved_fraction=geometry_metrics.get("mean_preserved_fraction", 0.0),
             actual_cka_after=geometry_metrics.get("mean_cka_after", 0.0),
-            actual_safety_verdict=safety_verdict,
             layer_actuals=layer_actuals,
             actual_transformation_counts=transplant_metrics.get(
                 "transform_requirements_counts", {}

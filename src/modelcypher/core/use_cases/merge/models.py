@@ -105,8 +105,6 @@ class UnifiedMergeResult:
 
     # Stage 6: Validation metrics (raw measurements)
     validation_metrics: dict[str, Any] = field(default_factory=dict)
-    # safety_verdict field was REMOVED - verdicts are subjective
-    # Use geometry_metrics["mean_preserved_fraction"] for the raw measurement
     refusal_preserved: bool = True
 
     # Geometric confidence signals (raw measurements, no interpretation)

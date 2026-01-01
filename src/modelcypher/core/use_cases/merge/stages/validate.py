@@ -150,7 +150,6 @@ def stage_validate(
         SafetyPolytope,
         create_diagnostic_vector,
     )
-    # SafetyVerdict was REMOVED - we return raw measurements, not verdicts
 
     metrics: dict[str, Any] = {
         "numerical_stability": {},

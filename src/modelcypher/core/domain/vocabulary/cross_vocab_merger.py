@@ -72,7 +72,7 @@ class CrossVocabMergeConfig:
     # Advanced options
     max_alignments_per_token: int = 3  # Max target tokens per source token
     anchor_count: int = 1000  # Anchors for projection alignment
-    regularization: float = 1e-6
+    regularization: float | None = None
     similarity_batch_size: int = 128  # Batch size for cosine similarity
 
     def to_projection_config(self) -> ProjectionConfig:
