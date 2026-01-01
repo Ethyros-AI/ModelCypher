@@ -146,9 +146,6 @@ class IntrinsicDimension:
         computer = IntrinsicDimension(b)
         return computer.compute(pts, config)
 
-    # Backward compatibility alias
-    estimate_two_nn = compute_two_nn
-
     def compute(
         self,
         points: "Array",
@@ -584,7 +581,3 @@ class IntrinsicDimension:
         result = estimator.local_dimension_map(points, k=k, deficiency_threshold=threshold)
         return result.deficient_indices
 
-
-# Backward compatibility alias - IntrinsicDimension is the correct name
-# (this is a measurement, not an estimate)
-IntrinsicDimensionEstimator = IntrinsicDimension

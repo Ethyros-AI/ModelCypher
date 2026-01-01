@@ -120,43 +120,8 @@ class AtlasSource(str, Enum):
     SAFETY_ETHICS = "safety_ethics"  # Consent, autonomy, coercion, boundaries, vulnerability
 
 
-class AtlasDomain(str, Enum):
-    """
-    Cross-domain categories for triangulation scoring.
-
-    Maps different atlas categories into unified triangulation domains.
-    When a concept is detected across multiple domains, triangulation
-    confidence increases.
-    """
-
-    # Mathematical/logical domains
-    MATHEMATICAL = "mathematical"  # Sequences, ratios, patterns
-    LOGICAL = "logical"  # Logic, conditionals, causality
-
-    # Language/semantic domains
-    LINGUISTIC = "linguistic"  # Semantic primes, speech acts
-    MENTAL = "mental"  # Mental predicates, cognitive
-
-    # Computational domains
-    COMPUTATIONAL = "computational"  # Code gates, algorithms
-    STRUCTURAL = "structural"  # Data types, modularity
-
-    # Affective domains
-    AFFECTIVE = "affective"  # Emotions, valence
-    RELATIONAL = "relational"  # Social, interpersonal
-
-    # Temporal/spatial domains
-    TEMPORAL = "temporal"  # Time concepts
-    SPATIAL = "spatial"  # Place, location
-
-    # Moral/ethical domains
-    MORAL = "moral"  # Ethics, virtue, vice
-
-    # Safety domains (AI safety critical concepts)
-    SAFETY = "safety"  # Consent, autonomy, coercion, boundaries, vulnerability
-
-    # Philosophical domains (fundamental categories of thought)
-    PHILOSOPHICAL = "philosophical"  # Ontology, epistemology, logic, modality, mereology
+# Import AtlasDomain from the canonical location
+from modelcypher.core.domain.domains import AtlasDomain
 
 
 # Domain mapping for each atlas category

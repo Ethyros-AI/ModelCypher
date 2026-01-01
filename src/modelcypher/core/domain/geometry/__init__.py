@@ -59,7 +59,6 @@ _SUBMODULES = {
     "gromov_wasserstein",
     "intersection_map_analysis",
     "intrinsic_dimension",
-    "intrinsic_dimension_estimator",
     "invariant_convergence_analyzer",
     "invariant_layer_mapper",
     "manifold_clusterer",
@@ -98,7 +97,6 @@ _SUBMODULES = {
 # Attribute to submodule mapping for commonly used classes
 # Format: "ExportedName": ("module_name", "actual_attr_name")
 _ATTR_TO_MODULE = {
-    "DoRAConfiguration": ("dora_decomposition", "DoRAConfig"),  # Alias for backward compat
     "DoRAConfig": ("dora_decomposition", "DoRAConfig"),
     "ChangeType": ("dora_decomposition", "ChangeType"),
     "DoRADecomposition": ("dora_decomposition", "DoRADecomposition"),

@@ -23,7 +23,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.exceptions import EstimatorError
 from modelcypher.core.domain.geometry.intrinsic_dimension import (
     BootstrapConfiguration,
-    IntrinsicDimensionEstimator,
+    IntrinsicDimension,
     TwoNNConfiguration,
 )
 
@@ -31,7 +31,7 @@ from modelcypher.core.domain.geometry.intrinsic_dimension import (
 def test_two_nn_insufficient_samples() -> None:
     points = [[0.0, 0.0], [1.0, 0.0]]
     with pytest.raises(EstimatorError) as exc:
-        IntrinsicDimensionEstimator.estimate_two_nn(points)
+        IntrinsicDimension.compute_two_nn(points)
     assert exc.value.kind == "insufficientSamples"
 
 
@@ -40,21 +40,21 @@ def test_two_nn_invalid_dimension() -> None:
     # This is correct - backend validates before estimator
     points = [[0.0, 0.0], [1.0], [2.0, 0.0]]
     with pytest.raises((EstimatorError, ValueError)):
-        IntrinsicDimensionEstimator.estimate_two_nn(points)
+        IntrinsicDimension.compute_two_nn(points)
 
 
 def test_two_nn_degenerate_neighbors() -> None:
     # Degenerate case now triggers regressionDegenerate (regression variant is default)
     points = [[1.0, 1.0] for _ in range(5)]
     with pytest.raises(EstimatorError) as exc:
-        IntrinsicDimensionEstimator.estimate_two_nn(points)
+        IntrinsicDimension.compute_two_nn(points)
     assert exc.value.kind in ("nearestNeighborDegenerate", "regressionDegenerate")
 
 
 def test_two_nn_estimate_basic() -> None:
     points = [[float(i), 0.0] for i in range(6)]
     config = TwoNNConfiguration(use_regression=False)
-    estimate = IntrinsicDimensionEstimator.estimate_two_nn(points, configuration=config)
+    estimate = IntrinsicDimension.compute_two_nn(points, configuration=config)
     assert estimate.sample_count == 6
     assert estimate.usable_count >= 3
     assert estimate.intrinsic_dimension > 0
@@ -65,7 +65,7 @@ def test_two_nn_bootstrap_ci() -> None:
     points = backend.array([[float(i), 0.0] for i in range(6)])
     config = TwoNNConfiguration(use_regression=False)
     bootstrap = BootstrapConfiguration(resamples=50, confidence_level=0.9, seed=7)
-    computer = IntrinsicDimensionEstimator(backend)
+    computer = IntrinsicDimension(backend)
     estimate = computer.compute(points, configuration=config, bootstrap=bootstrap)
     assert estimate.ci is not None
     assert estimate.ci.lower <= estimate.ci.upper
@@ -92,7 +92,7 @@ class TestDimensionInvariants:
         backend.eval(data)
 
         config = TwoNNConfiguration(use_regression=True)
-        computer = IntrinsicDimensionEstimator(backend)
+        computer = IntrinsicDimension(backend)
         estimate = computer.compute(data, configuration=config)
         assert estimate.intrinsic_dimension > 0
 
@@ -110,7 +110,7 @@ class TestDimensionInvariants:
         backend.eval(data)
 
         config = TwoNNConfiguration(use_regression=True)
-        computer = IntrinsicDimensionEstimator(backend)
+        computer = IntrinsicDimension(backend)
         estimate = computer.compute(data, configuration=config)
 
         # Should be close to true_dim (with geodesic distances, variance is higher)
@@ -137,7 +137,7 @@ class TestDimensionInvariants:
         backend.eval(points)
 
         config = TwoNNConfiguration(use_regression=True)
-        computer = IntrinsicDimensionEstimator(backend)
+        computer = IntrinsicDimension(backend)
         estimate = computer.compute(points, configuration=config)
 
         # Should be close to 1 (line is 1-dimensional)
@@ -160,7 +160,7 @@ class TestDimensionInvariants:
         backend.eval(points)
 
         config = TwoNNConfiguration(use_regression=True)
-        computer = IntrinsicDimensionEstimator(backend)
+        computer = IntrinsicDimension(backend)
         estimate = computer.compute(points, configuration=config)
 
         # Should be close to 2 (with geodesic distances, variance is higher)
@@ -187,7 +187,7 @@ class TestConfidenceIntervalInvariants:
             confidence_level=confidence_level,
             seed=42,
         )
-        computer = IntrinsicDimensionEstimator(backend)
+        computer = IntrinsicDimension(backend)
         estimate = computer.compute(data, configuration=config, bootstrap=bootstrap)
 
         assert estimate.ci is not None
@@ -210,7 +210,7 @@ class TestConfidenceIntervalInvariants:
             confidence_level=0.95,
             seed=seed,
         )
-        computer = IntrinsicDimensionEstimator(backend)
+        computer = IntrinsicDimension(backend)
         estimate = computer.compute(data, configuration=config, bootstrap=bootstrap)
 
         if estimate.ci is not None:
@@ -234,7 +234,7 @@ class TestUsableCountInvariants:
         backend.eval(data)
 
         config = TwoNNConfiguration(use_regression=True)
-        computer = IntrinsicDimensionEstimator(backend)
+        computer = IntrinsicDimension(backend)
         estimate = computer.compute(data, configuration=config)
 
         assert estimate.usable_count <= estimate.sample_count
@@ -274,7 +274,7 @@ class TestIntrinsicDimensionHypothesis:
         backend.eval(data)
 
         config = TwoNNConfiguration(use_regression=True)
-        computer = IntrinsicDimensionEstimator(backend)
+        computer = IntrinsicDimension(backend)
         try:
             estimate = computer.compute(data, configuration=config)
             assert estimate.intrinsic_dimension > 0
@@ -298,7 +298,7 @@ class TestIntrinsicDimensionHypothesis:
         backend.eval(data)
 
         config = TwoNNConfiguration(use_regression=True)
-        computer = IntrinsicDimensionEstimator(backend)
+        computer = IntrinsicDimension(backend)
         try:
             estimate = computer.compute(data, configuration=config)
             assert estimate.usable_count <= estimate.sample_count
@@ -326,7 +326,7 @@ class TestIntrinsicDimensionHypothesis:
         backend.eval(data)
 
         config = TwoNNConfiguration(use_regression=True)
-        computer = IntrinsicDimensionEstimator(backend)
+        computer = IntrinsicDimension(backend)
         try:
             estimate = computer.compute(data, configuration=config)
             # Allow wiggle room - geodesic distances + small samples = variance
@@ -375,7 +375,7 @@ class TestSyntheticManifoldDimension:
         backend.eval(points)
 
         config = TwoNNConfiguration(use_regression=True)
-        computer = IntrinsicDimensionEstimator(backend)
+        computer = IntrinsicDimension(backend)
         estimate = computer.compute(points, configuration=config)
 
         # S^2 has intrinsic dimension 2
@@ -420,7 +420,7 @@ class TestSyntheticManifoldDimension:
         backend.eval(points)
 
         config = TwoNNConfiguration(use_regression=True)
-        computer = IntrinsicDimensionEstimator(backend)
+        computer = IntrinsicDimension(backend)
         estimate = computer.compute(points, configuration=config)
 
         # Swiss roll has intrinsic dimension 2
@@ -455,7 +455,7 @@ class TestSyntheticManifoldDimension:
         backend.eval(points)
 
         config = TwoNNConfiguration(use_regression=True)
-        computer = IntrinsicDimensionEstimator(backend)
+        computer = IntrinsicDimension(backend)
         estimate = computer.compute(points, configuration=config)
 
         # Linear subspace should have dimension close to true_dim
@@ -501,7 +501,7 @@ class TestSyntheticManifoldDimension:
         backend.eval(points)
 
         config = TwoNNConfiguration(use_regression=True)
-        computer = IntrinsicDimensionEstimator(backend)
+        computer = IntrinsicDimension(backend)
         estimate = computer.compute(points, configuration=config)
 
         # Torus T^2 has intrinsic dimension 2

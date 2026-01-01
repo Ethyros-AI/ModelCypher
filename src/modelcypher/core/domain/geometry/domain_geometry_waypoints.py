@@ -33,8 +33,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
 from typing import TYPE_CHECKING
+
+# Import from canonical location - AtlasDomain is the single source of truth
+from modelcypher.core.domain.domains import AtlasDomain
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -43,20 +45,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class GeometryDomain(str, Enum):
-    """Validated geometry domains from hypothesis testing."""
-
-    SPATIAL = "spatial"  # 3D world model (Euclidean, gravity, occlusion)
-    SOCIAL = "social"  # Power hierarchies, kinship, formality
-    TEMPORAL = "temporal"  # Direction, duration, causality
-    MORAL = "moral"  # Valence, agency, scope (Haidt foundations)
-
 
 @dataclass(frozen=True)
 class DomainGeometryScore:
     """Geometry score for a single domain."""
 
-    domain: GeometryDomain
+    domain: AtlasDomain
     manifold_score: float  # Domain-specific manifold score (SMS, SGS, TMS, MMS)
     axis_orthogonality: float  # Mean orthogonality of domain axes
     gradient_consistency: float  # Mean gradient correlation
@@ -70,7 +64,7 @@ class ModelGeometryProfile:
 
     model_path: str
     layer: int
-    domain_scores: dict[GeometryDomain, DomainGeometryScore]
+    domain_scores: dict[AtlasDomain, DomainGeometryScore]
     computed_at: datetime
     total_anchors: int
 
@@ -81,14 +75,14 @@ class ModelGeometryProfile:
         return sum(scores) / len(scores) if scores else 0.0
 
     @property
-    def strongest_domain(self) -> GeometryDomain | None:
+    def strongest_domain(self) -> AtlasDomain | None:
         """Domain with highest manifold score."""
         if not self.domain_scores:
             return None
         return max(self.domain_scores.items(), key=lambda x: x[1].manifold_score)[0]
 
     @property
-    def weakest_domain(self) -> GeometryDomain | None:
+    def weakest_domain(self) -> AtlasDomain | None:
         """Domain with lowest manifold score."""
         if not self.domain_scores:
             return None
@@ -120,7 +114,7 @@ class DomainGeometryDelta:
 
     Attributes
     ----------
-    domain : GeometryDomain
+    domain : AtlasDomain
         The geometry domain being compared.
     source_score : float
         Manifold score from source model.
@@ -130,7 +124,7 @@ class DomainGeometryDelta:
         Absolute difference |source - target|.
     """
 
-    domain: GeometryDomain
+    domain: AtlasDomain
     source_score: float
     target_score: float
     delta: float
@@ -185,7 +179,7 @@ class PostMergeGeometryValidation:
         Geometry profile of source model before merge.
     merged_profile : ModelGeometryProfile
         Geometry profile of merged model.
-    preservation_by_domain : dict[GeometryDomain, float]
+    preservation_by_domain : dict[AtlasDomain, float]
         Preservation ratio per domain: merged_score / source_score.
     overall_preservation : float
         Mean preservation ratio across domains.
@@ -193,7 +187,7 @@ class PostMergeGeometryValidation:
 
     source_profile: ModelGeometryProfile
     merged_profile: ModelGeometryProfile
-    preservation_by_domain: dict[GeometryDomain, float]
+    preservation_by_domain: dict[AtlasDomain, float]
     overall_preservation: float
 
     def to_dict(self) -> dict:
@@ -236,7 +230,7 @@ class DomainGeometryWaypointService:
         self,
         model_path: str,
         layer: int = -1,
-        domains: list[GeometryDomain] | None = None,
+        domains: list[AtlasDomain] | None = None,
     ) -> ModelGeometryProfile:
         """
         Compute complete geometry profile for a model.
@@ -250,9 +244,9 @@ class DomainGeometryWaypointService:
             ModelGeometryProfile with scores for each domain
         """
         if domains is None:
-            domains = list(GeometryDomain)
+            domains = list(AtlasDomain)
 
-        domain_scores: dict[GeometryDomain, DomainGeometryScore] = {}
+        domain_scores: dict[AtlasDomain, DomainGeometryScore] = {}
         total_anchors = 0
 
         for domain in domains:
@@ -274,17 +268,17 @@ class DomainGeometryWaypointService:
     def _compute_domain_score(
         self,
         model_path: str,
-        domain: GeometryDomain,
+        domain: AtlasDomain,
         layer: int,
     ) -> DomainGeometryScore:
         """Compute geometry score for a specific domain."""
-        if domain == GeometryDomain.SPATIAL:
+        if domain == AtlasDomain.SPATIAL:
             return self._compute_spatial_score(model_path, layer, self._backend)
-        elif domain == GeometryDomain.SOCIAL:
+        elif domain == AtlasDomain.RELATIONAL:
             return self._compute_social_score(model_path, layer, self._backend)
-        elif domain == GeometryDomain.TEMPORAL:
+        elif domain == AtlasDomain.TEMPORAL:
             return self._compute_temporal_score(model_path, layer, self._backend)
-        elif domain == GeometryDomain.MORAL:
+        elif domain == AtlasDomain.MORAL:
             return self._compute_moral_score(model_path, layer, self._backend)
         else:
             raise ValueError(f"Unknown domain: {domain}")
@@ -325,7 +319,7 @@ class DomainGeometryWaypointService:
         mean_ortho = sum(ortho_dict.values()) / len(ortho_dict) if ortho_dict else 0.0
 
         return DomainGeometryScore(
-            domain=GeometryDomain.SPATIAL,
+            domain=AtlasDomain.SPATIAL,
             manifold_score=report.world_model_score,
             axis_orthogonality=mean_ortho,
             gradient_consistency=report.euclidean_consistency.consistency_score,
@@ -367,7 +361,7 @@ class DomainGeometryWaypointService:
         report = analyzer.full_analysis(activations)
 
         return DomainGeometryScore(
-            domain=GeometryDomain.SOCIAL,
+            domain=AtlasDomain.RELATIONAL,
             manifold_score=report.social_manifold_score,
             axis_orthogonality=report.axis_orthogonality.mean_orthogonality,
             gradient_consistency=abs(report.gradient_consistency.power_correlation),
@@ -394,7 +388,7 @@ class DomainGeometryWaypointService:
         report = analyzer.analyze()
 
         return DomainGeometryScore(
-            domain=GeometryDomain.TEMPORAL,
+            domain=AtlasDomain.TEMPORAL,
             manifold_score=report.temporal_manifold_score,
             axis_orthogonality=report.axis_orthogonality.mean_orthogonality,
             gradient_consistency=abs(report.gradient_consistency.direction_correlation),
@@ -436,7 +430,7 @@ class DomainGeometryWaypointService:
         report = analyzer.full_analysis(activations, model_path=model_path, layer=layer)
 
         return DomainGeometryScore(
-            domain=GeometryDomain.MORAL,
+            domain=AtlasDomain.MORAL,
             manifold_score=report.moral_manifold_score,
             axis_orthogonality=report.axis_orthogonality.mean_orthogonality,
             gradient_consistency=abs(report.gradient_consistency.valence_correlation),
@@ -534,7 +528,7 @@ class DomainGeometryWaypointService:
         domain_deltas: list[DomainGeometryDelta] = []
         alphas: list[float] = []
 
-        for domain in GeometryDomain:
+        for domain in AtlasDomain:
             source_score = source_profile.domain_scores.get(domain)
             target_score = target_profile.domain_scores.get(domain)
 
@@ -602,9 +596,9 @@ class DomainGeometryWaypointService:
         merged_profile = self.compute_profile(merged_path, layer)
 
         # Compute preservation by domain
-        preservation_by_domain: dict[GeometryDomain, float] = {}
+        preservation_by_domain: dict[AtlasDomain, float] = {}
 
-        for domain in GeometryDomain:
+        for domain in AtlasDomain:
             source_score = source_profile.domain_scores.get(domain)
             merged_score = merged_profile.domain_scores.get(domain)
 
@@ -638,7 +632,7 @@ class DomainGeometryWaypointService:
     def compute_domain_alpha_profile(
         self,
         audit: PreMergeGeometryAudit,
-    ) -> dict[GeometryDomain, float]:
+    ) -> dict[AtlasDomain, float]:
         """
         Compute domain-aware alpha profile from geometry audit.
 
@@ -651,7 +645,7 @@ class DomainGeometryWaypointService:
         Returns:
             Dict mapping domain to geometry-derived alpha
         """
-        alpha_profile: dict[GeometryDomain, float] = {}
+        alpha_profile: dict[AtlasDomain, float] = {}
 
         for delta in audit.domain_deltas:
             # Alpha derived from geometry: target_score / total
@@ -668,7 +662,7 @@ class DomainGeometryWaypointService:
 
 # Export types
 __all__ = [
-    "GeometryDomain",
+    "AtlasDomain",
     "DomainGeometryScore",
     "ModelGeometryProfile",
     "DomainGeometryDelta",

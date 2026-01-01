@@ -245,18 +245,8 @@ def list_domain_aliases() -> dict[str, AtlasDomain]:
     return dict(_load_taxonomy_aliases())
 
 
-# =============================================================================
-# Backward Compatibility
-# =============================================================================
-
-# Alias for code that imported GeometryDomain
-# DEPRECATED: Use AtlasDomain directly
-GeometryDomain = AtlasDomain
-
-
 __all__ = [
     "AtlasDomain",
-    "GeometryDomain",  # Deprecated alias
     "resolve_domain",
     "resolve_domains",
     "list_all_domains",

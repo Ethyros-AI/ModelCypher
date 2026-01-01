@@ -246,8 +246,9 @@ class MergePipelineService:
         """Run pre-merge interference analysis."""
         from modelcypher.cli.composition import get_domain_geometry_waypoint_service
         from modelcypher.core.domain._backend import get_default_backend
-        from modelcypher.core.domain.geometry.domain_geometry_waypoints import (
-            GeometryDomain,
+        from modelcypher.core.domain.domains import (
+            AtlasDomain,
+            resolve_domains,
         )
         from modelcypher.core.domain.geometry.interference_predictor import (
             InterferencePredictor,
@@ -262,17 +263,12 @@ class MergePipelineService:
         density_estimator = RiemannianDensityEstimator()
         predictor = InterferencePredictor()
 
-        # Map domain strings to enums
-        domain_list = []
-        for d in domains:
-            try:
-                domain_list.append(GeometryDomain(d.strip().lower()))
-            except ValueError:
-                logger.warning("Unknown domain: %s, skipping", d)
+        # Map domain strings to AtlasDomain enums using the canonical resolver
+        domain_list = resolve_domains(domains)
 
         if not domain_list:
             # Fall back to all domains
-            domain_list = list(GeometryDomain)
+            domain_list = list(AtlasDomain)
 
         # Collect activations
         source_activations: dict[str, dict[str, Any]] = {}
@@ -385,7 +381,7 @@ class MergePipelineService:
     def _extract_domain_activations(
         self,
         model_path: str,
-        domain: "GeometryDomain",
+        domain: "AtlasDomain",
         layer: int,
         waypoint_service: "DomainGeometryWaypointService",
     ) -> dict[str, Any]:

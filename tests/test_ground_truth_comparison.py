@@ -246,7 +246,7 @@ class TestIntrinsicDimensionGroundTruth:
     def test_linear_subspace_dimension_accurate(self) -> None:
         """TwoNN should accurately measure linear subspace dimension."""
         from modelcypher.core.domain.geometry.intrinsic_dimension import (
-            IntrinsicDimensionEstimator,
+            IntrinsicDimension,
             TwoNNConfiguration,
         )
 
@@ -266,7 +266,7 @@ class TestIntrinsicDimensionGroundTruth:
         points = coeffs @ basis
 
         config = TwoNNConfiguration(use_regression=True)
-        estimate = IntrinsicDimensionEstimator.estimate_two_nn(
+        estimate = IntrinsicDimension.compute_two_nn(
             points.tolist(),
             configuration=config,
         )
@@ -277,7 +277,7 @@ class TestIntrinsicDimensionGroundTruth:
     def test_full_rank_gaussian_dimension(self) -> None:
         """Full-rank Gaussian should have dimension close to ambient."""
         from modelcypher.core.domain.geometry.intrinsic_dimension import (
-            IntrinsicDimensionEstimator,
+            IntrinsicDimension,
             TwoNNConfiguration,
         )
 
@@ -290,7 +290,7 @@ class TestIntrinsicDimensionGroundTruth:
         points = np.random.randn(n_samples, ambient_dim).astype(np.float32)
 
         config = TwoNNConfiguration(use_regression=True)
-        estimate = IntrinsicDimensionEstimator.estimate_two_nn(
+        estimate = IntrinsicDimension.compute_two_nn(
             points.tolist(),
             configuration=config,
         )

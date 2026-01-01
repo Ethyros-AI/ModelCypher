@@ -18,7 +18,7 @@
 """Comprehensive tests for domain_geometry_waypoints.py.
 
 Tests:
-- GeometryDomain enum
+- AtlasDomain enum (unified domain definitions)
 - DomainGeometryScore dataclass
 - ModelGeometryProfile dataclass (properties, serialization)
 - DomainGeometryDelta dataclass
@@ -34,11 +34,11 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from modelcypher.core.domain.domains import AtlasDomain
 from modelcypher.core.domain.geometry.domain_geometry_waypoints import (
     DomainGeometryDelta,
     DomainGeometryScore,
     DomainGeometryWaypointService,
-    GeometryDomain,
     ModelGeometryProfile,
     PostMergeGeometryValidation,
     PreMergeGeometryAudit,
@@ -49,33 +49,44 @@ if TYPE_CHECKING:
 
 
 # =============================================================================
-# GeometryDomain Enum Tests
+# AtlasDomain Enum Tests
 # =============================================================================
 
 
-class TestGeometryDomain:
-    """Tests for GeometryDomain enum."""
+class TestAtlasDomain:
+    """Tests for AtlasDomain enum.
 
-    def test_all_domains_exist(self) -> None:
-        """All four geometry domains should be defined."""
-        assert GeometryDomain.SPATIAL.value == "spatial"
-        assert GeometryDomain.SOCIAL.value == "social"
-        assert GeometryDomain.TEMPORAL.value == "temporal"
-        assert GeometryDomain.MORAL.value == "moral"
+    Note: AtlasDomain is now an alias for AtlasDomain, which contains
+    all unified domains. The original 4 domains (SPATIAL, SOCIAL, TEMPORAL, MORAL)
+    are preserved, but SOCIAL is now RELATIONAL for consistency with AtlasDomain.
+    """
+
+    def test_core_domains_exist(self) -> None:
+        """Core geometry domains should be defined."""
+        # Original domains (SOCIAL -> RELATIONAL)
+        assert AtlasDomain.SPATIAL.value == "spatial"
+        assert AtlasDomain.RELATIONAL.value == "relational"  # Was SOCIAL
+        assert AtlasDomain.TEMPORAL.value == "temporal"
+        assert AtlasDomain.MORAL.value == "moral"
 
     def test_domain_is_string(self) -> None:
-        """GeometryDomain should be a string enum."""
-        assert isinstance(GeometryDomain.SPATIAL, str)
-        assert GeometryDomain.SPATIAL == "spatial"
+        """AtlasDomain should be a string enum."""
+        assert isinstance(AtlasDomain.SPATIAL, str)
+        assert AtlasDomain.SPATIAL == "spatial"
 
     def test_domain_iteration(self) -> None:
         """Should be able to iterate all domains."""
-        domains = list(GeometryDomain)
-        assert len(domains) == 4
-        assert GeometryDomain.SPATIAL in domains
-        assert GeometryDomain.SOCIAL in domains
-        assert GeometryDomain.TEMPORAL in domains
-        assert GeometryDomain.MORAL in domains
+        domains = list(AtlasDomain)
+        # Now includes all AtlasDomain values (14 total)
+        assert len(domains) == 14
+        assert AtlasDomain.SPATIAL in domains
+        assert AtlasDomain.RELATIONAL in domains  # Was SOCIAL
+        assert AtlasDomain.TEMPORAL in domains
+        assert AtlasDomain.MORAL in domains
+        # Additional domains from AtlasDomain
+        assert AtlasDomain.MATHEMATICAL in domains
+        assert AtlasDomain.LOGICAL in domains
+        assert AtlasDomain.COMPUTATIONAL in domains
 
 
 # =============================================================================
@@ -89,7 +100,7 @@ class TestDomainGeometryScore:
     def test_basic_creation(self) -> None:
         """Should create score with all fields."""
         score = DomainGeometryScore(
-            domain=GeometryDomain.SPATIAL,
+            domain=AtlasDomain.SPATIAL,
             manifold_score=0.85,
             axis_orthogonality=0.92,
             gradient_consistency=0.78,
@@ -97,7 +108,7 @@ class TestDomainGeometryScore:
             layer_analyzed=12,
         )
 
-        assert score.domain == GeometryDomain.SPATIAL
+        assert score.domain == AtlasDomain.SPATIAL
         assert score.manifold_score == 0.85
         assert score.axis_orthogonality == 0.92
         assert score.gradient_consistency == 0.78
@@ -107,7 +118,7 @@ class TestDomainGeometryScore:
     def test_frozen(self) -> None:
         """Score should be frozen (immutable)."""
         score = DomainGeometryScore(
-            domain=GeometryDomain.MORAL,
+            domain=AtlasDomain.MORAL,
             manifold_score=0.7,
             axis_orthogonality=0.8,
             gradient_consistency=0.6,
@@ -120,7 +131,7 @@ class TestDomainGeometryScore:
 
     def test_each_domain(self) -> None:
         """Should accept each domain type."""
-        for domain in GeometryDomain:
+        for domain in AtlasDomain:
             score = DomainGeometryScore(
                 domain=domain,
                 manifold_score=0.5,
@@ -142,15 +153,15 @@ class TestModelGeometryProfile:
 
     def _create_sample_profile(
         self,
-        scores: dict[GeometryDomain, float] | None = None,
+        scores: dict[AtlasDomain, float] | None = None,
     ) -> ModelGeometryProfile:
         """Create a sample profile for testing."""
         if scores is None:
             scores = {
-                GeometryDomain.SPATIAL: 0.9,
-                GeometryDomain.SOCIAL: 0.7,
-                GeometryDomain.TEMPORAL: 0.8,
-                GeometryDomain.MORAL: 0.6,
+                AtlasDomain.SPATIAL: 0.9,
+                AtlasDomain.RELATIONAL: 0.7,
+                AtlasDomain.TEMPORAL: 0.8,
+                AtlasDomain.MORAL: 0.6,
             }
 
         domain_scores = {}
@@ -185,8 +196,8 @@ class TestModelGeometryProfile:
         """mean_manifold_score should compute average."""
         profile = self._create_sample_profile(
             {
-                GeometryDomain.SPATIAL: 0.8,
-                GeometryDomain.SOCIAL: 0.6,
+                AtlasDomain.SPATIAL: 0.8,
+                AtlasDomain.RELATIONAL: 0.6,
             }
         )
 
@@ -208,13 +219,13 @@ class TestModelGeometryProfile:
         """strongest_domain should return domain with highest score."""
         profile = self._create_sample_profile(
             {
-                GeometryDomain.SPATIAL: 0.9,  # Highest
-                GeometryDomain.SOCIAL: 0.5,
-                GeometryDomain.TEMPORAL: 0.7,
+                AtlasDomain.SPATIAL: 0.9,  # Highest
+                AtlasDomain.RELATIONAL: 0.5,
+                AtlasDomain.TEMPORAL: 0.7,
             }
         )
 
-        assert profile.strongest_domain == GeometryDomain.SPATIAL
+        assert profile.strongest_domain == AtlasDomain.SPATIAL
 
     def test_strongest_domain_empty(self) -> None:
         """strongest_domain should return None for empty scores."""
@@ -232,13 +243,13 @@ class TestModelGeometryProfile:
         """weakest_domain should return domain with lowest score."""
         profile = self._create_sample_profile(
             {
-                GeometryDomain.SPATIAL: 0.9,
-                GeometryDomain.SOCIAL: 0.5,  # Lowest
-                GeometryDomain.TEMPORAL: 0.7,
+                AtlasDomain.SPATIAL: 0.9,
+                AtlasDomain.RELATIONAL: 0.5,  # Lowest
+                AtlasDomain.TEMPORAL: 0.7,
             }
         )
 
-        assert profile.weakest_domain == GeometryDomain.SOCIAL
+        assert profile.weakest_domain == AtlasDomain.RELATIONAL
 
     def test_weakest_domain_empty(self) -> None:
         """weakest_domain should return None for empty scores."""
@@ -256,8 +267,8 @@ class TestModelGeometryProfile:
         """to_dict should serialize profile correctly."""
         profile = self._create_sample_profile(
             {
-                GeometryDomain.SPATIAL: 0.85,
-                GeometryDomain.MORAL: 0.65,
+                AtlasDomain.SPATIAL: 0.85,
+                AtlasDomain.MORAL: 0.65,
             }
         )
 
@@ -296,13 +307,13 @@ class TestDomainGeometryDelta:
     def test_basic_creation(self) -> None:
         """Should create delta with all fields."""
         delta = DomainGeometryDelta(
-            domain=GeometryDomain.SPATIAL,
+            domain=AtlasDomain.SPATIAL,
             source_score=0.8,
             target_score=0.6,
             delta=0.2,
         )
 
-        assert delta.domain == GeometryDomain.SPATIAL
+        assert delta.domain == AtlasDomain.SPATIAL
         assert delta.source_score == 0.8
         assert delta.target_score == 0.6
         assert delta.delta == 0.2
@@ -311,7 +322,7 @@ class TestDomainGeometryDelta:
         """Delta should be absolute difference."""
         # Source higher
         delta1 = DomainGeometryDelta(
-            domain=GeometryDomain.SOCIAL,
+            domain=AtlasDomain.RELATIONAL,
             source_score=0.9,
             target_score=0.5,
             delta=0.4,
@@ -320,7 +331,7 @@ class TestDomainGeometryDelta:
 
         # Target higher
         delta2 = DomainGeometryDelta(
-            domain=GeometryDomain.TEMPORAL,
+            domain=AtlasDomain.TEMPORAL,
             source_score=0.3,
             target_score=0.7,
             delta=0.4,
@@ -329,7 +340,7 @@ class TestDomainGeometryDelta:
 
     def test_each_domain(self) -> None:
         """Should accept each domain type."""
-        for domain in GeometryDomain:
+        for domain in AtlasDomain:
             delta = DomainGeometryDelta(
                 domain=domain,
                 source_score=0.5,
@@ -348,7 +359,7 @@ class TestPreMergeGeometryAudit:
     """Tests for PreMergeGeometryAudit dataclass."""
 
     def _create_sample_profile(
-        self, path: str, scores: dict[GeometryDomain, float]
+        self, path: str, scores: dict[AtlasDomain, float]
     ) -> ModelGeometryProfile:
         """Create a sample profile."""
         domain_scores = {}
@@ -373,14 +384,14 @@ class TestPreMergeGeometryAudit:
     def test_basic_creation(self) -> None:
         """Should create audit with all fields."""
         source = self._create_sample_profile(
-            "/source", {GeometryDomain.SPATIAL: 0.8}
+            "/source", {AtlasDomain.SPATIAL: 0.8}
         )
         target = self._create_sample_profile(
-            "/target", {GeometryDomain.SPATIAL: 0.6}
+            "/target", {AtlasDomain.SPATIAL: 0.6}
         )
         deltas = [
             DomainGeometryDelta(
-                domain=GeometryDomain.SPATIAL,
+                domain=AtlasDomain.SPATIAL,
                 source_score=0.8,
                 target_score=0.6,
                 delta=0.2,
@@ -402,20 +413,20 @@ class TestPreMergeGeometryAudit:
     def test_to_dict(self) -> None:
         """to_dict should serialize audit correctly."""
         source = self._create_sample_profile(
-            "/source", {GeometryDomain.SPATIAL: 0.8, GeometryDomain.MORAL: 0.7}
+            "/source", {AtlasDomain.SPATIAL: 0.8, AtlasDomain.MORAL: 0.7}
         )
         target = self._create_sample_profile(
-            "/target", {GeometryDomain.SPATIAL: 0.6, GeometryDomain.MORAL: 0.9}
+            "/target", {AtlasDomain.SPATIAL: 0.6, AtlasDomain.MORAL: 0.9}
         )
         deltas = [
             DomainGeometryDelta(
-                domain=GeometryDomain.SPATIAL,
+                domain=AtlasDomain.SPATIAL,
                 source_score=0.8,
                 target_score=0.6,
                 delta=0.2,
             ),
             DomainGeometryDelta(
-                domain=GeometryDomain.MORAL,
+                domain=AtlasDomain.MORAL,
                 source_score=0.7,
                 target_score=0.9,
                 delta=0.2,
@@ -451,7 +462,7 @@ class TestPostMergeGeometryValidation:
     """Tests for PostMergeGeometryValidation dataclass."""
 
     def _create_sample_profile(
-        self, path: str, scores: dict[GeometryDomain, float]
+        self, path: str, scores: dict[AtlasDomain, float]
     ) -> ModelGeometryProfile:
         """Create a sample profile."""
         domain_scores = {}
@@ -476,39 +487,39 @@ class TestPostMergeGeometryValidation:
     def test_basic_creation(self) -> None:
         """Should create validation with all fields."""
         source = self._create_sample_profile(
-            "/source", {GeometryDomain.SPATIAL: 0.8}
+            "/source", {AtlasDomain.SPATIAL: 0.8}
         )
         merged = self._create_sample_profile(
-            "/merged", {GeometryDomain.SPATIAL: 0.72}
+            "/merged", {AtlasDomain.SPATIAL: 0.72}
         )
 
         validation = PostMergeGeometryValidation(
             source_profile=source,
             merged_profile=merged,
-            preservation_by_domain={GeometryDomain.SPATIAL: 0.9},  # 0.72/0.8 = 0.9
+            preservation_by_domain={AtlasDomain.SPATIAL: 0.9},  # 0.72/0.8 = 0.9
             overall_preservation=0.9,
         )
 
         assert validation.source_profile.model_path == "/source"
         assert validation.merged_profile.model_path == "/merged"
-        assert validation.preservation_by_domain[GeometryDomain.SPATIAL] == 0.9
+        assert validation.preservation_by_domain[AtlasDomain.SPATIAL] == 0.9
         assert validation.overall_preservation == 0.9
 
     def test_to_dict(self) -> None:
         """to_dict should serialize validation correctly."""
         source = self._create_sample_profile(
-            "/source", {GeometryDomain.SPATIAL: 0.8, GeometryDomain.MORAL: 0.7}
+            "/source", {AtlasDomain.SPATIAL: 0.8, AtlasDomain.MORAL: 0.7}
         )
         merged = self._create_sample_profile(
-            "/merged", {GeometryDomain.SPATIAL: 0.72, GeometryDomain.MORAL: 0.77}
+            "/merged", {AtlasDomain.SPATIAL: 0.72, AtlasDomain.MORAL: 0.77}
         )
 
         validation = PostMergeGeometryValidation(
             source_profile=source,
             merged_profile=merged,
             preservation_by_domain={
-                GeometryDomain.SPATIAL: 0.9,  # 0.72/0.8
-                GeometryDomain.MORAL: 1.1,    # 0.77/0.7
+                AtlasDomain.SPATIAL: 0.9,  # 0.72/0.8
+                AtlasDomain.MORAL: 1.1,    # 0.77/0.7
             },
             overall_preservation=1.0,
         )
@@ -527,20 +538,20 @@ class TestPostMergeGeometryValidation:
     def test_preservation_can_exceed_one(self) -> None:
         """Preservation can be > 1.0 if merge enhances geometry."""
         source = self._create_sample_profile(
-            "/source", {GeometryDomain.TEMPORAL: 0.5}
+            "/source", {AtlasDomain.TEMPORAL: 0.5}
         )
         merged = self._create_sample_profile(
-            "/merged", {GeometryDomain.TEMPORAL: 0.7}
+            "/merged", {AtlasDomain.TEMPORAL: 0.7}
         )
 
         validation = PostMergeGeometryValidation(
             source_profile=source,
             merged_profile=merged,
-            preservation_by_domain={GeometryDomain.TEMPORAL: 1.4},  # 0.7/0.5
+            preservation_by_domain={AtlasDomain.TEMPORAL: 1.4},  # 0.7/0.5
             overall_preservation=1.4,
         )
 
-        assert validation.preservation_by_domain[GeometryDomain.TEMPORAL] == 1.4
+        assert validation.preservation_by_domain[AtlasDomain.TEMPORAL] == 1.4
 
 
 # =============================================================================
@@ -582,7 +593,7 @@ class TestDomainGeometryWaypointService:
         # Create audit with equal scores
         deltas = [
             DomainGeometryDelta(
-                domain=GeometryDomain.SPATIAL,
+                domain=AtlasDomain.SPATIAL,
                 source_score=0.5,
                 target_score=0.5,
                 delta=0.0,
@@ -610,8 +621,8 @@ class TestDomainGeometryWaypointService:
 
         alphas = service.compute_domain_alpha_profile(audit)
 
-        assert GeometryDomain.SPATIAL in alphas
-        assert alphas[GeometryDomain.SPATIAL] == pytest.approx(0.5, abs=1e-5)
+        assert AtlasDomain.SPATIAL in alphas
+        assert alphas[AtlasDomain.SPATIAL] == pytest.approx(0.5, abs=1e-5)
 
     def test_compute_domain_alpha_profile_target_stronger(
         self, any_backend: "Backend"
@@ -626,7 +637,7 @@ class TestDomainGeometryWaypointService:
         # Target is stronger (0.8 vs 0.2)
         deltas = [
             DomainGeometryDelta(
-                domain=GeometryDomain.MORAL,
+                domain=AtlasDomain.MORAL,
                 source_score=0.2,
                 target_score=0.8,
                 delta=0.6,
@@ -655,7 +666,7 @@ class TestDomainGeometryWaypointService:
         alphas = service.compute_domain_alpha_profile(audit)
 
         # Alpha = target / (source + target) = 0.8 / 1.0 = 0.8
-        assert alphas[GeometryDomain.MORAL] == pytest.approx(0.8, abs=1e-5)
+        assert alphas[AtlasDomain.MORAL] == pytest.approx(0.8, abs=1e-5)
 
     def test_compute_domain_alpha_profile_source_stronger(
         self, any_backend: "Backend"
@@ -670,7 +681,7 @@ class TestDomainGeometryWaypointService:
         # Source is stronger (0.9 vs 0.1)
         deltas = [
             DomainGeometryDelta(
-                domain=GeometryDomain.TEMPORAL,
+                domain=AtlasDomain.TEMPORAL,
                 source_score=0.9,
                 target_score=0.1,
                 delta=0.8,
@@ -699,7 +710,7 @@ class TestDomainGeometryWaypointService:
         alphas = service.compute_domain_alpha_profile(audit)
 
         # Alpha = target / (source + target) = 0.1 / 1.0 = 0.1
-        assert alphas[GeometryDomain.TEMPORAL] == pytest.approx(0.1, abs=1e-5)
+        assert alphas[AtlasDomain.TEMPORAL] == pytest.approx(0.1, abs=1e-5)
 
     def test_compute_domain_alpha_profile_zero_scores(
         self, any_backend: "Backend"
@@ -713,7 +724,7 @@ class TestDomainGeometryWaypointService:
 
         deltas = [
             DomainGeometryDelta(
-                domain=GeometryDomain.SOCIAL,
+                domain=AtlasDomain.RELATIONAL,
                 source_score=0.0,
                 target_score=0.0,
                 delta=0.0,
@@ -742,7 +753,7 @@ class TestDomainGeometryWaypointService:
         alphas = service.compute_domain_alpha_profile(audit)
 
         # Should default to 0.5 when total is 0
-        assert alphas[GeometryDomain.SOCIAL] == 0.5
+        assert alphas[AtlasDomain.RELATIONAL] == 0.5
 
     def test_compute_domain_alpha_profile_multiple_domains(
         self, any_backend: "Backend"
@@ -756,25 +767,25 @@ class TestDomainGeometryWaypointService:
 
         deltas = [
             DomainGeometryDelta(
-                domain=GeometryDomain.SPATIAL,
+                domain=AtlasDomain.SPATIAL,
                 source_score=0.6,
                 target_score=0.4,
                 delta=0.2,
             ),
             DomainGeometryDelta(
-                domain=GeometryDomain.SOCIAL,
+                domain=AtlasDomain.RELATIONAL,
                 source_score=0.3,
                 target_score=0.7,
                 delta=0.4,
             ),
             DomainGeometryDelta(
-                domain=GeometryDomain.TEMPORAL,
+                domain=AtlasDomain.TEMPORAL,
                 source_score=0.5,
                 target_score=0.5,
                 delta=0.0,
             ),
             DomainGeometryDelta(
-                domain=GeometryDomain.MORAL,
+                domain=AtlasDomain.MORAL,
                 source_score=0.8,
                 target_score=0.2,
                 delta=0.6,
@@ -803,10 +814,10 @@ class TestDomainGeometryWaypointService:
         alphas = service.compute_domain_alpha_profile(audit)
 
         assert len(alphas) == 4
-        assert alphas[GeometryDomain.SPATIAL] == pytest.approx(0.4, abs=1e-5)
-        assert alphas[GeometryDomain.SOCIAL] == pytest.approx(0.7, abs=1e-5)
-        assert alphas[GeometryDomain.TEMPORAL] == pytest.approx(0.5, abs=1e-5)
-        assert alphas[GeometryDomain.MORAL] == pytest.approx(0.2, abs=1e-5)
+        assert alphas[AtlasDomain.SPATIAL] == pytest.approx(0.4, abs=1e-5)
+        assert alphas[AtlasDomain.RELATIONAL] == pytest.approx(0.7, abs=1e-5)
+        assert alphas[AtlasDomain.TEMPORAL] == pytest.approx(0.5, abs=1e-5)
+        assert alphas[AtlasDomain.MORAL] == pytest.approx(0.2, abs=1e-5)
 
     def test_compute_domain_alpha_profile_empty_deltas(
         self, any_backend: "Backend"
@@ -851,7 +862,7 @@ class TestIntegration:
     """Integration tests for the waypoints module."""
 
     def _create_profile(
-        self, path: str, scores: dict[GeometryDomain, float]
+        self, path: str, scores: dict[AtlasDomain, float]
     ) -> ModelGeometryProfile:
         """Create a sample profile."""
         domain_scores = {}
@@ -878,25 +889,25 @@ class TestIntegration:
         source = self._create_profile(
             "/source",
             {
-                GeometryDomain.SPATIAL: 0.85,
-                GeometryDomain.SOCIAL: 0.70,
-                GeometryDomain.TEMPORAL: 0.75,
-                GeometryDomain.MORAL: 0.80,
+                AtlasDomain.SPATIAL: 0.85,
+                AtlasDomain.RELATIONAL: 0.70,
+                AtlasDomain.TEMPORAL: 0.75,
+                AtlasDomain.MORAL: 0.80,
             },
         )
         target = self._create_profile(
             "/target",
             {
-                GeometryDomain.SPATIAL: 0.65,
-                GeometryDomain.SOCIAL: 0.90,
-                GeometryDomain.TEMPORAL: 0.75,
-                GeometryDomain.MORAL: 0.60,
+                AtlasDomain.SPATIAL: 0.65,
+                AtlasDomain.RELATIONAL: 0.90,
+                AtlasDomain.TEMPORAL: 0.75,
+                AtlasDomain.MORAL: 0.60,
             },
         )
 
-        # Create deltas
+        # Create deltas - only for domains in both profiles
         deltas = []
-        for domain in GeometryDomain:
+        for domain in source.domain_scores:
             s = source.domain_scores[domain].manifold_score
             t = target.domain_scores[domain].manifold_score
             deltas.append(
@@ -930,21 +941,21 @@ class TestIntegration:
         source = self._create_profile(
             "/source",
             {
-                GeometryDomain.SPATIAL: 0.80,
-                GeometryDomain.MORAL: 0.70,
+                AtlasDomain.SPATIAL: 0.80,
+                AtlasDomain.MORAL: 0.70,
             },
         )
         merged = self._create_profile(
             "/merged",
             {
-                GeometryDomain.SPATIAL: 0.72,  # 90% preserved
-                GeometryDomain.MORAL: 0.77,   # 110% preserved (enhanced)
+                AtlasDomain.SPATIAL: 0.72,  # 90% preserved
+                AtlasDomain.MORAL: 0.77,   # 110% preserved (enhanced)
             },
         )
 
         preservation = {
-            GeometryDomain.SPATIAL: 0.72 / 0.80,
-            GeometryDomain.MORAL: 0.77 / 0.70,
+            AtlasDomain.SPATIAL: 0.72 / 0.80,
+            AtlasDomain.MORAL: 0.77 / 0.70,
         }
         overall = sum(preservation.values()) / len(preservation)
 
