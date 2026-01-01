@@ -633,7 +633,7 @@ class BackendAffineStitchingLayer:
 
             import logging
             logger = logging.getLogger(__name__)
-            logger.warning(
+            logger.debug(
                 "Closed-form stitch: n=%d, src_dim=%d, tgt_dim=%d, fwd_err=%.6f, bwd_err=%.6f",
                 n, d_source, d_target, forward_error, backward_error
             )

@@ -185,7 +185,14 @@ def run_merge(
     # STAGE 1: PROBE (Compute layer correspondences via CKA)
     # =================================================================
     logger.info("STAGE 1: PROBE (%s mode)", merge_config.probe_mode)
-    probe_result, probe_metrics, source_activations, target_activations = stage_probe(
+    (
+        probe_result,
+        probe_metrics,
+        source_activations,
+        target_activations,
+        source_intermediate_activations,
+        target_intermediate_activations,
+    ) = stage_probe(
         source_weights=source_weights,
         target_weights=loaded_target_weights,
         source_model=source_model,
@@ -237,6 +244,12 @@ def run_merge(
             "PROBE: Collected activations for %d source layers, %d target layers",
             len(source_activations),
             len(target_activations),
+        )
+    if source_intermediate_activations and target_intermediate_activations:
+        logger.info(
+            "PROBE: Collected INTERMEDIATE activations for %d source layers, %d target layers",
+            len(source_intermediate_activations),
+            len(target_intermediate_activations),
         )
 
     # Clear GPU memory
@@ -307,6 +320,8 @@ def run_merge(
         probe_domains=probe_result.get("probe_domains"),
         source_activations=source_activations,
         target_activations=target_activations,
+        source_intermediate_activations=source_intermediate_activations,
+        target_intermediate_activations=target_intermediate_activations,
         config=merge_config,
         extract_layer_index_fn=extract_layer_index,
         backend=backend,

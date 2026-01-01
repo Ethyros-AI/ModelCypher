@@ -117,7 +117,7 @@ def stage_probe(
         "intersection_map": result.intersection_map,
         "probe_ids": result.probe_ids,
         "probe_domains": result.probe_domains,
-    }, result.metrics, result.source_activations, result.target_activations
+    }, result.metrics, result.source_activations, result.target_activations, result.source_intermediate_activations, result.target_intermediate_activations
 
 
 def stage_permute(
@@ -175,6 +175,8 @@ def stage_transplant(
     probe_domains: list[str] | None,
     source_activations: dict | None,
     target_activations: dict | None,
+    source_intermediate_activations: dict | None,
+    target_intermediate_activations: dict | None,
     config: UnifiedMergeConfig,
     extract_layer_index_fn: Callable[[str], int | None],
     backend: "Backend",
@@ -202,6 +204,8 @@ def stage_transplant(
         probe_domains=probe_domains,
         source_activations=source_activations,
         target_activations=target_activations,
+        source_intermediate_activations=source_intermediate_activations,
+        target_intermediate_activations=target_intermediate_activations,
         config=stage_config,
         extract_layer_index_fn=extract_layer_index_fn,
         backend=backend,

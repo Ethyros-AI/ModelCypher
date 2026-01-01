@@ -233,6 +233,8 @@ def stage_transplant(
     config: TransplantStageConfig,
     extract_layer_index_fn: Callable[[str], int | None],
     source_activations: dict[int, list["Array"]] | None = None,
+    source_intermediate_activations: dict[int, list["Array"]] | None = None,
+    target_intermediate_activations: dict[int, list["Array"]] | None = None,
     backend: "Backend | None" = None,
 ) -> TransplantStageResult:
     """Stage 3: Null-space constrained transplant using probe activations."""
@@ -429,6 +431,24 @@ def stage_transplant(
         transform_requirements: list[str] = []
         layer_fisher_weights = None
 
+        # Multi-space stitching: compute stitches for BOTH hidden AND intermediate dimensions
+        # Hidden stitch: maps layer output activations (source hidden → target hidden)
+        # Intermediate stitch: maps MLP internal activations (source intermediate → target intermediate)
+        hidden_stitch_weights = None
+        hidden_stitch_bias = None
+        intermediate_stitch_weights = None
+        intermediate_stitch_bias = None
+
+        # Get intermediate activations for this layer (MLP internal states)
+        src_inter_list = (
+            source_intermediate_activations.get(layer_idx)
+            if source_intermediate_activations else None
+        )
+        tgt_inter_list = (
+            target_intermediate_activations.get(layer_idx)
+            if target_intermediate_activations else None
+        )
+
         src_act_list = source_activations.get(layer_idx) if source_activations else None
         max_samples = max(0, config.analysis_max_samples)
         analysis_samples = (
@@ -613,6 +633,135 @@ def stage_transplant(
                 transform_requirements = [t.value for t in analysis.transformations]
                 metrics["transform_requirements_by_layer"][layer_idx] = transform_requirements
 
+        # =================================================================
+        # MULTI-SPACE STITCHING: Compute stitches for hidden AND intermediate
+        # =================================================================
+        # This enables cross-architecture merging where dimensions differ.
+        # MLP weights have shape [intermediate, hidden] or [hidden, intermediate].
+        # We need stitches for BOTH axes to properly transform weights.
+
+        # Compute HIDDEN stitch (source hidden_dim → target hidden_dim)
+        if src_act_list is not None and act_list is not None:
+            n_hidden_samples = min(len(src_act_list), len(act_list))
+            if n_hidden_samples >= 10:
+                from modelcypher.core.domain.geometry.affine_stitching_layer import (
+                    AnchorPair,
+                    BackendAffineStitchingLayer,
+                    Config as StitchConfig,
+                )
+
+                src_hidden = b.stack(src_act_list[:n_hidden_samples], axis=0)
+                tgt_hidden = b.stack(act_list[:n_hidden_samples], axis=0)
+                src_hidden = b.astype(src_hidden, "float32")
+                tgt_hidden = b.astype(tgt_hidden, "float32")
+                b.eval(src_hidden, tgt_hidden)
+
+                # Check if dimensions differ (cross-architecture)
+                src_hidden_dim = int(src_hidden.shape[1])
+                tgt_hidden_dim = int(tgt_hidden.shape[1])
+
+                if src_hidden_dim != tgt_hidden_dim:
+                    # Normalize for numerical stability
+                    src_mean = b.mean(src_hidden, axis=0, keepdims=True)
+                    src_std = b.std(src_hidden, axis=0, keepdims=True) + 1e-8
+                    src_normed = (src_hidden - src_mean) / src_std
+
+                    tgt_mean = b.mean(tgt_hidden, axis=0, keepdims=True)
+                    tgt_std = b.std(tgt_hidden, axis=0, keepdims=True) + 1e-8
+                    tgt_normed = (tgt_hidden - tgt_mean) / tgt_std
+                    b.eval(src_normed, tgt_normed)
+
+                    # Build anchor pairs
+                    src_np = b.to_numpy(src_normed)
+                    tgt_np = b.to_numpy(tgt_normed)
+                    hidden_anchor_pairs = [
+                        AnchorPair(
+                            source_activation=src_np[i].tolist(),
+                            target_activation=tgt_np[i].tolist(),
+                            anchor_id=f"hidden_{i}",
+                        )
+                        for i in range(n_hidden_samples)
+                    ]
+
+                    # Train hidden stitch
+                    stitcher = BackendAffineStitchingLayer(b)
+                    hidden_result = stitcher.train(
+                        hidden_anchor_pairs,
+                        StitchConfig(max_iterations=2000, learning_rate=0.01),
+                    )
+
+                    if hidden_result is not None and hidden_result.is_valid:
+                        hidden_stitch_weights = b.array(hidden_result.weights)
+                        hidden_stitch_bias = b.array(hidden_result.bias)
+                        b.eval(hidden_stitch_weights, hidden_stitch_bias)
+                        logger.info(
+                            "Layer %d: Hidden stitch trained (%d→%d), fwd_err=%.4f",
+                            layer_idx, src_hidden_dim, tgt_hidden_dim, hidden_result.forward_error
+                        )
+                        metrics.setdefault("hidden_stitches_trained", 0)
+                        metrics["hidden_stitches_trained"] += 1
+
+        # Compute INTERMEDIATE stitch (source intermediate_dim → target intermediate_dim)
+        if src_inter_list is not None and tgt_inter_list is not None:
+            n_inter_samples = min(len(src_inter_list), len(tgt_inter_list))
+            if n_inter_samples >= 10:
+                from modelcypher.core.domain.geometry.affine_stitching_layer import (
+                    AnchorPair,
+                    BackendAffineStitchingLayer,
+                    Config as StitchConfig,
+                )
+
+                src_inter = b.stack(src_inter_list[:n_inter_samples], axis=0)
+                tgt_inter = b.stack(tgt_inter_list[:n_inter_samples], axis=0)
+                src_inter = b.astype(src_inter, "float32")
+                tgt_inter = b.astype(tgt_inter, "float32")
+                b.eval(src_inter, tgt_inter)
+
+                # Check if dimensions differ
+                src_inter_dim = int(src_inter.shape[1])
+                tgt_inter_dim = int(tgt_inter.shape[1])
+
+                if src_inter_dim != tgt_inter_dim:
+                    # Normalize for numerical stability
+                    src_mean = b.mean(src_inter, axis=0, keepdims=True)
+                    src_std = b.std(src_inter, axis=0, keepdims=True) + 1e-8
+                    src_normed = (src_inter - src_mean) / src_std
+
+                    tgt_mean = b.mean(tgt_inter, axis=0, keepdims=True)
+                    tgt_std = b.std(tgt_inter, axis=0, keepdims=True) + 1e-8
+                    tgt_normed = (tgt_inter - tgt_mean) / tgt_std
+                    b.eval(src_normed, tgt_normed)
+
+                    # Build anchor pairs
+                    src_np = b.to_numpy(src_normed)
+                    tgt_np = b.to_numpy(tgt_normed)
+                    inter_anchor_pairs = [
+                        AnchorPair(
+                            source_activation=src_np[i].tolist(),
+                            target_activation=tgt_np[i].tolist(),
+                            anchor_id=f"inter_{i}",
+                        )
+                        for i in range(n_inter_samples)
+                    ]
+
+                    # Train intermediate stitch
+                    stitcher = BackendAffineStitchingLayer(b)
+                    inter_result = stitcher.train(
+                        inter_anchor_pairs,
+                        StitchConfig(max_iterations=2000, learning_rate=0.01),
+                    )
+
+                    if inter_result is not None and inter_result.is_valid:
+                        intermediate_stitch_weights = b.array(inter_result.weights)
+                        intermediate_stitch_bias = b.array(inter_result.bias)
+                        b.eval(intermediate_stitch_weights, intermediate_stitch_bias)
+                        logger.info(
+                            "Layer %d: Intermediate stitch trained (%d→%d), fwd_err=%.4f",
+                            layer_idx, src_inter_dim, tgt_inter_dim, inter_result.forward_error
+                        )
+                        metrics.setdefault("intermediate_stitches_trained", 0)
+                        metrics["intermediate_stitches_trained"] += 1
+
         stacked = b.stack(act_list, axis=0)
         # Convert to float32 for numerical stability in linalg operations.
         stacked = b.astype(stacked, "float32")
@@ -742,171 +891,112 @@ def stage_transplant(
                     logger.debug("Shared subspace projection failed for %s: %s", key, e)
 
             if target_w.shape != source_candidate.shape:
-                # Cross-architecture: Use affine stitching on activations, not weight projection
-                # Weight projection corrupts CKA. Instead, verify CKA = 1.0 via stitch layer.
-                from modelcypher.core.domain.geometry.affine_stitching_layer import (
-                    AnchorPair,
-                    BackendAffineStitchingLayer,
-                )
-                from modelcypher.core.domain.geometry.cka import (
-                    HSICEstimator,
-                    compute_cka_backend,
-                )
+                # =================================================================
+                # MULTI-SPACE STITCHING: Apply pre-computed stitches to weights
+                # =================================================================
+                # MLP weights need BOTH hidden AND intermediate stitches:
+                #   gate_proj [intermediate, hidden] → [tgt_intermediate, tgt_hidden]
+                #   up_proj   [intermediate, hidden] → [tgt_intermediate, tgt_hidden]
+                #   down_proj [hidden, intermediate] → [tgt_hidden, tgt_intermediate]
+                #
+                # Attention weights only need hidden stitch:
+                #   q_proj, k_proj, v_proj [hidden, head*num_heads] → [tgt_hidden, ...]
+                #   o_proj [head*num_heads, hidden] → [..., tgt_hidden]
 
-                # Build anchor pairs from FULL atlas (not limited by analysis_max_samples)
-                # Cross-architecture stitch needs ALL probes to avoid overfitting
-                if src_act_list is not None and act_list is not None:
-                    # Use ALL activations from the full atlas
-                    full_n_samples = min(len(src_act_list), len(act_list))
-                    if full_n_samples >= 10:
-                        # Stack FULL activation lists
-                        src_full = b.stack(src_act_list[:full_n_samples], axis=0)
-                        tgt_full = b.stack(act_list[:full_n_samples], axis=0)
-                        src_full = b.astype(src_full, "float32")
-                        tgt_full = b.astype(tgt_full, "float32")
-                        b.eval(src_full, tgt_full)
+                weight_shape = source_candidate.shape
+                is_mlp = any(mlp_name in key for mlp_name in [
+                    "gate_proj", "up_proj", "down_proj", "mlp.fc1", "mlp.fc2"
+                ])
 
-                        logger.info(
-                            "Using FULL atlas for stitch: n_samples=%d (src_dim=%d, tgt_dim=%d)",
-                            full_n_samples, int(src_full.shape[1]), int(tgt_full.shape[1])
-                        )
+                if is_mlp and hidden_stitch_weights is not None and intermediate_stitch_weights is not None:
+                    # MLP weight: apply BOTH stitches
+                    src_hidden_dim = int(hidden_stitch_weights.shape[1])
+                    tgt_hidden_dim = int(hidden_stitch_weights.shape[0])
+                    src_inter_dim = int(intermediate_stitch_weights.shape[1])
+                    tgt_inter_dim = int(intermediate_stitch_weights.shape[0])
 
-                        # NORMALIZE for numerical stability (geometry is scale-invariant)
-                        # Different models have wildly different activation scales
-                        src_mean = b.mean(src_full, axis=0, keepdims=True)
-                        src_std = b.std(src_full, axis=0, keepdims=True) + 1e-8
-                        src_normed = (src_full - src_mean) / src_std
+                    logger.info(
+                        "MLP weight %s: applying dual stitch (hidden %d→%d, inter %d→%d)",
+                        key, src_hidden_dim, tgt_hidden_dim, src_inter_dim, tgt_inter_dim
+                    )
 
-                        tgt_mean = b.mean(tgt_full, axis=0, keepdims=True)
-                        tgt_std = b.std(tgt_full, axis=0, keepdims=True) + 1e-8
-                        tgt_normed = (tgt_full - tgt_mean) / tgt_std
-                        b.eval(src_normed, tgt_normed)
+                    # Determine which dimension is which
+                    dim0, dim1 = int(weight_shape[0]), int(weight_shape[1])
 
-                        src_np = b.to_numpy(src_normed)
-                        tgt_np = b.to_numpy(tgt_normed)
-                        anchor_pairs = [
-                            AnchorPair(
-                                source_activation=src_np[i].tolist(),
-                                target_activation=tgt_np[i].tolist(),
-                                anchor_id=f"sample_{i}",
-                            )
-                            for i in range(full_n_samples)
-                        ]
-                        n_samples = full_n_samples
+                    if dim0 == src_inter_dim and dim1 == src_hidden_dim:
+                        # gate_proj/up_proj: [intermediate, hidden] → [tgt_inter, tgt_hidden]
+                        # Apply: intermediate_stitch @ weight @ hidden_stitch.T
+                        source_aligned = b.matmul(intermediate_stitch_weights, source_candidate)
+                        source_aligned = b.matmul(source_aligned, b.transpose(hidden_stitch_weights))
+                        b.eval(source_aligned)
+                        logger.info("Dual stitch (gate/up style): [%d,%d] → [%d,%d]",
+                                    dim0, dim1, tgt_inter_dim, tgt_hidden_dim)
 
-                        # Train affine stitching layer (more iterations for convergence)
-                        from modelcypher.core.domain.geometry.affine_stitching_layer import (
-                            Config as StitchConfig,
-                        )
-                        stitcher = BackendAffineStitchingLayer(b)
-                        stitch_result = stitcher.train(
-                            anchor_pairs,
-                            StitchConfig(max_iterations=2000, learning_rate=0.01),
-                        )
+                    elif dim0 == src_hidden_dim and dim1 == src_inter_dim:
+                        # down_proj: [hidden, intermediate] → [tgt_hidden, tgt_inter]
+                        # Apply: hidden_stitch @ weight @ intermediate_stitch.T
+                        source_aligned = b.matmul(hidden_stitch_weights, source_candidate)
+                        source_aligned = b.matmul(source_aligned, b.transpose(intermediate_stitch_weights))
+                        b.eval(source_aligned)
+                        logger.info("Dual stitch (down style): [%d,%d] → [%d,%d]",
+                                    dim0, dim1, tgt_hidden_dim, tgt_inter_dim)
 
-                        # Debug: understand why stitch training fails
-                        if stitch_result is None:
-                            logger.warning(
-                                "Stitch returned None for %s: n_samples=%d, src_dim=%d, tgt_dim=%d",
-                                key, n_samples, int(src_full.shape[1]), int(tgt_full.shape[1])
-                            )
-                        elif not stitch_result.is_valid:
-                            logger.warning(
-                                "Stitch invalid for %s: fwd_err=%.4f, bwd_err=%.4f, converged=%s, iters=%d",
-                                key, stitch_result.forward_error, stitch_result.backward_error,
-                                stitch_result.converged, stitch_result.iterations
-                            )
-
-                        if stitch_result is not None and stitch_result.is_valid:
-                            logger.info(
-                                "Stitch solved for %s: fwd_err=%.4f, bwd_err=%.4f, n_samples=%d",
-                                key, stitch_result.forward_error, stitch_result.backward_error, n_samples
-                            )
-                            # Apply stitch to NORMALIZED source activations
-                            logger.info("Converting stitch weights to backend array for %s...", key)
-                            weights_stitch = b.array(stitch_result.weights)
-                            bias_stitch = b.array(stitch_result.bias)
-                            logger.info("Applying stitch for %s: W=%s, b=%s", key, weights_stitch.shape, bias_stitch.shape)
-                            src_stitched = stitcher.apply(src_normed, weights_stitch, bias_stitch)
-                            b.eval(src_stitched)
-                            logger.info("Stitch applied for %s: src_stitched=%s", key, src_stitched.shape)
-
-                            # VERIFY CKA = 1.0 after stitching (use normalized target)
-                            logger.info("Computing CKA for %s (src=%s, tgt=%s)...", key, src_stitched.shape, tgt_normed.shape)
-                            cka_after_stitch = compute_cka_backend(
-                                src_stitched,
-                                tgt_normed,
-                                backend=b,
-                                estimator=HSICEstimator.BIASED,
-                                feature_bias_correction=False,
-                            )
-                            logger.info("CKA computed for %s, converting to float...", key)
-                            # Handle case where CKA returns a float directly or a tensor
-                            if isinstance(cka_after_stitch, (int, float)):
-                                cka_val = float(cka_after_stitch)
-                            else:
-                                b.eval(cka_after_stitch)
-                                cka_val = float(cka_after_stitch.item()) if hasattr(cka_after_stitch, 'item') else float(b.to_numpy(cka_after_stitch))
-                            logger.info("CKA after stitch for %s: %.4f", key, cka_val)
-
-                            if cka_val >= 0.99:  # CKA preserved - stitch is geometry-preserving
-                                # FOLD stitch INTO source weights:
-                                # Stitch W maps activations: [n, src_dim] @ W.T -> [n, tgt_dim]
-                                # W is [tgt_dim, src_dim] = [896, 960]
-                                #
-                                # Weight matrices have hidden_dim in different positions:
-                                # - down_proj: [hidden_dim, other] - transform first dim
-                                # - gate_proj/up_proj: [other, hidden_dim] - transform second dim
-                                # - attention projs: [hidden_dim, head_dim] or [head_dim, hidden_dim]
-                                #
-                                # Detect which dimension matches the source hidden_dim
-                                src_hidden_dim = int(weights_stitch.shape[1])  # 960
-                                tgt_hidden_dim = int(weights_stitch.shape[0])  # 896
-                                weight_shape = source_candidate.shape
-
-                                if int(weight_shape[0]) == src_hidden_dim:
-                                    # Hidden dim is first dimension: W_stitch @ weight
-                                    # [tgt, src] @ [src, other] = [tgt, other]
-                                    source_aligned = b.matmul(weights_stitch, source_candidate)
-                                    logger.info("Stitch applied to first dim: %s @ %s", weights_stitch.shape, weight_shape)
-                                elif int(weight_shape[1]) == src_hidden_dim:
-                                    # Hidden dim is second dimension: weight @ W_stitch.T
-                                    # [other, src] @ [src, tgt] = [other, tgt]
-                                    W_stitch_T = b.transpose(weights_stitch)  # [src, tgt]
-                                    source_aligned = b.matmul(source_candidate, W_stitch_T)
-                                    logger.info("Stitch applied to second dim: %s @ %s", weight_shape, W_stitch_T.shape)
-                                else:
-                                    # Neither dimension matches - skip this weight
-                                    logger.warning(
-                                        "Weight shape %s doesn't match hidden_dim %d - skipping %s",
-                                        weight_shape, src_hidden_dim, key
-                                    )
-                                    continue
-                                b.eval(source_aligned)
-
-                                logger.info(
-                                    "Folded stitch into weights: CKA=%.4f, %s->%s (layer %d, %s)",
-                                    cka_val, source_candidate.shape, source_aligned.shape, layer_idx, key
-                                )
-                                metrics.setdefault("stitch_folded_weights", 0)
-                                metrics["stitch_folded_weights"] += 1
-                            else:
-                                logger.warning(
-                                    "CKA dropped to %.4f after stitch (layer %d, %s) - skipping weight",
-                                    cka_val, layer_idx, key
-                                )
-                                metrics.setdefault("cka_violated_weights", 0)
-                                metrics["cka_violated_weights"] += 1
-                                continue  # Skip this weight - would corrupt geometry
-                        else:
-                            logger.warning("Affine stitch training failed for %s - skipping", key)
-                            continue
                     else:
-                        logger.warning("Not enough samples for CKA verification - skipping %s", key)
+                        logger.warning(
+                            "MLP weight %s shape [%d,%d] doesn't match expected dims "
+                            "(hidden=%d, inter=%d) - skipping",
+                            key, dim0, dim1, src_hidden_dim, src_inter_dim
+                        )
                         continue
+
+                    metrics.setdefault("dual_stitch_applied", 0)
+                    metrics["dual_stitch_applied"] += 1
+
+                elif hidden_stitch_weights is not None:
+                    # Attention or other weight: apply only hidden stitch
+                    src_hidden_dim = int(hidden_stitch_weights.shape[1])
+                    tgt_hidden_dim = int(hidden_stitch_weights.shape[0])
+                    dim0, dim1 = int(weight_shape[0]), int(weight_shape[1])
+
+                    if dim0 == src_hidden_dim:
+                        # Hidden dim is first: hidden_stitch @ weight
+                        source_aligned = b.matmul(hidden_stitch_weights, source_candidate)
+                        b.eval(source_aligned)
+                        logger.info("Hidden stitch applied to dim0: [%d,%d] → [%d,%d]",
+                                    dim0, dim1, tgt_hidden_dim, dim1)
+
+                    elif dim1 == src_hidden_dim:
+                        # Hidden dim is second: weight @ hidden_stitch.T
+                        source_aligned = b.matmul(source_candidate, b.transpose(hidden_stitch_weights))
+                        b.eval(source_aligned)
+                        logger.info("Hidden stitch applied to dim1: [%d,%d] → [%d,%d]",
+                                    dim0, dim1, dim0, tgt_hidden_dim)
+
+                    else:
+                        logger.warning(
+                            "Weight %s shape [%d,%d] doesn't match hidden_dim %d - skipping",
+                            key, dim0, dim1, src_hidden_dim
+                        )
+                        continue
+
+                    metrics.setdefault("hidden_stitch_applied", 0)
+                    metrics["hidden_stitch_applied"] += 1
+
                 else:
-                    logger.warning("Missing activations for CKA verification - skipping %s", key)
+                    logger.warning(
+                        "Cross-architecture weight %s but no stitch available - skipping",
+                        key
+                    )
                     continue
+
+                # Verify final shape matches target
+                if source_aligned.shape != target_w.shape:
+                    logger.warning(
+                        "Shape mismatch after stitch: %s vs %s for %s - skipping",
+                        source_aligned.shape, target_w.shape, key
+                    )
+                    continue
+
             else:
                 source_aligned = source_candidate
 

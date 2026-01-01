@@ -77,8 +77,13 @@ class ProbeResult:
     metrics: dict[str, Any]
 
     # Activations for downstream processing (null-space filtering, shared subspace)
+    # Hidden-space activations: shape [hidden_dim] per sample (e.g., 960 for SmolLM, 896 for Qwen)
     source_activations: dict[int, list[Any]] | None = None
     target_activations: dict[int, list[Any]] | None = None
+    # Intermediate-space activations: shape [intermediate_dim] per sample
+    # (e.g., 2560 for SmolLM, 4864 for Qwen) - for multi-space stitching
+    source_intermediate_activations: dict[int, list[Any]] | None = None
+    target_intermediate_activations: dict[int, list[Any]] | None = None
     probe_ids: list[str] | None = None
     probe_domains: list[str] | None = None
 
@@ -340,6 +345,9 @@ def _probe_precise(
 
     source_layer_activations: dict[int, list["Array"]] = {}
     target_layer_activations: dict[int, list["Array"]] = {}
+    # Intermediate-space activations for multi-space stitching (cross-architecture merges)
+    source_intermediate_activations: dict[int, list["Array"]] = {}
+    target_intermediate_activations: dict[int, list["Array"]] = {}
     probe_ids: list[str] = []
     probe_domains: list[str] = []
 
@@ -400,6 +408,22 @@ def _probe_precise(
                 token_ids=target_ids,
             )
 
+            # Also collect intermediate MLP activations for multi-space stitching
+            # These are needed to compute stitches for the intermediate dimension
+            # (e.g., 2560→4864 for SmolLM→Qwen cross-architecture merges)
+            source_intermediate_acts = collect_intermediate_activations_mlx(
+                source_model,
+                source_tokenizer,
+                probe_text,
+                token_ids=source_ids,
+            )
+            target_intermediate_acts = collect_intermediate_activations_mlx(
+                target_model,
+                target_tokenizer,
+                probe_text,
+                token_ids=target_ids,
+            )
+
             source_activated: dict[int, list[ActivatedDimension]] = {}
             target_activated: dict[int, list[ActivatedDimension]] = {}
 
@@ -414,6 +438,17 @@ def _probe_precise(
                 if layer_idx not in target_layer_activations:
                     target_layer_activations[layer_idx] = []
                 target_layer_activations[layer_idx].append(act)
+
+            # Store intermediate activations for multi-space stitching
+            for layer_idx, act in source_intermediate_acts.items():
+                if layer_idx not in source_intermediate_activations:
+                    source_intermediate_activations[layer_idx] = []
+                source_intermediate_activations[layer_idx].append(act)
+
+            for layer_idx, act in target_intermediate_acts.items():
+                if layer_idx not in target_intermediate_activations:
+                    target_intermediate_activations[layer_idx] = []
+                target_intermediate_activations[layer_idx].append(act)
 
             source_fingerprints.append(
                 ActivationFingerprint(
@@ -617,6 +652,8 @@ def _probe_precise(
         metrics=metrics,
         source_activations=source_layer_activations,
         target_activations=target_layer_activations,
+        source_intermediate_activations=source_intermediate_activations,
+        target_intermediate_activations=target_intermediate_activations,
         probe_ids=probe_ids,
         probe_domains=probe_domains,
     )
@@ -884,5 +921,123 @@ def collect_layer_activations_mlx(
 
     if not activations:
         logger.debug("No activations collected for text: %s", text[:50])
+
+    return activations
+
+
+def collect_intermediate_activations_mlx(
+    model: Any,
+    tokenizer: Any,
+    text: str,
+    token_ids: list[int] | None = None,
+) -> dict[int, "Array"]:
+    """
+    Collect per-layer MLP intermediate activations for a text input (MLX backend).
+
+    Captures the activation INSIDE the MLP (after gate_proj * up_proj, before down_proj).
+    This is the intermediate representation space, distinct from the hidden space.
+
+    Shape: [intermediate_dim] (e.g., 2560 for SmolLM, 4864 for Qwen)
+
+    Returns MLX arrays directly (no numpy conversion).
+    """
+    import mlx.core as mx
+    from mlx import nn
+
+    if token_ids is None:
+        tokens = tokenizer.encode(text, add_special_tokens=True)
+        if isinstance(tokens, list):
+            token_ids = tokens
+        else:
+            token_ids = list(tokens.ids)
+    input_ids = mx.array([token_ids])
+
+    activations: dict[int, "Array"] = {}
+
+    try:
+        if not (hasattr(model, "model") and hasattr(model.model, "layers")):
+            logger.debug("Model structure not compatible with intermediate activation collection")
+            return activations
+
+        inner = model.model
+
+        # Get embeddings
+        if hasattr(inner, "embed_tokens"):
+            h = inner.embed_tokens(input_ids)
+        elif hasattr(inner, "wte"):
+            h = inner.wte(input_ids)
+        else:
+            logger.debug("Cannot find embedding layer")
+            return activations
+
+        for layer_idx, layer in enumerate(inner.layers):
+            # Apply input layer norm
+            if hasattr(layer, "input_layernorm"):
+                h_norm = layer.input_layernorm(h)
+            elif hasattr(layer, "ln_1"):
+                h_norm = layer.ln_1(h)
+            else:
+                h_norm = h
+
+            # Apply self-attention
+            if hasattr(layer, "self_attn"):
+                attn_out = layer.self_attn(h_norm)
+                if isinstance(attn_out, tuple):
+                    attn_out = attn_out[0]
+            elif hasattr(layer, "attn"):
+                attn_out = layer.attn(h_norm)
+                if isinstance(attn_out, tuple):
+                    attn_out = attn_out[0]
+            else:
+                attn_out = mx.zeros_like(h)
+
+            # Add residual
+            h = h + attn_out
+
+            # Post-attention norm
+            if hasattr(layer, "post_attention_layernorm"):
+                h_post = layer.post_attention_layernorm(h)
+            elif hasattr(layer, "ln_2"):
+                h_post = layer.ln_2(h)
+            else:
+                h_post = h
+
+            # Extract MLP intermediate activation
+            if hasattr(layer, "mlp"):
+                mlp = layer.mlp
+                if hasattr(mlp, "up_proj") and hasattr(mlp, "gate_proj"):
+                    # Standard SwiGLU/SiLU architecture (LLaMA, Qwen, Mistral)
+                    up = mlp.up_proj(h_post)
+                    gate = mlp.gate_proj(h_post)
+                    # Intermediate = silu(gate) * up (before down_proj)
+                    intermediate = nn.silu(gate) * up
+                    mx.eval(intermediate)
+                    # Mean pool over sequence
+                    pooled = mx.mean(intermediate, axis=(0, 1))
+                    mx.eval(pooled)
+                    activations[layer_idx] = pooled
+                elif hasattr(mlp, "fc1") and hasattr(mlp, "fc2"):
+                    # GPT-style MLP (fc1 -> activation -> fc2)
+                    intermediate = mlp.fc1(h_post)
+                    mx.eval(intermediate)
+                    pooled = mx.mean(intermediate, axis=(0, 1))
+                    mx.eval(pooled)
+                    activations[layer_idx] = pooled
+                else:
+                    logger.debug("Layer %d: Unknown MLP structure", layer_idx)
+
+            # Complete the layer forward for next iteration
+            if hasattr(layer, "mlp"):
+                mlp_out = layer.mlp(h_post)
+                h = h + mlp_out
+            else:
+                result = layer(h)
+                if isinstance(result, tuple):
+                    h = result[0]
+                else:
+                    h = result
+
+    except Exception as e:
+        logger.warning("Intermediate activation collection failed: %s", e)
 
     return activations
