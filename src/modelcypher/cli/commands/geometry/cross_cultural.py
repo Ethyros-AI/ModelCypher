@@ -88,25 +88,17 @@ def cross_cultural_analyze(
     alignment = CrossCulturalGeometry.analyze_alignment(gram_a, gram_b, n)
 
     payload = {
-        "_schema": "mc.geometry.cross_cultural.analyze.v1",
+        "_schema": "mc.geometry.cross_cultural.analyze.v2",
+        "primeIds": list(prime_ids),
         "gramRoughnessA": result.gram_roughness_a,
         "gramRoughnessB": result.gram_roughness_b,
         "mergedGramRoughness": result.merged_gram_roughness,
         "roughnessReduction": result.roughness_reduction,
-        "complementarityScore": result.complementarity_score,
-        "convergentPrimes": result.convergent_primes,
-        "divergentPrimes": result.divergent_primes,
-        "complementaryPrimes": [
-            {
-                "primeId": item.prime_id,
-                "sharperModel": item.sharper_model.value,
-                "sharpnessRatio": item.sharpness_ratio,
-            }
-            for item in result.complementary_primes
-        ],
+        "rowCorrelations": result.row_correlations,
+        "rowSharpnessA": result.row_sharpness_a,
+        "rowSharpnessB": result.row_sharpness_b,
+        "rowSharpnessRatio": result.row_sharpness_ratio,
         "categoryDivergence": result.category_divergence,
-        "mergeQualityScore": result.merge_quality_score,
-        "rationale": result.rationale,
         "alignment": {
             "cka": alignment.cka,
             "rawPearson": alignment.raw_pearson,
@@ -123,11 +115,10 @@ def cross_cultural_analyze(
         lines = [
             "CROSS-CULTURAL GEOMETRY",
             "",
-            f"Merge Quality Score: {result.merge_quality_score:.3f}",
-            f"Complementarity Score: {result.complementarity_score:.3f}",
-            f"Roughness Reduction: {result.roughness_reduction:.3f}",
-            f"Convergent Primes: {len(result.convergent_primes)}",
-            f"Divergent Primes: {len(result.divergent_primes)}",
+            f"Gram Roughness A: {result.gram_roughness_a:.6f}",
+            f"Gram Roughness B: {result.gram_roughness_b:.6f}",
+            f"Merged Gram Roughness: {result.merged_gram_roughness:.6f}",
+            f"Roughness Reduction: {result.roughness_reduction:.6f}",
         ]
         if alignment:
             lines.extend(

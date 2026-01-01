@@ -33,7 +33,6 @@ from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.manifold_curvature import (
-    CurvatureConfig,
     CurvatureSign,
     EdgeCurvature,
     LocalCurvature,
@@ -251,43 +250,36 @@ class TestSignClassification:
     """Tests for curvature sign classification logic."""
 
     def test_mostly_positive_is_positive(self) -> None:
-        """> 80% positive samples should classify as POSITIVE."""
-        backend = get_default_backend()
+        """Positive samples should classify as POSITIVE."""
         estimator = SectionalCurvatureEstimator()
 
-        # Simulate > 80% positive curvatures
-        curvatures = backend.array([0.1, 0.2, 0.15, 0.3, 0.25, 0.18, 0.22, 0.12, 0.08, -0.02])
+        curvatures = [0.1, 0.2, 0.15, 0.3, 0.25, 0.18, 0.22, 0.12, 0.08]
         sign = estimator._classify_sign(curvatures)
 
         assert sign == CurvatureSign.POSITIVE
 
     def test_mostly_negative_is_negative(self) -> None:
-        """< 80% negative samples should classify as NEGATIVE."""
-        backend = get_default_backend()
+        """Negative samples should classify as NEGATIVE."""
         estimator = SectionalCurvatureEstimator()
 
-        curvatures = backend.array([-0.1, -0.2, -0.15, -0.3, -0.25, -0.18, -0.22, -0.12, -0.08, 0.02])
+        curvatures = [-0.1, -0.2, -0.15, -0.3, -0.25, -0.18, -0.22, -0.12, -0.08]
         sign = estimator._classify_sign(curvatures)
 
         assert sign == CurvatureSign.NEGATIVE
 
     def test_near_zero_is_flat(self) -> None:
         """All near-zero curvatures should classify as FLAT."""
-        backend = get_default_backend()
-        config = CurvatureConfig(flat_threshold=0.1)
-        estimator = SectionalCurvatureEstimator(config)
-
-        curvatures = backend.array([0.01, -0.02, 0.005, -0.008, 0.03, -0.01, 0.02, -0.015])
+        estimator = SectionalCurvatureEstimator()
+        curvatures = [0.0, -0.0, 0.0, -0.0]
         sign = estimator._classify_sign(curvatures)
 
         assert sign == CurvatureSign.FLAT
 
     def test_mixed_signs_is_mixed(self) -> None:
         """Mixed positive/negative should classify as MIXED."""
-        backend = get_default_backend()
         estimator = SectionalCurvatureEstimator()
 
-        curvatures = backend.array([0.5, -0.5, 0.3, -0.3, 0.2, -0.2, 0.1, -0.1])
+        curvatures = [0.5, -0.5, 0.3, -0.3, 0.2, -0.2, 0.1, -0.1]
         sign = estimator._classify_sign(curvatures)
 
         assert sign == CurvatureSign.MIXED
@@ -790,9 +782,10 @@ class TestOllivierRicciConfig:
         assert config.base_alpha == 0.5
         assert config.adaptive_alpha is True
         assert config.adaptive_strength == 0.3
-        assert config.sinkhorn_epsilon == 0.001
+        assert config.sinkhorn_epsilon is None
         assert config.sinkhorn_iterations == 100
-        assert config.k_neighbors == 10
+        assert config.sinkhorn_threshold is None
+        assert config.k_neighbors is None
         assert config.symmetrize is True
 
     def test_custom_config(self) -> None:

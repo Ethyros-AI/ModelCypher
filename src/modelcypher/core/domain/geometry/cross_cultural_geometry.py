@@ -18,29 +18,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka_from_grams
 from modelcypher.core.domain.geometry.numerical_stability import (
     compute_pearson_correlation,
+    division_epsilon,
 )
 from modelcypher.core.domain.geometry.path_geometry import (
     PathComparison,
     PathGeometry,
     PathSignature,
 )
-
-
-@dataclass(frozen=True)
-class ComplementaryPrime:
-    prime_id: str
-    sharper_model: "SharperModel"
-    sharpness_ratio: float
-
-
-class SharperModel(str, Enum):
-    model_a = "modelA"
-    model_b = "modelB"
 
 
 @dataclass(frozen=True)
@@ -57,20 +46,16 @@ class ComparisonResult:
         Roughness of merged Gram matrix.
     roughness_reduction : float
         Reduction in roughness from merging.
-    complementarity_score : float
-        Score indicating complementary strengths.
-    convergent_primes : list[str]
-        Primes where models agree.
-    divergent_primes : list[str]
-        Primes where models disagree.
-    complementary_primes : list[ComplementaryPrime]
-        Primes where one model is sharper.
+    row_correlations : list[float]
+        Per-prime Pearson correlations between Gram rows.
+    row_sharpness_a : list[float]
+        Per-prime sharpness (row variance) for model A.
+    row_sharpness_b : list[float]
+        Per-prime sharpness (row variance) for model B.
+    row_sharpness_ratio : list[float]
+        Per-prime sharpness ratio max(a, b) / min(a, b).
     category_divergence : dict[str, float]
         Per-category divergence scores.
-    merge_quality_score : float
-        Quality score (0-1). Higher values indicate lower transformation stress.
-    rationale : str
-        Explanation of the comparison.
     trajectory_analysis : PathComparison or None
         Optional trajectory analysis.
     """
@@ -79,13 +64,11 @@ class ComparisonResult:
     gram_roughness_b: float
     merged_gram_roughness: float
     roughness_reduction: float
-    complementarity_score: float
-    convergent_primes: list[str]
-    divergent_primes: list[str]
-    complementary_primes: list[ComplementaryPrime]
+    row_correlations: list[float]
+    row_sharpness_a: list[float]
+    row_sharpness_b: list[float]
+    row_sharpness_ratio: list[float]
     category_divergence: dict[str, float]
-    merge_quality_score: float
-    rationale: str
     trajectory_analysis: PathComparison | None = None
 
 
@@ -115,9 +98,6 @@ class CrossCulturalGeometry:
         gram_b: list[float],
         prime_ids: list[str],
         prime_categories: dict[str, str],
-        convergence_threshold: float = 0.7,
-        divergence_threshold: float = 0.4,
-        sharpness_ratio_threshold: float = 1.5,
     ) -> ComparisonResult | None:
         n = len(prime_ids)
         if len(gram_a) != n * n or len(gram_b) != n * n or n <= 1:
@@ -136,62 +116,31 @@ class CrossCulturalGeometry:
         sharpness_a = CrossCulturalGeometry._compute_row_sharpness(gram_a, n)
         sharpness_b = CrossCulturalGeometry._compute_row_sharpness(gram_b, n)
         row_correlations = CrossCulturalGeometry._compute_row_correlations(gram_a, gram_b, n)
-
-        convergent: list[str] = []
-        divergent: list[str] = []
-        complementary: list[ComplementaryPrime] = []
-
-        for idx, prime_id in enumerate(prime_ids):
-            correlation = row_correlations[idx]
-            if correlation > convergence_threshold:
-                convergent.append(prime_id)
-            elif correlation < divergence_threshold:
-                divergent.append(prime_id)
-
-            s_a = sharpness_a[idx]
-            s_b = sharpness_b[idx]
-            if s_a > 0 and s_b > 0:
-                ratio = max(s_a, s_b) / min(s_a, s_b)
-                if ratio > sharpness_ratio_threshold:
-                    sharper = SharperModel.model_a if s_a > s_b else SharperModel.model_b
-                    complementary.append(
-                        ComplementaryPrime(
-                            prime_id=prime_id, sharper_model=sharper, sharpness_ratio=ratio
-                        )
-                    )
+        backend = get_default_backend()
+        sharpness_values = sharpness_a + sharpness_b
+        eps_source = sharpness_values if sharpness_values else [0.0]
+        eps = division_epsilon(backend, backend.array(eps_source))
+        sharpness_ratios = []
+        for s_a, s_b in zip(sharpness_a, sharpness_b):
+            denom = min(s_a, s_b)
+            denom = max(denom, eps)
+            sharpness_ratios.append(max(s_a, s_b) / denom)
 
         category_divergence = CrossCulturalGeometry._compute_category_divergence(
             row_correlations,
             prime_ids,
             prime_categories,
         )
-        complementarity_score = CrossCulturalGeometry._compute_complementarity_score(
-            sharpness_a,
-            sharpness_b,
-            row_correlations,
-        )
-
-        merge_quality, rationale = CrossCulturalGeometry._assess_merge_quality(
-            roughness_reduction,
-            complementarity_score,
-            len(convergent),
-            len(divergent),
-            n,
-            category_divergence,
-        )
-
         return ComparisonResult(
             gram_roughness_a=roughness_a,
             gram_roughness_b=roughness_b,
             merged_gram_roughness=merged_roughness,
             roughness_reduction=roughness_reduction,
-            complementarity_score=complementarity_score,
-            convergent_primes=convergent,
-            divergent_primes=divergent,
-            complementary_primes=complementary,
+            row_correlations=row_correlations,
+            row_sharpness_a=sharpness_a,
+            row_sharpness_b=sharpness_b,
+            row_sharpness_ratio=sharpness_ratios,
             category_divergence=category_divergence,
-            merge_quality_score=merge_quality,
-            rationale=rationale,
             trajectory_analysis=None,
         )
 
@@ -308,70 +257,5 @@ class CrossCulturalGeometry:
         divergence: dict[str, float] = {}
         for category, correlations in category_correlations.items():
             mean_corr = sum(correlations) / len(correlations)
-            divergence[category] = 1.0 - max(0.0, mean_corr)
+            divergence[category] = 1.0 - mean_corr
         return divergence
-
-    @staticmethod
-    def _compute_complementarity_score(
-        sharpness_a: list[float],
-        sharpness_b: list[float],
-        row_correlations: list[float],
-        ratio_threshold: float = 1.3,
-    ) -> float:
-        if len(sharpness_a) != len(sharpness_b) or not sharpness_a:
-            return 0.0
-        complementary_count = 0
-        for i in range(len(sharpness_a)):
-            s_a = sharpness_a[i]
-            s_b = sharpness_b[i]
-            if s_a <= 0 or s_b <= 0:
-                continue
-            ratio = max(s_a, s_b) / min(s_a, s_b)
-            if ratio > ratio_threshold:
-                complementary_count += 1
-        complementary_ratio = complementary_count / len(sharpness_a)
-        mean_correlation = (
-            sum(row_correlations) / len(row_correlations) if row_correlations else 0.0
-        )
-        alignment_weight = max(0.0, min(1.0, mean_correlation))
-        return complementary_ratio * (0.5 + 0.5 * alignment_weight)
-
-    @staticmethod
-    def _assess_merge_quality(
-        roughness_reduction: float,
-        complementarity_score: float,
-        convergent_count: int,
-        divergent_count: int,
-        total_primes: int,
-        category_divergence: dict[str, float],
-    ) -> tuple[float, str]:
-        """Compute merge quality score.
-
-        Returns raw score [0, 1]. Higher values indicate lower transformation stress.
-        Qualitative rationale was removed - use raw measurements to interpret.
-
-        Returns
-        -------
-        tuple
-            (score, rationale): score is 0-1. Rationale is empty (deprecated).
-        """
-        score = 0.0
-        score += max(0.0, roughness_reduction) * 0.3
-        score += complementarity_score * 0.3
-        convergent_ratio = convergent_count / total_primes if total_primes else 0.0
-        score += convergent_ratio * 0.25
-        divergent_ratio = divergent_count / total_primes if total_primes else 0.0
-        score -= divergent_ratio * 0.15
-
-        avg_divergence = (
-            sum(category_divergence.values()) / max(1, len(category_divergence))
-            if category_divergence
-            else 0.0
-        )
-        score += (1.0 - avg_divergence) * 0.1
-        score = max(0.0, min(1.0, score))
-
-        # NOTE: Qualitative rationale generation removed per "No Vibes" rule.
-        # Use the raw measurements (roughness_reduction, complementarity_score,
-        # convergent_count, divergent_count, category_divergence) directly.
-        return score, ""

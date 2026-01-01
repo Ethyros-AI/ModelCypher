@@ -17,9 +17,16 @@
 
 from __future__ import annotations
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.cross_cultural_geometry import (
     CrossCulturalGeometry,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
+
+def _epsilon() -> float:
+    backend = get_default_backend()
+    return division_epsilon(backend, backend.array([1.0]))
 
 
 def test_compute_cka_identical():
@@ -35,7 +42,7 @@ def test_compute_cka_identical():
         1.0,
     ]
     cka = CrossCulturalGeometry.compute_cka(gram, gram, n=3)
-    assert cka > 0.99
+    assert abs(cka - 1.0) <= _epsilon()
 
 
 def test_analyze_alignment_identical():
@@ -52,7 +59,7 @@ def test_analyze_alignment_identical():
     ]
     analysis = CrossCulturalGeometry.analyze_alignment(gram, gram, n=3)
     assert analysis is not None
-    assert analysis.cka > 0.99
+    assert abs(analysis.cka - 1.0) <= _epsilon()
 
 
 def test_compute_cka_orthogonal():
@@ -85,8 +92,7 @@ def test_analyze_alignment_cka_signal():
     ]
     analysis = CrossCulturalGeometry.analyze_alignment(gram, gram, n=3)
     assert analysis is not None
-    # CKA IS the alignment signal - should be high (>= 0.7) for identical grams
-    assert analysis.cka >= 0.7
+    assert abs(analysis.cka - 1.0) <= _epsilon()
 
 
 def test_analyze_full_comparison():
@@ -118,10 +124,10 @@ def test_analyze_full_comparison():
 
     result = CrossCulturalGeometry.analyze(gram_a, gram_b, prime_ids, prime_categories)
     assert result is not None
-    # merge_quality_score IS the quality signal (0-1)
-    assert 0.0 <= result.merge_quality_score <= 1.0
-    # rationale should provide context
-    assert result.rationale is not None
+    assert len(result.row_correlations) == len(prime_ids)
+    assert len(result.row_sharpness_a) == len(prime_ids)
+    assert len(result.row_sharpness_b) == len(prime_ids)
+    assert len(result.row_sharpness_ratio) == len(prime_ids)
 
 
 def test_analyze_roughness_reduction():

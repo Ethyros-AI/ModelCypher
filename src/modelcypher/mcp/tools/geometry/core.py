@@ -333,24 +333,17 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             alignment = CrossCulturalGeometry.analyze_alignment(flat_a, flat_b, n)
 
             return {
-                "_schema": "mc.geometry.cross_cultural.analyze.v1",
+                "_schema": "mc.geometry.cross_cultural.analyze.v2",
+                "primeIds": list(primeIds),
                 "gramRoughnessA": result.gram_roughness_a,
                 "gramRoughnessB": result.gram_roughness_b,
                 "mergedGramRoughness": result.merged_gram_roughness,
                 "roughnessReduction": result.roughness_reduction,
-                "complementarityScore": result.complementarity_score,
-                "convergentPrimes": result.convergent_primes,
-                "divergentPrimes": result.divergent_primes,
-                "complementaryPrimes": [
-                    {
-                        "primeId": item.prime_id,
-                        "sharperModel": item.sharper_model.value,
-                        "sharpnessRatio": item.sharpness_ratio,
-                    }
-                    for item in result.complementary_primes
-                ],
+                "rowCorrelations": result.row_correlations,
+                "rowSharpnessA": result.row_sharpness_a,
+                "rowSharpnessB": result.row_sharpness_b,
+                "rowSharpnessRatio": result.row_sharpness_ratio,
                 "categoryDivergence": result.category_divergence,
-                "mergeQualityScore": result.merge_quality_score,
                 "alignment": {
                     "cka": alignment.cka,
                     "rawPearson": alignment.raw_pearson,
