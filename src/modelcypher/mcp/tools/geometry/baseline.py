@@ -80,22 +80,17 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_baseline_extract(
             modelPath: str,
-            domains: list[str] | None = None,
             layer: int = -1,
-            kNeighbors: int = 10,
         ) -> dict:
             """
             Extract geometry profile from a model.
 
             Uses Ollivier-Ricci curvature and intrinsic dimension to create
-            a complete geometry profile.
+            a geometry profile. k for k-NN is computed from the data (not guessed).
 
             Args:
                 modelPath: Path to the model directory
-                domains: Optional list of domains for domain-specific metrics
-                        (spatial, social, temporal, moral)
                 layer: Layer to analyze (-1 for sampled layers)
-                kNeighbors: k for k-NN graph in Ollivier-Ricci computation
 
             Returns:
                 Extracted profile with curvature and dimension metrics
@@ -108,22 +103,11 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
 
             model_path = require_existing_directory(modelPath)
 
-            if domains:
-                valid_domains = ["spatial", "social", "temporal", "moral"]
-                for d in domains:
-                    if d.lower() not in valid_domains:
-                        raise ValueError(
-                            f"Invalid domain: {d}. Valid: {', '.join(valid_domains)}"
-                        )
-                domains = [d.lower() for d in domains]
-
             model_loader = MLXModelLoader()
             extractor = ModelProfileExtractor(model_loader=model_loader)
             profile = extractor.extract_profile(
                 model_path=model_path,
                 layers=[layer] if layer != -1 else None,
-                k_neighbors=kNeighbors,
-                domains=domains,
             )
 
             # Save profile
@@ -138,7 +122,6 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
                 "ollivierRicciStd": profile.global_ollivier_ricci_std,
                 "intrinsicDimensionMean": profile.global_intrinsic_dimension_mean,
                 "layersAnalyzed": len(profile.layer_profiles),
-                "domainMetrics": profile.domain_metrics,
                 "savedPath": str(saved_path),
             }
 
@@ -148,7 +131,6 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
         def mc_geometry_baseline_compare(
             model1Path: str,
             model2Path: str,
-            domains: list[str] | None = None,
             layer: int = -1,
         ) -> dict:
             """
@@ -160,7 +142,6 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
             Args:
                 model1Path: Path to first model
                 model2Path: Path to second model
-                domains: Optional list of domains for domain-specific metrics
                 layer: Layer to analyze (-1 for sampled layers)
 
             Returns:
@@ -174,24 +155,19 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
             model1_path = require_existing_directory(model1Path)
             model2_path = require_existing_directory(model2Path)
 
-            if domains:
-                domains = [d.lower() for d in domains]
-
             model_loader = MLXModelLoader()
             extractor = ModelProfileExtractor(model_loader=model_loader)
 
             profile1 = extractor.extract_profile(
                 model_path=model1_path,
                 layers=[layer] if layer != -1 else None,
-                domains=domains,
             )
             profile2 = extractor.extract_profile(
                 model_path=model2_path,
                 layers=[layer] if layer != -1 else None,
-                domains=domains,
             )
 
-            # Compute divergence
+            # Compute divergence - raw measurements only
             ricci_divergence = abs(
                 profile1.global_ollivier_ricci_mean - profile2.global_ollivier_ricci_mean
             )
@@ -199,19 +175,6 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
                 profile1.global_intrinsic_dimension_mean
                 - profile2.global_intrinsic_dimension_mean
             )
-
-            # Compute domain metric divergence
-            domain_divergence: dict[str, dict[str, float]] = {}
-            for domain in set(profile1.domain_metrics.keys()) | set(
-                profile2.domain_metrics.keys()
-            ):
-                metrics1 = profile1.domain_metrics.get(domain, {})
-                metrics2 = profile2.domain_metrics.get(domain, {})
-                common_metrics = set(metrics1.keys()) & set(metrics2.keys())
-                if common_metrics:
-                    domain_divergence[domain] = {
-                        m: abs(metrics1[m] - metrics2[m]) for m in common_metrics
-                    }
 
             return {
                 "_schema": "mc.geometry.profile.compare.v1",
@@ -230,7 +193,6 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
                 "divergence": {
                     "ollivierRicci": ricci_divergence,
                     "intrinsicDimension": id_divergence,
-                    "domainMetrics": domain_divergence,
                 },
             }
 

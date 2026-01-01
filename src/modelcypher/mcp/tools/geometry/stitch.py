@@ -152,7 +152,7 @@ def register_geometry_stitch_tools(ctx: ServiceContext) -> None:
                 "sourceDimension": result.source_dimension,
                 "targetDimension": result.target_dimension,
                 "sampleCount": result.sample_count,
-                "h4Validated": h4_metrics.is_h4_validated(),
+                "isPerfect": h4_metrics.is_perfect,
                 "transferQuality": h4_metrics.transfer_quality,
                 "weights": result.weights,
                 "bias": result.bias,

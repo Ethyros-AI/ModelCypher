@@ -53,6 +53,12 @@ class Config:
 
 @dataclass(frozen=True)
 class H4ValidationMetrics:
+    """Raw measurements for H4 (affine stitching) validation.
+
+    Returns raw measurements without arbitrary thresholds.
+    Perfect transfer: forward_error = 0, backward_error = 0, transfer_quality = 1.0
+    """
+
     forward_error: float
     backward_error: float
     converged: bool
@@ -60,25 +66,23 @@ class H4ValidationMetrics:
     transfer_quality: float
 
     @property
-    def is_h4_validated(self) -> bool:
+    def is_perfect(self) -> bool:
+        """True only if transfer is perfect (zero error, quality = 1.0)."""
         return (
-            self.forward_error < 0.15
-            and self.backward_error < 0.15
-            and self.transfer_quality > 0.85
+            self.forward_error == 0.0
+            and self.backward_error == 0.0
+            and self.transfer_quality == 1.0
             and self.converged
         )
 
     @property
     def summary(self) -> str:
-        status = "PASS" if self.is_h4_validated else "FAIL"
-        forward_ok = "OK" if self.forward_error < 0.15 else "FAIL"
-        backward_ok = "OK" if self.backward_error < 0.15 else "FAIL"
-        quality_ok = "OK" if self.transfer_quality > 0.85 else "FAIL"
+        """Return raw measurements without pass/fail judgments."""
         return (
-            f"H4 Validation: {status}\n"
-            f"- Forward Error: {self.forward_error:.3f} (target: <0.15) {forward_ok}\n"
-            f"- Backward Error: {self.backward_error:.3f} (target: <0.15) {backward_ok}\n"
-            f"- Transfer Quality: {self.transfer_quality * 100:.1f}% (target: >85%) {quality_ok}\n"
+            f"H4 Validation Metrics:\n"
+            f"- Forward Error: {self.forward_error:.6f}\n"
+            f"- Backward Error: {self.backward_error:.6f}\n"
+            f"- Transfer Quality: {self.transfer_quality:.6f}\n"
             f"- Converged: {'Yes' if self.converged else 'No'} in {self.iterations} iterations"
         )
 

@@ -46,17 +46,8 @@ def _context(ctx: typer.Context) -> CLIContext:
 def profile_extract(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to model directory"),
-    domains: str | None = typer.Option(
-        None,
-        "--domains",
-        "-d",
-        help="Comma-separated domains for domain-specific metrics (spatial,social,temporal,moral)",
-    ),
     layer: int = typer.Option(
         -1, "--layer", "-l", help="Layer to analyze (-1 for sampled layers)"
-    ),
-    k_neighbors: int = typer.Option(
-        10, "--k-neighbors", "-k", help="k for k-NN graph in Ollivier-Ricci"
     ),
     output_dir: str | None = typer.Option(
         None, "--output-dir", "-o", help="Directory to save profile (default: ~/.modelcypher/profiles)"
@@ -66,15 +57,10 @@ def profile_extract(
     Extract geometry profile from a model.
 
     Uses Ollivier-Ricci curvature and intrinsic dimension to create
-    a geometry profile. Profiles are used for:
-
-    - Model comparison and alignment assessment
-    - Pre/post merge geometry checks
-    - Cross-model geometry analysis
+    a geometry profile. k for k-NN is computed from the data (not guessed).
 
     Example:
         mc geometry baseline extract /path/to/Qwen2.5-0.5B
-        mc geometry baseline extract /path/to/model --domains spatial,social
     """
     context = _context(ctx)
 
@@ -84,19 +70,7 @@ def profile_extract(
         ProfileRepository,
     )
 
-    domain_list = None
-    if domains:
-        domain_list = [d.strip().lower() for d in domains.split(",")]
-        valid_domains = ["spatial", "social", "temporal", "moral"]
-        for d in domain_list:
-            if d not in valid_domains:
-                typer.echo(f"Invalid domain: {d}. Valid: {', '.join(valid_domains)}", err=True)
-                raise typer.Exit(1)
-
     typer.echo(f"Extracting geometry profile from {model_path}...")
-    typer.echo(f"  k-neighbors: {k_neighbors}")
-    if domain_list:
-        typer.echo(f"  Domains: {', '.join(domain_list)}")
 
     try:
         model_loader = MLXModelLoader()
@@ -104,8 +78,6 @@ def profile_extract(
         profile = extractor.extract_profile(
             model_path=model_path,
             layers=[layer] if layer != -1 else None,
-            k_neighbors=k_neighbors,
-            domains=domain_list,
         )
     except Exception as e:
         typer.echo(f"Error extracting profile: {e}", err=True)
@@ -128,7 +100,6 @@ def profile_extract(
         "global_ollivier_ricci_std": profile.global_ollivier_ricci_std,
         "global_intrinsic_dimension_mean": profile.global_intrinsic_dimension_mean,
         "layers_analyzed": len(profile.layer_profiles),
-        "domain_metrics": profile.domain_metrics,
         "saved_path": str(saved_path),
     }
 
@@ -147,14 +118,7 @@ def profile_extract(
             f"Intrinsic Dimension: {profile.global_intrinsic_dimension_mean:.1f}",
             "",
             f"Saved to: {saved_path}",
-            "",
         ]
-        if profile.domain_metrics:
-            lines.append("Domain Metrics:")
-            for domain, metrics in profile.domain_metrics.items():
-                lines.append(f"  {domain}:")
-                for metric, value in metrics.items():
-                    lines.append(f"    {metric}: {value:.4f}")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -166,12 +130,6 @@ def profile_compare(
     ctx: typer.Context,
     model1_path: str = typer.Argument(..., help="Path to first model"),
     model2_path: str = typer.Argument(..., help="Path to second model"),
-    domains: str | None = typer.Option(
-        None,
-        "--domains",
-        "-d",
-        help="Comma-separated domains to include (spatial,social,temporal,moral)",
-    ),
     layer: int = typer.Option(
         -1, "--layer", "-l", help="Layer to analyze (-1 for sampled layers)"
     ),
@@ -180,11 +138,7 @@ def profile_compare(
     Compare geometry profiles of two models.
 
     Extracts profiles from both models and computes divergence metrics.
-    Useful for:
-
-    - Pre-merge alignment assessment
-    - Model family similarity analysis
-    - Fine-tuning impact measurement
+    k for k-NN is computed from intrinsic dimension (not guessed).
 
     Example:
         mc geometry baseline compare /path/to/model1 /path/to/model2
@@ -193,10 +147,6 @@ def profile_compare(
 
     from modelcypher.adapters.mlx_model_loader import MLXModelLoader
     from modelcypher.core.domain.geometry.model_profile import ModelProfileExtractor
-
-    domain_list = None
-    if domains:
-        domain_list = [d.strip().lower() for d in domains.split(",")]
 
     typer.echo("Comparing model geometry...")
     typer.echo(f"  Model 1: {model1_path}")
@@ -210,33 +160,20 @@ def profile_compare(
         profile1 = extractor.extract_profile(
             model_path=model1_path,
             layers=[layer] if layer != -1 else None,
-            domains=domain_list,
         )
 
         typer.echo("Extracting profile from model 2...")
         profile2 = extractor.extract_profile(
             model_path=model2_path,
             layers=[layer] if layer != -1 else None,
-            domains=domain_list,
         )
     except Exception as e:
         typer.echo(f"Error extracting profiles: {e}", err=True)
         raise typer.Exit(1)
 
-    # Compute divergence
+    # Compute divergence - raw measurements only
     ricci_divergence = abs(profile1.global_ollivier_ricci_mean - profile2.global_ollivier_ricci_mean)
     id_divergence = abs(profile1.global_intrinsic_dimension_mean - profile2.global_intrinsic_dimension_mean)
-
-    # Compute domain metric divergence
-    domain_divergence: dict[str, dict[str, float]] = {}
-    for domain in set(profile1.domain_metrics.keys()) | set(profile2.domain_metrics.keys()):
-        metrics1 = profile1.domain_metrics.get(domain, {})
-        metrics2 = profile2.domain_metrics.get(domain, {})
-        common_metrics = set(metrics1.keys()) & set(metrics2.keys())
-        if common_metrics:
-            domain_divergence[domain] = {
-                m: abs(metrics1[m] - metrics2[m]) for m in common_metrics
-            }
 
     payload = {
         "_schema": "mc.geometry.profile.compare.v1",
@@ -255,7 +192,6 @@ def profile_compare(
         "divergence": {
             "ollivier_ricci": ricci_divergence,
             "intrinsic_dimension": id_divergence,
-            "domain_metrics": domain_divergence,
         },
     }
 
@@ -277,17 +213,8 @@ def profile_compare(
             "DIVERGENCE:",
             f"  Ricci Curvature: {ricci_divergence:.4f}",
             f"  Intrinsic Dimension: {id_divergence:.1f}",
+            "",
         ]
-
-        if domain_divergence:
-            lines.append("")
-            lines.append("Domain Metrics:")
-            for domain, metrics in domain_divergence.items():
-                lines.append(f"  {domain}:")
-                for metric, div in metrics.items():
-                    lines.append(f"    {metric}: {div:.4f}")
-
-        lines.append("")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

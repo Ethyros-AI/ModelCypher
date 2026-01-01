@@ -81,10 +81,7 @@ def sample_profile(temp_profile_dir: Path) -> ModelProfile:
             LayerProfile(layer_idx=4, ollivier_ricci_mean=-0.18),
             LayerProfile(layer_idx=8, ollivier_ricci_mean=-0.22),
         ],
-        domain_metrics={
-            "spatial": {"euclidean_consistency": 0.76, "gravity_alignment": 0.89}
-        },
-        extraction_config={"k_neighbors": 10},
+        extraction_config={"layers_analyzed": 3},
     )
     repo = ProfileRepository(profile_dir=temp_profile_dir)
     repo.save_profile(profile)
@@ -209,14 +206,14 @@ class TestProfileCLICompare:
         )
         assert result.exit_code != 0
 
-    def test_compare_accepts_domain_option(self):
-        """Compare accepts --domains option."""
+    def test_compare_accepts_layer_option(self):
+        """Compare accepts --layer option."""
         result = runner.invoke(
             app,
             ["geometry", "baseline", "compare", "--help"],
         )
         assert result.exit_code == 0
-        assert "--domains" in result.stdout
+        assert "--layer" in result.stdout
 
 
 # =============================================================================
@@ -323,7 +320,6 @@ class TestModelProfile:
             global_ollivier_ricci_mean=-0.2,
             global_ollivier_ricci_std=0.05,
             global_intrinsic_dimension_mean=10.0,
-            domain_metrics={"spatial": {"metric1": 0.5}},
             layer_profiles=[LayerProfile(layer_idx=0, ollivier_ricci_mean=-0.15)],
         )
 
@@ -331,8 +327,7 @@ class TestModelProfile:
 
         assert d["model_family"] == "qwen"
         assert d["global_ollivier_ricci_mean"] == -0.2
-        assert "domain_metrics" in d
-        assert d["domain_metrics"]["spatial"]["metric1"] == 0.5
+        assert len(d["layer_profiles"]) == 1
 
     def test_profile_from_dict(self):
         """Profile creates from dict correctly."""
@@ -342,7 +337,6 @@ class TestModelProfile:
             "global_ollivier_ricci_mean": -0.15,
             "global_ollivier_ricci_std": 0.04,
             "global_intrinsic_dimension_mean": 11.0,
-            "domain_metrics": {"social": {"social_metric": 0.7}},
             "layer_profiles": [],
         }
 
@@ -403,7 +397,6 @@ class TestProfileIntegration:
             global_ollivier_ricci_mean=-0.17,
             global_ollivier_ricci_std=0.04,
             global_intrinsic_dimension_mean=11.0,
-            domain_metrics={"moral": {"moral_metric": 0.72}},
             layer_profiles=[
                 LayerProfile(layer_idx=i, ollivier_ricci_mean=-0.15)
                 for i in range(8)

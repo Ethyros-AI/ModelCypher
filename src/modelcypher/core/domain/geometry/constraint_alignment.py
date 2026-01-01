@@ -369,11 +369,9 @@ def diagnose_probe_conflict(
             f"AMBIGUOUS_TARGET: Secondary peak at layer {target_secondary} "
             f"({target_secondary_strength:.2f} vs primary {target_strength:.2f})"
         )
-    if peak_cka < 0.9:
-        diagnosis["issues"].append(
-            f"LOW_PEAK_CKA ({peak_cka:.3f}): Activation patterns don't match at peaks. "
-            "Check embedding extraction or layer selection."
-        )
+    # Report raw CKA value - no interpretation, no threshold
+    # CKA = 1.0 means aligned, CKA < 1.0 means not aligned
+    diagnosis["peak_cka"] = peak_cka
 
     if not diagnosis["issues"]:
         diagnosis["issues"].append("NO_OBVIOUS_ISSUES: Measurement looks good")

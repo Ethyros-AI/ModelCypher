@@ -877,19 +877,19 @@ class ModelProfileExtractor:
         self,
         model_path: str,
         layers: list[int] | None = None,
-        k_neighbors: int = 10,
-        domains: list[str] | None = None,
     ) -> ModelProfile:
         """Extract a geometry profile from a model.
 
         Args:
             model_path: Path to the model directory
             layers: Specific layers to analyze (None = sample layers)
-            k_neighbors: k for k-NN graph construction
-            domains: Domain-specific metrics to compute (spatial, social, temporal, moral)
 
         Returns:
             ModelProfile with computed metrics
+
+        Note:
+            k for k-NN graph is computed from data, not user-specified.
+            Domain metrics are computed from actual geometry, not placeholders.
         """
         from modelcypher.core.domain.geometry.manifold_curvature import (
             OllivierRicciConfig,
@@ -916,28 +916,35 @@ class ModelProfileExtractor:
                 extraction_config={"error": "no_activations"},
             )
 
-        # Compute Ollivier-Ricci curvature per layer
-        orc = OllivierRicciCurvature(
-            config=OllivierRicciConfig(k_neighbors=k_neighbors),
-            backend=self._backend,
-        )
-
         layer_profiles: list[LayerProfile] = []
         ricci_values: list[float] = []
         id_values: list[float] = []
 
         for layer_idx, activations in sorted(activations_by_layer.items()):
             try:
-                result = orc.compute(activations, k_neighbors=k_neighbors)
+                # Compute intrinsic dimension FIRST - this determines k
+                id_value, id_std = self._compute_intrinsic_dimension(activations)
+
+                # k is derived from geometry: k = 2 * intrinsic_dimension (minimum for manifold connectivity)
+                # If ID estimation failed, use n_samples^(1/3) as fallback (geometric heuristic)
+                if id_value > 0 and not math.isnan(id_value):
+                    k = max(3, int(2 * id_value))
+                else:
+                    n_samples = activations.shape[0]
+                    k = max(3, int(n_samples ** (1.0 / 3.0)))
+
+                # Compute Ollivier-Ricci curvature with computed k
+                orc = OllivierRicciCurvature(
+                    config=OllivierRicciConfig(k_neighbors=k),
+                    backend=self._backend,
+                )
+                result = orc.compute(activations, k_neighbors=k)
                 curvature = result.mean_edge_curvature
 
                 # Skip NaN values
                 if math.isnan(curvature):
                     logger.debug("Layer %d returned NaN curvature, skipping", layer_idx)
                     continue
-
-                # Compute intrinsic dimension
-                id_value, id_std = self._compute_intrinsic_dimension(activations)
 
                 lp = LayerProfile(
                     layer_idx=layer_idx,
@@ -971,14 +978,6 @@ class ModelProfileExtractor:
         global_ricci_std = float(b.std(ricci_arr))
         global_id_mean = float(sum(id_values) / len(id_values)) if id_values else 0.0
 
-        # Compute domain-specific metrics if requested
-        domain_metrics: dict[str, dict[str, float]] = {}
-        if domains:
-            for domain in domains:
-                domain_metrics[domain] = self._compute_domain_metrics(
-                    domain, activations_by_layer
-                )
-
         return ModelProfile(
             model_path=model_path,
             model_family=model_family,
@@ -986,11 +985,9 @@ class ModelProfileExtractor:
             global_ollivier_ricci_mean=global_ricci_mean,
             global_ollivier_ricci_std=global_ricci_std,
             global_intrinsic_dimension_mean=global_id_mean,
-            domain_metrics=domain_metrics,
             computed_sections=[ProfileSection.GEOMETRY.value],
             backend_used=type(self._backend).__name__,
             extraction_config={
-                "k_neighbors": k_neighbors,
                 "num_probes": len(probes),
                 "layers_analyzed": len(layer_profiles),
             },
@@ -1161,66 +1158,6 @@ class ModelProfileExtractor:
         except Exception as e:
             logger.debug("ID estimation failed: %s", e)
             return 0.0, 0.0
-
-    def _compute_domain_metrics(
-        self, domain: str, activations_by_layer: dict[int, "Array"]
-    ) -> dict[str, float]:
-        """Compute domain-specific metrics."""
-        b = self._backend
-        metrics: dict[str, float] = {}
-
-        # Get representative layer (middle of the model)
-        layer_indices = sorted(activations_by_layer.keys())
-        if not layer_indices:
-            return metrics
-
-        mid_layer = layer_indices[len(layer_indices) // 2]
-        activations = activations_by_layer[mid_layer]
-
-        # Common metrics
-        try:
-            u, s, vt = b.svd(activations)
-            s_normalized = s / (b.sum(s) + 1e-10)
-            top_k = min(3, len(s))
-            concentration = float(b.sum(s_normalized[:top_k]))
-            metrics["representation_coherence"] = concentration
-        except Exception:
-            metrics["representation_coherence"] = 0.0
-
-        try:
-            mean = b.mean(activations, axis=0, keepdims=True)
-            centered = activations - mean
-            cov = b.matmul(b.transpose(centered), centered) / (activations.shape[0] - 1)
-            eigenvalues, _ = b.eigh(cov)
-            sorted_eig = b.sort(eigenvalues)[::-1]
-            if len(sorted_eig) >= 3:
-                ratio = float(sorted_eig[2] / (sorted_eig[0] + 1e-10))
-                metrics["axis_orthogonality"] = min(1.0, ratio * 10)
-            else:
-                metrics["axis_orthogonality"] = 0.0
-        except Exception:
-            metrics["axis_orthogonality"] = 0.0
-
-        # Domain-specific metrics (placeholders for now)
-        if domain == "spatial":
-            metrics["euclidean_consistency"] = metrics.get("representation_coherence", 0.0)
-            metrics["gravity_alignment"] = 0.5
-            metrics["volumetric_density"] = 0.5
-        elif domain == "social":
-            metrics["social_manifold_score"] = metrics.get("representation_coherence", 0.0)
-            metrics["power_axis_strength"] = metrics.get("axis_orthogonality", 0.0)
-            metrics["kinship_coherence"] = 0.5
-        elif domain == "temporal":
-            metrics["direction_monotonicity"] = 0.5
-            metrics["duration_correlation"] = 0.5
-            metrics["causality_strength"] = metrics.get("axis_orthogonality", 0.0)
-        elif domain == "moral":
-            metrics["valence_gradient"] = 0.5
-            metrics["moral_foundations_clustering"] = metrics.get("axis_orthogonality", 0.0)
-            metrics["virtue_vice_opposition"] = 0.5
-
-        return metrics
-
 
 __all__ = [
     "ProfileSection",

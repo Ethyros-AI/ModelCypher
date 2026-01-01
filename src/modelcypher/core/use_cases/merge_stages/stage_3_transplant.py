@@ -485,25 +485,66 @@ def stage_transplant(
                 anchor_idx = farthest_point_sampling(tgt_analysis, n_anchors, backend=b)
                 anchors = b.take(tgt_analysis, b.array(anchor_idx), axis=0)
                 b.eval(anchors)
-                src_rel = compute_relative_representation(src_analysis, anchors)
+
+                # For cross-architecture, project source to target dimension
+                # compute_relative_representation requires same d for cosine similarity
+                src_d = int(src_analysis.shape[1])
+                tgt_d = int(tgt_analysis.shape[1])
+                if src_d != tgt_d:
+                    from modelcypher.core.domain.geometry.numerical_stability import (
+                        svd_via_eigh,
+                    )
+
+                    # Project source activations to target dimension via SVD
+                    _, _, Vt = svd_via_eigh(b, src_analysis, full_matrices=False)
+                    b.eval(Vt)
+                    k = min(tgt_d, int(Vt.shape[0]))
+                    V_k = b.transpose(Vt[:k, :])  # [src_d, k]
+                    src_projected = b.matmul(src_analysis, V_k)  # [n, k]
+                    if k < tgt_d:
+                        padding = b.zeros((int(src_analysis.shape[0]), tgt_d - k))
+                        src_projected = b.concatenate([src_projected, padding], axis=1)
+                    b.eval(src_projected)
+                    src_for_rel = src_projected
+                else:
+                    src_for_rel = src_analysis
+
+                src_rel = compute_relative_representation(src_for_rel, anchors)
                 tgt_rel = compute_relative_representation(tgt_analysis, anchors)
                 b.eval(src_rel, tgt_rel)
                 _, rel_error = align_relative_representations(src_rel, tgt_rel)
                 metrics["relative_rep_errors"].append(rel_error)
 
         if src_analysis is not None and config.enable_fisher_weighting:
-            epsilon = 1e-6
-            src_var = b.var(src_analysis, axis=0)
-            tgt_var = b.var(tgt_analysis, axis=0)
-            b.eval(src_var, tgt_var)
-            src_fisher = 1.0 / (src_var + epsilon)
-            tgt_fisher = 1.0 / (tgt_var + epsilon)
-            total_fisher = src_fisher + tgt_fisher + epsilon
-            layer_fisher_weights = tgt_fisher / total_fisher
-            b.eval(layer_fisher_weights)
-            mean_arr = b.mean(layer_fisher_weights)
-            b.eval(mean_arr)
-            metrics["fisher_target_means"].append(float(b.to_numpy(mean_arr).item()))
+            # Fisher weighting requires same dimensions for per-feature weights
+            src_d = int(src_analysis.shape[1])
+            tgt_d = int(tgt_analysis.shape[1])
+            if src_d == tgt_d:
+                epsilon = 1e-6
+                src_var = b.var(src_analysis, axis=0)
+                tgt_var = b.var(tgt_analysis, axis=0)
+                b.eval(src_var, tgt_var)
+                src_fisher = 1.0 / (src_var + epsilon)
+                tgt_fisher = 1.0 / (tgt_var + epsilon)
+                total_fisher = src_fisher + tgt_fisher + epsilon
+                layer_fisher_weights = tgt_fisher / total_fisher
+                b.eval(layer_fisher_weights)
+                mean_arr = b.mean(layer_fisher_weights)
+                b.eval(mean_arr)
+                metrics["fisher_target_means"].append(float(b.to_numpy(mean_arr).item()))
+            else:
+                # Cross-architecture: use scalar Fisher based on total variance
+                epsilon = 1e-6
+                src_total_var = b.var(src_analysis)
+                tgt_total_var = b.var(tgt_analysis)
+                b.eval(src_total_var, tgt_total_var)
+                src_total_var_f = float(b.to_numpy(src_total_var))
+                tgt_total_var_f = float(b.to_numpy(tgt_total_var))
+                src_fisher_scalar = 1.0 / (src_total_var_f + epsilon)
+                tgt_fisher_scalar = 1.0 / (tgt_total_var_f + epsilon)
+                total_fisher_scalar = src_fisher_scalar + tgt_fisher_scalar + epsilon
+                fisher_weight_scalar = tgt_fisher_scalar / total_fisher_scalar
+                metrics["fisher_target_means"].append(fisher_weight_scalar)
 
         if analyzer is not None:
             relation = layer_relations.get(layer_idx)
