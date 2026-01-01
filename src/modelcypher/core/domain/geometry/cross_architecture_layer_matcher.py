@@ -47,7 +47,10 @@ Algorithm:
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 from modelcypher.core.domain.geometry.concept_response_matrix import (
     AnchorCategory,
@@ -117,26 +120,17 @@ class AnchorCategoryWeights:
 
 @dataclass(frozen=True)
 class Configuration:
-    """Configuration for layer matching.
+    """Configuration for cross-architecture layer matching.
 
-    Attributes
-    ----------
-    cka_weight : float
-        Weight for dense CKA similarity (0-1).
-    jaccard_weight : float
-        Weight for sparse Jaccard similarity (0-1).
-    max_skip : int
-        Maximum consecutive layers that can be skipped.
-    skip_penalty : float
-        Penalty per skipped layer (subtracted from score).
-    min_cka_threshold : float
-        Minimum CKA threshold for valid match.
-    high_confidence_threshold : float
-        High confidence CKA threshold.
-    medium_confidence_threshold : float
-        Medium confidence CKA threshold.
-    anchor_category_weights : AnchorCategoryWeights | None
-        Optional per-anchor-category weights for CKA computation.
+    Attributes:
+        cka_weight: Weight for dense CKA similarity (0-1).
+        jaccard_weight: Weight for sparse Jaccard similarity (0-1).
+        max_skip: Maximum consecutive layers that can be skipped.
+        skip_penalty: Penalty per skipped layer (subtracted from score).
+        min_cka_threshold: Minimum CKA for diagnostic flagging.
+        high_confidence_threshold: CKA threshold for "high confidence" label.
+        medium_confidence_threshold: CKA threshold for "medium confidence" label.
+        anchor_category_weights: Optional per-anchor-category weights.
     """
 
     cka_weight: float = 0.5
@@ -149,10 +143,17 @@ class Configuration:
     anchor_category_weights: AnchorCategoryWeights | None = None
 
     def __post_init__(self) -> None:
-        """Validate that thresholds are provided or will be derived."""
-        # Thresholds must be explicitly set or derived from CKA distribution
-        # No arbitrary defaults - callers must use with_thresholds() or from_cka_distribution()
-        pass
+        """Validate configuration and warn about threshold settings."""
+        # INVARIANT GEOMETRY: All CKAs should be 1.0 (0.9999 machine epsilon).
+        # Warn if min_cka_threshold is set below machine epsilon, as this
+        # suggests tolerance for imperfect alignment (which is an algorithm bug).
+        if 0.0 < self.min_cka_threshold < 0.9999:
+            logger.warning(
+                "min_cka_threshold=%.4f is below machine epsilon (0.9999). "
+                "Per invariant geometry principle, CKA should be 1.0 for all matches. "
+                "CKA < 0.9999 indicates an algorithm bug, not model incompatibility.",
+                self.min_cka_threshold,
+            )
 
     @property
     def effective_high_threshold(self) -> float:

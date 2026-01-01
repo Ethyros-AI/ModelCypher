@@ -238,8 +238,16 @@ class TestNullSpaceFiltering:
         if result.filtering_applied:
             assert result.preserved_fraction < 0.5
 
-    def test_dimension_mismatch_skips_filtering(self):
-        """Mismatched dimensions should skip filtering gracefully."""
+    def test_dimension_mismatch_raises_error(self):
+        """Mismatched dimensions should raise NullSpaceFilterError.
+
+        Dimension mismatch is a BUG - the geometry is invariant, so if dimensions
+        don't match, our pipeline failed to compute the right transformation.
+        No fallbacks. Fix the algorithm.
+        """
+        import pytest
+        from modelcypher.core.domain.merging.exceptions import NullSpaceFilterError
+
         backend = get_default_backend()
         config = NullSpaceFilterConfig()
         filter = NullSpaceFilter(config)
@@ -250,12 +258,12 @@ class TestNullSpaceFiltering:
         backend.eval(A)
         backend.eval(delta)
 
-        result = filter.filter_delta(delta, A)
+        with pytest.raises(NullSpaceFilterError) as exc_info:
+            filter.filter_delta(delta, A)
 
-        assert not result.filtering_applied
-        backend.eval(result.filtered_delta)
-        backend.eval(result.original_delta)
-        assert float(backend.to_numpy(backend.max(backend.abs(result.filtered_delta - result.original_delta)))) == 0
+        assert "Activation dim" in str(exc_info.value)
+        assert exc_info.value.context["activation_dim"] == 20
+        assert exc_info.value.context["weight_dim"] == 15
 
 
 class TestMergeIntegration:

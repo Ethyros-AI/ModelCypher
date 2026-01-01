@@ -58,84 +58,22 @@ logger = logging.getLogger(__name__)
 class CrossVocabMergeConfig:
     """Configuration for cross-vocabulary merging.
 
-    Thresholds are used for quality classification and reporting, NOT for
-    rejecting alignments. All tokens get aligned - thresholds just categorize
-    the alignment quality. Use from_similarity_distribution() to derive
-    thresholds from actual embedding data.
+    Alignment is exact-match seeded, then geometry-driven for all remaining
+    tokens. No similarity thresholds or quality bins are applied.
     """
 
     # Projection strategy
     projection_strategy: ProjectionStrategy = ProjectionStrategy.PROCRUSTES
-
-    # Alignment thresholds - used for quality classification, not rejection
-    high_similarity_threshold: float = 0.95  # Min similarity for "similar" quality
-    similarity_threshold: float = 0.8  # Min similarity for "approximate" quality
-    confidence_threshold: float = 0.5  # Min confidence to include alignment
 
     # Embedding blending
     blend_alpha: float = 0.5  # Weight for source embeddings (0=target, 1=source)
     preserve_special_tokens: bool = True  # Keep target special tokens unchanged
 
     # Advanced options
-    use_embedding_similarity: bool = True  # Use embedding cosine for alignment
-    exact_match_only: bool = False  # Force exact token matches only
     max_alignments_per_token: int = 3  # Max target tokens per source token
     anchor_count: int = 1000  # Anchors for projection alignment
     regularization: float = 1e-6
-    max_similarity_pairs: int = 5_000_000  # Upper bound for similarity dot products
-    max_unmapped_similarity: int = 5000  # Cap number of unmapped tokens to refine
-    max_prefix_length: int = 8  # Prefix length for fast subword matching
-    max_prefix_matches: int = 3  # Max prefix matches to accept
     similarity_batch_size: int = 128  # Batch size for cosine similarity
-
-    @classmethod
-    def from_similarity_distribution(
-        cls,
-        similarities: list[float],
-        *,
-        high_similarity_percentile: float = 0.95,
-        similar_percentile: float = 0.80,
-        approximate_percentile: float = 0.50,
-        projection_strategy: ProjectionStrategy = ProjectionStrategy.PROCRUSTES,
-        blend_alpha: float = 0.5,
-    ) -> "CrossVocabMergeConfig":
-        """Derive thresholds from actual cosine similarity distribution.
-
-        Instead of arbitrary thresholds, derives them from the observed
-        distribution of cosine similarities between embeddings.
-
-        Args:
-            similarities: List of cosine similarities from embedding pairs.
-            high_similarity_percentile: Percentile for "high similarity" threshold.
-            similar_percentile: Percentile for "similar" quality threshold.
-            approximate_percentile: Percentile for "approximate" threshold.
-            projection_strategy: Projection method to use.
-            blend_alpha: Blending weight for source embeddings.
-
-        Returns:
-            Configuration with distribution-derived thresholds.
-        """
-        if not similarities:
-            # Fall back to defaults if no distribution available
-            return cls(
-                projection_strategy=projection_strategy,
-                blend_alpha=blend_alpha,
-            )
-
-        sorted_sims = sorted(similarities)
-        n = len(sorted_sims)
-
-        def percentile(p: float) -> float:
-            idx = int(p * (n - 1))
-            return sorted_sims[idx]
-
-        return cls(
-            projection_strategy=projection_strategy,
-            high_similarity_threshold=percentile(high_similarity_percentile),
-            similarity_threshold=percentile(similar_percentile),
-            confidence_threshold=percentile(approximate_percentile),
-            blend_alpha=blend_alpha,
-        )
 
     def to_projection_config(self) -> ProjectionConfig:
         """Convert to ProjectionConfig."""
@@ -256,10 +194,14 @@ class CrossVocabMerger:
             source_stats, target_stats, source_vocab, target_vocab
         )
 
-        # Note: alignment is always computed. Add warnings based on effort score instead.
+        # Note: alignment is always computed. The alignment_score is a DIAGNOSTIC metric
+        # indicating transformation effort, not a compatibility check. Per invariant
+        # geometry principle, all vocabularies CAN be aligned - this just indicates
+        # how much transformation is needed (low score = more work, but still doable).
         if alignment.alignment_score < 0.5:
             warnings.append(
-                f"High transformation effort needed (score: {alignment.alignment_score:.2f})"
+                f"High transformation effort needed (score: {alignment.alignment_score:.2f}). "
+                f"Vocabularies are still compatible per invariant geometry principle."
             )
 
         # Step 3: Build alignment map
@@ -324,29 +266,7 @@ class CrossVocabMerger:
         b = self._backend
 
         # Start with string-based alignment
-        alignment_map = build_alignment_from_vocabs(
-            source_vocab,
-            target_vocab,
-            self.config.similarity_threshold,
-            max_prefix_length=self.config.max_prefix_length,
-            max_prefix_matches=self.config.max_prefix_matches,
-            exact_only=self.config.exact_match_only,
-        )
-
-        if self.config.exact_match_only or not self.config.use_embedding_similarity:
-            return alignment_map
-
-        target_vocab_size = alignment_map.target_vocab_size
-        unmapped_count = alignment_map.unmapped_count
-        candidate_pairs = unmapped_count * target_vocab_size
-        if self.config.max_similarity_pairs > 0 and candidate_pairs > self.config.max_similarity_pairs:
-            logger.warning(
-                "Skipping embedding similarity: %d unmapped x %d targets (>%d pairs).",
-                unmapped_count,
-                target_vocab_size,
-                self.config.max_similarity_pairs,
-            )
-            return alignment_map
+        alignment_map = build_alignment_from_vocabs(source_vocab, target_vocab)
 
         # Enhance unmapped tokens with embedding similarity
         target_id_to_token = {id_: token for token, id_ in target_vocab.items()}
@@ -354,12 +274,15 @@ class CrossVocabMerger:
         source_dim = source_embeddings.shape[1]
         target_dim = target_embeddings.shape[1]
 
-        # Handle dimension mismatch for similarity computation
+        # Handle dimension mismatch by projecting source into target space
         if source_dim != target_dim:
-            shared_dim = min(source_dim, target_dim)
-            # Truncate both to shared dimension for similarity
-            source_for_sim = source_embeddings[:, :shared_dim]
-            target_for_sim = target_embeddings[:, :shared_dim]
+            projection_result = self._projector.project(
+                source_embeddings,
+                target_embeddings,
+                shared_token_indices=self._get_shared_indices(alignment_map),
+            )
+            source_for_sim = projection_result.projected_embeddings
+            target_for_sim = target_embeddings
         else:
             source_for_sim = source_embeddings
             target_for_sim = target_embeddings
@@ -377,15 +300,6 @@ class CrossVocabMerger:
             if alignment.quality == AlignmentQuality.UNMAPPED
         ]
         unmapped_alignments.sort(key=lambda a: a.source_id)
-        if self.config.max_unmapped_similarity > 0 and len(unmapped_alignments) > self.config.max_unmapped_similarity:
-            logger.info(
-                "Limiting embedding similarity to %d/%d unmapped tokens.",
-                self.config.max_unmapped_similarity,
-                len(unmapped_alignments),
-            )
-            unmapped_alignments = unmapped_alignments[: self.config.max_unmapped_similarity]
-
-        unmapped_count = 0
         valid_alignments = [
             alignment
             for alignment in unmapped_alignments
@@ -407,14 +321,6 @@ class CrossVocabMerger:
                 top_indices = row.argsort()[-k:][::-1]
                 top_sims = row[top_indices]
 
-                mask = top_sims >= self.config.similarity_threshold
-                if not mask.any():
-                    top_indices = top_indices[:1]
-                    top_sims = top_sims[:1]
-                else:
-                    top_indices = top_indices[mask]
-                    top_sims = top_sims[mask]
-
                 if len(top_indices) == 0:
                     continue
 
@@ -429,13 +335,7 @@ class CrossVocabMerger:
                 weights = [float(w) for w in weights]
 
                 max_sim = float(top_sims[0])
-                if max_sim >= self.config.high_similarity_threshold:
-                    quality = AlignmentQuality.SIMILAR
-                elif max_sim >= self.config.similarity_threshold:
-                    quality = AlignmentQuality.APPROXIMATE
-                else:
-                    quality = AlignmentQuality.INTERPOLATED
-                    unmapped_count += 1
+                quality = AlignmentQuality.INTERPOLATED
 
                 new_alignment = TokenAlignment(
                     source_id=alignment.source_id,
@@ -452,11 +352,7 @@ class CrossVocabMerger:
 
                 if alignment.quality == AlignmentQuality.UNMAPPED:
                     alignment_map.unmapped_count -= 1
-                if quality == AlignmentQuality.SIMILAR:
-                    alignment_map.similar_matches += 1
-                elif quality == AlignmentQuality.APPROXIMATE:
-                    alignment_map.approximate_matches += 1
-                elif quality == AlignmentQuality.INTERPOLATED:
+                if quality == AlignmentQuality.INTERPOLATED:
                     alignment_map.interpolated_count += 1
 
         return alignment_map
@@ -515,7 +411,7 @@ class CrossVocabMerger:
         target_indices = []
 
         for alignment in alignment_map.iter_alignments():
-            if alignment.quality in (AlignmentQuality.EXACT, AlignmentQuality.SIMILAR):
+            if alignment.quality == AlignmentQuality.EXACT:
                 if len(alignment.target_ids) == 1:
                     source_indices.append(alignment.source_id)
                     target_indices.append(alignment.target_ids[0])
@@ -579,7 +475,7 @@ class CrossVocabMerger:
                     stats["target_preserved"] += 1
                     continue
 
-                # Blend based on quality and confidence
+                # Blend based on alignment provenance and confidence
                 effective_alpha = alpha * alignment.confidence
 
                 if alignment.quality == AlignmentQuality.EXACT:
@@ -637,36 +533,24 @@ class CrossVocabMerger:
         test_prompts: list[str] | None = None,
     ) -> dict[str, Any]:
         """
-        Analyze quality of merged embeddings.
+        Analyze merge metrics for merged embeddings.
 
         Args:
             result: Merge result to analyze
             test_prompts: Optional test prompts for semantic validation
 
         Returns:
-            Dictionary of quality metrics
+            Dictionary of raw merge metrics
         """
         alignment = result.alignment_map
         projection = result.projection_result
 
-        metrics = {
+        return {
             "alignment_coverage": alignment.coverage,
             "alignment_confidence": alignment.mean_confidence,
-            "alignment_quality_distribution": alignment.quality_distribution(),
             "projection_alignment_score": projection.alignment_score,
             "projection_reconstruction_error": projection.reconstruction_error,
             "alignment_score": result.alignment.alignment_score,
             "vocab_overlap_ratio": result.alignment.vocab_overlap_ratio,
             "warnings_count": len(result.warnings),
         }
-
-        # Overall quality score
-        quality_score = (
-            0.3 * alignment.coverage
-            + 0.2 * alignment.mean_confidence
-            + 0.3 * projection.alignment_score
-            + 0.2 * result.alignment.alignment_score
-        )
-        metrics["overall_quality_score"] = quality_score
-
-        return metrics

@@ -236,7 +236,13 @@ class GeneralizedProcrustes:
             [N, K] consensus matrix
         """
         if not config.frechet_mean.enabled:
-            # Arithmetic mean fallback (only for debugging - NOT geometrically correct)
+            # Arithmetic mean is WRONG on curved manifolds. This is for debugging
+            # only - to compare against Fréchet mean. Should NOT be used for merges.
+            logger.warning(
+                "Using arithmetic mean (frechet_mean.enabled=False). "
+                "This is geometrically INCORRECT on curved manifolds and should "
+                "only be used for debugging. For merges, use Fréchet mean."
+            )
             return self._backend.mean(aligned_X, axis=0)
 
         # Fréchet mean for curvature-aware consensus

@@ -22,7 +22,7 @@ Uses the superior CrossVocabMerger pipeline:
 1. Analyze vocabularies (stats, alignment)
 2. Build token alignment map (exact + embedding similarity)
 3. Project source embeddings to target space (Procrustes/OT)
-4. Blend aligned embeddings with quality-weighted alpha
+4. Blend aligned embeddings with geometry-weighted alpha
 """
 
 from __future__ import annotations
@@ -37,7 +37,6 @@ from modelcypher.core.domain.geometry.alignment_diagnostic import (
     AlignmentSignal,
     alignment_signal_from_matrices,
 )
-from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
 from .anchor_selection import (
@@ -51,10 +50,6 @@ from .atlas_alignment import _build_atlas_anchor_map
 from .byte_alignment import _align_bytes_from_matrices, _build_byte_embedding_map
 from .caching import _make_embedding_cache_key, _make_tokenizer_cache_key
 from .config import VocabularyConfig, VocabularyResult
-from .threshold_derivation import (
-    _derive_thresholds_from_similarities,
-    _sample_embedding_similarities,
-)
 from .tokenizer_utils import _extract_vocab
 
 logger = logging.getLogger(__name__)
@@ -1074,75 +1069,12 @@ def stage_vocabulary_align(
                 effective_strategy = ProjectionStrategy.TRUNCATE
 
             merge_blend_alpha = config.blend_alpha
-            merge_use_embedding_similarity = config.use_embedding_similarity
-            merge_max_prefix_length = config.max_prefix_length
-            merge_max_prefix_matches = config.max_prefix_matches
-            if strict_token_alignment:
-                merge_blend_alpha = 1.0
-                merge_use_embedding_similarity = False
-                merge_max_prefix_length = 0
-                merge_max_prefix_matches = 0
-
-            # Derive thresholds from embedding data if not provided
-            effective_similarity = config.similarity_threshold
-            effective_confidence = config.confidence_threshold
-
-            if effective_similarity is None or effective_confidence is None:
-                # Sample embedding similarities to derive thresholds via spectral gap
-                sample_sims = _sample_embedding_similarities(
-                    source_embed, target_embed, backend, sample_size=min(500, source_embed.shape[0])
-                )
-                if sample_sims:
-                    derived = _derive_thresholds_from_similarities(sample_sims)
-                    if effective_similarity is None:
-                        effective_similarity = derived["similarity_threshold"]
-                    if effective_confidence is None:
-                        effective_confidence = derived["confidence_threshold"]
-                else:
-                    # No similarities computed - use dtype-derived minimum
-                    eps = machine_epsilon(backend, source_embed)
-                    if effective_similarity is None:
-                        effective_similarity = eps
-                    if effective_confidence is None:
-                        effective_confidence = eps
-
-            # For blend_alpha, if None, compute from CKA alignment quality
-            # Higher source CKA -> higher alpha (more weight to source)
-            if merge_blend_alpha is None:
-                # Use corrected CKA to avoid feature-sampling underestimation
-                source_cka_score = compute_cka(
-                    source_embed,
-                    source_embed,
-                    backend=backend,
-                    estimator=HSICEstimator.AUTO,
-                    feature_bias_correction=True,
-                ).best
-                target_cka_score = compute_cka(
-                    target_embed,
-                    target_embed,
-                    backend=backend,
-                    estimator=HSICEstimator.AUTO,
-                    feature_bias_correction=True,
-                ).best
-                total = source_cka_score + target_cka_score
-                if total > 0:
-                    merge_blend_alpha = source_cka_score / total
-                else:
-                    merge_blend_alpha = 0.5  # Equal self-CKA means equal weight
 
             merge_config = CrossVocabMergeConfig(
                 projection_strategy=effective_strategy,
-                similarity_threshold=effective_similarity,
-                confidence_threshold=effective_confidence,
                 blend_alpha=merge_blend_alpha,
                 preserve_special_tokens=config.preserve_special_tokens,
-                use_embedding_similarity=merge_use_embedding_similarity,
-                exact_match_only=strict_token_alignment,
                 anchor_count=config.anchor_count,
-                max_similarity_pairs=config.max_similarity_pairs,
-                max_unmapped_similarity=config.max_unmapped_similarity,
-                max_prefix_length=merge_max_prefix_length,
-                max_prefix_matches=merge_max_prefix_matches,
                 similarity_batch_size=config.similarity_batch_size,
             )
             merger = CrossVocabMerger(merge_config)
@@ -1161,32 +1093,7 @@ def stage_vocabulary_align(
                 "cross_vocab_merge_ms"
             ] = (time.perf_counter() - merge_start) * 1000
 
-            # Check quality
-            quality_metrics = merger.analyze_merge_quality(result)
-
-            # Warn on low alignment/coverage only if thresholds were specified
-            # If None, no arbitrary floor was set - we accept any measurable value
-            if (
-                config.min_alignment_score is not None
-                and result.alignment.alignment_score < config.min_alignment_score
-            ):
-                logger.warning(
-                    "Low alignment score %.2f for %s (continuing alignment)",
-                    result.alignment.alignment_score,
-                    embed_key,
-                )
-                metrics[f"{embed_key}_warning"] = "low_alignment"
-
-            if (
-                config.min_coverage is not None
-                and result.alignment_map.coverage < config.min_coverage
-            ):
-                logger.warning(
-                    "Low coverage %.2f for %s (continuing alignment)",
-                    result.alignment_map.coverage,
-                    embed_key,
-                )
-                metrics[f"{embed_key}_warning"] = "low_coverage"
+            merge_metrics = merger.analyze_merge_quality(result)
 
             # Convert result to backend array format, preserving original dtype
             merged_embed = result.merged_embeddings
@@ -1213,15 +1120,14 @@ def stage_vocabulary_align(
             metrics[f"{embed_key}_alignment_confidence"] = result.alignment_map.mean_confidence
             metrics[f"{embed_key}_projection_score"] = result.projection_result.alignment_score
             metrics[f"{embed_key}_alignment_score"] = result.alignment.alignment_score
-            metrics[f"{embed_key}_overall_quality"] = quality_metrics["overall_quality_score"]
             metrics[f"{embed_key}_warnings"] = result.warnings
             metrics[f"{embed_key}_strict_token_alignment"] = strict_token_alignment
 
             logger.info(
-                "Aligned %s: coverage=%.2f, quality=%.2f",
+                "Aligned %s: coverage=%.2f, alignment_score=%.2f",
                 embed_key,
                 result.alignment_map.coverage,
-                quality_metrics["overall_quality_score"],
+                merge_metrics["alignment_score"],
             )
             metrics["timing_ms"].setdefault(embed_key, {})[
                 "total_ms"

@@ -521,7 +521,6 @@ def run_full_geometry_merge(
 
         if source_model and target_model and source_tokenizer and target_tokenizer:
             from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
-            from modelcypher.core.domain.vocabulary.alignment_map import AlignmentQuality
             from modelcypher.core.use_cases.merge_stages.stage_1_probe import (
                 _encode_probe_ids,
                 build_token_id_map,
@@ -536,12 +535,7 @@ def run_full_geometry_merge(
             target_activations = {}
             token_id_map = None
             if vocab_alignment_map is not None:
-                token_id_map = build_token_id_map(
-                    vocab_alignment_map,
-                    min_confidence=1.0,
-                    min_size=0,
-                    allowed_qualities={AlignmentQuality.EXACT},
-                )
+                token_id_map = build_token_id_map(vocab_alignment_map)
                 if token_id_map:
                     logger.info(
                         "STAGE 1: Using aligned token map for probes (%d tokens).",

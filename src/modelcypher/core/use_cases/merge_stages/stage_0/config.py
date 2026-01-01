@@ -25,47 +25,18 @@ from typing import Any
 class VocabularyConfig:
     """Configuration for Stage 0 vocabulary alignment.
 
-    Note on thresholds:
-        All thresholds default to None and are derived from data at runtime:
-
-        - similarity_threshold: If None, derived from distribution of embedding
-          cosine similarities. Uses spectral gap to find natural boundary.
-
-        - confidence_threshold: If None, derived from alignment confidence
-          distribution using spectral gap detection.
-
-        - blend_alpha: If None, computed from relative alignment quality
-          (CKA scores) between source and target. Higher alignment quality
-          means higher weight for that model's embeddings.
-
-        - min_alignment_score: If None, set to machine_epsilon - any
-          measurable alignment is acceptable.
-
-        - min_coverage: If None, set to 0.0 - no arbitrary coverage floor.
+    No heuristic thresholds are applied in alignment or blending.
     """
 
     # Projection strategy: procrustes, pca, optimal_transport, cca
     projection_strategy: str = "procrustes"
 
-    # Alignment thresholds - None means derive from data
-    similarity_threshold: float | None = None
-    confidence_threshold: float | None = None
-
-    # Embedding blending - None means compute from alignment quality
-    blend_alpha: float | None = None
+    # Embedding blending
+    blend_alpha: float = 0.5
     preserve_special_tokens: bool = True
 
-    # Quality thresholds - None means no arbitrary floor
-    min_alignment_score: float | None = None
-    min_coverage: float | None = None
-
     # Advanced
-    use_embedding_similarity: bool = True
     anchor_count: int = 1000
-    max_similarity_pairs: int = 5_000_000
-    max_unmapped_similarity: int = 5000
-    max_prefix_length: int = 8
-    max_prefix_matches: int = 3
     similarity_batch_size: int = 128
 
     # Phase-lock alignment tuning

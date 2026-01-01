@@ -18,9 +18,8 @@
 """
 Concept detection using embedding geometry.
 
-The detector embeds probe support texts, computes Frechet centroids, and uses
-probe geometry to decide whether a response segment activates a concept.
-No user parameters are accepted; every decision is derived from embeddings.
+Embeds probe support texts, computes Frechet centroids, and uses probe geometry
+to decide whether a response segment activates a concept.
 """
 
 from __future__ import annotations

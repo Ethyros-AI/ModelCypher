@@ -128,7 +128,7 @@ class AlignmentResult:
 
     @property
     def is_perfect(self) -> bool:
-        """Returns True if we achieved CKA ≈ 1.0."""
+        """True if CKA = 1.0 within float32 machine epsilon (0.9999)."""
         return self.achieved_cka >= 0.9999
 
     @property

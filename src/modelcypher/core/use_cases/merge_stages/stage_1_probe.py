@@ -117,110 +117,20 @@ def _encode_probe_ids(
 
 def build_token_id_map(
     alignment_map: VocabularyAlignmentMap,
-    min_confidence: float | None = None,
-    min_size: int | None = None,
-    allowed_qualities: set[AlignmentQuality] | None = None,
 ) -> dict[int, int]:
-    """Build token ID mapping from vocabulary alignment.
-
-    Args:
-        alignment_map: The vocabulary alignment map.
-        min_confidence: Minimum confidence threshold. If None, derived from
-            spectral gap in confidence distribution.
-        min_size: Minimum mapping size before expanding to SIMILAR quality.
-            If None, derived as sqrt(vocab_size) - covers representative sample.
-        allowed_qualities: Explicit quality filter. If provided, min_size is ignored.
-
-    Returns:
-        Mapping from source token IDs to target token IDs.
-    """
-    # Derive min_confidence from spectral gap if not provided
-    if min_confidence is None:
-        confidence_values = [
-            a.confidence for a in alignment_map.iter_alignments() if a.confidence > 0
-        ]
-        if len(confidence_values) >= 2:
-            min_confidence = _derive_confidence_threshold(confidence_values)
-        else:
-            # With insufficient data, require exact confidence
-            min_confidence = 1.0
-
-    # Derive min_size from vocabulary coverage if not provided
-    if min_size is None:
-        vocab_size = sum(1 for _ in alignment_map.iter_alignments())
-        # sqrt(n) gives statistically representative sample
-        min_size = max(1, int(math.sqrt(vocab_size)))
-
-    def _build_map(qualities: set[AlignmentQuality]) -> dict[int, int]:
-        mapping: dict[int, int] = {}
-        for alignment in alignment_map.iter_alignments():
-            if alignment.confidence < min_confidence:
-                continue
-            if alignment.quality not in qualities:
-                continue
-            if not alignment.target_ids:
-                continue
-            best_idx = max(
-                range(len(alignment.target_ids)),
-                key=lambda i: alignment.weights[i],
-            )
-            mapping[alignment.source_id] = alignment.target_ids[best_idx]
-        return mapping
-
-    if allowed_qualities is None:
-        mapping = _build_map({AlignmentQuality.EXACT})
-        if len(mapping) < min_size:
-            mapping = _build_map({AlignmentQuality.EXACT, AlignmentQuality.SIMILAR})
-        return mapping
-
-    return _build_map(allowed_qualities)
-
-
-def _derive_confidence_threshold(confidence_values: list[float]) -> float:
-    """Derive confidence threshold from spectral gap in distribution.
-
-    Uses the largest gap between consecutive sorted values that exceeds
-    the mean + 2*stddev significance threshold. The threshold is placed
-    at the geometric mean of values around the gap.
-
-    If no significant gap exists, returns median (natural split point).
-    """
-    if len(confidence_values) < 2:
-        return 1.0
-
-    sorted_vals = sorted(confidence_values)
-    n = len(sorted_vals)
-
-    # Compute gaps between consecutive values
-    gaps = [sorted_vals[i + 1] - sorted_vals[i] for i in range(n - 1)]
-    if not gaps:
-        return sorted_vals[n // 2]
-
-    mean_gap = sum(gaps) / len(gaps)
-    variance = sum((g - mean_gap) ** 2 for g in gaps) / len(gaps)
-    stddev = math.sqrt(variance) if variance > 0 else 0.0
-
-    # Significance threshold: gap must be larger than mean + 2*stddev
-    significance_threshold = mean_gap + 2.0 * stddev
-
-    # Find largest significant gap (>= for boundary case)
-    max_gap = 0.0
-    gap_idx = -1
-    for i, g in enumerate(gaps):
-        if g >= significance_threshold and g > max_gap:
-            max_gap = g
-            gap_idx = i
-
-    if gap_idx >= 0:
-        # Threshold at geometric mean of values around the gap
-        below = sorted_vals[gap_idx]
-        above = sorted_vals[gap_idx + 1]
-        if below > 0 and above > 0:
-            return math.sqrt(below * above)
-        return (below + above) / 2.0
-
-    # No significant gap - use median
-    return sorted_vals[n // 2]
+    """Build token ID mapping from exact vocabulary alignments only."""
+    mapping: dict[int, int] = {}
+    for alignment in alignment_map.iter_alignments():
+        if alignment.quality != AlignmentQuality.EXACT:
+            continue
+        if not alignment.target_ids:
+            continue
+        best_idx = max(
+            range(len(alignment.target_ids)),
+            key=lambda i: alignment.weights[i],
+        )
+        mapping[alignment.source_id] = alignment.target_ids[best_idx]
+    return mapping
 
 
 def map_token_ids(
@@ -290,9 +200,13 @@ def stage_probe(
         )
     else:
         if config.probe_mode == "precise":
-            logger.warning(
+            # INVARIANT GEOMETRY: No silent fallbacks. If precise mode was requested,
+            # we need models loaded to compute activation-level CKA. Failing silently
+            # would hide alignment problems that will cause gibberish output.
+            raise RuntimeError(
                 "Precise mode requested but models not loaded. "
-                "Falling back to fast mode (weight-level CKA)."
+                "Cannot compute activation-level CKA without model access. "
+                "Either load the models or use probe_mode='fast' explicitly."
             )
         return _probe_fast(
             source_weights=source_weights,
@@ -370,12 +284,7 @@ def _probe_precise(
 
     token_id_map: dict[int, int] | None = None
     if alignment_map is not None:
-        token_id_map = build_token_id_map(
-            alignment_map,
-            min_confidence=1.0,
-            min_size=0,
-            allowed_qualities={AlignmentQuality.EXACT},
-        )
+        token_id_map = build_token_id_map(alignment_map)
         if token_id_map:
             logger.info(
                 "PROBE PRECISE: Using aligned token map (%d tokens).",

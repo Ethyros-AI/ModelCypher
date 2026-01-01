@@ -472,12 +472,9 @@ class InvariantLayerMappingService:
             )
         except Exception as e:
             logger.error("Failed to extract fingerprints: %s", e)
-            # Return empty fingerprints on error
-            return ModelFingerprints(
-                model_id=str(path),
-                layer_count=layer_count,
-                fingerprints=[],
-            )
+            raise RuntimeError(
+                f"Fingerprint extraction failed for {path}: {e}"
+            ) from e
 
         result = ModelFingerprints(
             model_id=str(path),

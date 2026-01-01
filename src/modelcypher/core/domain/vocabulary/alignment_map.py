@@ -35,12 +35,10 @@ logger = logging.getLogger(__name__)
 
 
 class AlignmentQuality(str, Enum):
-    """Quality levels for token alignments."""
+    """Alignment provenance for token mappings."""
 
     EXACT = "exact"  # Identical tokens
-    SIMILAR = "similar"  # High semantic similarity
-    APPROXIMATE = "approximate"  # Partial match
-    INTERPOLATED = "interpolated"  # Synthesized from neighbors
+    INTERPOLATED = "interpolated"  # Synthesized from geometry
     UNMAPPED = "unmapped"  # No alignment found
 
 
@@ -91,8 +89,6 @@ class VocabularyAlignmentMap:
 
     # Statistics
     exact_matches: int = 0
-    similar_matches: int = 0
-    approximate_matches: int = 0
     interpolated_count: int = 0
     unmapped_count: int = 0
 
@@ -110,10 +106,6 @@ class VocabularyAlignmentMap:
         # Update statistics
         if alignment.quality == AlignmentQuality.EXACT:
             self.exact_matches += 1
-        elif alignment.quality == AlignmentQuality.SIMILAR:
-            self.similar_matches += 1
-        elif alignment.quality == AlignmentQuality.APPROXIMATE:
-            self.approximate_matches += 1
         elif alignment.quality == AlignmentQuality.INTERPOLATED:
             self.interpolated_count += 1
         elif alignment.quality == AlignmentQuality.UNMAPPED:
@@ -155,8 +147,6 @@ class VocabularyAlignmentMap:
             "coverage": self.coverage,
             "mean_confidence": self.mean_confidence,
             "exact_matches": self.exact_matches,
-            "similar_matches": self.similar_matches,
-            "approximate_matches": self.approximate_matches,
             "interpolated_count": self.interpolated_count,
             "unmapped_count": self.unmapped_count,
             "has_projection_matrix": self.projection_matrix is not None,
@@ -166,8 +156,6 @@ class VocabularyAlignmentMap:
         """Get distribution of alignment qualities."""
         return {
             "exact": self.exact_matches,
-            "similar": self.similar_matches,
-            "approximate": self.approximate_matches,
             "interpolated": self.interpolated_count,
             "unmapped": self.unmapped_count,
         }
@@ -176,51 +164,15 @@ class VocabularyAlignmentMap:
 def build_alignment_from_vocabs(
     source_vocab: dict[str, int],
     target_vocab: dict[str, int],
-    similarity_threshold: float = 0.8,
-    max_prefix_length: int = 8,
-    max_prefix_matches: int = 3,
-    *,
-    exact_only: bool = False,
 ) -> VocabularyAlignmentMap:
-    """
-    Build alignment map from source and target vocabulary dictionaries.
-
-    Uses exact string matching and simple heuristics. For more sophisticated
-    alignment, use the CrossVocabMerger with embedding-based similarity.
-
-    Args:
-        source_vocab: Source token -> id mapping
-        target_vocab: Target token -> id mapping
-        similarity_threshold: Minimum similarity for approximate matches
-        exact_only: If True, only exact string matches are accepted
-
-    Returns:
-        VocabularyAlignmentMap with token alignments
-    """
+    """Build alignment map from exact string matches only."""
     alignment_map = VocabularyAlignmentMap(
         source_vocab_size=len(source_vocab),
         target_vocab_size=len(target_vocab),
     )
 
-    # Build direct and normalized lookups for fast matching
+    # Build direct lookup for exact matches.
     target_by_token = target_vocab
-    normalized_target: dict[str, tuple[str, int]] = {}
-    prefix_map: dict[str, list[tuple[str, int]]] = {}
-
-    if max_prefix_length < 0:
-        max_prefix_length = 0
-
-    for token, tid in target_vocab.items():
-        if not exact_only:
-            normalized = token.lower().strip()
-            existing = normalized_target.get(normalized)
-            if existing is None or tid < existing[1]:
-                normalized_target[normalized] = (token, tid)
-
-        if not exact_only and max_prefix_length > 0:
-            for i in range(1, min(max_prefix_length, len(token)) + 1):
-                prefix = token[:i]
-                prefix_map.setdefault(prefix, []).append((token, tid))
 
     # Deterministic iteration by token id
     source_items = sorted(source_vocab.items(), key=lambda x: x[1])
@@ -239,86 +191,15 @@ def build_alignment_from_vocabs(
                 confidence=1.0,
             )
         else:
-            if exact_only:
-                alignment = TokenAlignment(
-                    source_id=source_id,
-                    source_token=source_token,
-                    target_ids=[],
-                    target_tokens=[],
-                    weights=[],
-                    quality=AlignmentQuality.UNMAPPED,
-                    confidence=0.0,
-                )
-                alignment_map.add_alignment(alignment)
-                continue
-
-            # Try normalized matching (lowercase, strip whitespace)
-            normalized = source_token.lower().strip()
-            normalized_match = normalized_target.get(normalized)
-            if normalized_match is not None:
-                target_token, target_id = normalized_match
-                alignment = TokenAlignment(
-                    source_id=source_id,
-                    source_token=source_token,
-                    target_ids=[target_id],
-                    target_tokens=[target_token],
-                    weights=[1.0],
-                    quality=AlignmentQuality.SIMILAR,
-                    confidence=0.9,
-                )
-            else:
-                # Try prefix matching for subwords (bounded to avoid O(N*M))
-                prefix_matches: list[tuple[str, int]] = []
-                if max_prefix_length > 0:
-                    if len(source_token) <= max_prefix_length:
-                        prefix_matches.extend(prefix_map.get(source_token, []))
-
-                    max_len = min(len(source_token), max_prefix_length)
-                    for i in range(1, max_len + 1):
-                        prefix = source_token[:i]
-                        if prefix in target_by_token:
-                            prefix_matches.append((prefix, target_by_token[prefix]))
-
-                if prefix_matches:
-                    # Deduplicate and bound matches deterministically
-                    unique: dict[int, str] = {}
-                    for token, tid in prefix_matches:
-                        if tid not in unique:
-                            unique[tid] = token
-                    if len(unique) <= max_prefix_matches:
-                        target_ids = sorted(unique.keys())
-                        target_tokens = [unique[tid] for tid in target_ids]
-                        weights = [1.0 / len(target_ids)] * len(target_ids)
-                        alignment = TokenAlignment(
-                            source_id=source_id,
-                            source_token=source_token,
-                            target_ids=target_ids,
-                            target_tokens=target_tokens,
-                            weights=weights,
-                            quality=AlignmentQuality.APPROXIMATE,
-                            confidence=0.6,
-                        )
-                    else:
-                        alignment = TokenAlignment(
-                            source_id=source_id,
-                            source_token=source_token,
-                            target_ids=[],
-                            target_tokens=[],
-                            weights=[],
-                            quality=AlignmentQuality.UNMAPPED,
-                            confidence=0.0,
-                        )
-                else:
-                    # No match found
-                    alignment = TokenAlignment(
-                        source_id=source_id,
-                        source_token=source_token,
-                        target_ids=[],
-                        target_tokens=[],
-                        weights=[],
-                        quality=AlignmentQuality.UNMAPPED,
-                        confidence=0.0,
-                    )
+            alignment = TokenAlignment(
+                source_id=source_id,
+                source_token=source_token,
+                target_ids=[],
+                target_tokens=[],
+                weights=[],
+                quality=AlignmentQuality.UNMAPPED,
+                confidence=0.0,
+            )
 
         alignment_map.add_alignment(alignment)
 
@@ -333,7 +214,7 @@ class TokenizerComparisonResult:
     target_vocab_size: int
     overlap_count: int  # Exact match tokens
     overlap_ratio: float  # Fraction of source vocab with exact match
-    approximate_count: int  # Tokens matched via normalization/prefix
+    approximate_count: int  # Always 0 (exact-only alignment)
     unmapped_count: int  # Tokens with no mapping
     coverage: float  # Fraction of source tokens with any mapping
 
@@ -382,7 +263,7 @@ def compare_tokenizers(
         target_vocab_size=len(target_vocab),
         overlap_count=alignment_map.exact_matches,
         overlap_ratio=overlap_ratio,
-        approximate_count=alignment_map.similar_matches + alignment_map.approximate_matches,
+        approximate_count=0,
         unmapped_count=alignment_map.unmapped_count,
         coverage=alignment_map.coverage,
     )

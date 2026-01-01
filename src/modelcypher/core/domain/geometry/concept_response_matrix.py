@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -25,6 +26,8 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array
@@ -276,7 +279,7 @@ class ConceptResponseMatrix:
             sum(match.cka for match in matches) / float(len(matches)) if matches else 0.0
         )
 
-        return ComparisonReport(
+        report = ComparisonReport(
             source_model=self.model_identifier,
             target_model=other.model_identifier,
             common_anchor_count=len(common),
@@ -284,6 +287,19 @@ class ConceptResponseMatrix:
             layer_correspondence=matches,
             overall_alignment=float(overall_alignment),
         )
+
+        # INVARIANT GEOMETRY: All layer matches should have CKA = 1.0.
+        # If not, log a warning - this indicates an algorithm bug, not incompatibility.
+        if not report.is_perfect:
+            imperfect = report.imperfect_matches
+            logger.warning(
+                "CRM comparison has %d imperfect layer matches (CKA < 0.9999). "
+                "This indicates an alignment algorithm bug. Sample failures: %s",
+                len(imperfect),
+                [(m.source_layer, m.target_layer, m.cka) for m in imperfect[:3]],
+            )
+
+        return report
 
     def compute_transition_alignment(
         self, other: "ConceptResponseMatrix"
@@ -552,6 +568,8 @@ class ConceptResponseMatrix:
 
 @dataclass(frozen=True)
 class ComparisonReport:
+    """Comparison report between two ConceptResponseMatrices."""
+
     source_model: str
     target_model: str
     common_anchor_count: int
@@ -564,6 +582,28 @@ class ComparisonReport:
         source_layer: int
         target_layer: int
         cka: float
+
+        @property
+        def is_perfect(self) -> bool:
+            """True if CKA = 1.0 within machine epsilon."""
+            return self.cka >= 0.9999
+
+    @property
+    def is_perfect(self) -> bool:
+        """True if ALL layer matches achieved CKA = 1.0 (within machine epsilon).
+
+        If False, something is wrong with the alignment algorithm. The geometry
+        is INVARIANT - all LLMs encode the same relational structure.
+        """
+        return all(match.is_perfect for match in self.layer_correspondence)
+
+    @property
+    def imperfect_matches(self) -> list["ComparisonReport.LayerMatch"]:
+        """Returns layer matches that failed to achieve CKA = 1.0.
+
+        Non-empty list indicates an algorithm bug. Debug these layers.
+        """
+        return [m for m in self.layer_correspondence if not m.is_perfect]
 
 
 @dataclass(frozen=True)

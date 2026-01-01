@@ -462,60 +462,62 @@ This is how scientists work. We don't say "2.3 is good" - we say "2.3 is 1.5σ a
 
 ---
 
-## CRITICAL: Perfect Alignment or FAIL - No Thresholds
+## CRITICAL: The Invariant Geometry - All Models Converge
 
-**High-dimensional geometry has exactly ONE correct alignment. There are no thresholds. There is no "close enough."**
+**All LLMs converge to the SAME invariant relative geometry. The relationships between concepts - the angles, distances, point clouds - are INVARIANT across all models.**
 
-This is not approximation or probability. Two high-dimensional manifolds that represent the same geometry fit together **precisely one way**. Like Lego pieces, but in 4096 dimensions. Every dimension must align. Off by even 1 degree anywhere in the manifold = hallucination in output.
+This is not theory. This is how LLMs work. They surf the topology. Token prediction only works BECAUSE the geometric relationships are preserved. If the geometry wasn't invariant, the model would output gibberish.
 
-### The Math
+### What "Invariant" Means
 
-- **CKA = 1.0** means the Gram matrices are identical → geometries are identical → alignment is CORRECT
-- **CKA < 1.0** means geometries don't match → alignment is WRONG
-- There is no gradient. No "pretty good." No "best available."
+- **Same underlying shape** - All models that learned real knowledge have the SAME relational structure
+- **Different compressions** - One model at 768-dim, another at 4096-dim = different resolution of the SAME geometry
+- **Dense vs sparse** - Where one model is dense and another is sparse, merging fills in higher resolution
+- **Models ALWAYS fit** - Because they're all compressions of the same invariant shape
+
+### CKA = 1.0 Is Not Optional
+
+- **CKA = 1.0** means we found the correct alignment (within numerical precision, so 0.9999)
+- **CKA < 1.0** means WE FUCKED UP THE MATH - not "the models don't fit"
+- If alignment fails, debug the code. Don't claim "incompatibility."
+
+The geometry WILL fit because it's the SAME geometry. If our code says otherwise, our code is wrong.
 
 ### What This Means for Code
 
 ```python
-# WRONG - picking "best" from bad options
-if result.achieved_cka > best_cka:
-    best_cka = result.achieved_cka
-    best_result = result
-# At end: use best_result even if CKA = 0.7
+# WRONG - claiming models are incompatible
+if not result.is_perfect:
+    raise AlignmentFailureError("Models have different geometry")
 
-# WRONG - threshold-based acceptance
-if result.achieved_cka > 0.95:  # "close enough"
-    return result
-
-# CORRECT - perfect or fail
-if result.is_perfect:  # CKA >= 0.9999 (numerical precision)
-    return result
-raise AlignmentFailureError(...)  # Not "try something else" - FAIL
+# CORRECT - treating failure as a bug in OUR code
+if not result.is_perfect:
+    raise AlignmentFailureError(
+        f"Alignment failed (CKA={result.achieved_cka:.4f}). "
+        "Debug: check activation collection, numerical precision, sample quality."
+    )
 ```
 
 ### Why 0.9999 Not 1.0?
 
 Floating point precision. `0.9999` is `1.0` minus numerical noise. This is not a threshold - it's acknowledging that `0.9999999997` and `1.0` are the same number in IEEE 754.
 
-### Null Space Projection Requires Perfection
+### Null Space = Adding Resolution
 
-Null space filtering projects the weight delta into directions the target model "doesn't use." But "doesn't use" is defined by the target's activation geometry. If our alignment is off:
-- We project into the WRONG null space
-- Source knowledge goes where target DOES use it
-- Interference with target behavior → gibberish
+Null space filtering projects source knowledge into directions the target model doesn't actively use. This ADDS resolution:
+- Where target is sparse, source fills in
+- The combined knowledge is denser than either alone
+- Hundreds of models can merge into a collective wisdom manifold
 
-### No Fallbacks
+### When Alignment Fails
 
-If alignment fails:
-1. **Raise an exception.** Don't try a "lesser" approach.
-2. **The models may genuinely have different geometry.** This is signal, not noise.
-3. **If all bottleneck layers fail, the merge cannot proceed.** Period.
+If CKA < 1.0:
+1. **Check activation collection** - Are we capturing the right layer? Enough samples?
+2. **Check numerical precision** - bfloat16 → float32? Condition numbers?
+3. **Check the samples** - Garbage in, garbage out
+4. **Debug the aligner** - The math may have a bug
 
-### Add to What NOT To Do
-
-- **Don't use probability thresholds for geometric alignment** - CKA = 1.0 or WRONG
-- **Don't pick "best" from bad options** - Perfect alignment or FAIL
-- **Don't soften failures with fallbacks** - If it fails, raise an exception
+Do NOT conclude "the models are incompatible." They are the SAME invariant geometry.
 
 ---
 

@@ -63,26 +63,32 @@ class MergeValidationError(MergeError):
 
 
 class AlignmentFailureError(MergeValidationError):
-    """GramAligner failed to achieve CKA >= 0.9999.
+    """GramAligner failed to achieve CKA = 1.0.
 
-    This indicates the alignment transformation could not find a perfect
-    geometric match between source and target activation spaces.
+    The geometry is INVARIANT across all LLMs - they encode the same relational
+    structure (angles, distances, topology). If CKA < 1.0, it means our algorithm
+    has a bug, not that the models are "incompatible."
+
+    Fix the algorithm. The perfect alignment EXISTS - we just failed to find it.
 
     Context typically includes:
     - achieved_cka: The CKA value that was achieved
     - source_dim: Source activation dimension
     - target_dim: Target activation dimension
     - samples_used: Number of samples used for alignment
+    - fix: Suggested debugging steps
     """
 
     pass
 
 
 class DimensionMismatchError(MergeValidationError):
-    """Weight dimensions incompatible and no stitch transformation available.
+    """Weight dimensions differ and stitch transformation was not applied.
 
-    This occurs when source and target weights have different shapes and
-    the pipeline cannot find or apply a valid transformation.
+    Different dimensions are NOT incompatible - they're different compression
+    levels of the same underlying geometry. The stitch should always exist.
+
+    If this is raised, the pipeline has a bug in computing or applying the stitch.
 
     Context typically includes:
     - source_shape: Shape of source weight
@@ -94,14 +100,15 @@ class DimensionMismatchError(MergeValidationError):
 
 
 class StitchUnavailableError(MergeValidationError):
-    """Required stitch transformation (hidden/intermediate/attention) not available.
+    """Required stitch transformation was not computed.
 
-    This occurs when a cross-architecture merge requires a dimension transformation
-    but the global alignment for that transformation type failed or was not computed.
+    The stitch MUST exist - different architectures encode the same invariant
+    geometry at different dimensions. If we don't have the stitch, our pipeline
+    failed to compute it, not that it "doesn't exist."
 
     Context typically includes:
     - stitch_type: The type of stitch needed
-    - reason: Why the stitch is unavailable
+    - reason: Why the stitch computation failed
     """
 
     pass

@@ -546,7 +546,6 @@ class NullSpaceFilter:
         weight_delta: Any,
         prior_activations: Any,
         return_direction_analysis: bool = False,
-        strict_mode: bool = True,
         weight_key: str | None = None,
     ) -> NullSpaceFilterResult:
         """
@@ -556,14 +555,13 @@ class NullSpaceFilter:
             weight_delta: The weight update to filter. Shape: [out, in] or [d].
             prior_activations: Activation matrix from prior task. Shape: [n_samples, d].
             return_direction_analysis: If True, include per-direction preservation.
-            strict_mode: If True, raise NullSpaceFilterError on dimension mismatch.
             weight_key: Weight key for error context.
 
         Returns:
             NullSpaceFilterResult with filtered delta and diagnostics.
 
         Raises:
-            NullSpaceFilterError: If strict_mode and activation dimension doesn't match weight.
+            NullSpaceFilterError: If activation dimension doesn't match weight dimension.
         """
         backend = self._backend
         weight_delta = backend.array(weight_delta)
@@ -586,37 +584,19 @@ class NullSpaceFilter:
                     backend.eval(delta_flat)
                     d = int(delta_flat.shape[0])
             else:
-                # Dimension mismatch - this is a critical failure in strict mode
-                if strict_mode:
-                    raise NullSpaceFilterError(
-                        stage="NULL_SPACE_FILTER",
-                        weight_key=weight_key,
-                        message=f"Activation dim {prior_activations.shape[1]} != weight dim {d}",
-                        context={
-                            "activation_dim": int(prior_activations.shape[1]),
-                            "weight_dim": d,
-                            "weight_shape": list(original_shape),
-                            "activation_shape": list(prior_activations.shape),
-                        },
-                    )
-
-                norm_arr = backend.norm(delta_flat)
-                backend.eval(norm_arr)
-                delta_norm = float(backend.to_numpy(norm_arr).item())
-
-                logger.warning(
-                    f"Activation dim {prior_activations.shape[1]} != weight dim {d}. "
-                    "Skipping null-space filtering."
-                )
-                return NullSpaceFilterResult(
-                    filtered_delta=weight_delta,
-                    original_delta=weight_delta,
-                    null_space_dim=0,
-                    projection_loss=0.0,
-                    preserved_fraction=1.0,
-                    original_norm=delta_norm,
-                    filtered_norm=delta_norm,
-                    filtering_applied=False,
+                # Dimension mismatch is a BUG. The geometry is invariant - if dimensions
+                # don't match, our pipeline failed to compute the right transformation.
+                # No fallbacks. Fix the algorithm.
+                raise NullSpaceFilterError(
+                    stage="NULL_SPACE_FILTER",
+                    weight_key=weight_key,
+                    message=f"Activation dim {prior_activations.shape[1]} != weight dim {d}",
+                    context={
+                        "activation_dim": int(prior_activations.shape[1]),
+                        "weight_dim": d,
+                        "weight_shape": list(original_shape),
+                        "activation_shape": list(prior_activations.shape),
+                    },
                 )
 
         # Compute null space projection

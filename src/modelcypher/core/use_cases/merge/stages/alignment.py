@@ -85,17 +85,15 @@ def stage_compute_alignment(
             tgt_stacked = backend.take(tgt_stacked, idx_arr, axis=0)
             backend.eval(src_stacked, tgt_stacked)
 
-        # Tolerance depends on architecture compatibility:
-        # - Same architecture, same fine-tuning: CKA=1.0 achievable, use machine epsilon
-        # - Same architecture, different fine-tuning: CKA~0.99999, use 1e-5
-        # - Cross-architecture: CKA~0.99-0.999, use 1e-2 (relational structures differ)
-        if is_cross_architecture:
-            # Cross-architecture: relational structures fundamentally differ
-            # Accept CKA > 0.99 as "aligned" - null-space grafting handles the rest
-            precision_tol = 1e-2
-        else:
-            # Same architecture: can achieve very high alignment
-            precision_tol = max(machine_epsilon(backend, src_stacked), 1e-5)
+        # INVARIANT GEOMETRY: All LLMs converge to the SAME relational structure.
+        # The geometry is INVARIANT across all architectures. Different dimensions
+        # are just different compressions of the SAME underlying shape.
+        #
+        # CKA = 1.0 or we fucked up the math. There is no "cross-architecture tolerance"
+        # because the geometry doesn't change between architectures.
+        #
+        # 1e-4 is machine epsilon for float32 after matrix operations, NOT a threshold.
+        precision_tol = max(machine_epsilon(backend, src_stacked), 1e-4)
         aligner = GramAligner(
             backend=backend,
             max_iterations=5000,

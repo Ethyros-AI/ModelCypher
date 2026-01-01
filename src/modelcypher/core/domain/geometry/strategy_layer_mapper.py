@@ -24,8 +24,11 @@ how they measure this invariant structure.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.geometry.invariant_layer_mapper import (
@@ -377,8 +380,12 @@ class StrategyLayerMapper:
         crm_cfg = config.crm_config or CRMMappingConfig()
         mappings: list[LayerMapping] = []
 
-        # Greedy assignment: for each source, find best available target
+        # Greedy assignment: for each source, find best available target.
+        # INVARIANT GEOMETRY: All CKAs should be 1.0 (0.9999 = machine epsilon).
+        # We use greedy matching to establish correspondence, but all matches
+        # should have perfect CKA. If not, something is wrong with the algorithm.
         used_targets: set[int] = set()
+        imperfect_mappings: list[tuple[int, int, float]] = []
 
         for i, src_layer in enumerate(source_layers):
             best_j = -1
@@ -397,6 +404,10 @@ class StrategyLayerMapper:
 
                 is_skipped = best_cka < crm_cfg.min_cka_score
 
+                # Track imperfect mappings for diagnostic warning
+                if best_cka < 0.9999:
+                    imperfect_mappings.append((src_layer, tgt_layer, best_cka))
+
                 mappings.append(
                     LayerMapping(
                         source_layer=src_layer,
@@ -405,6 +416,16 @@ class StrategyLayerMapper:
                         is_skipped=is_skipped,
                     )
                 )
+
+        # INVARIANT GEOMETRY: Warn if any mappings are imperfect.
+        # This indicates an algorithm bug, not model incompatibility.
+        if imperfect_mappings:
+            logger.warning(
+                "CRM layer mapping has %d imperfect CKA scores (< 0.9999). "
+                "This indicates an alignment algorithm bug. Sample failures: %s",
+                len(imperfect_mappings),
+                imperfect_mappings[:3],
+            )
 
         return mappings
 
