@@ -118,9 +118,6 @@ class UnifiedGeometricMerger:
         use_full_geometry: bool = True,
         knowledge_delta_mask_path: str | None = None,
         transplant_domains: list[str] | None = None,
-        transplant_layers: list[int] | None = None,
-        transplant_boundary_k: int | None = None,
-        transplant_geodesic_k_neighbors: int | None = None,
         target_weights: dict[str, "Array"] | None = None,
         config: "UnifiedMergeConfig | None" = None,
     ) -> UnifiedMergeResult:
@@ -137,9 +134,6 @@ class UnifiedGeometricMerger:
             use_full_geometry=use_full_geometry,
             knowledge_delta_mask_path=knowledge_delta_mask_path,
             transplant_domains=transplant_domains,
-            transplant_layers=transplant_layers,
-            transplant_boundary_k=transplant_boundary_k,
-            transplant_geodesic_k_neighbors=transplant_geodesic_k_neighbors,
             target_weights=target_weights,
             config=config,
         )
@@ -209,6 +203,7 @@ class UnifiedGeometricMerger:
         probe_domains: list[str] | None,
         source_activations: dict | None,
         target_activations: dict | None,
+        graft_mask: dict[str, dict[int, bool]],
         config: UnifiedMergeConfig,
     ) -> tuple[dict[str, "Array"], dict[str, Any]]:
         return merge_stages.stage_transplant(
@@ -222,6 +217,7 @@ class UnifiedGeometricMerger:
             config=config,
             extract_layer_index_fn=merge_helpers.extract_layer_index,
             backend=self._backend,
+            graft_mask=graft_mask,
         )
 
     def _load_tokenizer(self, model_path: str) -> Any | None:

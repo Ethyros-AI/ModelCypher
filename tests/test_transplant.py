@@ -31,7 +31,6 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.constrained_transplant import (
     verify_boundary_invariance,
 )
-from modelcypher.core.domain.geometry.null_space_filter import NullSpaceFilterConfig
 from modelcypher.core.domain.geometry.transplant import (
     CoreBoundaryPartition,
     TransplantDeltaResult,
@@ -146,15 +145,13 @@ class TestComputeTransplantDelta:
         activations_boundary = backend.random_normal((n_boundary, in_dim))
         backend.eval(weight_target, weight_source, activations_core, activations_boundary)
 
-        # Compute transplant
-        config = NullSpaceFilterConfig(rank_threshold=1e-6)
+        # Compute transplant - null space params derived from spectral properties
         result = compute_transplant_delta(
             weight_target=weight_target,
             weight_source_aligned=weight_source,
             activations_core=activations_core,
             activations_boundary=activations_boundary,
             backend=backend,
-            nullspace_config=config,
         )
 
         assert result.applied is True
@@ -189,15 +186,13 @@ class TestComputeTransplantDelta:
         activations_boundary = backend.random_normal((n_boundary, in_dim))
         backend.eval(weight_target, weight_source, activations_core, activations_boundary)
 
-        # Use explicit rank_threshold for deterministic null-space detection
-        config = NullSpaceFilterConfig(rank_threshold=1e-6)
+        # Null-space params derived from spectral properties - no config needed
         result = compute_transplant_delta(
             weight_target=weight_target,
             weight_source_aligned=weight_source,
             activations_core=activations_core,
             activations_boundary=activations_boundary,
             backend=backend,
-            nullspace_config=config,
         )
 
         metrics = verify_boundary_invariance(
@@ -382,14 +377,13 @@ def test_stage_transplant_requires_real_activations() -> None:
         activations_boundary = backend.random_normal((10, in_dim))
         backend.eval(weight_target, weight_source, activations_core, activations_boundary)
 
-        config = NullSpaceFilterConfig(rank_threshold=1e-6)
+        # Null-space params derived from spectral properties - no config needed
         result = compute_transplant_delta(
             weight_target=weight_target,
             weight_source_aligned=weight_source,
             activations_core=activations_core,
             activations_boundary=activations_boundary,
             backend=backend,
-            nullspace_config=config,
         )
 
         assert result.applied is True
@@ -440,14 +434,13 @@ class TestTransplantEndToEnd:
         activations_boundary = backend.random_normal((n_boundary, in_dim))
         backend.eval(weight_target, weight_source, activations_core, activations_boundary)
 
-        config = NullSpaceFilterConfig(rank_threshold=1e-6)
+        # Null-space params derived from spectral properties - no config needed
         result = compute_transplant_delta(
             weight_target=weight_target,
             weight_source_aligned=weight_source,
             activations_core=activations_core,
             activations_boundary=activations_boundary,
             backend=backend,
-            nullspace_config=config,
         )
 
         assert result.applied is True
@@ -473,14 +466,13 @@ class TestTransplantEndToEnd:
         activations_boundary = backend.random_normal((n_boundary, in_dim))
         backend.eval(weight_target, weight_source, activations_core, activations_boundary)
 
-        config = NullSpaceFilterConfig(rank_threshold=1e-6)
+        # Null-space params derived from spectral properties - no config needed
         result = compute_transplant_delta(
             weight_target=weight_target,
             weight_source_aligned=weight_source,
             activations_core=activations_core,
             activations_boundary=activations_boundary,
             backend=backend,
-            nullspace_config=config,
         )
 
         assert result.applied is True

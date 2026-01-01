@@ -47,9 +47,6 @@ def register(app: typer.Typer) -> None:
             None, "--domain", "-d", help="Filter by atlas domain (repeatable)"
         ),
         max_probes: int = typer.Option(0, "--max-probes", help="Limit probes (0 = all)"),
-        k_neighbors: int = typer.Option(
-            10, "--k-neighbors", help="k for geodesic distance graph"
-        ),
         output_path: str | None = typer.Option(
             None, "--output-path", "-o", help="Save results to JSON file"
         ),
@@ -60,14 +57,13 @@ def register(app: typer.Typer) -> None:
         but target is sparse. Positive opportunity scores indicate concepts
         where grafting would add value.
 
-        Output includes ranked list of graft opportunities and concepts
-        that should NOT be grafted (target already knows).
+        Output includes ranked list of graft opportunities and the most
+        negative opportunities (target already denser).
         """
         context = get_context(ctx)
 
         from modelcypher.core.domain.geometry.knowledge_density import (
             KnowledgeDensityAnalyzer,
-            KnowledgeDensityConfig,
             ModelDensityProfile,
         )
         from modelcypher.core.domain.geometry.knowledge_diff import KnowledgeDiffer
@@ -75,13 +71,13 @@ def register(app: typer.Typer) -> None:
         # Load source model
         logger.info("Loading source model: %s", source_path)
         _, _, source_backend, source_provider, source_num_layers = load_model_and_provider(
-            source_path, k_neighbors
+            source_path
         )
 
         # Load target model
         logger.info("Loading target model: %s", target_path)
         _, _, target_backend, target_provider, target_num_layers = load_model_and_provider(
-            target_path, k_neighbors
+            target_path
         )
 
         # Resolve layers to analyze
@@ -107,13 +103,11 @@ def register(app: typer.Typer) -> None:
         if max_probes > 0 and max_probes < len(probes):
             probes = probes[:max_probes]
 
-        config = KnowledgeDensityConfig()
-
         # Analyze source model
         logger.info("Analyzing source model density...")
         source_analyzer = KnowledgeDensityAnalyzer(backend=source_backend)
         source_profile = source_analyzer.analyze_model(
-            probes, source_provider, resolved_layers, config
+            probes, source_provider, resolved_layers
         )
         source_profile = ModelDensityProfile(
             model_path=source_path,
@@ -121,15 +115,13 @@ def register(app: typer.Typer) -> None:
             layer_profiles=source_profile.layer_profiles,
             domain_densities=source_profile.domain_densities,
             overall_density=source_profile.overall_density,
-            sparse_concepts=source_profile.sparse_concepts,
-            dense_concepts=source_profile.dense_concepts,
         )
 
         # Analyze target model
         logger.info("Analyzing target model density...")
         target_analyzer = KnowledgeDensityAnalyzer(backend=target_backend)
         target_profile = target_analyzer.analyze_model(
-            probes, target_provider, resolved_layers, config
+            probes, target_provider, resolved_layers
         )
         target_profile = ModelDensityProfile(
             model_path=target_path,
@@ -137,8 +129,6 @@ def register(app: typer.Typer) -> None:
             layer_profiles=target_profile.layer_profiles,
             domain_densities=target_profile.domain_densities,
             overall_density=target_profile.overall_density,
-            sparse_concepts=target_profile.sparse_concepts,
-            dense_concepts=target_profile.dense_concepts,
         )
 
         # Compute knowledge diff
@@ -156,8 +146,8 @@ def register(app: typer.Typer) -> None:
             "overallSourceDensity": diff.overall_source_density,
             "overallTargetDensity": diff.overall_target_density,
             "overallOpportunity": diff.overall_opportunity,
-            "highOpportunityCount": diff.high_opportunity_count,
-            "noGraftCount": diff.no_graft_count,
+            "positiveOpportunityCount": diff.positive_opportunity_count,
+            "nonpositiveOpportunityCount": diff.nonpositive_opportunity_count,
             "domainDiffs": [
                 {
                     "domain": dd.domain,
@@ -165,7 +155,7 @@ def register(app: typer.Typer) -> None:
                     "meanTargetDensity": dd.mean_target_density,
                     "meanOpportunity": dd.mean_opportunity,
                     "conceptCount": dd.concept_count,
-                    "highOpportunityCount": dd.high_opportunity_count,
+                    "positiveOpportunityCount": dd.positive_opportunity_count,
                 }
                 for dd in diff.domain_diffs.values()
             ],
@@ -178,11 +168,10 @@ def register(app: typer.Typer) -> None:
                     "sourceDensity": o.source_density,
                     "targetDensity": o.target_density,
                     "opportunityScore": o.opportunity_score,
-                    "classification": o.classification,
                 }
                 for o in diff.ranked_opportunities[:50]
             ],
-            "noGraftConcepts": [
+            "mostNegativeOpportunities": [
                 {
                     "probeID": o.probe_id,
                     "name": o.name,
@@ -190,7 +179,10 @@ def register(app: typer.Typer) -> None:
                     "layer": o.layer,
                     "opportunityScore": o.opportunity_score,
                 }
-                for o in diff.no_graft_concepts[:20]
+                for o in sorted(
+                    (opp for opp in diff.ranked_opportunities if opp.opportunity_score <= 0.0),
+                    key=lambda x: x.opportunity_score,
+                )[:20]
             ],
         }
 
@@ -210,8 +202,8 @@ def register(app: typer.Typer) -> None:
                 f"Overall target density: {diff.overall_target_density:.3f}",
                 f"Overall opportunity: {diff.overall_opportunity:.3f}",
                 "",
-                f"High graft opportunities: {diff.high_opportunity_count}",
-                f"Do not graft (target dense): {diff.no_graft_count}",
+                f"Positive opportunities: {diff.positive_opportunity_count}",
+                f"Non-positive opportunities: {diff.nonpositive_opportunity_count}",
                 "",
                 "Domain Summary:",
             ]
@@ -232,8 +224,11 @@ def register(app: typer.Typer) -> None:
                 )
 
             lines.append("")
-            lines.append("Top 5 No-Graft Concepts (target already knows):")
-            for o in diff.no_graft_concepts[:5]:
+            lines.append("Top 5 Most Negative Opportunities (target already denser):")
+            for o in sorted(
+                (opp for opp in diff.ranked_opportunities if opp.opportunity_score <= 0.0),
+                key=lambda x: x.opportunity_score,
+            )[:5]:
                 lines.append(
                     f"  [{o.domain}] {o.name} L{o.layer}: score={o.opportunity_score:.3f}"
                 )

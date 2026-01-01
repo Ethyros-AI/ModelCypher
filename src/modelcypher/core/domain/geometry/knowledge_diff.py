@@ -37,7 +37,6 @@ Negative values indicate concepts where:
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -48,8 +47,6 @@ from modelcypher.core.domain.geometry.knowledge_density import (
 
 if TYPE_CHECKING:
     pass
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -70,9 +67,6 @@ class GraftOpportunity:
     # Negative = target already knows, don't touch
     opportunity_score: float
 
-    # Classification
-    classification: str  # "high_opportunity", "low_opportunity", "no_graft"
-
 
 @dataclass(frozen=True)
 class LayerDiff:
@@ -85,11 +79,8 @@ class LayerDiff:
 
     # Aggregates
     mean_opportunity: float
-    high_opportunity_count: int
-    no_graft_count: int
-
-    # Threshold used for classification (derived from data)
-    opportunity_threshold: float
+    positive_opportunity_count: int
+    nonpositive_opportunity_count: int
 
 
 @dataclass(frozen=True)
@@ -101,7 +92,7 @@ class DomainDiff:
     mean_target_density: float
     mean_opportunity: float
     concept_count: int
-    high_opportunity_count: int
+    positive_opportunity_count: int
 
 
 @dataclass(frozen=True)
@@ -125,13 +116,10 @@ class KnowledgeDiff:
     # Ranked list of graft opportunities (highest first)
     ranked_opportunities: list[GraftOpportunity]
 
-    # Concepts that should NOT be grafted (target already dense)
-    no_graft_concepts: list[GraftOpportunity]
-
     # Summary
     total_concepts: int
-    high_opportunity_count: int
-    no_graft_count: int
+    positive_opportunity_count: int
+    nonpositive_opportunity_count: int
 
 
 class KnowledgeDiffer:
@@ -188,54 +176,26 @@ class KnowledgeDiffer:
                     source_density=source_concept.density_score,
                     target_density=target_concept.density_score,
                     opportunity_score=opportunity_score,
-                    classification="pending",  # Will be set after threshold
-                )
-            )
-
-        # Compute threshold from data
-        opportunity_threshold = self._compute_threshold(all_opportunities)
-
-        # Classify opportunities
-        classified: list[GraftOpportunity] = []
-        for opp in all_opportunities:
-            if opp.opportunity_score > opportunity_threshold:
-                classification = "high_opportunity"
-            elif opp.opportunity_score < -opportunity_threshold:
-                classification = "no_graft"
-            else:
-                classification = "low_opportunity"
-
-            classified.append(
-                GraftOpportunity(
-                    probe_id=opp.probe_id,
-                    name=opp.name,
-                    domain=opp.domain,
-                    layer=opp.layer,
-                    source_density=opp.source_density,
-                    target_density=opp.target_density,
-                    opportunity_score=opp.opportunity_score,
-                    classification=classification,
                 )
             )
 
         # Group by layer
-        layer_diffs = self._group_by_layer(classified, opportunity_threshold)
+        layer_diffs = self._group_by_layer(all_opportunities)
 
         # Group by domain
-        domain_diffs = self._group_by_domain(classified)
+        domain_diffs = self._group_by_domain(all_opportunities)
 
         # Rank opportunities (highest first)
-        ranked = sorted(classified, key=lambda x: x.opportunity_score, reverse=True)
+        ranked = sorted(all_opportunities, key=lambda x: x.opportunity_score, reverse=True)
 
-        # Separate no-graft concepts
-        no_graft = [c for c in classified if c.classification == "no_graft"]
-        high_opportunity = [c for c in classified if c.classification == "high_opportunity"]
+        positive = [c for c in all_opportunities if c.opportunity_score > 0.0]
+        nonpositive = [c for c in all_opportunities if c.opportunity_score <= 0.0]
 
         # Global statistics
-        if classified:
-            overall_source = sum(c.source_density for c in classified) / len(classified)
-            overall_target = sum(c.target_density for c in classified) / len(classified)
-            overall_opp = sum(c.opportunity_score for c in classified) / len(classified)
+        if all_opportunities:
+            overall_source = sum(c.source_density for c in all_opportunities) / len(all_opportunities)
+            overall_target = sum(c.target_density for c in all_opportunities) / len(all_opportunities)
+            overall_opp = sum(c.opportunity_score for c in all_opportunities) / len(all_opportunities)
         else:
             overall_source = 0.0
             overall_target = 0.0
@@ -250,34 +210,14 @@ class KnowledgeDiffer:
             overall_target_density=overall_target,
             overall_opportunity=overall_opp,
             ranked_opportunities=ranked,
-            no_graft_concepts=no_graft,
-            total_concepts=len(classified),
-            high_opportunity_count=len(high_opportunity),
-            no_graft_count=len(no_graft),
+            total_concepts=len(all_opportunities),
+            positive_opportunity_count=len(positive),
+            nonpositive_opportunity_count=len(nonpositive),
         )
-
-    def _compute_threshold(self, opportunities: list[GraftOpportunity]) -> float:
-        """Compute opportunity threshold from data.
-
-        Uses standard deviation as threshold - concepts more than 1 stdev
-        from mean opportunity are classified as high/no-graft.
-        """
-        if not opportunities:
-            return 0.1
-
-        scores = [o.opportunity_score for o in opportunities]
-        mean = sum(scores) / len(scores)
-        variance = sum((s - mean) ** 2 for s in scores) / len(scores)
-        stdev = variance ** 0.5
-
-        # Threshold is 0.5 stdev from zero (not from mean)
-        # This ensures small differences don't trigger grafting
-        return max(0.05, stdev * 0.5)
 
     def _group_by_layer(
         self,
         opportunities: list[GraftOpportunity],
-        threshold: float,
     ) -> dict[int, LayerDiff]:
         """Group opportunities by layer."""
         by_layer: dict[int, list[GraftOpportunity]] = {}
@@ -290,16 +230,15 @@ class KnowledgeDiffer:
         result: dict[int, LayerDiff] = {}
         for layer, opps in by_layer.items():
             mean_opp = sum(o.opportunity_score for o in opps) / len(opps) if opps else 0.0
-            high_count = sum(1 for o in opps if o.classification == "high_opportunity")
-            no_graft_count = sum(1 for o in opps if o.classification == "no_graft")
+            positive_count = sum(1 for o in opps if o.opportunity_score > 0.0)
+            nonpositive_count = len(opps) - positive_count
 
             result[layer] = LayerDiff(
                 layer=layer,
                 opportunities=opps,
                 mean_opportunity=mean_opp,
-                high_opportunity_count=high_count,
-                no_graft_count=no_graft_count,
-                opportunity_threshold=threshold,
+                positive_opportunity_count=positive_count,
+                nonpositive_opportunity_count=nonpositive_count,
             )
 
         return result
@@ -322,7 +261,7 @@ class KnowledgeDiffer:
             mean_source = sum(o.source_density for o in opps) / n if n else 0.0
             mean_target = sum(o.target_density for o in opps) / n if n else 0.0
             mean_opp = sum(o.opportunity_score for o in opps) / n if n else 0.0
-            high_count = sum(1 for o in opps if o.classification == "high_opportunity")
+            positive_count = sum(1 for o in opps if o.opportunity_score > 0.0)
 
             result[domain] = DomainDiff(
                 domain=domain,
@@ -330,36 +269,20 @@ class KnowledgeDiffer:
                 mean_target_density=mean_target,
                 mean_opportunity=mean_opp,
                 concept_count=n,
-                high_opportunity_count=high_count,
+                positive_opportunity_count=positive_count,
             )
 
         return result
 
 
-def compute_graft_mask(
-    diff: KnowledgeDiff,
-    include_low_opportunity: bool = False,
-) -> dict[str, dict[int, bool]]:
-    """Compute a graft mask indicating which concepts to graft.
-
-    Args:
-        diff: Knowledge diff between source and target.
-        include_low_opportunity: If True, include low-opportunity concepts.
-
-    Returns:
-        Dict mapping probe_id -> layer -> should_graft.
-    """
+def compute_graft_mask(diff: KnowledgeDiff) -> dict[str, dict[int, bool]]:
+    """Compute a graft mask indicating which concepts to graft."""
     mask: dict[str, dict[int, bool]] = {}
 
     for opp in diff.ranked_opportunities:
         if opp.probe_id not in mask:
             mask[opp.probe_id] = {}
-
-        should_graft = opp.classification == "high_opportunity"
-        if include_low_opportunity:
-            should_graft = should_graft or opp.classification == "low_opportunity"
-
-        mask[opp.probe_id][opp.layer] = should_graft
+        mask[opp.probe_id][opp.layer] = opp.opportunity_score > 0.0
 
     return mask
 

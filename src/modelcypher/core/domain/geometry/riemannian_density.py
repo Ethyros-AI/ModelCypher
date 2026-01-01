@@ -62,20 +62,23 @@ class InfluenceType(str, Enum):
 
 @dataclass(frozen=True)
 class RiemannianDensityConfig:
-    """Configuration for Riemannian density estimation."""
+    """Configuration for Riemannian density estimation.
+
+    All parameters are derived from observed data geometry.
+    Membership is determined by geodesic_radius (data-derived).
+    """
 
     # Influence function type
     influence_type: InfluenceType = InfluenceType.GAUSSIAN
     # Degrees of freedom for Student-t (ignored for other types)
     student_t_df: float = 3.0
-    # Regularization for covariance estimation
+    # Regularization for covariance estimation (numerical precision floor)
     covariance_regularization: float = 1e-6
     # Whether to use curvature correction for covariance
     use_curvature_correction: bool = True
     # Number of neighbors for local density estimation
-    k_neighbors: int = 20
-    # Threshold for considering activations as part of concept volume
-    membership_threshold: float = 0.05
+    # None = derive from sqrt(n) scaling
+    k_neighbors: int | None = None
     # Curvature estimation config
     curvature_config: CurvatureConfig = field(default_factory=CurvatureConfig)
 
@@ -350,17 +353,21 @@ class ConceptVolume:
 
         return float(geo_dist_np[0, 1])
 
-    def contains(self, point: "Array", threshold: float = 0.05) -> bool:
+    def contains(self, point: "Array") -> bool:
         """Check if point is within concept volume.
+
+        Uses geodesic radius criterion: point is inside if its geodesic
+        distance from centroid is within the volume's extent. The geodesic
+        radius is derived from the data during volume estimation.
 
         Args:
             point: Point to check
-            threshold: Density threshold for membership
 
         Returns:
-            True if density at point exceeds threshold
+            True if point is within volume
         """
-        return self.density_at(point) >= threshold
+        dist = self.geodesic_distance_to(point)
+        return dist <= self.geodesic_radius
 
     def mahalanobis_distance_batch(self, points: "Array") -> "Array":
         """Compute Mahalanobis distance from centroid to multiple points.
@@ -514,19 +521,22 @@ class ConceptVolume:
         backend.eval(densities)
         return densities
 
-    def contains_batch(self, points: "Array", threshold: float = 0.05) -> "Array":
+    def contains_batch(self, points: "Array") -> "Array":
         """Check if multiple points are within concept volume (vectorized).
+
+        Uses Mahalanobis distance criterion: points within geodesic_radius
+        of centroid are inside. The geodesic_radius is derived from the
+        data during volume estimation.
 
         Args:
             points: Array of points (n x d)
-            threshold: Density threshold for membership
 
         Returns:
             Boolean array indicating membership (n,)
         """
         backend = get_default_backend()
-        densities = self.density_at_batch(points)
-        result = densities >= threshold
+        mahal_dist = self.mahalanobis_distance_batch(points)
+        result = mahal_dist <= self.geodesic_radius
         backend.eval(result)
         return result
 
@@ -625,7 +635,17 @@ class RiemannianDensityEstimator:
 
         # Compute geodesic context for proper log map in density_at
         # This k-NN graph is reused for all density computations
-        k_neighbors = min(max(3, n // 3), n - 1) if n > 1 else 1
+        # k is derived from config if provided, otherwise from data:
+        # - Minimum 3 neighbors for stable local structure
+        # - Maximum n-1 (all other points)
+        # - Scale with sqrt(n) to balance connectivity vs locality
+        if self.config.k_neighbors is not None:
+            k_neighbors = min(self.config.k_neighbors, n - 1) if n > 1 else 1
+        else:
+            # sqrt(n) scaling: balances graph connectivity with local structure
+            # For n=100, k≈10; for n=1000, k≈32; for n=10000, k≈100
+            import math
+            k_neighbors = min(max(3, int(math.sqrt(n))), n - 1) if n > 1 else 1
         geodesic_context = rg.geodesic_distances(activations, k_neighbors=k_neighbors)
 
         # Estimate local curvature at centroid
@@ -1084,9 +1104,9 @@ class RiemannianDensityEstimator:
         samples_b = sample_mvn(volume_b.centroid, volume_b.covariance, n_samples)
 
         # Count samples using vectorized batch operations (GPU-accelerated)
-        threshold = self.config.membership_threshold
-        a_in_b_mask = volume_b.contains_batch(samples_a, threshold)
-        b_in_a_mask = volume_a.contains_batch(samples_b, threshold)
+        # Membership uses geodesic_radius - derived from each volume's data
+        a_in_b_mask = volume_b.contains_batch(samples_a)
+        b_in_a_mask = volume_a.contains_batch(samples_b)
 
         # Sum boolean masks to get counts
         a_in_b_sum = backend.sum(backend.astype(a_in_b_mask, "float32"))

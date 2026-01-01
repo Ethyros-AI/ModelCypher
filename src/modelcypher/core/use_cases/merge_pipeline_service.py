@@ -142,9 +142,6 @@ class MergePipelineService:
         output_dir: str,
         transplant_domains: list[str],
         *,
-        transplant_layers: list[int] | None = None,
-        transplant_boundary_k: int | None = None,
-        transplant_geodesic_k: int | None = None,
         knowledge_delta_mask_path: str | None = None,
         skip_pre_analysis: bool = False,
         verify_predictions: bool = True,
@@ -156,9 +153,6 @@ class MergePipelineService:
             target_path: Path to target model
             output_dir: Output directory for merged model
             transplant_domains: Domains to transplant (e.g., ["mathematical", "logical"])
-            transplant_layers: Specific layers to transplant (None = all)
-            transplant_boundary_k: Boundary neighbors per core probe
-            transplant_geodesic_k: k for geodesic graph construction
             knowledge_delta_mask_path: Path to knowledge delta mask JSON
             skip_pre_analysis: Skip pre-merge interference analysis
             verify_predictions: Enable prediction verification
@@ -204,9 +198,6 @@ class MergePipelineService:
             target_path=target_path,
             output_dir=output_dir,
             transplant_domains=transplant_domains,
-            transplant_layers=transplant_layers,
-            transplant_boundary_k=transplant_boundary_k,
-            transplant_geodesic_k=transplant_geodesic_k,
             knowledge_delta_mask_path=knowledge_delta_mask_path,
         )
         merge_duration = time.time() - merge_start
@@ -402,9 +393,6 @@ class MergePipelineService:
         target_path: str,
         output_dir: str,
         transplant_domains: list[str],
-        transplant_layers: list[int] | None,
-        transplant_boundary_k: int | None,
-        transplant_geodesic_k: int | None,
         knowledge_delta_mask_path: str | None,
     ) -> "UnifiedMergeResult":
         """Execute the geometric merge."""
@@ -417,9 +405,6 @@ class MergePipelineService:
             output_dir=output_dir,
             knowledge_delta_mask_path=knowledge_delta_mask_path,
             transplant_domains=transplant_domains,
-            transplant_layers=transplant_layers,
-            transplant_boundary_k=transplant_boundary_k,
-            transplant_geodesic_k_neighbors=transplant_geodesic_k,
         )
 
     def _extract_post_merge_validation(

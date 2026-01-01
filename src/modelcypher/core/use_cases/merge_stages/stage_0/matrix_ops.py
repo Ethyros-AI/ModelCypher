@@ -19,7 +19,10 @@ from __future__ import annotations
 
 import logging
 
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    regularization_epsilon,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +100,8 @@ def _solve_feature_transform_exact(
     if n == 0:
         return None
 
-    eps = max(machine_epsilon(backend, source_matrix), 1e-12)
+    # Dtype-derived epsilon for numerical stability
+    eps = regularization_epsilon(backend, source_matrix)
 
     # Try QR-based solve first (fast for full-rank, well-conditioned cases)
     F_qr, diag = solve_full_row_rank_via_qr(backend, source_matrix, target_matrix)

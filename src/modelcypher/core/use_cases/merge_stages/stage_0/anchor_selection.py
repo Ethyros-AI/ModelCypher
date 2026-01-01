@@ -18,7 +18,10 @@
 from __future__ import annotations
 
 from modelcypher.core.domain.geometry.alignment_diagnostic import AlignmentSignal
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    regularization_epsilon,
+)
 
 from .matrix_ops import _dynamic_condition_threshold, _matrix_rank_for_alignment
 
@@ -129,7 +132,8 @@ def _select_full_rank_indices(
     norm_list = backend.to_numpy(norms).tolist()
     ranked = sorted(range(n), key=lambda idx: norm_list[idx], reverse=True)
 
-    eps = max(machine_epsilon(backend, points), 1e-12)
+    # Dtype-derived epsilon for rank-deficiency detection
+    eps = regularization_epsilon(backend, points)
     selected: list[int] = []
     basis: list["object"] = []
 
@@ -196,7 +200,8 @@ def _select_shared_full_rank_indices(
     norm_list = backend.to_numpy(norms).tolist()
     ranked = sorted(range(n), key=lambda idx: norm_list[idx], reverse=True)
 
-    eps = max(machine_epsilon(backend, combined) * 1e3, 1e-4)
+    # Dtype-derived epsilon for rank-deficiency detection
+    eps = division_epsilon(backend, combined)
 
     def _orthonormalize(
         vec: "object",

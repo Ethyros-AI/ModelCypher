@@ -37,7 +37,10 @@ from modelcypher.core.domain.geometry.alignment_diagnostic import (
     AlignmentSignal,
     alignment_signal_from_matrices,
 )
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
 
 from .anchor_selection import (
     _balanced_anchor_subset,
@@ -1211,7 +1214,9 @@ def _apply_alignment_correction(
         mean = backend.mean(embedding, axis=0, keepdims=True)
         centered = embedding - mean
         norms = backend.norm(centered, axis=1, keepdims=True)
-        normalized = centered / (norms + 1e-12)
+        # Dtype-derived epsilon for normalization
+        eps = division_epsilon(backend, centered)
+        normalized = centered / (norms + eps)
         backend.eval(normalized)
         return normalized
 

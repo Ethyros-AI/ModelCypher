@@ -34,8 +34,6 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.knowledge_density import (
     ConceptDensity,
-    KnowledgeDensityAnalyzer,
-    KnowledgeDensityConfig,
     LayerDensityProfile,
     ModelDensityProfile,
 )
@@ -44,26 +42,12 @@ from modelcypher.core.domain.geometry.knowledge_diff import (
     KnowledgeDiffer,
     compute_graft_mask,
 )
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class DensityStageConfig:
-    """Configuration for density analysis stage."""
-
-    # Knowledge density analysis config
-    density_config: KnowledgeDensityConfig | None = None
-
-    # Include low-opportunity concepts in graft mask (default: only high)
-    include_low_opportunity: bool = False
-
-    # Skip density analysis (for backward compatibility)
-    # When True, returns an empty graft_mask (all concepts grafted)
-    skip_density_analysis: bool = False
 
 
 @dataclass
@@ -137,7 +121,6 @@ def stage_density(
     probe_ids: list[str],
     probe_domains: list[str],
     layers: list[int],
-    config: DensityStageConfig | None = None,
     backend: "Backend | None" = None,
 ) -> DensityStageResult:
     """Stage 2: Compute knowledge density profiles and graft mask.
@@ -155,47 +138,21 @@ def stage_density(
         DensityStageResult with profiles, diff, and graft mask.
     """
     b = backend or get_default_backend()
-    cfg = config or DensityStageConfig()
 
     # Metrics to track
     metrics: dict[str, float | int] = {
         "layers_analyzed": 0,
         "concepts_analyzed": 0,
-        "high_opportunity_count": 0,
-        "no_graft_count": 0,
+        "positive_opportunity_count": 0,
+        "nonpositive_opportunity_count": 0,
     }
-
-    # Skip density analysis if configured (backward compatible)
-    if cfg.skip_density_analysis:
-        logger.info("DENSITY: Skipping density analysis (all concepts will be grafted)")
-        return DensityStageResult(
-            source_profile=None,
-            target_profile=None,
-            knowledge_diff=None,
-            graft_mask=None,  # None = graft all
-            metrics=metrics,
-        )
 
     # Validate inputs
     if not source_activations or not target_activations:
-        logger.warning("DENSITY: Missing activations, skipping density analysis")
-        return DensityStageResult(
-            source_profile=None,
-            target_profile=None,
-            knowledge_diff=None,
-            graft_mask=None,
-            metrics=metrics,
-        )
+        raise RuntimeError("DENSITY: Missing activations for density analysis")
 
     if not probe_ids or len(probe_ids) != len(probe_domains):
-        logger.warning("DENSITY: Probe metadata mismatch, skipping density analysis")
-        return DensityStageResult(
-            source_profile=None,
-            target_profile=None,
-            knowledge_diff=None,
-            graft_mask=None,
-            metrics=metrics,
-        )
+        raise RuntimeError("DENSITY: Probe metadata mismatch")
 
     logger.info(
         "DENSITY: Analyzing %d layers, %d probes for graft opportunities",
@@ -226,16 +183,13 @@ def stage_density(
     knowledge_diff = differ.diff(source_profile, target_profile)
 
     # Compute graft mask
-    graft_mask = compute_graft_mask(
-        knowledge_diff,
-        include_low_opportunity=cfg.include_low_opportunity,
-    )
+    graft_mask = compute_graft_mask(knowledge_diff)
 
     # Update metrics
     metrics["layers_analyzed"] = len(layers)
     metrics["concepts_analyzed"] = knowledge_diff.total_concepts
-    metrics["high_opportunity_count"] = knowledge_diff.high_opportunity_count
-    metrics["no_graft_count"] = knowledge_diff.no_graft_count
+    metrics["positive_opportunity_count"] = knowledge_diff.positive_opportunity_count
+    metrics["nonpositive_opportunity_count"] = knowledge_diff.nonpositive_opportunity_count
     metrics["overall_source_density"] = knowledge_diff.overall_source_density
     metrics["overall_target_density"] = knowledge_diff.overall_target_density
     metrics["overall_opportunity"] = knowledge_diff.overall_opportunity
@@ -243,8 +197,8 @@ def stage_density(
     logger.info(
         "DENSITY: %d concepts analyzed, %d high opportunity (will graft), %d no graft (target dense)",
         knowledge_diff.total_concepts,
-        knowledge_diff.high_opportunity_count,
-        knowledge_diff.no_graft_count,
+        knowledge_diff.positive_opportunity_count,
+        knowledge_diff.nonpositive_opportunity_count,
     )
 
     return DensityStageResult(
@@ -265,9 +219,9 @@ def _build_density_profile_from_activations(
 ) -> ModelDensityProfile:
     """Build a density profile from pre-collected activations.
 
-    Uses intrinsic dimension as the density signal:
-    - Low intrinsic dimension = dense representation (well-learned)
-    - High intrinsic dimension = sparse representation (gap in knowledge)
+    Uses per-probe local intrinsic dimension as the density signal:
+    - Lower intrinsic dimension = denser representation (well-learned)
+    - Higher intrinsic dimension = sparser representation (gap in knowledge)
     """
     from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
 
@@ -280,7 +234,39 @@ def _build_density_profile_from_activations(
     for layer_idx in layers:
         act_list = activations.get(layer_idx, [])
         if not act_list:
-            continue
+            raise RuntimeError(f"DENSITY: Missing activations for layer {layer_idx}")
+        if len(act_list) < 4:
+            raise RuntimeError(
+                f"DENSITY: Need at least 4 probes for local dimension at layer {layer_idx}"
+            )
+
+        act_vectors = []
+        for act in act_list:
+            act_arr = b.array(act)
+            b.eval(act_arr)
+            if len(act_arr.shape) != 1:
+                raise RuntimeError(
+                    f"DENSITY: Expected 1D activation vector, got shape {act_arr.shape}"
+                )
+            act_vectors.append(act_arr)
+
+        act_matrix = b.stack(act_vectors, axis=0)
+        b.eval(act_matrix)
+
+        local_map = id_estimator.local_dimension_map(
+            act_matrix, k=None, deficiency_threshold=None
+        )
+        dims_np = b.to_numpy(local_map.dimensions)
+
+        # Precompute mean cosine similarity per probe (cluster tightness)
+        norms = b.norm(act_matrix, axis=1, keepdims=True)
+        b.eval(norms)
+        eps = float(machine_epsilon(b, act_matrix))
+        normed = act_matrix / b.maximum(norms, b.full(norms.shape, eps))
+        b.eval(normed)
+        sim_matrix = b.matmul(normed, b.transpose(normed))
+        b.eval(sim_matrix)
+        sim_np = b.to_numpy(sim_matrix)
 
         concept_densities: list[ConceptDensity] = []
 
@@ -291,29 +277,23 @@ def _build_density_profile_from_activations(
             probe_id = probe_ids[i]
             domain = probe_domains[i] if i < len(probe_domains) else "unknown"
 
-            # Compute intrinsic dimension for this activation
-            # Single activation vector - estimate from its variance structure
+            intrinsic_dim = float(dims_np[i])
+            if intrinsic_dim != intrinsic_dim:
+                raise RuntimeError(
+                    f"DENSITY: Local dimension undefined for probe {probe_id} at layer {layer_idx}"
+                )
+            density_score = 1.0 / max(intrinsic_dim, eps)
+
             act_arr = b.array(act)
             b.eval(act_arr)
-
-            if len(act_arr.shape) == 1:
-                act_arr = b.reshape(act_arr, (1, -1))
-                b.eval(act_arr)
-
-            # Use variance as a proxy for intrinsic dimension
-            # Higher variance = less compressed = lower density
             var_arr = b.var(act_arr)
             b.eval(var_arr)
             variance = float(b.to_numpy(var_arr).item())
 
-            # Convert variance to density score (0-1)
-            # Lower variance = higher density
-            # Use sigmoid-like transform: density = 1 / (1 + var)
-            import math
-
-            intrinsic_dim = max(1.0, math.log(1.0 + variance * 1000))
-            density_score = 1.0 / (1.0 + math.log(intrinsic_dim))
-            density_score = max(0.0, min(1.0, density_score))
+            sims = sim_np[i].tolist()
+            if i < len(sims):
+                sims[i] = 0.0
+            cluster_tightness = sum(sims) / float(len(sims) - 1) if len(sims) > 1 else 0.0
 
             concept_densities.append(
                 ConceptDensity(
@@ -324,35 +304,25 @@ def _build_density_profile_from_activations(
                     intrinsic_dimension=intrinsic_dim,
                     density_score=density_score,
                     activation_variance=variance,
-                    cluster_tightness=None,
-                    dimension_class="estimated",
+                    cluster_tightness=cluster_tightness,
+                    dimension_class="local",
                 )
             )
 
-        # Compute layer threshold from data
         if concept_densities:
             scores = sorted(c.density_score for c in concept_densities)
             n = len(scores)
             median = scores[n // 2] if n % 2 == 1 else (scores[n // 2 - 1] + scores[n // 2]) / 2
-            threshold = median
-
-            sparse = [c for c in concept_densities if c.density_score < threshold]
-            dense = [c for c in concept_densities if c.density_score >= threshold]
             mean_density = sum(c.density_score for c in concept_densities) / len(concept_densities)
         else:
-            threshold = 0.5
-            sparse = []
-            dense = []
+            median = 0.0
             mean_density = 0.0
 
         layer_profiles[layer_idx] = LayerDensityProfile(
             layer=layer_idx,
             concept_densities=concept_densities,
             mean_density=mean_density,
-            median_density=threshold,
-            sparse_concept_count=len(sparse),
-            dense_concept_count=len(dense),
-            density_threshold=threshold,
+            median_density=median,
         )
 
         all_concepts.extend(concept_densities)
@@ -373,24 +343,12 @@ def _build_density_profile_from_activations(
     # Overall density
     overall = sum(c.density_score for c in all_concepts) / len(all_concepts) if all_concepts else 0.0
 
-    # Global threshold
-    global_threshold = 0.5
-    if all_concepts:
-        scores = sorted(c.density_score for c in all_concepts)
-        n = len(scores)
-        global_threshold = scores[n // 2] if n % 2 == 1 else (scores[n // 2 - 1] + scores[n // 2]) / 2
-
-    sparse_all = [c for c in all_concepts if c.density_score < global_threshold]
-    dense_all = [c for c in all_concepts if c.density_score >= global_threshold]
-
     return ModelDensityProfile(
         model_path="",  # Set by caller
         layers=layers,
         layer_profiles=layer_profiles,
         domain_densities=domain_means,
         overall_density=overall,
-        sparse_concepts=sparse_all,
-        dense_concepts=dense_all,
     )
 
 
@@ -398,7 +356,7 @@ def filter_core_probes_by_graft_mask(
     core_probe_ids: set[str],
     probe_ids: list[str],
     layer_idx: int,
-    graft_mask: dict[str, dict[int, bool]] | None,
+    graft_mask: dict[str, dict[int, bool]],
 ) -> set[str]:
     """Filter core probe IDs to only include those that should be grafted.
 
@@ -406,15 +364,11 @@ def filter_core_probes_by_graft_mask(
         core_probe_ids: Original set of core probe IDs (from domain selection).
         probe_ids: Full list of probe IDs.
         layer_idx: Current layer being processed.
-        graft_mask: Graft mask from density analysis (None = graft all).
+        graft_mask: Graft mask from density analysis.
 
     Returns:
         Filtered set of probe IDs that should be grafted at this layer.
     """
-    if graft_mask is None:
-        # No mask = graft all (backward compatible)
-        return core_probe_ids
-
     filtered = set()
     for probe_id in core_probe_ids:
         # Check if this (probe_id, layer) should be grafted
@@ -435,7 +389,6 @@ def filter_core_probes_by_graft_mask(
 
 
 __all__ = [
-    "DensityStageConfig",
     "DensityStageResult",
     "stage_density",
     "filter_core_probes_by_graft_mask",

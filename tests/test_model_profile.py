@@ -254,14 +254,12 @@ class TestDensitySummary:
         """Should create DensitySummary with defaults."""
         ds = DensitySummary()
         assert ds.overall_density == 0.0
-        assert ds.sparse_concept_count == 0
+        assert ds.domain_densities == {}
 
     def test_to_dict_and_from_dict(self) -> None:
         """Should roundtrip DensitySummary."""
         original = DensitySummary(
             overall_density=0.75,
-            sparse_concept_count=10,
-            dense_concept_count=50,
             domain_densities={"math": 0.8, "language": 0.7},
         )
         d = original.to_dict()

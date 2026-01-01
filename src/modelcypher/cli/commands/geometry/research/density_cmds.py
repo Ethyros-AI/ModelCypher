@@ -44,32 +44,21 @@ def register(app: typer.Typer) -> None:
             None, "--domain", "-d", help="Filter by atlas domain (repeatable)"
         ),
         max_probes: int = typer.Option(0, "--max-probes", help="Limit probes (0 = all)"),
-        k_neighbors: int = typer.Option(
-            10, "--k-neighbors", help="k for geodesic distance graph"
-        ),
         output_path: str | None = typer.Option(
             None, "--output-path", "-o", help="Save results to JSON file"
         ),
     ) -> None:
         """Measure knowledge density per concept at a model layer.
 
-        Knowledge density indicates how "well-learned" a concept is:
-        - High density = model has compressed representation efficiently (mastered)
-        - Low density = representation is sparse/incomplete (gap)
-
-        This helps identify which concepts are graft opportunities (sparse)
-        vs which should not be touched (dense).
+        Knowledge density indicates how efficiently a concept is represented.
         """
         context = get_context(ctx)
 
         from modelcypher.core.domain.geometry.knowledge_density import (
             KnowledgeDensityAnalyzer,
-            KnowledgeDensityConfig,
         )
 
-        model, tokenizer, backend, provider, num_layers = load_model_and_provider(
-            model_path, k_neighbors
-        )
+        model, tokenizer, backend, provider, num_layers = load_model_and_provider(model_path)
 
         target_layer = layer if layer >= 0 else num_layers - 1
 
@@ -85,12 +74,14 @@ def register(app: typer.Typer) -> None:
             probes = probes[:max_probes]
 
         analyzer = KnowledgeDensityAnalyzer(backend=backend)
-        config = KnowledgeDensityConfig()
 
         logger.info("Analyzing %d probes at layer %d...", len(probes), target_layer)
-        profile = analyzer.analyze_layer(probes, provider, target_layer, config)
+        profile = analyzer.analyze_layer(probes, provider, target_layer)
 
         # Build output payload
+        densities = [c.density_score for c in profile.concept_densities]
+        min_density = min(densities) if densities else 0.0
+        max_density = max(densities) if densities else 0.0
         payload = {
             "_schema": "mc.geometry.research.concept_density.v1",
             "modelPath": model_path,
@@ -98,9 +89,8 @@ def register(app: typer.Typer) -> None:
             "totalConcepts": len(profile.concept_densities),
             "meanDensity": profile.mean_density,
             "medianDensity": profile.median_density,
-            "sparseConceptCount": profile.sparse_concept_count,
-            "denseConceptCount": profile.dense_concept_count,
-            "densityThreshold": profile.density_threshold,
+            "minDensity": min_density,
+            "maxDensity": max_density,
             "concepts": [
                 {
                     "probeID": c.probe_id,
@@ -128,11 +118,9 @@ def register(app: typer.Typer) -> None:
                 f"Concepts: {len(profile.concept_densities)}",
                 f"Mean Density: {profile.mean_density:.3f}",
                 f"Median Density: {profile.median_density:.3f}",
-                f"Threshold: {profile.density_threshold:.3f}",
-                f"Sparse (graft opportunities): {profile.sparse_concept_count}",
-                f"Dense (do not touch): {profile.dense_concept_count}",
+                f"Min/Max Density: {min_density:.3f} / {max_density:.3f}",
                 "",
-                "Top 10 Sparse Concepts (lowest density):",
+                "Top 10 Lowest Density Concepts:",
             ]
             sparse = sorted(profile.concept_densities, key=lambda x: x.density_score)[:10]
             for c in sparse:
@@ -141,7 +129,7 @@ def register(app: typer.Typer) -> None:
                 )
 
             lines.append("")
-            lines.append("Top 10 Dense Concepts (highest density):")
+            lines.append("Top 10 Highest Density Concepts:")
             dense = sorted(
                 profile.concept_densities, key=lambda x: x.density_score, reverse=True
             )[:10]
@@ -169,9 +157,6 @@ def register(app: typer.Typer) -> None:
             None, "--domain", "-d", help="Filter by atlas domain (repeatable)"
         ),
         max_probes: int = typer.Option(0, "--max-probes", help="Limit probes (0 = all)"),
-        k_neighbors: int = typer.Option(
-            10, "--k-neighbors", help="k for geodesic distance graph"
-        ),
         output_path: str | None = typer.Option(
             None, "--output-path", "-o", help="Save results to JSON file"
         ),
@@ -182,20 +167,17 @@ def register(app: typer.Typer) -> None:
         representations. These are opportunities for knowledge transfer
         from another model.
 
-        Reports per-layer and per-domain sparse concept counts, plus
-        a ranked list of the most sparse concepts.
+        Reports per-layer and per-domain density summaries, plus
+        a ranked list of the lowest-density concepts.
         """
         context = get_context(ctx)
 
         from modelcypher.core.domain.geometry.knowledge_density import (
             KnowledgeDensityAnalyzer,
-            KnowledgeDensityConfig,
             ModelDensityProfile,
         )
 
-        model, tokenizer, backend, provider, num_layers = load_model_and_provider(
-            model_path, k_neighbors
-        )
+        model, tokenizer, backend, provider, num_layers = load_model_and_provider(model_path)
 
         # Resolve layers
         if not layers:
@@ -220,19 +202,22 @@ def register(app: typer.Typer) -> None:
             probes = probes[:max_probes]
 
         analyzer = KnowledgeDensityAnalyzer(backend=backend)
-        config = KnowledgeDensityConfig()
 
         logger.info("Analyzing %d probes across %d layers...", len(probes), len(resolved_layers))
-        profile = analyzer.analyze_model(probes, provider, resolved_layers, config)
+        profile = analyzer.analyze_model(probes, provider, resolved_layers)
         profile = ModelDensityProfile(
             model_path=model_path,
             layers=profile.layers,
             layer_profiles=profile.layer_profiles,
             domain_densities=profile.domain_densities,
             overall_density=profile.overall_density,
-            sparse_concepts=profile.sparse_concepts,
-            dense_concepts=profile.dense_concepts,
         )
+
+        all_concepts = [
+            concept
+            for layer_profile in profile.layer_profiles.values()
+            for concept in layer_profile.concept_densities
+        ]
 
         # Build output payload
         payload = {
@@ -240,21 +225,18 @@ def register(app: typer.Typer) -> None:
             "modelPath": model_path,
             "layers": resolved_layers,
             "overallDensity": profile.overall_density,
-            "totalSparseCount": len(profile.sparse_concepts),
-            "totalDenseCount": len(profile.dense_concepts),
+            "totalConcepts": len(all_concepts),
             "domainDensities": profile.domain_densities,
             "layerSummaries": [
                 {
                     "layer": lp.layer,
                     "meanDensity": lp.mean_density,
                     "medianDensity": lp.median_density,
-                    "sparseCount": lp.sparse_concept_count,
-                    "denseCount": lp.dense_concept_count,
-                    "threshold": lp.density_threshold,
+                    "conceptCount": len(lp.concept_densities),
                 }
                 for lp in profile.layer_profiles.values()
             ],
-            "sparseConcepts": [
+            "lowestDensityConcepts": [
                 {
                     "probeID": c.probe_id,
                     "name": c.name,
@@ -263,7 +245,7 @@ def register(app: typer.Typer) -> None:
                     "densityScore": c.density_score,
                     "intrinsicDimension": c.intrinsic_dimension,
                 }
-                for c in sorted(profile.sparse_concepts, key=lambda x: x.density_score)[:100]
+                for c in sorted(all_concepts, key=lambda x: x.density_score)[:100]
             ],
         }
 
@@ -277,14 +259,13 @@ def register(app: typer.Typer) -> None:
                 f"Model: {model_path}",
                 f"Layers: {', '.join(str(layer) for layer in resolved_layers)}",
                 f"Overall Density: {profile.overall_density:.3f}",
-                f"Total Sparse Concepts: {len(profile.sparse_concepts)}",
-                f"Total Dense Concepts: {len(profile.dense_concepts)}",
+                f"Total Concepts: {len(all_concepts)}",
                 "",
                 "Layer Summary:",
             ]
             for lp in sorted(profile.layer_profiles.values(), key=lambda x: x.layer):
                 lines.append(
-                    f"  L{lp.layer}: sparse={lp.sparse_concept_count}, dense={lp.dense_concept_count}, "
+                    f"  L{lp.layer}: concepts={len(lp.concept_densities)}, "
                     f"mean_density={lp.mean_density:.3f}"
                 )
 
@@ -294,8 +275,8 @@ def register(app: typer.Typer) -> None:
                 lines.append(f"  {domain}: {density:.3f}")
 
             lines.append("")
-            lines.append("Top 15 Sparse Concepts (most sparse):")
-            for c in sorted(profile.sparse_concepts, key=lambda x: x.density_score)[:15]:
+            lines.append("Top 15 Lowest Density Concepts:")
+            for c in sorted(all_concepts, key=lambda x: x.density_score)[:15]:
                 lines.append(
                     f"  [{c.domain}] {c.name} L{c.layer}: density={c.density_score:.3f}"
                 )

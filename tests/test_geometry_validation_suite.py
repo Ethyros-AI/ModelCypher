@@ -33,7 +33,6 @@ import pytest
 from modelcypher.core.domain.geometry.geometry_validation_suite import (
     Config,
     GeometryValidationSuite,
-    GromovWassersteinConfig,
     Thresholds,
 )
 from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
@@ -76,7 +75,6 @@ class TestSuiteExecution:
         config = Config(
             include_fixtures=True,
             thresholds=Thresholds.standard(),
-            gromov_wasserstein=GromovWassersteinConfig.standard(),
         )
         suite = GeometryValidationSuite()
         report = suite.run(config)
@@ -355,30 +353,9 @@ class TestThresholds:
         config = Config(
             include_fixtures=False,
             thresholds=tight_thresholds,
-            gromov_wasserstein=GromovWassersteinConfig.standard(),
         )
         suite = GeometryValidationSuite()
         report = suite.run(config)
 
         # With impossible thresholds, validation should fail
         assert not report.passed, "Impossible thresholds should cause failure"
-
-
-class TestGromovWassersteinConfig:
-    """Tests for GW solver configuration."""
-
-    def test_standard_config_produces_solver_config(self) -> None:
-        """Standard config should produce a valid solver config."""
-        gw_config = GromovWassersteinConfig.standard()
-        solver_config = gw_config.solver_config()
-
-        assert solver_config.sinkhorn_epsilon > 0
-        assert solver_config.max_outer_iterations > 0
-        assert solver_config.convergence_threshold > 0
-
-    def test_sinkhorn_epsilon_configured(self) -> None:
-        """Sinkhorn epsilon should be configured for linear OT subproblem."""
-        gw_config = GromovWassersteinConfig.standard()
-
-        assert gw_config.sinkhorn_epsilon > 0, "Sinkhorn epsilon must be positive"
-        assert gw_config.sinkhorn_iterations > 0, "Sinkhorn iterations must be positive"

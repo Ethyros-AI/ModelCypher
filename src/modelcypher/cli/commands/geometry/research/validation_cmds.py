@@ -91,7 +91,6 @@ def register(app: typer.Typer) -> None:
             from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
             from modelcypher.core.domain.geometry.knowledge_density import (
                 KnowledgeDensityAnalyzer,
-                KnowledgeDensityConfig,
             )
             from modelcypher.core.domain.geometry.probe_calibration import (
                 MLXActivationProvider,
@@ -140,7 +139,6 @@ def register(app: typer.Typer) -> None:
 
             # Analyze transplanted model density
             analyzer = KnowledgeDensityAnalyzer(backend=backend)
-            config = KnowledgeDensityConfig()
 
             typer.echo(f"Profiling transplanted model: {transplanted_model}")
             typer.echo(f"Layers to analyze: {len(layer_list)}")
@@ -149,7 +147,6 @@ def register(app: typer.Typer) -> None:
                 probes=probes,
                 activation_provider=provider,
                 layers=layer_list,
-                config=config,
             )
 
             # Compare densities
@@ -170,7 +167,6 @@ def register(app: typer.Typer) -> None:
                     "originalDensity": original_density,
                     "transplantedDensity": transplanted_density,
                     "delta": delta,
-                    "improved": delta > 0,
                 }
                 comparisons.append(comparison)
 

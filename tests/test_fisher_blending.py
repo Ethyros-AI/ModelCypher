@@ -205,15 +205,20 @@ class TestNormalizeFisherWeights:
         assert backend.to_numpy(result).tolist() == [1.0, 2.0, 3.0]
 
     def test_layer_normalization(self, backend):
-        """LAYER normalization should scale to [0, 1]."""
+        """LAYER normalization should scale to approximately [0, 1].
+
+        Note: Uses dtype-derived epsilon for numerical stability, so max
+        may be slightly below 1.0 (within sqrt(machine_epsilon)).
+        """
         fisher = backend.array([1.0, 2.0, 3.0])
         backend.eval(fisher)
 
         result = normalize_fisher_weights(fisher, FisherNormalization.LAYER, backend=backend)
         result_np = backend.to_numpy(result)
 
-        assert result_np.min() == pytest.approx(0.0, abs=1e-6)
-        assert result_np.max() == pytest.approx(1.0, abs=1e-6)
+        assert result_np.min() == pytest.approx(0.0, abs=1e-4)
+        # Max is slightly below 1.0 due to epsilon in denominator
+        assert result_np.max() == pytest.approx(1.0, abs=1e-3)
 
     def test_layer_normalization_uniform_values(self, backend):
         """LAYER normalization with uniform values should return ones."""

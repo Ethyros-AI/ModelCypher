@@ -46,19 +46,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class PermuteConfig:
-    """Configuration for Stage 2 permutation.
-
-    PURE GEOMETRY: MLP layers have N! permutation symmetries.
-    We solve for the optimal permutation P that minimizes ||W_target - P @ W_source||_F
-    via the Hungarian algorithm (optimal transport on discrete space).
-
-    No arbitrary thresholds - the permutation that minimizes error is computed exactly.
-    """
-
-    # Whether to run permutation alignment (disabling skips this stage)
-    enable_permutation: bool = True
+# Permutation alignment is ALWAYS enabled.
+# MLP layers have N! permutation symmetries that must be resolved.
+# Skipping permutation alignment produces worse merges - there is no valid reason to disable it.
 
 
 @dataclass
@@ -74,7 +64,6 @@ def stage_permute(
     target_weights: dict[str, Any],
     intersection_map_obj: Any | None,
     layer_confidences: dict[int, float],
-    config: PermuteConfig,
     infer_hidden_dim_fn: Callable[[dict[str, Any]], int],
     backend: "Backend | None" = None,
 ) -> PermuteResult:
@@ -89,19 +78,18 @@ def stage_permute(
 
     via the Hungarian algorithm (linear assignment problem).
 
-    No arbitrary thresholds. The optimal permutation is computed exactly.
+    No configuration - permutation alignment is always run.
+    No arbitrary thresholds - the optimal permutation is computed exactly.
     """
     b = backend or get_default_backend()
 
     from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
-    from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+    from modelcypher.core.domain.geometry.numerical_stability import (
+        regularization_epsilon,
+    )
     from modelcypher.core.domain.geometry.permutation_aligner import (
         PermutationAligner,
     )
-
-    if not config.enable_permutation:
-        logger.info("PERMUTE: Disabled")
-        return PermuteResult(source_weights, {"skipped": True})
 
     # Convert weights to backend arrays (with dequantization for quantized models)
     source_arr: dict[str, "Array"] = {}
@@ -178,7 +166,8 @@ def stage_permute(
             % (source_anchors.shape[1], target_anchors.shape[1])
         )
 
-    precision_tol = max(machine_epsilon(b, source_anchors), 1e-12)
+    # Dtype-derived precision threshold (sqrt(machine_epsilon))
+    precision_tol = regularization_epsilon(b, source_anchors)
     # Use feature_bias_correction=True and .best to avoid false negatives from underestimation
     embed_cka = compute_cka(
         source_anchors,

@@ -51,9 +51,14 @@ class _SessionState:
     tokens_observed: int = 0
     min_horror_kl: float | None = None
     min_sentinel_kl: float | None = None
+    observed_horror_kl: list = None  # type: ignore[assignment]  # For online threshold estimation
     max_mode_reached: SidecarSafetyMode = SidecarSafetyMode.NORMAL
     pending_intervention: SidecarSafetyIntervention | None = None
     committed_intervention: SidecarSafetyIntervention | None = None
+
+    def __post_init__(self) -> None:
+        if self.observed_horror_kl is None:
+            self.observed_horror_kl = []
 
 
 class SidecarSafetySession:
@@ -104,17 +109,21 @@ class SidecarSafetySession:
         if now is None:
             now = datetime.now(timezone.utc)
 
-        thresholds = self._policy.thresholds(control, now)
-
         with self._lock:
             self._state.tokens_observed += 1
 
-            # Track minimum KL values (closest approach)
+            # Track KL values for online threshold estimation
             if sample.kl_to_horror is not None and math.isfinite(sample.kl_to_horror):
+                self._state.observed_horror_kl.append(sample.kl_to_horror)
                 if self._state.min_horror_kl is None:
                     self._state.min_horror_kl = sample.kl_to_horror
                 else:
                     self._state.min_horror_kl = min(self._state.min_horror_kl, sample.kl_to_horror)
+
+            # Compute thresholds using online estimation if no baseline
+            thresholds = self._policy.thresholds(
+                control, now, observed_kl=self._state.observed_horror_kl
+            )
 
             if sample.kl_to_sentinel is not None and math.isfinite(sample.kl_to_sentinel):
                 if self._state.min_sentinel_kl is None:

@@ -33,7 +33,6 @@ from typing import TYPE_CHECKING, Any
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.birkhoff_projector import BirkhoffProjector
 from modelcypher.core.domain.geometry.null_space_filter import NullSpaceFilter
-from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -47,8 +46,6 @@ class CoreBoundaryPartition:
     boundary_indices: list[int]
     core_probe_ids: list[str]
     boundary_probe_ids: list[str]
-    boundary_k: int
-    geodesic_k_neighbors: int | None
 
 
 @dataclass(frozen=True)
@@ -71,53 +68,28 @@ def partition_core_boundary(
     activations: "Array",
     probe_ids: list[str],
     core_probe_ids: set[str],
-    boundary_k: int | None = None,
-    geodesic_k_neighbors: int | None = None,
     backend: "Backend | None" = None,
 ) -> CoreBoundaryPartition:
-    """Partition probes into core and boundary sets using geodesic neighborhoods."""
+    """Partition probes into core and boundary sets (boundary = complement)."""
     b = backend or get_default_backend()
     points = b.array(activations)
     b.eval(points)
 
     n = int(points.shape[0])
     if n == 0 or not probe_ids:
-        return CoreBoundaryPartition([], [], [], [], 0, geodesic_k_neighbors)
+        return CoreBoundaryPartition([], [], [], [])
 
     core_indices = [i for i, pid in enumerate(probe_ids) if pid in core_probe_ids]
     core_set = set(core_indices)
     if not core_indices:
-        return CoreBoundaryPartition([], [], [], [], 0, geodesic_k_neighbors)
+        return CoreBoundaryPartition([], [], [], [])
 
-    if boundary_k is None:
-        if geodesic_k_neighbors is not None:
-            boundary_k = geodesic_k_neighbors
-        else:
-            boundary_k = min(10, max(1, n - 1))
-    boundary_k = max(1, min(boundary_k, n - 1))
-
-    geo = RiemannianGeometry(b).geodesic_distances(points, k_neighbors=geodesic_k_neighbors)
-    dist_np = b.to_numpy(geo.distances)
-
-    boundary_indices: set[int] = set()
-    for core_idx in core_indices:
-        row = dist_np[core_idx].tolist()
-        candidates = [
-            (j, row[j]) for j in range(n)
-            if j != core_idx and j not in core_set
-        ]
-        candidates.sort(key=lambda item: item[1])
-        for j, _ in candidates[:boundary_k]:
-            boundary_indices.add(j)
-
-    boundary_list = sorted(boundary_indices)
+    boundary_list = [i for i in range(n) if i not in core_set]
     return CoreBoundaryPartition(
         core_indices=core_indices,
         boundary_indices=boundary_list,
         core_probe_ids=[probe_ids[i] for i in core_indices],
         boundary_probe_ids=[probe_ids[i] for i in boundary_list],
-        boundary_k=boundary_k,
-        geodesic_k_neighbors=geodesic_k_neighbors,
     )
 
 

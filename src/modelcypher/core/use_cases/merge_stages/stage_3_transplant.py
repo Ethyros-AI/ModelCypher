@@ -32,9 +32,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Iterable
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.cross_dimensional_projection import (
-    ProjectionMethod,
-)
+# NOTE: ProjectionMethod import removed - always use GRAM_TRANSPORT (the only correct method)
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     safe_pinv,
@@ -66,24 +64,29 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class TransplantStageConfig:
-    """Configuration for transplant stage."""
+    """Configuration for transplant stage.
 
+    Only user-provided data and infrastructure callbacks remain.
+    All geometric parameters are derived from the data.
+    """
+
+    # Core domains for transplant - THE ONLY user input beyond model paths
     core_domains: tuple[str, ...]
-    boundary_k: int | None = None
-    geodesic_k_neighbors: int | None = None
-    projection_method: ProjectionMethod = ProjectionMethod.GRAM_TRANSPORT
-    transplant_layers: tuple[int, ...] | None = None  # None = all layers
+
+    # Infrastructure (not geometric parameters)
     checkpoint_dir: Path | None = None  # Enable checkpointing if set
     progress_callback: Callable[[str, int, int], None] | None = None  # (msg, current, total)
-    # NOTE: Alpha interpolation was REMOVED. The null-space projection determines
-    # preserved_fraction geometrically. Do NOT add hardcoded scalar overrides.
-    # NOTE: strict_mode was REMOVED. All failures raise exceptions. No fallbacks.
 
-    # Graft mask from density analysis (stage 2).
+    # Internal data from density analysis (stage 2) - not user configurable
     # Maps probe_id -> layer -> should_graft.
-    # If None, graft all core probes (backward compatible).
-    # If set, only graft concepts with True in the mask.
+    # If None, graft all core probes.
     graft_mask: dict[str, dict[int, bool]] | None = None
+
+    # NOTE: boundary_k and geodesic_k_neighbors REMOVED - derived from geodesic connectivity
+    # NOTE: projection_method REMOVED - always use GRAM_TRANSPORT
+    # NOTE: transplant_layers REMOVED - always transplant all layers
+    # NOTE: Alpha interpolation was REMOVED - null-space projection determines preserved_fraction
+    # NOTE: strict_mode was REMOVED - all failures raise exceptions, no fallbacks
 
 
 @dataclass
@@ -234,8 +237,9 @@ def stage_transplant(
         "cka_before": [],
         "cka_after": [],
         "core_probes": 0,
-        "boundary_k": config.boundary_k,
-        "geodesic_k_neighbors": config.geodesic_k_neighbors,
+        # boundary_k and geodesic_k_neighbors are derived from geodesic connectivity
+        "boundary_k": "auto",
+        "geodesic_k_neighbors": "auto",
     }
 
     # REQUIRE real activations collected from probe runs.
@@ -251,8 +255,10 @@ def stage_transplant(
 
     # Probe-based transplant requires metadata
     if not probe_ids or not probe_domains:
-        metrics["transplant_skipped"] = "missing_probe_metadata"
-        return TransplantStageResult(merged_weights=merged, metrics=metrics)
+        raise RuntimeError("Transplant requires probe metadata (probe_ids, probe_domains)")
+
+    if config.graft_mask is None:
+        raise RuntimeError("Transplant requires graft_mask from density stage")
 
     if len(probe_ids) != len(probe_domains):
         metrics["transplant_skipped"] = "probe_metadata_mismatch"
@@ -601,10 +607,8 @@ def stage_transplant(
             logger.debug("TRANSPLANT: Skipping layer %d (already completed)", layer_idx)
             continue
 
-        # Filter to specific layers if configured
-        if config.transplant_layers is not None:
-            if layer_idx not in config.transplant_layers:
-                continue
+        # NOTE: transplant_layers filter was REMOVED. Always transplant all layers.
+        # The geometry determines which weights need transplanting, not arbitrary layer selection.
 
         layer_keys = weights_by_layer.get(layer_idx, [])
         if not layer_keys:
@@ -812,12 +816,14 @@ def stage_transplant(
             metrics["layers_skipped_by_density"] += 1
             continue
 
+        # boundary_k and geodesic_k_neighbors are derived from geodesic connectivity
+        # within partition_core_boundary - no user configuration needed
         partition = partition_core_boundary(
             activations=stacked,
             probe_ids=probe_ids,
             core_probe_ids=effective_core_probes,
-            boundary_k=config.boundary_k,
-            geodesic_k_neighbors=config.geodesic_k_neighbors,
+            boundary_k=None,  # Derived from geodesic connectivity
+            geodesic_k_neighbors=None,  # Derived from geodesic connectivity
             backend=b,
         )
 

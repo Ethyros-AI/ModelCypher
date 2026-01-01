@@ -59,21 +59,6 @@ def pipeline(
         "-d",
         help="Comma-separated domains for transplant (e.g., mathematical,logical)",
     ),
-    transplant_layers: str | None = typer.Option(
-        None,
-        "--transplant-layers",
-        help="Comma-separated layer indices for transplant (e.g., 5,10,15)",
-    ),
-    transplant_boundary_k: int | None = typer.Option(
-        None,
-        "--transplant-boundary-k",
-        help="Boundary neighbors per core probe",
-    ),
-    transplant_geodesic_k: int | None = typer.Option(
-        None,
-        "--transplant-geodesic-k",
-        help="k for geodesic graph construction",
-    ),
     knowledge_delta_mask: str | None = typer.Option(
         None,
         "--knowledge-delta-mask",
@@ -127,11 +112,6 @@ def pipeline(
             "transplant-domains must specify at least one domain (e.g., mathematical,logical)"
         )
 
-    # Parse layers
-    layer_list = None
-    if transplant_layers:
-        layer_list = [int(layer.strip()) for layer in transplant_layers.split(",") if layer.strip()]
-
     service = MergePipelineService(verification_registry_path=registry_path)
 
     try:
@@ -141,9 +121,6 @@ def pipeline(
                 target_path=target,
                 output_dir=output_dir,
                 transplant_domains=domain_list,
-                transplant_layers=layer_list,
-                transplant_boundary_k=transplant_boundary_k,
-                transplant_geodesic_k=transplant_geodesic_k,
                 knowledge_delta_mask_path=knowledge_delta_mask,
                 skip_pre_analysis=skip_pre_analysis,
                 verify_predictions=verify,

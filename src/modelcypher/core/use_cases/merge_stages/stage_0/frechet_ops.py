@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
 
 
@@ -67,7 +68,9 @@ def _frechet_mean_vectors(
     diff_norm = backend.norm(diff, axis=1)
     max_norm = backend.max(diff_norm)
     backend.eval(max_norm)
-    if float(max_norm) < 1e-12:
+    # Dtype-derived epsilon for zero-check
+    eps = machine_epsilon(backend, vectors)
+    if float(max_norm) < eps:
         return vectors[0]
 
     k_neighbors = max(1, n_vectors - 1)

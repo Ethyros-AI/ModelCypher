@@ -58,6 +58,20 @@ samples relate to each other.
 To achieve this with feature-space transformations, we search iteratively
 until the feature transformation produces matching Gram matrices.
 
+No User-Configurable Thresholds:
+================================
+
+All tolerances are derived from machine epsilon of the input dtype.
+Users do NOT configure thresholds - the geometry speaks for itself.
+
+- Convergence tolerance: sqrt(machine_epsilon) - dtype-derived
+- Regularization: sqrt(machine_epsilon) - dtype-derived
+- "Perfect" alignment: 1.0 - sqrt(machine_epsilon) - dtype-derived
+
+This follows the principle: geometry either works or it doesn't.
+There are no "good enough" alignments - only exact alignment within
+the precision limits of the hardware.
+
 References:
     - Kornblith, S., Norouzi, M., Lee, H., & Hinton, G. (2019).
       "Similarity of Neural Network Representations Revisited."
@@ -104,6 +118,10 @@ class AlignmentResult:
 
     The transformation that achieves CKA = 1.0, plus diagnostics about
     how we got there.
+
+    All thresholds are derived from dtype, not hardcoded. The precision_threshold
+    field stores sqrt(machine_epsilon) for the input dtype, which is used to
+    determine "perfect" alignment and "converged" status.
     """
 
     # The transformation that achieves CKA = 1.0
@@ -126,15 +144,28 @@ class AlignmentResult:
     # Diagnostic signal describing any residual gap
     diagnostic: "AlignmentSignal | None" = None
 
+    # Dtype-derived precision threshold: sqrt(machine_epsilon)
+    # Used to determine is_perfect and is_converged
+    # Default assumes float32 (sqrt(1.2e-7) ≈ 3.5e-4)
+    precision_threshold: float = 3.5e-4
+
     @property
     def is_perfect(self) -> bool:
-        """True if CKA = 1.0 within float32 machine epsilon (0.9999)."""
-        return self.achieved_cka >= 0.9999
+        """True if CKA = 1.0 within dtype precision.
+
+        Uses sqrt(machine_epsilon) as the threshold, derived from the input dtype.
+        For float32: 1.0 - 3.5e-4 ≈ 0.99965
+        For float64: 1.0 - 1.5e-8 ≈ 0.99999998
+        """
+        return self.achieved_cka >= (1.0 - self.precision_threshold)
 
     @property
     def is_converged(self) -> bool:
-        """Returns True if alignment error is negligible."""
-        return self.alignment_error < 1e-6
+        """Returns True if alignment error is below dtype precision.
+
+        Uses sqrt(machine_epsilon) as the threshold, derived from the input dtype.
+        """
+        return self.alignment_error < self.precision_threshold
 
 
 class GramAligner:
@@ -143,6 +174,18 @@ class GramAligner:
     This is not a "test" or "gate" - it's a SOLVER. Given two sets of
     activations, it finds the transformation that makes them equivalent
     in the CKA sense. This transformation always exists.
+
+    No User-Configurable Thresholds:
+    --------------------------------
+    All tolerances and regularization values are derived from the input
+    dtype's machine epsilon. Users do NOT configure thresholds - the
+    geometry speaks for itself.
+
+    - Tolerance: sqrt(machine_epsilon) - convergence criterion
+    - Regularization: sqrt(machine_epsilon) - numerical stability
+
+    The `tolerance` and `regularization` parameters are accepted for backward
+    compatibility but are IGNORED. All values are derived from dtype.
 
     Usage:
     ------
@@ -158,8 +201,8 @@ class GramAligner:
         backend: "Backend | None" = None,
         max_iterations: int = 1000,
         max_rounds: int = 1,
-        tolerance: float = 1e-6,  # Relax for float32 precision
-        regularization: float = 1e-8,
+        tolerance: float = 1e-6,  # IGNORED - derived from dtype
+        regularization: float = 1e-8,  # IGNORED - derived from dtype
     ) -> None:
         """Initialize the aligner.
 
@@ -174,13 +217,17 @@ class GramAligner:
             Maximum search rounds to reach exact kernel alignment. Each round
             increases the iteration budget and returns a diagnostic if still unlocked.
         tolerance : float
-            Convergence tolerance for CKA.
+            IGNORED. Convergence tolerance is derived from input dtype's machine
+            epsilon. Kept for backward compatibility.
         regularization : float
-            Regularization for matrix inversions.
+            IGNORED. Regularization is derived from input dtype's machine epsilon.
+            Kept for backward compatibility.
         """
         self._backend = backend or get_default_backend()
         self._max_iterations = max_iterations
         self._max_rounds = max_rounds
+        # IGNORED: these are kept for backward compatibility but all values
+        # are derived from dtype in find_perfect_alignment
         self._tolerance = tolerance
         self._regularization = regularization
         self._logger = logging.getLogger(__name__)
@@ -397,6 +444,11 @@ class GramAligner:
             if shape[0] != d_s or shape[1] != d_t:
                 initial_transform = None
 
+        # DERIVE ALL THRESHOLDS FROM DTYPE - No user configuration
+        # Uses sqrt(machine_epsilon) as the convergence criterion
+        # This is the standard numerical tolerance for iterative algorithms
+        precision_threshold = regularization_epsilon(b, source_activations)
+
         # PARADIGM SHIFT: CKA = 1.0 is achievable at ANY precision.
         # The algorithm aligns SHARED RELATIONAL SPACE (signal), not full
         # representations. If CKA < 1.0, we're trying to align noise.
@@ -413,7 +465,7 @@ class GramAligner:
             target_norm = float(b.to_numpy(b.norm(target_activations)))
 
             # Check for identical inputs
-            if diff_norm < 1e-10 * (source_norm + 1e-10):
+            if diff_norm < precision_threshold * (source_norm + precision_threshold):
                 # Inputs are identical (or nearly so) - use identity transform
                 identity = b.eye(d_s)
                 b.eval(identity)
@@ -432,15 +484,16 @@ class GramAligner:
                     diagnostic=self._diagnose_alignment(
                         source_centered, source_centered, 1.0
                     ),
+                    precision_threshold=precision_threshold,
                 )
 
             # Check for scaled inputs (target = c * source for some scalar c)
             # CKA is scale-invariant, so if Gram matrices are proportional, CKA = 1.0
-            if source_norm > 1e-10 and target_norm > 1e-10:
+            if source_norm > precision_threshold and target_norm > precision_threshold:
                 scale = target_norm / source_norm
                 scaled_diff = target_activations - source_activations * scale
                 scaled_diff_norm = float(b.to_numpy(b.norm(scaled_diff)))
-                if scaled_diff_norm < 1e-6 * target_norm:
+                if scaled_diff_norm < precision_threshold * target_norm:
                     # Inputs are scaled versions - use scaling transform
                     scale_transform = b.eye(d_s) * scale
                     b.eval(scale_transform)
@@ -462,6 +515,7 @@ class GramAligner:
                         diagnostic=self._diagnose_alignment(
                             target_centered, target_centered, 1.0
                         ),
+                        precision_threshold=precision_threshold,
                     )
 
             # Check for rotated inputs (target = source @ R where R is orthogonal)
@@ -475,7 +529,7 @@ class GramAligner:
             gram_diff = K_s - K_t
             gram_diff_norm = float(b.to_numpy(b.norm(gram_diff)))
             gram_norm = float(b.to_numpy(b.norm(K_s)))
-            if gram_diff_norm < 1e-5 * (gram_norm + 1e-10):
+            if gram_diff_norm < precision_threshold * (gram_norm + precision_threshold):
                 # Gram matrices are equal - this is a rotation/reflection
                 # Find the rotation via Procrustes: R = V @ U^T where source^T @ target = U @ S @ V^T
                 cross = b.matmul(b.transpose(source_centered), target_centered)
@@ -496,6 +550,7 @@ class GramAligner:
                     diagnostic=self._diagnose_alignment(
                         target_centered, target_centered, 1.0
                     ),
+                    precision_threshold=precision_threshold,
                 )
 
         # Try uncentered direct solve first (fast path for exact alignment)
@@ -515,7 +570,7 @@ class GramAligner:
             b.eval(K_s_c, K_t_c, K_a_c)
 
             cka_uncentered = self._compute_cka_from_centered_grams(K_a_c, K_t_c)
-            if cka_uncentered >= 1.0 - self._tolerance:
+            if cka_uncentered >= 1.0 - precision_threshold:
                 sample_transform = self._compute_sample_transform(K_s_c, K_t_c)
                 b.eval(sample_transform)
                 return AlignmentResult(
@@ -527,6 +582,7 @@ class GramAligner:
                     diagnostic=self._diagnose_alignment(
                         aligned_uncentered, target_activations, cka_uncentered
                     ),
+                    precision_threshold=precision_threshold,
                 )
 
         # Center the activations
@@ -583,14 +639,15 @@ class GramAligner:
             )
             total_iterations += iterations
 
-            if final_cka >= 1.0 - self._tolerance:
+            if final_cka >= 1.0 - precision_threshold:
                 break
 
             max_iterations *= 2
             logger.info(
-                "GramAligner: Exact kernel alignment not reached (cka=%.8f). "
+                "GramAligner: Exact kernel alignment not reached (cka=%.8f, threshold=%.2e). "
                 "Expanding search to %d iterations.",
                 final_cka,
+                precision_threshold,
                 max_iterations,
             )
 
@@ -615,6 +672,7 @@ class GramAligner:
             iterations=total_iterations,
             alignment_error=alignment_error,
             diagnostic=diagnostic,
+            precision_threshold=precision_threshold,
         )
 
     def _center(self, X: "Array") -> "Array":
@@ -710,12 +768,18 @@ class GramAligner:
         - Therefore (A_s @ F) @ (A_s @ F)^T = A_t @ A_t^T = K_t
         - CKA = 1.0 exactly, no iteration needed
 
+        All thresholds are derived from dtype, not user-configured.
+
         Returns (transform, iterations, achieved_cka).
         """
         b = self._backend
         n_samples = b.shape(source_centered)[0]
         d_s = b.shape(source_centered)[1]
         d_t = b.shape(target_centered)[1]
+
+        # DERIVE ALL THRESHOLDS FROM DTYPE - No user configuration
+        # Uses sqrt(machine_epsilon) as the convergence criterion
+        precision_threshold = regularization_epsilon(b, source_centered)
 
         # Use centering matrix for CKA computation
         H = self._centering_matrix(n_samples)
@@ -741,10 +805,10 @@ class GramAligner:
             b.eval(K_s_t_c)
             cka = self._compute_cka_from_centered_grams(K_s_t_c, K_t_c)
 
-            if cka >= 1.0 - self._tolerance:
+            if cka >= 1.0 - precision_threshold:
                 logger.info(
-                    "GramAligner: Converged to CKA=%.8f in %d iterations",
-                    cka, 1
+                    "GramAligner: Converged to CKA=%.8f (threshold=%.2e) in %d iterations",
+                    cka, precision_threshold, 1
                 )
                 return F, 1, cka
 
@@ -822,10 +886,10 @@ class GramAligner:
             b.eval(K_aligned_c)
             cka = self._compute_cka_from_centered_grams(K_aligned_c, K_t_c)
 
-            if cka >= 1.0 - self._tolerance:
+            if cka >= 1.0 - precision_threshold:
                 logger.info(
-                    "GramAligner: Sample-space converged to CKA=%.8f with reg=%.2e",
-                    cka, reg
+                    "GramAligner: Sample-space converged to CKA=%.8f (threshold=%.2e) with reg=%.2e",
+                    cka, precision_threshold, reg
                 )
                 return F_sample, 1, cka
 
@@ -850,10 +914,10 @@ class GramAligner:
                 best_cka = cka
                 best_F = F
 
-            if cka >= 1.0 - self._tolerance:
+            if cka >= 1.0 - precision_threshold:
                 logger.info(
-                    "GramAligner: Gradient converged to CKA=%.8f in %d iterations",
-                    cka, iteration + 1
+                    "GramAligner: Gradient converged to CKA=%.8f (threshold=%.2e) in %d iterations",
+                    cka, precision_threshold, iteration + 1
                 )
                 return F, iteration + 1, cka
 

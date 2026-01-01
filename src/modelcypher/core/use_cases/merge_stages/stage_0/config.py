@@ -43,7 +43,9 @@ class VocabularyConfig:
     alignment_iterations: int = 8
     alignment_solver_iterations: int = 5000
     alignment_solver_rounds: int = 1
-    alignment_tolerance: float = 1e-12
+    # Tolerance is overridden by dtype's machine_epsilon when smaller.
+    # Effective tolerance = max(alignment_tolerance, machine_epsilon).
+    alignment_tolerance: float = 0.0  # 0.0 = use dtype-derived threshold only
     phase_lock_max_iterations: int = 0
     use_all_support_texts: bool = True
     use_byte_anchors_for_atlas: bool = True

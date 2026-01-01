@@ -67,9 +67,6 @@ def run_merge(
     use_full_geometry: bool = True,
     knowledge_delta_mask_path: str | None = None,
     transplant_domains: list[str] | None = None,
-    transplant_layers: list[int] | None = None,
-    transplant_boundary_k: int | None = None,
-    transplant_geodesic_k_neighbors: int | None = None,
     target_weights: dict[str, "Array"] | None = None,
     config: UnifiedMergeConfig | None = None,
 ) -> UnifiedMergeResult:
@@ -91,28 +88,10 @@ def run_merge(
 
     # Resolve output path (prefer output_path over output_dir)
     effective_output = output_path or output_dir
-    if (
-        transplant_domains is not None
-        or transplant_layers is not None
-        or transplant_boundary_k is not None
-        or transplant_geodesic_k_neighbors is not None
-    ):
+    if transplant_domains is not None:
         merge_config = replace(
             merge_config,
             transplant_domains=tuple(transplant_domains or merge_config.transplant_domains),
-            transplant_layers=(
-                tuple(transplant_layers) if transplant_layers else merge_config.transplant_layers
-            ),
-            transplant_boundary_k=(
-                transplant_boundary_k
-                if transplant_boundary_k is not None
-                else merge_config.transplant_boundary_k
-            ),
-            transplant_geodesic_k_neighbors=(
-                transplant_geodesic_k_neighbors
-                if transplant_geodesic_k_neighbors is not None
-                else merge_config.transplant_geodesic_k_neighbors
-            ),
         )
 
     # Transplant strategy bypasses full geometry merge (uses null-space projection)
@@ -205,8 +184,8 @@ def run_merge(
         source_tokenizer=source_tokenizer,
         target_tokenizer=target_tokenizer,
         alignment_map=vocab_alignment_map,
-        config=merge_config,
         extract_layer_index_fn=extract_layer_index,
+        # ProbeConfig was REMOVED - always use precise mode with all probes
     )
 
     layer_confidences: dict[int, float] = probe_result.get("confidences", {})
@@ -286,13 +265,13 @@ def run_merge(
     enable_permutation = source_hidden == target_hidden
 
     if enable_permutation:
+        # PermuteConfig was REMOVED - permutation always runs when hidden dims match
         logger.info("STAGE 2: PERMUTE (Git Re-Basin, hidden_dim=%d)", target_hidden)
         permuted_weights, permute_metrics = stage_permute(
             source_weights=source_weights,
             target_weights=loaded_target_weights,
             intersection_map_obj=intersection_map_obj,
             layer_confidences=layer_confidences,
-            enable_permutation=True,
             backend=backend,
         )
         if not permute_metrics.get("skipped"):
@@ -340,7 +319,6 @@ def run_merge(
         probe_ids=probe_result.get("probe_ids"),
         probe_domains=probe_result.get("probe_domains"),
         layers=layer_indices,
-        skip_density_analysis=False,
         backend=backend,
     )
 
@@ -351,8 +329,8 @@ def run_merge(
         )
         logger.info(
             "DENSITY: %d concepts marked for grafting, %d skipped (target dense)",
-            density_metrics.get("high_opportunity_count", graft_count),
-            density_metrics.get("no_graft_count", 0),
+            density_metrics.get("positive_opportunity_count", graft_count),
+            density_metrics.get("nonpositive_opportunity_count", 0),
         )
     else:
         logger.info("DENSITY: Graft all concepts (no density filtering)")
@@ -372,7 +350,7 @@ def run_merge(
         target_attention_activations=target_attention_activations,
         source_kv_activations=source_kv_activations,
         target_kv_activations=target_kv_activations,
-        config=merge_config,
+        transplant_domains=tuple(merge_config.transplant_domains),
         extract_layer_index_fn=extract_layer_index,
         backend=backend,
         graft_mask=graft_mask,

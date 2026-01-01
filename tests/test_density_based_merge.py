@@ -41,14 +41,11 @@ from modelcypher.core.domain.geometry.knowledge_density import (
     ModelDensityProfile,
 )
 from modelcypher.core.domain.geometry.knowledge_diff import (
-    GraftOpportunity,
     KnowledgeDiff,
     KnowledgeDiffer,
     compute_graft_mask,
 )
 from modelcypher.core.use_cases.merge_stages.stage_2_density import (
-    DensityStageConfig,
-    DensityStageResult,
     filter_core_probes_by_graft_mask,
     stage_density,
 )
@@ -112,15 +109,10 @@ def source_profile_with_dense_math(dense_concept: ConceptDensity) -> ModelDensit
                 concept_densities=[dense_concept],
                 mean_density=0.85,
                 median_density=0.85,
-                sparse_concept_count=0,
-                dense_concept_count=1,
-                density_threshold=0.5,
             )
         },
         domain_densities={"mathematical": 0.85},
         overall_density=0.85,
-        sparse_concepts=[],
-        dense_concepts=[dense_concept],
     )
 
 
@@ -150,15 +142,10 @@ def target_profile_with_sparse_math(
                 concept_densities=[target_math],
                 mean_density=0.3,
                 median_density=0.3,
-                sparse_concept_count=1,
-                dense_concept_count=0,
-                density_threshold=0.5,
             )
         },
         domain_densities={"mathematical": 0.3},
         overall_density=0.3,
-        sparse_concepts=[target_math],
-        dense_concepts=[],
     )
 
 
@@ -197,7 +184,7 @@ class TestDensityProfileIdentifiesSparseRegions:
     def test_profile_segregates_sparse_and_dense(
         self, dense_concept: ConceptDensity, sparse_concept: ConceptDensity
     ) -> None:
-        """Profile correctly categorizes sparse vs dense concepts."""
+        """Profile preserves density ordering across concepts."""
         profile = ModelDensityProfile(
             model_path="/test",
             layers=[5],
@@ -207,21 +194,16 @@ class TestDensityProfileIdentifiesSparseRegions:
                     concept_densities=[dense_concept, sparse_concept],
                     mean_density=0.55,
                     median_density=0.55,
-                    sparse_concept_count=1,
-                    dense_concept_count=1,
-                    density_threshold=0.5,
                 )
             },
             domain_densities={},
             overall_density=0.55,
-            sparse_concepts=[sparse_concept],
-            dense_concepts=[dense_concept],
         )
 
-        assert len(profile.sparse_concepts) == 1
-        assert len(profile.dense_concepts) == 1
-        assert profile.sparse_concepts[0].probe_id == "logic_modus_ponens"
-        assert profile.dense_concepts[0].probe_id == "math_addition"
+        concepts = profile.layer_profiles[5].concept_densities
+        assert any(c.probe_id == "logic_modus_ponens" for c in concepts)
+        assert any(c.probe_id == "math_addition" for c in concepts)
+        assert dense_concept.density_score > sparse_concept.density_score
 
 
 # =============================================================================
@@ -245,7 +227,7 @@ class TestKnowledgeDiffFindsGraftOpportunities:
 
         # Source is dense (0.85), target is sparse (0.3)
         # Opportunity = 0.85 - 0.3 = 0.55 (high positive)
-        assert diff.high_opportunity_count >= 1
+        assert diff.positive_opportunity_count >= 1
         assert diff.overall_opportunity > 0
 
     def test_no_graft_when_target_already_dense(
@@ -259,7 +241,7 @@ class TestKnowledgeDiffFindsGraftOpportunities:
         )
 
         # Same density = opportunity around 0
-        assert diff.no_graft_count >= 0 or diff.high_opportunity_count == 0
+        assert diff.positive_opportunity_count == 0
 
     def test_negative_opportunity_when_source_sparse(
         self,
@@ -276,7 +258,8 @@ class TestKnowledgeDiffFindsGraftOpportunities:
 
         # Source sparse (0.3), target dense (0.85)
         # Opportunity = 0.3 - 0.85 = -0.55 (negative = don't graft)
-        assert diff.overall_opportunity < 0 or diff.no_graft_count >= 1
+        assert diff.overall_opportunity < 0
+        assert diff.nonpositive_opportunity_count >= 1
 
 
 # =============================================================================
@@ -286,20 +269,6 @@ class TestKnowledgeDiffFindsGraftOpportunities:
 
 class TestGraftMaskFiltering:
     """Graft mask correctly filters which concepts to transplant."""
-
-    def test_filter_returns_all_when_mask_is_none(self) -> None:
-        """None mask means graft all (backward compatible)."""
-        core_probes = {"probe_a", "probe_b", "probe_c"}
-        probe_ids = ["probe_a", "probe_b", "probe_c"]
-
-        filtered = filter_core_probes_by_graft_mask(
-            core_probe_ids=core_probes,
-            probe_ids=probe_ids,
-            layer_idx=5,
-            graft_mask=None,
-        )
-
-        assert filtered == core_probes
 
     def test_filter_respects_graft_mask(self) -> None:
         """Mask filters out probes marked as no-graft."""
@@ -380,7 +349,7 @@ class TestComputeGraftMask:
             source_profile_with_dense_math, target_profile_with_sparse_math
         )
 
-        graft_mask = compute_graft_mask(diff, include_low_opportunity=False)
+        graft_mask = compute_graft_mask(diff)
 
         # math_addition at layer 5 should be True (high opportunity)
         assert graft_mask.get("math_addition", {}).get(5, False) is True
@@ -397,7 +366,7 @@ class TestComputeGraftMask:
             source_profile_with_dense_math,  # Dense target
         )
 
-        graft_mask = compute_graft_mask(diff, include_low_opportunity=False)
+        graft_mask = compute_graft_mask(diff)
 
         # math_addition should be False or absent (target already dense)
         should_graft = graft_mask.get("math_addition", {}).get(5, False)
@@ -412,36 +381,17 @@ class TestComputeGraftMask:
 class TestStageDensityIntegration:
     """Integration tests for stage_density function."""
 
-    def test_stage_density_skip_returns_none_mask(self, backend: "Backend") -> None:
-        """Skipping density analysis returns None mask (graft all)."""
-        result = stage_density(
-            source_activations={},
-            target_activations={},
-            probe_ids=[],
-            probe_domains=[],
-            layers=[0, 1, 2],
-            config=DensityStageConfig(skip_density_analysis=True),
-            backend=backend,
-        )
-
-        assert result.graft_mask is None
-        assert result.source_profile is None
-        assert result.target_profile is None
-
-    def test_stage_density_with_empty_activations(self, backend: "Backend") -> None:
-        """Empty activations returns None mask."""
-        result = stage_density(
-            source_activations={},
-            target_activations={},
-            probe_ids=["probe_a"],
-            probe_domains=["test"],
-            layers=[0],
-            config=DensityStageConfig(skip_density_analysis=False),
-            backend=backend,
-        )
-
-        # Should handle gracefully
-        assert result.graft_mask is None
+    def test_stage_density_requires_activations(self, backend: "Backend") -> None:
+        """Missing activations raises (no silent fallback)."""
+        with pytest.raises(RuntimeError):
+            stage_density(
+                source_activations={},
+                target_activations={},
+                probe_ids=[],
+                probe_domains=[],
+                layers=[0, 1, 2],
+                backend=backend,
+            )
 
     def test_stage_density_with_valid_activations(self, backend: "Backend") -> None:
         """Valid activations produce density profiles and graft mask."""
@@ -450,15 +400,15 @@ class TestStageDensityIntegration:
         # Create synthetic activations
         # Source: tight cluster (dense)
         source_acts = {
-            0: [backend.random_normal((64,)) * 0.1 for _ in range(3)],
+            0: [backend.random_normal((64,)) * 0.1 for _ in range(4)],
         }
         # Target: spread cluster (sparse)
         target_acts = {
-            0: [backend.random_normal((64,)) * 2.0 for _ in range(3)],
+            0: [backend.random_normal((64,)) * 2.0 for _ in range(4)],
         }
 
-        probe_ids = ["probe_a", "probe_b", "probe_c"]
-        probe_domains = ["test", "test", "test"]
+        probe_ids = ["probe_a", "probe_b", "probe_c", "probe_d"]
+        probe_domains = ["test", "test", "test", "test"]
 
         result = stage_density(
             source_activations=source_acts,
@@ -466,7 +416,6 @@ class TestStageDensityIntegration:
             probe_ids=probe_ids,
             probe_domains=probe_domains,
             layers=[0],
-            config=DensityStageConfig(skip_density_analysis=False),
             backend=backend,
         )
 
@@ -532,15 +481,10 @@ class TestDensityPreservation:
                     concept_densities=[source_dense],
                     mean_density=0.9,
                     median_density=0.9,
-                    sparse_concept_count=0,
-                    dense_concept_count=1,
-                    density_threshold=0.5,
                 )
             },
             domain_densities={"test": 0.9},
             overall_density=0.9,
-            sparse_concepts=[],
-            dense_concepts=[source_dense],
         )
 
         target_profile = ModelDensityProfile(
@@ -552,15 +496,10 @@ class TestDensityPreservation:
                     concept_densities=[target_sparse],
                     mean_density=0.2,
                     median_density=0.2,
-                    sparse_concept_count=1,
-                    dense_concept_count=0,
-                    density_threshold=0.5,
                 )
             },
             domain_densities={"test": 0.2},
             overall_density=0.2,
-            sparse_concepts=[target_sparse],
-            dense_concepts=[],
         )
 
         differ = KnowledgeDiffer()
@@ -614,15 +553,10 @@ class TestDensityPreservation:
                     concept_densities=[source_sparse],
                     mean_density=0.2,
                     median_density=0.2,
-                    sparse_concept_count=1,
-                    dense_concept_count=0,
-                    density_threshold=0.5,
                 )
             },
             domain_densities={"test": 0.2},
             overall_density=0.2,
-            sparse_concepts=[source_sparse],
-            dense_concepts=[],
         )
 
         target_profile = ModelDensityProfile(
@@ -634,15 +568,10 @@ class TestDensityPreservation:
                     concept_densities=[target_dense],
                     mean_density=0.9,
                     median_density=0.9,
-                    sparse_concept_count=0,
-                    dense_concept_count=1,
-                    density_threshold=0.5,
                 )
             },
             domain_densities={"test": 0.9},
             overall_density=0.9,
-            sparse_concepts=[],
-            dense_concepts=[target_dense],
         )
 
         differ = KnowledgeDiffer()
@@ -668,46 +597,42 @@ class TestDensityEdgeCases:
     """Edge cases in density-based merge."""
 
     def test_empty_probe_ids(self, backend: "Backend") -> None:
-        """Empty probe_ids should not crash."""
-        result = stage_density(
-            source_activations={0: []},
-            target_activations={0: []},
-            probe_ids=[],
-            probe_domains=[],
-            layers=[0],
-            config=DensityStageConfig(skip_density_analysis=False),
-            backend=backend,
-        )
-        assert result.graft_mask is None
+        """Empty probe_ids raises (metadata required)."""
+        with pytest.raises(RuntimeError):
+            stage_density(
+                source_activations={0: []},
+                target_activations={0: []},
+                probe_ids=[],
+                probe_domains=[],
+                layers=[0],
+                backend=backend,
+            )
 
     def test_mismatched_probe_domains_length(self, backend: "Backend") -> None:
-        """Mismatched probe_ids/domains length handled gracefully."""
-        result = stage_density(
-            source_activations={0: []},
-            target_activations={0: []},
-            probe_ids=["a", "b", "c"],
-            probe_domains=["x"],  # Mismatch
-            layers=[0],
-            config=DensityStageConfig(skip_density_analysis=False),
-            backend=backend,
-        )
-        # Should handle gracefully, not crash
-        assert result.graft_mask is None
+        """Mismatched probe_ids/domains length raises."""
+        with pytest.raises(RuntimeError):
+            stage_density(
+                source_activations={0: []},
+                target_activations={0: []},
+                probe_ids=["a", "b", "c"],
+                probe_domains=["x"],  # Mismatch
+                layers=[0],
+                backend=backend,
+            )
 
-    def test_single_layer_single_probe(self, backend: "Backend") -> None:
-        """Minimal case: 1 layer, 1 probe."""
+    def test_single_layer_minimum_probes(self, backend: "Backend") -> None:
+        """Minimal valid case: 1 layer, >=4 probes."""
         backend.random_seed(42)
 
-        source_acts = {0: [backend.random_normal((32,)) * 0.1]}
-        target_acts = {0: [backend.random_normal((32,)) * 1.0]}
+        source_acts = {0: [backend.random_normal((32,)) * 0.1 for _ in range(4)]}
+        target_acts = {0: [backend.random_normal((32,)) * 1.0 for _ in range(4)]}
 
         result = stage_density(
             source_activations=source_acts,
             target_activations=target_acts,
-            probe_ids=["single_probe"],
-            probe_domains=["test"],
+            probe_ids=["probe_a", "probe_b", "probe_c", "probe_d"],
+            probe_domains=["test", "test", "test", "test"],
             layers=[0],
-            config=DensityStageConfig(skip_density_analysis=False),
             backend=backend,
         )
 

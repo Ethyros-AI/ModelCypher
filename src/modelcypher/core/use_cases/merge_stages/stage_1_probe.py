@@ -34,7 +34,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Literal
+from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
@@ -49,21 +49,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class ProbeConfig:
-    """Configuration for Stage 1 probing.
+# Probe mode is ALWAYS "precise" - activation-level CKA is required for correct alignment.
+# "fast" mode is eliminated - weight-level CKA is fundamentally less accurate and
+# hides alignment problems that will cause gibberish output.
+_PROBE_MODE = "precise"
 
-    PURE GEOMETRY: Layer correspondences are computed via CKA.
-    CKA measures representational similarity independent of scale/rotation.
-    No arbitrary thresholds - raw CKA values are returned.
-    """
-
-    # "precise": Run probes through models, compute CKA on activations
-    # "fast": Compute CKA directly on weight matrices (faster, less accurate)
-    probe_mode: Literal["precise", "fast"] = "precise"
-
-    # Maximum probes in precise mode (0 = all 403 probes)
-    max_probes: int = 0
+# All probes are always run. The probe corpus (403 probes) was carefully designed
+# to cover the concept space. Limiting probes degrades coverage with no benefit.
+_MAX_PROBES = 0  # 0 = all probes
 
 
 @dataclass
@@ -149,7 +142,6 @@ def map_token_ids(
 def stage_probe(
     source_weights: dict[str, Any],
     target_weights: dict[str, Any],
-    config: ProbeConfig,
     extract_layer_index_fn: Callable[[str], int | None],
     source_model: Any | None = None,
     target_model: Any | None = None,
@@ -163,13 +155,15 @@ def stage_probe(
     """
     Stage 1: Build intersection map from probe responses.
 
+    ALWAYS uses precise mode (activation-level CKA) with all 403 probes.
+    No configuration - the geometry determines everything.
+
     Args:
         source_weights: Source model weights
         target_weights: Target model weights
-        config: Probe configuration
         extract_layer_index_fn: Function to extract layer index from weight key
-        source_model: Loaded source model (for precise mode)
-        target_model: Loaded target model (for precise mode)
+        source_model: Loaded source model (required)
+        target_model: Loaded target model (required)
         tokenizer: Tokenizer (for precise mode)
         collect_activations_fn: Function to collect layer activations
 
@@ -180,9 +174,10 @@ def stage_probe(
         source_tokenizer = source_tokenizer or tokenizer
         target_tokenizer = target_tokenizer or tokenizer
 
+    # ALWAYS use precise mode - this is not configurable.
+    # Activation-level CKA is required for correct geometric alignment.
     if (
-        config.probe_mode == "precise"
-        and source_model is not None
+        source_model is not None
         and target_model is not None
         and collect_activations_fn is not None
     ):
@@ -193,26 +188,18 @@ def stage_probe(
             target_tokenizer=target_tokenizer,
             source_weights=source_weights,
             target_weights=target_weights,
-            config=config,
             extract_layer_index_fn=extract_layer_index_fn,
             collect_activations_fn=collect_activations_fn,
             alignment_map=alignment_map,
         )
     else:
-        if config.probe_mode == "precise":
-            # INVARIANT GEOMETRY: No silent fallbacks. If precise mode was requested,
-            # we need models loaded to compute activation-level CKA. Failing silently
-            # would hide alignment problems that will cause gibberish output.
-            raise RuntimeError(
-                "Precise mode requested but models not loaded. "
-                "Cannot compute activation-level CKA without model access. "
-                "Either load the models or use probe_mode='fast' explicitly."
-            )
-        return _probe_fast(
-            source_weights=source_weights,
-            target_weights=target_weights,
-            config=config,
-            extract_layer_index_fn=extract_layer_index_fn,
+        # INVARIANT GEOMETRY: No fallbacks. Models MUST be loaded.
+        # Weight-level CKA ("fast" mode) hides alignment problems that
+        # cause gibberish output. We don't allow it.
+        raise RuntimeError(
+            "Probe stage requires loaded models. "
+            "Cannot compute activation-level CKA without model access. "
+            "Load both source and target models before probing."
         )
 
 
@@ -223,7 +210,6 @@ def _probe_precise(
     target_tokenizer: Any,
     source_weights: dict[str, Any],
     target_weights: dict[str, Any],
-    config: ProbeConfig,
     extract_layer_index_fn: Callable[[str], int | None],
     collect_activations_fn: Callable,
     alignment_map: VocabularyAlignmentMap | None = None,
@@ -231,7 +217,12 @@ def _probe_precise(
     target_path: str = "",
     backend: "Backend | None" = None,
 ) -> ProbeResult:
-    """Precise probe mode: Run probes through BOTH models."""
+    """Precise probe mode: Run ALL probes through BOTH models.
+
+    No configuration - all 403 probes are always run. The probe corpus
+    was designed to cover the concept space. Limiting probes degrades
+    coverage with no benefit.
+    """
     b = backend or get_default_backend()
     from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
     from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
@@ -245,17 +236,9 @@ def _probe_precise(
         IntersectionMap,
     )
 
+    # Always use all probes - no configuration
     probes = UnifiedAtlasInventory.all_probes()
     num_probes = len(probes)
-
-    if config.max_probes > 0 and config.max_probes < num_probes:
-        probes = probes[: config.max_probes]
-        logger.info(
-            "PROBE PRECISE: Limited to %d/%d probes (max_probes=%d)",
-            len(probes),
-            num_probes,
-            config.max_probes,
-        )
 
     logger.info(
         "PROBE PRECISE: Running %d probes through source and target models...",
@@ -622,145 +605,6 @@ def _probe_precise(
         target_kv_activations=target_kv_activations,
         probe_ids=probe_ids,
         probe_domains=probe_domains,
-    )
-
-
-def _probe_fast(
-    source_weights: dict[str, Any],
-    target_weights: dict[str, Any],
-    config: ProbeConfig,
-    extract_layer_index_fn: Callable[[str], int | None],
-    backend: "Backend | None" = None,
-) -> ProbeResult:
-    """Fast probe mode: Compute CKA directly on weight matrices.
-
-    PURE GEOMETRY: CKA (Centered Kernel Alignment) measures representational
-    similarity between weight matrices. It is invariant to isotropic scaling
-    and orthogonal transformations - exactly what we need for merge alignment.
-    """
-    b = backend or get_default_backend()
-    from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka, compute_layer_cka
-
-    weight_cka: dict[str, float] = {}
-    layer_cka: dict[int, list[float]] = {}
-    missing_keys = 0
-    shape_mismatches = 0
-    insufficient_samples = 0
-    unsupported_shapes = 0
-
-    for key in target_weights:
-        if key not in source_weights:
-            missing_keys += 1
-            continue
-
-        source_w = source_weights[key]
-        target_w = target_weights[key]
-
-        if source_w.shape != target_w.shape:
-            shape_mismatches += 1
-            continue
-
-        layer_idx = extract_layer_index_fn(key)
-        if layer_idx is None:
-            continue
-
-        # Compute CKA for 2D weight matrices
-        cka_score = 0.0
-        if source_w.ndim == 2 and source_w.shape[0] >= 2:
-            try:
-                cka_result = compute_layer_cka(
-                    source_w,
-                    target_w,
-                    estimator=HSICEstimator.AUTO,
-                    feature_bias_correction=True,
-                )
-                if cka_result.is_valid:
-                    cka_score = (
-                        cka_result.cka_corrected
-                        if cka_result.cka_corrected is not None
-                        else cka_result.cka
-                    )
-                else:
-                    cka_score = 0.0
-            except Exception:
-                cka_score = 0.0
-        elif source_w.ndim == 1 and source_w.shape[0] >= 2:
-            try:
-                src_vec = b.array(source_w)
-                tgt_vec = b.array(target_w)
-                src_mat = b.reshape(src_vec, (-1, 1))
-                tgt_mat = b.reshape(tgt_vec, (-1, 1))
-                cka_result = compute_cka(
-                    src_mat,
-                    tgt_mat,
-                    backend=b,
-                    estimator=HSICEstimator.AUTO,
-                    feature_bias_correction=True,
-                )
-                if cka_result.is_valid:
-                    cka_score = (
-                        cka_result.cka_corrected
-                        if cka_result.cka_corrected is not None
-                        else cka_result.cka
-                    )
-                else:
-                    cka_score = 0.0
-            except Exception:
-                cka_score = 0.0
-        elif source_w.shape[0] < 2:
-            insufficient_samples += 1
-        else:
-            unsupported_shapes += 1
-
-        weight_cka[key] = cka_score
-
-        if layer_idx not in layer_cka:
-            layer_cka[layer_idx] = []
-        layer_cka[layer_idx].append(cka_score)
-
-    # Compute per-layer CKA (mean of all weights in layer)
-    layer_confidences: dict[int, float] = {}
-    for layer_idx, vals in layer_cka.items():
-        layer_confidences[layer_idx] = sum(vals) / len(vals) if vals else 0.0
-
-    # Compute overall statistics
-    all_cka = list(weight_cka.values())
-    mean_cka = sum(all_cka) / len(all_cka) if all_cka else 0.0
-    min_cka = min(all_cka) if all_cka else 0.0
-    perfect_alignment = (
-        bool(all_cka)
-        and min_cka == 1.0
-        and missing_keys == 0
-        and shape_mismatches == 0
-        and insufficient_samples == 0
-        and unsupported_shapes == 0
-    )
-
-    metrics = {
-        "probe_mode": "fast",
-        "weight_count": len(weight_cka),
-        "layer_confidences": layer_confidences,
-        "mean_confidence": mean_cka,
-        "mean_cka": mean_cka,
-        "min_cka": min_cka,
-        "cka_estimator": "auto",
-        "feature_bias_correction": True,
-        "perfect_alignment": perfect_alignment,
-        "max_cka": max(all_cka) if all_cka else 0.0,
-        "missing_keys": missing_keys,
-        "shape_mismatches": shape_mismatches,
-        "insufficient_samples": insufficient_samples,
-        "unsupported_shapes": unsupported_shapes,
-    }
-
-    logger.info("PROBE FAST: %d weights, mean_cka=%.3f", len(weight_cka), mean_cka)
-
-    return ProbeResult(
-        correlations=weight_cka,
-        confidences=layer_confidences,
-        intersection_map=None,
-        dimension_correlations={},
-        metrics=metrics,
     )
 
 

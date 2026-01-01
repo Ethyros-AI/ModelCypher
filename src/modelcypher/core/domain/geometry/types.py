@@ -29,11 +29,6 @@ Array = TypeVar("Array")
 # --- Permutation Aligner Types ---
 
 
-@dataclass(frozen=True)
-class AlignmentConfig:
-    use_anchor_grounding: bool = True
-
-
 @dataclass
 class PermutationAlignmentResult:
     permutation: Any  # MLX Array or List
@@ -57,12 +52,18 @@ class RebasinResult:
 
 @dataclass(frozen=True)
 class ConceptConfiguration:
-    detection_threshold: float = 0.3
-    window_sizes: list[int] = field(default_factory=lambda: [10, 20, 30])
-    stride: int = 5
+    """Concept detection configuration.
+
+    Detection uses Otsu thresholding on similarity scores - no arbitrary
+    threshold required. The geometry of the similarity distribution determines
+    the optimal split point.
+    """
+
     collapse_consecutive: bool = True
-    max_concepts_per_response: int = 30
+    """Collapse consecutive detections of the same concept."""
+
     source_modality_hint: str | None = None
+    """Optional hint for cross-modal detection."""
 
 
 @dataclass(frozen=True)
@@ -121,9 +122,18 @@ class ContrastivePair:
 
 @dataclass(frozen=True)
 class RefusalConfig:
-    activation_difference_threshold: float = 0.1
+    """Refusal direction extraction configuration.
+
+    No arbitrary thresholds. The refusal direction is extracted via PCA
+    on the activation differences. Significance is determined by explained
+    variance ratio (geometric property), not magic numbers.
+    """
+
     normalize_direction: bool = True
+    """Whether to L2-normalize the extracted direction."""
+
     target_layers: list[int] | None = None
+    """Which layers to analyze. None = all layers."""
 
 
 @dataclass(frozen=True)
@@ -147,23 +157,9 @@ class RefusalDistanceMetrics:
 
 
 # --- Transport Guided Merger Types ---
-
-
-@dataclass(frozen=True)
-class GWConfig:
-    epsilon: float = 0.01
-    max_iter: int = 100
-    threshold: float = 1e-4
-
-
-@dataclass(frozen=True)
-class MergerConfig:
-    coupling_threshold: float = 0.001
-    normalize_rows: bool = True
-    blend_alpha: float = 0.5
-    use_intersection_confidence: bool = True
-    min_samples: int = 5
-    gw_config: GWConfig = field(default_factory=GWConfig)
+# Note: GWConfig and MergerConfig removed. GromovWassersteinDistance now
+# uses internally-derived algorithm parameters. TransportGuidedMerger uses
+# the transport plan directly without arbitrary blending thresholds.
 
 
 @dataclass
@@ -214,9 +210,21 @@ class ClusteringResult:
 
 @dataclass
 class ClusteringConfiguration:
-    epsilon: float = 0.5
-    min_samples: int = 5
-    metric: str = "geodesic"  # Geodesic distance for curved manifolds
+    """Clustering configuration for manifold analysis.
+
+    Epsilon and min_samples are data-derived, not arbitrary defaults.
+    - epsilon: Use HDBSCAN (auto-selects) or derive from k-NN distances
+    - min_samples: Standard heuristic is 2 * ambient_dimension
+    """
+
+    epsilon: float | None = None
+    """Neighborhood radius. None = auto-derive from k-NN graph."""
+
+    min_samples: int | None = None
+    """Minimum cluster size. None = 2 * ambient_dimension."""
+
+    metric: str = "geodesic"
+    """Distance metric. Geodesic is correct for curved manifolds."""
 
 
 # --- Intrinsic Dimension Types ---
@@ -309,6 +317,15 @@ class CompositionProbe:
 
 @dataclass(frozen=True)
 class CompositionAnalysis:
+    """Analysis of compositional structure for a probe.
+
+    Compositionality is determined by geometric properties:
+    - residual_norm: How much the composition misses the target (lower = better)
+    - centroid_similarity: How well the barycenter approximates the phrase (higher = better)
+
+    Both metrics are in [0, 1]. The midpoint (0.5) is the geometric boundary.
+    """
+
     probe: CompositionProbe
     barycentric_weights: list[float]
     residual_norm: float
@@ -317,7 +334,9 @@ class CompositionAnalysis:
 
     @property
     def is_compositional(self) -> bool:
-        return self.residual_norm < 0.5 and self.centroid_similarity > 0.3
+        """Compositional if residual is below midpoint AND similarity above midpoint."""
+        # Midpoint of [0, 1] is the geometric boundary between "yes" and "no"
+        return self.residual_norm < 0.5 and self.centroid_similarity > 0.5
 
 
 @dataclass(frozen=True)

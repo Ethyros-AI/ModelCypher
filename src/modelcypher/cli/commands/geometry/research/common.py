@@ -119,13 +119,11 @@ def parse_domains(values: list[str] | None) -> set[AtlasDomain] | None:
     return {AtlasDomain(value) for value in values}
 
 
-def load_model_and_provider(model_path: str, k_neighbors: int = 10):
+def load_model_and_provider(model_path: str):
     """Load model and create activation provider.
 
     Args:
         model_path: Path to the model directory.
-        k_neighbors: k for geodesic distance computation in intrinsic dimension.
-            Not used for token aggregation (which uses arithmetic mean).
     """
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.backends.mlx_backend import MLXBackend

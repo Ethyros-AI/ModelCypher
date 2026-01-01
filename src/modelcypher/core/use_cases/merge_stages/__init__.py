@@ -44,17 +44,18 @@ from .stage_0_vocabulary import (
     stage_vocabulary_align,
 )
 from .stage_1_probe import (
-    ProbeConfig,
     ProbeResult,
     collect_layer_activations_mlx,
     stage_probe,
 )
 from .stage_2_permute import (
-    PermuteConfig,
     PermuteResult,
     infer_hidden_dim,
     stage_permute,
 )
+# NOTE: ProbeConfig and PermuteConfig were REMOVED.
+# Probe always uses precise mode with all probes.
+# Permute always runs (no enable_permutation toggle).
 from .stage_3_transplant import (
     TransplantStageConfig,
     TransplantStageResult,
@@ -71,17 +72,15 @@ __all__ = [
     "stage_vocabulary_align",
     "VocabularyConfig",
     "VocabularyResult",
-    # Stage 1: Probe
+    # Stage 1: Probe (ProbeConfig REMOVED - always precise mode, all probes)
     "stage_probe",
-    "ProbeConfig",
     "ProbeResult",
     "collect_layer_activations_mlx",
-    # Stage 2: Permute (Git Re-Basin)
+    # Stage 2: Permute (PermuteConfig REMOVED - always runs)
     "stage_permute",
-    "PermuteConfig",
     "PermuteResult",
     "infer_hidden_dim",
-    # Stage 3: Transplant
+    # Stage 3: Transplant (simplified - only core_domains and graft_mask)
     "stage_transplant",
     "TransplantStageConfig",
     "TransplantStageResult",

@@ -51,9 +51,6 @@ def register(app: typer.Typer) -> None:
         domains: list[str] | None = typer.Option(
             None, "--domain", "-d", help="Filter by atlas domain (repeatable)"
         ),
-        k_neighbors: int = typer.Option(
-            10, "--k-neighbors", help="k for geodesic distance graph"
-        ),
         checkpoint_dir: str | None = typer.Option(
             None, "--checkpoint-dir", help="Directory for incremental checkpoints"
         ),
@@ -83,13 +80,10 @@ def register(app: typer.Typer) -> None:
 
         from modelcypher.core.domain.geometry.knowledge_density import (
             KnowledgeDensityAnalyzer,
-            KnowledgeDensityConfig,
         )
 
         # Load model
-        model, tokenizer, backend, provider, num_layers = load_model_and_provider(
-            model_path, k_neighbors
-        )
+        model, tokenizer, backend, provider, num_layers = load_model_and_provider(model_path)
 
         # All layers, no sampling
         all_layers = list(range(num_layers))
@@ -123,7 +117,6 @@ def register(app: typer.Typer) -> None:
                 logger.info("Resuming from checkpoint: %d layers complete", len(completed_layers))
 
         analyzer = KnowledgeDensityAnalyzer(backend=backend)
-        config = KnowledgeDensityConfig()
 
         # Results structure
         layer_profiles: dict[int, dict] = checkpoint_data.get("layerProfiles", {})
@@ -138,53 +131,45 @@ def register(app: typer.Typer) -> None:
 
             logger.info("Processing layer %d/%d...", layer_idx + 1, num_layers)
 
-            try:
-                layer_result = analyzer.analyze_layer(probes, provider, layer_idx, config)
+            layer_result = analyzer.analyze_layer(probes, provider, layer_idx)
 
-                # Store results
-                layer_profiles[layer_idx] = {
-                    "layer": layer_idx,
-                    "totalConcepts": len(layer_result.concept_densities),
-                    "meanDensity": layer_result.mean_density,
-                    "medianDensity": layer_result.median_density,
-                    "sparseCount": layer_result.sparse_concept_count,
-                    "denseCount": layer_result.dense_concept_count,
-                    "densityThreshold": layer_result.density_threshold,
-                    "concepts": [
-                        {
-                            "probeID": c.probe_id,
-                            "name": c.name,
-                            "domain": c.domain,
-                            "densityScore": c.density_score,
-                            "intrinsicDimension": c.intrinsic_dimension,
-                            "activationVariance": c.activation_variance,
-                            "clusterTightness": c.cluster_tightness,
-                        }
-                        for c in layer_result.concept_densities
-                    ],
-                }
-                completed_layers.add(layer_idx)
+            # Store results
+            layer_profiles[layer_idx] = {
+                "layer": layer_idx,
+                "totalConcepts": len(layer_result.concept_densities),
+                "meanDensity": layer_result.mean_density,
+                "medianDensity": layer_result.median_density,
+                "concepts": [
+                    {
+                        "probeID": c.probe_id,
+                        "name": c.name,
+                        "domain": c.domain,
+                        "densityScore": c.density_score,
+                        "intrinsicDimension": c.intrinsic_dimension,
+                        "activationVariance": c.activation_variance,
+                        "clusterTightness": c.cluster_tightness,
+                    }
+                    for c in layer_result.concept_densities
+                ],
+            }
+            completed_layers.add(layer_idx)
 
-                # Save checkpoint after each layer
-                if checkpoint_dir:
-                    checkpoint_path = Path(checkpoint_dir)
-                    checkpoint_path.mkdir(parents=True, exist_ok=True)
-                    checkpoint_file = checkpoint_path / "full_profile_checkpoint.json"
-                    checkpoint_file.write_text(json.dumps({
-                        "modelPath": model_path,
-                        "completedLayers": sorted(completed_layers),
-                        "totalLayers": num_layers,
-                        "layerProfiles": {str(k): v for k, v in layer_profiles.items()},
-                    }, indent=2))
-                    logger.info(
-                        "Checkpoint saved: %d/%d layers",
-                        len(completed_layers),
-                        num_layers,
-                    )
-
-            except Exception as exc:
-                logger.error("Failed to process layer %d: %s", layer_idx, exc)
-                # Continue to next layer, don't abort
+            # Save checkpoint after each layer
+            if checkpoint_dir:
+                checkpoint_path = Path(checkpoint_dir)
+                checkpoint_path.mkdir(parents=True, exist_ok=True)
+                checkpoint_file = checkpoint_path / "full_profile_checkpoint.json"
+                checkpoint_file.write_text(json.dumps({
+                    "modelPath": model_path,
+                    "completedLayers": sorted(completed_layers),
+                    "totalLayers": num_layers,
+                    "layerProfiles": {str(k): v for k, v in layer_profiles.items()},
+                }, indent=2))
+                logger.info(
+                    "Checkpoint saved: %d/%d layers",
+                    len(completed_layers),
+                    num_layers,
+                )
 
         # Compute domain summaries across all layers
         domain_summaries: dict[str, dict] = {}
@@ -283,7 +268,7 @@ def register(app: typer.Typer) -> None:
                 lp = layer_profiles[layer_idx]
                 lines.append(
                     f"  L{layer_idx}: mean={lp['meanDensity']:.3f}, "
-                    f"sparse={lp['sparseCount']}, dense={lp['denseCount']}"
+                    f"concepts={lp['totalConcepts']}"
                 )
 
             write_output("\n".join(lines), context.output_format, context.pretty)
@@ -303,9 +288,6 @@ def register(app: typer.Typer) -> None:
         ),
         domains: list[str] | None = typer.Option(
             None, "--domain", "-d", help="Filter by atlas domain (repeatable)"
-        ),
-        k_neighbors: int = typer.Option(
-            10, "--k-neighbors", help="k for geodesic distance graph"
         ),
     ) -> None:
         """Profile multiple models SEQUENTIALLY with automatic resource management.
@@ -330,7 +312,6 @@ def register(app: typer.Typer) -> None:
 
         from modelcypher.core.domain.geometry.knowledge_density import (
             KnowledgeDensityAnalyzer,
-            KnowledgeDensityConfig,
         )
 
         # Resolve output directory
@@ -393,9 +374,7 @@ def register(app: typer.Typer) -> None:
             try:
                 # Load model
                 logger.info("Loading model: %s", model_path)
-                model, tokenizer, backend, provider, num_layers = load_model_and_provider(
-                    model_path, k_neighbors
-                )
+                model, tokenizer, backend, provider, num_layers = load_model_and_provider(model_path)
 
                 all_layers = list(range(num_layers))
                 logger.info(
@@ -417,7 +396,6 @@ def register(app: typer.Typer) -> None:
                     logger.info("Resuming from checkpoint: %d layers complete", len(completed_layers))
 
                 analyzer = KnowledgeDensityAnalyzer(backend=backend)
-                config = KnowledgeDensityConfig()
 
                 # Results structure
                 layer_profiles: dict[int, dict] = checkpoint_data.get("layerProfiles", {})
@@ -430,43 +408,36 @@ def register(app: typer.Typer) -> None:
 
                     logger.info("Processing layer %d/%d...", layer_idx + 1, num_layers)
 
-                    try:
-                        layer_result = analyzer.analyze_layer(probes, provider, layer_idx, config)
+                    layer_result = analyzer.analyze_layer(probes, provider, layer_idx)
 
-                        layer_profiles[layer_idx] = {
-                            "layer": layer_idx,
-                            "totalConcepts": len(layer_result.concept_densities),
-                            "meanDensity": layer_result.mean_density,
-                            "medianDensity": layer_result.median_density,
-                            "sparseCount": layer_result.sparse_concept_count,
-                            "denseCount": layer_result.dense_concept_count,
-                            "densityThreshold": layer_result.density_threshold,
-                            "concepts": [
-                                {
-                                    "probeID": c.probe_id,
-                                    "name": c.name,
-                                    "domain": c.domain,
-                                    "densityScore": c.density_score,
-                                    "intrinsicDimension": c.intrinsic_dimension,
-                                    "activationVariance": c.activation_variance,
-                                    "clusterTightness": c.cluster_tightness,
-                                }
-                                for c in layer_result.concept_densities
-                            ],
-                        }
-                        completed_layers.add(layer_idx)
+                    layer_profiles[layer_idx] = {
+                        "layer": layer_idx,
+                        "totalConcepts": len(layer_result.concept_densities),
+                        "meanDensity": layer_result.mean_density,
+                        "medianDensity": layer_result.median_density,
+                        "concepts": [
+                            {
+                                "probeID": c.probe_id,
+                                "name": c.name,
+                                "domain": c.domain,
+                                "densityScore": c.density_score,
+                                "intrinsicDimension": c.intrinsic_dimension,
+                                "activationVariance": c.activation_variance,
+                                "clusterTightness": c.cluster_tightness,
+                            }
+                            for c in layer_result.concept_densities
+                        ],
+                    }
+                    completed_layers.add(layer_idx)
 
-                        # Save checkpoint after each layer
-                        checkpoint_file.write_text(json.dumps({
-                            "modelPath": model_path,
-                            "completedLayers": sorted(completed_layers),
-                            "totalLayers": num_layers,
-                            "layerProfiles": {str(k): v for k, v in layer_profiles.items()},
-                        }, indent=2))
-                        logger.info("Checkpoint saved: %d/%d layers", len(completed_layers), num_layers)
-
-                    except Exception as exc:
-                        logger.error("Failed to process layer %d: %s", layer_idx, exc)
+                    # Save checkpoint after each layer
+                    checkpoint_file.write_text(json.dumps({
+                        "modelPath": model_path,
+                        "completedLayers": sorted(completed_layers),
+                        "totalLayers": num_layers,
+                        "layerProfiles": {str(k): v for k, v in layer_profiles.items()},
+                    }, indent=2))
+                    logger.info("Checkpoint saved: %d/%d layers", len(completed_layers), num_layers)
 
                 # Compute domain summaries
                 domain_summaries: dict[str, dict] = {}

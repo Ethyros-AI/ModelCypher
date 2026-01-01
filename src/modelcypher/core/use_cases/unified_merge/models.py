@@ -49,10 +49,6 @@ class UnifiedMergeConfig:
     # Transplant settings - REQUIRED for effective knowledge transfer
     # Core domains define what concepts to transplant (e.g., "mathematical")
     transplant_domains: tuple[str, ...] = ()
-    # Specific layers to transplant (None = all, but targeting is recommended)
-    transplant_layers: tuple[int, ...] | None = None
-    transplant_boundary_k: int | None = None
-    transplant_geodesic_k_neighbors: int | None = None
     # NOTE: Alpha was REMOVED. The null-space projection determines preserved_fraction
     # geometrically. For best results, do sequential single-domain transplants.
 

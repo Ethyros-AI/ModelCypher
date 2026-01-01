@@ -521,6 +521,67 @@ Do NOT conclude "the models are incompatible." They are the SAME invariant geome
 
 ---
 
+## CRITICAL: Don't Invent Heuristics
+
+**AI assistants have a failure mode: inventing "standard heuristics" that don't exist.**
+
+When you need a parameter value, your training pushes you to:
+1. Make up a number (k=20, threshold=0.05)
+2. Invent a citation ("standard heuristic is 2 * dimension")
+3. Dress it up in math language ("5th percentile", "geometric midpoint")
+
+**All of these are wrong.** You are fabricating authority you don't have.
+
+### Examples of Fabrication
+
+```python
+# WRONG - invented "standard heuristic"
+k_neighbors = 2 * ambient_dimension  # "standard heuristic"
+# WHERE IS THE CITATION? There isn't one. You made it up.
+
+# WRONG - arbitrary number with math costume
+threshold = sorted_values[int(0.05 * len(sorted_values))]  # "5th percentile"
+# WHY 5th? Why not 3rd or 10th? You picked 5 because it sounds reasonable.
+
+# WRONG - "geometric midpoint" justification
+cutoff = 0.5  # "geometric midpoint of [0,1]"
+# This is just 0.5. Calling it "geometric" doesn't make it derived from geometry.
+```
+
+### What To Do Instead
+
+1. **Admit you don't know** - "I don't have a citation for this. Let me derive it from the data."
+
+2. **Derive from the data itself** - The data has structure. Use it.
+   ```python
+   # CORRECT - the data determines k
+   # Find where k-NN distance distribution has maximum curvature (elbow)
+   k = find_elbow_in_knn_distances(points)
+
+   # CORRECT - the data determines the boundary
+   # geodesic_radius is computed FROM the activations during volume estimation
+   is_inside = distance <= volume.geodesic_radius
+   ```
+
+3. **Use mathematical properties, not feelings**
+   - Machine epsilon: derived from dtype (not arbitrary)
+   - Geodesic radius: derived from data extent (not arbitrary)
+   - Explained variance ratio: derived from eigenspectrum (not arbitrary)
+
+4. **If you can't derive it, say so** - "This requires a threshold. I don't know how to derive it from the geometry. What should we do?"
+
+### Why This Matters
+
+When you invent a heuristic:
+- You're lying about having knowledge you don't have
+- The user trusts your fabricated citation
+- The codebase accumulates arbitrary numbers dressed as math
+- Future maintainers can't find the "standard" you cited because it doesn't exist
+
+**The geometry does everything. If you need a number and the geometry doesn't give it to you, STOP and ask.**
+
+---
+
 ## What NOT To Do
 
 1. **Don't import numpy. ANYWHERE.** - Use the Backend protocol. Tests included. No exceptions.
@@ -538,3 +599,5 @@ Do NOT conclude "the models are incompatible." They are the SAME invariant geome
 13. **Don't use thresholds for geometric alignment** - CKA = 1.0 (0.9999 for numerical precision) or WRONG. No "close enough."
 14. **Don't pick "best" from bad options** - If perfect alignment isn't found, FAIL. Don't choose the least-bad failure.
 15. **Don't add fallbacks** - Fallbacks mask failures. If alignment fails, raise an exception. The failure IS the information.
+16. **Don't invent heuristics** - "Standard heuristic" requires a citation. If you can't cite it, you made it up. Derive from data or ask.
+17. **Don't dress arbitrary numbers as math** - "5th percentile" is just 0.05 in a costume. "Geometric midpoint" is just 0.5. The disguise doesn't make it derived.

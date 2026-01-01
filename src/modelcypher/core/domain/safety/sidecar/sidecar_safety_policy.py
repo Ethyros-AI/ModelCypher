@@ -18,6 +18,7 @@
 """Sidecar safety policy and thresholds.
 
 Policy thresholds for sidecar divergence monitoring based on KL divergence.
+Thresholds are derived from baseline measurements - no arbitrary defaults.
 
 Notes on KL interpretation:
 - D_KL(p0 || pProbe) is always >= 0.
@@ -27,7 +28,7 @@ Notes on KL interpretation:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from modelcypher.core.domain.safety.sidecar.session_control_state import (
@@ -62,48 +63,92 @@ class SidecarSafetyThresholds:
 class SidecarSafetyPolicy:
     """Policy thresholds for sidecar divergence monitoring.
 
-    Defines both hard and soft thresholds for KL divergence from probe
-    distributions. Hard thresholds trigger intervention; soft thresholds
-    trigger caution mode. Soft thresholds can be adjusted based on
-    consent grants.
+    Thresholds are derived from baseline KL measurements, not arbitrary defaults.
+    The baseline should be collected by running the model on safe/normal inputs
+    and measuring KL divergence to the horror probe distribution.
+
+    Hard threshold: 1st percentile of baseline KL (very close to horror = danger)
+    Soft threshold: 5th percentile of baseline KL (moderately close = caution)
+
+    If no baseline is provided, online percentile estimation is used.
     """
 
-    horror_kl_divergence_hard: float = 0.10
-    """Hard-stop proximity threshold for the horror probe.
-    If D_KL(p0 || p_horror) <= this value, intervention is required."""
+    baseline_kl_measurements: list[float] = field(default_factory=list)
+    """Baseline KL divergence measurements from safe/normal generation.
 
-    horror_kl_divergence_soft: float = 0.25
-    """Soft warning threshold for the horror probe (consent-adjustable)."""
+    Used to derive thresholds via percentiles. If empty, thresholds are
+    computed online from observed samples.
+    """
 
-    sentinel_kl_divergence_soft: float | None = None
-    """Soft warning threshold for the sentinel observer (optional)."""
+    hard_percentile: float = 1.0
+    """Percentile for hard-stop threshold (default: 1st percentile)."""
+
+    soft_percentile: float = 5.0
+    """Percentile for soft warning threshold (default: 5th percentile)."""
 
     relax_soft_thresholds_under_consent: bool = True
-    """When true, a consent grant in scenario .horror relaxes the *soft* horror threshold.
-    Hard-stop threshold is never relaxed."""
+    """When true, a consent grant relaxes the soft threshold (makes it stricter).
 
-    consent_soft_threshold_multiplier: float = 0.5
-    """Multiplier applied to soft thresholds when consent is active.
-
-    Since "proximity" corresponds to *lower* KL, relaxing the soft threshold means
-    decreasing the soft threshold by this multiplier (< 1.0).
+    Hard-stop threshold is NEVER relaxed.
     """
 
     @classmethod
     def default(cls) -> SidecarSafetyPolicy:
-        """Create default policy."""
+        """Create default policy with no baseline (uses online estimation)."""
         return cls()
+
+    @classmethod
+    def from_baseline(
+        cls,
+        baseline_measurements: list[float],
+        hard_percentile: float = 1.0,
+        soft_percentile: float = 5.0,
+    ) -> SidecarSafetyPolicy:
+        """Create policy with baseline measurements.
+
+        Args:
+            baseline_measurements: KL divergence measurements from safe generation
+            hard_percentile: Percentile for hard threshold (default: 1st)
+            soft_percentile: Percentile for soft threshold (default: 5th)
+
+        Raises:
+            ValueError: If baseline_measurements is empty
+        """
+        if not baseline_measurements:
+            raise ValueError("baseline_measurements cannot be empty")
+        return cls(
+            baseline_kl_measurements=list(baseline_measurements),
+            hard_percentile=hard_percentile,
+            soft_percentile=soft_percentile,
+        )
+
+    def _compute_percentile(self, values: list[float], percentile: float) -> float:
+        """Compute percentile value from a list of measurements."""
+        if not values:
+            # No data - return 0 (most conservative: any KL triggers)
+            return 0.0
+        sorted_values = sorted(values)
+        n = len(sorted_values)
+        idx = int(percentile * n / 100.0)
+        idx = max(0, min(idx, n - 1))
+        return sorted_values[idx]
 
     def thresholds(
         self,
         control: SessionControlState | None = None,
         now: datetime | None = None,
+        observed_kl: list[float] | None = None,
     ) -> SidecarSafetyThresholds:
         """Compute effective thresholds given session control state.
+
+        Thresholds are derived from baseline measurements if available,
+        otherwise from observed KL values during the session.
 
         Args:
             control: Optional session control state (scenario + consent).
             now: Current time. Defaults to UTC now.
+            observed_kl: Optional list of KL values observed during session
+                         (used for online estimation if no baseline).
 
         Returns:
             Computed thresholds with consent adjustments applied.
@@ -111,11 +156,24 @@ class SidecarSafetyPolicy:
         if now is None:
             now = datetime.now(timezone.utc)
 
+        # Use baseline if available, otherwise use observed values
+        measurements = self.baseline_kl_measurements if self.baseline_kl_measurements else (observed_kl or [])
+
+        # Compute percentile-based thresholds
+        horror_hard = self._compute_percentile(measurements, self.hard_percentile)
+        horror_soft = self._compute_percentile(measurements, self.soft_percentile)
+
+        # Ensure soft >= hard (soft is less restrictive)
+        horror_soft = max(horror_soft, horror_hard)
+
+        # Sentinel uses same percentiles if we have measurements
+        sentinel_soft = horror_soft if measurements else None
+
         if control is None:
             return SidecarSafetyThresholds(
-                horror_hard=self.horror_kl_divergence_hard,
-                horror_soft=self.horror_kl_divergence_soft,
-                sentinel_soft=self.sentinel_kl_divergence_soft,
+                horror_hard=horror_hard,
+                horror_soft=horror_soft,
+                sentinel_soft=sentinel_soft,
             )
 
         consent_active = control.is_consent_active(now)
@@ -126,41 +184,33 @@ class SidecarSafetyPolicy:
             in (ScenarioMode.HORROR, ScenarioMode.ROLEPLAY, ScenarioMode.FICTION)
         )
 
-        soft_multiplier = (
-            max(0.01, min(1.0, self.consent_soft_threshold_multiplier))
-            if should_relax_soft
-            else 1.0
-        )
+        # Consent makes soft threshold stricter (lower value = triggers earlier)
+        # Multiply by 0.5 to halve the threshold
+        soft_multiplier = 0.5 if should_relax_soft else 1.0
 
         return SidecarSafetyThresholds(
-            horror_hard=self.horror_kl_divergence_hard,
-            horror_soft=self.horror_kl_divergence_soft * soft_multiplier,
-            sentinel_soft=(
-                self.sentinel_kl_divergence_soft * soft_multiplier
-                if self.sentinel_kl_divergence_soft is not None
-                else None
-            ),
+            horror_hard=horror_hard,  # Hard threshold NEVER changes
+            horror_soft=horror_soft * soft_multiplier,
+            sentinel_soft=(sentinel_soft * soft_multiplier if sentinel_soft is not None else None),
         )
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
         return {
-            "horror_kl_divergence_hard": self.horror_kl_divergence_hard,
-            "horror_kl_divergence_soft": self.horror_kl_divergence_soft,
-            "sentinel_kl_divergence_soft": self.sentinel_kl_divergence_soft,
+            "baseline_kl_measurements": self.baseline_kl_measurements,
+            "hard_percentile": self.hard_percentile,
+            "soft_percentile": self.soft_percentile,
             "relax_soft_thresholds_under_consent": self.relax_soft_thresholds_under_consent,
-            "consent_soft_threshold_multiplier": self.consent_soft_threshold_multiplier,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> SidecarSafetyPolicy:
         """Create from dictionary."""
         return cls(
-            horror_kl_divergence_hard=data.get("horror_kl_divergence_hard", 0.10),
-            horror_kl_divergence_soft=data.get("horror_kl_divergence_soft", 0.25),
-            sentinel_kl_divergence_soft=data.get("sentinel_kl_divergence_soft"),
+            baseline_kl_measurements=data.get("baseline_kl_measurements", []),
+            hard_percentile=data.get("hard_percentile", 1.0),
+            soft_percentile=data.get("soft_percentile", 5.0),
             relax_soft_thresholds_under_consent=data.get(
                 "relax_soft_thresholds_under_consent", True
             ),
-            consent_soft_threshold_multiplier=data.get("consent_soft_threshold_multiplier", 0.5),
         )

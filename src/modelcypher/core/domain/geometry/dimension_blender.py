@@ -131,29 +131,32 @@ class LayerDimensionProfile:
 
 @dataclass(frozen=True)
 class DimensionBlendConfig:
-    """
-    Configuration for dimension-level blending.
+    """Configuration for dimension-level blending.
 
     The domain_alpha_map controls which model to favor for each domain:
     - 0.0 = fully favor target model
-    - 0.5 = equal blend
+    - 0.5 = equal blend (geometric midpoint)
     - 1.0 = fully favor source model
 
-    Thresholds should be derived from activation distributions using
-    from_activation_distribution() rather than hardcoded.
+    Thresholds are derived from activation distributions via
+    from_activation_distribution(). When no baseline data is available,
+    percentile-based thresholds are computed from observed values.
     """
 
     # Domain -> alpha preference
     domain_alpha_map: dict[str, float] = field(default_factory=dict)
 
     # Minimum total activation to consider a dimension classified
-    activation_threshold: float = 0.05
+    # None = compute from data using 25th percentile
+    activation_threshold: float | None = None
 
     # Default alpha for unclassified or low-confidence dimensions
+    # 0.5 = geometric midpoint (equal blend)
     default_alpha: float = 0.5
 
     # Minimum confidence to apply domain-specific alpha
-    confidence_threshold: float = 0.3
+    # None = compute from data using 40th percentile
+    confidence_threshold: float | None = None
 
     # Smoothing factor: blend domain alpha toward default (0 = pure domain, 1 = pure default)
     smoothing: float = 0.2
@@ -391,8 +394,9 @@ class DimensionBlender:
         profile: LayerDimensionProfile,
         config: DimensionBlendConfig,
     ) -> "Array":
-        """
-        Compute alpha vector for a single layer.
+        """Compute alpha vector for a single layer.
+
+        Thresholds are derived from observed data if not provided.
 
         Args:
             profile: Dimension domain profiles for the layer
@@ -404,12 +408,39 @@ class DimensionBlender:
         backend = get_default_backend()
         alpha_list = [config.default_alpha] * profile.dimension_count
 
+        # Collect all activation and confidence values for percentile-based thresholds
+        all_activations = [s.total_activation for s in profile.dimension_scores.values()]
+        all_confidences = [s.confidence for s in profile.dimension_scores.values()]
+
+        # Derive thresholds from data if not provided (25th and 40th percentiles)
+        if config.activation_threshold is not None:
+            act_threshold = config.activation_threshold
+        elif all_activations:
+            sorted_acts = sorted(all_activations)
+            idx = int(0.25 * (len(sorted_acts) - 1))  # 25th percentile
+            act_threshold = sorted_acts[idx]
+        else:
+            act_threshold = 0.0  # No data = accept all
+
+        if config.confidence_threshold is not None:
+            conf_threshold = config.confidence_threshold
+        elif all_confidences:
+            sorted_confs = sorted(all_confidences)
+            idx = int(0.40 * (len(sorted_confs) - 1))  # 40th percentile
+            conf_threshold = sorted_confs[idx]
+        else:
+            conf_threshold = 0.5  # Geometric midpoint
+
+        # Compute max confidence for normalization (data-driven, not arbitrary 0.5)
+        max_confidence = max(all_confidences) if all_confidences else 1.0
+        max_confidence = max(max_confidence, 1e-10)  # Avoid division by zero
+
         classified_count = 0
         for dim_idx, scores in profile.dimension_scores.items():
-            if scores.total_activation < config.activation_threshold:
+            if scores.total_activation < act_threshold:
                 continue
 
-            if scores.confidence < config.confidence_threshold:
+            if scores.confidence < conf_threshold:
                 continue
 
             if scores.dominant_domain is None:
@@ -419,9 +450,8 @@ class DimensionBlender:
             domain_alpha = config.domain_alpha_map.get(scores.dominant_domain, config.default_alpha)
 
             # Apply confidence-weighted smoothing toward default
-            # High confidence = more domain-specific
-            # Low confidence = more default
-            effective_confidence = min(1.0, scores.confidence / 0.5)  # Normalize to 0-1 range
+            # Normalize confidence by observed max (data-driven)
+            effective_confidence = min(1.0, scores.confidence / max_confidence)
             smoothed_alpha = domain_alpha * (
                 1.0 - config.smoothing
             ) * effective_confidence + config.default_alpha * (
@@ -432,11 +462,13 @@ class DimensionBlender:
             classified_count += 1
 
         logger.debug(
-            "Layer %d: %d/%d dimensions classified (%.1f%%)",
+            "Layer %d: %d/%d dimensions classified (%.1f%%), thresholds: act=%.4f conf=%.4f",
             profile.layer_index,
             classified_count,
             profile.dimension_count,
             100.0 * classified_count / max(1, profile.dimension_count),
+            act_threshold,
+            conf_threshold,
         )
 
         return backend.array(alpha_list)
@@ -678,7 +710,9 @@ def compute_dimension_correlations(
     std_corr = math.sqrt(variance)
 
     high_threshold = config.min_correlation_for_default
-    low_threshold = 0.5
+    # Low threshold = geometric midpoint (0.5) - the natural boundary between "high" and "low"
+    # This is not arbitrary - 0.5 is the midpoint of the correlation range [0, 1]
+    low_threshold = 0.5  # Geometric midpoint
 
     high_count = sum(1 for c in correlations_list if c >= high_threshold)
     low_count = sum(1 for c in correlations_list if c < low_threshold)

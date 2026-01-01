@@ -34,39 +34,30 @@ References:
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
-from modelcypher.core.domain.geometry.gromov_wasserstein import (
-    Config as GWConfig,
-)
-from modelcypher.core.domain.geometry.gromov_wasserstein import (
-    GromovWassersteinDistance,
+from modelcypher.core.domain.geometry.gromov_wasserstein import GromovWassersteinDistance
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
 )
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
-# Import canonical IntersectionMap from manifold_stitcher (not placeholder)
-
 
 class TransportGuidedMerger:
-    """Transport-guided model merger using GPU-accelerated Gromov-Wasserstein."""
+    """Transport-guided model merger using GPU-accelerated Gromov-Wasserstein.
+
+    All thresholds are derived from the geometry of the transport plan and
+    numerical precision of the dtype. No arbitrary parameters.
+    """
 
     def __init__(self, backend: "Backend | None" = None) -> None:
         self._backend = backend or get_default_backend()
         self._gw = GromovWassersteinDistance(self._backend)
-
-    @dataclass
-    class Config:
-        coupling_threshold: float = 0.001
-        normalize_rows: bool = True
-        blend_alpha: float = 0.5
-        use_intersection_confidence: bool = True
-        min_samples: int = 5
-        gw_config: GWConfig = field(default_factory=GWConfig)
 
     @dataclass
     class Result:
@@ -92,12 +83,13 @@ class TransportGuidedMerger:
         source_weights: "Array",
         target_weights: "Array",
         transport_plan: "Array",
-        config: "TransportGuidedMerger.Config | None" = None,
     ) -> "Array | None":
-        """Synthesize merged weights using transport plan."""
-        if config is None:
-            config = TransportGuidedMerger.Config()
+        """Synthesize merged weights using transport plan.
 
+        The transport plan determines the correspondence. Coupling threshold
+        is derived from numerical precision (machine epsilon). No arbitrary
+        blending - the transport plan IS the blending.
+        """
         backend = self._backend
         n = source_weights.shape[0]
         m = target_weights.shape[0]
@@ -107,30 +99,24 @@ class TransportGuidedMerger:
         if transport_plan.shape[0] != n or transport_plan.shape[1] != m:
             return None
 
-        d_source = source_weights.shape[1]
-        d_target = target_weights.shape[1]
+        # Derive coupling threshold from numerical precision
+        # Values below sqrt(eps) are numerically meaningless
+        eps = machine_epsilon(backend, transport_plan)
+        coupling_threshold = math.sqrt(float(backend.to_numpy(eps)))
 
-        # Apply threshold and normalize if configured
+        # Zero out values below numerical precision threshold
         processed_plan = transport_plan
-        if config.coupling_threshold > 0:
-            # Zero out values below threshold
-            mask = processed_plan >= config.coupling_threshold
-            processed_plan = backend.where(mask, processed_plan, backend.zeros_like(processed_plan))
+        mask = processed_plan >= coupling_threshold
+        processed_plan = backend.where(mask, processed_plan, backend.zeros_like(processed_plan))
 
-        if config.normalize_rows:
-            # Normalize rows to sum to 1
-            row_sums = backend.sum(processed_plan, axis=1, keepdims=True)
-            row_sums = backend.maximum(row_sums, backend.full(row_sums.shape, 1e-10))
-            processed_plan = processed_plan / row_sums
+        # Normalize rows to sum to 1 (always - this is mathematical correctness, not config)
+        row_sums = backend.sum(processed_plan, axis=1, keepdims=True)
+        row_sums = backend.maximum(row_sums, backend.full(row_sums.shape, coupling_threshold))
+        processed_plan = processed_plan / row_sums
 
         # Compute transport-merged weights: W_merged = π^T @ W_source
         # π is [n, m], W_source is [n, d_source], result is [m, d_source]
         merged_weights = backend.matmul(backend.transpose(processed_plan), source_weights)
-
-        # Blend with target if dimensions match and alpha > 0
-        if d_source == d_target and config.blend_alpha > 0:
-            alpha = config.blend_alpha
-            merged_weights = (1.0 - alpha) * merged_weights + alpha * target_weights
 
         return merged_weights
 
@@ -140,16 +126,17 @@ class TransportGuidedMerger:
         target_activations: "Array",
         source_weights: "Array",
         target_weights: "Array",
-        config: "TransportGuidedMerger.Config | None" = None,
     ) -> "TransportGuidedMerger.Result | None":
-        """Synthesize merged weights using Gromov-Wasserstein transport."""
-        if config is None:
-            config = TransportGuidedMerger.Config()
+        """Synthesize merged weights using Gromov-Wasserstein transport.
 
+        All parameters are derived from the geometry. Minimum sample count
+        is 2 (minimum for meaningful distance computation).
+        """
         backend = self._backend
         sample_count = source_activations.shape[0]
 
-        if sample_count < config.min_samples:
+        # Minimum 2 samples required for pairwise distances
+        if sample_count < 2:
             return None
         if sample_count != target_activations.shape[0]:
             return None
@@ -170,9 +157,9 @@ class TransportGuidedMerger:
         source_dist = self._gw.compute_pairwise_distances(source_points)
         target_dist = self._gw.compute_pairwise_distances(target_points)
 
-        # Compute GW transport plan
+        # Compute GW transport plan - all params derived from dtype
         gw_result = self._gw.compute(
-            source_distances=source_dist, target_distances=target_dist, config=config.gw_config
+            source_distances=source_dist, target_distances=target_dist
         )
 
         if not (gw_result.converged or gw_result.iterations > 0):
@@ -182,9 +169,7 @@ class TransportGuidedMerger:
         row_error, col_error = self._compute_marginal_error(gw_result.coupling)
         marginal_error = max(row_error, col_error)
 
-        effective_rank = self._compute_effective_rank(
-            gw_result.coupling, config.coupling_threshold
-        )
+        effective_rank = self._compute_effective_rank(gw_result.coupling)
         dim_confidences = self._compute_dimension_confidences(gw_result.coupling)
 
         # Synthesize
@@ -192,7 +177,6 @@ class TransportGuidedMerger:
             source_weights=source_weights,
             target_weights=target_weights,
             transport_plan=gw_result.coupling,
-            config=config,
         )
 
         if merged is None:
@@ -218,12 +202,8 @@ class TransportGuidedMerger:
         target_crm: ConceptResponseMatrix,
         source_weights: dict[int, "Array"],
         target_weights: dict[int, "Array"],
-        config: "TransportGuidedMerger.Config | None" = None,
     ) -> "TransportGuidedMerger.BatchResult":
         """Synthesize merged weights from CRMs for all common layers."""
-        if config is None:
-            config = TransportGuidedMerger.Config()
-
         layer_results: dict[str, TransportGuidedMerger.Result] = {}
         failed_layers: list[str] = []
         total_gw_dist = 0.0
@@ -259,7 +239,6 @@ class TransportGuidedMerger:
                 target_activations=target_act,
                 source_weights=src_w,
                 target_weights=tgt_w,
-                config=config,
             )
 
             if result:
@@ -322,9 +301,15 @@ class TransportGuidedMerger:
         backend.eval(max_row_error, max_col_error)
         return (float(backend.to_numpy(max_row_error)), float(backend.to_numpy(max_col_error)))
 
-    def _compute_effective_rank(self, coupling: "Array", threshold: float) -> int:
-        """Compute effective rank (number of entries above threshold)."""
+    def _compute_effective_rank(self, coupling: "Array") -> int:
+        """Compute effective rank (number of entries above numerical noise floor).
+
+        Threshold is derived from machine epsilon - values below sqrt(eps)
+        are numerically meaningless.
+        """
         backend = self._backend
+        eps = machine_epsilon(backend, coupling)
+        threshold = math.sqrt(float(backend.to_numpy(eps)))
         mask = coupling >= threshold
         count = backend.sum(backend.astype(mask, coupling.dtype))
         backend.eval(count)

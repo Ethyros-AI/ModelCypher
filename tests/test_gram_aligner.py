@@ -63,13 +63,20 @@ class TestAlignmentResult:
         assert result.is_perfect
 
     def test_is_perfect_false_below_threshold(self):
-        """is_perfect should be False when CKA < 0.9999."""
+        """is_perfect should be False when CKA < 1.0 - precision_threshold.
+
+        The precision_threshold is dtype-derived (sqrt(machine_epsilon)).
+        Default for float32 is ~3.5e-4, so CKA must be >= 0.99965.
+        We test with an explicit tight threshold to verify the behavior.
+        """
         result = AlignmentResult(
             feature_transform=[[1.0]],
             sample_transform=[[1.0]],
             achieved_cka=0.9998,
             iterations=10,
             alignment_error=1e-5,
+            # Use tight threshold: requires CKA >= 0.99999
+            precision_threshold=1e-5,
         )
         assert not result.is_perfect
 
@@ -85,13 +92,20 @@ class TestAlignmentResult:
         assert result.is_converged
 
     def test_is_converged_false_large_error(self):
-        """is_converged should be False when error >= 1e-6."""
+        """is_converged should be False when error >= precision_threshold.
+
+        The precision_threshold is dtype-derived (sqrt(machine_epsilon)).
+        Default for float32 is ~3.5e-4, so error must be < 3.5e-4.
+        We test with an explicit tight threshold to verify the behavior.
+        """
         result = AlignmentResult(
             feature_transform=[[1.0]],
             sample_transform=[[1.0]],
             achieved_cka=0.99,
             iterations=10,
             alignment_error=1e-5,
+            # Use tight threshold: requires error < 1e-6
+            precision_threshold=1e-6,
         )
         assert not result.is_converged
 
@@ -117,6 +131,34 @@ class TestAlignmentResult:
             alignment_error=0.0,
         )
         assert result.diagnostic is None
+
+    def test_precision_threshold_default(self):
+        """precision_threshold should default to ~3.5e-4 (float32 sqrt(eps))."""
+        result = AlignmentResult(
+            feature_transform=[[1.0]],
+            sample_transform=[[1.0]],
+            achieved_cka=1.0,
+            iterations=1,
+            alignment_error=0.0,
+        )
+        # Default is sqrt(float32 eps) ≈ 3.5e-4
+        assert 1e-4 < result.precision_threshold < 1e-3
+
+    def test_precision_threshold_custom(self):
+        """precision_threshold can be overridden for different dtypes."""
+        # float64 has eps ~2.2e-16, sqrt(eps) ≈ 1.5e-8
+        result = AlignmentResult(
+            feature_transform=[[1.0]],
+            sample_transform=[[1.0]],
+            achieved_cka=0.99999999,
+            iterations=1,
+            alignment_error=1e-9,
+            precision_threshold=1.5e-8,
+        )
+        # With tight threshold, 0.99999999 should be considered perfect
+        assert result.is_perfect
+        # And 1e-9 error should be converged
+        assert result.is_converged
 
 
 # =============================================================================

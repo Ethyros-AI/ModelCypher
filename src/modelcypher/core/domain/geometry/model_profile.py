@@ -281,15 +281,11 @@ class DensitySummary:
     """Summary of knowledge density for storage in ModelProfile."""
 
     overall_density: float = 0.0
-    sparse_concept_count: int = 0
-    dense_concept_count: int = 0
     domain_densities: dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "overall_density": self.overall_density,
-            "sparse_concept_count": self.sparse_concept_count,
-            "dense_concept_count": self.dense_concept_count,
             "domain_densities": self.domain_densities,
         }
 
@@ -297,8 +293,6 @@ class DensitySummary:
     def from_dict(cls, d: dict[str, Any]) -> DensitySummary:
         return cls(
             overall_density=d.get("overall_density", 0.0),
-            sparse_concept_count=d.get("sparse_concept_count", 0),
-            dense_concept_count=d.get("dense_concept_count", 0),
             domain_densities=d.get("domain_densities", {}),
         )
 
@@ -307,8 +301,6 @@ class DensitySummary:
         """Create from a ModelDensityProfile."""
         return cls(
             overall_density=profile.overall_density,
-            sparse_concept_count=len(profile.sparse_concepts),
-            dense_concept_count=len(profile.dense_concepts),
             domain_densities=dict(profile.domain_densities),
         )
 

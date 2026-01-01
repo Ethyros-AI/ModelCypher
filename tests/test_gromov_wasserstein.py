@@ -19,9 +19,10 @@
 
 Tests:
 - Result dataclass (properties, __post_init__)
-- Config dataclass (defaults, parameters)
 - GromovWassersteinDistance class (compute, Frank-Wolfe, Sinkhorn, helpers)
 - Edge cases (empty, single point, identical matrices)
+
+All solver parameters are derived from dtype - no configuration needed.
 """
 
 from __future__ import annotations
@@ -32,7 +33,6 @@ from typing import TYPE_CHECKING
 import pytest
 
 from modelcypher.core.domain.geometry.gromov_wasserstein import (
-    Config,
     GromovWassersteinDistance,
     Result,
 )
@@ -174,59 +174,6 @@ class TestResult:
 
 
 # =============================================================================
-# Config Dataclass Tests
-# =============================================================================
-
-
-class TestConfig:
-    """Tests for Config dataclass."""
-
-    def test_default_values(self) -> None:
-        """Should have sensible default values."""
-        config = Config()
-
-        assert config.max_outer_iterations == 30
-        assert config.min_outer_iterations == 5
-        assert config.sinkhorn_epsilon == 0.001
-        assert config.sinkhorn_iterations == 50
-        assert config.use_squared_loss is True
-        assert config.num_restarts == 10
-        assert config.seed == 42
-        assert config.ensure_symmetry is True
-
-    def test_custom_values(self) -> None:
-        """Should accept custom values."""
-        config = Config(
-            max_outer_iterations=50,
-            min_outer_iterations=10,
-            sinkhorn_epsilon=0.01,
-            num_restarts=5,
-            seed=123,
-        )
-
-        assert config.max_outer_iterations == 50
-        assert config.min_outer_iterations == 10
-        assert config.sinkhorn_epsilon == 0.01
-        assert config.num_restarts == 5
-        assert config.seed == 123
-
-    def test_convergence_thresholds_default_none(self) -> None:
-        """Convergence thresholds should default to None (derived at runtime)."""
-        config = Config()
-
-        assert config.convergence_threshold is None
-        assert config.relative_objective_threshold is None
-        assert config.sinkhorn_threshold is None
-
-    def test_frozen(self) -> None:
-        """Config should be frozen (immutable)."""
-        config = Config()
-
-        with pytest.raises(Exception):  # FrozenInstanceError
-            config.max_outer_iterations = 100  # type: ignore
-
-
-# =============================================================================
 # GromovWassersteinDistance Tests - Basic Operations
 # =============================================================================
 
@@ -343,8 +290,8 @@ class TestGromovWassersteinDistanceIdentity:
         dist_a = gw.compute_pairwise_distances(points_a)
         dist_b = gw.compute_pairwise_distances(points_b)
 
-        config = Config()
-        result = gw.compute(dist_a, dist_b, config=config)
+        # All params derived from dtype - no config needed
+        result = gw.compute(dist_a, dist_b)
 
         assert result.distance < 0.02
 
@@ -633,8 +580,8 @@ class TestDifferentSizes:
         )
         b.eval(dist1, dist2)
 
-        config = Config(num_restarts=3, max_outer_iterations=10)
-        result = gw.compute(dist1, dist2, config)
+        # All params derived from dtype - no config needed
+        result = gw.compute(dist1, dist2)
 
         # Should return valid result
         assert math.isfinite(result.distance)
@@ -656,17 +603,11 @@ class TestPointCloudGW:
         points = b.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
         b.eval(points)
 
-        config = Config(num_restarts=1, max_outer_iterations=10)
+        # All params derived from dtype - no config needed
         gw = GromovWassersteinDistance(backend=b)
-        source_dist = gw.compute_pairwise_distances(
-            points,
-            k_neighbors=config.geodesic_k_neighbors,
-        )
-        target_dist = gw.compute_pairwise_distances(
-            points,
-            k_neighbors=config.geodesic_k_neighbors,
-        )
-        result = gw.compute(source_dist, target_dist, config)
+        source_dist = gw.compute_pairwise_distances(points)
+        target_dist = gw.compute_pairwise_distances(points)
+        result = gw.compute(source_dist, target_dist)
 
         assert result.distance == pytest.approx(0.0, abs=0.01)
 
@@ -675,17 +616,11 @@ class TestPointCloudGW:
         points_a = [[0.0, 0.0], [1.0, 0.0]]
         points_b = [[0.0, 0.0], [1.0, 0.0]]
 
-        config = Config(num_restarts=1, max_outer_iterations=10)
+        # All params derived from dtype - no config needed
         gw = GromovWassersteinDistance()
-        source_dist = gw.compute_pairwise_distances(
-            points_a,
-            k_neighbors=config.geodesic_k_neighbors,
-        )
-        target_dist = gw.compute_pairwise_distances(
-            points_b,
-            k_neighbors=config.geodesic_k_neighbors,
-        )
-        result = gw.compute(source_dist, target_dist, config)
+        source_dist = gw.compute_pairwise_distances(points_a)
+        target_dist = gw.compute_pairwise_distances(points_b)
+        result = gw.compute(source_dist, target_dist)
 
         assert result.distance == pytest.approx(0.0, abs=0.01)
 
@@ -736,38 +671,36 @@ class TestEdgeCases:
         dist2 = dist1 * 2.0
         b.eval(dist1, dist2)
 
-        config = Config(num_restarts=3, max_outer_iterations=20)
-        result = gw.compute(dist1, dist2, config)
+        # All params derived from dtype - no config needed
+        result = gw.compute(dist1, dist2)
 
         # Should have non-zero distance due to scale difference
         assert result.distance > 0.0
 
-    def test_very_large_num_restarts(self, any_backend: "Backend") -> None:
-        """Should handle large number of restarts."""
+    def test_identity_distance_small_matrix(self, any_backend: "Backend") -> None:
+        """Identical matrices should have zero distance."""
         gw = GromovWassersteinDistance(backend=any_backend)
         b = any_backend
 
         dist = b.array([[0.0, 1.0], [1.0, 0.0]])
         b.eval(dist)
 
-        config = Config(num_restarts=50, max_outer_iterations=5)
-        result = gw.compute(dist, dist, config)
+        result = gw.compute(dist, dist)
 
-        # Should still converge
+        # Should converge to zero distance
         assert result.distance == 0.0
 
-    def test_zero_seed(self, any_backend: "Backend") -> None:
-        """Should handle seed=None (non-deterministic)."""
+    def test_identical_larger_matrix(self, any_backend: "Backend") -> None:
+        """Larger identical matrices should have zero distance."""
         gw = GromovWassersteinDistance(backend=any_backend)
         b = any_backend
 
         dist = b.array([[0.0, 1.0, 2.0], [1.0, 0.0, 1.5], [2.0, 1.5, 0.0]])
         b.eval(dist)
 
-        config = Config(seed=None, num_restarts=2)
-        result = gw.compute(dist, dist, config)
+        result = gw.compute(dist, dist)
 
-        # Should still produce valid result
+        # Should produce valid result with zero distance
         assert result.distance == 0.0
 
 
@@ -835,10 +768,9 @@ class TestGromovWassersteinHypothesis:
         dist_a = gw.compute_pairwise_distances(points_a)
         dist_b = gw.compute_pairwise_distances(points_b)
 
-        config = Config(num_restarts=3, max_outer_iterations=15, seed=42)
-
-        result_ab = gw.compute(dist_a, dist_b, config)
-        result_ba = gw.compute(dist_b, dist_a, config)
+        # All params derived from dtype - no config needed
+        result_ab = gw.compute(dist_a, dist_b)
+        result_ba = gw.compute(dist_b, dist_a)
 
         # Should be symmetric within tolerance
         assert result_ab.distance == pytest.approx(result_ba.distance, rel=0.2)
@@ -864,8 +796,8 @@ class TestGromovWassersteinHypothesis:
         dist_a = gw.compute_pairwise_distances(points_a)
         dist_b = gw.compute_pairwise_distances(points_b)
 
-        config = Config(num_restarts=2, max_outer_iterations=10)
-        result = gw.compute(dist_a, dist_b, config)
+        # All params derived from dtype - no config needed
+        result = gw.compute(dist_a, dist_b)
 
         assert result.distance >= 0.0
 
@@ -890,8 +822,8 @@ class TestGromovWassersteinHypothesis:
         dist_a = gw.compute_pairwise_distances(points_a)
         dist_b = gw.compute_pairwise_distances(points_b)
 
-        config = Config(num_restarts=2, max_outer_iterations=15)
-        result = gw.compute(dist_a, dist_b, config)
+        # All params derived from dtype - no config needed
+        result = gw.compute(dist_a, dist_b)
 
         if not result.converged:
             assume(False)
@@ -942,9 +874,8 @@ class TestGromovWassersteinHypothesis:
         dist_orig = gw.compute_pairwise_distances(points)
         dist_perm = gw.compute_pairwise_distances(permuted)
 
-        config = Config(num_restarts=3, max_outer_iterations=15, seed=42)
-
-        result = gw.compute(dist_orig, dist_perm, config)
+        # All params derived from dtype - no config needed
+        result = gw.compute(dist_orig, dist_perm)
 
         # Should be near 0 since it's just a permutation
         assert result.distance < 0.1

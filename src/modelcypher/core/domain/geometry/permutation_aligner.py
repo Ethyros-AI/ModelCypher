@@ -78,6 +78,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -193,12 +194,13 @@ class PermutationAligner:
         if source_signatures.shape[0] != N or target_signatures.shape[0] != N:
             raise PermutationAlignerError("Anchor signatures shape mismatch")
 
-        # Normalize signatures
+        # Normalize signatures (dtype-derived epsilon for numerical stability)
+        eps = division_epsilon(b, source_signatures)
         source_norms = (
-            b.sqrt(b.sum(source_signatures * source_signatures, axis=1, keepdims=True)) + 1e-8
+            b.sqrt(b.sum(source_signatures * source_signatures, axis=1, keepdims=True)) + eps
         )
         target_norms = (
-            b.sqrt(b.sum(target_signatures * target_signatures, axis=1, keepdims=True)) + 1e-8
+            b.sqrt(b.sum(target_signatures * target_signatures, axis=1, keepdims=True)) + eps
         )
         source_normalized = source_signatures / source_norms
         target_normalized = target_signatures / target_norms
@@ -388,9 +390,10 @@ class PermutationAligner:
         source_fp32 = b.astype(source_signatures, "float32")
         target_fp32 = b.astype(target_signatures, "float32")
 
-        # Normalize
-        source_norms = b.sqrt(b.sum(source_fp32 * source_fp32, axis=1, keepdims=True)) + 1e-8
-        target_norms = b.sqrt(b.sum(target_fp32 * target_fp32, axis=1, keepdims=True)) + 1e-8
+        # Normalize (dtype-derived epsilon for numerical stability)
+        eps = division_epsilon(b, source_fp32)
+        source_norms = b.sqrt(b.sum(source_fp32 * source_fp32, axis=1, keepdims=True)) + eps
+        target_norms = b.sqrt(b.sum(target_fp32 * target_fp32, axis=1, keepdims=True)) + eps
 
         source_normalized = source_fp32 / source_norms
         target_normalized = target_fp32 / target_norms

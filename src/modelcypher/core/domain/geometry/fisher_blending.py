@@ -40,6 +40,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -213,6 +214,8 @@ def normalize_fisher_weights(
         Normalized Fisher weights
     """
     b = backend or get_default_backend()
+    # Dtype-derived epsilon for numerical stability
+    eps = division_epsilon(b, fisher)
 
     if method == FisherNormalization.NONE:
         return fisher
@@ -225,10 +228,10 @@ def normalize_fisher_weights(
 
         f_min_val = float(b.to_numpy(f_min).item())
         f_max_val = float(b.to_numpy(f_max).item())
-        if (f_max_val - f_min_val) < 1e-10:
+        if (f_max_val - f_min_val) < eps:
             return b.ones_like(fisher)
 
-        return (fisher - f_min) / (f_max - f_min + 1e-10)
+        return (fisher - f_min) / (f_max - f_min + eps)
 
     elif method == FisherNormalization.GLOBAL:
         if global_stats is None:
@@ -240,11 +243,11 @@ def normalize_fisher_weights(
         else:
             mean, std = global_stats
 
-        if std < 1e-10:
+        if std < eps:
             return b.ones_like(fisher)
 
         # Z-score normalization, then sigmoid to [0, 1]
-        z = (fisher - mean) / (std + 1e-10)
+        z = (fisher - mean) / (std + eps)
         return 1.0 / (1.0 + b.exp(-z))
 
     elif method == FisherNormalization.SOFTMAX:
@@ -255,7 +258,7 @@ def normalize_fisher_weights(
         max_scaled = b.max(scaled)
         scaled = scaled - max_scaled
         exp_scaled = b.exp(scaled)
-        softmax = exp_scaled / (b.sum(exp_scaled) + 1e-10)
+        softmax = exp_scaled / (b.sum(exp_scaled) + eps)
         # Scale up to preserve relative magnitudes
         return b.reshape(softmax * fisher_flat.size, fisher.shape)
 
@@ -562,6 +565,8 @@ def combine_fisher_weights(
             continue
 
         stacked = b.stack(weights_for_key, axis=0)
+        # Dtype-derived epsilon for numerical stability
+        eps = division_epsilon(b, stacked)
 
         if combination_method == "mean":
             combined[key] = b.mean(stacked, axis=0)
@@ -569,7 +574,7 @@ def combine_fisher_weights(
             combined[key] = b.max(stacked, axis=0)
         elif combination_method == "harmonic":
             # Harmonic mean
-            reciprocal = 1.0 / (stacked + 1e-10)
+            reciprocal = 1.0 / (stacked + eps)
             combined[key] = len(weights_for_key) / b.sum(reciprocal, axis=0)
         else:
             combined[key] = b.mean(stacked, axis=0)

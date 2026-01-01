@@ -153,115 +153,15 @@ class Thresholds:
 
 
 @dataclass(frozen=True)
-class GromovWassersteinConfig:
-    """Configuration for GW solver using Frank-Wolfe algorithm.
-
-    Use with_parameters() to create with explicit values.
-    """
-
-    # Frank-Wolfe parameters
-    max_outer_iterations: int
-    min_outer_iterations: int
-    convergence_threshold: float
-    relative_objective_threshold: float
-
-    # Sinkhorn parameters for linear OT subproblem
-    sinkhorn_epsilon: float
-    sinkhorn_iterations: int
-    sinkhorn_threshold: float
-
-    # Loss function
-    use_squared_loss: bool
-
-    # Random restarts to escape local minima
-    num_restarts: int
-
-    @classmethod
-    def with_parameters(
-        cls,
-        *,
-        max_outer_iterations: int = 100,
-        min_outer_iterations: int = 5,
-        convergence_threshold: float = 1e-7,
-        relative_objective_threshold: float = 1e-7,
-        sinkhorn_epsilon: float = 0.001,
-        sinkhorn_iterations: int = 200,
-        sinkhorn_threshold: float = 1e-8,
-        use_squared_loss: bool = True,
-        num_restarts: int = 5,
-    ) -> "GromovWassersteinConfig":
-        """Create configuration with explicit parameters.
-
-        Args:
-            max_outer_iterations: Maximum Frank-Wolfe iterations.
-            min_outer_iterations: Minimum iterations before convergence check.
-            convergence_threshold: Absolute convergence threshold.
-            relative_objective_threshold: Relative objective convergence threshold.
-            sinkhorn_epsilon: Entropy regularization for Sinkhorn.
-            sinkhorn_iterations: Maximum Sinkhorn iterations.
-            sinkhorn_threshold: Sinkhorn convergence threshold.
-            use_squared_loss: Whether to use squared loss function.
-            num_restarts: Number of random restarts.
-
-        Returns:
-            Configuration with specified parameters.
-        """
-        if max_outer_iterations < 1:
-            raise ValueError(f"max_outer_iterations must be >= 1, got {max_outer_iterations}")
-        if min_outer_iterations < 1:
-            raise ValueError(f"min_outer_iterations must be >= 1, got {min_outer_iterations}")
-        if sinkhorn_epsilon <= 0:
-            raise ValueError(f"sinkhorn_epsilon must be > 0, got {sinkhorn_epsilon}")
-        if sinkhorn_iterations < 1:
-            raise ValueError(f"sinkhorn_iterations must be >= 1, got {sinkhorn_iterations}")
-        if num_restarts < 1:
-            raise ValueError(f"num_restarts must be >= 1, got {num_restarts}")
-        return cls(
-            max_outer_iterations=max_outer_iterations,
-            min_outer_iterations=min_outer_iterations,
-            convergence_threshold=convergence_threshold,
-            relative_objective_threshold=relative_objective_threshold,
-            sinkhorn_epsilon=sinkhorn_epsilon,
-            sinkhorn_iterations=sinkhorn_iterations,
-            sinkhorn_threshold=sinkhorn_threshold,
-            use_squared_loss=use_squared_loss,
-            num_restarts=num_restarts,
-        )
-
-    @classmethod
-    def standard(cls) -> "GromovWassersteinConfig":
-        """Return standard GW solver configuration."""
-        return cls.with_parameters()
-
-    @classmethod
-    def default(cls) -> "GromovWassersteinConfig":
-        """Alias for standard GW solver configuration."""
-        return cls.standard()
-
-    def solver_config(self) -> GWConfig:
-        return GWConfig(
-            max_outer_iterations=self.max_outer_iterations,
-            min_outer_iterations=self.min_outer_iterations,
-            convergence_threshold=self.convergence_threshold,
-            relative_objective_threshold=self.relative_objective_threshold,
-            sinkhorn_epsilon=self.sinkhorn_epsilon,
-            sinkhorn_iterations=self.sinkhorn_iterations,
-            sinkhorn_threshold=self.sinkhorn_threshold,
-            use_squared_loss=self.use_squared_loss,
-            num_restarts=self.num_restarts,
-        )
-
-
-@dataclass(frozen=True)
 class Config:
     """Configuration for geometry validation suite.
 
     Use with_parameters() to create with explicit values.
+    GW solver parameters are derived from dtype - no configuration needed.
     """
 
     include_fixtures: bool
     thresholds: Thresholds
-    gromov_wasserstein: GromovWassersteinConfig
 
     @classmethod
     def with_parameters(
@@ -269,14 +169,12 @@ class Config:
         *,
         include_fixtures: bool = False,
         thresholds: Thresholds | None = None,
-        gromov_wasserstein: GromovWassersteinConfig | None = None,
     ) -> "Config":
         """Create configuration with explicit parameters.
 
         Args:
             include_fixtures: Whether to include test fixtures in report.
             thresholds: Validation thresholds (uses with_parameters() defaults if None).
-            gromov_wasserstein: GW solver config (uses with_parameters() defaults if None).
 
         Returns:
             Configuration with specified parameters.
@@ -284,7 +182,6 @@ class Config:
         return cls(
             include_fixtures=include_fixtures,
             thresholds=thresholds or Thresholds.with_parameters(),
-            gromov_wasserstein=gromov_wasserstein or GromovWassersteinConfig.with_parameters(),
         )
 
     @classmethod
@@ -456,7 +353,6 @@ class GeometryValidationSuite:
         fixtures = self._build_fixtures()
         gw_validation = self._validate_gromov_wasserstein(
             fixture=fixtures.gromov_wasserstein,
-            config=resolved.gromov_wasserstein,
             thresholds=resolved.thresholds,
         )
         traversal_validation = self._validate_traversal_coherence(
@@ -650,11 +546,9 @@ class GeometryValidationSuite:
     def _validate_gromov_wasserstein(
         self,
         fixture: GromovWassersteinFixture,
-        config: GromovWassersteinConfig,
         thresholds: Thresholds,
     ) -> GromovWassersteinValidation:
         backend = self._backend
-        solver_config = config.solver_config()
 
         # Convert fixture data to backend arrays
         source_dist = backend.array(fixture.source_distances)
@@ -662,25 +556,22 @@ class GeometryValidationSuite:
         sym_source_dist = backend.array(fixture.symmetry_source_distances)
         sym_target_dist = backend.array(fixture.symmetry_target_distances)
 
+        # All solver params derived from dtype - no config needed
         identity = self._gw.compute(
             source_distances=source_dist,
             target_distances=source_dist,
-            config=solver_config,
         )
         permuted = self._gw.compute(
             source_distances=source_dist,
             target_distances=target_dist,
-            config=solver_config,
         )
         symmetry_forward = self._gw.compute(
             source_distances=sym_source_dist,
             target_distances=sym_target_dist,
-            config=solver_config,
         )
         symmetry_reverse = self._gw.compute(
             source_distances=sym_target_dist,
             target_distances=sym_source_dist,
-            config=solver_config,
         )
         symmetry_delta = abs(symmetry_forward.distance - symmetry_reverse.distance)
         row_error, column_error = self._coupling_mass_errors(permuted.coupling)

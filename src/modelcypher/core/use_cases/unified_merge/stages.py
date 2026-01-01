@@ -74,22 +74,21 @@ def stage_probe(
     source_tokenizer: Any | None,
     target_tokenizer: Any | None,
     alignment_map: Any | None,
-    config: UnifiedMergeConfig,
     extract_layer_index_fn: Callable[[str], int | None],
 ) -> tuple[dict[str, Any], dict[str, Any], dict | None, dict | None]:
-    """Stage 1: Compute layer correspondences via CKA."""
+    """Stage 1: Compute layer correspondences via CKA.
+
+    No configuration - always uses precise mode with all probes.
+    """
     from modelcypher.core.use_cases.merge_stages.stage_1_probe import (
-        ProbeConfig,
         collect_layer_activations_mlx,
     )
     from modelcypher.core.use_cases.merge_stages.stage_1_probe import (
         stage_probe as stage_probe_impl,
     )
 
-    probe_config = ProbeConfig(
-        probe_mode=config.probe_mode,
-        max_probes=config.max_probes,
-    )
+    # ProbeConfig was REMOVED. Always use precise mode with all probes.
+    # No configuration needed - the probe corpus is designed for complete coverage.
 
     collect_fn = (
         collect_layer_activations_mlx
@@ -100,7 +99,6 @@ def stage_probe(
     result = stage_probe_impl(
         source_weights=source_weights,
         target_weights=target_weights,
-        config=probe_config,
         extract_layer_index_fn=extract_layer_index_fn,
         source_model=source_model,
         target_model=target_model,
@@ -126,7 +124,6 @@ def stage_permute(
     target_weights: dict[str, Any],
     intersection_map_obj: Any | None,
     layer_confidences: dict[int, float],
-    enable_permutation: bool,
     backend: "Backend",
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """
@@ -141,24 +138,25 @@ def stage_permute(
     source and target weights. By aligning neuron orderings first, the
     null-space projection in transplant has less work to do.
 
+    No configuration - permutation alignment is always run.
+
     Reference: Ainsworth et al. (2023) arXiv:2209.04836 "Git Re-Basin"
     """
     from modelcypher.core.use_cases.merge_stages.stage_2_permute import (
-        PermuteConfig,
         infer_hidden_dim,
     )
     from modelcypher.core.use_cases.merge_stages.stage_2_permute import (
         stage_permute as stage_permute_impl,
     )
 
-    config = PermuteConfig(enable_permutation=enable_permutation)
+    # PermuteConfig was REMOVED. Permutation alignment always runs.
+    # Skipping permutation alignment produces worse merges with no benefit.
 
     result = stage_permute_impl(
         source_weights=source_weights,
         target_weights=target_weights,
         intersection_map_obj=intersection_map_obj,
         layer_confidences=layer_confidences,
-        config=config,
         infer_hidden_dim_fn=infer_hidden_dim,
         backend=backend,
     )
@@ -173,7 +171,6 @@ def stage_density(
     probe_ids: list[str] | None,
     probe_domains: list[str] | None,
     layers: list[int],
-    skip_density_analysis: bool = False,
     backend: "Backend",
 ) -> tuple[dict[str, dict[int, bool]] | None, dict[str, Any]]:
     """Stage 2.5: Density analysis for selective grafting.
@@ -184,19 +181,14 @@ def stage_density(
         probe_ids: List of probe IDs.
         probe_domains: List of domains for each probe.
         layers: Layer indices to analyze.
-        skip_density_analysis: Skip and graft all (backward compatible).
         backend: Backend for tensor operations.
 
     Returns:
         Tuple of (graft_mask, density_metrics).
-        graft_mask is None if skipped (means graft all).
     """
     from modelcypher.core.use_cases.merge_stages.stage_2_density import (
-        DensityStageConfig,
         stage_density as stage_density_impl,
     )
-
-    config = DensityStageConfig(skip_density_analysis=skip_density_analysis)
 
     result = stage_density_impl(
         source_activations=source_activations or {},
@@ -204,7 +196,6 @@ def stage_density(
         probe_ids=probe_ids or [],
         probe_domains=probe_domains or [],
         layers=layers,
-        config=config,
         backend=backend,
     )
 
@@ -226,12 +217,16 @@ def stage_transplant(
     target_attention_activations: dict | None,
     source_kv_activations: dict | None = None,
     target_kv_activations: dict | None = None,
-    config: UnifiedMergeConfig,
-    extract_layer_index_fn: Callable[[str], int | None],
-    backend: "Backend",
+    transplant_domains: tuple[str, ...] = (),
+    extract_layer_index_fn: Callable[[str], int | None] = lambda x: None,
+    backend: "Backend | None" = None,
     graft_mask: dict[str, dict[int, bool]] | None = None,
 ) -> tuple[dict[str, "Array"], dict[str, Any]]:
-    """Stage 3: Null-space constrained transplant."""
+    """Stage 3: Null-space constrained transplant.
+
+    No configuration - all geometric parameters derived from data.
+    Only transplant_domains is user input.
+    """
     from modelcypher.core.use_cases.merge_stages.stage_3_transplant import (
         TransplantStageConfig,
     )
@@ -239,11 +234,10 @@ def stage_transplant(
         stage_transplant as stage_transplant_impl,
     )
 
+    # TransplantStageConfig simplified: only core_domains and internal graft_mask
+    # boundary_k, geodesic_k_neighbors, transplant_layers all REMOVED
     stage_config = TransplantStageConfig(
-        core_domains=tuple(config.transplant_domains),
-        boundary_k=config.transplant_boundary_k,
-        geodesic_k_neighbors=config.transplant_geodesic_k_neighbors,
-        transplant_layers=config.transplant_layers,
+        core_domains=tuple(transplant_domains),
         graft_mask=graft_mask,
     )
 
