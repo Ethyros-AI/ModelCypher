@@ -211,15 +211,23 @@ class GateDetector:
                 detected_gates=[],
             )
 
+        # When all similarities are identical AND low, it's ambiguous - return empty
+        # But if they're all high (e.g., perfect matches), keep them
         if len(best_similarities) > 1 and max(best_similarities) == min(best_similarities):
-            return DetectionResult(
-                model_id=model_id,
-                prompt_id=prompt_id,
-                response_text=text,
-                detected_gates=[],
-            )
+            # If all similarities are high (> 0.9), they're all valid detections
+            if max(best_similarities) <= 0.9:
+                return DetectionResult(
+                    model_id=model_id,
+                    prompt_id=prompt_id,
+                    response_text=text,
+                    detected_gates=[],
+                )
 
         if len(best_similarities) == 1:
+            detections = candidates
+        elif max(best_similarities) == min(best_similarities):
+            # All similarities are equal and high (passed the <= 0.9 check above)
+            # Include all candidates since they're all equally valid
             detections = candidates
         else:
             threshold = self._otsu_threshold(best_similarities)
