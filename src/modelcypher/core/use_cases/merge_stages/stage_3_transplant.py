@@ -442,6 +442,10 @@ def stage_transplant(
         if analysis_samples >= 2:
             src_analysis = b.stack(src_act_list[:analysis_samples], axis=0)
             tgt_analysis = b.stack(act_list[:analysis_samples], axis=0)
+            # Convert to float32 for numerical stability in SVD operations.
+            # bfloat16 causes errors in many linalg operations.
+            src_analysis = b.astype(src_analysis, "float32")
+            tgt_analysis = b.astype(tgt_analysis, "float32")
             b.eval(src_analysis, tgt_analysis)
 
         if src_analysis is not None and config.enable_shared_subspace:
@@ -558,6 +562,8 @@ def stage_transplant(
                 metrics["transform_requirements_by_layer"][layer_idx] = transform_requirements
 
         stacked = b.stack(act_list, axis=0)
+        # Convert to float32 for numerical stability in linalg operations.
+        stacked = b.astype(stacked, "float32")
         b.eval(stacked)
 
         partition = partition_core_boundary(

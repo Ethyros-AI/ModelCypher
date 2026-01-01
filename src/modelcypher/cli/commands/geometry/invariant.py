@@ -94,11 +94,6 @@ def geometry_invariant_map_layers(
         "--triangulation/--no-triangulation",
         help="Enable cross-domain triangulation scoring",
     ),
-    collapse_threshold: float = typer.Option(
-        0.35,
-        "--collapse-threshold",
-        help="Threshold for collapse detection (0.0-1.0)",
-    ),
     sample_layers: int = typer.Option(
         12,
         "--sample-layers",
@@ -109,6 +104,9 @@ def geometry_invariant_map_layers(
 
     Uses probes from all atlases with cross-domain triangulation
     scoring to find corresponding layers between models.
+
+    Collapse threshold is derived from the activation variance
+    distribution across layers. No user parameters for thresholds.
 
     Scopes:
         invariants        - Default sequence families
@@ -142,7 +140,6 @@ def geometry_invariant_map_layers(
         invariant_scope=scope,
         families=family_list,
         use_triangulation=triangulation,
-        collapse_threshold=collapse_threshold,
         sample_layer_count=sample_layers,
         atlas_sources=atlas_source_list,
         atlas_domains=atlas_domain_list,
@@ -225,11 +222,6 @@ def geometry_invariant_collapse_risk(
         "--families",
         help="Comma-separated list of families (default: all)",
     ),
-    threshold: float = typer.Option(
-        0.35,
-        "--threshold",
-        help="Collapse detection threshold (0.0-1.0)",
-    ),
     sample_layers: int = typer.Option(
         12,
         "--sample-layers",
@@ -241,9 +233,11 @@ def geometry_invariant_collapse_risk(
     Identifies layers where invariant activation is too sparse for
     reliable layer correspondence in merge operations.
 
+    Collapse threshold is derived from the activation variance
+    distribution. No user parameters for thresholds.
+
     Example:
         mc geometry invariant collapse-risk --model ./qwen2.5-7b
-        mc geometry invariant collapse-risk --model ./model --threshold 0.25
     """
     context = _context(ctx)
     service = InvariantLayerMappingService()
@@ -255,7 +249,6 @@ def geometry_invariant_collapse_risk(
     config = CollapseRiskConfig(
         model_path=model,
         families=family_list,
-        collapse_threshold=threshold,
         sample_layer_count=sample_layers,
     )
 

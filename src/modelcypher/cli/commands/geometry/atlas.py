@@ -205,9 +205,6 @@ def atlas_dimensionality(
     max_total_texts: int = typer.Option(
         8, "--max-total-texts", help="Maximum total texts used per probe"
     ),
-    k_neighbors: int = typer.Option(
-        10, "--k-neighbors", help="k for geodesic distance graph"
-    ),
     bootstrap: int = typer.Option(0, "--bootstrap", help="Bootstrap resamples (0 = none)"),
     regression: bool = typer.Option(
         True,
@@ -352,9 +349,6 @@ def atlas_dimensionality_study(
     ),
     max_total_texts: int = typer.Option(
         8, "--max-total-texts", help="Maximum total texts used per probe"
-    ),
-    k_neighbors: int = typer.Option(
-        10, "--k-neighbors", help="k for geodesic distance graph"
     ),
     bootstrap: int = typer.Option(0, "--bootstrap", help="Bootstrap resamples (0 = none)"),
     regression: bool = typer.Option(

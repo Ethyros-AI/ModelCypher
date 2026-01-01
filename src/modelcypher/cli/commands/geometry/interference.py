@@ -348,14 +348,16 @@ def compute_volume(
     model_path: str = typer.Argument(..., help="Path to model"),
     concept: str = typer.Argument(..., help="Concept to analyze"),
     layer: int = typer.Option(-1, "--layer", help="Layer to analyze"),
-    samples: int = typer.Option(10, "--samples", help="Number of prompt variations"),
 ) -> None:
     """
     Compute ConceptVolume for a single concept.
 
     Shows the distributional properties of a concept in the model's
     latent space: centroid, covariance, geodesic radius, curvature.
+
+    Uses 10 prompt variations for reliable volume estimation.
     """
+    samples = 10  # Fixed for reproducibility
     context = _context(ctx)
 
     from modelcypher.adapters.model_loader import load_model_for_training
