@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, AsyncGenerator
 
 import torch
@@ -65,17 +65,17 @@ class DualPathGeneratorConfigurationCUDA:
     """Configuration for CUDA dual-path generator."""
 
     base_model_path: str
-    adapter_path: str | None = None
-    max_tokens: int = 512
-    temperature: float = 0.7
-    top_p: float = 0.95
-    top_k: int = 50
-    repetition_penalty: float = 1.0
-    stop_sequences: list[str] = field(default_factory=list)
-    halt_on_circuit_breaker: bool = True
-    device: str = "cuda:0"
-    dtype: str = "float16"  # float16, bfloat16, float32
-    entropy_top_k: int = 100  # Top-K for entropy calculation
+    adapter_path: str | None
+    max_tokens: int
+    temperature: float
+    top_p: float
+    top_k: int
+    repetition_penalty: float
+    stop_sequences: list[str]
+    halt_on_circuit_breaker: bool
+    device: str
+    dtype: str  # float16, bfloat16, float32
+    entropy_top_k: int  # Top-K for entropy calculation
 
 
 def compute_token_rank_metrics_cuda(

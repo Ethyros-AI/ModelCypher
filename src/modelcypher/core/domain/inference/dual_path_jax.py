@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, AsyncGenerator
 
 import jax
@@ -65,16 +65,16 @@ class DualPathGeneratorConfigurationJAX:
     """Configuration for JAX dual-path generator."""
 
     base_model_path: str
-    adapter_path: str | None = None
-    max_tokens: int = 512
-    temperature: float = 0.7
-    top_p: float = 0.95
-    top_k: int = 50
-    repetition_penalty: float = 1.0
-    stop_sequences: list[str] = field(default_factory=list)
-    halt_on_circuit_breaker: bool = True
-    entropy_top_k: int = 100  # Top-K for entropy calculation
-    seed: int = 42
+    adapter_path: str | None
+    max_tokens: int
+    temperature: float
+    top_p: float
+    top_k: int
+    repetition_penalty: float
+    stop_sequences: list[str]
+    halt_on_circuit_breaker: bool
+    entropy_top_k: int  # Top-K for entropy calculation
+    seed: int
 
 
 def compute_token_rank_metrics_jax(

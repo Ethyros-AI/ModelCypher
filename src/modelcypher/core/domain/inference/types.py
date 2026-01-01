@@ -40,13 +40,13 @@ class SecurityScanMetrics:
 class DualPathGeneratorConfiguration:
     base_model_path: str
     adapter_path: str | None = None
-    max_tokens: int = 100
+    max_tokens: int = 256
     temperature: float = 0.7
-    top_p: float = 0.9
+    top_p: float = 0.95
     repetition_penalty: float = 1.1
     # Safety thresholds
-    max_kl_threshold: float = 2.5
-    burst_length_limit: int = 5
+    max_kl_threshold: float = 5.0
+    burst_length_limit: int = 10
     accumulated_kl_limit: float = 50.0
 
 

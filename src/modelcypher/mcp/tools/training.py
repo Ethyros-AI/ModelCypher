@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from modelcypher.core.domain.training import TrainingConfig
+from modelcypher.core.domain.training import Hyperparameters, TrainingConfig
 from modelcypher.mcp.security import ConfirmationError, create_confirmation_response
 
 from .common import (
@@ -44,6 +44,78 @@ def register_training_tools(ctx: ServiceContext) -> None:
     """Register training and job management MCP tools."""
     mcp = ctx.mcp
     tool_set = ctx.tool_set
+
+    def _parse_hyperparameters(hyperparameters: dict) -> Hyperparameters:
+        required_hp = {
+            "batchSize",
+            "learningRate",
+            "epochs",
+            "sequenceLength",
+            "gradientAccumulationSteps",
+            "gradientCheckpointing",
+            "mixedPrecision",
+            "computePrecision",
+            "warmupSteps",
+            "weightDecay",
+            "seed",
+            "deterministic",
+            "optimizerType",
+        }
+        missing_hp = sorted(k for k in required_hp if k not in hyperparameters)
+        if missing_hp:
+            raise ValueError(f"hyperparameters missing required fields: {missing_hp}")
+
+        batch_size = hyperparameters["batchSize"]
+        learning_rate = hyperparameters["learningRate"]
+        epochs = hyperparameters["epochs"]
+        sequence_length = hyperparameters["sequenceLength"]
+        grad_accum = hyperparameters["gradientAccumulationSteps"]
+        gradient_checkpointing = hyperparameters["gradientCheckpointing"]
+        mixed_precision = hyperparameters["mixedPrecision"]
+        compute_precision = hyperparameters["computePrecision"]
+        warmup_steps = hyperparameters["warmupSteps"]
+        weight_decay = hyperparameters["weightDecay"]
+        seed = hyperparameters["seed"]
+        deterministic = hyperparameters["deterministic"]
+        optimizer_type = hyperparameters["optimizerType"]
+
+        if epochs <= 0:
+            raise ValueError("epochs must be a positive integer")
+        if learning_rate <= 0:
+            raise ValueError("learningRate must be positive")
+        if batch_size <= 0:
+            raise ValueError("batchSize must be a positive integer")
+        if sequence_length <= 0:
+            raise ValueError("sequenceLength must be a positive integer")
+        if grad_accum <= 0:
+            raise ValueError("gradientAccumulationSteps must be a positive integer")
+        if warmup_steps < 0:
+            raise ValueError("warmupSteps must be >= 0")
+        if weight_decay < 0:
+            raise ValueError("weightDecay must be >= 0")
+
+        from modelcypher.core.domain.training import ComputePrecision
+
+        try:
+            precision = ComputePrecision(compute_precision)
+        except ValueError as exc:
+            raise ValueError(f"Invalid computePrecision: {compute_precision}") from exc
+
+        return Hyperparameters(
+            batch_size=batch_size,
+            learning_rate=learning_rate,
+            epochs=epochs,
+            sequence_length=sequence_length,
+            gradient_accumulation_steps=grad_accum,
+            gradient_checkpointing=gradient_checkpointing,
+            mixed_precision=mixed_precision,
+            compute_precision=precision,
+            warmup_steps=warmup_steps,
+            weight_decay=weight_decay,
+            seed=seed,
+            deterministic=deterministic,
+            optimizer_type=optimizer_type,
+        )
 
     if "mc_train_start" in tool_set:
 
@@ -62,54 +134,9 @@ def register_training_tools(ctx: ServiceContext) -> None:
             evalMaxSamples: int | None = None,
             evalWait: bool | None = None,
         ) -> dict:
-            required_hp = {
-                "batchSize",
-                "learningRate",
-                "epochs",
-                "sequenceLength",
-                "gradientAccumulationSteps",
-                "gradientCheckpointing",
-                "mixedPrecision",
-                "computePrecision",
-                "warmupSteps",
-                "weightDecay",
-                "seed",
-                "deterministic",
-                "optimizerType",
-            }
-            missing_hp = sorted(k for k in required_hp if k not in hyperparameters)
-            if missing_hp:
-                raise ValueError(f"hyperparameters missing required fields: {missing_hp}")
-
-            batch_size = hyperparameters["batchSize"]
-            learning_rate = hyperparameters["learningRate"]
-            epochs = hyperparameters["epochs"]
-            sequence_length = hyperparameters["sequenceLength"]
-            grad_accum = hyperparameters["gradientAccumulationSteps"]
-            gradient_checkpointing = hyperparameters["gradientCheckpointing"]
-            mixed_precision = hyperparameters["mixedPrecision"]
-            compute_precision = hyperparameters["computePrecision"]
-            warmup_steps = hyperparameters["warmupSteps"]
-            weight_decay = hyperparameters["weightDecay"]
-            seed = hyperparameters["seed"]
-            deterministic = hyperparameters["deterministic"]
-            optimizer_type = hyperparameters["optimizerType"]
-
-            if epochs <= 0:
-                raise ValueError("epochs must be a positive integer")
-            if learning_rate <= 0:
-                raise ValueError("learningRate must be positive")
-            if batch_size <= 0:
-                raise ValueError("batchSize must be a positive integer")
-            if sequence_length <= 0:
-                raise ValueError("sequenceLength must be a positive integer")
-            if grad_accum <= 0:
-                raise ValueError("gradientAccumulationSteps must be a positive integer")
-            if warmup_steps < 0:
-                raise ValueError("warmupSteps must be >= 0")
-            if weight_decay < 0:
-                raise ValueError("weightDecay must be >= 0")
             dataset_path = require_existing_path(dataset)
+            hyper = _parse_hyperparameters(hyperparameters)
+            batch_size = hyper.batch_size
             if idempotencyKey:
                 previous = ctx.get_idempotency("train_start", idempotencyKey)
                 if previous:
@@ -145,27 +172,6 @@ def register_training_tools(ctx: ServiceContext) -> None:
                     target_modules=lora["targetModules"],
                 )
 
-            from modelcypher.core.domain.training import ComputePrecision, Hyperparameters
-            try:
-                precision = ComputePrecision(compute_precision)
-            except ValueError as exc:
-                raise ValueError(f"Invalid computePrecision: {compute_precision}") from exc
-
-            hyper = Hyperparameters(
-                batch_size=batch_size,
-                learning_rate=learning_rate,
-                epochs=epochs,
-                sequence_length=sequence_length,
-                gradient_accumulation_steps=grad_accum,
-                gradient_checkpointing=gradient_checkpointing,
-                mixed_precision=mixed_precision,
-                compute_precision=precision,
-                warmup_steps=warmup_steps,
-                weight_decay=weight_decay,
-                seed=seed,
-                deterministic=deterministic,
-                optimizer_type=optimizer_type,
-            )
             config = TrainingConfig(
                 model_id=model,
                 dataset_path=dataset_path,
@@ -257,7 +263,13 @@ def register_training_tools(ctx: ServiceContext) -> None:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_job_detail(jobId: str) -> dict:
             payload = ctx.job_service.show_job(jobId, include_loss_history=True)
-            hyper = payload.get("hyperparameters", {}) or {}
+            hyper = payload.get("hyperparameters")
+            if not isinstance(hyper, dict):
+                raise ValueError("Job details missing hyperparameters.")
+            required_hp = {"learningRate", "batchSize", "epochs", "sequenceLength"}
+            missing_hp = sorted(k for k in required_hp if k not in hyper)
+            if missing_hp:
+                raise ValueError(f"Job hyperparameters missing fields: {missing_hp}")
             loss_history = payload.get("lossHistory", []) or []
             normalized_loss = []
             for entry in loss_history:
@@ -281,10 +293,10 @@ def register_training_tools(ctx: ServiceContext) -> None:
                 "finalLoss": payload.get("finalLoss"),
                 "checkpoints": payload.get("checkpoints", []),
                 "hyperparameters": {
-                    "learningRate": hyper.get("learningRate", hyper.get("learning_rate", 0.0)),
-                    "batchSize": hyper.get("batchSize", hyper.get("batch_size", 0)),
-                    "epochs": hyper.get("epochs", 0),
-                    "sequenceLength": hyper.get("sequenceLength", hyper.get("sequence_length", 0)),
+                    "learningRate": hyper["learningRate"],
+                    "batchSize": hyper["batchSize"],
+                    "epochs": hyper["epochs"],
+                    "sequenceLength": hyper["sequenceLength"],
                 },
                 "lossHistory": normalized_loss,
             }
@@ -354,22 +366,16 @@ def register_training_tools(ctx: ServiceContext) -> None:
         def mc_validate_train(
             model: str,
             dataset: str,
-            sequenceLength: int = 2048,
-            batchSize: int | None = None,
+            outputPath: str,
+            hyperparameters: dict,
         ) -> dict:
-            if sequenceLength <= 0:
-                raise ValueError("sequenceLength must be a positive integer")
-            if batchSize is not None and batchSize <= 0:
-                raise ValueError("batchSize must be a positive integer")
             dataset_path = require_existing_path(dataset)
-            resolved_batch = batchSize if batchSize is not None else 1
+            hyper = _parse_hyperparameters(hyperparameters)
             config = TrainingConfig(
                 model_id=model,
                 dataset_path=dataset_path,
-                learning_rate=1e-5,
-                batch_size=resolved_batch,
-                epochs=1,
-                sequence_length=sequenceLength,
+                output_path=outputPath,
+                hyperparameters=hyper,
             )
             result = ctx.training_service.preflight(config)
             valid = result["canProceed"]
@@ -387,21 +393,16 @@ def register_training_tools(ctx: ServiceContext) -> None:
         def mc_estimate_train(
             model: str,
             dataset: str,
-            batchSize: int = 1,
-            sequenceLength: int = 2048,
+            outputPath: str,
+            hyperparameters: dict,
         ) -> dict:
-            if batchSize <= 0:
-                raise ValueError("batchSize must be a positive integer")
-            if sequenceLength <= 0:
-                raise ValueError("sequenceLength must be a positive integer")
             dataset_path = require_existing_path(dataset)
+            hyper = _parse_hyperparameters(hyperparameters)
             config = TrainingConfig(
                 model_id=model,
                 dataset_path=dataset_path,
-                learning_rate=1e-5,
-                batch_size=batchSize,
-                epochs=1,
-                sequence_length=sequenceLength,
+                output_path=outputPath,
+                hyperparameters=hyper,
             )
             result = ctx.training_service.preflight(config)
             will_fit = result["canProceed"]
@@ -422,30 +423,41 @@ def register_training_tools(ctx: ServiceContext) -> None:
         def mc_train_preflight(
             model: str,
             dataset: str,
-            sequenceLength: int = 2048,
-            loraRank: int | None = None,
-            loraAlpha: float | None = None,
-            batchSize: int | None = None,
+            outputPath: str,
+            hyperparameters: dict,
+            lora: dict | None = None,
         ) -> dict:
             """Check training feasibility."""
             dataset_path = require_existing_path(dataset)
 
-            lora = None
-            if loraRank is not None and loraAlpha is not None:
+            lora_config = None
+            if lora is not None:
+                required_lora = {"rank", "alpha", "dropout", "targetModules"}
+                missing_lora = sorted(k for k in required_lora if k not in lora)
+                if missing_lora:
+                    raise ValueError(f"lora missing required fields: {missing_lora}")
+                if lora["rank"] <= 0:
+                    raise ValueError("lora.rank must be a positive integer")
+                if lora["alpha"] <= 0:
+                    raise ValueError("lora.alpha must be positive")
+                if lora["dropout"] < 0:
+                    raise ValueError("lora.dropout must be >= 0")
                 from modelcypher.core.domain.training import LoRAConfig
 
-                lora = LoRAConfig(
-                    rank=loraRank, alpha=loraAlpha, dropout=0.0, targets=["q_proj", "v_proj"]
+                lora_config = LoRAConfig(
+                    rank=lora["rank"],
+                    alpha=lora["alpha"],
+                    dropout=lora["dropout"],
+                    target_modules=lora["targetModules"],
                 )
 
+            hyper = _parse_hyperparameters(hyperparameters)
             config = TrainingConfig(
                 model_id=model,
                 dataset_path=dataset_path,
-                learning_rate=1e-5,
-                batch_size=batchSize or 1,
-                epochs=1,
-                sequence_length=sequenceLength,
-                lora=lora,
+                output_path=outputPath,
+                hyperparameters=hyper,
+                lora_config=lora_config,
             )
 
             result = ctx.training_service.preflight(config)
