@@ -35,7 +35,19 @@ from ._platform import (
     get_inference_platform,
     get_security_scan_metrics_class,
 )
+from .activation_stream import ActivationFrame, ActivationStream
 from .adapter_pool import *  # noqa: F401,F403
 from .comparison import *  # noqa: F401,F403
 from .entropy_dynamics import *  # noqa: F401,F403
 from .types import *  # noqa: F401,F403
+
+__all__ = [
+    # Activation streaming for real-time visualization
+    "ActivationFrame",
+    "ActivationStream",
+    # Platform detection
+    "get_dual_path_config_class",
+    "get_dual_path_generator_class",
+    "get_inference_platform",
+    "get_security_scan_metrics_class",
+]

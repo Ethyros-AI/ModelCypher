@@ -168,9 +168,9 @@ class MergeValidationService:
     def validate(
         self,
         merged_model: str,
+        config: MergeValidationConfig,
         source_model: str | None = None,
         target_model: str | None = None,
-        config: MergeValidationConfig,
     ) -> MergeValidationResult:
         """
         Execute full merge validation suite.

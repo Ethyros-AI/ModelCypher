@@ -806,6 +806,10 @@ def stage_transplant(
                             )
 
                         if stitch_result is not None and stitch_result.is_valid:
+                            logger.info(
+                                "Stitch solved for %s: fwd_err=%.4f, bwd_err=%.4f, n_samples=%d",
+                                key, stitch_result.forward_error, stitch_result.backward_error, n_samples
+                            )
                             # Apply stitch to NORMALIZED source activations
                             weights_stitch = b.array(stitch_result.weights)
                             bias_stitch = b.array(stitch_result.bias)
@@ -822,6 +826,7 @@ def stage_transplant(
                             )
                             b.eval(cka_after_stitch)
                             cka_val = float(cka_after_stitch.item()) if hasattr(cka_after_stitch, 'item') else float(b.to_numpy(cka_after_stitch))
+                            logger.info("CKA after stitch for %s: %.4f", key, cka_val)
 
                             if cka_val >= 0.99:  # CKA preserved - stitch is geometry-preserving
                                 # FOLD stitch INTO source weights:
