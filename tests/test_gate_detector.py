@@ -27,6 +27,8 @@ Tests computational gate detection in model responses:
 
 from __future__ import annotations
 
+import pytest
+
 from modelcypher.core.domain.agents.computational_gate_atlas import (
     ComputationalGate,
     ComputationalGateCategory,
@@ -111,6 +113,7 @@ def _make_detector(
             window_sizes=window_sizes,
             stride=1,
             collapse_consecutive=collapse_consecutive,
+            max_gates_per_response=50,
         ),
         embedder=_KeywordEmbedder(),
         gate_inventory=_make_gates(),
@@ -227,12 +230,10 @@ class TestCollapseConsecutive:
 class TestConfiguration:
     """Tests for Configuration dataclass."""
 
-    def test_default_window_sizes(self) -> None:
-        """Default config should have reasonable window sizes."""
-        config = Configuration()
-
-        assert config.window_sizes is not None
-        assert len(config.window_sizes) > 0
+    def test_requires_explicit_values(self) -> None:
+        """Configuration should require explicit values."""
+        with pytest.raises(TypeError):
+            Configuration()  # type: ignore[call-arg]
 
     def test_custom_configuration(self) -> None:
         """Custom configuration values should be preserved."""

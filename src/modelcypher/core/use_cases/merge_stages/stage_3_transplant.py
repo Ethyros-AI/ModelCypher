@@ -49,6 +49,50 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _project_activations_to_weight_dim(
+    activations: "Array",
+    weight: "Array",
+    backend: "Backend",
+) -> "Array":
+    """Project activations to match weight input dimension for cross-architecture merges.
+
+    For weight matrix [out_features, in_features], we need activations with
+    shape [n_samples, in_features] for matmul to work.
+
+    If activations have different feature dimension, we project using SVD:
+    - Truncation: Project to top-k singular vectors if act_dim > weight_in_dim
+    - Expansion: Pad with zeros if act_dim < weight_in_dim
+    """
+    b = backend
+    act_dim = int(activations.shape[1])
+    weight_in_dim = int(weight.shape[1])
+
+    if act_dim == weight_in_dim:
+        return activations
+
+    from modelcypher.core.domain.geometry.numerical_stability import svd_via_eigh
+
+    if act_dim > weight_in_dim:
+        # Truncate: project to lower dimension via top-k singular vectors
+        _, _, Vt = svd_via_eigh(b, activations, full_matrices=False)
+        b.eval(Vt)
+        k = min(weight_in_dim, int(Vt.shape[0]))
+        V_k = b.transpose(Vt[:k, :])  # [act_dim, k]
+        projected = b.matmul(activations, V_k)  # [n, k]
+
+        if k < weight_in_dim:
+            padding = b.zeros((int(activations.shape[0]), weight_in_dim - k))
+            projected = b.concatenate([projected, padding], axis=1)
+        b.eval(projected)
+    else:
+        # Expand: pad with zeros
+        padding = b.zeros((int(activations.shape[0]), weight_in_dim - act_dim))
+        projected = b.concatenate([activations, padding], axis=1)
+        b.eval(projected)
+
+    return projected
+
+
 @dataclass(frozen=True)
 class TransplantStageConfig:
     """Configuration for transplant stage."""
@@ -146,38 +190,8 @@ def _compute_alignment_metrics(
 
     b = backend
 
-    # Get dimensions
-    act_dim = int(core_acts.shape[1])  # activation feature dimension
-    weight_in_dim = int(weight_before.shape[1])  # weight input dimension
-
-    # Project activations if dimensions don't match
-    if act_dim != weight_in_dim:
-        # Use SVD to project activations to weight's input dimension
-        # This preserves the most important variance while matching dimensions
-        from modelcypher.core.domain.geometry.numerical_stability import svd_via_eigh
-
-        if act_dim > weight_in_dim:
-            # Truncate: project to lower dimension via top-k singular vectors
-            _, _, Vt = svd_via_eigh(b, core_acts, full_matrices=False)
-            b.eval(Vt)
-            # Vt.shape is [min(n,d), d] - take top weight_in_dim rows
-            k = min(weight_in_dim, int(Vt.shape[0]))
-            V_k = b.transpose(Vt[:k, :])  # [act_dim, k]
-            core_acts_proj = b.matmul(core_acts, V_k)  # [n, k]
-
-            # Pad if k < weight_in_dim (due to rank deficiency)
-            if k < weight_in_dim:
-                padding = b.zeros((int(core_acts.shape[0]), weight_in_dim - k))
-                core_acts_proj = b.concatenate([core_acts_proj, padding], axis=1)
-            b.eval(core_acts_proj)
-        else:
-            # Expand: pad with zeros (geometrically neutral)
-            # New dimensions have no information, which is correct
-            padding = b.zeros((int(core_acts.shape[0]), weight_in_dim - act_dim))
-            core_acts_proj = b.concatenate([core_acts, padding], axis=1)
-            b.eval(core_acts_proj)
-
-        core_acts = core_acts_proj
+    # Project activations to match weight dimensions (handles cross-architecture)
+    core_acts = _project_activations_to_weight_dim(core_acts, weight_before, b)
 
     output_before = b.matmul(core_acts, b.transpose(weight_before))
     output_after = b.matmul(core_acts, b.transpose(weight_after))
@@ -723,9 +737,14 @@ def stage_transplant(
                     except Exception as e:
                         logger.debug("Alignment metrics failed for %s: %s", key, e)
                 if int(boundary_acts.shape[0]) > 0:
-                    target_output = b.matmul(boundary_acts, b.transpose(target_w))
+                    # Project boundary activations to match weight dimensions
+                    # (handles cross-architecture dimension mismatches)
+                    boundary_acts_proj = _project_activations_to_weight_dim(
+                        boundary_acts, target_w, b
+                    )
+                    target_output = b.matmul(boundary_acts_proj, b.transpose(target_w))
                     merged_output = b.matmul(
-                        boundary_acts, b.transpose(actual_merged_weight)
+                        boundary_acts_proj, b.transpose(actual_merged_weight)
                     )
                     diff = merged_output - target_output
                     diff_norm_arr = b.norm(b.reshape(diff, (-1,)))

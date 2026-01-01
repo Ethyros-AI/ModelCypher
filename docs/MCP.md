@@ -1393,56 +1393,6 @@ Call mc_inventory first to see what models are available before starting trainin
 
 ---
 
-### mc_geometry_baseline_validate
-
-**Purpose:** Validate model geometry against established baselines.
-
-**Category:** Read-only
-
-**Input Schema:**
-```json
-{
-  "type": "object",
-  "properties": {
-    "modelPath": { "type": "string" },
-    "domains": { "type": ["array", "null"], "items": { "type": "string" } },
-    "layer": { "type": "integer", "default": -1 }
-  },
-  "required": ["modelPath"]
-}
-```
-
-**Output:**
-```json
-{
-  "_schema": "mc.geometry.baseline.validate.v1",
-  "modelPath": "/models/qwen-0.5B",
-  "results": [
-    {
-      "domain": "spatial",
-      "baselineFound": true,
-      "baselineModel": "qwen-0.5B",
-      "currentModel": "/models/qwen-0.5B",
-      "missingMetrics": [],
-      "notes": [],
-      "metrics": {
-        "ollivier_ricci_mean": {
-          "current": -0.192,
-          "baseline": -0.189,
-          "baselineStd": 0.045,
-          "delta": -0.003,
-          "relativeDelta": -0.016,
-          "zScore": -0.067,
-          "percentile": 0.46
-        }
-      }
-    }
-  ]
-}
-```
-
----
-
 ### mc_geometry_baseline_compare
 
 **Purpose:** Compare geometry profiles of two models.

@@ -627,8 +627,7 @@ def geometry_validate(
     file: str | None = typer.Option(None, "--file"),
 ) -> None:
     context = _context(ctx)
-    embedder = EmbeddingDefaults.make_default_embedder()
-    service = GeometryService(embedder=embedder)
+    service = GeometryService()
     report = service.validate(include_fixtures=include_fixtures)
     payload = service.validation_payload(
         report,

@@ -296,7 +296,7 @@ class LogitEntropyCalculator:
         --------
         Usage with circuit breaker:
 
-            calc = LogitEntropyCalculator()
+            calc = LogitEntropyCalculator(top_k=10)
             raw_entropy, _ = calc.compute(logits)
             normalized = calc.normalize_entropy(raw_entropy, vocab_size=32000)
             # Pass normalized to circuit breaker

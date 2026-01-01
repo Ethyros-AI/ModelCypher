@@ -15,13 +15,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Geometry baseline MCP tools.
+"""Geometry profile MCP tools.
 
-Contains tools for domain geometry validation:
-- Baseline listing
-- Baseline extraction
-- Baseline validation
-- Baseline comparison
+Contains tools for model geometry profiling:
+- Profile listing
+- Profile extraction
+- Profile comparison
 """
 
 from __future__ import annotations
@@ -34,44 +33,45 @@ from ..common import (
 
 
 def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
-    """Register geometry baseline tools for domain geometry validation."""
+    """Register geometry profile tools for model geometry analysis."""
     mcp = ctx.mcp
     tool_set = ctx.tool_set
 
     if "mc_geometry_baseline_list" in tool_set:
 
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_geometry_baseline_list(domain: str | None = None) -> dict:
+        def mc_geometry_baseline_list(family: str | None = None) -> dict:
             """
-            List available domain geometry baselines.
+            List available model geometry profiles.
 
             Args:
-                domain: Optional domain filter (spatial, social, temporal, moral)
+                family: Optional model family filter (qwen, llama, mistral, etc.)
 
             Returns:
-                List of available baselines with their metadata
+                List of available profiles with their metadata
             """
-            from modelcypher.core.domain.geometry.domain_geometry_baselines import (
-                BaselineRepository,
+            from modelcypher.core.domain.geometry.model_profile import (
+                ProfileRepository,
             )
 
-            repo = BaselineRepository()
-            if domain:
-                baselines = repo.get_baselines_for_domain(domain)
+            repo = ProfileRepository()
+            if family:
+                profiles = repo.get_profiles_for_family(family)
             else:
-                baselines = repo.get_all_baselines()
+                profiles = repo.get_all_profiles()
 
             return {
-                "_schema": "mc.geometry.baseline.list.v1",
-                "baselines": [
+                "_schema": "mc.geometry.profile.list.v1",
+                "profiles": [
                     {
-                        "domain": b.domain,
-                        "modelFamily": b.model_family,
-                        "modelSize": b.model_size,
-                        "ollivierRicciMean": b.ollivier_ricci_mean,
-                        "extractionDate": b.extraction_date,
+                        "modelFamily": p.model_family,
+                        "modelPath": p.model_path,
+                        "ollivierRicciMean": p.global_ollivier_ricci_mean,
+                        "intrinsicDimensionMean": p.global_intrinsic_dimension_mean,
+                        "computedAt": p.computed_at,
+                        "layersAnalyzed": len(p.layer_profiles),
                     }
-                    for b in baselines
+                    for p in profiles
                 ],
             }
 
@@ -80,124 +80,66 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_baseline_extract(
             modelPath: str,
-            domain: str = "spatial",
+            domains: list[str] | None = None,
             layer: int = -1,
             kNeighbors: int = 10,
         ) -> dict:
             """
-            Extract geometry baseline from a reference model.
+            Extract geometry profile from a model.
 
-            Uses Ollivier-Ricci curvature and domain-specific analyzers to create
-            an empirical baseline for reference LLM geometry.
+            Uses Ollivier-Ricci curvature and intrinsic dimension to create
+            a complete geometry profile.
 
             Args:
                 modelPath: Path to the model directory
-                domain: Domain to extract (spatial, social, temporal, moral)
-                layer: Layer to analyze (-1 for all layers sampled)
+                domains: Optional list of domains for domain-specific metrics
+                        (spatial, social, temporal, moral)
+                layer: Layer to analyze (-1 for sampled layers)
                 kNeighbors: k for k-NN graph in Ollivier-Ricci computation
 
             Returns:
-                Extracted baseline with curvature and domain metrics
+                Extracted profile with curvature and dimension metrics
             """
             from modelcypher.adapters.mlx_model_loader import MLXModelLoader
-            from modelcypher.core.domain.geometry.domain_geometry_baselines import (
-                BaselineRepository,
-                DomainGeometryBaselineExtractor,
+            from modelcypher.core.domain.geometry.model_profile import (
+                ModelProfileExtractor,
+                ProfileRepository,
             )
 
             model_path = require_existing_directory(modelPath)
-            valid_domains = ["spatial", "social", "temporal", "moral"]
-            if domain.lower() not in valid_domains:
-                raise ValueError(f"Invalid domain: {domain}. Valid: {', '.join(valid_domains)}")
+
+            if domains:
+                valid_domains = ["spatial", "social", "temporal", "moral"]
+                for d in domains:
+                    if d.lower() not in valid_domains:
+                        raise ValueError(
+                            f"Invalid domain: {d}. Valid: {', '.join(valid_domains)}"
+                        )
+                domains = [d.lower() for d in domains]
 
             model_loader = MLXModelLoader()
-            extractor = DomainGeometryBaselineExtractor(model_loader=model_loader)
-            baseline = extractor.extract_baseline(
+            extractor = ModelProfileExtractor(model_loader=model_loader)
+            profile = extractor.extract_profile(
                 model_path=model_path,
-                domain=domain.lower(),
                 layers=[layer] if layer != -1 else None,
                 k_neighbors=kNeighbors,
-            )
-
-            # Save baseline
-            repo = BaselineRepository()
-            saved_path = repo.save_baseline(baseline)
-
-            return {
-                "_schema": "mc.geometry.baseline.extract.v1",
-                "domain": baseline.domain,
-                "modelFamily": baseline.model_family,
-                "modelSize": baseline.model_size,
-                "ollivierRicciMean": baseline.ollivier_ricci_mean,
-                "ollivierRicciStd": baseline.ollivier_ricci_std,
-                "intrinsicDimension": baseline.intrinsic_dimension_mean,
-                "domainMetrics": baseline.domain_metrics,
-                "savedPath": str(saved_path),
-            }
-
-    if "mc_geometry_baseline_validate" in tool_set:
-
-        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_geometry_baseline_validate(
-            modelPath: str,
-            domains: list[str] | None = None,
-            layer: int = -1,
-        ) -> dict:
-            """
-            Validate model geometry against established baselines.
-
-            Compares model's Ollivier-Ricci curvature and domain metrics against
-            reference baselines. Useful for post-merge validation and baseline-relative checks.
-
-            Args:
-                modelPath: Path to the model to validate
-                domains: List of domains to validate (default: all)
-                layer: Layer to analyze (-1 for all layers sampled)
-
-            Returns:
-                Validation results with baseline-relative deltas
-            """
-            from modelcypher.adapters.mlx_model_loader import MLXModelLoader
-            from modelcypher.core.domain.geometry.domain_geometry_validator import (
-                DomainGeometryValidator,
-            )
-
-            model_path = require_existing_directory(modelPath)
-
-            model_loader = MLXModelLoader()
-            validator = DomainGeometryValidator(model_loader=model_loader)
-            results = validator.validate_model(
-                model_path=model_path,
                 domains=domains,
-                layer=layer,
             )
 
+            # Save profile
+            repo = ProfileRepository()
+            saved_path = repo.save_profile(profile)
+
             return {
-                "_schema": "mc.geometry.baseline.validate.v1",
-                "modelPath": model_path,
-                "results": [
-                    {
-                        "domain": r.domain,
-                        "baselineFound": r.baseline_found,
-                        "baselineModel": r.baseline_model,
-                        "currentModel": r.current_model,
-                        "missingMetrics": r.missing_metrics,
-                        "notes": r.notes,
-                        "metrics": {
-                            name: {
-                                "current": metric.current,
-                                "baseline": metric.baseline,
-                                "baselineStd": metric.baseline_std,
-                                "delta": metric.delta,
-                                "relativeDelta": metric.relative_delta,
-                                "zScore": metric.z_score,
-                                "percentile": metric.percentile,
-                            }
-                            for name, metric in r.metrics.items()
-                        },
-                    }
-                    for r in results
-                ],
+                "_schema": "mc.geometry.profile.extract.v1",
+                "modelFamily": profile.model_family,
+                "modelPath": profile.model_path,
+                "ollivierRicciMean": profile.global_ollivier_ricci_mean,
+                "ollivierRicciStd": profile.global_ollivier_ricci_std,
+                "intrinsicDimensionMean": profile.global_intrinsic_dimension_mean,
+                "layersAnalyzed": len(profile.layer_profiles),
+                "domainMetrics": profile.domain_metrics,
+                "savedPath": str(saved_path),
             }
 
     if "mc_geometry_baseline_compare" in tool_set:
@@ -206,77 +148,84 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
         def mc_geometry_baseline_compare(
             model1Path: str,
             model2Path: str,
-            domain: str = "spatial",
+            domains: list[str] | None = None,
             layer: int = -1,
         ) -> dict:
             """
             Compare geometry profiles of two models.
 
-            Extracts baselines from both models and computes divergence metrics.
+            Extracts profiles from both models and computes divergence metrics.
             Useful for pre-merge alignment assessment.
 
             Args:
                 model1Path: Path to first model
                 model2Path: Path to second model
-                domain: Domain to compare (spatial, social, temporal, moral)
-                layer: Layer to analyze (-1 for all layers sampled)
+                domains: Optional list of domains for domain-specific metrics
+                layer: Layer to analyze (-1 for sampled layers)
 
             Returns:
                 Comparison results with divergence metrics
             """
             from modelcypher.adapters.mlx_model_loader import MLXModelLoader
-            from modelcypher.core.domain.geometry.domain_geometry_baselines import (
-                DomainGeometryBaselineExtractor,
+            from modelcypher.core.domain.geometry.model_profile import (
+                ModelProfileExtractor,
             )
 
             model1_path = require_existing_directory(model1Path)
             model2_path = require_existing_directory(model2Path)
 
-            valid_domains = ["spatial", "social", "temporal", "moral"]
-            if domain.lower() not in valid_domains:
-                raise ValueError(f"Invalid domain: {domain}. Valid: {', '.join(valid_domains)}")
+            if domains:
+                domains = [d.lower() for d in domains]
 
             model_loader = MLXModelLoader()
-            extractor = DomainGeometryBaselineExtractor(model_loader=model_loader)
-            baseline1 = extractor.extract_baseline(
+            extractor = ModelProfileExtractor(model_loader=model_loader)
+
+            profile1 = extractor.extract_profile(
                 model_path=model1_path,
-                domain=domain.lower(),
                 layers=[layer] if layer != -1 else None,
+                domains=domains,
             )
-            baseline2 = extractor.extract_baseline(
+            profile2 = extractor.extract_profile(
                 model_path=model2_path,
-                domain=domain.lower(),
                 layers=[layer] if layer != -1 else None,
+                domains=domains,
             )
 
             # Compute divergence
-            ricci_divergence = abs(baseline1.ollivier_ricci_mean - baseline2.ollivier_ricci_mean)
-            id_divergence = abs(baseline1.intrinsic_dimension_mean - baseline2.intrinsic_dimension_mean)
+            ricci_divergence = abs(
+                profile1.global_ollivier_ricci_mean - profile2.global_ollivier_ricci_mean
+            )
+            id_divergence = abs(
+                profile1.global_intrinsic_dimension_mean
+                - profile2.global_intrinsic_dimension_mean
+            )
 
             # Compute domain metric divergence
-            domain_divergence = {}
-            common_metrics = set(baseline1.domain_metrics.keys()) & set(baseline2.domain_metrics.keys())
-            for metric in common_metrics:
-                v1 = baseline1.domain_metrics[metric]
-                v2 = baseline2.domain_metrics[metric]
-                domain_divergence[metric] = abs(v1 - v2)
+            domain_divergence: dict[str, dict[str, float]] = {}
+            for domain in set(profile1.domain_metrics.keys()) | set(
+                profile2.domain_metrics.keys()
+            ):
+                metrics1 = profile1.domain_metrics.get(domain, {})
+                metrics2 = profile2.domain_metrics.get(domain, {})
+                common_metrics = set(metrics1.keys()) & set(metrics2.keys())
+                if common_metrics:
+                    domain_divergence[domain] = {
+                        m: abs(metrics1[m] - metrics2[m]) for m in common_metrics
+                    }
 
             return {
-                "_schema": "mc.geometry.baseline.compare.v1",
-                "domain": domain,
+                "_schema": "mc.geometry.profile.compare.v1",
                 "model1": {
                     "path": model1_path,
-                    "family": baseline1.model_family,
-                    "size": baseline1.model_size,
-                    "ollivierRicciMean": baseline1.ollivier_ricci_mean,
-                    "intrinsicDimension": baseline1.intrinsic_dimension_mean,
+                    "family": profile1.model_family,
+                    "ollivierRicciMean": profile1.global_ollivier_ricci_mean,
+                    "intrinsicDimension": profile1.global_intrinsic_dimension_mean,
                 },
                 "model2": {
                     "path": model2_path,
-                    "family": baseline2.model_family,
-                    "size": baseline2.model_size,
-                    "ollivierRicciMean": baseline2.ollivier_ricci_mean,
-                    "intrinsicDimension": baseline2.intrinsic_dimension_mean,
+                    "family": profile2.model_family,
+                    "ollivierRicciMean": profile2.global_ollivier_ricci_mean,
+                    "intrinsicDimension": profile2.global_intrinsic_dimension_mean,
                 },
                 "divergence": {
                     "ollivierRicci": ricci_divergence,
@@ -284,3 +233,6 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
                     "domainMetrics": domain_divergence,
                 },
             }
+
+    # Note: mc_geometry_baseline_validate removed
+    # Validation is now just comparison against existing profiles

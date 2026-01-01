@@ -16,12 +16,12 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-CLI commands for Domain Geometry Baselines.
+CLI commands for Model Geometry Profiles.
 
 Provides commands for:
-- Extracting geometry baselines from reference models
-- Validating models against established baselines
+- Extracting geometry profiles from models
 - Comparing model geometry profiles
+- Listing stored profiles
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ import typer
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 
-app = typer.Typer(help="Domain geometry baseline extraction and validation")
+app = typer.Typer(help="Model geometry profile extraction and comparison")
 logger = logging.getLogger(__name__)
 
 
@@ -43,141 +43,45 @@ def _context(ctx: typer.Context) -> CLIContext:
 
 
 @app.command("extract")
-def baseline_extract(
+def profile_extract(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to model directory"),
-    domain: str = typer.Option(
-        "spatial",
-        "--domain",
+    domains: str | None = typer.Option(
+        None,
+        "--domains",
         "-d",
-        help="Domain to extract (spatial, social, temporal, moral)",
+        help="Comma-separated domains for domain-specific metrics (spatial,social,temporal,moral)",
     ),
     layer: int = typer.Option(
-        -1, "--layer", "-l", help="Layer to analyze (-1 for last)"
+        -1, "--layer", "-l", help="Layer to analyze (-1 for sampled layers)"
     ),
     k_neighbors: int = typer.Option(
         10, "--k-neighbors", "-k", help="k for k-NN graph in Ollivier-Ricci"
     ),
     output_dir: str | None = typer.Option(
-        None, "--output-dir", "-o", help="Directory to save baseline (default: builtin)"
+        None, "--output-dir", "-o", help="Directory to save profile (default: ~/.modelcypher/profiles)"
     ),
 ) -> None:
     """
-    Extract geometry baseline from a reference model.
+    Extract geometry profile from a model.
 
-    Uses Ollivier-Ricci curvature and domain-specific analyzers to create
-    an empirical baseline for reference LLM geometry. Baselines are used for:
+    Uses Ollivier-Ricci curvature and intrinsic dimension to create
+    a geometry profile. Profiles are used for:
 
-    - Baseline-relative diagnostics (curvature and domain deltas)
+    - Model comparison and alignment assessment
     - Pre/post merge geometry checks
-    - Cross-model geometry comparison
+    - Cross-model geometry analysis
 
     Example:
-        mc geometry baseline extract /path/to/Qwen2.5-0.5B --domain spatial
+        mc geometry baseline extract /path/to/Qwen2.5-0.5B
+        mc geometry baseline extract /path/to/model --domains spatial,social
     """
     context = _context(ctx)
 
     from modelcypher.adapters.mlx_model_loader import MLXModelLoader
-    from modelcypher.core.domain.geometry.domain_geometry_baselines import (
-        BaselineRepository,
-        DomainGeometryBaselineExtractor,
-    )
-
-    valid_domains = ["spatial", "social", "temporal", "moral"]
-    if domain.lower() not in valid_domains:
-        typer.echo(f"Invalid domain: {domain}. Valid: {', '.join(valid_domains)}", err=True)
-        raise typer.Exit(1)
-
-    typer.echo(f"Extracting {domain} geometry baseline from {model_path}...")
-    typer.echo(f"  Layer: {layer if layer != -1 else 'last'}")
-    typer.echo(f"  k-neighbors: {k_neighbors}")
-
-    try:
-        model_loader = MLXModelLoader()
-        extractor = DomainGeometryBaselineExtractor(model_loader=model_loader)
-        baseline = extractor.extract_baseline(
-            model_path=model_path,
-            domain=domain.lower(),
-            layers=[layer] if layer != -1 else None,
-            k_neighbors=k_neighbors,
-        )
-    except Exception as e:
-        typer.echo(f"Error extracting baseline: {e}", err=True)
-        raise typer.Exit(1)
-
-    # Save baseline
-    try:
-        repo = BaselineRepository(baseline_dir=output_dir)
-        saved_path = repo.save_baseline(baseline)
-        typer.echo(f"Baseline saved to: {saved_path}")
-    except Exception as e:
-        typer.echo(f"Error saving baseline: {e}", err=True)
-        raise typer.Exit(1)
-
-    payload = {
-        "_schema": "mc.geometry.baseline.extract.v1",
-        "domain": baseline.domain,
-        "model_family": baseline.model_family,
-        "model_size": baseline.model_size,
-        "ollivier_ricci_mean": baseline.ollivier_ricci_mean,
-        "ollivier_ricci_std": baseline.ollivier_ricci_std,
-        "intrinsic_dimension_mean": baseline.intrinsic_dimension_mean,
-        "domain_metrics": baseline.domain_metrics,
-        "saved_path": str(saved_path),
-    }
-
-    if context.output_format == "text":
-        lines = [
-            "=" * 70,
-            f"BASELINE EXTRACTED: {domain.upper()}",
-            "=" * 70,
-            "",
-            f"Model: {baseline.model_family}-{baseline.model_size}",
-            f"Ollivier-Ricci Mean: {baseline.ollivier_ricci_mean:.4f}",
-            f"Ollivier-Ricci Std: {baseline.ollivier_ricci_std:.4f}",
-            f"Intrinsic Dimension: {baseline.intrinsic_dimension_mean:.1f}",
-            "",
-            f"Saved to: {saved_path}",
-            "",
-        ]
-        write_output("\n".join(lines), context.output_format, context.pretty)
-        return
-
-    write_output(payload, context.output_format, context.pretty)
-
-
-@app.command("validate")
-def baseline_validate(
-    ctx: typer.Context,
-    model_path: str = typer.Argument(..., help="Path to model to validate"),
-    domains: str | None = typer.Option(
-        None,
-        "--domains",
-        "-d",
-        help="Comma-separated domains (spatial,social,temporal,moral). Default: all",
-    ),
-    layer: int = typer.Option(
-        -1, "--layer", "-l", help="Layer to analyze (-1 for last)"
-    ),
-) -> None:
-    """
-    Validate model geometry against established baselines.
-
-    Compares model's Ollivier-Ricci curvature and domain metrics against
-    reference baselines, returning baseline-relative deltas. Useful for:
-
-    - Post-merge validation (did the merge preserve geometry?)
-    - Baseline-relative checks after fine-tuning or merge
-    - Regression testing after fine-tuning
-
-    Example:
-        mc geometry baseline validate /path/to/merged-model --domains spatial,social
-    """
-    context = _context(ctx)
-
-    from modelcypher.adapters.mlx_model_loader import MLXModelLoader
-    from modelcypher.core.domain.geometry.domain_geometry_validator import (
-        DomainGeometryValidator,
+    from modelcypher.core.domain.geometry.model_profile import (
+        ModelProfileExtractor,
+        ProfileRepository,
     )
 
     domain_list = None
@@ -189,70 +93,68 @@ def baseline_validate(
                 typer.echo(f"Invalid domain: {d}. Valid: {', '.join(valid_domains)}", err=True)
                 raise typer.Exit(1)
 
-    typer.echo(f"Validating geometry for {model_path}...")
+    typer.echo(f"Extracting geometry profile from {model_path}...")
+    typer.echo(f"  k-neighbors: {k_neighbors}")
+    if domain_list:
+        typer.echo(f"  Domains: {', '.join(domain_list)}")
 
     try:
         model_loader = MLXModelLoader()
-        validator = DomainGeometryValidator(model_loader=model_loader)
-        results = validator.validate_model(
+        extractor = ModelProfileExtractor(model_loader=model_loader)
+        profile = extractor.extract_profile(
             model_path=model_path,
+            layers=[layer] if layer != -1 else None,
+            k_neighbors=k_neighbors,
             domains=domain_list,
-            layer=layer,
         )
     except Exception as e:
-        typer.echo(f"Error validating model: {e}", err=True)
+        typer.echo(f"Error extracting profile: {e}", err=True)
+        raise typer.Exit(1)
+
+    # Save profile
+    try:
+        repo = ProfileRepository(profile_dir=output_dir)
+        saved_path = repo.save_profile(profile)
+        typer.echo(f"Profile saved to: {saved_path}")
+    except Exception as e:
+        typer.echo(f"Error saving profile: {e}", err=True)
         raise typer.Exit(1)
 
     payload = {
-        "_schema": "mc.geometry.baseline.validate.v1",
-        "model_path": model_path,
-        "results": [r.to_dict() for r in results],
+        "_schema": "mc.geometry.profile.extract.v1",
+        "model_family": profile.model_family,
+        "model_path": profile.model_path,
+        "global_ollivier_ricci_mean": profile.global_ollivier_ricci_mean,
+        "global_ollivier_ricci_std": profile.global_ollivier_ricci_std,
+        "global_intrinsic_dimension_mean": profile.global_intrinsic_dimension_mean,
+        "layers_analyzed": len(profile.layer_profiles),
+        "domain_metrics": profile.domain_metrics,
+        "saved_path": str(saved_path),
     }
 
     if context.output_format == "text":
-        def _fmt(value: float | None, *, percent: bool = False) -> str:
-            if value is None:
-                return "n/a"
-            return f"{value:.1%}" if percent else f"{value:.4f}"
-
         lines = [
             "=" * 70,
-            "GEOMETRY BASELINE COMPARISON",
+            "PROFILE EXTRACTED",
             "=" * 70,
             "",
-            f"Model: {Path(model_path).name}",
+            f"Model: {profile.model_family}",
+            f"Path: {profile.model_path}",
+            f"Layers analyzed: {len(profile.layer_profiles)}",
+            "",
+            f"Ollivier-Ricci Mean: {profile.global_ollivier_ricci_mean:.4f}",
+            f"Ollivier-Ricci Std: {profile.global_ollivier_ricci_std:.4f}",
+            f"Intrinsic Dimension: {profile.global_intrinsic_dimension_mean:.1f}",
+            "",
+            f"Saved to: {saved_path}",
             "",
         ]
-        for result in results:
-            lines.append("-" * 50)
-            lines.append(f"{result.domain.upper()}")
-            baseline_label = result.baseline_model if result.baseline_found else "none"
-            lines.append(f"  Baseline: {baseline_label}")
-
-            if result.notes:
-                lines.append("  Notes:")
-                for note in result.notes:
-                    lines.append(f"    - {note}")
-
-            if result.missing_metrics:
-                lines.append("  Missing metrics:")
-                for metric in result.missing_metrics:
-                    lines.append(f"    - {metric}")
-
-            if result.metrics:
-                lines.append("  Metrics:")
-                for metric, delta in result.metrics.items():
-                    lines.append(
-                        "    "
-                        f"{metric}: current={_fmt(delta.current)} "
-                        f"baseline={_fmt(delta.baseline)} "
-                        f"delta={_fmt(delta.delta)} "
-                        f"rel={_fmt(delta.relative_delta, percent=True)} "
-                        f"z={_fmt(delta.z_score)} "
-                        f"pct={_fmt(delta.percentile, percent=True)}"
-                    )
-
-        lines.append("")
+        if profile.domain_metrics:
+            lines.append("Domain Metrics:")
+            for domain, metrics in profile.domain_metrics.items():
+                lines.append(f"  {domain}:")
+                for metric, value in metrics.items():
+                    lines.append(f"    {metric}: {value:.4f}")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -260,24 +162,24 @@ def baseline_validate(
 
 
 @app.command("compare")
-def baseline_compare(
+def profile_compare(
     ctx: typer.Context,
     model1_path: str = typer.Argument(..., help="Path to first model"),
     model2_path: str = typer.Argument(..., help="Path to second model"),
-    domain: str = typer.Option(
-        "spatial",
-        "--domain",
+    domains: str | None = typer.Option(
+        None,
+        "--domains",
         "-d",
-        help="Domain to compare (spatial, social, temporal, moral)",
+        help="Comma-separated domains to include (spatial,social,temporal,moral)",
     ),
     layer: int = typer.Option(
-        -1, "--layer", "-l", help="Layer to analyze (-1 for last)"
+        -1, "--layer", "-l", help="Layer to analyze (-1 for sampled layers)"
     ),
 ) -> None:
     """
     Compare geometry profiles of two models.
 
-    Extracts baselines from both models and computes divergence metrics.
+    Extracts profiles from both models and computes divergence metrics.
     Useful for:
 
     - Pre-merge alignment assessment
@@ -285,73 +187,70 @@ def baseline_compare(
     - Fine-tuning impact measurement
 
     Example:
-        mc geometry baseline compare /path/to/model1 /path/to/model2 --domain spatial
+        mc geometry baseline compare /path/to/model1 /path/to/model2
     """
     context = _context(ctx)
 
     from modelcypher.adapters.mlx_model_loader import MLXModelLoader
-    from modelcypher.core.domain.geometry.domain_geometry_baselines import (
-        DomainGeometryBaselineExtractor,
-    )
+    from modelcypher.core.domain.geometry.model_profile import ModelProfileExtractor
 
-    valid_domains = ["spatial", "social", "temporal", "moral"]
-    if domain.lower() not in valid_domains:
-        typer.echo(f"Invalid domain: {domain}. Valid: {', '.join(valid_domains)}", err=True)
-        raise typer.Exit(1)
+    domain_list = None
+    if domains:
+        domain_list = [d.strip().lower() for d in domains.split(",")]
 
-    typer.echo(f"Comparing {domain} geometry...")
+    typer.echo("Comparing model geometry...")
     typer.echo(f"  Model 1: {model1_path}")
     typer.echo(f"  Model 2: {model2_path}")
 
     try:
         model_loader = MLXModelLoader()
-        extractor = DomainGeometryBaselineExtractor(model_loader=model_loader)
+        extractor = ModelProfileExtractor(model_loader=model_loader)
 
-        typer.echo("Extracting baseline from model 1...")
-        baseline1 = extractor.extract_baseline(
+        typer.echo("Extracting profile from model 1...")
+        profile1 = extractor.extract_profile(
             model_path=model1_path,
-            domain=domain.lower(),
             layers=[layer] if layer != -1 else None,
+            domains=domain_list,
         )
 
-        typer.echo("Extracting baseline from model 2...")
-        baseline2 = extractor.extract_baseline(
+        typer.echo("Extracting profile from model 2...")
+        profile2 = extractor.extract_profile(
             model_path=model2_path,
-            domain=domain.lower(),
             layers=[layer] if layer != -1 else None,
+            domains=domain_list,
         )
     except Exception as e:
-        typer.echo(f"Error extracting baselines: {e}", err=True)
+        typer.echo(f"Error extracting profiles: {e}", err=True)
         raise typer.Exit(1)
 
     # Compute divergence
-    ricci_divergence = abs(baseline1.ollivier_ricci_mean - baseline2.ollivier_ricci_mean)
-    id_divergence = abs(baseline1.intrinsic_dimension_mean - baseline2.intrinsic_dimension_mean)
+    ricci_divergence = abs(profile1.global_ollivier_ricci_mean - profile2.global_ollivier_ricci_mean)
+    id_divergence = abs(profile1.global_intrinsic_dimension_mean - profile2.global_intrinsic_dimension_mean)
 
     # Compute domain metric divergence
-    domain_divergence = {}
-    common_metrics = set(baseline1.domain_metrics.keys()) & set(baseline2.domain_metrics.keys())
-    for metric in common_metrics:
-        v1 = baseline1.domain_metrics[metric]
-        v2 = baseline2.domain_metrics[metric]
-        domain_divergence[metric] = abs(v1 - v2)
+    domain_divergence: dict[str, dict[str, float]] = {}
+    for domain in set(profile1.domain_metrics.keys()) | set(profile2.domain_metrics.keys()):
+        metrics1 = profile1.domain_metrics.get(domain, {})
+        metrics2 = profile2.domain_metrics.get(domain, {})
+        common_metrics = set(metrics1.keys()) & set(metrics2.keys())
+        if common_metrics:
+            domain_divergence[domain] = {
+                m: abs(metrics1[m] - metrics2[m]) for m in common_metrics
+            }
 
     payload = {
-        "_schema": "mc.geometry.baseline.compare.v1",
-        "domain": domain,
+        "_schema": "mc.geometry.profile.compare.v1",
         "model1": {
             "path": model1_path,
-            "family": baseline1.model_family,
-            "size": baseline1.model_size,
-            "ollivier_ricci_mean": baseline1.ollivier_ricci_mean,
-            "intrinsic_dimension": baseline1.intrinsic_dimension_mean,
+            "family": profile1.model_family,
+            "ollivier_ricci_mean": profile1.global_ollivier_ricci_mean,
+            "intrinsic_dimension": profile1.global_intrinsic_dimension_mean,
         },
         "model2": {
             "path": model2_path,
-            "family": baseline2.model_family,
-            "size": baseline2.model_size,
-            "ollivier_ricci_mean": baseline2.ollivier_ricci_mean,
-            "intrinsic_dimension": baseline2.intrinsic_dimension_mean,
+            "family": profile2.model_family,
+            "ollivier_ricci_mean": profile2.global_ollivier_ricci_mean,
+            "intrinsic_dimension": profile2.global_intrinsic_dimension_mean,
         },
         "divergence": {
             "ollivier_ricci": ricci_divergence,
@@ -363,16 +262,16 @@ def baseline_compare(
     if context.output_format == "text":
         lines = [
             "=" * 70,
-            f"GEOMETRY COMPARISON: {domain.upper()}",
+            "GEOMETRY COMPARISON",
             "=" * 70,
             "",
-            f"Model 1: {baseline1.model_family}-{baseline1.model_size}",
-            f"  Ollivier-Ricci: {baseline1.ollivier_ricci_mean:.4f}",
-            f"  Intrinsic Dim:  {baseline1.intrinsic_dimension_mean:.1f}",
+            f"Model 1: {profile1.model_family}",
+            f"  Ollivier-Ricci: {profile1.global_ollivier_ricci_mean:.4f}",
+            f"  Intrinsic Dim:  {profile1.global_intrinsic_dimension_mean:.1f}",
             "",
-            f"Model 2: {baseline2.model_family}-{baseline2.model_size}",
-            f"  Ollivier-Ricci: {baseline2.ollivier_ricci_mean:.4f}",
-            f"  Intrinsic Dim:  {baseline2.intrinsic_dimension_mean:.1f}",
+            f"Model 2: {profile2.model_family}",
+            f"  Ollivier-Ricci: {profile2.global_ollivier_ricci_mean:.4f}",
+            f"  Intrinsic Dim:  {profile2.global_intrinsic_dimension_mean:.1f}",
             "",
             "-" * 50,
             "DIVERGENCE:",
@@ -383,8 +282,10 @@ def baseline_compare(
         if domain_divergence:
             lines.append("")
             lines.append("Domain Metrics:")
-            for metric, div in domain_divergence.items():
-                lines.append(f"  {metric}: {div:.4f}")
+            for domain, metrics in domain_divergence.items():
+                lines.append(f"  {domain}:")
+                for metric, div in metrics.items():
+                    lines.append(f"    {metric}: {div:.4f}")
 
         lines.append("")
         write_output("\n".join(lines), context.output_format, context.pretty)
@@ -394,69 +295,73 @@ def baseline_compare(
 
 
 @app.command("list")
-def baseline_list(
+def profile_list(
     ctx: typer.Context,
-    domain: str | None = typer.Option(
+    family: str | None = typer.Option(
         None,
-        "--domain",
-        "-d",
-        help="Filter by domain (spatial, social, temporal, moral)",
+        "--family",
+        "-f",
+        help="Filter by model family (qwen, llama, mistral, etc.)",
     ),
 ) -> None:
     """
-    List available geometry baselines.
+    List available geometry profiles.
 
-    Shows all extracted baselines stored in the repository.
+    Shows all extracted profiles stored in the repository.
     """
     context = _context(ctx)
 
-    from modelcypher.core.domain.geometry.domain_geometry_baselines import (
-        BaselineRepository,
-    )
+    from modelcypher.core.domain.geometry.model_profile import ProfileRepository
 
-    repo = BaselineRepository()
-    if domain:
-        baselines = repo.get_baselines_for_domain(domain)
+    repo = ProfileRepository()
+    if family:
+        profiles = repo.get_profiles_for_family(family)
     else:
-        baselines = repo.get_all_baselines()
+        profiles = repo.get_all_profiles()
 
     payload = {
-        "_schema": "mc.geometry.baseline.list.v1",
-        "baselines": [
+        "_schema": "mc.geometry.profile.list.v1",
+        "profiles": [
             {
-                "domain": b.domain,
-                "model_family": b.model_family,
-                "model_size": b.model_size,
-                "ollivier_ricci_mean": b.ollivier_ricci_mean,
-                "extraction_date": b.extraction_date,
+                "model_family": p.model_family,
+                "model_path": p.model_path,
+                "ollivier_ricci_mean": p.global_ollivier_ricci_mean,
+                "intrinsic_dimension": p.global_intrinsic_dimension_mean,
+                "computed_at": p.computed_at,
+                "layers_analyzed": len(p.layer_profiles),
             }
-            for b in baselines
+            for p in profiles
         ],
     }
 
     if context.output_format == "text":
-        if not baselines:
-            typer.echo("No baselines found.")
+        if not profiles:
+            typer.echo("No profiles found.")
             return
 
         lines = [
             "=" * 70,
-            "AVAILABLE BASELINES",
+            "AVAILABLE PROFILES",
             "=" * 70,
             "",
-            f"{'Domain':<10} {'Family':<10} {'Size':<8} {'Ricci':<10} {'Date'}",
+            f"{'Family':<10} {'Ricci':<10} {'ID':<8} {'Layers':<8} {'Date'}",
             "-" * 70,
         ]
-        for b in baselines:
+        for p in profiles:
             lines.append(
-                f"{b.domain:<10} {b.model_family:<10} {b.model_size:<8} "
-                f"{b.ollivier_ricci_mean:+.4f}   {b.extraction_date}"
+                f"{p.model_family:<10} {p.global_ollivier_ricci_mean:+.4f}   "
+                f"{p.global_intrinsic_dimension_mean:<8.1f} {len(p.layer_profiles):<8} "
+                f"{p.computed_at[:10] if p.computed_at else 'n/a'}"
             )
         lines.append("")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
     write_output(payload, context.output_format, context.pretty)
+
+
+# Remove the old validate command - validation is now just comparison against profiles
+# If validation is needed, use `mc geometry baseline compare`
 
 
 __all__ = ["app"]

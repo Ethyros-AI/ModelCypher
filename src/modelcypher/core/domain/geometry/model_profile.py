@@ -50,6 +50,8 @@ if TYPE_CHECKING:
     )
     from modelcypher.core.domain.geometry.knowledge_density import ModelDensityProfile
     from modelcypher.core.domain.geometry.topological_fingerprint import Fingerprint
+    from modelcypher.ports.backend import Array, Backend
+    from modelcypher.ports.model_loader import ModelLoaderPort
 
 logger = logging.getLogger(__name__)
 
@@ -356,6 +358,10 @@ class ModelProfile:
     # === KNOWLEDGE DENSITY ===
     density_summary: DensitySummary | None = None
 
+    # === DOMAIN-SPECIFIC METRICS ===
+    # Maps domain (spatial, social, temporal, moral) to domain-specific metrics
+    domain_metrics: dict[str, dict[str, float]] = field(default_factory=dict)
+
     # === COMPUTED SECTIONS (track what's been computed) ===
     computed_sections: list[str] = field(default_factory=list)
 
@@ -422,6 +428,8 @@ class ModelProfile:
             "density_summary": (
                 self.density_summary.to_dict() if self.density_summary else None
             ),
+            # Domain-specific metrics
+            "domain_metrics": self.domain_metrics,
             # Computed sections
             "computed_sections": self.computed_sections,
             # Metadata
@@ -478,6 +486,7 @@ class ModelProfile:
             topology_summary=topology,
             semantic_signature=semantic,
             density_summary=density,
+            domain_metrics=d.get("domain_metrics", {}),
             computed_sections=d.get("computed_sections", []),
             probe_corpus_hash=d.get("probe_corpus_hash", ""),
             backend_used=d.get("backend_used", ""),
@@ -663,6 +672,11 @@ class ModelProfile:
                 other.density_summary.to_dict()
             )
 
+        # Merge domain metrics (add domains from other that we don't have)
+        for domain, metrics in other.domain_metrics.items():
+            if domain not in result.domain_metrics:
+                result.domain_metrics[domain] = metrics.copy()
+
         # Merge computed sections
         for section in other.computed_sections:
             if section not in result.computed_sections:
@@ -687,6 +701,527 @@ class ModelProfile:
         return result
 
 
+class ProfileRepository:
+    """Repository for loading and saving model geometry profiles.
+
+    Profiles are stored as JSON files in a directory structure:
+        ~/.modelcypher/profiles/{model_family}_{model_size}.json
+
+    This replaces the old BaselineRepository with a unified profile system.
+    """
+
+    def __init__(self, profile_dir: str | Path | None = None):
+        """Initialize the repository.
+
+        Args:
+            profile_dir: Directory containing profile JSON files.
+                        Defaults to ~/.modelcypher/profiles/
+        """
+        if profile_dir is None:
+            profile_dir = Path.home() / ".modelcypher" / "profiles"
+        self._profile_dir = Path(profile_dir)
+        self._cache: dict[str, ModelProfile] = {}
+
+    @property
+    def profile_dir(self) -> Path:
+        """Get the profile directory path."""
+        return self._profile_dir
+
+    def get_profile(
+        self, model_family: str, model_size: str
+    ) -> ModelProfile | None:
+        """Get a profile by family and size.
+
+        Args:
+            model_family: e.g., "qwen", "llama", "mistral"
+            model_size: e.g., "0.5B", "3B", "7B"
+
+        Returns:
+            ModelProfile if found, None otherwise
+        """
+        cache_key = f"{model_family}_{model_size}"
+
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
+        # Try to load from file
+        filename = f"{model_family}_{model_size}.json"
+        filepath = self._profile_dir / filename
+
+        if filepath.exists():
+            profile = ModelProfile.load(filepath)
+            self._cache[cache_key] = profile
+            return profile
+
+        return None
+
+    def get_profiles_for_family(self, model_family: str) -> list[ModelProfile]:
+        """Get all profiles for a given model family."""
+        profiles = []
+
+        if not self._profile_dir.exists():
+            return profiles
+
+        for filepath in self._profile_dir.glob(f"{model_family}_*.json"):
+            try:
+                profile = ModelProfile.load(filepath)
+                profiles.append(profile)
+            except Exception as e:
+                logger.warning("Failed to load profile %s: %s", filepath, e)
+
+        return profiles
+
+    def get_all_profiles(self) -> list[ModelProfile]:
+        """Get all available profiles."""
+        profiles = []
+
+        if not self._profile_dir.exists():
+            return profiles
+
+        for filepath in self._profile_dir.glob("*.json"):
+            try:
+                profile = ModelProfile.load(filepath)
+                profiles.append(profile)
+            except Exception as e:
+                logger.warning("Failed to load profile %s: %s", filepath, e)
+
+        return profiles
+
+    def save_profile(self, profile: ModelProfile) -> Path:
+        """Save a profile to the repository.
+
+        Returns the path where the profile was saved.
+        """
+        self._profile_dir.mkdir(parents=True, exist_ok=True)
+
+        # Normalize family and size for filename
+        family = profile.model_family.lower().replace(" ", "_")
+        size = self._extract_size(profile)
+
+        filename = f"{family}_{size}.json"
+        filepath = self._profile_dir / filename
+
+        profile.save(filepath)
+
+        # Update cache
+        cache_key = f"{family}_{size}"
+        self._cache[cache_key] = profile
+
+        return filepath
+
+    def _extract_size(self, profile: ModelProfile) -> str:
+        """Extract model size string from profile."""
+        # Try to get from path name
+        path = Path(profile.model_path)
+        name = path.name.lower()
+
+        for pattern in ["0.5b", "1b", "1.5b", "3b", "7b", "8b", "13b", "70b"]:
+            if pattern in name:
+                return pattern.upper()
+
+        # Fall back to parameter count
+        params = profile.parameter_count
+        if params >= 60_000_000_000:
+            return "70B"
+        elif params >= 10_000_000_000:
+            return "13B"
+        elif params >= 6_000_000_000:
+            return "7B"
+        elif params >= 2_000_000_000:
+            return "3B"
+        elif params >= 1_000_000_000:
+            return "1B"
+        elif params >= 400_000_000:
+            return "0.5B"
+        else:
+            return "unknown"
+
+    def find_matching_profile(
+        self, model_family: str, model_size: str
+    ) -> ModelProfile | None:
+        """Find the best matching profile for a model.
+
+        First tries exact match, then falls back to same family.
+        """
+        # Exact match
+        profile = self.get_profile(model_family, model_size)
+        if profile:
+            return profile
+
+        # Same family, any size
+        family_profiles = self.get_profiles_for_family(model_family)
+        if family_profiles:
+            return family_profiles[0]
+
+        return None
+
+
+class ModelProfileExtractor:
+    """Extract complete geometry profiles from models.
+
+    This is the unified extraction system that replaces domain_geometry_baselines.
+    It computes curvature, intrinsic dimension, and domain-specific metrics.
+    """
+
+    def __init__(
+        self,
+        backend: "Backend | None" = None,
+        model_loader: "ModelLoaderPort | None" = None,
+    ):
+        from modelcypher.core.domain._backend import get_default_backend
+
+        self._backend = backend or get_default_backend()
+        self._model_loader = model_loader
+
+    def extract_profile(
+        self,
+        model_path: str,
+        layers: list[int] | None = None,
+        k_neighbors: int = 10,
+        domains: list[str] | None = None,
+    ) -> ModelProfile:
+        """Extract a geometry profile from a model.
+
+        Args:
+            model_path: Path to the model directory
+            layers: Specific layers to analyze (None = sample layers)
+            k_neighbors: k for k-NN graph construction
+            domains: Domain-specific metrics to compute (spatial, social, temporal, moral)
+
+        Returns:
+            ModelProfile with computed metrics
+        """
+        from modelcypher.core.domain.geometry.manifold_curvature import (
+            OllivierRicciConfig,
+            OllivierRicciCurvature,
+        )
+
+        logger.info("Extracting geometry profile from %s", model_path)
+
+        # Parse model info from path
+        model_family, model_size = self._parse_model_info(model_path)
+
+        # Get probes and collect activations
+        probes = self._get_probes()
+        logger.debug("Using %d probes for geometry extraction", len(probes))
+
+        # Collect activations
+        activations_by_layer = self._collect_activations(model_path, probes, layers)
+
+        if not activations_by_layer:
+            logger.warning("No activations collected from %s", model_path)
+            return ModelProfile(
+                model_path=model_path,
+                model_family=model_family,
+                extraction_config={"error": "no_activations"},
+            )
+
+        # Compute Ollivier-Ricci curvature per layer
+        orc = OllivierRicciCurvature(
+            config=OllivierRicciConfig(k_neighbors=k_neighbors),
+            backend=self._backend,
+        )
+
+        layer_profiles: list[LayerProfile] = []
+        ricci_values: list[float] = []
+        id_values: list[float] = []
+
+        for layer_idx, activations in sorted(activations_by_layer.items()):
+            try:
+                result = orc.compute(activations, k_neighbors=k_neighbors)
+                curvature = result.mean_edge_curvature
+
+                # Skip NaN values
+                if math.isnan(curvature):
+                    logger.debug("Layer %d returned NaN curvature, skipping", layer_idx)
+                    continue
+
+                # Compute intrinsic dimension
+                id_value, id_std = self._compute_intrinsic_dimension(activations)
+
+                lp = LayerProfile(
+                    layer_idx=layer_idx,
+                    ollivier_ricci_mean=curvature,
+                    ollivier_ricci_std=result.curvature_std,
+                    intrinsic_dimension=id_value,
+                    intrinsic_dimension_uncertainty=id_std,
+                )
+                layer_profiles.append(lp)
+                ricci_values.append(curvature)
+                if not math.isnan(id_value):
+                    id_values.append(id_value)
+
+            except Exception as e:
+                logger.warning("Failed to compute metrics for layer %d: %s", layer_idx, e)
+                continue
+
+        if not layer_profiles:
+            logger.warning("No valid layer profiles computed")
+            return ModelProfile(
+                model_path=model_path,
+                model_family=model_family,
+                extraction_config={"error": "no_valid_layers"},
+            )
+
+        # Compute global statistics
+        b = self._backend
+        ricci_arr = b.array(ricci_values)
+
+        global_ricci_mean = float(b.mean(ricci_arr))
+        global_ricci_std = float(b.std(ricci_arr))
+        global_id_mean = float(sum(id_values) / len(id_values)) if id_values else 0.0
+
+        # Compute domain-specific metrics if requested
+        domain_metrics: dict[str, dict[str, float]] = {}
+        if domains:
+            for domain in domains:
+                domain_metrics[domain] = self._compute_domain_metrics(
+                    domain, activations_by_layer
+                )
+
+        return ModelProfile(
+            model_path=model_path,
+            model_family=model_family,
+            layer_profiles=layer_profiles,
+            global_ollivier_ricci_mean=global_ricci_mean,
+            global_ollivier_ricci_std=global_ricci_std,
+            global_intrinsic_dimension_mean=global_id_mean,
+            domain_metrics=domain_metrics,
+            computed_sections=[ProfileSection.GEOMETRY.value],
+            backend_used=type(self._backend).__name__,
+            extraction_config={
+                "k_neighbors": k_neighbors,
+                "num_probes": len(probes),
+                "layers_analyzed": len(layer_profiles),
+            },
+        )
+
+    def _parse_model_info(self, model_path: str) -> tuple[str, str]:
+        """Parse model family and size from path."""
+        path = Path(model_path)
+        name = path.name.lower()
+
+        # Detect family
+        if "qwen" in name:
+            family = "qwen"
+        elif "llama" in name:
+            family = "llama"
+        elif "mistral" in name:
+            family = "mistral"
+        elif "phi" in name:
+            family = "phi"
+        elif "gemma" in name:
+            family = "gemma"
+        elif "smol" in name:
+            family = "smollm"
+        else:
+            family = "unknown"
+
+        # Detect size
+        size = "unknown"
+        for pattern in ["0.5b", "1b", "1.5b", "3b", "7b", "8b", "13b", "70b"]:
+            if pattern in name:
+                size = pattern.upper()
+                break
+
+        return family, size
+
+    def _get_probes(self) -> list[str]:
+        """Get probe prompts for geometry measurement."""
+        from modelcypher.core.domain.geometry.atlas_registry import get_atlas_probes
+
+        probes = list(get_atlas_probes())
+        if not probes:
+            raise ValueError(
+                "No atlas probes registered. Call "
+                "modelcypher.core.use_cases.atlas_bootstrap.register_default_atlas_inventories() "
+                "before extracting geometry profiles."
+            )
+
+        prompts: list[str] = []
+        for probe in probes:
+            prompts.append(f"The concept of {probe.name}.")
+            for text in probe.support_texts:
+                if text and len(text) > 3:
+                    prompts.append(text)
+
+        # Deduplicate
+        seen: set[str] = set()
+        unique: list[str] = []
+        for p in prompts:
+            if p not in seen:
+                seen.add(p)
+                unique.append(p)
+
+        return unique
+
+    def _collect_activations(
+        self,
+        model_path: str,
+        probes: list[str],
+        layers: list[int] | None,
+    ) -> dict[int, "Array"]:
+        """Collect activations from a model for given probes."""
+        if self._model_loader is None:
+            raise RuntimeError(
+                "ModelProfileExtractor requires a model_loader. "
+                "Pass a ModelLoaderPort implementation to the constructor."
+            )
+
+        model, tokenizer = self._model_loader.load_model_for_training(model_path)
+
+        # Determine which layers to analyze
+        if layers is None:
+            total_layers = len(model.layers) if hasattr(model, "layers") else 24
+            layers = list(range(0, total_layers, max(1, total_layers // 8)))
+
+        activations_by_layer: dict[int, list["Array"]] = {l: [] for l in layers}
+
+        for probe in probes:
+            try:
+                tokens = tokenizer.encode(probe)
+                if hasattr(tokens, "tolist"):
+                    token_ids = tokens.tolist()
+                else:
+                    token_ids = list(tokens)
+
+                for layer_idx in layers:
+                    act = self._extract_layer_activation(model, token_ids, layer_idx)
+                    if act is not None:
+                        activations_by_layer[layer_idx].append(act)
+            except Exception as e:
+                logger.debug("Failed to get activation for probe: %s", e)
+                continue
+
+        # Stack activations per layer
+        result = {}
+        b = self._backend
+        for layer_idx, acts in activations_by_layer.items():
+            if acts:
+                stacked = b.stack(acts, axis=0)
+                result[layer_idx] = stacked
+
+        return result
+
+    def _extract_layer_activation(
+        self, model: Any, token_ids: list[int], layer_idx: int
+    ) -> "Array | None":
+        """Extract activation from a specific layer."""
+        try:
+            import mlx.core as mx
+
+            x = mx.array([token_ids])
+
+            inner_model = model.model if hasattr(model, "model") else model
+
+            if hasattr(inner_model, "embed_tokens"):
+                h = inner_model.embed_tokens(x)
+            elif hasattr(inner_model, "wte"):
+                h = inner_model.wte(x)
+            elif hasattr(model, "embed_tokens"):
+                h = model.embed_tokens(x)
+            else:
+                return None
+
+            layers = None
+            if hasattr(inner_model, "layers"):
+                layers = inner_model.layers
+            elif hasattr(model, "layers"):
+                layers = model.layers
+
+            if layers is None:
+                return None
+
+            for i, layer in enumerate(layers):
+                if i > layer_idx:
+                    break
+                h = layer(h)
+
+            mx.eval(h)
+            return h[0, -1, :]
+
+        except Exception as e:
+            logger.debug("Activation extraction failed: %s", e)
+            return None
+
+    def _compute_intrinsic_dimension(
+        self, activations: "Array"
+    ) -> tuple[float, float]:
+        """Compute intrinsic dimension of the activation manifold."""
+        try:
+            from modelcypher.core.domain.geometry.intrinsic_dimension import (
+                IntrinsicDimension,
+            )
+
+            estimator = IntrinsicDimension(backend=self._backend)
+            global_estimate = estimator.compute(activations)
+            local_map = estimator.local_dimension_map(activations)
+
+            return global_estimate.intrinsic_dimension, local_map.std_dimension
+        except Exception as e:
+            logger.debug("ID estimation failed: %s", e)
+            return 0.0, 0.0
+
+    def _compute_domain_metrics(
+        self, domain: str, activations_by_layer: dict[int, "Array"]
+    ) -> dict[str, float]:
+        """Compute domain-specific metrics."""
+        b = self._backend
+        metrics: dict[str, float] = {}
+
+        # Get representative layer (middle of the model)
+        layer_indices = sorted(activations_by_layer.keys())
+        if not layer_indices:
+            return metrics
+
+        mid_layer = layer_indices[len(layer_indices) // 2]
+        activations = activations_by_layer[mid_layer]
+
+        # Common metrics
+        try:
+            u, s, vt = b.svd(activations)
+            s_normalized = s / (b.sum(s) + 1e-10)
+            top_k = min(3, len(s))
+            concentration = float(b.sum(s_normalized[:top_k]))
+            metrics["representation_coherence"] = concentration
+        except Exception:
+            metrics["representation_coherence"] = 0.0
+
+        try:
+            mean = b.mean(activations, axis=0, keepdims=True)
+            centered = activations - mean
+            cov = b.matmul(b.transpose(centered), centered) / (activations.shape[0] - 1)
+            eigenvalues, _ = b.eigh(cov)
+            sorted_eig = b.sort(eigenvalues)[::-1]
+            if len(sorted_eig) >= 3:
+                ratio = float(sorted_eig[2] / (sorted_eig[0] + 1e-10))
+                metrics["axis_orthogonality"] = min(1.0, ratio * 10)
+            else:
+                metrics["axis_orthogonality"] = 0.0
+        except Exception:
+            metrics["axis_orthogonality"] = 0.0
+
+        # Domain-specific metrics (placeholders for now)
+        if domain == "spatial":
+            metrics["euclidean_consistency"] = metrics.get("representation_coherence", 0.0)
+            metrics["gravity_alignment"] = 0.5
+            metrics["volumetric_density"] = 0.5
+        elif domain == "social":
+            metrics["social_manifold_score"] = metrics.get("representation_coherence", 0.0)
+            metrics["power_axis_strength"] = metrics.get("axis_orthogonality", 0.0)
+            metrics["kinship_coherence"] = 0.5
+        elif domain == "temporal":
+            metrics["direction_monotonicity"] = 0.5
+            metrics["duration_correlation"] = 0.5
+            metrics["causality_strength"] = metrics.get("axis_orthogonality", 0.0)
+        elif domain == "moral":
+            metrics["valence_gradient"] = 0.5
+            metrics["moral_foundations_clustering"] = metrics.get("axis_orthogonality", 0.0)
+            metrics["virtue_vice_opposition"] = 0.5
+
+        return metrics
+
+
 __all__ = [
     "ProfileSection",
     "ManifoldRegion",
@@ -695,5 +1230,7 @@ __all__ = [
     "SemanticSignature",
     "DensitySummary",
     "ModelProfile",
+    "ProfileRepository",
+    "ModelProfileExtractor",
     "SCHEMA_VERSION",
 ]

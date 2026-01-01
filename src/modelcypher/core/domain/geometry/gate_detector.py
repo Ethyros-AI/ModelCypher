@@ -64,42 +64,37 @@ logger = logging.getLogger(__name__)
 class Configuration:
     """Gate detection configuration.
 
-    detection_threshold should be derived from the similarity distribution
-    of gate embeddings, not guessed. Use from_similarity_distribution() to
-    create a properly calibrated configuration.
+    All parameters are explicit; no hidden defaults or heuristic fallbacks.
     """
 
-    detection_threshold: float | None = None
-    """Cosine similarity threshold for gate detection.
+    detection_threshold: float
+    """Cosine similarity threshold for gate detection."""
 
-    If None, must be derived from gate embedding similarities before detection.
-    """
-
-    detection_sigma: float = 2.0
-    """Standard deviations above mean similarity for threshold derivation."""
-
-    window_sizes: list[int] = None  # type: ignore[assignment]
-    stride: int = 3
-    collapse_consecutive: bool = True
-    max_gates_per_response: int = 50
-
-    def __post_init__(self) -> None:
-        if self.window_sizes is None:
-            object.__setattr__(self, "window_sizes", [5, 10, 15])
+    window_sizes: list[int]
+    stride: int
+    collapse_consecutive: bool
+    max_gates_per_response: int
 
     @classmethod
     def from_similarity_distribution(
         cls,
         similarities: list[float],
-        sigma: float = 2.0,
-        window_sizes: list[int] | None = None,
+        *,
+        sigma: float,
+        window_sizes: list[int],
+        stride: int,
+        collapse_consecutive: bool,
+        max_gates_per_response: int,
     ) -> "Configuration":
         """Derive detection threshold from observed similarity distribution.
 
         Args:
             similarities: List of cosine similarities between embeddings.
-            sigma: Std devs above mean for threshold.
+            sigma: Std devs above mean for threshold (explicit).
             window_sizes: Detection window sizes.
+            stride: Sliding stride in tokens.
+            collapse_consecutive: Whether to collapse consecutive gates.
+            max_gates_per_response: Maximum gates to return.
 
         Returns:
             Configuration with data-derived threshold.
@@ -123,8 +118,10 @@ class Configuration:
 
         return cls(
             detection_threshold=max(0.0, min(1.0, threshold)),
-            detection_sigma=sigma,
             window_sizes=window_sizes,
+            stride=stride,
+            collapse_consecutive=collapse_consecutive,
+            max_gates_per_response=max_gates_per_response,
         )
 
 
@@ -179,71 +176,20 @@ class DetectionResult:
 class GateDetector:
     def __init__(
         self,
-        configuration: Configuration | None = None,
+        configuration: Configuration,
         embedder: EmbeddingProvider | None = None,
         gate_inventory: Iterable[ComputationalGateProtocol] | None = None,
     ) -> None:
-        self.config = configuration or Configuration()
+        self.config = configuration
         self.embedder = embedder
         self.gate_embeddings: dict[str, list[float]] = {}
         self.gate_metadata: dict[str, ComputationalGateProtocol] = {}
-        self._derived_threshold: float | None = None
 
         if gate_inventory is None:
             gate_inventory = get_gate_inventory()
 
         for gate in gate_inventory:
             self.gate_metadata[gate.id] = gate
-
-    @property
-    def effective_threshold(self) -> float:
-        """Get the detection threshold (explicit or derived from embeddings)."""
-        if self.config.detection_threshold is not None:
-            return self.config.detection_threshold
-        if self._derived_threshold is not None:
-            return self._derived_threshold
-        # Derive from gate embedding similarities
-        self._derived_threshold = self._derive_threshold_from_embeddings()
-        return self._derived_threshold
-
-    def _derive_threshold_from_embeddings(self) -> float:
-        """Derive detection threshold from inter-gate embedding similarities."""
-        import math
-
-        self._ensure_gate_embeddings()
-        if len(self.gate_embeddings) < 2:
-            raise ValueError(
-                "Cannot derive detection threshold: need at least 2 gate embeddings. "
-                "Ensure embedder is configured and gate inventory has examples."
-            )
-
-        # Compute pairwise cosine similarities between gate embeddings
-        gate_ids = list(self.gate_embeddings.keys())
-        similarities: list[float] = []
-
-        for i, gid_a in enumerate(gate_ids):
-            emb_a = self.gate_embeddings[gid_a]
-            for gid_b in gate_ids[i + 1 :]:
-                emb_b = self.gate_embeddings[gid_b]
-                sim = self._cosine_similarity(emb_a, emb_b)
-                similarities.append(sim)
-
-        if not similarities:
-            raise ValueError(
-                "Cannot derive detection threshold: no pairwise similarities computed."
-            )
-
-        n = len(similarities)
-        mean = sum(similarities) / n
-        variance = sum((s - mean) ** 2 for s in similarities) / n
-        std = math.sqrt(variance)
-        threshold = mean + self.config.detection_sigma * std
-
-        logger.debug(
-            f"Derived detection threshold: {threshold:.4f} "
-            f"(mean={mean:.4f}, std={std:.4f})"
-        )
-        return max(0.0, min(1.0, threshold))
 
     def detect(
         self,
@@ -362,7 +308,7 @@ class GateDetector:
                     best_similarity = similarity
                     best_gate_id = gate_id
 
-            if best_gate_id and best_similarity >= self.effective_threshold:
+            if best_gate_id and best_similarity >= self.config.detection_threshold:
                 gate_meta = self.gate_metadata.get(best_gate_id)
                 if gate_meta is None:
                     position += char_stride

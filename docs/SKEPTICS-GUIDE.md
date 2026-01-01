@@ -182,30 +182,33 @@ Removing hardcoded thresholds is noble, but scientists DO interpret results. Isn
 
 ### The Answer: Thresholds Come From Data, Not Magic Numbers
 
-**Code Reference**: [domain_geometry_baselines.py](../src/modelcypher/core/domain/geometry/domain_geometry_baselines.py)
+**Code Reference**: [model_profile.py](../src/modelcypher/core/domain/geometry/model_profile.py)
 
 ```python
-class DomainGeometryBaseline:
-    """Baseline statistics derived from empirical measurement."""
-    mean: float
-    std: float
-    percentiles: dict[int, float]  # 5th, 25th, 50th, 75th, 95th
-    sample_count: int
+@dataclass
+class ModelProfile:
+    """Complete geometry profile for a model.
+
+    Raw measurements only - no interpretation, no classification.
+    """
+    model_path: str
     model_family: str
+    global_ollivier_ricci_mean: float
+    global_ollivier_ricci_std: float
+    global_intrinsic_dimension_mean: float
+    layer_profiles: list[LayerProfile]  # Per-layer geometry
+    domain_metrics: dict[str, dict[str, float]]  # Domain-specific measurements
 ```
 
-**Code Reference**: [domain_geometry_validator.py](../src/modelcypher/core/domain/geometry/domain_geometry_validator.py)
+**Comparison returns raw deltas:**
 
 ```python
-def _metric_delta(self, current: float, baseline: DomainGeometryBaseline) -> dict:
-    return {
-        "current": current,
-        "baseline": baseline.mean,
-        "delta": current - baseline.mean,
-        "z_score": (current - baseline.mean) / baseline.std,
-        "percentile": self._compute_percentile(current, baseline),
-    }
-    # NO "good", "bad", "healthy", "concerning" - just numbers
+# Divergence is just: abs(profile1.metric - profile2.metric)
+divergence = {
+    "ollivier_ricci": abs(p1.global_ollivier_ricci_mean - p2.global_ollivier_ricci_mean),
+    "intrinsic_dimension": abs(p1.global_intrinsic_dimension_mean - p2.global_intrinsic_dimension_mean),
+}
+# NO "good", "bad", "healthy", "concerning" - just numbers
 ```
 
 **Code Reference**: [circuit_breaker_integration.py](../src/modelcypher/core/domain/safety/circuit_breaker_integration.py)
@@ -373,7 +376,7 @@ The thermodynamics framework uses real physics math (partition functions, Boltzm
 | CKA works cross-dimension | [cka.py](../src/modelcypher/core/domain/geometry/cka.py) | `compute_cka_from_grams()` |
 | No Euclidean fallback | [riemannian_utils.py](../src/modelcypher/core/domain/geometry/riemannian_utils.py) | `geodesic_interpolation()` ValueError |
 | No clamping | [riemannian_utils.py:1409](../src/modelcypher/core/domain/geometry/riemannian_utils.py#L1409) | Comment + implementation |
-| Thresholds from data | [domain_geometry_validator.py](../src/modelcypher/core/domain/geometry/domain_geometry_validator.py) | `_metric_delta()` |
+| Thresholds from data | [model_profile.py](../src/modelcypher/core/domain/geometry/model_profile.py) | `ProfileRepository` comparison |
 | Energy from probability | [measured_thermodynamics.py](../src/modelcypher/core/domain/thermo/measured_thermodynamics.py) | `MeasuredEnergy.from_probability()` |
 | Calibration exists | [thermo_calibrator.py](../src/modelcypher/core/domain/thermo/thermo_calibrator.py) | `ThermoCalibrator.calibrate()` |
 

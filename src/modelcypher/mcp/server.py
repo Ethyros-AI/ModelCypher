@@ -226,11 +226,10 @@ TOOL_PROFILES = {
         "mc_geometry_spatial_density",  # New - Volumetric density probe
         "mc_geometry_spatial_analyze",  # New - Full 3D world model analysis
         "mc_geometry_spatial_probe_model",  # New - End-to-end model probing
-        # Domain Geometry Baselines
-        "mc_geometry_baseline_list",  # New - List available baselines
-        "mc_geometry_baseline_extract",  # New - Extract baseline from model
-        "mc_geometry_baseline_validate",  # New - Validate model against baselines
-        "mc_geometry_baseline_compare",  # New - Compare two models
+        # Model Geometry Profiles
+        "mc_geometry_baseline_list",  # List available profiles
+        "mc_geometry_baseline_extract",  # Extract profile from model
+        "mc_geometry_baseline_compare",  # Compare two models
         # Task management (MCP 2025 Tasks framework)
         "mc_task_list",  # New - List async tasks
         "mc_task_status",  # New - Get task status
@@ -306,9 +305,9 @@ TOOL_PROFILES = {
         "mc_geometry_spatial_anchors",
         "mc_geometry_spatial_analyze",
         "mc_geometry_spatial_probe_model",
-        # Domain Geometry Baselines (for merge validation)
+        # Model Geometry Profiles (for merge validation)
         "mc_geometry_baseline_list",
-        "mc_geometry_baseline_validate",
+        "mc_geometry_baseline_compare",
         # Task management (async training jobs)
         "mc_task_list",
         "mc_task_status",
@@ -364,9 +363,9 @@ TOOL_PROFILES = {
         # 3D Spatial Metrology (model quality monitoring)
         "mc_geometry_spatial_anchors",
         "mc_geometry_spatial_analyze",
-        # Domain Geometry Baselines (model health monitoring)
+        # Model Geometry Profiles (model geometry monitoring)
         "mc_geometry_baseline_list",
-        "mc_geometry_baseline_validate",
+        "mc_geometry_baseline_compare",
         # Task monitoring (read-only status checks)
         "mc_task_list",
         "mc_task_status",

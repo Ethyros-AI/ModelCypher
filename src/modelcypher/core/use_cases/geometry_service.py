@@ -23,7 +23,18 @@ path comparison, and validation suite execution. Use this service to compare
 how different models process the same inputs.
 
 Example:
-    service = GeometryService()
+    service = GeometryService(
+        detector=GateDetector(
+            configuration=GateConfig(
+                detection_threshold=gate_threshold,
+                window_sizes=window_sizes,
+                stride=stride,
+                collapse_consecutive=collapse_consecutive,
+                max_gates_per_response=max_gates_per_response,
+            ),
+            embedder=embedder,
+        )
+    )
     result = service.compare_paths(model_a, model_b, prompt)
     print(result.comparison.cka_similarity)
 """
@@ -68,9 +79,20 @@ class GeometryService:
     def __init__(
         self,
         detector: GateDetector | None = None,
+        *,
+        gate_config: GateConfig | None = None,
         embedder: EmbeddingProvider | None = None,
     ) -> None:
-        self.detector = detector or GateDetector(embedder=embedder)
+        if detector is None:
+            if gate_config is None and embedder is None:
+                self.detector = None
+                return
+            if gate_config is None or embedder is None:
+                raise ValueError(
+                    "GeometryService requires GateDetector or (gate_config + embedder)."
+                )
+            detector = GateDetector(configuration=gate_config, embedder=embedder)
+        self.detector = detector
 
     def validate(self, include_fixtures: bool = False) -> Report:
         base = ValidationConfig.default()
@@ -338,6 +360,8 @@ class GeometryService:
         return payload
 
     def _detector_for_threshold(self, threshold: float | None) -> GateDetector:
+        if self.detector is None:
+            raise ValueError("GateDetector not configured. Provide gate_config or detector.")
         if threshold is None:
             return self.detector
         config = GateConfig(

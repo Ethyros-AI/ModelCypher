@@ -37,6 +37,7 @@ from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
 from modelcypher.adapters.local_inference import LocalInferenceEngine
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
+from modelcypher.core.domain.geometry.gate_detector import Configuration as GateConfig
 from modelcypher.core.use_cases.geometry_service import GeometryService
 from modelcypher.utils.json import dump_json
 
@@ -53,19 +54,42 @@ def geometry_path_detect(
     text: str = typer.Argument(...),
     model: str | None = typer.Option(None, "--model"),
     file: str | None = typer.Option(None, "--file"),
+    detection_threshold: float = typer.Option(..., "--detection-threshold"),
+    window_sizes: list[int] | None = typer.Option(None, "--window-size"),
+    stride: int = typer.Option(..., "--stride"),
+    collapse_consecutive: bool | None = typer.Option(
+        None, "--collapse-consecutive/--no-collapse-consecutive"
+    ),
+    max_gates_per_response: int = typer.Option(..., "--max-gates-per-response"),
 ) -> None:
     """Detect computational gate sequences in text.
 
-    The detection threshold is computed from the gate confidence distribution.
-    No user-configurable threshold - the geometry determines it.
+    All gate detection parameters are explicit. No implicit thresholds.
 
     Examples:
-        mc geometry path detect "The sequence 1, 1, 2, 3, 5, 8..."
-        mc geometry path detect "Hello world" --model ./model
+        mc geometry path detect "The sequence 1, 1, 2, 3, 5, 8..." \
+            --detection-threshold 0.6 --window-size 5 --window-size 10 \
+            --stride 3 --collapse-consecutive --max-gates-per-response 50
+        mc geometry path detect "Hello world" --model ./model \
+            --detection-threshold 0.6 --window-size 5 --stride 3 \
+            --no-collapse-consecutive --max-gates-per-response 50
     """
     context = _context(ctx)
+    if not window_sizes:
+        raise typer.BadParameter("At least one --window-size is required.")
+    if collapse_consecutive is None:
+        raise typer.BadParameter(
+            "Specify --collapse-consecutive or --no-collapse-consecutive."
+        )
     embedder = EmbeddingDefaults.make_default_embedder()
-    service = GeometryService(embedder=embedder)
+    gate_config = GateConfig(
+        detection_threshold=detection_threshold,
+        window_sizes=window_sizes,
+        stride=stride,
+        collapse_consecutive=collapse_consecutive,
+        max_gates_per_response=max_gates_per_response,
+    )
+    service = GeometryService(gate_config=gate_config, embedder=embedder)
 
     if model:
         engine = LocalInferenceEngine()
@@ -76,12 +100,10 @@ def geometry_path_detect(
         text_to_analyze = text
         model_id = "input-text"
 
-    # Threshold is computed from the data, not user-specified
     detection = service.detect_path(
         text_to_analyze,
         model_id=model_id,
         prompt_id="cli-input",
-        threshold=None,  # Let the detector derive from confidence distribution
     )
     payload = service.detection_payload(detection)
 
@@ -120,19 +142,42 @@ def geometry_path_compare(
         False, "--comprehensive", help="Include Frechet/DTW/signature similarity metrics"
     ),
     file: str | None = typer.Option(None, "--file"),
+    detection_threshold: float = typer.Option(..., "--detection-threshold"),
+    window_sizes: list[int] | None = typer.Option(None, "--window-size"),
+    stride: int = typer.Option(..., "--stride"),
+    collapse_consecutive: bool | None = typer.Option(
+        None, "--collapse-consecutive/--no-collapse-consecutive"
+    ),
+    max_gates_per_response: int = typer.Option(..., "--max-gates-per-response"),
 ) -> None:
     """Compare gate sequence paths between two texts or models.
 
-    The detection threshold is computed from the gate confidence distribution.
-    No user-configurable threshold - the geometry determines it.
+    All gate detection parameters are explicit. No implicit thresholds.
 
     Examples:
-        mc geometry path compare --text-a "First text" --text-b "Second text"
-        mc geometry path compare --model-a ./model1 --model-b ./model2 --prompt "Hello"
+        mc geometry path compare --text-a "First text" --text-b "Second text" \
+            --detection-threshold 0.6 --window-size 5 --stride 3 \
+            --collapse-consecutive --max-gates-per-response 50
+        mc geometry path compare --model-a ./model1 --model-b ./model2 --prompt "Hello" \
+            --detection-threshold 0.6 --window-size 5 --stride 3 \
+            --no-collapse-consecutive --max-gates-per-response 50
     """
     context = _context(ctx)
+    if not window_sizes:
+        raise typer.BadParameter("At least one --window-size is required.")
+    if collapse_consecutive is None:
+        raise typer.BadParameter(
+            "Specify --collapse-consecutive or --no-collapse-consecutive."
+        )
     embedder = EmbeddingDefaults.make_default_embedder()
-    service = GeometryService(embedder=embedder)
+    gate_config = GateConfig(
+        detection_threshold=detection_threshold,
+        window_sizes=window_sizes,
+        stride=stride,
+        collapse_consecutive=collapse_consecutive,
+        max_gates_per_response=max_gates_per_response,
+    )
+    service = GeometryService(gate_config=gate_config, embedder=embedder)
 
     if text_a and text_b:
         text_to_analyze_a = text_a
@@ -165,14 +210,12 @@ def geometry_path_compare(
             "  --model-a ./m1 --model-b ./m2 --prompt 'test'  (compare models)"
         )
 
-    # Threshold is computed from the data, not user-specified
     result = service.compare_paths(
         text_a=text_to_analyze_a,
         text_b=text_to_analyze_b,
         model_a=model_id_a,
         model_b=model_id_b,
         prompt_id="compare",
-        threshold=None,  # Let the detector derive from confidence distribution
         comprehensive=comprehensive,
     )
 
