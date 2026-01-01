@@ -49,7 +49,6 @@ from modelcypher.cli.commands import job as job_commands
 from modelcypher.cli.commands import merge as merge_commands
 from modelcypher.cli.commands import model as model_commands
 from modelcypher.cli.commands import profile as profile_commands
-from modelcypher.cli.commands import program as program_commands
 from modelcypher.cli.commands import research as research_commands
 from modelcypher.cli.commands import safety as safety_commands
 from modelcypher.cli.commands import stability as stability_commands
@@ -81,12 +80,9 @@ from modelcypher.cli.commands.geometry import safety as geometry_safety_commands
 from modelcypher.cli.commands.geometry import social as geometry_social_commands
 from modelcypher.cli.commands.geometry import sparse as geometry_sparse_commands
 from modelcypher.cli.commands.geometry import spatial as geometry_spatial_commands
-from modelcypher.cli.commands.geometry import stitch as geometry_stitch_commands
 from modelcypher.cli.commands.geometry import temporal as geometry_temporal_commands
 from modelcypher.cli.commands.geometry import training as geometry_training_commands
 from modelcypher.cli.commands.geometry import transfer as geometry_transfer_cabe_commands
-from modelcypher.cli.commands.geometry import transplant_cmd as geometry_transplant_commands
-from modelcypher.cli.commands.geometry import transport as geometry_transport_commands
 from modelcypher.cli.commands.geometry import visualize as geometry_visualize_commands
 from modelcypher.cli.commands.geometry import waypoint as geometry_waypoint_commands
 from modelcypher.cli.composition import get_training_service
@@ -173,7 +169,6 @@ app.add_typer(job_commands.app, name="job")
 app.add_typer(train_commands.checkpoint_app, name="checkpoint")
 app.add_typer(merge_commands.app, name="merge")
 app.add_typer(model_commands.app, name="model")
-app.add_typer(program_commands.app, name="program")
 app.add_typer(system_commands.app, name="system")
 app.add_typer(eval_commands.eval_app, name="eval")
 app.add_typer(eval_commands.compare_app, name="compare")
@@ -187,7 +182,6 @@ geometry_app.add_typer(geometry_adapter_commands.app, name="adapter")
 geometry_app.add_typer(geometry_atlas_commands.app, name="atlas")
 geometry_app.add_typer(geometry_baseline_commands.app, name="baseline")
 geometry_app.add_typer(geometry_primes_commands.app, name="primes")
-geometry_app.add_typer(geometry_stitch_commands.app, name="stitch")
 geometry_app.add_typer(geometry_crm_commands.app, name="crm")
 geometry_app.add_typer(geometry_metrics_commands.app, name="metrics")
 geometry_app.add_typer(geometry_concept_commands.app, name="concept")
@@ -196,7 +190,6 @@ geometry_app.add_typer(geometry_sparse_commands.app, name="sparse")
 geometry_app.add_typer(geometry_refusal_commands.app, name="refusal")
 geometry_app.add_typer(geometry_persona_commands.app, name="persona")
 geometry_app.add_typer(geometry_manifold_commands.app, name="manifold")
-geometry_app.add_typer(geometry_transport_commands.app, name="transport")
 geometry_app.add_typer(geometry_refinement_commands.app, name="refinement")
 geometry_app.add_typer(geometry_invariant_commands.app, name="invariant")
 geometry_app.add_typer(geometry_emotion_commands.app, name="emotion")
@@ -210,7 +203,6 @@ geometry_app.add_typer(geometry_number_theory_commands.app, name="number-theory"
 geometry_app.add_typer(geometry_waypoint_commands.app, name="waypoint")
 geometry_app.add_typer(geometry_interference_commands.app, name="interference")
 geometry_app.add_typer(geometry_research_commands.app, name="research")
-geometry_app.add_typer(geometry_transplant_commands.app, name="transplant")
 geometry_app.add_typer(geometry_visualize_commands.app, name="visualize")
 app.add_typer(entropy_commands.app, name="entropy")
 app.add_typer(adapter_commands.adapter_app, name="adapter")

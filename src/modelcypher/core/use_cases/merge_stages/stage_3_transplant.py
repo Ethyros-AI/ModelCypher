@@ -44,6 +44,16 @@ from modelcypher.core.domain.geometry.transplant import (
     compute_transplant_delta,
     partition_core_boundary,
 )
+from modelcypher.core.domain.merging.exceptions import (
+    AlignmentFailureError,
+    DimensionMismatchError,
+    StitchUnavailableError,
+)
+from modelcypher.core.use_cases.merge_stages.transplant_manifest import (
+    TransplantManifest,
+    WeightStatus,
+    WeightTransformRecord,
+)
 from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
 
 if TYPE_CHECKING:
@@ -116,6 +126,9 @@ class TransplantStageConfig:
     # NOTE: Alpha interpolation was REMOVED. The null-space projection determines
     # preserved_fraction geometrically. Do NOT add hardcoded scalar overrides.
 
+    # Fail-loud mode: If True, raise exceptions instead of logging warnings and continuing
+    strict_mode: bool = True
+
 
 @dataclass
 class TransplantStageResult:
@@ -123,6 +136,7 @@ class TransplantStageResult:
 
     merged_weights: dict[str, Any]
     metrics: dict[str, Any]
+    manifest: TransplantManifest | None = None  # Track every weight's status
 
 
 def _normalize_domains(domains: Iterable[str]) -> set[str]:
@@ -449,6 +463,18 @@ def stage_transplant(
                     metrics["global_trajectory_aligned"] = True
                     metrics["global_trajectory_cka"] = float(global_result.achieved_cka)
                 else:
+                    if config.strict_mode:
+                        raise AlignmentFailureError(
+                            stage="GLOBAL_TRAJECTORY_ALIGNMENT",
+                            weight_key=None,
+                            message=f"Global hidden alignment failed: CKA={global_result.achieved_cka:.4f} < 0.9999",
+                            context={
+                                "achieved_cka": float(global_result.achieved_cka),
+                                "source_dim": global_src_hidden_dim,
+                                "target_dim": global_tgt_hidden_dim,
+                                "samples_used": len(all_src_acts),
+                            },
+                        )
                     logger.warning(
                         "GLOBAL TRAJECTORY ALIGNMENT failed (CKA=%.4f)",
                         global_result.achieved_cka
@@ -526,6 +552,18 @@ def stage_transplant(
                     metrics["global_attention_aligned"] = True
                     metrics["global_attention_cka"] = float(attn_result.achieved_cka)
                 else:
+                    if config.strict_mode:
+                        raise AlignmentFailureError(
+                            stage="GLOBAL_ATTENTION_ALIGNMENT",
+                            weight_key=None,
+                            message=f"Global attention alignment failed: CKA={attn_result.achieved_cka:.4f} < 0.9999",
+                            context={
+                                "achieved_cka": float(attn_result.achieved_cka),
+                                "source_dim": global_src_attn_dim,
+                                "target_dim": global_tgt_attn_dim,
+                                "samples_used": len(all_src_attn),
+                            },
+                        )
                     logger.warning(
                         "GLOBAL ATTENTION ALIGNMENT failed (CKA=%.4f)",
                         attn_result.achieved_cka
@@ -1156,7 +1194,19 @@ def stage_transplant(
                             # Fall through to hidden-only stitch below
 
                     elif is_attention and attention_stitch_output is None:
-                        # No attention stitch available - skip (can't do anything meaningful)
+                        # No attention stitch available - this is a critical failure
+                        if config.strict_mode:
+                            raise StitchUnavailableError(
+                                stage="ATTENTION_WEIGHT_STITCH",
+                                weight_key=key,
+                                message="No attention stitch available for cross-architecture merge",
+                                context={
+                                    "source_shape": list(source_w.shape),
+                                    "target_shape": list(target_w.shape),
+                                    "stitch_type": "attention",
+                                    "reason": "Global attention alignment failed or had insufficient samples",
+                                },
+                            )
                         logger.info(
                             "Cross-arch: SKIPPING attention weight %s (no attention stitch available)",
                             key
@@ -1196,6 +1246,17 @@ def stage_transplant(
                                         dim0, dim1, dim0, tgt_hidden_dim)
 
                         else:
+                            if config.strict_mode:
+                                raise DimensionMismatchError(
+                                    stage="HIDDEN_WEIGHT_STITCH",
+                                    weight_key=key,
+                                    message=f"Weight shape [{dim0},{dim1}] doesn't match hidden_dim {src_hidden_dim}",
+                                    context={
+                                        "weight_shape": [dim0, dim1],
+                                        "expected_hidden_dim": src_hidden_dim,
+                                        "stitch_type": "hidden",
+                                    },
+                                )
                             logger.warning(
                                 "Weight %s shape [%d,%d] doesn't match hidden_dim %d - skipping",
                                 key, dim0, dim1, src_hidden_dim
@@ -1206,6 +1267,17 @@ def stage_transplant(
                         metrics["hidden_stitch_applied"] += 1
 
                 else:
+                    if config.strict_mode:
+                        raise StitchUnavailableError(
+                            stage="CROSS_ARCHITECTURE_STITCH",
+                            weight_key=key,
+                            message="Cross-architecture weight but no stitch transformation available",
+                            context={
+                                "source_shape": list(source_w.shape),
+                                "target_shape": list(target_w.shape),
+                                "reason": "No hidden or attention stitch computed",
+                            },
+                        )
                     logger.warning(
                         "Cross-architecture weight %s but no stitch available - skipping",
                         key
@@ -1214,6 +1286,16 @@ def stage_transplant(
 
                 # Verify final shape matches target
                 if source_aligned.shape != target_w.shape:
+                    if config.strict_mode:
+                        raise DimensionMismatchError(
+                            stage="POST_STITCH_VALIDATION",
+                            weight_key=key,
+                            message=f"Shape mismatch after stitch: {source_aligned.shape} vs {target_w.shape}",
+                            context={
+                                "aligned_shape": list(source_aligned.shape),
+                                "target_shape": list(target_w.shape),
+                            },
+                        )
                     logger.warning(
                         "Shape mismatch after stitch: %s vs %s for %s - skipping",
                         source_aligned.shape, target_w.shape, key

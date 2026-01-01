@@ -29,16 +29,16 @@ Primary workflows:
 - `mc train` (start/preflight/status/pause/resume/cancel/export/logs)
 - `mc job` (list/show/attach/delete)
 - `mc checkpoint` (list/delete/export)
-- `mc model` (list/register/delete/fetch/merge/search/probe/validate-merge/validate-knowledge/analyze-alignment/vocab-compare)
+- `mc merge` (pipeline)
+- `mc model` (list/register/delete/fetch/search/probe/validate-merge/validate-knowledge/analyze-alignment/vocab-compare)
 - `mc profile` (generate/inspect/compare/update/import/merge)
-- `mc program` (run/status/list/show/compare)
 - `mc doc` (convert/validate)
 - `mc infer` (run/suite)
 - `mc storage` (status/usage/cleanup)
 - `mc inventory`, `mc system`
 
 Research + diagnostics:
-- `mc geometry` (path/training/safety/adapter/atlas/baseline/concept/cross-cultural/primes/stitch/crm/metrics/sparse/refusal/persona/manifold/transport/refinement/invariant/emotion/merge-entropy/transfer/transplant/spatial/social/temporal/moral/waypoint/interference)
+- `mc geometry` (path/training/safety/adapter/atlas/baseline/concept/cross-cultural/primes/crm/metrics/sparse/refusal/persona/manifold/refinement/invariant/emotion/merge-entropy/transfer/spatial/social/temporal/moral/waypoint/interference)
 - `mc thermo` (analyze/path/path-integration/entropy/measure/detect/detect-batch/ridge-detect/phase/sweep/benchmark/parity)
 - `mc entropy` (analyze/detect-distress/verify-baseline/window/conversation-track/dual-path/calibrate)
 - `mc safety` (adapter-probe)

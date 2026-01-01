@@ -47,6 +47,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     regularization_epsilon,
     svd_via_eigh,
 )
+from modelcypher.core.domain.merging.exceptions import NullSpaceFilterError
 from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger(__name__)
@@ -545,6 +546,8 @@ class NullSpaceFilter:
         weight_delta: Any,
         prior_activations: Any,
         return_direction_analysis: bool = False,
+        strict_mode: bool = True,
+        weight_key: str | None = None,
     ) -> NullSpaceFilterResult:
         """
         Filter a weight delta to the null space of prior activations.
@@ -553,9 +556,14 @@ class NullSpaceFilter:
             weight_delta: The weight update to filter. Shape: [out, in] or [d].
             prior_activations: Activation matrix from prior task. Shape: [n_samples, d].
             return_direction_analysis: If True, include per-direction preservation.
+            strict_mode: If True, raise NullSpaceFilterError on dimension mismatch.
+            weight_key: Weight key for error context.
 
         Returns:
             NullSpaceFilterResult with filtered delta and diagnostics.
+
+        Raises:
+            NullSpaceFilterError: If strict_mode and activation dimension doesn't match weight.
         """
         backend = self._backend
         weight_delta = backend.array(weight_delta)
@@ -578,6 +586,20 @@ class NullSpaceFilter:
                     backend.eval(delta_flat)
                     d = int(delta_flat.shape[0])
             else:
+                # Dimension mismatch - this is a critical failure in strict mode
+                if strict_mode:
+                    raise NullSpaceFilterError(
+                        stage="NULL_SPACE_FILTER",
+                        weight_key=weight_key,
+                        message=f"Activation dim {prior_activations.shape[1]} != weight dim {d}",
+                        context={
+                            "activation_dim": int(prior_activations.shape[1]),
+                            "weight_dim": d,
+                            "weight_shape": list(original_shape),
+                            "activation_shape": list(prior_activations.shape),
+                        },
+                    )
+
                 norm_arr = backend.norm(delta_flat)
                 backend.eval(norm_arr)
                 delta_norm = float(backend.to_numpy(norm_arr).item())

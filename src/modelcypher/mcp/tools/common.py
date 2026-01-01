@@ -139,11 +139,9 @@ class ServiceContext:
     _geometry_safety_service: object = None
     _geometry_adapter_service: object = None
     _geometry_crm_service: object = None
-    _geometry_stitch_service: object = None
     _geometry_metrics_service: object = None
     _geometry_sparse_service: object = None
     _geometry_persona_service: object = None
-    _geometry_transport_service: object = None
     _invariant_mapping_service: object = None
     _evaluation_service: object = None
     _thermo_service: object = None
@@ -286,14 +284,6 @@ class ServiceContext:
         return self._geometry_crm_service
 
     @property
-    def geometry_stitch_service(self):
-        if self._geometry_stitch_service is None:
-            from modelcypher.core.use_cases.geometry_stitch_service import GeometryStitchService
-
-            self._geometry_stitch_service = GeometryStitchService()
-        return self._geometry_stitch_service
-
-    @property
     def geometry_metrics_service(self):
         if self._geometry_metrics_service is None:
             from modelcypher.core.use_cases.geometry_metrics_service import GeometryMetricsService
@@ -316,16 +306,6 @@ class ServiceContext:
 
             self._geometry_persona_service = GeometryPersonaService()
         return self._geometry_persona_service
-
-    @property
-    def geometry_transport_service(self):
-        if self._geometry_transport_service is None:
-            from modelcypher.core.use_cases.geometry_transport_service import (
-                GeometryTransportService,
-            )
-
-            self._geometry_transport_service = GeometryTransportService()
-        return self._geometry_transport_service
 
     @property
     def invariant_mapping_service(self):

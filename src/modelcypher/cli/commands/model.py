@@ -21,13 +21,12 @@ Provides commands for:
 - Model listing, registration, deletion, fetching
 - Model search via HuggingFace Hub
 - Model probing for architecture details
-- Model merge operations and validation
+- Model merge validation
 - Alignment analysis between models
 
 Commands:
     mc model list
     mc model register <alias> --path <path>
-    mc model merge --source <model> --target <model>
     mc model search <query>
     mc model probe <path>
 """
@@ -196,111 +195,6 @@ def _run_smoke_test(model_path: str, context: Any) -> dict:
     except Exception as e:
         logger.warning("SMOKE TEST: FAILED - %s", str(e))
         return {"passed": False, "error": str(e), "results": []}
-
-
-@app.command("merge")
-def model_merge(
-    ctx: typer.Context,
-    source: str = typer.Option(..., "--source"),
-    target: str = typer.Option(..., "--target"),
-    output_dir: str = typer.Option(..., "--output-dir"),
-    transplant_domains: str = typer.Option(
-        ...,
-        "--transplant-domains",
-        help="Comma-separated core domains for transplant (e.g., mathematical,logical)",
-    ),
-    transplant_layers: str | None = typer.Option(
-        None,
-        "--transplant-layers",
-        help="Comma-separated layer indices for transplant (e.g., 5,10,15)",
-    ),
-    transplant_boundary_k: int | None = typer.Option(
-        None,
-        "--transplant-boundary-k",
-        help="Boundary neighbors per core probe (optional)",
-    ),
-    transplant_geodesic_k: int | None = typer.Option(
-        None,
-        "--transplant-geodesic-k",
-        help="k for geodesic graph construction (optional)",
-    ),
-    knowledge_delta_mask: str | None = typer.Option(
-        None,
-        "--knowledge-delta-mask",
-        help="Path to knowledge delta mask JSON for layer gating",
-    ),
-) -> None:
-    """Merge two models using null-space constrained transplant.
-
-    Transplant formula: W' = W_target + P_null(A_boundary) @ (W_source - W_target)
-    Guarantee: A_boundary @ W' = A_boundary @ W_target (boundary preserved)
-
-    Pipeline: VOCAB → PROBE → TRANSPLANT → VALIDATE
-
-    Examples:
-        mc model merge --source ./instruct --target ./coder --output-dir ./merged \\
-            --transplant-domains mathematical,logical
-    """
-    from modelcypher.cli.composition import get_geometric_merger
-
-    context = _context(ctx)
-
-    domain_list = [d.strip() for d in transplant_domains.split(",") if d.strip()]
-    if not domain_list:
-        raise typer.BadParameter(
-            "transplant-domains must specify at least one domain (e.g., mathematical,logical)"
-        )
-
-    layer_list = None
-    if transplant_layers:
-        layer_list = [int(layer.strip()) for layer in transplant_layers.split(",") if layer.strip()]
-
-    merger = get_geometric_merger()
-    try:
-        # Prevent sleep during long merge operations
-        with prevent_sleep():
-            result = merger.merge(
-                source_path=source,
-                target_path=target,
-                output_dir=output_dir,
-                knowledge_delta_mask_path=knowledge_delta_mask,
-                transplant_domains=domain_list,
-                transplant_layers=layer_list,
-                transplant_boundary_k=transplant_boundary_k,
-                transplant_geodesic_k_neighbors=transplant_geodesic_k,
-            )
-        # Convert result to dict for output
-        output = {
-            "status": "success",
-            "outputDir": result.output_path,
-            "layerCount": result.layer_count,
-            "weightCount": result.weight_count,
-            "meanConfidence": result.mean_confidence,
-            "vocabAligned": result.vocab_aligned,
-            "metrics": {
-                "meanProcrustesError": result.mean_procrustes_error,
-            },
-            "transplantMetrics": {
-                "layersTransplanted": result.transplant_metrics.get("layers_transplanted"),
-                "weightsTransplanted": result.transplant_metrics.get("weights_transplanted"),
-                "meanPreservedFraction": result.transplant_metrics.get("mean_preserved_fraction"),
-                "meanProjectionLoss": result.transplant_metrics.get("mean_projection_loss"),
-                "meanBoundaryRelativeDiff": result.transplant_metrics.get("mean_boundary_relative_diff"),
-                "maxBoundaryRelativeDiff": result.transplant_metrics.get("max_boundary_relative_diff"),
-                "meanNullDim": result.transplant_metrics.get("mean_null_dim"),
-            },
-        }
-        write_output(output, context.output_format, context.pretty)
-    except Exception as e:
-        error = ErrorDetail(
-            code="MC-1010",
-            title="Merge failed",
-            detail=str(e),
-            hint="Check model paths and merge inputs",
-            trace_id=context.trace_id,
-        )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
 
 
 @app.command("delete")

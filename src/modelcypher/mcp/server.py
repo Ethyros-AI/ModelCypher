@@ -29,7 +29,6 @@ from modelcypher.core.use_cases.concept_response_matrix_service import (
     ConceptResponseMatrixService,
 )
 from modelcypher.core.use_cases.geometry_service import GeometryService
-from modelcypher.core.use_cases.geometry_stitch_service import GeometryStitchService
 from modelcypher.core.use_cases.merge_validation_service import (
     MergeValidationConfig,
 )
@@ -79,14 +78,8 @@ TOOL_PROFILES = {
         "mc_model_probe",
         "mc_model_validate_merge",
         "mc_model_analyze_alignment",
-        "mc_model_merge",  # New
         "mc_model_register",  # New
         "mc_model_delete",  # New
-        "mc_program_run",  # Multi-donor transplant
-        "mc_program_status",
-        "mc_program_list",
-        "mc_program_show",
-        "mc_program_generate",  # Auto-generate from density profiles
         "mc_checkpoint_export",
         "mc_checkpoint_list",  # New
         "mc_checkpoint_delete",  # New
@@ -109,8 +102,6 @@ TOOL_PROFILES = {
         "mc_geometry_crm_build",
         "mc_geometry_crm_compare",
         "mc_geometry_crm_sequence_inventory",
-        "mc_geometry_stitch_analyze",
-        "mc_geometry_stitch_apply",
         "mc_geometry_path_detect",  # New
         "mc_geometry_path_compare",  # New
         "mc_geometry_concept_detect",  # New
@@ -131,8 +122,6 @@ TOOL_PROFILES = {
         "mc_geometry_manifold_cluster",  # New
         "mc_geometry_manifold_dimension",  # New
         "mc_geometry_manifold_query",  # New
-        "mc_geometry_transport_merge",  # New
-        "mc_geometry_transport_synthesize",  # New
         "mc_geometry_invariant_map_layers",  # New
         "mc_geometry_invariant_collapse_risk",  # New
         "mc_geometry_atlas_inventory",  # New - multi-atlas probe inventory
@@ -192,7 +181,6 @@ TOOL_PROFILES = {
         "mc_train_export",  # New
         # Geometry refinement and stitching tools
         "mc_geometry_refinement_analyze",  # New - RefinementDensityAnalyzer
-        "mc_geometry_stitch_train",  # New - AffineStitchingLayer training
         "mc_geometry_domain_profile",  # New - DomainSignalProfile
         # Merge validation tools
         "mc_merge_validate",  # New - Full merge validation suite
@@ -282,7 +270,6 @@ TOOL_PROFILES = {
         "mc_train_export",
         # Geometry refinement and merge validation
         "mc_geometry_refinement_analyze",
-        "mc_geometry_stitch_train",
         "mc_merge_validate",
         "mc_merge_diagnose",
         # Phase 13: CLI/MCP Parity
@@ -423,7 +410,6 @@ def build_server() -> FastMCP:
     # GeometrySafetyService requires calibration - constructed on-demand via service provider
     # GeometryAdapterService is instantiated with model_loader in tool handlers
     ConceptResponseMatrixService(engine=inference_engine)
-    GeometryStitchService(model_loader=registry.model_loader)
 
     from modelcypher.core.use_cases.adapter_service import AdapterService
     from modelcypher.core.use_cases.doc_service import DocService
@@ -1477,13 +1463,11 @@ def build_server() -> FastMCP:
         register_geometry_primes_tools,
         register_geometry_safety_tools,
         register_geometry_spatial_tools,
-        register_geometry_stitch_tools,
         register_geometry_tools,
     )
     from modelcypher.mcp.tools.inference import register_inference_tools
     from modelcypher.mcp.tools.merge_entropy import register_merge_entropy_tools
     from modelcypher.mcp.tools.model import register_model_tools
-    from modelcypher.mcp.tools.program import register_program_tools
     from modelcypher.mcp.tools.safety_entropy import register_entropy_tools, register_safety_tools
     from modelcypher.mcp.tools.tasks import register_task_tools
     from modelcypher.mcp.tools.thermo import register_thermo_tools
@@ -1510,12 +1494,10 @@ def build_server() -> FastMCP:
     register_geometry_safety_tools(service_context)
     register_geometry_primes_tools(service_context)
     register_geometry_crm_tools(service_context)
-    register_geometry_stitch_tools(service_context)
     register_geometry_spatial_tools(service_context)
     register_geometry_interference_tools(service_context)
     register_geometry_baseline_tools(service_context)
     register_merge_entropy_tools(service_context)
-    register_program_tools(service_context)
     register_task_tools(service_context)
 
     return mcp
