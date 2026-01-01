@@ -145,12 +145,12 @@ def pipeline(
                 "layerCount": result.merge_result.get("layer_count"),
                 "weightCount": result.merge_result.get("weight_count"),
                 "meanConfidence": result.merge_result.get("mean_confidence"),
-                "safetyVerdict": result.merge_result.get("safety_verdict"),
+                # safetyVerdict removed - use geometry_metrics["mean_preserved_fraction"]
                 "vocabAligned": result.merge_result.get("vocab_aligned"),
             },
             "postMerge": {
                 "meanConfidence": result.post_merge.mean_confidence,
-                "safetyVerdict": result.post_merge.safety_verdict,
+                # safetyVerdict removed - use meanPreservedFraction
                 "layersTransplanted": result.post_merge.layers_transplanted,
                 "weightsTransplanted": result.post_merge.weights_transplanted,
                 "meanPreservedFraction": result.post_merge.mean_preserved_fraction,
@@ -207,7 +207,7 @@ def pipeline(
                 f"  Layers: {result.merge_result.get('layer_count')}",
                 f"  Weights: {result.merge_result.get('weight_count')}",
                 f"  Mean Confidence: {result.merge_result.get('mean_confidence', 0):.4f}",
-                f"  Safety Verdict: {result.merge_result.get('safety_verdict')}",
+                # Safety Verdict removed - raw measurements only
                 "",
                 "POST-MERGE VALIDATION",
                 f"  Mean Preserved Fraction: {result.post_merge.mean_preserved_fraction:.4f}",

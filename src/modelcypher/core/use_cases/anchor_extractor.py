@@ -33,6 +33,7 @@ from modelcypher.core.domain.agents.semantic_prime_multilingual import (
 from modelcypher.core.domain.agents.semantic_primes import SemanticPrimeInventory
 from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
 from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.use_cases.quantization_utils import (
     QuantizationConfig,
     dequantize_if_needed,
@@ -245,7 +246,8 @@ class AnchorExtractor:
         mean = b.mean(matrix, axis=0, keepdims=True)
         centered = matrix - mean
         norms = b.norm(centered, axis=1, keepdims=True)
-        norms = b.maximum(norms, b.array(1e-6))
+        eps = division_epsilon(b, norms)
+        norms = b.maximum(norms, b.full(norms.shape, eps))
         return centered / norms
 
     @staticmethod

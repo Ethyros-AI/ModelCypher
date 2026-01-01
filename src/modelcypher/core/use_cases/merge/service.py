@@ -74,7 +74,7 @@ class PostMergeValidation:
 
     # Geometry from merge result
     mean_confidence: float  # = preserved_fraction
-    safety_verdict: float  # Raw measurement, no categorical verdict
+    # safety_verdict removed - use mean_preserved_fraction or geometry_metrics
     geometry_metrics: dict[str, Any]
 
     # Transplant details
@@ -420,7 +420,7 @@ class MergePipelineService:
             merged_model=output_dir,
             timestamp=datetime.utcnow().isoformat(),
             mean_confidence=merge_result.mean_confidence,
-            safety_verdict=merge_result.safety_verdict,
+            # safety_verdict removed - use geometry_metrics["mean_preserved_fraction"]
             geometry_metrics=geometry_metrics,
             layers_transplanted=transplant_metrics.get("layers_transplanted", 0),
             weights_transplanted=transplant_metrics.get("weights_transplanted", 0),
@@ -489,7 +489,7 @@ class MergePipelineService:
             "layer_count": merge_result.layer_count,
             "weight_count": merge_result.weight_count,
             "mean_confidence": merge_result.mean_confidence,
-            "safety_verdict": merge_result.safety_verdict,
+            # safety_verdict removed - use geometry_metrics["mean_preserved_fraction"]
             "vocab_aligned": merge_result.vocab_aligned,
             "mean_procrustes_error": merge_result.mean_procrustes_error,
             "geometry_metrics": merge_result.geometry_metrics,

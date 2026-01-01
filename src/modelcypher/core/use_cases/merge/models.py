@@ -103,11 +103,10 @@ class UnifiedMergeResult:
     # Vocabulary alignment status
     vocab_aligned: bool = False
 
-    # Stage 6: Safety validation metrics
+    # Stage 6: Validation metrics (raw measurements)
     validation_metrics: dict[str, Any] = field(default_factory=dict)
-    # Raw measurement: mean_preserved_fraction from transplant stage
-    # No categorical verdicts - callers interpret relative to their baselines
-    safety_verdict: float = 0.0
+    # safety_verdict field was REMOVED - verdicts are subjective
+    # Use geometry_metrics["mean_preserved_fraction"] for the raw measurement
     refusal_preserved: bool = True
 
     # Geometric confidence signals (raw measurements, no interpretation)

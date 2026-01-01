@@ -40,6 +40,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Sequence
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol
 from modelcypher.core.domain.geometry.atlas_registry import get_atlas_probes
 
@@ -159,11 +160,17 @@ def compute_relative_representation(
     backend = get_default_backend()
     # Normalize anchors
     anchor_norms = backend.norm(anchor_embeddings, axis=1, keepdims=True)
-    anchors_normalized = anchor_embeddings / backend.maximum(anchor_norms, 1e-8)
+    anchor_eps = division_epsilon(backend, anchor_norms)
+    anchors_normalized = anchor_embeddings / backend.maximum(
+        anchor_norms, backend.full(anchor_norms.shape, anchor_eps)
+    )
 
     # Normalize hidden states
     hidden_norms = backend.norm(hidden_states, axis=1, keepdims=True)
-    hidden_normalized = hidden_states / backend.maximum(hidden_norms, 1e-8)
+    hidden_eps = division_epsilon(backend, hidden_norms)
+    hidden_normalized = hidden_states / backend.maximum(
+        hidden_norms, backend.full(hidden_norms.shape, hidden_eps)
+    )
 
     # Compute cosine similarities: [n, d] @ [d, n_anchors] = [n, n_anchors]
     backend.eval(anchors_normalized, hidden_normalized)
@@ -217,7 +224,8 @@ def align_relative_representations(
     diff = aligned - target_rel
     backend.eval(aligned, diff)
     error_num = backend.norm(diff)
-    error_denom = backend.maximum(backend.norm(target_rel), 1e-8)
+    error_eps = division_epsilon(backend, target_rel)
+    error_denom = backend.maximum(backend.norm(target_rel), backend.array(error_eps))
     backend.eval(error_num, error_denom)
     error = float(backend.to_numpy(error_num).item() / backend.to_numpy(error_denom).item())
 
@@ -271,7 +279,10 @@ def transfer_via_relative_space(
     # target_hidden = source_rel @ pinv(target_rel_anchors)
     # where target_rel_anchors[i, j] = cos(anchor_j, anchor_i)
     target_anchor_norms = backend.norm(target_anchors, axis=1, keepdims=True)
-    target_anchors_normalized = target_anchors / backend.maximum(target_anchor_norms, 1e-8)
+    target_anchor_eps = division_epsilon(backend, target_anchor_norms)
+    target_anchors_normalized = target_anchors / backend.maximum(
+        target_anchor_norms, backend.full(target_anchor_norms.shape, target_anchor_eps)
+    )
 
     # Pseudo-inverse of anchor similarities
     backend.eval(target_anchors_normalized)

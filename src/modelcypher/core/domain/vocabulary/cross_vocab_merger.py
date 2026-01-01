@@ -194,15 +194,7 @@ class CrossVocabMerger:
             source_stats, target_stats, source_vocab, target_vocab
         )
 
-        # Note: alignment is always computed. The alignment_score is a DIAGNOSTIC metric
-        # indicating transformation effort, not a compatibility check. Per invariant
-        # geometry principle, all vocabularies CAN be aligned - this just indicates
-        # how much transformation is needed (low score = more work, but still doable).
-        if alignment.alignment_score < 0.5:
-            warnings.append(
-                f"High transformation effort needed (score: {alignment.alignment_score:.2f}). "
-                f"Vocabularies are still compatible per invariant geometry principle."
-            )
+        # Alignment score is returned as a raw measurement in the result.
 
         # Step 3: Build alignment map
         logger.info("Building alignment map...")

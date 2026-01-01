@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID, uuid4
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.manifold_clusterer import (
     ClusteringResult,
     ManifoldClusterer,
@@ -39,6 +40,7 @@ from modelcypher.core.domain.geometry.manifold_dimensionality import (
     IDEstimateSummary,
     ManifoldDimensionality,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.manifold_profile import (
     ManifoldPoint,
     ManifoldRegion,
@@ -181,6 +183,8 @@ class GeometryPersonaService:
         Returns:
             TrainingDriftMetrics with overall drift assessment
         """
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([0.0]))
         parsed_positions = []
         for p in positions:
             # Support both "trait_id" and "trait" keys
@@ -201,7 +205,7 @@ class GeometryPersonaService:
             if normalized_position is None:
                 # Use projection magnitude normalized to unit scale
                 norm = (sum(x * x for x in position) ** 0.5) if isinstance(position, list) else abs(position)
-                normalized_position = projection / (norm + 1e-8) if norm > 0 else 0.0
+                normalized_position = projection / (norm + eps) if norm > 0 else 0.0
 
             parsed_positions.append(
                 PersonaPosition(

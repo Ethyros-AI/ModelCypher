@@ -71,7 +71,6 @@ class TaskProbeResult:
     prompt: str
     expected_pattern: str
     output: str
-    passed: bool
     match_details: str | None = None
 
 
@@ -106,7 +105,6 @@ class MergeValidationResult:
     perplexity_delta: float | None = None
     coherence_score: float | None = None
     task_probe_results: list[TaskProbeResult] = field(default_factory=list)
-    task_probe_pass_rate: float | None = None
 
     # Diagnosis
     geometric_diagnosis: GeometricDiagnosis | None = None
@@ -132,12 +130,10 @@ class MergeValidationResult:
                     "prompt": p.prompt,
                     "expectedPattern": p.expected_pattern,
                     "output": p.output[:500] if p.output else None,  # Truncate
-                    "passed": p.passed,
                     "matchDetails": p.match_details,
                 }
                 for p in self.task_probe_results
             ],
-            "taskProbePassRate": self.task_probe_pass_rate,
             "geometricDiagnosis": {
                 "layerCompositeScores": self.geometric_diagnosis.layer_composite_scores,
                 "meanDrift": self.geometric_diagnosis.mean_drift,
@@ -235,10 +231,6 @@ class MergeValidationService:
         if config.task_probes:
             try:
                 result.task_probe_results = self.run_task_probes(merged_model, config.task_probes)
-                passed = sum(1 for p in result.task_probe_results if p.passed)
-                result.task_probe_pass_rate = (
-                    passed / len(result.task_probe_results) if result.task_probe_results else None
-                )
             except Exception as e:
                 logger.warning(f"Task probes failed: {e}")
                 result.warnings.append(f"Task probes failed: {e}")
@@ -338,11 +330,8 @@ class MergeValidationService:
                 # Check if output matches expected pattern
                 if expected_pattern:
                     match = re.search(expected_pattern, output, re.IGNORECASE)
-                    passed = match is not None
                     match_details = match.group(0) if match else None
                 else:
-                    # No pattern = just check non-empty response
-                    passed = len(output.strip()) > 0
                     match_details = None
 
                 results.append(
@@ -351,7 +340,6 @@ class MergeValidationService:
                         prompt=prompt,
                         expected_pattern=expected_pattern,
                         output=output,
-                        passed=passed,
                         match_details=match_details,
                     )
                 )
@@ -364,7 +352,6 @@ class MergeValidationService:
                         prompt=prompt,
                         expected_pattern=expected_pattern,
                         output=f"ERROR: {e}",
-                        passed=False,
                     )
                 )
 

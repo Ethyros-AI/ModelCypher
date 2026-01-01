@@ -44,7 +44,6 @@ from modelcypher.core.domain.geometry.intersection_similarity import (
 )
 from modelcypher.core.domain.geometry.manifold_stitcher import (
     ContinuousFingerprint,
-    DimensionCorrelation,
     ManifoldStitcher,
     _ensure_proper_rotation,
 )
@@ -379,51 +378,6 @@ class TestProperRotation:
         diff = backend.abs(product - expected)
         backend.eval(diff)
         assert float(backend.max(diff)) < 1e-6
-
-
-# =============================================================================
-# DimensionCorrelation Tests
-# =============================================================================
-
-
-class TestDimensionCorrelation:
-    """Tests for DimensionCorrelation dataclass."""
-
-    @given(st.floats(min_value=0.0, max_value=1.0, allow_nan=False))
-    @settings(max_examples=50, deadline=None)
-    def test_correlation_classification_exclusive(self, corr: float):
-        """Each correlation should be in exactly one category."""
-        dc = DimensionCorrelation(source_dim=0, target_dim=0, correlation=corr)
-
-        categories = [
-            dc.is_strong_correlation,
-            dc.is_moderate_correlation,
-            dc.is_weak_correlation,
-        ]
-
-        # Exactly one should be True
-        assert sum(categories) == 1
-
-    def test_strong_threshold(self):
-        """Correlation > 0.75 should be strong."""
-        dc = DimensionCorrelation(source_dim=0, target_dim=0, correlation=0.8)
-        assert dc.is_strong_correlation is True
-        assert dc.is_moderate_correlation is False
-        assert dc.is_weak_correlation is False
-
-    def test_moderate_threshold(self):
-        """Correlation in (0.5, 0.75] should be moderate."""
-        dc = DimensionCorrelation(source_dim=0, target_dim=0, correlation=0.6)
-        assert dc.is_strong_correlation is False
-        assert dc.is_moderate_correlation is True
-        assert dc.is_weak_correlation is False
-
-    def test_weak_threshold(self):
-        """Correlation <= 0.5 should be weak."""
-        dc = DimensionCorrelation(source_dim=0, target_dim=0, correlation=0.4)
-        assert dc.is_strong_correlation is False
-        assert dc.is_moderate_correlation is False
-        assert dc.is_weak_correlation is True
 
 
 # =============================================================================

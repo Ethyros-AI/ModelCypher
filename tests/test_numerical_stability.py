@@ -74,11 +74,14 @@ class TestMachineEpsilon:
     def test_float64_epsilon(self, any_backend: "Backend") -> None:
         """Float64 epsilon should be approximately 2.22e-16."""
         b = any_backend
-        # MLX doesn't support float64 on GPU - skip if not available
+        # Some backends (JAX without x64, MLX) silently truncate float64 to float32
         try:
             arr = b.astype(b.zeros((2, 2)), "float64")
         except (ValueError, RuntimeError):
             pytest.skip("float64 not supported on this backend")
+        # Check if the dtype is actually float64 (not silently truncated)
+        if "float64" not in str(arr.dtype):
+            pytest.skip("float64 truncated to float32 on this backend")
         eps = machine_epsilon(b, arr)
         # float64 epsilon is ~2.22e-16
         assert 1e-17 < eps < 1e-14
@@ -97,12 +100,13 @@ class TestDivisionEpsilon:
     """Tests for division_epsilon function."""
 
     def test_division_epsilon_scaled(self, any_backend: "Backend") -> None:
-        """Division epsilon should be machine_epsilon * 1e3."""
+        """Division epsilon should be sqrt(machine_epsilon)."""
         b = any_backend
         arr = b.zeros((2, 2))
         div_eps = division_epsilon(b, arr)
         mach_eps = machine_epsilon(b, arr)
-        assert abs(div_eps - mach_eps * 1e3) < 1e-12
+        expected = math.sqrt(mach_eps)
+        assert abs(div_eps - expected) < 1e-12
 
     def test_division_epsilon_prevents_zero_division(
         self, any_backend: "Backend"
@@ -118,22 +122,22 @@ class TestDivisionEpsilon:
 class TestRegularizationEpsilon:
     """Tests for regularization_epsilon function."""
 
-    def test_regularization_epsilon_is_sqrt_eps(self, any_backend: "Backend") -> None:
-        """Regularization epsilon should be sqrt(machine_epsilon)."""
+    def test_regularization_epsilon_is_eps_0_75(self, any_backend: "Backend") -> None:
+        """Regularization epsilon should be machine_epsilon^0.75."""
         b = any_backend
         arr = b.zeros((2, 2))
         reg_eps = regularization_epsilon(b, arr)
         mach_eps = machine_epsilon(b, arr)
-        expected = math.sqrt(mach_eps)
+        expected = mach_eps ** 0.75
         assert abs(reg_eps - expected) < 1e-12
 
     def test_regularization_epsilon_float32(self, any_backend: "Backend") -> None:
-        """Float32 regularization epsilon should be approximately 3.45e-4."""
+        """Float32 regularization epsilon should be approximately 6.4e-6."""
         b = any_backend
         arr = b.zeros((2, 2))  # float32
         reg_eps = regularization_epsilon(b, arr)
-        # sqrt(1.19e-7) ~ 3.45e-4
-        assert 1e-5 < reg_eps < 1e-3
+        # (1.19e-7)^0.75 ~ 6.4e-6
+        assert 1e-7 < reg_eps < 1e-4
 
 
 class TestConditionThreshold:

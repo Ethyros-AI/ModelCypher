@@ -416,8 +416,7 @@ def run_merge(
 
     geometry_metrics = compute_geometric_confidence_from_transplant(transplant_metrics)
     mean_confidence = compute_mean_confidence(geometry_metrics)
-    # Raw measurement - no categorical verdict
-    safety_verdict = geometry_metrics.get("mean_preserved_fraction", 0.0)
+    # mean_preserved_fraction is in geometry_metrics - no separate verdict field
 
     projection_losses = transplant_metrics.get("projection_losses", [])
     mean_error = sum(projection_losses) / len(projection_losses) if projection_losses else 0.0
@@ -436,7 +435,7 @@ def run_merge(
         merge_strategy="transplant",
         output_path=final_output_path,
         vocab_aligned=vocab_aligned,
-        safety_verdict=safety_verdict,
+        # safety_verdict removed - use geometry_metrics["mean_preserved_fraction"]
         refusal_preserved=True,
         geometry_metrics=geometry_metrics,
     )
@@ -756,7 +755,7 @@ def run_full_geometry_merge(
         merge_strategy="full_geometry",
         output_path=output_path,
         vocab_aligned=vocab_aligned,
-        safety_verdict=geometry.curvature_alignment,
+        # safety_verdict removed - curvature_alignment is in geometry_metrics
         refusal_preserved=geometry.refusal_preserved,
         geometry_metrics=geometry_metrics_full,
     )

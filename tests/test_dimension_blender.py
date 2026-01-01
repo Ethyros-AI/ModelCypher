@@ -280,8 +280,8 @@ class TestDimensionBlendConfig:
         config = DimensionBlendConfig()
 
         assert config.default_alpha == 0.5
-        assert config.activation_threshold == 0.05
-        assert config.confidence_threshold == 0.3
+        assert config.activation_threshold is None
+        assert config.confidence_threshold is None
         assert config.smoothing == 0.2
         assert config.domain_alpha_map == {}
 
@@ -297,14 +297,12 @@ class TestDimensionBlendConfig:
         config = DimensionBlendConfig.from_activation_distribution(
             activation_values=activation_values,
             confidence_values=confidence_values,
-            activation_percentile=0.25,
-            confidence_percentile=0.40,
         )
 
-        # 25th percentile of [0.1-1.0] ≈ 0.3 (index 2)
-        assert config.activation_threshold > 0
-        # 40th percentile ≈ 0.4 (index 3)
-        assert config.confidence_threshold > 0
+        assert config.activation_threshold is not None
+        assert config.confidence_threshold is not None
+        assert min(activation_values) <= config.activation_threshold <= max(activation_values)
+        assert min(confidence_values) <= config.confidence_threshold <= max(confidence_values)
 
     def test_from_activation_distribution_empty_raises(self):
         """Empty values should raise ValueError."""
@@ -388,8 +386,7 @@ class TestCorrelationWeightConfig:
         assert config.correlation_scale == 5.0
         assert config.base_alpha == 0.5
         assert config.stability_alpha == 0.7
-        assert config.epsilon == 1e-8
-        assert config.min_correlation_for_default == 0.8
+        assert config.min_correlation_for_default is None
 
     def test_with_thresholds(self):
         """Should create config with explicit thresholds."""
@@ -419,11 +416,12 @@ class TestCorrelationWeightConfig:
 
         config = CorrelationWeightConfig.from_correlation_distribution(
             correlation_values=correlation_values,
-            high_correlation_percentile=0.75,
         )
 
-        # 75th percentile of [0.1, 0.3, 0.5, 0.7, 0.9] = 0.7 (index 3)
-        assert config.min_correlation_for_default > 0
+        assert config.min_correlation_for_default is not None
+        assert min(correlation_values) <= config.min_correlation_for_default <= max(
+            correlation_values
+        )
 
     def test_from_correlation_distribution_empty_raises(self):
         """Empty values should raise ValueError."""

@@ -40,6 +40,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol
 from modelcypher.core.domain.geometry.concept_dimensionality import (
     ConceptDimensionalityAnalyzer,
@@ -311,7 +312,7 @@ class KnowledgeDensityAnalyzer:
         # Compute pairwise cosine similarities
         norms = b.norm(activations, axis=1, keepdims=True)
         b.eval(norms)
-        eps = 1e-8
+        eps = division_epsilon(b, norms)
         normalized = activations / b.maximum(norms, b.full(norms.shape, eps))
         b.eval(normalized)
 

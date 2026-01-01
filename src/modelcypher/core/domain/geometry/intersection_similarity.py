@@ -27,6 +27,9 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
 if TYPE_CHECKING:
     from modelcypher.core.domain.geometry.manifold_stitcher import (
         ActivationFingerprint,
@@ -146,7 +149,9 @@ def compute_cosine_similarity(
         target_norm_sq += b * b
 
     norm_product = (source_norm_sq**0.5) * (target_norm_sq**0.5)
-    return dot_product / norm_product if norm_product > 1e-8 else 0.0
+    backend = get_default_backend()
+    eps = division_epsilon(backend, backend.array([0.0]))
+    return dot_product / norm_product if norm_product > eps else 0.0
 
 
 def compute_ensemble_similarity(

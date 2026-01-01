@@ -58,7 +58,7 @@ from modelcypher.core.domain.geometry.numerical_stability import division_epsilo
 from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol, enum_key
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Array
+    from modelcypher.ports.backend import Array, Backend
 
 
 def _sigmoid(x: "Array") -> "Array":
@@ -69,6 +69,51 @@ def _sigmoid(x: "Array") -> "Array":
         1 / (1 + backend.exp(-x)),
         backend.exp(x) / (1 + backend.exp(x)),
     )
+
+
+def _otsu_threshold(values: list[float]) -> float:
+    """Compute a data-derived threshold using Otsu separation."""
+    if not values:
+        raise ValueError("Cannot derive threshold from empty values")
+    if len(values) == 1:
+        return values[0]
+
+    sorted_vals = sorted(values)
+    total = sum(sorted_vals)
+    total_count = len(sorted_vals)
+
+    best_threshold = sorted_vals[0]
+    best_score = -1.0
+    sum_left = 0.0
+
+    for idx, value in enumerate(sorted_vals[:-1]):
+        sum_left += value
+        count_left = idx + 1
+        count_right = total_count - count_left
+        if count_right == 0:
+            break
+        mean_left = sum_left / count_left
+        mean_right = (total - sum_left) / count_right
+        weight_left = count_left / total_count
+        weight_right = count_right / total_count
+        score = weight_left * weight_right * (mean_left - mean_right) ** 2
+        if score > best_score:
+            best_score = score
+            best_threshold = value
+
+    return best_threshold
+
+
+def _derive_threshold(values: list[float], backend: "Backend") -> float | None:
+    """Derive a threshold from data or return None if signal is below dtype noise."""
+    if not values:
+        return None
+    max_abs = max(abs(v) for v in values)
+    ref = backend.array([max_abs if max_abs != 0.0 else 1.0], dtype="float32")
+    eps = float(division_epsilon(backend, ref))
+    if max_abs <= eps:
+        return None
+    return _otsu_threshold(values)
 
 
 logger = logging.getLogger(__name__)
@@ -136,27 +181,25 @@ class DimensionBlendConfig:
 
     The domain_alpha_map controls which model to favor for each domain:
     - 0.0 = fully favor target model
-    - 0.5 = equal blend (geometric midpoint)
+    - 0.5 = neutral blend (equal weighting)
     - 1.0 = fully favor source model
 
     Thresholds are derived from activation distributions via
-    from_activation_distribution(). When no baseline data is available,
-    percentile-based thresholds are computed from observed values.
+    from_activation_distribution() using data-driven separation.
     """
 
     # Domain -> alpha preference
     domain_alpha_map: dict[str, float] = field(default_factory=dict)
 
     # Minimum total activation to consider a dimension classified
-    # None = compute from data using 25th percentile
+    # None = compute from data using Otsu separation
     activation_threshold: float | None = None
 
     # Default alpha for unclassified or low-confidence dimensions
-    # 0.5 = geometric midpoint (equal blend)
     default_alpha: float = 0.5
 
     # Minimum confidence to apply domain-specific alpha
-    # None = compute from data using 40th percentile
+    # None = compute from data using Otsu separation
     confidence_threshold: float | None = None
 
     # Smoothing factor: blend domain alpha toward default (0 = pure domain, 1 = pure default)
@@ -185,8 +228,6 @@ class DimensionBlendConfig:
         confidence_values: list[float],
         domain_alpha_map: dict[str, float] | None = None,
         *,
-        activation_percentile: float = 0.25,
-        confidence_percentile: float = 0.40,
         default_alpha: float = 0.5,
         smoothing: float = 0.2,
     ) -> "DimensionBlendConfig":
@@ -196,8 +237,6 @@ class DimensionBlendConfig:
             activation_values: Total activation values from probe runs.
             confidence_values: Confidence scores from dimension scoring.
             domain_alpha_map: Domain -> alpha preferences.
-            activation_percentile: Percentile for activation threshold.
-            confidence_percentile: Percentile for confidence threshold.
             default_alpha: Default alpha for unclassified dimensions.
             smoothing: Smoothing factor toward default alpha.
 
@@ -207,16 +246,14 @@ class DimensionBlendConfig:
         if not activation_values or not confidence_values:
             raise ValueError("activation_values and confidence_values required for calibration")
 
-        sorted_activations = sorted(activation_values)
-        sorted_confidence = sorted(confidence_values)
-
-        act_idx = int(activation_percentile * (len(sorted_activations) - 1))
-        conf_idx = int(confidence_percentile * (len(sorted_confidence) - 1))
+        backend = get_default_backend()
+        activation_threshold = _derive_threshold(activation_values, backend)
+        confidence_threshold = _derive_threshold(confidence_values, backend)
 
         return cls(
             domain_alpha_map=domain_alpha_map or {},
-            activation_threshold=sorted_activations[act_idx],
-            confidence_threshold=sorted_confidence[conf_idx],
+            activation_threshold=activation_threshold,
+            confidence_threshold=confidence_threshold,
             default_alpha=default_alpha,
             smoothing=smoothing,
         )
@@ -409,28 +446,28 @@ class DimensionBlender:
         backend = get_default_backend()
         alpha_list = [config.default_alpha] * profile.dimension_count
 
-        # Collect all activation and confidence values for percentile-based thresholds
+        # Collect all activation and confidence values for data-driven thresholds
         all_activations = [s.total_activation for s in profile.dimension_scores.values()]
         all_confidences = [s.confidence for s in profile.dimension_scores.values()]
 
-        # Derive thresholds from data if not provided (25th and 40th percentiles)
-        if config.activation_threshold is not None:
-            act_threshold = config.activation_threshold
-        elif all_activations:
-            sorted_acts = sorted(all_activations)
-            idx = int(0.25 * (len(sorted_acts) - 1))  # 25th percentile
-            act_threshold = sorted_acts[idx]
-        else:
-            act_threshold = 0.0  # No data = accept all
+        # Derive thresholds from data if not provided
+        act_threshold = config.activation_threshold
+        if act_threshold is None:
+            act_threshold = _derive_threshold(all_activations, backend)
 
-        if config.confidence_threshold is not None:
-            conf_threshold = config.confidence_threshold
-        elif all_confidences:
-            sorted_confs = sorted(all_confidences)
-            idx = int(0.40 * (len(sorted_confs) - 1))  # 40th percentile
-            conf_threshold = sorted_confs[idx]
-        else:
-            conf_threshold = 0.5  # Geometric midpoint
+        conf_threshold = config.confidence_threshold
+        if conf_threshold is None:
+            conf_threshold = _derive_threshold(all_confidences, backend)
+
+        if act_threshold is None or conf_threshold is None:
+            logger.debug(
+                "Layer %d: insufficient signal for thresholding (act=%s conf=%s); "
+                "using default alpha",
+                profile.layer_index,
+                "none" if act_threshold is None else f"{act_threshold:.4f}",
+                "none" if conf_threshold is None else f"{conf_threshold:.4f}",
+            )
+            return backend.array(alpha_list)
 
         # Compute max confidence for normalization (data-driven, not arbitrary 0.5)
         max_confidence = max(all_confidences) if all_confidences else 1.0
@@ -550,18 +587,14 @@ class CorrelationWeightConfig:
     # Higher = trust target more for stability
     stability_alpha: float = 0.7
 
-    # Epsilon for numerical stability
-    epsilon: float = 1e-8
-
     # Minimum correlation before applying stability bias
-    min_correlation_for_default: float = 0.8
+    min_correlation_for_default: float | None = None
 
     @classmethod
     def from_correlation_distribution(
         cls,
         correlation_values: list[float],
         *,
-        high_correlation_percentile: float = 0.75,
         correlation_scale: float = 5.0,
         base_alpha: float = 0.5,
         stability_alpha: float = 0.7,
@@ -570,7 +603,6 @@ class CorrelationWeightConfig:
 
         Args:
             correlation_values: Per-dimension correlation values.
-            high_correlation_percentile: Percentile for high correlation threshold.
             correlation_scale: Sigmoid scale factor.
             base_alpha: Alpha when dimensions agree.
             stability_alpha: Alpha when dimensions disagree.
@@ -580,15 +612,14 @@ class CorrelationWeightConfig:
         """
         if not correlation_values:
             raise ValueError("correlation_values required for calibration")
-
-        sorted_corr = sorted(correlation_values)
-        idx = int(high_correlation_percentile * (len(sorted_corr) - 1))
+        backend = get_default_backend()
+        min_correlation_for_default = _derive_threshold(correlation_values, backend)
 
         return cls(
             correlation_scale=correlation_scale,
             base_alpha=base_alpha,
             stability_alpha=stability_alpha,
-            min_correlation_for_default=sorted_corr[idx],
+            min_correlation_for_default=min_correlation_for_default,
         )
 
     @classmethod
@@ -652,8 +683,7 @@ def compute_dimension_correlations(
     target_activations: "Array",
     config: CorrelationWeightConfig,
 ) -> DimensionCorrelations:
-    """
-    Compute per-dimension correlations between source and target activations.
+    """Compute per-dimension correlations between source and target activations.
 
     Args:
         source_activations: Source model activations [num_probes, hidden_dim]
@@ -695,7 +725,9 @@ def compute_dimension_correlations(
         s_norm_val = float(backend.to_numpy(s_norm))
         t_norm_val = float(backend.to_numpy(t_norm))
 
-        if s_norm_val < config.epsilon or t_norm_val < config.epsilon:
+        s_eps = float(division_epsilon(backend, s_norm))
+        t_eps = float(division_epsilon(backend, t_norm))
+        if s_norm_val < s_eps or t_norm_val < t_eps:
             # If either is near-zero, correlation undefined → assume disagreement
             correlations_list.append(0.0)
         else:
@@ -712,12 +744,13 @@ def compute_dimension_correlations(
     std_corr = math.sqrt(variance)
 
     high_threshold = config.min_correlation_for_default
-    # Low threshold = geometric midpoint (0.5) - the natural boundary between "high" and "low"
-    # This is not arbitrary - 0.5 is the midpoint of the correlation range [0, 1]
-    low_threshold = 0.5  # Geometric midpoint
+    if high_threshold is None:
+        high_threshold = _derive_threshold(correlations_list, backend)
+        if high_threshold is None:
+            high_threshold = max(correlations_list) if correlations_list else 0.0
 
     high_count = sum(1 for c in correlations_list if c >= high_threshold)
-    low_count = sum(1 for c in correlations_list if c < low_threshold)
+    low_count = sum(1 for c in correlations_list if c < high_threshold)
 
     return DimensionCorrelations(
         correlations=correlations,

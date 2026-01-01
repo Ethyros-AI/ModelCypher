@@ -260,7 +260,7 @@ class TestResultConversion:
 
         assert result.mean_confidence == 0.8
         assert result.layer_count == 32
-        assert result.safety_verdict == "not_validated"  # default
+        assert not hasattr(result, "safety_verdict")
         assert result.merge_strategy == "transplant"  # default
 
 
@@ -284,6 +284,10 @@ class TestStageValidate:
             hidden_dim=896,
         )
 
-        # Validation always runs - no "skipped" or "not_validated" state
-        assert result.safety_verdict in ("safe", "caution", "unsafe", "critical")
-        assert result.metrics.get("skipped") is not True
+        # Validation always runs - metrics are returned even if some checks skip
+        assert "numerical_stability" in result.metrics
+        assert "content_safety" in result.metrics
+        assert "behavioral_probes" in result.metrics
+        assert "circuit_breaker" in result.metrics
+        assert "ridge_resistance" in result.metrics
+        assert "refusal_preserved" not in result.metrics

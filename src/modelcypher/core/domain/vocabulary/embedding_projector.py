@@ -300,15 +300,11 @@ class EmbeddingProjector:
             projected = b.concatenate([projected, padding], axis=1)
 
         # Compute alignment quality on anchors
-        if shared_indices:
-            aligned_source = b.matmul(source_anchors, R.T)[:, :target_dim]
-            target_subset = target_anchors[:, :target_dim]
-            error = float(b.to_numpy(b.mean(b.norm(aligned_source - target_subset, axis=1))))
-            target_norm = float(b.to_numpy(b.mean(b.norm(target_subset, axis=1))))
-            alignment_score = 1.0 - (error / target_norm) if target_norm > 0 else 0.0
-        else:
-            error = 0.0
-            alignment_score = 0.8  # Default for random alignment
+        aligned_source = b.matmul(source_anchors, R.T)[:, :target_dim]
+        target_subset = target_anchors[:, :target_dim]
+        error = float(b.to_numpy(b.mean(b.norm(aligned_source - target_subset, axis=1))))
+        target_norm = float(b.to_numpy(b.mean(b.norm(target_subset, axis=1))))
+        alignment_score = 1.0 - (error / target_norm) if target_norm > 0 else 0.0
 
         # Scale to preserve norms if configured
         if self.config.preserve_norms:
