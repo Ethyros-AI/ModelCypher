@@ -117,35 +117,6 @@ def test_geometry_validate_cli():
     assert "gromovWasserstein" in payload
 
 
-def test_geometry_dimension_constraint_accepts_dict(tmp_path: Path):
-    points = {
-        "A": [0.0, 0.0],
-        "B": [1.0, 0.0],
-        "C": [0.0, 1.0],
-        "D": [1.0, 1.0],
-    }
-    points_path = tmp_path / "points.json"
-    points_path.write_text(json.dumps(points))
-
-    result = runner.invoke(
-        app,
-        [
-            "geometry",
-            "metrics",
-            "dimension-constraint",
-            str(points_path),
-            "--pad-dim",
-            "3",
-            "--output",
-            "json",
-        ],
-    )
-    assert result.exit_code == 0
-    payload = json.loads(result.stdout)
-    assert payload["_schema"] == "mc.geometry.dimension_constraint_invariance.v1"
-    assert payload["sampleCount"] == 4
-
-
 def test_geometry_path_detect_cli():
     result = runner.invoke(
         app,

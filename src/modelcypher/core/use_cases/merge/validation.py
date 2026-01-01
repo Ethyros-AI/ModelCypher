@@ -77,10 +77,14 @@ class TaskProbeResult:
 
 @dataclass
 class GeometricDiagnosis:
-    """Geometric analysis of merge quality."""
+    """Geometric analysis of merge quality.
 
-    diverged_layers: list[int]
-    high_drift_layers: list[int]
+    All values are raw measurements. No categorical thresholds.
+    Callers interpret layer_composite_scores relative to their own baselines.
+    """
+
+    # Raw composite scores per layer - callers decide what constitutes "drift"
+    layer_composite_scores: dict[int, float]
     mean_drift: float
     max_drift: float
     raw_analysis: dict | None = None
@@ -135,8 +139,7 @@ class MergeValidationResult:
             ],
             "taskProbePassRate": self.task_probe_pass_rate,
             "geometricDiagnosis": {
-                "divergedLayers": self.geometric_diagnosis.diverged_layers,
-                "highDriftLayers": self.geometric_diagnosis.high_drift_layers,
+                "layerCompositeScores": self.geometric_diagnosis.layer_composite_scores,
                 "meanDrift": self.geometric_diagnosis.mean_drift,
                 "maxDrift": self.geometric_diagnosis.max_drift,
             }
@@ -440,24 +443,20 @@ class MergeValidationService:
                 dora_result=dora_result,
             )
 
-            # Find diverged layers (high composite score = significant difference)
-            diverged_layers = []
-            high_drift_layers = []
+            # Return raw composite scores per layer - no arbitrary thresholds
+            # Callers interpret these values relative to their own baselines
+            layer_composite_scores = {}
             drift_values = []
 
             for layer_idx, score in result.layer_scores.items():
+                layer_composite_scores[layer_idx] = score.composite_score
                 drift_values.append(score.composite_score)
-                if score.composite_score > 0.6:
-                    diverged_layers.append(layer_idx)
-                if score.composite_score > 0.8:
-                    high_drift_layers.append(layer_idx)
 
             mean_drift = sum(drift_values) / len(drift_values) if drift_values else 0.0
             max_drift = max(drift_values) if drift_values else 0.0
 
             return GeometricDiagnosis(
-                diverged_layers=diverged_layers,
-                high_drift_layers=high_drift_layers,
+                layer_composite_scores=layer_composite_scores,
                 mean_drift=mean_drift,
                 max_drift=max_drift,
                 raw_analysis=result.to_dict(),
@@ -466,8 +465,7 @@ class MergeValidationService:
         except ImportError as e:
             logger.warning(f"MLX not available for geometric diagnosis: {e}")
             return GeometricDiagnosis(
-                diverged_layers=[],
-                high_drift_layers=[],
+                layer_composite_scores={},
                 mean_drift=0.0,
                 max_drift=0.0,
             )

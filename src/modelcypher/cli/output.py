@@ -23,8 +23,31 @@ from typing import Any
 from modelcypher.utils.json import dump_json
 
 
-def write_output(data: Any) -> None:
-    sys.stdout.write(dump_json(data, pretty=False))
+def write_output(
+    data: Any,
+    output_format: str = "json",
+    pretty: bool = False,
+) -> None:
+    """Write output to stdout in the specified format.
+
+    Args:
+        data: Data to write (dict, list, or string for text format)
+        output_format: "json", "yaml", or "text"
+        pretty: Whether to pretty-print JSON output
+    """
+    if output_format == "text":
+        if isinstance(data, str):
+            sys.stdout.write(data)
+        else:
+            sys.stdout.write(dump_json(data, pretty=True))
+    elif output_format == "yaml":
+        try:
+            import yaml
+            sys.stdout.write(yaml.dump(data, default_flow_style=False))
+        except ImportError:
+            sys.stdout.write(dump_json(data, pretty=True))
+    else:
+        sys.stdout.write(dump_json(data, pretty=pretty))
     sys.stdout.write("\n")
 
 

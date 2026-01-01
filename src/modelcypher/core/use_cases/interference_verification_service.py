@@ -243,7 +243,7 @@ class InterferenceVerificationService:
         merge_id: str,
         geometry_metrics: dict[str, Any],
         transplant_metrics: dict[str, Any],
-        safety_verdict: str,
+        safety_verdict: float,
     ) -> VerificationResult | None:
         """Verify using raw metrics instead of UnifiedMergeResult.
 
@@ -253,7 +253,7 @@ class InterferenceVerificationService:
             merge_id: ID of the prediction to verify
             geometry_metrics: Geometry metrics dict
             transplant_metrics: Transplant metrics dict
-            safety_verdict: Safety verdict string
+            safety_verdict: Raw safety measurement (mean_preserved_fraction)
 
         Returns:
             VerificationResult if prediction exists, None otherwise

@@ -33,6 +33,8 @@ import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.model_profile import (
     LayerProfile,
     ModelProfile,
@@ -380,6 +382,7 @@ def compare_profiles(
         ricci_z_scores = []
         dim_z_scores = []
 
+        backend = get_default_backend()
         for lc in layer_comparisons:
             # Map layer to relative position for baseline lookup
             src_layers = source.num_layers or len(source.layer_profiles)
@@ -397,21 +400,24 @@ def compare_profiles(
             # Sectional z-score
             if closest_idx < len(baseline.sectional_std_by_position):
                 std = baseline.sectional_std_by_position[closest_idx]
-                if std > 1e-10:
+                eps = division_epsilon(backend, backend.array([std]))
+                if std > eps:
                     z = abs(lc.sectional_curvature_diff) / std
                     sectional_z_scores.append(z)
 
             # Ricci z-score
             if closest_idx < len(baseline.ollivier_ricci_std_by_position):
                 std = baseline.ollivier_ricci_std_by_position[closest_idx]
-                if std > 1e-10:
+                eps = division_epsilon(backend, backend.array([std]))
+                if std > eps:
                     z = abs(lc.ollivier_ricci_diff) / std
                     ricci_z_scores.append(z)
 
             # Dimension z-score (using relative diff)
             if closest_idx < len(baseline.intrinsic_dimension_by_position):
                 baseline_dim = baseline.intrinsic_dimension_by_position[closest_idx]
-                if baseline_dim > 1e-10:
+                eps = division_epsilon(backend, backend.array([baseline_dim]))
+                if baseline_dim > eps:
                     # Use relative diff: |diff| / baseline_dim
                     z = abs(lc.intrinsic_dimension_diff) / baseline_dim
                     dim_z_scores.append(z)

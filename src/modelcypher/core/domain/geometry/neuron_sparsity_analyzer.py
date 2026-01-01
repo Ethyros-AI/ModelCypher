@@ -31,6 +31,9 @@ import logging
 import math
 from dataclasses import dataclass, field
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
 logger = logging.getLogger(__name__)
 
 
@@ -194,12 +197,16 @@ class NeuronStats:
     @property
     def is_dead(self) -> bool:
         """Whether this neuron never activates."""
-        return self.max_activation < 1e-10
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([self.max_activation]))
+        return self.max_activation < eps
 
     @property
     def coefficient_of_variation(self) -> float:
         """CV = std / mean, measures relative variability."""
-        if self.mean_activation < 1e-10:
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([self.mean_activation]))
+        if self.mean_activation < eps:
             return 0.0
         return math.sqrt(self.activation_variance) / self.mean_activation
 

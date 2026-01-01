@@ -405,10 +405,21 @@ class LayerMergeValidation:
         entropy_ratio = entropy_delta / (expected_entropy + eps)
 
         # Knowledge retention score: how close to expected
-        # When source == target, use expected_entropy as reference for what "large" means
-        # Otherwise, use the source-target gap as the scale
+        # Use the source-target gap as the natural scale for what "large" means
+        # When source == target (gap ≈ 0), use intrinsic variance of measured values
         source_target_gap = abs(source_entropy - target_entropy)
-        max_delta = max(source_target_gap, expected_entropy * 0.1, eps)
+
+        # Data-derived fallback: variance across all three measurements
+        # This is the natural scale when source and target are identical
+        mean_ent = (source_entropy + target_entropy + merged_entropy) / 3
+        variance = (
+            (source_entropy - mean_ent) ** 2
+            + (target_entropy - mean_ent) ** 2
+            + (merged_entropy - mean_ent) ** 2
+        ) / 3
+        intrinsic_std = variance**0.5
+
+        max_delta = max(source_target_gap, intrinsic_std, eps)
         retention = max(0.0, 1.0 - (entropy_delta / max_delta))
 
         return cls(

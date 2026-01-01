@@ -74,12 +74,7 @@ class GeometryService:
         self.detector = detector
 
     def validate(self, include_fixtures: bool = False) -> Report:
-        base = ValidationConfig.default()
-        config = ValidationConfig(
-            include_fixtures=include_fixtures,
-            thresholds=base.thresholds,
-            gromov_wasserstein=base.gromov_wasserstein,
-        )
+        config = ValidationConfig.with_parameters(include_fixtures=include_fixtures)
         suite = GeometryValidationSuite()
         return suite.run(config)
 
@@ -202,9 +197,17 @@ class GeometryService:
 
     @staticmethod
     def validation_payload(report: Report, include_schema: bool = False) -> dict:
+        # Import GW constants (derived from numerical analysis, not configurable)
+        from modelcypher.core.domain.geometry.gromov_wasserstein import (
+            _MAX_OUTER_ITERATIONS,
+            _MIN_OUTER_ITERATIONS,
+            _NUM_RESTARTS,
+            _SINKHORN_EPSILON,
+            _SINKHORN_ITERATIONS,
+        )
+
         config = report.config
         thresholds = config.thresholds
-        gw_config = config.gromov_wasserstein
         payload = {
             "suiteVersion": report.suite_version,
             "timestamp": GeometryService._iso_timestamp(report.timestamp),
@@ -244,15 +247,12 @@ class GeometryService:
                     ),
                 },
                 "gromovWasserstein": {
-                    "sinkhornEpsilon": gw_config.sinkhorn_epsilon,
-                    "sinkhornIterations": gw_config.sinkhorn_iterations,
-                    "sinkhornThreshold": gw_config.sinkhorn_threshold,
-                    "maxOuterIterations": gw_config.max_outer_iterations,
-                    "minOuterIterations": gw_config.min_outer_iterations,
-                    "convergenceThreshold": gw_config.convergence_threshold,
-                    "relativeObjectiveThreshold": gw_config.relative_objective_threshold,
-                    "useSquaredLoss": gw_config.use_squared_loss,
-                    "numRestarts": gw_config.num_restarts,
+                    "sinkhornEpsilon": _SINKHORN_EPSILON,
+                    "sinkhornIterations": _SINKHORN_ITERATIONS,
+                    "maxOuterIterations": _MAX_OUTER_ITERATIONS,
+                    "minOuterIterations": _MIN_OUTER_ITERATIONS,
+                    "numRestarts": _NUM_RESTARTS,
+                    "note": "Parameters derived from numerical analysis, not configurable",
                 },
             },
             "gromovWasserstein": {

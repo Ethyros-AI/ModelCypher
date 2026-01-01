@@ -28,8 +28,11 @@ import pytest
 from modelcypher.core.use_cases.merge.confidence import (
     compute_geometric_confidence_from_transplant,
     compute_mean_confidence,
-    compute_safety_verdict,
 )
+
+# NOTE: compute_safety_verdict was REMOVED.
+# Categorical verdicts ("healthy", "degenerate", "collapsed") violate the
+# "no vibes" principle. Use raw measurements from geometry_metrics instead.
 
 
 class TestComputeGeometricConfidenceFromTransplant:
@@ -158,101 +161,11 @@ class TestComputeMeanConfidence:
         assert compute_mean_confidence(geometry_metrics) == 0.2
 
 
-class TestComputeSafetyVerdict:
-    """Tests for compute_safety_verdict."""
-
-    def test_failed_when_nothing_transplanted(self):
-        """transplant_ratio == 0 should return 'failed'."""
-        geometry_metrics = {
-            "transplant_ratio": 0.0,
-            "mean_preserved_fraction": 0.0,
-        }
-
-        verdict = compute_safety_verdict(geometry_metrics)
-
-        assert verdict == "failed"
-
-    def test_collapsed_when_almost_no_preservation(self):
-        """mean_preserved_fraction < 0.1 should return 'collapsed'."""
-        geometry_metrics = {
-            "transplant_ratio": 0.5,
-            "mean_preserved_fraction": 0.05,
-        }
-
-        verdict = compute_safety_verdict(geometry_metrics)
-
-        assert verdict == "collapsed"
-
-    def test_degenerate_when_low_preservation(self):
-        """mean_preserved_fraction < 0.5 should return 'degenerate'."""
-        geometry_metrics = {
-            "transplant_ratio": 0.8,
-            "mean_preserved_fraction": 0.3,
-        }
-
-        verdict = compute_safety_verdict(geometry_metrics)
-
-        assert verdict == "degenerate"
-
-    def test_healthy_when_good_preservation(self):
-        """mean_preserved_fraction >= 0.5 should return 'healthy'."""
-        geometry_metrics = {
-            "transplant_ratio": 0.9,
-            "mean_preserved_fraction": 0.75,
-        }
-
-        verdict = compute_safety_verdict(geometry_metrics)
-
-        assert verdict == "healthy"
-
-    def test_boundary_at_half(self):
-        """Exactly 0.5 preservation should be 'healthy'."""
-        geometry_metrics = {
-            "transplant_ratio": 1.0,
-            "mean_preserved_fraction": 0.5,
-        }
-
-        verdict = compute_safety_verdict(geometry_metrics)
-
-        assert verdict == "healthy"
-
-    def test_boundary_at_tenth(self):
-        """Exactly 0.1 preservation should be 'degenerate' (not collapsed)."""
-        geometry_metrics = {
-            "transplant_ratio": 1.0,
-            "mean_preserved_fraction": 0.1,
-        }
-
-        verdict = compute_safety_verdict(geometry_metrics)
-
-        assert verdict == "degenerate"
-
-    def test_handles_missing_keys(self):
-        """Should handle missing keys with defaults."""
-        geometry_metrics = {}
-
-        verdict = compute_safety_verdict(geometry_metrics)
-
-        # transplant_ratio defaults to 0.0 → "failed"
-        assert verdict == "failed"
-
-    def test_verdict_is_string_not_enum(self):
-        """Verdict should be a simple string for JSON serialization."""
-        geometry_metrics = {
-            "transplant_ratio": 0.9,
-            "mean_preserved_fraction": 0.8,
-        }
-
-        verdict = compute_safety_verdict(geometry_metrics)
-
-        assert isinstance(verdict, str)
-
-
 class TestIntegration:
     """Integration tests for the full geometric confidence flow."""
 
-    def test_full_flow_healthy_merge(self):
-        """Test full flow for a healthy merge."""
+    def test_full_flow_high_preservation_merge(self):
+        """Test full flow for a merge with high preservation."""
         transplant_metrics = {
             "preserved_fractions": [0.85, 0.90, 0.88],
             "cka_after": [0.95, 0.92, 0.94],
@@ -265,14 +178,15 @@ class TestIntegration:
 
         geometry = compute_geometric_confidence_from_transplant(transplant_metrics)
         confidence = compute_mean_confidence(geometry)
-        verdict = compute_safety_verdict(geometry)
 
         # Confidence IS preserved_fraction (mean of 0.85, 0.90, 0.88)
         assert confidence == pytest.approx(0.8767, rel=0.01)
-        assert verdict == "healthy"
+        # Raw measurements available for caller interpretation
+        assert geometry["mean_preserved_fraction"] == pytest.approx(0.8767, rel=0.01)
+        assert geometry["transplant_ratio"] == pytest.approx(0.9, rel=0.01)
 
-    def test_full_flow_degenerate_merge(self):
-        """Test full flow for a degenerate merge."""
+    def test_full_flow_low_preservation_merge(self):
+        """Test full flow for a merge with low preservation."""
         transplant_metrics = {
             "preserved_fractions": [0.3, 0.4, 0.35],
             "cka_after": [0.6, 0.55, 0.58],
@@ -282,14 +196,14 @@ class TestIntegration:
 
         geometry = compute_geometric_confidence_from_transplant(transplant_metrics)
         confidence = compute_mean_confidence(geometry)
-        verdict = compute_safety_verdict(geometry)
 
         # Confidence IS preserved_fraction (mean of 0.3, 0.4, 0.35)
         assert confidence == pytest.approx(0.35, rel=0.01)
-        assert verdict == "degenerate"
+        # Raw measurements - caller interprets what this means
+        assert geometry["mean_preserved_fraction"] == pytest.approx(0.35, rel=0.01)
 
     def test_full_flow_failed_merge(self):
-        """Test full flow for a failed merge."""
+        """Test full flow for a failed merge (nothing transplanted)."""
         transplant_metrics = {
             "preserved_fractions": [],
             "cka_after": [],
@@ -299,7 +213,6 @@ class TestIntegration:
 
         geometry = compute_geometric_confidence_from_transplant(transplant_metrics)
         confidence = compute_mean_confidence(geometry)
-        verdict = compute_safety_verdict(geometry)
 
         assert confidence == 0.0
-        assert verdict == "failed"
+        assert geometry["transplant_ratio"] == 0.0

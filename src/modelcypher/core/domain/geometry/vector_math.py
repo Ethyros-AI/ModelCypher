@@ -37,6 +37,8 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING, Any, Sequence
 
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
 
@@ -797,7 +799,8 @@ class BackendVectorMath:
 
         metrics: dict[str, float | str] = {
             "angle_deg": angle_deg,
-            "magnitude_ratio": norm_v0_val / (norm_v1_val + 1e-10),
+            "magnitude_ratio": norm_v0_val
+            / (norm_v1_val + division_epsilon(self.backend, v1)),
             "cosine_similarity": dot_val,
         }
 
