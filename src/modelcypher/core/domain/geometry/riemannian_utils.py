@@ -639,7 +639,7 @@ class RiemannianGeometry:
         edge_count = sum(1 for row in adj_np for v in row if math.isfinite(float(v)) and v < inf_val * 0.9)
         inf_count_adj = sum(1 for row in adj_np for v in row if v >= inf_val * 0.9)
         nan_count_adj = sum(1 for row in adj_np for v in row if math.isnan(float(v)))
-        logger.warning(
+        logger.debug(
             f"Adjacency matrix: n={n}, k={k_neighbors}, "
             f"edges={edge_count}, inf_entries={inf_count_adj}, nan_entries={nan_count_adj}"
         )
@@ -667,7 +667,7 @@ class RiemannianGeometry:
         fw_finite = sum(1 for row in geo_fw_np for v in row if math.isfinite(float(v)) and v < inf_val * 0.9)
         fw_inf = sum(1 for row in geo_fw_np for v in row if v >= inf_val * 0.9)
         fw_nan = sum(1 for row in geo_fw_np for v in row if math.isnan(float(v)))
-        logger.warning(
+        logger.debug(
             f"After Floyd-Warshall: finite={fw_finite}, inf={fw_inf}, nan={fw_nan}"
         )
 
@@ -1740,11 +1740,11 @@ class RiemannianGeometry:
         extreme_pos_count = sum(1 for s in scale_np.flatten() if float(s) < 0.2)
 
         if extreme_neg_count > n * 0.1 or extreme_pos_count > n * 0.1:
-            logger.warning(
-                f"Extreme curvature detected in Fréchet mean: "
-                f"{extreme_neg_count}/{n} points with scale > 5.0 (strong negative curvature), "
-                f"{extreme_pos_count}/{n} points with scale < 0.2 (strong positive curvature). "
-                f"This may cause slow convergence. Consider increasing k_neighbors."
+            # Debug level: we handle extreme curvature with adaptive step sizes
+            logger.debug(
+                f"Curvature scaling in Fréchet mean: "
+                f"{extreme_neg_count}/{n} points with scale > 5.0 (negative curvature), "
+                f"{extreme_pos_count}/{n} points with scale < 0.2 (positive curvature)."
             )
 
         # Weighted sum of scaled tangent vectors (log maps)

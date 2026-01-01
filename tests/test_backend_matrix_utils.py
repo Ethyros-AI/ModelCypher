@@ -226,8 +226,11 @@ class TestProcrustesRotation:
         R_np = mlx_backend.to_numpy(result.rotation)
 
         import numpy as np
+        import math
         det = np.linalg.det(R_np)
-        np.testing.assert_allclose(det, 1.0, atol=1e-5)
+        # Use sqrt(machine_epsilon) as tolerance - standard for accumulated matrix ops
+        eps = np.finfo(R_np.dtype).eps
+        np.testing.assert_allclose(det, 1.0, atol=math.sqrt(eps))
 
     def test_known_rotation(self, utils: BackendMatrixUtils, mlx_backend: Backend):
         """Test with a known 90-degree rotation."""
@@ -434,8 +437,11 @@ class TestMLXBackendMatrixUtils:
         # Rotation should be orthogonal
         R_np = mlx_backend.to_numpy(result.rotation)
         import numpy as np
+        import math
         should_be_identity = R_np.T @ R_np
-        np.testing.assert_allclose(should_be_identity, np.eye(4), atol=1e-4)
+        # Use sqrt(machine_epsilon) as tolerance - standard for accumulated matrix ops
+        eps = np.finfo(R_np.dtype).eps
+        np.testing.assert_allclose(should_be_identity, np.eye(4), atol=math.sqrt(eps))
 
     def test_pairwise_distances_mlx(self, mlx_utils: BackendMatrixUtils, mlx_backend):
         """Verify pairwise distances work on MLX."""

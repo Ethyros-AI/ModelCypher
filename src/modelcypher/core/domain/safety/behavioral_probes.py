@@ -161,6 +161,24 @@ class CompositeProbeResult:
             findings.extend(result.findings)
         return findings
 
+    def recommended_status(self) -> str:
+        """Recommend safety status based on probe results.
+
+        Returns:
+            - "safe": No triggers and low risk
+            - "caution": Triggered but risk < 0.4
+            - "warning": 0.4 <= risk < 0.7
+            - "blocked": risk >= 0.7
+        """
+        risk = self.aggregate_risk_score
+        if not self.any_triggered:
+            return "safe"
+        if risk >= 0.7:
+            return "blocked"
+        if risk >= 0.4:
+            return "warning"
+        return "caution"
+
 
 class AdapterSafetyProbe(ABC):
     """Base class for adapter safety probes."""

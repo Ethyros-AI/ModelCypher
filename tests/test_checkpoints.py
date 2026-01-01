@@ -695,6 +695,15 @@ class TestDeserializeConfig:
                 "learning_rate": 1e-4,
                 "epochs": 5,
                 "sequence_length": 1024,
+                "gradient_accumulation_steps": 1,
+                "gradient_checkpointing": False,
+                "mixed_precision": True,
+                "compute_precision": "bfloat16",
+                "warmup_steps": 100,
+                "weight_decay": 0.01,
+                "seed": 42,
+                "deterministic": True,
+                "optimizer_type": "adamw",
             },
             "lora_config": {
                 "rank": 16,
@@ -716,16 +725,16 @@ class TestDeserializeConfig:
         manager = CheckpointManager()
         assert manager._deserialize_config(None) is None
 
-    def test_deserialize_uses_defaults(self):
-        """Missing fields use defaults."""
+    def test_deserialize_requires_hyperparameters(self):
+        """Minimal data without hyperparameters raises error."""
         manager = CheckpointManager()
 
-        data = {"model_id": "test"}  # Minimal data
+        data = {"model_id": "test"}  # Minimal data, no hyperparameters
 
-        config = manager._deserialize_config(data)
+        import pytest
 
-        assert config is not None
-        assert config.hyperparameters.batch_size == 4  # Default
+        with pytest.raises(ValueError, match="missing hyperparameters"):
+            manager._deserialize_config(data)
 
 
 class TestEdgeCases:

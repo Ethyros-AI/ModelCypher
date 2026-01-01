@@ -851,20 +851,37 @@ def stage_transplant(
 
                             if cka_val >= 0.99:  # CKA preserved - stitch is geometry-preserving
                                 # FOLD stitch INTO source weights:
-                                # Stitch maps activations: src_dim -> tgt_dim
-                                # Weights operate ON activations: W @ activation
+                                # Stitch W maps activations: [n, src_dim] @ W.T -> [n, tgt_dim]
+                                # W is [tgt_dim, src_dim] = [896, 960]
                                 #
-                                # source_candidate: [out, src_dim] operates on src_dim space
-                                # We need: [out, tgt_dim] to operate on tgt_dim space
+                                # Weight matrices have hidden_dim in different positions:
+                                # - down_proj: [hidden_dim, other] - transform first dim
+                                # - gate_proj/up_proj: [other, hidden_dim] - transform second dim
+                                # - attention projs: [hidden_dim, head_dim] or [head_dim, hidden_dim]
                                 #
-                                # Use pseudo-inverse of stitch to project weight columns:
-                                # source_aligned = source_candidate @ pinv(W_stitch)
-                                #   [out, src_dim] @ [src_dim, tgt_dim] -> [out, tgt_dim]
-                                #
-                                # This preserves geometry because stitch is CKA-preserving
-                                W_stitch_pinv = b.pinv(weights_stitch)  # [src_dim, tgt_dim]
-                                b.eval(W_stitch_pinv)
-                                source_aligned = b.matmul(source_candidate, W_stitch_pinv)
+                                # Detect which dimension matches the source hidden_dim
+                                src_hidden_dim = int(weights_stitch.shape[1])  # 960
+                                tgt_hidden_dim = int(weights_stitch.shape[0])  # 896
+                                weight_shape = source_candidate.shape
+
+                                if int(weight_shape[0]) == src_hidden_dim:
+                                    # Hidden dim is first dimension: W_stitch @ weight
+                                    # [tgt, src] @ [src, other] = [tgt, other]
+                                    source_aligned = b.matmul(weights_stitch, source_candidate)
+                                    logger.info("Stitch applied to first dim: %s @ %s", weights_stitch.shape, weight_shape)
+                                elif int(weight_shape[1]) == src_hidden_dim:
+                                    # Hidden dim is second dimension: weight @ W_stitch.T
+                                    # [other, src] @ [src, tgt] = [other, tgt]
+                                    W_stitch_T = b.transpose(weights_stitch)  # [src, tgt]
+                                    source_aligned = b.matmul(source_candidate, W_stitch_T)
+                                    logger.info("Stitch applied to second dim: %s @ %s", weight_shape, W_stitch_T.shape)
+                                else:
+                                    # Neither dimension matches - skip this weight
+                                    logger.warning(
+                                        "Weight shape %s doesn't match hidden_dim %d - skipping %s",
+                                        weight_shape, src_hidden_dim, key
+                                    )
+                                    continue
                                 b.eval(source_aligned)
 
                                 logger.info(

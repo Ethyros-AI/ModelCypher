@@ -201,6 +201,12 @@ class DimensionCascade:
             config.target_dims,
         )
 
+        # Cast to float32 if needed - SVD and other linalg ops require float32+
+        if 'float16' in str(activations.dtype):
+            activations = b.astype(activations, "float32")
+            b.eval(activations)
+            logger.debug("Cast activations from float16 to float32 for numerical stability")
+
         # Compute intrinsic dimension - this is the TRUE dimensionality
         id_config = TwoNNConfiguration()
         id_estimator = IntrinsicDimension(b)
@@ -309,15 +315,23 @@ class DimensionCascade:
         """
         b = self.backend
 
+        # SVD requires float32 or higher precision
+        # Cast to float32 if needed (common for model activations in float16)
+        if 'float16' in str(points.dtype):
+            points_f32 = b.astype(points, "float32")
+            b.eval(points_f32)
+        else:
+            points_f32 = points
+
         # SVD to find principal components
         # points = U @ S @ Vt, we want U[:, :target_dim] @ S[:target_dim]
-        U, S, Vt = b.svd(points, full_matrices=False)
+        U, S, Vt = b.svd(points_f32, full_matrices=False)
         b.eval(U, S, Vt)
 
         # Project to top target_dim dimensions
         # This is the PCA projection: points @ V[:, :target_dim]
         V_k = b.transpose(Vt[:target_dim, :])  # [source_dim, target_dim]
-        target = b.matmul(points, V_k)  # [n_points, target_dim]
+        target = b.matmul(points_f32, V_k)  # [n_points, target_dim]
         b.eval(target)
 
         return target

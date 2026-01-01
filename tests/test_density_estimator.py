@@ -241,13 +241,25 @@ class TestDensityEstimator:
 # =============================================================================
 
 
+def _has_meshgrid(backend: "Backend") -> bool:
+    """Check if backend supports meshgrid."""
+    return hasattr(backend, "meshgrid")
+
+
 class TestGridDensity:
-    """Tests for compute_grid_density method."""
+    """Tests for compute_grid_density method.
+
+    Note: These tests require the meshgrid backend method which may not be
+    available in all backends. Tests are skipped if meshgrid is unavailable.
+    """
 
     def test_grid_density_basic(
         self, backend: "Backend", random_points_3d: "Array"
     ) -> None:
         """Test basic grid density computation."""
+        if not _has_meshgrid(backend):
+            pytest.skip("Backend does not support meshgrid")
+
         estimator = DensityEstimator(backend)
         X, Y, Z, density = estimator.compute_grid_density(
             random_points_3d, grid_size=10
@@ -262,6 +274,9 @@ class TestGridDensity:
         self, backend: "Backend", random_points_3d: "Array"
     ) -> None:
         """Test that grid densities are positive."""
+        if not _has_meshgrid(backend):
+            pytest.skip("Backend does not support meshgrid")
+
         estimator = DensityEstimator(backend)
         _, _, _, density = estimator.compute_grid_density(
             random_points_3d, grid_size=5
@@ -274,6 +289,9 @@ class TestGridDensity:
         self, backend: "Backend", random_points_2d: "Array"
     ) -> None:
         """Test error when points are not 3D."""
+        if not _has_meshgrid(backend):
+            pytest.skip("Backend does not support meshgrid")
+
         estimator = DensityEstimator(backend)
 
         with pytest.raises(ValueError, match="3D"):
@@ -283,6 +301,9 @@ class TestGridDensity:
         self, backend: "Backend", random_points_3d: "Array"
     ) -> None:
         """Test grid density with explicit config."""
+        if not _has_meshgrid(backend):
+            pytest.skip("Backend does not support meshgrid")
+
         estimator = DensityEstimator(backend)
         config = DensityConfiguration(k_neighbors=3)
         X, Y, Z, density = estimator.compute_grid_density(
