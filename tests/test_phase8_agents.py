@@ -37,6 +37,7 @@ from modelcypher.core.domain.agents.task_diversion_detector import (
     DiversionDetectorConfiguration,
     TaskDiversionAssessment,
     TaskDiversionDetector,
+    TaskDiversionMethod,
 )
 from modelcypher.core.domain.geometry.vector_math import VectorMath
 
@@ -143,16 +144,14 @@ class TestPhase8Agents(unittest.TestCase):
         embedder = MockSemanticAwareEmbedder()
         detector = TaskDiversionDetector(embedder=embedder)
 
-        # Aligned
+        # Similar texts - high similarity
         assessment = asyncio.run(detector.assess("task_a", "task_a_rephrased"))
-        self.assertEqual(assessment.method, TaskDiversionAssessment.Method.EMBEDDINGS)
-        self.assertEqual(assessment.verdict, TaskDiversionAssessment.Verdict.ALIGNED)
-        self.assertGreaterEqual(assessment.embedding_cosine_similarity, 0.8)  # 0.9 dot 1.0 approx
+        self.assertEqual(assessment.method, TaskDiversionMethod.EMBEDDINGS)
+        self.assertGreaterEqual(assessment.embedding_cosine_similarity, 0.8)
 
-        # Diverged
+        # Different texts - low similarity
         assessment = asyncio.run(detector.assess("task_a", "task_b"))
-        self.assertEqual(assessment.method, TaskDiversionAssessment.Method.EMBEDDINGS)
-        self.assertEqual(assessment.verdict, TaskDiversionAssessment.Verdict.DIVERGED)
+        self.assertEqual(assessment.method, TaskDiversionMethod.EMBEDDINGS)
         self.assertLess(assessment.embedding_cosine_similarity, 0.1)
 
     def test_task_diversion_detector_lexical_fallback(self):
@@ -170,21 +169,22 @@ class TestPhase8Agents(unittest.TestCase):
             configuration=DiversionDetectorConfiguration(enable_lexical_fallback=True),
         )
 
-        # Aligned (lexically similar)
+        # Similar (lexically overlapping)
         # Stop words: "this", "is" might be stripped.
         # "calculate" "fibonacci" vs "calculate" "fibonacci" "sequence"
         t1 = "calculate fibonacci"
         t2 = "calculate fibonacci sequence"
         assessment = asyncio.run(detector.assess(t1, t2))
 
-        self.assertEqual(assessment.method, TaskDiversionAssessment.Method.LEXICAL_FALLBACK)
-        self.assertEqual(assessment.verdict, TaskDiversionAssessment.Verdict.ALIGNED)
+        self.assertEqual(assessment.method, TaskDiversionMethod.LEXICAL_FALLBACK)
+        self.assertIsNotNone(assessment.lexical_jaccard_similarity)
+        self.assertGreater(assessment.lexical_jaccard_similarity, 0.5)
 
-        # Diverged
+        # Different (low lexical overlap)
         t3 = "make sandwich"
         assessment = asyncio.run(detector.assess(t1, t3))
-        self.assertEqual(assessment.method, TaskDiversionAssessment.Method.LEXICAL_FALLBACK)
-        self.assertEqual(assessment.verdict, TaskDiversionAssessment.Verdict.DIVERGED)
+        self.assertEqual(assessment.method, TaskDiversionMethod.LEXICAL_FALLBACK)
+        self.assertLess(assessment.lexical_jaccard_similarity, 0.5)
 
 
 if __name__ == "__main__":

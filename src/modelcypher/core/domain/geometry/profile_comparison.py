@@ -310,7 +310,12 @@ def compare_profiles(
             + abs(src_topo.cycle_count - tgt_topo.cycle_count)
         )
         persist_diff = abs(src_topo.max_persistence - tgt_topo.max_persistence)
-        scale = max(src_topo.max_persistence, tgt_topo.max_persistence, 1e-6)
+        backend = get_default_backend()
+        scale_eps = division_epsilon(
+            backend,
+            backend.array([src_topo.max_persistence, tgt_topo.max_persistence]),
+        )
+        scale = max(src_topo.max_persistence, tgt_topo.max_persistence, scale_eps)
 
         topology_similarity = math.exp(-betti_diff) * math.exp(-persist_diff / scale)
 

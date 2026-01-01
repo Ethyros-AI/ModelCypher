@@ -54,7 +54,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
-    machine_epsilon,
+    regularization_epsilon,
 )
 
 if TYPE_CHECKING:
@@ -96,9 +96,9 @@ class OllivierRicciConfig:
     adaptive_strength: float = 0.3
 
     # Sinkhorn regularization for W_1 approximation
-    sinkhorn_epsilon: float = 0.001
+    sinkhorn_epsilon: float | None = None
     sinkhorn_iterations: int = 100
-    sinkhorn_threshold: float = 1e-8
+    sinkhorn_threshold: float | None = None
 
     # Number of neighbors for k-NN graph
     # When None, derived from intrinsic dimension: k = max(3, 2 * ID)
@@ -171,15 +171,8 @@ class CurvatureConfig:
     epsilon: float | None = None
     # Number of random directions to sample for sectional curvature
     num_directions: int = 10
-    # Threshold for considering curvature as flat
-    flat_threshold: float = 1e-6
     # Whether to use parallel transport correction
     use_parallel_transport: bool = True
-    # Neighborhood radius for local averaging
-    neighborhood_radius: float = 0.1
-    # Sign classification thresholds (fraction of samples required for dominant sign)
-    dominant_sign_threshold: float = 0.8
-    flat_sign_threshold: float = 0.2
 
 
 @dataclass
@@ -583,8 +576,11 @@ class SectionalCurvatureEstimator:
         cov = backend.matmul(backend.transpose(centered), centered) / (n - 1)
         backend.eval(cov)
 
-        # Regularize for numerical stability
-        cov = cov + 1e-6 * backend.eye(d)
+        # Regularize for numerical stability (dtype-derived)
+        reg = regularization_epsilon(backend, cov)
+        max_abs = float(backend.to_numpy(backend.max(backend.abs(cov))).item())
+        reg_scale = reg * max_abs if max_abs > 0 else reg
+        cov = cov + reg_scale * backend.eye(d)
 
         # Metric is inverse of covariance (Fisher information interpretation)
         # Use regularized inverse - no fallback to identity (Euclidean)
@@ -608,9 +604,6 @@ class SectionalCurvatureEstimator:
         Formula: epsilon = scale * sqrt(machine_epsilon) * d^0.25
         where scale is the characteristic length scale of the data.
 
-        For float32: sqrt(1e-7) ≈ 3e-4
-        For float64: sqrt(1e-16) ≈ 1e-8
-
         Args:
             neighbors: Nearby points used for curvature estimation
             backend: Computational backend
@@ -623,7 +616,7 @@ class SectionalCurvatureEstimator:
         d = int(neighbors.shape[1])
 
         if n < 2:
-            return 1e-4  # Default fallback
+            return division_epsilon(backend, neighbors)
 
         # Compute characteristic scale as median neighbor distance
         # Subsample for efficiency if many points
@@ -651,19 +644,18 @@ class SectionalCurvatureEstimator:
                 upper_tri.append(float(dists_np[i, j]))
 
         if not upper_tri:
-            return 1e-4  # Default fallback
+            return division_epsilon(backend, neighbors)
 
         upper_tri.sort()
         median_dist = upper_tri[len(upper_tri) // 2]
 
-        # Adaptive epsilon formula
-        # sqrt(machine_epsilon) ≈ 3e-4 for float32
-        # Factor of d^0.25 accounts for high dimensionality
-        eps = machine_epsilon(backend, neighbors)
-        epsilon = median_dist * (eps ** 0.5) * (d ** 0.25)
-
-        # Clamp to reasonable range (eps to 0.1)
-        epsilon = max(eps, min(epsilon, 0.1))
+        # Adaptive epsilon formula with dimensional scaling
+        eps = division_epsilon(backend, neighbors)
+        epsilon = median_dist * eps * (d ** 0.25)
+        max_dist = max(upper_tri)
+        if max_dist > 0:
+            epsilon = min(epsilon, max_dist)
+        epsilon = max(eps, epsilon)
 
         logger.debug(
             f"Adaptive epsilon: {epsilon:.2e} (scale={median_dist:.2e}, d={d})"
@@ -718,7 +710,10 @@ class SectionalCurvatureEstimator:
 
         # Compute Christoffel symbols
         # Regularize metric for stable inversion - no fallback to identity
-        g_reg = g + 1e-8 * backend.eye(d)
+        reg = regularization_epsilon(backend, g)
+        max_abs = float(backend.to_numpy(backend.max(backend.abs(g))).item())
+        reg_scale = reg * max_abs if max_abs > 0 else reg
+        g_reg = g + reg_scale * backend.eye(d)
         g_inv = backend.inv(g_reg)
 
         # Build christoffel tensor using pure Python loops (convert to numpy for indexing)
@@ -874,7 +869,10 @@ class SectionalCurvatureEstimator:
 
             # Shape operator = g^{-1} @ H
             # Regularize metric for stable inversion - no fallback
-            metric_reg = metric + 1e-8 * backend.eye(d)
+            reg = regularization_epsilon(backend, metric)
+            max_abs = float(backend.to_numpy(backend.max(backend.abs(metric))).item())
+            reg_scale = reg * max_abs if max_abs > 0 else reg
+            metric_reg = metric + reg_scale * backend.eye(d)
             metric_inv = backend.inv(metric_reg)
             shape_op = backend.matmul(metric_inv, hessian)
 
@@ -888,22 +886,25 @@ class SectionalCurvatureEstimator:
 
     def _classify_sign(self, sectional_curvatures: list[float]) -> CurvatureSign:
         """Classify curvature sign from sectional curvature samples."""
-        threshold = self.config.flat_threshold
-        dominant_threshold = self.config.dominant_sign_threshold
-        flat_threshold = self.config.flat_sign_threshold
-
-        pos_count = sum(1 for s in sectional_curvatures if s > threshold)
-        neg_count = sum(1 for s in sectional_curvatures if s < -threshold)
-        total = len(sectional_curvatures)
-
-        if pos_count > dominant_threshold * total:
-            return CurvatureSign.POSITIVE
-        elif neg_count > dominant_threshold * total:
-            return CurvatureSign.NEGATIVE
-        elif pos_count + neg_count < flat_threshold * total:
+        if not sectional_curvatures:
             return CurvatureSign.FLAT
-        else:
+
+        backend = get_default_backend()
+        curv_arr = backend.array(sectional_curvatures)
+        backend.eval(curv_arr)
+        eps = division_epsilon(backend, curv_arr)
+        curv_np = backend.to_numpy(curv_arr).flatten()
+
+        has_pos = any(float(val) > eps for val in curv_np)
+        has_neg = any(float(val) < -eps for val in curv_np)
+
+        if has_pos and has_neg:
             return CurvatureSign.MIXED
+        if has_pos:
+            return CurvatureSign.POSITIVE
+        if has_neg:
+            return CurvatureSign.NEGATIVE
+        return CurvatureSign.FLAT
 
     def _flat_curvature(self, point: "Array") -> LocalCurvature:
         """Return flat curvature for edge cases."""
@@ -1303,13 +1304,21 @@ class OllivierRicciCurvature:
         eps = division_epsilon(backend, cost_matrix)
         floor = tiny_value(backend, cost_matrix)
 
+        if epsilon is None:
+            cost_max = float(backend.to_numpy(backend.max(cost_matrix)).item())
+            epsilon = cost_max * eps if cost_max > 0 else eps
+
+        if threshold is None:
+            threshold = eps
+
         # Stabilized Sinkhorn: K = exp(-cost / epsilon)
         cost_min = backend.min(cost_matrix, axis=1, keepdims=True)
         cost_centered = cost_matrix - cost_min
         log_K = -cost_centered / max(epsilon, eps)
 
         # Clamp to avoid underflow
-        log_K = backend.maximum(log_K, backend.full(log_K.shape, -80.0))
+        min_log = math.log(floor)
+        log_K = backend.maximum(log_K, backend.full(log_K.shape, min_log))
         K = backend.exp(log_K)
         K = backend.maximum(K, backend.full(K.shape, floor))
 

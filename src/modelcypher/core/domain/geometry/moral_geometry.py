@@ -42,6 +42,8 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
 from modelcypher.core.domain.geometry.atlas_protocols import (
     MoralConceptProtocol,
     axis_key,
@@ -104,7 +106,6 @@ class VirtueViceOpposition:
     fairness_opposition: float  # exploitation ↔ justice distance
     loyalty_opposition: float  # betrayal ↔ devotion distance
     mean_opposition: float
-    opposition_detected: bool  # True if mean > 0.5
 
 
 @dataclass
@@ -159,7 +160,6 @@ class MoralGeometryReport:
                 "fairness": self.virtue_vice_opposition.fairness_opposition,
                 "loyalty": self.virtue_vice_opposition.loyalty_opposition,
                 "mean": self.virtue_vice_opposition.mean_opposition,
-                "detected": self.virtue_vice_opposition.opposition_detected,
             },
             "principal_components_variance": self.principal_components_variance,
             "moral_manifold_score": self.moral_manifold_score,
@@ -246,7 +246,8 @@ class MoralGeometryAnalyzer:
 
         # Normalize for cosine similarity
         norms = backend.norm(matrix, axis=1, keepdims=True)
-        matrix_norm = matrix / (norms + 1e-8)
+        eps = division_epsilon(backend, norms)
+        matrix_norm = matrix / (norms + eps)
 
         # PCA for axis analysis
         mean_vec = backend.mean(matrix_norm, axis=0, keepdims=True)
@@ -356,7 +357,8 @@ class MoralGeometryAnalyzer:
             backend.eval(n1, n2)
             n1_val = float(backend.to_numpy(n1))
             n2_val = float(backend.to_numpy(n2))
-            if n1_val < 1e-8 or n2_val < 1e-8:
+            eps = division_epsilon(backend, v1)
+            if n1_val < eps or n2_val < eps:
                 return 0.0
             dot = backend.sum(v1 * v2)
             backend.eval(dot)
@@ -439,7 +441,8 @@ class MoralGeometryAnalyzer:
         def cosine_sim(v1: "Array", v2: "Array") -> float:
             n1 = float(backend.to_numpy(backend.norm(v1)))
             n2 = float(backend.to_numpy(backend.norm(v2)))
-            if n1 < 1e-8 or n2 < 1e-8:
+            eps = division_epsilon(backend, v1)
+            if n1 < eps or n2 < eps:
                 return 0.0
             dot = float(backend.to_numpy(backend.sum(v1 * v2)))
             return dot / (n1 * n2)
@@ -494,7 +497,8 @@ class MoralGeometryAnalyzer:
             max_pair = max(pair_sims.keys(), key=lambda k: sum(pair_sims[k]) / len(pair_sims[k]) if pair_sims[k] else 0.0)
             most_overlapping = max_pair
 
-        separation = within_sim / (between_sim + 1e-8) if between_sim > 0 else 1.0
+        separation_eps = division_epsilon(backend, matrix)
+        separation = within_sim / (between_sim + separation_eps) if between_sim > 0 else 1.0
 
         return MoralFoundationClustering(
             within_foundation_similarity=within_sim,
@@ -527,7 +531,8 @@ class MoralGeometryAnalyzer:
             v1, v2 = matrix[vi], matrix[vci]
             n1 = float(backend.to_numpy(backend.norm(v1)))
             n2 = float(backend.to_numpy(backend.norm(v2)))
-            if n1 < 1e-8 or n2 < 1e-8:
+            eps = division_epsilon(backend, v1)
+            if n1 < eps or n2 < eps:
                 return 0.0
 
             dot = float(backend.to_numpy(backend.sum(v1 * v2)))
@@ -546,5 +551,4 @@ class MoralGeometryAnalyzer:
             fairness_opposition=fairness,
             loyalty_opposition=loyalty,
             mean_opposition=mean_opp,
-            opposition_detected=mean_opp > 0.5,
         )

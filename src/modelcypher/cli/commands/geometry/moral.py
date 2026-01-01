@@ -264,7 +264,6 @@ def moral_probe_model(
             f"  Care/Harm (cruelty↔compassion):     {report.virtue_vice_opposition.care_harm_opposition:.2f}",
             f"  Fairness (exploitation↔justice):    {report.virtue_vice_opposition.fairness_opposition:.2f}",
             f"  Loyalty (betrayal↔devotion):        {report.virtue_vice_opposition.loyalty_opposition:.2f}",
-            f"  Opposition Detected:                {'YES' if report.virtue_vice_opposition.opposition_detected else 'NO'}",
             "",
             "=" * 70,
         ]

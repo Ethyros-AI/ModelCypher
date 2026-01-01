@@ -68,7 +68,7 @@ def stage_compute_dimension_weights(
             backend.eval(src_var, tgt_var)
 
             # Fisher ~ 1/variance (stable for small variance)
-            epsilon = 1e-6
+            epsilon = division_epsilon(backend, src_var)
             src_fisher = 1.0 / (src_var + epsilon)
             tgt_fisher = 1.0 / (tgt_var + epsilon)
             backend.eval(src_fisher, tgt_fisher)

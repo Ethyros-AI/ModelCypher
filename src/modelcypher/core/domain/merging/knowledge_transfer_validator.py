@@ -53,8 +53,7 @@ class KnowledgeDomain(str, Enum):
     CREATIVE = "creative"
 
 
-# ValidationStatus enum removed - use status_for_thresholds() with caller-provided
-# thresholds to classify the raw overall_retention value.
+# ValidationStatus enum removed - expose raw retention metrics only.
 
 
 @dataclass
@@ -520,19 +519,13 @@ class KnowledgeRetentionResult:
     @property
     def retention_score(self) -> float:
         """Retention = merged / source (capped at 1.0)."""
-        if self.source_pass_rate < 0.01:
+        if self.source_pass_rate <= 0.0:
             return 1.0  # Avoid division by zero
         return min(1.0, self.merged_pass_rate / self.source_pass_rate)
 
     probes_tested: int = 0
     passed_probes: list[str] = field(default_factory=list)
     failed_probes: list[str] = field(default_factory=list)
-
-    @property
-    def degraded_probes(self) -> list[str]:
-        """Alias for failed_probes for compatibility."""
-        return self.failed_probes
-
 
 @dataclass
 class KnowledgeTransferReport:
@@ -545,7 +538,7 @@ class KnowledgeTransferReport:
     probe_results : list of ProbeResult
         Individual probe results.
     config : KnowledgeValidationConfig or None
-        Configuration used for validation (for threshold reference).
+        Configuration used for validation.
     compositional_consistency : float
         Consistency of semantic compositions.
     crm_correlation : float
@@ -579,7 +572,6 @@ class KnowledgeTransferReport:
 
     # NOTE: The status property was removed to comply with "no vibes" principle.
     # Validation returns raw measurements (overall_retention); callers decide interpretation.
-    # Removed thresholds: 0.95 (excellent), 0.80 (acceptable), 0.60 (degraded).
 
     compositional_consistency: float = 0.0
     """Consistency of semantic compositions (from CompositionalProbes)."""
@@ -593,7 +585,7 @@ class KnowledgeTransferReport:
         Parameters
         ----------
         threshold : float
-            Retention threshold (e.g., 0.8 for 80%).
+            Retention threshold.
 
         Returns
         -------
@@ -648,7 +640,7 @@ def run_knowledge_probes(
     probes : list of KnowledgeProbe
         List of probes to run.
     config : KnowledgeValidationConfig, optional
-        Validation configuration. Uses standard thresholds if not provided.
+        Validation configuration (defaults to standard settings).
 
     Returns
     -------
@@ -754,8 +746,7 @@ def validate_knowledge_transfer(
     merged_generate_fn : callable
         Generation function for merged model.
     config : KnowledgeValidationConfig, optional
-        Validation configuration. If not provided, uses standard testing
-        thresholds (95%/80%/60%).
+        Validation configuration (defaults to standard settings if not provided).
     corpus : KnowledgeProbeCorpus, optional
         Probe corpus (uses default if not provided).
 
@@ -787,7 +778,7 @@ def validate_knowledge_transfer(
     return KnowledgeTransferReport(
         per_domain=per_domain,
         probe_results=merged_results,
-        config=cfg,  # Store config for threshold reference
+        config=cfg,
         compositional_consistency=0.0,  # To be filled by service
         crm_correlation=0.0,  # To be filled by service
     )

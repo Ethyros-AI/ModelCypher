@@ -284,7 +284,7 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
                 useVariations: Whether to test probe variations for robustness
 
             Returns:
-                Knowledge retention report with per-domain scores and overall status
+                Knowledge retention report with per-domain scores and overall retention
             """
             from modelcypher.core.domain.merging.knowledge_transfer_validator import (
                 KnowledgeDomain,

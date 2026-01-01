@@ -123,7 +123,8 @@ def main():
     if result.vocab_aligned:
         print(f"Vocabulary aligned: Yes")
     if result.validation_metrics:
-        print(f"Safety verdict: {result.safety_verdict}")
+        preserved = result.geometry_metrics.get("mean_preserved_fraction", 0.0)
+        print(f"Mean preserved fraction: {preserved:.4f}")
         print(f"Refusal preserved: {result.refusal_preserved}")
 
     if result.output_path:

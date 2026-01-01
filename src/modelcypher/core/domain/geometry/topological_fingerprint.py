@@ -69,7 +69,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
@@ -133,7 +136,7 @@ class TopologyConfig:
     """
 
     # Numerical stability threshold
-    epsilon: float = 1e-9
+    epsilon: float | None = None
 
     # Persistence threshold: fraction of max filtration value
     # Features with persistence < threshold * max_filtration are noise
@@ -253,8 +256,17 @@ class TopologicalFingerprint:
             betti_diff += abs(a - b)
 
         # Scale is derived from the data - max persistence in either fingerprint
+        backend = get_default_backend()
+        scale_eps = division_epsilon(
+            backend,
+            backend.array(
+                [fingerprint_a.summary.max_persistence, fingerprint_b.summary.max_persistence]
+            ),
+        )
         scale = max(
-            fingerprint_a.summary.max_persistence, fingerprint_b.summary.max_persistence, 1e-6
+            fingerprint_a.summary.max_persistence,
+            fingerprint_b.summary.max_persistence,
+            scale_eps,
         )
 
         # Similarity score: purely geometric derivation
@@ -700,7 +712,9 @@ class TopologicalFingerprint:
     @staticmethod
     def _compute_entropy(values: list[float]) -> float:
         total = sum(values)
-        if total <= 1e-9:
+        backend = get_default_backend()
+        eps = machine_epsilon(backend, backend.array([0.0]))
+        if total <= eps:
             return 0.0
         entropy = 0.0
         for v in values:
@@ -831,8 +845,17 @@ class BackendTopologicalFingerprint:
             b_val = fingerprint_b.betti_numbers.get(dim, 0)
             betti_diff += abs(a - b_val)
 
+        backend = get_default_backend()
+        scale_eps = division_epsilon(
+            backend,
+            backend.array(
+                [fingerprint_a.summary.max_persistence, fingerprint_b.summary.max_persistence]
+            ),
+        )
         scale = max(
-            fingerprint_a.summary.max_persistence, fingerprint_b.summary.max_persistence, 1e-6
+            fingerprint_a.summary.max_persistence,
+            fingerprint_b.summary.max_persistence,
+            scale_eps,
         )
 
         score = (

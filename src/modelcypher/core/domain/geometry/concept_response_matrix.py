@@ -26,6 +26,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +161,6 @@ class ConceptResponseMatrix:
 
     def compute_cka_matrix(self, other: ConceptResponseMatrix) -> list[list[float]]:
         from modelcypher.core.domain.geometry.cka import _feature_sampling_correction
-        from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
         backend = get_default_backend()
         feature_bias_correction = True
@@ -418,7 +418,7 @@ class ConceptResponseMatrix:
         source_distance_sum = 0.0
         target_distance_sum = 0.0
         target_weights: dict[int, float] = {}
-        epsilon = 1e-6
+        epsilon = division_epsilon(backend, reference)
 
         for layer, (source_matrix, target_matrix) in sample_matrices.items():
             source_distance = float(_mean_absolute_difference(source_matrix, reference))
@@ -677,7 +677,8 @@ def _cosine_similarity_matrix(activations: list[list[float]]) -> "Array | None":
     if arr.ndim != 2 or arr.shape[0] == 0:
         return None
     norms = backend.norm(arr, axis=1, keepdims=True)
-    norms = backend.clip(norms, 1e-8, None)
+    eps = division_epsilon(backend, norms)
+    norms = backend.clip(norms, eps, None)
     normalized = arr / norms
     return normalized @ normalized.T
 

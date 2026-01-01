@@ -200,10 +200,10 @@ class KnowledgeTransferService:
                 warnings=warnings,
             )
 
-        validation_config = KnowledgeValidationConfig.from_standard_testing(
-            domains=config.domains
+        validation_config = KnowledgeValidationConfig(
+            domains=config.domains,
+            use_variations=config.include_variations,
         )
-        validation_config.use_variations = config.include_variations
 
         # Run probes on source model first (for baseline)
         source_probe_results: list = []

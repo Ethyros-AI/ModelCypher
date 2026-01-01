@@ -257,7 +257,6 @@ class TestMergePipelineService:
             layer_count = 24
             weight_count = 48
             mean_confidence = 0.85
-            safety_verdict = 0.8
             vocab_aligned = True
             mean_procrustes_error = 0.001
             geometry_metrics = {"mean_preserved_fraction": 0.9}
@@ -302,7 +301,6 @@ class TestPipelineServiceInternals:
             geometry_metrics = {}
             transplant_metrics = {}
             mean_confidence = 0.5
-            safety_verdict = 0.8
 
         # Verify with non-existent merge_id
         result = service._verify_predictions("nonexistent-id", MockMergeResult())

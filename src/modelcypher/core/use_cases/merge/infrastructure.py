@@ -20,6 +20,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
@@ -30,7 +33,8 @@ def setup_infrastructure() -> tuple[float, bool, Any | None]:
     """Set up geometry infrastructure settings."""
     # numerical_stability - compute data-driven epsilons
     # These functions compute appropriate epsilon based on dtype
-    epsilon = 1e-6  # Default for float32
+    backend = get_default_backend()
+    epsilon = machine_epsilon(backend, backend.array([0.0]))
     # SVD is NEVER disabled. We use svd_via_eigh from numerical_stability.py
     # which computes SVD via eigendecomposition - stable on all backends.
     avoid_svd = False
@@ -104,7 +108,7 @@ def select_shared_full_rank_indices(
     norm_list = backend.to_numpy(norms).tolist()
     ranked = sorted(range(n), key=lambda idx: norm_list[idx], reverse=True)
 
-    eps = max(machine_epsilon(backend, combined) * 100.0, 1e-6)
+    eps = machine_epsilon(backend, combined) * 100.0
 
     def _orthonormalize(
         vec: "Array",
@@ -173,7 +177,7 @@ def select_full_rank_indices(
     norm_list = backend.to_numpy(norms).tolist()
     ranked = sorted(range(n), key=lambda idx: norm_list[idx], reverse=True)
 
-    eps = max(machine_epsilon(backend, data) * 100.0, 1e-6)
+    eps = machine_epsilon(backend, data) * 100.0
     selected: list[int] = []
     basis: list["Array"] = []
 

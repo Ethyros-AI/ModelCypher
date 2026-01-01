@@ -86,73 +86,27 @@ class TestKnowledgeValidationConfigProperties:
     """Property tests for KnowledgeValidationConfig."""
 
     @given(
-        retention_scores=st.lists(
-            retention_strategy,
-            min_size=10,
-            max_size=100,
-        ),
+        domains=st.lists(domain_strategy, min_size=1, max_size=10),
+        min_probes=st.integers(min_value=1, max_value=20),
+        use_variations=st.booleans(),
     )
     @settings(max_examples=30)
-    def test_from_calibration_data_produces_valid_thresholds(
-        self, retention_scores: list[float]
+    def test_config_preserves_fields(
+        self,
+        domains: list[KnowledgeDomain],
+        min_probes: int,
+        use_variations: bool,
     ) -> None:
-        """Calibration should produce thresholds within [0, 1]."""
-        config = KnowledgeValidationConfig.from_calibration_data(retention_scores)
-
-        assert 0.0 <= config.retention_threshold_degraded <= 1.0
-        assert 0.0 <= config.retention_threshold_acceptable <= 1.0
-        assert 0.0 <= config.retention_threshold_excellent <= 1.0
-
-    @given(
-        retention_scores=st.lists(
-            retention_strategy,
-            min_size=10,
-            max_size=100,
-        ),
-    )
-    @settings(max_examples=30)
-    def test_from_baseline_variance_produces_valid_thresholds(
-        self, retention_scores: list[float]
-    ) -> None:
-        """Baseline variance method should produce valid thresholds."""
-        config = KnowledgeValidationConfig.from_baseline_variance(retention_scores)
-
-        # All thresholds should be non-negative (clamped to 0)
-        assert config.retention_threshold_degraded >= 0.0
-        assert config.retention_threshold_acceptable >= 0.0
-        assert config.retention_threshold_excellent >= 0.0
-
-        # Excellent >= Acceptable >= Degraded
-        assert config.retention_threshold_excellent >= config.retention_threshold_acceptable
-        assert config.retention_threshold_acceptable >= config.retention_threshold_degraded
-
-    @given(
-        excellent=st.floats(min_value=0.5, max_value=1.0, allow_nan=False),
-        acceptable=st.floats(min_value=0.3, max_value=0.8, allow_nan=False),
-        degraded=st.floats(min_value=0.1, max_value=0.5, allow_nan=False),
-    )
-    @settings(max_examples=30)
-    def test_with_explicit_thresholds_preserves_values(
-        self, excellent: float, acceptable: float, degraded: float
-    ) -> None:
-        """Explicit thresholds should be preserved exactly."""
-        config = KnowledgeValidationConfig.with_explicit_thresholds(
-            excellent=excellent,
-            acceptable=acceptable,
-            degraded=degraded,
+        """Configuration should preserve provided settings."""
+        config = KnowledgeValidationConfig(
+            domains=domains,
+            min_probes_per_domain=min_probes,
+            use_variations=use_variations,
         )
 
-        assert config.retention_threshold_excellent == pytest.approx(excellent)
-        assert config.retention_threshold_acceptable == pytest.approx(acceptable)
-        assert config.retention_threshold_degraded == pytest.approx(degraded)
-
-    def test_from_standard_testing_produces_known_thresholds(self) -> None:
-        """Standard testing should produce 95/80/60 thresholds."""
-        config = KnowledgeValidationConfig.from_standard_testing()
-
-        assert config.retention_threshold_excellent == pytest.approx(0.95)
-        assert config.retention_threshold_acceptable == pytest.approx(0.80)
-        assert config.retention_threshold_degraded == pytest.approx(0.60)
+        assert config.domains == domains
+        assert config.min_probes_per_domain == min_probes
+        assert config.use_variations == use_variations
 
 
 # =============================================================================

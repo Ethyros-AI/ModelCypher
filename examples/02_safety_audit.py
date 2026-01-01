@@ -74,12 +74,14 @@ def main():
             adapter_path=str(adapter_path),
             threshold=0.1,
         )
-        print(f"  Verdict: {entropy_result.verdict}")
-        print(f"  Delta from baseline: {entropy_result.delta:.4f}")
-        if entropy_result.verdict == "trusted":
-            print("  Adapter entropy matches expected baseline.")
-        else:
-            print("  Warning: Entropy deviation detected!")
+        divergence = entropy_result.comparison.divergence_score
+        z_score = entropy_result.comparison.mean_z_score
+        print(f"  Divergence score: {divergence:.4f}")
+        print(f"  Mean Z-score: {z_score:.2f}")
+        if divergence < 0.3:
+            print("  Low divergence from baseline.")
+        elif z_score > 3.0:
+            print("  Warning: High Z-score deviation detected!")
     except Exception as e:
         print(f"  Entropy check skipped: {e}")
 

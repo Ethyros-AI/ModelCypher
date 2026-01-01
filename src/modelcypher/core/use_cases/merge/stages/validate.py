@@ -729,9 +729,3 @@ def _validate_ridge_resistance(
             vulnerable_prompts=[],
             prompts_tested=0,  # 0 indicates check failed
         )
-
-
-# _compute_final_verdict was REMOVED.
-# Verdicts are subjective interpretations. The geometry IS what it is.
-# Callers should interpret raw measurements (metrics dict) relative to their baselines.
-# All the raw data is in ValidateResult.metrics - callers decide what it means.

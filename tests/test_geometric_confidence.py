@@ -30,10 +30,6 @@ from modelcypher.core.use_cases.merge.confidence import (
     compute_mean_confidence,
 )
 
-# NOTE: compute_safety_verdict was REMOVED.
-# Categorical verdicts ("healthy", "degenerate", "collapsed") violate the
-# "no vibes" principle. Use raw measurements from geometry_metrics instead.
-
 
 class TestComputeGeometricConfidenceFromTransplant:
     """Tests for compute_geometric_confidence_from_transplant."""

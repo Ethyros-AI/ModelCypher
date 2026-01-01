@@ -25,6 +25,7 @@ from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol,
 from modelcypher.core.domain.geometry.atlas_registry import get_atlas_probes
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    machine_epsilon,
     regularization_epsilon,
 )
 
@@ -200,8 +201,10 @@ class ContinuousFingerprint:
             entropies[layer] = min(max(entropy / max_entropy, 0.0), 1.0) if max_entropy > 0 else 0.0
 
             abs_acts = b.abs(arr)
-            threshold = 0.01 * float(b.to_numpy(b.max(abs_acts)).item())
-            near_zero = float(b.to_numpy(b.sum(abs_acts < threshold)).item())
+            max_abs = b.max(abs_acts)
+            eps = division_epsilon(b, abs_acts)
+            threshold = b.maximum(max_abs * eps, b.array(eps))
+            near_zero = float(b.to_numpy(b.sum(abs_acts <= threshold)).item())
             sparsities[layer] = near_zero / max(len(activations), 1)
 
         return ContinuousFingerprint(
@@ -211,7 +214,6 @@ class ContinuousFingerprint:
 
 @dataclass(frozen=True)
 class StitchingConstants:
-    epsilon: float = 1e-8
     similarity_weight: float = 0.25
     cosine_weight: float = 0.25
     magnitude_weight: float = 0.25
@@ -322,6 +324,7 @@ class ContinuousModelFingerprints:
             if layer_magnitudes
             else 0.0,
             probe_count=len(layer_entropies),
+            total_probes=len(self.fingerprints),
             entropy_std=_compute_std(layer_entropies),
             sparsity_std=_compute_std(layer_sparsities) if layer_sparsities else 0.0,
         )
@@ -345,21 +348,32 @@ class LayerContinuousProfile:
     mean_sparsity: float
     mean_magnitude: float
     probe_count: int
+    total_probes: int
     entropy_std: float = 0.0
     sparsity_std: float = 0.0
 
     @property
     def is_collapsed(self) -> bool:
         """Layer is considered collapsed if very low entropy or very high sparsity."""
-        return self.mean_entropy < 0.1 or self.mean_sparsity > 0.95
+        b = get_default_backend()
+        stats = b.array([self.mean_entropy, self.mean_sparsity])
+        eps = division_epsilon(b, stats)
+        return abs(self.mean_entropy) <= eps or abs(1.0 - self.mean_sparsity) <= eps
 
     @property
     def confidence(self) -> float:
         """Confidence based on entropy and probe count."""
-        # More probes and moderate entropy = higher confidence
-        probe_factor = min(self.probe_count / 20.0, 1.0)
-        entropy_factor = 1.0 - abs(self.mean_entropy - 0.5) * 2  # Peak at 0.5
-        return probe_factor * max(0.0, entropy_factor)
+        total = max(self.total_probes, 1)
+        probe_factor = self.probe_count / total
+        b = get_default_backend()
+        stats = b.array(
+            [self.mean_entropy, self.mean_sparsity, self.entropy_std, self.sparsity_std]
+        )
+        eps = division_epsilon(b, stats)
+        signal = abs(self.mean_entropy) + abs(self.mean_sparsity)
+        noise = self.entropy_std + self.sparsity_std
+        stability = signal / (signal + noise + eps)
+        return probe_factor * stability
 
 
 @dataclass(frozen=True)
@@ -559,11 +573,12 @@ class ManifoldStitcher:
         dot_prod = float(b.to_numpy(b.sum(s_trunc * t_trunc)).item())
         s_norm = float(b.to_numpy(b.norm(s_vec)).item())
         t_norm = float(b.to_numpy(b.norm(t_vec)).item())
-        cosine = dot_prod / (s_norm * t_norm) if (s_norm > 1e-8 and t_norm > 1e-8) else 0.0
+        norm_eps = division_epsilon(b, s_vec)
+        cosine = dot_prod / (s_norm * t_norm) if (s_norm > norm_eps and t_norm > norm_eps) else 0.0
 
         mag_ratio = (
             source.magnitudes.get(layer, 1.0) / target.magnitudes.get(layer, 1.0)
-            if target.magnitudes.get(layer, 1.0) > 1e-8
+            if target.magnitudes.get(layer, 1.0) > norm_eps
             else 1.0
         )
         entropy_delta = source.entropies.get(layer, 0.0) - target.entropies.get(layer, 0.0)
@@ -736,7 +751,8 @@ class ManifoldStitcher:
             error = projected - t_centered
             error_norm = float(b.to_numpy(b.sqrt(b.sum(error * error))).item())
             target_norm = float(b.to_numpy(b.sqrt(b.sum(t_centered * t_centered))).item())
-            procrustes_error = error_norm / target_norm if target_norm > 1e-6 else 0.0
+            norm_eps = division_epsilon(b, t_centered)
+            procrustes_error = error_norm / target_norm if target_norm > norm_eps else 0.0
 
             clusters.append(
                 AlignmentCluster(
@@ -851,7 +867,8 @@ class ManifoldStitcher:
             probs = min_dists**2
             prob_sum = b.sum(probs)
             b.eval(prob_sum)
-            if float(b.to_numpy(prob_sum)) < 1e-12:
+            prob_eps = division_epsilon(b, probs)
+            if float(b.to_numpy(prob_sum)) <= prob_eps:
                 # All points are at centroids, pick randomly
                 next_idx = int(b.to_numpy(b.random_randint(0, n, shape=(1,))).item())
             else:
