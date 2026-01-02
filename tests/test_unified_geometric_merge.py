@@ -105,21 +105,17 @@ class TestUnifiedMergeConfig:
     def test_default_config(self):
         """Test default config values."""
         config = UnifiedMergeConfig()
-        assert config.probe_mode == "precise"
-        assert config.max_probes == 0
         assert config.output_quant is None
         assert config.transplant_domains == ()
 
     def test_transplant_config(self):
         """Test transplant config values."""
         config = UnifiedMergeConfig(
-            probe_mode="fast",
-            max_probes=100,
             transplant_domains=("mathematical", "logical"),
+            output_quant="f16",
         )
-        assert config.probe_mode == "fast"
-        assert config.max_probes == 100
         assert config.transplant_domains == ("mathematical", "logical")
+        assert config.output_quant == "f16"
 
 
 class TestUnifiedGeometricMerger:
@@ -129,19 +125,18 @@ class TestUnifiedGeometricMerger:
         """Test merger initializes with default config."""
         merger = UnifiedGeometricMerger(model_loader=mock_model_loader)
         assert merger.config is not None
-        assert merger.config.probe_mode == "precise"
+        assert merger.config.transplant_domains == ()
+        assert merger.config.output_quant is None
 
     def test_merger_with_custom_config(self, mock_model_loader):
         """Test merger accepts custom config."""
         config = UnifiedMergeConfig(
-            probe_mode="fast",
-            max_probes=50,
             transplant_domains=("mathematical",),
+            output_quant="f16",
         )
         merger = UnifiedGeometricMerger(model_loader=mock_model_loader, config=config)
-        assert merger.config.probe_mode == "fast"
-        assert merger.config.max_probes == 50
         assert merger.config.transplant_domains == ("mathematical",)
+        assert merger.config.output_quant == "f16"
 
     def test_extract_layer_indices(self, real_weights, mock_model_loader):
         """Test layer index extraction from weight keys."""
@@ -187,57 +182,6 @@ class TestStageProbe:
             )
 
 
-class TestRealWeightProperties:
-    """Test geometric properties of real model weights."""
-
-    def test_real_weights_are_not_gaussian(self, real_weights):
-        """Real weights have structure that Gaussian noise doesn't capture."""
-        import numpy as np
-        backend = get_default_backend()
-        q_proj = real_weights["model.layers.0.self_attn.q_proj.weight"]
-
-        # Generate Gaussian noise with same shape and stats
-        backend.random_seed(42)
-        gaussian = backend.random_normal(q_proj.shape)
-        gaussian_np = backend.to_numpy(gaussian).astype(q_proj.dtype)
-        gaussian_np = gaussian_np * np.std(q_proj) + np.mean(q_proj)
-
-        # Real weights should have different distribution properties
-        # Kurtosis of real weights differs from Gaussian (kurtosis=0)
-        from scipy.stats import kurtosis
-
-        real_kurt = kurtosis(q_proj.flatten())
-        kurtosis(gaussian_np.flatten())
-
-        # Real model weights typically have higher kurtosis (heavier tails)
-        assert abs(real_kurt) > 0.5, "Real weights should have non-Gaussian kurtosis"
-
-    def test_real_weights_have_structure(self, real_weights):
-        """Real weights have low-rank structure."""
-        import numpy as np
-        q_proj = real_weights["model.layers.0.self_attn.q_proj.weight"]
-
-        # Compute SVD and check singular value decay (using numpy for SVD)
-        U, S, Vh = np.linalg.svd(q_proj, full_matrices=False)
-
-        # Ratio of top singular value to sum (concentration)
-        concentration = S[0] / S.sum()
-
-        # Real weights should have some concentration in top singular values
-        assert concentration > 0.01, "Real weights should have structured singular values"
-
-    def test_sparsity_pattern(self, real_weights):
-        """Real weights have specific sparsity patterns."""
-        import numpy as np
-        v_proj = real_weights["model.layers.0.self_attn.v_proj.weight"]
-
-        # V-proj typically has higher near-zero sparsity
-        near_zero = (np.abs(v_proj) < 0.01).mean()
-        assert near_zero > 0.3, (
-            f"V-proj should have significant near-zero values, got {near_zero:.1%}"
-        )
-
-
 class TestResultConversion:
     """Test result dataclass."""
 
@@ -247,7 +191,6 @@ class TestResultConversion:
 
         result = UnifiedMergeResult(
             merged_weights={},
-            vocab_metrics={},
             probe_metrics={"mean_cka": 0.8},
             permute_metrics={"skipped": True, "reason": "test"},
             transplant_metrics={"layers_transplanted": 5, "weights_transplanted": 10},

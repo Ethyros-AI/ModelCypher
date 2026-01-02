@@ -359,8 +359,7 @@ def run_merge(
         copy_config_files(target_path, effective_output)
         final_output_path = effective_output
 
-    # Compute geometric confidence from transplant metrics
-    # Confidence IS the geometry - no vibes, no interpretation strings
+    # Compute geometric metrics from transplant measurements
     from modelcypher.core.use_cases.merge.metrics import (
         compute_geometric_metrics_from_transplant,
     )

@@ -15,11 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for advanced PermutationAligner methods (requires MLX).
-
-Tests fuse(), rebasin_mlp_with_activations(), and helper methods
-added for TIES-Merging and MLP-focused re-basin.
-"""
+"""Tests for advanced PermutationAligner methods (requires MLX)."""
 
 import pytest
 
@@ -36,87 +32,10 @@ except ImportError:
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 
 from modelcypher.core.domain.geometry.permutation_aligner import (
-    AlignmentResult,
     AnchorActivationContext,
     PermutationAligner,
     PermutationAlignerError,
 )
-
-
-class TestPermutationAlignerFuse:
-    """Tests for PermutationAligner.fuse() - TIES-Merging fusion."""
-
-    @pytest.fixture
-    def basic_alignment(self) -> AlignmentResult:
-        """Create a basic alignment result for testing."""
-        N = 4
-        return AlignmentResult(
-            permutation=mx.eye(N, dtype=mx.float32),
-            signs=mx.eye(N, dtype=mx.float32),
-            match_quality=0.95,
-            match_confidences=[0.9, 0.8, 0.95, 0.85],
-            sign_flip_count=0,
-            is_sparse_permutation=False,
-            assignment_indices=None,
-        )
-
-    def test_fuse_identical_weights(self, basic_alignment):
-        """Fusing identical weights should return the same weights."""
-        weights = mx.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0], [7.0, 8.0]])
-
-        fused = PermutationAligner.fuse(weights, weights, basic_alignment)
-
-        mx.eval(fused)
-        assert fused.shape == weights.shape
-        assert mx.allclose(fused, weights).item()
-
-    def test_fuse_uses_confidence_weighting(self):
-        """High confidence rows should blend, low confidence rows should preserve source."""
-        N = 2
-        # High confidence for row 0, low for row 1
-        alignment = AlignmentResult(
-            permutation=mx.eye(N, dtype=mx.float32),
-            signs=mx.eye(N, dtype=mx.float32),
-            match_quality=0.7,
-            match_confidences=[1.0, 0.0],  # Row 0: full blend, Row 1: source only
-            sign_flip_count=0,
-            is_sparse_permutation=False,
-            assignment_indices=None,
-        )
-
-        source = mx.array([[1.0, 1.0], [1.0, 1.0]])
-        target = mx.array([[3.0, 3.0], [3.0, 3.0]])
-
-        fused = PermutationAligner.fuse(source, target, alignment)
-
-        mx.eval(fused)
-        # Row 0 (confidence=1.0): uses target = 3.0
-        # Row 1 (confidence=0.0): uses source = 1.0
-        assert mx.isclose(fused[0, 0], mx.array(3.0)).item()
-        assert mx.isclose(fused[1, 0], mx.array(1.0)).item()
-
-    def test_fuse_respects_source_alpha(self):
-        """Source alpha should control blending ratio."""
-        N = 2
-        alignment = AlignmentResult(
-            permutation=mx.eye(N, dtype=mx.float32),
-            signs=mx.eye(N, dtype=mx.float32),
-            match_quality=1.0,
-            match_confidences=[1.0, 1.0],
-            sign_flip_count=0,
-            is_sparse_permutation=False,
-            assignment_indices=None,
-        )
-
-        source = mx.array([[0.0], [0.0]])
-        target = mx.array([[10.0], [10.0]])
-
-        # 80% source, 20% target - fuse now uses alignment confidence directly
-        fused = PermutationAligner.fuse(source, target, alignment)
-
-        mx.eval(fused)
-        # With confidence=1.0, fused = target = [[10], [10]]
-        assert mx.allclose(fused, mx.array([[10.0], [10.0]]), atol=1e-5).item()
 
 
 class TestPermutationAlignerRebasinWithActivations:

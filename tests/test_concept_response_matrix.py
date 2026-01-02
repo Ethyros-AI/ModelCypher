@@ -953,7 +953,7 @@ class TestConsistencyProfile:
             sample_layer_count=5,
             mean_source_distance=0.1,
             mean_target_distance=0.2,
-            target_weight_by_layer={0: 0.5, 1: 0.6},
+            target_alignment_by_layer={0: 0.5, 1: 0.6},
         )
         with pytest.raises(Exception):
             profile.anchor_count = 20  # type: ignore

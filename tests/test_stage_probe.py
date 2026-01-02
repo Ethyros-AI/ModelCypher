@@ -42,7 +42,6 @@ def test_stage_probe_wrapper_maps_probe_result(monkeypatch) -> None:
         target_model=None,
         source_tokenizer=None,
         target_tokenizer=None,
-        alignment_map=None,
         extract_layer_index_fn=lambda _key: None,
     )
 
