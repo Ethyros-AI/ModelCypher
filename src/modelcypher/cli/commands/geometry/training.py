@@ -71,7 +71,6 @@ def geometry_training_status(
         "flatnessScore": payload["flatnessScore"],
         "gradientSNR": payload["gradientSNR"],
         "circuitBreakerSeverity": payload["circuitBreakerSeverity"],
-        "circuitBreakerTripped": payload["circuitBreakerTripped"],
         "activeLayers": payload["activeLayers"],
         "perLayerGradientNorms": payload["perLayerGradientNorms"] if format == "full" else None,
     }
@@ -87,8 +86,7 @@ def geometry_training_status(
         if output["gradientSNR"] is not None:
             lines.append(f"Gradient SNR: {output['gradientSNR']:.2f}")
         if output["circuitBreakerSeverity"] is not None:
-            tripped = "TRIPPED" if output.get("circuitBreakerTripped") else "OK"
-            lines.append(f"Circuit Breaker: {output['circuitBreakerSeverity']:.3f} ({tripped})")
+            lines.append(f"Circuit Breaker: {output['circuitBreakerSeverity']:.3f}")
         if output["activeLayers"]:
             lines.append(f"Active Layers: {', '.join(output['activeLayers'])}")
         write_output("\n".join(lines), context.output_format, context.pretty)

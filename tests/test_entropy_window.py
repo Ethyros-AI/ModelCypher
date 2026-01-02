@@ -15,9 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Tests for EntropyWindow sliding window tracker.
-"""
+"""Tests for EntropyWindow sliding window tracker."""
 
 import uuid
 
@@ -39,33 +37,17 @@ class TestEntropyWindowConfig:
 
     def test_custom_values(self):
         """Should accept custom values."""
-        config = EntropyWindowConfig(
-            window_size=10,
-            minimum_samples=2,
-            high_entropy_threshold=2.5,
-            circuit_breaker_threshold=5.0,
-            sustained_high_count=4,
-        )
+        config = EntropyWindowConfig(window_size=10)
 
         assert config.window_size == 10
-        assert config.minimum_samples == 2
-        assert config.high_entropy_threshold == 2.5
-        assert config.circuit_breaker_threshold == 5.0
-        assert config.sustained_high_count == 4
 
 
 class TestEntropyWindow:
     """Tests for EntropyWindow."""
 
     def test_initialization(self):
-        """Should initialize with default config."""
-        config = EntropyWindowConfig(
-            window_size=20,
-            minimum_samples=5,
-            high_entropy_threshold=3.0,
-            circuit_breaker_threshold=4.0,
-            sustained_high_count=3,
-        )
+        """Should initialize with config."""
+        config = EntropyWindowConfig(window_size=20)
         window = EntropyWindow(config=config)
 
         assert window.config is not None
@@ -74,26 +56,14 @@ class TestEntropyWindow:
     def test_custom_window_id(self):
         """Should accept custom window ID."""
         custom_id = str(uuid.uuid4())
-        config = EntropyWindowConfig(
-            window_size=10,
-            minimum_samples=1,
-            high_entropy_threshold=2.0,
-            circuit_breaker_threshold=3.0,
-            sustained_high_count=2,
-        )
+        config = EntropyWindowConfig(window_size=10)
         window = EntropyWindow(config=config, window_id=custom_id)
 
         assert window.window_id == custom_id
 
     def test_add_single_sample(self):
         """Should add a single sample."""
-        config = EntropyWindowConfig(
-            window_size=10,
-            minimum_samples=1,
-            high_entropy_threshold=3.0,
-            circuit_breaker_threshold=4.0,
-            sustained_high_count=3,
-        )
+        config = EntropyWindowConfig(window_size=10)
         window = EntropyWindow(config=config)
         status = window.add(entropy=2.0, variance=0.1, token_index=0)
 
@@ -103,13 +73,7 @@ class TestEntropyWindow:
 
     def test_add_multiple_samples(self):
         """Should compute moving average correctly."""
-        config = EntropyWindowConfig(
-            window_size=10,
-            minimum_samples=1,
-            high_entropy_threshold=3.0,
-            circuit_breaker_threshold=4.0,
-            sustained_high_count=3,
-        )
+        config = EntropyWindowConfig(window_size=10)
         window = EntropyWindow(config=config)
         window.add(entropy=1.0, variance=0.1, token_index=0)
         window.add(entropy=2.0, variance=0.1, token_index=1)
@@ -121,13 +85,7 @@ class TestEntropyWindow:
 
     def test_window_size_limit(self):
         """Should maintain window size limit."""
-        config = EntropyWindowConfig(
-            window_size=5,
-            minimum_samples=1,
-            high_entropy_threshold=3.0,
-            circuit_breaker_threshold=4.0,
-            sustained_high_count=3,
-        )
+        config = EntropyWindowConfig(window_size=5)
         window = EntropyWindow(config=config)
 
         for i in range(10):
@@ -137,69 +95,9 @@ class TestEntropyWindow:
         assert status.sample_count == 5
         assert status.min_entropy == 5.0  # First 5 should be evicted
 
-    def test_circuit_breaker_high_average(self):
-        """Should trip circuit breaker on high moving average."""
-        config = EntropyWindowConfig(
-            window_size=5,
-            minimum_samples=1,
-            high_entropy_threshold=10.0,
-            circuit_breaker_threshold=3.5,
-            sustained_high_count=10,
-        )
-        window = EntropyWindow(config=config)
-
-        # Add high entropy samples
-        for i in range(5):
-            window.add(entropy=4.0, variance=0.1, token_index=i)
-
-        status = window.status()
-        assert status.should_trip_circuit_breaker
-
-    def test_circuit_breaker_sustained_high(self):
-        """Should trip on sustained high count."""
-        config = EntropyWindowConfig(
-            window_size=5,
-            minimum_samples=1,
-            high_entropy_threshold=3.0,
-            circuit_breaker_threshold=10.0,
-            sustained_high_count=3,
-        )
-        window = EntropyWindow(config=config)
-
-        # Add 3 consecutive high entropy samples
-        for i in range(3):
-            window.add(entropy=3.5, variance=0.1, token_index=i)
-
-        status = window.status()
-        assert status.consecutive_high_count == 3
-        assert status.should_trip_circuit_breaker
-
-    def test_consecutive_high_count_reset(self):
-        """Low entropy should reset consecutive count."""
-        config = EntropyWindowConfig(
-            window_size=5,
-            minimum_samples=1,
-            high_entropy_threshold=3.0,
-            circuit_breaker_threshold=10.0,
-            sustained_high_count=3,
-        )
-        window = EntropyWindow(config=config)
-
-        window.add(entropy=4.0, variance=0.1, token_index=0)
-        window.add(entropy=4.0, variance=0.1, token_index=1)
-        status = window.add(entropy=1.0, variance=0.1, token_index=2)  # Low
-
-        assert status.consecutive_high_count == 0
-
     def test_reset(self):
         """Reset should clear all state."""
-        config = EntropyWindowConfig(
-            window_size=5,
-            minimum_samples=1,
-            high_entropy_threshold=3.0,
-            circuit_breaker_threshold=4.0,
-            sustained_high_count=3,
-        )
+        config = EntropyWindowConfig(window_size=5)
         window = EntropyWindow(config=config)
         window.add(entropy=4.0, variance=0.1, token_index=0)
         window.add(entropy=4.0, variance=0.1, token_index=1)
@@ -209,37 +107,9 @@ class TestEntropyWindow:
         status = window.status()
         assert status.sample_count == 0
 
-    def test_reset_circuit_breaker(self):
-        """Should reset only circuit breaker state."""
-        config = EntropyWindowConfig(
-            window_size=5,
-            minimum_samples=1,
-            high_entropy_threshold=3.0,
-            circuit_breaker_threshold=10.0,
-            sustained_high_count=2,
-        )
-        window = EntropyWindow(config=config)
-
-        window.add(entropy=5.0, variance=0.1, token_index=0)
-        window.add(entropy=5.0, variance=0.1, token_index=1)
-
-        assert window.status().should_trip_circuit_breaker
-
-        window.reset_circuit_breaker()
-
-        status = window.status()
-        assert not status.should_trip_circuit_breaker
-        assert status.sample_count == 2  # Samples preserved
-
     def test_add_batch(self):
         """Should add multiple samples via batch."""
-        config = EntropyWindowConfig(
-            window_size=5,
-            minimum_samples=1,
-            high_entropy_threshold=3.0,
-            circuit_breaker_threshold=4.0,
-            sustained_high_count=3,
-        )
+        config = EntropyWindowConfig(window_size=5)
         window = EntropyWindow(config=config)
         batch = [
             (1.0, 0.1, 0),
@@ -252,17 +122,8 @@ class TestEntropyWindow:
         assert status.moving_average == 2.0
 
     def test_moving_average_reflects_raw_entropy(self):
-        """Moving average should reflect raw entropy values.
-
-        The moving_average IS the entropy state. Caller applies thresholds.
-        """
-        config = EntropyWindowConfig(
-            window_size=5,
-            minimum_samples=1,
-            high_entropy_threshold=3.0,
-            circuit_breaker_threshold=4.0,
-            sustained_high_count=3,
-        )
+        """Moving average should reflect raw entropy values."""
+        config = EntropyWindowConfig(window_size=5)
         window = EntropyWindow(config=config)
 
         # Low entropy value
@@ -282,13 +143,7 @@ class TestEntropyWindow:
 
     def test_to_entropy_summary(self):
         """Should produce summary dict."""
-        config = EntropyWindowConfig(
-            window_size=5,
-            minimum_samples=1,
-            high_entropy_threshold=3.0,
-            circuit_breaker_threshold=4.0,
-            sustained_high_count=3,
-        )
+        config = EntropyWindowConfig(window_size=5)
         window = EntropyWindow(config=config)
         window.add(entropy=2.0, variance=0.1, token_index=0)
 
@@ -298,40 +153,6 @@ class TestEntropyWindow:
         assert "logit_entropy" in summary
         assert summary["sample_count"] == 1
 
-    def test_circuit_breaker_alert(self):
-        """Should generate alert when tripped."""
-        config = EntropyWindowConfig(
-            window_size=5,
-            minimum_samples=1,
-            high_entropy_threshold=2.0,
-            circuit_breaker_threshold=10.0,
-            sustained_high_count=1,
-        )
-        window = EntropyWindow(config=config)
-
-        window.add(entropy=3.0, variance=0.1, token_index=0)
-
-        alert = window.circuit_breaker_alert()
-
-        assert alert is not None
-        assert alert["type"] == "circuit_breaker_tripped"
-
-    def test_circuit_breaker_alert_none(self):
-        """Should return None when not tripped."""
-        config = EntropyWindowConfig(
-            window_size=5,
-            minimum_samples=1,
-            high_entropy_threshold=3.0,
-            circuit_breaker_threshold=4.0,
-            sustained_high_count=3,
-        )
-        window = EntropyWindow(config=config)
-        window.add(entropy=1.0, variance=0.1, token_index=0)
-
-        alert = window.circuit_breaker_alert()
-
-        assert alert is None
-
 
 class TestEntropyWindowAsync:
     """Tests for async operations."""
@@ -339,13 +160,7 @@ class TestEntropyWindowAsync:
     @pytest.mark.asyncio
     async def test_add_async(self):
         """Should add sample asynchronously."""
-        config = EntropyWindowConfig(
-            window_size=5,
-            minimum_samples=1,
-            high_entropy_threshold=3.0,
-            circuit_breaker_threshold=4.0,
-            sustained_high_count=3,
-        )
+        config = EntropyWindowConfig(window_size=5)
         window = EntropyWindow(config=config)
 
         status = await window.add_async(entropy=2.0, variance=0.1, token_index=0)

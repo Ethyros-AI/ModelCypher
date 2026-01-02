@@ -159,7 +159,6 @@ class TestGeometryMetricKey:
         assert GeometryMetricKey.gradient_snr == "geometry/gradient_snr"
 
     def test_circuit_breaker_keys(self):
-        assert GeometryMetricKey.circuit_breaker_tripped == "geometry/circuit_breaker_tripped"
         assert GeometryMetricKey.circuit_breaker_severity == "geometry/circuit_breaker_severity"
 
     def test_layer_grad_norm_method(self):
@@ -269,15 +268,6 @@ class TestToMetricsDict:
         result = metrics.to_metrics_dict()
         assert GeometryMetricKey.flatness_score in result
 
-    def test_circuit_breaker_tripped_as_float(self):
-        metrics = GeometricTrainingMetrics(circuit_breaker_tripped=True)
-        result = metrics.to_metrics_dict()
-        assert result[GeometryMetricKey.circuit_breaker_tripped] == 1.0
-
-        metrics_false = GeometricTrainingMetrics(circuit_breaker_tripped=False)
-        result_false = metrics_false.to_metrics_dict()
-        assert result_false[GeometryMetricKey.circuit_breaker_tripped] == 0.0
-
 
 class TestFromProgressMetrics:
     """Tests for from_progress_metrics() class method."""
@@ -338,17 +328,6 @@ class TestFromProgressMetrics:
         assert result is not None
         assert "layer_0" in result.active_layers
         assert "layer_1" not in result.active_layers
-
-    def test_parses_circuit_breaker_tripped(self):
-        metrics_dict = {"geometry/circuit_breaker_tripped": 1.0}
-        result = GeometricTrainingMetrics.from_progress_metrics(metrics_dict)
-        assert result is not None
-        assert result.circuit_breaker_tripped is True
-
-        metrics_dict_false = {"geometry/circuit_breaker_tripped": 0.0}
-        result_false = GeometricTrainingMetrics.from_progress_metrics(metrics_dict_false)
-        assert result_false is not None
-        assert result_false.circuit_breaker_tripped is False
 
 
 class TestMetricEntry:

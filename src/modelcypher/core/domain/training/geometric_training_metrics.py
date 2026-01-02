@@ -100,7 +100,6 @@ class GeometryMetricKey:
     dora_magnitude_change = "geometry/dora_magnitude_change"
     dora_directional_drift = "geometry/dora_directional_drift"
     dora_magnitude_to_direction_ratio = "geometry/dora_mag_dir_ratio"
-    circuit_breaker_tripped = "geometry/circuit_breaker_tripped"
     circuit_breaker_confidence = "geometry/circuit_breaker_confidence"
     circuit_breaker_severity = "geometry/circuit_breaker_severity"
     persona_overall_drift = "geometry/persona/overall_drift"
@@ -143,7 +142,6 @@ class GeometricTrainingMetrics:
     persona_drift_magnitude: float | None = None
     drifting_traits: list[str] = field(default_factory=list)
     circuit_breaker_severity: float | None = None
-    circuit_breaker_tripped: bool | None = None
 
     @property
     def flatness_score(self) -> float | None:
@@ -202,11 +200,6 @@ class GeometricTrainingMetrics:
             metrics[GeometryMetricKey.circuit_breaker_severity] = float(
                 self.circuit_breaker_severity
             )
-        if self.circuit_breaker_tripped is not None:
-            metrics[GeometryMetricKey.circuit_breaker_tripped] = (
-                1.0 if self.circuit_breaker_tripped else 0.0
-            )
-
         return metrics
 
     @classmethod
@@ -307,11 +300,6 @@ class GeometricTrainingMetrics:
             drifting_traits=sorted(drifting_traits),
             circuit_breaker_severity=_float_or_none(
                 metrics.get(GeometryMetricKey.circuit_breaker_severity)
-            ),
-            circuit_breaker_tripped=(
-                metrics.get(GeometryMetricKey.circuit_breaker_tripped, 0) > 0
-                if GeometryMetricKey.circuit_breaker_tripped in metrics
-                else None
             ),
         )
 

@@ -56,7 +56,6 @@ def _seed_geometry_job(tmp_home: Path, job_id: str) -> None:
             GeometryMetricKey.top_eigenvalue: 0.6,
             GeometryMetricKey.gradient_snr: 4.8,
             GeometryMetricKey.circuit_breaker_severity: 0.1,
-            GeometryMetricKey.circuit_breaker_tripped: 0.0,
             GeometryMetricKey.persona_overall_drift: 0.22,
             GeometryMetricKey.persona_delta("directness"): 0.27,
         }
@@ -214,16 +213,13 @@ def test_geometry_safety_circuit_breaker_cli(tmp_path: Path):
     # Mock the service to avoid calibration requirements
     from modelcypher.core.domain.safety.circuit_breaker_integration import (
         CircuitBreakerState,
-        RecommendedAction,
         SignalContributions,
     )
 
     mock_state = CircuitBreakerState(
-        is_tripped=False,
         severity=0.1,
-        trigger_source=None,
+        dominant_source=None,
         confidence=0.9,
-        recommended_action=RecommendedAction.continue_generation,
         signal_contributions=SignalContributions(
             entropy=0.3, refusal=0.1, persona_drift=0.2, oscillation=0.0
         ),
@@ -242,7 +238,7 @@ def test_geometry_safety_circuit_breaker_cli(tmp_path: Path):
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert "severity" in payload
-    assert "state" in payload
+    assert "dominantSource" in payload
 
 
 def test_geometry_safety_persona_cli(tmp_path: Path):

@@ -66,7 +66,6 @@ def _seed_geometry_job(tmp_home: Path, job_id: str) -> None:
             GeometryMetricKey.gradient_snr: 5.2,
             GeometryMetricKey.param_divergence: 0.03,
             GeometryMetricKey.circuit_breaker_severity: 0.2,
-            GeometryMetricKey.circuit_breaker_tripped: 0.0,
             GeometryMetricKey.refusal_distance: 0.45,
             GeometryMetricKey.refusal_approaching: 0.0,
             GeometryMetricKey.persona_overall_drift: 0.28,
@@ -339,7 +338,7 @@ def test_mc_safety_circuit_breaker_schema(mcp_env: dict[str, str]):
     assert payload["_schema"] == "mc.safety.circuit_breaker.v1"
     assert payload["adapterName"] == "test-adapter"
     assert "threatIndicatorCount" in payload
-    assert "maxThreatSeverity" in payload
+    assert "maxMeanDistance" in payload
     assert "entropyStats" in payload
     assert "indicators" in payload
 
@@ -420,7 +419,7 @@ def test_mc_geometry_path_detect_schema(mcp_env: dict[str, str]):
     assert "modelID" in payload
     assert "promptID" in payload
     assert "detectedGates" in payload
-    assert "meanConfidence" in payload
+    assert "meanSimilarity" in payload
 
 
 def test_mc_geometry_path_compare_schema(mcp_env: dict[str, str]):

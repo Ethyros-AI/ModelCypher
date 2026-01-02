@@ -18,114 +18,17 @@
 """Circuit breaker integration - raw signal aggregation.
 
 Aggregates multiple safety signals (entropy, refusal distance, persona drift,
-oscillation) into a combined severity score. Uses caller-provided thresholds
-for trip/warning decisions.
-
-No arbitrary defaults. No classification. The geometry speaks.
+oscillation) into a combined severity magnitude. Returns raw measurements only.
 """
 
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class Configuration:
-    """Circuit breaker configuration with signal weights and thresholds.
-
-    All thresholds must be explicitly provided by the caller.
-    No arbitrary defaults - derive from your baseline measurements.
-    """
-
-    entropy_weight: float
-    refusal_weight: float
-    persona_drift_weight: float
-    oscillation_weight: float
-    trip_threshold: float
-    warning_threshold: float
-    trend_window_size: int
-    enable_auto_escalation: bool
-    cooldown_tokens: int
-
-    @staticmethod
-    def uniform_weights(
-        trip_threshold: float,
-        warning_threshold: float,
-        trend_window_size: int = 10,
-        enable_auto_escalation: bool = True,
-        cooldown_tokens: int = 5,
-    ) -> Configuration:
-        """Create config with uniform weights.
-
-        All signals contribute equally. Thresholds must be explicitly provided.
-        """
-        return Configuration(
-            entropy_weight=0.25,
-            refusal_weight=0.25,
-            persona_drift_weight=0.25,
-            oscillation_weight=0.25,
-            trip_threshold=trip_threshold,
-            warning_threshold=warning_threshold,
-            trend_window_size=trend_window_size,
-            enable_auto_escalation=enable_auto_escalation,
-            cooldown_tokens=cooldown_tokens,
-        )
-
-    @staticmethod
-    def from_baseline_measurements(
-        baseline_severities: list[float],
-        percentile_trip: float = 99.0,
-        percentile_warning: float = 95.0,
-        trend_window_size: int = 10,
-        enable_auto_escalation: bool = True,
-        cooldown_tokens: int = 5,
-    ) -> Configuration:
-        """Derive thresholds from baseline severity measurements.
-
-        Args:
-            baseline_severities: Measured severities from representative samples
-            percentile_trip: Percentile for trip threshold (default: 99th)
-            percentile_warning: Percentile for warning threshold (default: 95th)
-
-        Raises:
-            ValueError: If baseline_severities is empty
-        """
-        if not baseline_severities:
-            raise ValueError("baseline_severities cannot be empty")
-
-        sorted_severities = sorted(baseline_severities)
-        n = len(sorted_severities)
-
-        trip_idx = min(int(n * percentile_trip / 100), n - 1)
-        warning_idx = min(int(n * percentile_warning / 100), n - 1)
-
-        return Configuration(
-            entropy_weight=0.25,
-            refusal_weight=0.25,
-            persona_drift_weight=0.25,
-            oscillation_weight=0.25,
-            trip_threshold=sorted_severities[trip_idx],
-            warning_threshold=sorted_severities[warning_idx],
-            trend_window_size=trend_window_size,
-            enable_auto_escalation=enable_auto_escalation,
-            cooldown_tokens=cooldown_tokens,
-        )
-
-    @property
-    def is_weights_valid(self) -> bool:
-        total = (
-            self.entropy_weight
-            + self.refusal_weight
-            + self.persona_drift_weight
-            + self.oscillation_weight
-        )
-        return abs(total - 1.0) < 0.01
 
 
 @dataclass(frozen=True)
@@ -185,7 +88,7 @@ class InputSignals:
 
 
 class TriggerSource(str, Enum):
-    """Source that triggered the circuit breaker."""
+    """Dominant source among available signals."""
 
     entropy_spike = "entropySpike"
     refusal_approach = "refusalApproach"
@@ -195,34 +98,11 @@ class TriggerSource(str, Enum):
     manual = "manual"
 
 
-class RecommendedAction(str, Enum):
-    """Recommended action based on circuit breaker state."""
-
-    continue_generation = "continue"
-    monitor = "monitor"
-    reduce_temperature = "reduceTemperature"
-    insert_safety_prompt = "insertSafetyPrompt"
-    stop_generation = "stopGeneration"
-    human_review = "humanReview"
-
-    @property
-    def description(self) -> str:
-        descriptions = {
-            RecommendedAction.continue_generation: "Continue normally",
-            RecommendedAction.monitor: "Monitor more closely",
-            RecommendedAction.reduce_temperature: "Reduce sampling temperature",
-            RecommendedAction.insert_safety_prompt: "Insert safety system prompt",
-            RecommendedAction.stop_generation: "Stop generation",
-            RecommendedAction.human_review: "Stop and request human review",
-        }
-        return descriptions.get(self, "Unknown action")
-
-
 @dataclass(frozen=True)
 class SignalContributions:
     """Raw signal values for circuit breaker evaluation.
 
-    All values are in [0, 1] representing raw measurements, not weighted.
+    All values are in [0, 1] representing raw measurements.
     """
 
     entropy: float
@@ -273,11 +153,9 @@ class SignalContributions:
 class CircuitBreakerState:
     """Current state of the circuit breaker."""
 
-    is_tripped: bool
     severity: float
-    trigger_source: TriggerSource | None
+    dominant_source: TriggerSource | None
     confidence: float
-    recommended_action: RecommendedAction
     signal_contributions: SignalContributions
     token_index: int
     timestamp: datetime = field(default_factory=datetime.utcnow)
@@ -291,37 +169,29 @@ class CircuitBreakerTelemetry:
     timestamp: datetime
     state: CircuitBreakerState
     combined_severity: float
-    any_signal_exceeded: bool
     oscillation_severity: float | None
     consecutive_oscillations: int
 
 
 class CircuitBreakerIntegration:
-    """Evaluates safety signals and determines circuit breaker state."""
+    """Evaluates safety signals and reports raw measurements."""
 
     @staticmethod
-    def evaluate(
-        signals: InputSignals,
-        configuration: Configuration,
-        previous_state: CircuitBreakerState | None = None,
-    ) -> CircuitBreakerState:
+    def evaluate(signals: InputSignals) -> CircuitBreakerState:
         """Evaluate signals and return circuit breaker state."""
-        config = configuration
-
         entropy_contribution = CircuitBreakerIntegration._compute_entropy_contribution(
-            signals.entropy_signal, config.entropy_weight
+            signals.entropy_signal
         )
         refusal_contribution = CircuitBreakerIntegration._compute_refusal_contribution(
-            signals.refusal_distance, signals.is_approaching_refusal, config.refusal_weight
+            signals.refusal_distance, signals.is_approaching_refusal
         )
         persona_contribution = CircuitBreakerIntegration._compute_persona_contribution(
-            signals.persona_drift_magnitude, signals.drifting_traits, config.persona_drift_weight
+            signals.persona_drift_magnitude, signals.drifting_traits
         )
         oscillation_contribution = CircuitBreakerIntegration._compute_oscillation_contribution(
             signals.oscillation_severity,
             signals.consecutive_oscillations,
             signals.has_oscillation,
-            config.oscillation_weight,
         )
 
         contributions = SignalContributions(
@@ -331,35 +201,14 @@ class CircuitBreakerIntegration:
             oscillation=oscillation_contribution,
         )
 
-        severity = (
-            entropy_contribution
-            + refusal_contribution
-            + persona_contribution
-            + oscillation_contribution
-        )
-        is_tripped = severity >= config.trip_threshold
-
-        trigger_source: TriggerSource | None = None
-        if is_tripped:
-            dominant = contributions.dominant_source
-            total = severity if severity > 0 else 1.0
-            dominant_contrib = contributions.get(dominant)
-            if dominant_contrib / total > 0.5:
-                trigger_source = dominant
-            else:
-                trigger_source = TriggerSource.combined_signals
-
+        severity = contributions.mean_signal
+        dominant_source = contributions.dominant_source if severity > 0 else None
         confidence = CircuitBreakerIntegration._compute_confidence(signals)
-        action = CircuitBreakerIntegration._determine_action(
-            severity, is_tripped, config, signals
-        )
 
         return CircuitBreakerState(
-            is_tripped=is_tripped,
             severity=severity,
-            trigger_source=trigger_source,
+            dominant_source=dominant_source,
             confidence=confidence,
-            recommended_action=action,
             signal_contributions=contributions,
             token_index=signals.token_index,
             timestamp=signals.timestamp,
@@ -367,16 +216,14 @@ class CircuitBreakerIntegration:
 
     @staticmethod
     def create_telemetry(
-        state: CircuitBreakerState, signals: InputSignals, config: Configuration
+        state: CircuitBreakerState, signals: InputSignals
     ) -> CircuitBreakerTelemetry:
         """Create telemetry snapshot from current state."""
-        any_exceeded = state.severity >= config.warning_threshold
         return CircuitBreakerTelemetry(
             token_index=state.token_index,
             timestamp=state.timestamp,
             state=state,
             combined_severity=state.severity,
-            any_signal_exceeded=any_exceeded,
             oscillation_severity=signals.oscillation_severity,
             consecutive_oscillations=signals.consecutive_oscillations,
         )
@@ -385,7 +232,6 @@ class CircuitBreakerIntegration:
     def to_metrics_dict(state: CircuitBreakerState) -> dict[str, float]:
         """Convert state to metrics dictionary."""
         return {
-            "geometry/circuit_breaker_tripped": 1.0 if state.is_tripped else 0.0,
             "geometry/circuit_breaker_confidence": float(state.confidence),
             "geometry/circuit_breaker_severity": float(state.severity),
             "geometry/circuit_breaker_entropy": float(state.signal_contributions.entropy),
@@ -395,16 +241,8 @@ class CircuitBreakerIntegration:
         }
 
     @staticmethod
-    def _compute_entropy_contribution(entropy: float | None, weight: float) -> float:
-        """Compute weighted entropy contribution.
-
-        Args:
-            entropy: Normalized entropy in [0, 1].
-            weight: Weight for this signal.
-
-        Returns:
-            Weighted contribution.
-        """
+    def _compute_entropy_contribution(entropy: float | None) -> float:
+        """Compute entropy contribution from raw signal."""
         if entropy is None:
             return 0.0
 
@@ -416,56 +254,40 @@ class CircuitBreakerIntegration:
             )
             entropy = max(0.0, min(1.0, entropy))
 
-        return entropy * weight
+        return entropy
 
     @staticmethod
     def _compute_refusal_contribution(
         distance: float | None,
         is_approaching: bool | None,
-        weight: float,
     ) -> float:
-        """Compute weighted refusal contribution."""
+        """Compute refusal contribution from distance to boundary."""
         if distance is None:
             return 0.0
         base_contribution = 1.0 - distance
-        return min(base_contribution, 1.0) * weight
+        return min(base_contribution, 1.0)
 
     @staticmethod
     def _compute_persona_contribution(
         drift_magnitude: float | None,
         drifting_traits: list[str],
-        weight: float,
     ) -> float:
-        """Compute persona drift contribution.
-
-        Uses drift_magnitude directly. Trait count is reported separately.
-        """
+        """Compute persona drift contribution from raw measurement."""
         if drift_magnitude is None:
             return 0.0
 
-        # Pass through the raw measurement
-        return min(drift_magnitude, 1.0) * weight
+        return min(drift_magnitude, 1.0)
 
     @staticmethod
     def _compute_oscillation_contribution(
         oscillation_severity: float | None,
         consecutive_oscillations: int,
         has_oscillation: bool,
-        weight: float,
     ) -> float:
-        """Compute oscillation contribution from raw measurements.
-
-        Args:
-            oscillation_severity: Direct severity measurement [0, 1]
-            consecutive_oscillations: Count of consecutive unstable windows
-            has_oscillation: Whether oscillation is detected
-            weight: Weight for this signal
-        """
+        """Compute oscillation contribution from raw measurements."""
         if oscillation_severity is not None:
-            # Direct pass-through of raw measurement
-            return min(oscillation_severity, 1.0) * weight
+            return min(oscillation_severity, 1.0)
 
-        # No severity provided - return 0 (no data = no contribution)
         return 0.0
 
     @staticmethod
@@ -482,23 +304,3 @@ class CircuitBreakerIntegration:
         if signals.oscillation_severity is not None:
             available += 1
         return float(available) / float(total_signals)
-
-    @staticmethod
-    def _determine_action(
-        severity: float,
-        is_tripped: bool,
-        configuration: Configuration,
-        signals: InputSignals,
-    ) -> RecommendedAction:
-        """Determine action based on severity relative to thresholds.
-
-        Returns monitor/continue based on warning threshold, stop if tripped.
-        No arbitrary sub-classification - severity is the measurement.
-        """
-        if not is_tripped:
-            if severity >= configuration.warning_threshold:
-                return RecommendedAction.monitor
-            return RecommendedAction.continue_generation
-
-        # Tripped = stop. Severity tells you how bad. No further classification.
-        return RecommendedAction.stop_generation

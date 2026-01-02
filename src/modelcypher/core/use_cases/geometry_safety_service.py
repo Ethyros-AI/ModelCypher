@@ -28,9 +28,7 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain.safety.circuit_breaker_integration import (
     CircuitBreakerIntegration,
     CircuitBreakerState,
-    Configuration,
     InputSignals,
-    RecommendedAction,
 )
 
 if TYPE_CHECKING:
@@ -263,15 +261,13 @@ class GeometrySafetyService:
         refusal_distance: float | None = None,
         persona_drift_magnitude: float | None = None,
         has_oscillation: bool = False,
-        configuration: Configuration | None = None,
     ) -> tuple[CircuitBreakerState, InputSignals]:
         """Get circuit breaker state.
 
         For jobs with pre-computed geometric metrics, returns the stored state
         (computed during training from actual entropy dynamics).
 
-        For ad-hoc evaluation with explicit signals, requires a calibrated
-        configuration derived from baseline measurements.
+        For ad-hoc evaluation with explicit signals, returns raw measurements.
         """
         signals = InputSignals(
             entropy_signal=entropy_signal,
@@ -294,14 +290,9 @@ class GeometrySafetyService:
 
                     # Pre-computed state from training - signal breakdown not stored
                     state = CircuitBreakerState(
-                        is_tripped=metrics.circuit_breaker_tripped or False,
                         severity=metrics.circuit_breaker_severity,
-                        trigger_source=None,
+                        dominant_source=None,
                         confidence=1.0,  # Pre-computed from actual geometry
-                        recommended_action=self._action_for_severity(
-                            metrics.circuit_breaker_severity,
-                            metrics.circuit_breaker_tripped or False,
-                        ),
                         signal_contributions=SignalContributions(
                             entropy=0.0,
                             refusal=0.0,
@@ -320,37 +311,8 @@ class GeometrySafetyService:
                     )
                     return state, resolved_signals
 
-        # Ad-hoc evaluation requires calibrated configuration
-        if configuration is None:
-            raise ValueError(
-                "Circuit breaker evaluation requires either:\n"
-                "1. A job_id with pre-computed geometric metrics, or\n"
-                "2. A calibrated Configuration from baseline measurements.\n"
-                "Use Configuration.from_baseline_measurements() with your model's "
-                "baseline severity samples to derive proper thresholds."
-            )
-        state = CircuitBreakerIntegration.evaluate(signals, configuration=configuration)
+        state = CircuitBreakerIntegration.evaluate(signals)
         return state, signals
-
-    def _action_for_severity(
-        self, severity: float, is_tripped: bool
-    ) -> "RecommendedAction":
-        """Determine action from pre-computed severity.
-
-        Returns only stop/continue based on boolean is_tripped state.
-        Severity is returned in CircuitBreakerState for caller interpretation.
-        No hardcoded threshold for human_review - the severity value itself
-        tells the caller how concerned to be.
-        """
-        from modelcypher.core.domain.safety.circuit_breaker_integration import (
-            RecommendedAction,
-        )
-
-        if is_tripped:
-            return RecommendedAction.stop_generation
-        # Severity is returned in the state; caller can decide if it warrants
-        # human_review based on their context and calibration.
-        return RecommendedAction.continue_generation
 
     def persona_drift(self, job_id: str) -> PersonaDriftInfo | None:
         metrics = self.training_service.get_metrics(job_id)

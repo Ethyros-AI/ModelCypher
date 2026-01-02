@@ -113,15 +113,6 @@ class GeometryTrainingService:
             elif job.total_steps:
                 step = int((job.current_step / job.total_steps) * 100)
 
-        thresholds = None
-        if output_format == "full":
-            thresholds = {
-                "snrLow": 1.0,
-                "snrAdequate": 10.0,
-                "flatnessWarning": 0.4,
-                "circuitBreakerThreshold": 0.75,
-            }
-
         return {
             "_schema": "mc.geometry.training_status.v1",
             "jobId": job_id,
@@ -144,9 +135,7 @@ class GeometryTrainingService:
                 metrics.per_layer_gradient_norms if output_format == "full" else None
             ),
             "circuitBreakerSeverity": metrics.circuit_breaker_severity,
-            "circuitBreakerTripped": metrics.circuit_breaker_tripped,
             "refusalDistance": metrics.refusal_distance,
-            "thresholds": thresholds,
         }
 
     def training_history_payload(self, job_id: str) -> dict:

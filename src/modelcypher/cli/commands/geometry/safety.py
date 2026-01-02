@@ -75,17 +75,17 @@ def geometry_safety_circuit_breaker(
     )
 
     output = {
-        "tripped": state.is_tripped,
         "severity": state.severity,
-        "state": "tripped" if state.is_tripped else "not_tripped",
+        "dominantSource": state.dominant_source.value if state.dominant_source else None,
     }
 
     if context.output_format == "text":
         lines = [
             "CIRCUIT BREAKER EVALUATION",
-            f"Tripped: {state.is_tripped}",
             f"Severity: {output['severity']:.3f}",
         ]
+        if output["dominantSource"] is not None:
+            lines.append(f"Dominant Source: {output['dominantSource']}")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

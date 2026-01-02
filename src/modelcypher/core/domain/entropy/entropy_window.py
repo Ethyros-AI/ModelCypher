@@ -18,17 +18,8 @@
 """
 Entropy Window: Sliding window tracker for entropy measurements during inference.
 
-Maintains a rolling window of entropy samples to detect sustained uncertainty
-patterns rather than transient spikes. Emits signals when circuit breaker
-conditions are met.
-
-Notes
------
-- Window size and thresholds are explicit inputs
-- Tracks both instantaneous and moving average entropy
-- Thread-safe via asyncio locks (or synchronous for simple use)
-
-Ported from EntropyWindow.swift (301 lines).
+Maintains a rolling window of entropy samples to measure local statistics
+without threshold-based classification.
 """
 
 from __future__ import annotations
@@ -51,20 +42,7 @@ logger = logging.getLogger("modelcypher.entropy.entropy_window")
 class EntropyWindowConfig:
     """Configuration for the entropy window."""
 
-    # Number of samples to maintain in the window
     window_size: int
-
-    # Minimum samples needed before computing moving average
-    minimum_samples: int
-
-    # Threshold above which a single sample is considered "high"
-    high_entropy_threshold: float
-
-    # Moving average threshold for circuit breaker
-    circuit_breaker_threshold: float
-
-    # Number of consecutive high samples before alerting
-    sustained_high_count: int
 
 
 # =============================================================================
@@ -86,30 +64,7 @@ class EntropySample:
 class EntropyWindowStatus:
     """Current status of the entropy window.
 
-    Raw measurements only. Caller applies thresholds for classification.
-
-    Attributes
-    ----------
-    window_id : str
-        Unique window identifier.
-    sample_count : int
-        Number of samples in window.
-    current_entropy : float
-        Most recent entropy value.
-    moving_average : float
-        Moving average of entropy.
-    max_entropy : float
-        Maximum entropy in window.
-    min_entropy : float
-        Minimum entropy in window.
-    consecutive_high_count : int
-        Consecutive high entropy samples.
-    should_trip_circuit_breaker : bool
-        Whether circuit breaker should trip.
-    token_start : int
-        Starting token index.
-    token_end : int
-        Ending token index.
+    Raw measurements only. Caller interprets downstream.
     """
 
     window_id: str
@@ -118,8 +73,6 @@ class EntropyWindowStatus:
     moving_average: float
     max_entropy: float
     min_entropy: float
-    consecutive_high_count: int
-    should_trip_circuit_breaker: bool
     token_start: int
     token_end: int
 
@@ -130,41 +83,17 @@ class EntropyWindowStatus:
 
 
 class EntropyWindow:
-    """
-    Sliding window tracker for entropy measurements during inference.
-
-    Usage:
-        window = EntropyWindow(
-            config=EntropyWindowConfig(
-                window_size=20,
-                minimum_samples=5,
-                high_entropy_threshold=3.0,
-                circuit_breaker_threshold=4.0,
-                sustained_high_count=3,
-            )
-        )
-        status = window.add(entropy=2.45, variance=0.12, token_index=42)
-        if status.should_trip_circuit_breaker:
-            # Handle high entropy condition
-    """
+    """Sliding window tracker for entropy measurements during inference."""
 
     def __init__(
         self,
         config: EntropyWindowConfig,
         window_id: str | None = None,
     ):
-        """
-        Initialize entropy window.
-
-        Args:
-            config: Window configuration (required).
-            window_id: Unique identifier for this window session.
-        """
+        """Initialize entropy window."""
         self.config = config
         self.window_id = window_id or str(uuid.uuid4())
         self._samples: list[EntropySample] = []
-        self._consecutive_high_count = 0
-        self._circuit_breaker_tripped = False
         self._lock = asyncio.Lock()
 
     def add(
@@ -173,17 +102,7 @@ class EntropyWindow:
         variance: float,
         token_index: int,
     ) -> EntropyWindowStatus:
-        """
-        Add a new entropy sample to the window (synchronous).
-
-        Args:
-            entropy: Shannon entropy value.
-            variance: Top-K variance value.
-            token_index: Index of the token in generation sequence.
-
-        Returns:
-            Current window status after adding the sample.
-        """
+        """Add a new entropy sample to the window (synchronous)."""
         sample = EntropySample(
             entropy=entropy,
             variance=variance,
@@ -196,21 +115,6 @@ class EntropyWindow:
         if len(self._samples) > self.config.window_size:
             self._samples.pop(0)
 
-        # Track consecutive high entropy
-        if entropy >= self.config.high_entropy_threshold:
-            self._consecutive_high_count += 1
-        else:
-            self._consecutive_high_count = 0
-
-        # Check circuit breaker conditions once minimum samples are available
-        if len(self._samples) >= self.config.minimum_samples:
-            avg = self._moving_average()
-            if (
-                avg >= self.config.circuit_breaker_threshold
-                or self._consecutive_high_count >= self.config.sustained_high_count
-            ):
-                self._circuit_breaker_tripped = True
-
         return self._current_status()
 
     async def add_async(
@@ -219,117 +123,65 @@ class EntropyWindow:
         variance: float,
         token_index: int,
     ) -> EntropyWindowStatus:
-        """Add entropy sample (async, thread-safe)."""
+        """Add a new entropy sample to the window (async)."""
         async with self._lock:
-            return self.add(entropy, variance, token_index)
+            return self.add(entropy=entropy, variance=variance, token_index=token_index)
+
+    def add_batch(self, batch: list[tuple[float, float, int]]) -> EntropyWindowStatus:
+        """Add multiple samples and return final status."""
+        status = self.status()
+        for entropy, variance, token_index in batch:
+            status = self.add(entropy=entropy, variance=variance, token_index=token_index)
+        return status
 
     def status(self) -> EntropyWindowStatus:
-        """Returns the current window status without adding a sample."""
+        """Return current window status without adding a new sample."""
         return self._current_status()
-
-    def reset_circuit_breaker(self) -> None:
-        """Resets the circuit breaker state (called after user intervention)."""
-        self._circuit_breaker_tripped = False
-        self._consecutive_high_count = 0
 
     def reset(self) -> None:
-        """Clears all samples and resets state for a new generation."""
-        self._samples.clear()
-        self._consecutive_high_count = 0
-        self._circuit_breaker_tripped = False
+        """Reset the window to empty state."""
+        self._samples = []
 
-    def add_batch(
-        self,
-        batch: list[tuple[float, float, int]],
-    ) -> EntropyWindowStatus:
-        """
-        Add multiple samples efficiently.
-
-        Args:
-            batch: List of (entropy, variance, token_index) tuples.
-
-        Returns:
-            Final status after all samples added.
-        """
-        for entropy, variance, token_index in batch:
-            self.add(entropy, variance, token_index)
-        return self._current_status()
-
-    # =========================================================================
-    # Private Helpers
-    # =========================================================================
+    def to_entropy_summary(self) -> dict:
+        """Return summary dictionary for JSON serialization."""
+        status = self.status()
+        return {
+            "window_id": status.window_id,
+            "logit_entropy": status.current_entropy,
+            "moving_average": status.moving_average,
+            "sample_count": status.sample_count,
+            "token_start": status.token_start,
+            "token_end": status.token_end,
+        }
 
     def _moving_average(self) -> float:
-        """Compute moving average of entropy values."""
-        if not self._samples:
+        values = [sample.entropy for sample in self._samples]
+        if not values:
             return 0.0
-        total = sum(s.entropy for s in self._samples)
-        return total / len(self._samples)
-
-    def _variance_mean(self) -> float:
-        """Compute mean variance."""
-        if not self._samples:
-            return 0.0
-        total = sum(s.variance for s in self._samples)
-        return total / len(self._samples)
+        return sum(values) / len(values)
 
     def _current_status(self) -> EntropyWindowStatus:
-        """Build current status from window state."""
-        entropies = [s.entropy for s in self._samples]
-        current = entropies[-1] if entropies else 0.0
-        avg = self._moving_average()
+        if not self._samples:
+            return EntropyWindowStatus(
+                window_id=self.window_id,
+                sample_count=0,
+                current_entropy=0.0,
+                moving_average=0.0,
+                max_entropy=0.0,
+                min_entropy=0.0,
+                token_start=0,
+                token_end=0,
+            )
 
+        values = [sample.entropy for sample in self._samples]
+        tokens = [sample.token_index for sample in self._samples]
         return EntropyWindowStatus(
             window_id=self.window_id,
             sample_count=len(self._samples),
-            current_entropy=current,
-            moving_average=avg,
-            max_entropy=max(entropies) if entropies else 0.0,
-            min_entropy=min(entropies) if entropies else 0.0,
-            consecutive_high_count=self._consecutive_high_count,
-            should_trip_circuit_breaker=self._circuit_breaker_tripped,
-            token_start=self._samples[0].token_index if self._samples else 0,
-            token_end=self._samples[-1].token_index if self._samples else 0,
+            current_entropy=self._samples[-1].entropy,
+            moving_average=self._moving_average(),
+            max_entropy=max(values),
+            min_entropy=min(values),
+            token_start=min(tokens),
+            token_end=max(tokens),
         )
-
-    # =========================================================================
-    # Signal Generation
-    # =========================================================================
-
-    def to_entropy_summary(self) -> dict:
-        """
-        Create a summary dict from current window state.
-
-        Returns:
-            Dictionary with entropy summary data.
-        """
-        status = self._current_status()
-        return {
-            "window_id": self.window_id,
-            "token_start": status.token_start,
-            "token_end": status.token_end,
-            "logit_entropy": status.moving_average,
-            "top_k_variance": self._variance_mean(),
-            "sample_count": status.sample_count,
-        }
-
-    def circuit_breaker_alert(self) -> dict | None:
-        """
-        Create a circuit breaker alert if conditions are met.
-
-        Returns:
-            Alert dictionary if circuit breaker should trip, else None.
-        """
-        status = self._current_status()
-        if not status.should_trip_circuit_breaker:
-            return None
-
-        return {
-            "type": "circuit_breaker_tripped",
-            "window_id": self.window_id,
-            "current_entropy": status.current_entropy,
-            "moving_average": status.moving_average,
-            "consecutive_high_count": status.consecutive_high_count,
-            "threshold": self.config.circuit_breaker_threshold,
-            "recommended_action": "pause_and_steer",
-        }
