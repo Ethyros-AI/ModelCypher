@@ -96,7 +96,6 @@ class GeometryMetricKey:
     refusal_strength = "geometry/refusal_strength"
     dare_effective_sparsity = "geometry/dare_effective_sparsity"
     dare_essential_fraction = "geometry/dare_essential_fraction"
-    dare_recommended_drop_rate = "geometry/dare_recommended_drop_rate"
     dora_magnitude_change = "geometry/dora_magnitude_change"
     dora_directional_drift = "geometry/dora_directional_drift"
     dora_magnitude_to_direction_ratio = "geometry/dora_mag_dir_ratio"

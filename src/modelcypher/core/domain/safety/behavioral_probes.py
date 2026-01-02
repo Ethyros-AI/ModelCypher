@@ -56,50 +56,19 @@ class AdapterSafetyTier(str, Enum):
 
 @dataclass(frozen=True)
 class ProbeResult:
-    """Result of a safety probe evaluation.
-
-    Raw finding counts replace risk_score. triggered = any findings detected.
-    """
+    """Result of a probe evaluation with raw measurements."""
 
     probe_name: str
     probe_version: str
-    triggered: bool
-    details: str
     findings: tuple[str, ...] = ()
     finding_counts: dict[str, int] | None = None
+    details: str | None = None
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
-    @staticmethod
-    def passed(
-        probe_name: str,
-        probe_version: str,
-        details: str = "Probe passed",
-    ) -> "ProbeResult":
-        """Create a passing result."""
-        return ProbeResult(
-            probe_name=probe_name,
-            probe_version=probe_version,
-            triggered=False,
-            details=details,
-        )
-
-    @staticmethod
-    def failed(
-        probe_name: str,
-        probe_version: str,
-        details: str,
-        findings: tuple[str, ...] = (),
-        finding_counts: dict[str, int] | None = None,
-    ) -> "ProbeResult":
-        """Create a failing result."""
-        return ProbeResult(
-            probe_name=probe_name,
-            probe_version=probe_version,
-            triggered=True,
-            details=details,
-            findings=findings,
-            finding_counts=finding_counts,
-        )
+    @property
+    def has_findings(self) -> bool:
+        """Whether this probe recorded any findings."""
+        return bool(self.findings)
 
 
 @dataclass
@@ -136,9 +105,9 @@ class CompositeProbeResult:
         return counts
 
     @property
-    def any_triggered(self) -> bool:
-        """Whether any probe was triggered."""
-        return any(r.triggered for r in self.probe_results)
+    def any_findings(self) -> bool:
+        """Whether any probe recorded findings."""
+        return any(r.has_findings for r in self.probe_results)
 
     @property
     def all_findings(self) -> list[str]:
@@ -149,9 +118,9 @@ class CompositeProbeResult:
         return findings
 
     @property
-    def triggered_count(self) -> int:
-        """Count of probes that were triggered."""
-        return sum(1 for r in self.probe_results if r.triggered)
+    def findings_probe_count(self) -> int:
+        """Count of probes that recorded findings."""
+        return sum(1 for r in self.probe_results if r.has_findings)
 
     @property
     def total_probes(self) -> int:
@@ -159,11 +128,11 @@ class CompositeProbeResult:
         return len(self.probe_results)
 
     @property
-    def trigger_ratio(self) -> float:
-        """Ratio of triggered probes to total probes (0.0 to 1.0)."""
+    def findings_ratio(self) -> float:
+        """Ratio of probes with findings to total probes (0.0 to 1.0)."""
         if not self.probe_results:
             return 0.0
-        return self.triggered_count / self.total_probes
+        return self.findings_probe_count / self.total_probes
 
 
 class AdapterSafetyProbe(ABC):
@@ -295,10 +264,11 @@ class SemanticDriftProbe(AdapterSafetyProbe):
     def evaluate(self, context: ProbeContext) -> ProbeResult:
         """Evaluate semantic drift in adapter responses."""
         if context.inference_hook is None or context.embedder is None:
-            return ProbeResult.passed(
+            return ProbeResult(
                 probe_name=self.name,
                 probe_version=self.version,
-                details="Behavioral check skipped - missing inference hook or embedder",
+                details="missing_inference_or_embedder",
+                finding_counts={"probes_tested": 0},
             )
         embedder = context.embedder
         probes = (
@@ -330,14 +300,9 @@ class SemanticDriftProbe(AdapterSafetyProbe):
                 outlier_count += 1
                 findings.append(f"{probe_id}: geodesic_distance={distance}")
 
-        triggered = outlier_count > 0
         mean_distance = sum(distances) / len(distances) if distances else 0.0
         max_distance = max(distances) if distances else 0.0
-        details = (
-            f"No drift outliers across {len(distances)} probes"
-            if not findings
-            else f"Drift outliers in {outlier_count}/{len(distances)} probes"
-        )
+        details = f"outlier_probes={outlier_count} total_probes={len(distances)}"
 
         finding_counts = {
             "probes_tested": len(distances),
@@ -350,7 +315,6 @@ class SemanticDriftProbe(AdapterSafetyProbe):
         return ProbeResult(
             probe_name=self.name,
             probe_version=self.version,
-            triggered=triggered,
             details=details,
             findings=tuple(findings),
             finding_counts=finding_counts,
@@ -437,10 +401,11 @@ class CanaryQAProbe(AdapterSafetyProbe):
     def evaluate(self, context: ProbeContext) -> ProbeResult:
         """Evaluate canary questions."""
         if context.inference_hook is None or context.embedder is None:
-            return ProbeResult.passed(
+            return ProbeResult(
                 probe_name=self.name,
                 probe_version=self.version,
-                details="Behavioral check skipped - missing inference hook or embedder",
+                details="missing_inference_or_embedder",
+                finding_counts={"questions_tested": 0},
             )
 
         questions_to_run = self.CANARY_QUESTIONS
@@ -458,7 +423,7 @@ class CanaryQAProbe(AdapterSafetyProbe):
                 distances.append(distance)
                 question_ids.append(f"{question.category.value}:{question.prompt}")
             except Exception as e:
-                findings.append(f"Canary inference failed: {str(e)}")
+                findings.append(f"canary_inference_error={str(e)}")
 
         threshold = _distance_threshold(distances)
         outlier_count = 0
@@ -467,14 +432,9 @@ class CanaryQAProbe(AdapterSafetyProbe):
                 outlier_count += 1
                 findings.append(f"{question_id}: geodesic_distance={distance}")
 
-        triggered = outlier_count > 0
         mean_distance = sum(distances) / len(distances) if distances else 0.0
         max_distance = max(distances) if distances else 0.0
-        details = (
-            f"No canary outliers across {len(distances)} questions"
-            if not findings
-            else f"Canary outliers in {outlier_count}/{len(distances)} questions"
-        )
+        details = f"outlier_questions={outlier_count} total_questions={len(distances)}"
 
         finding_counts = {
             "questions_tested": len(distances),
@@ -487,7 +447,6 @@ class CanaryQAProbe(AdapterSafetyProbe):
         return ProbeResult(
             probe_name=self.name,
             probe_version=self.version,
-            triggered=triggered,
             details=details,
             findings=tuple(findings),
             finding_counts=finding_counts,
@@ -522,13 +481,13 @@ class ProbeRunner:
                 result = probe.evaluate(context)
                 results.append(result)
             except Exception as e:
-                # Record failed probe as triggered
+                # Record probe execution errors as findings.
                 results.append(
-                    ProbeResult.failed(
+                    ProbeResult(
                         probe_name=probe.name,
                         probe_version=probe.version,
-                        details="Probe execution failed",
-                        findings=(f"Error: {str(e)}",),
+                        details="execution_error",
+                        findings=(f"execution_error={str(e)}",),
                         finding_counts={"execution_errors": 1},
                     )
                 )

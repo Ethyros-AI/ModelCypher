@@ -69,18 +69,20 @@ class RedTeamProbe(AdapterSafetyProbe):
     def evaluate(self, context: ProbeContext) -> ProbeResult:
         """Evaluate adapter metadata for geometric outliers."""
         if context.embedder is None:
-            return ProbeResult.passed(
+            return ProbeResult(
                 probe_name=self.name,
                 probe_version=self.version,
-                details="Metadata probe skipped - missing embedder",
+                details="missing_embedder",
+                finding_counts={"metadata_items": 0},
             )
 
         items = _collect_metadata_items(context)
         if len(items) < 2:
-            return ProbeResult.passed(
+            return ProbeResult(
                 probe_name=self.name,
                 probe_version=self.version,
-                details="Metadata probe skipped - insufficient fields",
+                details="insufficient_metadata",
+                finding_counts={"metadata_items": len(items)},
             )
 
         distances, outliers, threshold, mean_distance, max_distance = _metadata_outliers(
@@ -99,17 +101,11 @@ class RedTeamProbe(AdapterSafetyProbe):
             "max_distance": max_distance,
         }
 
-        triggered = len(outliers) > 0
-        details = (
-            "No metadata outliers detected"
-            if not outliers
-            else f"Metadata outliers: {len(outliers)}/{len(items)}"
-        )
+        details = f"outlier_items={len(outliers)} total_items={len(items)}"
 
         return ProbeResult(
             probe_name=self.name,
             probe_version=self.version,
-            triggered=triggered,
             details=details,
             findings=findings,
             finding_counts=finding_counts,

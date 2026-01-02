@@ -84,8 +84,9 @@ class TestRedTeamProbe:
             adapter_name="adapter",
         )
         result = probe.evaluate(context)
-        assert result.triggered is False
-        assert result.finding_counts is None
+        assert result.has_findings is False
+        assert result.finding_counts is not None
+        assert result.finding_counts["metadata_items"] == 0
 
     def test_evaluate_insufficient_fields(self, probe):
         """Single metadata field skips probe."""
@@ -95,8 +96,9 @@ class TestRedTeamProbe:
             embedder=DummyEmbedder(),
         )
         result = probe.evaluate(context)
-        assert result.triggered is False
-        assert result.finding_counts is None
+        assert result.has_findings is False
+        assert result.finding_counts is not None
+        assert result.finding_counts["metadata_items"] == 1
 
     def test_evaluate_no_outliers(self, probe):
         """Identical metadata fields produce no outliers."""
@@ -108,7 +110,7 @@ class TestRedTeamProbe:
             embedder=DummyEmbedder(),
         )
         result = probe.evaluate(context)
-        assert result.triggered is False
+        assert result.has_findings is False
         assert result.finding_counts is not None
         assert result.finding_counts["outlier_items"] == 0
 
@@ -122,7 +124,7 @@ class TestRedTeamProbe:
             embedder=DummyEmbedder(),
         )
         result = probe.evaluate(context)
-        assert result.triggered is True
+        assert result.has_findings is True
         assert result.finding_counts is not None
         assert result.finding_counts["outlier_items"] >= 1
         assert any("mean_distance" in f for f in result.findings)

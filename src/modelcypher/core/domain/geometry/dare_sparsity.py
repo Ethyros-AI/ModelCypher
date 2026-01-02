@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
@@ -51,7 +52,7 @@ class LayerSparsityMetrics:
     mean_magnitude: float
     max_magnitude: float
     essential_fraction: float
-    has_significant_updates: bool
+    has_non_zero_updates: bool
 
 
 @dataclass(frozen=True)
@@ -80,7 +81,6 @@ class SparsityAnalysis:
     essential_fraction: float
     per_layer_sparsity: dict[str, LayerSparsityMetrics]
     magnitude_stats: MagnitudeStatistics
-    recommended_drop_rate: float
     computed_at: datetime
 
 
@@ -115,11 +115,11 @@ class DARESparsityAnalyzer:
 
         # Derive thresholds from data, not arbitrary constants:
         # 1. Machine epsilon threshold: values below eps * max are numerical noise
-        eps = 2.220446049250313e-16  # float64 machine epsilon
-        zero_threshold = magnitude_stats.max * eps * 100  # 100x eps for headroom
+        eps = math.ulp(1.0)
+        zero_threshold = magnitude_stats.max * eps
 
         # 2. Spectral gap: find natural break in magnitude distribution
-        gap_threshold = find_magnitude_gap_threshold(sorted_magnitudes)
+        gap_threshold = find_magnitude_gap_threshold(sorted_magnitudes, eps=eps)
 
         # Use the larger of the two thresholds
         drop_threshold = max(zero_threshold, gap_threshold)
@@ -142,8 +142,6 @@ class DARESparsityAnalyzer:
                     drop_threshold=drop_threshold,
                 )
 
-        # Drop rate = effective sparsity (no arbitrary scaling)
-        recommended_drop_rate = effective_sparsity
         return SparsityAnalysis(
             total_parameters=total_count,
             non_zero_parameters=sum(1 for value in sorted_magnitudes if value > 0),
@@ -151,7 +149,6 @@ class DARESparsityAnalyzer:
             essential_fraction=essential_fraction,
             per_layer_sparsity=per_layer_metrics,
             magnitude_stats=magnitude_stats,
-            recommended_drop_rate=recommended_drop_rate,
             computed_at=datetime.now(timezone.utc),
         )
 
@@ -227,7 +224,7 @@ class DARESparsityAnalyzer:
         # Derive thresholds from data:
         # 1. Machine epsilon threshold (values below this are numerical noise)
         eps = b.finfo(next(iter(per_layer_arrays.values())).dtype).eps
-        zero_threshold = global_max * eps * 100  # 100x eps for headroom
+        zero_threshold = global_max * eps
 
         use_fast_path = total_count < 500_000_000
 
@@ -254,7 +251,7 @@ class DARESparsityAnalyzer:
             sorted_mags = b.sort(all_magnitudes)
             b.eval(sorted_mags)
             samples = [float(b.to_numpy(sorted_mags[idx : idx + 1]).item()) for idx in sample_indices]
-            gap_threshold = find_magnitude_gap_threshold(samples)
+            gap_threshold = find_magnitude_gap_threshold(samples, eps=eps)
         else:
             def count_below(threshold: float) -> int:
                 total = 0
@@ -316,7 +313,7 @@ class DARESparsityAnalyzer:
                     mean_magnitude=layer_mean,
                     max_magnitude=layer_max,
                     essential_fraction=1.0 - layer_sparsity,
-                    has_significant_updates=layer_sparsity < 1.0,  # Any non-total sparsity
+                    has_non_zero_updates=layer_sparsity < 1.0,
                 )
 
         effective_sparsity = float(total_droppable) / float(total_count)
@@ -338,19 +335,27 @@ class DARESparsityAnalyzer:
                 percentile95=p95,
                 percentile99=p99,
             ),
-            recommended_drop_rate=effective_sparsity,  # No arbitrary scaling
             computed_at=datetime.now(timezone.utc),
         )
 
     @staticmethod
     def identify_essential_parameters(
         delta_weights: dict[str, list[float]],
-        threshold: float,
     ) -> dict[str, set[int]]:
+        magnitudes = [abs(float(value)) for values in delta_weights.values() for value in values]
+        if not magnitudes:
+            return {name: set() for name in delta_weights}
+
+        eps = math.ulp(1.0)
+        sorted_magnitudes = sorted(magnitudes)
+        gap_threshold = find_magnitude_gap_threshold(sorted_magnitudes, eps=eps)
+        zero_threshold = max(sorted_magnitudes) * eps
+        drop_threshold = max(zero_threshold, gap_threshold)
+
         result: dict[str, set[int]] = {}
         for name, deltas in delta_weights.items():
             essential_indices = {
-                idx for idx, value in enumerate(deltas) if abs(float(value)) >= threshold
+                idx for idx, value in enumerate(deltas) if abs(float(value)) >= drop_threshold
             }
             result[name] = essential_indices
         return result
@@ -360,7 +365,6 @@ class DARESparsityAnalyzer:
         return {
             "geometry/dare_effective_sparsity": float(analysis.effective_sparsity),
             "geometry/dare_essential_fraction": float(analysis.essential_fraction),
-            "geometry/dare_recommended_drop_rate": float(analysis.recommended_drop_rate),
         }
 
     @staticmethod
@@ -382,7 +386,6 @@ class DARESparsityAnalyzer:
                 percentile95=0.0,
                 percentile99=0.0,
             ),
-            recommended_drop_rate=0.0,
             computed_at=datetime.now(timezone.utc),
         )
 
@@ -457,7 +460,5 @@ class DARESparsityAnalyzer:
             mean_magnitude=float(mean),
             max_magnitude=float(max_value),
             essential_fraction=float(1.0 - sparsity),
-            has_significant_updates=sparsity < 1.0,  # Any non-total sparsity
+            has_non_zero_updates=sparsity < 1.0,
         )
-
-

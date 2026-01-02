@@ -32,18 +32,17 @@ def test_empty_analysis() -> None:
 
     assert analysis.total_parameters == 0
     assert analysis.non_zero_parameters == 0
-    assert analysis.effective_sparsity == 1.0  # 1.0 = fully sparse = excellent
+    assert analysis.effective_sparsity == 1.0
     assert analysis.essential_fraction == 0.0
-    assert analysis.recommended_drop_rate == 0.0
     assert analysis.per_layer_sparsity == {}
     assert isinstance(analysis.computed_at, datetime)
 
 
 def test_identify_essential_parameters() -> None:
     deltas = {"layer1": [0.1, -0.05, 0.0], "layer2": [-0.2]}
-    essential = DARESparsityAnalyzer.identify_essential_parameters(deltas, threshold=0.1)
+    essential = DARESparsityAnalyzer.identify_essential_parameters(deltas)
 
-    assert essential["layer1"] == {0}
+    assert essential["layer1"] == {0, 1}
     assert essential["layer2"] == {0}
 
 
@@ -65,9 +64,6 @@ def test_analysis_derives_thresholds_from_data() -> None:
     assert 0.0 <= analysis.effective_sparsity <= 1.0
     assert 0.0 <= analysis.essential_fraction <= 1.0
     assert analysis.effective_sparsity + analysis.essential_fraction == pytest.approx(1.0)
-
-    # Drop rate = effective sparsity (no arbitrary scaling)
-    assert analysis.recommended_drop_rate == pytest.approx(analysis.effective_sparsity)
 
     # Per-layer metrics
     layer1 = analysis.per_layer_sparsity["layer1"]
@@ -101,7 +97,6 @@ def test_analysis_layer_filtering() -> None:
     assert set(analysis.per_layer_sparsity.keys()) == {"layer1"}
     # Sparsity is derived from data, verify constraints
     assert 0.0 <= analysis.effective_sparsity <= 1.0
-    assert analysis.recommended_drop_rate == pytest.approx(analysis.effective_sparsity)
 
 
 def test_metrics_dictionary() -> None:
@@ -111,6 +106,3 @@ def test_metrics_dictionary() -> None:
 
     assert metrics["geometry/dare_effective_sparsity"] == pytest.approx(analysis.effective_sparsity)
     assert metrics["geometry/dare_essential_fraction"] == pytest.approx(analysis.essential_fraction)
-    assert metrics["geometry/dare_recommended_drop_rate"] == pytest.approx(
-        analysis.recommended_drop_rate
-    )

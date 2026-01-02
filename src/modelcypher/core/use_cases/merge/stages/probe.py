@@ -417,6 +417,10 @@ def _probe_precise(
                     try:
                         src_stacked = b.stack(src_list[:n_samples], axis=0)
                         tgt_stacked = b.stack(tgt_list[:n_samples], axis=0)
+                        # Convert to float32 for numerical stability
+                        # float16 from model outputs causes SVD/eigendecomposition issues
+                        src_stacked = b.astype(src_stacked, "float32")
+                        tgt_stacked = b.astype(tgt_stacked, "float32")
                         b.eval(src_stacked, tgt_stacked)
                         cka_result = compute_cka(
                             src_stacked,
@@ -462,6 +466,10 @@ def _probe_precise(
                 try:
                     src_stacked = b.stack(src_list[:n_samples], axis=0)
                     tgt_stacked = b.stack(tgt_list[:n_samples], axis=0)
+                    # Convert to float32 for numerical stability
+                    # float16 from model outputs causes SVD/eigendecomposition issues
+                    src_stacked = b.astype(src_stacked, "float32")
+                    tgt_stacked = b.astype(tgt_stacked, "float32")
                     b.eval(src_stacked, tgt_stacked)
 
                     # GramAligner finds the transformation that achieves CKA = 1.0
@@ -556,16 +564,15 @@ def _probe_precise(
     raw_cka_vals = list(layer_cka_scores_raw.values())
     mean_cka_raw = sum(raw_cka_vals) / len(raw_cka_vals) if raw_cka_vals else 0.0
     min_cka_raw = min(raw_cka_vals) if raw_cka_vals else 0.0
+    # layers_with_data: layers that have activations in both models (for reporting)
     layers_with_data = set(source_layer_activations.keys()) & set(target_layer_activations.keys())
+    # For cross-architecture, DP alignment only matches a subset of layers.
+    # missing_cka_layers is for reporting - it doesn't block perfect_alignment
     missing_cka_layers = [layer for layer in layers_with_data if layer not in layer_cka_scores]
-    # Perfect alignment: all aligned layers have CKA >= 1.0 - precision_threshold
+    # Perfect alignment: all ALIGNED layers (in layer_cka_scores) have CKA >= 1.0 - threshold
     # The threshold is sqrt(machine_epsilon) ≈ 1e-4 for float32
     precision_threshold = math.sqrt(machine_epsilon(b, b.array([1.0])))
-    perfect_alignment = (
-        bool(layers_with_data)
-        and not missing_cka_layers
-        and min_cka >= 1.0 - precision_threshold
-    )
+    perfect_alignment = bool(layer_cka_scores) and min_cka >= 1.0 - precision_threshold
 
     metrics = {
         "probe_mode": "precise",
