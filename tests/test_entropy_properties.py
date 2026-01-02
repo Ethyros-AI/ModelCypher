@@ -36,7 +36,6 @@ except ImportError:
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 
 from modelcypher.core.domain.entropy.logit_entropy_calculator import (
-    EntropyThresholds,
     LogitEntropyCalculator,
 )
 
@@ -126,32 +125,6 @@ class TestEntropyProperties:
 
         assert variance >= 0.0
 
-    @given(st.floats(min_value=0, max_value=10, allow_nan=False, allow_infinity=False))
-    @settings(max_examples=50, deadline=None)
-    def test_thresholds_are_monotonic(self, entropy_value):
-        """Thresholds should follow low < high < circuit_breaker ordering.
-
-        Tests the mathematical property that entropy thresholds are properly ordered.
-        Classification is now done by comparing raw entropy values against these thresholds.
-        """
-        calc = LogitEntropyCalculator(top_k=10)
-        thresholds = EntropyThresholds(low=1.0, high=2.0, circuit_breaker=4.0)
-
-        # Verify threshold ordering - this is a structural invariant
-        assert thresholds.low < thresholds.high < thresholds.circuit_breaker
-
-        # Verify circuit breaker correctly identifies high entropy
-        if entropy_value >= thresholds.circuit_breaker:
-            assert calc.should_trip_circuit_breaker(
-                entropy_value,
-                threshold=thresholds.circuit_breaker,
-            )
-        else:
-            assert not calc.should_trip_circuit_breaker(
-                entropy_value,
-                threshold=thresholds.circuit_breaker,
-            )
-
     @given(logits_array(), logits_array())
     @settings(max_examples=30, deadline=None)
     def test_batch_compute_length_matches(self, logits_a, logits_b):
@@ -182,23 +155,3 @@ class TestEntropyProperties:
         _, variance = calc.compute(logits, skip_variance=True)
 
         assert variance == 0.0
-
-    @given(st.floats(min_value=0, max_value=20, allow_nan=False, allow_infinity=False))
-    @settings(max_examples=50, deadline=None)
-    def test_circuit_breaker_respects_threshold(self, entropy_value):
-        """Circuit breaker should trip if and only if entropy >= threshold.
-
-        Tests the precise boundary condition for circuit breaker activation.
-        """
-        calc = LogitEntropyCalculator(top_k=10)
-        threshold = EntropyThresholds(low=1.0, high=2.0, circuit_breaker=4.0).circuit_breaker
-
-        should_trip = calc.should_trip_circuit_breaker(
-            entropy_value,
-            threshold=threshold,
-        )
-
-        if entropy_value >= threshold:
-            assert should_trip, f"Should trip at {entropy_value} >= {threshold}"
-        else:
-            assert not should_trip, f"Should not trip at {entropy_value} < {threshold}"

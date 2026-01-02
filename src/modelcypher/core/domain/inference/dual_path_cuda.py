@@ -42,8 +42,12 @@ import time
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator
 
-import torch
-import torch.nn.functional as F
+try:
+    import torch
+    import torch.nn.functional as F
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    torch = None
+    F = None
 
 logger = logging.getLogger(__name__)
 
@@ -61,8 +65,6 @@ class SecurityScanMetricsCUDA:
     time_to_first_token_ms: float
     total_time_ms: float
     tokens_per_second: float
-    circuit_breaker_tripped: bool
-    anomaly_alert_count: int
 
 
 @dataclass
@@ -82,7 +84,6 @@ class DualPathGeneratorConfigurationCUDA:
     top_k: int
     repetition_penalty: float
     stop_sequences: list[str]
-    halt_on_circuit_breaker: bool
     device: str
     dtype: str  # float16, bfloat16, float32
     entropy_top_k: int  # Top-K for entropy calculation
@@ -97,11 +98,6 @@ class DualPathGeneratorConfigurationCUDA:
     approval_threshold: float | None = None
     """Normalized approval below which sample is anomalous. Derive from baseline σ."""
 
-    circuit_breaker_anomaly_rate: float | None = None
-    """Anomaly rate above which circuit breaker trips. Derive from baseline measurements.
-
-    If None, circuit breaker is disabled - we cannot determine what "too many"
-    anomalies means without baseline geometry."""
 
 
 def compute_token_rank_metrics_cuda(
@@ -238,7 +234,6 @@ class DualPathGeneratorCUDA:
     - PEFT LoRA adapter support
     - Mixed precision inference
     - Entropy-based anomaly detection
-    - Circuit breaker for safety
 
     Example:
         config = DualPathGeneratorConfigurationCUDA(
@@ -330,7 +325,6 @@ class DualPathGeneratorCUDA:
         # Tracking state
         self.samples: list[EntropyDeltaSampleCUDA] = []
         self.anomaly_count = 0
-        self.circuit_breaker_tripped = False
 
         logger.info("DualPathGeneratorCUDA initialized successfully")
 
@@ -341,7 +335,6 @@ class DualPathGeneratorCUDA:
         Yields chunks containing:
         - {"type": "token", "text": str}
         - {"type": "anomaly", "sample": EntropyDeltaSampleCUDA}
-        - {"type": "circuit_breaker", "samples": List}
         - {"type": "metrics", "metrics": SecurityScanMetricsCUDA}
 
         Args:
@@ -352,7 +345,6 @@ class DualPathGeneratorCUDA:
         """
         self.samples = []
         self.anomaly_count = 0
-        self.circuit_breaker_tripped = False
 
         start_time = time.time()
         time_to_first = 0.0
@@ -450,12 +442,6 @@ class DualPathGeneratorCUDA:
                     self.anomaly_count += 1
                     yield {"type": "anomaly", "sample": sample}
 
-                # Check circuit breaker
-                if self.config.halt_on_circuit_breaker and self._check_circuit_breaker():
-                    self.circuit_breaker_tripped = True
-                    yield {"type": "circuit_breaker", "samples": self.samples}
-                    break
-
                 # Update state
                 token_count += 1
                 if token_count == 1:
@@ -494,8 +480,6 @@ class DualPathGeneratorCUDA:
             time_to_first_token_ms=time_to_first,
             total_time_ms=total_time,
             tokens_per_second=token_count / (total_time / 1000) if total_time > 0 else 0,
-            circuit_breaker_tripped=self.circuit_breaker_tripped,
-            anomaly_alert_count=self.anomaly_count,
         )
         yield {"type": "metrics", "metrics": metrics}
 
@@ -554,28 +538,6 @@ class DualPathGeneratorCUDA:
             if sample.normalized_approval < self.config.approval_threshold:
                 return True
         return False
-
-    def _check_circuit_breaker(self) -> bool:
-        """Check if circuit breaker should trip.
-
-        Requires calibration to operate. If circuit_breaker_anomaly_rate is not
-        provided, the circuit breaker is disabled - we cannot know what "too many"
-        anomalies means without baseline geometry to compare against.
-        """
-        # No calibration = circuit breaker disabled
-        if self.config.circuit_breaker_anomaly_rate is None:
-            return False
-
-        if len(self.samples) < 5:
-            return False
-
-        # Trip if recent anomaly geometry exceeds calibrated threshold
-        recent_samples = self.samples[-10:]
-        anomaly_rate = sum(1 for s in recent_samples if self._check_anomaly(s)) / len(
-            recent_samples
-        )
-        return anomaly_rate > self.config.circuit_breaker_anomaly_rate
-
 
 __all__ = [
     "DualPathGeneratorCUDA",

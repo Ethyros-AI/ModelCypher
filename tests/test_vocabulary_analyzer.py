@@ -22,12 +22,18 @@ from __future__ import annotations
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.vocabulary.vocabulary_analyzer import (
     TokenizerType,
     VocabularyAnalyzer,
     VocabularyAlignment,
     VocabularyStats,
 )
+
+
+def _div_eps() -> float:
+    backend = get_default_backend()
+    return division_epsilon(backend, backend.array([1.0]))
 
 
 @pytest.fixture
@@ -160,7 +166,7 @@ class TestVocabularyAnalyzer:
         alignment = analyzer.analyze_alignment(source, target)
 
         assert alignment.requires_projection is False
-        assert alignment.dimension_ratio == 1.0
+        assert abs(alignment.dimension_ratio - 1.0) < _div_eps()
 
     def test_analyze_alignment_different_dimensions(self, analyzer):
         """Test alignment when dimensions differ."""
@@ -186,7 +192,8 @@ class TestVocabularyAnalyzer:
         alignment = analyzer.analyze_alignment(source, target)
 
         assert alignment.requires_projection is True
-        assert alignment.dimension_ratio == 768 / 1024
+        expected = 768 / 1024
+        assert abs(alignment.dimension_ratio - expected) < _div_eps()
         assert alignment.requires_vocab_mapping is True
 
     def test_analyze_alignment_with_vocab_dicts(self, analyzer):
@@ -221,8 +228,9 @@ class TestVocabularyAnalyzer:
         assert alignment.shared_token_count == 80  # tokens 20-99
         assert alignment.source_only_tokens == 20  # tokens 0-19
         assert alignment.target_only_tokens == 20  # tokens 100-119
-        # Jaccard = 80 / 120 = 0.666...
-        assert 0.65 < alignment.vocab_overlap_ratio < 0.68
+        expected = 80 / 120
+        assert alignment.vocab_overlap_ratio is not None
+        assert abs(alignment.vocab_overlap_ratio - expected) < _div_eps()
 
     def test_compute_token_overlap(self, analyzer):
         """Test token overlap computation."""

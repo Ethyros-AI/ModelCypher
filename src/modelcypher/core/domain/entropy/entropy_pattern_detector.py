@@ -18,65 +18,40 @@
 """
 Entropy Pattern Detector.
 
-Analyzes entropy time series to detect patterns indicative of model state.
-
-Provides statistical analysis of entropy and variance sequences to detect:
-- Trends: Rising, falling, stable, or spiking entropy
-- Volatility: How much entropy varies (erratic vs smooth)
-- Distress signatures: Negative entropy-variance correlation
-- Anomalies: Sudden shifts in behavior
-
-Performance: All computations are O(n) where n = window size.
+Analyzes entropy time series to compute raw statistical measurements.
+No threshold-based classification is performed.
 """
 
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from enum import Enum
 
-
-class DistressAction(str, Enum):
-    """Recommended action when distress is detected."""
-
-    MONITOR = "monitor"  # Continue monitoring, distress signature is weak
-    PAUSE_AND_STEER = "pause_and_steer"  # Pause generation and attempt to steer conversation
-    HALT = "halt"  # Halt generation immediately (circuit breaker)
-
-
-@dataclass(frozen=True)
-class DetectorConfiguration:
-    """Configuration for entropy pattern detection.
-
-    Thresholds must be derived from baseline entropy measurements.
-    """
-
-    minimum_samples_for_trend: int
-    trend_threshold: float
-    distress_correlation_threshold: float
-    high_volatility_threshold: float
-    anomaly_z_score_threshold: float
-
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    find_magnitude_gap_threshold,
+)
 
 
 @dataclass(frozen=True)
 class EntropyPattern:
     """Complete entropy pattern analysis result.
 
-    Raw geometric measurements - no categorical classifications.
+    Raw geometric measurements only.
     """
 
-    trend_slope: float  # Linear regression slope of entropy over time
-    volatility: float  # Standard deviation of entropy
+    trend_slope: float
+    volatility: float
     entropy_mean: float
     entropy_std_dev: float
     variance_mean: float
     variance_std_dev: float
     entropy_variance_correlation: float
-    sustained_high_count: int  # Consecutive samples above mean + std
+    sustained_high_count: int
     peak_entropy: float
     min_entropy: float
-    anomaly_indices: tuple[int, ...]  # Indices with z-score > threshold
+    anomaly_indices: tuple[int, ...]
     sample_count: int
 
     @property
@@ -91,18 +66,13 @@ class EntropyPattern:
 
     @property
     def sustained_significance(self) -> float:
-        """How significant the sustained high count is.
-
-        Returns ratio of sustained_high_count to sqrt(sample_count).
-        Values > 1.0 indicate statistically unlikely by chance.
-        """
+        """Ratio of sustained high count to sqrt(sample_count)."""
         if self.sample_count < 1:
             return 0.0
-        threshold = max(2.0, math.sqrt(self.sample_count))
-        return self.sustained_high_count / threshold
+        return self.sustained_high_count / math.sqrt(self.sample_count)
 
     @staticmethod
-    def empty() -> EntropyPattern:
+    def empty() -> "EntropyPattern":
         """Empty pattern for when no samples are available."""
         return EntropyPattern(
             trend_slope=0.0,
@@ -140,49 +110,24 @@ class EntropyPattern:
 
 @dataclass(frozen=True)
 class DistressDetectionResult:
-    """Result of distress detection analysis.
+    """Raw distress-related measurements."""
 
-    Raw confidence and indicator measurements.
-    Caller decides action based on their risk tolerance.
-    """
-
-    confidence: float  # 0.0-1.0
     sustained_high_count: int
-    average_entropy: float
-    average_variance: float
-    correlation: float
-    indicators: tuple[str, ...]
-
-    def action_for_thresholds(
-        self,
-        halt_threshold: float = 0.8,
-        pause_threshold: float = 0.5,
-    ) -> DistressAction:
-        """Map confidence to action using caller-provided thresholds.
-
-        Args:
-            halt_threshold: Confidence >= this triggers HALT
-            pause_threshold: Confidence >= this triggers PAUSE_AND_STEER
-
-        Returns:
-            Recommended action based on thresholds
-        """
-        if self.confidence >= halt_threshold:
-            return DistressAction.HALT
-        elif self.confidence >= pause_threshold:
-            return DistressAction.PAUSE_AND_STEER
-        else:
-            return DistressAction.MONITOR
+    sustained_significance: float
+    entropy_mean: float
+    variance_mean: float
+    entropy_variance_correlation: float
+    sample_count: int
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
         return {
-            "confidence": self.confidence,
             "sustainedHighCount": self.sustained_high_count,
-            "averageEntropy": self.average_entropy,
-            "averageVariance": self.average_variance,
-            "correlation": self.correlation,
-            "indicators": list(self.indicators),
+            "sustainedSignificance": self.sustained_significance,
+            "entropyMean": self.entropy_mean,
+            "varianceMean": self.variance_mean,
+            "entropyVarianceCorrelation": self.entropy_variance_correlation,
+            "sampleCount": self.sample_count,
         }
 
 
@@ -206,46 +151,22 @@ class _Statistics:
 
 
 class EntropyPatternAnalyzer:
-    """
-    Analyzes entropy time series to detect patterns indicative of model state.
-
-    Provides statistical analysis of entropy and variance sequences to detect:
-    - Trends: Rising, falling, stable, or spiking entropy
-    - Volatility: How much entropy varies (erratic vs smooth)
-    - Distress signatures: Negative entropy-variance correlation
-    - Anomalies: Sudden shifts in behavior
-    """
-
-    def __init__(self, config: DetectorConfiguration):
-        """Initialize with calibrated configuration."""
-        self.config = config
+    """Analyze entropy sequences and return raw measurements."""
 
     def analyze(self, samples: list[tuple[float, float]]) -> EntropyPattern:
-        """
-        Analyze a sequence of entropy/variance samples to detect patterns.
-
-        Args:
-            samples: List of (entropy, variance) tuples in chronological order
-
-        Returns:
-            Detected pattern with statistics
-        """
+        """Analyze a sequence of entropy/variance samples."""
         if not samples:
             return EntropyPattern.empty()
 
         entropies = [s[0] for s in samples]
         variances = [s[1] for s in samples]
 
-        # Compute basic statistics
         entropy_mean = _Statistics.mean(entropies)
         entropy_std_dev = _Statistics.standard_deviation(entropies, entropy_mean)
         variance_mean = _Statistics.mean(variances)
         variance_std_dev = _Statistics.standard_deviation(variances, variance_mean)
 
-        # Compute trend (linear regression slope)
         trend = self._compute_trend(entropies)
-
-        # Compute entropy-variance correlation (key distress indicator)
         correlation = self._pearson_correlation(
             x=entropies,
             y=variances,
@@ -255,20 +176,16 @@ class EntropyPatternAnalyzer:
             y_std_dev=variance_std_dev,
         )
 
-        # Check for anomalies
         anomaly_indices = self._detect_anomalies(
             values=entropies,
             mean=entropy_mean,
             std_dev=entropy_std_dev,
         )
 
-        # Count sustained high entropy
-        # "High" is defined as mean + 1 std dev (statistically elevated)
-        high_threshold = entropy_mean + entropy_std_dev if entropy_std_dev > 1e-10 else entropy_mean
-        sustained_high_count = self._count_sustained_high(
-            entropies=entropies,
-            threshold=high_threshold,
-        )
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([0.0]))
+        high_threshold = entropy_mean + entropy_std_dev if entropy_std_dev > eps else entropy_mean
+        sustained_high_count = self._count_sustained_high(entropies, high_threshold)
 
         return EntropyPattern(
             trend_slope=trend,
@@ -286,96 +203,62 @@ class EntropyPatternAnalyzer:
         )
 
     def detect_distress(self, pattern: EntropyPattern) -> DistressDetectionResult | None:
-        """
-        Detect if the current pattern indicates distress.
-
-        Distress signature:
-        1. Sustained high entropy
-        2. Low variance (flat distribution)
-        3. Negative entropy-variance correlation
-
-        Args:
-            pattern: Analyzed entropy pattern
-
-        Returns:
-            DistressDetectionResult if detected, None otherwise
-        """
-        # Need minimum samples
-        if pattern.sample_count < self.config.minimum_samples_for_trend:
+        """Return distress-related measurements from the pattern."""
+        if pattern.sample_count == 0:
             return None
-
-        # Check for distress signature using data-derived thresholds
-        # Sustained high: significant if count > sqrt(samples)
-        sustained_threshold = max(2, int(math.sqrt(pattern.sample_count)))
-        has_sustained_high = pattern.sustained_high_count >= sustained_threshold
-
-        # Low variance indicates flat distribution (model equally uncertain about all options)
-        # Compare variance to entropy: if variance << entropy, distribution is uniform-like
-        # Geometric relationship: for uniform distribution, variance/entropy approaches a constant
-        has_low_variance = pattern.variance_mean < pattern.entropy_mean * 0.5 if pattern.entropy_mean > 1e-10 else False
-
-        has_negative_correlation = (
-            pattern.entropy_variance_correlation < self.config.distress_correlation_threshold
-        )
-
-        # Require at least sustained high + one other indicator
-        if not has_sustained_high:
-            return None
-        if not (has_low_variance or has_negative_correlation):
-            return None
-
-        # Confidence derived from indicator strengths
-        # Sustained: ratio of count to threshold (capped at 1)
-        sustained_strength = min(1.0, pattern.sustained_high_count / sustained_threshold)
-        # Correlation: how far below threshold (scaled to [0, 0.5])
-        correlation_strength = (
-            min(1.0, abs(pattern.entropy_variance_correlation - self.config.distress_correlation_threshold) / 0.5)
-            if has_negative_correlation else 0.0
-        )
-        # Base confidence from indicator presence, weighted by strength
-        num_indicators = sum([has_sustained_high, has_low_variance, has_negative_correlation])
-        confidence = (sustained_strength + correlation_strength + (1.0 if has_low_variance else 0.0)) / num_indicators
-
-        indicators: list[str] = []
-        if has_sustained_high:
-            indicators.append("sustained_high_entropy")
-        if has_low_variance:
-            indicators.append("low_variance")
-        if has_negative_correlation:
-            indicators.append("negative_correlation")
-
         return DistressDetectionResult(
-            confidence=confidence,
             sustained_high_count=pattern.sustained_high_count,
-            average_entropy=pattern.entropy_mean,
-            average_variance=pattern.variance_mean,
-            correlation=pattern.entropy_variance_correlation,
-            indicators=tuple(indicators),
+            sustained_significance=pattern.sustained_significance,
+            entropy_mean=pattern.entropy_mean,
+            variance_mean=pattern.variance_mean,
+            entropy_variance_correlation=pattern.entropy_variance_correlation,
+            sample_count=pattern.sample_count,
         )
 
     def _compute_trend(self, values: list[float]) -> float:
         """Compute linear regression slope (trend)."""
-        if len(values) < self.config.minimum_samples_for_trend:
+        if len(values) < 2:
             return 0.0
 
-        n = float(len(values))
-        sum_x = 0.0
-        sum_y = 0.0
-        sum_xy = 0.0
-        sum_x2 = 0.0
+        n = len(values)
+        x_values = list(range(n))
+        x_mean = sum(x_values) / n
+        y_mean = sum(values) / n
 
-        for i, y in enumerate(values):
-            x = float(i)
-            sum_x += x
-            sum_y += y
-            sum_xy += x * y
-            sum_x2 += x * x
+        numerator = sum((x - x_mean) * (y - y_mean) for x, y in zip(x_values, values))
+        denominator = sum((x - x_mean) ** 2 for x in x_values)
+        return numerator / denominator if denominator != 0 else 0.0
 
-        denominator = n * sum_x2 - sum_x * sum_x
-        if abs(denominator) < 1e-10:
-            return 0.0
+    def _count_sustained_high(self, entropies: list[float], threshold: float) -> int:
+        """Count consecutive samples above the threshold."""
+        max_count = 0
+        current_count = 0
 
-        return (n * sum_xy - sum_x * sum_y) / denominator
+        for entropy in entropies:
+            if entropy > threshold:
+                current_count += 1
+                max_count = max(max_count, current_count)
+            else:
+                current_count = 0
+
+        return max_count
+
+    def _detect_anomalies(self, values: list[float], mean: float, std_dev: float) -> list[int]:
+        """Detect anomalies using data-derived z-score separation."""
+        if len(values) < 2:
+            return []
+
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([0.0]))
+        if std_dev <= eps:
+            return []
+
+        z_scores = [abs((value - mean) / std_dev) for value in values]
+        threshold = find_magnitude_gap_threshold(sorted(z_scores), eps=eps)
+        if threshold <= 0.0:
+            return []
+
+        return [i for i, z in enumerate(z_scores) if z >= threshold]
 
     def _pearson_correlation(
         self,
@@ -386,49 +269,23 @@ class EntropyPatternAnalyzer:
         x_std_dev: float,
         y_std_dev: float,
     ) -> float:
-        """Compute Pearson correlation coefficient."""
+        """Compute Pearson correlation coefficient between two lists."""
         if len(x) != len(y) or len(x) < 2:
             return 0.0
-        if x_std_dev < 1e-10 or y_std_dev < 1e-10:
+        if x_std_dev == 0 or y_std_dev == 0:
             return 0.0
 
-        sum_product = 0.0
-        for i in range(len(x)):
-            sum_product += (x[i] - x_mean) * (y[i] - y_mean)
+        numerator = sum((xi - x_mean) * (yi - y_mean) for xi, yi in zip(x, y))
+        denominator = (len(x) - 1) * x_std_dev * y_std_dev
 
-        return sum_product / (float(len(x) - 1) * x_std_dev * y_std_dev)
+        if denominator == 0:
+            return 0.0
 
-    def _detect_anomalies(
-        self,
-        values: list[float],
-        mean: float,
-        std_dev: float,
-    ) -> list[int]:
-        """Detect anomalies based on Z-score."""
-        if std_dev < 1e-10:
-            return []
+        return numerator / denominator
 
-        anomalies: list[int] = []
-        for i, value in enumerate(values):
-            z_score = abs(value - mean) / std_dev
-            if z_score > self.config.anomaly_z_score_threshold:
-                anomalies.append(i)
-        return anomalies
 
-    def _count_sustained_high(
-        self,
-        entropies: list[float],
-        threshold: float,
-    ) -> int:
-        """Count the maximum consecutive high entropy samples."""
-        max_consecutive = 0
-        current = 0
-
-        for e in entropies:
-            if e >= threshold:
-                current += 1
-                max_consecutive = max(max_consecutive, current)
-            else:
-                current = 0
-
-        return max_consecutive
+__all__ = [
+    "DistressDetectionResult",
+    "EntropyPattern",
+    "EntropyPatternAnalyzer",
+]

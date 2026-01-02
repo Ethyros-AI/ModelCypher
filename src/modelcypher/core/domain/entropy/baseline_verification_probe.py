@@ -41,6 +41,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Awaitable, Callable
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
 
 @dataclass(frozen=True)
 class EntropyBaseline:
@@ -90,21 +93,51 @@ class BaselineComparison:
     mean_z_score: float
     # Ratio of observed stdDev to declared stdDev
     std_dev_ratio: float
-    # Whether observed range exceeds declared range
-    range_exceeded: bool
-    # Overall divergence score (0 = identical, 1 = completely different)
-    divergence_score: float
-    # Whether enough samples were collected
-    sample_count_sufficient: bool
+    # Absolute deviation of observed max from declared max
+    max_deviation: float
+    # Absolute deviation of observed min from declared min
+    min_deviation: float
+    # Declared range (max - min)
+    declared_range: float
+    # Observed range (max - min)
+    observed_range: float
+
+    @staticmethod
+    def from_baselines(
+        observed: "EntropyBaseline",
+        declared: "EntropyBaseline",
+    ) -> "BaselineComparison":
+        """Compute comparison metrics from observed and declared baselines."""
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([0.0]))
+
+        mean_z_score = abs(observed.delta_mean - declared.delta_mean) / max(
+            declared.delta_std_dev, eps
+        )
+        std_dev_ratio = observed.delta_std_dev / max(declared.delta_std_dev, eps)
+        max_deviation = abs(observed.delta_max - declared.delta_max)
+        min_deviation = abs(observed.delta_min - declared.delta_min)
+        declared_range = abs(declared.delta_max - declared.delta_min)
+        observed_range = abs(observed.delta_max - observed.delta_min)
+
+        return BaselineComparison(
+            mean_z_score=mean_z_score,
+            std_dev_ratio=std_dev_ratio,
+            max_deviation=max_deviation,
+            min_deviation=min_deviation,
+            declared_range=declared_range,
+            observed_range=observed_range,
+        )
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
         return {
             "meanZScore": self.mean_z_score,
             "stdDevRatio": self.std_dev_ratio,
-            "rangeExceeded": self.range_exceeded,
-            "divergenceScore": self.divergence_score,
-            "sampleCountSufficient": self.sample_count_sufficient,
+            "maxDeviation": self.max_deviation,
+            "minDeviation": self.min_deviation,
+            "declaredRange": self.declared_range,
+            "observedRange": self.observed_range,
         }
 
 
@@ -133,34 +166,14 @@ class PromptResult:
         }
 
 
-@dataclass(frozen=True)
-class AdversarialFlag:
-    """Flag raised during adversarial prompt testing."""
-
-    prompt_index: int
-    prompt: str
-    anomaly_score: float
-    reason: str
-
-    def to_dict(self) -> dict:
-        """Convert to dictionary for serialization."""
-        return {
-            "promptIndex": self.prompt_index,
-            "prompt": self.prompt[:100] + ("..." if len(self.prompt) > 100 else ""),
-            "anomalyScore": self.anomaly_score,
-            "reason": self.reason,
-        }
-
 
 @dataclass(frozen=True)
 class VerificationResult:
     """Result of baseline verification.
 
     Raw measurements:
-    - comparison.divergence_score: Overall divergence (0 = identical, 1 = completely different)
     - comparison.mean_z_score: Z-score of observed vs declared mean
     - comparison.std_dev_ratio: Ratio of observed to declared std dev
-    - adversarial_flags: Flags from adversarial prompt testing
 
     Callers should interpret these measurements relative to their own baselines.
     """
@@ -171,7 +184,6 @@ class VerificationResult:
     observed_baseline: EntropyBaseline
     comparison: BaselineComparison
     prompt_results: tuple[PromptResult, ...]
-    adversarial_flags: tuple[AdversarialFlag, ...]
     total_samples: int
     verification_duration: float
     timestamp: datetime
@@ -183,10 +195,10 @@ class VerificationResult:
 - Declared delta mean: {self.declared_baseline.delta_mean:.3f} ± {self.declared_baseline.delta_std_dev:.3f}
 - Observed delta mean: {self.observed_baseline.delta_mean:.3f} ± {self.observed_baseline.delta_std_dev:.3f}
 - Mean Z-score: {self.comparison.mean_z_score:.2f}
-- Divergence score: {self.comparison.divergence_score:.3f}
 - StdDev ratio: {self.comparison.std_dev_ratio:.2f}
+- Max deviation: {self.comparison.max_deviation:.3f}
+- Min deviation: {self.comparison.min_deviation:.3f}
 - Samples: {self.total_samples}
-- Adversarial flags: {len(self.adversarial_flags)}
 - Duration: {self.verification_duration:.1f}s"""
 
     def to_dict(self) -> dict:
@@ -198,7 +210,6 @@ class VerificationResult:
             "observedBaseline": self.observed_baseline.to_dict(),
             "comparison": self.comparison.to_dict(),
             "promptResults": [pr.to_dict() for pr in self.prompt_results],
-            "adversarialFlags": [af.to_dict() for af in self.adversarial_flags],
             "totalSamples": self.total_samples,
             "verificationDuration": self.verification_duration,
             "timestamp": self.timestamp.isoformat(),
@@ -208,81 +219,16 @@ class VerificationResult:
 
 @dataclass(frozen=True)
 class VerificationConfiguration:
-    """Configuration for baseline verification probe.
-
-    Z-score thresholds are for divergence_score normalization.
-    Standard significance conventions:
-    - 2.0 ≈ 95% confidence (p < 0.05)
-    - 3.0 ≈ 99.7% confidence (p < 0.003)
-    """
+    """Configuration for baseline verification probe."""
 
     # Test prompts for verification (diverse to catch hidden capabilities)
     test_prompts: tuple[str, ...]
     # Maximum tokens to generate per prompt
     max_tokens_per_prompt: int
-    # Z-score threshold for divergence normalization
-    failure_z_score_threshold: float
-    # Z-score threshold (lower bound for normalization)
-    suspicious_z_score_threshold: float
-    # Minimum samples required for valid verification
-    minimum_sample_count: int
     # Temperature for generation (lower = more deterministic)
     temperature: float
     # Timeout per prompt in seconds
     prompt_timeout_seconds: float
-    # Anomaly score threshold for adversarial prompt flagging (optional)
-    # If None, all adversarial samples with anomaly_score > 0 are flagged.
-    adversarial_anomaly_threshold: float | None = None
-
-    @classmethod
-    def with_statistical_thresholds(
-        cls,
-        *,
-        failure_z_score: float,
-        suspicious_z_score: float,
-        test_prompts: tuple[str, ...],
-        include_adversarial: bool,
-        max_tokens_per_prompt: int,
-        minimum_sample_count: int,
-        temperature: float,
-        prompt_timeout_seconds: float,
-    ) -> "VerificationConfiguration":
-        """Create configuration with explicit statistical thresholds.
-
-        Args:
-            failure_z_score: Z-score for divergence_score normalization.
-                Standard values: 3.0 (99.7% confidence), 2.5 (99% confidence).
-            suspicious_z_score: Lower Z-score bound for normalization.
-                Standard values: 2.0 (95% confidence), 1.5 (86% confidence).
-            test_prompts: Custom test prompts.
-            include_adversarial: If True, includes adversarial prompts.
-            max_tokens_per_prompt: Maximum tokens to generate per prompt.
-            minimum_sample_count: Minimum samples required for valid verification.
-            temperature: Generation temperature (lower = more deterministic).
-            prompt_timeout_seconds: Timeout per prompt in seconds.
-
-        Returns:
-            VerificationConfiguration with the specified thresholds.
-        """
-        if suspicious_z_score >= failure_z_score:
-            raise ValueError(
-                f"suspicious_z_score ({suspicious_z_score}) must be less than "
-                f"failure_z_score ({failure_z_score})"
-            )
-
-        prompts = test_prompts
-        if include_adversarial:
-            prompts = prompts + cls.adversarial_prompts()
-
-        return cls(
-            test_prompts=prompts,
-            max_tokens_per_prompt=max_tokens_per_prompt,
-            failure_z_score_threshold=failure_z_score,
-            suspicious_z_score_threshold=suspicious_z_score,
-            minimum_sample_count=minimum_sample_count,
-            temperature=temperature,
-            prompt_timeout_seconds=prompt_timeout_seconds,
-        )
 
     @staticmethod
     def default_test_prompts() -> tuple[str, ...]:
@@ -334,9 +280,11 @@ class BaselineVerificationProbe:
     """Verifies adapter entropy signatures match declared baselines.
 
     Usage:
-        config = VerificationConfiguration.with_statistical_thresholds(
-            failure_z_score=3.0,     # 99.7% confidence
-            suspicious_z_score=2.0,  # 95% confidence
+        config = VerificationConfiguration(
+            test_prompts=VerificationConfiguration.default_test_prompts(),
+            max_tokens_per_prompt=max_tokens_per_prompt,
+            temperature=temperature,
+            prompt_timeout_seconds=prompt_timeout_seconds,
         )
         probe = BaselineVerificationProbe(config)
         result = await probe.verify(
@@ -347,17 +295,14 @@ class BaselineVerificationProbe:
         )
 
         # Use raw measurements to make decisions
-        if result.comparison.divergence_score < 0.3:
-            print("Low divergence")
-        elif result.comparison.mean_z_score > 3.0:
-            print("High z-score deviation")
+        print(result.comparison.mean_z_score)
     """
 
     def __init__(self, config: VerificationConfiguration) -> None:
         """Initialize with configuration.
 
         Args:
-            config: Verification configuration with statistical thresholds.
+            config: Verification configuration.
         """
         self.config = config
 
@@ -385,8 +330,6 @@ class BaselineVerificationProbe:
         # Collect samples from all test prompts
         all_samples: list[DeltaSample] = []
         prompt_results: list[PromptResult] = []
-        adversarial_flags: list[AdversarialFlag] = []
-
         for index, prompt in enumerate(self.config.test_prompts):
             prompt_start = datetime.now()
             prompt_samples: list[DeltaSample] = []
@@ -399,22 +342,6 @@ class BaselineVerificationProbe:
                         self.config.temperature,
                     )
                     all_samples.extend(prompt_samples)
-
-                    # Check for adversarial flag using configurable threshold
-                    if self._is_adversarial_prompt(prompt):
-                        threshold = self.config.adversarial_anomaly_threshold
-                        for sample in prompt_samples:
-                            # If threshold not configured, flag any nonzero anomaly
-                            if sample.anomaly_score > (threshold if threshold is not None else 0.0):
-                                adversarial_flags.append(
-                                    AdversarialFlag(
-                                        prompt_index=index,
-                                        prompt=prompt,
-                                        anomaly_score=sample.anomaly_score,
-                                        reason="High anomaly on adversarial prompt",
-                                    )
-                                )
-                                break
 
                 except Exception:
                     # Continue with other prompts
@@ -458,7 +385,6 @@ class BaselineVerificationProbe:
             observed_baseline=observed_baseline,
             comparison=comparison,
             prompt_results=tuple(prompt_results),
-            adversarial_flags=tuple(adversarial_flags),
             total_samples=len(all_samples),
             verification_duration=verification_duration,
             timestamp=datetime.now(),
@@ -492,7 +418,6 @@ class BaselineVerificationProbe:
             observed_baseline=observed_baseline,
             comparison=comparison,
             prompt_results=(),
-            adversarial_flags=(),
             total_samples=len(observed_samples),
             verification_duration=0.0,
             timestamp=datetime.now(),
@@ -539,36 +464,7 @@ class BaselineVerificationProbe:
         declared: EntropyBaseline,
     ) -> BaselineComparison:
         """Compare observed baseline against declared baseline."""
-        # Z-score of observed mean vs declared distribution
-        mean_z_score = abs(observed.delta_mean - declared.delta_mean) / max(
-            declared.delta_std_dev, 0.001
-        )
-
-        # Ratio of observed stdDev to declared stdDev
-        std_dev_ratio = observed.delta_std_dev / max(declared.delta_std_dev, 0.001)
-
-        # Check if observed range deviates significantly from declared range
-        max_deviation = abs(observed.delta_max - declared.delta_max)
-        min_deviation = abs(observed.delta_min - declared.delta_min)
-        declared_range = max(abs(declared.delta_max - declared.delta_min), 0.1)
-        # Range tolerance: 1 std dev of the declared distribution (statistically grounded)
-        range_tolerance = declared.delta_std_dev if declared.delta_std_dev > 1e-10 else declared_range * 0.1
-        range_exceeded = max_deviation > range_tolerance or min_deviation > range_tolerance
-
-        # Compute overall divergence score with uniform weights
-        # Each component contributes equally (1/3 each)
-        z_score_component = min(1.0, mean_z_score / self.config.failure_z_score_threshold)
-        ratio_component = min(1.0, abs(std_dev_ratio - 1.0))
-        range_component = 1.0 if range_exceeded else 0.0
-        divergence_score = (z_score_component + ratio_component + range_component) / 3.0
-
-        return BaselineComparison(
-            mean_z_score=mean_z_score,
-            std_dev_ratio=std_dev_ratio,
-            range_exceeded=range_exceeded,
-            divergence_score=min(1.0, divergence_score),
-            sample_count_sufficient=observed.sample_count >= self.config.minimum_sample_count,
-        )
+        return BaselineComparison.from_baselines(observed, declared)
 
     def _is_adversarial_prompt(self, prompt: str) -> bool:
         """Check if a prompt is from the adversarial set."""

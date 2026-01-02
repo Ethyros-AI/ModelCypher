@@ -80,7 +80,7 @@ def storage_usage(ctx: typer.Context) -> None:
 @app.command("cleanup")
 def storage_cleanup(
     ctx: typer.Context,
-    targets: list[str] = typer.Option(..., "--target", help="Cleanup targets: caches"),
+    targets: list[str] = typer.Option(..., "--target", help="Cleanup targets: caches, rag"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview cleanup without deleting"),
     force: bool = typer.Option(False, "--force", help="Skip confirmation"),
 ) -> None:
@@ -114,7 +114,7 @@ def storage_cleanup(
             code="MC-1018",
             title="Storage cleanup failed",
             detail=str(exc),
-            hint="Valid targets are: caches",
+            hint="Valid targets are: caches, rag",
             trace_id=context.trace_id,
         )
         write_error(error.as_dict(), context.output_format, context.pretty)

@@ -24,13 +24,19 @@ from modelcypher.core.domain.entropy.geometric_alignment import (
     GASConfig,
     GeometricAlignmentSystem,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.safety.circuit_breaker_integration import (
     CircuitBreakerIntegration,
-    Configuration,
     InputSignals,
-    RecommendedAction,
     TriggerSource,
 )
+
+
+def _div_eps() -> float:
+    from modelcypher.core.domain._backend import get_default_backend
+
+    backend = get_default_backend()
+    return division_epsilon(backend, backend.array([1.0]))
 
 
 def test_geometric_alignment_sentinel():
@@ -40,23 +46,23 @@ def test_geometric_alignment_sentinel():
 
     # Test 1: Stable entropy (no spike)
     decision = session.observe(entropy=2.0, token_index=0)
-    assert not decision.sentinel.is_spike
-    assert not decision.sentinel.is_any_dip  # No dip (no negative delta)
+    assert decision.sentinel.entropy == 2.0
+    assert decision.sentinel.delta_h == 0.0
 
     # Test 2: Spike detection (delta > 1.0)
     decision = session.observe(entropy=3.5, token_index=1)  # Delta +1.5
-    assert decision.sentinel.is_spike
     assert decision.sentinel.delta_h == 1.5
+    assert decision.sentinel.is_negative_delta is False
 
     # Test 3: Pseudo-dip (drop > 0.3 but entropy > ceiling)
     # Ceiling is 4.0. Let's go up first
     session.observe(entropy=5.0, token_index=2)
     decision = session.observe(entropy=4.5, token_index=3)  # Delta -0.5
-    assert decision.sentinel.is_pseudo_dip  # Negative delta but above ceiling
+    assert decision.sentinel.is_negative_delta is True
 
     # Test 4: True dip (drop > 0.3 and entropy < ceiling)
     decision = session.observe(entropy=3.0, token_index=4)  # Delta -1.5, Entropy 3.0 (<4.0)
-    assert decision.sentinel.is_true_dip  # Negative delta and below ceiling
+    assert decision.sentinel.delta_h == -1.5
 
 
 def test_geometric_alignment_oscillation_pattern():
@@ -72,59 +78,30 @@ def test_geometric_alignment_oscillation_pattern():
 
     # Should have sign changes detected in the pattern
     assert decision.pattern.window_sign_changes > 0
-    # Severity should be elevated due to oscillation
-    assert decision.pattern.severity > 0
 
 
 def test_circuit_breaker_integration():
     """Test CircuitBreakerIntegration evaluates safety signals correctly."""
-    config = Configuration.uniform_weights(trip_threshold=0.75, warning_threshold=0.50)
+    eps = _div_eps()
 
-    # Case 1: Safe state
     signals_safe = InputSignals(
         entropy_signal=0.2,
-        refusal_distance=0.9,  # Far from refusal
+        refusal_distance=0.9,
         persona_drift_magnitude=0.1,
     )
-    state_safe = CircuitBreakerIntegration.evaluate(signals_safe, config)
-    assert not state_safe.is_tripped
-    assert state_safe.recommended_action == RecommendedAction.continue_generation
+    state_safe = CircuitBreakerIntegration.evaluate(signals_safe)
 
-    # Case 2: Tripped by Refusal Approach
-    # Use low threshold config for safety testing
-    safety_config = Configuration(
-        entropy_weight=0.25,
-        refusal_weight=0.5,
-        persona_drift_weight=0.15,
-        oscillation_weight=0.10,
-        trip_threshold=0.4,
-        warning_threshold=0.25,
-        trend_window_size=10,
-        enable_auto_escalation=True,
-        cooldown_tokens=5,
-    )
+    expected_refusal = 1.0 - 0.9
+    expected_severity = (0.2 + expected_refusal + 0.1 + 0.0) / 4.0
+    assert abs(state_safe.severity - expected_severity) < eps
+    assert state_safe.dominant_source == TriggerSource.entropy_spike
+    assert abs(state_safe.signal_contributions.refusal - expected_refusal) < eps
+    assert abs(state_safe.confidence - 0.75) < eps
+
     signals_refusal = InputSignals(
         entropy_signal=0.2,
-        refusal_distance=0.1,  # Very close => high contribution
-        is_approaching_refusal=True,
+        refusal_distance=0.1,
         persona_drift_magnitude=0.1,
     )
-    state_refusal = CircuitBreakerIntegration.evaluate(signals_refusal, safety_config)
-
-    # Refusal contribution should dominate and trip
-    assert state_refusal.is_tripped
-    assert state_refusal.trigger_source == TriggerSource.refusal_approach
-
-    # Case 3: Combined signals trip
-    signals_combined = InputSignals(
-        entropy_signal=0.95,  # Very high
-        refusal_distance=0.1,  # Very close to refusal
-        is_approaching_refusal=True,
-        persona_drift_magnitude=0.85,  # High drift
-        has_oscillation=True,
-        oscillation_severity=0.9,  # High oscillation
-    )
-
-    state_combined = CircuitBreakerIntegration.evaluate(signals_combined, config)
-    assert state_combined.is_tripped
-    assert state_combined.trigger_source == TriggerSource.combined_signals
+    state_refusal = CircuitBreakerIntegration.evaluate(signals_refusal)
+    assert state_refusal.dominant_source == TriggerSource.refusal_approach

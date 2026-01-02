@@ -22,6 +22,14 @@ from modelcypher.core.domain.merging.entropy_merge_validator import (
     MergeEntropyValidation,
     ModelEntropyProfile,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
+
+def _div_eps() -> float:
+    from modelcypher.core.domain._backend import get_default_backend
+
+    backend = get_default_backend()
+    return division_epsilon(backend, backend.array([1.0]))
 
 
 # =============================================================================
@@ -84,16 +92,14 @@ class TestLayerMergeValidationProperties:
     def test_perfect_merge_has_unit_retention(
         self, source: float, target: float
     ) -> None:
-        expected = (source + target) / 2
-
         validation = LayerMergeValidation.compute(
             layer_name="test_layer",
             source_entropy=source,
             target_entropy=target,
-            merged_entropy=expected,
+            merged_entropy=target,
         )
 
-        assert validation.knowledge_retention_score == 1.0
+        assert abs(validation.knowledge_retention_score - 1.0) < _div_eps()
 
     @given(
         source=entropy_strategy,
@@ -104,8 +110,7 @@ class TestLayerMergeValidationProperties:
     def test_entropy_delta_is_absolute(
         self, source: float, target: float, merged: float
     ) -> None:
-        expected = (source + target) / 2
-        expected_delta = abs(merged - expected)
+        expected_delta = abs(merged - target)
 
         validation = LayerMergeValidation.compute(
             layer_name="test_layer",
@@ -114,7 +119,7 @@ class TestLayerMergeValidationProperties:
             merged_entropy=merged,
         )
 
-        assert validation.entropy_delta == expected_delta
+        assert abs(validation.entropy_delta - expected_delta) < _div_eps()
 
 
 # =============================================================================

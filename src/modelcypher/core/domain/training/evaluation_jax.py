@@ -45,9 +45,16 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
-import jax
-import jax.numpy as jnp
-import optax
+try:
+    import jax
+    import jax.numpy as jnp
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    jax = None
+    jnp = None
+try:
+    import optax
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    optax = None
 
 logger = logging.getLogger(__name__)
 

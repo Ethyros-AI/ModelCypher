@@ -45,8 +45,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import jax
-import jax.numpy as jnp
+try:
+    import jax
+    import jax.numpy as jnp
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    jax = None
+    jnp = None
 
 from .exceptions import CheckpointError
 from .types import CheckpointMetadata, TrainingConfig

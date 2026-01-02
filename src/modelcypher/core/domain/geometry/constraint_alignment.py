@@ -34,8 +34,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from modelcypher.core.domain._backend import Backend, get_default_backend
+from modelcypher.core.domain._backend import get_default_backend
+
+if TYPE_CHECKING:
+    from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger(__name__)
 

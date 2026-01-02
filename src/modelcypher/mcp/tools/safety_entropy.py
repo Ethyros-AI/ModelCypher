@@ -248,27 +248,14 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_entropy_analyze(
             samples: list[list[float]],
-            minimumSamples: int,
-            trendThreshold: float,
-            distressCorrelationThreshold: float,
-            highVolatilityThreshold: float,
-            anomalyZScoreThreshold: float,
         ) -> dict:
             """Analyze entropy/variance samples for patterns and trends."""
             from modelcypher.core.use_cases.entropy_probe_service import (
                 EntropyProbeService,
-                PatternAnalysisConfig,
             )
 
             parsed_samples = [(s[0], s[1]) for s in samples]
-            config = PatternAnalysisConfig(
-                minimum_samples_for_trend=minimumSamples,
-                trend_threshold=trendThreshold,
-                distress_correlation_threshold=distressCorrelationThreshold,
-                high_volatility_threshold=highVolatilityThreshold,
-                anomaly_z_score_threshold=anomalyZScoreThreshold,
-            )
-            pattern = ctx.entropy_probe_service.analyze_pattern(parsed_samples, config)
+            pattern = ctx.entropy_probe_service.analyze_pattern(parsed_samples)
             payload = EntropyProbeService.pattern_payload(pattern)
             payload["_schema"] = "mc.entropy.analyze.v1"
             return payload
@@ -278,27 +265,14 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_entropy_detect_distress(
             samples: list[list[float]],
-            minimumSamples: int,
-            trendThreshold: float,
-            distressCorrelationThreshold: float,
-            highVolatilityThreshold: float,
-            anomalyZScoreThreshold: float,
         ) -> dict:
             """Detect distress patterns in entropy samples."""
             from modelcypher.core.use_cases.entropy_probe_service import (
                 EntropyProbeService,
-                PatternAnalysisConfig,
             )
 
             parsed_samples = [(s[0], s[1]) for s in samples]
-            config = PatternAnalysisConfig(
-                minimum_samples_for_trend=minimumSamples,
-                trend_threshold=trendThreshold,
-                distress_correlation_threshold=distressCorrelationThreshold,
-                high_volatility_threshold=highVolatilityThreshold,
-                anomaly_z_score_threshold=anomalyZScoreThreshold,
-            )
-            result = ctx.entropy_probe_service.detect_distress(parsed_samples, config)
+            result = ctx.entropy_probe_service.detect_distress(parsed_samples)
             payload = EntropyProbeService.distress_payload(result)
             payload["_schema"] = "mc.entropy.detect_distress.v1"
             return payload
@@ -312,40 +286,18 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
             declaredMax: float,
             declaredMin: float,
             observedDeltas: list[float],
-            testPrompts: list[str],
-            failureZScore: float,
-            suspiciousZScore: float,
-            minimumSampleCount: int,
-            includeAdversarial: bool,
-            maxTokensPerPrompt: int,
-            temperature: float,
-            promptTimeoutSeconds: float,
             baseModelId: str,
             adapterPath: str,
         ) -> dict:
             """Verify observed entropy deltas against declared baseline."""
-            from modelcypher.core.domain.entropy.baseline_verification_probe import (
-                VerificationConfiguration,
-            )
             from modelcypher.core.use_cases.entropy_probe_service import EntropyProbeService
 
-            config = VerificationConfiguration.with_statistical_thresholds(
-                failure_z_score=failureZScore,
-                suspicious_z_score=suspiciousZScore,
-                test_prompts=tuple(testPrompts),
-                include_adversarial=includeAdversarial,
-                max_tokens_per_prompt=maxTokensPerPrompt,
-                minimum_sample_count=minimumSampleCount,
-                temperature=temperature,
-                prompt_timeout_seconds=promptTimeoutSeconds,
-            )
             result = ctx.entropy_probe_service.verify_baseline(
                 declared_mean=declaredMean,
                 declared_std_dev=declaredStdDev,
                 declared_max=declaredMax,
                 declared_min=declaredMin,
                 observed_deltas=observedDeltas,
-                config=config,
                 base_model_id=baseModelId,
                 adapter_path=adapterPath,
             )
@@ -360,12 +312,8 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
         def mc_entropy_window(
             samples: list[list[float]],
             windowSize: int,
-            minimumSamples: int,
-            sustainedHighCount: int,
-            highThreshold: float,
-            circuitThreshold: float,
         ) -> dict:
-            """Track entropy in a sliding window with circuit breaker."""
+            """Track entropy in a sliding window and return raw measurements."""
             from modelcypher.core.domain.entropy.entropy_window import (
                 EntropyWindow,
                 EntropyWindowConfig,
@@ -373,10 +321,6 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
 
             config = EntropyWindowConfig(
                 window_size=windowSize,
-                minimum_samples=minimumSamples,
-                high_entropy_threshold=highThreshold,
-                circuit_breaker_threshold=circuitThreshold,
-                sustained_high_count=sustainedHighCount,
             )
             window = EntropyWindow(config)
             for i, sample in enumerate(samples):
@@ -390,8 +334,6 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
                 "windowSize": windowSize,
                 "currentEntropy": status.current_entropy,
                 "movingAverage": status.moving_average,
-                # circuitBreakerTripped is geometric: moving_average > circuit_threshold
-                "circuitBreakerTripped": status.should_trip_circuit_breaker,
             }
 
     if "mc_entropy_conversation_track" in tool_set:
@@ -399,31 +341,18 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_entropy_conversation_track(
             turns: list[dict],
-            oscillationThreshold: float,
-            driftThreshold: float,
-            turnSpikeThreshold: float,
-            oscillationWindowSize: int,
-            minimumTurns: int,
-            recencyDecay: float,
+            baselineDeltas: list[float] | None = None,
         ) -> dict:
-            """Track conversation entropy for manipulation detection.
-
-            Returns raw geometric measurements from conversation analysis.
-            """
+            """Track conversation entropy across turns and return raw measurements."""
             from modelcypher.core.domain.entropy.conversation_entropy_tracker import (
-                ConversationEntropyConfiguration,
+                ConversationEntropyBaseline,
                 ConversationEntropyTracker,
             )
 
-            config = ConversationEntropyConfiguration.with_thresholds(
-                oscillation_threshold=oscillationThreshold,
-                drift_threshold=driftThreshold,
-                turn_spike_threshold=turnSpikeThreshold,
-                oscillation_window_size=oscillationWindowSize,
-                minimum_turns_for_analysis=minimumTurns,
-                recency_decay=recencyDecay,
-            )
-            tracker = ConversationEntropyTracker(configuration=config)
+            baseline = None
+            if baselineDeltas:
+                baseline = ConversationEntropyBaseline.from_samples(baselineDeltas)
+            tracker = ConversationEntropyTracker(baseline=baseline)
 
             # Record each turn - record_turn returns the current assessment
             assessment = None
@@ -440,14 +369,6 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
                     )
                 if "anomalyCount" not in turn and "anomaly_count" not in turn:
                     raise ValueError("Each turn must include anomalyCount or anomaly_count")
-                if "circuitBreakerTripped" not in turn and "circuit_breaker_tripped" not in turn:
-                    raise ValueError(
-                        "Each turn must include circuitBreakerTripped or circuit_breaker_tripped"
-                    )
-                if "securityAssessment" not in turn and "security_assessment" not in turn:
-                    raise ValueError(
-                        "Each turn must include securityAssessment or security_assessment"
-                    )
                 if "timestamp" not in turn:
                     raise ValueError("Each turn must include timestamp")
 
@@ -457,12 +378,6 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
                     turn.get("maxAnomalyScore", turn.get("max_anomaly_score"))
                 )
                 anomaly_count = int(turn.get("anomalyCount", turn.get("anomaly_count")))
-                circuit_breaker_tripped = bool(
-                    turn.get("circuitBreakerTripped", turn.get("circuit_breaker_tripped"))
-                )
-                security_assessment = str(
-                    turn.get("securityAssessment", turn.get("security_assessment"))
-                )
                 timestamp = datetime.fromisoformat(str(turn["timestamp"]))
 
                 assessment = tracker.record_turn(
@@ -470,8 +385,6 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
                     avg_delta=avg_delta,
                     max_anomaly_score=max_anomaly,
                     anomaly_count=anomaly_count,
-                    circuit_breaker_tripped=circuit_breaker_tripped,
-                    security_assessment=security_assessment,
                     timestamp=timestamp,
                 )
 
@@ -480,38 +393,32 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
                 return {
                     "_schema": "mc.entropy.conversation_track.v1",
                     "turnsProcessed": 0,
+                    "meanDelta": 0.0,
+                    "stdDelta": 0.0,
                     "oscillationAmplitude": 0.0,
                     "oscillationFrequency": 0.0,
                     "cumulativeDrift": 0.0,
-                    "recentAnomalyCount": 0,
-                    "assessmentConfidence": 0.0,
+                    "anomalyCount": 0,
+                    "anomalyRate": 0.0,
+                    "maxAnomalyScore": 0.0,
+                    "deltaChangeMean": 0.0,
+                    "deltaChangeStd": 0.0,
                 }
 
             # Return raw geometric measurements
-            components = assessment.manipulation_components
             return {
                 "_schema": "mc.entropy.conversation_track.v1",
                 "turnsProcessed": len(turns),
-                # Raw oscillation measurements
+                "meanDelta": assessment.mean_delta,
+                "stdDelta": assessment.std_delta,
                 "oscillationAmplitude": assessment.oscillation_amplitude,
                 "oscillationFrequency": assessment.oscillation_frequency,
-                # Raw drift measurement
                 "cumulativeDrift": assessment.cumulative_drift,
-                # Raw anomaly count
-                "recentAnomalyCount": assessment.recent_anomaly_count,
-                # Confidence in measurements (based on turn count)
-                "assessmentConfidence": assessment.assessment_confidence,
-                # Individual signal components (all 0-1 normalized)
-                "signalComponents": {
-                    "oscillationAmplitudeScore": components.oscillation_amplitude_score,
-                    "oscillationFrequencyScore": components.oscillation_frequency_score,
-                    "driftScore": components.drift_score,
-                    "anomalyScore": components.anomaly_score,
-                    "spikeScore": components.spike_score,
-                },
-                # Binary geometric signals (not arbitrary thresholds)
-                "circuitBreakerTripped": components.circuit_breaker_tripped,
-                "baselineOscillationExceeded": components.baseline_oscillation_exceeded,
+                "anomalyCount": assessment.anomaly_count,
+                "anomalyRate": assessment.anomaly_rate,
+                "maxAnomalyScore": assessment.max_anomaly_score,
+                "deltaChangeMean": assessment.delta_change_mean,
+                "deltaChangeStd": assessment.delta_change_std,
             }
 
     if "mc_entropy_dual_path" in tool_set:

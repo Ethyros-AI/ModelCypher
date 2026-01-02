@@ -182,7 +182,7 @@ def test_entropy_window_basic():
     assert "windowMean" in data
 
 
-def test_entropy_window_with_circuit_breaker():
+def test_entropy_window_high_entropy_samples():
     """Test entropy window with high entropy samples."""
     # High entropy samples should still yield raw statistics
     samples = "[[5.0, 1.0], [5.2, 1.1], [5.5, 1.2], [5.8, 1.3], [6.0, 1.5]]"
@@ -214,8 +214,6 @@ def test_entropy_conversation_track(tmp_path):
                 "avg_delta": 0.1,
                 "anomaly_count": 0,
                 "max_anomaly_score": 0.2,
-                "circuit_breaker_tripped": False,
-                "security_assessment": "nominal",
                 "timestamp": "2025-01-01T00:00:00Z",
             },
             {
@@ -223,8 +221,6 @@ def test_entropy_conversation_track(tmp_path):
                 "avg_delta": 0.12,
                 "anomaly_count": 0,
                 "max_anomaly_score": 0.15,
-                "circuit_breaker_tripped": False,
-                "security_assessment": "nominal",
                 "timestamp": "2025-01-01T00:01:00Z",
             },
             {
@@ -232,8 +228,6 @@ def test_entropy_conversation_track(tmp_path):
                 "avg_delta": 0.08,
                 "anomaly_count": 0,
                 "max_anomaly_score": 0.1,
-                "circuit_breaker_tripped": False,
-                "security_assessment": "nominal",
                 "timestamp": "2025-01-01T00:02:00Z",
             },
         ]

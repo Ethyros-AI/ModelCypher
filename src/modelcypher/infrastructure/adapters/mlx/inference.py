@@ -59,7 +59,6 @@ class MLXInferenceAdapter(InferenceEnginePort):
             top_p=config.top_p,
             repetition_penalty=config.repetition_penalty,
             stop_sequences=config.stop_sequences,
-            halt_on_circuit_breaker=config.halt_on_circuit_breaker,
         )
 
         generator = DualPathGenerator(impl_config)
@@ -87,7 +86,6 @@ class MLXInferenceAdapter(InferenceEnginePort):
             top_p=config.top_p,
             repetition_penalty=config.repetition_penalty,
             stop_sequences=config.stop_sequences,
-            halt_on_circuit_breaker=config.halt_on_circuit_breaker,
         )
         # Note: ComparisonCoordinator takes list of checkpoints and config.
         # It handles iteration.

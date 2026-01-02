@@ -18,7 +18,6 @@
 """Entropy domain models for disagreement and safety metrics."""
 
 from .baseline_verification_probe import (
-    AdversarialFlag,
     BaselineComparison,
     BaselineVerificationProbe,
     DeltaSample,
@@ -47,23 +46,17 @@ from .entropy_delta_tracker import (
     PendingEntropyData,
 )
 from .entropy_pattern_detector import (
-    DetectorConfiguration,
-    DistressAction,
     DistressDetectionResult,
     EntropyPattern,
     EntropyPatternAnalyzer,
 )
 from .entropy_tracker import (
-    DistressDetection,
-    EntropyPatternDetector,
     EntropySample,
     EntropyTracker,
     EntropyTrackerConfig,
     EntropyTransition,
     EntropyWindow,
     EntropyWindowStatus,
-    ModelStateClassifier,
-    PatternConfig,
 )
 from .entropy_window import (
     EntropyWindow as EntropyWindowV2,  # Renamed to avoid conflict with entropy_tracker version
@@ -87,7 +80,6 @@ from .layer_entropy_projector import (
     ModelLayerEntropyProfile,
 )
 from .logit_entropy_calculator import (
-    EntropyThresholds,
     LogitEntropyCalculator,
     LogitEntropySample,
 )
@@ -102,13 +94,7 @@ from .metrics_ring_buffer import (
 # model_state_classifier exports (ModelState enum removed in Pure Geometry refactor)
 from .model_state_classifier import (
     CalibratedBaseline,
-    ClassificationResult,
-    ClassificationSnapshot,
-    EntropyStateThresholds,
     ModelStateSignals,
-)
-from .model_state_classifier import (
-    ModelStateClassifier as CalibratedModelStateClassifier,
 )
 from .sep_probe import (
     LayerProbeWeights,

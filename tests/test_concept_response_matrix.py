@@ -27,6 +27,7 @@ from pathlib import Path
 
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.concept_response_matrix import (
     AnchorActivation,
     AnchorCategory,
@@ -40,11 +41,12 @@ from modelcypher.core.domain.geometry.concept_response_matrix import (
     _cosine_similarity_matrix,
     _decode_datetime,
     _encode_datetime,
-    _interpolate_layer_weights,
+    _interpolate_layer_alignment,
     _mean_absolute_difference,
     _mean_pool_state,
     _sample_layer_indices,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 
 # =============================================================================
@@ -120,6 +122,11 @@ def _build_crm_mixed() -> ConceptResponseMatrix:
     return crm
 
 
+def _div_eps() -> float:
+    backend = get_default_backend()
+    return division_epsilon(backend, backend.array([1.0]))
+
+
 # =============================================================================
 # AnchorActivation Tests
 # =============================================================================
@@ -131,12 +138,12 @@ class TestAnchorActivation:
     def test_norm_computed_from_activation(self) -> None:
         """Norm should be computed from activation vector."""
         act = AnchorActivation(anchor_id="test", layer=0, activation=[3.0, 4.0])
-        assert abs(act.norm - 5.0) < 1e-10
+        assert abs(act.norm - 5.0) < _div_eps()
 
     def test_norm_unit_vector(self) -> None:
         """Unit vector should have norm 1."""
         act = AnchorActivation(anchor_id="test", layer=0, activation=[1.0, 0.0, 0.0])
-        assert abs(act.norm - 1.0) < 1e-10
+        assert abs(act.norm - 1.0) < _div_eps()
 
     def test_norm_zero_vector(self) -> None:
         """Zero vector should have norm 0."""
@@ -157,18 +164,18 @@ class TestAnchorActivation:
     def test_negative_values_in_activation(self) -> None:
         """Norm should work with negative values."""
         act = AnchorActivation(anchor_id="test", layer=0, activation=[-3.0, -4.0])
-        assert abs(act.norm - 5.0) < 1e-10
+        assert abs(act.norm - 5.0) < _div_eps()
 
     def test_single_element_activation(self) -> None:
         """Single element activation norm."""
         act = AnchorActivation(anchor_id="test", layer=0, activation=[7.0])
-        assert abs(act.norm - 7.0) < 1e-10
+        assert abs(act.norm - 7.0) < _div_eps()
 
     def test_high_dimensional_activation(self) -> None:
         """High dimensional activation norm."""
         # Vector of 100 ones has norm sqrt(100) = 10
         act = AnchorActivation(anchor_id="test", layer=0, activation=[1.0] * 100)
-        assert abs(act.norm - 10.0) < 1e-10
+        assert abs(act.norm - 10.0) < _div_eps()
 
 
 # =============================================================================
@@ -202,8 +209,8 @@ class TestLayerStatistics:
         )
         assert stats.layer == 5
         assert stats.anchor_count == 100
-        assert abs(stats.mean_activation_norm - 2.5) < 1e-10
-        assert abs(stats.std_activation_norm - 0.8) < 1e-10
+        assert abs(stats.mean_activation_norm - 2.5) < _div_eps()
+        assert abs(stats.std_activation_norm - 0.8) < _div_eps()
         assert stats.hidden_dim == 1024
 
 
@@ -369,8 +376,8 @@ class TestConceptResponseMatrixStatistics:
         crm = _build_crm()
         stats = crm.compute_layer_statistics()
         # Layer 0: norms are 1.0, 1.0, sqrt(2) ≈ 1.414
-        # Mean ≈ (1.0 + 1.0 + 1.414) / 3 ≈ 1.138
-        assert 1.0 < stats[0].mean_activation_norm < 1.5
+        expected = (2.0 + math.sqrt(2.0)) / 3.0
+        assert abs(stats[0].mean_activation_norm - expected) < _div_eps()
 
     def test_compute_layer_statistics_empty_crm(self) -> None:
         """CRM with no activations should return empty stats."""
@@ -439,10 +446,10 @@ class TestConceptResponseMatrixCKA:
         cka = crm.compute_cka_matrix(crm)
         assert len(cka) == 2
         # Self-comparison should be 1.0
-        assert abs(cka[0][0] - 1.0) < 1e-6
-        assert abs(cka[1][1] - 1.0) < 1e-6
+        assert abs(cka[0][0] - 1.0) < _div_eps()
+        assert abs(cka[1][1] - 1.0) < _div_eps()
         # Cross-layer CKA values - verify they are symmetric and bounded
-        assert abs(cka[0][1] - cka[1][0]) < 1e-6  # Symmetric
+        assert abs(cka[0][1] - cka[1][0]) < _div_eps()  # Symmetric
         assert 0.0 <= cka[0][1] <= 1.0  # Bounded
 
     def test_cka_matrix_symmetric_for_self(self) -> None:
@@ -451,7 +458,7 @@ class TestConceptResponseMatrixCKA:
         cka = crm.compute_cka_matrix(crm)
         for i in range(len(cka)):
             for j in range(len(cka[0])):
-                assert abs(cka[i][j] - cka[j][i]) < 1e-6
+                assert abs(cka[i][j] - cka[j][i]) < _div_eps()
 
     def test_cka_matrix_bounded_zero_one(self) -> None:
         """CKA values should be in [0, 1]."""
@@ -490,7 +497,7 @@ class TestConceptResponseMatrixCKA:
         crm = _build_crm()
         cka = crm.compute_layer_cka(0, crm, 0)
         assert cka is not None
-        assert abs(cka - 1.0) < 1e-6  # Self-comparison
+        assert abs(cka - 1.0) < _div_eps()  # Self-comparison
 
     def test_compute_layer_cka_cross_layer(self) -> None:
         """Cross-layer CKA should be computed."""
@@ -549,9 +556,10 @@ class TestConceptResponseMatrixComparison:
         """Overall alignment with self should be 1.0."""
         crm = _build_crm()
         report = crm.compare(crm)
-        # When comparing to self, diagonal CKA values are 1.0
-        # But greedy matching may not always get perfect alignment
-        assert report.overall_alignment > 0.5
+        expected = sum(match.cka for match in report.layer_correspondence) / float(
+            len(report.layer_correspondence)
+        )
+        assert abs(report.overall_alignment - expected) < _div_eps()
 
     def test_compare_cka_matrix_in_report(self) -> None:
         """CKA matrix should be included in report."""
@@ -576,11 +584,11 @@ class TestConceptResponseMatrixTransition:
         assert experiment is not None
         assert experiment.anchor_count == 3
         assert experiment.layer_transition_count == 1
-        assert abs(experiment.mean_transition_cka - 1.0) < 1e-6
-        assert abs(experiment.mean_state_cka - 1.0) < 1e-6
-        assert abs(experiment.transition_advantage - 1.0) < 1e-6
+        assert abs(experiment.mean_transition_cka - 1.0) < _div_eps()
+        assert abs(experiment.mean_state_cka - 1.0) < _div_eps()
+        assert abs(experiment.transition_advantage - 1.0) < _div_eps()
         assert experiment.transition_better_than_state is False
-        assert abs(experiment.transitions[0].delta_alignment - 1.0) < 1e-6
+        assert abs(experiment.transitions[0].delta_alignment - 1.0) < _div_eps()
 
     def test_transition_alignment_model_identifiers(self) -> None:
         """Experiment should have correct model identifiers."""
@@ -660,7 +668,7 @@ class TestConceptResponseMatrixConsistency:
         assert profile.anchor_count == 4
         assert profile.sample_layer_count == 2
         for alignment in profile.target_alignment_by_layer.values():
-            assert abs(alignment - 0.5) < 1e-6
+            assert abs(alignment - 0.5) < _div_eps()
 
     def test_consistency_profile_too_few_anchors(self) -> None:
         """Less than 4 common anchors should return None."""
@@ -800,7 +808,7 @@ class TestConceptResponseMatrixPrivate:
         assert delta[0] == [1.0, 1.0]
         assert delta[1] == [1.0, 1.0]
         # Each delta has norm sqrt(2), mean is sqrt(2)
-        assert abs(norm - math.sqrt(2)) < 1e-6
+        assert abs(norm - math.sqrt(2)) < _div_eps()
 
     def test_compute_layer_delta_different_lengths(self) -> None:
         """Different length lists should return empty."""
@@ -823,7 +831,7 @@ class TestConceptResponseMatrixPrivate:
         """Identical matrices should have CKA = 1."""
         x = [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]
         cka = ConceptResponseMatrix.compute_linear_cka(x, x)
-        assert abs(cka - 1.0) < 1e-6
+        assert abs(cka - 1.0) < _div_eps()
 
     def test_compute_linear_cka_bounded(self) -> None:
         """CKA should be in [0, 1]."""
@@ -884,15 +892,16 @@ class TestLayerTransitionResult:
             target_delta_norm=1.0,
         )
         # delta_alignment = transition_cka / state_cka = 0.8 / 0.4 = 2.0
-        assert abs(result.delta_alignment - 2.0) < 1e-6
+        assert abs(result.delta_alignment - 2.0) < _div_eps()
 
     def test_delta_alignment_zero_state_cka(self) -> None:
         """delta_alignment should be 0 when state_cka is very small."""
+        eps = _div_eps()
         result = LayerTransitionResult(
             from_layer=0,
             to_layer=1,
             transition_cka=0.8,
-            state_cka=0.0001,  # Below threshold
+            state_cka=eps * 0.5,
             source_delta_norm=1.0,
             target_delta_norm=1.0,
         )
@@ -992,7 +1001,7 @@ class TestMeanPoolState:
         # Mean of [1,5,9], [2,6,10], [3,7,11], [4,8,12] = [5, 6, 7, 8]
         expected = [5.0, 6.0, 7.0, 8.0]
         for i, val in enumerate(expected):
-            assert abs(float(backend.to_numpy(result)[i]) - val) < 1e-6
+            assert abs(float(backend.to_numpy(result)[i]) - val) < _div_eps()
 
     def test_1d_tensor_unchanged(self) -> None:
         """1D tensor should be unchanged."""
@@ -1023,10 +1032,10 @@ class TestCosineSimilarityMatrix:
         np_result = backend.to_numpy(result)
 
         # Diagonal should be 1, off-diagonal should be 0
-        assert abs(np_result[0, 0] - 1.0) < 1e-6
-        assert abs(np_result[1, 1] - 1.0) < 1e-6
-        assert abs(np_result[0, 1]) < 1e-6
-        assert abs(np_result[1, 0]) < 1e-6
+        assert abs(np_result[0, 0] - 1.0) < _div_eps()
+        assert abs(np_result[1, 1] - 1.0) < _div_eps()
+        assert abs(np_result[0, 1]) < _div_eps()
+        assert abs(np_result[1, 0]) < _div_eps()
 
     def test_identical_vectors(self) -> None:
         """Identical vectors should have similarity 1."""
@@ -1041,7 +1050,7 @@ class TestCosineSimilarityMatrix:
         # All entries should be 1
         for i in range(2):
             for j in range(2):
-                assert abs(np_result[i, j] - 1.0) < 1e-6
+                assert abs(np_result[i, j] - 1.0) < _div_eps()
 
     def test_empty_activations(self) -> None:
         """Empty activations should return None."""
@@ -1074,7 +1083,7 @@ class TestMeanAbsoluteDifference:
         b = backend.array([[1.0, 2.0], [3.0, 4.0]])
 
         diff = _mean_absolute_difference(a, b)
-        assert abs(diff) < 1e-10
+        assert abs(diff) < _div_eps()
 
     def test_constant_difference(self) -> None:
         """Constant difference should be reflected in mean."""
@@ -1085,7 +1094,7 @@ class TestMeanAbsoluteDifference:
         b = backend.array([[2.0, 3.0], [4.0, 5.0]])
 
         diff = _mean_absolute_difference(a, b)
-        assert abs(diff - 1.0) < 1e-10
+        assert abs(diff - 1.0) < _div_eps()
 
     def test_different_shapes(self) -> None:
         """Different shapes should return 0."""
@@ -1158,30 +1167,30 @@ class TestSampleLayerIndices:
 
 
 # =============================================================================
-# Helper Function Tests - _interpolate_layer_weights
+# Helper Function Tests - _interpolate_layer_alignment
 # =============================================================================
 
 
-class TestInterpolateLayerWeights:
-    """Tests for _interpolate_layer_weights helper function."""
+class TestInterpolateLayerAlignment:
+    """Tests for _interpolate_layer_alignment helper function."""
 
     def test_basic_interpolation(self) -> None:
         """Should interpolate between sample weights."""
-        result = _interpolate_layer_weights(
+        result = _interpolate_layer_alignment(
             sample_layers=[0, 4],
-            sample_weights={0: 0.0, 4: 1.0},
+            sample_alignment={0: 0.0, 4: 1.0},
             layer_count=5,
         )
 
         assert result[0] == 0.0
         assert result[4] == 1.0
-        assert abs(result[2] - 0.5) < 1e-10
+        assert abs(result[2] - 0.5) < _div_eps()
 
     def test_extrapolation_before_first(self) -> None:
         """Should extrapolate before first sample."""
-        result = _interpolate_layer_weights(
+        result = _interpolate_layer_alignment(
             sample_layers=[2, 4],
-            sample_weights={2: 0.3, 4: 0.7},
+            sample_alignment={2: 0.3, 4: 0.7},
             layer_count=5,
         )
 
@@ -1191,9 +1200,9 @@ class TestInterpolateLayerWeights:
 
     def test_extrapolation_after_last(self) -> None:
         """Should extrapolate after last sample."""
-        result = _interpolate_layer_weights(
+        result = _interpolate_layer_alignment(
             sample_layers=[0, 2],
-            sample_weights={0: 0.3, 2: 0.7},
+            sample_alignment={0: 0.3, 2: 0.7},
             layer_count=5,
         )
 
@@ -1203,27 +1212,27 @@ class TestInterpolateLayerWeights:
 
     def test_empty_sample_layers(self) -> None:
         """Empty sample layers should return empty dict."""
-        result = _interpolate_layer_weights(
+        result = _interpolate_layer_alignment(
             sample_layers=[],
-            sample_weights={},
+            sample_alignment={},
             layer_count=5,
         )
         assert result == {}
 
     def test_zero_layer_count(self) -> None:
         """Zero layer count should return empty dict."""
-        result = _interpolate_layer_weights(
+        result = _interpolate_layer_alignment(
             sample_layers=[0, 1],
-            sample_weights={0: 0.5, 1: 0.5},
+            sample_alignment={0: 0.5, 1: 0.5},
             layer_count=0,
         )
         assert result == {}
 
     def test_all_layers_covered(self) -> None:
         """All layers should be in result."""
-        result = _interpolate_layer_weights(
+        result = _interpolate_layer_alignment(
             sample_layers=[0, 9],
-            sample_weights={0: 0.2, 9: 0.8},
+            sample_alignment={0: 0.2, 9: 0.8},
             layer_count=10,
         )
 

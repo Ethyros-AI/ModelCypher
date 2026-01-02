@@ -63,7 +63,6 @@ class EntropyDeltaTrackerConfig:
 
     top_k: int
     anomaly_threshold: float
-    consecutive_anomaly_count: int
     compute_variance: bool
     source: str
 
@@ -72,30 +71,30 @@ class EntropyDeltaTrackerConfig:
         cls,
         anomaly_score_samples: list[float],
         *,
-        alert_percentile: float,
-        consecutive_count: int,
         top_k: int | None,
         compute_variance: bool,
         source: str,
     ) -> "EntropyDeltaTrackerConfig":
-        """Derive thresholds from baseline anomaly score distribution.
+        """Derive threshold from baseline anomaly score distribution.
 
         Args:
             anomaly_score_samples: Anomaly scores from baseline model runs.
-            alert_percentile: Percentile for anomaly alert threshold.
-            consecutive_count: Consecutive anomalies before circuit breaker trips.
         """
         if not anomaly_score_samples:
             raise ValueError("anomaly_score_samples required for calibration")
 
         sorted_samples = sorted(anomaly_score_samples)
-        idx = int(alert_percentile * (len(sorted_samples) - 1))
-        threshold = sorted_samples[idx]
+        from modelcypher.core.domain.geometry.numerical_stability import (
+            division_epsilon,
+            find_magnitude_gap_threshold,
+        )
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([0.0]))
+        threshold = float(find_magnitude_gap_threshold(sorted_samples, eps=eps))
 
         return cls(
             top_k=top_k,
             anomaly_threshold=threshold,
-            consecutive_anomaly_count=consecutive_count,
             compute_variance=compute_variance,
             source=source,
         )
@@ -191,16 +190,10 @@ class EntropyDeltaTracker:
         self._correlation_id: UUID | None = None
         self._session_start: datetime | None = None
         self._samples: list[EntropyDeltaSample] = []
-        self._consecutive_anomalies: int = 0
-        self._circuit_breaker_tripped: bool = False
-        self._circuit_breaker_trip_index: int | None = None
 
         # Callbacks
         self.on_delta_sample: Callable[[EntropyDeltaSample], Awaitable[None]] | None = None
         self.on_anomaly_detected: Callable[[EntropyDeltaSample], Awaitable[None]] | None = None
-        self.on_circuit_breaker_tripped: (
-            Callable[[list[EntropyDeltaSample]], Awaitable[None]] | None
-        ) = None
 
     def start_session(self, correlation_id: UUID | None = None) -> None:
         """
@@ -213,9 +206,6 @@ class EntropyDeltaTracker:
         self._correlation_id = correlation_id or uuid4()
         self._session_start = datetime.utcnow()
         self._samples = []
-        self._consecutive_anomalies = 0
-        self._circuit_breaker_tripped = False
-        self._circuit_breaker_trip_index = None
 
         logger.info(f"Started security scan session: {self._correlation_id}")
 
@@ -370,25 +360,21 @@ class EntropyDeltaTracker:
             avg_base_surprisal=avg_base_surprisal,
             max_base_surprisal=max_base_surprisal,
             conflict_analysis=conflict_analysis,
-            circuit_breaker_tripped=self._circuit_breaker_tripped,
-            circuit_breaker_trip_index=self._circuit_breaker_trip_index,
             samples=self._samples.copy(),
         )
 
         logger.info(
             f"Security scan complete: {total_tokens} tokens, {anomaly_count} anomalies, "
-            f"max score: {max_anomaly_score:.2f}, flags: {result.has_security_flags}"
+            f"max score: {max_anomaly_score:.2f}"
         )
 
         return result
 
     async def _check_anomalies(self, sample: EntropyDeltaSample) -> None:
-        """Check for anomalies and manage circuit breaker."""
+        """Check for anomalies and emit callbacks."""
         is_anomaly = sample.anomaly_score >= self.config.anomaly_threshold
 
         if is_anomaly:
-            self._consecutive_anomalies += 1
-
             # Invoke callback
             if self.on_anomaly_detected:
                 await self.on_anomaly_detected(sample)
@@ -399,31 +385,6 @@ class EntropyDeltaTracker:
                 f"baseEntropy={sample.base_entropy:.2f}, adapterEntropy={sample.adapter_entropy:.2f}"
             )
 
-            # Check circuit breaker
-            if (
-                not self._circuit_breaker_tripped
-                and self._consecutive_anomalies >= self.config.consecutive_anomaly_count
-            ):
-                await self._trip_circuit_breaker(sample.token_index)
-        else:
-            # Reset consecutive count on non-anomaly
-            self._consecutive_anomalies = 0
-
-    async def _trip_circuit_breaker(self, token_index: int) -> None:
-        """Trip the security circuit breaker."""
-        self._circuit_breaker_tripped = True
-        self._circuit_breaker_trip_index = token_index
-
-        recent_samples = self._samples[-self.config.consecutive_anomaly_count :]
-
-        # Invoke callback
-        if self.on_circuit_breaker_tripped:
-            await self.on_circuit_breaker_tripped(recent_samples)
-
-        logger.error(
-            f"Security circuit breaker TRIPPED at token {token_index}: "
-            f"{self.config.consecutive_anomaly_count} consecutive anomalies detected"
-        )
 
     def _get_top_token(self, logits: "Array") -> int:
         """Get the top predicted token from logits."""
@@ -457,7 +418,6 @@ class EntropyDeltaTracker:
             max_anomaly_score=0.0,
             avg_delta=0.0,
             disagreement_rate=0.0,
-            circuit_breaker_tripped=False,
         )
 
     # State accessors
@@ -468,19 +428,9 @@ class EntropyDeltaTracker:
         return self._session_active
 
     @property
-    def is_circuit_breaker_tripped(self) -> bool:
-        """Whether the circuit breaker has tripped in the current session."""
-        return self._circuit_breaker_tripped
-
-    @property
     def current_sample_count(self) -> int:
         """Current sample count in the active session."""
         return len(self._samples)
-
-    @property
-    def current_consecutive_anomalies(self) -> int:
-        """Current consecutive anomaly count."""
-        return self._consecutive_anomalies
 
     @property
     def correlation_id(self) -> UUID | None:

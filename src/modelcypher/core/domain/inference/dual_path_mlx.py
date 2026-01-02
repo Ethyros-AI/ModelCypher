@@ -119,8 +119,6 @@ class SecurityScanMetrics:
     time_to_first_token_ms: float
     total_time_ms: float
     tokens_per_second: float
-    circuit_breaker_tripped: bool
-    anomaly_alert_count: int
 
 
 @dataclass
@@ -132,7 +130,6 @@ class DualPathGeneratorConfiguration:
     top_p: float
     repetition_penalty: float
     stop_sequences: list[str]
-    halt_on_circuit_breaker: bool
     adapter_path: str | None = None
 
 
@@ -306,15 +303,6 @@ class DualPathGenerator:
             # Yield token
             yield {"type": "token", "text": text}
 
-            # Check for anomalies/circuit breaker
-            report = await self.delta_tracker.check_status()
-            if report and report.get("anomaly"):
-                yield {"type": "anomaly", "sample": sample}
-
-            if self.config.halt_on_circuit_breaker and report and report.get("circuit_breaker"):
-                yield {"type": "circuit_breaker", "samples": []}
-                break
-
             # Prepare next step
             tokens.append(token_id)
             token_count += 1
@@ -339,8 +327,6 @@ class DualPathGenerator:
             time_to_first_token_ms=time_to_first,
             total_time_ms=total_time,
             tokens_per_second=token_count / (total_time / 1000),
-            circuit_breaker_tripped=False,
-            anomaly_alert_count=0,
         )
         yield {"type": "metrics", "metrics": metrics}
 

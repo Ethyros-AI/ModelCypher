@@ -21,10 +21,13 @@ These tests verify the platform selection logic and dataclass configurations
 for the dual-path generator across MLX, CUDA, and JAX backends.
 """
 
+import math
 import os
 from unittest import mock
 
 import pytest
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 
 class TestPlatformDetection:
@@ -254,32 +257,12 @@ class TestSecurityScanMetrics:
             time_to_first_token_ms=50.5,
             total_time_ms=1000.0,
             tokens_per_second=100.0,
-            circuit_breaker_tripped=False,
-            anomaly_alert_count=0,
         )
 
         assert metrics.token_count == 100
         assert metrics.time_to_first_token_ms == 50.5
         assert metrics.total_time_ms == 1000.0
         assert metrics.tokens_per_second == 100.0
-        assert metrics.circuit_breaker_tripped is False
-        assert metrics.anomaly_alert_count == 0
-
-    def test_metrics_with_alerts(self):
-        """Metrics can track anomaly alerts and circuit breaker."""
-        from modelcypher.core.domain.inference.dual_path_mlx import SecurityScanMetrics
-
-        metrics = SecurityScanMetrics(
-            token_count=50,
-            time_to_first_token_ms=100.0,
-            total_time_ms=500.0,
-            tokens_per_second=100.0,
-            circuit_breaker_tripped=True,
-            anomaly_alert_count=3,
-        )
-
-        assert metrics.circuit_breaker_tripped is True
-        assert metrics.anomaly_alert_count == 3
 
 
 class TestDualPathGeneratorConfiguration:
@@ -291,8 +274,6 @@ class TestDualPathGeneratorConfiguration:
 
         return EntropyDeltaTracker.Configuration(
             top_k=10,
-            anomaly_threshold=0.8,
-            consecutive_anomaly_count=3,
             compute_variance=True,
             source="test",
         )
@@ -313,7 +294,6 @@ class TestDualPathGeneratorConfiguration:
             top_p=0.95,
             repetition_penalty=1.0,
             stop_sequences=[],
-            halt_on_circuit_breaker=True,
         )
 
         assert config.base_model_path == "/path/to/model"
@@ -323,7 +303,6 @@ class TestDualPathGeneratorConfiguration:
         assert config.top_p == 0.95
         assert config.repetition_penalty == 1.0
         assert config.stop_sequences == []
-        assert config.halt_on_circuit_breaker is True
 
     def test_config_creation_full(self):
         """Configuration can be created with all fields."""
@@ -341,7 +320,6 @@ class TestDualPathGeneratorConfiguration:
             top_p=0.9,
             repetition_penalty=1.2,
             stop_sequences=[".", "?", "!"],
-            halt_on_circuit_breaker=False,
         )
 
         assert config.adapter_path == "/path/to/adapter"
@@ -350,7 +328,6 @@ class TestDualPathGeneratorConfiguration:
         assert config.top_p == 0.9
         assert config.repetition_penalty == 1.2
         assert config.stop_sequences == [".", "?", "!"]
-        assert config.halt_on_circuit_breaker is False
 
     def test_config_with_zero_temperature(self):
         """Zero temperature (greedy) is valid."""
@@ -368,7 +345,6 @@ class TestDualPathGeneratorConfiguration:
             top_p=0.95,
             repetition_penalty=1.0,
             stop_sequences=[],
-            halt_on_circuit_breaker=True,
         )
 
         assert config.temperature == 0.0
@@ -383,36 +359,13 @@ class TestEntropyDeltaTrackerConfiguration:
 
         config = EntropyDeltaTracker.Configuration(
             top_k=10,
-            anomaly_threshold=0.8,
-            consecutive_anomaly_count=3,
             compute_variance=True,
             source="test",
         )
 
         assert config.top_k == 10
-        assert config.anomaly_threshold == 0.8
-        assert config.consecutive_anomaly_count == 3
         assert config.compute_variance is True
         assert config.source == "test"
-
-    def test_from_baseline_distribution(self):
-        """Configuration can be derived from baseline distribution."""
-        from modelcypher.core.domain.inference.entropy_dynamics import EntropyDeltaTracker
-
-        # Create sample anomaly scores (simulating baseline)
-        samples = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
-
-        config = EntropyDeltaTracker.Configuration.from_baseline_distribution(
-            samples,
-            alert_percentile=0.90,
-            consecutive_count=5,
-            top_k=20,
-        )
-
-        assert config.top_k == 20
-        assert config.consecutive_anomaly_count == 5
-        # 90th percentile of [0.1...1.0] is 0.9
-        assert config.anomaly_threshold == pytest.approx(0.9, abs=0.1)
 
 
 class TestEntropyDeltaSample:
@@ -458,7 +411,9 @@ class TestEntropyDeltaSample:
         )
 
         # delta = base - adapter
-        assert sample.delta == pytest.approx(1.0)
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([0.0]))
+        assert math.isclose(sample.delta, 1.0, rel_tol=eps, abs_tol=eps)
 
     def test_sample_top_token_disagreement(self):
         """EntropyDeltaSample detects top token disagreement."""
@@ -553,7 +508,8 @@ class TestLogitDivergenceCalculator:
         kl = calc.kl_divergence(logits, logits)
 
         assert kl >= 0
-        assert kl < 0.01  # Should be very close to zero
+        eps = division_epsilon(backend, backend.array([0.0]))
+        assert kl <= eps
 
     def test_kl_divergence_different_distributions(self):
         """KL divergence of different distributions is positive."""
@@ -585,4 +541,5 @@ class TestLogitDivergenceCalculator:
 
         # Check probabilities sum to 1
         prob_sum = float(backend.to_numpy(backend.sum(probs)))
-        assert prob_sum == pytest.approx(1.0, abs=0.001)
+        eps = division_epsilon(backend, backend.array([0.0]))
+        assert math.isclose(prob_sum, 1.0, rel_tol=eps, abs_tol=eps)

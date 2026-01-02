@@ -46,8 +46,12 @@ import math
 from dataclasses import dataclass
 from typing import Callable
 
-import torch
-import torch.nn as nn
+try:
+    import torch
+    import torch.nn as nn
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    torch = None
+    nn = None
 
 logger = logging.getLogger(__name__)
 

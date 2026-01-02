@@ -31,6 +31,23 @@ from .alignment_map import (
     compare_tokenizers,
     format_comparison_report,
 )
+from .cross_vocab_merger import (
+    CrossVocabMergeConfig,
+    CrossVocabMergeResult,
+    CrossVocabMerger,
+)
+from .embedding_projector import (
+    EmbeddingProjector,
+    ProjectionConfig,
+    ProjectionResult,
+    ProjectionStrategy,
+)
+from .vocabulary_analyzer import (
+    TokenizerType,
+    VocabularyAlignment,
+    VocabularyAnalyzer,
+    VocabularyStats,
+)
 __all__ = [
     # Alignment
     "TokenAlignment",
@@ -40,4 +57,18 @@ __all__ = [
     "compare_tokenizers",
     "format_comparison_report",
     "build_alignment_from_vocabs",
+    # Analyzer
+    "VocabularyAnalyzer",
+    "VocabularyStats",
+    "VocabularyAlignment",
+    "TokenizerType",
+    # Projection
+    "EmbeddingProjector",
+    "ProjectionConfig",
+    "ProjectionResult",
+    "ProjectionStrategy",
+    # Merger
+    "CrossVocabMerger",
+    "CrossVocabMergeConfig",
+    "CrossVocabMergeResult",
 ]

@@ -24,12 +24,18 @@ from pathlib import Path
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.merging.exceptions import MergeError
 from modelcypher.core.domain.merging.lora_adapter_merger import (
     AdapterPayload,
     LoRAAdapterMerger,
     MergeReport,
 )
+
+
+def _div_eps() -> float:
+    backend = get_default_backend()
+    return division_epsilon(backend, backend.array([1.0]))
 
 
 @pytest.fixture
@@ -145,8 +151,9 @@ class TestGeometricMergeMatrices:
 
         # Should return the matrix with perfect scores
         assert result.shape == matrix.shape
-        assert error == 0.0
-        assert quality == 1.0
+        eps = _div_eps()
+        assert abs(error) < eps
+        assert abs(quality - 1.0) < eps
 
     def test_1d_tensors_averaged(self, backend):
         """Test 1D tensors (biases) are simply averaged."""
@@ -163,9 +170,10 @@ class TestGeometricMergeMatrices:
 
         assert result.shape == bias1.shape
         for i in range(3):
-            assert abs(result_np[i] - expected_np[i]) < 1e-5
-        assert error == 0.0
-        assert quality == 1.0
+            assert abs(result_np[i] - expected_np[i]) < _div_eps()
+        eps = _div_eps()
+        assert abs(error) < eps
+        assert abs(quality - 1.0) < eps
 
     def test_two_matrices_merged(self, backend):
         """Test two matrices are merged geometrically."""
@@ -207,7 +215,7 @@ class TestProcrustesAlign:
         rotated, error = LoRAAdapterMerger._procrustes_align(matrix, matrix, backend)
 
         # Aligning to self should have very low error
-        assert error < 0.1
+        assert error < _div_eps()
         assert rotated.shape == matrix.shape
 
     def test_scaled_matrices(self, backend):
@@ -235,7 +243,8 @@ class TestProcrustesAlign:
 
         # They shouldn't be exactly equal
         diff = abs(source_np - rotated_np).sum()
-        assert diff > 1e-5 or error < 1e-5  # Either different or perfectly aligned
+        eps = _div_eps()
+        assert diff > eps or error < eps  # Either different or perfectly aligned
 
 
 class TestMergeValidation:

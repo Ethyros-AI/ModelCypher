@@ -24,32 +24,18 @@ Provides pattern analysis and baseline verification for entropy monitoring.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from datetime import datetime
 
 from modelcypher.core.domain.entropy.baseline_verification_probe import (
-    BaselineVerificationProbe,
-    DeltaSample,
+    BaselineComparison,
     EntropyBaseline,
-    VerificationConfiguration,
     VerificationResult,
 )
 from modelcypher.core.domain.entropy.entropy_pattern_detector import (
-    DetectorConfiguration,
     DistressDetectionResult,
     EntropyPattern,
     EntropyPatternAnalyzer,
 )
-
-
-@dataclass(frozen=True)
-class PatternAnalysisConfig:
-    """Configuration for pattern analysis operations."""
-
-    minimum_samples_for_trend: int
-    trend_threshold: float
-    distress_correlation_threshold: float
-    high_volatility_threshold: float
-    anomaly_z_score_threshold: float
 
 
 class EntropyProbeService:
@@ -66,51 +52,31 @@ class EntropyProbeService:
     def analyze_pattern(
         self,
         samples: list[tuple[float, float]],
-        config: PatternAnalysisConfig,
     ) -> EntropyPattern:
         """
         Analyze entropy/variance samples for patterns.
 
         Args:
             samples: List of (entropy, variance) tuples in chronological order
-            config: Configuration for analysis (required).
-
         Returns:
             EntropyPattern with trend, statistics, and anomaly information
         """
-        detector_config = DetectorConfiguration(
-            minimum_samples_for_trend=config.minimum_samples_for_trend,
-            trend_threshold=config.trend_threshold,
-            distress_correlation_threshold=config.distress_correlation_threshold,
-            high_volatility_threshold=config.high_volatility_threshold,
-            anomaly_z_score_threshold=config.anomaly_z_score_threshold,
-        )
-        analyzer = EntropyPatternAnalyzer(detector_config)
+        analyzer = EntropyPatternAnalyzer()
         return analyzer.analyze(samples)
 
     def detect_distress(
         self,
         samples: list[tuple[float, float]],
-        config: PatternAnalysisConfig,
     ) -> DistressDetectionResult | None:
         """
         Detect distress patterns in entropy/variance samples.
 
         Args:
             samples: List of (entropy, variance) tuples
-            config: Configuration for analysis (required).
-
         Returns:
             DistressDetectionResult if distress detected, None otherwise
         """
-        detector_config = DetectorConfiguration(
-            minimum_samples_for_trend=config.minimum_samples_for_trend,
-            trend_threshold=config.trend_threshold,
-            distress_correlation_threshold=config.distress_correlation_threshold,
-            high_volatility_threshold=config.high_volatility_threshold,
-            anomaly_z_score_threshold=config.anomaly_z_score_threshold,
-        )
-        analyzer = EntropyPatternAnalyzer(detector_config)
+        analyzer = EntropyPatternAnalyzer()
         pattern = analyzer.analyze(samples)
         return analyzer.detect_distress(pattern)
 
@@ -121,7 +87,6 @@ class EntropyProbeService:
         declared_max: float,
         declared_min: float,
         observed_deltas: list[float],
-        config: VerificationConfiguration,
         *,
         base_model_id: str,
         adapter_path: str,
@@ -137,8 +102,6 @@ class EntropyProbeService:
             observed_deltas: List of observed delta values
             base_model_id: Base model identifier
             adapter_path: Path to adapter (for reporting)
-            config: Verification configuration derived from explicit thresholds
-
         Returns:
             VerificationResult with comparison metrics and statistics
         """
@@ -151,17 +114,48 @@ class EntropyProbeService:
             sample_count=0,  # Declared baselines don't track sample count
         )
 
-        observed_samples = [
-            DeltaSample(token_index=i, delta=d, anomaly_score=0.0)
-            for i, d in enumerate(observed_deltas)
-        ]
+        if not observed_deltas:
+            observed_baseline = EntropyBaseline(
+                delta_mean=0.0,
+                delta_std_dev=0.0,
+                delta_max=0.0,
+                delta_min=0.0,
+                base_model_id=base_model_id,
+                sample_count=0,
+            )
+        else:
+            mean = sum(observed_deltas) / len(observed_deltas)
+            if len(observed_deltas) > 1:
+                variance = sum((d - mean) ** 2 for d in observed_deltas) / (
+                    len(observed_deltas) - 1
+                )
+                std_dev = variance**0.5
+            else:
+                std_dev = 0.0
+            observed_baseline = EntropyBaseline(
+                delta_mean=mean,
+                delta_std_dev=std_dev,
+                delta_max=max(observed_deltas),
+                delta_min=min(observed_deltas),
+                base_model_id=base_model_id,
+                sample_count=len(observed_deltas),
+            )
 
-        probe = BaselineVerificationProbe(config)
-        return probe.quick_verify_sync(
-            declared_baseline=declared_baseline,
-            observed_samples=observed_samples,
+        comparison = BaselineComparison.from_baselines(
+            observed=observed_baseline,
+            declared=declared_baseline,
+        )
+
+        return VerificationResult(
             adapter_path=adapter_path,
             base_model_path=base_model_id,
+            declared_baseline=declared_baseline,
+            observed_baseline=observed_baseline,
+            comparison=comparison,
+            prompt_results=(),
+            total_samples=len(observed_deltas),
+            verification_duration=0.0,
+            timestamp=datetime.now(),
         )
 
     @staticmethod
@@ -187,24 +181,23 @@ class EntropyProbeService:
 
     @staticmethod
     def distress_payload(distress: DistressDetectionResult | None) -> dict:
-        """Convert distress detection result to CLI/MCP payload.
-
-        Raw confidence - caller uses action_for_thresholds() to decide action.
-        """
+        """Convert distress metrics to CLI/MCP payload."""
         if distress is None:
             return {
-                "detected": False,
-                "confidence": 0.0,
-                "indicators": [],
+                "sustainedHighCount": 0,
+                "sustainedSignificance": 0.0,
+                "entropyMean": 0.0,
+                "varianceMean": 0.0,
+                "entropyVarianceCorrelation": 0.0,
+                "sampleCount": 0,
             }
         return {
-            "detected": True,
-            "confidence": distress.confidence,
             "sustainedHighCount": distress.sustained_high_count,
-            "averageEntropy": distress.average_entropy,
-            "averageVariance": distress.average_variance,
-            "correlation": distress.correlation,
-            "indicators": list(distress.indicators),
+            "sustainedSignificance": distress.sustained_significance,
+            "entropyMean": distress.entropy_mean,
+            "varianceMean": distress.variance_mean,
+            "entropyVarianceCorrelation": distress.entropy_variance_correlation,
+            "sampleCount": distress.sample_count,
         }
 
     @staticmethod
@@ -217,7 +210,6 @@ class EntropyProbeService:
             "observedBaseline": result.observed_baseline.to_dict(),
             "comparison": result.comparison.to_dict(),
             "totalSamples": result.total_samples,
-            "adversarialFlagCount": len(result.adversarial_flags),
             "verificationDuration": result.verification_duration,
             "timestamp": result.timestamp.isoformat(),
         }

@@ -36,23 +36,10 @@ class TestCrossVocabMergeConfig:
     def test_defaults(self):
         config = CrossVocabMergeConfig()
         assert config.projection_strategy == ProjectionStrategy.PROCRUSTES
-        assert config.preserve_special_tokens is True
-        assert config.max_alignments_per_token == 3
-        assert config.anchor_count == 1000
-        assert config.regularization is None
-        assert config.similarity_batch_size == 128
 
     def test_custom_projection_strategy(self):
         config = CrossVocabMergeConfig(projection_strategy=ProjectionStrategy.PCA)
         assert config.projection_strategy == ProjectionStrategy.PCA
-
-    def test_custom_preserve_special_tokens(self):
-        config = CrossVocabMergeConfig(preserve_special_tokens=False)
-        assert config.preserve_special_tokens is False
-
-    def test_custom_anchor_count(self):
-        config = CrossVocabMergeConfig(anchor_count=500)
-        assert config.anchor_count == 500
 
 
 class TestCrossVocabMergeConfigToProjectionConfig:
@@ -69,24 +56,6 @@ class TestCrossVocabMergeConfigToProjectionConfig:
         proj_config = merge_config.to_projection_config()
 
         assert proj_config.strategy == ProjectionStrategy.PCA
-
-    def test_regularization_transferred(self):
-        merge_config = CrossVocabMergeConfig(regularization=1e-4)
-        proj_config = merge_config.to_projection_config()
-
-        assert proj_config.regularization == 1e-4
-
-    def test_anchor_count_transferred(self):
-        merge_config = CrossVocabMergeConfig(anchor_count=500)
-        proj_config = merge_config.to_projection_config()
-
-        assert proj_config.anchor_count == 500
-
-    def test_preserve_norms_always_true(self):
-        merge_config = CrossVocabMergeConfig()
-        proj_config = merge_config.to_projection_config()
-
-        assert proj_config.preserve_norms is True
 
 
 class TestCrossVocabMergerInit:
@@ -219,7 +188,6 @@ class TestCrossVocabMergerBuildIndexAlignment:
         for a in alignment.iter_alignments():
             if a.source_id < 10:
                 assert a.quality == AlignmentQuality.EXACT
-                assert a.confidence == 1.0
 
 
 class TestCrossVocabMergerGetSharedIndices:
@@ -265,8 +233,7 @@ class TestCrossVocabMergerMerge:
 
     @pytest.fixture
     def merger(self):
-        config = CrossVocabMergeConfig(anchor_count=20)
-        return CrossVocabMerger(config=config)
+        return CrossVocabMerger()
 
     @pytest.fixture
     def backend(self):
@@ -355,8 +322,7 @@ class TestCrossVocabMergeResultToDict:
 
     @pytest.fixture
     def merger(self):
-        config = CrossVocabMergeConfig(anchor_count=10)
-        return CrossVocabMerger(config=config)
+        return CrossVocabMerger()
 
     @pytest.fixture
     def backend(self):
@@ -418,8 +384,7 @@ class TestCrossVocabMergerAnalyzeMergeQuality:
 
     @pytest.fixture
     def merger(self):
-        config = CrossVocabMergeConfig(anchor_count=10)
-        return CrossVocabMerger(config=config)
+        return CrossVocabMerger()
 
     @pytest.fixture
     def backend(self):

@@ -66,46 +66,24 @@ class DoRAConfig:
     Use with_parameters() to create with explicit values.
     """
 
-    magnitude_dominance_threshold: float = 2.0
-    direction_dominance_threshold: float = 2.0
     compute_per_layer_metrics: bool = True
-    minimum_norm: float = 1e-8
 
     @classmethod
     def with_parameters(
         cls,
         *,
-        magnitude_dominance_threshold: float = 2.0,
-        direction_dominance_threshold: float = 2.0,
         compute_per_layer_metrics: bool = True,
-        minimum_norm: float = 1e-8,
     ) -> "DoRAConfig":
         """Create configuration with explicit parameters.
 
         Args:
-            magnitude_dominance_threshold: Ratio threshold for magnitude-dominated change.
-            direction_dominance_threshold: Ratio threshold for direction-dominated change.
             compute_per_layer_metrics: Whether to compute per-layer metrics.
-            minimum_norm: Minimum norm for valid decomposition.
 
         Returns:
             Configuration with specified parameters.
         """
-        if magnitude_dominance_threshold <= 0:
-            raise ValueError(
-                f"magnitude_dominance_threshold must be > 0, got {magnitude_dominance_threshold}"
-            )
-        if direction_dominance_threshold <= 0:
-            raise ValueError(
-                f"direction_dominance_threshold must be > 0, got {direction_dominance_threshold}"
-            )
-        if minimum_norm <= 0:
-            raise ValueError(f"minimum_norm must be > 0, got {minimum_norm}")
         return cls(
-            magnitude_dominance_threshold=magnitude_dominance_threshold,
-            direction_dominance_threshold=direction_dominance_threshold,
             compute_per_layer_metrics=compute_per_layer_metrics,
-            minimum_norm=minimum_norm,
         )
 
 
@@ -191,7 +169,8 @@ class DoRADecomposition:
         base_mag = float(b.to_numpy(base_sq).item())
         current_mag = float(b.to_numpy(current_sq).item())
 
-        if base_mag < self.config.minimum_norm:
+        min_norm = division_epsilon(b, base_flat)
+        if base_mag < min_norm:
             return None
 
         magnitude_ratio = current_mag / base_mag
@@ -274,9 +253,10 @@ class DoRADecomposition:
         overall_drift = total_dir_drift / total_weight
 
         # Compute ratio
-        if overall_drift > self.config.minimum_norm:
+        eps = division_epsilon(backend, backend.array([overall_mag, overall_drift]))
+        if overall_drift > eps:
             ratio = overall_mag / overall_drift
-        elif overall_mag > self.config.minimum_norm:
+        elif overall_mag > eps:
             ratio = float("inf")
         else:
             ratio = 0.0
@@ -301,14 +281,15 @@ class DoRADecomposition:
         ratio: float,
     ) -> ChangeType:
         """Classify the dominant change type."""
-        # Use config minimum_norm as threshold for MINIMAL (no arbitrary 0.01)
-        if mag_change < self.config.minimum_norm and dir_drift < self.config.minimum_norm:
+        backend = self._backend
+        eps = division_epsilon(backend, backend.array([mag_change, dir_drift]))
+        if mag_change < eps and dir_drift < eps:
             return ChangeType.MINIMAL
 
-        if ratio > self.config.magnitude_dominance_threshold:
+        if ratio > 1.0 + eps:
             return ChangeType.MAGNITUDE_DOMINATED
 
-        if ratio < 1.0 / self.config.direction_dominance_threshold:
+        if ratio < 1.0 - eps:
             return ChangeType.DIRECTION_DOMINATED
 
         return ChangeType.BALANCED

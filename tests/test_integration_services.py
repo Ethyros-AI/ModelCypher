@@ -101,11 +101,9 @@ class TestEntropyIntegration:
         from modelcypher.core.domain.entropy.entropy_tracker import (
             EntropyTracker,
             EntropyTrackerConfig,
-            PatternConfig,
         )
         from modelcypher.core.domain.entropy.model_state_classifier import (
             CalibratedBaseline,
-            EntropyStateThresholds,
         )
 
         # Create minimal baseline (real usage requires calibration service)
@@ -119,36 +117,11 @@ class TestEntropyIntegration:
             sample_count=100,
             model_id="test-model",
         )
-        thresholds = EntropyStateThresholds(
-            entropy_low=1.8,
-            entropy_high=3.2,
-            entropy_circuit_breaker=4.5,
-            variance_low=0.2,
-            variance_moderate=0.3,
-            z_confident=-1.0,
-            z_uncertain=1.5,
-            z_distressed=2.0,
-            z_extreme=3.0,
-            trend_min_samples=5,
-            trend_slope_threshold=0.05,
-            distress_correlation_threshold=-0.3,
-            sustained_high_count=3,
-        )
-        pattern_config = PatternConfig(
-            min_samples=5,
-            high_z_score_threshold=1.5,
-            low_variance_threshold=0.2,
-            sustained_count=3,
-        )
         tracker_config = EntropyTrackerConfig(
             top_k=10,
             window_size=20,
             emit_interval=1,
             source="EntropyTracker",
-            z_score_change_threshold=1.0,
-            distress_check_interval=5,
-            state_thresholds=thresholds,
-            pattern_config=pattern_config,
         )
         tracker = EntropyTracker(baseline=baseline, config=tracker_config)
         assert tracker is not None
@@ -169,13 +142,7 @@ class TestEntropyIntegration:
             EntropyWindowConfig,
         )
 
-        config = EntropyWindowConfig(
-            window_size=5,
-            minimum_samples=1,
-            high_entropy_threshold=3.0,
-            circuit_breaker_threshold=4.0,
-            sustained_high_count=3,
-        )
+        config = EntropyWindowConfig(window_size=5)
         window = EntropyWindow(config)
 
         assert window is not None

@@ -740,9 +740,9 @@ def infer(
 
     # Flatten security info for easier reading if present
     if result.security:
-        payload["hasSecurityFlags"] = result.security.has_security_flags
         payload["maxAnomalyScore"] = result.security.max_anomaly_score
         payload["securityAnomalies"] = result.security.anomaly_count
+        payload["securityAvgDelta"] = result.security.avg_delta
 
     write_output(payload, context.output_format, context.pretty)
 

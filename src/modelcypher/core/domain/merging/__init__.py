@@ -38,6 +38,11 @@ from .entropy_merge_validator import (
     MergeEntropyValidation,
     ModelEntropyProfile,
 )
+from .lora_adapter_merger import (
+    AdapterPayload,
+    LoRAAdapterMerger,
+    MergeReport,
+)
 __all__ = [
     # Entropy Merge Validator
     "EntropyMergeValidator",
@@ -45,6 +50,10 @@ __all__ = [
     "ModelEntropyProfile",
     "LayerMergeValidation",
     "MergeEntropyValidation",
+    # LoRA adapter merge
+    "AdapterPayload",
+    "MergeReport",
+    "LoRAAdapterMerger",
     # Exceptions
     "MergeError",
     # Platform detection

@@ -45,10 +45,18 @@ from enum import Enum
 from pathlib import Path
 from typing import Callable, Iterator
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from safetensors.torch import load_file
+try:
+    import torch
+    import torch.nn as nn
+    import torch.nn.functional as F
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    torch = None
+    nn = None
+    F = None
+try:
+    from safetensors.torch import load_file
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    load_file = None
 
 logger = logging.getLogger(__name__)
 

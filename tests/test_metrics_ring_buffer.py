@@ -156,13 +156,13 @@ class TestMetricEvent:
     def test_create_with_timestamp(self) -> None:
         """Test creating an event with timestamp."""
         event = MetricEvent.create(
-            event_type=EventType.circuit_breaker_tripped,
+            event_type=EventType.dpo_correction,
             timestamp=1000.0,
-            label="High entropy detected",
+            label="DPO correction applied",
         )
-        assert event.event_type == EventType.circuit_breaker_tripped
+        assert event.event_type == EventType.dpo_correction
         assert event.timestamp == 1000.0
-        assert event.label == "High entropy detected"
+        assert event.label == "DPO correction applied"
         assert event.id is not None
 
     def test_create_with_date(self) -> None:
@@ -176,9 +176,6 @@ class TestMetricEvent:
 
     def test_event_type_properties(self) -> None:
         """Test EventType display properties."""
-        assert EventType.circuit_breaker_tripped.display_name == "Circuit"
-        assert EventType.circuit_breaker_tripped.symbol == "▲"
-
         assert EventType.dpo_correction.display_name == "DPO"
         assert EventType.dpo_correction.symbol == "◆"
 

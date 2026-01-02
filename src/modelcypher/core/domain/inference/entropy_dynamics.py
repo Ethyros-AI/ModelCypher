@@ -18,13 +18,6 @@
 """Entropy dynamics for inference monitoring.
 
 Provides raw geometric measurements from logit entropy during generation.
-
-Notes
------
-Information-theoretic thresholds:
-- Confident: entropy < ln(e²) ≈ 2.0 (probability mass concentrated)
-- Uncertain: entropy > 3.0 (high uncertainty)
-- Distress signature: high entropy + low variance
 """
 
 from __future__ import annotations
@@ -37,6 +30,10 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -179,12 +176,11 @@ class EntropyDeltaSample:
 
     @property
     def anomaly_score(self) -> float:
-        """Raw anomaly score."""
+        """Entropy ratio measuring base uncertainty relative to adapter confidence."""
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([0.0]))
         positive_delta = max(0.0, self.delta)
-        entropy_ratio = positive_delta / max(self.base_entropy, 0.01)
-        disagreement_bonus = 1.0 if self.top_token_disagreement else 0.0
-        raw_score = 0.8 * entropy_ratio + 0.2 * disagreement_bonus
-        return min(1.0, raw_score)
+        return positive_delta / max(self.base_entropy, eps)
 
     def to_signal_payload(self) -> dict[str, Any]:
         """Convert to signal payload with raw measurements."""
@@ -232,15 +228,13 @@ class EntropyDeltaSessionResult:
     total_tokens : int
         Total tokens generated in session.
     anomaly_count : int
-        Number of tokens exceeding anomaly threshold.
+        Number of tokens with positive entropy delta.
     max_anomaly_score : float
         Maximum anomaly score observed.
     avg_delta : float
         Average entropy delta across tokens.
     disagreement_rate : float
         Fraction of tokens where base and adapter disagreed on top token.
-    circuit_breaker_tripped : bool
-        Whether circuit breaker was triggered.
     samples : list of EntropyDeltaSample
         Individual token samples.
     """
@@ -252,7 +246,6 @@ class EntropyDeltaSessionResult:
     max_anomaly_score: float
     avg_delta: float
     disagreement_rate: float
-    circuit_breaker_tripped: bool
     samples: list[EntropyDeltaSample]
 
     session_id: uuid.UUID = field(default_factory=uuid.uuid4)
@@ -260,12 +253,6 @@ class EntropyDeltaSessionResult:
     avg_base_surprisal: float | None = None
     max_base_surprisal: float | None = None
     conflict_analysis: ConflictAnalysis | None = None
-    circuit_breaker_trip_index: int | None = None
-
-    @property
-    def has_security_flags(self) -> bool:
-        """Check if any security flags are raised."""
-        return self.circuit_breaker_tripped
 
     @property
     def duration_seconds(self) -> float:
@@ -279,12 +266,11 @@ class LogitEntropyCalculator:
     def __init__(
         self,
         top_k: int = 10,
-        epsilon: float = 1e-10,
         backend: "Backend | None" = None,
     ) -> None:
         self.top_k = top_k
-        self.epsilon = epsilon
         self._backend = backend or get_default_backend()
+        self._epsilon = machine_epsilon(self._backend, self._backend.array([0.0]))
 
     def compute(self, logits: "Array", skip_variance: bool = False) -> tuple[float, float]:
         b = self._backend
@@ -308,7 +294,7 @@ class LogitEntropyCalculator:
         probs = exp_shifted / sum_exp
 
         # Entropy
-        log_probs = b.log(probs + self.epsilon)
+        log_probs = b.log(probs + self._epsilon)
         entropy = -b.sum(probs * log_probs, axis=-1)
 
         # Variance
@@ -341,11 +327,10 @@ class LogitDivergenceCalculator:
 
     def __init__(
         self,
-        epsilon: float = 1e-10,
         backend: "Backend | None" = None,
     ) -> None:
-        self.epsilon = epsilon
         self._backend = backend or get_default_backend()
+        self._epsilon = machine_epsilon(self._backend, self._backend.array([0.0]))
 
     def stable_softmax(self, flat_logits: "Array") -> "Array":
         b = self._backend
@@ -368,8 +353,8 @@ class LogitDivergenceCalculator:
         p = self.stable_softmax(p_flat)
         q = self.stable_softmax(q_flat)
 
-        log_p = b.log(p + self.epsilon)
-        log_q = b.log(q + self.epsilon)
+        log_p = b.log(p + self._epsilon)
+        log_q = b.log(q + self._epsilon)
 
         kl = b.sum(p * (log_p - log_q), axis=-1)
         b.eval(kl)
@@ -382,40 +367,11 @@ class EntropyDeltaTracker:
 
     @dataclass
     class Configuration:
-        """Derive via from_baseline_distribution()."""
+        """Configuration for entropy delta tracking."""
 
         top_k: int
-        anomaly_threshold: float
-        consecutive_anomaly_count: int
         compute_variance: bool
         source: str
-
-        @classmethod
-        def from_baseline_distribution(
-            cls,
-            anomaly_score_samples: list[float],
-            *,
-            alert_percentile: float = 0.90,
-            consecutive_count: int = 3,
-            top_k: int = 10,
-            compute_variance: bool = True,
-            source: str = "EntropyDeltaTracker",
-        ) -> "EntropyDeltaTracker.Configuration":
-            """Derive thresholds from baseline anomaly score distribution."""
-            if not anomaly_score_samples:
-                raise ValueError("anomaly_score_samples required for calibration")
-
-            sorted_samples = sorted(anomaly_score_samples)
-            idx = int(alert_percentile * (len(sorted_samples) - 1))
-            threshold = sorted_samples[idx]
-
-            return cls(
-                top_k=top_k,
-                anomaly_threshold=threshold,
-                consecutive_anomaly_count=consecutive_count,
-                compute_variance=compute_variance,
-                source=source,
-            )
 
     def __init__(
         self,
@@ -429,18 +385,12 @@ class EntropyDeltaTracker:
         self.session_active = False
         self.correlation_id: uuid.UUID | None = None
         self.session_start: datetime | None = None
-        self.consecutive_anomalies = 0
-        self.circuit_breaker_tripped = False
-        self.circuit_breaker_trip_index: int | None = None
 
     def start_session(self, correlation_id: uuid.UUID | None = None):
         self.session_active = True
         self.correlation_id = correlation_id or uuid.uuid4()
         self.session_start = datetime.utcnow()
         self.samples = []
-        self.consecutive_anomalies = 0
-        self.circuit_breaker_tripped = False
-        self.circuit_breaker_trip_index = None
 
     def record_dual_entropy(
         self,
@@ -488,28 +438,13 @@ class EntropyDeltaTracker:
         )
 
         self.samples.append(sample)
-        self._check_anomalies(sample)
         return sample
-
-    def _check_anomalies(self, sample: EntropyDeltaSample):
-        if sample.anomaly_score >= self.config.anomaly_threshold:
-            self.consecutive_anomalies += 1
-            if (
-                not self.circuit_breaker_tripped
-                and self.consecutive_anomalies >= self.config.consecutive_anomaly_count
-            ):
-                self.circuit_breaker_tripped = True
-                self.circuit_breaker_trip_index = sample.token_index
-        else:
-            self.consecutive_anomalies = 0
 
     def end_session(self) -> EntropyDeltaSessionResult:
         end_time = datetime.utcnow()
         self.session_active = False
 
-        anomaly_count = sum(
-            1 for s in self.samples if s.anomaly_score >= self.config.anomaly_threshold
-        )
+        anomaly_count = sum(1 for s in self.samples if s.delta > 0.0)
         max_score = max((s.anomaly_score for s in self.samples), default=0.0)
         avg_delta = sum((s.delta for s in self.samples), start=0.0) / max(1, len(self.samples))
         disagreement = sum(1 for s in self.samples if s.top_token_disagreement)
@@ -528,8 +463,6 @@ class EntropyDeltaTracker:
             max_anomaly_score=max_score,
             avg_delta=avg_delta,
             disagreement_rate=disagreement_rate,
-            circuit_breaker_tripped=self.circuit_breaker_tripped,
-            circuit_breaker_trip_index=self.circuit_breaker_trip_index,
             samples=self.samples,
             correlation_id=self.correlation_id,
             conflict_analysis=conflict,

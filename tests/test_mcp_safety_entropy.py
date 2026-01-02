@@ -63,6 +63,8 @@ def _build_env(tmp_home: Path) -> dict[str, str]:
     env["PYTHONPATH"] = python_path
     env["MODELCYPHER_HOME"] = str(tmp_home)
     env["MC_MCP_PROFILE"] = "full"
+    env["MC_ALLOW_STUB_INFERENCE"] = "1"
+    env["MC_ALLOW_STUB_EMBEDDINGS"] = "1"
     return env
 
 
@@ -401,8 +403,6 @@ class TestEntropyWindowTool:
                     arguments={
                         "samples": samples,
                         "windowSize": 3,
-                        "highThreshold": 3.0,
-                        "circuitThreshold": 4.0,
                     },
                 )
             )
@@ -412,30 +412,6 @@ class TestEntropyWindowTool:
 
         assert payload["_schema"] == "mc.entropy.window.v1"
         assert "samplesProcessed" in payload
-        assert "circuitBreakerTripped" in payload
-
-    def test_entropy_window_circuit_breaker_trips(self, mcp_env: dict[str, str]) -> None:
-        """Circuit breaker should trip on very high entropy."""
-        # Very high entropy samples
-        samples = [[5.0, 2.0], [5.5, 2.5], [6.0, 3.0]]
-
-        async def runner(session: ClientSession):
-            return await _await_with_timeout(
-                session.call_tool(
-                    "mc_entropy_window",
-                    arguments={
-                        "samples": samples,
-                        "windowSize": 3,
-                        "highThreshold": 3.0,
-                        "circuitThreshold": 4.0,
-                    },
-                )
-            )
-
-        result = _run_mcp(mcp_env, runner)
-        payload = _extract_structured(result)
-
-        assert payload["circuitBreakerTripped"] is True
 
 
 # =============================================================================
@@ -449,10 +425,20 @@ class TestEntropyConversationTrackTool:
     def test_conversation_track_schema(self, mcp_env: dict[str, str]) -> None:
         """Tool should return properly structured response."""
         turns = [
-            {"role": "user", "entropy": 1.5, "variance": 0.3},
-            {"role": "assistant", "entropy": 1.6, "variance": 0.35},
-            {"role": "user", "entropy": 1.7, "variance": 0.4},
-            {"role": "assistant", "entropy": 1.8, "variance": 0.45},
+            {
+                "tokenCount": 50,
+                "avgDelta": 0.1,
+                "maxAnomalyScore": 0.2,
+                "anomalyCount": 0,
+                "timestamp": "2025-01-01T00:00:00Z",
+            },
+            {
+                "tokenCount": 60,
+                "avgDelta": 0.12,
+                "maxAnomalyScore": 0.18,
+                "anomalyCount": 1,
+                "timestamp": "2025-01-01T00:01:00Z",
+            },
         ]
 
         async def runner(session: ClientSession):
@@ -461,8 +447,6 @@ class TestEntropyConversationTrackTool:
                     "mc_entropy_conversation_track",
                     arguments={
                         "turns": turns,
-                        "oscillationThreshold": 0.8,
-                        "driftThreshold": 1.5,
                     },
                 )
             )
@@ -472,7 +456,9 @@ class TestEntropyConversationTrackTool:
 
         assert payload["_schema"] == "mc.entropy.conversation_track.v1"
         assert "turnsProcessed" in payload
-        # Raw measurements - no arbitrary "oscillationDetected" classification
+        # Raw measurements - no arbitrary classification
+        assert "meanDelta" in payload
+        assert "stdDelta" in payload
         assert "oscillationAmplitude" in payload
         assert "oscillationFrequency" in payload
         assert "cumulativeDrift" in payload
@@ -600,8 +586,20 @@ class TestSafetyEntropyInvariants:
     ) -> None:
         """Turns processed should match input length."""
         turns = [
-            {"role": "user", "entropy": 1.5, "variance": 0.3},
-            {"role": "assistant", "entropy": 1.6, "variance": 0.35},
+            {
+                "tokenCount": 40,
+                "avgDelta": 0.05,
+                "maxAnomalyScore": 0.1,
+                "anomalyCount": 0,
+                "timestamp": "2025-01-01T00:00:00Z",
+            },
+            {
+                "tokenCount": 45,
+                "avgDelta": 0.07,
+                "maxAnomalyScore": 0.12,
+                "anomalyCount": 1,
+                "timestamp": "2025-01-01T00:01:00Z",
+            },
         ]
 
         async def runner(session: ClientSession):

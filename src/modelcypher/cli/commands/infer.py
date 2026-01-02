@@ -88,13 +88,10 @@ def infer_run(
 
     if result.security:
         payload["security"] = {
-            "hasSecurityFlags": result.security.has_security_flags,
             "anomalyCount": result.security.anomaly_count,
             "maxAnomalyScore": result.security.max_anomaly_score,
             "avgDelta": result.security.avg_delta,
             "disagreementRate": result.security.disagreement_rate,
-            "circuitBreakerTripped": result.security.circuit_breaker_tripped,
-            "circuitBreakerTripIndex": result.security.circuit_breaker_trip_index,
         }
 
     if context.output_format == "text":
@@ -109,7 +106,11 @@ def infer_run(
         if result.adapter:
             lines.append(f"Adapter: {result.adapter}")
         if result.security:
-            lines.append(f"Security flags: {result.security.has_security_flags}, score: {result.security.max_anomaly_score:.3f}")
+            lines.append(
+                "Security metrics: "
+                f"anomalies={result.security.anomaly_count}, "
+                f"max_score={result.security.max_anomaly_score:.3f}"
+            )
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

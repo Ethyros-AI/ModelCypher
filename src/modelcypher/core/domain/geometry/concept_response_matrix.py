@@ -26,7 +26,10 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -293,7 +296,7 @@ class ConceptResponseMatrix:
         if not report.is_perfect:
             imperfect = report.imperfect_matches
             logger.warning(
-                "CRM comparison has %d imperfect layer matches (CKA < 0.9999). "
+                "CRM comparison has %d imperfect layer matches (CKA < 1.0 within machine epsilon). "
                 "This indicates an alignment algorithm bug. Sample failures: %s",
                 len(imperfect),
                 [(m.source_layer, m.target_layer, m.cka) for m in imperfect[:3]],
@@ -352,7 +355,9 @@ class ConceptResponseMatrix:
 
         mean_transition = sum(item.transition_cka for item in transitions) / float(len(transitions))
         mean_state = sum(item.state_cka for item in transitions) / float(len(transitions))
-        advantage = mean_transition / mean_state if mean_state > 0.001 else 0.0
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([mean_state]))
+        advantage = mean_transition / mean_state if mean_state > eps else 0.0
 
         return TransitionExperiment(
             source_model=self.model_identifier,
@@ -586,7 +591,9 @@ class ComparisonReport:
         @property
         def is_perfect(self) -> bool:
             """True if CKA = 1.0 within machine epsilon."""
-            return self.cka >= 0.9999
+            backend = get_default_backend()
+            eps = machine_epsilon(backend, backend.array([self.cka]))
+            return self.cka >= 1.0 - eps
 
     @property
     def is_perfect(self) -> bool:
@@ -629,7 +636,9 @@ class LayerTransitionResult:
         object.__setattr__(self, "to_layer", int(to_layer))
         object.__setattr__(self, "transition_cka", float(transition_cka))
         object.__setattr__(self, "state_cka", float(state_cka))
-        delta_alignment = float(transition_cka) / float(state_cka) if state_cka > 0.001 else 0.0
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([state_cka]))
+        delta_alignment = float(transition_cka) / float(state_cka) if state_cka > eps else 0.0
         object.__setattr__(self, "delta_alignment", float(delta_alignment))
         object.__setattr__(self, "source_delta_norm", float(source_delta_norm))
         object.__setattr__(self, "target_delta_norm", float(target_delta_norm))
@@ -715,21 +724,22 @@ def _interpolate_layer_alignment(
     sample_alignment: dict[int, float],
     layer_count: int,
 ) -> dict[int, float]:
-    if layer_count <= 0 or not sample_layers:
+    if layer_count <= 0 or not sample_layers or not sample_alignment:
         return {}
 
     sorted_layers = sorted(sample_layers)
     weights: dict[int, float] = {}
+    default_weight = sum(sample_alignment.values()) / float(len(sample_alignment))
 
     first_layer = sorted_layers[0]
-    first_weight = sample_alignment.get(first_layer, 0.5)
+    first_weight = sample_alignment.get(first_layer, default_weight)
     for layer in range(0, first_layer):
         weights[layer] = float(first_weight)
 
     for idx in range(len(sorted_layers) - 1):
         left = sorted_layers[idx]
         right = sorted_layers[idx + 1]
-        left_weight = sample_alignment.get(left, 0.5)
+        left_weight = sample_alignment.get(left, default_weight)
         right_weight = sample_alignment.get(right, left_weight)
         span = max(1, right - left)
         for layer in range(left, right + 1):
@@ -737,7 +747,7 @@ def _interpolate_layer_alignment(
             weights[layer] = float(left_weight + (right_weight - left_weight) * t)
 
     last_layer = sorted_layers[-1]
-    last_weight = sample_alignment.get(last_layer, 0.5)
+    last_weight = sample_alignment.get(last_layer, default_weight)
     if last_layer < layer_count - 1:
         for layer in range(last_layer + 1, layer_count):
             weights[layer] = float(last_weight)

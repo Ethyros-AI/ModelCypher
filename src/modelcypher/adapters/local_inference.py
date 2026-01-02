@@ -70,16 +70,13 @@ class SuiteInferResult:
 class SecurityScanSummary:
     """Summary of security scan results.
 
-    Raw measurements: max_anomaly_score, anomaly_count, circuit_breaker_tripped.
+    Raw measurements: max_anomaly_score, anomaly_count, avg_delta.
     """
 
-    has_security_flags: bool
     anomaly_count: int
     max_anomaly_score: float
     avg_delta: float
     disagreement_rate: float
-    circuit_breaker_tripped: bool
-    circuit_breaker_trip_index: int | None
 
 
 @dataclass
@@ -836,34 +833,19 @@ class LocalInferenceEngine(HiddenStateEngine):
         """
         # Simplified security scan implementation
         # In production, this would use the geometry safety service
-        prompt_len = len(prompt)
-        response_len = len(response)
-
-        # Basic heuristics for security assessment
+        logger.warning(
+            "Local security scan does not compute geometry-derived measurements. "
+            "Returning zeroed metrics."
+        )
         anomaly_score = 0.0
         anomaly_count = 0
-
-        # Check for potential issues
-        suspicious_patterns = ["ignore previous", "disregard", "bypass", "jailbreak"]
-        for pattern in suspicious_patterns:
-            if pattern.lower() in prompt.lower():
-                anomaly_count += 1
-                anomaly_score = max(anomaly_score, 0.7)
-
-        # Calculate delta based on response characteristics
-        avg_delta = abs(response_len - prompt_len) / max(prompt_len, 1)
-
-        # Raw measurements for security assessment
-        has_flags = anomaly_count > 0
+        avg_delta = 0.0
 
         return SecurityScanSummary(
-            has_security_flags=has_flags,
             anomaly_count=anomaly_count,
             max_anomaly_score=anomaly_score,
             avg_delta=avg_delta,
             disagreement_rate=0.0,
-            circuit_breaker_tripped=has_flags,
-            circuit_breaker_trip_index=0 if has_flags else None,
         )
 
     def run(

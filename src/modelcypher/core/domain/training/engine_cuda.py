@@ -43,9 +43,17 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
-import torch
-import torch.nn as nn
-from torch.amp import GradScaler, autocast
+try:
+    import torch
+    import torch.nn as nn
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    torch = None
+    nn = None
+try:
+    from torch.amp import GradScaler, autocast
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    GradScaler = None
+    autocast = None
 
 from .resources import TrainingResourceGuard
 from .types import TrainingConfig, TrainingProgress

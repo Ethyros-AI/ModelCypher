@@ -49,7 +49,6 @@ class DualPathGeneratorConfiguration:
     top_p: float
     repetition_penalty: float
     stop_sequences: list[str]
-    halt_on_circuit_breaker: bool
 
 
 # --- Comparison Types ---

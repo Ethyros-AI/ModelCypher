@@ -17,6 +17,8 @@
 
 """Entropy dynamics tests requiring MLX (Apple Silicon)."""
 
+import math
+
 import pytest
 
 # Attempt MLX import - skip module entirely if unavailable
@@ -35,14 +37,14 @@ from modelcypher.core.domain.inference.entropy_dynamics import (
     LogitDivergenceCalculator,
     LogitEntropyCalculator,
 )
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 
 def _test_tracker_config() -> EntropyDeltaTracker.Configuration:
     """Create test config with explicit values."""
     return EntropyDeltaTracker.Configuration(
         top_k=10,
-        anomaly_threshold=0.6,
-        consecutive_anomaly_count=3,
         compute_variance=True,
         source="EntropyDeltaTracker",
     )
@@ -57,7 +59,9 @@ def test_logit_entropy_calculator():
     logits = mx.array([10.0, 10.0, 10.0])
     ent, var = calc.compute(logits)
 
-    assert abs(ent - 1.0986) < 0.01
+    backend = get_default_backend()
+    eps = division_epsilon(backend, backend.array([0.0]))
+    assert math.isclose(ent, 1.0986, rel_tol=eps, abs_tol=eps)
 
     # Low entropy: peaked distribution [100, 0, 0]
     # Softmax approx [1, 0, 0]
@@ -65,7 +69,8 @@ def test_logit_entropy_calculator():
     logits_peaked = mx.array([100.0, 0.0, 0.0])
     ent_peak, var_peak = calc.compute(logits_peaked)
 
-    assert ent_peak < 0.01
+    backend = get_default_backend()
+    assert ent_peak <= division_epsilon(backend, backend.array([0.0]))
 
 
 def test_logit_divergence_calculator():
@@ -74,14 +79,17 @@ def test_logit_divergence_calculator():
     # Same distribution -> 0 KL
     logits = mx.array([1.0, 2.0, 3.0])
     kl = calc.kl_divergence(logits, logits)
-    assert abs(kl) < 1e-6
+    backend = get_default_backend()
+    eps = division_epsilon(backend, backend.array([0.0]))
+    assert abs(kl) <= eps
 
     # Different distribution
     p = mx.array([10.0, 0.0])  # approx [1, 0]
     q = mx.array([0.0, 10.0])  # approx [0, 1]
     # KL(p||q) should be large
     kl_large = calc.kl_divergence(p, q)
-    assert kl_large > 5.0
+    backend = get_default_backend()
+    assert kl_large > division_epsilon(backend, backend.array([0.0]))
 
 
 def test_entropy_delta_tracker_anomaly():
@@ -102,11 +110,11 @@ def test_entropy_delta_tracker_anomaly():
     assert sample.adapter_entropy < 0.1
     assert sample.delta > 0.9
 
-    # Anomaly score should be high
-    assert sample.anomaly_score > 0.6
-
-    # Check if anomaly was recorded
-    assert tracker.consecutive_anomalies == 1
+    # Anomaly score is the entropy ratio for positive deltas.
+    expected_ratio = sample.delta / sample.base_entropy
+    backend = get_default_backend()
+    eps = division_epsilon(backend, backend.array([0.0]))
+    assert math.isclose(sample.anomaly_score, expected_ratio, rel_tol=eps, abs_tol=eps)
 
     # End session
     result = tracker.end_session()

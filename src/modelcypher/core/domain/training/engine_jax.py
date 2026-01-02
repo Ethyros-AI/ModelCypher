@@ -45,9 +45,16 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
-import jax
-import jax.numpy as jnp
-import optax
+try:
+    import jax
+    import jax.numpy as jnp
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    jax = None
+    jnp = None
+try:
+    import optax
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    optax = None
 
 from .types import TrainingConfig, TrainingProgress
 from .validation import TrainingHyperparameterValidator

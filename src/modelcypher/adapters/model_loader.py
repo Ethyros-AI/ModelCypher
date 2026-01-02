@@ -24,7 +24,11 @@ from typing import Any
 
 import mlx.core as mx
 import mlx.nn as nn
-from mlx_lm import load as mlx_lm_load
+
+try:
+    from mlx_lm import load as mlx_lm_load
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    mlx_lm_load = None
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.training.lora_mlx import (
@@ -111,6 +115,11 @@ def load_model_for_training(
                 f"Ensure mlx_vlm is properly installed and the model is compatible."
             ) from e
     else:
+        if mlx_lm_load is None:
+            raise ImportError(
+                "mlx_lm is required to load text models for training. "
+                "Install with: pip install mlx-lm"
+            )
         model, tokenizer = mlx_lm_load(model_path)
 
     if lora_config is not None:

@@ -39,27 +39,12 @@ Correlates with semantic entropy (R^2 ~0.6 per arXiv:2406.15927)
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass
+
+import uuid
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.ports.backend import Array, Backend
-
-# =============================================================================
-# Entropy Thresholds (Explicit)
-# =============================================================================
-
-
-@dataclass(frozen=True)
-class EntropyThresholds:
-    """Explicit thresholds for entropy gates.
-
-    Callers must supply values derived from calibration data.
-    """
-
-    low: float
-    high: float
-    circuit_breaker: float
 
 # =============================================================================
 # Logit Entropy Calculator
@@ -86,7 +71,6 @@ class LogitEntropyCalculator:
 
         calculator = LogitEntropyCalculator(top_k=10)
         entropy, variance = calculator.compute(logits)
-        level = calculator.classify(entropy)
     """
 
     def __init__(
@@ -250,23 +234,6 @@ class LogitEntropyCalculator:
             )
             for e, v in zip(entropies, variances)
         ]
-
-    def should_trip_circuit_breaker(
-        self,
-        entropy: float,
-        threshold: float,
-    ) -> bool:
-        """
-        Determine if circuit breaker should trip based on entropy.
-
-        Args:
-            entropy: Computed entropy value.
-            threshold: Optional custom threshold.
-
-        Returns:
-            True if circuit breaker should trip.
-        """
-        return entropy >= threshold
 
     @staticmethod
     def normalize_entropy(

@@ -161,7 +161,6 @@ class MetricSample:
 class EventType(str, Enum):
     """Event types for chart overlay markers."""
 
-    circuit_breaker_tripped = "circuit_breaker_tripped"  # ▲ High entropy
     dpo_correction = "dpo_correction"  # ◆ User steering
     skill_activated = "skill_activated"  # ● Adapter loaded
     skill_deactivated = "skill_deactivated"  # ○ Adapter unloaded
@@ -171,7 +170,6 @@ class EventType(str, Enum):
     @property
     def display_name(self) -> str:
         return {
-            EventType.circuit_breaker_tripped: "Circuit",
             EventType.dpo_correction: "DPO",
             EventType.skill_activated: "Skill+",
             EventType.skill_deactivated: "Skill-",
@@ -182,7 +180,6 @@ class EventType(str, Enum):
     @property
     def symbol(self) -> str:
         return {
-            EventType.circuit_breaker_tripped: "▲",
             EventType.dpo_correction: "◆",
             EventType.skill_activated: "●",
             EventType.skill_deactivated: "○",

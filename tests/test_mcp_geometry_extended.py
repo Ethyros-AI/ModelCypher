@@ -43,6 +43,7 @@ from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 DEFAULT_TIMEOUT_SECONDS = 15
 
@@ -71,6 +72,8 @@ def _build_env(tmp_home: Path) -> dict[str, str]:
     env["PYTHONPATH"] = python_path
     env["MODELCYPHER_HOME"] = str(tmp_home)
     env["MC_MCP_PROFILE"] = "full"
+    env["MC_ALLOW_STUB_INFERENCE"] = "1"
+    env["MC_ALLOW_STUB_EMBEDDINGS"] = "1"
     if _mlx_available():
         env["MC_BACKEND"] = "mlx"
         env["MC_ENABLE_MLX"] = "1"
@@ -139,8 +142,6 @@ class TestGromovWassersteinTool:
                     arguments={
                         "sourcePoints": source_points,
                         "targetPoints": target_points,
-                        "epsilon": 0.05,
-                        "maxIterations": 50,
                     },
                 )
             )
@@ -200,8 +201,9 @@ class TestGromovWassersteinTool:
         result = _run_mcp(mcp_env, runner)
         payload = _extract_structured(result)
 
-        # Distance to self should be very small
-        assert payload["distance"] < 0.1
+        eps = division_epsilon(backend, points_arr)
+        # Distance to self should be within numerical precision.
+        assert payload["distance"] <= eps
 
 
 # =============================================================================
@@ -386,6 +388,7 @@ class TestDimensionConstraintInvarianceTool:
 
     def test_dimension_constraint_schema(self, mcp_env: dict[str, str]) -> None:
         """Tool should return properly structured response."""
+        backend = get_default_backend()
         points = [
             [0.0, 0.0],
             [1.0, 0.0],
@@ -412,8 +415,10 @@ class TestDimensionConstraintInvarianceTool:
         assert payload["_schema"] == "mc.geometry.dimension_constraint_invariance.v1"
         assert payload["baseDimension"] == 2
         assert payload["paddedDimension"] == 4
-        assert payload["gramCka"] == pytest.approx(1.0, abs=1e-6)
-        assert payload["geodesicDiff"]["maxAbs"] == pytest.approx(0.0, abs=1e-6)
+        points_arr = backend.array(points, dtype="float32")
+        eps = division_epsilon(backend, points_arr)
+        assert abs(payload["gramCka"] - 1.0) <= eps
+        assert payload["geodesicDiff"]["maxAbs"] <= eps
 
 # =============================================================================
 # Manifold Cluster Tests
@@ -804,7 +809,8 @@ class TestGeometryToolInvariants:
         payload_ba = _extract_structured(result_ba)
 
         # GW distance should be approximately symmetric
-        assert abs(payload_ab["distance"] - payload_ba["distance"]) < 0.1
+        eps = division_epsilon(backend, points_a_arr)
+        assert abs(payload_ab["distance"] - payload_ba["distance"]) <= eps
 
     @pytest.mark.parametrize("seed", range(3))
     def test_dimension_stability_across_tools(self, mcp_env: dict[str, str], seed: int) -> None:

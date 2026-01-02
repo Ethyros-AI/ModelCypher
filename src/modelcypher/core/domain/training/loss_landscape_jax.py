@@ -46,8 +46,12 @@ import math
 from dataclasses import dataclass
 from typing import Any, Callable
 
-import jax
-import jax.numpy as jnp
+try:
+    import jax
+    import jax.numpy as jnp
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    jax = None
+    jnp = None
 
 logger = logging.getLogger(__name__)
 

@@ -47,10 +47,20 @@ class EmbeddingDefaults:
     def make_default_embedder(
         environment: dict[str, str] | None = None,
     ) -> EmbeddingProvider | None:
+        env = environment or os.environ
         source, value = EmbeddingDefaults.resolved_source(environment)
         if source == "http" and value:
             return HTTPEmbeddingProvider(HTTPEmbeddingConfig(base_url=value))
         try:
             return MLXEmbeddingProvider(MLXEmbeddingConfig())
         except MLXEmbeddingError:
+            allow_stub = (env.get("MC_ALLOW_STUB_EMBEDDINGS") or "").strip()
+            if not allow_stub:
+                allow_stub = (env.get("MC_ALLOW_STUB_INFERENCE") or "").strip()
+            if allow_stub:
+                from modelcypher.adapters.embedding_stub import (
+                    ByteFrequencyEmbeddingProvider,
+                )
+
+                return ByteFrequencyEmbeddingProvider()
             return None

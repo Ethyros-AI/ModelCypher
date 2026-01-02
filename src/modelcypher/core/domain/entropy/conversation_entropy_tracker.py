@@ -15,150 +15,46 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Conversation entropy tracker for multi-turn manipulation detection.
+"""Conversation entropy tracker for multi-turn measurements.
 
-Tracks entropy patterns across conversation turns to detect:
-- Oscillation patterns: The sawtooth signature of manipulation attempts
-- Cumulative drift: Gradual shift from baseline over extended interactions
-- Turn-level anomalies: Sudden behavioral changes between turns
-
-Notes
------
-Legitimate conversations show settling entropy - users ask, get answers, move on.
-Manipulation attempts show sustained oscillation as the attacker repeatedly
-probes boundaries, retreats, and probes again. The oscillation frequency and
-amplitude over turns is the manipulation signature.
+Tracks entropy dynamics across conversation turns and reports raw measurements.
+No internal classification or thresholds are applied.
 """
 
 from __future__ import annotations
 
-import logging
 import math
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID, uuid4
 
-logger = logging.getLogger(__name__)
-
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 @dataclass(frozen=True)
-class ConversationEntropyConfiguration:
-    """Configuration for conversation entropy tracking.
+class ConversationEntropyBaseline:
+    """Baseline entropy statistics for comparison."""
 
-    Derive thresholds from baseline measurements via from_baseline_measurements().
-    """
-
-    oscillation_window_size: int
-    """Sliding window size for oscillation detection (number of turns)."""
-
-    minimum_turns_for_analysis: int
-    """Minimum turns before oscillation analysis is valid."""
-
-    oscillation_threshold: float
-    """Oscillation amplitude threshold (std dev of deltas over window)."""
-
-    drift_threshold: float
-    """Cumulative drift threshold from baseline before flagging."""
-
-    turn_spike_threshold: float
-    """Turn-over-turn delta change threshold for spike detection."""
-
-    recency_decay: float
-    """Confidence decay factor for older turns (0.0-1.0)."""
+    delta_mean: float
+    delta_std_dev: float
 
     @classmethod
-    def from_baseline_measurements(
-        cls,
-        delta_samples: list[float],
-        *,
-        oscillation_percentile: float,
-        drift_percentile: float,
-        spike_percentile: float,
-        oscillation_window_size: int,
-        minimum_turns_for_analysis: int,
-        recency_decay: float,
-    ) -> "ConversationEntropyConfiguration":
-        """Derive thresholds from baseline entropy delta measurements.
+    def from_samples(cls, delta_samples: list[float]) -> "ConversationEntropyBaseline":
+        """Derive baseline from entropy delta samples."""
+        if len(delta_samples) < 2:
+            raise ValueError("Need at least 2 samples for baseline")
 
-        Args:
-            delta_samples: Entropy delta values from baseline conversation turns.
-            oscillation_percentile: Percentile for oscillation threshold.
-            drift_percentile: Percentile for drift threshold.
-            spike_percentile: Percentile for spike threshold.
-        """
-        if len(delta_samples) < 5:
-            raise ValueError("Need at least 5 delta samples for calibration")
+        mean = sum(delta_samples) / len(delta_samples)
+        variance = sum((d - mean) ** 2 for d in delta_samples) / len(delta_samples)
+        return cls(delta_mean=mean, delta_std_dev=math.sqrt(variance))
 
-        import statistics
-
-        # Compute oscillation threshold from std dev distribution
-        # Use rolling window std devs if we have enough samples
-        window_stds = []
-        for i in range(len(delta_samples) - oscillation_window_size + 1):
-            window = delta_samples[i : i + oscillation_window_size]
-            if len(window) >= 2:
-                window_stds.append(statistics.stdev(window))
-
-        if not window_stds:
-            raise ValueError("Need enough delta samples to compute oscillation window statistics")
-
-        sorted_stds = sorted(window_stds)
-        osc_idx = int(oscillation_percentile * (len(sorted_stds) - 1))
-        oscillation_threshold = sorted_stds[osc_idx]
-
-        # Compute drift threshold from delta magnitudes
-        abs_deltas = [abs(d) for d in delta_samples]
-        sorted_abs = sorted(abs_deltas)
-        drift_idx = int(drift_percentile * (len(sorted_abs) - 1))
-        drift_threshold = sorted_abs[drift_idx]
-
-        # Compute spike threshold from consecutive differences
-        diffs = [abs(delta_samples[i] - delta_samples[i - 1]) for i in range(1, len(delta_samples))]
-        if not diffs:
-            raise ValueError("Need at least two delta samples to compute spike threshold")
-
-        sorted_diffs = sorted(diffs)
-        spike_idx = int(spike_percentile * (len(sorted_diffs) - 1))
-        turn_spike_threshold = sorted_diffs[spike_idx]
-
-        return cls(
-            oscillation_window_size=oscillation_window_size,
-            minimum_turns_for_analysis=minimum_turns_for_analysis,
-            oscillation_threshold=oscillation_threshold,
-            drift_threshold=drift_threshold,
-            turn_spike_threshold=turn_spike_threshold,
-            recency_decay=recency_decay,
-        )
-
-    @classmethod
-    def with_thresholds(
-        cls,
-        oscillation_threshold: float,
-        drift_threshold: float,
-        *,
-        turn_spike_threshold: float,
-        oscillation_window_size: int,
-        minimum_turns_for_analysis: int,
-        recency_decay: float,
-    ) -> "ConversationEntropyConfiguration":
-        """Create configuration with explicit thresholds.
-
-        Use this when you have calibrated threshold values but not raw samples.
-        Prefer from_baseline_measurements() when baseline data is available.
-
-        Args:
-            oscillation_threshold: Calibrated oscillation amplitude threshold.
-            drift_threshold: Calibrated drift threshold.
-            turn_spike_threshold: Spike threshold.
-        """
-        return cls(
-            oscillation_window_size=oscillation_window_size,
-            minimum_turns_for_analysis=minimum_turns_for_analysis,
-            oscillation_threshold=oscillation_threshold,
-            drift_threshold=drift_threshold,
-            turn_spike_threshold=turn_spike_threshold,
-            recency_decay=recency_decay,
-        )
+    def z_score(self, value: float) -> float:
+        """Compute z-score relative to the baseline mean/std."""
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([0.0]))
+        if self.delta_std_dev < eps:
+            return 0.0 if abs(value - self.delta_mean) < eps else float("inf")
+        return (value - self.delta_mean) / self.delta_std_dev
 
 
 @dataclass(frozen=True)
@@ -166,189 +62,35 @@ class TurnSummary:
     """Summary of a single conversation turn."""
 
     turn_index: int
-    """Index of this turn in the conversation."""
-
     timestamp: datetime
-    """When this turn completed."""
-
     token_count: int
-    """Number of tokens generated in this turn."""
-
     avg_delta: float
-    """Average entropy delta for this turn."""
-
     max_anomaly_score: float
-    """Maximum anomaly score observed."""
-
     anomaly_count: int
-    """Number of anomalies detected."""
-
-    circuit_breaker_tripped: bool
-    """Whether the circuit breaker was tripped."""
-
-    security_assessment: str
-    """Security assessment from the turn."""
-
-
-@dataclass(frozen=True)
-class ManipulationSignalComponents:
-    """Individual components of manipulation detection.
-
-    Consumer is responsible for combining based on their risk tolerance.
-    No arbitrary weights - each signal is reported independently.
-
-    Attributes
-    ----------
-    oscillation_amplitude_score : float
-        Oscillation amplitude as [0, 1] signal. Higher = more oscillation.
-    oscillation_frequency_score : float
-        Oscillation frequency as [0, 1] signal. Higher = more sign changes.
-    drift_score : float
-        Cumulative drift from baseline as [0, 1] signal.
-    anomaly_score : float
-        Weighted anomaly score as [0, 1] signal.
-    spike_score : float
-        Turn-over-turn spike frequency as [0, 1] signal.
-    circuit_breaker_tripped : bool
-        Whether any circuit breaker was tripped.
-    baseline_oscillation_exceeded : bool
-        Whether oscillation exceeded baseline threshold.
-    """
-
-    oscillation_amplitude_score: float
-    oscillation_frequency_score: float
-    drift_score: float
-    anomaly_score: float
-    spike_score: float
-    circuit_breaker_tripped: bool
-    baseline_oscillation_exceeded: bool
 
 
 @dataclass(frozen=True)
 class ConversationAssessment:
-    """Comprehensive conversation-level assessment.
-
-    Raw measurements only - no pattern classification or recommendations computed internally.
-
-    Attributes
-    ----------
-    conversation_id : UUID, optional
-        Unique identifier for this conversation.
-    turn_count : int
-        Number of turns in this conversation.
-    oscillation_amplitude : float
-        Standard deviation of entropy deltas over recent window.
-    oscillation_frequency : float
-        Frequency of sign changes in delta differences (0-1).
-    cumulative_drift : float
-        Z-score drift from baseline or conversation start.
-    recent_anomaly_count : int
-        Number of anomalies in recent window.
-    manipulation_components : ManipulationSignalComponents
-        Individual manipulation signal components. Consumer decides thresholds.
-    assessment_confidence : float
-        Confidence in assessment (based on turn count).
-    """
+    """Conversation-level entropy measurements."""
 
     conversation_id: UUID | None
     turn_count: int
+    mean_delta: float
+    std_delta: float
     oscillation_amplitude: float
     oscillation_frequency: float
     cumulative_drift: float
-    recent_anomaly_count: int
-    manipulation_components: ManipulationSignalComponents
-    assessment_confidence: float
-
-    @property
-    def is_sufficient_data(self) -> bool:
-        """Whether enough turns exist for meaningful analysis."""
-        return self.assessment_confidence >= 1.0
-
-    @property
-    def summary(self) -> str:
-        """Human-readable summary."""
-        c = self.manipulation_components
-        return (
-            f"Turn {self.turn_count}: osc_amp={c.oscillation_amplitude_score:.2f}, "
-            f"osc_freq={c.oscillation_frequency_score:.2f}, drift={c.drift_score:.2f}, "
-            f"anomaly={c.anomaly_score:.2f}, spikes={c.spike_score:.2f}, "
-            f"cb_tripped={c.circuit_breaker_tripped}"
-        )
-
-@dataclass
-class EntropyBaseline:
-    """Baseline entropy statistics for comparison.
-
-    Derive from measurements via from_samples().
-    """
-
-    delta_mean: float
-    """Mean entropy delta."""
-
-    delta_std_dev: float
-    """Standard deviation of entropy deltas."""
-
-    oscillation_threshold: float
-    """Threshold for excessive oscillation."""
-
-    @classmethod
-    def from_samples(
-        cls,
-        delta_samples: list[float],
-        *,
-        oscillation_percentile: float = 0.95,
-    ) -> "EntropyBaseline":
-        """Derive baseline from entropy delta samples.
-
-        Args:
-            delta_samples: Entropy delta values from baseline runs.
-            oscillation_percentile: Percentile for oscillation threshold.
-        """
-        if len(delta_samples) < 2:
-            raise ValueError("Need at least 2 samples for baseline")
-
-        import statistics
-
-        delta_mean = statistics.mean(delta_samples)
-        delta_std_dev = statistics.stdev(delta_samples)
-
-        # Oscillation threshold at percentile of absolute deviations
-        abs_deviations = [abs(d - delta_mean) for d in delta_samples]
-        sorted_dev = sorted(abs_deviations)
-        idx = int(oscillation_percentile * (len(sorted_dev) - 1))
-        oscillation_threshold = sorted_dev[idx]
-
-        return cls(
-            delta_mean=delta_mean,
-            delta_std_dev=delta_std_dev,
-            oscillation_threshold=oscillation_threshold,
-        )
-
-    def is_oscillation_excessive(self, amplitude: float) -> bool:
-        """Check if oscillation amplitude is excessive."""
-        return amplitude > self.oscillation_threshold
+    anomaly_count: int
+    anomaly_rate: float
+    max_anomaly_score: float
+    delta_change_mean: float
+    delta_change_std: float
 
 
 class ConversationEntropyTracker:
-    """Tracks entropy patterns across conversation turns for manipulation detection.
+    """Tracks entropy patterns across conversation turns and reports measurements."""
 
-    While per-turn trackers monitor within a single generation, this tracker
-    maintains state across multiple conversation turns to detect patterns
-    that emerge over extended interactions.
-    """
-
-    def __init__(
-        self,
-        configuration: ConversationEntropyConfiguration,
-        baseline: EntropyBaseline | None = None,
-    ) -> None:
-        """Create a conversation entropy tracker.
-
-        Args:
-            configuration: Tracker configuration (derive via from_baseline_measurements).
-            baseline: Optional entropy baseline for drift detection.
-        """
-        self._config = configuration
+    def __init__(self, baseline: ConversationEntropyBaseline | None = None) -> None:
         self._baseline = baseline
         self._turn_summaries: list[TurnSummary] = []
         self._conversation_start: datetime | None = None
@@ -360,30 +102,15 @@ class ConversationEntropyTracker:
         avg_delta: float,
         max_anomaly_score: float,
         anomaly_count: int,
-        circuit_breaker_tripped: bool,
-        security_assessment: str,
-        timestamp: datetime,
+        timestamp: datetime | None = None,
     ) -> ConversationAssessment:
-        """Record a completed generation turn and return conversation-level assessment.
+        """Record a completed generation turn and return conversation assessment."""
+        timestamp = timestamp or datetime.utcnow()
 
-        Args:
-            token_count: Number of tokens generated.
-            avg_delta: Average entropy delta for this turn.
-            max_anomaly_score: Maximum anomaly score observed.
-            anomaly_count: Number of anomalies detected.
-            circuit_breaker_tripped: Whether circuit breaker was tripped.
-            security_assessment: Security assessment string.
-            timestamp: Turn completion time. Defaults to now.
-
-        Returns:
-            Current conversation assessment including manipulation signals.
-        """
-        # Initialize conversation if needed
         if self._conversation_start is None:
             self._conversation_start = timestamp
             self._conversation_id = uuid4()
 
-        # Create turn summary
         turn_index = len(self._turn_summaries)
         summary = TurnSummary(
             turn_index=turn_index,
@@ -392,26 +119,10 @@ class ConversationEntropyTracker:
             avg_delta=avg_delta,
             max_anomaly_score=max_anomaly_score,
             anomaly_count=anomaly_count,
-            circuit_breaker_tripped=circuit_breaker_tripped,
-            security_assessment=security_assessment,
         )
         self._turn_summaries.append(summary)
 
-        # Compute conversation-level metrics
-        assessment = self._compute_assessment()
-
-        # Log significant events based on binary signals
-        c = assessment.manipulation_components
-        if c.circuit_breaker_tripped or c.baseline_oscillation_exceeded:
-            logger.warning(
-                "Manipulation signal triggered at turn %d: "
-                "circuit_breaker=%s, oscillation_exceeded=%s",
-                turn_index,
-                c.circuit_breaker_tripped,
-                c.baseline_oscillation_exceeded,
-            )
-
-        return assessment
+        return self._compute_assessment()
 
     def reset(self) -> None:
         """Reset the conversation tracker for a new conversation."""
@@ -435,72 +146,68 @@ class ConversationEntropyTracker:
         return self._conversation_id
 
     def _compute_assessment(self) -> ConversationAssessment:
-        """Compute current conversation assessment."""
+        """Compute current conversation measurements."""
         turn_count = len(self._turn_summaries)
 
-        if turn_count < self._config.minimum_turns_for_analysis:
+        if turn_count == 0:
             return ConversationAssessment(
                 conversation_id=self._conversation_id,
-                turn_count=turn_count,
+                turn_count=0,
+                mean_delta=0.0,
+                std_delta=0.0,
                 oscillation_amplitude=0.0,
                 oscillation_frequency=0.0,
                 cumulative_drift=0.0,
-                recent_anomaly_count=0,
-                manipulation_components=ManipulationSignalComponents(
-                    oscillation_amplitude_score=0.0,
-                    oscillation_frequency_score=0.0,
-                    drift_score=0.0,
-                    anomaly_score=0.0,
-                    spike_score=0.0,
-                    circuit_breaker_tripped=False,
-                    baseline_oscillation_exceeded=False,
-                ),
-                assessment_confidence=turn_count / self._config.minimum_turns_for_analysis,
+                anomaly_count=0,
+                anomaly_rate=0.0,
+                max_anomaly_score=0.0,
+                delta_change_mean=0.0,
+                delta_change_std=0.0,
             )
 
-        # Compute oscillation metrics over sliding window
-        window_turns = self._turn_summaries[-self._config.oscillation_window_size :]
-        deltas = [t.avg_delta for t in window_turns]
-
-        oscillation_amplitude = self._compute_oscillation_amplitude(deltas)
+        deltas = [t.avg_delta for t in self._turn_summaries]
+        mean_delta = sum(deltas) / turn_count
+        std_delta = self._compute_std(deltas)
+        oscillation_amplitude = std_delta
         oscillation_frequency = self._compute_oscillation_frequency(deltas)
+        cumulative_drift = self._compute_cumulative_drift(mean_delta, std_delta)
 
-        # Compute cumulative drift from baseline
-        cumulative_drift = self._compute_cumulative_drift()
+        anomaly_count = sum(t.anomaly_count for t in self._turn_summaries)
+        anomaly_rate = anomaly_count / turn_count
+        max_anomaly_score = max((t.max_anomaly_score for t in self._turn_summaries), default=0.0)
 
-        # Compute manipulation signal components
-        manipulation_components = self._compute_manipulation_signal(
-            oscillation_amplitude=oscillation_amplitude,
-            oscillation_frequency=oscillation_frequency,
-            cumulative_drift=cumulative_drift,
-            window_turns=window_turns,
-        )
-
-        # Count recent anomalies (raw measurement, no classification)
-        recent_anomaly_count = sum(t.anomaly_count for t in window_turns)
+        delta_changes = [
+            deltas[i] - deltas[i - 1]
+            for i in range(1, len(deltas))
+        ]
+        delta_change_mean = sum(delta_changes) / len(delta_changes) if delta_changes else 0.0
+        delta_change_std = self._compute_std(delta_changes) if delta_changes else 0.0
 
         return ConversationAssessment(
             conversation_id=self._conversation_id,
             turn_count=turn_count,
+            mean_delta=mean_delta,
+            std_delta=std_delta,
             oscillation_amplitude=oscillation_amplitude,
             oscillation_frequency=oscillation_frequency,
             cumulative_drift=cumulative_drift,
-            recent_anomaly_count=recent_anomaly_count,
-            manipulation_components=manipulation_components,
-            assessment_confidence=min(1.0, turn_count / self._config.oscillation_window_size),
+            anomaly_count=anomaly_count,
+            anomaly_rate=anomaly_rate,
+            max_anomaly_score=max_anomaly_score,
+            delta_change_mean=delta_change_mean,
+            delta_change_std=delta_change_std,
         )
 
-    def _compute_oscillation_amplitude(self, deltas: list[float]) -> float:
-        """Compute oscillation amplitude (standard deviation of deltas)."""
-        if len(deltas) < 2:
+    def _compute_std(self, values: list[float]) -> float:
+        """Compute population standard deviation."""
+        if len(values) < 2:
             return 0.0
-
-        mean = sum(deltas) / len(deltas)
-        variance = sum((d - mean) ** 2 for d in deltas) / (len(deltas) - 1)
+        mean = sum(values) / len(values)
+        variance = sum((v - mean) ** 2 for v in values) / len(values)
         return math.sqrt(variance)
 
     def _compute_oscillation_frequency(self, deltas: list[float]) -> float:
-        """Compute oscillation frequency (number of sign changes in delta differences)."""
+        """Compute oscillation frequency (sign changes in delta differences)."""
         if len(deltas) < 3:
             return 0.0
 
@@ -514,89 +221,18 @@ class ConversationEntropyTracker:
                     sign_changes += 1
             previous_diff = diff
 
-        # Normalize by maximum possible sign changes
         max_changes = len(deltas) - 2
         return sign_changes / max_changes if max_changes > 0 else 0.0
 
-    def _compute_cumulative_drift(self) -> float:
+    def _compute_cumulative_drift(self, mean_delta: float, std_delta: float) -> float:
         """Compute cumulative drift from baseline or conversation start."""
+        if self._baseline is not None:
+            return self._baseline.z_score(mean_delta)
+
         if not self._turn_summaries:
             return 0.0
 
-        recent_deltas = [t.avg_delta for t in self._turn_summaries[-3:]]
-        recent_mean = sum(recent_deltas) / len(recent_deltas)
-
-        if self._baseline is not None:
-            # Drift from declared baseline
-            return abs(recent_mean - self._baseline.delta_mean) / max(
-                self._baseline.delta_std_dev, 0.001
-            )
-        else:
-            # Drift from conversation start
-            initial_deltas = [t.avg_delta for t in self._turn_summaries[:3]]
-            initial_mean = sum(initial_deltas) / len(initial_deltas)
-            all_deltas = [t.avg_delta for t in self._turn_summaries]
-            conversation_std = self._compute_oscillation_amplitude(all_deltas)
-            return abs(recent_mean - initial_mean) / max(conversation_std, 0.001)
-
-    def _compute_manipulation_signal(
-        self,
-        oscillation_amplitude: float,
-        oscillation_frequency: float,
-        cumulative_drift: float,
-        window_turns: list[TurnSummary],
-    ) -> ManipulationSignalComponents:
-        """Compute manipulation signal components.
-
-        Returns individual signal components - consumer decides how to combine.
-        No arbitrary weights applied here.
-        """
-        # Normalized components - raw signals in [0, 1] range
-        osc_amp_score = min(1.0, oscillation_amplitude / self._config.oscillation_threshold)
-        osc_freq_score = oscillation_frequency  # Already 0-1
-        drift_score = min(1.0, cumulative_drift / self._config.drift_threshold)
-
-        # Apply recency-weighted analysis
-        weighted_anomaly_score = 0.0
-        has_circuit_breaker_trip = False
-        spike_count = 0
-        total_weight = 0.0
-
-        for index, turn in enumerate(window_turns):
-            # Recency weight: more recent turns weighted higher
-            recency_weight = self._config.recency_decay ** (len(window_turns) - 1 - index)
-            total_weight += recency_weight
-
-            weighted_anomaly_score += turn.anomaly_count * recency_weight
-
-            if turn.circuit_breaker_tripped:
-                has_circuit_breaker_trip = True
-
-            if index > 0:
-                previous_delta = window_turns[index - 1].avg_delta
-                delta_change = abs(turn.avg_delta - previous_delta)
-                if delta_change > self._config.turn_spike_threshold:
-                    spike_count += 1
-
-        # Normalize weighted scores
-        normalized_anomaly = (
-            min(1.0, weighted_anomaly_score / (5.0 * total_weight)) if total_weight > 0 else 0.0
-        )
-        spike_score = (
-            min(1.0, spike_count / (len(window_turns) - 1)) if len(window_turns) > 1 else 0.0
-        )
-
-        # Check baseline oscillation threshold
-        baseline_exceeded = False
-        if self._baseline is not None:
-            baseline_exceeded = self._baseline.is_oscillation_excessive(oscillation_amplitude)
-
-        return ManipulationSignalComponents(
-            oscillation_amplitude_score=osc_amp_score,
-            oscillation_frequency_score=osc_freq_score,
-            drift_score=drift_score,
-            anomaly_score=normalized_anomaly,
-            spike_score=spike_score,
-            circuit_breaker_tripped=has_circuit_breaker_trip,
-            baseline_oscillation_exceeded=baseline_exceeded,
-        )
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([0.0]))
+        first_delta = self._turn_summaries[0].avg_delta
+        return (mean_delta - first_delta) / max(std_delta, eps)

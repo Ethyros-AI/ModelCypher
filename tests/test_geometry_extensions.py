@@ -37,11 +37,13 @@ except ImportError:
 
 # Skip all tests in this module if MLX unavailable
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.dora_decomposition import (
     ChangeType,
     DoRAConfig,
     DoRADecomposition,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.manifold_fidelity_sweep import (
     ManifoldFidelitySweep,
     SweepConfig,
@@ -54,10 +56,12 @@ from modelcypher.core.domain.geometry.tangent_space_alignment import (
 
 def _test_dora_config() -> DoRAConfig:
     """Create test DoRAConfig with explicit parameters."""
-    return DoRAConfig.with_parameters(
-        magnitude_dominance_threshold=2.0,
-        direction_dominance_threshold=2.0,
-    )
+    return DoRAConfig.with_parameters()
+
+
+def _div_eps() -> float:
+    backend = get_default_backend()
+    return division_epsilon(backend, backend.array([1.0]))
 
 
 def _test_sweep_config(ranks: list[int] | None = None, min_anchor_count: int = 8) -> SweepConfig:
@@ -88,9 +92,10 @@ class TestDoRADecomposition:
         metrics = dora.decompose(w, w, "test")
 
         assert metrics is not None
-        assert metrics.magnitude_ratio == pytest.approx(1.0, rel=0.01)
-        assert metrics.directional_drift == pytest.approx(0.0, abs=0.01)
-        assert metrics.direction_cosine == pytest.approx(1.0, rel=0.01)
+        eps = _div_eps()
+        assert abs(metrics.magnitude_ratio - 1.0) < eps
+        assert abs(metrics.directional_drift - 0.0) < eps
+        assert abs(metrics.direction_cosine - 1.0) < eps
 
     def test_scaled_weights(self):
         """Scaled weights should show magnitude change only."""
@@ -101,9 +106,10 @@ class TestDoRADecomposition:
         metrics = dora.decompose(w1, w2, "test")
 
         assert metrics is not None
-        assert metrics.magnitude_ratio == pytest.approx(2.0, rel=0.05)
+        eps = _div_eps()
+        assert abs(metrics.magnitude_ratio - 2.0) < eps
         # Direction should be same
-        assert metrics.direction_cosine == pytest.approx(1.0, rel=0.01)
+        assert abs(metrics.direction_cosine - 1.0) < eps
 
     def test_adapter_analysis(self):
         """Test multi-layer adapter analysis."""
@@ -145,7 +151,7 @@ class TestTangentSpaceAlignment:
         result = aligner.compute_layer_metrics(points, points)
 
         assert result is not None
-        assert result.mean_cosine >= 0.9  # High alignment
+        assert abs(result.mean_cosine - 1.0) < _div_eps()
         assert result.coverage > 0
 
     def test_orthogonal_points(self):

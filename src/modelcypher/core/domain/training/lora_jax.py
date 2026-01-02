@@ -52,8 +52,12 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-import jax
-import jax.numpy as jnp
+try:
+    import jax
+    import jax.numpy as jnp
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    jax = None
+    jnp = None
 
 logger = logging.getLogger(__name__)
 

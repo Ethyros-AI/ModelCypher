@@ -63,6 +63,9 @@ def entropy_analyze(
     import json as json_lib
     import math
 
+    from modelcypher.core.domain._backend import get_default_backend
+    from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
     try:
         sample_list = json_lib.loads(samples)
         if not isinstance(sample_list, list):
@@ -261,7 +264,7 @@ def entropy_verify_baseline(
     Returns raw statistical comparison metrics:
     - Z-score of observed mean vs declared mean
     - Ratio of observed std vs declared std
-    - Whether observed range exceeds declared range
+    - Declared vs observed ranges
     - Per-sample z-scores
 
     No interpretation thresholds - the statistics ARE the signal.
@@ -269,6 +272,9 @@ def entropy_verify_baseline(
     context = _context(ctx)
     import json as json_lib
     import math
+
+    from modelcypher.core.domain._backend import get_default_backend
+    from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
     try:
         deltas = json_lib.loads(observed_deltas)
@@ -298,20 +304,18 @@ def entropy_verify_baseline(
     observed_min = min(parsed_deltas)
     observed_max = max(parsed_deltas)
 
-    # Z-score: how many declared std devs is observed mean from declared mean
-    mean_z_score = (observed_mean - declared_mean) / declared_std_dev if declared_std_dev > 0 else 0.0
+    backend = get_default_backend()
+    eps = division_epsilon(backend, backend.array([0.0]))
 
-    # Std dev ratio: observed variability vs declared
-    std_dev_ratio = observed_std / declared_std_dev if declared_std_dev > 0 else 0.0
+    mean_z_score = (observed_mean - declared_mean) / max(declared_std_dev, eps)
+    std_dev_ratio = observed_std / max(declared_std_dev, eps)
 
-    # Range comparison
-    range_exceeded = observed_min < declared_min or observed_max > declared_max
+    max_deviation = abs(observed_max - declared_max)
+    min_deviation = abs(observed_min - declared_min)
+    declared_range = abs(declared_max - declared_min)
+    observed_range = abs(observed_max - observed_min)
 
-    # Per-sample z-scores (vs declared baseline)
-    sample_z_scores = [(d - declared_mean) / declared_std_dev if declared_std_dev > 0 else 0.0 for d in parsed_deltas]
-
-    # Divergence score: absolute mean difference normalized by declared std
-    divergence_score = abs(mean_z_score)
+    sample_z_scores = [(d - declared_mean) / max(declared_std_dev, eps) for d in parsed_deltas]
 
     payload = {
         "sampleCount": n,
@@ -329,8 +333,10 @@ def entropy_verify_baseline(
         },
         "meanZScore": mean_z_score,
         "stdDevRatio": std_dev_ratio,
-        "rangeExceeded": range_exceeded,
-        "divergenceScore": divergence_score,
+        "maxDeviation": max_deviation,
+        "minDeviation": min_deviation,
+        "declaredRange": declared_range,
+        "observedRange": observed_range,
         "sampleZScores": sample_z_scores,
     }
 
@@ -344,8 +350,10 @@ def entropy_verify_baseline(
             "",
             f"Mean Z-score: {mean_z_score:.4f}",
             f"StdDev Ratio: {std_dev_ratio:.4f}",
-            f"Range Exceeded: {range_exceeded}",
-            f"Divergence Score: {divergence_score:.4f}",
+            f"Max Deviation: {max_deviation:.4f}",
+            f"Min Deviation: {min_deviation:.4f}",
+            f"Declared Range: {declared_range:.4f}",
+            f"Observed Range: {observed_range:.4f}",
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
         return

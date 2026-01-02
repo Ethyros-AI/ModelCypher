@@ -360,16 +360,12 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         def mc_geometry_gromov_wasserstein(
             sourcePoints: list[list[float]],
             targetPoints: list[list[float]],
-            epsilon: float = 0.05,
-            maxIterations: int = 50,
         ) -> dict:
             """Compute Gromov-Wasserstein distance between point clouds.
             """
             result = ctx.geometry_metrics_service.compute_gromov_wasserstein(
                 source_points=sourcePoints,
                 target_points=targetPoints,
-                epsilon=epsilon,
-                max_iterations=maxIterations,
             )
             payload = ctx.geometry_metrics_service.gromov_wasserstein_payload(result)
             payload["_schema"] = "mc.geometry.gromov_wasserstein.v1"

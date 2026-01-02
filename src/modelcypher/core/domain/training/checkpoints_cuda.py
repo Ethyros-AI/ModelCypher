@@ -45,8 +45,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import torch
-from safetensors.torch import load_file, save_file
+try:
+    import torch
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    torch = None
+try:
+    from safetensors.torch import load_file, save_file
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    load_file = None
+    save_file = None
 
 from .exceptions import CheckpointError
 from .types import CheckpointMetadata, TrainingConfig

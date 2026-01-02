@@ -38,6 +38,46 @@ from hypothesis import strategies as st
 MCP_ONLY_FIELDS = {"_schema"}
 
 
+class _EmptyModelStore:
+    def list_models(self):
+        return []
+
+    def get_model(self, model_id: str):
+        return None
+
+    def register_model(self, model):
+        return None
+
+    def delete_model(self, model_id: str):
+        return None
+
+
+class _EmptyJobStore:
+    def save_job(self, job):
+        return None
+
+    def update_job(self, job):
+        return None
+
+    def list_jobs(self, status=None, active_only=False):
+        return []
+
+    def get_job(self, job_id: str):
+        return None
+
+    def delete_job(self, job_id: str):
+        return None
+
+    def list_checkpoints(self, job_id: str | None = None):
+        return []
+
+    def add_checkpoint(self, checkpoint):
+        return None
+
+    def delete_checkpoint(self, path: str):
+        return None
+
+
 def normalize_keys(data: Any) -> Any:
     """Recursively normalize dictionary keys to camelCase for comparison."""
     if isinstance(data, dict):
@@ -108,7 +148,14 @@ class TestMCPCLIParity:
                 home.mkdir(parents=True, exist_ok=True)
                 hf_home.mkdir(parents=True, exist_ok=True)
 
-                service = StorageService()
+                logs_dir = home / "logs"
+                logs_dir.mkdir(parents=True, exist_ok=True)
+                service = StorageService(
+                    model_store=_EmptyModelStore(),
+                    job_store=_EmptyJobStore(),
+                    base_dir=home,
+                    logs_dir=logs_dir,
+                )
                 snapshot = service.compute_snapshot()
                 usage = snapshot.usage
                 disk = snapshot.disk
@@ -187,7 +234,15 @@ class TestMCPCLIParity:
 
                 from modelcypher.core.use_cases.storage_service import StorageService
 
-                service = StorageService(cache_ttl_seconds=0.0)
+                logs_dir = home / "logs"
+                logs_dir.mkdir(parents=True, exist_ok=True)
+                service = StorageService(
+                    model_store=_EmptyModelStore(),
+                    job_store=_EmptyJobStore(),
+                    base_dir=home,
+                    logs_dir=logs_dir,
+                    cache_ttl_seconds=0.0,
+                )
 
                 # Get before snapshot
                 before_snapshot = service.compute_snapshot()

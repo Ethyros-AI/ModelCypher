@@ -94,13 +94,10 @@ def register_inference_tools(ctx: ServiceContext) -> None:
 
             if result.security:
                 payload["security"] = {
-                    "hasSecurityFlags": result.security.has_security_flags,
                     "anomalyCount": result.security.anomaly_count,
                     "maxAnomalyScore": result.security.max_anomaly_score,
                     "avgDelta": result.security.avg_delta,
                     "disagreementRate": result.security.disagreement_rate,
-                    "circuitBreakerTripped": result.security.circuit_breaker_tripped,
-                    "circuitBreakerTripIndex": result.security.circuit_breaker_trip_index,
                 }
 
             return payload

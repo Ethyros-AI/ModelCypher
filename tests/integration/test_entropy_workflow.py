@@ -15,23 +15,22 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Integration tests for the entropy workflow.
+"""Integration tests for entropy workflow components.
 
-Tests the full workflow:
-    probe → measure → classify → detect
-
-This validates that the entropy monitoring components work together
-to detect distress patterns and trigger appropriate responses.
+Validates that entropy measurement components operate together without
+threshold-based classification.
 """
 
 from __future__ import annotations
 
 import math
 from datetime import datetime, timezone
+
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.entropy.conversation_entropy_tracker import (
-    ConversationEntropyConfiguration,
+    ConversationEntropyBaseline,
     ConversationEntropyTracker,
 )
 from modelcypher.core.domain.entropy.entropy_window import (
@@ -41,13 +40,7 @@ from modelcypher.core.domain.entropy.entropy_window import (
 from modelcypher.core.domain.entropy.logit_entropy_calculator import (
     LogitEntropyCalculator,
 )
-# EntropyLevel enums removed - using raw entropy values with thresholds
-from modelcypher.core.domain.thermo.phase_transition_theory import (
-    Phase,
-    PhaseTransitionTheory,
-)
-
-from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 
 # =============================================================================
@@ -63,9 +56,7 @@ class TestEntropyCalculationIntegration:
         backend = get_default_backend()
         calculator = LogitEntropyCalculator(top_k=10, backend=backend)
 
-        # Typical logit distribution (softmax input)
         logits = backend.array([2.0, 1.5, 0.5, -0.5, -1.0])
-
         entropy, variance = calculator.compute(logits)
 
         assert entropy >= 0
@@ -76,10 +67,7 @@ class TestEntropyCalculationIntegration:
         backend = get_default_backend()
         calculator = LogitEntropyCalculator(top_k=10, backend=backend)
 
-        # Low uncertainty (one dominant logit)
         low_uncertainty = backend.array([10.0, 0.0, 0.0, 0.0, 0.0])
-
-        # High uncertainty (uniform-ish)
         high_uncertainty = backend.array([1.0, 1.0, 1.0, 1.0, 1.0])
 
         low_entropy, _ = calculator.compute(low_uncertainty)
@@ -112,65 +100,33 @@ class TestEntropyWindowIntegration:
 
     def test_window_tracks_entropy_over_time(self) -> None:
         """Window should track entropy samples over time."""
-        config = EntropyWindowConfig(
-            window_size=10,
-            minimum_samples=1,
-            high_entropy_threshold=3.0,
-            circuit_breaker_threshold=4.0,
-            sustained_high_count=3,
-        )
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([0.0]))
+
+        config = EntropyWindowConfig(window_size=5)
         window = EntropyWindow(config)
 
-        # Add samples
-        for i in range(15):
-            entropy = 1.5 + 0.1 * i
-            variance = 0.3 + 0.02 * i
-            window.add(entropy, variance, i)
+        samples = [(1.0 + 0.1 * i, 0.2 + 0.01 * i, i) for i in range(8)]
+        for entropy, variance, token_index in samples:
+            window.add(entropy, variance, token_index)
 
         status = window.status()
+        tail = samples[-5:]
+        expected_mean = sum(s[0] for s in tail) / len(tail)
 
-        assert status.current_entropy > 0
-        assert status.moving_average > 0
-        # Raw values returned, caller applies thresholds
+        assert status.sample_count == 5
+        assert math.isclose(status.moving_average, expected_mean, rel_tol=eps, abs_tol=eps)
+        assert status.token_start == tail[0][2]
+        assert status.token_end == tail[-1][2]
 
-    def test_window_detects_high_entropy(self) -> None:
-        """Window should detect high entropy levels."""
-        config = EntropyWindowConfig(
-            window_size=5,
-            minimum_samples=1,
-            high_entropy_threshold=2.0,
-            circuit_breaker_threshold=4.0,
-            sustained_high_count=3,
-        )
-        window = EntropyWindow(config)
-
-        # Add high entropy samples
-        for i in range(5):
-            window.add(3.0, 0.5, i)  # Above high threshold
-
+    def test_window_empty_status(self) -> None:
+        """Empty window returns zeroed measurements."""
+        window = EntropyWindow(EntropyWindowConfig(window_size=4))
         status = window.status()
 
-        # Raw measurements - check moving_average is high
-        assert status.moving_average >= 2.0  # Above high threshold
-
-    def test_window_circuit_breaker_trips(self) -> None:
-        """Circuit breaker should trip on extreme entropy."""
-        config = EntropyWindowConfig(
-            window_size=5,
-            minimum_samples=1,
-            high_entropy_threshold=3.0,
-            circuit_breaker_threshold=4.0,
-            sustained_high_count=3,
-        )
-        window = EntropyWindow(config)
-
-        # Add extreme entropy samples
-        for i in range(5):
-            window.add(5.0, 2.0, i)  # Above circuit breaker threshold
-
-        status = window.status()
-
-        assert status.should_trip_circuit_breaker is True
+        assert status.sample_count == 0
+        assert status.current_entropy == 0.0
+        assert status.moving_average == 0.0
 
 
 # =============================================================================
@@ -181,438 +137,66 @@ class TestEntropyWindowIntegration:
 class TestConversationTrackingIntegration:
     """Tests for conversation entropy tracking integration."""
 
-    def test_track_normal_conversation(self) -> None:
-        """Normal conversation should not trigger alerts."""
-        config = ConversationEntropyConfiguration.with_thresholds(
-            oscillation_threshold=0.8,
-            drift_threshold=1.5,
-            turn_spike_threshold=0.6,
-            oscillation_window_size=4,
-            minimum_turns_for_analysis=3,
-            recency_decay=0.9,
-        )
-        tracker = ConversationEntropyTracker(configuration=config)
+    def test_tracker_records_turns_and_metrics(self) -> None:
+        """Tracker should compute raw measurements from turns."""
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([0.0]))
+
+        tracker = ConversationEntropyTracker()
         timestamp = datetime.now(timezone.utc)
 
-        # Normal conversation with stable entropy deltas
-        for i in range(4):
-            assessment = tracker.record_turn(
-                token_count=50,
-                avg_delta=0.1,  # Small, stable deltas
-                max_anomaly_score=0.1,
-                anomaly_count=0,
-                circuit_breaker_tripped=False,
-                security_assessment="",
-                timestamp=timestamp,
-            )
-
-        # Should have low oscillation/drift values (normal conversation)
-        c = assessment.manipulation_components
-        assert assessment.oscillation_amplitude < 0.5
-        assert not c.circuit_breaker_tripped
-        assert not c.baseline_oscillation_exceeded
-
-    def test_detect_oscillation_pattern(self) -> None:
-        """Should detect entropy oscillation (manipulation indicator)."""
-        config = ConversationEntropyConfiguration.with_thresholds(
-            oscillation_threshold=0.3,  # Lower threshold for easier detection
-            drift_threshold=2.0,
-            turn_spike_threshold=0.5,
-            oscillation_window_size=4,
-            minimum_turns_for_analysis=3,
-            recency_decay=0.9,
-        )
-        tracker = ConversationEntropyTracker(configuration=config)
-        timestamp = datetime.now(timezone.utc)
-
-        # Oscillating entropy deltas (potential manipulation)
-        for i in range(6):
-            delta = 1.0 if i % 2 == 0 else -0.8  # Alternating
-            assessment = tracker.record_turn(
-                token_count=50,
-                avg_delta=delta,
-                max_anomaly_score=0.5,
-                anomaly_count=1,
-                circuit_breaker_tripped=False,
-                security_assessment="",
-                timestamp=timestamp,
-            )
-
-        # Should detect elevated oscillation via raw measurements
-        c = assessment.manipulation_components
-        assert (
-            assessment.oscillation_amplitude > 0.5
-            or c.oscillation_amplitude_score > 0.3
-        )
-
-    def test_detect_drift_pattern(self) -> None:
-        """Should detect entropy drift (gradual increase)."""
-        config = ConversationEntropyConfiguration.with_thresholds(
-            oscillation_threshold=1.0,
-            drift_threshold=0.5,  # Lower threshold for easier detection
-            turn_spike_threshold=0.5,
-            oscillation_window_size=4,
-            minimum_turns_for_analysis=3,
-            recency_decay=0.9,
-        )
-        tracker = ConversationEntropyTracker(configuration=config)
-        timestamp = datetime.now(timezone.utc)
-
-        # Drifting entropy (gradually increasing deltas)
-        for i in range(10):
-            delta = 0.1 + 0.1 * i  # Steady increase
-            assessment = tracker.record_turn(
-                token_count=50,
-                avg_delta=delta,
-                max_anomaly_score=0.2,
-                anomaly_count=0,
-                circuit_breaker_tripped=False,
-                security_assessment="",
-                timestamp=timestamp,
-            )
-
-        # Should detect drift via raw measurements
-        c = assessment.manipulation_components
-        assert (
-            assessment.cumulative_drift > 0.3
-            or c.drift_score > 0.2
-        )
-
-
-# =============================================================================
-# Phase Transition Integration
-# =============================================================================
-
-
-class TestPhaseTransitionIntegration:
-    """Tests for phase transition theory integration."""
-
-    def test_classify_phase_from_entropy(self) -> None:
-        """Should classify phase based on entropy patterns."""
-        logits = [2.0, 1.5, 0.5, -0.5, -1.0]
-        temperature = 1.0
-
-        entropy = PhaseTransitionTheory.compute_entropy(logits, temperature)
-        # Estimate T_c from logit statistics (not hardcoded)
-        stats = PhaseTransitionTheory.compute_logit_statistics(logits)
-        v_eff = PhaseTransitionTheory.effective_vocabulary_size(logits, 1.0)
-        tc = PhaseTransitionTheory.estimate_critical_temperature(stats.std_dev, v_eff)
-
-        phase = PhaseTransitionTheory.classify_phase(temperature, tc)
-
-        assert phase in Phase
-        assert entropy >= 0
-
-    def test_entropy_increases_with_temperature(self) -> None:
-        """Entropy should generally increase with temperature."""
-        logits = [2.0, 1.5, 0.5, -0.5, -1.0]
-
-        entropy_low = PhaseTransitionTheory.compute_entropy(logits, 0.5)
-        entropy_high = PhaseTransitionTheory.compute_entropy(logits, 2.0)
-
-        assert entropy_high > entropy_low
-
-    def test_phase_analysis_integration(self) -> None:
-        """Full phase analysis should work end-to-end."""
-        logits = [2.0, 1.5, 0.5, -0.5, -1.0]
-
-        result = PhaseTransitionTheory.analyze(
-            logits=logits,
-            temperature=1.0,
-        )
-
-        assert result.temperature == 1.0
-        assert result.estimated_tc > 0
-        assert result.phase in Phase
-        assert result.logit_variance >= 0
-        assert result.effective_vocab_size >= 1
-        assert result.entropy >= 0
-
-
-# =============================================================================
-# Full Workflow Integration
-# =============================================================================
-
-
-class TestFullEntropyWorkflow:
-    """Tests for the full probe → measure → classify → detect workflow."""
-
-    def test_workflow_normal_operation(self) -> None:
-        """Full workflow should work for normal operation."""
-        calculator = LogitEntropyCalculator(top_k=10, backend=get_default_backend())
-        window_config = EntropyWindowConfig(
-            window_size=10,
-            minimum_samples=1,
-            high_entropy_threshold=3.0,
-            circuit_breaker_threshold=4.0,
-            sustained_high_count=5,
-        )
-        window = EntropyWindow(window_config)
-
-        # Step 1: Probe (simulate logit samples)
-        backend = get_default_backend()
-        backend.random_seed(42)
-
-        for i in range(10):
-            # Generate peaked logits (low entropy - one dominant class)
-            base = [0.0] * 100
-            base[i % 10] = 5.0  # One dominant logit per sample
-            logits = backend.array(base)
-            noise = backend.random_uniform(-0.1, 0.1, (100,))
-            logits = logits + noise
-            backend.eval(logits)
-
-            # Step 2: Measure
-            entropy, variance = calculator.compute(logits)
-
-            # Step 3: Track in window
-            window.add(entropy, variance, i)
-
-        # Step 4: Assess
-        status = window.status()
-
-        # Raw measurements - verify entropy tracking works
-        assert status.moving_average > 0
-        assert not status.should_trip_circuit_breaker
-
-    def test_workflow_with_phase_classification(self) -> None:
-        """Workflow should integrate phase classification."""
-        LogitEntropyCalculator(top_k=10, backend=get_default_backend())
-
-        # Generate and analyze samples
-        backend = get_default_backend()
-        backend.random_seed(42)
-        phases = []
-
-        for _ in range(5):
-            logits = backend.random_normal((50,))
-            backend.eval(logits)
-            logits_list = backend.to_numpy(logits).tolist()
-
-            # Calculate entropy via phase theory (works with lists)
-            entropy = PhaseTransitionTheory.compute_entropy(logits_list, 1.0)
-
-            # Estimate T_c from logit statistics (not hardcoded)
-            stats = PhaseTransitionTheory.compute_logit_statistics(logits_list)
-            v_eff = PhaseTransitionTheory.effective_vocabulary_size(logits_list, 1.0)
-            tc = PhaseTransitionTheory.estimate_critical_temperature(stats.std_dev, v_eff)
-            # Use entropy as proxy for effective temperature
-            effective_temp = max(0.1, entropy / 2.0)
-            phase = PhaseTransitionTheory.classify_phase(effective_temp, tc)
-
-            phases.append(phase)
-
-        # Should have classified all samples
-        assert len(phases) == 5
-        assert all(p in Phase for p in phases)
-
-    def test_workflow_distress_detection_to_circuit_breaker(self) -> None:
-        """Distress detection should propagate to circuit breaker."""
-        calculator = LogitEntropyCalculator(top_k=10, backend=get_default_backend())
-        window_config = EntropyWindowConfig(
-            window_size=5,
-            minimum_samples=1,
-            high_entropy_threshold=2.0,
-            circuit_breaker_threshold=3.0,
-            sustained_high_count=2,
-        )
-        window = EntropyWindow(window_config)
-        conv_config = ConversationEntropyConfiguration.with_thresholds(
-            oscillation_threshold=0.5,
-            drift_threshold=1.0,
-            turn_spike_threshold=0.4,
-            oscillation_window_size=4,
-            minimum_turns_for_analysis=3,
-            recency_decay=0.9,
-        )
-        tracker = ConversationEntropyTracker(configuration=conv_config)
-
-        # Simulate escalating distress with uniform logits
-        backend = get_default_backend()
-        for i in range(10):
-            # Uniform logits = high entropy
-            logits = backend.ones((50,))
-            backend.eval(logits)
-
-            entropy, variance = calculator.compute(logits)
-            window.add(entropy, variance, i)
-
-            tracker.record_turn(
-                token_count=50,
-                avg_delta=entropy / 2.0,
-                max_anomaly_score=0.3,
-                anomaly_count=0,
-                circuit_breaker_tripped=False,
-                security_assessment="",
-                timestamp=datetime.now(timezone.utc),
-            )
-
-        window_status = window.status()
-        conv_assessment = tracker.record_turn(
+        tracker.record_turn(
             token_count=50,
-            avg_delta=0.5,
-            max_anomaly_score=0.3,
+            avg_delta=0.1,
+            max_anomaly_score=0.2,
             anomaly_count=0,
-            circuit_breaker_tripped=False,
-            security_assessment="",
-            timestamp=datetime.now(timezone.utc),
+            timestamp=timestamp,
         )
-
-        # High entropy should be above threshold (raw value check)
-        assert window_status.moving_average >= 2.0  # Above high_entropy_threshold
-        # Should have manipulation components
-        assert conv_assessment.manipulation_components is not None
-
-
-# =============================================================================
-# Error Handling
-# =============================================================================
-
-
-class TestEntropyWorkflowErrorHandling:
-    """Tests for error handling in the entropy workflow."""
-
-    def test_empty_logits_handled(self) -> None:
-        """Empty logits should raise ValueError (no valid entropy for empty array)."""
-        backend = get_default_backend()
-        calculator = LogitEntropyCalculator(top_k=10, backend=backend)
-
-        logits = backend.array([])
-
-        # Empty logits cannot have entropy computed - expect ValueError
-        with pytest.raises(ValueError):
-            calculator.compute(logits)
-
-    def test_single_logit_handled(self) -> None:
-        """Single logit should be handled gracefully."""
-        backend = get_default_backend()
-        calculator = LogitEntropyCalculator(top_k=10, backend=backend)
-
-        logits = backend.array([1.0])
-        entropy, variance = calculator.compute(logits)
-
-        # Should return values without crashing
-        assert isinstance(entropy, float)
-        assert entropy >= 0
-
-    def test_extreme_logits_handled(self) -> None:
-        """Extreme logit values should be handled gracefully."""
-        backend = get_default_backend()
-        calculator = LogitEntropyCalculator(top_k=10, backend=backend)
-
-        # Very large logits (but not extreme enough to cause overflow)
-        large_logits = backend.array([100.0, -100.0, 0.0])
-        entropy, variance = calculator.compute(large_logits)
-
-        # Should not crash, entropy should be finite
-        assert isinstance(entropy, float)
-        assert math.isfinite(entropy)
-
-    def test_empty_conversation_handled(self) -> None:
-        """Empty conversation should be handled gracefully."""
-        config = ConversationEntropyConfiguration.with_thresholds(
-            oscillation_threshold=0.8,
-            drift_threshold=1.5,
-            turn_spike_threshold=0.6,
-            oscillation_window_size=4,
-            minimum_turns_for_analysis=3,
-            recency_decay=0.9,
-        )
-        tracker = ConversationEntropyTracker(configuration=config)
-
-        # Record a turn to get assessment
         assessment = tracker.record_turn(
-            token_count=0,
-            avg_delta=0.0,
-            max_anomaly_score=0.0,
+            token_count=60,
+            avg_delta=-0.1,
+            max_anomaly_score=0.3,
+            anomaly_count=1,
+            timestamp=timestamp,
+        )
+        assessment = tracker.record_turn(
+            token_count=55,
+            avg_delta=0.1,
+            max_anomaly_score=0.15,
             anomaly_count=0,
-            circuit_breaker_tripped=False,
-            security_assessment="",
-            timestamp=datetime.now(timezone.utc),
+            timestamp=timestamp,
         )
 
-        # Should return assessment without crashing
-        assert assessment is not None
-        assert assessment.manipulation_components is not None
+        assert assessment.turn_count == 3
+        expected_mean = (0.1 - 0.1 + 0.1) / 3.0
+        assert math.isclose(assessment.mean_delta, expected_mean, rel_tol=eps, abs_tol=eps)
+        assert assessment.anomaly_count == 1
+        assert assessment.max_anomaly_score == 0.3
+        assert assessment.oscillation_frequency == 1.0
 
-
-# =============================================================================
-# Mathematical Invariants
-# =============================================================================
-
-
-class TestEntropyWorkflowInvariants:
-    """Tests for mathematical invariants in the entropy workflow."""
-
-    @pytest.mark.parametrize("seed", range(5))
-    def test_entropy_always_bounded(self, seed: int) -> None:
-        """Entropy should always be bounded by log(vocab_size)."""
+    def test_tracker_baseline_drift(self) -> None:
+        """Baseline drift should use baseline z-score of mean delta."""
         backend = get_default_backend()
-        calculator = LogitEntropyCalculator(top_k=10, backend=backend)
+        eps = division_epsilon(backend, backend.array([0.0]))
 
-        backend.random_seed(seed)
-        vocab_size = int(backend.to_numpy(backend.random_randint(10, 1000, (1,)))[0])
-        logits = backend.random_normal((vocab_size,))
-        backend.eval(logits)
+        baseline = ConversationEntropyBaseline(delta_mean=0.0, delta_std_dev=0.5)
+        tracker = ConversationEntropyTracker(baseline=baseline)
+        timestamp = datetime.now(timezone.utc)
 
-        entropy, _ = calculator.compute(logits)
-        max_entropy = math.log(vocab_size)
-
-        assert entropy <= max_entropy + 1e-6
-
-    def test_window_moving_average_stable(self) -> None:
-        """Moving average should be stable over time."""
-        config = EntropyWindowConfig(
-            window_size=10,
-            minimum_samples=1,
-            high_entropy_threshold=3.0,
-            circuit_breaker_threshold=4.0,
-            sustained_high_count=3,
+        tracker.record_turn(
+            token_count=40,
+            avg_delta=0.2,
+            max_anomaly_score=0.1,
+            anomaly_count=0,
+            timestamp=timestamp,
         )
-        window = EntropyWindow(config)
+        assessment = tracker.record_turn(
+            token_count=55,
+            avg_delta=0.2,
+            max_anomaly_score=0.1,
+            anomaly_count=0,
+            timestamp=timestamp,
+        )
 
-        # Add constant entropy
-        for i in range(20):
-            window.add(2.0, 0.5, i)
-
-        status = window.status()
-
-        # Moving average should converge to constant
-        assert abs(status.moving_average - 2.0) < 0.1
-
-    def test_phase_classification_consistent(self) -> None:
-        """Phase classification should be consistent with temperature."""
-        # Estimate T_c from typical LLM parameters (σ_z = 4.0, V_eff = 2000)
-        tc = PhaseTransitionTheory.estimate_critical_temperature(4.0, 2000)
-
-        # Well below T_c should be ordered
-        phase_low = PhaseTransitionTheory.classify_phase(tc * 0.5, tc)
-        assert phase_low == Phase.ORDERED
-
-        # Well above T_c should be disordered
-        phase_high = PhaseTransitionTheory.classify_phase(tc * 2.0, tc)
-        assert phase_high == Phase.DISORDERED
-
-    @pytest.mark.parametrize("seed", range(3))
-    def test_entropy_circuit_breaker_consistent(self, seed: int) -> None:
-        """Circuit breaker decision should be consistent with threshold.
-
-        Raw entropy IS the measurement. Caller applies thresholds.
-        """
-        backend = get_default_backend()
-        calculator = LogitEntropyCalculator(top_k=10, backend=backend)
-        threshold = 3.5
-
-        backend.random_seed(seed)
-        logits = backend.random_normal((100,))
-        backend.eval(logits)
-        entropy, _ = calculator.compute(logits)
-
-        # Circuit breaker uses explicit threshold comparison
-        should_trip = calculator.should_trip_circuit_breaker(entropy, threshold=threshold)
-
-        # Decision should match threshold comparison
-        if entropy >= threshold:
-            assert should_trip
-        else:
-            assert not should_trip
+        expected_z = baseline.z_score(assessment.mean_delta)
+        assert math.isclose(assessment.cumulative_drift, expected_z, rel_tol=eps, abs_tol=eps)

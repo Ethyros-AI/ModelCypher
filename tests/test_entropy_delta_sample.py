@@ -22,11 +22,13 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from modelcypher.core.domain.adapters.signal import SystemEvent
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.entropy.entropy_delta_sample import (
     BaselineDistribution,
     EntropyDeltaSample,
     EntropyDeltaSessionResult,
 )
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
 
 def test_entropy_delta_sample_anomaly_metrics() -> None:
@@ -50,16 +52,10 @@ def test_entropy_delta_sample_anomaly_metrics() -> None:
     assert sample.top_token_disagreement is True
     assert sample.anomaly_score > 0.0
 
-    # Test calibrated detection methods with a baseline
-    # baseline mean=3.0, std=1.0 means:
-    # - base_entropy=5.0 → z=(5-3)/1=2 (>1.0, uncertain ✓)
-    # - adapter_entropy=1.0 → z=(1-3)/1=-2 (<-1.0, confident ✓)
-    baseline = BaselineDistribution(mean=3.0, std=1.0)
-    # sigma_high=1.0 means >1σ is uncertain, sigma_low=-1.0 means <-1σ is confident
-    assert sample.has_backdoor_signature_calibrated(baseline, sigma_high=1.0, sigma_low=-1.0) is True
-    # sigma_confident=-1.0 means <-1σ is confident, surprisal_threshold=4.6 is approx -ln(0.01)
-    assert sample.has_approval_anomaly_calibrated(baseline, sigma_confident=-1.0, surprisal_threshold=4.6) is True
-    assert sample.enhanced_anomaly_score_calibrated(baseline) > 0.0
+    backend = get_default_backend()
+    eps = machine_epsilon(backend, backend.array([0.0]))
+    expected_ratio = 4.0 / max(5.0, eps)
+    assert abs(sample.anomaly_score - expected_ratio) <= eps
 
 
 def test_entropy_delta_sample_signal_payload() -> None:
@@ -114,7 +110,6 @@ def test_entropy_delta_session_metrics() -> None:
 
     assert result.duration == 2.0
     assert result.avg_latency_ms == 3.0
-    assert result.has_security_flags is False
     assert result.max_anomaly_score == 0.1
 
 
@@ -123,25 +118,15 @@ def test_baseline_distribution_z_score() -> None:
     baseline = BaselineDistribution(mean=0.5, std=0.1)
 
     # At mean: z=0
-    assert abs(baseline.z_score(0.5)) < 0.001
+    backend = get_default_backend()
+    eps = machine_epsilon(backend, backend.array([0.0]))
+    assert abs(baseline.z_score(0.5)) <= eps
 
     # 1 std above: z=1
-    assert abs(baseline.z_score(0.6) - 1.0) < 0.001
+    assert abs(baseline.z_score(0.6) - 1.0) <= eps
 
     # 3 std above: z=3 (outlier)
-    assert abs(baseline.z_score(0.8) - 3.0) < 0.001
-
-
-def test_baseline_distribution_is_outlier() -> None:
-    """Test outlier detection using explicit σ threshold."""
-    baseline = BaselineDistribution(mean=0.5, std=0.1)
-
-    # Within 3σ: not outlier
-    assert not baseline.is_outlier(0.5, sigma=3.0)
-    assert not baseline.is_outlier(0.7, sigma=3.0)  # z = (0.7-0.5)/0.1 = 2.0 < 3.0
-
-    # Beyond 3σ: outlier
-    assert baseline.is_outlier(0.85, sigma=3.0)  # z = (0.85-0.5)/0.1 = 3.5 > 3.0
+    assert abs(baseline.z_score(0.8) - 3.0) <= eps
 
 
 def test_baseline_distribution_from_samples() -> None:
@@ -149,39 +134,9 @@ def test_baseline_distribution_from_samples() -> None:
     samples = [0.1, 0.2, 0.3, 0.4, 0.5]
     baseline = BaselineDistribution.from_samples(samples)
 
-    assert abs(baseline.mean - 0.3) < 0.001
+    backend = get_default_backend()
+    eps = machine_epsilon(backend, backend.array([0.0]))
+    assert abs(baseline.mean - 0.3) <= eps
     # std = sqrt(variance) where variance = mean of squared deviations
     expected_std = (0.02) ** 0.5  # variance = 0.02
-    assert abs(baseline.std - expected_std) < 0.001
-
-
-def test_sample_is_anomaly_outlier() -> None:
-    """Test sample outlier detection using baseline."""
-    baseline = BaselineDistribution(mean=0.1, std=0.05)
-
-    # Normal sample (low anomaly score)
-    normal = EntropyDeltaSample.create(
-        token_index=0,
-        generated_token=1,
-        base_entropy=2.0,
-        base_top_k_variance=0.2,
-        base_top_token=1,
-        adapter_entropy=2.0,  # Same as base
-        adapter_top_k_variance=0.2,
-        adapter_top_token=1,  # Same as base
-    )
-
-    # Anomalous sample (high entropy delta + disagreement)
-    anomalous = EntropyDeltaSample.create(
-        token_index=1,
-        generated_token=2,
-        base_entropy=5.0,  # High
-        base_top_k_variance=0.2,
-        base_top_token=1,
-        adapter_entropy=0.5,  # Low
-        adapter_top_k_variance=0.2,
-        adapter_top_token=99,  # Different
-    )
-
-    # Normal should have low anomaly score, anomalous should have high
-    assert normal.anomaly_score < anomalous.anomaly_score
+    assert abs(baseline.std - expected_std) <= eps
