@@ -92,7 +92,7 @@ class TestCircuitBreakerEvaluate:
 
         state = CircuitBreakerIntegration.evaluate(signals)
 
-        assert state.severity > 0.0
+        assert state.severity > _eps(backend)
         assert state.dominant_source == TriggerSource.entropy_spike
         expected = (0.2 + 0.1 + 0.05 + 0.0) / 4.0
         assert abs(state.severity - expected) <= _eps(backend)

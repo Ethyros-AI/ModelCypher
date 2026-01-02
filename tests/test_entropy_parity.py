@@ -31,6 +31,7 @@ except ImportError:
     mx = None  # type: ignore
 
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.entropy import (
     CalibratedBaseline,
     EntropySample,
@@ -42,6 +43,12 @@ from modelcypher.core.domain.entropy import (
     SEPProbe,
     SEPProbeConfig,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
+
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return division_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 def _create_test_baseline() -> CalibratedBaseline:
@@ -84,7 +91,9 @@ class TestEntropySample:
     def test_z_score_computation(self):
         baseline = _create_test_baseline()
         sample = EntropySample(logit_entropy=4.0)
-        assert sample.get_z_score(baseline) == pytest.approx(1.5)
+        z_score = sample.get_z_score(baseline)
+        eps = _eps(z_score, 1.5)
+        assert abs(z_score - 1.5) <= eps
 
 
 class TestEntropyTracker:

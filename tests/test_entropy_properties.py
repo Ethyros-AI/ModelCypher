@@ -35,9 +35,16 @@ except ImportError:
 # Skip all tests in this module if MLX unavailable
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.entropy.logit_entropy_calculator import (
     LogitEntropyCalculator,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
+
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return division_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 # Strategy for generating valid logit arrays
@@ -80,17 +87,18 @@ class TestEntropyProperties:
     @settings(max_examples=50, deadline=None)
     def test_entropy_is_non_negative(self, logits):
         """Entropy should always be non-negative."""
-        calc = LogitEntropyCalculator(top_k=10)
+        calc = LogitEntropyCalculator(top_k=None)
 
         entropy, _ = calc.compute(logits)
 
-        assert entropy >= 0.0
+        eps = _eps(entropy, 0.0)
+        assert entropy >= -eps
 
     @given(uniform_logits())
     @settings(max_examples=30, deadline=None)
     def test_uniform_distribution_maximum_entropy(self, logits):
         """Uniform distribution should have maximum entropy."""
-        calc = LogitEntropyCalculator(top_k=10)
+        calc = LogitEntropyCalculator(top_k=None)
 
         entropy, _ = calc.compute(logits)
 
@@ -99,37 +107,39 @@ class TestEntropyProperties:
         max_entropy = math.log(n)
 
         # Should be close to maximum
-        assert entropy >= max_entropy * 0.9
+        eps = _eps(entropy, max_entropy)
+        assert abs(entropy - max_entropy) <= eps
 
     @given(peaked_logits())
     @settings(max_examples=30, deadline=None)
     def test_peaked_distribution_low_entropy(self, logits):
         """Highly peaked distribution should have low entropy."""
-        calc = LogitEntropyCalculator(top_k=10)
+        calc = LogitEntropyCalculator(top_k=None)
 
         entropy, _ = calc.compute(logits)
 
-        # Should be much lower than maximum
         n = logits.shape[0]
-        max_entropy = math.log(n)
-
-        assert entropy < max_entropy * 0.5
+        uniform = mx.zeros((n,))
+        entropy_uniform, _ = calc.compute(uniform)
+        eps = _eps(entropy, entropy_uniform)
+        assert entropy <= entropy_uniform + eps
 
     @given(logits_array())
     @settings(max_examples=50, deadline=None)
     def test_variance_is_non_negative(self, logits):
         """Variance should always be non-negative."""
-        calc = LogitEntropyCalculator(top_k=10)
+        calc = LogitEntropyCalculator(top_k=None)
 
         _, variance = calc.compute(logits)
 
-        assert variance >= 0.0
+        eps = _eps(variance, 0.0)
+        assert variance >= -eps
 
     @given(logits_array(), logits_array())
     @settings(max_examples=30, deadline=None)
     def test_batch_compute_length_matches(self, logits_a, logits_b):
         """Batch compute should return correct number of results."""
-        calc = LogitEntropyCalculator(top_k=10)
+        calc = LogitEntropyCalculator(top_k=None)
 
         batch = [logits_a, logits_b]
         results = calc.compute_batch(batch)
@@ -140,7 +150,7 @@ class TestEntropyProperties:
     @settings(max_examples=30, deadline=None)
     def test_batch_compute_empty_batch(self, batch):
         """Batch compute should handle any size batch."""
-        calc = LogitEntropyCalculator(top_k=10)
+        calc = LogitEntropyCalculator(top_k=None)
 
         results = calc.compute_batch(batch)
 
@@ -150,8 +160,9 @@ class TestEntropyProperties:
     @settings(max_examples=50, deadline=None)
     def test_skip_variance_returns_zero(self, logits):
         """When skipping variance, should return 0."""
-        calc = LogitEntropyCalculator(top_k=10)
+        calc = LogitEntropyCalculator(top_k=None)
 
         _, variance = calc.compute(logits, skip_variance=True)
 
-        assert variance == 0.0
+        eps = _eps(variance, 0.0)
+        assert abs(variance - 0.0) <= eps

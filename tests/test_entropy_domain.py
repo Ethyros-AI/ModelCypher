@@ -83,7 +83,7 @@ def test_logit_entropy_calculator_uniform():
     """Uniform distribution should have maximum entropy."""
     vocab_size = 32768
     logits = mx.zeros((vocab_size,))
-    calculator = LogitEntropyCalculator(top_k=10)
+    calculator = LogitEntropyCalculator(top_k=None)
 
     entropy, variance = calculator.compute(logits)
 
@@ -98,14 +98,14 @@ def test_logit_entropy_calculator_delta():
     logits = mx.array([-1e9] * vocab_size)
     logits[0] = 1e9
 
-    calculator = LogitEntropyCalculator(top_k=10)
+    calculator = LogitEntropyCalculator(top_k=None)
     entropy, _ = calculator.compute(logits)
 
     assert abs(entropy - 0.0) < _eps(entropy, 0.0)
 
 
 def test_logit_entropy_batch():
-    calculator = LogitEntropyCalculator(top_k=10)
+    calculator = LogitEntropyCalculator(top_k=None)
     logits_batch = [mx.zeros((10,)), mx.ones((10,))]
     results = calculator.compute_batch(logits_batch)
 
@@ -125,9 +125,10 @@ def test_conflict_score_calculation():
     calculator = ConflictScoreCalculator()
     result = calculator.compute(base_logits, adapted_logits, sampled_token=1)
 
-    assert result.mean_kl > 0.0
-    assert result.base_frontier_rate == 0.0
-    assert result.conflict_score > 0.0
+    eps = _eps(result.mean_kl, result.conflict_score, result.base_frontier_rate)
+    assert result.mean_kl > eps
+    assert abs(result.base_frontier_rate - 0.0) <= eps
+    assert result.conflict_score > eps
 
 
 def test_conflict_score_agreement():
@@ -137,7 +138,8 @@ def test_conflict_score_agreement():
     result = calculator.compute(logits, logits, sampled_token=0)
 
     assert abs(result.mean_kl - 0.0) < _eps(result.mean_kl, 0.0)
-    assert result.base_frontier_rate == 1.0
+    eps = _eps(result.base_frontier_rate, 1.0)
+    assert abs(result.base_frontier_rate - 1.0) <= eps
     assert abs(result.conflict_score - 0.0) < _eps(result.conflict_score, 0.0)
 
 
@@ -181,7 +183,7 @@ def test_entropy_tracker_state_measurements():
 
     asyncio.run(record_high_entropy())
 
-    assert tracker.current_entropy == 4.2
+    assert abs(tracker.current_entropy - 4.2) < _eps(tracker.current_entropy, 4.2)
     assert abs(tracker.current_variance - 0.1) < _eps(tracker.current_variance, 0.1)
     assert abs(tracker.current_z_score - 1.7) < _eps(tracker.current_z_score, 1.7)
     tracker.end_session()
@@ -212,7 +214,8 @@ def test_metrics_ring_buffer_stats():
         buffer.append_values(timestamp=float(v), loss=float(v))
 
     assert buffer.count == 3
-    assert buffer.max_y >= 30.0
+    eps = _eps(buffer.max_y, 30.0)
+    assert buffer.max_y >= 30.0 - eps
 
 
 # --- EntropyWindow Tests ---
@@ -232,7 +235,7 @@ def test_entropy_window_sliding():
         status = window.add(entropy=val, variance=0.1, token_index=i)
 
     assert status.sample_count == 5
-    assert status.max_entropy == 5.0
+    assert abs(status.max_entropy - 5.0) < _eps(status.max_entropy, 5.0)
 
 
 # --- LogitEntropySample Tests ---

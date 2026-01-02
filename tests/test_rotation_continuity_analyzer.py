@@ -407,7 +407,7 @@ class TestRotationContinuityResultSummary:
     """Tests for RotationContinuityResult summary generation."""
 
     def test_summary_per_layer_required(self):
-        """Summary should indicate per-layer alignment required when smoothness < 0.7."""
+        """Summary should indicate per-layer alignment required when flagged."""
         result = RotationContinuityResult(
             source_model="a",
             target_model="b",
@@ -416,7 +416,7 @@ class TestRotationContinuityResultSummary:
                 LayerRotationResult(1, [[1, 0], [0, 1]], 0.1, 0.5, 0.3),
             ],
             global_rotation_error=0.5,
-            smoothness_ratio=0.5,  # < 0.7
+            smoothness_ratio=0.5,
             rotation_roughness=0.2,
             mean_angular_velocity=0.3,
             requires_per_layer_alignment=True,
@@ -428,7 +428,7 @@ class TestRotationContinuityResultSummary:
         assert "Per-layer alignment REQUIRED" in result.summary
 
     def test_summary_global_sufficient(self):
-        """Summary should indicate global rotation sufficient when smoothness >= 0.7."""
+        """Summary should indicate global rotation sufficient when flagged."""
         result = RotationContinuityResult(
             source_model="a",
             target_model="b",

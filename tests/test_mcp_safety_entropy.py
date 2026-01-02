@@ -46,6 +46,7 @@ from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 DEFAULT_TIMEOUT_SECONDS = 15
 
@@ -76,6 +77,11 @@ def _extract_structured(result: types.CallToolResult) -> dict:
         if isinstance(content, types.TextContent):
             return json.loads(content.text)
     raise AssertionError("No structured content returned from tool call")
+
+
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return division_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 async def _await_with_timeout(coro, timeout: int = DEFAULT_TIMEOUT_SECONDS):
@@ -574,12 +580,19 @@ class TestSafetyEntropyInvariants:
         payload = _extract_structured(result)
 
         # All delta statistics are non-negative (absolute values)
-        assert payload["minDelta"] >= 0.0
-        assert payload["meanDelta"] >= 0.0
-        assert payload["medianDelta"] >= 0.0
-        assert payload["maxDelta"] >= 0.0
+        eps = _eps(
+            payload["minDelta"],
+            payload["meanDelta"],
+            payload["medianDelta"],
+            payload["maxDelta"],
+        )
+        assert payload["minDelta"] >= -eps
+        assert payload["meanDelta"] >= -eps
+        assert payload["medianDelta"] >= -eps
+        assert payload["maxDelta"] >= -eps
         # min <= median <= max
-        assert payload["minDelta"] <= payload["medianDelta"] <= payload["maxDelta"]
+        assert payload["minDelta"] <= payload["medianDelta"] + eps
+        assert payload["medianDelta"] <= payload["maxDelta"] + eps
 
     def test_conversation_track_turns_processed_matches_input(
         self, mcp_env: dict[str, str]
