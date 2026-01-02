@@ -18,12 +18,16 @@
 """Merge models via null-space knowledge transplant.
 
 Usage:
-    mc merge --source A --target B --output-dir OUT --transplant-domains mathematical,logical
+    mc merge --source A --target B --output-dir OUT
 
 There is exactly ONE correct way to merge high-dimensional Legos:
 1. Find geometric correspondence (CKA alignment)
 2. Project source knowledge into target's null space
 3. Add (not blend) the projected knowledge
+
+By default, uses density-only mode: geometry decides what to transplant based on
+where source is denser than target. Optionally specify --transplant-domains to
+restrict to specific domains.
 
 This command runs the complete pipeline automatically.
 """
@@ -57,10 +61,10 @@ def run(
     target: str = typer.Option(..., "--target", "-t", help="Path to target model (receives knowledge)"),
     output_dir: str = typer.Option(..., "--output-dir", "-o", help="Output directory for merged model"),
     transplant_domains: str = typer.Option(
-        ...,
+        "",
         "--transplant-domains",
         "-d",
-        help="Comma-separated domains to transplant (e.g., mathematical,logical,spatial)",
+        help="Comma-separated domains to transplant. Empty = density-only mode (recommended)",
     ),
     skip_pre_analysis: bool = typer.Option(
         False,
@@ -80,21 +84,18 @@ def run(
     TARGET's existing capabilities. The result is a denser model.
 
     Examples:
-        mc merge -s ./qwen -t ./smol -o ./merged -d mathematical,logical
+        # Density-only mode (recommended) - geometry decides what to transplant
+        mc merge -s ./qwen -t ./smol -o ./merged
 
-        mc merge --source /models/coder --target /models/instruct \\
-            --output-dir /out --transplant-domains spatial,social
+        # Domain-based mode - transplant specific domains only
+        mc merge -s ./qwen -t ./smol -o ./merged -d mathematical,logical
     """
     from modelcypher.core.use_cases.merge import MergePipelineService
 
     context = _context(ctx)
 
-    # Parse domains
+    # Parse domains (empty = density-only mode)
     domain_list = [d.strip() for d in transplant_domains.split(",") if d.strip()]
-    if not domain_list:
-        raise typer.BadParameter(
-            "transplant-domains must specify at least one domain (e.g., mathematical,logical)"
-        )
 
     service = MergePipelineService()
 

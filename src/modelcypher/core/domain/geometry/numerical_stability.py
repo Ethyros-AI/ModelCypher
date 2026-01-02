@@ -776,8 +776,11 @@ def _compute_residual_and_refine(
     residual = reconstructed - target
     b.eval(reconstructed, residual)
 
-    res_norm = float(b.to_numpy(b.norm(residual)))
-    tgt_norm = float(b.to_numpy(b.norm(target)))
+    res_norm_arr = b.norm(residual)
+    tgt_norm_arr = b.norm(target)
+    b.eval(res_norm_arr, tgt_norm_arr)
+    res_norm = float(b.to_scalar(res_norm_arr))
+    tgt_norm = float(b.to_scalar(tgt_norm_arr))
     rel_residual = res_norm / (tgt_norm + eps)
     diagnostics["residual_norm"] = rel_residual
 
@@ -805,7 +808,9 @@ def _compute_residual_and_refine(
             residual_ref = reconstructed_ref - target
             b.eval(reconstructed_ref, residual_ref)
 
-            res_norm_ref = float(b.to_numpy(b.norm(residual_ref)))
+            res_norm_ref_arr = b.norm(residual_ref)
+            b.eval(res_norm_ref_arr)
+            res_norm_ref = float(b.to_scalar(res_norm_ref_arr))
             rel_residual_ref = res_norm_ref / (tgt_norm + eps)
 
             if rel_residual_ref < rel_residual:
@@ -934,8 +939,11 @@ def solve_via_truncated_svd(
     target_proj = b.matmul(U_k, b.matmul(b.transpose(U_k), target))
     b.eval(target_proj)
     proj_residual = target - target_proj
-    proj_error = float(b.to_numpy(b.norm(proj_residual)))
-    target_norm = float(b.to_numpy(b.norm(target)))
+    proj_error_arr = b.norm(proj_residual)
+    target_norm_arr = b.norm(target)
+    b.eval(proj_error_arr, target_norm_arr)
+    proj_error = float(b.to_scalar(proj_error_arr))
+    target_norm = float(b.to_scalar(target_norm_arr))
     diagnostics["projection_error"] = proj_error / (target_norm + eps)
 
     # Compute support-space inverse: F = V @ S^{-1} @ U^T @ target
@@ -959,7 +967,9 @@ def solve_via_truncated_svd(
     reconstructed = b.matmul(source, F)
     residual = reconstructed - target
     b.eval(reconstructed, residual)
-    res_norm = float(b.to_numpy(b.norm(residual)))
+    res_norm_arr = b.norm(residual)
+    b.eval(res_norm_arr)
+    res_norm = float(b.to_scalar(res_norm_arr))
     diagnostics["residual_norm"] = res_norm / (target_norm + eps)
 
     return F, diagnostics
@@ -1216,8 +1226,11 @@ def solve_via_gram_alignment(
     U_s_rotated = b.matmul(U_s_k, R)
     b.eval(U_s_rotated)
     diff = U_s_rotated - U_t_k
-    diff_norm = float(b.to_numpy(b.norm(diff)))
-    U_t_norm = float(b.to_numpy(b.norm(U_t_k)))
+    diff_norm_arr = b.norm(diff)
+    U_t_norm_arr = b.norm(U_t_k)
+    b.eval(diff_norm_arr, U_t_norm_arr)
+    diff_norm = float(b.to_scalar(diff_norm_arr))
+    U_t_norm = float(b.to_scalar(U_t_norm_arr))
     procrustes_error = diff_norm / (U_t_norm + eps)
     diagnostics["procrustes_error"] = procrustes_error
 
@@ -1623,7 +1636,7 @@ def solve_via_cca_procrustes(
     Z_t_norm = b.norm(Z_t)
     b.eval(diff_norm, Z_t_norm)
 
-    alignment_error = float(b.to_numpy(diff_norm)) / (float(b.to_numpy(Z_t_norm)) + eps)
+    alignment_error = float(b.to_scalar(diff_norm)) / (float(b.to_scalar(Z_t_norm)) + eps)
     diagnostics["alignment_error"] = alignment_error
 
     # Full transformation chain:

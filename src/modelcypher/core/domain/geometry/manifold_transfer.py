@@ -138,7 +138,7 @@ class AnchorDistanceProfile:
         weighted_sum = backend.sum(self.distances * self.weights)
         weight_sum = backend.sum(self.weights)
         backend.eval(weighted_sum, weight_sum)
-        return float(backend.to_numpy(weighted_sum)) / float(backend.to_numpy(weight_sum))
+        return float(backend.to_scalar(weighted_sum)) / float(backend.to_scalar(weight_sum))
 
     @property
     def distance_variance(self) -> float:
@@ -146,7 +146,7 @@ class AnchorDistanceProfile:
         backend = get_default_backend()
         var_result = backend.var(self.distances)
         backend.eval(var_result)
-        return float(backend.to_numpy(var_result))
+        return float(backend.to_scalar(var_result))
 
     def distance_to(self, anchor_id: str) -> float | None:
         """Get distance to a specific anchor."""
@@ -405,8 +405,8 @@ class CrossManifoldProjector:
                     # Extract scalar from backend array
                     dist_val = profile.distances[i]
                     weight_val = profile.weights[i]
-                    source_distances_list.append(float(backend.to_numpy(dist_val)) if hasattr(dist_val, 'shape') else float(dist_val))
-                    weights_list.append(float(backend.to_numpy(weight_val)) if hasattr(weight_val, 'shape') else float(weight_val))
+                    source_distances_list.append(float(backend.to_scalar(dist_val)) if hasattr(dist_val, 'shape') else float(dist_val))
+                    weights_list.append(float(backend.to_scalar(weight_val)) if hasattr(weight_val, 'shape') else float(weight_val))
 
         if len(matching_anchor_ids) < self.config.min_anchors:
             logger.warning(
@@ -466,7 +466,7 @@ class CrossManifoldProjector:
             residuals = current_distances - source_distances
             stress_arr = backend.sum(weights * residuals * residuals)
             backend.eval(stress_arr)
-            stress = float(backend.to_numpy(stress_arr))
+            stress = float(backend.to_scalar(stress_arr))
 
             if stress < best_stress:
                 best_stress = stress
@@ -521,7 +521,7 @@ class CrossManifoldProjector:
         src_dist_sq_sum = backend.sum(source_distances * source_distances)
         backend.eval(src_dist_sq_sum)
         stress_eps = division_epsilon(backend, source_distances)
-        normalized_stress = best_stress / (float(backend.to_numpy(src_dist_sq_sum)) + stress_eps)
+        normalized_stress = best_stress / (float(backend.to_scalar(src_dist_sq_sum)) + stress_eps)
 
         # Compute curvature mismatch
         curvature_mismatch = 0.0
@@ -606,7 +606,9 @@ class CrossManifoldProjector:
         ]
         if source_curvatures:
             source_curvatures_arr = backend.array(source_curvatures)
-            source_mean_curvature = float(backend.to_numpy(backend.mean(source_curvatures_arr)))
+            source_mean_arr = backend.mean(source_curvatures_arr)
+            backend.eval(source_mean_arr)
+            source_mean_curvature = float(backend.to_scalar(source_mean_arr))
         else:
             source_mean_curvature = None
         target_mean_curvature = (
@@ -615,10 +617,15 @@ class CrossManifoldProjector:
 
         if stresses:
             stresses_arr = backend.array(stresses)
-            mean_stress = float(backend.to_numpy(backend.mean(stresses_arr)))
-            max_stress = float(backend.to_numpy(backend.max(stresses_arr)))
-            min_stress = float(backend.to_numpy(backend.min(stresses_arr)))
-            std_stress = float(backend.to_numpy(backend.std(stresses_arr)))
+            mean_stress_arr = backend.mean(stresses_arr)
+            max_stress_arr = backend.max(stresses_arr)
+            min_stress_arr = backend.min(stresses_arr)
+            std_stress_arr = backend.std(stresses_arr)
+            backend.eval(mean_stress_arr, max_stress_arr, min_stress_arr, std_stress_arr)
+            mean_stress = float(backend.to_scalar(mean_stress_arr))
+            max_stress = float(backend.to_scalar(max_stress_arr))
+            min_stress = float(backend.to_scalar(min_stress_arr))
+            std_stress = float(backend.to_scalar(std_stress_arr))
             # Compute median via sorting
             sorted_stresses = sorted(stresses)
             n = len(sorted_stresses)

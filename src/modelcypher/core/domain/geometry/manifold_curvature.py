@@ -407,7 +407,7 @@ class SectionalCurvatureEstimator:
             u_norm = backend.norm(u)
             backend.eval(u_norm)
             eps = division_epsilon(backend, u)
-            u = u / (float(backend.to_numpy(u_norm)) + eps)
+            u = u / (float(backend.to_scalar(u_norm)) + eps)
 
             v = backend.random_normal((d,))
             backend.eval(u, v)
@@ -419,7 +419,7 @@ class SectionalCurvatureEstimator:
             backend.eval(v)
             v_norm = backend.norm(v)
             backend.eval(v_norm)
-            v_norm_val = float(backend.to_numpy(v_norm))
+            v_norm_val = float(backend.to_scalar(v_norm))
             if v_norm_val < eps:
                 continue
             v = v / v_norm_val
@@ -1360,7 +1360,7 @@ class OllivierRicciCurvature:
                 u_diff = backend.max(backend.abs(u_new - u))
                 v_diff = backend.max(backend.abs(v_new - v))
                 backend.eval(u_diff, v_diff)
-                if max(float(backend.to_numpy(u_diff)), float(backend.to_numpy(v_diff))) < threshold:
+                if max(float(backend.to_scalar(u_diff)), float(backend.to_scalar(v_diff))) < threshold:
                     u, v = u_new, v_new
                     break
 
@@ -1373,7 +1373,7 @@ class OllivierRicciCurvature:
         w1 = backend.sum(cost_matrix * gamma)
         backend.eval(w1)
 
-        return float(backend.to_numpy(w1))
+        return float(backend.to_scalar(w1))
 
     def _aggregate_to_nodes(
         self,

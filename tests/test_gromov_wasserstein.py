@@ -28,6 +28,7 @@ All solver parameters are derived from dtype - no configuration needed.
 from __future__ import annotations
 
 import math
+import random
 from typing import TYPE_CHECKING
 
 import pytest
@@ -36,9 +37,14 @@ from modelcypher.core.domain.geometry.gromov_wasserstein import (
     GromovWassersteinDistance,
     Result,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
+
+
+def _eps(backend: "Backend", *values: float) -> float:
+    return division_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 # =============================================================================
@@ -106,7 +112,8 @@ class TestResult:
         result = Result(distance=0.0, coupling=coupling, converged=True, iterations=0)
 
         # 1 - exp(-0) = 1 - 1 = 0
-        assert result.normalized_distance == 0.0
+        eps = _eps(b, result.normalized_distance, 0.0)
+        assert abs(result.normalized_distance - 0.0) <= eps
 
     def test_normalized_distance_large(self, any_backend: "Backend") -> None:
         """normalized_distance should approach 1 for large distance."""
@@ -116,8 +123,9 @@ class TestResult:
 
         result = Result(distance=10.0, coupling=coupling, converged=True, iterations=0)
 
-        # 1 - exp(-10) ≈ 0.99995
-        assert result.normalized_distance > 0.99
+        expected = 1.0 - math.exp(-result.distance)
+        eps = _eps(b, result.normalized_distance, expected)
+        assert abs(result.normalized_distance - expected) <= eps
 
     def test_normalized_distance_inf(self, any_backend: "Backend") -> None:
         """normalized_distance should be 1 for infinite distance."""
@@ -127,7 +135,8 @@ class TestResult:
 
         result = Result(distance=float("inf"), coupling=coupling, converged=False, iterations=0)
 
-        assert result.normalized_distance == 1.0
+        eps = _eps(b, result.normalized_distance, 1.0)
+        assert abs(result.normalized_distance - 1.0) <= eps
 
     def test_alignment_score_zero_distance(self, any_backend: "Backend") -> None:
         """alignment_score should be 1 for distance=0."""
@@ -138,7 +147,8 @@ class TestResult:
         result = Result(distance=0.0, coupling=coupling, converged=True, iterations=0)
 
         # exp(-0) = 1
-        assert result.alignment_score == 1.0
+        eps = _eps(b, result.alignment_score, 1.0)
+        assert abs(result.alignment_score - 1.0) <= eps
 
     def test_alignment_score_large_distance(self, any_backend: "Backend") -> None:
         """alignment_score should approach 0 for large distance."""
@@ -148,8 +158,9 @@ class TestResult:
 
         result = Result(distance=10.0, coupling=coupling, converged=True, iterations=0)
 
-        # exp(-10) ≈ 0.000045
-        assert result.alignment_score < 0.001
+        expected = math.exp(-result.distance)
+        eps = _eps(b, result.alignment_score, expected)
+        assert abs(result.alignment_score - expected) <= eps
 
     def test_alignment_score_inf(self, any_backend: "Backend") -> None:
         """alignment_score should be 0 for infinite distance."""
@@ -159,7 +170,8 @@ class TestResult:
 
         result = Result(distance=float("inf"), coupling=coupling, converged=False, iterations=0)
 
-        assert result.alignment_score == 0.0
+        eps = _eps(b, result.alignment_score, 0.0)
+        assert abs(result.alignment_score - 0.0) <= eps
 
     def test_frozen(self, any_backend: "Backend") -> None:
         """Result should be frozen (immutable)."""
@@ -238,7 +250,9 @@ class TestGromovWassersteinDistanceBasic:
 
         # Diagonal should be 0
         for i in range(3):
-            assert float(distances[i, i]) == pytest.approx(0.0, abs=1e-5)
+            diag = float(distances[i, i])
+            eps = _eps(b, diag, 0.0)
+            assert abs(diag - 0.0) <= eps
 
     def test_compute_pairwise_distances_empty(self, any_backend: "Backend") -> None:
         """Should handle empty point set."""
@@ -271,14 +285,16 @@ class TestGromovWassersteinDistanceIdentity:
         distances = gw.compute_pairwise_distances(points)
         result = gw.compute(distances, distances)
 
-        assert result.distance == 0.0
+        eps = _eps(any_backend, result.distance, 0.0)
+        assert abs(result.distance - 0.0) <= eps
         assert result.converged is True
         assert result.iterations == 0
         assert len(result.coupling) == 3
-        # Use larger tolerance for float32 precision
-        assert float(result.coupling[0][0]) == pytest.approx(1.0 / 3.0, abs=1e-5)
-        assert float(result.coupling[1][1]) == pytest.approx(1.0 / 3.0, abs=1e-5)
-        assert float(result.coupling[2][2]) == pytest.approx(1.0 / 3.0, abs=1e-5)
+        expected = 1.0 / 3.0
+        for idx in range(3):
+            value = float(result.coupling[idx][idx])
+            eps = _eps(any_backend, value, expected)
+            assert abs(value - expected) <= eps
 
     def test_gw_permutation_distance_small(self, any_backend: "Backend") -> None:
         """Permuted points should have near-zero GW distance (same shape)."""
@@ -293,7 +309,9 @@ class TestGromovWassersteinDistanceIdentity:
         # All params derived from dtype - no config needed
         result = gw.compute(dist_a, dist_b)
 
-        assert result.distance < 0.02
+        identity = gw.compute(dist_a, dist_a)
+        eps = _eps(any_backend, result.distance, identity.distance)
+        assert abs(result.distance - identity.distance) <= eps
 
         # Verify coupling marginals sum to uniform distribution
         row_mass = [sum(row) for row in result.coupling]
@@ -301,8 +319,13 @@ class TestGromovWassersteinDistanceIdentity:
             sum(result.coupling[i][j] for i in range(len(result.coupling)))
             for j in range(len(result.coupling[0]))
         ]
-        assert max(abs(value - 1.0 / 3.0) for value in row_mass) < 0.02
-        assert max(abs(value - 1.0 / 3.0) for value in col_mass) < 0.02
+        expected = 1.0 / 3.0
+        for value in row_mass:
+            eps = _eps(any_backend, value, expected)
+            assert abs(value - expected) <= eps
+        for value in col_mass:
+            eps = _eps(any_backend, value, expected)
+            assert abs(value - expected) <= eps
 
 
 # =============================================================================
@@ -327,13 +350,19 @@ class TestRandomCoupling:
         row_sums = b.sum(coupling, axis=1)
         b.eval(row_sums)
         for i in range(n):
-            assert float(row_sums[i]) == pytest.approx(1.0 / n, abs=0.05)
+            expected = 1.0 / n
+            value = float(row_sums[i])
+            eps = _eps(b, value, expected)
+            assert abs(value - expected) <= eps
 
         # Check column sums (should be 1/m)
         col_sums = b.sum(coupling, axis=0)
         b.eval(col_sums)
         for j in range(m):
-            assert float(col_sums[j]) == pytest.approx(1.0 / m, abs=0.05)
+            expected = 1.0 / m
+            value = float(col_sums[j])
+            eps = _eps(b, value, expected)
+            assert abs(value - expected) <= eps
 
     def test_random_coupling_positive(self, any_backend: "Backend") -> None:
         """Random coupling should be non-negative."""
@@ -367,7 +396,8 @@ class TestPermutationSearch:
 
         result = gw._solve_by_permutation_search(dist, dist, 3, b)
 
-        assert result.distance == pytest.approx(0.0, abs=1e-5)
+        eps = _eps(b, result.distance, 0.0)
+        assert abs(result.distance - 0.0) <= eps
         assert result.converged is True
 
     def test_permutation_search_permuted(self, any_backend: "Backend") -> None:
@@ -385,8 +415,8 @@ class TestPermutationSearch:
 
         result = gw._solve_by_permutation_search(dist1, dist2, 3, b)
 
-        # Should find near-zero since it's just a permutation
-        assert result.distance < 0.1
+        eps = _eps(b, result.distance, 0.0)
+        assert abs(result.distance - 0.0) <= eps
 
 
 # =============================================================================
@@ -454,7 +484,8 @@ class TestLossAndGradient:
         loss = gw._gw_loss(constC, hC1, hC2, T)
 
         # Loss can be slightly negative due to numerical precision
-        assert loss >= -1e-5
+        eps = _eps(b, float(loss))
+        assert float(loss) >= -eps
 
     def test_gw_gradient_shape(self, any_backend: "Backend") -> None:
         """GW gradient should have same shape as coupling."""
@@ -495,20 +526,29 @@ class TestSinkhorn:
         q = b.ones((m,)) / m
         b.eval(cost, p, q)
 
-        G = gw._solve_linear_ot(cost, p, q, epsilon=0.01, max_iterations=100, threshold=1e-6)
+        epsilon = division_epsilon(b, cost)
+        threshold = division_epsilon(b, cost)
+        max_iterations = n * m
+        G = gw._solve_linear_ot(cost, p, q, epsilon=epsilon, max_iterations=max_iterations, threshold=threshold)
         b.eval(G)
 
         # Check row sums
         row_sums = b.sum(G, axis=1)
         b.eval(row_sums)
         for i in range(n):
-            assert float(row_sums[i]) == pytest.approx(1.0 / n, abs=0.05)
+            expected = 1.0 / n
+            value = float(row_sums[i])
+            eps = _eps(b, value, expected)
+            assert abs(value - expected) <= eps
 
         # Check column sums
         col_sums = b.sum(G, axis=0)
         b.eval(col_sums)
         for j in range(m):
-            assert float(col_sums[j]) == pytest.approx(1.0 / m, abs=0.05)
+            expected = 1.0 / m
+            value = float(col_sums[j])
+            eps = _eps(b, value, expected)
+            assert abs(value - expected) <= eps
 
     def test_solve_linear_ot_empty(self, any_backend: "Backend") -> None:
         """Sinkhorn should handle empty inputs."""
@@ -520,7 +560,10 @@ class TestSinkhorn:
         q = b.zeros((0,))
         b.eval(cost, p, q)
 
-        G = gw._solve_linear_ot(cost, p, q, epsilon=0.01, max_iterations=10, threshold=1e-6)
+        epsilon = division_epsilon(b, cost)
+        threshold = division_epsilon(b, cost)
+        max_iterations = 0
+        G = gw._solve_linear_ot(cost, p, q, epsilon=epsilon, max_iterations=max_iterations, threshold=threshold)
         b.eval(G)
 
         assert b.shape(G) == (0, 0)
@@ -552,7 +595,9 @@ class TestStepSize:
         constC, hC1, hC2 = gw._init_loss_matrices(C1, C2, p, q)
         alpha = gw._compute_step_size(constC, hC1, hC2, T, G)
 
-        assert 0.0 <= alpha <= 1.0
+        eps = _eps(b, alpha, 1.0, 0.0)
+        assert alpha + eps >= 0.0
+        assert alpha <= 1.0 + eps
 
 
 # =============================================================================
@@ -609,7 +654,8 @@ class TestPointCloudGW:
         target_dist = gw.compute_pairwise_distances(points)
         result = gw.compute(source_dist, target_dist)
 
-        assert result.distance == pytest.approx(0.0, abs=0.01)
+        eps = _eps(b, result.distance, 0.0)
+        assert abs(result.distance - 0.0) <= eps
 
     def test_compute_with_default_backend(self) -> None:
         """Should work with default backend."""
@@ -622,7 +668,9 @@ class TestPointCloudGW:
         target_dist = gw.compute_pairwise_distances(points_b)
         result = gw.compute(source_dist, target_dist)
 
-        assert result.distance == pytest.approx(0.0, abs=0.01)
+        backend = gw._backend
+        eps = _eps(backend, result.distance, 0.0)
+        assert abs(result.distance - 0.0) <= eps
 
 
 # =============================================================================
@@ -675,7 +723,8 @@ class TestEdgeCases:
         result = gw.compute(dist1, dist2)
 
         # Should have non-zero distance due to scale difference
-        assert result.distance > 0.0
+        eps = _eps(b, result.distance, 0.0)
+        assert result.distance > eps
 
     def test_identity_distance_small_matrix(self, any_backend: "Backend") -> None:
         """Identical matrices should have zero distance."""
@@ -743,7 +792,8 @@ class TestGromovWassersteinHypothesis:
 
         # Self-distance should be 0
         result = gw.compute(dist, dist)
-        assert result.distance == pytest.approx(0.0, abs=0.01)
+        eps = _eps(b, result.distance, 0.0)
+        assert abs(result.distance - 0.0) <= eps
         assert result.converged is True
 
     @given(
@@ -773,7 +823,8 @@ class TestGromovWassersteinHypothesis:
         result_ba = gw.compute(dist_b, dist_a)
 
         # Should be symmetric within tolerance
-        assert result_ab.distance == pytest.approx(result_ba.distance, rel=0.2)
+        eps = _eps(b, result_ab.distance, result_ba.distance)
+        assert abs(result_ab.distance - result_ba.distance) <= eps
 
     @given(
         n_points=st.integers(min_value=2, max_value=6),
@@ -799,7 +850,8 @@ class TestGromovWassersteinHypothesis:
         # All params derived from dtype - no config needed
         result = gw.compute(dist_a, dist_b)
 
-        assert result.distance >= 0.0
+        eps = _eps(b, result.distance, 0.0)
+        assert result.distance + eps >= 0.0
 
     @given(
         n_points=st.integers(min_value=2, max_value=5),
@@ -834,12 +886,16 @@ class TestGromovWassersteinHypothesis:
         # Check row sums ≈ 1/n
         for i in range(n):
             row_sum = sum(float(coupling[i][j]) for j in range(n))
-            assert row_sum == pytest.approx(1.0 / n, abs=0.1)
+            expected = 1.0 / n
+            eps = _eps(b, row_sum, expected)
+            assert abs(row_sum - expected) <= eps
 
         # Check column sums ≈ 1/n
         for j in range(n):
             col_sum = sum(float(coupling[i][j]) for i in range(n))
-            assert col_sum == pytest.approx(1.0 / n, abs=0.1)
+            expected = 1.0 / n
+            eps = _eps(b, col_sum, expected)
+            assert abs(col_sum - expected) <= eps
 
     @given(
         n_points=st.integers(min_value=3, max_value=5),
@@ -850,8 +906,6 @@ class TestGromovWassersteinHypothesis:
         self, n_points: int, seed: int, any_backend: "Backend"
     ):
         """GW distance should be invariant to point permutation."""
-        import numpy as np
-
         b = any_backend
         b.random_seed(seed)
         gw = GromovWassersteinDistance(backend=b)
@@ -861,9 +915,9 @@ class TestGromovWassersteinHypothesis:
         b.eval(points)
 
         # Create permutation
-        np.random.seed(seed)
+        rng = random.Random(seed)
         perm = list(range(n_points))
-        np.random.shuffle(perm)
+        rng.shuffle(perm)
 
         # Permute points
         points_np = b.to_numpy(points)
@@ -878,4 +932,5 @@ class TestGromovWassersteinHypothesis:
         result = gw.compute(dist_orig, dist_perm)
 
         # Should be near 0 since it's just a permutation
-        assert result.distance < 0.1
+        eps = _eps(b, result.distance, 0.0)
+        assert abs(result.distance - 0.0) <= eps

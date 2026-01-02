@@ -165,8 +165,8 @@ def _backend_corrcoef(backend: "Backend", x: "Array", y: "Array") -> float:
     std_y = b.sqrt(b.mean(y_centered * y_centered))
     b.eval(std_x, std_y)
 
-    std_x_val = float(b.to_numpy(std_x))
-    std_y_val = float(b.to_numpy(std_y))
+    std_x_val = float(b.to_scalar(std_x))
+    std_y_val = float(b.to_scalar(std_y))
 
     eps = division_epsilon(b, x_flat)
     if std_x_val < eps or std_y_val < eps:
@@ -180,7 +180,7 @@ def _backend_corrcoef(backend: "Backend", x: "Array", y: "Array") -> float:
     corr = cov / (std_x * std_y)
     b.eval(corr)
 
-    result = float(b.to_numpy(corr))
+    result = float(b.to_scalar(corr))
 
     # Handle NaN result
     if result != result:  # NaN check
@@ -196,7 +196,7 @@ def _backend_vector_norm(backend: "Backend", v: "Array") -> float:
     norm_sq = b.sum(v_flat * v_flat)
     norm = b.sqrt(norm_sq)
     b.eval(norm)
-    return float(b.to_numpy(norm))
+    return float(b.to_scalar(norm))
 
 
 def _backend_vector_dot(backend: "Backend", v1: "Array", v2: "Array") -> float:
@@ -206,7 +206,7 @@ def _backend_vector_dot(backend: "Backend", v1: "Array", v2: "Array") -> float:
     v2_flat = b.reshape(v2, (-1,))
     dot = b.sum(v1_flat * v2_flat)
     b.eval(dot)
-    return float(b.to_numpy(dot))
+    return float(b.to_scalar(dot))
 
 
 def _backend_var(backend: "Backend", arr: "Array") -> float:
@@ -217,7 +217,7 @@ def _backend_var(backend: "Backend", arr: "Array") -> float:
     centered = arr_flat - mean_val
     var = b.mean(centered * centered)
     b.eval(var)
-    return float(b.to_numpy(var))
+    return float(b.to_scalar(var))
 
 
 def _backend_std(backend: "Backend", arr: "Array") -> float:

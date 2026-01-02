@@ -1797,7 +1797,9 @@ class RiemannianGeometry:
             backend.eval(gradient)
             grad_np = backend.to_numpy(gradient)
 
-        grad_norm = float(backend.to_numpy(backend.sqrt(backend.sum(gradient * gradient))))
+        grad_norm_arr = backend.sqrt(backend.sum(gradient * gradient))
+        backend.eval(grad_norm_arr)
+        grad_norm = float(backend.to_scalar(grad_norm_arr))
 
         # Use a step size that limits the maximum movement per iteration
         # This prevents numerical instability from extreme curvature while preserving

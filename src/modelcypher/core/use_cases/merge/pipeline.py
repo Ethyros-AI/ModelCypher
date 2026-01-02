@@ -276,11 +276,18 @@ def run_merge(
     # =================================================================
     # ROTATE/PROPAGATE was removed - no boundary preservation guarantee.
     # Only null-space constrained transplant preserves boundary relationships.
-    if not merge_config.transplant_domains:
-        raise RuntimeError(
-            "Transplant requires transplant_domains. "
-            "Specify domains like ['mathematical', 'logical'] for knowledge transfer."
+    #
+    # DENSITY-ONLY MODE: When transplant_domains is empty, ALL probes are
+    # candidates and graft_mask decides what to transplant based on density.
+    # This is the recommended mode - geometry decides, not domain names.
+    if merge_config.transplant_domains:
+        logger.info(
+            "TRANSPLANT: Domain-based mode - restricting to domains: %s",
+            list(merge_config.transplant_domains),
         )
+    else:
+        logger.info("TRANSPLANT: Density-only mode - geometry decides what to transplant")
+
     if not target_activations:
         raise RuntimeError(
             "Transplant requires probe activations. "

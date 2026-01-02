@@ -275,13 +275,29 @@ def stage_transplant(
         return TransplantStageResult(merged_weights=merged, metrics=metrics)
 
     core_domains = _normalize_domains(config.core_domains)
-    core_probe_ids = {
-        probe_id
-        for probe_id, domain in zip(probe_ids, probe_domains)
-        if domain and domain.lower() in core_domains
-    }
+
+    if core_domains:
+        # Legacy: domain-based filtering
+        core_probe_ids = {
+            probe_id
+            for probe_id, domain in zip(probe_ids, probe_domains)
+            if domain and domain.lower() in core_domains
+        }
+        logger.info(
+            "TRANSPLANT: Domain-based mode - %d core probes from domains %s",
+            len(core_probe_ids), list(core_domains)
+        )
+    else:
+        # Density-only: ALL probes are candidates, graft_mask decides
+        core_probe_ids = set(probe_ids)
+        logger.info(
+            "TRANSPLANT: Density-only mode - %d candidate probes (geometry decides)",
+            len(core_probe_ids)
+        )
 
     metrics["core_probes"] = len(core_probe_ids)
+    metrics["density_only_mode"] = not bool(core_domains)
+
     if not core_probe_ids:
         metrics["transplant_skipped"] = "no_core_probes"
         return TransplantStageResult(merged_weights=merged, metrics=metrics)

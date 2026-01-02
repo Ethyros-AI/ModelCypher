@@ -110,7 +110,9 @@ class BackendMatrixUtils:
             # Find median of positive values (approximate)
             n = flat.shape[0] if hasattr(flat, "shape") else len(flat)
             mid_idx = n // 2
-            median_dist = float(self.backend.to_numpy(sorted_dists)[mid_idx])
+            median_val = sorted_dists[mid_idx]
+            self.backend.eval(median_val)
+            median_dist = float(self.backend.to_scalar(median_val))
             div_eps = division_epsilon(self.backend, sq_dists)
             gamma = 1.0 / (2.0 * (median_dist + div_eps))
 
@@ -170,7 +172,8 @@ class BackendMatrixUtils:
             # Subtract col_mean (broadcast)
             result = result - col_mean
             # Add grand_mean
-            grand_mean_arr = self.backend.full(K.shape, float(self.backend.to_numpy(grand_mean)))
+            self.backend.eval(grand_mean)
+            grand_mean_arr = self.backend.full(K.shape, float(self.backend.to_scalar(grand_mean)))
             result = result + grand_mean_arr
             return result
         else:
@@ -194,7 +197,8 @@ class BackendMatrixUtils:
             grand_mean = self.backend.sum(K * outer_weights)
 
             result = K - row_mean - col_mean
-            grand_mean_arr = self.backend.full(K.shape, float(self.backend.to_numpy(grand_mean)))
+            self.backend.eval(grand_mean)
+            grand_mean_arr = self.backend.full(K.shape, float(self.backend.to_scalar(grand_mean)))
             result = result + grand_mean_arr
             return result
 
@@ -283,11 +287,14 @@ class BackendMatrixUtils:
         # Compute scale if requested
         if allow_scaling:
             # Optimal scale: sum(S) / trace(source.T @ source)
-            S_sum = float(self.backend.to_numpy(self.backend.sum(S)))
+            S_sum_arr = self.backend.sum(S)
             source_cov = self.backend.matmul(source_T, source)
             # trace = sum of diagonal
             diag_vals = self.backend.diag(source_cov)
-            source_variance = float(self.backend.to_numpy(self.backend.sum(diag_vals)))
+            source_variance_arr = self.backend.sum(diag_vals)
+            self.backend.eval(S_sum_arr, source_variance_arr)
+            S_sum = float(self.backend.to_scalar(S_sum_arr))
+            source_variance = float(self.backend.to_scalar(source_variance_arr))
 
             if source_variance > 0:
                 scale = S_sum / source_variance
@@ -304,7 +311,9 @@ class BackendMatrixUtils:
 
         diff = target - aligned
         diff_sq = diff * diff
-        residual = float(self.backend.to_numpy(self.backend.sum(diff_sq)))
+        residual_arr = self.backend.sum(diff_sq)
+        self.backend.eval(residual_arr)
+        residual = float(self.backend.to_scalar(residual_arr))
 
         # Translation (zeros for rotation-only)
         d = source.shape[1]
@@ -539,7 +548,9 @@ class BackendMatrixUtils:
             Trace (sum of diagonal elements)
         """
         diag_vals = self.backend.diag(A)
-        return float(self.backend.to_numpy(self.backend.sum(diag_vals)))
+        trace_arr = self.backend.sum(diag_vals)
+        self.backend.eval(trace_arr)
+        return float(self.backend.to_scalar(trace_arr))
 
 
 # =============================================================================
