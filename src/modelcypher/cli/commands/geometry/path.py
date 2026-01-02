@@ -217,7 +217,6 @@ def geometry_path_compare(
                     f"  Frechet Distance: {comp.frechet.distance:.3f}",
                     f"  DTW Normalized Cost: {comp.dtw.normalized_cost:.3f}",
                     f"  Signature Similarity: {comp.signature_similarity:.3f}",
-                    f"  Overall Similarity: {comp.overall_similarity:.3f}",
                 ]
             )
         write_output("\n".join(lines), context.output_format, context.pretty)

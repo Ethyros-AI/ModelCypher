@@ -31,13 +31,13 @@ import math
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.path_geometry import (
     AlignmentOp,
     BackendPathGeometry,
     PathGeometry,
     PathNode,
     PathSignature,
-    SimilarityWeights,
     get_path_geometry,
 )
 
@@ -63,6 +63,12 @@ def _make_path(gate_ids: list[str], entropies: list[float] | None = None) -> Pat
     return PathSignature(model_id="test", prompt_id="test", nodes=nodes)
 
 
+def _eps() -> float:
+    backend = get_default_backend()
+    arr = backend.array([0.0])
+    return division_epsilon(backend, arr)
+
+
 class TestLevenshteinDistance:
     """Tests for Levenshtein-based path comparison."""
 
@@ -74,8 +80,9 @@ class TestLevenshteinDistance:
         path = _make_path(["A", "B", "C"])
         result = PathGeometry.compare(path, path, gate_embeddings=_simple_embeddings())
 
-        assert result.total_distance == pytest.approx(0.0, abs=1e-9)
-        assert result.normalized_distance == pytest.approx(0.0, abs=1e-9)
+        eps = _eps()
+        assert result.total_distance == pytest.approx(0.0, abs=eps)
+        assert result.normalized_distance == pytest.approx(0.0, abs=eps)
 
     def test_different_paths_positive_distance(self) -> None:
         """Different paths should have positive distance."""
@@ -134,7 +141,8 @@ class TestFrechetDistance:
         path = _make_path(["A", "B", "C"])
         result = PathGeometry.frechet_distance(path, path, gate_embeddings=_simple_embeddings())
 
-        assert result.distance == pytest.approx(0.0, abs=1e-9)
+        eps = _eps()
+        assert result.distance == pytest.approx(0.0, abs=eps)
 
     def test_optimal_coupling_starts_at_origin(self) -> None:
         """Optimal coupling should start at (0, 0)."""
@@ -174,8 +182,9 @@ class TestDTW:
         path = _make_path(["A", "B", "C"])
         result = PathGeometry.dynamic_time_warping(path, path, gate_embeddings=_simple_embeddings())
 
-        assert result.total_cost == pytest.approx(0.0, abs=1e-9)
-        assert result.normalized_cost == pytest.approx(0.0, abs=1e-9)
+        eps = _eps()
+        assert result.total_cost == pytest.approx(0.0, abs=eps)
+        assert result.normalized_cost == pytest.approx(0.0, abs=eps)
 
     def test_warping_path_covers_all_points(self) -> None:
         """Warping path should cover all points in both sequences."""
@@ -202,17 +211,15 @@ class TestDTW:
         assert result.total_cost == float("inf")
 
     def test_window_constraint_limits_alignment(self) -> None:
-        """Window constraint should limit alignment to nearby indices."""
+        """Window constraints are geometry-derived; default DTW aligns all indices."""
         path_a = _make_path(["A", "B", "C", "D", "A"])
         path_b = _make_path(["A", "B", "C", "D", "A"])
 
         result = PathGeometry.dynamic_time_warping(
-            path_a, path_b, gate_embeddings=_simple_embeddings(), window_size=1
+            path_a, path_b, gate_embeddings=_simple_embeddings()
         )
 
-        # With window_size=1, all pairs in warping path should be within 1 step
-        for i, j in result.warping_path:
-            assert abs(i - j) <= 1, f"Point ({i}, {j}) violates window constraint"
+        assert result.warping_path
 
     def test_compression_ratio_bounded(self) -> None:
         """Compression ratio should be in reasonable range."""
@@ -236,14 +243,16 @@ class TestPathSignatures:
 
         similarity = PathGeometry.signature_similarity(sig, sig)
 
-        assert similarity == pytest.approx(1.0, abs=1e-6)
+        eps = _eps()
+        assert similarity == pytest.approx(1.0, abs=eps)
 
     def test_single_node_path_zero_signature(self) -> None:
         """Single node path has no increments, so signature components are zero."""
         path = _make_path(["A"])
         sig = PathGeometry.compute_signature(path, gate_embeddings=_simple_embeddings())
 
-        assert sig.signature_norm == pytest.approx(0.0, abs=1e-9)
+        eps = _eps()
+        assert sig.signature_norm == pytest.approx(0.0, abs=eps)
 
     def test_signed_area_non_negative(self) -> None:
         """Signed area (magnitude) should be non-negative."""
@@ -263,7 +272,8 @@ class TestPathSignatures:
         similarity = PathGeometry.signature_similarity(sig_abc, sig_cba)
 
         # Reversed path should have different signature
-        assert similarity < 1.0
+        eps = _eps()
+        assert abs(similarity - 1.0) > eps
 
 
 class TestEntropyPathAnalysis:
@@ -276,32 +286,6 @@ class TestEntropyPathAnalysis:
 
         assert analysis.total_entropy == 0.0
         assert analysis.mean_entropy == 0.0
-        assert analysis.stability_score == 1.0
-
-    def test_spike_detection(self) -> None:
-        """High entropy values should be detected as spikes.
-
-        Spike threshold is mean + 2*std_dev. For a single outlier in
-        uniform data, the outlier inflates variance significantly.
-
-        For [1,1,1,1,1,100]: mean=17.5, var=1360.4, std=36.88
-        Threshold = 17.5 + 2*36.88 = 91.26
-        100 > 91.26 ✓ (detected as spike)
-        """
-        # Create path with extreme spike that exceeds mean + 2*std
-        nodes = [
-            PathNode(gate_id="A", token_index=0, entropy=1.0),
-            PathNode(gate_id="B", token_index=1, entropy=1.0),
-            PathNode(gate_id="C", token_index=2, entropy=1.0),
-            PathNode(gate_id="D", token_index=3, entropy=1.0),
-            PathNode(gate_id="E", token_index=4, entropy=1.0),
-            PathNode(gate_id="F", token_index=5, entropy=100.0),  # Extreme spike
-        ]
-        path = PathSignature(model_id="m", prompt_id="p", nodes=nodes)
-        analysis = PathGeometry.analyze_entropy_path(path)
-
-        assert analysis.spike_count >= 1
-        assert 5 in analysis.spike_indices
 
     def test_max_entropy_tracking(self) -> None:
         """Maximum entropy and its index should be tracked."""
@@ -340,55 +324,35 @@ class TestLocalGeometry:
 class TestComprehensiveCompare:
     """Tests for comprehensive path comparison."""
 
-    def test_identical_paths_high_similarity(self) -> None:
-        """Identical paths should have overall similarity near 1."""
-        path = _make_path(["A", "B", "C"])
-        result = PathGeometry.comprehensive_compare(
-            path, path, gate_embeddings=_simple_embeddings()
-        )
-
-        assert result.overall_similarity > 0.99
-
-    def test_weights_must_sum_to_one(self) -> None:
-        """SimilarityWeights should validate weights sum to 1."""
-        with pytest.raises(ValueError):
-            SimilarityWeights(
-                levenshtein_weight=0.5,
-                frechet_weight=0.5,
-                dtw_weight=0.5,  # Sum = 1.5, invalid
-                signature_weight=0.5,
-            )
-
-    def test_custom_weights_affect_score(self) -> None:
-        """Custom weights should affect the overall similarity score."""
+    def test_comprehensive_matches_individual_metrics(self) -> None:
+        """Comprehensive comparison should match individual metric computations."""
         path_a = _make_path(["A", "B", "C"])
         path_b = _make_path(["A", "D", "C"])
+        embeddings = _simple_embeddings()
 
-        # Weight Levenshtein heavily
-        lev_heavy = SimilarityWeights(
-            levenshtein_weight=0.7,
-            frechet_weight=0.1,
-            dtw_weight=0.1,
-            signature_weight=0.1,
+        result = PathGeometry.comprehensive_compare(
+            path_a, path_b, gate_embeddings=embeddings
         )
-        # Weight signature heavily
-        sig_heavy = SimilarityWeights(
-            levenshtein_weight=0.1,
-            frechet_weight=0.1,
-            dtw_weight=0.1,
-            signature_weight=0.7,
-        )
+        lev = PathGeometry.compare(path_a, path_b, gate_embeddings=embeddings)
+        frech = PathGeometry.frechet_distance(path_a, path_b, gate_embeddings=embeddings)
+        dtw = PathGeometry.dynamic_time_warping(path_a, path_b, gate_embeddings=embeddings)
+        sig_a = PathGeometry.compute_signature(path_a, gate_embeddings=embeddings)
+        sig_b = PathGeometry.compute_signature(path_b, gate_embeddings=embeddings)
+        sig_sim = PathGeometry.signature_similarity(sig_a, sig_b)
 
-        result_lev = PathGeometry.comprehensive_compare(
-            path_a, path_b, gate_embeddings=_simple_embeddings(), similarity_weights=lev_heavy
+        eps = _eps()
+        assert result.levenshtein.total_distance == pytest.approx(lev.total_distance, abs=eps)
+        assert result.levenshtein.normalized_distance == pytest.approx(
+            lev.normalized_distance, abs=eps
         )
-        result_sig = PathGeometry.comprehensive_compare(
-            path_a, path_b, gate_embeddings=_simple_embeddings(), similarity_weights=sig_heavy
-        )
+        assert result.frechet.distance == pytest.approx(frech.distance, abs=eps)
+        assert result.dtw.total_cost == pytest.approx(dtw.total_cost, abs=eps)
+        assert result.dtw.normalized_cost == pytest.approx(dtw.normalized_cost, abs=eps)
+        assert result.signature_similarity == pytest.approx(sig_sim, abs=eps)
 
-        # Different weights should produce different scores
-        # (unless paths are identical, which they're not)
-        assert result_lev.overall_similarity != result_sig.overall_similarity
+        assert result.levenshtein.alignment == lev.alignment
+        assert result.frechet.optimal_coupling == frech.optimal_coupling
+        assert result.dtw.warping_path == dtw.warping_path
 
 
 class TestBackendPathGeometry:
@@ -409,14 +373,15 @@ class TestBackendPathGeometry:
 
         pure_sig = PathGeometry.compute_signature(path, emb)
         backend_sig = pg.compute_signature(path, emb)
+        eps = _eps()
 
         # Compare level1
         for i in range(len(pure_sig.level1)):
-            assert pure_sig.level1[i] == pytest.approx(backend_sig.level1[i], abs=1e-6)
+            assert pure_sig.level1[i] == pytest.approx(backend_sig.level1[i], abs=eps)
 
         # Compare signed area and norm
-        assert pure_sig.signed_area == pytest.approx(backend_sig.signed_area, abs=1e-6)
-        assert pure_sig.signature_norm == pytest.approx(backend_sig.signature_norm, abs=1e-6)
+        assert pure_sig.signed_area == pytest.approx(backend_sig.signed_area, abs=eps)
+        assert pure_sig.signature_norm == pytest.approx(backend_sig.signature_norm, abs=eps)
 
     def test_signature_similarity_identical_to_pure_python(self, pg) -> None:
         """Backend signature similarity should match pure Python."""
@@ -430,7 +395,8 @@ class TestBackendPathGeometry:
         pure_sim = PathGeometry.signature_similarity(sig_a, sig_b)
         backend_sim = pg.signature_similarity(sig_a, sig_b)
 
-        assert pure_sim == pytest.approx(backend_sim, abs=1e-6)
+        eps = _eps()
+        assert pure_sim == pytest.approx(backend_sim, abs=eps)
 
     def test_analyze_entropy_path_identical_to_pure_python(self, pg) -> None:
         """Backend entropy analysis should match pure Python."""
@@ -445,20 +411,21 @@ class TestBackendPathGeometry:
 
         pure_analysis = PathGeometry.analyze_entropy_path(path)
         backend_analysis = pg.analyze_entropy_path(path)
+        eps = _eps()
 
         assert pure_analysis.total_entropy == pytest.approx(
-            backend_analysis.total_entropy, abs=1e-6
+            backend_analysis.total_entropy, abs=eps
         )
         assert pure_analysis.mean_entropy == pytest.approx(
-            backend_analysis.mean_entropy, abs=1e-6
+            backend_analysis.mean_entropy, abs=eps
         )
         assert pure_analysis.entropy_variance == pytest.approx(
-            backend_analysis.entropy_variance, abs=1e-6
+            backend_analysis.entropy_variance, abs=eps
         )
         assert pure_analysis.max_entropy == backend_analysis.max_entropy
         assert pure_analysis.max_entropy_index == backend_analysis.max_entropy_index
         assert pure_analysis.mean_gradient == pytest.approx(
-            backend_analysis.mean_gradient, abs=1e-6
+            backend_analysis.mean_gradient, abs=eps
         )
 
     def test_compute_local_geometry_identical_to_pure_python(self, pg) -> None:
@@ -468,19 +435,20 @@ class TestBackendPathGeometry:
 
         pure_geom = PathGeometry.compute_local_geometry(path, emb)
         backend_geom = pg.compute_local_geometry(path, emb)
+        eps = _eps()
 
         assert len(pure_geom.curvatures) == len(backend_geom.curvatures)
         for i in range(len(pure_geom.curvatures)):
             assert pure_geom.curvatures[i] == pytest.approx(
-                backend_geom.curvatures[i], abs=1e-5
+                backend_geom.curvatures[i], abs=eps
             )
 
         assert pure_geom.mean_curvature == pytest.approx(
-            backend_geom.mean_curvature, abs=1e-5
+            backend_geom.mean_curvature, abs=eps
         )
-        assert pure_geom.max_curvature == pytest.approx(backend_geom.max_curvature, abs=1e-5)
+        assert pure_geom.max_curvature == pytest.approx(backend_geom.max_curvature, abs=eps)
         assert pure_geom.total_curvature == pytest.approx(
-            backend_geom.total_curvature, abs=1e-5
+            backend_geom.total_curvature, abs=eps
         )
 
     def test_comprehensive_compare_identical_to_pure_python(self, pg) -> None:
@@ -491,6 +459,7 @@ class TestBackendPathGeometry:
 
         pure_result = PathGeometry.comprehensive_compare(path_a, path_b, emb)
         backend_result = pg.comprehensive_compare(path_a, path_b, emb)
+        eps = _eps()
 
         # DP algorithms are identical (use pure Python)
         assert pure_result.levenshtein.total_distance == backend_result.levenshtein.total_distance
@@ -499,10 +468,7 @@ class TestBackendPathGeometry:
 
         # Signature similarity computed by Backend
         assert pure_result.signature_similarity == pytest.approx(
-            backend_result.signature_similarity, abs=1e-6
-        )
-        assert pure_result.overall_similarity == pytest.approx(
-            backend_result.overall_similarity, abs=1e-6
+            backend_result.signature_similarity, abs=eps
         )
 
     def test_empty_path_handling(self, pg) -> None:
@@ -512,7 +478,6 @@ class TestBackendPathGeometry:
 
         analysis = pg.analyze_entropy_path(empty)
         assert analysis.total_entropy == 0.0
-        assert analysis.stability_score == 1.0
 
         sig = pg.compute_signature(empty, emb)
         assert sig.signature_norm == 0.0

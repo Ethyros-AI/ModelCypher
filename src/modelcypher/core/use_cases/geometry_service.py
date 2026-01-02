@@ -192,7 +192,6 @@ class GeometryService:
                 "compressionRatio": comparison.dtw.compression_ratio,
             },
             "signatureSimilarity": comparison.signature_similarity,
-            "overallSimilarity": comparison.overall_similarity,
         }
 
     @staticmethod

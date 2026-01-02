@@ -290,7 +290,6 @@ class PathSignatureFixture:
     gate_embeddings: dict[str, list[float]]
     shifted_embeddings: dict[str, list[float]]
     path: PathSignature
-    projection_dim: int
 
 
 @dataclass(frozen=True)
@@ -502,7 +501,6 @@ class GeometryValidationSuite:
             gate_embeddings=gate_embeddings,
             shifted_embeddings=shifted_embeddings,
             path=path,
-            projection_dim=3,
         )
 
         spectral_fixture = SpectralSignatureFixture(
@@ -668,12 +666,10 @@ class GeometryValidationSuite:
         signature = PathGeometry.compute_signature(
             fixture.path,
             gate_embeddings=fixture.gate_embeddings,
-            projection_dim=fixture.projection_dim,
         )
         shifted_signature = PathGeometry.compute_signature(
             fixture.path,
             gate_embeddings=fixture.shifted_embeddings,
-            projection_dim=fixture.projection_dim,
         )
         similarity = PathGeometry.signature_similarity(signature, shifted_signature)
         frechet = PathGeometry.frechet_distance(

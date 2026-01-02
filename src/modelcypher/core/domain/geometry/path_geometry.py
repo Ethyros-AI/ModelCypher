@@ -119,9 +119,7 @@ class LocalGeometry:
 class ComprehensiveComparison:
     """Result of comprehensive trajectory comparison.
 
-    Contains objective geometric quantities only - no subjective
-    categorical classifications. Downstream consumers may apply
-    their own task-specific thresholds to these values.
+    Contains objective geometric quantities only.
     """
 
     levenshtein: PathComparison
