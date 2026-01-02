@@ -38,6 +38,7 @@ from modelcypher.core.domain.geometry.density_estimator import (
     DensityEstimator,
     DensityResult,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -52,6 +53,10 @@ if TYPE_CHECKING:
 def backend() -> "Backend":
     """Provide backend for tests."""
     return get_default_backend()
+
+
+def _eps(backend: "Backend") -> float:
+    return division_epsilon(backend, backend.array([1.0]))
 
 
 @pytest.fixture
@@ -173,8 +178,9 @@ class TestDensityEstimator:
         result = estimator.compute(random_points_3d, config)
 
         densities = backend.to_numpy(result.densities)
-        assert densities.min() >= 0.0
-        assert densities.max() <= 1.0
+        eps = _eps(backend)
+        assert densities.min() >= -eps
+        assert densities.max() <= 1.0 + eps
 
     def test_unnormalized_densities(
         self, backend: "Backend", random_points_3d: "Array"
@@ -186,7 +192,7 @@ class TestDensityEstimator:
 
         densities = backend.to_numpy(result.densities)
         # All densities should be positive
-        assert densities.min() > 0
+        assert densities.min() > _eps(backend)
 
     def test_radii_positive(
         self, backend: "Backend", random_points_3d: "Array"
@@ -196,7 +202,7 @@ class TestDensityEstimator:
         result = estimator.compute(random_points_3d)
 
         radii = backend.to_numpy(result.radii)
-        assert radii.min() > 0
+        assert radii.min() > _eps(backend)
 
     def test_clustered_density_variation(
         self, backend: "Backend", clustered_points: "Array"
@@ -208,13 +214,13 @@ class TestDensityEstimator:
 
         densities = backend.to_numpy(result.densities)
         # Should have variation in density
-        assert densities.std() > 0
+        assert densities.std() > _eps(backend)
 
     def test_too_few_points_error(self, backend: "Backend") -> None:
         """Test error when too few points for k-NN."""
         estimator = DensityEstimator(backend)
-        config = DensityConfiguration(k_neighbors=20)
         small_points = backend.random_normal((10, 3))
+        config = DensityConfiguration(k_neighbors=small_points.shape[0] + 1)
 
         with pytest.raises(ValueError, match="more than"):
             estimator.compute(small_points, config)
@@ -229,8 +235,9 @@ class TestDensityEstimator:
         assert densities.shape == (50,)
         # Should be normalized
         d = backend.to_numpy(densities)
-        assert d.min() >= 0.0
-        assert d.max() <= 1.0
+        eps = _eps(backend)
+        assert d.min() >= -eps
+        assert d.max() <= 1.0 + eps
 
 
 # =============================================================================

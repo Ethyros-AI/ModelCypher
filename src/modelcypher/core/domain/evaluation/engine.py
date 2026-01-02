@@ -45,10 +45,6 @@ class EvaluationConfig:
     metrics: list[MetricType]
     batch_size: int = 1
     max_samples: int | None = None
-    # Entropy threshold for pass/fail (higher = more uncertain)
-    entropy_threshold: float = 5.0
-    # Score threshold for pass/fail
-    score_threshold: float = 0.5
 
 
 @dataclass
@@ -65,16 +61,15 @@ class PromptResult:
 
     prompt: str
     output: str
-    entropy: float
-    score: float
+    entropy: float | None
+    score: float | None
 
 
 @dataclass
 class ScenarioResult:
     scenario_name: str
-    avg_entropy: float
-    avg_score: float
-    passed: bool
+    avg_entropy: float | None
+    avg_score: float | None
     details: dict[str, Any]
     prompt_results: list[PromptResult] = field(default_factory=list)
 
@@ -105,9 +100,6 @@ class EvaluationExecutionEngine:
         )
         ```
     """
-
-    # Default entropy when no entropy_fn provided (for backward compatibility)
-    DEFAULT_ENTROPY = 2.0
 
     def __init__(self, config: EvaluationConfig | None = None):
         self.config = config or EvaluationConfig(dataset_path="", metrics=[])
@@ -149,12 +141,12 @@ class EvaluationExecutionEngine:
                     entropy = entropy_fn(prompt)
                 except Exception as e:
                     logger.warning(f"Entropy calculation failed for prompt: {e}")
-                    entropy = self.DEFAULT_ENTROPY
+                    entropy = None
             else:
-                # Backward compatibility: use default entropy when no entropy_fn
-                entropy = self.DEFAULT_ENTROPY
+                entropy = None
 
-            entropies.append(entropy)
+            if entropy is not None:
+                entropies.append(entropy)
 
             # 3. Semantic scoring
             if scoring_fn is not None:
@@ -162,12 +154,12 @@ class EvaluationExecutionEngine:
                     score = scoring_fn(output, scenario.target_concepts)
                 except Exception as e:
                     logger.warning(f"Scoring failed for output: {e}")
-                    score = 0.0
+                    score = None
             else:
-                # Fallback heuristic: output exists = 1.0, empty = 0.0
-                score = 1.0 if output and output.strip() else 0.0
+                score = None
 
-            scores.append(score)
+            if score is not None:
+                scores.append(score)
             prompt_results.append(
                 PromptResult(
                     prompt=prompt,
@@ -182,26 +174,20 @@ class EvaluationExecutionEngine:
             stats = EntropyMath.calculate_trajectory_stats(entropies)
             avg_entropy = stats.mean_entropy
         else:
-            avg_entropy = 0.0
+            avg_entropy = None
 
-        avg_score = sum(scores) / len(scores) if scores else 0.0
-
-        # Pass/fail determination
-        passed = (
-            avg_entropy < self.config.entropy_threshold and avg_score > self.config.score_threshold
-        )
+        avg_score = sum(scores) / len(scores) if scores else None
 
         return ScenarioResult(
             scenario_name=scenario.name,
             avg_entropy=avg_entropy,
             avg_score=avg_score,
-            passed=passed,
             details={
                 "prompts_count": len(scenario.prompts),
-                "entropy_threshold": self.config.entropy_threshold,
-                "score_threshold": self.config.score_threshold,
                 "used_real_entropy": entropy_fn is not None,
                 "used_custom_scoring": scoring_fn is not None,
+                "entropy_sample_count": len(entropies),
+                "score_sample_count": len(scores),
             },
             prompt_results=prompt_results,
         )

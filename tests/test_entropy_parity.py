@@ -82,11 +82,15 @@ class TestEntropySample:
             logit_entropy=3.0,
             sep_entropy=0.5,
         )
-        assert sample.best_entropy_estimate == 0.5
+        assert abs(sample.best_entropy_estimate - 0.5) <= _eps(
+            sample.best_entropy_estimate, 0.5
+        )
 
     def test_best_entropy_estimate_fallback(self):
         sample = EntropySample(logit_entropy=3.0)
-        assert sample.best_entropy_estimate == 3.0
+        assert abs(sample.best_entropy_estimate - 3.0) <= _eps(
+            sample.best_entropy_estimate, 3.0
+        )
 
     def test_z_score_computation(self):
         baseline = _create_test_baseline()
@@ -106,8 +110,9 @@ class TestEntropyTracker:
 
         tracker.start_session()
         assert tracker.is_session_active
-        assert tracker.current_entropy == 0.0
-        assert tracker.current_variance == 0.0
+        eps = _eps(tracker.current_entropy, tracker.current_variance)
+        assert abs(tracker.current_entropy) <= eps
+        assert abs(tracker.current_variance) <= eps
 
         tracker.end_session()
         assert not tracker.is_session_active

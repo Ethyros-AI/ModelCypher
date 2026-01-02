@@ -40,6 +40,11 @@ from modelcypher.core.domain.geometry.intrinsic_dimension import (
 from modelcypher.core.domain.geometry.manifold_clusterer import ManifoldClusterer, ManifoldPoint
 
 
+def _eps() -> float:
+    backend = get_default_backend()
+    return division_epsilon(backend, backend.array([1.0]))
+
+
 def test_intrinsic_dimension_estimator_mle():
     # Compare 1D vs 2D manifolds embedded in 10D space
     N = 200
@@ -58,7 +63,7 @@ def test_intrinsic_dimension_estimator_mle():
     line_est = estimator.compute_two_nn(line_points, config)
     plane_est = estimator.compute_two_nn(plane_points, config)
 
-    eps = division_epsilon(get_default_backend(), get_default_backend().array([1.0]))
+    eps = _eps()
     assert plane_est.intrinsic_dimension - line_est.intrinsic_dimension > eps
 
 
@@ -92,8 +97,9 @@ def test_manifold_clusterer_simple():
 
     # Check region centroids
     centroids = sorted([r.centroid.mean_entropy for r in result.regions])
-    assert centroids[0] == 1.0
-    assert centroids[1] == 5.0
+    eps = _eps()
+    assert abs(centroids[0] - 1.0) <= eps
+    assert abs(centroids[1] - 5.0) <= eps
 
 
 def test_manifold_clusterer_noise():
@@ -118,4 +124,4 @@ def test_manifold_clusterer_noise():
 
     assert len(result.regions) == 1
     assert len(result.noise_points) == 1
-    assert result.noise_points[0].mean_entropy == 100.0
+    assert abs(result.noise_points[0].mean_entropy - 100.0) <= _eps()

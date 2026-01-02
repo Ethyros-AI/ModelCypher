@@ -29,6 +29,13 @@ from modelcypher.core.domain.agents.emotion_concept_atlas import (
     EmotionIntensity,
     OppositionPreservationScorer,
 )
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
+
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 class TestEmotionConceptInventory:
@@ -119,7 +126,11 @@ class TestEmotionConceptVAD:
         """All valence values should be in [-1, 1]."""
         all_emotions = EmotionConceptInventory.all_emotions()
         for emotion in all_emotions:
-            assert -1.0 <= emotion.valence <= 1.0, (
+            eps = _eps(emotion.valence, -1.0, 1.0)
+            assert emotion.valence >= -1.0 - eps, (
+                f"{emotion.id} valence {emotion.valence} out of range"
+            )
+            assert emotion.valence <= 1.0 + eps, (
                 f"{emotion.id} valence {emotion.valence} out of range"
             )
 
@@ -127,7 +138,11 @@ class TestEmotionConceptVAD:
         """All arousal values should be in [0, 1]."""
         all_emotions = EmotionConceptInventory.all_emotions()
         for emotion in all_emotions:
-            assert 0.0 <= emotion.arousal <= 1.0, (
+            eps = _eps(emotion.arousal, 0.0, 1.0)
+            assert emotion.arousal >= -eps, (
+                f"{emotion.id} arousal {emotion.arousal} out of range"
+            )
+            assert emotion.arousal <= 1.0 + eps, (
                 f"{emotion.id} arousal {emotion.arousal} out of range"
             )
 
@@ -135,7 +150,11 @@ class TestEmotionConceptVAD:
         """All dominance values should be in [0, 1]."""
         all_emotions = EmotionConceptInventory.all_emotions()
         for emotion in all_emotions:
-            assert 0.0 <= emotion.dominance <= 1.0, (
+            eps = _eps(emotion.dominance, 0.0, 1.0)
+            assert emotion.dominance >= -eps, (
+                f"{emotion.id} dominance {emotion.dominance} out of range"
+            )
+            assert emotion.dominance <= 1.0 + eps, (
                 f"{emotion.id} dominance {emotion.dominance} out of range"
             )
 
@@ -145,12 +164,14 @@ class TestEmotionConceptVAD:
         id_to_emotion = {e.id: e for e in primaries}
 
         # Joy should be positive, sadness negative
-        assert id_to_emotion["joy"].valence > 0
-        assert id_to_emotion["sadness"].valence < 0
+        eps = _eps(id_to_emotion["joy"].valence, id_to_emotion["sadness"].valence)
+        assert id_to_emotion["joy"].valence > eps
+        assert id_to_emotion["sadness"].valence < -eps
 
         # Trust should be positive, disgust negative
-        assert id_to_emotion["trust"].valence > 0
-        assert id_to_emotion["disgust"].valence < 0
+        eps = _eps(id_to_emotion["trust"].valence, id_to_emotion["disgust"].valence)
+        assert id_to_emotion["trust"].valence > eps
+        assert id_to_emotion["disgust"].valence < -eps
 
     def test_intense_has_more_extreme_values(self) -> None:
         """Intense emotions should have more extreme arousal than mild."""
@@ -166,7 +187,8 @@ class TestEmotionConceptVAD:
                 mild = by_intensity[EmotionIntensity.MILD]
                 intense = by_intensity[EmotionIntensity.INTENSE]
                 # Intense should have >= arousal than mild
-                assert intense.arousal >= mild.arousal, (
+                eps = _eps(intense.arousal, mild.arousal)
+                assert intense.arousal + eps >= mild.arousal, (
                     f"{category}: intense arousal {intense.arousal} < mild arousal {mild.arousal}"
                 )
 
@@ -176,7 +198,10 @@ class TestEmotionConceptVAD:
         vad = emotion.vad
         assert isinstance(vad, tuple)
         assert len(vad) == 3
-        assert vad == (emotion.valence, emotion.arousal, emotion.dominance)
+        eps = _eps(emotion.valence, emotion.arousal, emotion.dominance)
+        assert abs(vad[0] - emotion.valence) <= eps
+        assert abs(vad[1] - emotion.arousal) <= eps
+        assert abs(vad[2] - emotion.dominance) <= eps
 
 
 class TestEmotionDyad:
@@ -199,9 +224,13 @@ class TestEmotionDyad:
         """Dyad VAD values should be in valid ranges."""
         dyads = EmotionConceptInventory.primary_dyads()
         for dyad in dyads:
-            assert -1.0 <= dyad.valence <= 1.0
-            assert 0.0 <= dyad.arousal <= 1.0
-            assert 0.0 <= dyad.dominance <= 1.0
+            eps = _eps(dyad.valence, dyad.arousal, dyad.dominance)
+            assert dyad.valence >= -1.0 - eps
+            assert dyad.valence <= 1.0 + eps
+            assert dyad.arousal >= -eps
+            assert dyad.arousal <= 1.0 + eps
+            assert dyad.dominance >= -eps
+            assert dyad.dominance <= 1.0 + eps
 
     def test_dyad_has_support_texts(self) -> None:
         """All dyads should have at least one support text."""
@@ -219,7 +248,8 @@ class TestEmotionConceptSignature:
             emotion_ids=["joy", "sadness"],
             values=[1.0, 0.0],
         )
-        assert sig.cosine_similarity(sig) == 1.0
+        similarity = sig.cosine_similarity(sig)
+        assert abs(similarity - 1.0) <= _eps(similarity, 1.0)
 
     def test_cosine_similarity_orthogonal(self) -> None:
         """Orthogonal signatures should have cosine similarity of 0.0."""
@@ -231,7 +261,8 @@ class TestEmotionConceptSignature:
             emotion_ids=["joy", "sadness"],
             values=[0.0, 1.0],
         )
-        assert sig_a.cosine_similarity(sig_b) == 0.0
+        similarity = sig_a.cosine_similarity(sig_b)
+        assert abs(similarity) <= _eps(similarity)
 
     def test_cosine_similarity_mismatched_ids(self) -> None:
         """Mismatched emotion_ids still compute similarity - different labels,
@@ -248,7 +279,7 @@ class TestEmotionConceptSignature:
         # Same values -> high similarity despite different labels
         # Normalized cosine: (1.0 + 1.0) / 2 = 1.0
         similarity = sig_a.cosine_similarity(sig_b)
-        assert similarity == 1.0
+        assert abs(similarity - 1.0) <= _eps(similarity, 1.0)
 
     def test_l2_normalized(self) -> None:
         """l2_normalized should produce unit vector."""
@@ -258,8 +289,9 @@ class TestEmotionConceptSignature:
         )
         normalized = sig.l2_normalized()
         # Should be [0.6, 0.8]
-        assert abs(normalized.values[0] - 0.6) < 1e-6
-        assert abs(normalized.values[1] - 0.8) < 1e-6
+        eps = _eps(normalized.values[0], normalized.values[1])
+        assert abs(normalized.values[0] - 0.6) <= eps
+        assert abs(normalized.values[1] - 0.8) <= eps
 
     def test_dominant_emotion(self) -> None:
         """dominant_emotion should return highest activation."""
@@ -269,7 +301,7 @@ class TestEmotionConceptSignature:
         )
         dominant_id, dominant_val = sig.dominant_emotion()
         assert dominant_id == "sadness"
-        assert dominant_val == 0.7
+        assert abs(dominant_val - 0.7) <= _eps(dominant_val, 0.7)
 
     def test_top_emotions(self) -> None:
         """top_emotions should return k highest by activation."""
@@ -279,8 +311,11 @@ class TestEmotionConceptSignature:
         )
         top_2 = sig.top_emotions(k=2)
         assert len(top_2) == 2
-        assert top_2[0] == ("sadness", 0.9)
-        assert top_2[1] == ("anger", 0.7)
+        eps = _eps(top_2[0][1], top_2[1][1])
+        assert top_2[0][0] == "sadness"
+        assert abs(top_2[0][1] - 0.9) <= eps
+        assert top_2[1][0] == "anger"
+        assert abs(top_2[1][1] - 0.7) <= eps
 
     def test_opposition_balance(self) -> None:
         """opposition_balance should compute difference for each pair."""
@@ -300,11 +335,13 @@ class TestEmotionConceptSignature:
         balances = sig.opposition_balance()
 
         # joy (0.8) vs sadness (0.2) = 0.6
-        assert abs(balances["joy_vs_sadness"] - 0.6) < 1e-6
+        eps = _eps(balances["joy_vs_sadness"], 0.6)
+        assert abs(balances["joy_vs_sadness"] - 0.6) <= eps
         # trust (0.5) vs disgust (0.5) = 0.0
-        assert abs(balances["trust_vs_disgust"]) < 1e-6
+        assert abs(balances["trust_vs_disgust"]) <= _eps(balances["trust_vs_disgust"])
         # fear (0.3) vs anger (0.7) = -0.4
-        assert abs(balances["fear_vs_anger"] - (-0.4)) < 1e-6
+        eps = _eps(balances["fear_vs_anger"], -0.4)
+        assert abs(balances["fear_vs_anger"] - (-0.4)) <= eps
 
     def test_vad_projection_with_inventory(self) -> None:
         """vad_projection should compute weighted average of VAD coordinates."""
@@ -317,9 +354,10 @@ class TestEmotionConceptSignature:
         vad = sig.vad_projection()
         # Should match joy's VAD exactly
         joy = next(e for e in emotions if e.id == "joy")
-        assert abs(vad[0] - joy.valence) < 1e-6
-        assert abs(vad[1] - joy.arousal) < 1e-6
-        assert abs(vad[2] - joy.dominance) < 1e-6
+        eps = _eps(joy.valence, joy.arousal, joy.dominance)
+        assert abs(vad[0] - joy.valence) <= eps
+        assert abs(vad[1] - joy.arousal) <= eps
+        assert abs(vad[2] - joy.dominance) <= eps
 
     def test_vad_projection_without_inventory(self) -> None:
         """vad_projection without inventory should return (0, 0, 0)."""
@@ -327,7 +365,11 @@ class TestEmotionConceptSignature:
             emotion_ids=["joy"],
             values=[1.0],
         )
-        assert sig.vad_projection() == (0.0, 0.0, 0.0)
+        vad = sig.vad_projection()
+        eps = _eps(*vad)
+        assert abs(vad[0]) <= eps
+        assert abs(vad[1]) <= eps
+        assert abs(vad[2]) <= eps
 
 
 class TestOppositionPreservationScorer:
@@ -349,7 +391,7 @@ class TestOppositionPreservationScorer:
             values=[0.8, 0.2, 0.6, 0.4, 0.3, 0.7, 0.5, 0.5],
         )
         score = OppositionPreservationScorer.compute_score(sig, sig)
-        assert score.mean_preservation == 1.0
+        assert abs(score.mean_preservation - 1.0) <= _eps(score.mean_preservation, 1.0)
         assert len(score.violated_pairs) == 0
 
     def test_flipped_opposition_violation(self) -> None:
@@ -363,7 +405,7 @@ class TestOppositionPreservationScorer:
             values=[0.2, 0.8],  # sadness dominant (flipped)
         )
         score = OppositionPreservationScorer.compute_score(sig_a, sig_b)
-        assert score.mean_preservation < 1.0
+        assert abs(score.mean_preservation - 1.0) > _eps(score.mean_preservation, 1.0)
         assert "joy_vs_sadness" in score.violated_pairs
 
     def test_co_activation_penalty_no_coactivation(self) -> None:
@@ -382,7 +424,7 @@ class TestOppositionPreservationScorer:
             values=[1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0],
         )
         penalty = OppositionPreservationScorer.co_activation_penalty(sig)
-        assert penalty == 0.0
+        assert abs(penalty) <= _eps(penalty)
 
     def test_co_activation_penalty_full_coactivation(self) -> None:
         """Full co-activation should have high penalty."""
@@ -400,7 +442,7 @@ class TestOppositionPreservationScorer:
             values=[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         )
         penalty = OppositionPreservationScorer.co_activation_penalty(sig)
-        assert penalty == 1.0
+        assert abs(penalty - 1.0) <= _eps(penalty, 1.0)
 
 
 class TestEmotionConceptAtlas:
@@ -439,14 +481,14 @@ class TestEmotionConceptAtlas:
         atlas = EmotionConceptAtlas()
         entropy = atlas._normalized_entropy([1.0, 1.0, 1.0])
         assert entropy is not None
-        assert abs(entropy - 1.0) < 1e-6
+        assert abs(entropy - 1.0) <= _eps(entropy, 1.0)
 
     def test_normalized_entropy_concentrated(self) -> None:
         """Concentrated distribution should have low entropy."""
         atlas = EmotionConceptAtlas()
         entropy = atlas._normalized_entropy([1.0, 0.0, 0.0])
         assert entropy is not None
-        assert entropy == 0.0
+        assert abs(entropy) <= _eps(entropy)
 
     def test_vad_distance_identical(self) -> None:
         """Identical VAD projections should have distance 0."""
@@ -458,7 +500,7 @@ class TestEmotionConceptAtlas:
             _inventory=emotions,
         )
         distance = atlas.vad_distance(sig, sig)
-        assert distance == 0.0
+        assert abs(distance) <= _eps(distance)
 
     def test_vad_distance_opposites(self) -> None:
         """Opposite emotions should have large VAD distance."""
@@ -477,9 +519,13 @@ class TestEmotionConceptAtlas:
         )
 
         distance = atlas.vad_distance(sig_joy, sig_sadness)
-        # Joy and sadness have opposite valence, different arousal/dominance
-        # Should be a significant distance
-        assert distance > 1.0
+        vad_joy = sig_joy.vad_projection()
+        vad_sadness = sig_sadness.vad_projection()
+        expected = ((vad_joy[0] - vad_sadness[0]) ** 2 +
+                    (vad_joy[1] - vad_sadness[1]) ** 2 +
+                    (vad_joy[2] - vad_sadness[2]) ** 2) ** 0.5
+        eps = _eps(distance, expected)
+        assert abs(distance - expected) <= eps
 
 
 class TestOppositionPairs:

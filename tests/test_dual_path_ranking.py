@@ -26,6 +26,10 @@ from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.inference.dual_path_mlx import compute_token_rank_metrics
 
 
+def _eps(backend, *values: float) -> float:
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
+
+
 class TestTokenRankMetrics:
     """Tests for compute_token_rank_metrics function."""
 
@@ -37,7 +41,7 @@ class TestTokenRankMetrics:
         rank, rank_fraction, frontier_hit = compute_token_rank_metrics(scores, token_id=0)
 
         assert rank == 0
-        assert rank_fraction == 1.0  # Top token = max rank fraction
+        assert abs(rank_fraction - 1.0) <= _eps(backend, rank_fraction, 1.0)
         assert frontier_hit is True
 
     def test_second_token_has_rank_one(self):
@@ -60,7 +64,7 @@ class TestTokenRankMetrics:
         rank, rank_fraction, frontier_hit = compute_token_rank_metrics(scores, token_id=3)
 
         assert rank == 3  # vocab_size - 1
-        assert rank_fraction == 0.0  # Bottom token = min rank fraction
+        assert abs(rank_fraction) <= _eps(backend, rank_fraction)
         assert frontier_hit is False
 
     def test_rank_fraction_range(self):
@@ -71,10 +75,12 @@ class TestTokenRankMetrics:
             backend.random_seed(seed)
             scores = backend.random_uniform(shape=(100,))
             backend.eval(scores)
+            eps = _eps(backend, float(backend.to_numpy(backend.max(scores))))
 
             for token_id in range(100):
                 _, rank_fraction, _ = compute_token_rank_metrics(scores, token_id)
-                assert 0.0 <= rank_fraction <= 1.0
+                assert rank_fraction >= -eps
+                assert rank_fraction <= 1.0 + eps
 
     def test_frontier_gap_derivation(self):
         """Frontier hit should follow the largest relative gap."""
@@ -104,7 +110,7 @@ class TestTokenRankMetrics:
         for i in range(n):
             rank, rank_fraction, frontier_hit = compute_token_rank_metrics(scores, token_id=i)
             assert rank == 0  # All equal = all are "top"
-            assert rank_fraction == 1.0
+            assert abs(rank_fraction - 1.0) <= _eps(backend, rank_fraction, 1.0)
             assert frontier_hit is True
 
     def test_large_vocabulary(self):
@@ -120,7 +126,7 @@ class TestTokenRankMetrics:
         rank, rank_fraction, frontier_hit = compute_token_rank_metrics(scores, top_id)
 
         assert rank == 0
-        assert rank_fraction == 1.0
+        assert abs(rank_fraction - 1.0) <= _eps(backend, rank_fraction, 1.0)
         assert frontier_hit is True
 
         # Find the bottom token
@@ -128,7 +134,7 @@ class TestTokenRankMetrics:
         rank, rank_fraction, frontier_hit = compute_token_rank_metrics(scores, bottom_id)
 
         assert rank == vocab_size - 1
-        assert rank_fraction == 0.0
+        assert abs(rank_fraction) <= _eps(backend, rank_fraction)
         assert frontier_hit is False
 
     def test_single_token_vocab(self):
@@ -139,7 +145,7 @@ class TestTokenRankMetrics:
         rank, rank_fraction, frontier_hit = compute_token_rank_metrics(scores, token_id=0)
 
         assert rank == 0
-        assert rank_fraction == 1.0
+        assert abs(rank_fraction - 1.0) <= _eps(backend, rank_fraction, 1.0)
         assert frontier_hit is True
 
     def test_two_token_vocab(self):
@@ -151,11 +157,11 @@ class TestTokenRankMetrics:
         rank1, rank_fraction1, hit1 = compute_token_rank_metrics(scores, token_id=1)
 
         assert rank0 == 0
-        assert rank_fraction0 == 1.0
+        assert abs(rank_fraction0 - 1.0) <= _eps(backend, rank_fraction0, 1.0)
         assert hit0 is True
 
         assert rank1 == 1
-        assert rank_fraction1 == 0.0  # 1 - (1 / 1) = 0
+        assert abs(rank_fraction1) <= _eps(backend, rank_fraction1)
         assert hit1 is False
 
     def test_ties_in_probability(self):
@@ -168,7 +174,9 @@ class TestTokenRankMetrics:
 
         # Both have same score, so same rank (1 token has higher score)
         assert rank1 == rank2 == 1
-        assert rank_fraction1 == rank_fraction2
+        assert abs(rank_fraction1 - rank_fraction2) <= _eps(
+            backend, rank_fraction1, rank_fraction2
+        )
         assert hit1 is hit2 is False
 
     def test_monotonicity(self):
@@ -182,5 +190,6 @@ class TestTokenRankMetrics:
             rank_fractions.append(rank_fraction)
 
         # Should be monotonically decreasing
+        eps = _eps(backend, *rank_fractions)
         for i in range(len(rank_fractions) - 1):
-            assert rank_fractions[i] >= rank_fractions[i + 1]
+            assert rank_fractions[i] + eps >= rank_fractions[i + 1]

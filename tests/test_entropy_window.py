@@ -21,10 +21,17 @@ import uuid
 
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.entropy.entropy_window import (
     EntropyWindow,
     EntropyWindowConfig,
 )
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
+
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 class TestEntropyWindowConfig:
@@ -68,8 +75,9 @@ class TestEntropyWindow:
         status = window.add(entropy=2.0, variance=0.1, token_index=0)
 
         assert status.sample_count == 1
-        assert status.current_entropy == 2.0
-        assert status.moving_average == 2.0
+        eps = _eps(status.current_entropy, status.moving_average)
+        assert abs(status.current_entropy - 2.0) <= eps
+        assert abs(status.moving_average - 2.0) <= eps
 
     def test_add_multiple_samples(self):
         """Should compute moving average correctly."""
@@ -80,8 +88,9 @@ class TestEntropyWindow:
         status = window.add(entropy=3.0, variance=0.1, token_index=2)
 
         assert status.sample_count == 3
-        assert status.moving_average == 2.0  # (1+2+3)/3
-        assert status.current_entropy == 3.0
+        eps = _eps(status.moving_average, status.current_entropy)
+        assert abs(status.moving_average - 2.0) <= eps  # (1+2+3)/3
+        assert abs(status.current_entropy - 3.0) <= eps
 
     def test_window_size_limit(self):
         """Should maintain window size limit."""
@@ -93,7 +102,7 @@ class TestEntropyWindow:
 
         status = window.status()
         assert status.sample_count == 5
-        assert status.min_entropy == 5.0  # First 5 should be evicted
+        assert abs(status.min_entropy - 5.0) <= _eps(status.min_entropy)
 
     def test_reset(self):
         """Reset should clear all state."""
@@ -119,7 +128,7 @@ class TestEntropyWindow:
         status = window.add_batch(batch)
 
         assert status.sample_count == 3
-        assert status.moving_average == 2.0
+        assert abs(status.moving_average - 2.0) <= _eps(status.moving_average)
 
     def test_moving_average_reflects_raw_entropy(self):
         """Moving average should reflect raw entropy values."""
@@ -129,17 +138,23 @@ class TestEntropyWindow:
         # Low entropy value
         window.reset()
         window.add(entropy=1.0, variance=0.1, token_index=0)
-        assert window.status().moving_average == 1.0
+        assert abs(window.status().moving_average - 1.0) <= _eps(
+            window.status().moving_average
+        )
 
         # Moderate entropy value
         window.reset()
         window.add(entropy=2.0, variance=0.1, token_index=0)
-        assert window.status().moving_average == 2.0
+        assert abs(window.status().moving_average - 2.0) <= _eps(
+            window.status().moving_average
+        )
 
         # High entropy value
         window.reset()
         window.add(entropy=4.0, variance=0.1, token_index=0)
-        assert window.status().moving_average == 4.0
+        assert abs(window.status().moving_average - 4.0) <= _eps(
+            window.status().moving_average
+        )
 
     def test_to_entropy_summary(self):
         """Should produce summary dict."""

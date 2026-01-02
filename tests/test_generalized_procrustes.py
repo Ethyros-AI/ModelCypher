@@ -507,11 +507,13 @@ class TestLayerRotationResult:
             angular_deviation=0.1,
             rotation_delta=0.05,
         )
+        backend = get_default_backend()
+        eps = _eps(backend, result.error, result.angular_deviation, result.rotation_delta)
         assert result.layer_index == 0
         assert result.rotation is not None
-        assert result.error == 0.01
-        assert result.angular_deviation == 0.1
-        assert result.rotation_delta == 0.05
+        assert abs(result.error - 0.01) <= eps
+        assert abs(result.angular_deviation - 0.1) <= eps
+        assert abs(result.rotation_delta - 0.05) <= eps
 
     def test_optional_fields_default_none(self) -> None:
         """Optional fields should default to None."""
@@ -564,13 +566,21 @@ class TestRotationContinuityResult:
     def test_all_fields_accessible(self) -> None:
         """Should have all required fields."""
         result = self._make_result()
+        backend = get_default_backend()
+        eps = _eps(
+            backend,
+            result.global_rotation_error,
+            result.smoothness_ratio,
+            result.rotation_roughness,
+            result.mean_angular_velocity,
+        )
         assert result.source_model == "source"
         assert result.target_model == "target"
         assert len(result.layers) == 1
-        assert result.global_rotation_error == 0.05
-        assert result.smoothness_ratio == 0.8
-        assert result.rotation_roughness == 0.01
-        assert result.mean_angular_velocity == 0.1
+        assert abs(result.global_rotation_error - 0.05) <= eps
+        assert abs(result.smoothness_ratio - 0.8) <= eps
+        assert abs(result.rotation_roughness - 0.01) <= eps
+        assert abs(result.mean_angular_velocity - 0.1) <= eps
         assert result.requires_per_layer_alignment is False
         assert result.source_dimension == 64
         assert result.target_dimension == 64
@@ -700,7 +710,9 @@ class TestRotationContinuityAnalyzer:
             source_acts, target_acts, "source", "target", config=config
         )
         assert result is not None
-        assert result.smoothness_ratio >= 0  # Should be valid ratio
+        backend = get_default_backend()
+        eps = _eps(backend, result.smoothness_ratio)
+        assert result.smoothness_ratio >= -eps
 
     def test_angular_deviation_between_layers(self) -> None:
         """Should compute angular deviation between layer rotations."""
@@ -759,7 +771,9 @@ class TestProcrustesEdgeCases:
 
         if result is not None:
             assert result.dimension == 2
-            assert result.alignment_error >= 0
+            backend = get_default_backend()
+            eps = _eps(backend, result.alignment_error)
+            assert result.alignment_error >= -eps
 
     def test_align_with_rank_deficient_activations_completes(self) -> None:
         """Rank-deficient matrices should not crash SVD."""

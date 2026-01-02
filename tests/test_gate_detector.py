@@ -40,6 +40,11 @@ from modelcypher.core.domain.geometry.gate_detector import (
 from modelcypher.ports.embedding import EmbeddingProvider
 
 
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
+
+
 class _KeywordEmbedder(EmbeddingProvider):
     """Test embedder that maps keywords to known vectors."""
 
@@ -132,7 +137,7 @@ class TestBasicDetection:
             prompt_id="p",
         )
 
-        assert result.mean_similarity > 0
+        assert result.mean_similarity > _eps(result.mean_similarity)
 
     def test_empty_text_returns_empty_result(self) -> None:
         """Empty text should return result with no detected gates."""
@@ -140,7 +145,7 @@ class TestBasicDetection:
         result = detector.detect(text="", model_id="m", prompt_id="p")
 
         assert result.detected_gates == []
-        assert result.mean_similarity == 0.0
+        assert abs(result.mean_similarity) <= _eps(result.mean_similarity)
 
     def test_no_matching_text_returns_empty(self) -> None:
         """Text with no matching keywords should return empty gates."""
@@ -216,10 +221,10 @@ class TestDetectedGate:
 
         assert gate.gate_id == "test"
         assert gate.gate_name == "TEST"
-        assert gate.similarity == 0.85
+        assert abs(gate.similarity - 0.85) <= _eps(gate.similarity, 0.85)
         assert gate.character_span == (10, 20)
         assert gate.trigger_text == "test text"
-        assert gate.local_entropy == 1.5
+        assert abs(gate.local_entropy - 1.5) <= _eps(gate.local_entropy, 1.5)
 
 
 class TestDetectionResult:
@@ -286,7 +291,7 @@ class TestEntropyTrace:
         # If gates detected, they should have local entropy
         for gate in result.detected_gates:
             if gate.local_entropy is not None:
-                assert gate.local_entropy > 0
+                assert gate.local_entropy > _eps(gate.local_entropy)
 
 
 class TestGateEmbeddings:

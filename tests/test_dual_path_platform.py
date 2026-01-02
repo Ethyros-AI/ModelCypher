@@ -30,6 +30,11 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 
+def _eps() -> float:
+    backend = get_default_backend()
+    return division_epsilon(backend, backend.array([1.0]))
+
+
 class TestPlatformDetection:
     """Tests for _is_*_available() helper functions."""
 
@@ -260,9 +265,9 @@ class TestSecurityScanMetrics:
         )
 
         assert metrics.token_count == 100
-        assert metrics.time_to_first_token_ms == 50.5
-        assert metrics.total_time_ms == 1000.0
-        assert metrics.tokens_per_second == 100.0
+        assert abs(metrics.time_to_first_token_ms - 50.5) <= _eps()
+        assert abs(metrics.total_time_ms - 1000.0) <= _eps()
+        assert abs(metrics.tokens_per_second - 100.0) <= _eps()
 
 
 class TestDualPathGeneratorConfiguration:
@@ -299,9 +304,9 @@ class TestDualPathGeneratorConfiguration:
         assert config.base_model_path == "/path/to/model"
         assert config.adapter_path is None
         assert config.max_tokens == 512
-        assert config.temperature == 0.7
-        assert config.top_p == 0.95
-        assert config.repetition_penalty == 1.0
+        assert abs(config.temperature - 0.7) <= _eps()
+        assert abs(config.top_p - 0.95) <= _eps()
+        assert abs(config.repetition_penalty - 1.0) <= _eps()
         assert config.stop_sequences == []
 
     def test_config_creation_full(self):
@@ -324,9 +329,9 @@ class TestDualPathGeneratorConfiguration:
 
         assert config.adapter_path == "/path/to/adapter"
         assert config.max_tokens == 256
-        assert config.temperature == 0.5
-        assert config.top_p == 0.9
-        assert config.repetition_penalty == 1.2
+        assert abs(config.temperature - 0.5) <= _eps()
+        assert abs(config.top_p - 0.9) <= _eps()
+        assert abs(config.repetition_penalty - 1.2) <= _eps()
         assert config.stop_sequences == [".", "?", "!"]
 
     def test_config_with_zero_temperature(self):
@@ -347,7 +352,7 @@ class TestDualPathGeneratorConfiguration:
             stop_sequences=[],
         )
 
-        assert config.temperature == 0.0
+        assert abs(config.temperature) <= _eps()
 
 
 class TestEntropyDeltaTrackerConfiguration:
@@ -389,8 +394,8 @@ class TestEntropyDeltaSample:
 
         assert sample.token_index == 0
         assert sample.generated_token == 12345
-        assert sample.base_entropy == 2.5
-        assert sample.adapter_entropy == 2.8
+        assert abs(sample.base_entropy - 2.5) <= _eps()
+        assert abs(sample.adapter_entropy - 2.8) <= _eps()
         assert sample.base_top_token == 100
         assert sample.adapter_top_token == 200
 
@@ -473,8 +478,9 @@ class TestLogitEntropyCalculator:
 
         assert isinstance(entropy, float)
         assert isinstance(variance, float)
-        assert entropy >= 0
-        assert variance >= 0
+        eps = _eps()
+        assert entropy >= -eps
+        assert variance >= -eps
 
     def test_compute_skip_variance(self):
         """Compute can skip variance calculation."""
@@ -489,7 +495,7 @@ class TestLogitEntropyCalculator:
         entropy, variance = calc.compute(logits, skip_variance=True)
 
         assert isinstance(entropy, float)
-        assert variance == 0.0  # Skipped
+        assert abs(variance) <= _eps()
 
 
 class TestLogitDivergenceCalculator:
@@ -507,8 +513,8 @@ class TestLogitDivergenceCalculator:
         logits = backend.random_normal((100,))
         kl = calc.kl_divergence(logits, logits)
 
-        assert kl >= 0
         eps = division_epsilon(backend, backend.array([0.0]))
+        assert kl >= -eps
         assert kl <= eps
 
     def test_kl_divergence_different_distributions(self):
@@ -525,7 +531,7 @@ class TestLogitDivergenceCalculator:
         logits_q = backend.random_normal((100,))
         kl = calc.kl_divergence(logits_p, logits_q)
 
-        assert kl >= 0  # KL divergence is non-negative
+        assert kl >= -_eps()
 
     def test_stable_softmax(self):
         """Stable softmax doesn't overflow on large logits."""

@@ -46,15 +46,16 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 
 def _test_config(
     baseline_samples: list[float] | None = None,
-    top_k: int = 10,
+    top_k: int | None = None,
     compute_variance: bool = True,
     source: str = "EntropyDeltaTracker",
 ) -> EntropyDeltaTrackerConfig:
     """Create test config derived from baseline samples."""
     samples = baseline_samples or [0.05, 0.1, 0.15, 0.2, 0.25]
+    derived_top_k = len(samples) if top_k is None else top_k
     return EntropyDeltaTrackerConfig.from_baseline_distribution(
         samples,
-        top_k=top_k,
+        top_k=derived_top_k,
         compute_variance=compute_variance,
         source=source,
     )
@@ -70,7 +71,7 @@ def test_from_baseline_distribution() -> None:
     samples = [0.1, 0.2, 0.3, 5.0]
     config = EntropyDeltaTrackerConfig.from_baseline_distribution(
         samples,
-        top_k=10,
+        top_k=len(samples),
         compute_variance=True,
         source="calibration_test",
     )
@@ -79,7 +80,7 @@ def test_from_baseline_distribution() -> None:
     eps = division_epsilon(backend, backend.array([0.0]))
     expected = find_magnitude_gap_threshold(sorted(samples), eps=eps)
     assert math.isclose(config.anomaly_threshold, expected, rel_tol=eps, abs_tol=eps)
-    assert config.top_k == 10
+    assert config.top_k == len(samples)
 
 
 def test_from_baseline_requires_samples() -> None:
@@ -87,7 +88,7 @@ def test_from_baseline_requires_samples() -> None:
     with pytest.raises(ValueError, match="anomaly_score_samples required"):
         EntropyDeltaTrackerConfig.from_baseline_distribution(
             [],
-            top_k=10,
+            top_k=1,
             compute_variance=True,
             source="calibration_test",
         )

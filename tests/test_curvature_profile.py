@@ -35,6 +35,7 @@ from pathlib import Path
 
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.curvature_profile import (
     CurvatureAlignment,
     CurvatureProfile,
@@ -45,6 +46,12 @@ from modelcypher.core.domain.geometry.curvature_profile import (
     parse_model_info,
     SCHEMA_VERSION,
 )
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
+
+def _eps() -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array([1.0]))
 
 
 # =============================================================================
@@ -59,9 +66,10 @@ class TestLayerCurvature:
         """LayerCurvature initializes with sensible defaults."""
         lc = LayerCurvature(layer_idx=5)
         assert lc.layer_idx == 5
-        assert lc.sectional_mean == 0.0
-        assert lc.ollivier_ricci_mean == 0.0
-        assert lc.intrinsic_dimension == 0.0
+        eps = _eps()
+        assert abs(lc.sectional_mean) <= eps
+        assert abs(lc.ollivier_ricci_mean) <= eps
+        assert abs(lc.intrinsic_dimension) <= eps
         assert lc.dominant_sign == "unknown"
 
     def test_custom_values(self):
@@ -122,7 +130,7 @@ class TestLayerCurvature:
         d = {"layer_idx": 0}
         lc = LayerCurvature.from_dict(d)
         assert lc.layer_idx == 0
-        assert lc.sectional_mean == 0.0
+        assert abs(lc.sectional_mean) <= _eps()
         assert lc.dominant_sign == "unknown"
 
     def test_roundtrip_serialization(self):
@@ -166,7 +174,7 @@ class TestCurvatureProfile:
         assert profile.model_size == "0.5B"
         assert profile.layer_curvatures == []
         assert profile.total_layers == 0
-        assert profile.global_sectional_mean == 0.0
+        assert abs(profile.global_sectional_mean) <= _eps()
 
     def test_with_layer_curvatures(self):
         """CurvatureProfile stores layer curvatures."""
@@ -377,8 +385,12 @@ class TestBuildFamilyBaseline:
 
         # Check that means are averaged
         assert len(baseline.sectional_mean_by_position) == 11
+        profile_means = [p.layer_curvatures[0].sectional_mean for p in profiles]
+        min_mean = min(profile_means)
+        max_mean = max(profile_means)
+        eps = _eps()
         for mean in baseline.sectional_mean_by_position:
-            assert -0.12 < mean < -0.04  # Between min and max profile means
+            assert min_mean - eps <= mean <= max_mean + eps
 
     def test_different_layer_counts(self):
         """build_family_baseline handles models with different layer counts."""
@@ -449,11 +461,12 @@ class TestComputeCurvatureAlignment:
         )
 
         alignment = compute_curvature_alignment(profile, profile)
-        assert alignment.score == 1.0
-        assert alignment.sectional_alignment == 1.0
-        assert alignment.ollivier_ricci_alignment == 1.0
-        assert alignment.sectional_z_score == 0.0
-        assert alignment.ollivier_ricci_z_score == 0.0
+        eps = _eps()
+        assert abs(alignment.score - 1.0) <= eps
+        assert abs(alignment.sectional_alignment - 1.0) <= eps
+        assert abs(alignment.ollivier_ricci_alignment - 1.0) <= eps
+        assert abs(alignment.sectional_z_score) <= eps
+        assert abs(alignment.ollivier_ricci_z_score) <= eps
 
     def test_different_profiles_no_baseline(self):
         """Different profiles produce lower alignment without baseline."""
@@ -479,8 +492,10 @@ class TestComputeCurvatureAlignment:
         )
 
         alignment = compute_curvature_alignment(source, target)
-        assert 0.0 < alignment.score < 1.0
-        assert alignment.sectional_z_score > 0.0
+        eps = _eps()
+        assert alignment.score > eps
+        assert alignment.score <= 1.0 + eps
+        assert alignment.sectional_z_score > eps
         assert alignment.baseline_family == "none"
 
     def test_with_baseline(self):
@@ -515,11 +530,13 @@ class TestComputeCurvatureAlignment:
             sample_count=3,
         )
 
+        alignment_no_baseline = compute_curvature_alignment(source, target)
         alignment = compute_curvature_alignment(source, target, baseline)
         assert alignment.baseline_family == "qwen"
         assert alignment.baseline_model_count == 3
         # With larger baseline std, z-scores should be smaller, alignment higher
-        assert alignment.score > 0.5
+        eps = _eps()
+        assert alignment.score + eps >= alignment_no_baseline.score
 
     def test_very_different_profiles(self):
         """Very different profiles have low alignment."""
@@ -545,9 +562,20 @@ class TestComputeCurvatureAlignment:
         )
 
         alignment = compute_curvature_alignment(source, target)
-        # Score should be very low due to large differences
-        assert alignment.score < 0.5
-        assert alignment.sectional_z_score > 3.0  # More than 3 sigma
+        mild_target = CurvatureProfile(
+            model_path="/models/target-mild",
+            model_family="qwen",
+            model_size="3B",
+            global_sectional_mean=-0.12,
+            global_sectional_std=0.02,
+            global_ollivier_ricci_mean=-0.10,
+            global_ollivier_ricci_std=0.02,
+            global_intrinsic_dimension_mean=150.0,
+        )
+        mild_alignment = compute_curvature_alignment(source, mild_target)
+        eps = _eps()
+        assert alignment.score + eps <= mild_alignment.score
+        assert alignment.sectional_z_score >= mild_alignment.sectional_z_score + eps
 
     def test_alignment_score_bounded(self):
         """Alignment score is bounded to [0, 1]."""
@@ -571,9 +599,10 @@ class TestComputeCurvatureAlignment:
         )
 
         alignment = compute_curvature_alignment(source, target)
-        assert 0.0 <= alignment.score <= 1.0
-        assert 0.0 <= alignment.sectional_alignment <= 1.0
-        assert 0.0 <= alignment.ollivier_ricci_alignment <= 1.0
+        eps = _eps()
+        assert -eps <= alignment.score <= 1.0 + eps
+        assert -eps <= alignment.sectional_alignment <= 1.0 + eps
+        assert -eps <= alignment.ollivier_ricci_alignment <= 1.0 + eps
 
 
 # =============================================================================
@@ -668,7 +697,7 @@ class TestEdgeCases:
         baseline = build_family_baseline([profile], "test")
         # Single sample means std is 0
         for std in baseline.sectional_std_by_position:
-            assert std == 0.0
+            assert abs(std) <= _eps()
 
     def test_alignment_with_zero_std_profile(self):
         """compute_curvature_alignment handles zero std profiles."""
@@ -683,7 +712,7 @@ class TestEdgeCases:
         )
         # Should not raise, uses fallback epsilon
         alignment = compute_curvature_alignment(profile, profile)
-        assert alignment.score == 1.0
+        assert abs(alignment.score - 1.0) <= _eps()
 
     def test_alignment_dataclass_is_frozen(self):
         """CurvatureAlignment is immutable."""

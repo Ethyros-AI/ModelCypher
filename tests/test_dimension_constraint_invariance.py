@@ -78,10 +78,11 @@ def test_geodesic_and_spectral_invariance_under_padding(any_backend) -> None:
     backend = any_backend
     points = _base_points()
     padded = _pad_points(points, 3)
+    k_neighbors = len(points) - 1
 
     geometry = RiemannianGeometry(backend)
-    geo_base = geometry.geodesic_distances(points, k_neighbors=3)
-    geo_padded = geometry.geodesic_distances(padded, k_neighbors=3)
+    geo_base = geometry.geodesic_distances(points, k_neighbors=k_neighbors)
+    geo_padded = geometry.geodesic_distances(padded, k_neighbors=k_neighbors)
 
     geo_diff = backend.abs(geo_base.distances - geo_padded.distances)
     geo_max = backend.max(geo_diff)
@@ -91,7 +92,7 @@ def test_geodesic_and_spectral_invariance_under_padding(any_backend) -> None:
     assert geo_base.connected == geo_padded.connected
     assert geo_base.k_neighbors == geo_padded.k_neighbors
 
-    config = SpectralSignatureConfig(k_neighbors=3)
+    config = SpectralSignatureConfig(k_neighbors=k_neighbors)
     spectral = SpectralSignature(backend)
     sig_base = spectral.compute(points, config)
     sig_padded = spectral.compute(padded, config)
@@ -158,7 +159,7 @@ def test_padding_invariance_random_pointcloud(
     backend.eval(points_arr)
     points = backend.to_numpy(points_arr).tolist()
     padded = _pad_points(points, base_dim + pad_extra)
-    k_neighbors = min(5, sample_count - 1)
+    k_neighbors = sample_count - 1
 
     base = backend.array(points)
     expanded = backend.array(padded)

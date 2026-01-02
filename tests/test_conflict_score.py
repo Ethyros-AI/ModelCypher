@@ -69,7 +69,7 @@ class TestConflictScoreResult:
 
         expected = result.mean_kl * (1.0 - result.base_frontier_rate)
         backend = get_default_backend()
-        assert abs(result.conflict_score - expected) < _eps(backend, result.conflict_score)
+        assert abs(result.conflict_score - expected) <= _eps(backend, result.conflict_score)
 
 
 class TestConflictScoreCalculator:
@@ -112,11 +112,11 @@ class TestConflictScoreCalculator:
 
         # KL should be ~0 for identical distributions
         backend = get_default_backend()
-        assert result.mean_kl < _eps(backend, result.mean_kl)
+        assert result.mean_kl <= _eps(backend, result.mean_kl)
         # Top token should be in frontier
-        assert result.base_frontier_rate == 1.0
+        assert abs(result.base_frontier_rate - 1.0) <= _eps(backend, result.base_frontier_rate)
         # Conflict should be ~0
-        assert result.conflict_score < _eps(backend, result.conflict_score)
+        assert result.conflict_score <= _eps(backend, result.conflict_score)
 
     def test_compute_different_logits(self):
         """Different logits should have positive KL."""
@@ -131,7 +131,8 @@ class TestConflictScoreCalculator:
         )
 
         # KL should be positive
-        assert result.mean_kl > 0
+        backend = get_default_backend()
+        assert result.mean_kl > _eps(backend, result.mean_kl)
 
     def test_is_in_frontier(self):
         """Should correctly identify frontier membership."""
@@ -155,11 +156,11 @@ class TestConflictAnalysis:
         )
 
         assert result is not None
-        assert result.base_frontier_rate == 1.0
+        backend = get_default_backend()
+        assert abs(result.base_frontier_rate - 1.0) <= _eps(backend, result.base_frontier_rate)
         assert result.token_count == 4
         # Low KL + high frontier rate = low conflict
-        backend = get_default_backend()
-        assert result.conflict_score < _eps(backend, result.conflict_score)
+        assert result.conflict_score <= _eps(backend, result.conflict_score)
 
     def test_compute_mid_frontier_rate(self):
         """Mid frontier rate with raw measurements."""
@@ -170,7 +171,7 @@ class TestConflictAnalysis:
 
         assert result is not None
         backend = get_default_backend()
-        assert abs(result.base_frontier_rate - 6 / 7) < _eps(
+        assert abs(result.base_frontier_rate - 6 / 7) <= _eps(
             backend, result.base_frontier_rate
         )
         assert result.token_count == 7
@@ -183,12 +184,12 @@ class TestConflictAnalysis:
         )
 
         assert result is not None
-        assert result.base_frontier_rate == 0.0
+        backend = get_default_backend()
+        assert abs(result.base_frontier_rate) <= _eps(backend, result.base_frontier_rate)
         assert result.token_count == 4
         # High KL + zero frontier rate = high conflict
         mean_kl = sum([2.0, 3.0, 2.5, 3.0]) / 4
-        backend = get_default_backend()
-        assert abs(result.conflict_score - mean_kl) < _eps(backend, result.conflict_score)
+        assert abs(result.conflict_score - mean_kl) <= _eps(backend, result.conflict_score)
 
     def test_compute_empty(self):
         """Empty input should return None."""
@@ -204,7 +205,8 @@ class TestConflictAnalysis:
         )
 
         assert result is not None
-        assert result.base_frontier_rate == 1.0
+        backend = get_default_backend()
+        assert abs(result.base_frontier_rate - 1.0) <= _eps(backend, result.base_frontier_rate)
         assert result.token_count == 3  # Only 3 valid pairs
 
 
@@ -239,7 +241,8 @@ class TestKLDivergenceInvariants:
             sampled_token=0,
         )
 
-        assert result.mean_kl >= 0.0
+        backend = get_default_backend()
+        assert result.mean_kl >= -_eps(backend, result.mean_kl)
 
     def test_kl_self_divergence_zero(self) -> None:
         """KL(P||P) = 0.
@@ -257,7 +260,7 @@ class TestKLDivergenceInvariants:
         )
 
         backend = get_default_backend()
-        assert result.mean_kl < _eps(backend, result.mean_kl)
+        assert result.mean_kl <= _eps(backend, result.mean_kl)
 
     @pytest.mark.parametrize("seed", range(5))
     def test_kl_asymmetry(self, seed: int) -> None:

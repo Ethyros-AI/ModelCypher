@@ -39,6 +39,10 @@ from modelcypher.core.domain.geometry.dimension_cascade import (
     CascadeResult,
     DimensionCascade,
 )
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -47,6 +51,14 @@ if TYPE_CHECKING:
 # =============================================================================
 # Test Fixtures
 # =============================================================================
+
+
+def _eps(backend: "Backend") -> float:
+    return machine_epsilon(backend, backend.array([1.0]))
+
+
+def _div_eps(backend: "Backend") -> float:
+    return division_epsilon(backend, backend.array([1.0]))
 
 
 @pytest.fixture
@@ -130,7 +142,7 @@ class TestCascadeResult:
         )
 
         assert result.original_dim == 64
-        assert result.intrinsic_dim == 12.5
+        assert abs(result.intrinsic_dim - 12.5) <= _eps(backend)
         assert 4 in result.projections
         assert 3 in result.projections
         assert 4 in result.couplings
@@ -160,7 +172,7 @@ class TestDimensionCascade:
 
         assert cascade.calibrated is True
         assert result.original_dim == 64
-        assert result.intrinsic_dim > 0
+        assert result.intrinsic_dim > _eps(backend)
         assert 4 in result.projections
         assert 3 in result.projections
         assert 4 in result.couplings
@@ -279,7 +291,7 @@ class TestDimensionCascade:
 
         # Results should be very close (not exact due to chain vs single matmul)
         diff = backend.to_numpy(backend.abs(chain_result - composite_result))
-        assert diff.max() < 1e-4
+        assert diff.max() <= division_epsilon(backend, chain_result)
 
     def test_geodesic_distortion_computed(
         self, backend: "Backend", random_activations: "Array"
@@ -292,7 +304,8 @@ class TestDimensionCascade:
         assert 3 in result.geodesic_distortion
         # Distortion should be between 0 and 1
         for dim, distortion in result.geodesic_distortion.items():
-            assert 0 <= distortion <= 1
+            assert distortion >= -_eps(backend)
+            assert distortion <= 1.0 + _eps(backend)
 
     def test_curvature_computed(
         self, backend: "Backend", random_activations: "Array"
@@ -341,12 +354,13 @@ class TestDimensionCascade:
         # Coupling should have changed (completely replaced with new)
         new_coupling = cascade._couplings[3]
         diff = backend.to_numpy(backend.abs(original_coupling - new_coupling))
-        assert diff.sum() > 0
+        assert diff.sum() > _div_eps(backend)
 
     def test_min_points_validation(self, backend: "Backend") -> None:
         """Test validation of minimum calibration points."""
         cascade = DimensionCascade(backend)
-        too_few = backend.random_normal((5, 64))
+        min_points = CascadeConfiguration(target_dims=[4, 3]).min_calibration_points
+        too_few = backend.random_normal((min_points - 1, 64))
 
         with pytest.raises(ValueError, match="calibration points"):
             cascade.calibrate(too_few, target_dims=[4, 3])

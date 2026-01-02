@@ -93,8 +93,9 @@ class TestProjectionResult:
 
     def test_required_fields(self, sample_result):
         assert sample_result.projected_embeddings is not None
-        assert sample_result.reconstruction_error == 0.1
-        assert sample_result.alignment_score == 0.95
+        eps = _div_eps()
+        assert abs(sample_result.reconstruction_error - 0.1) <= eps
+        assert abs(sample_result.alignment_score - 0.95) <= eps
         assert sample_result.strategy_used == ProjectionStrategy.TRUNCATE
 
     def test_optional_projection_matrix(self, sample_result):
@@ -114,7 +115,7 @@ class TestProjectionResult:
             metadata={"n_components": 64, "explained_variance": 0.95},
         )
         assert result.metadata["n_components"] == 64
-        assert result.metadata["explained_variance"] == 0.95
+        assert abs(result.metadata["explained_variance"] - 0.95) <= _div_eps()
 
     def test_to_dict_contains_required_fields(self, sample_result):
         d = sample_result.to_dict()
@@ -126,8 +127,9 @@ class TestProjectionResult:
 
     def test_to_dict_values(self, sample_result):
         d = sample_result.to_dict()
-        assert d["reconstruction_error"] == 0.1
-        assert d["alignment_score"] == 0.95
+        eps = _div_eps()
+        assert abs(d["reconstruction_error"] - 0.1) <= eps
+        assert abs(d["alignment_score"] - 0.95) <= eps
         assert d["strategy_used"] == "truncate"
         assert d["output_shape"] == [100, 64]
         assert d["has_projection_matrix"] is False
@@ -184,8 +186,10 @@ class TestEmbeddingProjectorTruncate:
 
         assert result.strategy_used == ProjectionStrategy.TRUNCATE
         assert result.projected_embeddings.shape == (100, 64)
-        assert result.reconstruction_error >= 0.0
-        assert -1.0 <= result.alignment_score <= 1.0
+        eps = _div_eps()
+        assert result.reconstruction_error >= -eps
+        assert result.alignment_score >= -1.0 - eps
+        assert result.alignment_score <= 1.0 + eps
 
     def test_truncate_larger_source(self, projector, backend):
         source = backend.random_normal((100, 128))
@@ -193,8 +197,10 @@ class TestEmbeddingProjectorTruncate:
         result = projector.project(source, target)
 
         assert result.projected_embeddings.shape == (100, 64)
-        assert result.reconstruction_error >= 0.0
-        assert -1.0 <= result.alignment_score <= 1.0
+        eps = _div_eps()
+        assert result.reconstruction_error >= -eps
+        assert result.alignment_score >= -1.0 - eps
+        assert result.alignment_score <= 1.0 + eps
 
     def test_pad_smaller_source(self, projector, backend):
         source = backend.random_normal((100, 32))
@@ -202,8 +208,10 @@ class TestEmbeddingProjectorTruncate:
         result = projector.project(source, target)
 
         assert result.projected_embeddings.shape == (100, 64)
-        assert result.reconstruction_error >= 0.0
-        assert -1.0 <= result.alignment_score <= 1.0
+        eps = _div_eps()
+        assert result.reconstruction_error >= -eps
+        assert result.alignment_score >= -1.0 - eps
+        assert result.alignment_score <= 1.0 + eps
 
 
 class TestEmbeddingProjectorPCA:
@@ -226,7 +234,9 @@ class TestEmbeddingProjectorPCA:
 
         assert result.strategy_used == ProjectionStrategy.PCA
         assert result.projected_embeddings.shape == (100, 64)
-        assert -1.0 <= result.alignment_score <= 1.0
+        eps = _div_eps()
+        assert result.alignment_score >= -1.0 - eps
+        assert result.alignment_score <= 1.0 + eps
 
     def test_pca_with_dimension_reduction(self, backend):
         config = ProjectionConfig(strategy=ProjectionStrategy.PCA)
@@ -299,8 +309,8 @@ class TestEmbeddingProjectorProcrustes:
         result = projector.project(source, source)
 
         eps = _div_eps()
-        assert result.reconstruction_error < eps
-        assert abs(result.alignment_score - 1.0) < eps
+        assert result.reconstruction_error <= eps
+        assert abs(result.alignment_score - 1.0) <= eps
 
 
 class TestEmbeddingProjectorCCA:
@@ -420,9 +430,9 @@ class TestEmbeddingProjectorAlignmentQuality:
         metrics = projector.compute_alignment_quality(embeddings, embeddings, embeddings)
 
         eps = _div_eps()
-        assert metrics["mse"] < eps
-        assert abs(metrics["mean_cosine_similarity"] - 1.0) < eps
-        assert abs(metrics["norm_preservation_ratio"] - 1.0) < eps
+        assert metrics["mse"] <= eps
+        assert abs(metrics["mean_cosine_similarity"] - 1.0) <= eps
+        assert abs(metrics["norm_preservation_ratio"] - 1.0) <= eps
 
 
 class TestProjectionStrategyDispatch:

@@ -19,6 +19,8 @@
 
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -49,13 +51,14 @@ class TestEntropyTransition:
             to_entropy=3.5,
             to_variance=0.4,
             from_z_score=0.0,
-            to_z_score=1.5,
-            token_index=100,
-        )
+        to_z_score=1.5,
+        token_index=100,
+    )
 
-        assert transition.entropy_delta == 1.5
-        assert abs(transition.variance_delta - 0.1) < _eps(transition.variance_delta)
-        assert transition.z_score_delta == 1.5
+        eps = _eps(transition.entropy_delta)
+        assert abs(transition.entropy_delta - 1.5) <= eps
+        assert abs(transition.variance_delta - 0.1) <= _eps(transition.variance_delta)
+        assert abs(transition.z_score_delta - 1.5) <= eps
 
 
 class TestEntropySample:
@@ -73,8 +76,9 @@ class TestEntropySample:
         )
 
         assert sample.window_id == "window-1"
-        assert sample.logit_entropy == 2.5
-        assert sample.z_score == 0.5
+        eps = _eps(sample.logit_entropy)
+        assert abs(sample.logit_entropy - 2.5) <= eps
+        assert abs(sample.z_score - 0.5) <= eps
         assert sample.id is not None
 
     def test_sample_optional_fields(self):
@@ -93,9 +97,9 @@ class TestEntropySample:
             pca_dimensions=32,
         )
 
-        assert sample.sep_entropy == 2.3
+        assert abs(sample.sep_entropy - 2.3) <= _eps(sample.sep_entropy)
         assert sample.sep_layers == [10, 11, 12]
-        assert sample.semantic_volume == 1.5
+        assert abs(sample.semantic_volume - 1.5) <= _eps(sample.semantic_volume)
 
 
 class TestCalibratedBaseline:
@@ -117,7 +121,7 @@ class TestCalibratedBaseline:
 
     def test_z_score_at_mean(self, baseline):
         """Test z-score is 0 at mean."""
-        assert baseline.z_score(2.5) == 0.0
+        assert abs(baseline.z_score(2.5)) <= _eps(baseline.z_score(2.5))
 
     def test_z_score_above_mean(self, baseline):
         """Test z-score positive above mean."""
@@ -140,8 +144,8 @@ class TestCalibratedBaseline:
             sample_count=100,
         )
 
-        assert baseline.z_score(2.5) == 0.0
-        assert baseline.z_score(3.0) == float("inf")
+        assert abs(baseline.z_score(2.5)) <= _eps(baseline.z_score(2.5))
+        assert math.isinf(baseline.z_score(3.0))
 
 
 class TestModelStateSignals:
@@ -156,5 +160,5 @@ class TestModelStateSignals:
             entropy_variance_correlation=0.5,
         )
 
-        assert signals.entropy == 1.5
-        assert signals.z_score == -1.5
+        assert abs(signals.entropy - 1.5) <= _eps(signals.entropy)
+        assert abs(signals.z_score + 1.5) <= _eps(signals.z_score)

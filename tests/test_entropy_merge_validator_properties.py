@@ -64,7 +64,8 @@ class TestLayerMergeValidationProperties:
             merged_entropy=merged,
         )
 
-        assert validation.entropy_ratio >= 0.0
+        eps = _div_eps()
+        assert validation.entropy_ratio >= -eps
 
     @given(
         source=entropy_strategy,
@@ -82,7 +83,8 @@ class TestLayerMergeValidationProperties:
             merged_entropy=merged,
         )
 
-        assert 0.0 <= validation.knowledge_retention_score <= 1.0
+        eps = _div_eps()
+        assert -eps <= validation.knowledge_retention_score <= 1.0 + eps
 
     @given(
         source=entropy_strategy,
@@ -99,7 +101,7 @@ class TestLayerMergeValidationProperties:
             merged_entropy=target,
         )
 
-        assert abs(validation.knowledge_retention_score - 1.0) < _div_eps()
+        assert abs(validation.knowledge_retention_score - 1.0) <= _div_eps()
 
     @given(
         source=entropy_strategy,
@@ -119,7 +121,7 @@ class TestLayerMergeValidationProperties:
             merged_entropy=merged,
         )
 
-        assert abs(validation.entropy_delta - expected_delta) < _div_eps()
+        assert abs(validation.entropy_delta - expected_delta) <= _div_eps()
 
 
 # =============================================================================
@@ -156,7 +158,8 @@ class TestMergeEntropyValidationProperties:
             layer_validations=layer_validations,
         )
 
-        assert validation.max_entropy_ratio >= validation.mean_entropy_ratio
+        eps = _div_eps()
+        assert validation.max_entropy_ratio + eps >= validation.mean_entropy_ratio
 
     @given(
         layer_data=st.lists(
@@ -184,7 +187,8 @@ class TestMergeEntropyValidationProperties:
             layer_validations=layer_validations,
         )
 
-        assert 0.0 <= validation.mean_knowledge_retention <= 1.0
+        eps = _div_eps()
+        assert -eps <= validation.mean_knowledge_retention <= 1.0 + eps
 
     def test_empty_validations_handles_gracefully(self) -> None:
         validation = MergeEntropyValidation.from_layer_validations(
@@ -193,10 +197,11 @@ class TestMergeEntropyValidationProperties:
             layer_validations={},
         )
 
-        assert validation.mean_entropy_ratio == 0.0
-        assert validation.max_entropy_ratio == 0.0
-        assert validation.mean_knowledge_retention == 1.0
-        assert validation.entropy_ratio_std == 0.0
+        eps = _div_eps()
+        assert abs(validation.mean_entropy_ratio) <= eps
+        assert abs(validation.max_entropy_ratio) <= eps
+        assert abs(validation.mean_knowledge_retention - 1.0) <= eps
+        assert abs(validation.entropy_ratio_std) <= eps
 
 
 # =============================================================================
@@ -236,7 +241,7 @@ class TestModelEntropyProfileProperties:
         )
 
         expected_mean = sum(entropies) / len(entropies)
-        assert profile.mean_entropy == expected_mean
+        assert abs(profile.mean_entropy - expected_mean) <= _div_eps()
 
     @given(
         layer_count=st.integers(min_value=1, max_value=10),
@@ -266,7 +271,7 @@ class TestModelEntropyProfileProperties:
             layer_profiles=layer_profiles,
         )
 
-        assert profile.entropy_variance >= 0.0
+        assert profile.entropy_variance >= -_div_eps()
 
     def test_empty_profiles_handles_gracefully(self) -> None:
         profile = ModelEntropyProfile.from_layer_profiles(
@@ -274,5 +279,6 @@ class TestModelEntropyProfileProperties:
             layer_profiles={},
         )
 
-        assert profile.mean_entropy == 0.0
-        assert profile.entropy_variance == 0.0
+        eps = _div_eps()
+        assert abs(profile.mean_entropy) <= eps
+        assert abs(profile.entropy_variance) <= eps

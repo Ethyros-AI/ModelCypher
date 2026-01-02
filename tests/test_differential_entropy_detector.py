@@ -287,7 +287,7 @@ async def test_detect_with_mock_measure_fn() -> None:
         delta_h_threshold=config.delta_h_threshold,
         minimum_baseline_entropy=config.minimum_baseline_entropy,
     )
-    assert result.processing_time > 0
+    assert result.processing_time > _eps()
 
 
 @pytest.mark.asyncio
@@ -397,8 +397,8 @@ class TestBatchDetectionStatistics:
         """Test computing statistics from empty results."""
         stats = BatchDetectionStatistics.compute([])
         assert stats.total == 0
-        assert stats.cooling_rate == 0.0
-        assert stats.heating_rate == 0.0
+        assert abs(stats.cooling_rate) <= _eps()
+        assert abs(stats.heating_rate) <= _eps()
 
     def test_compute_mixed_results(self) -> None:
         """Test computing statistics from mixed results."""
@@ -443,8 +443,8 @@ class TestBatchDetectionStatistics:
         assert abs(stats.cooling_rate - expected_cooling_rate) <= _eps()
         assert abs(stats.heating_rate - expected_heating_rate) <= _eps()
         assert abs(stats.mean_delta_h - expected_mean_delta) <= _eps()
-        assert stats.min_delta_h == -0.5
-        assert stats.max_delta_h == 0.5
+        assert abs(stats.min_delta_h + 0.5) <= _eps()
+        assert abs(stats.max_delta_h - 0.5) <= _eps()
         assert abs(stats.total_processing_time - 0.3) <= _eps()
 
     def test_count_below_threshold(self) -> None:
@@ -528,7 +528,7 @@ class TestVariantMeasurement:
             token_count=10,
             entropies=[1.8, 2.0, 2.2],
         )
-        assert measurement.mean_entropy == 2.0
+        assert abs(measurement.mean_entropy - 2.0) <= _eps()
         assert measurement.token_count == 10
         assert len(measurement.entropies) == 3
 

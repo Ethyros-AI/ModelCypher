@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.fingerprint_cache import (
     CachedFingerprints,
     ModelFingerprintCache,
@@ -32,6 +33,12 @@ from modelcypher.core.domain.geometry.invariant_layer_mapper import (
     ActivationFingerprint,
     ModelFingerprints,
 )
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
+
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 class TestCachedFingerprints:
@@ -204,7 +211,9 @@ class TestModelFingerprintCacheSaveLoad:
         loaded_dims = loaded_fp.activated_dimensions[0]
         assert len(loaded_dims) == 2
         assert loaded_dims[0].index == 10
-        assert abs(loaded_dims[0].activation - 0.85) < 0.001
+        assert abs(loaded_dims[0].activation - 0.85) <= _eps(
+            loaded_dims[0].activation, 0.85
+        )
 
 
 class TestModelFingerprintCacheInvalidation:

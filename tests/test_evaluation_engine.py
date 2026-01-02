@@ -21,6 +21,7 @@ from typing import List
 
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.evaluation.engine import (
     EvaluationConfig,
     EvaluationExecutionEngine,
@@ -29,6 +30,12 @@ from modelcypher.core.domain.evaluation.engine import (
     PromptResult,
     ScenarioResult,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
+
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return division_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 @pytest.fixture
@@ -48,38 +55,26 @@ def engine() -> EvaluationExecutionEngine:
     return EvaluationExecutionEngine()
 
 
-@pytest.fixture
-def configured_engine() -> EvaluationExecutionEngine:
-    """Engine with custom thresholds."""
-    config = EvaluationConfig(
-        dataset_path="",
-        metrics=[MetricType.ACCURACY],
-        entropy_threshold=3.0,
-        score_threshold=0.7,
-    )
-    return EvaluationExecutionEngine(config)
-
-
 class TestEvaluationConfig:
     """Tests for EvaluationConfig."""
 
-    def test_default_thresholds(self):
-        """Default thresholds are sensible."""
+    def test_default_values(self):
+        """Default configuration values are preserved."""
         config = EvaluationConfig(dataset_path="", metrics=[])
-        assert config.entropy_threshold == 5.0
-        assert config.score_threshold == 0.5
+        assert config.batch_size == 1
+        assert config.max_samples is None
 
-    def test_custom_thresholds(self):
-        """Custom thresholds are preserved."""
+    def test_custom_values(self):
+        """Custom configuration values are preserved."""
         config = EvaluationConfig(
             dataset_path="/data",
             metrics=[MetricType.LOSS, MetricType.PERPLEXITY],
-            entropy_threshold=2.5,
-            score_threshold=0.8,
+            batch_size=4,
+            max_samples=100,
         )
         assert config.dataset_path == "/data"
-        assert config.entropy_threshold == 2.5
-        assert config.score_threshold == 0.8
+        assert config.batch_size == 4
+        assert config.max_samples == 100
 
 
 class TestEvaluationExecutionEngine:
@@ -99,9 +94,15 @@ class TestEvaluationExecutionEngine:
 
         assert isinstance(result, ScenarioResult)
         assert result.scenario_name == "test_scenario"
-        assert result.avg_entropy == 2.0  # DEFAULT_ENTROPY
-        assert result.avg_score == 1.0  # All outputs exist
-        assert result.passed is True
+        assert result.avg_entropy is None
+        assert result.avg_score is None
+        assert result.details["used_real_entropy"] is False
+        assert result.details["used_custom_scoring"] is False
+        assert result.details["entropy_sample_count"] == 0
+        assert result.details["score_sample_count"] == 0
+        for prompt_result in result.prompt_results:
+            assert prompt_result.entropy is None
+            assert prompt_result.score is None
 
     @pytest.mark.asyncio
     async def test_run_scenario_with_scoring_fn(self, engine, basic_scenario):
@@ -121,7 +122,16 @@ class TestEvaluationExecutionEngine:
         )
 
         assert result.details["used_custom_scoring"] is True
-        assert 0.0 < result.avg_score < 1.0  # Length-based score
+        expected_scores = [
+            scoring_fn(inference_fn(prompt), basic_scenario.target_concepts)
+            for prompt in basic_scenario.prompts
+        ]
+        expected_avg = sum(expected_scores) / len(expected_scores)
+        assert result.avg_score is not None
+        assert abs(result.avg_score - expected_avg) <= _eps(result.avg_score, expected_avg)
+        assert result.avg_entropy is None
+        assert result.details["score_sample_count"] == len(expected_scores)
+        assert result.details["entropy_sample_count"] == 0
 
     @pytest.mark.asyncio
     async def test_run_scenario_with_entropy_fn(self, engine, basic_scenario):
@@ -141,13 +151,19 @@ class TestEvaluationExecutionEngine:
         )
 
         assert result.details["used_real_entropy"] is True
-        # "Hello"=5, "World"=5, "Test"=4 -> avg=(2.5+2.5+2.0)/3 = 2.33...
-        assert result.avg_entropy > 0.0
-        assert result.avg_entropy != 2.0  # Not default
+        expected_entropies = [entropy_fn(prompt) for prompt in basic_scenario.prompts]
+        expected_avg = sum(expected_entropies) / len(expected_entropies)
+        assert result.avg_entropy is not None
+        assert abs(result.avg_entropy - expected_avg) <= _eps(
+            result.avg_entropy, expected_avg
+        )
+        assert result.avg_score is None
+        assert result.details["entropy_sample_count"] == len(expected_entropies)
+        assert result.details["score_sample_count"] == 0
 
     @pytest.mark.asyncio
     async def test_run_scenario_empty_output_scores_zero(self, engine, basic_scenario):
-        """Empty outputs score 0.0 with default scoring."""
+        """Empty outputs with no scoring_fn leave scores unset."""
 
         def inference_fn(prompt: str) -> str:
             return ""  # Empty output
@@ -157,11 +173,11 @@ class TestEvaluationExecutionEngine:
             inference_fn=inference_fn,
         )
 
-        assert result.avg_score == 0.0
+        assert result.avg_score is None
 
     @pytest.mark.asyncio
     async def test_run_scenario_whitespace_output_scores_zero(self, engine, basic_scenario):
-        """Whitespace-only outputs score 0.0 with default scoring."""
+        """Whitespace-only outputs with no scoring_fn leave scores unset."""
 
         def inference_fn(prompt: str) -> str:
             return "   \n\t  "  # Whitespace only
@@ -171,28 +187,7 @@ class TestEvaluationExecutionEngine:
             inference_fn=inference_fn,
         )
 
-        assert result.avg_score == 0.0
-
-    @pytest.mark.asyncio
-    async def test_run_scenario_pass_fail_logic(self, configured_engine, basic_scenario):
-        """Pass/fail uses configured thresholds."""
-
-        # High entropy, low score -> should fail
-        def inference_fn(prompt: str) -> str:
-            return ""
-
-        def entropy_fn(prompt: str) -> float:
-            return 10.0  # High entropy
-
-        result = await configured_engine.run_scenario(
-            scenario=basic_scenario,
-            inference_fn=inference_fn,
-            entropy_fn=entropy_fn,
-        )
-
-        assert result.passed is False
-        assert result.details["entropy_threshold"] == 3.0
-        assert result.details["score_threshold"] == 0.7
+        assert result.avg_score is None
 
     @pytest.mark.asyncio
     async def test_run_scenario_prompt_results_populated(self, engine, basic_scenario):
@@ -210,10 +205,12 @@ class TestEvaluationExecutionEngine:
         assert all(isinstance(pr, PromptResult) for pr in result.prompt_results)
         assert result.prompt_results[0].prompt == "Hello"
         assert result.prompt_results[0].output == "Output for Hello"
+        assert result.prompt_results[0].entropy is None
+        assert result.prompt_results[0].score is None
 
     @pytest.mark.asyncio
     async def test_run_scenario_entropy_fn_exception_handled(self, engine, basic_scenario):
-        """Entropy function exceptions fall back to default."""
+        """Entropy function exceptions leave entropy unset."""
 
         def inference_fn(prompt: str) -> str:
             return "output"
@@ -227,12 +224,12 @@ class TestEvaluationExecutionEngine:
             entropy_fn=entropy_fn,
         )
 
-        # Should fall back to default entropy
-        assert result.avg_entropy == 2.0
+        assert result.avg_entropy is None
+        assert result.details["entropy_sample_count"] == 0
 
     @pytest.mark.asyncio
     async def test_run_scenario_scoring_fn_exception_handled(self, engine, basic_scenario):
-        """Scoring function exceptions score 0.0."""
+        """Scoring function exceptions leave score unset."""
 
         def inference_fn(prompt: str) -> str:
             return "output"
@@ -246,8 +243,8 @@ class TestEvaluationExecutionEngine:
             scoring_fn=scoring_fn,
         )
 
-        # Should score 0.0 on error
-        assert result.avg_score == 0.0
+        assert result.avg_score is None
+        assert result.details["score_sample_count"] == 0
 
     @pytest.mark.asyncio
     async def test_run_scenario_empty_prompts(self, engine):
@@ -267,8 +264,8 @@ class TestEvaluationExecutionEngine:
             inference_fn=inference_fn,
         )
 
-        assert result.avg_entropy == 0.0
-        assert result.avg_score == 0.0
+        assert result.avg_entropy is None
+        assert result.avg_score is None
         assert result.prompt_results == []
 
     @pytest.mark.asyncio

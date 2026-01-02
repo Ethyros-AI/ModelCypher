@@ -31,6 +31,11 @@ from modelcypher.core.domain.entropy.entropy_delta_sample import (
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
 
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
+
+
 def test_entropy_delta_sample_anomaly_metrics() -> None:
     """Test anomaly metrics with raw entropy values."""
     # High base entropy (uncertain), low adapter entropy (confident), token disagreement
@@ -48,12 +53,11 @@ def test_entropy_delta_sample_anomaly_metrics() -> None:
         latency_ms=12.0,
     )
 
-    assert sample.delta == 4.0
+    assert abs(sample.delta - 4.0) <= _eps(sample.delta, 4.0)
     assert sample.top_token_disagreement is True
-    assert sample.anomaly_score > 0.0
+    assert sample.anomaly_score > _eps(sample.anomaly_score)
 
-    backend = get_default_backend()
-    eps = machine_epsilon(backend, backend.array([0.0]))
+    eps = _eps(sample.anomaly_score, 5.0)
     expected_ratio = 4.0 / max(5.0, eps)
     assert abs(sample.anomaly_score - expected_ratio) <= eps
 
@@ -73,8 +77,9 @@ def test_entropy_delta_sample_signal_payload() -> None:
     )
 
     payload = sample.to_signal_payload()
-    assert payload["baseEntropy"].double_value == 1.0
-    assert payload["adapterEntropy"].double_value == 1.2
+    eps = _eps(payload["baseEntropy"].double_value, payload["adapterEntropy"].double_value)
+    assert abs(payload["baseEntropy"].double_value - 1.0) <= eps
+    assert abs(payload["adapterEntropy"].double_value - 1.2) <= eps
     assert payload["topTokenDisagreement"].bool_value is False
 
     signal = sample.to_anomaly_signal()
@@ -108,9 +113,10 @@ def test_entropy_delta_session_metrics() -> None:
         samples=[sample],
     )
 
-    assert result.duration == 2.0
-    assert result.avg_latency_ms == 3.0
-    assert result.max_anomaly_score == 0.1
+    eps = _eps(result.duration, result.avg_latency_ms, result.max_anomaly_score)
+    assert abs(result.duration - 2.0) <= eps
+    assert abs(result.avg_latency_ms - 3.0) <= eps
+    assert abs(result.max_anomaly_score - 0.1) <= eps
 
 
 def test_baseline_distribution_z_score() -> None:
@@ -118,8 +124,7 @@ def test_baseline_distribution_z_score() -> None:
     baseline = BaselineDistribution(mean=0.5, std=0.1)
 
     # At mean: z=0
-    backend = get_default_backend()
-    eps = machine_epsilon(backend, backend.array([0.0]))
+    eps = _eps(0.5)
     assert abs(baseline.z_score(0.5)) <= eps
 
     # 1 std above: z=1
@@ -134,8 +139,7 @@ def test_baseline_distribution_from_samples() -> None:
     samples = [0.1, 0.2, 0.3, 0.4, 0.5]
     baseline = BaselineDistribution.from_samples(samples)
 
-    backend = get_default_backend()
-    eps = machine_epsilon(backend, backend.array([0.0]))
+    eps = _eps(baseline.mean, baseline.std)
     assert abs(baseline.mean - 0.3) <= eps
     # std = sqrt(variance) where variance = mean of squared deviations
     expected_std = (0.02) ** 0.5  # variance = 0.02

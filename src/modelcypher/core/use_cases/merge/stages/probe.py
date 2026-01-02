@@ -637,6 +637,23 @@ def _probe_precise(
                             gram_transform = b.array(kv_result.feature_transform)
                             combined_transform = b.matmul(R_procrustes_full, gram_transform)
                             b.eval(combined_transform)
+
+                            # EMBED INTO TARGET SPACE: When target has more dims than source,
+                            # pad the transform with zeros to map source into a subspace of target.
+                            # The remaining target dims (null space) will be preserved from target.
+                            if tgt_dim > shared_dim:
+                                # combined_transform is [src_dim, shared_dim]
+                                # Pad to [src_dim, tgt_dim] with zero columns
+                                pad_cols = b.zeros((src_dim, tgt_dim - shared_dim))
+                                combined_transform = b.concatenate(
+                                    [combined_transform, pad_cols], axis=1
+                                )
+                                b.eval(combined_transform)
+                                logger.debug(
+                                    "PROBE: KV transform layer %d: padded [%d,%d] -> [%d,%d]",
+                                    tgt_layer, src_dim, shared_dim, src_dim, tgt_dim,
+                                )
+
                             kv_transforms[tgt_layer] = b.to_numpy(combined_transform).tolist()
 
                             if not kv_result.is_perfect:
