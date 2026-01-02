@@ -19,14 +19,12 @@
 Unified Geometric Merge Pipeline.
 
 Pipeline:
-    VOCAB → PROBE → DENSITY → PERMUTE → TRANSPLANT → VALIDATE
+    PROBE → DENSITY → PERMUTE → TRANSPLANT
 
-Stage 0: VOCABULARY - Cross-vocabulary embedding alignment
 Stage 1: PROBE - Build intersection map from probe responses
 Stage 2a: DENSITY - Knowledge density profiling for graft mask
 Stage 2b: PERMUTE - Git Re-Basin permutation alignment (same-arch only)
 Stage 3: TRANSPLANT - Null-space constrained knowledge grafting
-Stage 6: VALIDATE - Safety checks (numerical + content)
 
 Key Principles:
 1. Null-space projection guarantees: A_boundary @ W' = A_boundary @ W_target
@@ -78,7 +76,7 @@ class UnifiedGeometricMerger:
     """
     Unified geometric merge pipeline.
 
-    Pipeline: VOCAB → PROBE → DENSITY → PERMUTE → TRANSPLANT → VALIDATE
+    Pipeline: PROBE → DENSITY → PERMUTE → TRANSPLANT
 
     - PERMUTE (Git Re-Basin): Solves permutation symmetry for same-architecture models.
       Reduces delta magnitude before transplant by aligning neuron orderings.
@@ -115,7 +113,6 @@ class UnifiedGeometricMerger:
         output_dir: str | None = None,
         output_path: str | None = None,
         dry_run: bool = False,
-        knowledge_delta_mask_path: str | None = None,
         transplant_domains: list[str] | None = None,
         target_weights: dict[str, "Array"] | None = None,
         config: "UnifiedMergeConfig | None" = None,
@@ -130,25 +127,9 @@ class UnifiedGeometricMerger:
             output_dir=output_dir,
             output_path=output_path,
             dry_run=dry_run,
-            knowledge_delta_mask_path=knowledge_delta_mask_path,
             transplant_domains=transplant_domains,
             target_weights=target_weights,
             config=config,
-        )
-
-    # Convenience wrappers to preserve internal helper access in tests/callers.
-    def _stage_vocabulary(
-        self,
-        source_weights: dict[str, "Array"],
-        target_weights: dict[str, "Array"],
-        source_tokenizer: Any | None,
-        target_tokenizer: Any | None,
-    ) -> tuple[dict[str, "Array"], dict[str, Any], bool, Any | None]:
-        return merge_stages.stage_vocabulary(
-            source_weights=source_weights,
-            target_weights=target_weights,
-            source_tokenizer=source_tokenizer,
-            target_tokenizer=target_tokenizer,
         )
 
     def _stage_probe(
@@ -230,11 +211,6 @@ class UnifiedGeometricMerger:
 
     def _infer_hidden_dim(self, weights: dict[str, Any]) -> int:
         return merge_helpers.infer_hidden_dim(weights)
-
-    def _require_vocab_phase_lock(
-        self, vocab_metrics: dict[str, Any], vocab_aligned: bool
-    ) -> None:
-        merge_helpers.require_vocab_phase_lock(vocab_metrics, vocab_aligned)
 
     def _save_weights(
         self,

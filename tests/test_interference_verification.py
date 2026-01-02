@@ -52,13 +52,13 @@ class TestMergePrediction:
             predicted_mean_overlap=0.7,
             predicted_mean_curvature_divergence=0.2,
             predicted_mean_alignment=0.85,
-            predicted_transformation_counts={"alpha_scaling": 3},
-            config_thresholds={"alpha_scaling_threshold": 0.5},
+            predicted_transformation_counts={"null_space_constraint": 3},
+            config_thresholds={"null_space_constraint_threshold": 0.5},
         )
 
         assert pred.merge_id == "test123"
         assert pred.predicted_mean_overlap == 0.7
-        assert pred.predicted_transformation_counts["alpha_scaling"] == 3
+        assert pred.predicted_transformation_counts["null_space_constraint"] == 3
 
     def test_prediction_is_frozen(self):
         """Predictions should be immutable."""
@@ -91,7 +91,7 @@ class TestMergeVerification:
             actual_preserved_fraction=0.78,
             actual_cka_after=0.92,
             layer_actuals={0: {"preserved_fraction": 0.8}},
-            actual_transformation_counts={"alpha_scaling": 2},
+            actual_transformation_counts={"null_space_constraint": 2},
         )
 
         assert verif.merge_id == "test123"
@@ -135,7 +135,7 @@ class TestPredictionRegistry:
             predicted_mean_overlap=0.7,
             predicted_mean_curvature_divergence=0.3,
             predicted_mean_alignment=0.8,
-            predicted_transformation_counts={"alpha_scaling": 3},
+            predicted_transformation_counts={"null_space_constraint": 3},
             config_thresholds={},
         )
         registry.store_prediction(pred)
@@ -147,7 +147,7 @@ class TestPredictionRegistry:
             actual_preserved_fraction=0.65,
             actual_cka_after=0.85,
             layer_actuals={},
-            actual_transformation_counts={"alpha_scaling": 2},
+            actual_transformation_counts={"null_space_constraint": 2},
         )
         registry.store_verification(verif)
 
@@ -258,7 +258,7 @@ class TestVerificationResult:
             predicted_mean_overlap=0.8,
             predicted_mean_curvature_divergence=0.0,
             predicted_mean_alignment=0.9,
-            predicted_transformation_counts={"alpha_scaling": 2},
+            predicted_transformation_counts={"null_space_constraint": 2},
             config_thresholds={},
         )
         registry.store_prediction(pred)
@@ -270,7 +270,7 @@ class TestVerificationResult:
             actual_preserved_fraction=0.7,
             actual_cka_after=0.85,
             layer_actuals={},
-            actual_transformation_counts={"alpha_scaling": 2},
+            actual_transformation_counts={"null_space_constraint": 2},
         )
         registry.store_verification(verif)
 
@@ -295,7 +295,7 @@ class TestVerificationResult:
             predicted_mean_curvature_divergence=0.0,
             predicted_mean_alignment=0.8,
             predicted_transformation_counts={
-                "alpha_scaling": 3,
+                "null_space_constraint": 3,
                 "procrustes_rotation": 0,
             },
             config_thresholds={},
@@ -310,7 +310,7 @@ class TestVerificationResult:
             actual_cka_after=0.8,
             layer_actuals={},
             actual_transformation_counts={
-                "alpha_scaling": 2,
+                "null_space_constraint": 2,
                 "procrustes_rotation": 1,
             },
         )
@@ -318,8 +318,8 @@ class TestVerificationResult:
 
         result = registry.results["trans"]
 
-        # alpha_scaling: predicted needed (3>0), actual needed (2>0) → correct
-        assert result.transformation_accuracy["alpha_scaling"] is True
+        # null_space_constraint: predicted needed (3>0), actual needed (2>0) → correct
+        assert result.transformation_accuracy["null_space_constraint"] is True
         # procrustes: predicted not needed (0), actual needed (1>0) → incorrect
         assert result.transformation_accuracy["procrustes_rotation"] is False
 
@@ -338,8 +338,8 @@ class TestInterferenceVerificationService:
                 0: {"overlap_score": 0.7, "curvature_divergence": 0.2},
                 1: {"overlap_score": 0.6, "curvature_divergence": 0.3},
             },
-            transformation_counts={"alpha_scaling": 2},
-            config_thresholds={"alpha_scaling_threshold": 0.5},
+            transformation_counts={"null_space_constraint": 2},
+            config_thresholds={"null_space_constraint_threshold": 0.5},
         )
 
         assert pred.merge_id is not None
@@ -497,7 +497,7 @@ class TestCalibrationStats:
                 predicted_mean_overlap=0.5,
                 predicted_mean_curvature_divergence=0.0,
                 predicted_mean_alignment=0.8,
-                predicted_transformation_counts={"alpha_scaling": pred_alpha},
+                predicted_transformation_counts={"null_space_constraint": pred_alpha},
                 config_thresholds={},
             )
             registry.store_prediction(pred)
@@ -509,7 +509,7 @@ class TestCalibrationStats:
                 actual_preserved_fraction=0.5,
                 actual_cka_after=0.8,
                 layer_actuals={},
-                actual_transformation_counts={"alpha_scaling": actual_alpha},
+                actual_transformation_counts={"null_space_constraint": actual_alpha},
             )
             registry.store_verification(verif)
 
@@ -520,7 +520,7 @@ class TestCalibrationStats:
         # i=2: pred=1>0, actual=0 → incorrect (predicted needed, wasn't)
         # i=3: pred=2>0, actual=3>0 → correct (both needed)
         # 3 correct / 4 total = 0.75
-        assert stats.transformation_accuracy_rates["alpha_scaling"] == 0.75
+        assert stats.transformation_accuracy_rates["null_space_constraint"] == 0.75
 
     def test_error_percentile(self):
         """Error percentiles computed correctly."""

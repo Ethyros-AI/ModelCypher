@@ -133,31 +133,6 @@ def infer_hidden_dim(weights: dict[str, Any]) -> int:
     return 0
 
 
-def require_vocab_phase_lock(vocab_metrics: dict[str, Any], vocab_aligned: bool) -> None:
-    """Enforce exact kernel alignment from the vocabulary stage."""
-    if not vocab_aligned:
-        raise RuntimeError(
-            "Vocabulary alignment was not applied. "
-            "Exact kernel alignment is required before merge."
-        )
-    binary = vocab_metrics.get("binary_alignment", {})
-    vocab = vocab_metrics.get("vocab_phase_lock", {})
-    if not binary or not vocab:
-        raise RuntimeError(
-            "Vocabulary alignment metrics missing; cannot confirm exact kernel alignment."
-        )
-    for key, entry in binary.items():
-        if not entry.get("phase_locked"):
-            raise RuntimeError(
-                f"Binary exact kernel alignment missing for {key}; aborting merge."
-            )
-    for key, entry in vocab.items():
-        if not entry.get("phase_locked"):
-            raise RuntimeError(
-                f"Vocabulary exact kernel alignment missing for {key}; aborting merge."
-            )
-
-
 def save_weights(
     output_dir: str,
     weights: dict[str, Any],

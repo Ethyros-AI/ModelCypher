@@ -98,10 +98,10 @@ class TestTransformationType:
 
     def test_all_values_exist(self) -> None:
         """Verify all expected transformation types exist."""
-        assert TransformationType.ALPHA_SCALING == "alpha_scaling"
+        assert TransformationType.NULL_SPACE_CONSTRAINT == "null_space_constraint"
         assert TransformationType.CURVATURE_CORRECTION == "curvature_correction"
         assert TransformationType.PROCRUSTES_ROTATION == "procrustes_rotation"
-        assert TransformationType.BOUNDARY_SMOOTHING == "boundary_smoothing"
+        assert TransformationType.BOUNDARY_PROJECTION == "boundary_projection"
         assert TransformationType.SEMANTIC_VERIFICATION == "semantic_verification"
 
     def test_is_string_enum(self) -> None:
@@ -126,7 +126,7 @@ class TestMergeAnalysisConfig:
     def test_default_values(self) -> None:
         """Test default configuration values."""
         config = MergeAnalysisConfig()
-        assert config.alpha_scaling_threshold == 0.5
+        assert config.null_space_threshold == 0.5
         assert config.curvature_correction_threshold == 0.25
         assert config.procrustes_threshold == 0.5
         assert config.boundary_asymmetry_threshold == 0.5
@@ -149,24 +149,24 @@ class TestMergeAnalysisConfig:
     def test_custom_thresholds(self) -> None:
         """Test custom threshold configuration."""
         config = MergeAnalysisConfig(
-            alpha_scaling_threshold=0.7,
+            null_space_threshold=0.7,
             curvature_correction_threshold=0.1,
             procrustes_threshold=0.8,
         )
-        assert config.alpha_scaling_threshold == 0.7
+        assert config.null_space_threshold == 0.7
         assert config.curvature_correction_threshold == 0.1
         assert config.procrustes_threshold == 0.8
 
     def test_from_overlap_distribution_empty(self) -> None:
         """Empty overlap distribution should return defaults."""
         config = MergeAnalysisConfig.from_overlap_distribution([])
-        assert config.alpha_scaling_threshold == 0.5  # default
+        assert config.null_space_threshold == 0.5  # default
 
     def test_from_overlap_distribution_single(self) -> None:
         """Single value distribution."""
         config = MergeAnalysisConfig.from_overlap_distribution([0.6])
         # With single value, all percentiles return that value
-        assert config.alpha_scaling_threshold == 0.6
+        assert config.null_space_threshold == 0.6
         assert config.procrustes_threshold == 1.0 - 0.6
 
     def test_from_overlap_distribution_multiple(self) -> None:
@@ -179,7 +179,7 @@ class TestMergeAnalysisConfig:
         )
         # 50th percentile of [0.1..1.0] at index 4 = 0.5
         # The actual value depends on percentile calculation
-        assert 0.4 <= config.alpha_scaling_threshold <= 0.6
+        assert 0.4 <= config.null_space_threshold <= 0.6
 
     def test_config_initializes(self) -> None:
         """Configuration should initialize with defaults."""
@@ -200,7 +200,7 @@ class TestMergeAnalysisResult:
         result = MergeAnalysisResult(
             volume_a_id="test_a",
             volume_b_id="test_b",
-            transformations=[TransformationType.ALPHA_SCALING],
+            transformations=[TransformationType.NULL_SPACE_CONSTRAINT],
             overlap_score=0.7,
             curvature_divergence=0.2,
             alignment_score=0.8,
@@ -211,7 +211,7 @@ class TestMergeAnalysisResult:
         assert result.volume_a_id == "test_a"
         assert result.volume_b_id == "test_b"
         assert len(result.transformations) == 1
-        assert TransformationType.ALPHA_SCALING in result.transformations
+        assert TransformationType.NULL_SPACE_CONSTRAINT in result.transformations
         assert result.overlap_score == 0.7
         assert result.measurement_confidence == 0.9
 
@@ -236,9 +236,9 @@ class TestMergeAnalysisResult:
             volume_a_id="a",
             volume_b_id="b",
             transformations=[
-                TransformationType.ALPHA_SCALING,
+                TransformationType.NULL_SPACE_CONSTRAINT,
                 TransformationType.PROCRUSTES_ROTATION,
-                TransformationType.BOUNDARY_SMOOTHING,
+                TransformationType.BOUNDARY_PROJECTION,
             ],
             overlap_score=0.8,
             curvature_divergence=0.15,
@@ -276,7 +276,7 @@ class TestGlobalMergeAnalysisReport:
         result1 = MergeAnalysisResult(
             volume_a_id="a",
             volume_b_id="b",
-            transformations=[TransformationType.ALPHA_SCALING],
+            transformations=[TransformationType.NULL_SPACE_CONSTRAINT],
             overlap_score=0.7,
             curvature_divergence=0.1,
             alignment_score=0.8,
@@ -299,7 +299,7 @@ class TestGlobalMergeAnalysisReport:
             volume_a_id="e",
             volume_b_id="f",
             transformations=[
-                TransformationType.ALPHA_SCALING,
+                TransformationType.NULL_SPACE_CONSTRAINT,
                 TransformationType.PROCRUSTES_ROTATION,
             ],
             overlap_score=0.8,
@@ -318,10 +318,10 @@ class TestGlobalMergeAnalysisReport:
             },
             total_pairs=3,
             transformation_counts={
-                TransformationType.ALPHA_SCALING: 2,
+                TransformationType.NULL_SPACE_CONSTRAINT: 2,
                 TransformationType.PROCRUSTES_ROTATION: 2,
                 TransformationType.CURVATURE_CORRECTION: 0,
-                TransformationType.BOUNDARY_SMOOTHING: 0,
+                TransformationType.BOUNDARY_PROJECTION: 0,
                 TransformationType.SEMANTIC_VERIFICATION: 0,
             },
             mean_overlap=0.633,
@@ -331,7 +331,7 @@ class TestGlobalMergeAnalysisReport:
         )
 
         alpha_pairs = report.get_pairs_needing_transformation(
-            TransformationType.ALPHA_SCALING
+            TransformationType.NULL_SPACE_CONSTRAINT
         )
         assert len(alpha_pairs) == 2
         assert ("a", "b") in alpha_pairs
@@ -365,9 +365,9 @@ class TestMergeAnalyzer:
 
     def test_init_custom_config(self) -> None:
         """Test initialization with custom config."""
-        config = MergeAnalysisConfig(alpha_scaling_threshold=0.8)
+        config = MergeAnalysisConfig(null_space_threshold=0.8)
         analyzer = MergeAnalyzer(config)
-        assert analyzer.config.alpha_scaling_threshold == 0.8
+        assert analyzer.config.null_space_threshold == 0.8
 
     def test_analyze_returns_result(
         self,
@@ -555,18 +555,18 @@ class TestMergeAnalyzerInternals:
         density_estimator: RiemannianDensityEstimator,
         sample_volumes: dict[str, ConceptVolume],
     ) -> None:
-        """High overlap should trigger ALPHA_SCALING."""
+        """High overlap should trigger NULL_SPACE_CONSTRAINT."""
         relation = density_estimator.compute_relation(
             sample_volumes["concept_a"],
             sample_volumes["concept_b"],
         )
         # Force high overlap
-        config = MergeAnalysisConfig(alpha_scaling_threshold=0.0)  # Always trigger
+        config = MergeAnalysisConfig(null_space_threshold=0.0)  # Always trigger
         analyzer = MergeAnalyzer(config)
         transformations = analyzer._identify_transformations(
             relation, overlap_score=0.9, curvature_divergence=0.0, alignment_score=1.0
         )
-        assert TransformationType.ALPHA_SCALING in transformations
+        assert TransformationType.NULL_SPACE_CONSTRAINT in transformations
 
     def test_identify_transformations_curvature_correction(
         self,
@@ -614,7 +614,7 @@ class TestMergeAnalyzerInternals:
         )
         # Set thresholds that won't trigger anything
         config = MergeAnalysisConfig(
-            alpha_scaling_threshold=1.0,
+            null_space_threshold=1.0,
             curvature_correction_threshold=1.0,
             procrustes_threshold=0.0,
             boundary_asymmetry_threshold=1.0,
@@ -693,7 +693,7 @@ class TestMergeAnalyzerInternals:
         """Should include percentage information."""
         analyzer = MergeAnalyzer()
         counts = {t: 0 for t in TransformationType}
-        counts[TransformationType.ALPHA_SCALING] = 3
+        counts[TransformationType.NULL_SPACE_CONSTRAINT] = 3
         counts[TransformationType.PROCRUSTES_ROTATION] = 2
         summary = analyzer._generate_transformation_summary(counts, 10)
         assert "alpha_scaling" in summary
@@ -976,7 +976,7 @@ class TestIntegration:
 
         # Strict config - triggers more transformations
         strict_config = MergeAnalysisConfig(
-            alpha_scaling_threshold=0.0,
+            null_space_threshold=0.0,
             curvature_correction_threshold=0.0,
             procrustes_threshold=1.0,
         )
@@ -985,7 +985,7 @@ class TestIntegration:
 
         # Lenient config - triggers fewer transformations
         lenient_config = MergeAnalysisConfig(
-            alpha_scaling_threshold=1.0,
+            null_space_threshold=1.0,
             curvature_correction_threshold=1.0,
             procrustes_threshold=0.0,
         )

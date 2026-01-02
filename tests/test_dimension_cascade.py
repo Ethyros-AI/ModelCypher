@@ -327,18 +327,18 @@ class TestDimensionCascade:
     def test_recalibrate(
         self, backend: "Backend", random_activations: "Array"
     ) -> None:
-        """Test incremental recalibration."""
+        """Test recalibration replaces couplings entirely."""
         cascade = DimensionCascade(backend)
         cascade.calibrate(random_activations, target_dims=[4, 3])
 
         # Get original coupling
         original_coupling = cascade._couplings[3]
 
-        # Recalibrate with new data
+        # Recalibrate with new data (replaces couplings, no blending)
         new_activations = backend.random_normal((50, 64))
-        cascade.recalibrate(new_activations, alpha=0.5)
+        cascade.recalibrate(new_activations)
 
-        # Coupling should have changed
+        # Coupling should have changed (completely replaced with new)
         new_coupling = cascade._couplings[3]
         diff = backend.to_numpy(backend.abs(original_coupling - new_coupling))
         assert diff.sum() > 0

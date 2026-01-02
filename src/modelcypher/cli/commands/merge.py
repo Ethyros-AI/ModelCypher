@@ -59,11 +59,6 @@ def pipeline(
         "-d",
         help="Comma-separated domains for transplant (e.g., mathematical,logical)",
     ),
-    knowledge_delta_mask: str | None = typer.Option(
-        None,
-        "--knowledge-delta-mask",
-        help="Path to knowledge delta mask JSON for layer gating",
-    ),
     skip_pre_analysis: bool = typer.Option(
         False,
         "--skip-pre-analysis",
@@ -121,7 +116,6 @@ def pipeline(
                 target_path=target,
                 output_dir=output_dir,
                 transplant_domains=domain_list,
-                knowledge_delta_mask_path=knowledge_delta_mask,
                 skip_pre_analysis=skip_pre_analysis,
                 verify_predictions=verify,
             )

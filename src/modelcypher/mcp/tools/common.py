@@ -145,7 +145,6 @@ class ServiceContext:
     _invariant_mapping_service: object = None
     _evaluation_service: object = None
     _thermo_service: object = None
-    _ensemble_service: object = None
     _adapter_service: object = None
     _doc_service: object = None
     _safety_probe_service: object = None
@@ -330,12 +329,6 @@ class ServiceContext:
 
             self._thermo_service = ThermoService()
         return self._thermo_service
-
-    @property
-    def ensemble_service(self):
-        if self._ensemble_service is None:
-            self._ensemble_service = self.factory.ensemble_service()
-        return self._ensemble_service
 
     @property
     def adapter_service(self):

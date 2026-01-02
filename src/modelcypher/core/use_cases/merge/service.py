@@ -141,7 +141,6 @@ class MergePipelineService:
         output_dir: str,
         transplant_domains: list[str],
         *,
-        knowledge_delta_mask_path: str | None = None,
         skip_pre_analysis: bool = False,
         verify_predictions: bool = True,
     ) -> PipelineResult:
@@ -152,7 +151,6 @@ class MergePipelineService:
             target_path: Path to target model
             output_dir: Output directory for merged model
             transplant_domains: Domains to transplant (e.g., ["mathematical", "logical"])
-            knowledge_delta_mask_path: Path to knowledge delta mask JSON
             skip_pre_analysis: Skip pre-merge interference analysis
             verify_predictions: Enable prediction verification
 
@@ -197,7 +195,6 @@ class MergePipelineService:
             target_path=target_path,
             output_dir=output_dir,
             transplant_domains=transplant_domains,
-            knowledge_delta_mask_path=knowledge_delta_mask_path,
         )
         merge_duration = time.time() - merge_start
         logger.info("Merge completed in %.2fs", merge_duration)
@@ -392,7 +389,6 @@ class MergePipelineService:
         target_path: str,
         output_dir: str,
         transplant_domains: list[str],
-        knowledge_delta_mask_path: str | None,
     ) -> "UnifiedMergeResult":
         """Execute the geometric merge."""
         from modelcypher.cli.composition import get_geometric_merger
@@ -402,7 +398,6 @@ class MergePipelineService:
             source_path=source_path,
             target_path=target_path,
             output_dir=output_dir,
-            knowledge_delta_mask_path=knowledge_delta_mask_path,
             transplant_domains=transplant_domains,
         )
 

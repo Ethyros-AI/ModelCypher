@@ -457,38 +457,6 @@ def test_mc_thermo_analyze_schema(mcp_env: dict[str, str]):
     assert "temperature" in payload
 
 
-def test_mc_ensemble_list_schema(mcp_env: dict[str, str], tmp_path: Path):
-    model_a = tmp_path / "model-a"
-    model_b = tmp_path / "model-b"
-    model_a.mkdir()
-    model_b.mkdir()
-
-    async def runner(session: ClientSession):
-        created = await _await_with_timeout(
-            session.call_tool(
-                "mc_ensemble_create",
-                arguments={"models": [str(model_a), str(model_b)]},
-            )
-        )
-        listed = await _await_with_timeout(
-            session.call_tool("mc_ensemble_list", arguments={"limit": 10})
-        )
-        created_payload = _extract_structured(created)
-        ensemble_id = created_payload["ensembleId"]
-        deleted = await _await_with_timeout(
-            session.call_tool("mc_ensemble_delete", arguments={"ensembleId": ensemble_id})
-        )
-        return listed, deleted
-
-    list_result, delete_result = _run_mcp(mcp_env, runner)
-    list_payload = _extract_structured(list_result)
-    delete_payload = _extract_structured(delete_result)
-    assert list_payload["_schema"] == "mc.ensemble.list.v1"
-    assert "ensembles" in list_payload
-    assert "count" in list_payload
-    assert delete_payload["_schema"] == "mc.ensemble.delete.v1"
-
-
 def test_mc_adapter_inspect_schema(mcp_env: dict[str, str], tmp_path: Path):
     from safetensors.numpy import save_file
 

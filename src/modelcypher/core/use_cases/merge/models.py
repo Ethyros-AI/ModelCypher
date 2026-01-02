@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array
@@ -39,12 +39,6 @@ class UnifiedMergeConfig:
     This was validated empirically (Phase 6-8 research) and theoretically
     (AlphaEdit, ICLR 2025 Outstanding Paper).
     """
-
-    # Probe mode: "precise" (CKA on activations) or "fast" (weight-level CKA)
-    probe_mode: Literal["precise", "fast"] = "precise"
-
-    # Maximum probes in precise mode (0 = all 403)
-    max_probes: int = 0
 
     # Transplant settings - REQUIRED for effective knowledge transfer
     # Core domains define what concepts to transplant (e.g., "mathematical")
@@ -78,7 +72,6 @@ class UnifiedMergeResult:
     merged_weights: dict[str, "Array"]
 
     # Per-stage metrics
-    vocab_metrics: dict[str, Any]  # Stage 0: Vocabulary alignment
     probe_metrics: dict[str, Any]  # Stage 1: Probe
     permute_metrics: dict[str, Any]  # Stage 2: Git Re-Basin permutation
     transplant_metrics: dict[str, Any]  # Stage 3: Transplant
@@ -98,9 +91,6 @@ class UnifiedMergeResult:
     # Optional fields (must come after required fields)
     # Output path (if saved)
     output_path: str | None = None
-
-    # Vocabulary alignment status
-    vocab_aligned: bool = False
 
     # Stage 6: Validation metrics (raw measurements)
     validation_metrics: dict[str, Any] = field(default_factory=dict)

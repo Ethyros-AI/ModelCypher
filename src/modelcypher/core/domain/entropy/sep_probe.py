@@ -25,7 +25,7 @@ with R² ~ 0.8 while being 1000x faster than full computation (0.3ms vs 15s).
 
 Architecture:
     For each layer l: ŜE_l = w_l^T h_l + b_l
-    Final: ŜE = Σ (R²_l * ŜE_l) / Σ R²_l (R²-weighted ensemble)
+    Final: ŜE = Fréchet mean of per-layer predictions (no weighting)
 
 Research Basis:
     arXiv:2406.15927 - Semantic Entropy Probes
@@ -80,8 +80,6 @@ class SEPProbeConfig:
     layer_count: int = 32
     layer_fractions: list[float] = field(default_factory=lambda: [0.75, 0.78, 0.81, 0.84, 0.875])
     hidden_dim: int = 4096
-    use_ensemble: bool = True
-
     # Thresholds - MUST be derived from baseline measurements, no arbitrary defaults
     min_r2_threshold: float | None = None
     """Minimum R² for probe to be considered valid. Derive from training validation."""
@@ -129,7 +127,6 @@ class PredictionResult:
 
     predicted_entropy: float
     layer_predictions: dict[int, float]
-    ensemble_weights: dict[int, float]
     should_trip_circuit_breaker: bool
     latency_ms: float
 
@@ -243,9 +240,6 @@ class SEPProbe:
         b = self._backend
 
         predictions: dict[int, float] = {}
-        ensemble_weights: dict[int, float] = {}
-        weighted_sum: float = 0.0
-        total_weight: float = 0.0
 
         for layer, probe in self._probe_weights.items():
             hidden_state = hidden_states.get(layer)
@@ -271,19 +265,15 @@ class SEPProbe:
             prediction = projection + probe.bias
             b.eval(prediction)
 
-            # Clamp to [0, 1]
             pred_np = b.to_numpy(prediction)
-            pred_value = max(0.0, min(1.0, float(pred_np.item())))
+            pred_value = float(pred_np.item())
             predictions[layer] = pred_value
+        if not predictions:
+            raise SEPProbeError("No matching hidden states for configured probe layers.")
 
-            # R²-weighted ensemble
-            weight = probe.validation_r2
-            ensemble_weights[layer] = weight
-            weighted_sum += pred_value * weight
-            total_weight += weight
-
-        # Final ensemble prediction
-        final = weighted_sum / total_weight if total_weight > 0 else 0.0
+        # Final prediction is the intrinsic mean (Fréchet mean) across layers.
+        # For scalar outputs, this is the arithmetic mean.
+        final = sum(predictions.values()) / len(predictions)
 
         latency_ms = (time.time() - start) * 1000
 
@@ -296,7 +286,6 @@ class SEPProbe:
         return PredictionResult(
             predicted_entropy=final,
             layer_predictions=predictions,
-            ensemble_weights=ensemble_weights,
             should_trip_circuit_breaker=should_trip,
             latency_ms=latency_ms,
         )

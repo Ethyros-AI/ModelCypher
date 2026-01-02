@@ -726,35 +726,28 @@ class DimensionCascade:
     def recalibrate(
         self,
         new_activations: "Array",
-        alpha: float = 0.1,
     ) -> None:
         """
-        Incrementally update couplings with new activations.
+        Recalibrate couplings with new activations.
 
-        Uses exponential moving average to blend new coupling with existing.
-        Useful for adaptive calibration during generation.
+        Replaces existing couplings with fresh ones computed from new data.
+        No blending or interpolation - the new couplings are exact for
+        the new activation distribution.
 
         Args:
             new_activations: New calibration data [n_points, hidden_dim]
-            alpha: Blending weight for new coupling (0.1 = 10% new, 90% old)
         """
         if not self._calibrated:
             raise RuntimeError("Must call calibrate() before recalibrate()")
 
-        b = self.backend
-
-        # Compute new couplings
+        # Compute new couplings and replace entirely
         new_result = self.calibrate(
             new_activations,
             target_dims=list(self._couplings.keys()),
         )
 
-        # Blend with existing
+        # Replace with new couplings (no blending)
         for dim, new_coupling in new_result.couplings.items():
-            if dim in self._couplings:
-                old_coupling = self._couplings[dim]
-                blended = (1 - alpha) * old_coupling + alpha * new_coupling
-                b.eval(blended)
-                self._couplings[dim] = blended
+            self._couplings[dim] = new_coupling
 
-        logger.debug("Recalibrated couplings with alpha=%.2f", alpha)
+        logger.debug("Recalibrated couplings from %d activations", new_activations.shape[0])

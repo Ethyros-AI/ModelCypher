@@ -33,9 +33,7 @@ from .helpers import (
     infer_hidden_dim,
     load_model_for_probing,
     load_tokenizer,
-    load_weights,
     load_weights_cpu,
-    require_vocab_phase_lock,
     save_weights,
 )
 from .models import UnifiedMergeConfig, UnifiedMergeResult
@@ -44,7 +42,6 @@ from .stages import (
     stage_permute,
     stage_probe,
     stage_transplant,
-    stage_vocabulary,
 )
 
 if TYPE_CHECKING:
@@ -63,7 +60,6 @@ def run_merge(
     output_dir: str | None = None,
     output_path: str | None = None,
     dry_run: bool = False,
-    knowledge_delta_mask_path: str | None = None,
     transplant_domains: list[str] | None = None,
     target_weights: dict[str, "Array"] | None = None,
     config: UnifiedMergeConfig | None = None,
@@ -110,43 +106,23 @@ def run_merge(
     layer_indices = extract_layer_indices(loaded_target_weights)
     logger.info("Found %d layers", len(layer_indices))
 
-    # Load tokenizers for vocabulary alignment
+    # Load tokenizers for probe execution
     source_tokenizer = load_tokenizer(source_path)
     target_tokenizer = load_tokenizer(target_path)
 
-    # =================================================================
-    # STAGE 0: VOCABULARY (Cross-vocabulary alignment for embedding layers)
-    # =================================================================
-    # Skip vocabulary alignment for transplant since GRAM_TRANSPORT
-    # handles cross-dimensional projection at the weight level.
-    skip_vocab_for_transplant = bool(merge_config.transplant_domains)
-    if skip_vocab_for_transplant:
-        logger.info("STAGE 0: VOCABULARY ALIGNMENT (skipped for transplant)")
-        vocab_metrics = {"skipped": True, "reason": "transplant_strategy"}
-        vocab_aligned = False
-        vocab_alignment_map = None
-    else:
-        logger.info("STAGE 0: VOCABULARY ALIGNMENT")
-        source_weights, vocab_metrics, vocab_aligned, vocab_alignment_map = stage_vocabulary(
-            source_weights=source_weights,
-            target_weights=loaded_target_weights,
-            source_tokenizer=source_tokenizer,
-            target_tokenizer=target_tokenizer,
-        )
-        require_vocab_phase_lock(vocab_metrics, vocab_aligned)
+    vocab_alignment_map = None
 
     # Load models for probe stage
     source_model = None
     target_model = None
-    if merge_config.probe_mode == "precise":
-        logger.info("Loading models for precise probe execution...")
-        source_model = load_model_for_probing(source_path)
-        target_model = load_model_for_probing(target_path)
+    logger.info("Loading models for probe execution...")
+    source_model = load_model_for_probing(source_path)
+    target_model = load_model_for_probing(target_path)
 
     # =================================================================
     # STAGE 1: PROBE (Compute layer correspondences via CKA)
     # =================================================================
-    logger.info("STAGE 1: PROBE (%s mode)", merge_config.probe_mode)
+    logger.info("STAGE 1: PROBE (precise)")
     (
         probe_result,
         probe_metrics,
@@ -176,32 +152,22 @@ def run_merge(
     probe_failed = bool(probe_metrics.get("probe_failed"))
     perfect_alignment = bool(probe_metrics.get("perfect_alignment"))
 
-    # Skip CKA alignment check for transplant strategy - cross-architecture models
-    # won't have high CKA, but transplant works via null-space projection which
-    # operates in target activation space regardless of CKA alignment.
-    if not skip_vocab_for_transplant:
-        if probe_failed:
-            min_cka = probe_metrics.get("min_cka", 0.0)
-            mean_cka = probe_metrics.get("mean_cka", 0.0)
-            raise RuntimeError(
-                "PROBE SIGNAL: Alignment signals missing (mean_cka=%.4f, min_cka=%.4f). "
-                "Exact kernel alignment is required before merge."
-                % (mean_cka, min_cka)
-            )
-
-        if not perfect_alignment:
-            min_cka = probe_metrics.get("min_cka", 0.0)
-            mean_cka = probe_metrics.get("mean_cka", 0.0)
-            raise RuntimeError(
-                "PROBE BAROMETER: Alignment not exact kernel aligned "
-                "(mean_cka=%.4f, min_cka=%.4f). Resolve alignment before merge."
-                % (mean_cka, min_cka)
-            )
-    else:
+    if probe_failed:
+        min_cka = probe_metrics.get("min_cka", 0.0)
         mean_cka = probe_metrics.get("mean_cka", 0.0)
-        logger.info(
-            "PROBE BAROMETER: Skipped for transplant (mean_cka=%.4f - low CKA expected for cross-arch)",
-            mean_cka,
+        raise RuntimeError(
+            "PROBE SIGNAL: Alignment signals missing (mean_cka=%.4f, min_cka=%.4f). "
+            "Exact kernel alignment is required before merge."
+            % (mean_cka, min_cka)
+        )
+
+    if not perfect_alignment:
+        min_cka = probe_metrics.get("min_cka", 0.0)
+        mean_cka = probe_metrics.get("mean_cka", 0.0)
+        raise RuntimeError(
+            "PROBE BAROMETER: Alignment not exact kernel aligned "
+            "(mean_cka=%.4f, min_cka=%.4f). Resolve alignment before merge."
+            % (mean_cka, min_cka)
         )
 
     # Log activation collection results
@@ -412,7 +378,6 @@ def run_merge(
 
     result = UnifiedMergeResult(
         merged_weights=merged_weights,
-        vocab_metrics=vocab_metrics,
         probe_metrics=probe_metrics,
         permute_metrics=permute_metrics,
         transplant_metrics=transplant_metrics,
@@ -423,7 +388,6 @@ def run_merge(
         timestamp=datetime.utcnow(),
         merge_strategy="transplant",
         output_path=final_output_path,
-        vocab_aligned=vocab_aligned,
         refusal_preserved=True,
         geometry_metrics=geometry_metrics,
     )

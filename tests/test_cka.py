@@ -52,7 +52,6 @@ from modelcypher.core.domain.geometry.cka import (
     compute_cka_from_lists,
     compute_cka_matrix,
     compute_layer_cka,
-    ensemble_similarity,
 )
 
 if TYPE_CHECKING:
@@ -1167,46 +1166,6 @@ class TestComputeCKAFromGrams:
         )
 
         assert abs(cka - 1.0) < 1e-4
-
-
-# =============================================================================
-# ensemble_similarity Tests
-# =============================================================================
-
-
-class TestEnsembleSimilarity:
-    """Tests for ensemble_similarity function."""
-
-    def test_all_zeros(self) -> None:
-        """All zero metrics should give zero similarity."""
-        score = ensemble_similarity(jaccard=0.0, cka=0.0, cosine=0.0)
-        assert score == 0.0
-
-    def test_all_ones(self) -> None:
-        """All one metrics should give maximum similarity."""
-        score = ensemble_similarity(jaccard=1.0, cka=1.0, cosine=1.0)
-        # Max = 0.5 + 0.5 + 1.0 = 2.0, score = 2.0 / 2.0 = 1.0
-        assert abs(score - 1.0) < 1e-5
-
-    def test_negative_cosine_gated(self) -> None:
-        """Negative cosine should be gated to 0."""
-        score = ensemble_similarity(jaccard=0.5, cka=0.5, cosine=-1.0)
-        # cosine_gate = 0, score = (0.5*0.5 + 0.5*0.5 + 0) / 2.0 = 0.5 / 2.0 = 0.25
-        assert abs(score - 0.25) < 1e-5
-
-    def test_custom_weights(self) -> None:
-        """Custom Jaccard and CKA weights."""
-        score = ensemble_similarity(
-            jaccard=1.0, cka=0.0, cosine=0.0, jaccard_weight=0.8, cka_weight=0.2
-        )
-        # score = (0.8*1.0 + 0.2*0.0 + 0) / (0.8 + 0.2 + 1.0) = 0.8 / 2.0 = 0.4
-        assert abs(score - 0.4) < 1e-5
-
-    def test_mixed_values(self) -> None:
-        """Mixed metric values."""
-        score = ensemble_similarity(jaccard=0.6, cka=0.8, cosine=0.5)
-        # score = (0.5*0.6 + 0.5*0.8 + 0.5) / 2.0 = (0.3 + 0.4 + 0.5) / 2.0 = 0.6
-        assert abs(score - 0.6) < 1e-5
 
 
 # =============================================================================

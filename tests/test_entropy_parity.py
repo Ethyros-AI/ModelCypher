@@ -251,7 +251,6 @@ class TestSEPProbe:
         config = SEPProbeConfig.default()
         assert config.layer_count == 32
         assert config.hidden_dim == 4096
-        assert config.use_ensemble
 
     def test_target_layers(self):
         config = SEPProbeConfig(layer_count=32)

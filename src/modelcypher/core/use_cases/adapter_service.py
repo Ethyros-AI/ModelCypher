@@ -83,17 +83,6 @@ class SmoothResult:
     variance_reduction: float
 
 
-@dataclass(frozen=True)
-class AdapterMergeResult:
-    """Result of merging multiple adapters using geometric alignment."""
-
-    output_path: str
-    merged_modules: int
-    procrustes_error: float
-    permutation_quality: float
-    merge_confidence: float
-
-
 class AdapterService:
     """Service for LoRA adapter operations."""
 

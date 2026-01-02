@@ -125,10 +125,13 @@ class LayerMergeValidation:
             LayerMergeValidation with raw measurements.
         """
 
-        # Expected merged entropy is weighted average (assuming 50/50 blend)
-        expected_entropy = (source_entropy + target_entropy) / 2
+        # With null space addition, target behavior is PRESERVED
+        # Source knowledge is ADDED in null space directions
+        # Expected: merged entropy >= target entropy (more knowledge = higher entropy)
+        # Reference: target entropy (what we're preserving)
+        expected_entropy = target_entropy
 
-        # Delta from expectation - the raw measurement
+        # Delta from target - how much the merge changed target's entropy
         entropy_delta = abs(merged_entropy - expected_entropy)
 
         # Ratio normalized by expected - stability signal (lower = more stable)

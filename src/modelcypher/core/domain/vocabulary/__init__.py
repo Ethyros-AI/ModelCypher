@@ -16,18 +16,10 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Cross-Vocabulary Merging Domain.
+Vocabulary Alignment Utilities.
 
-Provides algorithms for merging models with different vocabularies/tokenizers:
-- VocabularyAnalyzer: Detect vocab size, embedding dimensions, tokenizer type
-- EmbeddingProjector: Project embeddings between different vocabulary spaces
-- VocabularyAlignmentMap: Store token mappings and projection matrices
-- CrossVocabMerger: Orchestrate full cross-vocabulary merging pipeline
-
-This module enables merging models that have:
-- Different vocabulary sizes
-- Different tokenizers (e.g., Llama tokenizer vs Qwen tokenizer)
-- Different embedding dimensions
+Provides exact vocabulary alignment helpers used for tokenizer comparison
+and probe ID mapping. No embedding interpolation or blending.
 """
 
 from .alignment_map import (
@@ -39,35 +31,7 @@ from .alignment_map import (
     compare_tokenizers,
     format_comparison_report,
 )
-from .cross_vocab_merger import (
-    CrossVocabMergeConfig,
-    CrossVocabMerger,
-    CrossVocabMergeResult,
-)
-from .embedding_projector import (
-    EmbeddingProjector,
-    ProjectionConfig,
-    ProjectionResult,
-    ProjectionStrategy,
-)
-from .vocabulary_analyzer import (
-    TokenizerType,
-    VocabularyAlignment,
-    VocabularyAnalyzer,
-    VocabularyStats,
-)
-
 __all__ = [
-    # Analyzer
-    "VocabularyStats",
-    "VocabularyAlignment",
-    "VocabularyAnalyzer",
-    "TokenizerType",
-    # Projector
-    "ProjectionStrategy",
-    "ProjectionConfig",
-    "ProjectionResult",
-    "EmbeddingProjector",
     # Alignment
     "TokenAlignment",
     "VocabularyAlignmentMap",
@@ -76,8 +40,4 @@ __all__ = [
     "compare_tokenizers",
     "format_comparison_report",
     "build_alignment_from_vocabs",
-    # Merger
-    "CrossVocabMergeConfig",
-    "CrossVocabMergeResult",
-    "CrossVocabMerger",
 ]

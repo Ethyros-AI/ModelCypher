@@ -21,14 +21,12 @@ Merge pipeline stages.
 Each stage is a standalone module that can be imported and tested independently.
 The UnifiedGeometricMerger orchestrates these stages in sequence.
 
-Pipeline: VOCAB → PROBE → DENSITY → PERMUTE → TRANSPLANT → VALIDATE
+Pipeline: PROBE → DENSITY → PERMUTE → TRANSPLANT
 
-Stage 0: VOCABULARY - Cross-vocabulary embedding alignment
 Stage 1: PROBE - Build intersection map from probe responses
 Stage 2a: DENSITY - Knowledge density profiling for graft mask
 Stage 2b: PERMUTE - Git Re-Basin permutation alignment for MLP neurons (same-arch)
 Stage 3: TRANSPLANT - Null-space constrained knowledge grafting
-Stage 6: VALIDATE - Safety checks (numerical + content)
 
 REMOVED (proven broken):
 - ROTATE/PROPAGATE: No mathematical guarantee of boundary preservation.
@@ -43,13 +41,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Callable
 
-from .vocabulary import (
-    VocabularyResult,
-    stage_vocabulary_align,
-)
-# NOTE: VocabularyConfig is INTERNAL ONLY. All defaults are optimal.
-# Users should not configure vocabulary alignment - it just works.
-from .vocabulary import VocabularyConfig as _VocabularyConfig
 from .probe import (
     ProbeResult,
     collect_layer_activations_mlx,
@@ -72,49 +63,11 @@ from .transplant import (
     TransplantStageResult,
     stage_transplant as stage_transplant_impl,
 )
-from .validate import (
-    ValidateResult,
-    stage_validate,
-)
-# NOTE: ValidateConfig was REMOVED. Validation always runs all checks.
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
-
-
-def stage_vocabulary(
-    *,
-    source_weights: dict[str, "Array"],
-    target_weights: dict[str, "Array"],
-    source_tokenizer: Any | None,
-    target_tokenizer: Any | None,
-) -> tuple[dict[str, "Array"], dict[str, Any], bool, Any | None]:
-    """Stage 0: Align source vocabulary to target vocabulary."""
-    config = _VocabularyConfig()
-
-    result = stage_vocabulary_align(
-        source_weights=source_weights,
-        target_weights=target_weights,
-        source_tokenizer=source_tokenizer,
-        target_tokenizer=target_tokenizer,
-        config=config,
-    )
-
-    if result.was_aligned:
-        logger.info("Vocabulary alignment applied")
-    else:
-        reason = result.metrics.get("reason", "unknown")
-        logger.info("Vocabulary alignment skipped: %s", reason)
-
-    return (
-        result.modified_weights,
-        result.metrics,
-        result.was_aligned,
-        result.alignment_map,
-    )
-
 
 def stage_probe(
     *,
@@ -269,10 +222,6 @@ def stage_transplant(
     return result.merged_weights, result.metrics
 
 __all__ = [
-    # Stage 0: Vocabulary (VocabularyConfig INTERNAL ONLY - not exported)
-    "stage_vocabulary",
-    "stage_vocabulary_align",
-    "VocabularyResult",
     # Stage 1: Probe (ProbeConfig REMOVED - always precise mode, all probes)
     "stage_probe",
     "ProbeResult",
@@ -288,7 +237,4 @@ __all__ = [
     "stage_transplant",
     "TransplantStageConfig",
     "TransplantStageResult",
-    # Stage 6: Validate (ValidateConfig REMOVED - always runs all checks)
-    "stage_validate",
-    "ValidateResult",
 ]

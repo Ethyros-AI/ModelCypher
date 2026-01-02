@@ -40,7 +40,6 @@ from modelcypher.cli.commands import adapter as adapter_commands
 from modelcypher.cli.commands import agent as agent_commands
 from modelcypher.cli.commands import agent_eval as agent_eval_commands
 from modelcypher.cli.commands import dashboard as dashboard_commands
-from modelcypher.cli.commands import ensemble as ensemble_commands
 from modelcypher.cli.commands import entropy as entropy_commands
 from modelcypher.cli.commands import eval as eval_commands
 from modelcypher.cli.commands import help_cmd as help_commands
@@ -215,7 +214,6 @@ app.add_typer(agent_commands.app, name="agent")
 app.add_typer(stability_commands.app, name="stability")
 app.add_typer(dashboard_commands.app, name="dashboard")
 app.add_typer(storage_commands.app, name="storage")
-app.add_typer(ensemble_commands.app, name="ensemble")
 app.add_typer(infer_commands.app, name="infer")
 app.add_typer(help_commands.app, name="help")
 app.add_typer(profile_commands.app, name="profile")

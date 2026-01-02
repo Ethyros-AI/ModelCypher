@@ -118,7 +118,7 @@ The core domain is organized by concern:
 | `training/` | Checkpoint management, preflight checks, resource guards |
 | `validation/` | Auto-fix engine for training data |
 | `thermo/` | Linguistic thermodynamics, ridge detection, phase transitions |
-| `adapters/` | LoRA merging, adapter blending, ensemble orchestration |
+| `adapters/` | LoRA inspection, projection, and adapter utilities |
 | `inference/` | Dual-path generation, entropy dynamics |
 
 ## Backend Protocol
