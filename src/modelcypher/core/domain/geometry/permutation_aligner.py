@@ -602,38 +602,6 @@ class PermutationAligner:
         return aligned_weights, avg_quality, mlp_blocks_aligned
 
     @staticmethod
-    def fuse(
-        source_weight: "Array",
-        aligned_target_weight: "Array",
-        alignment: AlignmentResult,
-        backend: "Backend | None" = None,
-    ) -> "Array":
-        """Fuses source and aligned target weights using confidence weights only.
-
-        Args:
-            source_weight: Base model weight [Out, In].
-            aligned_target_weight: Aligned target weight [Out, In].
-            alignment: Alignment result with match confidences.
-            backend: Optional backend for array operations.
-
-        Returns:
-            Fused weight matrix.
-        """
-        b = backend or get_default_backend()
-
-        confidence = b.astype(b.array(alignment.match_confidences), "float32")
-
-        # Broadcast confidence to shape [Out, 1] for row-wise masking
-        mask = b.reshape(confidence, (-1, 1))
-
-        # Confidence-weighted blend:
-        # W_final = confidence * target + (1 - confidence) * source
-        fused = (aligned_target_weight * mask) + (source_weight * (1 - mask))
-
-        b.eval(fused)
-        return fused
-
-    @staticmethod
     def _apply_sparse_mlp_permutation(
         source_up: "Array",
         source_gate: "Array",

@@ -257,16 +257,20 @@ def geometry_crm_delta_mask(
     ctx: typer.Context,
     source: str = typer.Option(..., "--source", help="Source CRM JSON path"),
     target: str = typer.Option(..., "--target", help="Target CRM JSON path"),
-    target_sparse_percentile: float = typer.Option(
-        0.25, "--target-sparse-percentile", help="Percentile for target sparsity cutoff"
+    target_sparse_percentile: float | None = typer.Option(
+        None,
+        "--target-sparse-percentile",
+        help="Optional percentile for target sparsity cutoff (omit to derive from gap)",
     ),
-    source_dense_percentile: float = typer.Option(
-        0.75, "--source-dense-percentile", help="Percentile for source density cutoff"
+    source_dense_percentile: float | None = typer.Option(
+        None,
+        "--source-dense-percentile",
+        help="Optional percentile for source density cutoff (omit to derive from gap)",
     ),
     density_ratio_percentile: float | None = typer.Option(
         None,
         "--density-ratio-percentile",
-        help="Percentile for density ratio cutoff (defaults to source dense percentile)",
+        help="Optional percentile for density ratio cutoff (omit to derive from gap)",
     ),
     min_anchor_count: int = typer.Option(
         1, "--min-anchor-count", help="Minimum anchors required per layer"
@@ -312,11 +316,7 @@ def geometry_crm_delta_mask(
         "config": {
             "targetSparsePercentile": summary.config.target_sparse_percentile,
             "sourceDensePercentile": summary.config.source_dense_percentile,
-            "densityRatioPercentile": (
-                summary.config.density_ratio_percentile
-                if summary.config.density_ratio_percentile is not None
-                else summary.config.source_dense_percentile
-            ),
+            "densityRatioPercentile": summary.config.density_ratio_percentile,
             "minAnchorCount": summary.config.min_anchor_count,
         },
         "thresholds": {
@@ -325,7 +325,7 @@ def geometry_crm_delta_mask(
             "densityRatioThreshold": summary.density_ratio_threshold,
         },
         "graftLayers": summary.graft_layers,
-        "alphaByLayer": {str(k): v for k, v in summary.alpha_by_layer.items()},
+        "graftMaskByLayer": {str(k): v for k, v in summary.graft_mask_by_layer.items()},
         "skippedLayers": summary.skipped_layers,
         "layerMetrics": [
             {

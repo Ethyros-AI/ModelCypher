@@ -76,8 +76,8 @@ class UnifiedMergeResult:
     permute_metrics: dict[str, Any]  # Stage 2: Git Re-Basin permutation
     transplant_metrics: dict[str, Any]  # Stage 3: Transplant
 
-    # Overall quality
-    mean_confidence: float
+    # Overall geometry
+    mean_preserved_fraction: float
     mean_procrustes_error: float
     layer_count: int
     weight_count: int

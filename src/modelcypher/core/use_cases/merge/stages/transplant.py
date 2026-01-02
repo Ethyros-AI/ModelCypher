@@ -1217,7 +1217,7 @@ def stage_transplant(
                     weight_num + 1, len(layer_keys), key,
                     weight_elapsed, result.preserved_fraction, result.projection_loss
                 )
-                # Use the actual stored weight (may be alpha-scaled)
+                # Use the actual stored weight (already geometry-scaled if applicable)
                 actual_merged_weight = merged[key]
                 if can_measure_alignment and result.delta_norm > best_delta_norm:
                     try:

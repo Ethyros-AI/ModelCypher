@@ -450,8 +450,6 @@ def _probe_precise(
         else:
             weight_correlations[key] = 0.0
 
-    conf_vals = list(layer_confidences.values())
-    mean_confidence = sum(conf_vals) / len(conf_vals) if conf_vals else 0.0
     cka_vals = list(layer_cka_scores.values())
     mean_cka = sum(cka_vals) / len(cka_vals) if cka_vals else 0.0
     min_cka = min(cka_vals) if cka_vals else 0.0
@@ -479,7 +477,6 @@ def _probe_precise(
         "layer_confidences": layer_confidences,
         "layer_cka_scores": layer_cka_scores,
         "layer_cka_scores_raw": layer_cka_scores_raw,
-        "mean_confidence": mean_confidence,
         "mean_cka": mean_cka,
         "min_cka": min_cka,
         "mean_cka_raw": mean_cka_raw,
@@ -487,8 +484,6 @@ def _probe_precise(
         "cka_estimator": "auto",
         "feature_bias_correction": True,
         "perfect_alignment": perfect_alignment,
-        "min_confidence": min(layer_confidences.values()) if layer_confidences else 0.0,
-        "max_confidence": max(layer_confidences.values()) if layer_confidences else 0.0,
         "atlas_sources": list(set(p.source.value for p in probes)),
         "atlas_domains": list(set(p.domain.value for p in probes)),
         "intersection_map_built": intersection_map_obj is not None,
@@ -498,9 +493,9 @@ def _probe_precise(
     }
 
     logger.info(
-        "PROBE PRECISE: %d layers, mean_confidence=%.3f, overall_correlation=%.3f",
+        "PROBE PRECISE: %d layers, mean_cka=%.3f, overall_correlation=%.3f",
         len(layer_confidences),
-        mean_confidence,
+        mean_cka,
         metrics["overall_correlation"],
     )
 

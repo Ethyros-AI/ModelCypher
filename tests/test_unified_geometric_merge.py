@@ -248,17 +248,17 @@ class TestResultConversion:
         result = UnifiedMergeResult(
             merged_weights={},
             vocab_metrics={},
-            probe_metrics={"mean_confidence": 0.8},
+            probe_metrics={"mean_cka": 0.8},
             permute_metrics={"skipped": True, "reason": "test"},
             transplant_metrics={"layers_transplanted": 5, "weights_transplanted": 10},
-            mean_confidence=0.8,
+            mean_preserved_fraction=0.8,
             mean_procrustes_error=0.05,
             layer_count=32,
             weight_count=200,
             timestamp=datetime.utcnow(),
         )
 
-        assert result.mean_confidence == 0.8
+        assert result.mean_preserved_fraction == 0.8
         assert result.layer_count == 32
         assert not hasattr(result, "safety_verdict")
         assert result.merge_strategy == "transplant"  # default

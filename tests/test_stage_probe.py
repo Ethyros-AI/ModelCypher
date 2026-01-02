@@ -26,7 +26,7 @@ def test_stage_probe_wrapper_maps_probe_result(monkeypatch) -> None:
             confidences={0: 0.8},
             intersection_map=None,
             dimension_correlations={"p0": 0.7},
-            metrics={"mean_confidence": 0.8},
+            metrics={"mean_cka": 0.8},
             source_activations={0: ["s0"]},
             target_activations={0: ["t0"]},
             probe_ids=["p0"],
@@ -53,6 +53,6 @@ def test_stage_probe_wrapper_maps_probe_result(monkeypatch) -> None:
     assert probe_payload["dimension_correlations"] == {"p0": 0.7}
     assert probe_payload["probe_ids"] == ["p0"]
     assert probe_payload["probe_domains"] == ["math"]
-    assert metrics == {"mean_confidence": 0.8}
+    assert metrics == {"mean_cka": 0.8}
     assert source_acts == {0: ["s0"]}
     assert target_acts == {0: ["t0"]}

@@ -125,10 +125,9 @@ def pipeline(
             "mergeResult": {
                 "layerCount": result.merge_result.get("layer_count"),
                 "weightCount": result.merge_result.get("weight_count"),
-                "meanConfidence": result.merge_result.get("mean_confidence"),
+                "meanPreservedFraction": result.merge_result.get("mean_preserved_fraction"),
             },
             "postMerge": {
-                "meanConfidence": result.post_merge.mean_confidence,
                 "layersTransplanted": result.post_merge.layers_transplanted,
                 "weightsTransplanted": result.post_merge.weights_transplanted,
                 "meanPreservedFraction": result.post_merge.mean_preserved_fraction,
@@ -183,7 +182,7 @@ def pipeline(
                 "MERGE RESULT",
                 f"  Layers: {result.merge_result.get('layer_count')}",
                 f"  Weights: {result.merge_result.get('weight_count')}",
-                f"  Mean Confidence: {result.merge_result.get('mean_confidence', 0):.4f}",
+                f"  Mean Preserved Fraction: {result.merge_result.get('mean_preserved_fraction', 0):.4f}",
                 # Safety Verdict removed - raw measurements only
                 "",
                 "POST-MERGE VALIDATION",
@@ -192,16 +191,6 @@ def pipeline(
                 f"  Layers Transplanted: {result.post_merge.layers_transplanted}",
                 f"  Weights Transplanted: {result.post_merge.weights_transplanted}",
             ]
-
-            if result.verification:
-                lines.extend([
-                    "",
-                    "VERIFICATION",
-                    f"  Merge ID: {result.verification.get('merge_id')}",
-                    f"  Mean Absolute Error: {result.verification.get('mean_absolute_error', 0):.4f}",
-                    f"  Overlap Delta: {result.verification.get('overlap_delta', 0):.4f}",
-                    f"  Alignment Delta: {result.verification.get('alignment_delta', 0):.4f}",
-                ])
 
             lines.extend([
                 "",

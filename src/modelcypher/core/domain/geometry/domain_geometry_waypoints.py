@@ -25,7 +25,7 @@ Provides:
 - Per-domain geometry scores for models
 - Pre-merge geometry audit comparing source and target
 - Post-merge geometry preservation validation
-- Domain-aware alpha recommendations
+- Domain strength ratios (measurement-only)
 """
 
 from __future__ import annotations
@@ -142,14 +142,14 @@ class PreMergeGeometryAudit:
         Geometry profile of target model.
     domain_deltas : list[DomainGeometryDelta]
         Per-domain geometry differences.
-    alpha_variance : float
-        Variance in geometry-derived alphas across domains.
+    strength_ratio_variance : float
+        Variance in geometry-derived strength ratios across domains.
     """
 
     source_profile: ModelGeometryProfile
     target_profile: ModelGeometryProfile
     domain_deltas: list[DomainGeometryDelta]
-    alpha_variance: float
+    strength_ratio_variance: float
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
@@ -165,7 +165,7 @@ class PreMergeGeometryAudit:
                 }
                 for d in self.domain_deltas
             ],
-            "alphaVariance": self.alpha_variance,
+            "strengthRatioVariance": self.strength_ratio_variance,
         }
 
 
@@ -205,7 +205,7 @@ class DomainGeometryWaypointService:
     Service for computing and using domain geometry as merge waypoints.
 
     Uses validated geometric structures (spatial, social, temporal, moral)
-    to guide model merging with domain-aware alpha profiles.
+    to report domain strength ratios for merge planning.
     """
 
     def __init__(
@@ -518,7 +518,7 @@ class DomainGeometryWaypointService:
         Returns
         -------
         PreMergeGeometryAudit
-            Per-domain geometry deltas and alpha variance.
+            Per-domain geometry deltas and strength ratio variance.
         """
         # Compute profiles for both models
         source_profile = self.compute_profile(source_path, layer)
@@ -526,7 +526,7 @@ class DomainGeometryWaypointService:
 
         # Compute per-domain deltas
         domain_deltas: list[DomainGeometryDelta] = []
-        alphas: list[float] = []
+        strength_ratios: list[float] = []
 
         for domain in AtlasDomain:
             source_score = source_profile.domain_scores.get(domain)
@@ -546,27 +546,25 @@ class DomainGeometryWaypointService:
                 )
             )
 
-            # Derive alpha from geometry: stronger manifold gets more weight
-            # This is geometry-derived, not arbitrary
             total = source_score.manifold_score + target_score.manifold_score
             if total > 0:
-                alpha = target_score.manifold_score / total
-            else:
-                alpha = 0.5
-            alphas.append(alpha)
+                strength_ratio = target_score.manifold_score / total
+                strength_ratios.append(strength_ratio)
 
-        # Compute alpha variance - how much domain-specific tuning is needed
-        if alphas:
-            mean_alpha = sum(alphas) / len(alphas)
-            alpha_variance = sum((a - mean_alpha) ** 2 for a in alphas) / len(alphas)
+        # Compute strength ratio variance - how different domains are
+        if strength_ratios:
+            mean_ratio = sum(strength_ratios) / len(strength_ratios)
+            strength_ratio_variance = sum(
+                (a - mean_ratio) ** 2 for a in strength_ratios
+            ) / len(strength_ratios)
         else:
-            alpha_variance = 0.0
+            strength_ratio_variance = 0.0
 
         return PreMergeGeometryAudit(
             source_profile=source_profile,
             target_profile=target_profile,
             domain_deltas=domain_deltas,
-            alpha_variance=alpha_variance,
+            strength_ratio_variance=strength_ratio_variance,
         )
 
     def post_merge_validate(
@@ -629,35 +627,30 @@ class DomainGeometryWaypointService:
             overall_preservation=overall_preservation,
         )
 
-    def compute_domain_alpha_profile(
+    def compute_domain_strength_profile(
         self,
         audit: PreMergeGeometryAudit,
     ) -> dict[AtlasDomain, float]:
         """
-        Compute domain-aware alpha profile from geometry audit.
+        Compute domain strength ratios from geometry audit.
 
-        Alpha is derived directly from the geometry: the stronger manifold
-        gets more weight in the merge. This is geometry-determined, not arbitrary.
+        Ratio is derived directly from the geometry: target_score / (source + target).
+        This is measurement-only; callers decide how to use it.
 
         Args:
             audit: Pre-merge geometry audit result
 
         Returns:
-            Dict mapping domain to geometry-derived alpha
+            Dict mapping domain to geometry-derived strength ratio
         """
-        alpha_profile: dict[AtlasDomain, float] = {}
+        strength_profile: dict[AtlasDomain, float] = {}
 
         for delta in audit.domain_deltas:
-            # Alpha derived from geometry: target_score / total
-            # Stronger manifold gets more weight
             total = delta.source_score + delta.target_score
             if total > 0:
-                alpha = delta.target_score / total
-            else:
-                alpha = 0.5
-            alpha_profile[delta.domain] = alpha
+                strength_profile[delta.domain] = delta.target_score / total
 
-        return alpha_profile
+        return strength_profile
 
 
 # Export types

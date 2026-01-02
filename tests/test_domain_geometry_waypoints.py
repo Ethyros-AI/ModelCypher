@@ -24,7 +24,7 @@ Tests:
 - DomainGeometryDelta dataclass
 - PreMergeGeometryAudit dataclass
 - PostMergeGeometryValidation dataclass
-- DomainGeometryWaypointService (alpha computation, audit creation)
+- DomainGeometryWaypointService (strength computation, audit creation)
 """
 
 from __future__ import annotations
@@ -402,13 +402,13 @@ class TestPreMergeGeometryAudit:
             source_profile=source,
             target_profile=target,
             domain_deltas=deltas,
-            alpha_variance=0.01,
+            strength_ratio_variance=0.01,
         )
 
         assert audit.source_profile.model_path == "/source"
         assert audit.target_profile.model_path == "/target"
         assert len(audit.domain_deltas) == 1
-        assert audit.alpha_variance == 0.01
+        assert audit.strength_ratio_variance == 0.01
 
     def test_to_dict(self) -> None:
         """to_dict should serialize audit correctly."""
@@ -437,7 +437,7 @@ class TestPreMergeGeometryAudit:
             source_profile=source,
             target_profile=target,
             domain_deltas=deltas,
-            alpha_variance=0.02,
+            strength_ratio_variance=0.02,
         )
 
         d = audit.to_dict()
@@ -450,7 +450,7 @@ class TestPreMergeGeometryAudit:
         assert len(d["domainDeltas"]) == 2
         assert d["domainDeltas"][0]["domain"] == "spatial"
         assert d["domainDeltas"][0]["sourceScore"] == 0.8
-        assert d["alphaVariance"] == 0.02
+        assert d["strengthRatioVariance"] == 0.02
 
 
 # =============================================================================
@@ -580,17 +580,16 @@ class TestDomainGeometryWaypointService:
         assert service._backend is any_backend
         assert service._model_loader is loader
 
-    def test_compute_domain_alpha_profile_equal_scores(
+    def test_compute_domain_strength_profile_equal_scores(
         self, any_backend: "Backend"
     ) -> None:
-        """Alpha should be 0.5 when source and target scores are equal."""
+        """Strength ratio should be 0.5 when source and target scores are equal."""
         loader = self.MockModelLoader()
         service = DomainGeometryWaypointService(
             backend=any_backend,
             model_loader=loader,  # type: ignore
         )
 
-        # Create audit with equal scores
         deltas = [
             DomainGeometryDelta(
                 domain=AtlasDomain.SPATIAL,
@@ -616,25 +615,23 @@ class TestDomainGeometryWaypointService:
                 total_anchors=0,
             ),
             domain_deltas=deltas,
-            alpha_variance=0.0,
+            strength_ratio_variance=0.0,
         )
 
-        alphas = service.compute_domain_alpha_profile(audit)
+        ratios = service.compute_domain_strength_profile(audit)
 
-        assert AtlasDomain.SPATIAL in alphas
-        assert alphas[AtlasDomain.SPATIAL] == pytest.approx(0.5, abs=1e-5)
+        assert ratios[AtlasDomain.SPATIAL] == pytest.approx(0.5, abs=1e-5)
 
-    def test_compute_domain_alpha_profile_target_stronger(
+    def test_compute_domain_strength_profile_target_stronger(
         self, any_backend: "Backend"
     ) -> None:
-        """Alpha should favor target when target score is higher."""
+        """Strength ratio should favor target when target score is higher."""
         loader = self.MockModelLoader()
         service = DomainGeometryWaypointService(
             backend=any_backend,
             model_loader=loader,  # type: ignore
         )
 
-        # Target is stronger (0.8 vs 0.2)
         deltas = [
             DomainGeometryDelta(
                 domain=AtlasDomain.MORAL,
@@ -660,25 +657,23 @@ class TestDomainGeometryWaypointService:
                 total_anchors=0,
             ),
             domain_deltas=deltas,
-            alpha_variance=0.0,
+            strength_ratio_variance=0.0,
         )
 
-        alphas = service.compute_domain_alpha_profile(audit)
+        ratios = service.compute_domain_strength_profile(audit)
 
-        # Alpha = target / (source + target) = 0.8 / 1.0 = 0.8
-        assert alphas[AtlasDomain.MORAL] == pytest.approx(0.8, abs=1e-5)
+        assert ratios[AtlasDomain.MORAL] == pytest.approx(0.8, abs=1e-5)
 
-    def test_compute_domain_alpha_profile_source_stronger(
+    def test_compute_domain_strength_profile_source_stronger(
         self, any_backend: "Backend"
     ) -> None:
-        """Alpha should favor source when source score is higher."""
+        """Strength ratio should favor source when source score is higher."""
         loader = self.MockModelLoader()
         service = DomainGeometryWaypointService(
             backend=any_backend,
             model_loader=loader,  # type: ignore
         )
 
-        # Source is stronger (0.9 vs 0.1)
         deltas = [
             DomainGeometryDelta(
                 domain=AtlasDomain.TEMPORAL,
@@ -704,18 +699,17 @@ class TestDomainGeometryWaypointService:
                 total_anchors=0,
             ),
             domain_deltas=deltas,
-            alpha_variance=0.0,
+            strength_ratio_variance=0.0,
         )
 
-        alphas = service.compute_domain_alpha_profile(audit)
+        ratios = service.compute_domain_strength_profile(audit)
 
-        # Alpha = target / (source + target) = 0.1 / 1.0 = 0.1
-        assert alphas[AtlasDomain.TEMPORAL] == pytest.approx(0.1, abs=1e-5)
+        assert ratios[AtlasDomain.TEMPORAL] == pytest.approx(0.1, abs=1e-5)
 
-    def test_compute_domain_alpha_profile_zero_scores(
+    def test_compute_domain_strength_profile_zero_scores(
         self, any_backend: "Backend"
     ) -> None:
-        """Alpha should be 0.5 when both scores are zero."""
+        """Zero scores should yield no ratio entry."""
         loader = self.MockModelLoader()
         service = DomainGeometryWaypointService(
             backend=any_backend,
@@ -747,18 +741,17 @@ class TestDomainGeometryWaypointService:
                 total_anchors=0,
             ),
             domain_deltas=deltas,
-            alpha_variance=0.0,
+            strength_ratio_variance=0.0,
         )
 
-        alphas = service.compute_domain_alpha_profile(audit)
+        ratios = service.compute_domain_strength_profile(audit)
 
-        # Should default to 0.5 when total is 0
-        assert alphas[AtlasDomain.RELATIONAL] == 0.5
+        assert AtlasDomain.RELATIONAL not in ratios
 
-    def test_compute_domain_alpha_profile_multiple_domains(
+    def test_compute_domain_strength_profile_multiple_domains(
         self, any_backend: "Backend"
     ) -> None:
-        """Should compute alphas for all domains in audit."""
+        """Should compute ratios for all domains in audit."""
         loader = self.MockModelLoader()
         service = DomainGeometryWaypointService(
             backend=any_backend,
@@ -808,18 +801,18 @@ class TestDomainGeometryWaypointService:
                 total_anchors=0,
             ),
             domain_deltas=deltas,
-            alpha_variance=0.0,
+            strength_ratio_variance=0.0,
         )
 
-        alphas = service.compute_domain_alpha_profile(audit)
+        ratios = service.compute_domain_strength_profile(audit)
 
-        assert len(alphas) == 4
-        assert alphas[AtlasDomain.SPATIAL] == pytest.approx(0.4, abs=1e-5)
-        assert alphas[AtlasDomain.RELATIONAL] == pytest.approx(0.7, abs=1e-5)
-        assert alphas[AtlasDomain.TEMPORAL] == pytest.approx(0.5, abs=1e-5)
-        assert alphas[AtlasDomain.MORAL] == pytest.approx(0.2, abs=1e-5)
+        assert len(ratios) == 4
+        assert ratios[AtlasDomain.SPATIAL] == pytest.approx(0.4, abs=1e-5)
+        assert ratios[AtlasDomain.RELATIONAL] == pytest.approx(0.7, abs=1e-5)
+        assert ratios[AtlasDomain.TEMPORAL] == pytest.approx(0.5, abs=1e-5)
+        assert ratios[AtlasDomain.MORAL] == pytest.approx(0.2, abs=1e-5)
 
-    def test_compute_domain_alpha_profile_empty_deltas(
+    def test_compute_domain_strength_profile_empty_deltas(
         self, any_backend: "Backend"
     ) -> None:
         """Should return empty dict when no deltas."""
@@ -845,12 +838,12 @@ class TestDomainGeometryWaypointService:
                 total_anchors=0,
             ),
             domain_deltas=[],
-            alpha_variance=0.0,
+            strength_ratio_variance=0.0,
         )
 
-        alphas = service.compute_domain_alpha_profile(audit)
+        ratios = service.compute_domain_strength_profile(audit)
 
-        assert alphas == {}
+        assert ratios == {}
 
 
 # =============================================================================
@@ -924,7 +917,7 @@ class TestIntegration:
             source_profile=source,
             target_profile=target,
             domain_deltas=deltas,
-            alpha_variance=0.015,
+            strength_ratio_variance=0.015,
         )
 
         # Serialize
@@ -934,7 +927,7 @@ class TestIntegration:
         assert d["sourceProfile"]["modelPath"] == "/source"
         assert d["targetProfile"]["modelPath"] == "/target"
         assert len(d["domainDeltas"]) == 4
-        assert d["alphaVariance"] == 0.015
+        assert d["strengthRatioVariance"] == 0.015
 
     def test_validation_workflow(self) -> None:
         """Full workflow for post-merge validation."""

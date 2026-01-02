@@ -101,7 +101,7 @@ def compute_alignment_guidance(
         target_profile: Curvature profile of target model
 
     Returns:
-        AlignmentPlan with per-layer guidance and global recommendations
+        AlignmentPlan with per-layer guidance and global effort statistics
     """
     # Build layer correspondence based on relative position
     source_layers = {lc.layer_idx: lc for lc in source_profile.layer_curvatures}

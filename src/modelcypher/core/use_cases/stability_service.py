@@ -154,7 +154,7 @@ class StabilityService:
             suite_id: ID of the stability suite
 
         Returns:
-            StabilityReport with detailed metrics and recommendations
+            StabilityReport with raw metrics and per-prompt results
 
         Raises:
             ValueError: If suite_id is not found

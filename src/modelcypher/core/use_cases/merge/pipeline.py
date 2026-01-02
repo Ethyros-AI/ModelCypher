@@ -361,14 +361,12 @@ def run_merge(
 
     # Compute geometric confidence from transplant metrics
     # Confidence IS the geometry - no vibes, no interpretation strings
-    from modelcypher.core.use_cases.merge.confidence import (
-        compute_geometric_confidence_from_transplant,
-        compute_mean_confidence,
+    from modelcypher.core.use_cases.merge.metrics import (
+        compute_geometric_metrics_from_transplant,
     )
 
-    geometry_metrics = compute_geometric_confidence_from_transplant(transplant_metrics)
-    mean_confidence = compute_mean_confidence(geometry_metrics)
-    # mean_preserved_fraction is in geometry_metrics - no separate verdict field
+    geometry_metrics = compute_geometric_metrics_from_transplant(transplant_metrics)
+    mean_preserved_fraction = geometry_metrics.get("mean_preserved_fraction", 0.0)
 
     projection_losses = transplant_metrics.get("projection_losses", [])
     mean_error = sum(projection_losses) / len(projection_losses) if projection_losses else 0.0
@@ -378,7 +376,7 @@ def run_merge(
         probe_metrics=probe_metrics,
         permute_metrics=permute_metrics,
         transplant_metrics=transplant_metrics,
-        mean_confidence=mean_confidence,
+        mean_preserved_fraction=mean_preserved_fraction,
         mean_procrustes_error=float(mean_error),
         layer_count=len(layer_indices),
         weight_count=len(merged_weights),
@@ -390,10 +388,10 @@ def run_merge(
     )
 
     logger.info(
-        "Merge complete: %d layers, %d weights, confidence=%.3f, error=%.3f",
+        "Merge complete: %d layers, %d weights, preserved_fraction=%.3f, error=%.3f",
         result.layer_count,
         result.weight_count,
-        result.mean_confidence,
+        result.mean_preserved_fraction,
         result.mean_procrustes_error,
     )
 

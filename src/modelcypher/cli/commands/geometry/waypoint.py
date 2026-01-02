@@ -22,7 +22,7 @@ Provides commands for:
 - Computing model geometry profiles
 - Pre-merge geometry audit
 - Post-merge geometry validation
-- Domain-aware alpha profiles
+- Domain strength profiles
 """
 
 from __future__ import annotations
@@ -159,7 +159,7 @@ def waypoint_audit(
     """
     Pre-merge geometry audit comparing source and target models.
 
-    Computes geometry deltas and alpha variance before merging.
+    Computes geometry deltas and strength ratio variance before merging.
     """
     context = _context(ctx)
 
@@ -187,7 +187,7 @@ def waypoint_audit(
         typer.echo(f"Audit saved to {output_file}")
 
     if context.output_format == "text":
-        alpha_profile = service.compute_domain_alpha_profile(audit)
+        strength_profile = service.compute_domain_strength_profile(audit)
         lines = [
             "=" * 70,
             "PRE-MERGE GEOMETRY AUDIT",
@@ -195,7 +195,7 @@ def waypoint_audit(
             "",
             f"Source: {Path(source_path).name}",
             f"Target: {Path(target_path).name}",
-            f"Alpha Variance: {audit.alpha_variance:.4f}",
+            f"Strength Ratio Variance: {audit.strength_ratio_variance:.4f}",
             "",
             "-" * 50,
             "Domain Deltas:",
@@ -208,9 +208,9 @@ def waypoint_audit(
             )
 
         lines.append("")
-        lines.append("Alpha by Domain (geometry-derived):")
-        for domain, alpha in alpha_profile.items():
-            lines.append(f"  {domain.value:<10}: alpha={alpha:.2f}")
+        lines.append("Target Strength Ratio by Domain:")
+        for domain, ratio in strength_profile.items():
+            lines.append(f"  {domain.value:<10}: ratio={ratio:.2f}")
 
         lines.append("")
         write_output("\n".join(lines), context.output_format, context.pretty)
@@ -284,56 +284,55 @@ def waypoint_validate(
     write_output(payload, context.output_format, context.pretty)
 
 
-@app.command("alpha-profile")
-def waypoint_alpha_profile(
+@app.command("strength-profile")
+def waypoint_strength_profile(
     ctx: typer.Context,
     source_path: str = typer.Argument(..., help="Path to source model"),
     target_path: str = typer.Argument(..., help="Path to target model"),
     layer: int = typer.Option(-1, "--layer", help="Layer to analyze (-1 for last)"),
 ) -> None:
     """
-    Compute domain-aware alpha profile for merging.
+    Compute domain strength profile for merging.
 
-    Runs geometry audit and computes per-domain alpha values derived
+    Runs geometry audit and computes per-domain strength ratios derived
     entirely from the geometric relationship between source and target.
-    No user parameters - the geometry determines optimal alpha per domain.
     """
     context = _context(ctx)
 
     from modelcypher.cli.composition import get_domain_geometry_waypoint_service
 
-    typer.echo("Computing domain-aware alpha profile...")
+    typer.echo("Computing domain strength profile...")
 
     service = get_domain_geometry_waypoint_service()
 
     try:
         audit = service.pre_merge_audit(source_path, target_path, layer)
-        alpha_profile = service.compute_domain_alpha_profile(audit)
+        strength_profile = service.compute_domain_strength_profile(audit)
     except Exception as e:
-        typer.echo(f"Error computing alpha profile: {e}", err=True)
+        typer.echo(f"Error computing strength profile: {e}", err=True)
         raise typer.Exit(1)
 
     payload = {
-        "_schema": "mc.geometry.waypoint.alpha_profile.v1",
+        "_schema": "mc.geometry.waypoint.strength_profile.v1",
         "sourceModel": source_path,
         "targetModel": target_path,
-        "alphaProfile": {d.value: a for d, a in alpha_profile.items()},
+        "strengthProfile": {d.value: a for d, a in strength_profile.items()},
     }
 
     if context.output_format == "text":
         lines = [
             "=" * 70,
-            "DOMAIN-AWARE ALPHA PROFILE",
+            "DOMAIN STRENGTH PROFILE",
             "=" * 70,
             "",
             f"Source: {Path(source_path).name}",
             f"Target: {Path(target_path).name}",
             "",
             "-" * 50,
-            "Alpha by Domain (geometry-derived):",
+            "Target Strength Ratio by Domain:",
         ]
-        for domain, alpha in alpha_profile.items():
-            lines.append(f"  {domain.value:<10}: alpha={alpha:.3f}")
+        for domain, ratio in strength_profile.items():
+            lines.append(f"  {domain.value:<10}: ratio={ratio:.3f}")
 
         lines.append("")
         write_output("\n".join(lines), context.output_format, context.pretty)

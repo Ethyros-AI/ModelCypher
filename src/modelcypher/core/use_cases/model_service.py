@@ -141,7 +141,7 @@ class ModelService:
             "outputPath": merge_result.output_path,
             "layerCount": merge_result.layer_count,
             "weightCount": merge_result.weight_count,
-            "meanConfidence": merge_result.mean_confidence,
+            "meanPreservedFraction": merge_result.mean_preserved_fraction,
             "metrics": {
                 "meanProcrustesError": merge_result.mean_procrustes_error,
             },

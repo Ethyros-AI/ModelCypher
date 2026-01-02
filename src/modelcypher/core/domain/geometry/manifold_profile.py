@@ -217,6 +217,75 @@ class ManifoldPoint:
 
 
 @dataclass(frozen=True)
+class RegionClassificationConfig:
+    """Configuration for region classification thresholds.
+
+    Thresholds define boundaries between topological regions (DENSE/SPARSE/TRANSITIONAL).
+    These are geometric classifications, not quality judgments.
+
+    Use `from_percentiles()` to derive thresholds from observed data distributions.
+    """
+
+    low_entropy: float
+    high_entropy: float
+    low_variance: float
+    high_variance: float
+    high_coherence: float
+    low_coherence: float
+
+    @classmethod
+    def from_percentiles(
+        cls,
+        entropies: list[float],
+        variances: list[float],
+        coherences: list[float],
+        low_percentile: float = 25.0,
+        high_percentile: float = 75.0,
+    ) -> "RegionClassificationConfig":
+        """Derive thresholds from observed data distributions.
+
+        Args:
+            entropies: Observed entropy values from calibration data.
+            variances: Observed variance values from calibration data.
+            coherences: Observed coherence values from calibration data.
+            low_percentile: Percentile for "low" thresholds (default 25th).
+            high_percentile: Percentile for "high" thresholds (default 75th).
+
+        Returns:
+            Config with thresholds derived from the data.
+        """
+
+        def percentile(values: list[float], p: float) -> float:
+            if not values:
+                return 0.0
+            sorted_vals = sorted(values)
+            k = (len(sorted_vals) - 1) * (p / 100.0)
+            f = int(k)
+            c = f + 1 if f + 1 < len(sorted_vals) else f
+            return sorted_vals[f] + (sorted_vals[c] - sorted_vals[f]) * (k - f)
+
+        return cls(
+            low_entropy=percentile(entropies, low_percentile),
+            high_entropy=percentile(entropies, high_percentile),
+            low_variance=percentile(variances, low_percentile),
+            high_variance=percentile(variances, high_percentile),
+            high_coherence=percentile(coherences, high_percentile),
+            low_coherence=percentile(coherences, low_percentile),
+        )
+
+
+# Default classification config - callers should derive from their data when possible
+_DEFAULT_CLASSIFICATION_CONFIG = RegionClassificationConfig(
+    low_entropy=3.0,
+    high_entropy=6.0,
+    low_variance=0.5,
+    high_variance=2.0,
+    high_coherence=0.7,
+    low_coherence=0.4,
+)
+
+
+@dataclass(frozen=True)
 class ManifoldRegion:
     class RegionCharacter(str, Enum):
         """Topological character of a manifold region.
@@ -255,38 +324,40 @@ class ManifoldRegion:
         return self.centroid.mean_gate_confidence
 
     @staticmethod
-    def classify(centroid: ManifoldPoint) -> "ManifoldRegion.RegionCharacter":
+    def classify(
+        centroid: ManifoldPoint,
+        config: RegionClassificationConfig | None = None,
+    ) -> "ManifoldRegion.RegionCharacter":
         """Classify region character based on centroid measurements.
 
-        Uses data-driven thresholds from typical entropy distributions.
-        This describes the topological character, not a safety judgment.
+        Args:
+            centroid: The centroid point to classify.
+            config: Classification thresholds. If None, uses module default.
+                Use `RegionClassificationConfig.from_percentiles()` to derive
+                thresholds from your observed data distribution.
+
+        Returns:
+            Topological character (DENSE, SPARSE, or TRANSITIONAL).
         """
+        cfg = config or _DEFAULT_CLASSIFICATION_CONFIG
         entropy = centroid.mean_entropy
         variance = centroid.entropy_variance
         coherence = centroid.mean_gate_confidence
 
-        # Thresholds derived from typical LLM entropy distributions
-        low_entropy = 3.0
-        high_entropy = 6.0
-        low_variance = 0.5
-        high_variance = 2.0
-        high_coherence = 0.7
-        low_coherence = 0.4
-
         # High variance indicates transitional region
-        if variance > high_variance:
+        if variance > cfg.high_variance:
             return ManifoldRegion.RegionCharacter.TRANSITIONAL
-        if entropy > low_entropy and entropy < high_entropy and variance > low_variance:
+        if entropy > cfg.low_entropy and entropy < cfg.high_entropy and variance > cfg.low_variance:
             return ManifoldRegion.RegionCharacter.TRANSITIONAL
 
         # High entropy with low coherence indicates sparse region
-        if entropy > high_entropy and coherence < low_coherence:
+        if entropy > cfg.high_entropy and coherence < cfg.low_coherence:
             return ManifoldRegion.RegionCharacter.SPARSE
-        if entropy > high_entropy:
+        if entropy > cfg.high_entropy:
             return ManifoldRegion.RegionCharacter.SPARSE
 
         # Low entropy, low variance, high coherence indicates dense region
-        if entropy < low_entropy and variance < low_variance and coherence > high_coherence:
+        if entropy < cfg.low_entropy and variance < cfg.low_variance and coherence > cfg.high_coherence:
             return ManifoldRegion.RegionCharacter.DENSE
 
         return ManifoldRegion.RegionCharacter.TRANSITIONAL

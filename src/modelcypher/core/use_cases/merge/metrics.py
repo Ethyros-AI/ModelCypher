@@ -15,15 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Geometric confidence computation for merge operations.
+"""Geometric metric aggregation for merge operations.
 
-This module extracts confidence from geometric signals in transplant metrics.
-No vibes - confidence IS the geometry. Returns raw measurements only.
-
-Philosophy:
-- No magic thresholds or interpretation strings
-- Confidence is derived from what geometry actually measures
-- All component signals are exposed for downstream transparency
+This module extracts raw geometric measurements from transplant metrics.
+No interpretation strings, no heuristics - just computed values.
 """
 
 from __future__ import annotations
@@ -31,10 +26,10 @@ from __future__ import annotations
 from typing import Any
 
 
-def compute_geometric_confidence_from_transplant(
+def compute_geometric_metrics_from_transplant(
     transplant_metrics: dict[str, Any],
 ) -> dict[str, float]:
-    """Extract geometric confidence signals from transplant stage metrics.
+    """Aggregate geometric measurements from transplant stage metrics.
 
     The transplant stage already computes rich geometric measurements:
     - preserved_fractions: How much knowledge survived per layer
@@ -42,14 +37,13 @@ def compute_geometric_confidence_from_transplant(
     - projection_losses: Loss during null-space projection
     - weights_transplanted/considered: Transplant success rate
 
-    This function extracts and aggregates these into a confidence signal.
-    No interpretation - just raw geometric measurements.
+    This function aggregates raw measurements for downstream use.
 
     Args:
         transplant_metrics: Metrics dict from stage_3_transplant
 
     Returns:
-        Dict of geometric confidence signals (all floats, no strings):
+        Dict of geometric measurements (all floats, no strings):
         - mean_preserved_fraction: Average preservation across layers
         - mean_cka_after: Average post-alignment CKA
         - mean_projection_loss: Average projection loss (lower = better)
@@ -74,7 +68,7 @@ def compute_geometric_confidence_from_transplant(
         ),
         # Alignment quality signal
         "mean_cka_after": sum(cka_after) / len(cka_after) if cka_after else 0.0,
-        # Projection quality signal (lower = better, so we invert for confidence)
+        # Projection quality signal
         "mean_projection_loss": (
             sum(proj_losses) / len(proj_losses) if proj_losses else 0.0
         ),
@@ -95,27 +89,3 @@ def compute_geometric_confidence_from_transplant(
         "layers_transplanted": transplant_metrics.get("layers_transplanted", 0),
         "layers_considered": transplant_metrics.get("layers_considered", 0),
     }
-
-
-def compute_mean_confidence(geometry_metrics: dict[str, float]) -> float:
-    """Return the most direct geometric measurement of merge success.
-
-    This is NOT an interpretation or weighted combination. It IS the geometry:
-    mean_preserved_fraction measures how much of the manifold's structure
-    survived the null-space projection. This is the geometric truth of
-    what happened during the merge.
-
-    The preserved fraction comes from:
-        ||P_null @ delta|| / ||delta||
-
-    Where P_null is the null-space projector and delta is the weight difference.
-    A preserved_fraction of 0.8 means 80% of the transplanted knowledge
-    lies in directions orthogonal to the boundary - it survived geometrically.
-
-    Args:
-        geometry_metrics: Output from compute_geometric_confidence_from_transplant
-
-    Returns:
-        mean_preserved_fraction - the geometric reality of what was preserved
-    """
-    return geometry_metrics.get("mean_preserved_fraction", 0.0)

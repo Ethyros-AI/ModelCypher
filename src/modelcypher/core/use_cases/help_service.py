@@ -535,7 +535,7 @@ class HelpService:
             "geometry_transfer_compare": None,
             "geometry_transfer_profile": None,
             "geometry_transfer_project": None,
-            "geometry_waypoint_alpha_profile": "mc.geometry.waypoint.alpha_profile.v1",
+            "geometry_waypoint_strength_profile": "mc.geometry.waypoint.strength_profile.v1",
             "geometry_waypoint_audit": "mc.geometry.waypoint.audit.v1",
             "geometry_waypoint_profile": "mc.geometry.waypoint.profile.v1",
             "geometry_waypoint_validate": "mc.geometry.waypoint.validate.v1",

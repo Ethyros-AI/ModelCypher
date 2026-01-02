@@ -379,7 +379,6 @@ class MergeValidationService:
         )
         from modelcypher.core.domain.geometry.refinement_density import (
             RefinementDensityAnalyzer,
-            RefinementDensityConfig,
         )
 
         try:
@@ -421,8 +420,7 @@ class MergeValidationService:
             dora_result = dora.analyze_adapter(source_weights, merged_weights)
 
             # Refinement density analysis
-            config = RefinementDensityConfig.default()
-            analyzer = RefinementDensityAnalyzer(config)
+            analyzer = RefinementDensityAnalyzer()
             result = analyzer.analyze(
                 source_model=source_model,
                 target_model=merged_model,

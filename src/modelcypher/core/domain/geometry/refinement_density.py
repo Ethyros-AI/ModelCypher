@@ -16,15 +16,15 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Refinement Density Analysis: Per-layer scoring for selective model merging.
+Refinement Density Analysis: Per-layer scoring for geometric refinement.
 
 Combines signals from:
 - DARE sparsity (what fraction of weights are essential)
 - DoRA directional drift (how much the feature space rotated)
 - Transition CKA (how aligned layer transitions are between models)
 
-A high refinement density score indicates the layer is "more refined" in the source
-model and should be preferentially selected during merging.
+A higher refinement density score indicates the layer is more refined in the
+source model relative to the target model. This module reports measurements only.
 """
 
 from __future__ import annotations
@@ -51,106 +51,19 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class LayerRefinementScore:
-    """Refinement density score for a single layer.
-
-    Attributes
-    ----------
-    layer_name : str
-        Name of the layer.
-    layer_index : int
-        Index of the layer.
-    sparsity_contribution : float
-        Contribution from sparsity (1 - sparsity, higher = more essential params).
-    directional_contribution : float
-        Contribution from directional drift.
-    transition_contribution : float
-        Contribution from transition advantage.
-    composite_score : float
-        Combined refinement score (0.0 to 1.0).
-    recommended_alpha : float
-        Blend alpha derived from composite_score. Lower values favor the source.
-    raw_sparsity : float or None
-        Raw sparsity metric.
-    raw_directional_drift : float or None
-        Raw directional drift metric.
-    raw_transition_cka : float or None
-        Raw transition CKA metric.
-    raw_state_cka : float or None
-        Raw state CKA metric.
-    """
+    """Refinement density score for a single layer."""
 
     layer_name: str
     layer_index: int
-    sparsity_contribution: float
-    directional_contribution: float
-    transition_contribution: float
+    sparsity_contribution: float | None
+    directional_contribution: float | None
+    transition_contribution: float | None
     composite_score: float
-    recommended_alpha: float
+    component_count: int
     raw_sparsity: float | None = None
     raw_directional_drift: float | None = None
     raw_transition_cka: float | None = None
     raw_state_cka: float | None = None
-
-
-@dataclass(frozen=True)
-class RefinementDensityConfig:
-    """Configuration for refinement density analysis.
-
-    Alpha is derived directly from composite_score: alpha = 1.0 - score.
-    The geometry determines the blend - no arbitrary bounds or presets.
-
-    Score thresholds are derived from the score distribution, not hardcoded.
-    Use with_parameters() to create with explicit values.
-    """
-
-    # Equal component weights - geometric decomposition
-    sparsity_weight: float = 1.0 / 3.0
-    directional_weight: float = 1.0 / 3.0
-    transition_weight: float = 1.0 / 3.0
-
-    # Normalization parameters - these define the scale, not arbitrary thresholds
-    max_directional_drift: float = 0.5  # Drift values above this are clipped
-    max_transition_advantage: float = 2.0  # Transition ratio above this is clipped
-
-    @classmethod
-    def with_parameters(
-        cls,
-        *,
-        sparsity_weight: float = 1.0 / 3.0,
-        directional_weight: float = 1.0 / 3.0,
-        transition_weight: float = 1.0 / 3.0,
-        max_directional_drift: float = 0.5,
-        max_transition_advantage: float = 2.0,
-    ) -> "RefinementDensityConfig":
-        """Create configuration with explicit parameters.
-
-        Args:
-            sparsity_weight: Weight for sparsity component.
-            directional_weight: Weight for directional drift component.
-            transition_weight: Weight for transition advantage component.
-            max_directional_drift: Maximum drift for normalization.
-            max_transition_advantage: Maximum transition ratio for normalization.
-
-        Returns:
-            Configuration with specified parameters.
-        """
-        # Validate weights sum to ~1.0
-        total_weight = sparsity_weight + directional_weight + transition_weight
-        if abs(total_weight - 1.0) > 0.01:
-            raise ValueError(f"Weights must sum to 1.0, got {total_weight}")
-        if max_directional_drift <= 0:
-            raise ValueError(f"max_directional_drift must be > 0, got {max_directional_drift}")
-        if max_transition_advantage <= 0:
-            raise ValueError(
-                f"max_transition_advantage must be > 0, got {max_transition_advantage}"
-            )
-        return cls(
-            sparsity_weight=sparsity_weight,
-            directional_weight=directional_weight,
-            transition_weight=transition_weight,
-            max_directional_drift=max_directional_drift,
-            max_transition_advantage=max_transition_advantage,
-        )
 
 
 @dataclass
@@ -160,7 +73,6 @@ class RefinementDensityResult:
     source_model: str
     target_model: str
     computed_at: datetime
-    config: RefinementDensityConfig
 
     # Per-layer scores
     layer_scores: dict[int, LayerRefinementScore]
@@ -168,64 +80,20 @@ class RefinementDensityResult:
     # Aggregate metrics
     mean_composite_score: float
     max_composite_score: float
-    std_composite_score: float  # For deriving thresholds from distribution
+    std_composite_score: float
+    scored_layer_count: int
+
+    # Normalization context (data-derived)
+    max_directional_drift: float
+    max_transition_advantage: float
 
     # Component availability
     has_sparsity_data: bool
     has_directional_data: bool
     has_transition_data: bool
 
-    @property
-    def _derived_thresholds(self) -> tuple[float, float, float]:
-        """Derive thresholds from score distribution (mean + multiples of std)."""
-        mean = self.mean_composite_score
-        std = self.std_composite_score
-        # Top tier: mean + 1.5*std, Mid tier: mean + 0.5*std, Low tier: mean
-        return (
-            min(1.0, mean + 1.5 * std),  # hard_swap
-            min(1.0, mean + 0.5 * std),  # high_alpha
-            mean,  # medium_alpha
-        )
-
-    @property
-    def hard_swap_layers(self) -> list[int]:
-        """Layer indices with composite_score >= mean + 1.5*std."""
-        threshold = self._derived_thresholds[0]
-        return sorted(
-            idx
-            for idx, score in self.layer_scores.items()
-            if score.composite_score >= threshold
-        )
-
-    @property
-    def high_alpha_layers(self) -> list[int]:
-        """Layer indices with composite_score >= mean + 0.5*std (but below hard_swap)."""
-        hard_thresh, high_thresh, _ = self._derived_thresholds
-        return sorted(
-            idx
-            for idx, score in self.layer_scores.items()
-            if high_thresh <= score.composite_score < hard_thresh
-        )
-
-    @property
-    def alpha_by_layer(self) -> dict[int, float]:
-        """Recommended alpha value for each layer."""
-        return {idx: score.recommended_alpha for idx, score in self.layer_scores.items()}
-
-    @property
-    def layers_above_hard_swap(self) -> int:
-        """Count of layers above hard_swap threshold (mean + 1.5*std)."""
-        return len(self.hard_swap_layers)
-
-    @property
-    def layers_above_high_alpha(self) -> int:
-        """Count of layers above high_alpha threshold (mean + 0.5*std)."""
-        return len(self.high_alpha_layers)
-
-
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
-        hard_thresh, high_thresh, _ = self._derived_thresholds
         return {
             "sourceModel": self.source_model,
             "targetModel": self.target_model,
@@ -233,24 +101,24 @@ class RefinementDensityResult:
             "meanCompositeScore": self.mean_composite_score,
             "stdCompositeScore": self.std_composite_score,
             "maxCompositeScore": self.max_composite_score,
-            "derivedThresholds": {
-                "hardSwap": hard_thresh,
-                "highAlpha": high_thresh,
+            "scoredLayerCount": self.scored_layer_count,
+            "normalization": {
+                "maxDirectionalDrift": self.max_directional_drift,
+                "maxTransitionAdvantage": self.max_transition_advantage,
             },
-            "layersAboveHardSwap": self.layers_above_hard_swap,
-            "layersAboveHighAlpha": self.layers_above_high_alpha,
-            "hardSwapLayers": self.hard_swap_layers,
-            "highAlphaLayers": self.high_alpha_layers,
-            "alphaByLayer": self.alpha_by_layer,
             "layerScores": {
                 str(idx): {
                     "layerName": score.layer_name,
                     "layerIndex": score.layer_index,
                     "compositeScore": score.composite_score,
+                    "componentCount": score.component_count,
                     "sparsityContribution": score.sparsity_contribution,
                     "directionalContribution": score.directional_contribution,
                     "transitionContribution": score.transition_contribution,
-                    "alpha": score.recommended_alpha,
+                    "rawSparsity": score.raw_sparsity,
+                    "rawDirectionalDrift": score.raw_directional_drift,
+                    "rawTransitionCKA": score.raw_transition_cka,
+                    "rawStateCKA": score.raw_state_cka,
                 }
                 for idx, score in self.layer_scores.items()
             },
@@ -261,33 +129,7 @@ class RefinementDensityResult:
 
 
 class RefinementDensityAnalyzer:
-    """
-    Analyzes refinement density across layers using multiple geometric signals.
-
-    Combines three signals:
-    1. DARE sparsity: Lower sparsity indicates more essential parameters.
-    2. DoRA drift: Directional drift captures feature space rotation.
-    3. Transition CKA: Transition alignment reflects structural continuity.
-
-    Usage:
-        analyzer = RefinementDensityAnalyzer()
-        result = analyzer.analyze(
-            source_model="model_A",
-            target_model="model_B",
-            sparsity_analysis=dare_result,
-            dora_result=dora_result,
-            transition_experiment=transition_result,
-        )
-        alphas = result.alpha_by_layer
-    """
-
-    def __init__(self, config: RefinementDensityConfig):
-        """Initialize with explicit configuration.
-
-        Args:
-            config: Refinement density configuration (use with_parameters() to create).
-        """
-        self.config = config
+    """Analyzes refinement density across layers using multiple geometric signals."""
 
     def analyze(
         self,
@@ -298,21 +140,7 @@ class RefinementDensityAnalyzer:
         transition_experiment: TransitionExperiment | None = None,
         layer_count: int | None = None,
     ) -> RefinementDensityResult:
-        """
-        Perform refinement density analysis across all layers.
-
-        Args:
-            source_model: Identifier for the source (refined) model
-            target_model: Identifier for the target (base) model
-            sparsity_analysis: DARE sparsity analysis result
-            dora_result: DoRA decomposition result
-            transition_experiment: CKA transition experiment result
-            layer_count: Override layer count (inferred from inputs if not provided)
-
-        Returns:
-            RefinementDensityResult with per-layer scores and derived alphas
-        """
-        # Infer layer count from available data
+        """Perform refinement density analysis across all layers."""
         inferred_count = self._infer_layer_count(
             sparsity_analysis, dora_result, transition_experiment
         )
@@ -321,12 +149,19 @@ class RefinementDensityAnalyzer:
             logger.warning("No layers found in refinement density inputs.")
             return self._empty_result(source_model, target_model)
 
-        # Build per-layer indices
         sparsity_by_layer = self._index_sparsity(sparsity_analysis)
         dora_by_layer = self._index_dora(dora_result)
         transition_by_layer = self._index_transition(transition_experiment)
 
-        # Compute scores for each layer
+        max_directional_drift = max(
+            (metric.directional_drift for metric in dora_by_layer.values()),
+            default=0.0,
+        )
+        max_transition_advantage = max(
+            (self._transition_ratio(t) for t in transition_by_layer.values()),
+            default=0.0,
+        )
+
         layer_scores: dict[int, LayerRefinementScore] = {}
         for layer_idx in range(effective_count):
             score = self._compute_layer_score(
@@ -334,30 +169,37 @@ class RefinementDensityAnalyzer:
                 sparsity_by_layer.get(layer_idx),
                 dora_by_layer.get(layer_idx),
                 transition_by_layer.get(layer_idx),
+                max_directional_drift,
+                max_transition_advantage,
             )
             layer_scores[layer_idx] = score
 
-        # Aggregate metrics - derive thresholds from distribution, not hardcoded values
-        composite_scores = [s.composite_score for s in layer_scores.values()]
-        if composite_scores:
-            mean_score = sum(composite_scores) / len(composite_scores)
-            max_score = max(composite_scores)
-            variance = sum((s - mean_score) ** 2 for s in composite_scores) / len(composite_scores)
-            std_score = variance ** 0.5
+        scored_values = [
+            s.composite_score for s in layer_scores.values() if s.component_count > 0
+        ]
+        if scored_values:
+            mean_score = sum(scored_values) / len(scored_values)
+            max_score = max(scored_values)
+            variance = sum((s - mean_score) ** 2 for s in scored_values) / len(scored_values)
+            std_score = variance**0.5
+            scored_count = len(scored_values)
         else:
             mean_score = 0.0
             max_score = 0.0
             std_score = 0.0
+            scored_count = 0
 
         return RefinementDensityResult(
             source_model=source_model,
             target_model=target_model,
             computed_at=datetime.now(timezone.utc),
-            config=self.config,
             layer_scores=layer_scores,
             mean_composite_score=mean_score,
             max_composite_score=max_score,
             std_composite_score=std_score,
+            scored_layer_count=scored_count,
+            max_directional_drift=max_directional_drift,
+            max_transition_advantage=max_transition_advantage,
             has_sparsity_data=bool(sparsity_by_layer),
             has_directional_data=bool(dora_by_layer),
             has_transition_data=bool(transition_by_layer),
@@ -371,19 +213,7 @@ class RefinementDensityAnalyzer:
         adapted_weights: dict[str, any],
         transition_experiment: TransitionExperiment | None = None,
     ) -> RefinementDensityResult:
-        """
-        Convenience method to compute DARE and DoRA internally and analyze.
-
-        Args:
-            source_model: Identifier for the source model
-            target_model: Identifier for the target model
-            base_weights: Base model weights (dict of layer_name → weight array)
-            adapted_weights: Adapted model weights
-            transition_experiment: Optional CKA transition data
-
-        Returns:
-            RefinementDensityResult
-        """
+        """Convenience method to compute DARE and DoRA internally and analyze."""
         from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.geometry.dare_sparsity import (
             Configuration as DAREConfig,
@@ -397,7 +227,6 @@ class RefinementDensityAnalyzer:
 
         b = get_default_backend()
 
-        # Compute delta weights for DARE
         delta_weights: dict[str, list[float]] = {}
         for name in base_weights:
             if name not in adapted_weights:
@@ -419,7 +248,6 @@ class RefinementDensityAnalyzer:
             delta_weights, DAREConfig(compute_per_layer_metrics=True)
         )
 
-        # Compute DoRA decomposition
         base_arr: dict[str, any] = {}
         adapted_arr: dict[str, any] = {}
         for name in base_weights:
@@ -445,54 +273,48 @@ class RefinementDensityAnalyzer:
         sparsity: LayerSparsityMetrics | None,
         dora: MagnitudeDirectionMetrics | None,
         transition: LayerTransitionResult | None,
+        max_directional_drift: float,
+        max_transition_advantage: float,
     ) -> LayerRefinementScore:
         """Compute refinement score for a single layer."""
-        cfg = self.config
-
-        # Sparsity contribution: 1 - sparsity (more essential = higher score)
         raw_sparsity = None
+        sparsity_contrib = None
         if sparsity is not None:
             raw_sparsity = sparsity.sparsity
-            sparsity_contrib = 1.0 - sparsity.sparsity
-        else:
-            sparsity_contrib = 0.5  # Neutral if missing
+            sparsity_contrib = max(0.0, min(1.0, 1.0 - sparsity.sparsity))
 
-        # Directional contribution: normalized drift
         raw_drift = None
+        directional_contrib = None
         if dora is not None:
             raw_drift = dora.directional_drift
-            normalized_drift = min(dora.directional_drift / cfg.max_directional_drift, 1.0)
-            directional_contrib = normalized_drift
-        else:
-            directional_contrib = 0.5  # Neutral if missing
+            if max_directional_drift > 0:
+                directional_contrib = max(
+                    0.0, min(1.0, dora.directional_drift / max_directional_drift)
+                )
+            else:
+                directional_contrib = 0.0
 
-        # Transition contribution: transition_cka / state_cka ratio
         raw_transition = None
         raw_state = None
+        transition_contrib = None
         if transition is not None:
             raw_transition = transition.transition_cka
             raw_state = transition.state_cka
-            if transition.state_cka > 0.001:
-                ratio = transition.transition_cka / transition.state_cka
-                normalized_ratio = min(ratio / cfg.max_transition_advantage, 1.0)
-                transition_contrib = normalized_ratio
+            ratio = self._transition_ratio(transition)
+            if max_transition_advantage > 0:
+                transition_contrib = max(0.0, min(1.0, ratio / max_transition_advantage))
             else:
-                transition_contrib = transition.transition_cka  # Use raw if no state baseline
+                transition_contrib = 0.0
+
+        contributions = [
+            c for c in (sparsity_contrib, directional_contrib, transition_contrib) if c is not None
+        ]
+        component_count = len(contributions)
+        if component_count:
+            composite = sum(contributions) / component_count
         else:
-            transition_contrib = 0.5  # Neutral if missing
+            composite = 0.0
 
-        # Composite score with configured weights
-        composite = (
-            cfg.sparsity_weight * sparsity_contrib
-            + cfg.directional_weight * directional_contrib
-            + cfg.transition_weight * transition_contrib
-        )
-        composite = max(0.0, min(1.0, composite))
-
-        # Alpha derived directly from composite score - no binning
-        alpha = self._score_to_alpha(composite)
-
-        # Layer name
         layer_name = f"layer_{layer_idx}"
         if sparsity is not None:
             layer_name = sparsity.layer_name
@@ -505,22 +327,19 @@ class RefinementDensityAnalyzer:
             sparsity_contribution=sparsity_contrib,
             directional_contribution=directional_contrib,
             transition_contribution=transition_contrib,
-            composite_score=composite,
-            recommended_alpha=alpha,
+            composite_score=max(0.0, min(1.0, composite)),
+            component_count=component_count,
             raw_sparsity=raw_sparsity,
             raw_directional_drift=raw_drift,
             raw_transition_cka=raw_transition,
             raw_state_cka=raw_state,
         )
 
-    def _score_to_alpha(self, score: float) -> float:
-        """Map composite score directly to alpha value.
-
-        Alpha = 1.0 - score. The geometry determines the blend directly.
-        - score=0 (no refinement) → alpha=1.0 (retain target)
-        - score=1 (fully refined) → alpha=0.0 (use source)
-        """
-        return max(0.0, min(1.0, 1.0 - score))
+    @staticmethod
+    def _transition_ratio(transition: LayerTransitionResult) -> float:
+        if transition.state_cka > 0:
+            return transition.transition_cka / transition.state_cka
+        return transition.transition_cka
 
     def _infer_layer_count(
         self,
@@ -532,7 +351,6 @@ class RefinementDensityAnalyzer:
         counts = []
 
         if sparsity and sparsity.per_layer_sparsity:
-            # Extract layer indices from keys like "layers.0.mlp.gate_proj.weight"
             indices = set()
             for key in sparsity.per_layer_sparsity.keys():
                 idx = self._extract_layer_index(key)
@@ -565,7 +383,6 @@ class RefinementDensityAnalyzer:
         for key, metrics in sparsity.per_layer_sparsity.items():
             idx = self._extract_layer_index(key)
             if idx is not None:
-                # Take the first metric for each layer (or aggregate if multiple)
                 if idx not in result or metrics.essential_fraction > result[idx].essential_fraction:
                     result[idx] = metrics
         return result
@@ -579,7 +396,6 @@ class RefinementDensityAnalyzer:
         for key, metrics in dora.per_layer_metrics.items():
             idx = self._extract_layer_index(key)
             if idx is not None:
-                # Take highest drift for the layer
                 if idx not in result or metrics.directional_drift > result[idx].directional_drift:
                     result[idx] = metrics
         return result
@@ -611,11 +427,13 @@ class RefinementDensityAnalyzer:
             source_model=source,
             target_model=target,
             computed_at=datetime.now(timezone.utc),
-            config=self.config,
             layer_scores={},
             mean_composite_score=0.0,
             max_composite_score=0.0,
             std_composite_score=0.0,
+            scored_layer_count=0,
+            max_directional_drift=0.0,
+            max_transition_advantage=0.0,
             has_sparsity_data=False,
             has_directional_data=False,
             has_transition_data=False,
@@ -632,8 +450,7 @@ class RefinementMetricKey:
 
     MEAN_COMPOSITE = "geometry/refinement_mean_composite"
     MAX_COMPOSITE = "geometry/refinement_max_composite"
-    HARD_SWAP_COUNT = "geometry/refinement_hard_swap_count"
-    HIGH_ALPHA_COUNT = "geometry/refinement_high_alpha_count"
+    SCORED_LAYER_COUNT = "geometry/refinement_scored_layer_count"
 
 
 def to_metrics_dict(result: RefinementDensityResult) -> dict[str, float]:
@@ -641,6 +458,5 @@ def to_metrics_dict(result: RefinementDensityResult) -> dict[str, float]:
     return {
         RefinementMetricKey.MEAN_COMPOSITE: result.mean_composite_score,
         RefinementMetricKey.MAX_COMPOSITE: result.max_composite_score,
-        RefinementMetricKey.HARD_SWAP_COUNT: float(result.layers_above_hard_swap),
-        RefinementMetricKey.HIGH_ALPHA_COUNT: float(result.layers_above_high_alpha),
+        RefinementMetricKey.SCORED_LAYER_COUNT: float(result.scored_layer_count),
     }

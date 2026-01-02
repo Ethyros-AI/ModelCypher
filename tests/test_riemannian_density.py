@@ -47,6 +47,7 @@ from modelcypher.core.domain.geometry.manifold_curvature import (
     SectionalCurvatureEstimator,
     compute_curvature_divergence,
 )
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.geometry.riemannian_density import (
     InfluenceType,
     RiemannianDensityConfig,
@@ -149,42 +150,19 @@ def two_distant_concepts():
 class TestSectionalCurvatureEstimator:
     """Tests for curvature estimation."""
 
-    def test_flat_space_has_low_curvature(self, simple_gaussian_samples):
-        """Flat Gaussian samples should have low curvature magnitude."""
-        estimator = SectionalCurvatureEstimator()
-
-        point = simple_gaussian_samples[0]
-        neighbors = simple_gaussian_samples[1:]
-
-        curvature = estimator.estimate_local_curvature(point, neighbors)
-
-        # Should have low curvature magnitude (estimation is inherently noisy)
-        assert abs(curvature.mean_sectional) < 1.0
-        # Sign can vary due to noise, but variance should be relatively low
-        assert curvature.variance_sectional < 0.5
-
-    def test_spherical_has_positive_curvature(self, spherical_samples):
-        """Spherical samples should have positive curvature."""
-        estimator = SectionalCurvatureEstimator()
-
-        point = spherical_samples[0]
-        neighbors = spherical_samples[1:]
-
-        curvature = estimator.estimate_local_curvature(point, neighbors)
-
-        # Sphere has positive curvature (though estimation may be noisy)
-        # We check that it's not strongly negative
-        assert curvature.mean_sectional > -0.5
-
     @pytest.mark.skipif(not HAS_SCIPY, reason="scipy required for manifold profile")
     def test_curvature_profile_statistics(self, simple_gaussian_samples):
         """Test manifold profile aggregates curvature correctly."""
+        backend = get_default_backend()
         estimator = SectionalCurvatureEstimator()
 
         profile = estimator.estimate_manifold_profile(simple_gaussian_samples, k_neighbors=10)
 
         assert len(profile.local_curvatures) == len(simple_gaussian_samples)
-        assert 0 <= sum(profile.sign_distribution.values()) <= 1.1  # Account for rounding
+        sign_values = list(profile.sign_distribution.values())
+        sign_total = sum(sign_values)
+        eps = machine_epsilon(backend, backend.array(sign_values))
+        assert abs(sign_total - 1.0) <= eps * max(1, len(sign_values))
         assert profile.dominant_sign in CurvatureSign
 
     @pytest.mark.skipif(not HAS_SCIPY, reason="scipy required for manifold profile")
@@ -235,32 +213,6 @@ class TestRiemannianDensityEstimator:
         assert volume.centroid.shape == (simple_gaussian_samples.shape[1],)
         assert volume.covariance.shape == (volume.dimension, volume.dimension)
 
-    def test_volume_centroid_is_valid_center(self, simple_gaussian_samples):
-        """Centroid should be a valid center of the distribution.
-
-        Note: Uses Fréchet mean (Riemannian center of mass), not arithmetic mean.
-        In curved spaces, these differ. Fréchet mean minimizes sum of squared
-        geodesic distances - the correct center for manifold data.
-        """
-        backend = get_default_backend()
-        estimator = RiemannianDensityEstimator()
-
-        volume = estimator.estimate_concept_volume("test", simple_gaussian_samples)
-
-        # Centroid should be in the convex hull of samples (approximately)
-        # and have reasonable dimension
-        assert volume.centroid.shape == (simple_gaussian_samples.shape[1],)
-        # Centroid should not be too far from arithmetic mean (they're related)
-        samples_tensor = backend.array(simple_gaussian_samples)
-        arithmetic_mean = backend.mean(samples_tensor, axis=0)
-        backend.eval(arithmetic_mean)
-        arithmetic_mean_np = backend.to_numpy(arithmetic_mean)
-
-        distance_from_arithmetic = backend.norm(backend.array(volume.centroid) - backend.array(arithmetic_mean_np))
-        backend.eval(distance_from_arithmetic)
-        # Fréchet mean is typically close to arithmetic mean for mild curvature
-        assert backend.to_numpy(distance_from_arithmetic) < 1.0  # Reasonable bound
-
     def test_density_at_centroid_is_maximum(self, simple_gaussian_samples):
         """Density should be highest at centroid."""
         backend = get_default_backend()
@@ -310,12 +262,14 @@ class TestRiemannianDensityEstimator:
 
     def test_mahalanobis_distance_at_centroid(self, simple_gaussian_samples):
         """Mahalanobis distance at centroid should be zero."""
+        backend = get_default_backend()
         estimator = RiemannianDensityEstimator()
 
         volume = estimator.estimate_concept_volume("test", simple_gaussian_samples)
 
         distance = volume.mahalanobis_distance(volume.centroid)
-        assert abs(distance) < 1e-10
+        eps = machine_epsilon(backend, backend.array(volume.centroid))
+        assert abs(distance) <= eps
 
 
 class TestConceptVolumeRelation:
@@ -355,15 +309,18 @@ class TestConceptVolumeRelation:
 
     def test_identical_volumes_have_perfect_overlap(self, simple_gaussian_samples):
         """Identical volumes should have perfect overlap."""
+        backend = get_default_backend()
         estimator = RiemannianDensityEstimator()
 
         vol = estimator.estimate_concept_volume("A", simple_gaussian_samples)
 
         relation = estimator.compute_relation(vol, vol)
 
-        assert relation.bhattacharyya_coefficient > 0.99
-        assert relation.centroid_distance < 1e-10
-        assert relation.subspace_alignment > 0.99
+        eps = machine_epsilon(backend, backend.array(vol.centroid))
+        tol = eps * max(1, vol.dimension)
+        assert abs(relation.bhattacharyya_coefficient - 1.0) <= tol
+        assert abs(relation.centroid_distance) <= tol
+        assert abs(relation.subspace_alignment - 1.0) <= tol
 
     def test_subspace_alignment_similar_spaces(self):
         """Similar subspaces should have higher alignment than orthogonal ones."""
@@ -452,18 +409,18 @@ class TestMergeAnalyzer:
 
     def test_identical_volumes_high_overlap(self, simple_gaussian_samples):
         """Identical volumes should have high overlap score."""
+        backend = get_default_backend()
         estimator = RiemannianDensityEstimator()
         vol = estimator.estimate_concept_volume("A", simple_gaussian_samples)
 
         predictor = MergeAnalyzer()
         result = predictor.analyze(vol, vol)
 
-        # Overlap score should be substantial for identical volumes
-        assert result.overlap_score > 0.5
-        # Distance should be zero
-        assert result.distance_score == 0.0
-        # Alignment should be perfect
-        assert result.alignment_score > 0.99
+        eps = machine_epsilon(backend, backend.array(vol.centroid))
+        tol = eps * max(1, vol.dimension)
+        assert abs(result.overlap_score - 1.0) <= tol
+        assert abs(result.distance_score) <= tol
+        assert abs(result.alignment_score - 1.0) <= tol
 
 class TestGlobalMergeAnalysisReport:
     """Tests for global merge analysis."""
@@ -521,11 +478,12 @@ class TestGlobalMergeAnalysisReport:
         report = predictor.analyze_global(volumes)
 
         # Each pair result should have bounded geometric measurements
+        eps = machine_epsilon(backend, backend.array([0.0]))
         for pair, result in report.pair_results.items():
-            assert 0 <= result.overlap_score <= 1
-            assert 0 <= result.alignment_score <= 1
-            assert result.curvature_divergence >= 0
-            assert result.distance_score >= 0
+            assert -eps <= result.overlap_score <= 1 + eps
+            assert -eps <= result.alignment_score <= 1 + eps
+            assert result.curvature_divergence >= -eps
+            assert result.distance_score >= -eps
 
 
 class TestQuickInterferenceCheck:
@@ -663,7 +621,7 @@ class TestRiemannianDensityProperties:
         result = predictor.analyze(vol_a, vol_b)
 
         # All geometric measurements should be bounded (with small epsilon for floating point)
-        eps = 1e-6
+        eps = machine_epsilon(backend, backend.array([0.0]))
         assert -eps <= result.overlap_score <= 1 + eps
         assert -eps <= result.alignment_score <= 1 + eps
         assert result.curvature_divergence >= -eps

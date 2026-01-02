@@ -17,7 +17,7 @@
 
 """End-to-end merge pipeline service.
 
-Orchestrates: Pre-merge analysis → Execute merge → Post-merge validation → Verification
+Orchestrates: Pre-merge analysis → Execute merge → Post-merge validation
 
 All stages return raw geometric measurements. No interpretation.
 """
@@ -26,9 +26,8 @@ from __future__ import annotations
 
 import logging
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -58,9 +57,6 @@ class PreMergeAnalysis:
     mean_curvature_divergence: float
     mean_distance: float
 
-    # Layer predictions (for later verification)
-    layer_predictions: dict[int, dict[str, Any]] = field(default_factory=dict)
-
 
 @dataclass(frozen=True)
 class PostMergeValidation:
@@ -73,7 +69,6 @@ class PostMergeValidation:
     timestamp: str
 
     # Geometry from merge result
-    mean_confidence: float
     geometry_metrics: dict[str, Any]
 
     # Transplant details
@@ -116,20 +111,13 @@ class MergePipelineService:
     1. Pre-merge analysis: Interference prediction, entropy profiling
     2. Execute merge: Unified geometric merge
     3. Post-merge validation: Extract geometry metrics
-    4. Verification: Compare predictions to actuals (if enabled)
     """
 
     def __init__(
         self,
-        verification_registry_path: str | Path | None = None,
     ):
         """Initialize the pipeline service.
-
-        Args:
-            verification_registry_path: Path to store prediction/verification history.
-                If None, uses in-memory only.
         """
-        self.verification_registry_path = verification_registry_path
 
     def run(
         self,
@@ -405,7 +393,6 @@ class MergePipelineService:
         return PostMergeValidation(
             merged_model=output_dir,
             timestamp=datetime.utcnow().isoformat(),
-            mean_confidence=merge_result.mean_confidence,
             geometry_metrics=geometry_metrics,
             layers_transplanted=transplant_metrics.get("layers_transplanted", 0),
             weights_transplanted=transplant_metrics.get("weights_transplanted", 0),
@@ -419,7 +406,7 @@ class MergePipelineService:
             "output_path": merge_result.output_path,
             "layer_count": merge_result.layer_count,
             "weight_count": merge_result.weight_count,
-            "mean_confidence": merge_result.mean_confidence,
+            "mean_preserved_fraction": merge_result.mean_preserved_fraction,
             "mean_procrustes_error": merge_result.mean_procrustes_error,
             "geometry_metrics": merge_result.geometry_metrics,
             "transplant_metrics": merge_result.transplant_metrics,

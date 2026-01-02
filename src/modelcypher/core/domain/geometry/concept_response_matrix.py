@@ -417,7 +417,7 @@ class ConceptResponseMatrix:
 
         source_distance_sum = 0.0
         target_distance_sum = 0.0
-        target_weights: dict[int, float] = {}
+        target_alignment: dict[int, float] = {}
         epsilon = division_epsilon(backend, reference)
 
         for layer, (source_matrix, target_matrix) in sample_matrices.items():
@@ -431,12 +431,12 @@ class ConceptResponseMatrix:
             inv_target = max_distance - target_distance
             denom = inv_source + inv_target
             weight = inv_target / denom if denom > epsilon else 0.5
-            target_weights[layer] = float(max(0.0, min(1.0, weight)))
+            target_alignment[layer] = float(max(0.0, min(1.0, weight)))
 
-        sampled_layers = sorted(target_weights.keys())
-        full_weights = _interpolate_layer_weights(
+        sampled_layers = sorted(target_alignment.keys())
+        full_alignment = _interpolate_layer_alignment(
             sample_layers=sampled_layers,
-            sample_weights=target_weights,
+            sample_alignment=target_alignment,
             layer_count=layer_count,
         )
 
@@ -445,7 +445,7 @@ class ConceptResponseMatrix:
             sample_layer_count=len(sample_matrices),
             mean_source_distance=source_distance_sum / sampled,
             mean_target_distance=target_distance_sum / sampled,
-            target_weight_by_layer=full_weights,
+            target_alignment_by_layer=full_alignment,
         )
 
     def save(self, path: str) -> None:
@@ -655,7 +655,7 @@ class ConsistencyProfile:
     sample_layer_count: int
     mean_source_distance: float
     mean_target_distance: float
-    target_weight_by_layer: dict[int, float]
+    target_alignment_by_layer: dict[int, float]
 
 
 def _mean_pool_state(state: Any, backend: Any) -> "Array":
@@ -710,9 +710,9 @@ def _sample_layer_indices(layer_count: int, sample_count: int) -> list[int]:
     return unique
 
 
-def _interpolate_layer_weights(
+def _interpolate_layer_alignment(
     sample_layers: list[int],
-    sample_weights: dict[int, float],
+    sample_alignment: dict[int, float],
     layer_count: int,
 ) -> dict[int, float]:
     if layer_count <= 0 or not sample_layers:
@@ -722,22 +722,22 @@ def _interpolate_layer_weights(
     weights: dict[int, float] = {}
 
     first_layer = sorted_layers[0]
-    first_weight = sample_weights.get(first_layer, 0.5)
+    first_weight = sample_alignment.get(first_layer, 0.5)
     for layer in range(0, first_layer):
         weights[layer] = float(first_weight)
 
     for idx in range(len(sorted_layers) - 1):
         left = sorted_layers[idx]
         right = sorted_layers[idx + 1]
-        left_weight = sample_weights.get(left, 0.5)
-        right_weight = sample_weights.get(right, left_weight)
+        left_weight = sample_alignment.get(left, 0.5)
+        right_weight = sample_alignment.get(right, left_weight)
         span = max(1, right - left)
         for layer in range(left, right + 1):
             t = float(layer - left) / float(span)
             weights[layer] = float(left_weight + (right_weight - left_weight) * t)
 
     last_layer = sorted_layers[-1]
-    last_weight = sample_weights.get(last_layer, 0.5)
+    last_weight = sample_alignment.get(last_layer, 0.5)
     if last_layer < layer_count - 1:
         for layer in range(last_layer + 1, layer_count):
             weights[layer] = float(last_weight)

@@ -652,15 +652,15 @@ class TestConceptResponseMatrixTransition:
 class TestConceptResponseMatrixConsistency:
     """Tests for compute_consistency_profile."""
 
-    def test_consistency_profile_weights_centered(self) -> None:
-        """Weights should be centered when comparing CRM to itself."""
+    def test_consistency_profile_alignment_centered(self) -> None:
+        """Alignment values should be centered when comparing CRM to itself."""
         crm = _build_crm4()
         profile = crm.compute_consistency_profile(crm, layer_sample_count=2)
         assert profile is not None
         assert profile.anchor_count == 4
         assert profile.sample_layer_count == 2
-        for weight in profile.target_weight_by_layer.values():
-            assert abs(weight - 0.5) < 1e-6
+        for alignment in profile.target_alignment_by_layer.values():
+            assert abs(alignment - 0.5) < 1e-6
 
     def test_consistency_profile_too_few_anchors(self) -> None:
         """Less than 4 common anchors should return None."""
@@ -668,13 +668,13 @@ class TestConceptResponseMatrixConsistency:
         profile = crm.compute_consistency_profile(crm)
         assert profile is None
 
-    def test_consistency_profile_weights_bounded(self) -> None:
-        """Weights should be in [0, 1]."""
+    def test_consistency_profile_alignment_bounded(self) -> None:
+        """Alignment values should be in [0, 1]."""
         crm = _build_crm4()
         profile = crm.compute_consistency_profile(crm, layer_sample_count=2)
         assert profile is not None
-        for weight in profile.target_weight_by_layer.values():
-            assert 0.0 <= weight <= 1.0
+        for alignment in profile.target_alignment_by_layer.values():
+            assert 0.0 <= alignment <= 1.0
 
     def test_consistency_profile_distances_non_negative(self) -> None:
         """Distances should be non-negative."""

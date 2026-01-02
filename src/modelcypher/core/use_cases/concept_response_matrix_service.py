@@ -41,7 +41,10 @@ from modelcypher.core.domain.geometry.concept_response_matrix import (
     AnchorMetadata,
     ConceptResponseMatrix,
 )
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    find_magnitude_gap_threshold,
+)
 from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
     Configuration as LayerMatcherConfiguration,
 )
@@ -121,8 +124,8 @@ class CRMSharedSubspaceSummary:
 class KnowledgeDeltaMaskConfig:
     """Configuration for knowledge delta mask extraction."""
 
-    target_sparse_percentile: float = 0.25
-    source_dense_percentile: float = 0.75
+    target_sparse_percentile: float | None = None
+    source_dense_percentile: float | None = None
     density_ratio_percentile: float | None = None
     min_anchor_count: int = 1
     epsilon: float | None = None
@@ -152,7 +155,7 @@ class KnowledgeDeltaMaskSummary:
     source_dense_threshold: float
     density_ratio_threshold: float
     graft_layers: list[int]
-    alpha_by_layer: dict[int, float]
+    graft_mask_by_layer: dict[int, float]
     skipped_layers: list[int]
     layer_summaries: list[KnowledgeDeltaLayerSummary]
     config: KnowledgeDeltaMaskConfig
@@ -418,22 +421,20 @@ class ConceptResponseMatrixService:
         """Build a knowledge delta mask from two CRMs.
 
         The mask highlights layers where the source has higher activation
-        density while the target appears sparse, based on distribution-derived
-        percentiles of activation norms.
+        density while the target appears sparse, using distribution-derived
+        thresholds for activation norms.
         """
         source = ConceptResponseMatrix.load(str(expand_path(source_path)))
         target = ConceptResponseMatrix.load(str(expand_path(target_path)))
         cfg = config or KnowledgeDeltaMaskConfig()
         backend = get_default_backend()
 
-        _validate_percentile("target_sparse_percentile", cfg.target_sparse_percentile)
-        _validate_percentile("source_dense_percentile", cfg.source_dense_percentile)
-        density_percentile = (
-            cfg.density_ratio_percentile
-            if cfg.density_ratio_percentile is not None
-            else cfg.source_dense_percentile
-        )
-        _validate_percentile("density_ratio_percentile", density_percentile)
+        if cfg.target_sparse_percentile is not None:
+            _validate_percentile("target_sparse_percentile", cfg.target_sparse_percentile)
+        if cfg.source_dense_percentile is not None:
+            _validate_percentile("source_dense_percentile", cfg.source_dense_percentile)
+        if cfg.density_ratio_percentile is not None:
+            _validate_percentile("density_ratio_percentile", cfg.density_ratio_percentile)
 
         common = source.common_anchor_ids(target)
         if not common:
@@ -497,12 +498,18 @@ class ConceptResponseMatrixService:
         source_means = [float(entry["source_mean_norm"]) for entry in raw_layers]
         density_ratios = [float(entry["density_ratio"]) for entry in raw_layers]
 
-        target_sparse_threshold = _percentile(target_means, cfg.target_sparse_percentile)
-        source_dense_threshold = _percentile(source_means, cfg.source_dense_percentile)
-        density_ratio_threshold = _percentile(density_ratios, density_percentile)
+        def resolve_threshold(values: list[float], percentile: float | None) -> float:
+            if percentile is not None:
+                return _percentile(values, percentile)
+            sorted_vals = sorted(values)
+            return find_magnitude_gap_threshold(sorted_vals, eps=math.ulp(1.0))
+
+        target_sparse_threshold = resolve_threshold(target_means, cfg.target_sparse_percentile)
+        source_dense_threshold = resolve_threshold(source_means, cfg.source_dense_percentile)
+        density_ratio_threshold = resolve_threshold(density_ratios, cfg.density_ratio_percentile)
 
         graft_layers: list[int] = []
-        alpha_by_layer = {layer: 0.0 for layer in range(layer_count)}
+        graft_mask_by_layer = {layer: 0.0 for layer in range(layer_count)}
         layer_summaries: list[KnowledgeDeltaLayerSummary] = []
 
         for entry in raw_layers:
@@ -520,7 +527,7 @@ class ConceptResponseMatrixService:
             graftable = bool(is_sparse and is_dense and ratio_ok and delta_ok)
             if graftable:
                 graft_layers.append(layer)
-                alpha_by_layer[layer] = 1.0
+                graft_mask_by_layer[layer] = 1.0
 
             layer_summaries.append(
                 KnowledgeDeltaLayerSummary(
@@ -546,7 +553,7 @@ class ConceptResponseMatrixService:
             source_dense_threshold=source_dense_threshold,
             density_ratio_threshold=density_ratio_threshold,
             graft_layers=graft_layers,
-            alpha_by_layer=alpha_by_layer,
+            graft_mask_by_layer=graft_mask_by_layer,
             skipped_layers=skipped_layers,
             layer_summaries=layer_summaries,
             config=cfg,

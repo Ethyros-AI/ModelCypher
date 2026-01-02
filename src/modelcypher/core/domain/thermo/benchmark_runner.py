@@ -351,13 +351,13 @@ class ThermoBenchmarkRunner:
         }
 
     def generate_report(self, result: BenchmarkResult) -> str:
-        """Generate markdown report with tables and recommendations.
+        """Generate markdown report with measurement tables.
 
         Args:
             result: Benchmark result.
 
         Returns:
-            Markdown formatted report.
+            Markdown formatted report with raw measurements.
         """
         lines = [
             "# Thermodynamic Benchmark Report",

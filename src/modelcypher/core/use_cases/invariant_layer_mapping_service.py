@@ -178,7 +178,7 @@ class InvariantLayerMappingService:
             config: Collapse risk configuration
 
         Returns:
-            CollapseRiskResult with risk assessment and recommendations
+            CollapseRiskResult with raw collapse measurements
         """
         # Load fingerprints
         fingerprints = self._load_fingerprints(config.model_path)

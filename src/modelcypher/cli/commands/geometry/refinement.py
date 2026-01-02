@@ -63,8 +63,7 @@ def geometry_refinement_analyze(
     Combines DARE sparsity, DoRA directional drift, and transition CKA
     to produce per-layer refinement scores and merge metrics.
 
-    Thresholds and blend coefficients are derived from the geometry -
-    no configuration needed.
+    Reports geometry-derived measurements only.
 
     Example:
         mc geometry refinement analyze ./base-model ./finetuned-model
@@ -182,7 +181,7 @@ def geometry_refinement_analyze(
                 for idx, score in sorted_scores[:5]:
                     lines.append(
                         f"  Layer {idx}: score={score.composite_score:.3f}, "
-                        f"alpha={score.recommended_alpha:.3f}"
+                        f"components={score.component_count}"
                     )
 
             write_output("\n".join(lines), context.output_format, context.pretty)
@@ -216,9 +215,8 @@ def geometry_refinement_summary(
             "targetModel": data.get("targetModel"),
             "meanCompositeScore": data.get("meanCompositeScore"),
             "maxCompositeScore": data.get("maxCompositeScore"),
-            "layersAboveHardSwap": data.get("layersAboveHardSwap"),
-            "hardSwapLayers": data.get("hardSwapLayers"),
-            "alphaByLayer": data.get("alphaByLayer"),
+            "scoredLayerCount": data.get("scoredLayerCount"),
+            "normalization": data.get("normalization"),
         }
 
         if context.output_format == "text":
@@ -228,12 +226,8 @@ def geometry_refinement_summary(
                 f"Target: {data.get('targetModel')}",
                 f"Mean Score: {data.get('meanCompositeScore', 0):.3f}",
                 f"Max Score: {data.get('maxCompositeScore', 0):.3f}",
-                f"Hard Swap Candidates: {data.get('layersAboveHardSwap', 0)}",
+                f"Scored Layers: {data.get('scoredLayerCount', 0)}",
             ]
-
-            hard_swap = data.get("hardSwapLayers", [])
-            if hard_swap:
-                lines.append(f"Hard Swap Layers: {hard_swap}")
 
             write_output("\n".join(lines), context.output_format, context.pretty)
             return
