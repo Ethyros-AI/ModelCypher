@@ -297,7 +297,7 @@ class TestComputeLayerGuidance:
         src = LayerCurvature(layer_idx=0, intrinsic_dimension=0.0, ollivier_ricci_mean=-0.1)
         tgt = LayerCurvature(layer_idx=0, intrinsic_dimension=64.0, ollivier_ricci_mean=-0.1)
         guidance = _compute_layer_guidance(src, tgt, layer_idx=0)
-        assert guidance.dimension_scale == 64.0  # 64/1
+        assert guidance.dimension_scale == 1.0
 
     def test_same_sign_curvature_lower_correction(self):
         """Same sign curvatures have lower correction than opposite signs."""

@@ -25,6 +25,8 @@ NO NUMPY. All data generation uses Backend protocol.
 
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -131,8 +133,10 @@ class TestGroundingRotation:
         estimator = GroundingRotationEstimator(backend)
         rotation = estimator.estimate_rotation(sample_anchors, sample_anchors)
 
-        assert rotation.angle_degrees == pytest.approx(0.0, abs=1.0)
-        assert rotation.alignment_score >= 0.99
+        eps = division_epsilon(backend, backend.array([0.0]))
+        angle_tol = math.degrees(math.acos(max(-1.0, min(1.0, 1.0 - eps))))
+        assert rotation.angle_degrees == pytest.approx(0.0, abs=angle_tol)
+        assert rotation.alignment_score >= 1.0 - eps
         # alignment_score >= 0.99 means effectively aligned
 
     def test_rotated_anchors_detect_rotation(self, backend):

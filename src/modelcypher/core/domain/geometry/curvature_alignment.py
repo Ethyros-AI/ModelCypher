@@ -120,10 +120,10 @@ def compute_alignment_guidance(
             # No corresponding layer - use defaults
             guidance_list.append(AlignmentGuidance(
                 layer_idx=src_idx,
-                alignment_effort=1.0,
+                alignment_effort=0.0,
                 dimension_scale=1.0,
                 curvature_correction=0.0,
-                alignment_weight=0.5,
+                alignment_weight=1.0,
             ))
             continue
 
@@ -160,9 +160,14 @@ def _compute_layer_guidance(
     )
 
     # 1. Intrinsic dimension scaling
-    src_dim = src.intrinsic_dimension if src.intrinsic_dimension > 0 else 1.0
-    tgt_dim = tgt.intrinsic_dimension if tgt.intrinsic_dimension > 0 else 1.0
-    dimension_scale = tgt_dim / src_dim
+    src_dim = float(src.intrinsic_dimension)
+    tgt_dim = float(tgt.intrinsic_dimension)
+    if src_dim <= 0.0 or tgt_dim <= 0.0:
+        dimension_scale = 1.0
+        dim_effort = 0.0
+    else:
+        dimension_scale = tgt_dim / src_dim
+        dim_effort = abs(tgt_dim - src_dim) / max(src_dim, tgt_dim)
 
     # 2. Curvature correction
     # If curvatures have same sign, less correction needed
@@ -170,27 +175,12 @@ def _compute_layer_guidance(
     src_ricci = src.ollivier_ricci_mean
     tgt_ricci = tgt.ollivier_ricci_mean
 
-    if src_ricci != 0 and tgt_ricci != 0:
-        # Same sign = similar geometry, easier alignment
-        same_sign = (src_ricci > 0) == (tgt_ricci > 0)
-        curvature_diff = abs(src_ricci - tgt_ricci)
-
-        if same_sign:
-            # Curvature correction based on magnitude difference
-            curvature_correction = curvature_diff / (abs(src_ricci) + abs(tgt_ricci) + eps)
-        else:
-            # Opposite signs = fundamentally different local geometry
-            # Needs curvature flow to reconcile
-            curvature_correction = 1.0 + curvature_diff
-    else:
-        # Both curvatures zero = unmeasured. Use 1.0 (neutral, no correction)
-        # since we have no geometric information to derive a correction from.
-        curvature_correction = 1.0
+    curvature_diff = abs(src_ricci - tgt_ricci)
+    curvature_correction = curvature_diff / (abs(src_ricci) + abs(tgt_ricci) + eps)
 
     # 3. Alignment effort (0-1)
     # Higher effort = more transformation needed
-    dim_effort = min(1.0, abs(math.log(dimension_scale)) / math.log(2))  # Double/half = effort 1.0
-    curv_effort = min(1.0, curvature_correction)
+    curv_effort = curvature_correction
 
     # Alignment effort: geometric mean of dimension and curvature effort
     # (no arbitrary weights - both contribute equally)
@@ -198,7 +188,7 @@ def _compute_layer_guidance(
 
     # 4. Alignment weight = similarity (no artificial floor)
     # Layers with similar curvature profiles are more reliable
-    alignment_weight = 1.0 - min(1.0, curvature_correction)
+    alignment_weight = 1.0 - curvature_correction
 
     return AlignmentGuidance(
         layer_idx=layer_idx,
