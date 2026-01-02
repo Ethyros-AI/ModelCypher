@@ -46,7 +46,7 @@ from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
 DEFAULT_TIMEOUT_SECONDS = 15
 
@@ -81,7 +81,7 @@ def _extract_structured(result: types.CallToolResult) -> dict:
 
 def _eps(*values: float) -> float:
     backend = get_default_backend()
-    return division_epsilon(backend, backend.array(list(values) or [1.0]))
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 async def _await_with_timeout(coro, timeout: int = DEFAULT_TIMEOUT_SECONDS):

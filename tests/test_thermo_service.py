@@ -26,11 +26,18 @@ from pathlib import Path
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.use_cases.thermo_service import (
     ThermoDetectResult,
     ThermoMeasureResult,
     ThermoService,
 )
+
+
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 # **Feature: cli-mcp-parity, Property 2: Thermo detect returns raw measurements**
@@ -153,4 +160,5 @@ def test_thermo_detect_returns_consistent_delta():
     # delta_h should be intensity_entropy - baseline_entropy
     # (within floating point tolerance)
     expected_delta = result.intensity_entropy - result.baseline_entropy
-    assert abs(result.delta_h - expected_delta) < 1e-6
+    eps = _eps(result.delta_h, expected_delta)
+    assert abs(result.delta_h - expected_delta) <= eps

@@ -30,6 +30,7 @@ import math
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.geometry.topological_fingerprint import (
     BackendTopologicalFingerprint,
     PersistenceDiagram,
@@ -37,6 +38,11 @@ from modelcypher.core.domain.geometry.topological_fingerprint import (
     TopologicalFingerprint,
     get_topological_fingerprint,
 )
+
+
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 class TestComputeEdgeCases:
@@ -133,10 +139,15 @@ class TestCompareFingerprints:
         fingerprint = TopologicalFingerprint.compute(points, max_dimension=1)
         comparison = TopologicalFingerprint.compare(fingerprint, fingerprint)
 
-        assert comparison.bottleneck_distance == pytest.approx(0.0, abs=1e-6)
-        assert comparison.wasserstein_distance == pytest.approx(0.0, abs=1e-6)
+        eps = _eps(
+            comparison.bottleneck_distance,
+            comparison.wasserstein_distance,
+            comparison.similarity_score,
+        )
+        assert abs(comparison.bottleneck_distance - 0.0) <= eps
+        assert abs(comparison.wasserstein_distance - 0.0) <= eps
         assert comparison.betti_difference == 0
-        assert comparison.similarity_score == pytest.approx(1.0, abs=1e-6)
+        assert abs(comparison.similarity_score - 1.0) <= eps
         assert comparison.betti_numbers_match is True
 
     def test_different_topologies_positive_distance(self) -> None:
@@ -169,8 +180,14 @@ class TestCompareFingerprints:
         comp_ab = TopologicalFingerprint.compare(fp_a, fp_b)
         comp_ba = TopologicalFingerprint.compare(fp_b, fp_a)
 
-        assert comp_ab.bottleneck_distance == pytest.approx(comp_ba.bottleneck_distance, abs=1e-6)
-        assert comp_ab.wasserstein_distance == pytest.approx(comp_ba.wasserstein_distance, abs=1e-6)
+        eps = _eps(
+            comp_ab.bottleneck_distance,
+            comp_ba.bottleneck_distance,
+            comp_ab.wasserstein_distance,
+            comp_ba.wasserstein_distance,
+        )
+        assert abs(comp_ab.bottleneck_distance - comp_ba.bottleneck_distance) <= eps
+        assert abs(comp_ab.wasserstein_distance - comp_ba.wasserstein_distance) <= eps
         assert comp_ab.betti_difference == comp_ba.betti_difference
 
 
@@ -180,7 +197,8 @@ class TestPersistencePoint:
     def test_persistence_is_death_minus_birth(self) -> None:
         """Persistence should be death - birth."""
         point = PersistencePoint(birth=0.5, death=1.5, dimension=0)
-        assert point.persistence == pytest.approx(1.0, abs=1e-9)
+        eps = _eps(point.persistence, 1.0)
+        assert abs(point.persistence - 1.0) <= eps
 
     def test_persistence_non_negative(self) -> None:
         """Persistence should be non-negative when death >= birth."""
@@ -228,7 +246,8 @@ class TestComparisonMetrics:
         comparison = TopologicalFingerprint.compare(fingerprint, fingerprint)
 
         # Identical fingerprints have zero distance and matching Betti numbers
-        assert comparison.bottleneck_distance < 1e-6
+        eps = _eps(comparison.bottleneck_distance)
+        assert comparison.bottleneck_distance <= eps
         assert comparison.betti_difference == 0
         assert comparison.betti_numbers_match is True
 
@@ -291,7 +310,8 @@ class TestPairwiseDistances:
         n = len(points)
         for i in range(n):
             for j in range(n):
-                assert distances[i][j] == pytest.approx(distances[j][i])
+                eps = _eps(distances[i][j], distances[j][i])
+                assert abs(distances[i][j] - distances[j][i]) <= eps
 
     def test_diagonal_is_zero(self) -> None:
         """Distance from point to itself should be 0."""
@@ -299,7 +319,8 @@ class TestPairwiseDistances:
         distances = TopologicalFingerprint._compute_pairwise_distances(points)
 
         for i in range(len(points)):
-            assert distances[i][i] == pytest.approx(0.0)
+            eps = _eps(distances[i][i], 0.0)
+            assert abs(distances[i][i] - 0.0) <= eps
 
     def test_euclidean_distance_correct(self) -> None:
         """Should compute correct Euclidean distances."""
@@ -307,8 +328,9 @@ class TestPairwiseDistances:
         distances = TopologicalFingerprint._compute_pairwise_distances(points)
 
         # Distance should be 5 (3-4-5 triangle)
-        assert distances[0][1] == pytest.approx(5.0)
-        assert distances[1][0] == pytest.approx(5.0)
+        eps = _eps(distances[0][1], distances[1][0], 5.0)
+        assert abs(distances[0][1] - 5.0) <= eps
+        assert abs(distances[1][0] - 5.0) <= eps
 
     def test_empty_returns_empty(self) -> None:
         """Empty input should return empty matrix."""
@@ -328,7 +350,8 @@ class TestPersistenceEntropy:
     def test_entropy_zero_for_empty(self) -> None:
         """Entropy should be 0 for empty values."""
         entropy = TopologicalFingerprint._compute_entropy([])
-        assert entropy == 0.0
+        eps = _eps(entropy, 0.0)
+        assert abs(entropy - 0.0) <= eps
 
     def test_entropy_max_for_uniform(self) -> None:
         """Entropy should be maximal for uniform distribution."""
@@ -385,7 +408,8 @@ class TestMathematicalInvariants:
 
             result = TopologicalFingerprint.compare(fp, fp)
 
-            assert result.bottleneck_distance == pytest.approx(0.0)
+            eps = _eps(result.bottleneck_distance, 0.0)
+            assert abs(result.bottleneck_distance - 0.0) <= eps
             assert result.betti_difference == 0
 
     def test_distance_matrix_is_square(self) -> None:
@@ -423,12 +447,10 @@ class TestBackendTopologicalFingerprint:
         # Summary should match
         assert pure.summary.component_count == gpu.summary.component_count
         assert pure.summary.cycle_count == gpu.summary.cycle_count
-        assert pure.summary.average_persistence == pytest.approx(
-            gpu.summary.average_persistence, abs=1e-6
-        )
-        assert pure.summary.max_persistence == pytest.approx(
-            gpu.summary.max_persistence, abs=1e-6
-        )
+        eps = _eps(pure.summary.average_persistence, gpu.summary.average_persistence)
+        assert abs(pure.summary.average_persistence - gpu.summary.average_persistence) <= eps
+        eps = _eps(pure.summary.max_persistence, gpu.summary.max_persistence)
+        assert abs(pure.summary.max_persistence - gpu.summary.max_persistence) <= eps
 
     def test_compare_matches_pure_python(self, backend_fp) -> None:
         """Backend compare should match pure Python results."""
@@ -441,12 +463,10 @@ class TestBackendTopologicalFingerprint:
         pure = TopologicalFingerprint.compare(fp_a, fp_b)
         gpu = backend_fp.compare(fp_a, fp_b)
 
-        assert pure.bottleneck_distance == pytest.approx(
-            gpu.bottleneck_distance, abs=1e-6
-        )
-        assert pure.wasserstein_distance == pytest.approx(
-            gpu.wasserstein_distance, abs=1e-6
-        )
+        eps = _eps(pure.bottleneck_distance, gpu.bottleneck_distance)
+        assert abs(pure.bottleneck_distance - gpu.bottleneck_distance) <= eps
+        eps = _eps(pure.wasserstein_distance, gpu.wasserstein_distance)
+        assert abs(pure.wasserstein_distance - gpu.wasserstein_distance) <= eps
         assert pure.betti_difference == gpu.betti_difference
 
     def test_bottleneck_distance_matches(self, backend_fp) -> None:
@@ -461,7 +481,8 @@ class TestBackendTopologicalFingerprint:
         pure = TopologicalFingerprint._bottleneck_distance(diag, diag)
         gpu = backend_fp._bottleneck_distance(diag, diag)
 
-        assert pure == pytest.approx(gpu, abs=1e-6)
+        eps = _eps(pure, gpu)
+        assert abs(pure - gpu) <= eps
 
     def test_wasserstein_distance_matches(self, backend_fp) -> None:
         """Backend Wasserstein distance should match pure Python."""
@@ -474,7 +495,8 @@ class TestBackendTopologicalFingerprint:
         pure = TopologicalFingerprint._wasserstein_distance(diag, diag)
         gpu = backend_fp._wasserstein_distance(diag, diag)
 
-        assert pure == pytest.approx(gpu, abs=1e-6)
+        eps = _eps(pure, gpu)
+        assert abs(pure - gpu) <= eps
 
     def test_entropy_matches(self, backend_fp) -> None:
         """Backend entropy computation should match pure Python."""
@@ -483,7 +505,8 @@ class TestBackendTopologicalFingerprint:
         pure = TopologicalFingerprint._compute_entropy(values)
         gpu = backend_fp._compute_entropy(values)
 
-        assert pure == pytest.approx(gpu, abs=1e-6)
+        eps = _eps(pure, gpu)
+        assert abs(pure - gpu) <= eps
 
     def test_empty_input_matches(self, backend_fp) -> None:
         """Empty input should work identically."""

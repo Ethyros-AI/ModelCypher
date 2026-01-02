@@ -44,7 +44,7 @@ from modelcypher.core.domain.geometry.manifold_curvature import (
     SectionalCurvatureEstimator,
     compute_curvature_divergence,
 )
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
 # =============================================================================
 # Test Fixtures
@@ -91,7 +91,7 @@ def make_spherical_samples(n: int = 60, d: int = 6, seed: int = 42):
 
 
 def _eps(backend) -> float:
-    return division_epsilon(backend, backend.array([1.0]))
+    return machine_epsilon(backend, backend.array([1.0]))
 
 
 _FAST_SINKHORN_ITERATIONS = 10
@@ -171,7 +171,9 @@ class TestCurvatureAnisotropy:
     def test_isotropic_has_zero_anisotropy(self) -> None:
         """Isotropic curvature (min = max) should have 0 anisotropy."""
         lc = make_local_curvature(mean=1.0, min_val=1.0, max_val=1.0)
-        assert lc.curvature_anisotropy == 0.0
+        backend = get_default_backend()
+        eps = machine_epsilon(backend, backend.array([lc.curvature_anisotropy, 0.0]))
+        assert abs(lc.curvature_anisotropy - 0.0) <= eps
 
     def test_anisotropy_bounded_zero_one(self) -> None:
         """Anisotropy should be in [0, 1] for all valid inputs."""
@@ -181,14 +183,17 @@ class TestCurvatureAnisotropy:
                 min_val=min_val,
                 max_val=max_val,
             )
-            assert 0.0 <= lc.curvature_anisotropy <= 1.0
+            backend = get_default_backend()
+            eps = _eps(backend)
+            assert lc.curvature_anisotropy >= -eps
+            assert lc.curvature_anisotropy <= 1.0 + eps
 
     def test_high_anisotropy_for_different_signs(self) -> None:
         """Large difference between min and max should give high anisotropy."""
         lc = make_local_curvature(mean=0.0, min_val=-1.0, max_val=1.0)
         # (max - min) / (|max| + |min|) = 2 / 2 = 1
         backend = get_default_backend()
-        eps = division_epsilon(backend, backend.array([1.0]))
+        eps = machine_epsilon(backend, backend.array([1.0]))
         assert abs(lc.curvature_anisotropy - 1.0) <= eps
 
 
@@ -212,8 +217,13 @@ class TestSectionalCurvatureEstimator:
         curvature = estimator.estimate_local_curvature(point, neighbors)
 
         assert curvature.sign == CurvatureSign.FLAT
-        assert curvature.mean_sectional == 0.0
-        assert curvature.variance_sectional == 0.0
+        backend = get_default_backend()
+        eps = machine_epsilon(
+            backend,
+            backend.array([curvature.mean_sectional, curvature.variance_sectional, 0.0]),
+        )
+        assert abs(curvature.mean_sectional - 0.0) <= eps
+        assert abs(curvature.variance_sectional - 0.0) <= eps
 
     def test_curvature_variance_non_negative(self) -> None:
         """Curvature variance should always be >= 0."""
@@ -664,7 +674,9 @@ class TestMathematicalInvariants:
             principal_curvature_proxy=None,
         )
 
-        assert 0.0 <= lc.curvature_anisotropy <= 1.0
+        eps = _eps(backend)
+        assert lc.curvature_anisotropy >= -eps
+        assert lc.curvature_anisotropy <= 1.0 + eps
 
     def test_variance_non_negative_for_all_samples(self) -> None:
         """Variance should be non-negative for any sample set."""

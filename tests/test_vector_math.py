@@ -28,6 +28,8 @@ import math
 
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.geometry.vector_math import (
     BackendVectorMath,
     SparseVectorMath,
@@ -36,6 +38,11 @@ from modelcypher.core.domain.geometry.vector_math import (
     _to_list,
     get_vector_math,
 )
+
+
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 class TestHelperFunctions:
@@ -82,14 +89,14 @@ class TestVectorMathDot:
         b = [4.0, 5.0, 6.0]
         result = VectorMath.dot(a, b)
         # 1*4 + 2*5 + 3*6 = 4 + 10 + 18 = 32
-        assert result == pytest.approx(32.0)
+        assert abs(result - 32.0) <= _eps(result, 32.0)
 
     def test_dot_orthogonal(self):
         """Dot product of orthogonal vectors is zero."""
         a = [1.0, 0.0]
         b = [0.0, 1.0]
         result = VectorMath.dot(a, b)
-        assert result == pytest.approx(0.0)
+        assert abs(result - 0.0) <= _eps(result, 0.0)
 
     def test_dot_empty_vectors(self):
         """Dot product of empty vectors raises ValueError."""
@@ -109,7 +116,7 @@ class TestVectorMathDot:
             a = mx.array([1.0, 2.0, 3.0])
             b = mx.array([4.0, 5.0, 6.0])
             result = VectorMath.dot(a, b)
-            assert result == pytest.approx(32.0)
+            assert abs(result - 32.0) <= _eps(result, 32.0)
         except ImportError:
             pytest.skip("MLX not available")
 
@@ -120,12 +127,14 @@ class TestVectorMathL2Norm:
     def test_l2_norm_unit_vector(self):
         """L2 norm of unit vector is 1."""
         a = [1.0, 0.0, 0.0]
-        assert VectorMath.l2_norm(a) == pytest.approx(1.0)
+        norm = VectorMath.l2_norm(a)
+        assert abs(norm - 1.0) <= _eps(norm, 1.0)
 
     def test_l2_norm_simple(self):
         """L2 norm computation - 3-4-5 triangle."""
         a = [3.0, 4.0]
-        assert VectorMath.l2_norm(a) == pytest.approx(5.0)
+        norm = VectorMath.l2_norm(a)
+        assert abs(norm - 5.0) <= _eps(norm, 5.0)
 
     def test_l2_norm_empty(self):
         """L2 norm of empty vector raises ValueError."""
@@ -134,7 +143,8 @@ class TestVectorMathL2Norm:
 
     def test_l2_norm_zero_vector(self):
         """L2 norm of zero vector returns 0.0."""
-        assert VectorMath.l2_norm([0.0, 0.0, 0.0]) == pytest.approx(0.0)
+        norm = VectorMath.l2_norm([0.0, 0.0, 0.0])
+        assert abs(norm - 0.0) <= _eps(norm, 0.0)
 
     def test_l2_norm_with_mlx_array(self):
         """L2 norm works with MLX arrays."""
@@ -143,7 +153,7 @@ class TestVectorMathL2Norm:
 
             a = mx.array([3.0, 4.0])
             result = VectorMath.l2_norm(a)
-            assert result == pytest.approx(5.0)
+            assert abs(result - 5.0) <= _eps(result, 5.0)
         except ImportError:
             pytest.skip("MLX not available")
 
@@ -156,11 +166,13 @@ class TestVectorMathL2Normalized:
         a = [3.0, 4.0]
         result = VectorMath.l2_normalized(a)
         # Should be [0.6, 0.8]
-        assert result[0] == pytest.approx(0.6)
-        assert result[1] == pytest.approx(0.8)
+        expected = (3.0 / 5.0, 4.0 / 5.0)
+        eps = _eps(result[0], result[1], *expected)
+        assert abs(result[0] - expected[0]) <= eps
+        assert abs(result[1] - expected[1]) <= eps
         # Norm should be 1
         norm = math.sqrt(sum(x * x for x in result))
-        assert norm == pytest.approx(1.0)
+        assert abs(norm - 1.0) <= _eps(norm, 1.0)
 
     def test_l2_normalized_zero_vector(self):
         """L2 normalizing zero vector returns original."""
@@ -181,21 +193,21 @@ class TestVectorMathCosineSimilarity:
         """Cosine similarity of identical vectors is 1."""
         a = [1.0, 2.0, 3.0]
         result = VectorMath.cosine_similarity(a, a)
-        assert result == pytest.approx(1.0)
+        assert abs(result - 1.0) <= _eps(result, 1.0)
 
     def test_cosine_similarity_opposite(self):
         """Cosine similarity of opposite vectors is -1."""
         a = [1.0, 2.0, 3.0]
         b = [-1.0, -2.0, -3.0]
         result = VectorMath.cosine_similarity(a, b)
-        assert result == pytest.approx(-1.0)
+        assert abs(result - -1.0) <= _eps(result, -1.0)
 
     def test_cosine_similarity_orthogonal(self):
         """Cosine similarity of orthogonal vectors is 0."""
         a = [1.0, 0.0]
         b = [0.0, 1.0]
         result = VectorMath.cosine_similarity(a, b)
-        assert result == pytest.approx(0.0)
+        assert abs(result - 0.0) <= _eps(result, 0.0)
 
     def test_cosine_similarity_empty(self):
         """Cosine similarity of empty vectors raises ValueError."""
@@ -220,7 +232,7 @@ class TestVectorMathCosineSimilarity:
             a = mx.array([1.0, 0.0])
             b = mx.array([1.0, 0.0])
             result = VectorMath.cosine_similarity(a, b)
-            assert result == pytest.approx(1.0)
+            assert abs(result - 1.0) <= _eps(result, 1.0)
         except ImportError:
             pytest.skip("MLX not available")
 
@@ -232,7 +244,7 @@ class TestVectorMathCosineSimilarity:
             a = [1.0, 2.0, 3.0]
             b = mx.array([1.0, 2.0, 3.0])
             result = VectorMath.cosine_similarity(a, b)
-            assert result == pytest.approx(1.0)
+            assert abs(result - 1.0) <= _eps(result, 1.0)
         except ImportError:
             pytest.skip("MLX not available")
 
@@ -244,7 +256,7 @@ class TestSparseVectorMathL2Norm:
         """Basic sparse L2 norm."""
         v = {"a": 3.0, "b": 4.0}
         result = SparseVectorMath.l2_norm(v)
-        assert result == pytest.approx(5.0)
+        assert abs(result - 5.0) <= _eps(result, 5.0)
 
     def test_sparse_l2_norm_empty(self):
         """Sparse L2 norm of empty dict raises ValueError."""
@@ -259,14 +271,14 @@ class TestSparseVectorMathCosineSimilarity:
         """Sparse cosine similarity of identical vectors is 1."""
         v = {"a": 1.0, "b": 2.0}
         result = SparseVectorMath.cosine_similarity(v, v)
-        assert result == pytest.approx(1.0)
+        assert abs(result - 1.0) <= _eps(result, 1.0)
 
     def test_sparse_cosine_orthogonal(self):
         """Sparse cosine similarity of orthogonal vectors is 0."""
         a = {"x": 1.0}
         b = {"y": 1.0}
         result = SparseVectorMath.cosine_similarity(a, b)
-        assert result == pytest.approx(0.0)
+        assert abs(result - 0.0) <= _eps(result, 0.0)
 
     def test_sparse_cosine_partial_overlap(self):
         """Sparse cosine similarity with partial overlap."""
@@ -275,7 +287,7 @@ class TestSparseVectorMathCosineSimilarity:
         # dot = 1*1 = 1, norms = sqrt(2) each
         # cos = 1 / (sqrt(2) * sqrt(2)) = 1/2
         result = SparseVectorMath.cosine_similarity(a, b)
-        assert result == pytest.approx(0.5)
+        assert abs(result - 0.5) <= _eps(result, 0.5)
 
     def test_sparse_cosine_empty(self):
         """Sparse cosine similarity of empty dicts raises ValueError."""
@@ -295,9 +307,11 @@ class TestVectorMathSlerp:
         result = VectorMath.slerp(v0, v1, 0.5)
         # At 45 degrees: [cos(45), sin(45), 0] = [0.7071, 0.7071, 0]
         assert result is not None
-        assert result[0] == pytest.approx(0.7071, rel=0.01)
-        assert result[1] == pytest.approx(0.7071, rel=0.01)
-        assert result[2] == pytest.approx(0.0)
+        expected = math.sqrt(0.5)
+        eps = _eps(result[0], result[1], result[2], expected, 0.0)
+        assert abs(result[0] - expected) <= eps
+        assert abs(result[1] - expected) <= eps
+        assert abs(result[2] - 0.0) <= eps
 
     def test_slerp_t0_returns_v0(self):
         """SLERP at t=0 returns the first vector."""
@@ -323,7 +337,7 @@ class TestVectorMathSlerp:
             result = VectorMath.slerp(v0, v1, t)
             assert result is not None
             norm = VectorMath.l2_norm(result)
-            assert norm == pytest.approx(1.0, rel=0.001)
+            assert abs(norm - 1.0) <= _eps(norm, 1.0)
 
     def test_slerp_magnitude_interpolation(self):
         """SLERP interpolates magnitudes linearly."""
@@ -333,7 +347,7 @@ class TestVectorMathSlerp:
         assert result is not None
         # Expected magnitude: (2 + 4) / 2 = 3
         norm = VectorMath.l2_norm(result)
-        assert norm == pytest.approx(3.0, rel=0.001)
+        assert abs(norm - 3.0) <= _eps(norm, 3.0)
 
     def test_slerp_no_magnitude_interpolation(self):
         """SLERP without magnitude interpolation returns unit vector."""
@@ -342,7 +356,7 @@ class TestVectorMathSlerp:
         result = VectorMath.slerp(v0, v1, 0.5, interpolate_magnitude=False)
         assert result is not None
         norm = VectorMath.l2_norm(result)
-        assert norm == pytest.approx(1.0, rel=0.001)
+        assert abs(norm - 1.0) <= _eps(norm, 1.0)
 
     def test_slerp_near_parallel_fallback(self):
         """SLERP falls back to linear for near-parallel vectors."""
@@ -351,8 +365,10 @@ class TestVectorMathSlerp:
         result = VectorMath.slerp(v0, v1, 0.5)
         assert result is not None
         # Should be close to linear interpolation
-        assert result[0] == pytest.approx(1.0, rel=0.01)
-        assert result[1] == pytest.approx(0.00005, rel=0.1)
+        expected = [(1.0 - 0.5) * v0[0] + 0.5 * v1[0], (1.0 - 0.5) * v0[1] + 0.5 * v1[1]]
+        eps = _eps(result[0], result[1], expected[0], expected[1])
+        assert abs(result[0] - expected[0]) <= eps
+        assert abs(result[1] - expected[1]) <= eps
 
     def test_slerp_empty_vectors(self):
         """SLERP of empty vectors raises ValueError."""
@@ -378,8 +394,10 @@ class TestVectorMathSlerp:
             v1 = mx.array([0.0, 1.0, 0.0])
             result = VectorMath.slerp(v0, v1, 0.5)
             assert result is not None
-            assert result[0] == pytest.approx(0.7071, rel=0.01)
-            assert result[1] == pytest.approx(0.7071, rel=0.01)
+            expected = math.sqrt(0.5)
+            eps = _eps(result[0], result[1], expected)
+            assert abs(result[0] - expected) <= eps
+            assert abs(result[1] - expected) <= eps
         except ImportError:
             pytest.skip("MLX not available")
 
@@ -395,8 +413,10 @@ class TestVectorMathSlerpBatch:
         assert "layer1" in result
         assert "layer2" in result
         # Both should be 45-degree interpolations
-        assert result["layer1"][0] == pytest.approx(0.7071, rel=0.01)
-        assert result["layer1"][1] == pytest.approx(0.7071, rel=0.01)
+        expected = math.sqrt(0.5)
+        eps = _eps(result["layer1"][0], result["layer1"][1], expected)
+        assert abs(result["layer1"][0] - expected) <= eps
+        assert abs(result["layer1"][1] - expected) <= eps
 
     def test_slerp_batch_missing_key_in_b(self):
         """Batch SLERP includes keys only in weights_a unchanged."""
@@ -404,7 +424,9 @@ class TestVectorMathSlerpBatch:
         weights_b = {"layer1": [0.0, 1.0]}
         result = VectorMath.slerp_batch(weights_a, weights_b, 0.5)
         # layer1 should be interpolated
-        assert result["layer1"][0] == pytest.approx(0.7071, rel=0.01)
+        expected = math.sqrt(0.5)
+        eps = _eps(result["layer1"][0], expected)
+        assert abs(result["layer1"][0] - expected) <= eps
         # layer2 should be unchanged from weights_a
         assert result["layer2"] == [0.5, 0.5]
 
@@ -441,20 +463,23 @@ class TestBackendVectorMath:
         v1 = backend.array([1.0, 2.0, 3.0])
         v2 = backend.array([4.0, 5.0, 6.0])
         result = bvm.dot(v1, v2)
-        assert result == pytest.approx(32.0)
+        eps = machine_epsilon(backend, v1)
+        assert abs(result - 32.0) <= eps
 
     def test_l2_norm(self, backend, bvm):
         """Test GPU-accelerated L2 norm."""
         v = backend.array([3.0, 4.0])
         result = bvm.l2_norm(v)
-        assert result == pytest.approx(5.0)
+        eps = machine_epsilon(backend, v)
+        assert abs(result - 5.0) <= eps
 
     def test_cosine_similarity(self, backend, bvm):
         """Test GPU-accelerated cosine similarity."""
         v1 = backend.array([1.0, 0.0])
         v2 = backend.array([0.0, 1.0])
         result = bvm.cosine_similarity(v1, v2)
-        assert result == pytest.approx(0.0)
+        eps = machine_epsilon(backend, v1)
+        assert abs(result - 0.0) <= eps
 
     def test_slerp_orthogonal(self, backend, bvm):
         """Test GPU-accelerated SLERP on orthogonal vectors."""
@@ -463,9 +488,11 @@ class TestBackendVectorMath:
         result = bvm.slerp(v0, v1, 0.5)
         backend.eval(result)
         result_list = result.tolist()
-        assert result_list[0] == pytest.approx(0.7071, rel=0.01)
-        assert result_list[1] == pytest.approx(0.7071, rel=0.01)
-        assert result_list[2] == pytest.approx(0.0)
+        expected = math.sqrt(0.5)
+        eps = machine_epsilon(backend, v0)
+        assert abs(result_list[0] - expected) <= eps
+        assert abs(result_list[1] - expected) <= eps
+        assert abs(result_list[2] - 0.0) <= eps
 
     def test_slerp_magnitude_interpolation(self, backend, bvm):
         """Test SLERP interpolates magnitudes correctly."""
@@ -473,7 +500,8 @@ class TestBackendVectorMath:
         v1 = backend.array([0.0, 4.0, 0.0])
         result = bvm.slerp(v0, v1, 0.5)
         norm = bvm.l2_norm(result)
-        assert norm == pytest.approx(3.0, rel=0.001)
+        eps = machine_epsilon(backend, v0)
+        assert abs(norm - 3.0) <= eps
 
     def test_slerp_from_list(self, backend, bvm):
         """Test SLERP auto-converts lists to backend arrays."""
@@ -482,7 +510,9 @@ class TestBackendVectorMath:
         result = bvm.slerp(v0, v1, 0.5)
         backend.eval(result)
         result_list = result.tolist()
-        assert result_list[0] == pytest.approx(0.7071, rel=0.01)
+        expected = math.sqrt(0.5)
+        eps = machine_epsilon(backend, backend.array(result_list))
+        assert abs(result_list[0] - expected) <= eps
 
     def test_precision_matches_pure_python(self, backend, bvm):
         """Verify Backend results match pure Python within precision."""
@@ -501,7 +531,8 @@ class TestBackendVectorMath:
 
         # Check precision (should be within float32 epsilon)
         for py_val, gpu_val in zip(py_result, gpu_result_list):
-            assert py_val == pytest.approx(gpu_val, abs=1e-6)
+            eps = machine_epsilon(backend, v0_arr)
+            assert abs(py_val - gpu_val) <= eps
 
 
 class TestGetVectorMath:
