@@ -294,7 +294,7 @@ class TestSafetyAdapterProbeTool:
         # Raw measurements - no arbitrary "isSafe" classification
         assert "maxL2Norm" in payload
         assert "meanL2Norm" in payload
-        assert "suspectLayerFraction" in payload
+        assert "outlierLayerFraction" in payload
 
 
 # =============================================================================

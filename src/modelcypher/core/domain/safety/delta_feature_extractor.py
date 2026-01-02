@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Extracts statistical features from LoRA adapter weights for risk analysis.
+"""Extracts statistical features from LoRA adapter weights for geometric profiling.
 
 This implements lightweight PEFTGuard-style analysis by computing:
 - L2 norms per target module
@@ -33,7 +33,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    find_magnitude_gap_threshold,
+    machine_epsilon,
+)
 from modelcypher.core.domain.safety.adapter_safety_models import AdapterSafetyTier
 from modelcypher.core.domain.safety.adapter_safety_probe import (
     AdapterSafetyProbe,
@@ -49,10 +52,10 @@ if TYPE_CHECKING:
 
 
 class DeltaFeatureExtractor:
-    """Extracts statistical features from LoRA adapter weights for risk analysis.
+    """Extracts statistical features from LoRA adapter weights for profiling.
 
-    Computes L2 norms, sparsity ratios, and outlier detection without
-    requiring the full base model.
+    Computes L2 norms, sparsity ratios, and gap-derived outlier detection
+    without requiring the full base model.
     """
 
     VERSION = "delta-v1.0"
@@ -60,16 +63,10 @@ class DeltaFeatureExtractor:
 
     def __init__(
         self,
-        outlier_std_devs: float = 2.5,
         backend: "Backend | None" = None,
     ):
         """Create a feature extractor.
-
-        Args:
-            outlier_std_devs: Standard deviations above mean L2 norm to flag
-                a layer as suspect.
         """
-        self._outlier_std_devs = outlier_std_devs
         self._backend = backend or get_default_backend()
 
     async def extract(self, adapter_path: Path) -> DeltaFeatureSet:
@@ -95,20 +92,20 @@ class DeltaFeatureExtractor:
             all_l2_norms.extend(norms)
             all_sparsity.extend(sparsities)
 
-        # Find outlier layers (unusually high L2 norms)
-        suspect_indices = self._find_outlier_indices(all_l2_norms)
+        # Find outlier layers via gap detection on L2 norms
+        outlier_indices = self._find_outlier_indices(all_l2_norms)
 
         logger.info(
             "Extracted delta features: %d layers, %d suspect",
             len(all_l2_norms),
-            len(suspect_indices),
+            len(outlier_indices),
         )
 
         return DeltaFeatureSet(
             l2_norms=tuple(all_l2_norms),
             sparsity=tuple(all_sparsity),
             cosine_to_aligned=(),  # Requires aligned baseline (future)
-            suspect_layer_indices=tuple(suspect_indices),
+            outlier_layer_indices=tuple(outlier_indices),
             feature_version=self.VERSION,
         )
 
@@ -182,19 +179,14 @@ class DeltaFeatureExtractor:
         if len(values) <= 2:
             return []
 
-        mean = sum(values) / len(values)
-        variance = sum((v - mean) ** 2 for v in values) / len(values)
-        std_dev = math.sqrt(variance)
-
-        if std_dev <= 0:
-            return []
-
-        threshold = mean + self._outlier_std_devs * std_dev
+        sorted_values = sorted(values)
+        eps = math.ulp(1.0)
+        threshold = find_magnitude_gap_threshold(sorted_values, eps=eps)
         return [i for i, v in enumerate(values) if v > threshold]
 
 
 class DeltaFeatureProbe(AdapterSafetyProbe):
-    """Safety probe that evaluates adapter weight statistics."""
+    """Probe that evaluates adapter weight statistics."""
 
     NAME = "delta-features"
     VERSION = "probe-delta-v1.0"
@@ -240,21 +232,21 @@ class DeltaFeatureProbe(AdapterSafetyProbe):
         # Collect raw counts - no arbitrary thresholds
         finding_counts: dict[str, int] = {
             "total_layers": features.layer_count,
-            "outlier_layers": len(features.suspect_layer_indices),
+            "outlier_layers": len(features.outlier_layer_indices),
             "zero_norm_layers": sum(1 for n in features.l2_norms if n == 0),
         }
 
         # Check for outlier layers (using data-derived outlier detection)
-        if features.has_suspect_layers:
+        if features.has_outlier_layers:
             findings.append(
-                f"{len(features.suspect_layer_indices)}/{features.layer_count} "
-                f"layers have outlier L2 norms"
+                f"{len(features.outlier_layer_indices)}/{features.layer_count} "
+                "layers have outlier L2 norms"
             )
 
-        # Check for zero-norm layers (objectively corrupted - not threshold-based)
+        # Check for zero-norm layers (exact zeros are data artifacts)
         if finding_counts["zero_norm_layers"] > 0:
             findings.append(
-                f"{finding_counts['zero_norm_layers']} layers have zero L2 norm (corrupted)"
+                f"{finding_counts['zero_norm_layers']} layers have zero L2 norm"
             )
 
         # Add statistics to finding_counts
@@ -262,24 +254,19 @@ class DeltaFeatureProbe(AdapterSafetyProbe):
             finding_counts["max_l2_norm"] = int(max(features.l2_norms))
             finding_counts["min_l2_norm"] = int(min(features.l2_norms))
 
-        triggered = len(findings) > 0
-        details = (
-            "Findings detected in weight statistics"
-            if findings
-            else "No anomalies detected"
-        )
-
         logger.info(
-            "Delta probe: %d layers, outliers=%d, triggered=%s",
+            "Delta probe: %d layers, outliers=%d, findings=%d",
             features.layer_count,
-            len(features.suspect_layer_indices),
-            triggered,
+            len(features.outlier_layer_indices),
+            len(findings),
         )
 
         return ProbeResult(
             probe_name=self.name,
-            triggered=triggered,
-            details=details,
+            details=(
+                f"outlier_layers={finding_counts['outlier_layers']} "
+                f"total_layers={finding_counts['total_layers']}"
+            ),
             findings=tuple(findings),
             probe_version=self.version,
             finding_counts=finding_counts,

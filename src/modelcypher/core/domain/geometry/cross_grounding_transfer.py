@@ -41,6 +41,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -127,6 +128,9 @@ class GhostAnchor:
     # Transfer quality
     stress_preservation: float  # How well the stress pattern was preserved (0-1)
     grounding_rotation: GroundingRotation  # The rotation applied
+    common_anchor_count: int  # Number of shared anchors used
+    source_anchor_count: int  # Total anchors in source
+    target_anchor_count: int  # Total anchors in target
 
     # Relational structure
     source_stress: RelationalStressProfile
@@ -134,7 +138,6 @@ class GhostAnchor:
 
     # Confidence
     synthesis_confidence: float  # How confident we are in this Ghost Anchor
-    warning: str | None = None  # Any warnings about the synthesis
 
 
 @dataclass
@@ -171,7 +174,7 @@ class RelationalStressComputer:
         self,
         concept_activation: "Array",
         anchor_activations: dict[str, "Array"],
-        k_nearest: int = 5,
+        k_nearest: int | None = None,
     ) -> RelationalStressProfile:
         """
         Compute the Relational Stress Profile for a concept.
@@ -179,7 +182,7 @@ class RelationalStressComputer:
         Args:
             concept_activation: The activation vector for the concept
             anchor_activations: Dict mapping anchor names to their activations
-            k_nearest: Number of nearest anchors to track
+            k_nearest: Number of nearest anchors to track (None = all anchors)
 
         Returns:
             Coordinate-invariant RelationalStressProfile
@@ -199,8 +202,7 @@ class RelationalStressComputer:
         b.eval(points_arr)
 
         # Compute geodesic distances (curvature-aware)
-        k_neighbors = min(max(3, len(anchor_names) // 2), len(anchor_names))
-        geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=k_neighbors, backend=b)
+        geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=None, backend=b)
         b.eval(geo_dist)
         geo_dist_np = b.to_numpy(geo_dist)
 
@@ -221,11 +223,13 @@ class RelationalStressComputer:
 
         # Find k nearest anchors
         sorted_anchors = sorted(distances.items(), key=lambda x: x[1])
-        nearest = tuple(name for name, _ in sorted_anchors[:k_nearest])
+        effective_k = len(sorted_anchors) if k_nearest is None else min(k_nearest, len(sorted_anchors))
+        nearest = tuple(name for name, _ in sorted_anchors[:effective_k])
 
         # Compute local density (inverse of mean distance to k nearest)
-        k_distances = [d for _, d in sorted_anchors[:k_nearest]]
-        local_density = 1.0 / (sum(k_distances) / len(k_distances) + 1e-8) if k_distances else 0.0
+        k_distances = [d for _, d in sorted_anchors[:effective_k]]
+        eps = division_epsilon(b, concept_activation)
+        local_density = 1.0 / (sum(k_distances) / len(k_distances) + eps) if k_distances else 0.0
 
         # Compute curvature signature (eigenvalues of local covariance)
         curvature = self._estimate_local_curvature(concept_activation, anchor_activations)
@@ -272,24 +276,24 @@ class RelationalStressComputer:
         b.eval(points_arr)
 
         # Compute geodesic distances
-        k_geo = min(max(3, len(neighbor_names) // 2), len(neighbor_names))
-        geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=k_geo, backend=b)
+        geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=None, backend=b)
         b.eval(geo_dist)
         geo_dist_np = b.to_numpy(geo_dist)
 
         # Extract distances from point (row 0) to neighbors
         dists = [(neighbor_names[i], float(geo_dist_np[0, i + 1])) for i in range(len(neighbor_names))]
         dists.sort(key=lambda x: x[1])
-        k = min(10, len(dists))
+        k = len(dists)
 
         # Build local covariance from neighbor directions
         directions = []
+        eps = division_epsilon(b, point)
         for name, _ in dists[:k]:
             direction = neighbors[name] - point
             norm_val = b.norm(direction)
             b.eval(norm_val)
             norm = float(b.to_numpy(norm_val))
-            if norm > 1e-8:
+            if norm > eps:
                 normalized = direction / norm
                 b.eval(normalized)
                 directions.append(normalized)
@@ -364,8 +368,7 @@ class GroundingRotationEstimator:
         source_list = [b.reshape(source_anchors[a], (1, -1)) for a in common_list]
         source_matrix = b.concatenate(source_list, axis=0)
         source_arr = b.astype(source_matrix, "float32")
-        k_neighbors = min(max(3, n // 3), n - 1)
-        source_geo = geodesic_distance_matrix(source_arr, k_neighbors=k_neighbors, backend=b)
+        source_geo = geodesic_distance_matrix(source_arr, k_neighbors=None, backend=b)
         b.eval(source_geo)
         source_dists = b.to_numpy(source_geo)
 
@@ -373,15 +376,16 @@ class GroundingRotationEstimator:
         target_list = [b.reshape(target_anchors[a], (1, -1)) for a in common_list]
         target_matrix = b.concatenate(target_list, axis=0)
         target_arr = b.astype(target_matrix, "float32")
-        target_geo = geodesic_distance_matrix(target_arr, k_neighbors=k_neighbors, backend=b)
+        target_geo = geodesic_distance_matrix(target_arr, k_neighbors=None, backend=b)
         b.eval(target_geo)
         target_dists = b.to_numpy(target_geo)
 
         # Normalize distance matrices
         source_max = max(float(v) for row in source_dists for v in row)
         target_max = max(float(v) for row in target_dists for v in row)
-        source_dists = [[float(v) / (source_max + 1e-8) for v in row] for row in source_dists]
-        target_dists = [[float(v) / (target_max + 1e-8) for v in row] for row in target_dists]
+        eps = division_epsilon(b, source_arr)
+        source_dists = [[float(v) / (source_max + eps) for v in row] for row in source_dists]
+        target_dists = [[float(v) / (target_max + eps) for v in row] for row in target_dists]
 
         # Compute alignment as correlation between distance matrices
         source_flat = [v for row in source_dists for v in row]
@@ -419,7 +423,9 @@ class GroundingRotationEstimator:
             std_diff = math.sqrt(variance)
         else:
             std_diff = 0.0
-        confidence = min(1.0, len(common_anchors) / 20.0) * (1.0 - std_diff)
+        anchor_total = len(source_anchors) + len(target_anchors)
+        overlap_fraction = (2.0 * len(common_anchors) / anchor_total) if anchor_total > 0 else 0.0
+        confidence = max(0.0, min(1.0, overlap_fraction)) * (1.0 - std_diff)
 
         return GroundingRotation(
             angle_degrees=angle_degrees,
@@ -526,18 +532,23 @@ class CrossGroundingSynthesizer:
         source_pos = self._backend.to_numpy(source_activation)
 
         # Find common anchors
+        source_anchor_count = len(source_anchors)
+        target_anchor_count = len(target_anchors)
         common = set(source_stress.anchor_distances.keys()) & set(target_anchors.keys())
-        if len(common) < 3:
+        common_anchor_count = len(common)
+        if common_anchor_count < 3:
             return GhostAnchor(
                 concept_id=concept_id,
                 source_position=source_pos,
                 target_position=source_pos,  # Fallback: use source position
                 stress_preservation=0.0,
                 grounding_rotation=grounding_rotation,
+                common_anchor_count=common_anchor_count,
+                source_anchor_count=source_anchor_count,
+                target_anchor_count=target_anchor_count,
                 source_stress=source_stress,
                 target_stress=source_stress,
                 synthesis_confidence=0.0,
-                warning="Insufficient common anchors for cross-grounding transfer",
             )
 
         # Solve for target position that preserves relational stress
@@ -560,19 +571,18 @@ class CrossGroundingSynthesizer:
         # Compute synthesis confidence
         confidence = stress_preservation * grounding_rotation.confidence
 
-        # Stress preservation value is in the result; caller interprets significance
-        warning = None
-
         return GhostAnchor(
             concept_id=concept_id,
             source_position=source_pos,
             target_position=target_pos,
             stress_preservation=stress_preservation,
             grounding_rotation=grounding_rotation,
+            common_anchor_count=common_anchor_count,
+            source_anchor_count=source_anchor_count,
+            target_anchor_count=target_anchor_count,
             source_stress=source_stress,
             target_stress=target_stress,
             synthesis_confidence=confidence,
-            warning=warning,
         )
 
     def _solve_stress_preserving_position(
@@ -607,10 +617,10 @@ class CrossGroundingSynthesizer:
         anchor_arr = b.astype(anchor_matrix, "float32")
         b.eval(anchor_arr)
 
-        k_neighbors = min(max(3, n_anchors // 3), n_anchors - 1)
-        anchor_geo = geodesic_distance_matrix(anchor_arr, k_neighbors=k_neighbors, backend=b)
+        anchor_geo = geodesic_distance_matrix(anchor_arr, k_neighbors=None, backend=b)
         b.eval(anchor_geo)
         anchor_geo_np = b.to_numpy(anchor_geo)
+        eps = division_epsilon(b, anchor_arr)
 
         # Scale target distances by the ratio of geodesic spreads
         source_vals = list(source_stress.anchor_distances.values())
@@ -635,7 +645,7 @@ class CrossGroundingSynthesizer:
         scaled_distances = {k: v * scale_factor for k, v in target_distances.items()}
 
         # Initialize position as weighted centroid of target anchors
-        weights = {name: 1.0 / (d + 0.1) for name, d in scaled_distances.items()}
+        weights = {name: 1.0 / (d + eps) for name, d in scaled_distances.items()}
         total_weight = sum(weights.values())
 
         # Get dimensionality from first anchor
@@ -650,7 +660,10 @@ class CrossGroundingSynthesizer:
             position = position + (weights[name] / total_weight) * pos
         b.eval(position)
 
-        learning_rate = 0.1
+        distance_scale = max(scaled_distances.values()) if scaled_distances else 0.0
+        learning_rate = 1.0 / (distance_scale + eps)
+        error_scale = sum(abs(v) for v in scaled_distances.values())
+        error_threshold = eps * (error_scale + eps)
 
         for iteration in range(100):
             # Compute current geodesic distances from position to anchors
@@ -658,7 +671,7 @@ class CrossGroundingSynthesizer:
             all_points = b.concatenate([pos_2d, anchor_matrix], axis=0)
             points_arr = b.astype(all_points, "float32")
             b.eval(points_arr)
-            geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=k_neighbors, backend=b)
+            geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=None, backend=b)
             b.eval(geo_dist)
             geo_dist_np = b.to_numpy(geo_dist)
 
@@ -672,23 +685,23 @@ class CrossGroundingSynthesizer:
 
                 current_diff = position - anchor_pos
 
-                if current_dist > 1e-8:
+                if current_dist > eps:
                     error = current_dist - target_dist
                     total_error += error**2
                     diff_norm = b.norm(current_diff)
                     b.eval(diff_norm)
                     diff_norm_val = float(b.to_numpy(diff_norm))
-                    if diff_norm_val > 1e-8:
+                    if diff_norm_val > eps:
                         gradient = gradient + 2 * error * current_diff / diff_norm_val
 
             b.eval(gradient)
             position = position - learning_rate * gradient
             b.eval(position)
 
-            if total_error < 1e-6:
+            if total_error < error_threshold:
                 break
 
-            learning_rate *= 0.99
+            learning_rate *= max(0.0, 1.0 - eps)
 
         return position
 
@@ -725,13 +738,18 @@ class CrossGroundingSynthesizer:
             correlation = 0.0
 
         # Also consider absolute distance matching
-        max_dist = max(max(source_dists), max(target_dists), 1e-8)
+        eps = math.ulp(1.0)
+        max_dist = max(max(source_dists), max(target_dists), eps)
         abs_diffs = [abs(s - t) for s, t in zip(source_dists, target_dists)]
         relative_error = sum(abs_diffs) / len(abs_diffs) / max_dist
         distance_match = max(0.0, 1.0 - relative_error)
 
-        # Combine correlation and distance match
-        return float(0.6 * max(0.0, correlation) + 0.4 * distance_match)
+        # Combine correlation and distance match with data-derived weighting
+        weight_denom = s_std + t_std
+        eps = math.ulp(1.0)
+        corr_weight = (s_std / weight_denom) if weight_denom > eps else 0.0
+        distance_weight = 1.0 - corr_weight
+        return float(corr_weight * max(0.0, correlation) + distance_weight * distance_match)
 
 
 class CrossGroundingTransferEngine:

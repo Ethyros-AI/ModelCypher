@@ -15,15 +15,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Adapter safety probe protocol and types.
+"""Adapter probe protocol and types.
 
-Probes are modular evaluation units that check specific aspects of adapter safety:
+Probes are modular evaluation units that return raw measurements:
 - Delta feature analysis (weight statistics)
 - Semantic drift detection (output deviation)
 - Canary QA (known-answer tests)
 - Red-team prompts (adversarial detection)
-
-Each probe returns a result with a risk score and triggered flag.
 """
 
 from __future__ import annotations
@@ -72,17 +70,10 @@ class SafetyProbeInferenceHook(Protocol):
 
 @dataclass(frozen=True)
 class ProbeResult:
-    """Result from running a safety probe against an adapter.
-
-    Raw measurements returned in finding_counts. The triggered field indicates
-    whether any findings were detected (triggered = len(findings) > 0).
-    """
+    """Result from running a probe against an adapter."""
 
     probe_name: str
     """Name identifying the probe."""
-
-    triggered: bool
-    """Whether this probe detected any findings."""
 
     probe_version: str
     """Version of this probe for invalidation tracking."""
@@ -96,39 +87,10 @@ class ProbeResult:
     finding_counts: dict[str, int] | None = None
     """Raw finding counts by category."""
 
-    @classmethod
-    def passing(
-        cls,
-        probe_name: str,
-        probe_version: str,
-        details: str | None = None,
-    ) -> "ProbeResult":
-        """Convenience for a passing probe result."""
-        return cls(
-            probe_name=probe_name,
-            triggered=False,
-            probe_version=probe_version,
-            details=details,
-        )
-
-    @classmethod
-    def failing(
-        cls,
-        probe_name: str,
-        probe_version: str,
-        details: str | None = None,
-        findings: tuple[str, ...] | None = None,
-        finding_counts: dict[str, int] | None = None,
-    ) -> "ProbeResult":
-        """Convenience for a failing probe result."""
-        return cls(
-            probe_name=probe_name,
-            triggered=True,
-            probe_version=probe_version,
-            details=details,
-            findings=findings or (),
-            finding_counts=finding_counts,
-        )
+    @property
+    def has_findings(self) -> bool:
+        """Whether this probe recorded any findings."""
+        return bool(self.findings)
 
 
 @dataclass(frozen=True)
@@ -157,9 +119,8 @@ class ProbeContext:
 class AdapterSafetyProbe(ABC):
     """Base class for adapter safety probes.
 
-    Probes are modular evaluation units that check specific aspects of
-    adapter safety. Each probe returns a result with a risk score and
-    triggered flag.
+    Probes are modular evaluation units that return raw measurements
+    and findings derived from geometry or weight statistics.
     """
 
     @property
@@ -188,7 +149,7 @@ class AdapterSafetyProbe(ABC):
             context: Evaluation context with adapter info.
 
         Returns:
-            Probe result with risk score and findings.
+            Probe result with findings and raw measurements.
         """
         ...
 
@@ -215,9 +176,9 @@ class CompositeProbeResult:
         return counts
 
     @property
-    def any_triggered(self) -> bool:
-        """Whether any probe triggered."""
-        return any(r.triggered for r in self.probe_results)
+    def any_findings(self) -> bool:
+        """Whether any probe recorded findings."""
+        return any(r.has_findings for r in self.probe_results)
 
     @property
     def all_findings(self) -> tuple[str, ...]:
@@ -234,9 +195,9 @@ class CompositeProbeResult:
         return "+".join(versions)
 
     @property
-    def triggered_count(self) -> int:
-        """Count of probes that triggered."""
-        return sum(1 for r in self.probe_results if r.triggered)
+    def findings_probe_count(self) -> int:
+        """Count of probes that recorded findings."""
+        return sum(1 for r in self.probe_results if r.has_findings)
 
     @property
     def total_probes(self) -> int:
@@ -244,8 +205,8 @@ class CompositeProbeResult:
         return len(self.probe_results)
 
     @property
-    def trigger_ratio(self) -> float:
-        """Ratio of triggered probes to total probes (0.0 to 1.0)."""
+    def findings_ratio(self) -> float:
+        """Ratio of probes with findings to total probes (0.0 to 1.0)."""
         if not self.probe_results:
             return 0.0
-        return self.triggered_count / self.total_probes
+        return self.findings_probe_count / self.total_probes

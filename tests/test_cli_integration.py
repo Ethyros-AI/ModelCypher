@@ -55,7 +55,7 @@ def test_safety_adapter_probe_basic(tmp_path):
     data = json.loads(result.stdout)
     assert "adapterPath" in data
     assert "layerCount" in data
-    assert "isSafe" in data
+    assert "outlierLayerCount" in data
 
 
 def test_safety_adapter_probe_missing_adapter():
@@ -481,7 +481,7 @@ def test_safety_adapter_probe_text_output(tmp_path):
         ],
     )
     assert result.exit_code == 0
-    assert "ADAPTER SAFETY PROBE" in result.stdout
+    assert "ADAPTER PROBE" in result.stdout
 
 
 def test_entropy_window_text_output():

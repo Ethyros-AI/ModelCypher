@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import pytest
@@ -42,8 +43,8 @@ class TestDeltaFeatureSet:
         """Empty feature set has sensible defaults."""
         fs = DeltaFeatureSet()
         assert fs.layer_count == 0
-        assert fs.has_suspect_layers is False
-        assert fs.suspect_layer_fraction == 0.0
+        assert fs.has_outlier_layers is False
+        assert fs.outlier_layer_fraction == 0.0
         assert fs.mean_l2_norm == 0.0
         assert fs.max_l2_norm == 0.0
         assert fs.mean_sparsity == 0.0
@@ -53,21 +54,21 @@ class TestDeltaFeatureSet:
         fs = DeltaFeatureSet(l2_norms=(1.0, 2.0, 3.0))
         assert fs.layer_count == 3
 
-    def test_has_suspect_layers(self) -> None:
-        """has_suspect_layers detects suspect indices."""
-        fs1 = DeltaFeatureSet(suspect_layer_indices=())
-        assert fs1.has_suspect_layers is False
+    def test_has_outlier_layers(self) -> None:
+        """has_outlier_layers detects outlier indices."""
+        fs1 = DeltaFeatureSet(outlier_layer_indices=())
+        assert fs1.has_outlier_layers is False
 
-        fs2 = DeltaFeatureSet(suspect_layer_indices=(0, 2))
-        assert fs2.has_suspect_layers is True
+        fs2 = DeltaFeatureSet(outlier_layer_indices=(0, 2))
+        assert fs2.has_outlier_layers is True
 
-    def test_suspect_layer_fraction(self) -> None:
-        """suspect_layer_fraction computes correctly."""
+    def test_outlier_layer_fraction(self) -> None:
+        """outlier_layer_fraction computes correctly."""
         fs = DeltaFeatureSet(
             l2_norms=(1.0, 2.0, 3.0, 4.0),
-            suspect_layer_indices=(0, 2),
+            outlier_layer_indices=(0, 2),
         )
-        assert fs.suspect_layer_fraction == 0.5
+        assert fs.outlier_layer_fraction == 0.5
 
     def test_mean_l2_norm(self) -> None:
         """mean_l2_norm computes average."""
@@ -82,20 +83,21 @@ class TestDeltaFeatureSet:
     def test_mean_sparsity(self) -> None:
         """mean_sparsity computes average."""
         fs = DeltaFeatureSet(sparsity=(0.1, 0.3, 0.5))
-        assert abs(fs.mean_sparsity - 0.3) < 0.001
+        eps = math.ulp(1.0)
+        assert math.isclose(fs.mean_sparsity, 0.3, rel_tol=eps, abs_tol=eps)
 
     def test_to_dict(self) -> None:
         """to_dict serializes correctly."""
         fs = DeltaFeatureSet(
             l2_norms=(1.0, 2.0),
             sparsity=(0.1, 0.2),
-            suspect_layer_indices=(1,),
+            outlier_layer_indices=(1,),
             feature_version="test-v1",
         )
         d = fs.to_dict()
         assert d["l2_norms"] == [1.0, 2.0]
         assert d["sparsity"] == [0.1, 0.2]
-        assert d["suspect_layer_indices"] == [1]
+        assert d["outlier_layer_indices"] == [1]
         assert d["feature_version"] == "test-v1"
 
     def test_from_dict(self) -> None:
@@ -104,13 +106,13 @@ class TestDeltaFeatureSet:
             "l2_norms": [1.0, 2.0],
             "sparsity": [0.5],
             "cosine_to_aligned": [],
-            "suspect_layer_indices": [0],
+            "outlier_layer_indices": [0],
             "feature_version": "v2",
         }
         fs = DeltaFeatureSet.from_dict(data)
         assert fs.l2_norms == (1.0, 2.0)
         assert fs.sparsity == (0.5,)
-        assert fs.suspect_layer_indices == (0,)
+        assert fs.outlier_layer_indices == (0,)
         assert fs.feature_version == "v2"
 
     def test_from_dict_defaults(self) -> None:
@@ -169,9 +171,8 @@ class TestDeltaFeatureExtractor:
 
     def test_find_outlier_indices_with_outlier(self) -> None:
         """_find_outlier_indices detects outliers."""
-        # Use low std_devs threshold so outlier is easier to detect
-        extractor = DeltaFeatureExtractor(outlier_std_devs=1.0)
-        # Values with clear outlier: mean=3, std≈1.41, threshold≈4.41
+        extractor = DeltaFeatureExtractor()
+        # Values with clear gap between 4 and 10.
         values = [1.0, 2.0, 3.0, 4.0, 10.0]
         outliers = extractor._find_outlier_indices(values)
         assert 4 in outliers  # Index of 10.0
@@ -219,7 +220,7 @@ class TestDeltaFeatureProbe:
         )
         result = await probe.evaluate(context)
         assert result.probe_name == "delta-features"
-        assert result.triggered is False
+        assert result.has_findings is False
         assert result.finding_counts is not None
 
     @pytest.mark.asyncio
@@ -234,7 +235,7 @@ class TestDeltaFeatureProbe:
                 return DeltaFeatureSet(
                     l2_norms=(1.0, 2.0, 3.0),
                     sparsity=(0.1, 0.2, 0.3),
-                    suspect_layer_indices=(),
+                    outlier_layer_indices=(),
                     feature_version="mock-v1",
                 )
 
@@ -245,7 +246,7 @@ class TestDeltaFeatureProbe:
             trigger=AdapterSafetyTrigger.POST_TRAINING,
         )
         result = await probe.evaluate(context)
-        assert result.triggered is False
+        assert result.has_findings is False
         assert result.finding_counts is not None
         assert result.finding_counts["total_layers"] == 3
         assert result.finding_counts["outlier_layers"] == 0
@@ -261,7 +262,7 @@ class TestDeltaFeatureProbe:
                 return DeltaFeatureSet(
                     l2_norms=(1.0, 2.0, 3.0, 4.0, 5.0),
                     sparsity=(0.1,) * 5,
-                    suspect_layer_indices=(0, 1, 2),  # 3 outlier layers detected
+                    outlier_layer_indices=(0, 1, 2),  # 3 outlier layers detected
                 )
 
         probe = DeltaFeatureProbe(extractor=MockExtractor())  # type: ignore
@@ -271,7 +272,7 @@ class TestDeltaFeatureProbe:
             trigger=AdapterSafetyTrigger.MERGE,
         )
         result = await probe.evaluate(context)
-        assert result.triggered is True
+        assert result.has_findings is True
         assert result.finding_counts is not None
         assert result.finding_counts["outlier_layers"] == 3
         assert any("outlier" in f for f in result.findings)
@@ -287,7 +288,7 @@ class TestDeltaFeatureProbe:
                 return DeltaFeatureSet(
                     l2_norms=(0.0, 1.0, 0.0),  # Two zero-norm layers
                     sparsity=(0.0, 0.1, 0.0),
-                    suspect_layer_indices=(),
+                    outlier_layer_indices=(),
                 )
 
         probe = DeltaFeatureProbe(extractor=MockExtractor())  # type: ignore
@@ -297,7 +298,7 @@ class TestDeltaFeatureProbe:
             trigger=AdapterSafetyTrigger.ACTIVATION_CHECK,
         )
         result = await probe.evaluate(context)
-        assert result.triggered is True
+        assert result.has_findings is True
         assert result.finding_counts is not None
         assert result.finding_counts["zero_norm_layers"] == 2
         assert any("zero L2 norm" in f for f in result.findings)

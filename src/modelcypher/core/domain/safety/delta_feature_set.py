@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Feature vector extracted from adapter weights for lightweight risk scoring.
+"""Feature vector extracted from adapter weights for geometric profiling.
 
 P0 stores summary statistics; future phases can append additional dimensions
 without breaking persistence by using versioned keys.
@@ -30,10 +30,9 @@ DEFAULT_FEATURE_VERSION = "P0-lite"
 
 @dataclass(frozen=True)
 class DeltaFeatureSet:
-    """Feature vector extracted from adapter weights for lightweight risk scoring.
+    """Feature vector extracted from adapter weights for geometric profiling.
 
-    Contains statistical features computed from LoRA adapter weights that can
-    be used to detect unusual or potentially malicious weight patterns.
+    Contains statistical features computed from LoRA adapter weights.
     """
 
     l2_norms: tuple[float, ...] = ()
@@ -45,8 +44,8 @@ class DeltaFeatureSet:
     cosine_to_aligned: tuple[float, ...] = ()
     """Cosine similarity to aligned-direction vectors per module (if available)."""
 
-    suspect_layer_indices: tuple[int, ...] = ()
-    """Ranked suspect layers (indices into target modules)."""
+    outlier_layer_indices: tuple[int, ...] = ()
+    """Ranked outlier layers (indices into target modules)."""
 
     feature_version: str = DEFAULT_FEATURE_VERSION
     """Version tag for the feature extractor."""
@@ -57,16 +56,16 @@ class DeltaFeatureSet:
         return len(self.l2_norms)
 
     @property
-    def has_suspect_layers(self) -> bool:
-        """Whether any layers were flagged as suspect."""
-        return len(self.suspect_layer_indices) > 0
+    def has_outlier_layers(self) -> bool:
+        """Whether any layers were flagged as outliers."""
+        return len(self.outlier_layer_indices) > 0
 
     @property
-    def suspect_layer_fraction(self) -> float:
-        """Fraction of layers flagged as suspect."""
+    def outlier_layer_fraction(self) -> float:
+        """Fraction of layers flagged as outliers."""
         if self.layer_count == 0:
             return 0.0
-        return len(self.suspect_layer_indices) / self.layer_count
+        return len(self.outlier_layer_indices) / self.layer_count
 
     @property
     def mean_l2_norm(self) -> float:
@@ -95,7 +94,7 @@ class DeltaFeatureSet:
             "l2_norms": list(self.l2_norms),
             "sparsity": list(self.sparsity),
             "cosine_to_aligned": list(self.cosine_to_aligned),
-            "suspect_layer_indices": list(self.suspect_layer_indices),
+            "outlier_layer_indices": list(self.outlier_layer_indices),
             "feature_version": self.feature_version,
         }
 
@@ -106,6 +105,6 @@ class DeltaFeatureSet:
             l2_norms=tuple(data.get("l2_norms", [])),
             sparsity=tuple(data.get("sparsity", [])),
             cosine_to_aligned=tuple(data.get("cosine_to_aligned", [])),
-            suspect_layer_indices=tuple(data.get("suspect_layer_indices", [])),
+            outlier_layer_indices=tuple(data.get("outlier_layer_indices", [])),
             feature_version=data.get("feature_version", DEFAULT_FEATURE_VERSION),
         )

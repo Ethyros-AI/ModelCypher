@@ -53,17 +53,19 @@ def delta_feature_set(draw):
     size = len(l2_norms)
     sparsity = draw(sparsity_tuple(size)) if size > 0 else ()
 
-    # Suspect layer indices must be valid indices
+    # Outlier layer indices must be valid indices
     if size > 0:
-        num_suspect = draw(st.integers(min_value=0, max_value=size))
-        suspect_indices = tuple(sorted(draw(st.sampled_from(range(size))) for _ in range(num_suspect)))
+        num_outlier = draw(st.integers(min_value=0, max_value=size))
+        outlier_indices = tuple(
+            sorted(draw(st.sampled_from(range(size))) for _ in range(num_outlier))
+        )
     else:
-        suspect_indices = ()
+        outlier_indices = ()
 
     return DeltaFeatureSet(
         l2_norms=l2_norms,
         sparsity=sparsity,
-        suspect_layer_indices=suspect_indices,
+        outlier_layer_indices=outlier_indices,
     )
 
 
@@ -93,9 +95,9 @@ class TestDeltaFeatureSetProperties:
 
     @given(delta_feature_set())
     @settings(max_examples=100)
-    def test_suspect_layer_fraction_bounded(self, features: DeltaFeatureSet):
-        """suspect_layer_fraction should be in [0, 1]."""
-        fraction = features.suspect_layer_fraction
+    def test_outlier_layer_fraction_bounded(self, features: DeltaFeatureSet):
+        """outlier_layer_fraction should be in [0, 1]."""
+        fraction = features.outlier_layer_fraction
         assert 0.0 <= fraction <= 1.0
 
     @given(delta_feature_set())
@@ -105,7 +107,7 @@ class TestDeltaFeatureSetProperties:
         restored = DeltaFeatureSet.from_dict(features.to_dict())
         assert restored.l2_norms == features.l2_norms
         assert restored.sparsity == features.sparsity
-        assert restored.suspect_layer_indices == features.suspect_layer_indices
+        assert restored.outlier_layer_indices == features.outlier_layer_indices
 
     @given(st.lists(st.floats(min_value=0.0, max_value=1.0, allow_nan=False), min_size=1, max_size=20))
     @settings(max_examples=100)
@@ -122,5 +124,5 @@ class TestDeltaFeatureSetProperties:
         assert features.mean_l2_norm == 0.0
         assert features.max_l2_norm == 0.0
         assert features.mean_sparsity == 0.0
-        assert features.suspect_layer_fraction == 0.0
-        assert not features.has_suspect_layers
+        assert features.outlier_layer_fraction == 0.0
+        assert not features.has_outlier_layers

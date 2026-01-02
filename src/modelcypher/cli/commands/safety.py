@@ -49,13 +49,12 @@ def safety_adapter_probe(
     ),
     tier: str = typer.Option("default", "--tier", help="Probe tier: quick, default, thorough"),
 ) -> None:
-    """Probe adapter for safety-relevant delta features.
+    """Probe adapter for delta-feature geometry.
 
     Analyzes adapter weights for:
     - L2 norm distributions
     - Sparsity patterns
-    - Suspect layer detection
-    - Safety impact estimation
+    - Outlier layer detection
 
     Examples:
         mc safety adapter-probe --adapter ./my-adapter
@@ -87,7 +86,7 @@ def safety_adapter_probe(
         features = DeltaFeatureSet(
             l2_norms=(0.01, 0.02, 0.015, 0.018),
             sparsity=(0.1, 0.15, 0.12, 0.08),
-            suspect_layer_indices=(),
+            outlier_layer_indices=(),
         )
     except Exception as exc:
         error = ErrorDetail(
@@ -99,32 +98,27 @@ def safety_adapter_probe(
         write_error(error.as_dict(), context.output_format, context.pretty)
         raise typer.Exit(code=1)
 
-    is_safe = not features.has_suspect_layers
-
     payload = {
         "adapterPath": str(adapter_path),
         "tier": tier,
         "layerCount": features.layer_count,
-        "suspectLayerCount": len(features.suspect_layer_indices),
-        "suspectLayerIndices": list(features.suspect_layer_indices),
+        "outlierLayerCount": len(features.outlier_layer_indices),
+        "outlierLayerIndices": list(features.outlier_layer_indices),
         "maxL2Norm": features.max_l2_norm,
         "meanL2Norm": features.mean_l2_norm,
         "meanSparsity": features.mean_sparsity,
-        "isSafe": is_safe,
         "l2Norms": list(features.l2_norms[:10]),
         "sparsity": list(features.sparsity[:10]),
     }
 
     if context.output_format == "text":
-        status = "SAFE" if is_safe else "SUSPECT"
         lines = [
-            "ADAPTER SAFETY PROBE",
+            "ADAPTER PROBE",
             f"Adapter: {adapter_path}",
             f"Tier: {tier}",
             "",
-            f"Status: {status}",
             f"Layers Analyzed: {features.layer_count}",
-            f"Suspect Layers: {len(features.suspect_layer_indices)}",
+            f"Outlier Layers: {len(features.outlier_layer_indices)}",
             "",
             "L2 Norm Statistics:",
             f"  Max: {features.max_l2_norm:.6f}",
@@ -133,10 +127,10 @@ def safety_adapter_probe(
             "Sparsity Statistics:",
             f"  Mean: {features.mean_sparsity:.2%}",
         ]
-        if features.suspect_layer_indices:
+        if features.outlier_layer_indices:
             lines.append("")
-            lines.append("Suspect Layer Indices:")
-            for idx in features.suspect_layer_indices:
+            lines.append("Outlier Layer Indices:")
+            for idx in features.outlier_layer_indices:
                 lines.append(f"  - Layer {idx}")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return

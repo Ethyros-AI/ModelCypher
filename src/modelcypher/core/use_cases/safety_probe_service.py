@@ -105,7 +105,7 @@ class SafetyProbeService:
         """
         Run all behavioral probes for an adapter.
 
-        Note: Without an inference hook, behavioral probes will pass by default
+        Note: Without an inference hook, behavioral probes return empty findings
         since they cannot run actual inference.
 
         Args:
@@ -159,7 +159,7 @@ class SafetyProbeService:
         return {
             "probeName": result.probe_name,
             "probeVersion": result.probe_version,
-            "triggered": result.triggered,
+            "hasFindings": result.has_findings,
             "details": result.details,
             "findings": list(result.findings),
             "findingCounts": result.finding_counts,
@@ -174,7 +174,7 @@ class SafetyProbeService:
                 SafetyProbeService.probe_result_payload(r) for r in result.probe_results
             ],
             "aggregateFindingCounts": result.aggregate_finding_counts,
-            "anyTriggered": result.any_triggered,
+            "anyFindings": result.any_findings,
             "allFindings": result.all_findings,
             "probeCount": len(result.probe_results),
             "timestamp": result.timestamp.isoformat(),

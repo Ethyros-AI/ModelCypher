@@ -222,7 +222,7 @@ def register_safety_tools(ctx: ServiceContext) -> None:
             features = DeltaFeatureSet(
                 l2_norms=(0.01, 0.02, 0.015, 0.018),
                 sparsity=(0.1, 0.15, 0.12, 0.08),
-                suspect_layer_indices=(),  # No suspect layers in this simulation
+                outlier_layer_indices=(),  # No outlier layers in this simulation
             )
             return {
                 "_schema": "mc.safety.adapter_probe.v1",
@@ -233,8 +233,8 @@ def register_safety_tools(ctx: ServiceContext) -> None:
                 "maxL2Norm": features.max_l2_norm,
                 "meanL2Norm": features.mean_l2_norm,
                 "meanSparsity": features.mean_sparsity,
-                "suspectLayerFraction": features.suspect_layer_fraction,
-                "suspectLayerIndices": list(features.suspect_layer_indices),
+                "outlierLayerFraction": features.outlier_layer_fraction,
+                "outlierLayerIndices": list(features.outlier_layer_indices),
             }
 
 

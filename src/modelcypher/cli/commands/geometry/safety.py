@@ -274,13 +274,13 @@ def geometry_safety_probe_redteam(
 def geometry_safety_probe_behavioral(
     ctx: typer.Context,
     name: str = typer.Option(..., "--name", help="Adapter name"),
-    tier: str = typer.Option("standard", "--tier", help="Safety tier: quick, standard, full"),
+    tier: str = typer.Option("standard", "--tier", help="Probe tier: quick, standard, full"),
     description: str | None = typer.Option(None, "--description", help="Adapter description"),
     tags: list[str] | None = typer.Option(None, "--tag", help="Skill tags (can specify multiple)"),
     creator: str | None = typer.Option(None, "--creator", help="Creator identifier"),
     base_model: str | None = typer.Option(None, "--base-model", help="Base model ID"),
 ) -> None:
-    """Run behavioral safety probes (requires inference hook for full analysis).
+    """Run behavioral probes (requires inference hook for full analysis).
 
     Examples:
         mc geometry safety probe-behavioral --name my-adapter
@@ -311,10 +311,10 @@ def geometry_safety_probe_behavioral(
 
     if context.output_format == "text":
         lines = [
-            "BEHAVIORAL SAFETY PROBE RESULTS",
+            "BEHAVIORAL PROBE RESULTS",
             f"Adapter: {name}",
             f"Tier: {tier.upper()}",
-            f"Any Triggered: {payload['anyTriggered']}",
+            f"Any Findings: {payload['anyFindings']}",
             f"Probes Run: {payload['probeCount']}",
         ]
         if payload["aggregateFindingCounts"]:
@@ -322,11 +322,11 @@ def geometry_safety_probe_behavioral(
                 f"{k}: {v}" for k, v in payload["aggregateFindingCounts"].items()
             )
             lines.append(f"Aggregate Finding Counts: {counts_str}")
-        if payload["anyTriggered"]:
+        if payload["anyFindings"]:
             lines.append("")
-            lines.append("TRIGGERED PROBES:")
+            lines.append("PROBES WITH FINDINGS:")
             for r in result.probe_results:
-                if r.triggered:
+                if r.has_findings:
                     counts = r.finding_counts or {}
                     counts_str = ", ".join(f"{k}: {v}" for k, v in counts.items()) if counts else "none"
                     lines.append(f"  {r.probe_name}: {r.details} (counts: {counts_str})")
