@@ -368,7 +368,11 @@ def transfer_compare(
     cov_ab = backend.mean(centered_a * centered_b)
     std_a = backend.sqrt(backend.mean(centered_a * centered_a))
     std_b = backend.sqrt(backend.mean(centered_b * centered_b))
-    correlation = float(cov_ab / (std_a * std_b + 1e-10))
+    import sys
+    eps = sys.float_info.epsilon
+    corr_arr = cov_ab / (std_a * std_b + eps)
+    backend.eval(corr_arr)
+    correlation = float(backend.to_scalar(corr_arr))
 
     # Mean absolute difference
     mean_diff = float(backend.mean(backend.abs(dists_a - dists_b)))

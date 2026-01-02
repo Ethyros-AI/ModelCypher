@@ -347,8 +347,19 @@ def primes_compare(
             centroid_b = Y.mean(axis=0)
 
             # Use normalized dot product with centroid as proxy
-            norm_a = float((row_a @ centroid_a) / (backend.to_numpy(backend.norm(backend.array(row_a))) * backend.to_numpy(backend.norm(backend.array(centroid_a))) + 1e-8))
-            norm_b = float((row_b @ centroid_b) / (backend.to_numpy(backend.norm(backend.array(row_b))) * backend.to_numpy(backend.norm(backend.array(centroid_b))) + 1e-8))
+            import sys
+            eps = sys.float_info.epsilon
+            row_a_arr = backend.array(row_a)
+            row_b_arr = backend.array(row_b)
+            centroid_a_arr = backend.array(centroid_a)
+            centroid_b_arr = backend.array(centroid_b)
+            norm_row_a = backend.norm(row_a_arr)
+            norm_row_b = backend.norm(row_b_arr)
+            norm_cent_a = backend.norm(centroid_a_arr)
+            norm_cent_b = backend.norm(centroid_b_arr)
+            backend.eval(norm_row_a, norm_row_b, norm_cent_a, norm_cent_b)
+            norm_a = float((row_a @ centroid_a) / (backend.to_scalar(norm_row_a) * backend.to_scalar(norm_cent_a) + eps))
+            norm_b = float((row_b @ centroid_b) / (backend.to_scalar(norm_row_b) * backend.to_scalar(norm_cent_b) + eps))
 
             # Similarity = how similarly positioned this prime is in both spaces
             sim = 1.0 - abs(norm_a - norm_b)
