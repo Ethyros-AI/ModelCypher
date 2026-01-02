@@ -40,18 +40,10 @@ For typical LLMs:
 from __future__ import annotations
 
 import math
-import sys
 from dataclasses import dataclass
 from enum import Enum
 
 from modelcypher.core.domain.thermo.linguistic_thermodynamics import AttractorBasin
-
-# Machine epsilon for float64 - used for temperature floor
-MINIMUM_TEMPERATURE: float = sys.float_info.epsilon
-
-# Minimum positive float value for log safety
-_LOG_SAFE_MIN: float = sys.float_info.min
-
 
 class Phase(str, Enum):
     """Classification of thermodynamic phase.
@@ -292,7 +284,7 @@ class PhaseTransitionTheory:
         """
         if temperature <= 0:
             return 0.0
-        safe_temperature = max(temperature, MINIMUM_TEMPERATURE)
+        safe_temperature = max(temperature, math.ulp(temperature))
         variance = PhaseTransitionTheory.compute_logit_variance(
             logits, temperature=safe_temperature
         )
@@ -317,7 +309,7 @@ class PhaseTransitionTheory:
         """
         if temperature <= 0 or not logits:
             return 0.0
-        safe_temperature = max(temperature, MINIMUM_TEMPERATURE)
+        safe_temperature = max(temperature, math.ulp(temperature))
 
         # Temperature-scaled softmax
         scaled = [z / safe_temperature for z in logits]
@@ -386,7 +378,7 @@ class PhaseTransitionTheory:
     def effective_vocabulary_size(
         logits: list[float],
         temperature: float,
-        threshold: float = 1e-4,
+        threshold: float | None = None,
     ) -> int:
         """Compute effective vocabulary size (tokens with p > threshold).
 
@@ -404,7 +396,7 @@ class PhaseTransitionTheory:
         if temperature <= 0 or not logits:
             return 1
 
-        safe_temperature = max(temperature, MINIMUM_TEMPERATURE)
+        safe_temperature = max(temperature, math.ulp(temperature))
 
         # Temperature-scaled softmax
         scaled = [z / safe_temperature for z in logits]
@@ -414,7 +406,8 @@ class PhaseTransitionTheory:
         probs = [e / partition for e in exp_scaled]
 
         # Count tokens with p > threshold
-        count = sum(1 for p in probs if p > threshold)
+        prob_threshold = threshold if threshold is not None else math.ulp(1.0)
+        count = sum(1 for p in probs if p > prob_threshold)
         return max(1, count)
 
     @staticmethod
@@ -436,7 +429,7 @@ class PhaseTransitionTheory:
         if temperature <= 0 or not logits:
             return 0.0
 
-        safe_temperature = max(temperature, MINIMUM_TEMPERATURE)
+        safe_temperature = max(temperature, math.ulp(temperature))
 
         # Temperature-scaled softmax
         scaled = [z / safe_temperature for z in logits]
@@ -446,21 +439,22 @@ class PhaseTransitionTheory:
         probs = [e / partition for e in exp_scaled]
 
         # H = -Σ p log p (with numerical stability)
-        entropy = -sum(p * math.log(p + _LOG_SAFE_MIN) for p in probs)
+        log_eps = math.ulp(0.0)
+        entropy = -sum(p * math.log(p + log_eps) for p in probs)
         return entropy
 
     @staticmethod
     def classify_phase(
         temperature: float,
         critical_temperature: float,
-        tolerance: float = 0.15,
+        tolerance: float | None = None,
     ) -> Phase:
         """Classify current phase based on temperature relative to T_c.
 
         Args:
             temperature: Current generation temperature.
             critical_temperature: Estimated T_c for this context.
-            tolerance: Width of critical region (default 0.15).
+            tolerance: Optional ratio tolerance around 1.0. Defaults to machine precision.
 
         Returns:
             Phase classification.
@@ -470,9 +464,11 @@ class PhaseTransitionTheory:
 
         ratio = temperature / critical_temperature
 
-        if ratio < 1.0 - tolerance:
+        tol = tolerance if tolerance is not None else math.ulp(1.0)
+
+        if ratio < 1.0 - tol:
             return Phase.ORDERED
-        elif ratio > 1.0 + tolerance:
+        elif ratio > 1.0 + tol:
             return Phase.DISORDERED
         else:
             return Phase.CRITICAL
@@ -580,17 +576,17 @@ class PhaseTransitionTheory:
     def validate_tc_estimation(
         estimated_tc: float,
         observed_tc: float,
-        tolerance: float = 0.2,
+        tolerance: float | None = None,
     ) -> bool:
         """Validate T_c estimation against empirical observation.
 
         Args:
             estimated_tc: T_c from formula.
             observed_tc: T_c from experiments.
-            tolerance: Acceptable deviation (default 0.2).
+            tolerance: Acceptable deviation. Defaults to machine precision.
 
         Returns:
             True if estimation is within tolerance.
         """
-        return abs(estimated_tc - observed_tc) <= tolerance
-
+        tol = tolerance if tolerance is not None else max(math.ulp(estimated_tc), math.ulp(observed_tc))
+        return abs(estimated_tc - observed_tc) <= tol

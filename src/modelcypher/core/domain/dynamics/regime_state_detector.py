@@ -312,7 +312,7 @@ class RegimeStateDetector:
             Critical tolerance (width of critical region).
         """
         if critical_temperature <= 0:
-            return 0.1
+            return math.ulp(1.0)
 
         # Coefficient of variation of logits determines tolerance
         # This is the natural width from the geometry

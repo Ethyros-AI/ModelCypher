@@ -38,11 +38,18 @@ except ImportError:
 # Skip all tests in this module if MLX unavailable
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.dynamics.regime_state_detector import (
     BasinTopology,
     RegimeAnalysis,
     RegimeStateDetector,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
+
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return division_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 class TestBasinTopology:

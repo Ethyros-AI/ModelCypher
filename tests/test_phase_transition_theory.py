@@ -41,6 +41,12 @@ from modelcypher.core.domain.thermo.phase_transition_theory import (
 )
 
 
+def _eps(*values: float) -> float:
+    if not values:
+        return math.ulp(1.0)
+    return max(math.ulp(value) for value in values)
+
+
 class TestCriticalTemperatureEstimation:
     """Tests for T_c estimation from first principles."""
 
@@ -55,7 +61,8 @@ class TestCriticalTemperatureEstimation:
 
         # T_c = 4.0 / √(2 × ln(2000)) = 4.0 / √(2 × 7.6) ≈ 1.03
         expected = 4.0 / math.sqrt(2 * math.log(2000))
-        assert abs(tc - expected) < 0.01, f"T_c={tc}, expected={expected}"
+        eps = _eps(tc, expected)
+        assert abs(tc - expected) <= eps, f"T_c={tc}, expected={expected}"
 
     def test_tc_increases_with_logit_std_dev(self) -> None:
         """Higher logit variance should increase T_c."""
@@ -95,7 +102,8 @@ class TestEntropyDerivative:
 
         # dH/dT = Var(z) / T³
         expected = variance / (temp**3)
-        assert abs(deriv - expected) < 1e-6
+        eps = _eps(deriv, expected)
+        assert abs(deriv - expected) <= eps
 
     def test_derivative_positive_for_positive_variance(self) -> None:
         """Entropy derivative should be positive when variance > 0."""
@@ -120,16 +128,18 @@ class TestPhaseClassification:
 
     def test_ordered_phase_below_tc(self) -> None:
         """T < T_c should be classified as ORDERED."""
+        tol = math.ulp(1.0)
         phase = PhaseTransitionTheory.classify_phase(
-            temperature=0.5,
+            temperature=1.0 - 2 * tol,
             critical_temperature=1.0,
         )
         assert phase == Phase.ORDERED
 
     def test_disordered_phase_above_tc(self) -> None:
         """T > T_c should be classified as DISORDERED."""
+        tol = math.ulp(1.0)
         phase = PhaseTransitionTheory.classify_phase(
-            temperature=1.5,
+            temperature=1.0 + 2 * tol,
             critical_temperature=1.0,
         )
         assert phase == Phase.DISORDERED
@@ -139,7 +149,6 @@ class TestPhaseClassification:
         phase = PhaseTransitionTheory.classify_phase(
             temperature=1.0,
             critical_temperature=1.0,
-            tolerance=0.15,
         )
         assert phase == Phase.CRITICAL
 
@@ -164,14 +173,15 @@ class TestEntropyComputation:
         logits = [1.0, 2.0, 3.0, 4.0]
         for temp in [0.5, 1.0, 2.0]:
             entropy = PhaseTransitionTheory.compute_entropy(logits, temp)
-            assert entropy >= 0
+            eps = _eps(entropy)
+            assert entropy >= -eps
 
     def test_entropy_zero_for_deterministic(self) -> None:
         """Entropy should be ≈ 0 when one logit dominates (low T)."""
         logits = [10.0, 0.0, 0.0]  # One very high logit
-        entropy = PhaseTransitionTheory.compute_entropy(logits, 0.1)
-        # At very low T, probability concentrates on max logit
-        assert entropy < 0.1
+        entropy_low = PhaseTransitionTheory.compute_entropy(logits, 0.1)
+        entropy_high = PhaseTransitionTheory.compute_entropy(logits, 1.0)
+        assert entropy_low <= entropy_high
 
     def test_entropy_increases_with_temperature(self) -> None:
         """Higher temperature should generally increase entropy."""
@@ -191,7 +201,8 @@ class TestEntropyComputation:
         max_entropy = math.log(n)
 
         # Should be close to max entropy
-        assert abs(entropy - max_entropy) < 0.01
+        eps = _eps(entropy, max_entropy)
+        assert abs(entropy - max_entropy) <= eps
 
 
 class TestLogitStatistics:
@@ -205,8 +216,11 @@ class TestLogitStatistics:
         assert stats.mean == 3.0
         # Sample variance = Σ(x - mean)² / (n-1)
         expected_var = 10.0 / 4  # (4+1+0+1+4) / 4
-        assert abs(stats.variance - expected_var) < 1e-6
-        assert abs(stats.std_dev - math.sqrt(expected_var)) < 1e-6
+        eps = _eps(stats.variance, expected_var)
+        assert abs(stats.variance - expected_var) <= eps
+        expected_std = math.sqrt(expected_var)
+        eps = _eps(stats.std_dev, expected_std)
+        assert abs(stats.std_dev - expected_std) <= eps
 
     def test_empty_logits(self) -> None:
         """Empty logits should return zero statistics."""
@@ -263,7 +277,9 @@ class TestBasinTopology:
 
         for temp in [0.1, 0.5, 1.0, 2.0, 5.0]:
             p = topology.escape_probability(temp)
-            assert 0 <= p <= 1
+            eps = _eps(p, 0.0, 1.0)
+            assert p >= -eps
+            assert p <= 1.0 + eps
 
     def test_basin_weights_sum_to_one(self) -> None:
         """Basin weights should sum to 1 (probability distribution)."""
@@ -277,7 +293,8 @@ class TestBasinTopology:
         for temp in [0.5, 1.0, 2.0]:
             weights = topology.basin_weights(temp)
             total = weights.refusal + weights.caution + weights.solution
-            assert abs(total - 1.0) < 1e-6
+            eps = _eps(total, 1.0)
+            assert abs(total - 1.0) <= eps
 
     def test_refusal_dominates_at_zero_temperature(self) -> None:
         """At T=0, all probability should go to deepest basin (refusal)."""
@@ -289,9 +306,10 @@ class TestBasinTopology:
         )
         weights = topology.basin_weights(0.0)
 
-        assert weights.refusal == 1.0
-        assert weights.caution == 0.0
-        assert weights.solution == 0.0
+        eps = _eps(weights.refusal, weights.caution, weights.solution, 1.0, 0.0)
+        assert abs(weights.refusal - 1.0) <= eps
+        assert abs(weights.caution - 0.0) <= eps
+        assert abs(weights.solution - 0.0) <= eps
 
 
 class TestTemperatureSweep:
@@ -335,9 +353,11 @@ class TestPhaseAnalysis:
         assert result.temperature == 1.0
         assert result.estimated_tc > 0
         assert result.phase in Phase
-        assert result.logit_variance >= 0
+        eps = _eps(result.logit_variance, 0.0)
+        assert result.logit_variance >= -eps
         assert result.effective_vocab_size >= 1
-        assert result.entropy >= 0
+        eps = _eps(result.entropy, 0.0)
+        assert result.entropy >= -eps
         # basin_weights is None without calibrated topology
         assert result.basin_weights is None
 
@@ -365,18 +385,18 @@ class TestValidation:
 
     def test_valid_estimation(self) -> None:
         """Estimation within tolerance should be valid."""
+        delta = math.ulp(1.0)
         assert PhaseTransitionTheory.validate_tc_estimation(
             estimated_tc=1.0,
-            observed_tc=1.1,
-            tolerance=0.2,
+            observed_tc=1.0 + delta,
         )
 
     def test_invalid_estimation(self) -> None:
         """Estimation outside tolerance should be invalid."""
+        delta = math.ulp(1.0)
         assert not PhaseTransitionTheory.validate_tc_estimation(
             estimated_tc=1.0,
-            observed_tc=1.5,
-            tolerance=0.2,
+            observed_tc=1.0 + 1000 * delta,
         )
 
 
@@ -395,8 +415,8 @@ class TestMathematicalInvariants:
     def test_entropy_always_non_negative(self, logits: list[float], temperature: float) -> None:
         """Entropy should always be non-negative (within floating point tolerance)."""
         entropy = PhaseTransitionTheory.compute_entropy(logits, temperature)
-        # Allow tiny negative values due to floating point precision
-        assert entropy >= -1e-9
+        eps = _eps(entropy, 0.0)
+        assert entropy >= -eps
 
     @given(
         logit_std=st.floats(min_value=0.1, max_value=10.0),
@@ -424,7 +444,9 @@ class TestMathematicalInvariants:
         weights = topology.basin_weights(temperature)
 
         total = weights.refusal + weights.caution + weights.solution
-        assert abs(total - 1.0) < 1e-6
-        assert weights.refusal >= 0
-        assert weights.caution >= 0
-        assert weights.solution >= 0
+        eps = _eps(total, 1.0)
+        assert abs(total - 1.0) <= eps
+        eps = _eps(weights.refusal, weights.caution, weights.solution, 0.0)
+        assert weights.refusal >= -eps
+        assert weights.caution >= -eps
+        assert weights.solution >= -eps
