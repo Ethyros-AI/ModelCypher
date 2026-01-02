@@ -60,14 +60,13 @@ class CrossVocabMergeConfig:
     """Configuration for cross-vocabulary merging.
 
     Alignment is exact-match seeded, then geometry-driven for all remaining
-    tokens. No similarity thresholds or quality bins are applied.
+    tokens. No blending - uses null space addition (geometric addition).
     """
 
     # Projection strategy
     projection_strategy: ProjectionStrategy = ProjectionStrategy.PROCRUSTES
 
-    # Embedding blending
-    blend_alpha: float = 0.5  # Weight for source embeddings (0=target, 1=source)
+    # Embedding merge strategy
     preserve_special_tokens: bool = True  # Keep target special tokens unchanged
 
     # Advanced options
@@ -220,9 +219,9 @@ class CrossVocabMerger:
             source_embeddings, target_embeddings, shared_indices
         )
 
-        # Step 5: Blend embeddings
-        logger.info("Blending embeddings...")
-        merged, blend_stats = self._blend_embeddings(
+        # Step 5: Geometric addition of embeddings
+        logger.info("Adding embeddings geometrically (null space addition)...")
+        merged, add_stats = self._add_embeddings_geometrically(
             projection_result.projected_embeddings,
             target_embeddings,
             alignment_map,
@@ -242,9 +241,9 @@ class CrossVocabMerger:
             alignment=alignment,
             source_stats=source_stats,
             target_stats=target_stats,
-            tokens_preserved_from_source=blend_stats["source_preserved"],
-            tokens_preserved_from_target=blend_stats["target_preserved"],
-            tokens_interpolated=blend_stats["interpolated"],
+            tokens_preserved_from_source=0,  # Now using geometric addition, not blending
+            tokens_preserved_from_target=add_stats["target_preserved"],
+            tokens_interpolated=add_stats["multi_target_added"],
             warnings=warnings,
         )
 
@@ -415,33 +414,42 @@ class CrossVocabMerger:
         # "no direct matches, projection will use all indices"
         return source_indices, target_indices
 
-    def _blend_embeddings(
+    def _add_embeddings_geometrically(
         self,
         projected_source: "Array",
         target_embeddings: "Array",
         alignment_map: VocabularyAlignmentMap,
     ) -> tuple["Array", dict[str, int]]:
         """
-        Blend projected source embeddings with target embeddings.
+        Add source knowledge to target embeddings via null space addition.
+
+        For each aligned token pair:
+            delta = source - target
+            orthogonal = delta - projection(delta onto target)
+            merged = target + orthogonal
+
+        This ADDS the component of source that's perpendicular to target.
+        NO BLENDING. NO INTERPOLATION.
 
         Returns:
-            Tuple of (merged_embeddings, blend_statistics)
+            Tuple of (merged_embeddings, statistics)
         """
+        import numpy as np
+
         b = self._backend
 
         target_vocab_size, hidden_dim = target_embeddings.shape
-        alpha = self.config.blend_alpha
+        eps = division_epsilon(b, target_embeddings)
 
-        # Initialize with target embeddings (materialize once for fast updates)
+        # Initialize with target embeddings
         merged_np = b.to_numpy(target_embeddings).copy()
         projected_np = b.to_numpy(projected_source)
         target_np = b.to_numpy(target_embeddings)
 
         stats = {
-            "source_preserved": 0,
             "target_preserved": 0,
-            "interpolated": 0,
-            "blended": 0,
+            "geometric_added": 0,
+            "multi_target_added": 0,
         }
 
         # Process each alignment
@@ -470,27 +478,36 @@ class CrossVocabMerger:
                     stats["target_preserved"] += 1
                     continue
 
-                # Blend based on alignment provenance and confidence
-                effective_alpha = alpha * alignment.confidence
+                # NULL SPACE ADDITION: target + orthogonal(source - target)
+                delta = source_vec - target_vec
+                target_norm_sq = float(np.dot(target_vec, target_vec)) + eps
+                projection_scalar = float(np.dot(delta, target_vec)) / target_norm_sq
+                parallel = projection_scalar * target_vec
+                orthogonal = delta - parallel
 
-                blended = effective_alpha * source_vec + (1 - effective_alpha) * target_vec
-                merged_np[target_id] = blended
+                # Add orthogonal component (what target doesn't have)
+                merged_np[target_id] = target_vec + orthogonal
 
-                stats["blended"] += 1
+                stats["geometric_added"] += 1
 
             elif len(alignment.target_ids) > 1:
-                # One-to-many mapping - distribute source to targets
-                for target_id, weight in zip(alignment.target_ids, alignment.weights):
+                # One-to-many mapping - add to each target
+                for target_id in alignment.target_ids:
                     if target_id >= target_vocab_size:
                         continue
 
                     target_vec = target_np[target_id]
-                    effective_alpha = alpha * alignment.confidence * weight
 
-                    blended = effective_alpha * source_vec + (1 - effective_alpha) * target_vec
-                    merged_np[target_id] = blended
+                    # Same null space addition for each target
+                    delta = source_vec - target_vec
+                    target_norm_sq = float(np.dot(target_vec, target_vec)) + eps
+                    projection_scalar = float(np.dot(delta, target_vec)) / target_norm_sq
+                    parallel = projection_scalar * target_vec
+                    orthogonal = delta - parallel
 
-                stats["interpolated"] += 1
+                    merged_np[target_id] = target_vec + orthogonal
+
+                stats["multi_target_added"] += 1
 
         merged = b.array(merged_np)
         return merged, stats

@@ -471,19 +471,16 @@ def run_full_geometry_merge(
     """
     Execute merge using GeometricMergeOrchestrator with ALL 84 geometry files.
 
-    This is the comprehensive merge that uses:
+    This is the comprehensive merge that uses NULL SPACE ADDITION:
     - intrinsic_dimension: Per-layer intrinsic dimension
-    - manifold_curvature: Curvature for geodesic interpolation
+    - manifold_curvature: Curvature measurements
     - shared_subspace_projector: CCA-based shared dimension discovery
     - relative_representation: Anchor-based dimension-agnostic alignment
-    - fisher_blending: Importance-weighted blending
-    - dimension_blender: Per-dimension alpha computation
-    - null_space_filter: Interference elimination
-    - dare_sparsity: Optional sparsification
-    - ... and 70+ more geometry files
+    - null_space_filter: Projects deltas to null space (interference elimination)
+    - dare_sparsity: Identifies droppable parameters
 
-    Higher dimensions contain lower dimensions (1D ⊂ 2D ⊂ 3D ⊂ ... ⊂ nD).
-    We analyze and blend at EVERY dimension level.
+    NO BLENDING. NO ALPHAS. Null space addition only.
+    Source knowledge is ADDED where target has nothing.
     """
     from modelcypher.core.use_cases.geometric_merge_orchestrator import (
         GeometricMergeOrchestrator,

@@ -16,17 +16,18 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Geometric Merge Orchestrator: Complete Pipeline Using ALL 84 Geometry Files.
+Geometric Merge Orchestrator: Analysis Pipeline Using Geometry Modules.
 
-This orchestrator integrates EVERY geometry file in the codebase. No dead code.
-If a file exists in geometry/, it gets used here.
+This orchestrator performs full geometric analysis without blending.
+It measures shared structure, alignment, and interference to support
+null-space constrained transplants elsewhere in the pipeline.
 
 Key Insight: Higher dimensions contain lower dimensions.
 - 1D is a compression of 2D
 - 2D is a compression of 3D
 - nD contains the entirety of (n-1)D
 
-Therefore: We analyze at EVERY dimension level and blend accordingly.
+Therefore: We analyze at EVERY dimension level.
 
 Pipeline Stages:
 ================
@@ -70,28 +71,14 @@ STAGE 5: ANALYZE INTERFERENCE
     - transfer_fidelity: Transfer quality
     - null_space_filter: Compute null spaces
 
-STAGE 6: COMPUTE DIMENSION WEIGHTS
-    - dimension_blender: Per-dimension alpha
-    - verb_noun_classifier: Skill vs structure
-    - fisher_blending: Fisher importance weights
-    - refinement_density: Per-layer scores
-    - domain_signal_profile: Domain-specific weights
-
-STAGE 7: BLEND
-    - alpha_smoothing: Smooth alphas across layers
-    - task_singular_vectors: SVD-based blending
-    - transport_guided_merger: Optimal transport merge
-    - dare_sparsity: DARE sparsification
-    - affine_stitching_layer: Affine stitching
-
-STAGE 8: VALIDATE
+STAGE 6: VALIDATE
     - geometry_validation_suite: Validate geometry
     - anchor_invariance_analyzer: Check anchor stability
     - manifold_fidelity_sweep: Sweep for optimal subspace
     - safety_polytope: Check safety region
     - refusal_direction_detector: Preserve refusal
 
-STAGE 9: DOMAIN ANALYSIS (optional)
+STAGE 7: DOMAIN ANALYSIS (optional)
     - social_geometry, moral_geometry, spatial_3d, temporal_topology
     - cross_cultural_geometry, domain_geometry_waypoints
 """
@@ -111,14 +98,11 @@ from .analysis import (
     stage_analyze_geometry,
     stage_analyze_interference,
     stage_compute_alignment,
-    stage_compute_dimension_weights,
     stage_find_shared_structure,
     stage_layer_correspondence,
     stage_probe_fingerprint,
-    stage_smooth_alphas,
     stage_validate,
 )
-from .weight_merger import merge_weights as merge_weights_impl
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -250,17 +234,9 @@ class GeometricMergeOrchestrator:
                 avoid_svd=self._avoid_svd,
             )
 
-            # STAGE 6: Compute dimension weights
-            stage_compute_dimension_weights(
-                layer_geom, src_acts, tgt_acts, src_layer_weights, tgt_layer_weights, b
-            )
-
             geometry.layer_geometries[layer_idx] = layer_geom
 
-        # STAGE 7: Smooth alphas across layers
-        stage_smooth_alphas(geometry)
-
-        # STAGE 8: Validate
+        # STAGE 6: Validate
         stage_validate(geometry, source_weights, target_weights)
 
         # Compute global metrics
@@ -268,25 +244,9 @@ class GeometricMergeOrchestrator:
 
         return geometry
 
-    def merge_weights(
-        self,
-        source_weights: dict[str, "Array"],
-        target_weights: dict[str, "Array"],
-        geometry: MergeGeometry,
-        extract_layer_index_fn: Any,
-        checkpoint_dir: str | None = None,
-        layer_alpha_scale: dict[int, float] | None = None,
-    ) -> tuple[dict[str, "Array"], dict[str, Any]]:
-        return merge_weights_impl(
-            source_weights,
-            target_weights,
-            geometry,
-            extract_layer_index_fn,
-            self._backend,
-            avoid_svd=self._avoid_svd,
-            checkpoint_dir=checkpoint_dir,
-            layer_alpha_scale=layer_alpha_scale,
-        )
+    # REMOVED: merge_weights method
+    # Used wrong paradigm (blending/interpolation)
+    # Correct approach: use transplant stage with null space addition
 
     def _extract_layer_indices(self, weights: dict[str, "Array"]) -> list[int]:
         """Extract unique layer indices from weight keys."""

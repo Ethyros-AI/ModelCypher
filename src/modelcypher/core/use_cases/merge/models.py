@@ -69,7 +69,6 @@ class LayerMergeState:
     # Accumulated metrics
     procrustes_errors: list[float] = field(default_factory=list)
     spectral_ratios: list[float] = field(default_factory=list)
-    effective_alphas: list[float] = field(default_factory=list)
 
 
 @dataclass
@@ -166,18 +165,7 @@ class LayerGeometry:
     null_space_projection: "Array | None" = None
     spectral_condition: float = 0.0
 
-    # Dimension weights (Stage 6)
-    dimension_alphas: "Array | None" = None
-    fisher_weights: "Array | None" = None
-    source_fisher: "Array | None" = None
-    target_fisher: "Array | None" = None
-    fisher_method: str = ""
-    verb_noun_mask: "Array | None" = None
-    refinement_score: float = 0.0
-
-    # Blending (Stage 7)
-    base_alpha: float = 0.5
-    smoothed_alpha: float = 0.5
+    # Sparsity (for DARE - identifies droppable parameters)
     sparsity_mask: "Array | None" = None
 
 

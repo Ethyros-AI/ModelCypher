@@ -71,7 +71,7 @@ def stage_vocabulary_align(
     Uses CrossVocabMerger for sophisticated vocabulary alignment with:
     - Multi-strategy projection (Procrustes, PCA, Optimal Transport)
     - Embedding similarity for unmapped tokens
-    - Quality-weighted blending
+    - Null space addition for aligned tokens (no blending)
 
     Args:
         source_weights: Source model weights
@@ -232,7 +232,7 @@ def stage_vocabulary_align(
             target_cache_key = _make_embedding_cache_key(target_embed, backend)
             target_cache_key_original = target_cache_key
 
-            # Binary (1D) alignment: align byte-level anchors before vocabulary blending.
+            # Binary (1D) alignment: align byte-level anchors before vocabulary merging.
             # Pre-compute byte maps ONCE to avoid repeated Frechet mean computation.
             binary_metrics = metrics.setdefault("binary_alignment", {})
             binary_signals: list[dict[str, Any]] = []
@@ -1071,11 +1071,8 @@ def stage_vocabulary_align(
                     )
                 effective_strategy = ProjectionStrategy.TRUNCATE
 
-            merge_blend_alpha = config.blend_alpha
-
             merge_config = CrossVocabMergeConfig(
                 projection_strategy=effective_strategy,
-                blend_alpha=merge_blend_alpha,
                 preserve_special_tokens=config.preserve_special_tokens,
                 anchor_count=config.anchor_count,
                 similarity_batch_size=config.similarity_batch_size,

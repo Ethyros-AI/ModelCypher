@@ -39,7 +39,6 @@ _SUBMODULES = {
     "matrix_utils",
     "signature_base",
     "affine_stitching_layer",
-    "alpha_smoothing",
     "anchor_invariance_analyzer",
     "cka",
     "compositional_probes",
@@ -88,8 +87,6 @@ _SUBMODULES = {
     "transfer_fidelity",
     "transport_guided_merger",
     "traversal_coherence",
-    "verb_noun_classifier",
-    "dimension_blender",
     "relative_representation",
     "wudi_interference",
     # Real-time visualization support
@@ -107,7 +104,6 @@ _ATTR_TO_MODULE = {
     "PathNode": ("path_geometry", "PathNode"),
     "PathSignature": ("path_geometry", "PathSignature"),
     "PermutationAligner": ("permutation_aligner", "PermutationAligner"),
-    "DimensionBlender": ("dimension_blender", "DimensionBlender"),
     # Backend-aware matrix utilities
     "BackendMatrixUtils": ("backend_matrix_utils", "BackendMatrixUtils"),
     "ProcrustesResult": ("types", "ProcrustesResult"),
@@ -144,7 +140,6 @@ def __dir__():
 # TYPE_CHECKING block for static analysis - these imports don't run at runtime
 if TYPE_CHECKING:
     from .backend_matrix_utils import BackendMatrixUtils
-    from .dimension_blender import DimensionBlender
     from .dora_decomposition import ChangeType, DoRADecomposition
     from .dora_decomposition import DoRAConfig as DoRAConfiguration
     from .path_geometry import PathNode, PathSignature

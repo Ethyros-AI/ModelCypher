@@ -20,11 +20,9 @@
 from .alignment import stage_compute_alignment
 from .analyze import stage_analyze_geometry
 from .correspondence import stage_layer_correspondence
-from .dimension import stage_compute_dimension_weights
 from .interference import stage_analyze_interference
 from .probe import stage_probe_fingerprint
 from .shared_structure import stage_find_shared_structure
-from .smooth import stage_smooth_alphas
 from .validate import stage_validate
 
 __all__ = [
@@ -34,7 +32,5 @@ __all__ = [
     "stage_find_shared_structure",
     "stage_compute_alignment",
     "stage_analyze_interference",
-    "stage_compute_dimension_weights",
-    "stage_smooth_alphas",
     "stage_validate",
 ]

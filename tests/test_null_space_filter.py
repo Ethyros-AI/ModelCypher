@@ -293,19 +293,19 @@ class TestMergeIntegration:
         backend.eval(source_flat)
         backend.eval(target_flat)
 
+        # NO ALPHA - geometric addition only
         merged, result = filter_merge_delta_to_null_space(
             source_flat,
             target_flat,
             activations,
-            alpha=0.5,
         )
 
         backend.eval(merged)
         assert merged.shape == source_flat.shape
         assert result.filtering_applied or result.null_space_dim == 0
 
-    def test_alpha_zero_gives_target(self):
-        """Alpha=0 should give target weights (regardless of filtering)."""
+    def test_merged_is_target_plus_filtered_delta(self):
+        """Merged = target + filtered_delta (geometric addition)."""
         backend = get_default_backend()
         d = 10
 
@@ -313,42 +313,17 @@ class TestMergeIntegration:
         source = backend.random_normal((d,))
         target = backend.random_normal((d,))
         activations = backend.random_normal((30, d))
-        backend.eval(source)
-        backend.eval(target)
-        backend.eval(activations)
+        backend.eval(source, target, activations)
 
-        merged, _ = filter_merge_delta_to_null_space(source, target, activations, alpha=0.0)
-
+        merged, result = filter_merge_delta_to_null_space(source, target, activations)
         backend.eval(merged)
-        backend.eval(target)
-        assert float(backend.to_numpy(backend.max(backend.abs(merged - target)))) < 1e-6
 
-    def test_alpha_one_with_full_null_gives_source(self):
-        """Alpha=1 with full null space should approach source."""
-        backend = get_default_backend()
-        d = 10
-
-        backend.random_seed(42)
-        source = backend.random_normal((d,))
-        target = backend.random_normal((d,))
-        # Few samples = large null space
-        activations = backend.random_normal((3, d))
-        backend.eval(source)
-        backend.eval(target)
-        backend.eval(activations)
-
-        merged, result = filter_merge_delta_to_null_space(
-            source, target, activations, alpha=1.0
-        )
-
-        backend.eval(merged)
-        if result.preserved_fraction > 0.9:
-            # If most of delta preserved, should be close to source
-            diff1 = merged - source
-            diff2 = source - target
-            backend.eval(diff1)
-            backend.eval(diff2)
-            assert float(backend.to_numpy(backend.norm(diff1))) < float(backend.to_numpy(backend.norm(diff2)))
+        # Verify: merged = target + filtered_delta
+        expected = target + result.filtered_delta
+        backend.eval(expected)
+        diff = backend.max(backend.abs(merged - expected))
+        backend.eval(diff)
+        assert float(backend.to_numpy(diff)) < 1e-6
 
 
 class TestModelProfile:

@@ -25,14 +25,13 @@ from typing import Any
 class VocabularyConfig:
     """Configuration for Stage 0 vocabulary alignment.
 
-    No heuristic thresholds are applied in alignment or blending.
+    Uses null space addition for merging - no blending.
     """
 
     # Projection strategy: procrustes, pca, optimal_transport, cca
     projection_strategy: str = "procrustes"
 
-    # Embedding blending
-    blend_alpha: float = 0.5
+    # Embedding merge options
     preserve_special_tokens: bool = True
 
     # Advanced

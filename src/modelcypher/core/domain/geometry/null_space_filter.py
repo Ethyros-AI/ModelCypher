@@ -502,19 +502,24 @@ def filter_merge_delta_to_null_space(
     source_weights: Any,
     target_weights: Any,
     prior_activations: Any,
-    alpha: float = 0.5,
 ) -> tuple[Any, NullSpaceFilterResult]:
     """
-    Convenience function: Compute and filter merge delta to null space.
+    Compute and filter merge delta to null space.
 
-    All parameters are derived from the data's spectral properties.
-    No configuration needed - the geometry determines everything.
+    NO ALPHA. NO BLENDING. This is geometric ADDITION.
+
+    Formula:
+        delta = source - target
+        safe_delta = null_space_projection(delta)
+        merged = target + safe_delta
+
+    The null space projection ensures source knowledge is added
+    only where target has nothing (no interference).
 
     Args:
-        source_weights: Weights from source model.
-        target_weights: Weights from target model.
-        prior_activations: Activations from target model on prior task.
-        alpha: Merge coefficient (0 = target, 1 = source).
+        source_weights: Source model weights.
+        target_weights: Target model weights.
+        prior_activations: Target activations defining the null space.
 
     Returns:
         Tuple of (merged_weights, filter_result).
@@ -528,12 +533,12 @@ def filter_merge_delta_to_null_space(
     delta = source_weights - target_weights
     backend.eval(delta)
 
-    # Filter to null space - no config, all derived from geometry
+    # Filter to null space - geometry determines everything
     null_filter = NullSpaceFilter(backend)
     result = null_filter.filter_delta(delta, prior_activations)
 
-    # Apply filtered delta
-    merged = target_weights + alpha * result.filtered_delta
+    # Merge = target + projected_delta (NO ALPHA)
+    merged = target_weights + result.filtered_delta
     backend.eval(merged)
 
     return merged, result
