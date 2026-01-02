@@ -427,9 +427,9 @@ class TestTransplantEndToEnd:
         assert result.applied is True
         # With only 5 boundary samples in 128-dim space, null space is large
         assert result.null_dim > 100  # 128 - 5 = 123 null dims expected
-        # Birkhoff projection enforces spectral stability (mHC paper)
-        # preserved_fraction is lower because we bound spectral norm
-        assert result.birkhoff_applied is True
+        # Spectral norm bounding enforces compositional stability
+        # We use direct scalar scaling (not full Birkhoff) to preserve null-space exactly
+        assert result.birkhoff_spectral_clipped is True  # spectral norm was > 1.0
         assert result.filtered_norm > 0  # some delta survives
         assert result.projection_loss < 1.0  # not total loss
 

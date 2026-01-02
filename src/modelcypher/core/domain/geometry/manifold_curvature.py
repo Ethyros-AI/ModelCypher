@@ -1304,6 +1304,26 @@ class OllivierRicciCurvature:
         eps = division_epsilon(backend, cost_matrix)
         floor = tiny_value(backend, cost_matrix)
 
+        # Ensure finite cost matrix for Sinkhorn stability.
+        cost_np = backend.to_numpy(cost_matrix)
+        finite_vals = [
+            float(value)
+            for row in cost_np
+            for value in row
+            if math.isfinite(float(value))
+        ]
+        finite_max = max(finite_vals) if finite_vals else 0.0
+        finite_max = max(finite_max, eps)
+        finite_mask = [
+            [math.isfinite(float(value)) for value in row] for row in cost_np
+        ]
+        mask_arr = backend.array(finite_mask)
+        cost_matrix = backend.where(
+            mask_arr,
+            cost_matrix,
+            backend.full(cost_matrix.shape, finite_max),
+        )
+
         if epsilon is None:
             cost_max = float(backend.to_numpy(backend.max(cost_matrix)).item())
             epsilon = cost_max * eps if cost_max > 0 else eps

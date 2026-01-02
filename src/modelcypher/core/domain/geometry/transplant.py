@@ -31,8 +31,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.birkhoff_projector import BirkhoffProjector
 from modelcypher.core.domain.geometry.null_space_filter import NullSpaceFilter
+from modelcypher.core.domain.geometry.numerical_stability import svd_via_eigh
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -168,13 +168,26 @@ def compute_transplant_delta(
     b.eval(delta_filtered_t)
 
     # Spectral norm bound for compositional stability.
-    # Use scaling only; full Birkhoff projection can violate the boundary null-space guarantee.
-    birkhoff = BirkhoffProjector(backend=b)
+    # Use direct scalar scaling to preserve null-space membership exactly.
+    # SVD-reconstruct can introduce numerical error; scalar multiply cannot.
     delta_filtered = b.transpose(delta_filtered_t)
     b.eval(delta_filtered)
-    delta_stabilized, spectral_clipped = birkhoff.bound_spectral_norm(
-        delta_filtered, max_norm=1.0
-    )
+
+    # Compute spectral norm (largest singular value)
+    _, S, _ = svd_via_eigh(b, delta_filtered, full_matrices=False)
+    b.eval(S)
+    S_np = b.to_numpy(S)
+    spectral_norm = float(S_np[0]) if len(S_np) > 0 else 0.0
+
+    # Scale by scalar if needed (preserves null-space exactly)
+    max_norm = 1.0
+    if spectral_norm > max_norm:
+        scale = max_norm / spectral_norm
+        delta_stabilized = delta_filtered * scale
+        spectral_clipped = True
+    else:
+        delta_stabilized = delta_filtered
+        spectral_clipped = False
     b.eval(delta_stabilized)
 
     merged_weight = weight_target + delta_stabilized

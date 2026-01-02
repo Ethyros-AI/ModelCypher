@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.agents.computational_gate_atlas import (
     ComputationalGate,
     ComputationalGateAtlas,
@@ -37,6 +38,7 @@ from modelcypher.core.domain.agents.computational_gate_atlas import (
     ComputationalGateSignature,
     GateAtlasConfiguration,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.vector_math import VectorMath
 
 # =============================================================================
@@ -220,6 +222,7 @@ def test_signature_creation():
 
 def test_signature_cosine_similarity_identical():
     """Identical signatures have cosine similarity 1.0."""
+    backend = get_default_backend()
     sig = ComputationalGateSignature(
         gate_ids=["1", "2"],
         values=[1.0, 0.0],
@@ -227,11 +230,13 @@ def test_signature_cosine_similarity_identical():
     similarity = sig.cosine_similarity(sig)
 
     assert similarity is not None
-    assert abs(similarity - 1.0) < 1e-6
+    eps = division_epsilon(backend, backend.array(sig.values, dtype="float32"))
+    assert abs(similarity - 1.0) <= eps
 
 
 def test_signature_cosine_similarity_orthogonal():
     """Orthogonal signatures have cosine similarity 0.0."""
+    backend = get_default_backend()
     sig1 = ComputationalGateSignature(
         gate_ids=["1", "2"],
         values=[1.0, 0.0],
@@ -243,7 +248,8 @@ def test_signature_cosine_similarity_orthogonal():
     similarity = sig1.cosine_similarity(sig2)
 
     assert similarity is not None
-    assert abs(similarity) < 1e-6
+    eps = division_epsilon(backend, backend.array(sig1.values, dtype="float32"))
+    assert abs(similarity) <= eps
 
 
 def test_signature_cosine_similarity_mismatched_ids():
@@ -280,6 +286,7 @@ def test_signature_cosine_similarity_different_lengths():
 
 def test_signature_l2_normalized():
     """L2 normalization produces unit vector."""
+    backend = get_default_backend()
     sig = ComputationalGateSignature(
         gate_ids=["1", "2"],
         values=[3.0, 4.0],  # norm = 5
@@ -287,7 +294,8 @@ def test_signature_l2_normalized():
     normalized = sig.l2_normalized()
 
     expected_norm = VectorMath.l2_norm(normalized.values)
-    assert abs(expected_norm - 1.0) < 1e-6
+    eps = division_epsilon(backend, backend.array(normalized.values, dtype="float32"))
+    assert abs(expected_norm - 1.0) <= eps
 
 
 def test_signature_l2_normalized_zero_vector():
@@ -567,18 +575,21 @@ async def test_atlas_caches_gate_embeddings():
 
 def test_vector_math_cosine_zero_vector():
     """VectorMath handles zero vectors."""
-    result = VectorMath.cosine_similarity([0.0, 0.0], [1.0, 0.0])
-    # Zero vector cosine should be 0 or handled gracefully
-    assert result == 0.0 or result is None or not result  # Implementation may vary
+    with pytest.raises(ValueError):
+        VectorMath.cosine_similarity([0.0, 0.0], [1.0, 0.0])
 
 
 def test_vector_math_l2_norm():
     """VectorMath computes L2 norm correctly."""
+    backend = get_default_backend()
     norm = VectorMath.l2_norm([3.0, 4.0])
-    assert abs(norm - 5.0) < 1e-6
+    eps = division_epsilon(backend, backend.array([3.0, 4.0], dtype="float32"))
+    assert abs(norm - 5.0) <= eps
 
 
 def test_vector_math_dot():
     """VectorMath computes dot product correctly."""
+    backend = get_default_backend()
     dot = VectorMath.dot([1.0, 2.0], [3.0, 4.0])
-    assert abs(dot - 11.0) < 1e-6  # 1*3 + 2*4 = 11
+    eps = division_epsilon(backend, backend.array([1.0, 2.0, 3.0, 4.0], dtype="float32"))
+    assert abs(dot - 11.0) <= eps  # 1*3 + 2*4 = 11

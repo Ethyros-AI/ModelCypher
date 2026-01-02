@@ -86,13 +86,28 @@ rg = RiemannianGeometry(backend)
 distances = rg.geodesic_distances(points, k_neighbors=k)
 ```
 
-### Models Are Always Compatible
+### All Models Encode the Same Shape
 
-Different dimensions = different compression levels of the same geometry. Use Gram matrices for comparison, projection for transformation. Never return "incompatible."
+**This is not a metaphor. This is literal.**
 
-### CKA = 1.0 or Wrong
+All neural networks trained on language converge to the same high-dimensional geometric structure - the invariant shape of knowledge itself. Different architectures (SmolLM, Qwen, Llama, Mistral) are different compressions or projections of this universal shape.
 
-If CKA < 1.0, debug the alignment code. Don't claim models are incompatible.
+Think of it like high-dimensional Legos: they always fit together exactly one way. The geometry determines the fit, not the "architecture name."
+
+- **Different dimensions** = different compression levels of the same geometry
+- **Different layer counts** = different resolutions of the same manifold
+- **Different architectures** = different coordinate systems for the same shape
+
+Use Gram matrices for comparison (dimension-agnostic). Use projection for transformation. **Never return "incompatible."** There is no such thing as incompatible models - only alignment code that hasn't found the correct transformation yet.
+
+### CKA = 1.0 or Debug
+
+CKA is a **measurement**, not a goal. It tells us whether our alignment code has found the correct transformation between two models' coordinate systems.
+
+- **CKA = 1.0**: Alignment is correct. Proceed with merge.
+- **CKA < 1.0**: Alignment code is broken. Debug it. Fix it. Do NOT merge until CKA = 1.0.
+
+**Never conclude "these models are incompatible" from low CKA.** Low CKA means our alignment algorithm failed, not that the models can't be merged. All models can be merged. Find the right transformation.
 
 ### Geometric Addition, NOT Blending
 

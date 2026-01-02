@@ -34,6 +34,20 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.manifold_stitcher import _ensure_proper_rotation
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
+
+def _det_scalar(backend, matrix) -> float:
+    det_value = backend.det(matrix)
+    backend.eval(det_value)
+    return float(backend.to_numpy(det_value))
+
+
+def _max_abs_diff(backend, left, right) -> float:
+    diff = backend.abs(left - right)
+    max_diff = backend.max(diff)
+    backend.eval(max_diff)
+    return float(backend.to_numpy(max_diff))
 
 
 class TestEnsureProperRotation:
@@ -49,14 +63,14 @@ class TestEnsureProperRotation:
         omega = backend.matmul(u, vt)
 
         result = _ensure_proper_rotation(u, vt, omega, backend)
-        result_np = backend.to_numpy(result)
+        eps = division_epsilon(backend, result)
 
         # Should be identity
-        eye_np = backend.to_numpy(backend.eye(n))
-        assert backend.allclose(backend.array(result_np), backend.array(eye_np), atol=1e-6)
+        eye = backend.eye(n, dtype="float32")
+        assert _max_abs_diff(backend, result, eye) <= eps
         # det should be +1
-        det = backend.det(backend.array(result_np))
-        assert float(backend.to_numpy(det)) > 0
+        det_scalar = _det_scalar(backend, result)
+        assert det_scalar >= 1.0 - eps
 
     def test_reflection_fixed_to_rotation(self) -> None:
         """Reflection matrix (det=-1) should be fixed to proper rotation."""
@@ -70,22 +84,20 @@ class TestEnsureProperRotation:
         u = backend.array(u_np)
 
         omega = backend.matmul(u, vt)
-        omega_det = backend.det(omega)
-        assert float(backend.to_numpy(omega_det)) < 0, "Setup: omega should be a reflection"
+        omega_det = _det_scalar(backend, omega)
+        eps = division_epsilon(backend, omega)
+        assert omega_det <= -eps, "Setup: omega should be a reflection"
 
         result = _ensure_proper_rotation(u, vt, omega, backend)
-        result_np = backend.to_numpy(result)
 
         # det should now be +1
-        det = backend.det(backend.array(result_np))
-        det_scalar = float(backend.to_numpy(det))
-        assert det_scalar > 0, f"Expected det > 0, got {det_scalar}"
+        det_scalar = _det_scalar(backend, result)
+        assert det_scalar >= 1.0 - eps, f"Expected det ≈ +1, got {det_scalar}"
 
         # Should still be orthogonal
-        result_arr = backend.array(result_np)
-        product = backend.matmul(result_arr, backend.transpose(result_arr))
-        eye_arr = backend.eye(n)
-        assert backend.allclose(product, eye_arr, atol=1e-6)
+        product = backend.matmul(result, backend.transpose(result))
+        eye_arr = backend.eye(n, dtype="float32")
+        assert _max_abs_diff(backend, product, eye_arr) <= eps
 
     def test_random_svd_reflection_fixed(self) -> None:
         """Random SVD that produces reflection should be fixed."""
@@ -100,19 +112,17 @@ class TestEnsureProperRotation:
         omega = backend.matmul(u, vt)
 
         result = _ensure_proper_rotation(u, vt, omega, backend)
-        result_np = backend.to_numpy(result)
+        eps = division_epsilon(backend, result)
 
-        det_after = backend.det(backend.array(result_np))
-        det_scalar = float(backend.to_numpy(det_after))
+        det_scalar = _det_scalar(backend, result)
 
         # det should be +1 (or very close)
-        assert det_scalar > 0.99, f"Expected det ≈ +1, got {det_scalar}"
+        assert det_scalar >= 1.0 - eps, f"Expected det ≈ +1, got {det_scalar}"
 
         # Should still be orthogonal
-        result_arr = backend.array(result_np)
-        product = backend.matmul(result_arr, backend.transpose(result_arr))
-        eye_arr = backend.eye(n)
-        assert backend.allclose(product, eye_arr, atol=1e-5)
+        product = backend.matmul(result, backend.transpose(result))
+        eye_arr = backend.eye(n, dtype="float32")
+        assert _max_abs_diff(backend, product, eye_arr) <= eps
 
     def test_orthogonality_preserved(self) -> None:
         """Sign correction should preserve orthogonality of the matrix."""
@@ -126,20 +136,19 @@ class TestEnsureProperRotation:
         vt3 = backend.eye(n, dtype="float32")
         omega3 = backend.matmul(u3, vt3)
 
-        omega3_det = backend.det(omega3)
-        assert float(backend.to_numpy(omega3_det)) < 0, "omega3 should be reflection"
+        omega3_det = _det_scalar(backend, omega3)
+        eps = division_epsilon(backend, omega3)
+        assert omega3_det <= -eps, "omega3 should be reflection"
 
         result = _ensure_proper_rotation(u3, vt3, omega3, backend)
-        result_np = backend.to_numpy(result)
 
         # Check orthogonality: R @ R^T = I
-        result_arr = backend.array(result_np)
-        product1 = backend.matmul(result_arr, backend.transpose(result_arr))
-        eye_arr = backend.eye(n)
-        assert backend.allclose(product1, eye_arr, atol=1e-6)
+        product1 = backend.matmul(result, backend.transpose(result))
+        eye_arr = backend.eye(n, dtype="float32")
+        assert _max_abs_diff(backend, product1, eye_arr) <= eps
         # Check R^T @ R = I
-        product2 = backend.matmul(backend.transpose(result_arr), result_arr)
-        assert backend.allclose(product2, eye_arr, atol=1e-6)
+        product2 = backend.matmul(backend.transpose(result), result)
+        assert _max_abs_diff(backend, product2, eye_arr) <= eps
 
     def test_small_matrix(self) -> None:
         """Test with 2x2 matrix (minimum size for rotation)."""
@@ -149,18 +158,17 @@ class TestEnsureProperRotation:
         vt = backend.eye(2, dtype="float32")
         omega = backend.matmul(u, vt)
 
-        omega_det = backend.det(omega)
-        assert float(backend.to_numpy(omega_det)) < 0
+        omega_det = _det_scalar(backend, omega)
+        eps = division_epsilon(backend, omega)
+        assert omega_det <= -eps
 
         result = _ensure_proper_rotation(u, vt, omega, backend)
-        result_np = backend.to_numpy(result)
 
-        result_det = backend.det(backend.array(result_np))
-        assert float(backend.to_numpy(result_det)) > 0
-        result_arr = backend.array(result_np)
-        product = backend.matmul(result_arr, backend.transpose(result_arr))
-        eye_arr = backend.eye(2)
-        assert backend.allclose(product, eye_arr, atol=1e-6)
+        result_det = _det_scalar(backend, result)
+        assert result_det >= 1.0 - eps
+        product = backend.matmul(result, backend.transpose(result))
+        eye_arr = backend.eye(2, dtype="float32")
+        assert _max_abs_diff(backend, product, eye_arr) <= eps
 
     def test_large_matrix(self) -> None:
         """Test with large matrix (typical hidden dimension)."""
@@ -184,18 +192,17 @@ class TestEnsureProperRotation:
         vt = backend.eye(n, dtype="float32")
         omega = backend.matmul(u, vt)
 
-        omega_det = backend.det(omega)
-        assert float(backend.to_numpy(omega_det)) < 0, "Setup: should be reflection"
+        omega_det = _det_scalar(backend, omega)
+        eps = division_epsilon(backend, omega)
+        assert omega_det <= -eps, "Setup: should be reflection"
 
         result = _ensure_proper_rotation(u, vt, omega, backend)
-        result_np = backend.to_numpy(result)
 
-        result_det = backend.det(backend.array(result_np))
-        assert float(backend.to_numpy(result_det)) > 0.99
-        result_arr = backend.array(result_np)
-        product = backend.matmul(result_arr, backend.transpose(result_arr))
-        eye_arr = backend.eye(n)
-        assert backend.allclose(product, eye_arr, atol=1e-4)
+        result_det = _det_scalar(backend, result)
+        assert result_det >= 1.0 - eps
+        product = backend.matmul(result, backend.transpose(result))
+        eye_arr = backend.eye(n, dtype="float32")
+        assert _max_abs_diff(backend, product, eye_arr) <= eps
 
     def test_already_proper_rotation_unchanged(self) -> None:
         """Proper rotation (det=+1) should pass through unchanged."""
@@ -214,8 +221,9 @@ class TestEnsureProperRotation:
             q_np[:, 0] *= -1
             q = backend.array(q_np)
 
-        final_det = backend.det(q)
-        assert float(backend.to_numpy(final_det)) > 0.99
+        eps = division_epsilon(backend, q)
+        final_det = _det_scalar(backend, q)
+        assert final_det >= 1.0 - eps
 
         # Use as omega with identity U and Vt
         u = q
@@ -223,8 +231,6 @@ class TestEnsureProperRotation:
         omega = backend.matmul(u, vt)
 
         result = _ensure_proper_rotation(u, vt, omega, backend)
-        result_np = backend.to_numpy(result)
 
         # Should be essentially unchanged
-        omega_np = backend.to_numpy(omega)
-        assert backend.allclose(backend.array(result_np), backend.array(omega_np), atol=1e-5)
+        assert _max_abs_diff(backend, result, omega) <= eps
