@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import math
+import sys
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
@@ -893,7 +894,9 @@ class SharedSubspaceProjector:
         if len(positive) < 2:
             return len(positive)
 
-        eps = 1e-12  # Numerical floor
+        # Numerical floor derived from Python float dtype (float64)
+        # Uses sqrt(machine_eps) consistent with division_epsilon pattern
+        eps = math.sqrt(sys.float_info.epsilon)
         max_gap = 0.0
         gap_index = 1  # Keep at least 1 component
 

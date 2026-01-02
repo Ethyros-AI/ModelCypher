@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import find_magnitude_gap_threshold
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
@@ -31,41 +32,15 @@ if TYPE_CHECKING:
 class Configuration:
     """Configuration for DARE sparsity analysis.
 
-    Drop rate computation uses a linear scaling of effective_sparsity:
-        recommended_drop_rate = effective_sparsity * drop_rate_scale_factor
+    Thresholds are derived from data, not arbitrary constants:
+    - Zero threshold: machine epsilon relative to max magnitude
+    - Drop threshold: spectral gap in magnitude distribution (largest relative jump)
 
-    The scale factor is clamped to [0, 1] to ensure valid drop rates.
-    Callers should validate the recommended rate against their specific
-    model and task requirements.
+    The only configurable parameters are which layers to analyze.
     """
 
-    sparsity_threshold: float = 0.01
-    droppable_percentile: float = 0.95
     analysis_layers: set[str] | None = None
     compute_per_layer_metrics: bool = True
-
-    # Linear scaling factor for drop rate (recommended = effective_sparsity * scale)
-    drop_rate_scale_factor: float = 0.9
-
-    @staticmethod
-    def default() -> "Configuration":
-        return Configuration()
-
-    @staticmethod
-    def aggressive() -> "Configuration":
-        return Configuration(
-            sparsity_threshold=0.001,
-            droppable_percentile=0.99,
-            drop_rate_scale_factor=0.95,
-        )
-
-    @staticmethod
-    def conservative() -> "Configuration":
-        return Configuration(
-            sparsity_threshold=0.05,
-            droppable_percentile=0.90,
-            drop_rate_scale_factor=0.5,
-        )
 
 
 @dataclass(frozen=True)
@@ -138,12 +113,16 @@ class DARESparsityAnalyzer:
         sorted_magnitudes = sorted(all_magnitudes)
         magnitude_stats = DARESparsityAnalyzer._compute_magnitude_stats(sorted_magnitudes)
 
-        threshold_by_magnitude = magnitude_stats.max * configuration.sparsity_threshold
-        percentile_index = int(len(sorted_magnitudes) * configuration.droppable_percentile)
-        threshold_by_percentile = sorted_magnitudes[
-            min(percentile_index, len(sorted_magnitudes) - 1)
-        ]
-        drop_threshold = max(threshold_by_magnitude, threshold_by_percentile)
+        # Derive thresholds from data, not arbitrary constants:
+        # 1. Machine epsilon threshold: values below eps * max are numerical noise
+        eps = 2.220446049250313e-16  # float64 machine epsilon
+        zero_threshold = magnitude_stats.max * eps * 100  # 100x eps for headroom
+
+        # 2. Spectral gap: find natural break in magnitude distribution
+        gap_threshold = find_magnitude_gap_threshold(sorted_magnitudes)
+
+        # Use the larger of the two thresholds
+        drop_threshold = max(zero_threshold, gap_threshold)
 
         if magnitude_stats.max == 0:
             droppable_count = len(sorted_magnitudes)
@@ -163,10 +142,8 @@ class DARESparsityAnalyzer:
                     drop_threshold=drop_threshold,
                 )
 
-        recommended_drop_rate = DARESparsityAnalyzer._compute_recommended_drop_rate(
-            effective_sparsity=effective_sparsity,
-            scale_factor=configuration.drop_rate_scale_factor,
-        )
+        # Drop rate = effective sparsity (no arbitrary scaling)
+        recommended_drop_rate = effective_sparsity
         return SparsityAnalysis(
             total_parameters=total_count,
             non_zero_parameters=sum(1 for value in sorted_magnitudes if value > 0),
@@ -246,7 +223,11 @@ class DARESparsityAnalyzer:
         mean_val = total_sum / total_count
         variance = (total_sum_sq / total_count) - (mean_val**2)
         std_dev = variance**0.5 if variance > 0 else 0.0
-        threshold_by_magnitude = global_max * configuration.sparsity_threshold
+
+        # Derive thresholds from data:
+        # 1. Machine epsilon threshold (values below this are numerical noise)
+        eps = b.finfo(next(iter(per_layer_arrays.values())).dtype).eps
+        zero_threshold = global_max * eps * 100  # 100x eps for headroom
 
         use_fast_path = total_count < 500_000_000
 
@@ -266,7 +247,14 @@ class DARESparsityAnalyzer:
             median = find_percentile_fast(0.50)
             p95 = find_percentile_fast(0.95)
             p99 = find_percentile_fast(0.99)
-            threshold_by_percentile = find_percentile_fast(configuration.droppable_percentile)
+
+            # 2. Spectral gap: find largest relative jump in sorted magnitudes
+            # Sample 1000 points to find approximate gap location (GPU-efficient)
+            sample_indices = [int(i * total_count / 1000) for i in range(1000)]
+            sorted_mags = b.sort(all_magnitudes)
+            b.eval(sorted_mags)
+            samples = [float(b.to_numpy(sorted_mags[idx : idx + 1]).item()) for idx in sample_indices]
+            gap_threshold = find_magnitude_gap_threshold(samples)
         else:
             def count_below(threshold: float) -> int:
                 total = 0
@@ -292,8 +280,11 @@ class DARESparsityAnalyzer:
             median = find_percentile(0.50)
             p95 = find_percentile(0.95)
             p99 = find_percentile(0.99)
-            threshold_by_percentile = find_percentile(configuration.droppable_percentile)
-        drop_threshold = max(threshold_by_magnitude, threshold_by_percentile)
+
+            # For very large arrays, use median as conservative gap estimate
+            gap_threshold = median
+
+        drop_threshold = max(zero_threshold, gap_threshold)
 
         total_droppable = 0
         per_layer_metrics: dict[str, LayerSparsityMetrics] = {}
@@ -347,9 +338,7 @@ class DARESparsityAnalyzer:
                 percentile95=p95,
                 percentile99=p99,
             ),
-            recommended_drop_rate=DARESparsityAnalyzer._compute_recommended_drop_rate(
-                effective_sparsity, configuration.drop_rate_scale_factor
-            ),
+            recommended_drop_rate=effective_sparsity,  # No arbitrary scaling
             computed_at=datetime.now(timezone.utc),
         )
 
@@ -471,22 +460,4 @@ class DARESparsityAnalyzer:
             has_significant_updates=sparsity < 1.0,  # Any non-total sparsity
         )
 
-    @staticmethod
-    def _compute_recommended_drop_rate(
-        effective_sparsity: float, scale_factor: float = 0.9
-    ) -> float:
-        """Compute recommended DARE drop rate from effective sparsity.
-
-        Uses linear scaling: drop_rate = effective_sparsity * scale_factor
-        Result is clamped to [0, 1].
-
-        Args:
-            effective_sparsity: Fraction of weights that are droppable [0, 1]
-            scale_factor: Scaling factor from Configuration.drop_rate_scale_factor
-
-        Returns:
-            Recommended drop rate [0, 1]
-        """
-        drop_rate = effective_sparsity * scale_factor
-        return max(0.0, min(1.0, drop_rate))
 

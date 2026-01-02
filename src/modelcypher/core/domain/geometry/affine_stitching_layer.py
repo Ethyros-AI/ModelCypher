@@ -38,9 +38,11 @@ class Config:
     weight_decay: float = 1e-4
     max_iterations: int = 1000
     forward_weight: float | None = None
-    """Weight for forward mapping loss. If None, uses symmetric 0.5."""
+    """Weight for forward mapping loss. If None, uses symmetric equal weighting.
+    Symmetric is principled when no prior about direction importance exists."""
     backward_weight: float | None = None
-    """Weight for backward mapping loss. If None, uses symmetric 0.5."""
+    """Weight for backward mapping loss. If None, uses symmetric equal weighting.
+    Provide explicit weights if domain knowledge indicates asymmetric importance."""
     convergence_threshold: float = 1e-5
     min_samples: int = 5
     use_momentum: bool = True
@@ -50,12 +52,20 @@ class Config:
 
     @property
     def effective_forward_weight(self) -> float:
-        """Effective forward weight (defaults to symmetric 0.5 if not specified)."""
+        """Effective forward weight.
+
+        Defaults to symmetric equal weighting (0.5) when not specified.
+        This is the principled choice when no prior exists about direction importance.
+        """
         return self.forward_weight if self.forward_weight is not None else 0.5
 
     @property
     def effective_backward_weight(self) -> float:
-        """Effective backward weight (defaults to symmetric 0.5 if not specified)."""
+        """Effective backward weight.
+
+        Defaults to symmetric equal weighting (0.5) when not specified.
+        This is the principled choice when no prior exists about direction importance.
+        """
         return self.backward_weight if self.backward_weight is not None else 0.5
 
     @staticmethod

@@ -340,7 +340,8 @@ def apply_adaptive_smoothing(
     smoothed: dict[int, float] = {}
 
     for layer in sorted_layers:
-        raw_alpha = alpha_by_layer.get(layer, 0.5)
+        # layer is from alpha_by_layer.keys(), so guaranteed to exist
+        raw_alpha = alpha_by_layer[layer]
         sigma = boundary_profile.recommended_smoothing.get(layer, 1.0)
 
         # Gaussian smoothing over all layers (not arbitrary window)

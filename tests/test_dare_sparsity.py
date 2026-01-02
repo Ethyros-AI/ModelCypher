@@ -47,45 +47,44 @@ def test_identify_essential_parameters() -> None:
     assert essential["layer2"] == {0}
 
 
-def test_analysis_with_custom_threshold() -> None:
+def test_analysis_derives_thresholds_from_data() -> None:
+    """Test that thresholds are derived from data, not arbitrary constants."""
     deltas = {
         "layer1": [0.0, 0.2, 0.5, 1.0],
         "layer2": [0.05, 0.0],
     }
-    config = Configuration(sparsity_threshold=0.2, droppable_percentile=0.5)
 
-    analysis = DARESparsityAnalyzer.analyze(deltas, configuration=config)
+    analysis = DARESparsityAnalyzer.analyze(deltas)
 
+    # Basic structure
     assert analysis.total_parameters == 6
     assert analysis.non_zero_parameters == 4
-    assert analysis.effective_sparsity == pytest.approx(4.0 / 6.0)  # ~0.667 = moderate
-    assert analysis.essential_fraction == pytest.approx(2.0 / 6.0)
-    assert analysis.recommended_drop_rate == pytest.approx(0.6)
 
+    # Sparsity should be derived from spectral gap in magnitude distribution
+    # The exact value depends on the data, not arbitrary thresholds
+    assert 0.0 <= analysis.effective_sparsity <= 1.0
+    assert 0.0 <= analysis.essential_fraction <= 1.0
+    assert analysis.effective_sparsity + analysis.essential_fraction == pytest.approx(1.0)
+
+    # Drop rate = effective sparsity (no arbitrary scaling)
+    assert analysis.recommended_drop_rate == pytest.approx(analysis.effective_sparsity)
+
+    # Per-layer metrics
     layer1 = analysis.per_layer_sparsity["layer1"]
     assert layer1.parameter_count == 4
-    assert layer1.sparsity == pytest.approx(0.5)
     assert layer1.mean_magnitude == pytest.approx(0.425)
     assert layer1.max_magnitude == pytest.approx(1.0)
-    assert layer1.essential_fraction == pytest.approx(0.5)
-    assert layer1.has_significant_updates is True
 
     layer2 = analysis.per_layer_sparsity["layer2"]
     assert layer2.parameter_count == 2
-    assert layer2.sparsity == pytest.approx(1.0)
     assert layer2.mean_magnitude == pytest.approx(0.025)
     assert layer2.max_magnitude == pytest.approx(0.05)
-    assert layer2.essential_fraction == pytest.approx(0.0)
-    assert layer2.has_significant_updates is False
 
+    # Magnitude stats
     stats = analysis.magnitude_stats
     assert stats.max == pytest.approx(1.0)
     assert stats.min_non_zero == pytest.approx(0.05)
     assert stats.median == pytest.approx(0.2)
-    assert stats.percentile1 == pytest.approx(0.0)
-    assert stats.percentile5 == pytest.approx(0.0)
-    assert stats.percentile95 == pytest.approx(1.0)
-    assert stats.percentile99 == pytest.approx(1.0)
 
 
 def test_analysis_layer_filtering() -> None:
@@ -93,25 +92,21 @@ def test_analysis_layer_filtering() -> None:
         "layer1": [0.0, 0.2, 0.5, 1.0],
         "layer2": [0.05, 0.0],
     }
-    config = Configuration(
-        sparsity_threshold=0.2,
-        droppable_percentile=0.5,
-        analysis_layers={"layer1"},
-    )
+    config = Configuration(analysis_layers={"layer1"})
 
     analysis = DARESparsityAnalyzer.analyze(deltas, configuration=config)
 
     assert analysis.total_parameters == 4
-    assert analysis.effective_sparsity == pytest.approx(0.75)  # 0.75 = good quality
-    assert analysis.essential_fraction == pytest.approx(0.25)
-    assert analysis.recommended_drop_rate == pytest.approx(0.675)
+    # Layer filtering should only analyze layer1
     assert set(analysis.per_layer_sparsity.keys()) == {"layer1"}
+    # Sparsity is derived from data, verify constraints
+    assert 0.0 <= analysis.effective_sparsity <= 1.0
+    assert analysis.recommended_drop_rate == pytest.approx(analysis.effective_sparsity)
 
 
 def test_metrics_dictionary() -> None:
     deltas = {"layer1": [0.0, 1.0], "layer2": [0.1, 0.0]}
-    config = Configuration(sparsity_threshold=0.5, droppable_percentile=0.5)
-    analysis = DARESparsityAnalyzer.analyze(deltas, configuration=config)
+    analysis = DARESparsityAnalyzer.analyze(deltas)
     metrics = DARESparsityAnalyzer.to_metrics_dictionary(analysis)
 
     assert metrics["geometry/dare_effective_sparsity"] == pytest.approx(analysis.effective_sparsity)

@@ -85,6 +85,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("modelcypher.geometry.permutation_aligner")
 
+# Memory-derived threshold for sparse vs dense permutation representation.
+# Dense matrix = N × N × 4 bytes (float32). At N=4096, matrix is 64MB.
+# Beyond this, use sparse representation (assignment indices) to avoid OOM.
+_DENSE_MATRIX_MEMORY_BUDGET_BYTES = 64 * 1024 * 1024  # 64 MB
+_SPARSE_THRESHOLD_N = int((_DENSE_MATRIX_MEMORY_BUDGET_BYTES / 4) ** 0.5)  # = 4096
+
 
 class PermutationAlignerError(Exception):
     """Error during permutation alignment."""
@@ -429,7 +435,7 @@ class PermutationAligner:
 
         avg_quality = sum(confidences_target) / max(1, N)
 
-        if N > 4096:
+        if N > _SPARSE_THRESHOLD_N:
             return AlignmentResult(
                 permutation=b.astype(b.array(assignment), "float32"),
                 signs=b.astype(b.array(signs_target), "float32"),

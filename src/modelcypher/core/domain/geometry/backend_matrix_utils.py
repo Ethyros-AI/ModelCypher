@@ -46,7 +46,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, TypeVar
 
 from modelcypher.core.domain.cache import ComputationCache
-from modelcypher.core.domain.geometry.numerical_stability import svd_via_eigh
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon, svd_via_eigh
 from modelcypher.core.domain.geometry.types import PairwiseProcrustesResult
 
 if TYPE_CHECKING:
@@ -387,8 +387,8 @@ class BackendMatrixUtils:
         if len(eig_positive) < 2:
             return len(eig_positive)
 
-        # Machine epsilon for numerical stability
-        eps = _division_epsilon_for_dtype(b)
+        # Machine epsilon for numerical stability (derived from eigenvalue dtype)
+        eps = division_epsilon(b, eig_flat)
 
         # Find the maximum relative drop: (λ_i - λ_{i+1}) / λ_i
         max_gap = 0.0

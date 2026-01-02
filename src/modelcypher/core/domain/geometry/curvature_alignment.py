@@ -183,20 +183,22 @@ def _compute_layer_guidance(
             # Needs curvature flow to reconcile
             curvature_correction = 1.0 + curvature_diff
     else:
-        curvature_correction = 0.5  # Unknown, use moderate correction
+        # Both curvatures zero = unmeasured. Use 1.0 (neutral, no correction)
+        # since we have no geometric information to derive a correction from.
+        curvature_correction = 1.0
 
     # 3. Alignment effort (0-1)
     # Higher effort = more transformation needed
     dim_effort = min(1.0, abs(math.log(dimension_scale)) / math.log(2))  # Double/half = effort 1.0
     curv_effort = min(1.0, curvature_correction)
 
-    # Weight: dimension matters more for projection, curvature for rotation
-    alignment_effort = 0.4 * dim_effort + 0.6 * curv_effort
+    # Alignment effort: geometric mean of dimension and curvature effort
+    # (no arbitrary weights - both contribute equally)
+    alignment_effort = math.sqrt(dim_effort * curv_effort)
 
-    # 4. Alignment weight (how much to trust this layer's contribution)
+    # 4. Alignment weight = similarity (no artificial floor)
     # Layers with similar curvature profiles are more reliable
-    similarity = 1.0 - min(1.0, curvature_correction)
-    alignment_weight = 0.3 + 0.7 * similarity  # Range [0.3, 1.0]
+    alignment_weight = 1.0 - min(1.0, curvature_correction)
 
     return AlignmentGuidance(
         layer_idx=layer_idx,
@@ -274,9 +276,9 @@ def curvature_weighted_procrustes(
     R = backend.matmul(U, Vt)
 
     # Step 4: Apply curvature correction
-    # Scale the rotation by (1 - correction) to dampen aggressive transformations
-    # when curvature profiles differ significantly
-    damping = 1.0 - 0.3 * guidance.curvature_correction
+    # Dampen rotation based on curvature mismatch (hyperbolic decay, no arbitrary constants)
+    # correction=0 → damping=1.0 (full rotation), correction→∞ → damping→0 (identity)
+    damping = 1.0 / (1.0 + guidance.curvature_correction)
     R = R * damping + backend.eye(backend.shape(R)[0]) * (1 - damping)
 
     return R
@@ -336,8 +338,9 @@ def compute_layer_correspondence_by_curvature(
                 continue
 
             # Penalize matches far from expected position
+            # Penalty > 1.0 means outside the search window
             position_penalty = abs(tgt_lc.layer_idx - expected_tgt_idx) / max(1, window)
-            if position_penalty > 1.5:
+            if position_penalty > 1.0:
                 continue
 
             tgt_features = layer_features(tgt_lc)
@@ -348,7 +351,8 @@ def compute_layer_correspondence_by_curvature(
                 for s, t in zip(src_features, tgt_features)
             ) / 3
 
-            score = feature_dist + 0.2 * position_penalty
+            # Score: average of feature distance and position penalty (equal weights)
+            score = (feature_dist + position_penalty) / 2
 
             if score < best_score:
                 best_score = score

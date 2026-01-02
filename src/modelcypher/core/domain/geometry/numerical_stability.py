@@ -38,6 +38,8 @@ __all__ = [
     "svd_rank_threshold",
     "tiny_value",
     "safe_log_epsilon",
+    # Data-derived thresholds
+    "find_magnitude_gap_threshold",
     # Statistical utilities
     "compute_pearson_correlation",
     # Matrix decomposition
@@ -122,6 +124,40 @@ def safe_log_epsilon(backend: Backend, array: Array) -> float:
     Uses tiny value to prevent log(0) while maintaining precision.
     """
     return backend.finfo(array.dtype).tiny
+
+
+def find_magnitude_gap_threshold(sorted_values: list[float], eps: float = 1e-10) -> float:
+    """Find the natural break point in a sorted magnitude distribution.
+
+    Finds the threshold where the largest relative drop occurs between
+    consecutive values. This identifies where "signal" ends and "noise" begins
+    without arbitrary percentile choices.
+
+    Args:
+        sorted_values: Magnitudes sorted in ascending order.
+        eps: Minimum denominator for numerical stability.
+
+    Returns:
+        The value at which the largest relative gap occurs.
+        Returns the median if no clear gap is found.
+    """
+    if len(sorted_values) < 3:
+        return sorted_values[len(sorted_values) // 2] if sorted_values else 0.0
+
+    # Find the largest relative gap: (v[i+1] - v[i]) / v[i]
+    max_gap = 0.0
+    gap_index = len(sorted_values) // 2  # Default to median
+
+    for i in range(len(sorted_values) - 1):
+        curr = sorted_values[i]
+        next_val = sorted_values[i + 1]
+        if curr > eps:
+            relative_gap = (next_val - curr) / curr
+            if relative_gap > max_gap:
+                max_gap = relative_gap
+                gap_index = i
+
+    return sorted_values[gap_index]
 
 
 def compute_pearson_correlation(

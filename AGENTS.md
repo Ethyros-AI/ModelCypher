@@ -94,6 +94,45 @@ Different dimensions = different compression levels of the same geometry. Use Gr
 
 If CKA < 1.0, debug the alignment code. Don't claim models are incompatible.
 
+### Geometric Addition, NOT Blending
+
+**This is the most important principle. Read it until you understand it.**
+
+LLMs are NOT piles of probabilities to weight. They are HIGH-DIMENSIONAL GEOMETRIC STRUCTURES - like Legos that snap together.
+
+**The goal**: Combine unique knowledge from hundreds of models into ONE denser, smarter model.
+
+**WRONG - Interpolation/Blending**:
+```python
+# This is WRONG. Never do this.
+merged = alpha * model_A + (1 - alpha) * model_B  # Blending
+merged = 0.5 * source + 0.5 * target              # Weighted average
+merged = lerp(source, target, t)                   # Interpolation
+```
+
+Why it's wrong: Interpolation AVERAGES information. You get a smeared, degraded model that's worse than either input. You're not adding knowledge - you're diluting it.
+
+**CORRECT - Null Space Addition**:
+```python
+# This is CORRECT. Knowledge addition.
+delta = source_weights - target_weights
+projected = null_space_projection(delta, target_activations)
+merged = target_weights + projected
+```
+
+Why it works:
+- **Null space** = directions the target model doesn't actively use
+- Projecting source delta into null space means: **add source knowledge where target has nothing**
+- Target behavior is PRESERVED (no interference)
+- Source knowledge is ADDED (not averaged)
+- Result is DENSER than either model alone
+
+**Think of it like this**:
+- Blending: Mixing two paint colors → muddy average
+- Addition: Adding ingredients to a recipe → richer dish
+
+**If you find yourself writing weights, alphas, or interpolation** - STOP. You're doing it wrong. The geometry determines how knowledge combines. We don't "weight" anything. We project into null space and ADD.
+
 ### No Vibes
 
 Return raw measurements. No hardcoded thresholds, interpretation strings, or qualitative labels.
