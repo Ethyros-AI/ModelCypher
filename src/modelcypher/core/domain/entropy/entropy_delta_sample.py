@@ -243,8 +243,8 @@ class EntropyDeltaSessionResult:
     max_anomaly_score: float
     avg_delta: float
     disagreement_rate: float
-    avg_base_surprisal: float | None = None
-    max_base_surprisal: float | None = None
+    avg_base_logit_margin: float | None = None
+    max_base_logit_margin: float | None = None
     conflict_analysis: ConflictAnalysis | None = None
     samples: list[EntropyDeltaSample] = field(default_factory=list)
 

@@ -91,11 +91,11 @@ class DualPathGeneratorConfigurationJAX:
     kl_divergence_threshold: float | None = None
     """KL divergence above which sample is anomalous. Derive from baseline σ."""
 
-    surprisal_threshold: float | None = None
-    """Surprisal above which sample is anomalous. Derive from baseline σ."""
+    logit_margin_threshold: float | None = None
+    """Logit margin above which sample is anomalous. Derive from baseline σ."""
 
-    approval_threshold: float | None = None
-    """Normalized approval below which sample is anomalous. Derive from baseline σ."""
+    rank_fraction_threshold: float | None = None
+    """Rank fraction below which sample is anomalous. Derive from baseline σ."""
 
 
 
@@ -229,10 +229,10 @@ class EntropyDeltaSampleJAX:
     adapter_entropy: float
     adapter_variance: float
     kl_divergence: float
-    base_surprisal: float
-    base_approval_prob: float
-    normalized_approval: float
-    base_top_k_hit: bool
+    base_logit_margin: float
+    base_token_logit: float
+    base_rank_fraction: float
+    base_frontier_hit: bool
 
 
 class DualPathGeneratorJAX:
@@ -406,14 +406,14 @@ class DualPathGeneratorJAX:
                 logits_adapter[0], logits_base[0], self.config.entropy_top_k
             )
 
-            # Compute base model approval
-            probs_base = jax.nn.softmax(logits_base[0])
-            eps = _division_epsilon_for_dtype(probs_base)
-            token_prob = float(probs_base[token_id])
-            surprisal = float(-jnp.log(probs_base[token_id] + eps))
+            # Compute base logit geometry.
+            scores_base = logits_base[0]
+            token_logit = float(scores_base[token_id])
+            max_logit = float(jnp.max(scores_base))
+            logit_margin = max(0.0, max_logit - token_logit)
 
-            _, normalized_approval, top_k_hit = compute_token_rank_metrics_jax(
-                curr_logits_base, token_id
+            _, rank_fraction, frontier_hit = compute_token_rank_metrics_jax(
+                scores_base, token_id
             )
 
             # Create sample
@@ -425,10 +425,10 @@ class DualPathGeneratorJAX:
                 adapter_entropy=adapter_entropy,
                 adapter_variance=adapter_variance,
                 kl_divergence=kl_div,
-                base_surprisal=surprisal,
-                base_approval_prob=token_prob,
-                normalized_approval=normalized_approval,
-                base_top_k_hit=top_k_hit,
+                base_logit_margin=logit_margin,
+                base_token_logit=token_logit,
+                base_rank_fraction=rank_fraction,
+                base_frontier_hit=frontier_hit,
             )
             self.samples.append(sample)
 
@@ -531,20 +531,20 @@ class DualPathGeneratorJAX:
 
         Thresholds should be derived from baseline measurements:
         - kl_divergence_threshold: baseline_mean + 2*baseline_std
-        - surprisal_threshold: baseline_mean + 2*baseline_std
-        - approval_threshold: baseline_mean - 2*baseline_std
+        - logit_margin_threshold: baseline_mean + 2*baseline_std
+        - rank_fraction_threshold: baseline_mean - 2*baseline_std
         """
         # High KL divergence indicates disagreement
         if self.config.kl_divergence_threshold is not None:
             if sample.kl_divergence > self.config.kl_divergence_threshold:
                 return True
-        # High surprisal indicates unexpected token
-        if self.config.surprisal_threshold is not None:
-            if sample.base_surprisal > self.config.surprisal_threshold:
+        # High logit margin indicates unexpected token
+        if self.config.logit_margin_threshold is not None:
+            if sample.base_logit_margin > self.config.logit_margin_threshold:
                 return True
-        # Low approval indicates base model disapproves
-        if self.config.approval_threshold is not None:
-            if sample.normalized_approval < self.config.approval_threshold:
+        # Low rank fraction indicates out-of-frontier selection
+        if self.config.rank_fraction_threshold is not None:
+            if sample.base_rank_fraction < self.config.rank_fraction_threshold:
                 return True
         return False
 

@@ -21,20 +21,25 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.entropy.entropy_delta_sample import EntropyDeltaSample
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.geometry.manifold_dimensionality import (
     BackendManifoldDimensionality,
     ManifoldDimensionality,
     get_manifold_dimensionality,
 )
 
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array(list(values)))
+
 
 def test_entropy_trace_features() -> None:
     features = ManifoldDimensionality.entropy_trace_features([1.0, 2.0, 3.0])
     assert features is not None
     assert features.token_count == 3
-    assert features.mean == pytest.approx(2.0)
-    assert features.std_dev == pytest.approx(1.0)
-    assert features.max == pytest.approx(3.0)
+    assert abs(features.mean - 2.0) < _eps(features.mean, 2.0)
+    assert abs(features.std_dev - 1.0) < _eps(features.std_dev, 1.0)
+    assert abs(features.max - 3.0) < _eps(features.max, 3.0)
     assert features.feature_vector == [3.0, 2.0, 1.0]
 
 
@@ -42,9 +47,9 @@ def test_feature_stats() -> None:
     stats = ManifoldDimensionality.feature_stats([[1.0, 2.0], [3.0, 4.0]], ["a", "b"])
     assert len(stats) == 2
     assert stats[0].name == "a"
-    assert stats[0].mean == pytest.approx(2.0)
+    assert abs(stats[0].mean - 2.0) < _eps(stats[0].mean, 2.0)
     assert stats[1].name == "b"
-    assert stats[1].mean == pytest.approx(3.0)
+    assert abs(stats[1].mean - 3.0) < _eps(stats[1].mean, 3.0)
 
 
 def test_summarize_prior_tension() -> None:
@@ -58,9 +63,9 @@ def test_summarize_prior_tension() -> None:
             adapter_entropy=1.2,
             adapter_top_k_variance=0.2,
             adapter_top_token=1,
-            base_surprisal=2.0,
-            base_approval_probability=0.1,
-            normalized_approval_score=0.2,
+            base_logit_margin=2.0,
+            base_token_logit=0.1,
+            base_rank_fraction=0.2,
         ),
         EntropyDeltaSample.create(
             token_index=1,
@@ -71,16 +76,23 @@ def test_summarize_prior_tension() -> None:
             adapter_entropy=1.6,
             adapter_top_k_variance=0.2,
             adapter_top_token=3,
-            base_surprisal=4.0,
-            base_approval_probability=0.05,
-            normalized_approval_score=0.1,
+            base_logit_margin=4.0,
+            base_token_logit=0.05,
+            base_rank_fraction=0.1,
         ),
     ]
     summary = ManifoldDimensionality.summarize_prior_tension(samples)
     assert summary is not None
     assert summary.token_count == 2
-    assert summary.mean_base_surprisal == pytest.approx(3.0)
-    assert summary.top_token_disagreement_rate == pytest.approx(0.5)
+    assert abs(summary.mean_base_logit_margin - 3.0) < _eps(
+        summary.mean_base_logit_margin, 3.0
+    )
+    assert abs(summary.min_base_rank_fraction - 0.1) < _eps(
+        summary.min_base_rank_fraction, 0.1
+    )
+    assert abs(summary.top_token_disagreement_rate - 0.5) < _eps(
+        summary.top_token_disagreement_rate, 0.5
+    )
 
 
 def test_estimate_id() -> None:
@@ -111,9 +123,9 @@ class TestBackendManifoldDimensionality:
         assert pure is not None
         assert backend is not None
         assert pure.token_count == backend.token_count
-        assert pure.mean == pytest.approx(backend.mean, abs=1e-6)
-        assert pure.std_dev == pytest.approx(backend.std_dev, abs=1e-6)
-        assert pure.max == pytest.approx(backend.max, abs=1e-6)
+        assert abs(pure.mean - backend.mean) < _eps(pure.mean, backend.mean)
+        assert abs(pure.std_dev - backend.std_dev) < _eps(pure.std_dev, backend.std_dev)
+        assert abs(pure.max - backend.max) < _eps(pure.max, backend.max)
 
     def test_entropy_trace_features_empty_returns_none(self, md) -> None:
         """Empty input should return None."""
@@ -125,7 +137,7 @@ class TestBackendManifoldDimensionality:
         features = md.entropy_trace_features(entropies)
         assert features is not None
         assert features.token_count == 2
-        assert features.mean == pytest.approx(2.0, abs=1e-6)
+        assert abs(features.mean - 2.0) < _eps(features.mean, 2.0)
 
     def test_feature_stats_matches_pure_python(self, md) -> None:
         """Backend feature stats should match pure Python."""
@@ -139,8 +151,8 @@ class TestBackendManifoldDimensionality:
         for p, b in zip(pure, backend):
             assert p.index == b.index
             assert p.name == b.name
-            assert p.mean == pytest.approx(b.mean, abs=1e-6)
-            assert p.std_dev == pytest.approx(b.std_dev, abs=1e-6)
+            assert abs(p.mean - b.mean) < _eps(p.mean, b.mean)
+            assert abs(p.std_dev - b.std_dev) < _eps(p.std_dev, b.std_dev)
 
     def test_feature_stats_empty_returns_empty(self, md) -> None:
         """Empty input should return empty list."""
@@ -158,9 +170,9 @@ class TestBackendManifoldDimensionality:
                 adapter_entropy=1.2,
                 adapter_top_k_variance=0.2,
                 adapter_top_token=1,
-                base_surprisal=2.0,
-                base_approval_probability=0.1,
-                normalized_approval_score=0.2,
+                base_logit_margin=2.0,
+                base_token_logit=0.1,
+                base_rank_fraction=0.2,
             ),
             EntropyDeltaSample.create(
                 token_index=1,
@@ -171,9 +183,9 @@ class TestBackendManifoldDimensionality:
                 adapter_entropy=1.6,
                 adapter_top_k_variance=0.2,
                 adapter_top_token=3,
-                base_surprisal=4.0,
-                base_approval_probability=0.05,
-                normalized_approval_score=0.1,
+                base_logit_margin=4.0,
+                base_token_logit=0.05,
+                base_rank_fraction=0.1,
             ),
         ]
 
@@ -183,12 +195,12 @@ class TestBackendManifoldDimensionality:
         assert pure is not None
         assert backend is not None
         assert pure.token_count == backend.token_count
-        assert pure.mean_base_surprisal == pytest.approx(
-            backend.mean_base_surprisal, abs=1e-6
+        assert abs(pure.mean_base_logit_margin - backend.mean_base_logit_margin) < _eps(
+            pure.mean_base_logit_margin, backend.mean_base_logit_margin
         )
-        assert pure.top_token_disagreement_rate == pytest.approx(
-            backend.top_token_disagreement_rate, abs=1e-6
-        )
+        assert abs(
+            pure.top_token_disagreement_rate - backend.top_token_disagreement_rate
+        ) < _eps(pure.top_token_disagreement_rate, backend.top_token_disagreement_rate)
 
     def test_summarize_prior_tension_empty_returns_none(self, md) -> None:
         """Empty samples should return None."""
@@ -202,8 +214,8 @@ class TestBackendManifoldDimensionality:
         backend = md.estimate_id(points, use_regression=False)
 
         assert pure.sample_count == backend.sample_count
-        assert pure.intrinsic_dimension == pytest.approx(
-            backend.intrinsic_dimension, abs=1e-6
+        assert abs(pure.intrinsic_dimension - backend.intrinsic_dimension) < _eps(
+            pure.intrinsic_dimension, backend.intrinsic_dimension
         )
 
 

@@ -228,6 +228,8 @@ class GramAligner:
         self._tolerance = tolerance
         self._regularization = regularization
         self._logger = logging.getLogger(__name__)
+        # Cache for centering matrices (keyed by n)
+        self._centering_cache: dict[int, "Array"] = {}
 
     def _solve_feature_transform(
         self,
@@ -679,12 +681,19 @@ class GramAligner:
         return X - mean
 
     def _centering_matrix(self, n: int) -> "Array":
-        """Create centering matrix H = I - (1/n) * 1 @ 1^T."""
+        """Create centering matrix H = I - (1/n) * 1 @ 1^T.
+
+        Cached to avoid recomputation - the centering matrix depends only on n.
+        """
+        if n in self._centering_cache:
+            return self._centering_cache[n]
+
         b = self._backend
         I = b.eye(n)
         ones = b.ones((n, n))
         H = I - ones / float(n)
         b.eval(H)
+        self._centering_cache[n] = H
         return H
 
     def _compute_sample_transform(

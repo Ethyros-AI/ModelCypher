@@ -17,12 +17,17 @@
 
 from __future__ import annotations
 
-import pytest
-
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.sparse_region_validator import (
     BaselineMetrics,
     SparseRegionValidator,
 )
+
+
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return division_epsilon(backend, backend.array(list(values)))
 
 
 def test_sparse_region_validator_analyze_results() -> None:
@@ -30,39 +35,34 @@ def test_sparse_region_validator_analyze_results() -> None:
     baseline = BaselineMetrics(
         mean_entropy=1.0,
         entropy_std_dev=0.1,
-        refusal_rate=0.05,
-        coherence_score=0.8,
+        coherence_index=0.8,
         per_prompt_entropy=[1.0, 1.1],
         duration=0.1,
     )
     post = BaselineMetrics(
         mean_entropy=1.02,
         entropy_std_dev=0.1,
-        refusal_rate=0.06,
-        coherence_score=0.81,
+        coherence_index=0.81,
         per_prompt_entropy=[1.02, 1.0],
         duration=0.1,
     )
     result = validator.analyze_results(
         baseline=baseline, post_perturbation=post, perturbed_layers=[1, 2]
     )
-    assert result.entropy_delta == pytest.approx(0.02)
-    assert result.refusal_delta == pytest.approx(0.01)
-    assert result.coherence_change == pytest.approx(0.01)
+    assert abs(result.entropy_delta - 0.02) < _eps(result.entropy_delta, 0.02)
+    assert abs(result.coherence_change - 0.01) < _eps(result.coherence_change, 0.01)
 
 
 def test_sparse_region_validator_helpers() -> None:
     coherence = SparseRegionValidator.compute_coherence([1.0, 1.0, 1.0])
     assert coherence == 1.0
-    assert SparseRegionValidator.detect_refusal("I cannot comply with that request.")
 
 
 def test_validation_report_contains_fields() -> None:
     baseline = BaselineMetrics(
         mean_entropy=1.0,
         entropy_std_dev=0.1,
-        refusal_rate=0.05,
-        coherence_score=0.8,
+        coherence_index=0.8,
         per_prompt_entropy=[1.0, 1.1],
         duration=0.1,
     )

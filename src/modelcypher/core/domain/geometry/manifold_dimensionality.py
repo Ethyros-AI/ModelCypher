@@ -55,12 +55,12 @@ class FeatureStat:
 @dataclass(frozen=True)
 class PriorTensionSummary:
     token_count: int
-    mean_base_surprisal: float | None
-    p95_base_surprisal: float | None
-    mean_base_approval_probability: float | None
-    p05_base_approval_probability: float | None
-    mean_normalized_approval: float | None
-    p05_normalized_approval: float | None
+    mean_base_logit_margin: float | None
+    max_base_logit_margin: float | None
+    mean_base_token_logit: float | None
+    min_base_token_logit: float | None
+    mean_base_rank_fraction: float | None
+    min_base_rank_fraction: float | None
     top_token_disagreement_rate: float | None
 
 
@@ -130,16 +130,14 @@ class ManifoldDimensionality:
         if not samples:
             return None
 
-        surprisal = [float(s.base_surprisal) for s in samples if s.base_surprisal is not None]
-        approval_prob = [
-            float(s.base_approval_probability)
-            for s in samples
-            if s.base_approval_probability is not None
+        logit_margin = [
+            float(s.base_logit_margin) for s in samples if s.base_logit_margin is not None
         ]
-        normalized = [
-            float(s.normalized_approval_score)
-            for s in samples
-            if s.normalized_approval_score is not None
+        token_logit = [
+            float(s.base_token_logit) for s in samples if s.base_token_logit is not None
+        ]
+        rank_fraction = [
+            float(s.base_rank_fraction) for s in samples if s.base_rank_fraction is not None
         ]
 
         disagreement_rate = None
@@ -150,20 +148,14 @@ class ManifoldDimensionality:
         def mean(values: list[float]) -> float | None:
             return sum(values) / float(len(values)) if values else None
 
-        def percentile(values: list[float], p: float) -> float | None:
-            if not values:
-                return None
-            sorted_values = sorted(values)
-            return statistics.percentile(sorted_values, p)
-
         return PriorTensionSummary(
             token_count=len(samples),
-            mean_base_surprisal=mean(surprisal),
-            p95_base_surprisal=percentile(surprisal, 0.95),
-            mean_base_approval_probability=mean(approval_prob),
-            p05_base_approval_probability=percentile(approval_prob, 0.05),
-            mean_normalized_approval=mean(normalized),
-            p05_normalized_approval=percentile(normalized, 0.05),
+            mean_base_logit_margin=mean(logit_margin),
+            max_base_logit_margin=max(logit_margin) if logit_margin else None,
+            mean_base_token_logit=mean(token_logit),
+            min_base_token_logit=min(token_logit) if token_logit else None,
+            mean_base_rank_fraction=mean(rank_fraction),
+            min_base_rank_fraction=min(rank_fraction) if rank_fraction else None,
             top_token_disagreement_rate=disagreement_rate,
         )
 
@@ -313,16 +305,14 @@ class BackendManifoldDimensionality:
         if not samples:
             return None
 
-        surprisal = [float(s.base_surprisal) for s in samples if s.base_surprisal is not None]
-        approval_prob = [
-            float(s.base_approval_probability)
-            for s in samples
-            if s.base_approval_probability is not None
+        logit_margin = [
+            float(s.base_logit_margin) for s in samples if s.base_logit_margin is not None
         ]
-        normalized = [
-            float(s.normalized_approval_score)
-            for s in samples
-            if s.normalized_approval_score is not None
+        token_logit = [
+            float(s.base_token_logit) for s in samples if s.base_token_logit is not None
+        ]
+        rank_fraction = [
+            float(s.base_rank_fraction) for s in samples if s.base_rank_fraction is not None
         ]
 
         # Disagreement rate
@@ -339,24 +329,30 @@ class BackendManifoldDimensionality:
             self.backend.eval(result)
             return self._to_scalar(result)
 
-        def compute_percentile(values: list[float], p: float) -> float | None:
+        def compute_min(values: list[float]) -> float | None:
             if not values:
                 return None
-            # Sort and compute percentile
             arr = self.backend.array(values)
-            sorted_arr = self.backend.sort(arr)
-            self.backend.eval(sorted_arr)
-            sorted_list = sorted_arr.tolist()
-            return statistics.percentile(sorted_list, p)
+            result = self.backend.min(arr)
+            self.backend.eval(result)
+            return self._to_scalar(result)
+
+        def compute_max(values: list[float]) -> float | None:
+            if not values:
+                return None
+            arr = self.backend.array(values)
+            result = self.backend.max(arr)
+            self.backend.eval(result)
+            return self._to_scalar(result)
 
         return PriorTensionSummary(
             token_count=len(samples),
-            mean_base_surprisal=compute_mean(surprisal),
-            p95_base_surprisal=compute_percentile(surprisal, 0.95),
-            mean_base_approval_probability=compute_mean(approval_prob),
-            p05_base_approval_probability=compute_percentile(approval_prob, 0.05),
-            mean_normalized_approval=compute_mean(normalized),
-            p05_normalized_approval=compute_percentile(normalized, 0.05),
+            mean_base_logit_margin=compute_mean(logit_margin),
+            max_base_logit_margin=compute_max(logit_margin),
+            mean_base_token_logit=compute_mean(token_logit),
+            min_base_token_logit=compute_min(token_logit),
+            mean_base_rank_fraction=compute_mean(rank_fraction),
+            min_base_rank_fraction=compute_min(rank_fraction),
             top_token_disagreement_rate=disagreement_rate,
         )
 

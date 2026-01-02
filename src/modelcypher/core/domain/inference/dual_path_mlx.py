@@ -269,21 +269,14 @@ class DualPathGenerator:
             # Note: Swift logic accumulates `PendingEntropyData` then sends to actor.
             # Python is simpler.
 
-            # Compute base logits for rank geometry, and probabilities for entropy-derived metrics.
+            # Compute base logits for rank geometry.
             scores_base = b.squeeze(curr_logits_base)
-            probs_base = b.softmax(curr_logits_base)
-
-            # Surprisal = -log(P(token))
-            token_prob = float(b.to_numpy(probs_base[token_id]))
-            eps = division_epsilon(b, probs_base)
-            surprisal = (
-                -1.0 * float(b.to_numpy(b.log(b.array([token_prob]))))
-                if token_prob > eps
-                else 100.0
-            )
+            token_logit = float(b.to_numpy(scores_base[token_id]))
+            max_logit = float(b.to_numpy(b.max(scores_base)))
+            logit_margin = max(0.0, max_logit - token_logit)
 
             # Compute rank geometry for the generated token.
-            _, normalized_approval, base_top_k_hit = compute_token_rank_metrics(
+            _, rank_fraction, frontier_hit = compute_token_rank_metrics(
                 scores_base, token_id, backend=b
             )
 
@@ -295,10 +288,10 @@ class DualPathGenerator:
                 adapter_entropy=adap_ent.entropy,
                 adapter_variance=adap_ent.variance,
                 kl_divergence=kl,
-                base_surprisal=surprisal,
-                base_approval_prob=token_prob,
-                normalized_approval=normalized_approval,
-                base_top_k_hit=base_top_k_hit,
+                base_logit_margin=logit_margin,
+                base_token_logit=token_logit,
+                base_rank_fraction=rank_fraction,
+                base_frontier_hit=frontier_hit,
             )
 
             await self.delta_tracker.record_step(sample)

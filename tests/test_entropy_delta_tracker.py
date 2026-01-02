@@ -154,7 +154,7 @@ def test_pending_entropy_data() -> None:
         adapter_entropy=1.2,
         adapter_top_k_variance=0.3,
         adapter_top_token=102,
-        base_surprisal=6.5,
+        base_logit_margin=6.5,
         kl_divergence_adapter_to_base=0.25,
         latency_ms=15.5,
     )
@@ -162,7 +162,7 @@ def test_pending_entropy_data() -> None:
     assert data.token_index == 5
     assert data.base_entropy == 3.5
     assert data.adapter_entropy == 1.2
-    assert data.base_surprisal == 6.5
+    assert data.base_logit_margin == 6.5
 
 
 @pytest.mark.asyncio

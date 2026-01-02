@@ -77,6 +77,10 @@ class NullSpaceProjection:
     # Number of samples used to estimate null space
     n_samples: int
 
+    # Cached right singular vectors Vh (rows are singular vectors)
+    # Used to avoid recomputing SVD for direction analysis
+    vh: Any = None
+
 
 @dataclass
 class NullSpaceFilterResult:
@@ -294,6 +298,7 @@ class NullSpaceFilter:
             singular_values=S,
             effective_threshold=effective_threshold,
             n_samples=n_samples,
+            vh=Vh,  # Cache Vh to avoid recomputing SVD for direction analysis
         )
 
     def filter_delta(
@@ -397,9 +402,13 @@ class NullSpaceFilter:
         direction_preservation = None
         if return_direction_analysis and projection.null_dim > 0:
             # Compute how much of each principal direction is preserved
+            # Reuse Vh from projection (cached from SVD) to avoid recomputation
             try:
-                _, _, Vh = svd_via_eigh(backend, prior_activations, full_matrices=False)
-                backend.eval(Vh)
+                Vh = projection.vh
+                if Vh is None:
+                    # Fallback if Vh wasn't cached (e.g., from older projections)
+                    _, _, Vh = svd_via_eigh(backend, prior_activations, full_matrices=False)
+                    backend.eval(Vh)
 
                 n_dirs = min(10, int(Vh.shape[0]))
                 dir_pres = []

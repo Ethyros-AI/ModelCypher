@@ -144,7 +144,7 @@ class PendingEntropyData:
     adapter_entropy: float
     adapter_top_k_variance: float
     adapter_top_token: int
-    base_surprisal: float | None = None
+    base_logit_margin: float | None = None
     base_token_logit: float | None = None
     base_rank_fraction: float | None = None
     base_frontier_hit: bool | None = None
@@ -291,7 +291,7 @@ class EntropyDeltaTracker:
             adapter_entropy=data.adapter_entropy,
             adapter_top_k_variance=data.adapter_top_k_variance,
             adapter_top_token=data.adapter_top_token,
-            base_surprisal=data.base_surprisal,
+            base_logit_margin=data.base_logit_margin,
             base_token_logit=data.base_token_logit,
             base_rank_fraction=data.base_rank_fraction,
             base_frontier_hit=data.base_frontier_hit,
@@ -335,12 +335,14 @@ class EntropyDeltaTracker:
         avg_delta = sum(s.delta for s in self._samples) / total_tokens if total_tokens > 0 else 0.0
         disagreement_count = sum(1 for s in self._samples if s.top_token_disagreement)
         disagreement_rate = disagreement_count / total_tokens if total_tokens > 0 else 0.0
-        # Surprisal statistics
-        surprisal_values = [s.base_surprisal for s in self._samples if s.base_surprisal is not None]
-        avg_base_surprisal = (
-            sum(surprisal_values) / len(surprisal_values) if surprisal_values else None
+        # Logit margin statistics
+        margin_values = [
+            s.base_logit_margin for s in self._samples if s.base_logit_margin is not None
+        ]
+        avg_base_logit_margin = (
+            sum(margin_values) / len(margin_values) if margin_values else None
         )
-        max_base_surprisal = max(surprisal_values) if surprisal_values else None
+        max_base_logit_margin = max(margin_values) if margin_values else None
 
         # Compute conflict analysis
         kl_divergences = [s.kl_divergence_adapter_to_base for s in self._samples]
@@ -357,8 +359,8 @@ class EntropyDeltaTracker:
             max_anomaly_score=max_anomaly_score,
             avg_delta=avg_delta,
             disagreement_rate=disagreement_rate,
-            avg_base_surprisal=avg_base_surprisal,
-            max_base_surprisal=max_base_surprisal,
+            avg_base_logit_margin=avg_base_logit_margin,
+            max_base_logit_margin=max_base_logit_margin,
             conflict_analysis=conflict_analysis,
             samples=self._samples.copy(),
         )

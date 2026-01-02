@@ -153,9 +153,9 @@ class EntropyDeltaSample:
     source: str | None = None
 
     # Approval metrics
-    base_surprisal: float | None = None
-    base_approval_probability: float | None = None
-    normalized_approval_score: float | None = None
+    base_logit_margin: float | None = None
+    base_token_logit: float | None = None
+    base_rank_fraction: float | None = None
     base_frontier_hit: bool | None = None
     kl_divergence_adapter_to_base: float | None = None
 
@@ -198,12 +198,12 @@ class EntropyDeltaSample:
             "timestamp": self.timestamp.isoformat(),
             "latencyMs": self.latency_ms,
         }
-        if self.base_surprisal is not None:
-            payload["baseSurprisal"] = self.base_surprisal
-        if self.base_approval_probability is not None:
-            payload["baseApprovalProbability"] = self.base_approval_probability
-        if self.normalized_approval_score is not None:
-            payload["normalizedApprovalScore"] = self.normalized_approval_score
+        if self.base_logit_margin is not None:
+            payload["baseLogitMargin"] = self.base_logit_margin
+        if self.base_token_logit is not None:
+            payload["baseTokenLogit"] = self.base_token_logit
+        if self.base_rank_fraction is not None:
+            payload["baseRankFraction"] = self.base_rank_fraction
         if self.base_frontier_hit is not None:
             payload["baseFrontierHit"] = self.base_frontier_hit
         if self.kl_divergence_adapter_to_base is not None:
@@ -250,8 +250,8 @@ class EntropyDeltaSessionResult:
 
     session_id: uuid.UUID = field(default_factory=uuid.uuid4)
     correlation_id: uuid.UUID | None = None
-    avg_base_surprisal: float | None = None
-    max_base_surprisal: float | None = None
+    avg_base_logit_margin: float | None = None
+    max_base_logit_margin: float | None = None
     conflict_analysis: ConflictAnalysis | None = None
 
     @property

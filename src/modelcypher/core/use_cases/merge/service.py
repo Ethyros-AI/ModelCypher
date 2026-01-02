@@ -227,17 +227,23 @@ class MergePipelineService:
             # Fall back to all domains
             domain_list = list(AtlasDomain)
 
-        # Collect activations
+        # Collect activations - load models once, not per-domain
         source_activations: dict[str, dict[str, Any]] = {}
         target_activations: dict[str, dict[str, Any]] = {}
 
+        from modelcypher.adapters.mlx_model_loader import MLXModelLoader
+
+        model_loader = MLXModelLoader()
+        source_model, source_tokenizer = model_loader.load_model_for_training(source_path)
+        target_model, target_tokenizer = model_loader.load_model_for_training(target_path)
+
         for domain in domain_list:
             try:
-                source_acts = self._extract_domain_activations(
-                    source_path, domain, -1, waypoint_service
+                source_acts = self._extract_domain_activations_cached(
+                    source_model, source_tokenizer, domain, -1, waypoint_service
                 )
-                target_acts = self._extract_domain_activations(
-                    target_path, domain, -1, waypoint_service
+                target_acts = self._extract_domain_activations_cached(
+                    target_model, target_tokenizer, domain, -1, waypoint_service
                 )
                 source_activations[domain.value] = source_acts
                 target_activations[domain.value] = target_acts
@@ -290,14 +296,21 @@ class MergePipelineService:
                 domain_analysis["distance_scores"].append(result.distance_score)
 
             if domain_analysis["overlap_scores"]:
+                # Batch array creation and mean computation - single eval for all
                 overlap_arr = backend.array(domain_analysis["overlap_scores"])
                 align_arr = backend.array(domain_analysis["alignment_scores"])
                 curvature_arr = backend.array(domain_analysis["curvature_scores"])
                 distance_arr = backend.array(domain_analysis["distance_scores"])
-                domain_analysis["mean_overlap"] = float(backend.mean(overlap_arr))
-                domain_analysis["mean_alignment"] = float(backend.mean(align_arr))
-                domain_analysis["mean_curvature_divergence"] = float(backend.mean(curvature_arr))
-                domain_analysis["mean_distance"] = float(backend.mean(distance_arr))
+                mean_overlap = backend.mean(overlap_arr)
+                mean_align = backend.mean(align_arr)
+                mean_curv = backend.mean(curvature_arr)
+                mean_dist = backend.mean(distance_arr)
+                # Single eval for all 4 means
+                backend.eval(mean_overlap, mean_align, mean_curv, mean_dist)
+                domain_analysis["mean_overlap"] = float(backend.to_scalar(mean_overlap))
+                domain_analysis["mean_alignment"] = float(backend.to_scalar(mean_align))
+                domain_analysis["mean_curvature_divergence"] = float(backend.to_scalar(mean_curv))
+                domain_analysis["mean_distance"] = float(backend.to_scalar(mean_dist))
             else:
                 domain_analysis["mean_overlap"] = 0.0
                 domain_analysis["mean_alignment"] = 1.0
@@ -323,10 +336,16 @@ class MergePipelineService:
             all_distance_scores.append(dr["mean_distance"])
 
         if all_overlap_scores:
-            mean_overlap = float(backend.mean(backend.array(all_overlap_scores)))
-            mean_alignment = float(backend.mean(backend.array(all_alignment_scores)))
-            mean_curvature = float(backend.mean(backend.array(all_curvature_scores)))
-            mean_distance = float(backend.mean(backend.array(all_distance_scores)))
+            # Batch array creation and eval
+            overlap_global = backend.mean(backend.array(all_overlap_scores))
+            align_global = backend.mean(backend.array(all_alignment_scores))
+            curv_global = backend.mean(backend.array(all_curvature_scores))
+            dist_global = backend.mean(backend.array(all_distance_scores))
+            backend.eval(overlap_global, align_global, curv_global, dist_global)
+            mean_overlap = float(backend.to_scalar(overlap_global))
+            mean_alignment = float(backend.to_scalar(align_global))
+            mean_curvature = float(backend.to_scalar(curv_global))
+            mean_distance = float(backend.to_scalar(dist_global))
         else:
             mean_overlap = 0.0
             mean_alignment = 1.0
@@ -345,6 +364,23 @@ class MergePipelineService:
             mean_distance=mean_distance,
         )
 
+    def _extract_domain_activations_cached(
+        self,
+        model: Any,
+        tokenizer: Any,
+        domain: "AtlasDomain",
+        layer: int,
+        waypoint_service: "DomainGeometryWaypointService",
+    ) -> dict[str, Any]:
+        """Extract activations for a domain using pre-loaded model.
+
+        This avoids repeated disk I/O by reusing a loaded model instance.
+        """
+        waypoints = waypoint_service.extract(
+            model, tokenizer, domain=domain, layer_idx=layer
+        )
+        return {wp.concept_id: wp.activations for wp in waypoints}
+
     def _extract_domain_activations(
         self,
         model_path: str,
@@ -352,16 +388,18 @@ class MergePipelineService:
         layer: int,
         waypoint_service: "DomainGeometryWaypointService",
     ) -> dict[str, Any]:
-        """Extract activations for a specific domain."""
+        """Extract activations for a specific domain (loads model from disk).
+
+        Note: For multiple domains, use _extract_domain_activations_cached with
+        a pre-loaded model to avoid repeated disk I/O.
+        """
         from modelcypher.adapters.mlx_model_loader import MLXModelLoader
 
         model_loader = MLXModelLoader()
         model, tokenizer = model_loader.load_model_for_training(model_path)
-        waypoints = waypoint_service.extract(
-            model, tokenizer, domain=domain, layer_idx=layer
+        return self._extract_domain_activations_cached(
+            model, tokenizer, domain, layer, waypoint_service
         )
-
-        return {wp.concept_id: wp.activations for wp in waypoints}
 
     def _execute_merge(
         self,
