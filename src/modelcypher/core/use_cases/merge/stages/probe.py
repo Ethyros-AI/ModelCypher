@@ -683,6 +683,47 @@ def _probe_precise(
         metrics["overall_correlation"],
     )
 
+    # =========================================================================
+    # PROPAGATE TRANSFORMS TO ALL TARGET LAYERS
+    # =========================================================================
+    # Cross-architecture DP alignment may map multiple source layers to few
+    # target layers (e.g., 24 Qwen layers → 3 SmolLM layers). But we need
+    # transforms for ALL target layers to perform weight transplant.
+    #
+    # Strategy: For target layers without a transform, use nearest neighbor.
+    # This is geometrically sound because adjacent layers encode similar
+    # manifold regions - their transforms should be similar.
+    all_target_layers = sorted(set(target_layer_activations.keys()))
+    if feature_transforms and len(feature_transforms) < len(all_target_layers):
+        mapped_layers = sorted(feature_transforms.keys())
+        logger.info(
+            "PROBE: Propagating transforms from %d mapped layers to %d total layers",
+            len(mapped_layers),
+            len(all_target_layers),
+        )
+        for tgt_layer in all_target_layers:
+            if tgt_layer not in feature_transforms:
+                # Find nearest mapped layer
+                nearest = min(mapped_layers, key=lambda x: abs(x - tgt_layer))
+                feature_transforms[tgt_layer] = feature_transforms[nearest]
+                # Also propagate layer_mapping
+                if nearest in layer_mapping:
+                    layer_mapping[tgt_layer] = layer_mapping[nearest]
+
+    if attention_transforms and len(attention_transforms) < len(all_target_layers):
+        mapped_layers = sorted(attention_transforms.keys())
+        for tgt_layer in all_target_layers:
+            if tgt_layer not in attention_transforms:
+                nearest = min(mapped_layers, key=lambda x: abs(x - tgt_layer))
+                attention_transforms[tgt_layer] = attention_transforms[nearest]
+
+    if kv_transforms and len(kv_transforms) < len(all_target_layers):
+        mapped_layers = sorted(kv_transforms.keys())
+        for tgt_layer in all_target_layers:
+            if tgt_layer not in kv_transforms:
+                nearest = min(mapped_layers, key=lambda x: abs(x - tgt_layer))
+                kv_transforms[tgt_layer] = kv_transforms[nearest]
+
     return ProbeResult(
         correlations=weight_correlations,
         confidences=layer_confidences,

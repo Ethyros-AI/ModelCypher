@@ -47,6 +47,10 @@ def test_pipeline_forwards_graft_mask_to_transplant(monkeypatch) -> None:
             None,
             None,
             None,
+            None,
+            None,
+            None,
+            None,
         )
 
     def fake_stage_density(**_kwargs):

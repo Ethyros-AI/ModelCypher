@@ -449,7 +449,6 @@ class TestManifoldClusterTool:
                     arguments={
                         "points": points,
                         "epsilon": 0.5,
-                        "minPoints": 3,
                         "computeDimension": False,
                     },
                 )

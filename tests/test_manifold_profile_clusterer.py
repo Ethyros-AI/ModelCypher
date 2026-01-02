@@ -74,7 +74,7 @@ def test_clusterer_groups_identical_points() -> None:
             )
         )
 
-    clusterer = ManifoldClusterer(configuration=Configuration(epsilon=0.1, min_points=3))
+    clusterer = ManifoldClusterer(configuration=Configuration(epsilon=0.1))
     result = clusterer.cluster(points)
     assert len(result.regions) == 1
     assert result.regions[0].member_count == 5

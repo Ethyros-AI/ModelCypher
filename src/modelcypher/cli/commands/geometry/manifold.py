@@ -59,8 +59,8 @@ def geometry_manifold_cluster(
     """
     Cluster manifold points into regions using DBSCAN.
 
-    DBSCAN parameters (epsilon, min_points) are derived from the geometry
-    of the point cloud. No user parameters.
+    DBSCAN epsilon is derived from the geometry of the point cloud.
+    No user parameters.
 
     Points should have entropy and gate features from thermo measurements.
     """
@@ -70,7 +70,7 @@ def geometry_manifold_cluster(
     points = json.loads(Path(points_file).read_text())
     result = service.cluster_points(
         points=points,
-        # epsilon and min_points use service defaults (derived from geometry)
+        # epsilon uses service defaults (derived from geometry)
         compute_dimension=compute_dimension,
     )
 

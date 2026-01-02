@@ -226,8 +226,7 @@ class GeometryPersonaService:
     def cluster_points(
         self,
         points: list[dict],
-        epsilon: float = 0.3,
-        min_points: int = 5,
+        epsilon: float | None = None,
         compute_dimension: bool = True,
     ) -> ClusteringResult:
         """
@@ -235,8 +234,7 @@ class GeometryPersonaService:
 
         Args:
             points: List of point dicts with feature values
-            epsilon: DBSCAN epsilon (distance threshold)
-            min_points: Minimum points per cluster
+            epsilon: DBSCAN epsilon (distance threshold); derived if None
             compute_dimension: Whether to estimate intrinsic dimension
 
         Returns:
@@ -244,7 +242,6 @@ class GeometryPersonaService:
         """
         config = ClustererConfig(
             epsilon=epsilon,
-            min_points=min_points,
             compute_intrinsic_dimension=compute_dimension,
         )
         clusterer = ManifoldClusterer(config)

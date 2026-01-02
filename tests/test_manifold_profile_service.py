@@ -50,13 +50,15 @@ def test_service_clustering_and_intervention(tmp_path) -> None:
     config = ManifoldProfileService.Configuration(
         clustering_threshold=1,
         clusterer_config=ClustererConfiguration(
-            epsilon=1.0, min_points=1, compute_intrinsic_dimension=False
+            epsilon=1.0, compute_intrinsic_dimension=False
         ),
     )
     service = ManifoldProfileService(store=store, configuration=config)
 
     point = _safe_point()
+    point2 = _safe_point(prompt_hash="prompt-2")
     service.record_point(point, model_id="model-safe", model_name="Model Safe")
+    service.record_point(point2, model_id="model-safe", model_name="Model Safe")
     service.flush_pending_points(model_id="model-safe", model_name="Model Safe")
 
     profile = service.get_profile("model-safe")

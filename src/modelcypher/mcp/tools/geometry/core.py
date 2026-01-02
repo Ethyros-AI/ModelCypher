@@ -713,15 +713,13 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_manifold_cluster(
             points: list[dict],
-            epsilon: float = 0.3,
-            minPoints: int = 5,
+            epsilon: float | None = None,
             computeDimension: bool = True,
         ) -> dict:
             """Cluster manifold points into regions using DBSCAN."""
             result = ctx.geometry_persona_service.cluster_points(
                 points=points,
                 epsilon=epsilon,
-                min_points=minPoints,
                 compute_dimension=computeDimension,
             )
             payload = ctx.geometry_persona_service.clustering_payload(result)

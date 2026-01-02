@@ -1169,22 +1169,16 @@ def solve_via_gram_alignment(
     if not S_s_np or not S_t_np or max(S_s_np) == 0 or max(S_t_np) == 0:
         return None, diagnostics
 
-    # Compute NUMERICAL rank - all dimensions above numerical zero
-    # NO entropy-based truncation. CKA = 1.0 is achievable at FULL rank.
-    # The "shared relational rank" concept was causing CKA < 1.0 by truncating
-    # signal dimensions prematurely.
-    thresh_s = eps * max(S_s_np) * max(n, d_s)
-    thresh_t = eps * max(S_t_np) * max(n, d_t)
-    rank_s = sum(1 for s in S_s_np if s > thresh_s)
-    rank_t = sum(1 for s in S_t_np if s > thresh_t)
-    diagnostics["rank_source"] = rank_s
-    diagnostics["rank_target"] = rank_t
-
-    # Use ALL non-zero dimensions from both representations
-    # Procrustes alignment works on the minimum of available ranks
+    # Use ALL available dimensions - NO truncation based on thresholds.
+    # Information is NEVER lost by dimension change - only compressed.
+    # Small singular values are highly-compressed information, not noise.
+    # CKA = 1.0 is ALWAYS achievable because Gram matrices live in sample
+    # space [n × n] regardless of feature dimension.
     avail_s = len(S_s_np)
     avail_t = len(S_t_np)
-    actual_rank = min(rank_s, rank_t, avail_s, avail_t)
+    actual_rank = min(avail_s, avail_t)  # Use everything SVD gives us
+    diagnostics["rank_source"] = avail_s
+    diagnostics["rank_target"] = avail_t
 
     if actual_rank == 0:
         return None, diagnostics
@@ -1231,7 +1225,9 @@ def solve_via_gram_alignment(
     # But we need to handle rank truncation carefully
 
     # S_s^{-1} for the k dimensions we're using (use actual_rank, not shared_rank)
-    S_s_inv = b.array([1.0 / S_s_np[i] if S_s_np[i] > thresh_s else 0.0
+    # Use machine epsilon as floor for numerical stability in inversion
+    sv_floor = eps * max(S_s_np) if S_s_np else eps
+    S_s_inv = b.array([1.0 / S_s_np[i] if S_s_np[i] > sv_floor else 0.0
                        for i in range(actual_rank)])
     S_t_k = b.array([S_t_np[i] for i in range(actual_rank)])
     b.eval(S_s_inv, S_t_k)
