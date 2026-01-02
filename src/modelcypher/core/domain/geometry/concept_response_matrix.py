@@ -184,7 +184,9 @@ class ConceptResponseMatrix:
                 continue
             centered = array - backend.mean(array, axis=0, keepdims=True)
             gram = centered @ centered.T
-            frob = float(backend.to_numpy(backend.sum(gram * gram)))
+            frob_arr = backend.sum(gram * gram)
+            backend.eval(frob_arr)
+            frob = float(backend.to_scalar(frob_arr))
             correction = 1.0
             if feature_bias_correction:
                 feature_dim = array.shape[1] if len(array.shape) > 1 else 1
@@ -200,7 +202,9 @@ class ConceptResponseMatrix:
                 continue
             centered = array - backend.mean(array, axis=0, keepdims=True)
             gram = centered @ centered.T
-            frob = float(backend.to_numpy(backend.sum(gram * gram)))
+            frob_arr = backend.sum(gram * gram)
+            backend.eval(frob_arr)
+            frob = float(backend.to_scalar(frob_arr))
             correction = 1.0
             if feature_bias_correction:
                 feature_dim = array.shape[1] if len(array.shape) > 1 else 1
@@ -223,7 +227,9 @@ class ConceptResponseMatrix:
                 denom = math.sqrt(source_frob * target_frob)
                 if denom < eps:
                     continue
-                hsic_xy = float(backend.to_numpy(backend.sum(source_gram * target_gram)))
+                hsic_xy_arr = backend.sum(source_gram * target_gram)
+                backend.eval(hsic_xy_arr)
+                hsic_xy = float(backend.to_scalar(hsic_xy_arr))
                 cka = hsic_xy / denom
                 cka = max(0.0, min(1.0, cka))
                 if cka >= 1.0 - eps:
@@ -696,7 +702,9 @@ def _mean_absolute_difference(a: "Array", b: "Array") -> float:
     backend = get_default_backend()
     if a.shape != b.shape or a.size == 0:
         return 0.0
-    return float(backend.to_numpy(backend.mean(backend.abs(a - b))))
+    mad_arr = backend.mean(backend.abs(a - b))
+    backend.eval(mad_arr)
+    return float(backend.to_scalar(mad_arr))
 
 
 def _sample_layer_indices(layer_count: int, sample_count: int) -> list[int]:

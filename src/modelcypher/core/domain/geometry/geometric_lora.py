@@ -423,7 +423,7 @@ class GeometricLoRAGenerator:
         diff_norm = backend.norm(reconstructed - output_delta)
         delta_norm = backend.norm(output_delta) + division_epsilon(backend, output_delta)
         backend.eval(diff_norm, delta_norm)
-        geometric_loss = float(backend.to_numpy(diff_norm) / backend.to_numpy(delta_norm))
+        geometric_loss = float(backend.to_scalar(diff_norm)) / float(backend.to_scalar(delta_norm))
 
         # A, B, S are already backend arrays
         A_backend = A
@@ -448,7 +448,9 @@ class GeometricLoRAGenerator:
         if sv_len == 0:
             return 1
 
-        first_sv = float(backend.to_numpy(singular_values[0]))
+        first_sv_arr = singular_values[0]
+        backend.eval(first_sv_arr)
+        first_sv = float(backend.to_scalar(first_sv_arr))
         if first_sv < division_epsilon(backend, singular_values):
             return 1
 

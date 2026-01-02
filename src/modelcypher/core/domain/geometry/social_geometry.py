@@ -205,14 +205,14 @@ class SocialGeometryAnalyzer:
             norm_a = backend.norm(a)
             norm_b = backend.norm(b)
             backend.eval(norm_a, norm_b)
-            norm_a_val = float(backend.to_numpy(norm_a))
-            norm_b_val = float(backend.to_numpy(norm_b))
+            norm_a_val = float(backend.to_scalar(norm_a))
+            norm_b_val = float(backend.to_scalar(norm_b))
             div_eps = division_epsilon(backend, a)
             if norm_a_val < div_eps or norm_b_val < div_eps:
                 return 0.0
             dot_prod = backend.sum(a * b)
             backend.eval(dot_prod)
-            cos = float(backend.to_numpy(dot_prod)) / (norm_a_val * norm_b_val)
+            cos = float(backend.to_scalar(dot_prod)) / (norm_a_val * norm_b_val)
             return 1.0 - abs(cos)
 
         # Get axis direction vectors
@@ -386,7 +386,7 @@ class SocialGeometryAnalyzer:
             power_direction = high_centroid - low_centroid
             norm = backend.norm(power_direction)
             backend.eval(norm)
-            norm_val = float(backend.to_numpy(norm))
+            norm_val = float(backend.to_scalar(norm))
             div_eps = division_epsilon(backend, power_direction)
             if norm_val > div_eps:
                 power_direction = power_direction / norm

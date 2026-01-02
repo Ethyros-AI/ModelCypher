@@ -366,8 +366,11 @@ class GeneralizedProcrustes:
 
             # Error - normalize by total data energy for scale-invariant convergence
             diffs = aligned_X - new_consensus
-            current_error = float(self._backend.to_numpy(self._backend.sum(diffs**2)))
-            total_energy = float(self._backend.to_numpy(self._backend.sum(aligned_X**2)))
+            current_error_arr = self._backend.sum(diffs**2)
+            total_energy_arr = self._backend.sum(aligned_X**2)
+            self._backend.eval(current_error_arr, total_energy_arr)
+            current_error = float(self._backend.to_scalar(current_error_arr))
+            total_energy = float(self._backend.to_scalar(total_energy_arr))
 
             # Use relative residual error instead of relative change in error
             # This is scale-invariant: same behavior regardless of input magnitude
@@ -385,7 +388,9 @@ class GeneralizedProcrustes:
         per_model_errors = self._backend.sum(residuals**2, axis=(1, 2))
 
         # Variance calc
-        total_var = float(self._backend.to_numpy(self._backend.sum(aligned_X**2)))
+        total_var_arr = self._backend.sum(aligned_X**2)
+        self._backend.eval(total_var_arr)
+        total_var = float(self._backend.to_scalar(total_var_arr))
         residual_var = current_error
         var_eps = float(division_epsilon(self._backend, aligned_X))
         ratio = 1.0 - (residual_var / total_var) if total_var > var_eps else 0.0
@@ -670,7 +675,7 @@ class RotationContinuityAnalyzer:
             aligned_source = backend.matmul(source_arr, rotation)
             error_arr = backend.sum((aligned_source - target_arr) ** 2)
             backend.eval(error_arr)
-            error = float(backend.to_numpy(error_arr))
+            error = float(backend.to_scalar(error_arr))
 
             # Compute angular deviation from previous layer
             angular_deviation = None
@@ -689,7 +694,7 @@ class RotationContinuityAnalyzer:
                 diff = rotation - prev_rotation
                 fro_norm_arr = backend.sqrt(backend.sum(diff * diff))
                 backend.eval(fro_norm_arr)
-                rotation_delta = float(backend.to_numpy(fro_norm_arr))
+                rotation_delta = float(backend.to_scalar(fro_norm_arr))
 
             prev_rotation = rotation
 
@@ -742,7 +747,7 @@ class RotationContinuityAnalyzer:
         aligned_global = backend.matmul(global_source, global_rotation)
         global_error_arr = backend.sum((aligned_global - global_target) ** 2)
         backend.eval(global_error_arr)
-        global_error = float(backend.to_numpy(global_error_arr))
+        global_error = float(backend.to_scalar(global_error_arr))
 
         # Compute metrics
         mean_layer_error = sum(layer_r.error for layer_r in layer_results) / len(layer_results)

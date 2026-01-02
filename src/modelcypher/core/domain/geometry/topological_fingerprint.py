@@ -784,7 +784,7 @@ class BackendTopologicalFingerprint:
         # Get max and min (excluding zeros) using backend
         max_val = b.max(dist_arr)
         b.eval(max_val)
-        max_dist = max_filtration if max_filtration is not None else float(b.to_numpy(max_val))
+        max_dist = max_filtration if max_filtration is not None else float(b.to_scalar(max_val))
 
         # For min nonzero, we need to mask zeros
         flat = b.reshape(dist_arr, (-1,))
@@ -794,7 +794,7 @@ class BackendTopologicalFingerprint:
         masked = b.where(positive_mask, flat, b.full(flat.shape, float("inf")))
         min_val = b.min(masked)
         b.eval(min_val)
-        min_dist = float(b.to_numpy(min_val))
+        min_dist = float(b.to_scalar(min_val))
         if min_dist == float("inf"):
             min_dist = 0.0
 
@@ -1155,7 +1155,7 @@ class BackendTopologicalFingerprint:
         arr = b.array(values)
         total = b.sum(arr)
         b.eval(total)
-        total_val = float(b.to_numpy(total))
+        total_val = float(b.to_scalar(total))
 
         eps = division_epsilon(b, arr)
 
@@ -1169,7 +1169,7 @@ class BackendTopologicalFingerprint:
         entropy = -b.sum(probs * log_probs)
         b.eval(entropy)
 
-        return float(b.to_numpy(entropy))
+        return float(b.to_scalar(entropy))
 
 
 def get_topological_fingerprint(

@@ -215,7 +215,7 @@ class RelationalStressComputer:
         anchor_matrix = b.concatenate(anchor_list, axis=0)
         anchor_std = b.std(anchor_matrix)
         b.eval(anchor_std)
-        anchor_spread = float(b.to_numpy(anchor_std))
+        anchor_spread = float(b.to_scalar(anchor_std))
         if anchor_spread > 0:
             normalized = {k: v / anchor_spread for k, v in distances.items()}
         else:
@@ -237,7 +237,7 @@ class RelationalStressComputer:
         # Activation magnitude
         concept_norm = b.norm(concept_activation)
         b.eval(concept_norm)
-        magnitude = float(b.to_numpy(concept_norm))
+        magnitude = float(b.to_scalar(concept_norm))
 
         # Create stress vector (sorted for consistency)
         stress_vector = tuple(distances[k] for k in sorted(distances.keys()))
@@ -292,7 +292,7 @@ class RelationalStressComputer:
             direction = neighbors[name] - point
             norm_val = b.norm(direction)
             b.eval(norm_val)
-            norm = float(b.to_numpy(norm_val))
+            norm = float(b.to_scalar(norm_val))
             if norm > eps:
                 normalized = direction / norm
                 b.eval(normalized)
@@ -690,7 +690,7 @@ class CrossGroundingSynthesizer:
                     total_error += error**2
                     diff_norm = b.norm(current_diff)
                     b.eval(diff_norm)
-                    diff_norm_val = float(b.to_numpy(diff_norm))
+                    diff_norm_val = float(b.to_scalar(diff_norm))
                     if diff_norm_val > eps:
                         gradient = gradient + 2 * error * current_diff / diff_norm_val
 

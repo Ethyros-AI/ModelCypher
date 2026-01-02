@@ -355,14 +355,14 @@ class MoralGeometryAnalyzer:
             n1 = backend.norm(v1)
             n2 = backend.norm(v2)
             backend.eval(n1, n2)
-            n1_val = float(backend.to_numpy(n1))
-            n2_val = float(backend.to_numpy(n2))
+            n1_val = float(backend.to_scalar(n1))
+            n2_val = float(backend.to_scalar(n2))
             eps = division_epsilon(backend, v1)
             if n1_val < eps or n2_val < eps:
                 return 0.0
             dot = backend.sum(v1 * v2)
             backend.eval(dot)
-            cos_sim = abs(float(backend.to_numpy(dot)) / (n1_val * n2_val))
+            cos_sim = abs(float(backend.to_scalar(dot)) / (n1_val * n2_val))
             return 1.0 - cos_sim
 
         val_agen = orthogonality(val_vec, agen_vec)
@@ -395,7 +395,9 @@ class MoralGeometryAnalyzer:
                     continue
                 levels.append(concept.level)
                 backend.eval(matrix)
-                projections.append(float(backend.to_numpy(matrix[i, 0])) if matrix.shape[1] > 0 else 0.0)
+                proj_val = matrix[i, 0]
+                backend.eval(proj_val)
+                projections.append(float(backend.to_scalar(proj_val)) if matrix.shape[1] > 0 else 0.0)
 
             if len(levels) < 3:
                 return 0.0, False
@@ -440,12 +442,17 @@ class MoralGeometryAnalyzer:
             foundation_indices[foundation_key].append(i)
 
         def cosine_sim(v1: "Array", v2: "Array") -> float:
-            n1 = float(backend.to_numpy(backend.norm(v1)))
-            n2 = float(backend.to_numpy(backend.norm(v2)))
+            n1_arr = backend.norm(v1)
+            n2_arr = backend.norm(v2)
+            backend.eval(n1_arr, n2_arr)
+            n1 = float(backend.to_scalar(n1_arr))
+            n2 = float(backend.to_scalar(n2_arr))
             eps = division_epsilon(backend, v1)
             if n1 < eps or n2 < eps:
                 return 0.0
-            dot = float(backend.to_numpy(backend.sum(v1 * v2)))
+            dot_arr = backend.sum(v1 * v2)
+            backend.eval(dot_arr)
+            dot = float(backend.to_scalar(dot_arr))
             return dot / (n1 * n2)
 
         # Compute within-foundation similarity
@@ -530,13 +537,18 @@ class MoralGeometryAnalyzer:
                 return 0.0
 
             v1, v2 = matrix[vi], matrix[vci]
-            n1 = float(backend.to_numpy(backend.norm(v1)))
-            n2 = float(backend.to_numpy(backend.norm(v2)))
+            n1_arr = backend.norm(v1)
+            n2_arr = backend.norm(v2)
+            backend.eval(n1_arr, n2_arr)
+            n1 = float(backend.to_scalar(n1_arr))
+            n2 = float(backend.to_scalar(n2_arr))
             eps = division_epsilon(backend, v1)
             if n1 < eps or n2 < eps:
                 return 0.0
 
-            dot = float(backend.to_numpy(backend.sum(v1 * v2)))
+            dot_arr = backend.sum(v1 * v2)
+            backend.eval(dot_arr)
+            dot = float(backend.to_scalar(dot_arr))
             cos_sim = dot / (n1 * n2)
             # Distance = 1 - similarity (higher = more opposed)
             return float(1.0 - cos_sim)

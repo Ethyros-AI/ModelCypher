@@ -236,8 +236,8 @@ class BirkhoffProjector:
             backend.eval(row_error, col_error)
 
             max_error = max(
-                float(backend.to_numpy(row_error)),
-                float(backend.to_numpy(col_error)),
+                float(backend.to_scalar(row_error)),
+                float(backend.to_scalar(col_error)),
             )
 
             if max_error < threshold:
@@ -356,7 +356,7 @@ class BirkhoffProjector:
         # Normalize gram matrix for better Sinkhorn convergence
         gram_norm = backend.norm(gram)
         backend.eval(gram_norm)
-        gram_norm_val = float(backend.to_numpy(gram_norm))
+        gram_norm_val = float(backend.to_scalar(gram_norm))
 
         if gram_norm_val > 0:
             gram = gram / gram_norm_val

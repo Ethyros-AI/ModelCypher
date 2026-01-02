@@ -100,7 +100,7 @@ class GeometryAdapterService:
         if "lora_scale" in checkpoint:
             scale_arr = b.reshape(b.array(checkpoint["lora_scale"]), (-1,))
             b.eval(scale_arr)
-            scale = float(b.to_numpy(scale_arr)[0])
+            scale = float(b.to_scalar(scale_arr[0]))
 
         lora_deltas = self._lora_deltas_gpu(checkpoint, scale)
         if not lora_deltas:
@@ -192,7 +192,7 @@ class GeometryAdapterService:
         if "lora_scale" in checkpoint:
             scale_arr = b.reshape(b.array(checkpoint["lora_scale"]), (-1,))
             b.eval(scale_arr)
-            scale = float(b.to_numpy(scale_arr)[0])
+            scale = float(b.to_scalar(scale_arr[0]))
 
         deltas = self._lora_deltas_gpu(checkpoint, scale)
         if deltas:
@@ -475,7 +475,7 @@ class GeometryAdapterService:
             scale_arr = b.array(weights["lora_scale"])
             scale_arr = b.reshape(scale_arr, (-1,))
             b.eval(scale_arr)
-            scale = float(b.to_numpy(scale_arr)[0])
+            scale = float(b.to_scalar(scale_arr[0]))
 
         return AdapterWeights(weights=weights, scale=scale)
 

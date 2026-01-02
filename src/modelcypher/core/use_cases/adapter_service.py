@@ -122,7 +122,7 @@ class AdapterService:
             is_zero = abs_tensor < machine_epsilon(backend, tensor_backend)
             zero_count_tensor = backend.sum(is_zero)
             backend.eval(zero_count_tensor)
-            zero_count += int(backend.to_numpy(zero_count_tensor))
+            zero_count += int(backend.to_scalar(zero_count_tensor))
 
             layer_analysis.append(
                 LayerAdapterInfo(
@@ -172,7 +172,7 @@ class AdapterService:
             tensor_backend = backend.array(tensor)
             norm = backend.norm(tensor_backend)
             backend.eval(norm)
-            norm_scalar = float(backend.to_numpy(norm))
+            norm_scalar = float(backend.to_scalar(norm))
 
             if norm_scalar > 0:
                 normalized = tensor_backend / norm
