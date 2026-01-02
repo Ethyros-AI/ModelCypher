@@ -259,10 +259,11 @@ class DoRADecomposition:
             total_dir_drift += metrics.directional_drift * weight
             total_weight += weight
 
-            # Track significant changes
-            if metrics.directional_drift > 0.1:
+            # Track any measurable changes (no arbitrary thresholds)
+            # Caller interprets significance from the raw metrics
+            if metrics.directional_drift > 0:
                 sig_direction.append(name)
-            if metrics.magnitude_ratio > 1.2 or metrics.magnitude_ratio < 0.8:
+            if metrics.magnitude_ratio > 1.0 or metrics.magnitude_ratio < 1.0:
                 sig_magnitude.append(name)
 
         eps = division_epsilon(backend, backend.array([total_weight]))
@@ -300,7 +301,8 @@ class DoRADecomposition:
         ratio: float,
     ) -> ChangeType:
         """Classify the dominant change type."""
-        if mag_change < 0.01 and dir_drift < 0.01:
+        # Use config minimum_norm as threshold for MINIMAL (no arbitrary 0.01)
+        if mag_change < self.config.minimum_norm and dir_drift < self.config.minimum_norm:
             return ChangeType.MINIMAL
 
         if ratio > self.config.magnitude_dominance_threshold:

@@ -75,7 +75,7 @@ They *cannot*:
 Key fields:
 - `flatnessScore` (0 to 1): Higher is flatter. Relative to model family baseline.
 - `gradientSNR`: Signal-to-noise ratio in gradients.
-- `circuitBreakerSeverity`: Aggregated risk score from entropy/refusal/persona/oscillation.
+- `circuitBreakerSeverity`: Composite signal from entropy/refusal/persona/oscillation measurements.
 - `activeLayers`: Layers with notable gradient activity (when available).
 - `baseline`: Reference distribution statistics when available.
 

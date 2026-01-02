@@ -136,7 +136,7 @@ print(f"Entropy = {analysis.entropy:.3f} nats")
 # For basin topology, calibration is required
 calibrator = ThermoCalibrator()
 topology = calibrator.calibrate(model, probe_prompts)  # Returns BasinTopology
-weights = topology.basin_weights(temperature=1.0)
+weights = topology.basin_weights(temperature=1.0)  # Returns list[float] with 3 basin weights
 ```
 
 ## 8. Key Citations

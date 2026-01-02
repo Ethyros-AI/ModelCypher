@@ -384,34 +384,23 @@ class ChunkEntropyAnalyzer:
         return max_risk, detected_patterns
 
     def _compute_semantic_coherence(self, text: str) -> float:
-        """Compute semantic coherence based on text structure."""
-        sentences = [s.strip() for s in re.split(r"[.!?]", text) if s.strip()]
+        """Compute semantic coherence based on text structure.
 
-        if not sentences:
-            return 0.5
+        Returns the alphabetic character ratio as a direct measure of
+        text structure. Higher ratio = more textual content vs. special
+        characters, code, or formatting. No arbitrary classification
+        thresholds - the raw ratio is the signal.
 
-        # Check average sentence length (ideal: 15-30 words)
-        avg_words = sum(len(s.split()) for s in sentences) / len(sentences)
-        if avg_words < 5:
-            length_score = 0.6  # Very short sentences
-        elif avg_words > 50:
-            length_score = 0.7  # Very long sentences
-        else:
-            length_score = 1.0
-
-        # Check for unusual character ratios
+        Returns:
+            Alpha ratio in [0, 1]. Caller interprets based on their context.
+        """
+        # Alpha ratio: proportion of alphabetic characters
+        # This is a structural measurement without arbitrary cutoffs
         alpha_count = sum(1 for c in text if c.isalpha())
         total_count = len(text)
         alpha_ratio = alpha_count / max(1, total_count)
 
-        if alpha_ratio < 0.5:
-            char_score = 0.6  # Too many non-letter characters
-        elif alpha_ratio > 0.95:
-            char_score = 0.8  # Suspiciously few punctuation/numbers
-        else:
-            char_score = 1.0
-
-        return (length_score + char_score) / 2.0
+        return alpha_ratio
 
     def _compute_cross_reference_scores(self, embeddings: list[list[float]]) -> list[float]:
         """Compute cross-reference agreement from geodesic structure."""

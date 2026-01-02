@@ -168,16 +168,17 @@ Recommendation:
 
 ---
 
-## Interpretation Guide
+## Understanding Output
 
-### Safety Score Thresholds
+### Safety Score
 
-| Score | Interpretation |
-|-------|----------------|
-| ≥ 0.8 | LOW RISK - Proceed with standard merge |
-| 0.6-0.8 | ACCEPTABLE - Minor monitoring recommended |
-| 0.4-0.6 | MODERATE RISK - Apply mitigations |
-| < 0.4 | HIGH RISK - Review and reconsider |
+The safety score (0.0 to 1.0) is a composite measurement derived from:
+- **Overlap score**: Bhattacharyya coefficient of concept distributions
+- **Curvature mismatch**: Difference in local Riemannian curvature
+- **Subspace alignment**: Principal direction correlation
+- **Centroid distance**: Geodesic distance between concept centroids
+
+Higher values indicate less predicted interference. The score is a raw measurement; interpret relative to your baseline observations for similar model pairs.
 
 ### Critical Pair Analysis
 

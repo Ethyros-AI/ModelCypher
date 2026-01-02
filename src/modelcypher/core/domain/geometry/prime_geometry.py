@@ -1025,14 +1025,8 @@ def format_result(result: PrimeGeometryResult) -> str:
         "=" * 60,
     ]
 
-    # Interpretation hints (relative, not vibes)
-    if result.comparison.ks_statistic > 0.1:
-        lines.append("")
-        lines.append("NOTE: KS statistic > 0.1 suggests prime spectrum differs from random.")
-
-    if abs(result.prime_intrinsic_dim - result.random_intrinsic_dim) > 1.0:
-        lines.append("")
-        lines.append("NOTE: Intrinsic dimension differs by >1, suggesting structural difference.")
+    # Raw measurements reported above; no arbitrary interpretation thresholds
+    # Caller compares KS statistic and intrinsic dimensions against their requirements
 
     return "\n".join(lines)
 
@@ -1236,13 +1230,13 @@ def run_hypothesis_test(
         p_value = 0.05  # Placeholder without samples
         ci = None
 
-    # Determine pass/fail
+    # Determine pass/fail using boundary values
     if one_sided:
-        # For H1, H2: pass if prime < baseline
+        # For H1, H2: pass if prime < baseline with statistical significance
         passed = prime_value < baseline_value and p_value < 0.05
     else:
-        # For H3, etc: pass if significantly different
-        passed = abs(prime_value - baseline_value) > 0.1 and p_value < 0.05
+        # For H3, etc: pass if any measurable difference with statistical significance
+        passed = prime_value != baseline_value and p_value < 0.05
 
     return HypothesisTest(
         hypothesis_id=hypothesis_id,

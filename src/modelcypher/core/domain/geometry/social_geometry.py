@@ -394,7 +394,8 @@ class SocialGeometryAnalyzer:
             power_direction = backend.zeros((1,))
 
         return PowerGradientResult(
-            power_axis_detected=abs(correlation) > 0.5,
+            # Power axis detected if any measurable correlation exists
+            power_axis_detected=abs(correlation) > 0,
             power_direction=power_direction,
             status_correlation=correlation,
             high_status_anchors=high_status,

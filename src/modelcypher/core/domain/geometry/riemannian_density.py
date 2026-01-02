@@ -1243,7 +1243,11 @@ class RiemannianDensityEstimator:
         bc = self._bhattacharyya_coefficient(volume_a, volume_b)
 
         # For Gaussians: J ≈ BC / (2 - BC)
-        if bc > 0.999:
+        # When BC is within machine epsilon of 1.0, the distributions are
+        # effectively identical, so Jaccard = 1.0
+        backend = get_default_backend()
+        eps = machine_epsilon(backend, volume_a.centroid)
+        if bc > 1.0 - eps:
             return 1.0
         return bc / (2 - bc)
 

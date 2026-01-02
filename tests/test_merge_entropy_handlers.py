@@ -80,7 +80,6 @@ from modelcypher.core.domain.merging.entropy_merge_validator import (
     EntropyMergeValidator,
     LayerEntropyProfile,
     ModelEntropyProfile,
-    PhaseAdjustments,
 )
 from modelcypher.core.domain.thermo.phase_transition_theory import Phase
 # EntropyLevel enum removed - using raw entropy values with Phase classification
@@ -610,48 +609,6 @@ class TestEntropyMathematics:
 
         # Above critical zone -> DISORDERED
         assert validator.classify_phase(4.0) == Phase.DISORDERED
-
-    def test_alpha_adjustment_conservatism(self) -> None:
-        """More unstable phases should get lower alpha (more conservative)."""
-        from modelcypher.core.domain.merging.entropy_merge_validator import (
-            LayerEntropyProfile,
-        )
-        from modelcypher.core.domain.thermo.phase_transition_theory import Phase
-
-        # LayerEntropyProfile no longer has entropy_level - just raw values
-        ordered = LayerEntropyProfile(
-            layer_name="ordered",
-            mean_entropy=1.0,
-            entropy_variance=0.1,
-            phase=Phase.ORDERED,
-        )
-        critical = LayerEntropyProfile(
-            layer_name="critical",
-            mean_entropy=2.25,
-            entropy_variance=0.2,
-            phase=Phase.CRITICAL,
-        )
-        disordered = LayerEntropyProfile(
-            layer_name="disordered",
-            mean_entropy=4.0,
-            entropy_variance=0.5,
-            phase=Phase.DISORDERED,
-        )
-
-        # ORDERED gets full alpha (1.0)
-        # DISORDERED gets moderate reduction (0.85)
-        # CRITICAL gets most conservative (0.7)
-        adjustments = PhaseAdjustments(
-            ordered_alpha=1.0,
-            critical_alpha=0.7,
-            disordered_alpha=0.85,
-            ordered_sigma=1.0,
-            critical_sigma=2.0,
-            disordered_sigma=1.5,
-        )
-        assert ordered.alpha_adjustment(adjustments) > disordered.alpha_adjustment(adjustments)
-        assert disordered.alpha_adjustment(adjustments) > critical.alpha_adjustment(adjustments)
-
 
 # =============================================================================
 # Edge Case Tests

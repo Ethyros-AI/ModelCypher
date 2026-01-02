@@ -325,7 +325,7 @@ class DARESparsityAnalyzer:
                     mean_magnitude=layer_mean,
                     max_magnitude=layer_max,
                     essential_fraction=1.0 - layer_sparsity,
-                    has_significant_updates=layer_sparsity < 0.9,
+                    has_significant_updates=layer_sparsity < 1.0,  # Any non-total sparsity
                 )
 
         effective_sparsity = float(total_droppable) / float(total_count)
@@ -468,7 +468,7 @@ class DARESparsityAnalyzer:
             mean_magnitude=float(mean),
             max_magnitude=float(max_value),
             essential_fraction=float(1.0 - sparsity),
-            has_significant_updates=sparsity < 0.9,
+            has_significant_updates=sparsity < 1.0,  # Any non-total sparsity
         )
 
     @staticmethod

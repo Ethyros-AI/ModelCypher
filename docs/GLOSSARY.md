@@ -180,14 +180,11 @@ Whether the model represents objects in depth order where "near" objects can blo
 -   **Human explanation**: "The model understands that closer things block farther things, not just that 'front' and 'back' are different words."
 
 ### World Model Score (Visual-Spatial Grounding Density)
-A composite metric (0.0 to 1.0) measuring how concentrated a model's probability mass is along human-perceptual 3D axes.
+A raw measurement (0.0 to 1.0) of how concentrated a model's probability mass is along human-perceptual 3D axes.
 -   **Key Insight**: All models encode physics geometrically—the formulas, relationships, and structure are geometric representations. The difference is in the **probability distribution** over that geometric space.
 -   **VL Models**: Visual grounding concentrates probability mass along specific 3D axes matching human visual experience.
 -   **Text Models**: Same geometric knowledge, but probability distributed differently—shaped by linguistic/formula patterns rather than visual patterns.
--   **Interpretation**:
-    -   >0.5 with physics_engine=True: **HIGH VISUAL GROUNDING** - Probability concentrated on human-perceptual 3D axes.
-    -   0.3-0.5: **MODERATE GROUNDING** - 3D structure present, probability more diffuse.
-    -   <0.3: **ALTERNATIVE GROUNDING** - Geometric physics encoded along different axes (linguistic, formula-based, or higher-dimensional).
+-   **What it measures**: The score indicates concentration on human-perceptual 3D axes. Higher values = more concentrated; lower values = more diffuse or aligned with alternative axes (linguistic, formula-based).
 -   **Analogy**: A blind physicist understands gravity geometrically through equations and tactile experience. A sighted physicist has the same geometric knowledge but with probability concentrated on visual axes. Neither is "abstract"—both are geometric, just with different probability densities.
 -   **Human explanation**: "This score measures how much the model's spatial concepts align with human visual experience, not whether it understands physics."
 
@@ -226,13 +223,9 @@ A geometric dimension encoding linguistic register from casual to formal.
 -   **Human explanation**: "The model knows that 'salutations' is more formal than 'hey'."
 
 ### Social Manifold Score (SMS)
-A composite metric (0.0 to 1.0) measuring how well a model encodes social structure.
+A raw measurement (0.0 to 1.0) of how well a model encodes social structure.
 -   **Formula**: SMS = 0.30 × orthogonality + 0.40 × gradient_consistency + 0.30 × power_detection
--   **Threshold**: SMS > 0.40 indicates social manifold presence.
--   **Interpretation**:
-    -   >0.55: **STRONG SOCIAL MANIFOLD** - Clear power/kinship/formality axes detected.
-    -   0.40-0.55: **MODERATE SOCIAL MANIFOLD** - Some social structure present.
-    -   <0.40: **WEAK SOCIAL MANIFOLD** - Limited social geometry found.
+-   **What it measures**: Higher values indicate stronger encoding of orthogonal power/kinship/formality axes. Lower values indicate weaker or more diffuse social geometry.
 -   **Human explanation**: "This score measures how strongly the model encodes implicit social relationships."
 
 ### Latent Sociologist Hypothesis

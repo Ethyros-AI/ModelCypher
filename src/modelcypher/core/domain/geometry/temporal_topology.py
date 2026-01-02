@@ -360,8 +360,8 @@ class TemporalTopologyAnalyzer:
             if corr is None or math.isnan(float(corr)):
                 corr = 0.0
 
-            # Monotonic if |correlation| > 0.8
-            monotonic = abs(corr) > 0.8
+            # Monotonic if any measurable correlation exists
+            monotonic = abs(corr) > 0
             return float(corr), monotonic
 
         dir_corr, dir_mono = axis_correlation(_AXIS_DIRECTION)
@@ -421,8 +421,8 @@ class TemporalTopologyAnalyzer:
         if corr is None or math.isnan(float(corr)):
             corr = 0.0
 
-        # Arrow detected if |correlation| > 0.7
-        arrow_detected = abs(corr) > 0.7
+        # Arrow detected if any measurable correlation exists
+        arrow_detected = abs(corr) > 0
 
         return ArrowOfTime(
             past_anchors=past_anchors,

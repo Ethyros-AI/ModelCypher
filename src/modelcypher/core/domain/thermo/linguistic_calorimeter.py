@@ -559,20 +559,20 @@ class LinguisticCalorimeter:
                 next_delta = (
                     measurement.entropy_trajectory[i + 1] - measurement.entropy_trajectory[i]
                 )
-                # Sign change indicates inflection
-                if prev_delta * next_delta < 0 and abs(prev_delta) > 0.1:
+                # Sign change indicates inflection (any magnitude)
+                if prev_delta * next_delta < 0:
                     inflection_points.append(i)
 
-        # Determine overall trend
+        # Determine overall trend using boundary values (> 0, < 0)
         if len(measurement.entropy_trajectory) >= 2:
             first_half = measurement.entropy_trajectory[: len(measurement.entropy_trajectory) // 2]
             second_half = measurement.entropy_trajectory[len(measurement.entropy_trajectory) // 2 :]
             first_mean = sum(first_half) / len(first_half) if first_half else 0
             second_mean = sum(second_half) / len(second_half) if second_half else 0
             delta = second_mean - first_mean
-            if delta > 0.1:
+            if delta > 0:
                 trend = EntropyDirection.INCREASE
-            elif delta < -0.1:
+            elif delta < 0:
                 trend = EntropyDirection.DECREASE
             else:
                 trend = EntropyDirection.NEUTRAL

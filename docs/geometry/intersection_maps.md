@@ -31,7 +31,7 @@ $$ C_{ij} = \text{corr}(a_i, b_j) $$
 
 ### The "Aligned" Subspace
 We filter this matrix for strong correlations.
--   **Strong Correlation (> 0.7)**: A common heuristic threshold suggesting dimensions $i$ and $j$ behave similarly on the probe corpus. (Thresholds should be calibrated per architecture/prompt set.)
+-   **Strong Correlation**: Dimensions $i$ and $j$ behave similarly on the probe corpus. What constitutes "strong" depends on the model pair and probe corpus—calibrate against baseline observations for your specific setup.
 -   **Weak Correlation**: Concepts unique to one model (or encoded in a basis we haven't found).
 
 The `IntersectionMap` dataclass captures this:

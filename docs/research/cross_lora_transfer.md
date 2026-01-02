@@ -29,9 +29,12 @@ Where $P$ is the orthogonal Procrustes rotation matrix derived from Semantic Pri
 
 ## Rotation Field Roughness
 
-We measure the "Roughness" of the rotation field across layers.
--   **Smooth (< 0.2)**: More likely transfer under this diagnostic (models look more representationally similar under the probe).
--   **Rough (> 1.0)**: Higher “tearing” risk (non-uniform mapping); transfer may fail or require additional calibration.
+Roughness measures how non-uniformly the rotation field varies across layers.
+-   **What it measures**: The variance in Procrustes rotation matrices between adjacent layers.
+-   **Lower values**: More consistent rotation across layers (uniform transformation).
+-   **Higher values**: Rotation varies significantly between layers (non-uniform mapping).
+
+Interpret roughness relative to baseline observations for similar model pairs.
 
 ## References
 

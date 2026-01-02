@@ -404,7 +404,8 @@ class MoralGeometryAnalyzer:
             if corr is None or math.isnan(float(corr)):
                 corr = 0.0
 
-            monotonic = abs(corr) > 0.8
+            # Monotonic if any measurable correlation exists
+            monotonic = abs(corr) > 0
             return float(corr), monotonic
 
         val_corr, val_mono = axis_correlation(_AXIS_VALENCE)

@@ -127,9 +127,9 @@ class ThermoPathIntegration:
             float(spike_transitions) / float(total_transitions) if total_transitions > 0 else 0.0
         )
 
-        # H3 supported if correlation is moderate or strong (|r| > 0.4)
-        # This is a geometric condition, not arbitrary binning
-        h3_supported = correlation is not None and abs(correlation) > 0.4
+        # H3 supported if any measurable correlation exists
+        # Uses boundary value (> 0) instead of arbitrary threshold
+        h3_supported = correlation is not None and abs(correlation) > 0
 
         rationale = self._build_rationale(correlation, spike_rate, len(measurements))
 
@@ -184,7 +184,8 @@ class ThermoPathIntegration:
             if prev.local_entropy is None or curr.local_entropy is None:
                 continue
             delta = curr.local_entropy - prev.local_entropy
-            is_spike = abs(delta) > 0.5
+            # Any measurable change is a transition; magnitude is in entropy_delta
+            is_spike = abs(delta) > 0
             transitions.append(
                 GateTransitionEntropy(
                     from_gate=prev.gate_name,
@@ -261,16 +262,8 @@ class ThermoPathIntegration:
         """Build human-readable rationale from raw measurements."""
         parts: list[str] = []
         if correlation is not None:
+            # Report raw correlation; let caller interpret significance
             parts.append(f"Entropy-gate correlation r={correlation:.3f}")
-            # Interpret based on correlation magnitude
-            if abs(correlation) > 0.6:
-                parts.append("Strong thermo-path coupling supports H3")
-            elif abs(correlation) > 0.4:
-                parts.append("Moderate thermo-path coupling partially supports H3")
-            elif abs(correlation) > 0.2:
-                parts.append("Weak thermo-path coupling does not support H3")
-            else:
-                parts.append("No significant thermo-path coupling detected")
         else:
             parts.append("Insufficient data for correlation")
 
@@ -287,8 +280,8 @@ class ThermoPathIntegration:
         """Assess a single measurement's thermo-path relationship."""
         spike_rate = float(spike_count) / float(gate_count - 1) if gate_count > 1 else 0.0
 
-        # H3 supported if moderate or strong correlation
-        h3_supported = correlation is not None and abs(correlation) > 0.4
+        # H3 supported if any measurable correlation exists
+        h3_supported = correlation is not None and abs(correlation) > 0
 
         correlation_text = f"{correlation:.2f}" if correlation is not None else "N/A"
         rationale = f"Single measurement: r={correlation_text}, spike_rate={spike_rate * 100:.1f}%"

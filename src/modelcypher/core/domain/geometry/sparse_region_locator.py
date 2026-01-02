@@ -234,7 +234,8 @@ class SparseRegionLocator:
 
         high_droppability: list[int] = []
         for layer_name, metrics in dare_analysis.per_layer_sparsity.items():
-            if metrics.sparsity <= 0.8:
+            # Any layer with positive sparsity is droppable; magnitude in metrics
+            if metrics.sparsity <= 0:
                 continue
             for component in layer_name.split("."):
                 if component.isdigit():

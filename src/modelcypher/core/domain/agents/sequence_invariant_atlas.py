@@ -1266,8 +1266,9 @@ class TriangulationScorer:
         if related_family_activations is None:
             related_family_activations = {}
 
-        # Filter to domains with significant activation
-        detected_domains = {k: v for k, v in activations.items() if v > 0.3}
+        # Filter to domains with any measurable activation
+        # Uses boundary value (> 0) instead of arbitrary threshold
+        detected_domains = {k: v for k, v in activations.items() if v > 0}
         if not detected_domains:
             return TriangulatedScore(
                 base=0.0, cross_domain_multiplier=1.0, relationship_bonus=0.0, coherence_bonus=0.0

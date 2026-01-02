@@ -560,5 +560,5 @@ def svd_summary(decompositions: dict[str, TaskVectorDecomposition]) -> dict:
         "max_effective_rank": int(max(effective_ranks)) if effective_ranks else 0,
         "mean_variance_captured": float(sum(variances) / len(variances)) if variances else 0.0,
         "min_variance_captured": float(min(variances)) if variances else 0.0,
-        "high_variance_count": sum(1 for v in variances if v > 0.9),
+        "high_variance_count": sum(1 for v in variances if v > 0),
     }

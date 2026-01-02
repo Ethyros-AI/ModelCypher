@@ -94,4 +94,4 @@ mc model fetch mlx-community/Qwen2.5-0.5B-Instruct-bf16
 1. **Start small**: Use smaller models (0.5B-3B) for faster iteration
 2. **Check memory**: Run `mc system memory` before large operations
 3. **Use the CLI**: Many examples have CLI equivalents (`mc geometry spatial probe-model`)
-4. **Read the output**: Pay attention to `interpretation` fields in results
+4. **Read the output**: Raw measurements are returned; you decide meaning based on context

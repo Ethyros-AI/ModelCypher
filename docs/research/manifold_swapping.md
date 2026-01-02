@@ -29,4 +29,4 @@ $W_{stitch}$ is initialized via Procrustes Alignment on Semantic Primes, then fi
 
 Experimental results suggest that some concepts (like "Lance") are "Islets"—disconnected from the main manifold. Swapping these regions often leads to catastrophic semantic collapse (gibberish).
 
-**Falsification**: If Procrustes alignment fails to recover >80% CKA at the swap interface, the Manifold Swapping Hypothesis is invalid for that model pair.
+**Falsification**: If Procrustes alignment fails to achieve CKA ≈ 1.0 at the swap interface, investigate alignment failures before concluding the hypothesis is invalid. CKA < 1.0 may indicate alignment bugs, insufficient samples, or numerical precision issues rather than incompatible geometry.

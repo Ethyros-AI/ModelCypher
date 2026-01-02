@@ -905,8 +905,9 @@ class GravityGradientAnalyzer:
                 layer_strengths[layer_idx] = layer_corr
 
         # Identify sink (heavy) and float (light) anchors
-        sink_anchors = [a.name for a in available if a.expected_y < -0.3]
-        float_anchors = [a.name for a in available if a.expected_y > 0.3]
+        # Uses boundary values (< 0, > 0) instead of arbitrary thresholds
+        sink_anchors = [a.name for a in available if a.expected_y < 0]
+        float_anchors = [a.name for a in available if a.expected_y > 0]
 
         return GravityGradientResult(
             # Gravity axis detected if we found a direction and any measurable correlation

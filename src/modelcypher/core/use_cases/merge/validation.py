@@ -474,12 +474,12 @@ class MergeValidationService:
         if 5 <= len(words) <= 200:
             score += 0.2
 
-        # Repetition penalty
+        # Repetition penalty - use boundary value (any uniqueness > 0)
         unique_words = set(words)
         if len(words) > 0:
             uniqueness = len(unique_words) / len(words)
-            if uniqueness > 0.5:
-                score += 0.2
+            if uniqueness > 0:
+                score += 0.2 * uniqueness  # Scale by uniqueness ratio
 
         # Error pattern penalty
         error_patterns = ["error", "sorry", "cannot", "unable", "as an ai"]

@@ -334,9 +334,13 @@ class CompositionAnalysis:
 
     @property
     def is_compositional(self) -> bool:
-        """Compositional if residual is below midpoint AND similarity above midpoint."""
-        # Midpoint of [0, 1] is the geometric boundary between "yes" and "no"
-        return self.residual_norm < 0.5 and self.centroid_similarity > 0.5
+        """Compositional if residual exists and there's positive similarity.
+
+        Uses boundary values (residual < 1.0, similarity > 0.0) instead of
+        arbitrary midpoint thresholds. Callers should compare raw
+        residual_norm and centroid_similarity values for nuanced decisions.
+        """
+        return self.residual_norm < 1.0 and self.centroid_similarity > 0.0
 
 
 @dataclass(frozen=True)

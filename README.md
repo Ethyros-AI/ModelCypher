@@ -1,7 +1,6 @@
 # ModelCypher
 
-ModelCypher measures high-dimensional geometry. It exposes geometry metrics for point clouds only.
-There is no configuration surface; inputs are model/data paths.
+Geometric diagnostics for LLM representations. Measures intrinsic dimension, curvature, entropy, and representational similarity to guide model merging, monitor training stability, and detect behavioral drift.
 
 ## Install
 
@@ -9,26 +8,55 @@ There is no configuration surface; inputs are model/data paths.
 poetry install
 ```
 
-## CLI
+Requires Python 3.11+. Primary backend is MLX (macOS/Apple Silicon). JAX backend available for Linux/TPU.
+
+## Quick Start
 
 ```bash
-mc geometry metrics gromov-wasserstein <source_file> <target_file>
-mc geometry metrics intrinsic-dimension <points_file>
-mc geometry metrics topological-fingerprint <points_file>
-mc geometry metrics spectral-signature <points_file>
+# Probe a model's architecture and geometry
+mc model probe /path/to/model
+
+# Merge two models with geometric alignment
+mc merge pipeline --source /path/to/source --target /path/to/target --output /path/to/output
+
+# Analyze spatial geometry encoding
+mc geometry spatial probe-model /path/to/model
+
+# Measure entropy dynamics
+mc thermo measure "Your prompt here" /path/to/model
 ```
 
-Point clouds are JSON arrays of arrays. Intrinsic-dimension also accepts a JSON object
-of activation vectors (values are treated as points in sorted key order).
+## Core Capabilities
 
-## MCP
+| Command Group | Purpose |
+|--------------|---------|
+| `mc model` | Probe, fetch, register, validate models |
+| `mc merge` | Cross-architecture model merging pipeline |
+| `mc geometry` | Representational geometry analysis (30+ subcommands) |
+| `mc thermo` | Linguistic thermodynamics and entropy measurement |
+| `mc safety` | Behavioral drift and refusal pattern detection |
+| `mc train` | Training with geometry monitoring |
+| `mc infer` | Entropy-aware inference with security monitoring |
+
+Run `mc --help` for full command list. Run `mc <command> --help` for subcommands.
+
+## MCP Server
 
 ```bash
 poetry run modelcypher-mcp
 ```
 
-Tools:
-- `mc_geometry_gromov_wasserstein(source_file, target_file)`
-- `mc_geometry_intrinsic_dimension(points_file)`
-- `mc_geometry_topological_fingerprint(points_file)`
-- `mc_geometry_spectral_signature(points_file)`
+155+ tools available. See [docs/MCP.md](docs/MCP.md) for the full catalog.
+
+## Documentation
+
+| Doc | Purpose |
+|-----|---------|
+| [CLAUDE.md](CLAUDE.md) | AI assistant guidance and architecture |
+| [docs/CLI-REFERENCE.md](docs/CLI-REFERENCE.md) | Command reference |
+| [docs/GEOMETRY-GUIDE.md](docs/GEOMETRY-GUIDE.md) | Geometry metrics explained |
+| [docs/GLOSSARY.md](docs/GLOSSARY.md) | Terminology |
+
+## License
+
+AGPL-3.0. See [LICENSE](LICENSE).

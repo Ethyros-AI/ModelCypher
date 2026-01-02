@@ -828,8 +828,8 @@ class RiemannianGeometry:
 
         return CurvatureEstimate(
             sectional_curvature=sectional_curvature,
-            is_positive=sectional_curvature > 0.01,
-            is_negative=sectional_curvature < -0.01,
+            is_positive=sectional_curvature > 0,  # Any positive curvature
+            is_negative=sectional_curvature < 0,  # Any negative curvature
             confidence=confidence,
         )
 
@@ -1743,17 +1743,17 @@ class RiemannianGeometry:
                 f"duplicate points in the input."
             )
 
-        # Log extreme curvature for diagnostics (not clamping, just reporting)
+        # Log curvature scale statistics for diagnostics (not clamping, just reporting)
         n = len(scale_np)
-        extreme_neg_count = sum(1 for s in scale_np.flatten() if float(s) > 5.0)
-        extreme_pos_count = sum(1 for s in scale_np.flatten() if float(s) < 0.2)
-
-        if extreme_neg_count > n * 0.1 or extreme_pos_count > n * 0.1:
-            # Debug level: we handle extreme curvature with adaptive step sizes
+        scale_flat = [float(s) for s in scale_np.flatten()]
+        if scale_flat:
+            scale_min = min(scale_flat)
+            scale_max = max(scale_flat)
+            scale_mean = sum(scale_flat) / len(scale_flat)
+            # Debug level: report raw statistics, let caller interpret
             logger.debug(
-                f"Curvature scaling in Fréchet mean: "
-                f"{extreme_neg_count}/{n} points with scale > 5.0 (negative curvature), "
-                f"{extreme_pos_count}/{n} points with scale < 0.2 (positive curvature)."
+                f"Curvature scaling in Fréchet mean: n={n}, "
+                f"scale range=[{scale_min:.3f}, {scale_max:.3f}], mean={scale_mean:.3f}"
             )
 
         # Weighted sum of scaled tangent vectors (log maps)

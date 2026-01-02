@@ -288,7 +288,7 @@ class GeometricTrainingMetrics:
             ),
             refusal_distance=_float_or_none(metrics.get(GeometryMetricKey.refusal_distance)),
             is_approaching_refusal=(
-                metrics.get(GeometryMetricKey.refusal_approaching, 0) > 0.5
+                metrics.get(GeometryMetricKey.refusal_approaching, 0) > 0
                 if GeometryMetricKey.refusal_approaching in metrics
                 else None
             ),
@@ -309,7 +309,7 @@ class GeometricTrainingMetrics:
                 metrics.get(GeometryMetricKey.circuit_breaker_severity)
             ),
             circuit_breaker_tripped=(
-                metrics.get(GeometryMetricKey.circuit_breaker_tripped, 0) > 0.5
+                metrics.get(GeometryMetricKey.circuit_breaker_tripped, 0) > 0
                 if GeometryMetricKey.circuit_breaker_tripped in metrics
                 else None
             ),

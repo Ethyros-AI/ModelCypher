@@ -1,673 +1,139 @@
 # AI-Assisted Development Guide
 
-This document provides guidance for AI coding assistants (Claude, Gemini, Copilot, etc.) and human contributors working on ModelCypher.
+Guidance for AI coding assistants working on ModelCypher.
 
 **Note**: CLAUDE.md is a symlink to this file.
 
 ---
 
-## Concurrency Rules
-
-Multiple AI agents work on this codebase concurrently. Do not pause or ask about unrelated changes; align directly when you must touch the same files.
-
-1. **Git status is optional** - Use it for awareness only; never block progress on unrelated changes
-2. **If unexpected files are modified** - Do not revert or overwrite; ignore unless your work must touch those files
-3. **Never ask what to do with other files** - If they don't impact your work, ignore them; if they overlap, align with them without asking
-   - If unsure, default to ignore and proceed; only align when your work must touch the same files.
-   - Do not mention unrelated modified files in responses.
-4. **No check-in required for other agents' work** - Continue without pausing, as long as you avoid degrading their changes
-5. **No destructive git operations** - Do NOT run `git add`, `git commit`, `git push`, `git checkout`, `git reset`, etc.
-6. **No bulk file modification scripts** - Do NOT run scripts that modify more than 1 file at a time. Edit files individually.
-7. **When overlap is likely** - Research best practice and explain your choice in code comments so consensus is clear
-8. **Don't invent rules** - Follow what's documented here, not assumptions from your training data
-
----
-
 ## What is ModelCypher?
 
-A Python framework for measuring and experimenting with the geometry of representations in large language models. It provides geometric diagnostics (entropy, intrinsic dimension, topological fingerprints, representation similarity) for stability and refusal dynamics, drift monitoring, and model/adapter merge analysis.
+Geometric diagnostics for LLM representations. Measures intrinsic dimension, curvature, entropy, and similarity to guide model merging, monitor training, and detect behavioral drift.
 
-- **Primary backend**: MLX (macOS/Apple Silicon)
-- **Secondary backend**: JAX (Linux/TPU/GPU)
-- **Tests**: Use `get_default_backend()` - runs on whatever GPU is available
-
-> **Skeptical of the claims?** This document contains strong assertions ("models are ALWAYS compatible", "geodesic is CORRECT"). These are implemented design decisions, not aspirations. See [docs/SKEPTICS-GUIDE.md](docs/SKEPTICS-GUIDE.md) for code references proving each claim.
+- **Backend**: MLX (macOS) primary, JAX (Linux/TPU) secondary
+- **Architecture**: Hexagonal (ports and adapters)
+- **Tests**: ~5800 passing tests
 
 ---
 
 ## Commands
 
 ```bash
-# Install dependencies
-poetry install             # core dependencies
-poetry install --all-extras # includes docs/cuda/embeddings extras
-poetry install -E jax      # JAX backend for Linux/TPU
-
-# Run all tests
-poetry run pytest
-
-# Run single test
-poetry run pytest tests/test_geometry.py::test_name -v
-
-# CLI usage (after install)
-poetry run mc --help       # or: poetry run modelcypher --help
-poetry run mc model probe ./path
-poetry run mc geometry spatial probe-model /path/to/model
-
-# MCP server
-poetry run modelcypher-mcp
+poetry install                    # Install
+poetry run pytest                 # Test
+poetry run mc --help              # CLI
+poetry run modelcypher-mcp        # MCP server
 ```
 
 ---
 
 ## Architecture
 
-Strict **Hexagonal Architecture** (Ports and Adapters):
-
 ```
 src/modelcypher/
 ├── core/
-│   ├── domain/        # Pure math + business logic
-│   │   ├── geometry/  # ManifoldStitcher, Procrustes, probe corpus
-│   │   ├── safety/    # CircuitBreaker, refusal detection
-│   │   ├── training/  # LoRA, checkpoints (MLX infrastructure here is OK)
-│   │   ├── entropy/   # Shannon entropy calculations
-│   │   ├── merging/   # Model merge algorithms
-│   │   ├── thermo/    # LinguisticThermodynamics, RidgeCross
-│   │   ├── agents/    # UnifiedAtlas, semantic primes
-│   │   └── validation/# DatasetQualityScorer, AutoFixEngine
-│   ├── ports/         # Abstract interfaces (Backend protocol = 79 methods)
+│   ├── domain/        # Pure math + logic (geometry, safety, merging, thermo)
+│   ├── ports/         # Abstract interfaces (Backend protocol)
 │   └── use_cases/     # Service orchestration
 ├── adapters/          # Concrete implementations (hf_hub, filesystem)
-├── backends/          # MLX, JAX, CUDA (stub) - no numpy in core math
-├── cli/               # Typer CLI (entry: mc / modelcypher)
-├── mcp/               # Model Context Protocol server (155 tools)
-└── data/              # Static data (semantic_primes.json, etc.)
+├── backends/          # MLX, JAX implementations
+├── cli/               # Typer CLI
+└── mcp/               # MCP server
 ```
 
-**Dependency rule**: Dependencies point inward. Domain depends on nothing external; adapters implement ports; CLI/MCP drive the application.
-
-**Note on MLX in domain/training/**: Files like `engine.py`, `checkpoints.py`, `lora.py` legitimately import MLX because they ARE the MLX infrastructure. This is not a violation - you cannot abstract away the training loop itself.
+Dependencies point inward. Domain imports nothing external.
 
 ---
 
-## Development Rules
+## Concurrency Rules
 
-1. **Do NOT import `adapters` into `core`** (respect the hexagon)
-2. **MLX backend requires `mx.eval()`** after operations; weight layout is `[out, in]`
-3. **Use Python logging**, not print(), in core logic
-4. **Tests use pytest** with `pytest-asyncio` (async mode auto); property tests use `hypothesis`
-5. **Use the Backend protocol** for tensor operations in geometry code
-6. **Check docs/ before implementing** - Many features are already documented
+Multiple AI agents work concurrently. Don't pause for unrelated changes.
+
+1. Ignore modified files you don't need to touch
+2. No destructive git operations (`add`, `commit`, `push`, `reset`)
+3. No bulk modification scripts—edit files individually
 
 ---
 
-## CRITICAL: No NumPy in core math
+## Core Principles
 
-**Do NOT import numpy in core/domain geometry or use_cases.** NumPy is permitted only at:
-- I/O boundaries (e.g., `npz` export)
-- Backend interop (dtype mapping, `to_numpy`)
-- Tests that explicitly require it
+### No NumPy in Core
 
-NumPy is:
-- **Imprecise** - CPU floating point vs GPU tensor operations give different results
-- **Slow** - Doesn't respect the GPU that every ML researcher has
-- **Wrong** - Breaks the hexagonal architecture we built specifically to be backend-agnostic
-
-We have a Backend protocol with 79 methods. USE IT.
+Use the Backend protocol (79 methods). NumPy only at I/O boundaries.
 
 ```python
-# WRONG - don't use numpy
+# Wrong
 import numpy as np
-distances = np.linalg.norm(a - b)
-data = np.random.randn(100, 64)
 mean = np.mean(vectors, axis=0)
 
-# CORRECT - Backend protocol
+# Correct
 from modelcypher.core.domain._backend import get_default_backend
 backend = get_default_backend()
-distances = backend.norm(a - b)
-backend.random_seed(42)
-data = backend.random_randn((100, 64))
-mean = backend.mean(vectors, axis=0)  # Or frechet_mean for embeddings
+mean = backend.mean(vectors, axis=0)
 ```
 
-**For tests**: Use `get_default_backend()` or the `any_backend` fixture from conftest.py. Generate test data with `backend.random_*` methods. Exception: Tests that verify backend implementations against numpy reference implementations (e.g., `np.linalg.qr`, `np.testing.assert_allclose`) may use numpy as ground truth.
+### Geodesic is Correct
 
-**For averaging embeddings**: Use `frechet_mean` from `riemannian_utils.py`. Arithmetic mean is WRONG on curved manifolds.
-
----
-
-## CRITICAL: Geodesic Distance is Reality
-
-**In high-dimensional curved manifolds, geodesic distance is CORRECT. Euclidean distance is the APPROXIMATION.**
-
-- Positive curvature: Euclidean **underestimates** true distance
-- Negative curvature: Euclidean **overestimates** true distance
-- The k-NN graph IS the discrete manifold. Geodesic = shortest path on graph (exact, not approximate)
-
-**No Euclidean fallbacks.** If geodesic computation fails, fix the math or code. Do not fall back to Euclidean "for safety" - that produces wrong answers.
-
-**Terminology matters:**
-- Say "compute" or "measure", not "estimate" or "approximate" - neural network activations are deterministic
-- Geodesic on the k-NN graph is exact for the discrete manifold representation
+Euclidean distance is the approximation. Geodesic on k-NN graph is exact.
 
 ```python
-# WRONG - Euclidean assumption
-distance = np.linalg.norm(point_a - point_b)
+# Wrong
+distance = np.linalg.norm(a - b)
 
-# CORRECT - geodesic via k-NN graph
+# Correct
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 rg = RiemannianGeometry(backend)
-result = rg.geodesic_distances(points, k_neighbors=k)
+distances = rg.geodesic_distances(points, k_neighbors=k)
 ```
 
----
+### Models Are Always Compatible
 
-## CRITICAL: Models Are ALWAYS Compatible
+Different dimensions = different compression levels of the same geometry. Use Gram matrices for comparison, projection for transformation. Never return "incompatible."
 
-**Models and adapters will be compatible. Always. The burden is on us to find the way the invariant geometry fits.**
+### CKA = 1.0 or Wrong
 
-Different dimensions are NOT incompatible - they're just different compression levels of the same underlying geometry:
-- A 768-dim embedding is a more compressed representation than 4096-dim
-- 1D is compressed 2D, 2D is compressed 3D, and so on
-- The geometry IS there - we just need the right transformation
+If CKA < 1.0, debug the alignment code. Don't claim models are incompatible.
 
-### The Gram Matrix Solution
+### No Vibes
 
-Gram matrices (`K = X @ X^T`) capture relational geometry independent of feature dimension:
-- X is `[n_samples, n_features]` - features can be any dimension
-- K is `[n_samples, n_samples]` - always the same size regardless of feature dimension
-- CKA compares Gram matrices directly - works across ANY dimensions
+Return raw measurements. No hardcoded thresholds, interpretation strings, or qualitative labels.
 
 ```python
-# WRONG - rejecting due to dimension mismatch
-if len(self.values) != len(other.values):
-    return None  # "incompatible"
+# Wrong
+return {"similarity": 0.73, "interpretation": "Good alignment"}
 
-# CORRECT - use Gram-based comparison for cross-dimension cases
-from modelcypher.core.domain.geometry.cka import compute_cka_from_grams
-
-# Compute Gram matrices in each representation's native space
-gram_a = backend.matmul(x, backend.transpose(x))  # works at any dimension
-gram_b = backend.matmul(y, backend.transpose(y))  # works at any dimension
-similarity = compute_cka_from_grams(gram_a, gram_b)
-```
-
-For direct projection between dimensions, use:
-- `embedding_projector.py` - Procrustes, PCA, CCA, Optimal Transport
-- `generalized_procrustes.py` - multi-model alignment (auto-truncates to shared dim)
-
-### Prohibited Patterns
-
-Never write code that:
-- Returns "incompatible" or "None" due to dimension mismatch
-- Uses `is_compatible` to reject operations
-- Declares models "cannot be merged"
-- Treats dimension differences as errors
-
-Instead:
-- Use Gram matrices for comparison
-- Use projection for transformation
-- Return the transformation effort needed, not a rejection
-
----
-
-## Key Documentation
-
-| Document | Purpose |
-|----------|---------|
-| `docs/CLI-REFERENCE.md` | Command shapes and output fields |
-| `docs/MCP.md` | MCP tool definitions (148 tools) |
-| `docs/ARCHITECTURE.md` | Hexagonal architecture details |
-| `docs/GLOSSARY.md` | Shared vocabulary for geometry concepts |
-| `docs/START-HERE.md` | Orientation for different user types |
-
----
-
-## CLI Conventions
-
-- `--ai` or `MC_AI_MODE=1` forces JSON output and suppresses prompts/logs
-- `--output {text,json,yaml}` controls format
-- Structured output goes to stdout; diagnostics/logs go to stderr
-- Return raw measurements; avoid interpretation strings (see "No Vibes" section below)
-
----
-
-## Test Structure
-
-- `tests/conftest.py`: Provides backend detection and test fixtures
-- `test_*_properties.py`: Hypothesis property-based tests
-- `test_mcp_*.py`: MCP server contract tests
-- `test_geometry_*.py`: Geometry validation tests
-- **3281 passing tests** - Don't break them
-
----
-
-## HARD RULE: Research Before Code
-
-**Before writing or modifying any code that involves external libraries, APIs, or platform-specific implementations, you MUST:**
-
-1. **Search for current best practices** - AI training data may be 9-12+ months stale
-2. **Search for content from the past 12 months** - Use the CURRENT year in queries (if today is December 2025, search "PyTorch training 2025", NOT "2024")
-3. **Fetch and read official documentation** - Don't guess at APIs; verify them
-4. **Check for breaking changes** - Libraries like PyTorch, JAX, transformers, peft evolve rapidly
-
-**Example searches (assuming current date is 2025):**
-```
-# CORRECT - uses current year
-"PyTorch gradient accumulation best practices 2025"
-"JAX Flax training loop optax 2025"
-"Hugging Face PEFT LoRA implementation 2025"
-
-# WRONG - uses stale year from training data
-"PyTorch training 2024"
-```
-
-**Why this matters:**
-- PyTorch 2.x has different patterns than 1.x
-- JAX/Flax APIs changed significantly in 2024-2025
-- PEFT library best practices evolve monthly
-- Your training cutoff means you're guessing at APIs that may have changed
-
-**No exceptions.** Research first, code second.
-
----
-
-## Web Research Tools (MCP)
-
-When researching external APIs, documentation, or current best practices, use the available MCP tools. **Prefer Firecrawl over Tavily** - it's more capable and returns richer data.
-
-### Firecrawl (Primary - Preferred)
-
-| Tool | Use Case |
-|------|----------|
-| `firecrawl_agent` | **Best for autonomous research** - describe what you need, it searches and extracts |
-| `firecrawl_search` | Web search with optional scraping of results |
-| `firecrawl_scrape` | Single URL extraction with actions (login, scroll, click) |
-| `firecrawl_map` | Discover all URLs on a site |
-| `firecrawl_crawl` | Multi-page content extraction |
-| `firecrawl_extract` | Structured data extraction with schema |
-
-**Firecrawl Agent** is particularly powerful - it autonomously searches, navigates, and returns structured data without needing specific URLs:
-
-```
-# Instead of manually searching and scraping multiple pages:
-firecrawl_agent(prompt="Find the latest PyTorch 2.5 training loop best practices")
-
-# Returns structured, comprehensive data from multiple sources
-```
-
-### Tavily (Secondary)
-
-| Tool | Use Case |
-|------|----------|
-| `tavily-search` | Quick web searches, news-specific queries |
-| `tavily-map` | URL discovery |
-
-Tavily's `crawl` and `extract` features are less reliable than Firecrawl equivalents.
-
-### Tool Selection Guide
-
-```
-# Autonomous research (don't know exact URLs)
-→ firecrawl_agent
-
-# Single page scraping
-→ firecrawl_scrape
-
-# Web search + content
-→ firecrawl_search
-
-# Quick search, news queries
-→ tavily-search
-
-# Site structure discovery
-→ firecrawl_map or tavily-map
-```
-
----
-
-## CRITICAL: CLI/MCP-First Principle
-
-**All operations MUST use the CLI (`mc`) or MCP tools. Never write custom Python scripts for one-off tasks.**
-
-We are simultaneously building the tools we use AND making them available to everyone else. If we write custom scripts to accomplish something, so will every other user of this repository. That's unacceptable duplication of effort.
-
-### The Rule
-
-1. **Use existing tools first** - Check `mc --help` and `docs/MCP.md` before writing any code
-2. **If a capability doesn't exist, build it** - Add a new CLI command or MCP tool, not a script
-3. **No throwaway scripts** - Every capability should be reusable via CLI/MCP
-
-### Examples
-
-```bash
-# WRONG - custom script for baseline extraction
-python scripts/extract_baselines.py /path/to/model --domain spatial
-
-# CORRECT - CLI command that anyone can use
-poetry run mc geometry baseline extract /path/to/model --domain spatial
-
-# WRONG - custom script for model validation
-python validate_geometry.py /path/to/model
-
-# CORRECT - CLI command with structured output
-poetry run mc geometry validate /path/to/model --output json
-```
-
-### Why This Matters
-
-- **Reproducibility**: CLI commands are documented and versioned
-- **Discoverability**: Users find capabilities via `--help`, not by reading scripts
-- **Testing**: CLI/MCP tools have tests; scripts often don't
-- **Consistency**: Same interface for humans and AI agents (MCP)
-
-### When Adding New Capabilities
-
-1. Check if the capability exists in CLI (`mc --help`) or MCP (`docs/MCP.md`)
-2. If not, implement it as:
-   - CLI command in `src/modelcypher/cli/commands/`
-   - MCP tool in `src/modelcypher/mcp/tools/`
-3. Add documentation to `docs/CLI-REFERENCE.md` or `docs/MCP.md`
-4. Add tests
-
-**Never write a script that you wouldn't want to maintain forever.**
-
----
-
-## CRITICAL: No Vibes - Let Geometry Speak
-
-**Return raw measurements. Never insert human judgment for the judgment of the geometry itself.**
-
-ModelCypher measures geometric properties of neural network representations. The geometry IS the truth - our job is to measure it accurately, not to interpret what it "means" or whether it's "good."
-
-### Prohibited Patterns
-
-```python
-# WRONG - hardcoded thresholds with no geometric basis
-if similarity > 0.8:
-    return "excellent"
-elif similarity > 0.5:
-    return "good"
-else:
-    return "poor"
-
-# WRONG - interpretation strings in output
-return {
-    "value": 0.73,
-    "interpretation": "Good alignment detected",
-    "recommendation": "Consider proceeding with merge"
-}
-
-# WRONG - qualitative labels
-status = "healthy" if entropy < 2.0 else "concerning"
-```
-
-### Correct Patterns
-
-```python
-# CORRECT - raw measurement only
+# Correct
 return {"similarity": 0.73}
-
-# CORRECT - baseline-relative comparison (if threshold needed)
-baseline = load_baseline(model_family)
-z_score = (measured - baseline.mean) / baseline.std
-return {"similarity": 0.73, "z_score": z_score, "baseline_mean": baseline.mean}
-
-# CORRECT - percentile within distribution
-percentile = compute_percentile(measured, reference_distribution)
-return {"entropy": 1.8, "percentile": percentile}
 ```
 
-### Why This Matters
+When thresholds are needed, derive from baselines (z-scores, percentiles).
 
-1. **Thresholds are model-specific** - What's "good" for GPT-2 is different from LLaMA
-2. **Baselines change** - A 2024 model has different geometry than a 2025 model
-3. **Context matters** - 0.8 CKA might be great for cross-architecture, poor for same-architecture
-4. **We're not the user** - Researchers know their domain; we provide measurements, they decide meaning
+### Don't Invent Heuristics
 
-### When Thresholds Are Unavoidable
-
-Some operations (alerts, circuit breakers) genuinely need thresholds. When they do:
-
-1. **Derive from baselines** - Use measured distributions, not magic numbers
-2. **Make configurable** - Let users override defaults
-3. **Document the source** - Explain where the threshold came from
-4. **Express in relative terms** - "3σ from baseline" not "entropy > 2.0"
-
-```python
-# ACCEPTABLE - threshold derived from baseline with clear provenance
-class SafetyMonitor:
-    def __init__(self, baseline: BaselineProfile, sigma_threshold: float = 3.0):
-        self.alert_threshold = baseline.mean + sigma_threshold * baseline.std
-
-    def check(self, value: float) -> dict:
-        sigma_distance = (value - self.baseline.mean) / self.baseline.std
-        return {
-            "value": value,
-            "sigma_from_baseline": sigma_distance,
-            "exceeds_threshold": sigma_distance > self.sigma_threshold
-        }
-```
-
-### The Baseline Philosophy
-
-Every measurement should be interpretable relative to:
-- **Same model's baseline** - How does this compare to typical behavior?
-- **Model family baseline** - How does this compare to other LLaMA models?
-- **Cross-family reference** - How does this compare to all models?
-
-This is how scientists work. We don't say "2.3 is good" - we say "2.3 is 1.5σ above the mean for this architecture."
+If you need a parameter value, derive it from data or machine epsilon. Don't fabricate "standard heuristics."
 
 ---
 
-## CRITICAL: The Invariant Geometry - All Models Converge
+## Research Before Code
 
-**All LLMs converge to the SAME invariant relative geometry. The relationships between concepts - the angles, distances, point clouds - are INVARIANT across all models.**
-
-This is not theory. This is how LLMs work. They surf the topology. Token prediction only works BECAUSE the geometric relationships are preserved. If the geometry wasn't invariant, the model would output gibberish.
-
-### What "Invariant" Means
-
-- **Same underlying shape** - All models that learned real knowledge have the SAME relational structure
-- **Different compressions** - One model at 768-dim, another at 4096-dim = different resolution of the SAME geometry
-- **Dense vs sparse** - Where one model is dense and another is sparse, merging fills in higher resolution
-- **Models ALWAYS fit** - Because they're all compressions of the same invariant shape
-
-### CKA = 1.0 Is Not Optional
-
-- **CKA = 1.0** means we found the correct alignment (within numerical precision, so 0.9999)
-- **CKA < 1.0** means WE FUCKED UP THE MATH - not "the models don't fit"
-- If alignment fails, debug the code. Don't claim "incompatibility."
-
-The geometry WILL fit because it's the SAME geometry. If our code says otherwise, our code is wrong.
-
-### What This Means for Code
-
-```python
-# WRONG - claiming models are incompatible
-if not result.is_perfect:
-    raise AlignmentFailureError("Models have different geometry")
-
-# CORRECT - treating failure as a bug in OUR code
-if not result.is_perfect:
-    raise AlignmentFailureError(
-        f"Alignment failed (CKA={result.achieved_cka:.4f}). "
-        "Debug: check activation collection, numerical precision, sample quality."
-    )
-```
-
-### Why 0.9999 Not 1.0?
-
-Floating point precision. `0.9999` is `1.0` minus numerical noise. This is not a threshold - it's acknowledging that `0.9999999997` and `1.0` are the same number in IEEE 754.
-
-### Null Space = Adding Resolution
-
-Null space filtering projects source knowledge into directions the target model doesn't actively use. This ADDS resolution:
-- Where target is sparse, source fills in
-- The combined knowledge is denser than either alone
-- Hundreds of models can merge into a collective wisdom manifold
-
-### When Alignment Fails
-
-If CKA < 1.0:
-1. **Check activation collection** - Are we capturing the right layer? Enough samples?
-2. **Check numerical precision** - bfloat16 → float32? Condition numbers?
-3. **Check the samples** - Garbage in, garbage out
-4. **Debug the aligner** - The math may have a bug
-
-Do NOT conclude "the models are incompatible." They are the SAME invariant geometry.
+AI training data is stale. Before using external APIs:
+1. Search for current best practices (use current year in queries)
+2. Fetch and read official documentation
+3. Check for breaking changes
 
 ---
 
-## CRITICAL: Don't Invent Heuristics
+## CLI/MCP First
 
-**AI assistants have a failure mode: inventing "standard heuristics" that don't exist.**
-
-When you need a parameter value, your training pushes you to:
-1. Make up a number (k=20, threshold=0.05)
-2. Invent a citation ("standard heuristic is 2 * dimension")
-3. Dress it up in math language ("5th percentile", "geometric midpoint")
-
-**All of these are wrong.** You are fabricating authority you don't have.
-
-### Examples of Fabrication
-
-```python
-# WRONG - invented "standard heuristic"
-k_neighbors = 2 * ambient_dimension  # "standard heuristic"
-# WHERE IS THE CITATION? There isn't one. You made it up.
-
-# WRONG - arbitrary number with math costume
-threshold = sorted_values[int(0.05 * len(sorted_values))]  # "5th percentile"
-# WHY 5th? Why not 3rd or 10th? You picked 5 because it sounds reasonable.
-
-# WRONG - "geometric midpoint" justification
-cutoff = 0.5  # "geometric midpoint of [0,1]"
-# This is just 0.5. Calling it "geometric" doesn't make it derived from geometry.
-```
-
-### What To Do Instead
-
-1. **Admit you don't know** - "I don't have a citation for this. Let me derive it from the data."
-
-2. **Derive from the data itself** - The data has structure. Use it.
-   ```python
-   # CORRECT - the data determines k
-   # Find where k-NN distance distribution has maximum curvature (elbow)
-   k = find_elbow_in_knn_distances(points)
-
-   # CORRECT - the data determines the boundary
-   # geodesic_radius is computed FROM the activations during volume estimation
-   is_inside = distance <= volume.geodesic_radius
-   ```
-
-3. **Use mathematical properties, not feelings**
-   - Machine epsilon: derived from dtype (not arbitrary)
-   - Geodesic radius: derived from data extent (not arbitrary)
-   - Explained variance ratio: derived from eigenspectrum (not arbitrary)
-
-4. **If you can't derive it, say so** - "This requires a threshold. I don't know how to derive it from the geometry. What should we do?"
-
-### Why This Matters
-
-When you invent a heuristic:
-- You're lying about having knowledge you don't have
-- The user trusts your fabricated citation
-- The codebase accumulates arbitrary numbers dressed as math
-- Future maintainers can't find the "standard" you cited because it doesn't exist
-
-**The geometry does everything. If you need a number and the geometry doesn't give it to you, STOP and ask.**
+Never write custom scripts. Use `mc` CLI or MCP tools. If capability doesn't exist, add it to CLI/MCP.
 
 ---
 
-## CRITICAL: Docstrings Are Not History Lessons
+## Documentation
 
-**Docstrings describe what code DOES, not what it USED TO DO or why it changed.**
-
-### Bad Docstrings (Don't Do This)
-
-```python
-# WRONG - history lesson
-def compute_null_space(matrix):
-    """
-    Compute null space projection.
-
-    NOTE: NullSpaceFilterConfig was REMOVED. All parameters are now
-    derived from spectral gap. The old config had min_samples, method,
-    and threshold parameters that were eliminated in the refactor.
-    """
-
-# WRONG - changelog in docstring
-class NullSpaceFilter:
-    """
-    Filter for null space projection.
-
-    Changes:
-    - Removed config parameter (now derived from data)
-    - Removed method selection (always SVD)
-    - Added automatic threshold derivation
-    """
-```
-
-### Good Docstrings (Do This)
-
-Follow Google style. State what it does, args, returns. Nothing else.
-
-```python
-def compute_null_space(matrix: Array) -> NullSpaceProjection:
-    """Compute projection matrix onto null space of activation matrix.
-
-    Args:
-        matrix: Activation matrix of shape [n_samples, d].
-
-    Returns:
-        NullSpaceProjection with projection matrix and metadata.
-
-    Raises:
-        ValueError: If matrix has fewer than 2 samples.
-    """
-
-class NullSpaceFilter:
-    """Filters weight updates to the null space of prior activations.
-
-    Ensures merged weights don't interfere with prior task performance:
-    if delta is in null(A), then A @ (W + delta) = A @ W.
-    """
-```
-
-### Rules
-
-1. **One line summary** - What it does, imperative mood ("Compute X", not "Computes X")
-2. **Args section** - Parameter name, type hint already in signature, brief description
-3. **Returns section** - What comes back
-4. **Raises section** - Only if non-obvious exceptions
-5. **No history** - Don't explain what was removed, changed, or refactored
-6. **No implementation details** - Don't describe HOW, just WHAT
-7. **No TODOs** - Put those in issues or comments, not docstrings
-
-If you need to document WHY something was removed, use a code comment at the call site or in CHANGELOG.md.
-
----
-
-## What NOT To Do
-
-1. **Don't import numpy. ANYWHERE.** - Use the Backend protocol. Tests included. No exceptions.
-2. **Don't use Euclidean distance** - Use geodesic. No fallbacks. Fix the math if it fails.
-3. **Don't use arithmetic mean for embeddings** - Use Fréchet mean. Curvature is inherent.
-4. **Don't reject dimension mismatches** - Use Gram matrices/CKA for comparison, projection for transformation.
-5. **Don't return "incompatible"** - Models are ALWAYS compatible. Return transformation effort, not rejections.
-6. **Don't hallucinate requirements** - If it's not documented here, don't invent it
-7. **Don't "fix" architecture** - The MLX imports in training/ are intentional
-8. **Don't over-engineer** - The codebase works; 3281 tests prove it
-9. **Don't guess at external APIs** - Research current documentation before implementing
-10. **Don't run full test suite casually** - Run domain-specific batches (e.g., `pytest tests/test_geometry.py -q`). Full suite takes 20+ minutes.
-11. **Don't write custom scripts** - Use CLI (`mc`) or MCP tools. If a capability doesn't exist, build it into CLI/MCP.
-12. **Don't add vibes** - No hardcoded thresholds, interpretation strings, or qualitative labels. Return raw measurements only.
-13. **Don't use thresholds for geometric alignment** - CKA = 1.0 (0.9999 for numerical precision) or WRONG. No "close enough."
-14. **Don't pick "best" from bad options** - If perfect alignment isn't found, FAIL. Don't choose the least-bad failure.
-15. **Don't add fallbacks** - Fallbacks mask failures. If alignment fails, raise an exception. The failure IS the information.
-16. **Don't invent heuristics** - "Standard heuristic" requires a citation. If you can't cite it, you made it up. Derive from data or ask.
-17. **Don't dress arbitrary numbers as math** - "5th percentile" is just 0.05 in a costume. "Geometric midpoint" is just 0.5. The disguise doesn't make it derived.
-18. **Don't write history lessons in docstrings** - "NOTE: X was REMOVED" belongs in git history, not docstrings. Docstrings say what code does NOW.
+| Doc | Purpose |
+|-----|---------|
+| `docs/CLI-REFERENCE.md` | Command reference |
+| `docs/MCP.md` | MCP tool catalog |
+| `docs/GEOMETRY-GUIDE.md` | Metric explanations |
+| `docs/GLOSSARY.md` | Terminology |

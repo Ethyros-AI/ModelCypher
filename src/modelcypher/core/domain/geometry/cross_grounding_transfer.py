@@ -560,10 +560,8 @@ class CrossGroundingSynthesizer:
         # Compute synthesis confidence
         confidence = stress_preservation * grounding_rotation.confidence
 
-        # Generate warning if stress preservation is low
+        # Stress preservation value is in the result; caller interprets significance
         warning = None
-        if stress_preservation < 0.5:
-            warning = f"Low stress preservation ({stress_preservation:.2f}). The target position may not accurately represent the source concept."
 
         return GhostAnchor(
             concept_id=concept_id,
