@@ -63,17 +63,14 @@ from modelcypher.cli.commands.geometry import cross_cultural as geometry_cross_c
 from modelcypher.cli.commands.geometry import density as geometry_density_commands
 from modelcypher.cli.commands.geometry import emotion as geometry_emotion_commands
 from modelcypher.cli.commands.geometry import geom_adapter as geometry_adapter_commands
-from modelcypher.cli.commands.geometry import interference as geometry_interference_commands
 from modelcypher.cli.commands.geometry import invariant as geometry_invariant_commands
 from modelcypher.cli.commands.geometry import manifold as geometry_manifold_commands
-from modelcypher.cli.commands.geometry import merge_entropy as geometry_merge_entropy_commands
 from modelcypher.cli.commands.geometry import metrics as geometry_metrics_commands
 from modelcypher.cli.commands.geometry import moral as geometry_moral_commands
 from modelcypher.cli.commands.geometry import number_theory as geometry_number_theory_commands
 from modelcypher.cli.commands.geometry import path as geometry_path_commands
 from modelcypher.cli.commands.geometry import persona as geometry_persona_commands
 from modelcypher.cli.commands.geometry import primes as geometry_primes_commands
-from modelcypher.cli.commands.geometry import refinement as geometry_refinement_commands
 from modelcypher.cli.commands.geometry import refusal as geometry_refusal_commands
 from modelcypher.cli.commands.geometry import research as geometry_research_commands
 from modelcypher.cli.commands.geometry import safety as geometry_safety_commands
@@ -84,7 +81,6 @@ from modelcypher.cli.commands.geometry import temporal as geometry_temporal_comm
 from modelcypher.cli.commands.geometry import training as geometry_training_commands
 from modelcypher.cli.commands.geometry import transfer as geometry_transfer_cabe_commands
 from modelcypher.cli.commands.geometry import visualize as geometry_visualize_commands
-from modelcypher.cli.commands.geometry import waypoint as geometry_waypoint_commands
 from modelcypher.cli.composition import get_training_service
 from modelcypher.cli.context import CLIContext, resolve_ai_mode, resolve_output_format
 from modelcypher.cli.output import write_output
@@ -191,18 +187,14 @@ geometry_app.add_typer(geometry_sparse_commands.app, name="sparse")
 geometry_app.add_typer(geometry_refusal_commands.app, name="refusal")
 geometry_app.add_typer(geometry_persona_commands.app, name="persona")
 geometry_app.add_typer(geometry_manifold_commands.app, name="manifold")
-geometry_app.add_typer(geometry_refinement_commands.app, name="refinement")
 geometry_app.add_typer(geometry_invariant_commands.app, name="invariant")
 geometry_app.add_typer(geometry_emotion_commands.app, name="emotion")
-geometry_app.add_typer(geometry_merge_entropy_commands.app, name="merge-entropy")
 geometry_app.add_typer(geometry_transfer_cabe_commands.app, name="transfer")
 geometry_app.add_typer(geometry_spatial_commands.app, name="spatial")
 geometry_app.add_typer(geometry_social_commands.app, name="social")
 geometry_app.add_typer(geometry_temporal_commands.app, name="temporal")
 geometry_app.add_typer(geometry_moral_commands.app, name="moral")
 geometry_app.add_typer(geometry_number_theory_commands.app, name="number-theory")
-geometry_app.add_typer(geometry_waypoint_commands.app, name="waypoint")
-geometry_app.add_typer(geometry_interference_commands.app, name="interference")
 geometry_app.add_typer(geometry_research_commands.app, name="research")
 geometry_app.add_typer(geometry_visualize_commands.app, name="visualize")
 app.add_typer(entropy_commands.app, name="entropy")

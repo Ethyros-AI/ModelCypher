@@ -139,7 +139,6 @@ def pipeline(
                 "layerCount": result.merge_result.get("layer_count"),
                 "weightCount": result.merge_result.get("weight_count"),
                 "meanConfidence": result.merge_result.get("mean_confidence"),
-                "vocabAligned": result.merge_result.get("vocab_aligned"),
             },
             "postMerge": {
                 "meanConfidence": result.post_merge.mean_confidence,

@@ -181,7 +181,7 @@ from modelcypher.core.domain.geometry.spatial_3d import Spatial3DAnalyzer
 analyzer = Spatial3DAnalyzer(backend)
 # Measure concentration on X (lateral), Y (vertical), Z (depth) axes
 result = analyzer.analyze(model_activations, spatial_probes)
-# All models encode physics geometrically; difference is probability distribution
+# All models encode physics geometrically; differences are density over the invariant manifold
 ```
 
 ---

@@ -38,7 +38,6 @@ References:
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any, Callable
 
 from .probe import (
@@ -64,8 +63,6 @@ from .transplant import (
     stage_transplant as stage_transplant_impl,
 )
 
-logger = logging.getLogger(__name__)
-
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
@@ -77,7 +74,6 @@ def stage_probe(
     target_model: Any | None,
     source_tokenizer: Any | None,
     target_tokenizer: Any | None,
-    alignment_map: Any | None,
     extract_layer_index_fn: Callable[[str], int | None],
 ) -> tuple[
     dict[str, Any],
@@ -107,7 +103,6 @@ def stage_probe(
         source_tokenizer=source_tokenizer,
         target_tokenizer=target_tokenizer,
         collect_activations_fn=collect_fn,
-        alignment_map=alignment_map,
     )
 
     return (

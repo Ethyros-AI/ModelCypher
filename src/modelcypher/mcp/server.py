@@ -26,6 +26,7 @@ from mcp.server.fastmcp import FastMCP
 from modelcypher.infrastructure.container import PortRegistry
 from modelcypher.infrastructure.service_factory import ServiceFactory
 from modelcypher.mcp.security import ConfirmationManager, SecurityConfig
+from modelcypher.mcp.tools.adapter import register_adapter_tools
 from modelcypher.mcp.tools.agent import register_agent_tools
 from modelcypher.mcp.tools.common import ServiceContext
 from modelcypher.mcp.tools.evaluation import register_evaluation_tools
@@ -37,9 +38,11 @@ from modelcypher.mcp.tools.safety_entropy import (
     register_entropy_tools,
     register_safety_tools,
 )
+from modelcypher.mcp.tools.system import register_system_tools
 from modelcypher.mcp.tools.tasks import register_task_tools
 from modelcypher.mcp.tools.thermo import register_thermo_tools
 from modelcypher.mcp.tools.training import register_training_tools
+from modelcypher.mcp.resources import register_system_resources
 
 _TOOL_NAME_PATTERN = re.compile(r"""['"](mc_[a-zA-Z0-9_]+)['"]""")
 
@@ -89,6 +92,9 @@ def build_server(profile: str | None = None) -> FastMCP:
     register_agent_tools(ctx)
     register_thermo_tools(ctx)
     register_evaluation_tools(ctx)
+    register_system_tools(ctx)
+    register_adapter_tools(ctx)
+    register_system_resources(ctx)
 
     return mcp
 

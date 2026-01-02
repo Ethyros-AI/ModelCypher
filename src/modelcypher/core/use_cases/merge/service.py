@@ -482,7 +482,6 @@ class MergePipelineService:
             "layer_count": merge_result.layer_count,
             "weight_count": merge_result.weight_count,
             "mean_confidence": merge_result.mean_confidence,
-            "vocab_aligned": merge_result.vocab_aligned,
             "mean_procrustes_error": merge_result.mean_procrustes_error,
             "geometry_metrics": merge_result.geometry_metrics,
             "transplant_metrics": merge_result.transplant_metrics,

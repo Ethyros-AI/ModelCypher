@@ -178,7 +178,7 @@ def _project_gram_transport(
     3. Apply EXACTLY: W_col_aligned = W @ π_col -> [m_s, d_t]
     4. For row mismatch:
        - If rows tractable (< 20k): compute row GW
-       - If rows huge (embeddings): should be pre-aligned by vocabulary stage
+       - If rows huge (embeddings): token identity alignment must be handled outside this projector
 
     Projection:
     - Column dimension: source @ π_col projects columns
@@ -246,7 +246,7 @@ def _project_gram_transport(
         # MEMORY CONSTRAINT (not approximation):
         # - 20k × 20k Gram = 400M elements × 4 bytes = 1.6 GB
         # - GW requires multiple copies: ~6-8 GB total
-        # - For embedding layers (vocab_size > 100k), use vocabulary alignment in stage 0
+        # - For embedding layers (vocab_size > 100k), align token identity before projection
         max_tractable_dim = 20000
 
         if current_rows <= max_tractable_dim and m_t <= max_tractable_dim:
@@ -286,8 +286,8 @@ def _project_gram_transport(
             # Use Low-Rank GW which has O((n+m)r²) complexity instead of O(n²m + nm²).
             # This preserves geometry EXACTLY within the low-rank approximation.
             #
-            # For embedding layers (vocab_size mismatch), vocabulary alignment
-            # should still be performed in stage 0 for discrete token identity.
+            # For embedding layers (vocab_size mismatch), align token identity
+            # before projection to preserve discrete token correspondence.
             from modelcypher.core.domain.geometry.low_rank_gw import (
                 LowRankGromovWasserstein,
                 LowRankGWConfig,
@@ -555,8 +555,8 @@ def _project_svd(
     # intermediate_size, different num_kv_heads, etc.). We handle ALL mismatches
     # via SVD truncation/padding - NEVER fall back to GW on weights.
     #
-    # Embedding layers (vocab_size mismatch) should be handled by stage 0
-    # vocabulary alignment BEFORE we get here.
+    # Embedding layers (vocab_size mismatch) require token identity alignment
+    # before projection to preserve discrete token correspondence.
     if m_s != m_t:
         mismatch = abs(m_s - m_t)
         logger.debug(

@@ -69,7 +69,6 @@ _SUBMODULES = {
     "path_geometry",
     "permutation_aligner",
     "persona_vector_monitor",
-    "refinement_density",
     "refusal_direction_cache",
     "refusal_direction_detector",
     "shared_subspace_projector",

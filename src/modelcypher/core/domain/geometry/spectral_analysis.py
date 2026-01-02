@@ -16,15 +16,13 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Spectral Analysis for Model Merging.
+Spectral Analysis for Model Weight Matrices.
 
 Computes spectral metrics (condition numbers, singular value ratios) to assess
-transformation effort between source and target models. When spectral
-mismatch is high (indicating different representation scales), the merge should
-trust the target more to maintain stability.
+the geometric relationship between source and target weight matrices.
 
-Reference:
-- Prevents merging from creating ill-conditioned weight matrices
+This module provides RAW MEASUREMENTS only. No alpha blending, no interpretation.
+Use these metrics to understand transformation effort - decisions are yours.
 
 Mathematical Foundation
 -----------------------
@@ -32,16 +30,15 @@ For weight matrices W_source and W_target:
 
 1. Spectral ratio = σ_max(W_source) / σ_max(W_target)
    - σ_max = largest singular value
-   - Ratio near 1.0 = good alignment
+   - Ratio near 1.0 = similar representation scales
 
 2. Spectral confidence = min(ratio, 1/ratio)
    - Symmetric: both 2.0 and 0.5 give same confidence
-   - Range: [0, 1], higher = better
+   - Range: [0, 1], higher = more similar scales
 
-3. Spectral penalty:
-   - penalty = (1 - spectral_confidence) * strength
-   - alpha_adjusted = alpha + (1 - alpha) * penalty
-   - Effect: Low confidence → increase alpha → trust target more
+3. Condition number = σ_max / σ_min
+   - Higher = more ill-conditioned
+   - Derived threshold from dtype precision
 """
 
 from __future__ import annotations
@@ -90,17 +87,13 @@ class SpectralMetrics:
 class SpectralConfig:
     """Configuration for spectral analysis.
 
-    Use with_parameters() to create with explicit values.
+    All thresholds are derived from dtype precision when None.
     """
 
-    # Strength of spectral penalty [0, 1]
-    # Higher = more aggressive penalty for mismatch
-    penalty_strength: float = 0.5
-
-    # Epsilon for numerical stability
+    # Epsilon for numerical stability (None = derived from dtype)
     epsilon: float | None = None
 
-    # Maximum condition number before clamping
+    # Maximum condition number before clamping (None = derived from dtype)
     max_condition_number: float | None = None
 
     # Whether to use full SVD (slower but more accurate) or just top-k
@@ -108,46 +101,6 @@ class SpectralConfig:
 
     # Number of singular values to compute if not full
     top_k: int = 10
-
-    @classmethod
-    def with_parameters(
-        cls,
-        *,
-        penalty_strength: float = 0.5,
-        epsilon: float | None = None,
-        max_condition_number: float | None = None,
-        use_full_svd: bool = False,
-        top_k: int = 10,
-    ) -> "SpectralConfig":
-        """Create configuration with explicit parameters.
-
-        Args:
-            penalty_strength: How aggressively to penalize spectral mismatch [0, 1].
-            epsilon: Numerical stability threshold.
-            max_condition_number: Maximum condition number before clamping.
-            use_full_svd: Use full SVD (slower but more accurate).
-            top_k: Number of singular values to compute if not full SVD.
-
-        Returns:
-            Configuration with specified parameters.
-        """
-        if penalty_strength < 0 or penalty_strength > 1:
-            raise ValueError(f"penalty_strength must be in [0, 1], got {penalty_strength}")
-        if epsilon is not None and epsilon <= 0:
-            raise ValueError(f"epsilon must be > 0, got {epsilon}")
-        if max_condition_number is not None and max_condition_number <= 0:
-            raise ValueError(
-                f"max_condition_number must be > 0, got {max_condition_number}"
-            )
-        if top_k < 1:
-            raise ValueError(f"top_k must be >= 1, got {top_k}")
-        return cls(
-            penalty_strength=penalty_strength,
-            epsilon=epsilon,
-            max_condition_number=max_condition_number,
-            use_full_svd=use_full_svd,
-            top_k=top_k,
-        )
 
 
 def _to_float(val: Any) -> float:
@@ -261,101 +214,6 @@ def compute_spectral_metrics(
         target_spectral_norm=target_spectral,
         delta_frobenius=delta_frobenius,
     )
-
-
-def apply_spectral_penalty(
-    alpha: float,
-    spectral_confidence: float,
-    penalty_strength: float = 0.5,
-) -> float:
-    """
-    Apply spectral penalty to alpha.
-
-    When spectral confidence is low (mismatch is high), increase alpha
-    to trust target more and maintain stability.
-
-    Args:
-        alpha: Base alpha value [0, 1]
-        spectral_confidence: Spectral confidence [0, 1]
-        penalty_strength: How aggressively to penalize [0, 1]
-
-    Returns:
-        Adjusted alpha with spectral penalty applied
-    """
-    # Clamp inputs
-    alpha = max(0.0, min(1.0, alpha))
-    spectral_confidence = max(0.0, min(1.0, spectral_confidence))
-    penalty_strength = max(0.0, min(1.0, penalty_strength))
-
-    if penalty_strength <= 0:
-        return alpha
-
-    # Penalty = (1 - confidence) * strength
-    # Low confidence → high penalty → alpha increases toward 1 (trust target)
-    penalty = (1.0 - spectral_confidence) * penalty_strength
-
-    # Apply penalty: alpha moves toward 1.0
-    adjusted = alpha + (1.0 - alpha) * penalty
-
-    return max(0.0, min(1.0, adjusted))
-
-
-def compute_spectral_alpha_adjustments(
-    source_weights: dict[str, "Array"],
-    target_weights: dict[str, "Array"],
-    base_alphas: dict[str, float],
-    config: SpectralConfig,
-    backend: "Backend | None" = None,
-) -> tuple[dict[str, float], dict[str, SpectralMetrics]]:
-    """
-    Compute spectral-adjusted alphas for all weight matrices.
-
-    Args:
-        source_weights: Source model weights by name
-        target_weights: Target model weights by name
-        base_alphas: Base alpha per weight (before spectral adjustment)
-        config: Spectral analysis configuration (use with_parameters() to create).
-        backend: Optional backend for array operations.
-
-    Returns:
-        Tuple of (adjusted_alphas, spectral_metrics)
-    """
-
-    adjusted_alphas: dict[str, float] = {}
-    metrics: dict[str, SpectralMetrics] = {}
-
-    for name, base_alpha in base_alphas.items():
-        if name not in source_weights or name not in target_weights:
-            adjusted_alphas[name] = base_alpha
-            continue
-
-        source_w = source_weights[name]
-        target_w = target_weights[name]
-
-        # Skip if shapes don't match
-        if source_w.shape != target_w.shape:
-            logger.warning(
-                "Shape mismatch for %s: %s vs %s",
-                name,
-                source_w.shape,
-                target_w.shape,
-            )
-            adjusted_alphas[name] = base_alpha
-            continue
-
-        # Compute spectral metrics
-        spectral = compute_spectral_metrics(source_w, target_w, config, backend=backend)
-        metrics[name] = spectral
-
-        # Apply penalty
-        adjusted = apply_spectral_penalty(
-            base_alpha,
-            spectral.spectral_confidence,
-            config.penalty_strength,
-        )
-        adjusted_alphas[name] = adjusted
-
-    return adjusted_alphas, metrics
 
 
 def spectral_summary(metrics: dict[str, SpectralMetrics]) -> dict:

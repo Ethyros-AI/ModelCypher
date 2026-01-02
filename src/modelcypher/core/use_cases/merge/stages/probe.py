@@ -38,10 +38,6 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
-from modelcypher.core.domain.vocabulary.alignment_map import (
-    AlignmentQuality,
-    VocabularyAlignmentMap,
-)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -89,56 +85,6 @@ class ProbeResult:
     probe_domains: list[str] | None = None
 
 
-def _encode_probe_ids(
-    tokenizer: Any,
-    text: str,
-    add_special_tokens: bool = False,
-) -> list[int]:
-    try:
-        encoded = tokenizer.encode(text, add_special_tokens=add_special_tokens)
-    except TypeError:
-        encoded = tokenizer.encode(text)
-
-    if isinstance(encoded, list):
-        return encoded
-    if hasattr(encoded, "ids"):
-        return list(encoded.ids)
-    if hasattr(encoded, "input_ids"):
-        return list(encoded.input_ids)
-    return []
-
-
-def build_token_id_map(
-    alignment_map: VocabularyAlignmentMap,
-) -> dict[int, int]:
-    """Build token ID mapping from exact vocabulary alignments only."""
-    mapping: dict[int, int] = {}
-    for alignment in alignment_map.iter_alignments():
-        if alignment.quality != AlignmentQuality.EXACT:
-            continue
-        if not alignment.target_ids:
-            continue
-        best_idx = max(
-            range(len(alignment.target_ids)),
-            key=lambda i: alignment.weights[i],
-        )
-        mapping[alignment.source_id] = alignment.target_ids[best_idx]
-    return mapping
-
-
-def map_token_ids(
-    token_ids: list[int],
-    token_map: dict[int, int],
-) -> list[int] | None:
-    mapped: list[int] = []
-    for token_id in token_ids:
-        mapped_id = token_map.get(token_id)
-        if mapped_id is None:
-            return None
-        mapped.append(mapped_id)
-    return mapped
-
-
 def stage_probe(
     source_weights: dict[str, Any],
     target_weights: dict[str, Any],
@@ -149,7 +95,6 @@ def stage_probe(
     target_tokenizer: Any | None = None,
     tokenizer: Any | None = None,
     collect_activations_fn: Callable | None = None,
-    alignment_map: VocabularyAlignmentMap | None = None,
     backend: "Backend | None" = None,
 ) -> ProbeResult:
     """
@@ -190,7 +135,6 @@ def stage_probe(
             target_weights=target_weights,
             extract_layer_index_fn=extract_layer_index_fn,
             collect_activations_fn=collect_activations_fn,
-            alignment_map=alignment_map,
         )
     else:
         # INVARIANT GEOMETRY: No fallbacks. Models MUST be loaded.
@@ -212,7 +156,6 @@ def _probe_precise(
     target_weights: dict[str, Any],
     extract_layer_index_fn: Callable[[str], int | None],
     collect_activations_fn: Callable,
-    alignment_map: VocabularyAlignmentMap | None = None,
     source_path: str = "",
     target_path: str = "",
     backend: "Backend | None" = None,
@@ -265,36 +208,14 @@ def _probe_precise(
     probes_processed = 0
     probes_failed = 0
 
-    token_id_map: dict[int, int] | None = None
-    if alignment_map is not None:
-        token_id_map = build_token_id_map(alignment_map)
-        if token_id_map:
-            logger.info(
-                "PROBE PRECISE: Using aligned token map (%d tokens).",
-                len(token_id_map),
-            )
-
     for probe in probes:
         try:
             probe_text = None
-            source_ids: list[int] | None = None
-            target_ids: list[int] | None = None
 
             for candidate in probe.support_texts or []:
                 if not candidate or len(candidate.strip()) < 2:
                     continue
-                if token_id_map is None:
-                    probe_text = candidate
-                    break
-                candidate_source_ids = _encode_probe_ids(
-                    source_tokenizer, candidate, add_special_tokens=False
-                )
-                candidate_target_ids = map_token_ids(candidate_source_ids, token_id_map)
-                if candidate_target_ids is None:
-                    continue
                 probe_text = candidate
-                source_ids = candidate_source_ids
-                target_ids = candidate_target_ids
                 break
 
             if probe_text is None:
@@ -305,13 +226,11 @@ def _probe_precise(
                 source_model,
                 source_tokenizer,
                 probe_text,
-                token_ids=source_ids,
             )
             target_acts = collect_activations_fn(
                 target_model,
                 target_tokenizer,
                 probe_text,
-                token_ids=target_ids,
             )
 
             # Also collect intermediate MLP activations for multi-space stitching
@@ -321,13 +240,11 @@ def _probe_precise(
                 source_model,
                 source_tokenizer,
                 probe_text,
-                token_ids=source_ids,
             )
             target_intermediate_acts = collect_intermediate_activations_mlx(
                 target_model,
                 target_tokenizer,
                 probe_text,
-                token_ids=target_ids,
             )
 
             # Also collect attention activations for attention weight stitching
@@ -338,13 +255,11 @@ def _probe_precise(
                 source_model,
                 source_tokenizer,
                 probe_text,
-                token_ids=source_ids,
             )
             target_attention_acts, target_kv_acts = collect_attention_activations_mlx(
                 target_model,
                 target_tokenizer,
                 probe_text,
-                token_ids=target_ids,
             )
 
             source_activated: dict[int, list[ActivatedDimension]] = {}

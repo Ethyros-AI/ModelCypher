@@ -292,11 +292,13 @@ class LowRankGromovWasserstein:
                 logger.warning("NaN detected in iteration %d, using previous values", it)
                 break
 
-            # Line search: blend old and new
-            alpha = 0.5  # Fixed blend for stability
-            Q = (1 - alpha) * Q + alpha * Q_new
-            g = (1 - alpha) * g + alpha * g_new
-            R = (1 - alpha) * R + alpha * R_new
+            # Update coupling via convex combination
+            # TODO: Implement proper line search like gromov_wasserstein.py
+            # Currently using full step (alpha=1.0) to let algorithm converge naturally.
+            # A fixed 0.5 damping factor is arbitrary - either derive analytically or use 1.0.
+            Q = Q_new
+            g = g_new
+            R = R_new
             b.eval(Q, g, R)
 
             # Compute current distance

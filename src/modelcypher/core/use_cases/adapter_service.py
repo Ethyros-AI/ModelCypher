@@ -74,15 +74,6 @@ class WrapResult:
     wrapped_layers: int
 
 
-@dataclass(frozen=True)
-class SmoothResult:
-    """Result of smoothing adapter weights."""
-
-    output_path: str
-    smoothed_layers: int
-    variance_reduction: float
-
-
 class AdapterService:
     """Service for LoRA adapter operations."""
 
@@ -235,72 +226,6 @@ class AdapterService:
         return WrapResult(
             output_path=str(output),
             wrapped_layers=len(wrapped_weights),
-        )
-
-    def smooth(self, adapter_path: str, output_path: str, strength: float = 0.1) -> SmoothResult:
-        """Apply smoothing to adapter weights.
-
-        Args:
-            adapter_path: Path to adapter directory.
-            output_path: Output path for smoothed adapter.
-            strength: Smoothing strength (0.0 to 1.0).
-
-        Returns:
-            SmoothResult with variance reduction.
-        """
-        backend = get_default_backend()
-        path = Path(adapter_path).expanduser().resolve()
-        output = Path(output_path).expanduser().resolve()
-
-        if not path.exists():
-            raise ValueError(f"Adapter path does not exist: {path}")
-
-        output.mkdir(parents=True, exist_ok=True)
-
-        weights = self._load_weights(path)
-        smoothed_weights = {}
-        original_variance = 0.0
-        smoothed_variance = 0.0
-
-        for name, tensor in weights.items():
-            tensor_backend = backend.array(tensor)
-
-            # Compute original variance
-            var_orig = backend.var(tensor_backend)
-            backend.eval(var_orig)
-            original_variance += float(backend.to_numpy(var_orig))
-
-            # Apply smoothing: blend towards mean
-            mean = backend.mean(tensor_backend)
-            backend.eval(mean)
-            smoothed = tensor_backend * (1 - strength) + mean * strength
-            backend.eval(smoothed)
-
-            smoothed_weights[name] = backend.to_numpy(smoothed).astype("float32")
-
-            # Compute smoothed variance
-            var_smooth = backend.var(smoothed)
-            backend.eval(var_smooth)
-            smoothed_variance += float(backend.to_numpy(var_smooth))
-
-        save_file(smoothed_weights, output / "adapter_model.safetensors")
-
-        # Copy config
-        config_path = path / "adapter_config.json"
-        if config_path.exists():
-            (output / "adapter_config.json").write_text(
-                config_path.read_text(encoding="utf-8"),
-                encoding="utf-8",
-            )
-
-        variance_reduction = (
-            1.0 - (smoothed_variance / original_variance) if original_variance > 0 else 0.0
-        )
-
-        return SmoothResult(
-            output_path=str(output),
-            smoothed_layers=len(smoothed_weights),
-            variance_reduction=float(variance_reduction),
         )
 
     def _load_weights(self, path: Path) -> dict:

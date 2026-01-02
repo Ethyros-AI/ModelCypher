@@ -110,8 +110,6 @@ def run_merge(
     source_tokenizer = load_tokenizer(source_path)
     target_tokenizer = load_tokenizer(target_path)
 
-    vocab_alignment_map = None
-
     # Load models for probe stage
     source_model = None
     target_model = None
@@ -141,7 +139,6 @@ def run_merge(
         target_model=target_model,
         source_tokenizer=source_tokenizer,
         target_tokenizer=target_tokenizer,
-        alignment_map=vocab_alignment_map,
         extract_layer_index_fn=extract_layer_index,
         # ProbeConfig was REMOVED - always use precise mode with all probes
     )

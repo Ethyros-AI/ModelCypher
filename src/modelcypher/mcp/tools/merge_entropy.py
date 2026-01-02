@@ -18,8 +18,7 @@
 """Merge entropy validation MCP tools.
 
 Provides entropy-aware metrics for model merging:
-- Pre-merge: Profile models to identify critical layers
-- Guidance: Get per-layer alpha/sigma adjustments
+- Pre-merge: Profile models to measure layer entropy
 - Validation: Check knowledge retention after merge
 """
 
@@ -36,27 +35,6 @@ if TYPE_CHECKING:
     pass
 
 
-def _percentile(sorted_values: list[float], pct: float) -> float:
-    if not sorted_values:
-        return 0.0
-    index = int(round((len(sorted_values) - 1) * pct))
-    return sorted_values[index]
-
-
-def _compute_stats(values: list[float]) -> dict[str, float]:
-    if not values:
-        return {"mean": 0.0, "min": 0.0, "max": 0.0, "p50": 0.0, "p90": 0.0}
-    sorted_vals = sorted(values)
-    mean = sum(values) / len(values)
-    return {
-        "mean": mean,
-        "min": sorted_vals[0],
-        "max": sorted_vals[-1],
-        "p50": _percentile(sorted_vals, 0.5),
-        "p90": _percentile(sorted_vals, 0.9),
-    }
-
-
 def register_merge_entropy_tools(ctx: ServiceContext) -> None:
     """Register merge entropy validation MCP tools."""
     mcp = ctx.mcp
@@ -71,17 +49,15 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Profile model entropy characteristics for merge planning.
 
-            Analyzes a model's per-layer entropy to report:
-            - Phase distribution (ordered/critical/disordered)
-            - Raw entropy statistics
-            - Critical-layer counts
+            Analyzes a model's per-layer entropy using Entropy-Lens projection.
+            Returns raw entropy statistics only.
 
             Args:
                 model: Model name or path to profile
                 numLayers: Number of layers in the model (default: 32)
 
             Returns:
-                Profile with entropy stats and phase classification
+                Profile with entropy stats per layer
             """
             from pathlib import Path
 
@@ -106,97 +82,21 @@ def register_merge_entropy_tools(ctx: ServiceContext) -> None:
                 str(model_path), model_loader=model_loader, num_layers=numLayers
             )
 
-            # Get top critical layers (limit to 5 for compact response)
-            critical_layers = [name for name, p in profile.layer_profiles.items() if p.is_critical][
-                :5
-            ]
+            # Sort by entropy (highest first)
+            sorted_layers = sorted(
+                profile.layer_profiles.values(),
+                key=lambda lp: lp.mean_entropy,
+                reverse=True,
+            )
+            top_entropy_layers = [lp.layer_name for lp in sorted_layers[:5]]
 
             return {
                 "_schema": "mc.merge.entropy.profile.v1",
                 "modelName": profile.model_name,
                 "meanEntropy": round(profile.mean_entropy, 3),
                 "entropyVariance": round(profile.entropy_variance, 4),
-                "dominantPhase": profile.dominant_phase.value,
-                "criticalLayerCount": profile.critical_layer_count,
-                "topCriticalLayers": critical_layers,
-            }
-
-    if "mc_merge_entropy_guide" in tool_set:
-
-        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_merge_entropy_guide(
-            source: str,
-            target: str,
-            numLayers: int = 32,
-        ) -> dict:
-            """Generate entropy-aware merge guidance.
-
-            Compares source and target models to compute:
-            - Per-layer alpha adjustments based on phase
-            - Per-layer smoothing sigma values
-
-            Args:
-                source: Source model name/path
-                target: Target model name/path
-                numLayers: Number of layers (must match for both)
-
-            Returns:
-                Adjustments with alpha and smoothing sigma values
-            """
-            from pathlib import Path
-
-            from modelcypher.adapters.mlx_model_loader import MLXModelLoader
-            from modelcypher.core.domain.merging.entropy_merge_validator import (
-                EntropyMergeValidator,
-            )
-
-            validator = EntropyMergeValidator()
-            model_loader = MLXModelLoader()
-
-            # Require real model paths - no simulated data
-            source_path = Path(source).expanduser()
-            if not source_path.exists():
-                return {
-                    "_schema": "mc.merge.entropy.guide.v1",
-                    "error": f"Source model path not found: {source}",
-                    "hint": "Provide valid local model paths for entropy-guided merging",
-                }
-
-            target_path = Path(target).expanduser()
-            if not target_path.exists():
-                return {
-                    "_schema": "mc.merge.entropy.guide.v1",
-                    "error": f"Target model path not found: {target}",
-                    "hint": "Provide valid local model paths for entropy-guided merging",
-                }
-
-            source_profile = validator.create_profile(
-                str(source_path), model_loader=model_loader, num_layers=numLayers
-            )
-            target_profile = validator.create_profile(
-                str(target_path), model_loader=model_loader, num_layers=numLayers
-            )
-
-            alpha_adj = validator.compute_alpha_adjustments(source_profile, target_profile)
-            sigmas = validator.compute_smoothing_sigmas(source_profile, target_profile)
-
-            alpha_values = list(alpha_adj.values())
-            sigma_values = list(sigmas.values())
-            alpha_stats = _compute_stats(alpha_values)
-            sigma_stats = _compute_stats(sigma_values)
-
-            sorted_alpha = sorted(alpha_adj.items(), key=lambda item: item[0])
-            sorted_sigmas = sorted(sigmas.items(), key=lambda item: item[0])
-
-            return {
-                "_schema": "mc.merge.entropy.guide.v1",
-                "sourceModel": source,
-                "targetModel": target,
-                "layerCount": len(alpha_adj),
-                "alphaAdjustments": {name: round(value, 4) for name, value in sorted_alpha},
-                "smoothingSigmas": {name: round(value, 4) for name, value in sorted_sigmas},
-                "alphaStats": {k: round(v, 4) for k, v in alpha_stats.items()},
-                "sigmaStats": {k: round(v, 4) for k, v in sigma_stats.items()},
+                "layerCount": len(profile.layer_profiles),
+                "topEntropyLayers": top_entropy_layers,
             }
 
     if "mc_merge_entropy_validate" in tool_set:

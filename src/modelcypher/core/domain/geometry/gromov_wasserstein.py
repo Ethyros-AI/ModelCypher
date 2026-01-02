@@ -48,6 +48,15 @@ Algorithm:
         3. Line search for optimal step size (analytic for quadratic)
         4. Update coupling: T ← (1-α)T + αG
 
+    IMPORTANT: The update T ← (1-α)T + αG is NOT blending/interpolation in the
+    "vibes" sense. This is the mathematically correct Frank-Wolfe convex combination:
+    - G is the descent direction (solution to a linear subproblem)
+    - α is computed ANALYTICALLY via line search minimizing a quadratic objective
+    - The formula comes from Peyré et al. (2016), not arbitrary choice
+    - This is standard convex optimization, not weight mixing
+
+    DO NOT REFACTOR this to "remove blending" - it would break the algorithm.
+
 Complexity:
     O(n²m + nm²) per outer iteration for gradient computation.
     Linear OT subproblem: O(nm log nm) with Sinkhorn.
@@ -620,8 +629,10 @@ class GromovWassersteinDistance:
             # Step 3: Line search for optimal step size
             alpha = self._compute_step_size(constC, hC1, hC2, T, G)
 
-            # Step 4: Update coupling
-            # Use precision-aware threshold for meaningful step check
+            # Step 4: Update coupling via Frank-Wolfe convex combination
+            # NOTE: This is NOT arbitrary blending. The step size α is computed
+            # analytically by _compute_step_size() via line search on the quadratic
+            # GW objective. This is standard convex optimization from Peyré et al.
             step_eps = division_epsilon(backend, T)
             if alpha > step_eps:  # Only update if step is meaningful
                 T = (1.0 - alpha) * T + alpha * G

@@ -17,11 +17,10 @@
 
 """Merge entropy validation CLI commands.
 
-Provides commands for entropy-guided model merging analysis and validation.
+Provides commands for entropy-based model analysis and merge validation.
 
 Commands:
     mc geometry merge-entropy profile <model> [--layers N]
-    mc geometry merge-entropy guide --source <path> --target <path>
     mc geometry merge-entropy validate --source-ent <json> --target-ent <json> --merged-ent <json>
 """
 
@@ -77,8 +76,8 @@ def entropy_profile(
 ) -> None:
     """Profile model entropy characteristics for merge planning.
 
-    Measures actual layer entropy using the LinguisticCalorimeter
-    and produces phase distribution and raw entropy statistics.
+    Measures actual layer entropy using Entropy-Lens projection and produces
+    raw entropy statistics per layer.
 
     Example:
         mc geometry merge-entropy profile ./my-model
@@ -93,126 +92,35 @@ def entropy_profile(
         model_loader = MLXModelLoader()
         profile = validator.create_profile(model, model_loader=model_loader, num_layers=layers)
 
-        # Build compact response
-        critical_layers = [name for name, lp in profile.layer_profiles.items() if lp.is_critical]
+        # Sort layers by entropy for reporting
+        sorted_layers = sorted(
+            profile.layer_profiles.values(),
+            key=lambda lp: lp.mean_entropy,
+            reverse=True,
+        )
+        top_entropy_layers = [lp.layer_name for lp in sorted_layers[:5]]
 
         payload = {
             "_schema": "mc.merge.entropy.profile.v1",
             "modelName": profile.model_name,
             "meanEntropy": round(profile.mean_entropy, 3),
             "entropyVariance": round(profile.entropy_variance, 4),
-            "dominantPhase": profile.dominant_phase.value,
-            "criticalLayerCount": profile.critical_layer_count,
-            "topCriticalLayers": critical_layers[:5],  # Top 5 only
+            "layerCount": len(profile.layer_profiles),
+            "topEntropyLayers": top_entropy_layers,
         }
 
         if context.output_format == "text":
             lines = [
                 "ENTROPY PROFILE",
                 f"Model: {model}",
-                f"Layers: {layers}",
+                f"Layers: {len(profile.layer_profiles)}",
                 "",
                 f"Mean Entropy: {profile.mean_entropy:.3f}",
                 f"Entropy Variance: {profile.entropy_variance:.4f}",
-                f"Dominant Phase: {profile.dominant_phase.value}",
-                f"Critical Layers: {profile.critical_layer_count}",
             ]
 
-            if critical_layers:
-                lines.append(f"\nCritical Layer Names: {', '.join(critical_layers[:5])}")
-
-            write_output("\n".join(lines), context.output_format, context.pretty)
-            return
-
-        write_output(payload, context.output_format, context.pretty)
-
-    except Exception as exc:
-        error = ErrorDetail.from_exception(exc)
-        write_error(error.message, context.output_format)
-        raise typer.Exit(1) from exc
-
-
-@app.command("guide")
-def entropy_guide(
-    ctx: typer.Context,
-    source: str = typer.Option(..., "--source", "-s", help="Path to source model directory"),
-    target: str = typer.Option(..., "--target", "-t", help="Path to target model directory"),
-    layers: int = typer.Option(None, "--layers", "-n", help="Number of layers (auto-detected)"),
-) -> None:
-    """Generate entropy-aware merge guidance.
-
-    Analyzes both models by measuring actual layer entropy and provides
-    per-layer alpha adjustments and smoothing sigmas for merging.
-
-    Example:
-        mc geometry merge-entropy guide --source ./model-a --target ./model-b
-        mc geometry merge-entropy guide -s /path/to/source -t /path/to/target
-    """
-    from modelcypher.adapters.mlx_model_loader import MLXModelLoader
-
-    context = _context(ctx)
-
-    try:
-        validator = EntropyMergeValidator()
-        model_loader = MLXModelLoader()
-        source_profile = validator.create_profile(
-            source, model_loader=model_loader, num_layers=layers
-        )
-        target_profile = validator.create_profile(
-            target, model_loader=model_loader, num_layers=layers
-        )
-
-        alpha_adjustments = validator.compute_alpha_adjustments(source_profile, target_profile)
-        smoothing_sigmas = validator.compute_smoothing_sigmas(source_profile, target_profile)
-
-        alpha_values = list(alpha_adjustments.values())
-        sigma_values = list(smoothing_sigmas.values())
-        alpha_stats = _compute_stats(alpha_values)
-        sigma_stats = _compute_stats(sigma_values)
-
-        sorted_alpha = sorted(alpha_adjustments.items(), key=lambda item: item[0])
-        sorted_sigma = sorted(smoothing_sigmas.items(), key=lambda item: item[0])
-
-        payload = {
-            "_schema": "mc.merge.entropy.guide.v1",
-            "sourceModel": source,
-            "targetModel": target,
-            "layerCount": len(alpha_adjustments),
-            "alphaAdjustments": {name: round(value, 4) for name, value in sorted_alpha},
-            "smoothingSigmas": {name: round(value, 4) for name, value in sorted_sigma},
-            "alphaStats": {k: round(v, 4) for k, v in alpha_stats.items()},
-            "sigmaStats": {k: round(v, 4) for k, v in sigma_stats.items()},
-        }
-
-        if context.output_format == "text":
-            lowest_alpha = sorted(alpha_adjustments.items(), key=lambda item: item[1])[:5]
-            highest_sigma = sorted(smoothing_sigmas.items(), key=lambda item: item[1], reverse=True)[
-                :5
-            ]
-
-            lines = [
-                "MERGE ENTROPY GUIDE",
-                f"Source: {source}",
-                f"Target: {target}",
-                "",
-                f"Layers Compared: {len(alpha_adjustments)}",
-                f"Alpha Mean: {alpha_stats['mean']:.4f}",
-                f"Alpha Min/Max: {alpha_stats['min']:.4f}/{alpha_stats['max']:.4f}",
-                f"Alpha P50/P90: {alpha_stats['p50']:.4f}/{alpha_stats['p90']:.4f}",
-                f"Sigma Mean: {sigma_stats['mean']:.4f}",
-                f"Sigma Min/Max: {sigma_stats['min']:.4f}/{sigma_stats['max']:.4f}",
-                f"Sigma P50/P90: {sigma_stats['p50']:.4f}/{sigma_stats['p90']:.4f}",
-            ]
-
-            if lowest_alpha:
-                lines.append("\nLowest Alpha Layers:")
-                for name, value in lowest_alpha:
-                    lines.append(f"  {name}: alpha={value:.4f}")
-
-            if highest_sigma:
-                lines.append("\nHighest Sigma Layers:")
-                for name, value in highest_sigma:
-                    lines.append(f"  {name}: sigma={value:.4f}")
+            if top_entropy_layers:
+                lines.append(f"\nHighest Entropy Layers: {', '.join(top_entropy_layers)}")
 
             write_output("\n".join(lines), context.output_format, context.pretty)
             return

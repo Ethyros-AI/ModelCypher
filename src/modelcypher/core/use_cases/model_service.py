@@ -113,23 +113,27 @@ class ModelService:
         source_model: str,
         target_model: str,
         output_path: str,
+        transplant_domains: list[str] | None = None,
         auto_register: bool = False,
         alias: str | None = None,
     ) -> dict[str, Any]:
         """Merge two models using pure geometric alignment.
 
-        Pipeline: VOCAB → PROBE → PERMUTE → ROTATE → BLEND → PROPAGATE → VALIDATE
+        Pipeline: PROBE → DENSITY → PERMUTE → TRANSPLANT
 
-        The geometry determines everything - per-layer blend coefficients,
-        alignment rotations, neuron permutations. No configuration needed.
+        The geometry determines the transplant. No blending or interpolation.
         """
         from modelcypher.core.use_cases.merge import UnifiedGeometricMerger
+
+        if not transplant_domains:
+            raise ValueError("transplant_domains is required for geometric transplant merges.")
 
         merger = UnifiedGeometricMerger(model_loader=self._model_loader)
         merge_result = merger.merge(
             source_path=source_model,
             target_path=target_model,
             output_dir=output_path,
+            transplant_domains=transplant_domains,
         )
 
         result: dict[str, Any] = {
@@ -138,7 +142,6 @@ class ModelService:
             "layerCount": merge_result.layer_count,
             "weightCount": merge_result.weight_count,
             "meanConfidence": merge_result.mean_confidence,
-            "vocabAligned": merge_result.vocab_aligned,
             "metrics": {
                 "meanProcrustesError": merge_result.mean_procrustes_error,
             },

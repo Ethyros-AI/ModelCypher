@@ -18,7 +18,7 @@
 """Adapter CLI commands.
 
 Provides commands for:
-- Adapter inspection, projection, wrapping, smoothing
+- Adapter inspection, projection, wrapping
 
 Commands:
     mc adapter inspect <path>
@@ -140,43 +140,6 @@ def adapter_wrap_mlx(
         "outputPath": result.output_path,
         "wrappedLayers": result.wrapped_layers,
     }
-
-    write_output(payload, context.output_format, context.pretty)
-
-
-@adapter_app.command("smooth")
-def adapter_smooth(
-    ctx: typer.Context,
-    adapter_path: str = typer.Argument(..., help="Path to adapter"),
-    output: str = typer.Option(..., "--output-path", "-o", help="Output path"),
-    strength: float = typer.Option(0.1, "--strength"),
-) -> None:
-    """Apply smoothing to adapter weights.
-
-    Examples:
-        mc adapter smooth ./adapter --output-path ./smoothed --strength 0.2
-    """
-    context = _context(ctx)
-    from modelcypher.core.use_cases.adapter_service import AdapterService
-
-    service = AdapterService()
-    result = service.smooth(adapter_path, output, strength)
-
-    payload = {
-        "outputPath": result.output_path,
-        "smoothedLayers": result.smoothed_layers,
-        "varianceReduction": result.variance_reduction,
-    }
-
-    if context.output_format == "text":
-        lines = [
-            "ADAPTER SMOOTHED",
-            f"Output: {result.output_path}",
-            f"Layers: {result.smoothed_layers}",
-            f"Variance Reduction: {result.variance_reduction:.2%}",
-        ]
-        write_output("\n".join(lines), context.output_format, context.pretty)
-        return
 
     write_output(payload, context.output_format, context.pretty)
 
