@@ -268,6 +268,9 @@ class BackendMatrixUtils:
 
         # Optimal orthogonal rotation: R = U @ Vt
         R = self.backend.matmul(U, Vt)
+        # Re-project to the closest orthogonal matrix to suppress numeric drift.
+        U_r, _, Vt_r = svd_via_eigh(self.backend, R, full_matrices=False)
+        R = self.backend.matmul(U_r, Vt_r)
 
         det_arr = self.backend.det(R)
         self.backend.eval(det_arr)

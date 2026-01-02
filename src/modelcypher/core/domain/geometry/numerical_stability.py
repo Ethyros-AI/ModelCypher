@@ -1362,7 +1362,7 @@ def solve_via_cca_procrustes(
     d_t = int(shape_t[1])
 
     eps = machine_epsilon(b, source)
-    sv_floor = 1e-8
+    sv_floor = eps  # Use machine epsilon, not hardcoded value
 
     diagnostics: dict = {
         "shared_dim": 0,
@@ -1583,6 +1583,7 @@ def solve_via_cca_procrustes(
 
     # Check for reflection and correct if needed
     R_np = b.to_numpy(R)
+    singular_threshold = float(tiny_value(b, R))  # Derive from dtype, not hardcoded
     det = 1.0
     work = R_np.copy()
     kk = int(b.shape(R)[0])
@@ -1591,7 +1592,7 @@ def solve_via_cca_procrustes(
         for row in range(col + 1, kk):
             if abs(work[row, col]) > abs(work[max_row, col]):
                 max_row = row
-        if abs(work[max_row, col]) < 1e-15:
+        if abs(work[max_row, col]) < singular_threshold:
             det = 0.0
             break
         if max_row != col:
