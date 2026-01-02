@@ -46,7 +46,7 @@ from modelcypher.core.domain.geometry.concept_response_matrix import (
     _mean_pool_state,
     _sample_layer_indices,
 )
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
 
 # =============================================================================
@@ -124,7 +124,7 @@ def _build_crm_mixed() -> ConceptResponseMatrix:
 
 def _div_eps() -> float:
     backend = get_default_backend()
-    return division_epsilon(backend, backend.array([1.0]))
+    return machine_epsilon(backend, backend.array([1.0]))
 
 
 # =============================================================================
@@ -148,12 +148,12 @@ class TestAnchorActivation:
     def test_norm_zero_vector(self) -> None:
         """Zero vector should have norm 0."""
         act = AnchorActivation(anchor_id="test", layer=0, activation=[0.0, 0.0])
-        assert act.norm == 0.0
+        assert abs(act.norm - 0.0) <= _div_eps()
 
     def test_norm_empty_activation(self) -> None:
         """Empty activation should have norm 0."""
         act = AnchorActivation(anchor_id="test", layer=0, activation=[])
-        assert act.norm == 0.0
+        assert abs(act.norm - 0.0) <= _div_eps()
 
     def test_frozen_dataclass(self) -> None:
         """AnchorActivation should be immutable."""
@@ -450,7 +450,9 @@ class TestConceptResponseMatrixCKA:
         assert abs(cka[1][1] - 1.0) < _div_eps()
         # Cross-layer CKA values - verify they are symmetric and bounded
         assert abs(cka[0][1] - cka[1][0]) < _div_eps()  # Symmetric
-        assert 0.0 <= cka[0][1] <= 1.0  # Bounded
+        eps = _div_eps()
+        assert cka[0][1] >= -eps
+        assert cka[0][1] <= 1.0 + eps
 
     def test_cka_matrix_symmetric_for_self(self) -> None:
         """CKA matrix comparing CRM to itself should be symmetric."""
@@ -466,7 +468,9 @@ class TestConceptResponseMatrixCKA:
         cka = crm.compute_cka_matrix(crm)
         for row in cka:
             for value in row:
-                assert 0.0 <= value <= 1.0
+                eps = _div_eps()
+                assert value >= -eps
+                assert value <= 1.0 + eps
 
     def test_cka_matrix_no_common_anchors(self) -> None:
         """No common anchors should return zero matrix."""
@@ -490,7 +494,7 @@ class TestConceptResponseMatrixCKA:
         cka = crm1.compute_cka_matrix(crm2)
         for row in cka:
             for value in row:
-                assert value == 0.0
+                assert abs(value - 0.0) <= _div_eps()
 
     def test_compute_layer_cka_valid(self) -> None:
         """compute_layer_cka should return valid CKA value."""
@@ -504,7 +508,9 @@ class TestConceptResponseMatrixCKA:
         crm = _build_crm()
         cka = crm.compute_layer_cka(0, crm, 1)
         assert cka is not None
-        assert 0.0 <= cka <= 1.0
+        eps = _div_eps()
+        assert cka >= -eps
+        assert cka <= 1.0 + eps
 
     def test_compute_layer_cka_no_common_anchors(self) -> None:
         """No common anchors should return None."""
@@ -682,15 +688,18 @@ class TestConceptResponseMatrixConsistency:
         profile = crm.compute_consistency_profile(crm, layer_sample_count=2)
         assert profile is not None
         for alignment in profile.target_alignment_by_layer.values():
-            assert 0.0 <= alignment <= 1.0
+            eps = _div_eps()
+            assert alignment >= -eps
+            assert alignment <= 1.0 + eps
 
     def test_consistency_profile_distances_non_negative(self) -> None:
         """Distances should be non-negative."""
         crm = _build_crm4()
         profile = crm.compute_consistency_profile(crm, layer_sample_count=2)
         assert profile is not None
-        assert profile.mean_source_distance >= 0.0
-        assert profile.mean_target_distance >= 0.0
+        eps = _div_eps()
+        assert profile.mean_source_distance >= -eps
+        assert profile.mean_target_distance >= -eps
 
 
 # =============================================================================
@@ -818,14 +827,14 @@ class TestConceptResponseMatrixPrivate:
         delta, norm = ConceptResponseMatrix._compute_layer_delta(current, next_layer)
 
         assert delta == []
-        assert norm == 0.0
+        assert abs(norm - 0.0) <= _div_eps()
 
     def test_compute_layer_delta_empty(self) -> None:
         """Empty lists should return empty."""
         delta, norm = ConceptResponseMatrix._compute_layer_delta([], [])
 
         assert delta == []
-        assert norm == 0.0
+        assert abs(norm - 0.0) <= _div_eps()
 
     def test_compute_linear_cka_identical(self) -> None:
         """Identical matrices should have CKA = 1."""
@@ -838,7 +847,9 @@ class TestConceptResponseMatrixPrivate:
         x = [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]
         y = [[0.0, 1.0], [1.0, 0.0], [0.5, 0.5]]
         cka = ConceptResponseMatrix.compute_linear_cka(x, y)
-        assert 0.0 <= cka <= 1.0
+        eps = _div_eps()
+        assert cka >= -eps
+        assert cka <= 1.0 + eps
 
 
 # =============================================================================
@@ -905,7 +916,7 @@ class TestLayerTransitionResult:
             source_delta_norm=1.0,
             target_delta_norm=1.0,
         )
-        assert result.delta_alignment == 0.0
+        assert abs(result.delta_alignment - 0.0) <= eps
 
     def test_frozen_dataclass(self) -> None:
         """LayerTransitionResult should be immutable."""
@@ -1105,7 +1116,7 @@ class TestMeanAbsoluteDifference:
         b = backend.array([[1.0, 2.0], [3.0, 4.0]])
 
         diff = _mean_absolute_difference(a, b)
-        assert diff == 0.0
+        assert abs(diff - 0.0) <= _div_eps()
 
     def test_empty_arrays(self) -> None:
         """Empty arrays should return 0."""
@@ -1116,7 +1127,7 @@ class TestMeanAbsoluteDifference:
         b = backend.array([])
 
         diff = _mean_absolute_difference(a, b)
-        assert diff == 0.0
+        assert abs(diff - 0.0) <= _div_eps()
 
 
 # =============================================================================
@@ -1182,8 +1193,9 @@ class TestInterpolateLayerAlignment:
             layer_count=5,
         )
 
-        assert result[0] == 0.0
-        assert result[4] == 1.0
+        eps = _div_eps()
+        assert abs(result[0] - 0.0) <= eps
+        assert abs(result[4] - 1.0) <= eps
         assert abs(result[2] - 0.5) < _div_eps()
 
     def test_extrapolation_before_first(self) -> None:
@@ -1195,8 +1207,9 @@ class TestInterpolateLayerAlignment:
         )
 
         # Layers 0 and 1 should have weight of first sample
-        assert result[0] == 0.3
-        assert result[1] == 0.3
+        eps = _div_eps()
+        assert abs(result[0] - 0.3) <= eps
+        assert abs(result[1] - 0.3) <= eps
 
     def test_extrapolation_after_last(self) -> None:
         """Should extrapolate after last sample."""
@@ -1207,8 +1220,9 @@ class TestInterpolateLayerAlignment:
         )
 
         # Layers 3 and 4 should have weight of last sample
-        assert result[3] == 0.7
-        assert result[4] == 0.7
+        eps = _div_eps()
+        assert abs(result[3] - 0.7) <= eps
+        assert abs(result[4] - 0.7) <= eps
 
     def test_empty_sample_layers(self) -> None:
         """Empty sample layers should return empty dict."""

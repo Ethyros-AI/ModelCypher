@@ -37,7 +37,6 @@ from modelcypher.core.domain.geometry.curvature_profile import (
     LayerCurvature,
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
     machine_epsilon,
 )
 
@@ -499,7 +498,7 @@ class TestCurvatureWeightedProcrustes:
 
         diff = backend.to_numpy(RTR) - backend.to_numpy(I)
         frobenius_norm = (diff ** 2).sum() ** 0.5
-        eps = division_epsilon(backend, R_low)
+        eps = machine_epsilon(backend, R_low)
         assert math.isfinite(frobenius_norm)
         assert frobenius_norm >= -eps
 

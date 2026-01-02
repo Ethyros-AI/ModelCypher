@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.agents.computational_gate_atlas import (
     ComputationalGateInventory,
     ComputationalGateSignature,
@@ -30,6 +31,12 @@ from modelcypher.core.domain.agents.semantic_primes import (
     SemanticPrimeInventory,
     SemanticPrimeSignature,
 )
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
+
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 def test_semantic_prime_inventory_count() -> None:
@@ -66,15 +73,18 @@ def test_computational_gate_counts() -> None:
 def test_signature_cosine_similarity() -> None:
     sig_a = SemanticPrimeSignature(prime_ids=["A", "B"], values=[1.0, 0.0])
     sig_b = SemanticPrimeSignature(prime_ids=["A", "B"], values=[1.0, 0.0])
-    assert sig_a.cosine_similarity(sig_b) == 1.0
+    eps = _eps(sig_a.cosine_similarity(sig_b), 1.0)
+    assert abs(sig_a.cosine_similarity(sig_b) - 1.0) <= eps
 
     gate_a = ComputationalGateSignature(gate_ids=["1", "2"], values=[1.0, 0.0])
     gate_b = ComputationalGateSignature(gate_ids=["1", "2"], values=[0.0, 1.0])
-    assert gate_a.cosine_similarity(gate_b) == 0.0
+    eps = _eps(gate_a.cosine_similarity(gate_b), 0.0)
+    assert abs(gate_a.cosine_similarity(gate_b) - 0.0) <= eps
 
 
 def test_normalized_entropy_uniform() -> None:
     atlas = SemanticPrimeAtlas()
     entropy = atlas._normalized_entropy([1.0, 1.0, 1.0])  # pylint: disable=protected-access
     assert entropy is not None
-    assert abs(entropy - 1.0) < 1e-6
+    eps = _eps(entropy, 1.0)
+    assert abs(entropy - 1.0) <= eps

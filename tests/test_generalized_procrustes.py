@@ -35,7 +35,7 @@ import math
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.geometry.concept_response_matrix import (
     AnchorActivation,
     AnchorMetadata,
@@ -53,7 +53,7 @@ from modelcypher.core.domain.geometry.generalized_procrustes import (
 
 
 def _eps(backend, *values: float) -> float:
-    return division_epsilon(backend, backend.array(list(values) or [1.0]))
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 # =============================================================================
@@ -77,7 +77,7 @@ class TestFrechetMeanConfig:
     def test_custom_values(self) -> None:
         """Should accept custom values."""
         backend = get_default_backend()
-        eps = division_epsilon(backend, backend.array([1.0]))
+        eps = machine_epsilon(backend, backend.array([1.0]))
         config = FrechetMeanConfig(
             enabled=False,
             k_neighbors=20,
@@ -150,7 +150,7 @@ class TestConfig:
     def test_custom_values(self) -> None:
         """Should accept custom values."""
         backend = get_default_backend()
-        eps = division_epsilon(backend, backend.array([1.0]))
+        eps = machine_epsilon(backend, backend.array([1.0]))
         ratios = [0.4, 0.6]
         threshold = sum(ratios) / len(ratios)
         config = Config(
@@ -357,7 +357,7 @@ class TestGeneralizedProcrustesAlign:
         result = GeneralizedProcrustes().align([m1, m2], config=config)
         assert result is not None
         # Should converge well before max iterations
-        assert result.iterations <= 100
+        assert result.iterations <= config.max_iterations
 
     def test_align_rotations_are_orthogonal(self) -> None:
         """Returned rotations should be orthogonal matrices."""

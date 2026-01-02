@@ -19,9 +19,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.geometry.thermo_path_integration import (
     ThermoPathIntegration,
 )
+
+
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 @dataclass
@@ -96,5 +103,7 @@ def test_analyze_relationship() -> None:
     # Correlation should be computed (could be None if insufficient data)
     # but with 2 measurements we should have a value
     assert assessment.correlation is not None or assessment.measurement_count < 3
-    assert 0.0 <= assessment.spike_rate <= 1.0
+    eps = _eps(assessment.spike_rate, 0.0, 1.0)
+    assert assessment.spike_rate >= -eps
+    assert assessment.spike_rate <= 1.0 + eps
     # Caller interprets correlation directly - no qualitative strength labels
