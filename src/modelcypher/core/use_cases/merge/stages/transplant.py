@@ -309,104 +309,98 @@ def stage_transplant(
     )
 
     # ==========================================================================
-    # GLOBAL TRAJECTORY ALIGNMENT: Compute ONE hidden stitch for ALL layers
+    # PER-LAYER ALIGNMENT: Use transforms from probe stage (CKA=1.0 verified)
     # ==========================================================================
-    # The model processes as a trajectory: layer_0 → layer_1 → ... → layer_N
-    # If we compute independent F per layer, we break compositional structure.
-    # Solution: compute a SINGLE alignment using concatenated activations.
-    global_hidden_stitch_output = None
-    global_hidden_stitch_input = None
-    global_src_hidden_dim = None
-    global_tgt_hidden_dim = None
+    # The probe stage already found the transforms that achieve CKA=1.0 for each
+    # aligned layer pair. We use those directly instead of recomputing.
+    # Each layer gets its own transform - different layers encode different parts
+    # of the geometry at different resolutions.
+    layer_hidden_stitches: dict[int, tuple[Any, Any]] = {}  # layer -> (stitch_out, stitch_in)
 
-    if source_activations:
-        # GLOBAL ALIGNMENT: Collect activations from ALL layers.
-        # The geometry is invariant - same concepts, same relationships.
-        # We align the WHOLE manifold, not one slice of it.
-        all_src_acts = []
-        all_tgt_acts = []
-        for layer_idx in layer_indices:
-            src_list = source_activations.get(layer_idx)
-            tgt_list = target_activations.get(layer_idx)
-            if src_list and tgt_list:
-                n = min(len(src_list), len(tgt_list))
-                all_src_acts.extend(src_list[:n])
-                all_tgt_acts.extend(tgt_list[:n])
+    if config.feature_transforms and config.layer_mapping:
+        # Use pre-computed per-layer transforms from probe stage
+        logger.info(
+            "PER-LAYER ALIGNMENT: Using %d transforms from probe stage (CKA=1.0 verified)",
+            len(config.feature_transforms),
+        )
 
-        logger.info("GLOBAL HIDDEN: Collected %d activations across %d layers",
-                    len(all_src_acts), len(layer_indices))
+        # Convert all transforms to backend arrays in one batch for MLX efficiency
+        transforms_to_eval = []
+        for tgt_layer, transform_list in config.feature_transforms.items():
+            F = b.array(transform_list)
+            F = b.astype(F, "float32")
+            transforms_to_eval.append((tgt_layer, F))
 
-        if len(all_src_acts) < 2:
-            raise AlignmentFailureError(
-                stage="GLOBAL_TRAJECTORY_ALIGNMENT",
-                weight_key=None,
-                message="Insufficient activations for global hidden alignment",
-                context={
-                    "samples_used": len(all_src_acts),
-                    "required_min_samples": 2,
-                },
-            )
+        # Batch eval for MLX efficiency
+        if transforms_to_eval:
+            b.eval(*[t[1] for t in transforms_to_eval])
 
-        src_concat = b.stack(all_src_acts, axis=0)
-        tgt_concat = b.stack(all_tgt_acts, axis=0)
-        src_concat = b.astype(src_concat, "float32")
-        tgt_concat = b.astype(tgt_concat, "float32")
-        b.eval(src_concat, tgt_concat)
+        # Compute stitch matrices for each layer
+        for tgt_layer, F in transforms_to_eval:
+            stitch_output = b.transpose(F)  # F.T [tgt_dim, src_dim]
+            F_pinv, _ = safe_pinv(b, F)
+            stitch_input = b.transpose(F_pinv)  # pinv(F).T [src_dim, tgt_dim]
+            layer_hidden_stitches[tgt_layer] = (stitch_output, stitch_input)
 
-        global_src_hidden_dim = int(src_concat.shape[1])
-        global_tgt_hidden_dim = int(tgt_concat.shape[1])
+        # Batch eval all stitch matrices for MLX efficiency
+        all_stitches = []
+        for stitch_out, stitch_in in layer_hidden_stitches.values():
+            all_stitches.extend([stitch_out, stitch_in])
+        if all_stitches:
+            b.eval(*all_stitches)
 
-        if global_src_hidden_dim != global_tgt_hidden_dim:
-            from modelcypher.core.domain.geometry.gram_aligner import GramAligner
-            aligner = GramAligner(b)
-            global_result = aligner.find_perfect_alignment(src_concat, tgt_concat)
+        metrics["per_layer_alignment"] = True
+        metrics["layers_with_transforms"] = len(layer_hidden_stitches)
 
-            if global_result.is_perfect:
-                F = b.array(global_result.feature_transform)
-                b.eval(F)
-                global_hidden_stitch_output = b.transpose(F)  # F.T [tgt, src]
-                F_pinv, pinv_diag = safe_pinv(b, F)
-                global_hidden_stitch_input = b.transpose(F_pinv)  # pinv(F).T [src, tgt]
-                b.eval(global_hidden_stitch_output, global_hidden_stitch_input)
+    elif source_activations:
+        # Fallback: same-architecture case where dims match
+        # Get dimensions from first available layer
+        first_src_list = next(iter(source_activations.values()), [])
+        first_tgt_list = next(iter(target_activations.values()), [])
+
+        if first_src_list and first_tgt_list:
+            src_dim = int(b.array(first_src_list[0]).shape[0])
+            tgt_dim = int(b.array(first_tgt_list[0]).shape[0])
+
+            if src_dim == tgt_dim:
+                # Same dims: identity transform for all layers
+                identity = b.eye(src_dim)
+                b.eval(identity)
+                for layer_idx in layer_indices:
+                    layer_hidden_stitches[layer_idx] = (identity, identity)
                 logger.info(
-                    "GLOBAL TRAJECTORY ALIGNMENT: CKA=%.4f (%d→%d) cond=%.2e rank=%d/%d",
-                    global_result.achieved_cka, global_src_hidden_dim,
-                    global_tgt_hidden_dim, pinv_diag.get("condition_number", 0),
-                    pinv_diag.get("effective_rank", 0), min(global_src_hidden_dim, global_tgt_hidden_dim)
+                    "SAME-DIM ALIGNMENT: Using identity for %d layers (dim=%d)",
+                    len(layer_indices),
+                    src_dim,
                 )
-                metrics["global_trajectory_aligned"] = True
-                metrics["global_trajectory_cka"] = float(global_result.achieved_cka)
+                metrics["per_layer_alignment"] = True
+                metrics["layers_with_transforms"] = len(layer_indices)
             else:
-                # No fallbacks. CKA = 1.0 or FAIL.
                 raise AlignmentFailureError(
-                    stage="GLOBAL_TRAJECTORY_ALIGNMENT",
+                    stage="PER_LAYER_ALIGNMENT",
                     weight_key=None,
-                    message=f"Alignment algorithm bug: CKA={global_result.achieved_cka:.4f}. The geometry is invariant - this is a code/numerical issue, not model incompatibility.",
+                    message=(
+                        f"Dimension mismatch ({src_dim} vs {tgt_dim}) but no "
+                        "feature_transforms from probe stage. Run probe with "
+                        "GramAligner to get CKA=1.0 transforms."
+                    ),
                     context={
-                        "achieved_cka": float(global_result.achieved_cka),
-                        "source_dim": global_src_hidden_dim,
-                        "target_dim": global_tgt_hidden_dim,
-                        "samples_used": len(all_src_acts),
-                        "fix": "Check GramAligner numerical stability, sample count, or precision",
+                        "source_dim": src_dim,
+                        "target_dim": tgt_dim,
                     },
                 )
         else:
-            # Same hidden dims: use IDENTITY stitch (no transformation)
-            # This is required for MLP dual-stitch to work when only intermediate differs
-            global_hidden_stitch_output = b.eye(global_src_hidden_dim)
-            global_hidden_stitch_input = b.eye(global_src_hidden_dim)
-            b.eval(global_hidden_stitch_output, global_hidden_stitch_input)
-            logger.info(
-                "GLOBAL: Same hidden dims (%d) - using identity stitch",
-                global_src_hidden_dim
+            raise AlignmentFailureError(
+                stage="PER_LAYER_ALIGNMENT",
+                weight_key=None,
+                message="No activations available for alignment",
+                context={},
             )
-            metrics["global_trajectory_aligned"] = True
-            metrics["global_trajectory_cka"] = 1.0  # Identity = perfect
     else:
         raise AlignmentFailureError(
-            stage="GLOBAL_TRAJECTORY_ALIGNMENT",
+            stage="PER_LAYER_ALIGNMENT",
             weight_key=None,
-            message="Source activations are required for global hidden alignment",
+            message="Source activations are required for alignment",
             context={},
         )
 
@@ -691,22 +685,25 @@ def stage_transplant(
 
         from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 
-        # USE GLOBAL TRAJECTORY-ALIGNED hidden stitch (computed once for all layers)
-        # This ensures consistent alignment across the entire model trajectory.
-        if global_hidden_stitch_output is not None:
-            hidden_stitch_output = global_hidden_stitch_output
-            hidden_stitch_input = global_hidden_stitch_input
+        # USE PER-LAYER ALIGNED hidden stitch (from probe stage with CKA=1.0)
+        # Each layer gets its own transform - different layers encode different
+        # parts of the geometry at different resolutions.
+        hidden_stitch_output = None
+        hidden_stitch_input = None
+
+        if layer_idx in layer_hidden_stitches:
+            hidden_stitch_output, hidden_stitch_input = layer_hidden_stitches[layer_idx]
             # Log only on first layer to avoid spam
             if layer_num == 0:
+                stitch_shape = hidden_stitch_output.shape if hidden_stitch_output is not None else "N/A"
                 logger.info(
-                    "Layer %d: Using GLOBAL hidden stitch (%d→%d)",
-                    layer_idx, global_src_hidden_dim, global_tgt_hidden_dim
+                    "Layer %d: Using per-layer hidden stitch (shape=%s)",
+                    layer_idx, stitch_shape
                 )
-
-        # NO PER-LAYER FALLBACK: If global alignment failed, we already raised an exception.
-        # Per-layer alignment breaks compositional structure - each layer would get a
-        # different F, causing activations to not compose correctly through the network.
-        # If we get here without global stitch, something is wrong.
+        elif layer_hidden_stitches:
+            # Layer not in mapping - might be unmapped target layer
+            # Use identity if we have any transforms (cross-arch case)
+            pass  # hidden_stitch_output/input stay None - will skip stitching
 
         # Compute INTERMEDIATE alignment (source intermediate_dim → target intermediate_dim)
         # Note: Intermediate stitch is per-layer since each MLP has different internal geometry

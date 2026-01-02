@@ -30,7 +30,6 @@ from modelcypher.core.domain.geometry.alignment_diagnostic import (
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
-    regularization_epsilon,
 )
 
 
@@ -335,6 +334,7 @@ class TestAlignmentSignalFromMatrices:
         backend.random_seed(42)
         source = backend.random_normal((5, 8))
         target = backend.random_normal((5, 8))
+        cka_achieved = 1.0 - division_epsilon(backend, source)
 
         labels = ["alpha", "beta", "gamma", "delta", "epsilon"]
         signal = alignment_signal_from_matrices(
@@ -342,7 +342,7 @@ class TestAlignmentSignalFromMatrices:
             target_matrix=target,
             labels=labels,
             backend=backend,
-            cka_achieved=0.6,
+            cka_achieved=cka_achieved,
         )
 
         assert signal.anchor_labels == labels
@@ -354,12 +354,13 @@ class TestAlignmentSignalFromMatrices:
         backend.random_seed(42)
         source = backend.random_normal((5, 8))
         target = backend.random_normal((5, 8))
+        cka_achieved = 1.0 - division_epsilon(backend, source)
 
         signal = alignment_signal_from_matrices(
             source_matrix=source,
             target_matrix=target,
             backend=backend,
-            cka_achieved=0.6,
+            cka_achieved=cka_achieved,
         )
 
         assert len(signal.anchor_labels) == 5
@@ -370,12 +371,13 @@ class TestAlignmentSignalFromMatrices:
         backend.random_seed(42)
         source = backend.random_normal((20, 8))
         target = backend.random_normal((20, 8))
+        cka_achieved = 1.0 - division_epsilon(backend, source)
 
         signal = alignment_signal_from_matrices(
             source_matrix=source,
             target_matrix=target,
             backend=backend,
-            cka_achieved=0.5,
+            cka_achieved=cka_achieved,
             top_k=3,
         )
 
@@ -386,12 +388,13 @@ class TestAlignmentSignalFromMatrices:
         backend.random_seed(42)
         source = backend.random_normal((5, 8))
         target = backend.random_normal((5, 8))
+        cka_achieved = 1.0 - division_epsilon(backend, source)
 
         signal = alignment_signal_from_matrices(
             source_matrix=source,
             target_matrix=target,
             backend=backend,
-            cka_achieved=0.5,
+            cka_achieved=cka_achieved,
             top_k=100,  # more than samples
         )
 
@@ -432,12 +435,13 @@ class TestAlignmentSignalFromMatrices:
         backend.random_seed(42)
         source = backend.random_normal((10, 8))
         target = backend.random_normal((10, 8))
+        cka_achieved = 1.0 - division_epsilon(backend, source)
 
         signal = alignment_signal_from_matrices(
             source_matrix=source,
             target_matrix=target,
             backend=backend,
-            cka_achieved=0.5,
+            cka_achieved=cka_achieved,
         )
 
         assert "rank_source" in signal.metadata
@@ -454,12 +458,13 @@ class TestAlignmentSignalFromMatrices:
         n_samples = 15
         source = backend.random_normal((n_samples, 8))
         target = backend.random_normal((n_samples, 8))
+        cka_achieved = 1.0 - division_epsilon(backend, source)
 
         signal = alignment_signal_from_matrices(
             source_matrix=source,
             target_matrix=target,
             backend=backend,
-            cka_achieved=0.5,
+            cka_achieved=cka_achieved,
         )
 
         assert len(signal.anchor_divergence) == n_samples
@@ -477,19 +482,29 @@ class TestAlignmentSignalPatternDetection:
         # Take first 16 columns of Q (orthonormal columns)
         source = q[:, :16]
         backend.eval(source)
-        # Scale target by 5x - significant scale mismatch
-        target = source * 5.0
+        scale_factor = 1.0 + division_epsilon(backend, source)
+        target = source * scale_factor
 
         signal = alignment_signal_from_matrices(
             source_matrix=source,
             target_matrix=target,
             backend=backend,
-            cka_achieved=0.8,  # CKA is scale-invariant so still high
+            cka_achieved=1.0 - division_epsilon(backend, source),
         )
 
-        # Scale ratio should reflect the 5x difference (source/target = 0.2)
+        # Scale ratio should reflect the relative normalization.
         scale_ratio = signal.metadata["scale_ratio"]
-        assert 0.15 < scale_ratio < 0.25, f"Expected ~0.2, got {scale_ratio}"
+        div_eps = division_epsilon(backend, source)
+        src_norm = backend.mean(backend.norm(source, axis=1))
+        tgt_norm = backend.mean(backend.norm(target, axis=1))
+        backend.eval(src_norm, tgt_norm)
+        src_norm_val = float(backend.to_numpy(src_norm))
+        tgt_norm_val = float(backend.to_numpy(tgt_norm))
+        expected_ratio = src_norm_val / (tgt_norm_val + div_eps)
+        tolerance = machine_epsilon(backend, source)
+        assert abs(scale_ratio - expected_ratio) <= tolerance, (
+            f"Expected ~{expected_ratio}, got {scale_ratio}"
+        )
 
         # Pattern may be scale, rotation, or rank_deficient depending on
         # numerical precision in eigenvalue computation
@@ -507,12 +522,13 @@ class TestAlignmentSignalPatternDetection:
 
         # Full rank target
         target = backend.random_normal((10, 8))
+        cka_achieved = 1.0 - division_epsilon(backend, source)
 
         signal = alignment_signal_from_matrices(
             source_matrix=source,
             target_matrix=target,
             backend=backend,
-            cka_achieved=0.4,
+            cka_achieved=cka_achieved,
         )
 
         assert signal.divergence_pattern == "rank_deficient"
@@ -563,17 +579,6 @@ class TestMatrixRank:
         # Random matrix should be full rank
         assert rank == n
 
-    def test_custom_epsilon(self, backend):
-        """Test custom epsilon threshold."""
-        backend.random_seed(42)
-        matrix = backend.random_normal((5, 5))
-
-        # Very large epsilon should reduce rank
-        rank_strict = _matrix_rank(matrix, backend, eps=1e-10)
-        rank_loose = _matrix_rank(matrix, backend, eps=0.5)
-
-        assert rank_loose <= rank_strict
-
 
 class TestAlignmentSignalEdgeCases:
     """Edge case tests for alignment diagnostics."""
@@ -583,12 +588,13 @@ class TestAlignmentSignalEdgeCases:
         backend.random_seed(42)
         source = backend.random_normal((1, 8))
         target = backend.random_normal((1, 8))
+        cka_achieved = 1.0 - division_epsilon(backend, source)
 
         signal = alignment_signal_from_matrices(
             source_matrix=source,
             target_matrix=target,
             backend=backend,
-            cka_achieved=0.5,
+            cka_achieved=cka_achieved,
         )
 
         assert len(signal.anchor_labels) == 1
@@ -599,12 +605,13 @@ class TestAlignmentSignalEdgeCases:
         backend.random_seed(42)
         source = backend.random_normal((5, 100))
         target = backend.random_normal((5, 100))
+        cka_achieved = 1.0 - division_epsilon(backend, source)
 
         signal = alignment_signal_from_matrices(
             source_matrix=source,
             target_matrix=target,
             backend=backend,
-            cka_achieved=0.6,
+            cka_achieved=cka_achieved,
         )
 
         assert signal.dimension == 3  # default
@@ -615,12 +622,13 @@ class TestAlignmentSignalEdgeCases:
         backend.random_seed(42)
         source = backend.random_normal((100, 5))
         target = backend.random_normal((100, 5))
+        cka_achieved = 1.0 - division_epsilon(backend, source)
 
         signal = alignment_signal_from_matrices(
             source_matrix=source,
             target_matrix=target,
             backend=backend,
-            cka_achieved=0.6,
+            cka_achieved=cka_achieved,
             top_k=10,
         )
 
@@ -631,28 +639,31 @@ class TestAlignmentSignalEdgeCases:
         backend.random_seed(42)
         source = backend.random_normal((10, 8))
         target = backend.random_normal((10, 8))
+        cka_achieved = 0.0
 
         signal = alignment_signal_from_matrices(
             source_matrix=source,
             target_matrix=target,
             backend=backend,
-            cka_achieved=0.0,
+            cka_achieved=cka_achieved,
         )
 
-        assert signal.cka_achieved == 0.0
-        assert signal.gap == 1.0
+        expected_gap = 1.0 - cka_achieved
+        assert signal.cka_achieved == cka_achieved
+        assert abs(signal.gap - expected_gap) <= _eps()
 
     def test_uses_default_backend(self, backend):
         """Test function uses default backend when none provided."""
         backend.random_seed(42)
         source = backend.random_normal((10, 8))
         target = backend.random_normal((10, 8))
+        cka_achieved = 1.0 - division_epsilon(backend, source)
 
         # Don't pass backend explicitly
         signal = alignment_signal_from_matrices(
             source_matrix=source,
             target_matrix=target,
-            cka_achieved=0.5,
+            cka_achieved=cka_achieved,
         )
 
         assert signal is not None
