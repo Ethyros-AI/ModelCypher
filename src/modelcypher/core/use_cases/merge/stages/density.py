@@ -287,7 +287,7 @@ def _build_density_profile_from_activations(
             b.eval(act_arr)
             var_arr = b.var(act_arr)
             b.eval(var_arr)
-            variance = float(b.to_numpy(var_arr).item())
+            variance = float(b.to_scalar(var_arr))
 
             sims = sim_np[i].tolist()
             if i < len(sims):

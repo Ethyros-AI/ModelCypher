@@ -89,7 +89,7 @@ class GeometricFingerprint:
         v = backend.random_normal((n,))
         norm_arr = backend.norm(v)
         backend.eval(norm_arr)
-        norm = float(backend.to_numpy(norm_arr).item())
+        norm = float(backend.to_scalar(norm_arr))
         if norm > 0:
             v = v / norm
 
@@ -99,7 +99,7 @@ class GeometricFingerprint:
             for i in range(n):
                 row_sum = 0.0
                 for j in range(n):
-                    v_val = float(backend.to_numpy(v[j]).item())
+                    v_val = float(backend.to_scalar(v[j]))
                     row_sum += float(gram[i * n + j]) * v_val
                 w_arr = backend.array([row_sum])
                 backend.eval(w_arr)
@@ -113,8 +113,8 @@ class GeometricFingerprint:
             dot_arr = backend.sum(v * w)
             norm_arr = backend.norm(w)
             backend.eval(dot_arr, norm_arr)
-            lam = float(backend.to_numpy(dot_arr).item())
-            norm = float(backend.to_numpy(norm_arr).item())
+            lam = float(backend.to_scalar(dot_arr))
+            norm = float(backend.to_scalar(norm_arr))
             eps = division_epsilon(backend, w)
             if norm <= eps:
                 break

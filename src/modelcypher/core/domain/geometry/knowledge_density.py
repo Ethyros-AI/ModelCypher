@@ -295,7 +295,7 @@ class KnowledgeDensityAnalyzer:
         mean_var = b.mean(var_vec)
         b.eval(mean_var)
 
-        return float(b.to_numpy(mean_var).item())
+        return float(b.to_scalar(mean_var))
 
     def _compute_cluster_tightness(self, activations: "Array") -> float:
         """Compute mean pairwise similarity within concept cluster."""

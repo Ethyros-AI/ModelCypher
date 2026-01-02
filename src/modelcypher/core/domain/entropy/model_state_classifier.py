@@ -23,11 +23,10 @@ classification or thresholding logic lives here.
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
 
-# Machine epsilon for float64 (native Python float)
-_MACHINE_EPS = sys.float_info.epsilon
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
 
 @dataclass(frozen=True)
@@ -63,8 +62,10 @@ class CalibratedBaseline:
 
     def z_score(self, entropy: float) -> float:
         """Compute z-score (standard deviations from mean)."""
-        if self.std_dev < _MACHINE_EPS:
-            return 0.0 if abs(entropy - self.mean) < _MACHINE_EPS else float("inf")
+        backend = get_default_backend()
+        eps = machine_epsilon(backend, backend.array([self.std_dev]))
+        if self.std_dev < eps:
+            return 0.0 if abs(entropy - self.mean) < eps else float("inf")
         return (entropy - self.mean) / self.std_dev
 
 

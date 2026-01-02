@@ -20,6 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.ports.backend import Array, Backend
 
 
@@ -49,7 +50,8 @@ class ConceptVectorSpace:
 
         # Normalize on insertion for cosine similarity
         norm = self._backend.norm(vector)
-        normalized = vector / (norm + 1e-6)
+        div_eps = division_epsilon(self._backend, vector)
+        normalized = vector / (norm + div_eps)
 
         self.concepts[concept_id] = ConceptNode(
             id=concept_id,
@@ -63,7 +65,8 @@ class ConceptVectorSpace:
 
         # 1. Prepare Query
         q_norm = self._backend.norm(query_vector)
-        q = query_vector / (q_norm + 1e-6)
+        div_eps = division_epsilon(self._backend, query_vector)
+        q = query_vector / (q_norm + div_eps)
 
         # 2. Stack Concept Vectors
         ids = list(self.concepts.keys())

@@ -166,9 +166,9 @@ class EmbeddingProjector:
         backend.eval(mse_arr, mean_cos, norm_ratio)
 
         return {
-            "mse": float(backend.to_numpy(mse_arr).item()),
-            "mean_cosine_similarity": float(backend.to_numpy(mean_cos).item()),
-            "norm_preservation_ratio": float(backend.to_numpy(norm_ratio).item()),
+            "mse": float(backend.to_scalar(mse_arr)),
+            "mean_cosine_similarity": float(backend.to_scalar(mean_cos)),
+            "norm_preservation_ratio": float(backend.to_scalar(norm_ratio)),
             "n_samples_evaluated": int(sample_count),
         }
 
@@ -219,8 +219,8 @@ class EmbeddingProjector:
         explained = backend.sum(S[:n_components])
         backend.eval(total_variance, explained)
         eps = division_epsilon(backend, S)
-        ratio = float(backend.to_numpy(explained).item()) / max(
-            float(backend.to_numpy(total_variance).item()), eps
+        ratio = float(backend.to_scalar(explained)) / max(
+            float(backend.to_scalar(total_variance)), eps
         )
 
         meta = {
@@ -410,5 +410,5 @@ class EmbeddingProjector:
             denom = backend.clip(s_norm * t_norm, eps, None)
             corr = backend.sum(s * t) / denom
             backend.eval(corr)
-            correlations.append(float(backend.to_numpy(corr).item()))
+            correlations.append(float(backend.to_scalar(corr)))
         return correlations

@@ -237,6 +237,23 @@ class MLXBackend(Backend):
             self.safe.eval(array)
         return _np_interop.array(array)
 
+    def to_scalar(self, array: Array) -> float | int:
+        """Extract a scalar from a 0-d or single-element array.
+
+        Faster than to_numpy().item() - uses MLX's native .item() directly,
+        skipping numpy conversion entirely.
+
+        Args:
+            array: A scalar (0-d) or single-element array. Must be evaluated first.
+
+        Returns:
+            Python float or int.
+
+        Raises:
+            ValueError: If array has more than one element.
+        """
+        return array.item()
+
     @lru_cache(maxsize=8)
     def finfo(self, dtype: Any | None = None) -> FloatInfo:
         """Return floating-point precision info for the given dtype.

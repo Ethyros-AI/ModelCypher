@@ -224,8 +224,8 @@ class LoRAAdapterMerger:
         target_energy = backend.mean(target * target)
         backend.eval(mse, target_energy)
         eps = division_epsilon(backend, target)
-        error = float(backend.to_numpy(mse).item()) / max(
-            float(backend.to_numpy(target_energy).item()), eps
+        error = float(backend.to_scalar(mse)) / max(
+            float(backend.to_scalar(target_energy)), eps
         )
         return aligned, error
 

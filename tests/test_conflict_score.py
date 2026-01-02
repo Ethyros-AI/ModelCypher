@@ -37,6 +37,11 @@ from modelcypher.core.domain.entropy.conflict_score import (
     ConflictScoreCalculator,
     ConflictScoreResult,
 )
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
+
+def _eps(backend, *values: float) -> float:
+    return machine_epsilon(backend, backend.array(list(values)))
 
 
 class TestConflictScoreResult:

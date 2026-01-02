@@ -21,13 +21,13 @@ Conflict Score: Distinguishing Adapter Specialization from Fighting the Prior.
 Notes
 -----
 Entropy differential (ΔH) alone cannot distinguish between:
-- Specialization (good): Adapter narrows distribution to domain-specific tokens
-- Fighting prior (bad): Adapter pushes toward tokens the base model rejected
+- Specialization: Adapter narrows distribution to domain-specific tokens
+- Prior tension: Adapter pushes toward tokens outside the base model frontier
 
-Conflict Score = meanKL × (1 - baseApprovalRate)
+Conflict Score = meanKL × (1 - baseFrontierRate)
 
-When baseApprovalRate is high (sampled tokens in base top-K), the adapter is
-refining within the base model's comfort zone. When low, the adapter is fighting.
+The base frontier is derived from the largest logit gap, not a fixed top-K.
+When frontier rate is high, the adapter stays within the base logit geometry.
 
 Ported from ConflictScore.swift (342 lines).
 """
@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -59,23 +60,15 @@ class ConflictScoreResult:
     ----------
     mean_kl : float
         Mean KL divergence D_KL(adapter || base). Higher values indicate more divergence.
-    base_approval_rate : float
-        Fraction of sampled tokens in base model's top-K [0, 1].
+    base_frontier_rate : float
+        Fraction of sampled tokens inside the base logit frontier [0, 1].
     conflict_score : float
-        KL × (1 - approval_rate). Higher values indicate the adapter is fighting the prior.
+        KL × (1 - frontier_rate). Higher values indicate more prior tension.
     """
 
     mean_kl: float
-    base_approval_rate: float
+    base_frontier_rate: float
     conflict_score: float
-
-    def exceeds_threshold(self, threshold: float) -> bool:
-        """Check if conflict_score exceeds a given threshold.
-
-        This replaces the removed is_conflicting field. Callers must
-        explicitly provide thresholds - no arbitrary defaults.
-        """
-        return self.conflict_score > threshold
 
 
 # =============================================================================
@@ -84,36 +77,10 @@ class ConflictScoreResult:
 
 
 class ConflictScoreCalculator:
-    """Calculates conflict score between base and adapted model logits.
+    """Calculates conflict score between base and adapted model logits."""
 
-    Example
-    -------
-    >>> calculator = ConflictScoreCalculator(top_k=10)
-    >>> result = calculator.compute(
-    ...     base_logits=base_model_logits,
-    ...     adapted_logits=adapter_logits,
-    ...     sampled_token=token_id,
-    ... )
-    >>> if result.exceeds_threshold(0.3):  # Caller decides threshold
-    ...     # Adapter may be fighting the prior - potential safety concern
-    """
-
-    def __init__(
-        self,
-        top_k: int = 10,
-        epsilon: float = 1e-10,
-        backend: "Backend | None" = None,
-    ) -> None:
-        """
-        Initialize calculator.
-
-        Args:
-            top_k: Number of top tokens to consider for base approval.
-            epsilon: Numerical stability epsilon.
-            backend: Compute backend (defaults to MLX on macOS).
-        """
-        self.top_k = top_k
-        self.epsilon = epsilon
+    def __init__(self, backend: "Backend | None" = None) -> None:
+        """Initialize calculator."""
         self._backend = backend or get_default_backend()
 
     def compute(
@@ -123,8 +90,6 @@ class ConflictScoreCalculator:
         sampled_token: int,
     ) -> ConflictScoreResult:
         """Compute conflict metrics for a single token prediction.
-
-        Use result.exceeds_threshold(t) to check against a specific threshold.
 
         Args:
             base_logits: Logits from base model [vocab_size] or [batch, seq, vocab].
@@ -141,16 +106,16 @@ class ConflictScoreCalculator:
         # Compute KL divergence: D_KL(adapted || base)
         kl = self._compute_kl_divergence(adapted_flat, base_flat)
 
-        # Check if sampled token was in base model's top-K
-        was_approved = self._is_in_top_k(base_flat, sampled_token, self.top_k)
-        approval_rate = 1.0 if was_approved else 0.0
+        # Check if sampled token was in base model's frontier.
+        in_frontier = self._is_in_frontier(base_flat, sampled_token)
+        frontier_rate = 1.0 if in_frontier else 0.0
 
-        # Conflict score = KL × (1 - approval)
-        conflict = kl * (1.0 - approval_rate)
+        # Conflict score = KL × (1 - frontier_rate)
+        conflict = kl * (1.0 - frontier_rate)
 
         return ConflictScoreResult(
             mean_kl=kl,
-            base_approval_rate=approval_rate,
+            base_frontier_rate=frontier_rate,
             conflict_score=conflict,
         )
 
@@ -161,8 +126,6 @@ class ConflictScoreCalculator:
         sampled_tokens: list[int],
     ) -> ConflictScoreResult:
         """Compute conflict metrics over a window of tokens.
-
-        Use result.exceeds_threshold(t) to check against a specific threshold.
 
         Args:
             base_logits_sequence: Array of logit tensors from base model.
@@ -179,12 +142,12 @@ class ConflictScoreCalculator:
         ):
             return ConflictScoreResult(
                 mean_kl=0.0,
-                base_approval_rate=1.0,
+                base_frontier_rate=1.0,
                 conflict_score=0.0,
             )
 
         total_kl = 0.0
-        approved_count = 0
+        frontier_count = 0
 
         for i in range(len(base_logits_sequence)):
             base_flat = self._flatten_to_vocab(base_logits_sequence[i])
@@ -192,16 +155,16 @@ class ConflictScoreCalculator:
 
             total_kl += self._compute_kl_divergence(adapted_flat, base_flat)
 
-            if self._is_in_top_k(base_flat, sampled_tokens[i], self.top_k):
-                approved_count += 1
+            if self._is_in_frontier(base_flat, sampled_tokens[i]):
+                frontier_count += 1
 
         mean_kl = total_kl / len(base_logits_sequence)
-        approval_rate = approved_count / len(sampled_tokens)
-        conflict = mean_kl * (1.0 - approval_rate)
+        frontier_rate = frontier_count / len(sampled_tokens)
+        conflict = mean_kl * (1.0 - frontier_rate)
 
         return ConflictScoreResult(
             mean_kl=mean_kl,
-            base_approval_rate=approval_rate,
+            base_frontier_rate=frontier_rate,
             conflict_score=conflict,
         )
 
@@ -239,7 +202,7 @@ class ConflictScoreCalculator:
         q_probs = q_exp / q_sum
 
         # KL = sum(p * log(p/q)) = sum(p * (log(p) - log(q)))
-        eps = b.array(self.epsilon)
+        eps = division_epsilon(b, p_probs)
         p_log_probs = b.log(p_probs + eps)
         q_log_probs = b.log(q_probs + eps)
 
@@ -252,24 +215,33 @@ class ConflictScoreCalculator:
         kl_np = b.to_numpy(kl_f32)
         return max(0.0, float(kl_np.item()))
 
-    def _is_in_top_k(self, logits: "Array", token_id: int, k: int) -> bool:
-        """Check if token_id is in the top-K of logits."""
-        if k <= 0:
-            return False
-
-        vocab_size = logits.shape[0]
-        kk = min(k, vocab_size)
-        if kk <= 0:
-            return False
-
+    def _is_in_frontier(self, logits: "Array", token_id: int) -> bool:
+        """Check if token_id is inside the base logit frontier."""
         b = self._backend
-        # Use argpartition for O(n) complexity
-        neg_logits = -logits
-        top_k_indices = b.argpartition(neg_logits, kth=kk - 1)[:kk]
-        b.eval(top_k_indices)
+        logits = self._flatten_to_vocab(logits)
+        vocab_size = logits.shape[0]
+        if vocab_size <= 1:
+            return True
 
-        indices = b.to_numpy(top_k_indices).tolist()
-        return token_id in indices
+        token_logit = logits[token_id]
+        token_rank = int(b.to_numpy(b.sum(b.astype(logits > token_logit, "float32"))))
+        frontier_size = self._frontier_size(logits)
+        return token_rank < frontier_size
+
+    def _frontier_size(self, logits: "Array") -> int:
+        """Compute frontier size from the largest logit gap."""
+        b = self._backend
+        vocab_size = logits.shape[0]
+        if vocab_size <= 1:
+            return 1
+
+        sorted_logits = -b.sort(-logits)
+        gaps = sorted_logits[:-1] - sorted_logits[1:]
+        eps = division_epsilon(b, logits)
+        max_gap = float(b.to_numpy(b.max(gaps)))
+        if max_gap <= eps:
+            return vocab_size
+        return int(b.to_numpy(b.argmax(gaps))) + 1
 
 
 # =============================================================================
@@ -285,63 +257,56 @@ class ConflictAnalysis:
     ----------
     mean_kl : float
         Mean KL divergence across tokens. Higher = more divergent.
-    base_approval_rate : float
-        Fraction of tokens in base model's top-K [0, 1]. Higher = more agreement.
+    base_frontier_rate : float
+        Fraction of tokens in base logit frontier [0, 1]. Higher = more agreement.
     conflict_score : float
-        Combined signal: KL × (1 - approval_rate).
+        Combined signal: KL × (1 - frontier_rate).
     token_count : int
         Number of tokens analyzed.
     """
 
     mean_kl: float
-    base_approval_rate: float
+    base_frontier_rate: float
     conflict_score: float
     token_count: int
 
     @staticmethod
     def compute(
         kl_divergences: list[float | None],
-        base_approved_top_k: list[bool | None],
+        base_frontier_hit: list[bool | None],
     ) -> "ConflictAnalysis" | None:
         """Compute ConflictAnalysis from token-level metrics.
 
         Parameters
         ----------
             kl_divergences: Per-token D_KL(p_adapter || p_base) values.
-            base_approved_top_k: Per-token approval flags (sampled in base top-K).
+            base_frontier_hit: Per-token frontier hit flags.
 
         Returns:
             ConflictAnalysis with raw measurements if enough data, else None.
         """
         kl_sum = 0.0
         token_count = 0
-        approved_count = 0
+        frontier_count = 0
 
-        for kl, approved in zip(kl_divergences, base_approved_top_k):
-            if kl is None or approved is None:
+        for kl, hit in zip(kl_divergences, base_frontier_hit):
+            if kl is None or hit is None:
                 continue
             token_count += 1
             kl_sum += float(kl)
-            if approved:
-                approved_count += 1
+            if hit:
+                frontier_count += 1
 
         if token_count == 0:
             return None
 
         mean_kl = kl_sum / token_count
-        approval_rate = approved_count / token_count
-        conflict_score = mean_kl * (1.0 - approval_rate)
+        frontier_rate = frontier_count / token_count
+        conflict_score = mean_kl * (1.0 - frontier_rate)
 
         return ConflictAnalysis(
             mean_kl=mean_kl,
-            base_approval_rate=approval_rate,
+            base_frontier_rate=frontier_rate,
             conflict_score=conflict_score,
             token_count=token_count,
         )
-
-    def exceeds_threshold(self, threshold: float) -> bool:
-        """Check if conflict_score exceeds a given threshold.
-
-        Callers must explicitly provide thresholds - no arbitrary defaults.
-        """
-        return self.conflict_score > threshold

@@ -274,7 +274,7 @@ class BackendMatrixUtils:
 
         det_arr = self.backend.det(R)
         self.backend.eval(det_arr)
-        det_val = float(self.backend.to_numpy(det_arr).item())
+        det_val = float(self.backend.to_scalar(det_arr))
 
         if det_val < 0:
             U_fixed = self.backend.concatenate([U[:, :-1], -U[:, -1:]], axis=1)
@@ -446,7 +446,7 @@ class BackendMatrixUtils:
         eig_sorted = b.array([float(x) for x in sorted(eig_positive, reverse=True)])
         total_arr = b.sum(eig_sorted)
         b.eval(total_arr)
-        total = float(b.to_numpy(total_arr).item())
+        total = float(b.to_scalar(total_arr))
 
         if total <= 0:
             return 0
@@ -483,7 +483,7 @@ class BackendMatrixUtils:
         eig_arr = b.array([float(x) for x in eig_positive])
         total_arr = b.sum(eig_arr)
         b.eval(total_arr)
-        total = float(b.to_numpy(total_arr).item())
+        total = float(b.to_scalar(total_arr))
 
         if total <= 0:
             return 0.0
@@ -493,7 +493,7 @@ class BackendMatrixUtils:
         log_p = b.log(p + b.full(p.shape, log_eps))
         entropy_arr = -b.sum(p * log_p)
         b.eval(entropy_arr)
-        entropy = float(b.to_numpy(entropy_arr).item())
+        entropy = float(b.to_scalar(entropy_arr))
 
         return math.exp(entropy)
 

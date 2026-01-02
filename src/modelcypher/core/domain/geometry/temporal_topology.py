@@ -303,14 +303,14 @@ class TemporalTopologyAnalyzer:
             n1_arr = backend.norm(v1)
             n2_arr = backend.norm(v2)
             backend.eval(n1_arr, n2_arr)
-            n1 = float(backend.to_numpy(n1_arr).item())
-            n2 = float(backend.to_numpy(n2_arr).item())
+            n1 = float(backend.to_scalar(n1_arr))
+            n2 = float(backend.to_scalar(n2_arr))
             div_eps = division_epsilon(backend, v1)
             if n1 < div_eps or n2 < div_eps:
                 return 0.0
             dot_arr = backend.sum(v1 * v2)
             backend.eval(dot_arr)
-            dot_val = float(backend.to_numpy(dot_arr).item())
+            dot_val = float(backend.to_scalar(dot_arr))
             cos_sim = abs(dot_val / (n1 * n2))
             return 1.0 - cos_sim
 
@@ -352,7 +352,7 @@ class TemporalTopologyAnalyzer:
                 if len(shape) > 1 and shape[1] > 0:
                     proj_val = matrix[i, 0]
                     backend.eval(proj_val)
-                    projections.append(float(backend.to_numpy(proj_val).item()))
+                    projections.append(float(backend.to_scalar(proj_val)))
                 else:
                     projections.append(0.0)
 
@@ -418,7 +418,7 @@ class TemporalTopologyAnalyzer:
         for a in direction_anchors:
             proj_val = a[2][0]
             backend.eval(proj_val)
-            projections.append(float(backend.to_numpy(proj_val).item()))
+            projections.append(float(backend.to_scalar(proj_val)))
 
         corr = VectorMath.spearman_correlation(levels, projections)
         if corr is None or math.isnan(float(corr)):

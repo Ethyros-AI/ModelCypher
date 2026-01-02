@@ -36,12 +36,16 @@ Example:
 from __future__ import annotations
 
 import logging
+import sys
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.cka import compute_cka
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
+# Machine epsilon for float64 (native Python float)
+_MACHINE_EPS = sys.float_info.epsilon
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.agents.conceptual_metaphor_atlas import CMTMapping
@@ -183,7 +187,7 @@ def _compute_spearman_correlation(x: list[float], y: list[float]) -> float:
     denom_y = sum((rank_y[i] - mean_y) ** 2 for i in range(n))
 
     denom = (denom_x * denom_y) ** 0.5
-    if denom < 1e-10:
+    if denom < _MACHINE_EPS:
         return 0.0
 
     return num / denom

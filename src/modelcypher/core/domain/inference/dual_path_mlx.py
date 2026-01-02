@@ -59,58 +59,60 @@ from modelcypher.core.domain.inference.entropy_dynamics import (
 
 
 def compute_token_rank_metrics(
-    probabilities: "Array",
+    scores: "Array",
     token_id: int,
-    top_k: int = 10,
     backend: "Backend | None" = None,
 ) -> tuple[int, float, bool]:
-    """Compute ranking-based metrics for a token in a probability distribution.
+    """Compute rank geometry for a token in logit space.
 
-    This function computes proper ranking-based approval metrics, which are more
-    accurate than raw probability for measuring whether the base model "approves"
-    of a token selected by the adapter.
+    Ranking is defined by ordering in logit space (monotone under softmax),
+    and the frontier boundary is derived from the largest relative logit gap.
 
     Args:
-        probabilities: 1D array of token probabilities (must sum to 1)
-        token_id: ID of the selected token
-        top_k: Threshold for top-K hit detection (default: 10)
-        backend: Backend for array operations (auto-detected if None)
+        scores: 1D array of logit scores.
+        token_id: ID of the selected token.
+        backend: Backend for array operations (auto-detected if None).
 
     Returns:
-        Tuple of (rank, normalized_approval, top_k_hit) where:
-        - rank: 0-indexed rank of the token (0 = highest probability)
-        - normalized_approval: 1.0 = top token, 0.0 = bottom token
-        - top_k_hit: True if token is in the top-K by probability
-
-    Example:
-        >>> backend = get_default_backend()
-        >>> probs = backend.array([0.5, 0.3, 0.15, 0.05])  # 4-token vocab
-        >>> rank, approval, hit = compute_token_rank_metrics(probs, 1, backend=backend)
-        >>> # Token 1 has prob 0.3, which is 2nd highest (rank 1)
-        >>> assert rank == 1
-        >>> assert approval == pytest.approx(0.667, abs=0.01)  # 1 - 1/3
-        >>> assert hit == True  # rank 1 < top_k=10
+        Tuple of (rank, rank_fraction, frontier_hit) where:
+        - rank: 0-indexed rank of the token (0 = highest score).
+        - rank_fraction: 1.0 = top token, 0.0 = bottom token.
+        - frontier_hit: True if token is in the derived top frontier.
     """
     b = backend or get_default_backend()
 
-    vocab_size = probabilities.shape[0]
-    token_prob = probabilities[token_id]
+    if scores.ndim > 1:
+        scores = b.squeeze(scores)
 
-    # Rank = count of tokens with strictly higher probability
-    # rank 0 = top token (highest prob), rank vocab_size-1 = lowest prob
-    token_rank = int(b.to_numpy(b.sum(b.astype(probabilities > token_prob, "float32"))))
+    vocab_size = scores.shape[0]
+    token_score = scores[token_id]
 
-    # Normalized approval: 1 = top token, 0 = bottom token
-    # Formula: 1 - (rank / (vocab_size - 1)) for rank in [0, vocab_size-1]
+    # Rank = count of tokens with strictly higher score.
+    token_rank = int(b.to_numpy(b.sum(b.astype(scores > token_score, "float32"))))
+
+    # Rank fraction: 1 = top token, 0 = bottom token.
     if vocab_size > 1:
-        normalized_approval = 1.0 - (token_rank / (vocab_size - 1))
+        rank_fraction = 1.0 - (token_rank / (vocab_size - 1))
     else:
-        normalized_approval = 1.0  # Single token vocab = always top
+        rank_fraction = 1.0
 
-    # Top-K hit: is this token in the top K of the base model?
-    top_k_hit = token_rank < top_k
+    # Frontier size is the index of the largest relative gap in sorted scores.
+    if vocab_size > 1:
+        sorted_scores = -b.sort(-scores)
+        gaps = sorted_scores[:-1] - sorted_scores[1:]
+        eps = division_epsilon(b, scores)
+        max_gap = float(b.to_numpy(b.max(gaps)))
+        if max_gap <= eps:
+            frontier_size = vocab_size
+        else:
+            frontier_index = int(b.to_numpy(b.argmax(gaps)))
+            frontier_size = frontier_index + 1
+    else:
+        frontier_size = 1
 
-    return token_rank, normalized_approval, top_k_hit
+    frontier_hit = token_rank < frontier_size
+
+    return token_rank, rank_fraction, frontier_hit
 
 
 @dataclass
@@ -267,7 +269,8 @@ class DualPathGenerator:
             # Note: Swift logic accumulates `PendingEntropyData` then sends to actor.
             # Python is simpler.
 
-            # Compute probabilities for metrics
+            # Compute base logits for rank geometry, and probabilities for entropy-derived metrics.
+            scores_base = b.squeeze(curr_logits_base)
             probs_base = b.softmax(curr_logits_base)
 
             # Surprisal = -log(P(token))
@@ -279,9 +282,9 @@ class DualPathGenerator:
                 else 100.0
             )
 
-            # Compute proper ranking-based metrics
+            # Compute rank geometry for the generated token.
             _, normalized_approval, base_top_k_hit = compute_token_rank_metrics(
-                probs_base, token_id, top_k=10, backend=b
+                scores_base, token_id, backend=b
             )
 
             sample = EntropyDeltaSample(

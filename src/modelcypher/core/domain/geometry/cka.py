@@ -828,9 +828,9 @@ def compute_cka_backend(
     backend.eval(hsic_xy_arr, hsic_xx_arr, hsic_yy_arr)
 
     # Convert to Python floats
-    hsic_xy = float(backend.to_numpy(hsic_xy_arr).item())
-    hsic_xx = float(backend.to_numpy(hsic_xx_arr).item())
-    hsic_yy = float(backend.to_numpy(hsic_yy_arr).item())
+    hsic_xy = float(backend.to_scalar(hsic_xy_arr))
+    hsic_xx = float(backend.to_scalar(hsic_xx_arr))
+    hsic_yy = float(backend.to_scalar(hsic_yy_arr))
 
     # CKA = HSIC(X,Y) / sqrt(HSIC(X,X) * HSIC(Y,Y))
     denom = math.sqrt(hsic_xx * hsic_yy)

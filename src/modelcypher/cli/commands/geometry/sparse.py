@@ -149,7 +149,6 @@ def geometry_sparse_neurons(
     """
     from modelcypher.cli.output import write_error
     from modelcypher.core.domain.geometry.neuron_sparsity_analyzer import (
-        NeuronSparsityConfig,
         NeuronSparsityMap,
         compute_neuron_sparsity_map,
     )
@@ -207,15 +206,6 @@ def geometry_sparse_neurons(
     typer.echo(f"  Layer range: {layer_start:.0%} - {layer_end:.0%}", err=True)
     typer.echo("  Sparsity threshold: (derived from activation distribution)", err=True)
 
-    # Use None to signal thresholds should be derived from data
-    # NeuronSparsityMap._derive_thresholds() computes them as mean + N*sigma
-    config = NeuronSparsityConfig(
-        sparsity_threshold=None,  # Derived as mean + 2σ from distribution
-        dead_neuron_threshold=None,  # Derived as mean + 3σ from distribution
-        activation_threshold=None,  # Derived from noise floor
-        min_prompts=min(len(prompts), 20),
-    )
-
     try:
         # Get model layer count
         from modelcypher.core.use_cases.model_probe_service import ModelProbeService
@@ -269,11 +259,11 @@ def geometry_sparse_neurons(
             )
 
         # Compute sparsity map
-        sparsity_map = compute_neuron_sparsity_map(activations, config)
+        sparsity_map = compute_neuron_sparsity_map(activations)
 
     except ImportError as e:
         typer.echo(f"  Note: Full analysis requires inference engine ({e})", err=True)
-        sparsity_map = NeuronSparsityMap(stats={}, config=config, total_prompts=0)
+        sparsity_map = NeuronSparsityMap(stats={}, total_prompts=0, activation_threshold=0.0)
 
     except Exception as e:
         error = ErrorDetail(
@@ -290,11 +280,7 @@ def geometry_sparse_neurons(
     summary = sparsity_map.summary()
     payload = {
         "model": model,
-        "config": {
-            "sparsityThreshold": config.sparsity_threshold,
-            "activationThreshold": config.activation_threshold,
-            "layerRange": [layer_start, layer_end],
-        },
+        "layerRange": [layer_start, layer_end],
         "summary": summary,
         "graftCandidates": sparsity_map.get_graft_candidates(),
         "deadNeurons": sparsity_map.dead_neurons,

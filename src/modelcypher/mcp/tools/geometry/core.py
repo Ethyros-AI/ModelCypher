@@ -497,7 +497,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             promptsFile: str | None = None,
             layerStart: float = 0.0,
             layerEnd: float = 1.0,
-            sparsityThreshold: float | None = None,
         ) -> dict:
             """Analyze per-neuron sparsity for fine-grained knowledge grafting.
 
@@ -510,16 +509,12 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                 promptsFile: Path to JSON file with custom prompts
                 layerStart: Start layer fraction (0.0-1.0)
                 layerEnd: End layer fraction (0.0-1.0)
-                sparsityThreshold: Sparsity threshold for graft candidates.
-                    If None (default), derived from distribution as mean + 2σ.
-
             Returns:
                 Neuron sparsity map with graft candidates and dead neurons
             """
             import json
 
             from modelcypher.core.domain.geometry.neuron_sparsity_analyzer import (
-                NeuronSparsityConfig,
                 compute_neuron_sparsity_map,
             )
 
@@ -545,14 +540,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                 prompts = domain_def.probes
             else:
                 raise ValueError("Provide either domain or promptsFile")
-
-            # All thresholds derived from data distribution when None
-            config = NeuronSparsityConfig(
-                sparsity_threshold=sparsityThreshold,  # None = mean + 2σ
-                dead_neuron_threshold=None,  # mean + 3σ
-                activation_threshold=None,  # noise floor from data
-                min_prompts=min(len(prompts), 20),
-            )
 
             # Collect activations via model inference
             from modelcypher.core.domain.entropy.hidden_state_extractor import (
@@ -581,7 +568,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             engine = LocalInferenceEngine()
             extractor.start_neuron_collection()
 
-            for prompt in prompts[: config.min_prompts]:
+            for prompt in prompts:
                 try:
                     # Run inference to trigger activation capture
                     engine.infer(str(model_path), prompt)
@@ -592,18 +579,14 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             # Get collected activations
             activations = extractor.get_neuron_activations()
 
-            sparsity_map = compute_neuron_sparsity_map(activations, config)
+            sparsity_map = compute_neuron_sparsity_map(activations)
             summary = sparsity_map.summary()
 
             return {
                 "_schema": "mc.geometry.sparse_neurons.v1",
                 "modelPath": str(model_path),
                 "domain": domain,
-                "config": {
-                    "sparsityThreshold": config.sparsity_threshold,
-                    "activationThreshold": config.activation_threshold,
-                    "layerRange": [layerStart, layerEnd],
-                },
+                "layerRange": [layerStart, layerEnd],
                 "summary": summary,
                 "graftCandidates": sparsity_map.get_graft_candidates(),
                 "deadNeurons": sparsity_map.dead_neurons,

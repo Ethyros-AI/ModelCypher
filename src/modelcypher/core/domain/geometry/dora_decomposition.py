@@ -166,8 +166,8 @@ class DoRADecomposition:
         current_sq = b.sqrt(b.sum(current_flat**2))
         b.eval(base_sq, current_sq)
 
-        base_mag = float(b.to_numpy(base_sq).item())
-        current_mag = float(b.to_numpy(current_sq).item())
+        base_mag = float(b.to_scalar(base_sq))
+        current_mag = float(b.to_scalar(current_sq))
 
         min_norm = division_epsilon(b, base_flat)
         if base_mag < min_norm:
@@ -180,7 +180,7 @@ class DoRADecomposition:
         # Compute directional similarity (cosine)
         dot_arr = b.sum(base_flat * current_flat)
         b.eval(dot_arr)
-        dot = float(b.to_numpy(dot_arr).item())
+        dot = float(b.to_scalar(dot_arr))
         eps = division_epsilon(b, base_flat)
         cosine = dot / (base_mag * current_mag + eps)
         cosine = max(-1.0, min(1.0, cosine))  # Clamp

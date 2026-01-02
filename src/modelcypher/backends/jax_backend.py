@@ -332,6 +332,23 @@ class JAXBackend(Backend):
     def to_numpy(self, array: Array) -> Any:
         return _np_interop.asarray(array)
 
+    def to_scalar(self, array: Array) -> float | int:
+        """Extract a scalar from a 0-d or single-element array.
+
+        Faster than to_numpy().item() - uses JAX's native .item() directly,
+        skipping numpy conversion entirely.
+
+        Args:
+            array: A scalar (0-d) or single-element array.
+
+        Returns:
+            Python float or int.
+
+        Raises:
+            ValueError: If array has more than one element.
+        """
+        return array.item()
+
     def finfo(self, dtype: Any | None = None) -> FloatInfo:
         """Return floating-point precision info for the given dtype.
 

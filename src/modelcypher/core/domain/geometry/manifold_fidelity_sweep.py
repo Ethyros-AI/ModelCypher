@@ -286,11 +286,11 @@ class ManifoldFidelitySweep:
         total_arr = b.sum(s_sq)
         captured_arr = b.sum(s_sq[:rank])
         b.eval(total_arr, captured_arr)
-        total = float(b.to_numpy(total_arr).item())
+        total = float(b.to_scalar(total_arr))
         eps = division_epsilon(b, s)
         if total < eps:
             return 0.0
-        captured = float(b.to_numpy(captured_arr).item())
+        captured = float(b.to_scalar(captured_arr))
         return captured / total
 
     def _compute_cka(self, x: "Array", y: "Array") -> float:
@@ -330,8 +330,8 @@ class ManifoldFidelitySweep:
             norm_y_arr = b.sum(y**2)
             b.eval(error_arr, norm_y_arr)
 
-            error = float(b.to_numpy(error_arr).item())
-            norm_y = float(b.to_numpy(norm_y_arr).item())
+            error = float(b.to_scalar(error_arr))
+            norm_y = float(b.to_scalar(norm_y_arr))
 
             eps = division_epsilon(b, y)
             return math.sqrt(error / norm_y) if norm_y > eps else 0.0

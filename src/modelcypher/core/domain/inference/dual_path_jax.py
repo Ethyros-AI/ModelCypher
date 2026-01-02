@@ -100,37 +100,50 @@ class DualPathGeneratorConfigurationJAX:
 
 
 def compute_token_rank_metrics_jax(
-    probabilities: jnp.ndarray,
+    scores: jnp.ndarray,
     token_id: int,
-    top_k: int = 10,
 ) -> tuple[int, float, bool]:
     """
-    Compute ranking-based metrics for a token in a probability distribution.
+    Compute rank geometry for a token in logit space.
 
     Args:
-        probabilities: 1D array of token probabilities
-        token_id: ID of the selected token
-        top_k: Threshold for top-K hit detection
+        scores: 1D array of logit scores.
+        token_id: ID of the selected token.
 
     Returns:
-        Tuple of (rank, normalized_approval, top_k_hit)
+        Tuple of (rank, rank_fraction, frontier_hit).
     """
-    vocab_size = probabilities.shape[0]
-    token_prob = float(probabilities[token_id])
+    if scores.ndim > 1:
+        scores = scores.squeeze()
 
-    # Rank = count of tokens with strictly higher probability
-    token_rank = int(jnp.sum(probabilities > token_prob))
+    vocab_size = scores.shape[0]
+    token_score = float(scores[token_id])
 
-    # Normalized approval: 1 = top token, 0 = bottom token
+    # Rank = count of tokens with strictly higher score.
+    token_rank = int(jnp.sum(scores > token_score))
+
+    # Rank fraction: 1 = top token, 0 = bottom token.
     if vocab_size > 1:
-        normalized_approval = 1.0 - (token_rank / (vocab_size - 1))
+        rank_fraction = 1.0 - (token_rank / (vocab_size - 1))
     else:
-        normalized_approval = 1.0
+        rank_fraction = 1.0
 
-    # Top-K hit
-    top_k_hit = token_rank < top_k
+    # Frontier size is the index of the largest relative gap in sorted scores.
+    if vocab_size > 1:
+        sorted_scores = -jnp.sort(-scores)
+        gaps = sorted_scores[:-1] - sorted_scores[1:]
+        eps = _division_epsilon_for_dtype(scores)
+        max_gap = float(jnp.max(gaps))
+        if max_gap <= eps:
+            frontier_size = vocab_size
+        else:
+            frontier_size = int(jnp.argmax(gaps)) + 1
+    else:
+        frontier_size = 1
 
-    return token_rank, normalized_approval, top_k_hit
+    frontier_hit = token_rank < frontier_size
+
+    return token_rank, rank_fraction, frontier_hit
 
 
 def compute_entropy_jax(
@@ -400,7 +413,7 @@ class DualPathGeneratorJAX:
             surprisal = float(-jnp.log(probs_base[token_id] + eps))
 
             _, normalized_approval, top_k_hit = compute_token_rank_metrics_jax(
-                probs_base, token_id, top_k=10
+                curr_logits_base, token_id
             )
 
             # Create sample

@@ -290,7 +290,7 @@ def _heat_trace(backend: "Backend", eigenvalues: "Array", times: list[float]) ->
     for t in times:
         heat = backend.sum(backend.exp(-t * eigenvalues))
         backend.eval(heat)
-        trace_values.append(float(backend.to_numpy(heat).item()))
+        trace_values.append(float(backend.to_scalar(heat)))
     return trace_values
 
 

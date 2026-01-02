@@ -451,8 +451,8 @@ class SharedSubspaceProjector:
         error_sum = b.sum(diff * diff)
         target_norm_sq = b.sum(target_projected * target_projected)
         b.eval(error_sum, target_norm_sq)
-        error_sum_float = float(b.to_numpy(error_sum).item())
-        target_norm_float = float(b.to_numpy(target_norm_sq).item())
+        error_sum_float = float(b.to_scalar(error_sum))
+        target_norm_float = float(b.to_scalar(target_norm_sq))
         alignment_error = math.sqrt(error_sum_float / target_norm_float) if target_norm_float > 0 else 0.0
 
         # Compute alignment strengths using backend
@@ -464,9 +464,9 @@ class SharedSubspaceProjector:
             sum_sq_s = b.sum(s_col * s_col)
             sum_sq_t = b.sum(t_col * t_col)
             b.eval(sum_prod, sum_sq_s, sum_sq_t)
-            prod_float = float(b.to_numpy(sum_prod).item())
-            sq_s_float = float(b.to_numpy(sum_sq_s).item())
-            sq_t_float = float(b.to_numpy(sum_sq_t).item())
+            prod_float = float(b.to_scalar(sum_prod))
+            sq_s_float = float(b.to_scalar(sum_sq_s))
+            sq_t_float = float(b.to_scalar(sum_sq_t))
             denom = math.sqrt(sq_s_float * sq_t_float)
             alignment_strengths.append(abs(prod_float / denom) if denom > 0 else 0.0)
 
@@ -581,8 +581,8 @@ class SharedSubspaceProjector:
         error_sum = b.sum(diff * diff)
         target_norm_sq = b.sum(target_centered * target_centered)
         b.eval(error_sum, target_norm_sq)
-        error_sum_float = float(b.to_numpy(error_sum).item())
-        target_norm_float = float(b.to_numpy(target_norm_sq).item())
+        error_sum_float = float(b.to_scalar(error_sum))
+        target_norm_float = float(b.to_scalar(target_norm_sq))
         alignment_error = math.sqrt(error_sum_float / target_norm_float) if target_norm_float > 0 else 0.0
 
         # Convert singular values to list
@@ -755,7 +755,7 @@ class SharedSubspaceProjector:
         values = b.array([max(0.0, float(value)) for value in weights])
         total_arr = b.sum(values)
         b.eval(total_arr)
-        total = float(b.to_numpy(total_arr).item())
+        total = float(b.to_scalar(total_arr))
         if total <= 0.0:
             return None
         result = values / total
@@ -956,7 +956,7 @@ class SharedSubspaceProjector:
 
         total_arr = b.sum(variances)
         b.eval(total_arr)
-        total = float(b.to_numpy(total_arr).item())
+        total = float(b.to_scalar(total_arr))
         if total <= 0.0:
             return 0
         cumulative = 0.0

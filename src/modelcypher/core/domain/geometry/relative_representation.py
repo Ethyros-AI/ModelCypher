@@ -212,7 +212,7 @@ def align_relative_representations(
     backend.eval(R)
     det_val = backend.det(R)
     backend.eval(det_val)
-    if backend.to_numpy(det_val).item() < 0:
+    if backend.to_scalar(det_val) < 0:
         U_np = backend.to_numpy(U)
         U_np[:, -1] *= -1
         U = backend.array(U_np)
@@ -227,7 +227,7 @@ def align_relative_representations(
     error_eps = division_epsilon(backend, target_rel)
     error_denom = backend.maximum(backend.norm(target_rel), backend.array(error_eps))
     backend.eval(error_num, error_denom)
-    error = float(backend.to_numpy(error_num).item() / backend.to_numpy(error_denom).item())
+    error = float(backend.to_scalar(error_num) / backend.to_scalar(error_denom))
 
     return R, float(error)
 

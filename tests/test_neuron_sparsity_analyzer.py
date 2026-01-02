@@ -23,9 +23,10 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.geometry.neuron_sparsity_analyzer import (
     NeuronActivationCollector,
-    NeuronSparsityConfig,
     NeuronSparsityMap,
     NeuronStats,
     compare_neuron_sparsity,
@@ -92,7 +93,9 @@ class TestNeuronStats:
         )
 
         # CV = 0.5 / 1.0 = 0.5
-        assert abs(stats.coefficient_of_variation - 0.5) < 0.01
+        backend = get_default_backend()
+        eps = machine_epsilon(backend, backend.array([1.0]))
+        assert abs(stats.coefficient_of_variation - 0.5) <= eps
 
 
 class TestNeuronSparsityMap:
@@ -101,28 +104,36 @@ class TestNeuronSparsityMap:
     @pytest.fixture
     def sample_map(self):
         """Create sample sparsity map."""
-        config = NeuronSparsityConfig(sparsity_threshold=0.8, dead_neuron_threshold=0.99)
+        backend = get_default_backend()
+        activation_threshold = machine_epsilon(backend, backend.array([1.0]))
         stats = {
             0: [
-                NeuronStats(0, 0, 0.5, 1.0, 0.0, 0.1, 0.1, 100),  # sparse (0.9)
+                NeuronStats(0, 0, 0.5, 1.0, 0.0, 0.1, 0.95, 100),  # active (0.05)
                 NeuronStats(0, 1, 0.5, 1.0, 0.0, 0.1, 0.9, 100),  # active (0.1)
-                NeuronStats(0, 2, 0.0, 1e-12, 0.0, 0.0, 0.0, 100),  # dead (1.0)
+                NeuronStats(0, 2, 0.3, 0.8, 0.0, 0.1, 0.2, 100),  # sparse (0.8)
+                NeuronStats(0, 3, 0.2, 0.7, 0.0, 0.1, 0.1, 100),  # sparse (0.9)
+                NeuronStats(0, 4, 0.0, 0.0, 0.0, 0.0, 0.0, 100),  # dead (1.0)
             ],
             1: [
-                NeuronStats(1, 0, 0.3, 0.8, 0.0, 0.05, 0.5, 100),  # medium (0.5)
-                NeuronStats(1, 1, 0.1, 0.2, 0.0, 0.01, 0.15, 100),  # sparse (0.85)
+                NeuronStats(1, 0, 0.4, 0.9, 0.0, 0.05, 0.9, 100),  # active (0.1)
+                NeuronStats(1, 1, 0.2, 0.6, 0.0, 0.01, 0.2, 100),  # sparse (0.8)
             ],
         }
-        return NeuronSparsityMap(stats=stats, config=config, total_prompts=100)
+        return NeuronSparsityMap(
+            stats=stats,
+            total_prompts=100,
+            activation_threshold=activation_threshold,
+        )
 
     def test_sparse_neurons_detection(self, sample_map):
         """Should identify neurons with sparsity >= threshold."""
         sparse = sample_map.sparse_neurons
 
         assert 0 in sparse
-        assert 0 in sparse[0]  # neuron 0 in layer 0 is sparse
-        assert 2 in sparse[0]  # neuron 2 in layer 0 is dead (also sparse)
-        assert 1 not in sparse[0]  # neuron 1 in layer 0 is active
+        assert 2 in sparse[0]  # neuron 2 in layer 0 is sparse
+        assert 3 in sparse[0]  # neuron 3 in layer 0 is sparse
+        assert 4 in sparse[0]  # neuron 4 in layer 0 is dead (also sparse)
+        assert 0 not in sparse[0]  # neuron 0 in layer 0 is active
 
         assert 1 in sparse
         assert 1 in sparse[1]  # neuron 1 in layer 1 is sparse
@@ -132,35 +143,29 @@ class TestNeuronSparsityMap:
         dead = sample_map.dead_neurons
 
         assert 0 in dead
-        assert 2 in dead[0]  # only neuron 2 in layer 0 is dead
-        assert 0 not in dead[0]  # neuron 0 is sparse but not dead
+        assert 4 in dead[0]  # only neuron 4 in layer 0 is dead
+        assert 2 not in dead[0]  # neuron 2 is sparse but not dead
 
     def test_graft_candidates(self, sample_map):
         """Should return neurons sparse enough for grafting."""
-        # Default threshold from config (0.8)
         candidates = sample_map.get_graft_candidates()
         assert 0 in candidates
         assert 1 in candidates
-
-        # Higher threshold
-        strict_candidates = sample_map.get_graft_candidates(threshold=0.95)
-        assert 0 in strict_candidates
-        assert 2 in strict_candidates[0]  # dead neuron has sparsity 1.0
 
     def test_layer_summary(self, sample_map):
         """Should compute correct layer statistics."""
         summary = sample_map.get_layer_summary(0)
 
-        assert summary["total_neurons"] == 3
-        assert summary["sparse_count"] == 2  # neurons 0 and 2
-        assert summary["dead_count"] == 1  # only neuron 2
+        assert summary["total_neurons"] == 5
+        assert summary["sparse_count"] == 3  # neurons 2, 3, 4
+        assert summary["dead_count"] == 1  # only neuron 4
 
     def test_overall_summary(self, sample_map):
         """Should compute correct overall statistics."""
         summary = sample_map.summary()
 
         assert summary["num_layers"] == 2
-        assert summary["total_neurons"] == 5
+        assert summary["total_neurons"] == 7
         assert summary["total_prompts"] == 100
 
 
@@ -179,7 +184,7 @@ class TestNeuronActivationCollector:
 
     def test_compute_sparsity_map(self):
         """Should compute correct statistics from collected activations."""
-        collector = NeuronActivationCollector(NeuronSparsityConfig(activation_threshold=0.1))
+        collector = NeuronActivationCollector()
 
         # Add samples where neuron 0 is always active, neuron 1 sometimes
         for _ in range(10):
@@ -198,9 +203,12 @@ class TestNeuronActivationCollector:
         neuron_0 = sparsity_map.stats[0][0]
         assert neuron_0.active_fraction == 1.0
 
-        # Neuron 1 should have 50% active fraction
+        # Neuron 1 active fraction follows the derived threshold.
         neuron_1 = sparsity_map.stats[0][1]
-        assert neuron_1.active_fraction == 0.5
+        threshold = sparsity_map.activation_threshold
+        values = [0.05] * 10 + [0.5] * 10
+        expected_active = sum(1 for v in values if v > threshold) / len(values)
+        assert neuron_1.active_fraction == expected_active
 
     def test_clear(self):
         """Should clear collected data."""
@@ -239,7 +247,8 @@ class TestCompareNeuronSparsity:
 
     def test_graft_candidate_identification(self):
         """Should identify neurons sparse in target but not source."""
-        config = NeuronSparsityConfig(sparsity_threshold=0.8)
+        backend = get_default_backend()
+        activation_threshold = machine_epsilon(backend, backend.array([1.0]))
 
         # Source: neuron 0 active, neuron 1 sparse
         source_stats = {
@@ -248,7 +257,11 @@ class TestCompareNeuronSparsity:
                 NeuronStats(0, 1, 0.1, 0.2, 0.0, 0.01, 0.1, 100),  # sparse
             ]
         }
-        source_map = NeuronSparsityMap(stats=source_stats, config=config, total_prompts=100)
+        source_map = NeuronSparsityMap(
+            stats=source_stats,
+            total_prompts=100,
+            activation_threshold=activation_threshold,
+        )
 
         # Target: neuron 0 sparse, neuron 1 active
         target_stats = {
@@ -257,7 +270,11 @@ class TestCompareNeuronSparsity:
                 NeuronStats(0, 1, 0.5, 1.0, 0.0, 0.1, 0.9, 100),  # active
             ]
         }
-        target_map = NeuronSparsityMap(stats=target_stats, config=config, total_prompts=100)
+        target_map = NeuronSparsityMap(
+            stats=target_stats,
+            total_prompts=100,
+            activation_threshold=activation_threshold,
+        )
 
         comparison = compare_neuron_sparsity(source_map, target_map)
 
@@ -290,6 +307,8 @@ class TestPropertyBasedTests:
     @settings(max_examples=100)
     def test_sparsity_plus_active_equals_one(self, active_fraction):
         """Sparsity + active_fraction should equal 1."""
+        backend = get_default_backend()
+        eps = machine_epsilon(backend, backend.array([1.0]))
         stats = NeuronStats(
             layer=0,
             neuron_idx=0,
@@ -301,4 +320,4 @@ class TestPropertyBasedTests:
             prompt_count=100,
         )
 
-        assert abs(stats.sparsity_score + stats.active_fraction - 1.0) < 1e-10
+        assert abs(stats.sparsity_score + stats.active_fraction - 1.0) <= eps

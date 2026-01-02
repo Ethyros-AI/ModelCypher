@@ -133,8 +133,8 @@ class VocabularyAnalyzer:
         return VocabularyStats(
             vocab_size=int(array.shape[0]),
             hidden_dim=int(array.shape[1]),
-            embedding_mean_norm=float(backend.to_numpy(mean_norm).item()),
-            embedding_std=float(backend.to_numpy(std_norm).item()),
+            embedding_mean_norm=float(backend.to_scalar(mean_norm)),
+            embedding_std=float(backend.to_scalar(std_norm)),
             tokenizer_type=tokenizer_type,
             special_token_count=special_token_count,
             has_tie_weights=has_tie_weights,

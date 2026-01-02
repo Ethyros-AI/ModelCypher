@@ -27,6 +27,7 @@ Ported 1:1 from the reference Swift implementation.
 from __future__ import annotations
 
 import math
+import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -35,8 +36,14 @@ from modelcypher.core.domain._backend import get_default_backend
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
+# Machine epsilon for float64 (native Python float)
+_MACHINE_EPS = sys.float_info.epsilon
+
+# Smallest positive float for log safety (prevents log(0))
+_LOG_SAFE_MIN = sys.float_info.min
+
 # Minimum temperature to avoid division by zero
-MINIMUM_TEMPERATURE: float = 1e-6
+MINIMUM_TEMPERATURE: float = _MACHINE_EPS
 
 
 @dataclass(frozen=True)
@@ -478,7 +485,7 @@ class RegimeStateDetector:
         scaled = logits_f32 / max(temperature, MINIMUM_TEMPERATURE)
         probs = b.softmax(scaled, axis=-1)
 
-        log_probs = b.log(probs + 1e-10)
+        log_probs = b.log(probs + _LOG_SAFE_MIN)
         entropy = -b.sum(probs * log_probs, axis=-1)
         b.eval(entropy)
 

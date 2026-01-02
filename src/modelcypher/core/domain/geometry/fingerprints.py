@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.ports.backend import Backend
 
 # Data Structures mimicking Swift ManifoldStitcher.ModelFingerprints
@@ -143,9 +144,9 @@ class ModelFingerprintsProjection:
         # 3. Normalize & Center
         # L2 Normalize rows
         norms = self._backend.norm(X, axis=1, keepdims=True)
-        # Avoid division by zero
-        self._backend.ones_like(X)
-        mask = norms > 1e-9
+        # Avoid division by zero using dtype-aware epsilon
+        div_eps = division_epsilon(self._backend, norms)
+        mask = norms > div_eps
         X = self._backend.where(mask, X / norms, X)
 
         # Center columns (Mean centering)

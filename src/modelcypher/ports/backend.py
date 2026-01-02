@@ -193,6 +193,22 @@ class Backend(Protocol):
     # --- Type Conversion ---
     def astype(self, array: Array, dtype: Any) -> Array: ...
     def to_numpy(self, array: Array) -> Any: ...
+    def to_scalar(self, array: Array) -> float | int:
+        """Extract a scalar from a 0-d or single-element array.
+
+        Faster than to_numpy().item() - skips numpy conversion entirely.
+        Array must be evaluated first (call eval() before to_scalar()).
+
+        Args:
+            array: A scalar (0-d) or single-element array.
+
+        Returns:
+            Python float or int.
+
+        Raises:
+            ValueError: If array has more than one element.
+        """
+        ...
     def finfo(self, dtype: Any | None = None) -> FloatInfo:
         """Return floating-point precision info for the given dtype.
 

@@ -350,7 +350,7 @@ class GeneralizedProcrustes:
                 for i in range(model_count):
                     det_val = b.det(Rs[i])
                     b.eval(det_val)
-                    if float(b.to_numpy(det_val).item()) < 0:
+                    if float(b.to_scalar(det_val)) < 0:
                         U_i = U_batch[i]
                         U_fixed = b.concatenate([U_i[:, :-1], -U_i[:, -1:]], axis=1)
                         R_fixed = b.matmul(U_fixed, Vt_batch[i])
@@ -662,7 +662,7 @@ class RotationContinuityAnalyzer:
             if not config.allow_reflections:
                 det_val = backend.det(rotation)
                 backend.eval(det_val)
-                if float(backend.to_numpy(det_val).item()) < 0:
+                if float(backend.to_scalar(det_val)) < 0:
                     U_fixed = backend.concatenate([U[:, :-1], -U[:, -1:]], axis=1)
                     rotation = backend.matmul(U_fixed, Vt)
 
@@ -679,7 +679,7 @@ class RotationContinuityAnalyzer:
                 R_diff = backend.matmul(rotation, backend.transpose(prev_rotation))
                 trace_arr = backend.sum(backend.diag(R_diff))
                 backend.eval(trace_arr)
-                trace = float(backend.to_numpy(trace_arr).item())
+                trace = float(backend.to_scalar(trace_arr))
                 # Clamp for numerical stability
                 cos_angle = (trace - 1) / 2
                 cos_angle = max(-1.0, min(1.0, cos_angle))
@@ -735,7 +735,7 @@ class RotationContinuityAnalyzer:
         if not config.allow_reflections:
             det_val = backend.det(global_rotation)
             backend.eval(det_val)
-            if float(backend.to_numpy(det_val).item()) < 0:
+            if float(backend.to_scalar(det_val)) < 0:
                 U_g_fixed = backend.concatenate([U_g[:, :-1], -U_g[:, -1:]], axis=1)
                 global_rotation = backend.matmul(U_g_fixed, Vt_g)
 

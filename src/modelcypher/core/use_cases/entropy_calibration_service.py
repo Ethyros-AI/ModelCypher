@@ -32,11 +32,18 @@ from __future__ import annotations
 import json
 import logging
 import math
+import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+# Machine epsilon for float64 (native Python float)
+_MACHINE_EPS = sys.float_info.epsilon
+
+# Smallest positive float for log safety (prevents log(0))
+_LOG_SAFE_MIN = sys.float_info.min
 
 logger = logging.getLogger(__name__)
 
@@ -177,8 +184,8 @@ class EntropyCalibrationResult:
         Returns:
             Number of standard deviations from the mean.
         """
-        if self.std_dev < 1e-10:
-            return 0.0 if abs(entropy - self.mean) < 1e-10 else float("inf")
+        if self.std_dev < _MACHINE_EPS:
+            return 0.0 if abs(entropy - self.mean) < _MACHINE_EPS else float("inf")
         return (entropy - self.mean) / self.std_dev
 
     def is_outlier(self, entropy: float, sigma: float) -> bool:
@@ -475,8 +482,8 @@ class EntropyCalibrationService:
         probs = exp_logits / sum_exp
 
         # Shannon entropy: -sum(p * log(p))
-        # Add small epsilon to avoid log(0)
-        log_probs = mx.log(probs + 1e-10)
+        # Add smallest positive float to avoid log(0)
+        log_probs = mx.log(probs + _LOG_SAFE_MIN)
         entropy = -mx.sum(probs * log_probs)
 
         mx.eval(entropy)

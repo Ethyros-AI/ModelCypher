@@ -497,8 +497,8 @@ class GeometryMetricsService:
         geo_mean = backend.mean(geo_diff)
         geo_max = backend.max(geo_diff)
         backend.eval(geo_mean, geo_max)
-        geodesic_mean_abs_diff = float(backend.to_numpy(geo_mean).item())
-        geodesic_max_abs_diff = float(backend.to_numpy(geo_max).item())
+        geodesic_mean_abs_diff = float(backend.to_scalar(geo_mean))
+        geodesic_max_abs_diff = float(backend.to_scalar(geo_max))
 
         times = (
             tuple(heat_times)

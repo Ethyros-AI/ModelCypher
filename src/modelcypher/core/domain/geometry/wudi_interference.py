@@ -107,7 +107,7 @@ def subspace_overlap(
     cosine = dot / denom
     overlap = cosine * cosine
     b.eval(overlap)
-    return float(b.to_numpy(overlap).item())
+    return float(b.to_scalar(overlap))
 
 
 def compute_wudi_interference(
@@ -150,7 +150,7 @@ def compute_wudi_interference(
             mean_overlap = 0.0
             max_group_overlap = 0.0
 
-        loss_val = float(b.to_numpy(loss_arr).item())
+        loss_val = float(b.to_scalar(loss_arr))
         group_results.append(
             WUDIGroupResult(
                 shape=shape,

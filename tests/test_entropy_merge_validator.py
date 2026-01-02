@@ -92,8 +92,10 @@ class TestModelEntropyProfile:
         profile = ModelEntropyProfile.from_layer_profiles("test_model", layers)
 
         assert profile.model_name == "test_model"
-        assert profile.mean_entropy == pytest.approx(2.0)
-        assert profile.entropy_variance == pytest.approx(2.0 / 3.0)
+        assert abs(profile.mean_entropy - 2.0) < _epsilon(profile.mean_entropy, 2.0)
+        assert abs(profile.entropy_variance - (2.0 / 3.0)) < _epsilon(
+            profile.entropy_variance, 2.0 / 3.0
+        )
 
     def test_empty_layers_returns_defaults(self) -> None:
         profile = ModelEntropyProfile.from_layer_profiles("empty", {})
@@ -134,8 +136,12 @@ class TestLayerMergeValidation:
         expected_delta = 0.5
         expected_ratio = expected_delta / (expected_entropy + eps)
 
-        assert validation.entropy_delta == pytest.approx(expected_delta)
-        assert validation.entropy_ratio == pytest.approx(expected_ratio)
+        assert abs(validation.entropy_delta - expected_delta) < _epsilon(
+            validation.entropy_delta, expected_delta
+        )
+        assert abs(validation.entropy_ratio - expected_ratio) < _epsilon(
+            validation.entropy_ratio, expected_ratio
+        )
 
     def test_ratio_ordering_reflects_deviation(self) -> None:
         stable = LayerMergeValidation.compute("l0", 2.0, 2.0, 2.0)
@@ -163,9 +169,15 @@ class TestMergeEntropyValidation:
         max_ratio = max(v.entropy_ratio for v in layers.values())
         mean_retention = sum(v.knowledge_retention_score for v in layers.values()) / len(layers)
 
-        assert validation.mean_entropy_ratio == pytest.approx(mean_ratio)
-        assert validation.max_entropy_ratio == pytest.approx(max_ratio)
-        assert validation.mean_knowledge_retention == pytest.approx(mean_retention)
+        assert abs(validation.mean_entropy_ratio - mean_ratio) < _epsilon(
+            validation.mean_entropy_ratio, mean_ratio
+        )
+        assert abs(validation.max_entropy_ratio - max_ratio) < _epsilon(
+            validation.max_entropy_ratio, max_ratio
+        )
+        assert abs(validation.mean_knowledge_retention - mean_retention) < _epsilon(
+            validation.mean_knowledge_retention, mean_retention
+        )
 
     def test_single_layer_aggregation(self) -> None:
         layer = LayerMergeValidation.compute("layers.0", 2.0, 2.0, 5.0)
@@ -173,11 +185,15 @@ class TestMergeEntropyValidation:
             "source", "target", {"layers.0": layer}
         )
 
-        assert validation.mean_entropy_ratio == pytest.approx(layer.entropy_ratio)
-        assert validation.max_entropy_ratio == pytest.approx(layer.entropy_ratio)
-        assert validation.mean_knowledge_retention == pytest.approx(
-            layer.knowledge_retention_score
+        assert abs(validation.mean_entropy_ratio - layer.entropy_ratio) < _epsilon(
+            validation.mean_entropy_ratio, layer.entropy_ratio
         )
+        assert abs(validation.max_entropy_ratio - layer.entropy_ratio) < _epsilon(
+            validation.max_entropy_ratio, layer.entropy_ratio
+        )
+        assert abs(
+            validation.mean_knowledge_retention - layer.knowledge_retention_score
+        ) < _epsilon(validation.mean_knowledge_retention, layer.knowledge_retention_score)
 
     def test_layers_by_entropy_ratio(self) -> None:
         layers = {
@@ -219,7 +235,7 @@ class TestEntropyMergeValidator:
         profile = validator.create_layer_profile("layers.0", entropies)
 
         assert profile.layer_name == "layers.0"
-        assert profile.mean_entropy == pytest.approx(1.0)
+        assert abs(profile.mean_entropy - 1.0) < _epsilon(profile.mean_entropy, 1.0)
 
     def test_create_layer_profile_empty(self, validator: EntropyMergeValidator) -> None:
         profile = validator.create_layer_profile("layers.0", [])
@@ -250,7 +266,9 @@ class TestEntropyMergeValidator:
         mean_ratio = sum(
             v.entropy_ratio for v in validation.layer_validations.values()
         ) / len(validation.layer_validations)
-        assert validation.mean_entropy_ratio == pytest.approx(mean_ratio)
+        assert abs(validation.mean_entropy_ratio - mean_ratio) < _epsilon(
+            validation.mean_entropy_ratio, mean_ratio
+        )
 
     def test_validate_merge_missing_layers(self, validator: EntropyMergeValidator) -> None:
         source_entropies = {"layers.0": 2.0, "layers.1": 2.5}

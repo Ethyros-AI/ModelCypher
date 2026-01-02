@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.entropy.entropy_tracker import (
     EntropySample,
     EntropyTransition,
@@ -29,6 +30,12 @@ from modelcypher.core.domain.entropy.model_state_classifier import (
     CalibratedBaseline,
     ModelStateSignals,
 )
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
+
+def _eps(value: float) -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array([value]))
 
 
 class TestEntropyTransition:
@@ -47,7 +54,7 @@ class TestEntropyTransition:
         )
 
         assert transition.entropy_delta == 1.5
-        assert transition.variance_delta == pytest.approx(0.1)
+        assert abs(transition.variance_delta - 0.1) < _eps(transition.variance_delta)
         assert transition.z_score_delta == 1.5
 
 
@@ -114,11 +121,11 @@ class TestCalibratedBaseline:
 
     def test_z_score_above_mean(self, baseline):
         """Test z-score positive above mean."""
-        assert baseline.z_score(3.0) == pytest.approx(1.0)
+        assert abs(baseline.z_score(3.0) - 1.0) < _eps(baseline.z_score(3.0))
 
     def test_z_score_below_mean(self, baseline):
         """Test z-score negative below mean."""
-        assert baseline.z_score(2.0) == pytest.approx(-1.0)
+        assert abs(baseline.z_score(2.0) + 1.0) < _eps(baseline.z_score(2.0))
 
     def test_z_score_zero_std_dev(self):
         """Test z-score handles zero std_dev gracefully."""

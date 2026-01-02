@@ -119,6 +119,23 @@ class CUDABackend(Backend):
     def to_numpy(self, array: Array) -> Any:
         return array.detach().cpu().numpy()
 
+    def to_scalar(self, array: Array) -> float | int:
+        """Extract a scalar from a 0-d or single-element tensor.
+
+        Faster than to_numpy().item() - uses PyTorch's native .item() directly,
+        skipping CPU transfer and numpy conversion.
+
+        Args:
+            array: A scalar (0-d) or single-element tensor.
+
+        Returns:
+            Python float or int.
+
+        Raises:
+            ValueError: If tensor has more than one element.
+        """
+        return array.item()
+
     def finfo(self, dtype: Any | None = None) -> FloatInfo:
         """Return floating-point precision info for the given dtype.
 
