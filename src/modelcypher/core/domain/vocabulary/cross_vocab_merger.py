@@ -19,7 +19,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -54,6 +55,12 @@ class CrossVocabMergeConfig:
 
 
 @dataclass
+class AlignmentMethod(str, Enum):
+    VOCABULARY = "vocabulary"
+    INDEX = "index"
+
+
+@dataclass
 class CrossVocabMergeResult:
     merged_embeddings: "Array"
     output_vocab_size: int
@@ -63,10 +70,10 @@ class CrossVocabMergeResult:
     alignment: VocabularyAlignment
     source_stats: VocabularyStats
     target_stats: VocabularyStats
+    alignment_method: AlignmentMethod
     tokens_preserved_from_source: int
     tokens_preserved_from_target: int
     tokens_interpolated: int
-    warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -77,10 +84,10 @@ class CrossVocabMergeResult:
             "vocabulary_alignment": self.alignment.to_dict(),
             "source_stats": self.source_stats.to_dict(),
             "target_stats": self.target_stats.to_dict(),
+            "alignment_method": self.alignment_method.value,
             "tokens_preserved_from_source": self.tokens_preserved_from_source,
             "tokens_preserved_from_target": self.tokens_preserved_from_target,
             "tokens_interpolated": self.tokens_interpolated,
-            "warnings": list(self.warnings),
         }
 
 
@@ -112,15 +119,15 @@ class CrossVocabMerger:
         target_arr = backend.array(target_embeddings)
         backend.eval(source_arr, target_arr)
 
-        warnings: list[str] = []
         if source_vocab is None or target_vocab is None:
             alignment_map = self._build_index_alignment(
                 int(source_arr.shape[0]),
                 int(target_arr.shape[0]),
             )
-            warnings.append("Index-based alignment used (no vocab dictionaries provided)")
+            alignment_method = AlignmentMethod.INDEX
         else:
             alignment_map = build_alignment_from_vocabs(source_vocab, target_vocab)
+            alignment_method = AlignmentMethod.VOCABULARY
 
         shared_indices = self._get_shared_indices(alignment_map)
         projection_result = self._projector.project(
@@ -154,10 +161,10 @@ class CrossVocabMerger:
             alignment=alignment,
             source_stats=source_stats,
             target_stats=target_stats,
+            alignment_method=alignment_method,
             tokens_preserved_from_source=int(mapped_count),
             tokens_preserved_from_target=int(target_arr.shape[0]),
             tokens_interpolated=int(alignment_map.interpolated_count),
-            warnings=warnings,
         )
 
     def analyze_merge_quality(self, result: CrossVocabMergeResult) -> dict[str, Any]:
@@ -177,7 +184,7 @@ class CrossVocabMerger:
             "projection_reconstruction_error": result.projection_result.reconstruction_error,
             "alignment_score": result.alignment.alignment_score,
             "vocab_overlap_ratio": result.alignment.vocab_overlap_ratio,
-            "warnings_count": len(result.warnings),
+            "alignment_method": result.alignment_method.value,
         }
 
     def _is_special_token(self, token: str) -> bool:

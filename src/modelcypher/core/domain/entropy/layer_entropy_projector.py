@@ -60,6 +60,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import safe_log_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -165,8 +166,6 @@ class LayerEntropyProjector:
     ----------
     backend : Backend, optional
         Compute backend. Defaults to MLXBackend.
-    epsilon : float, optional
-        Numerical stability constant for log operations.
 
     Examples
     --------
@@ -185,10 +184,8 @@ class LayerEntropyProjector:
     def __init__(
         self,
         backend: "Backend | None" = None,
-        epsilon: float = 1e-10,
     ) -> None:
         self._backend = backend or get_default_backend()
-        self._epsilon = epsilon
         self._unembedding_matrix: "Array | None" = None
         self._vocab_size: int = 0
         self._hidden_dim: int = 0
@@ -340,7 +337,8 @@ class LayerEntropyProjector:
         probs = exp_shifted / sum_exp
 
         # Shannon entropy: -sum(p * log(p))
-        log_probs = b.log(probs + self._epsilon)
+        eps = safe_log_epsilon(b, probs)
+        log_probs = b.log(probs + eps)
         entropy = -b.sum(probs * log_probs)
 
         # Evaluate and convert

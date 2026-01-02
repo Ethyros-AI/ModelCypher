@@ -18,7 +18,7 @@
 """
 Tests for DifferentialEntropyDetector.
 
-This tests the two-pass entropy detection for unsafe prompt patterns.
+This tests the two-pass entropy detection for cooling patterns.
 Tests raw measurements - caller applies thresholds for classification.
 """
 
@@ -68,33 +68,36 @@ class TestDifferentialEntropyConfig:
 
     def test_from_calibration_results(self) -> None:
         """Test deriving config from calibration data."""
-        # Unsafe samples all negative
-        unsafe_samples = [-0.15, -0.20, -0.18, -0.12, -0.25]
-        # Benign samples mostly positive
-        benign_samples = [0.05, 0.10, -0.02, 0.08, 0.15]
+        # Cooling samples are negative
+        cooling_samples = [-0.15, -0.20, -0.18, -0.12, -0.25]
+        # Reference samples mostly positive
+        reference_samples = [0.05, 0.10, -0.02, 0.08, 0.15]
         # Baseline entropies
         baseline_entropies = [0.5, 0.8, 1.2, 0.9, 0.7, 0.6, 0.4, 0.55, 0.65, 0.75]
 
         config = DifferentialEntropyConfig.from_calibration_results(
-            unsafe_delta_h_samples=unsafe_samples,
-            benign_delta_h_samples=benign_samples,
+            cooling_delta_h_samples=cooling_samples,
+            reference_delta_h_samples=reference_samples,
             baseline_entropies=baseline_entropies,
-            target_recall=0.80,  # 80% recall
+            target_capture=0.80,  # 80% capture
         )
 
-        # Threshold should be set so 80% of unsafe samples are below it
-        # Sorted unsafe: [-0.25, -0.20, -0.18, -0.15, -0.12]
+        # Threshold should be set so 80% of cooling samples are below it
+        # Sorted cooling: [-0.25, -0.20, -0.18, -0.15, -0.12]
         # 80% index = 4 -> -0.12
         assert config.delta_h_threshold == -0.12
         assert config.minimum_baseline_entropy > 0
 
     def test_from_calibration_empty_raises(self) -> None:
         """Test that empty calibration data raises error."""
-        with pytest.raises(ValueError, match="Both unsafe and benign samples required"):
+        with pytest.raises(
+            ValueError, match="Both cooling and reference samples required"
+        ):
             DifferentialEntropyConfig.from_calibration_results(
-                unsafe_delta_h_samples=[],
-                benign_delta_h_samples=[0.1, 0.2],
+                cooling_delta_h_samples=[],
+                reference_delta_h_samples=[0.1, 0.2],
                 baseline_entropies=[0.5],
+                target_capture=0.9,
             )
 
 
@@ -149,8 +152,8 @@ class TestDetectorMeasurements:
         assert result.is_cooling
         assert not result.is_heating
 
-    def test_is_unsafe_for_threshold_strong_cooling(self) -> None:
-        """Test unsafe detection with strong cooling."""
+    def test_is_below_threshold_strong_cooling(self) -> None:
+        """Test below-threshold detection with strong cooling."""
         detector = DifferentialEntropyDetector(TEST_CONFIG)
         result = detector.detect_from_measurements(
             baseline_entropy=2.0,
@@ -159,13 +162,13 @@ class TestDetectorMeasurements:
             intensity_token_count=10,
         )
         # delta = -0.5 is below threshold -0.1
-        assert result.is_unsafe_for_threshold(
+        assert result.is_below_delta_h_threshold(
             delta_h_threshold=-0.1,
             minimum_baseline_entropy=0.01,
         )
 
-    def test_is_unsafe_for_threshold_slight_cooling(self) -> None:
-        """Test that slight cooling doesn't trigger unsafe."""
+    def test_is_below_threshold_slight_cooling(self) -> None:
+        """Test that slight cooling doesn't fall below threshold."""
         detector = DifferentialEntropyDetector(TEST_CONFIG)
         result = detector.detect_from_measurements(
             baseline_entropy=2.0,
@@ -174,12 +177,12 @@ class TestDetectorMeasurements:
             intensity_token_count=10,
         )
         # delta = -0.05 is above threshold -0.1
-        assert not result.is_unsafe_for_threshold(
+        assert not result.is_below_delta_h_threshold(
             delta_h_threshold=-0.1,
             minimum_baseline_entropy=0.01,
         )
 
-    def test_is_unsafe_for_threshold_low_baseline(self) -> None:
+    def test_is_below_threshold_low_baseline(self) -> None:
         """Test that low baseline entropy returns False (indeterminate)."""
         detector = DifferentialEntropyDetector(TEST_CONFIG)
         result = detector.detect_from_measurements(
@@ -189,7 +192,7 @@ class TestDetectorMeasurements:
             intensity_token_count=10,
         )
         # Low baseline = indeterminate, returns False
-        assert not result.is_unsafe_for_threshold(
+        assert not result.is_below_delta_h_threshold(
             delta_h_threshold=-0.1,
             minimum_baseline_entropy=0.01,
         )
@@ -254,7 +257,7 @@ async def test_detect_with_mock_measure_fn() -> None:
     assert result.intensity_entropy == 1.5
     assert result.delta_h == -0.5
     assert result.is_cooling
-    assert result.is_unsafe_for_threshold(
+    assert result.is_below_delta_h_threshold(
         delta_h_threshold=-0.1,
         minimum_baseline_entropy=0.01,
     )
@@ -262,8 +265,8 @@ async def test_detect_with_mock_measure_fn() -> None:
 
 
 @pytest.mark.asyncio
-async def test_detect_benign_prompt() -> None:
-    """Test detection with benign prompt (entropy increases with CAPS)."""
+async def test_detect_heating_prompt() -> None:
+    """Test detection with heating prompt (entropy increases with CAPS)."""
 
     async def mock_measure(prompt: str) -> VariantMeasurement:
         if prompt.isupper():
@@ -280,7 +283,7 @@ async def test_detect_benign_prompt() -> None:
 
     assert result.delta_h == 0.5
     assert result.is_heating
-    assert not result.is_unsafe_for_threshold(
+    assert not result.is_below_delta_h_threshold(
         delta_h_threshold=-0.1,
         minimum_baseline_entropy=0.01,
     )
@@ -414,8 +417,8 @@ class TestBatchDetectionStatistics:
         assert stats.max_delta_h == 0.5
         assert abs(stats.total_processing_time - 0.3) < 0.001
 
-    def test_unsafe_count_for_threshold(self) -> None:
-        """Test counting unsafe results with given threshold."""
+    def test_count_below_threshold(self) -> None:
+        """Test counting below-threshold results with given threshold."""
         results = [
             DetectionResult(
                 baseline_entropy=2.0,
@@ -449,12 +452,12 @@ class TestBatchDetectionStatistics:
         stats = BatchDetectionStatistics.compute(results)
 
         # Only one result has delta_h <= -0.1
-        unsafe_count = stats.unsafe_count_for_threshold(
+        below_threshold_count = stats.count_below_delta_h_threshold(
             results=results,
             delta_h_threshold=-0.1,
             minimum_baseline_entropy=0.01,
         )
-        assert unsafe_count == 1
+        assert below_threshold_count == 1
 
 
 # =============================================================================

@@ -27,6 +27,7 @@ from modelcypher.core.domain.vocabulary.embedding_projector import (
     ProjectionStrategy,
 )
 from modelcypher.core.domain.vocabulary.cross_vocab_merger import (
+    AlignmentMethod,
     CrossVocabMerger,
     CrossVocabMergeConfig,
 )
@@ -389,8 +390,7 @@ class TestCrossVocabMerger:
         # Output uses target vocab size
         assert result.output_vocab_size == 1000
         assert result.output_hidden_dim == 64
-        # Should have warnings about index-based alignment
-        assert any("index-based" in w.lower() for w in result.warnings)
+        assert result.alignment_method == AlignmentMethod.INDEX
 
     def test_merge_with_vocab_dicts(self, backend: "Backend") -> None:
         """Merge with vocab dicts uses string-based alignment."""

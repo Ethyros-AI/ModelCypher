@@ -15,13 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Regex Content Filter.
+"""Regex Content Filter.
 
-Fast local pattern filter for dangerous content (destructive commands, prompt injection, PII)
-that runs before LLM moderation.
-
-Ported 1:1 from the reference Swift implementation.
+Fast local pattern matcher for rule-based content detection that runs before
+LLM moderation.
 """
 
 from __future__ import annotations
@@ -46,11 +43,6 @@ class SafetyCategory(str, Enum):
     HARASSMENT = "harassment"
 
 
-class SafetyStatus(str, Enum):
-    REJECTED = "rejected"
-    FLAGGED_FOR_REVIEW = "flagged_for_review"
-
-
 class DatasetPurpose(str, Enum):
     GENERAL = "general"
     CODE_TRAINING = "code_training"
@@ -66,7 +58,7 @@ class DatasetPurpose(str, Enum):
 
 @dataclass(frozen=True)
 class ContentFilterResult:
-    status: SafetyStatus
+    action: RuleAction
     reason: str
     category: SafetyCategory | None
     rule_id: str
@@ -124,14 +116,8 @@ class RegexContentFilter:
                     if domain and domain.lower() in self._pii_email_whitelist:
                         continue
 
-                status = (
-                    SafetyStatus.REJECTED
-                    if rule.action == RuleAction.REJECT
-                    else SafetyStatus.FLAGGED_FOR_REVIEW
-                )
-
                 return ContentFilterResult(
-                    status=status,
+                    action=rule.action,
                     reason=rule.reason,
                     category=rule.category,
                     rule_id=rule.id,

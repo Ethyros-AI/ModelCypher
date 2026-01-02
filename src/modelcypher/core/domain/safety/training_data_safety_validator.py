@@ -149,10 +149,10 @@ class TrainingDataSafetyValidator:
         )
 
         if regex_result is not None:
-            # Map regex SafetyStatus to safety_models SafetyStatus
+            # Map regex RuleAction to safety_models SafetyStatus
             status = (
                 SafetyStatus.REJECTED
-                if regex_result.status.value == "rejected"
+                if regex_result.action.value == "reject"
                 else SafetyStatus.FLAGGED_FOR_REVIEW
             )
             result = SafetyValidationResult(

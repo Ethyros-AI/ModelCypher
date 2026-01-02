@@ -21,7 +21,7 @@ import unittest
 from modelcypher.core.domain.safety.regex_content_filter import (
     RegexContentFilter,
     SafetyCategory,
-    SafetyStatus,
+    RuleAction,
 )
 
 
@@ -38,7 +38,7 @@ class TestRegexContentFilter(unittest.TestCase):
         text = "To delete everything, run: sudo rm -rf / --no-preserve-root"
         result = self.filter.check(text)
         self.assertIsNotNone(result)
-        self.assertEqual(result.status, SafetyStatus.REJECTED)
+        self.assertEqual(result.action, RuleAction.REJECT)
         self.assertEqual(result.category, SafetyCategory.DANGEROUS_CODE)
         self.assertIn("Destructive shell command", result.reason)
 

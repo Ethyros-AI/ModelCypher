@@ -21,6 +21,7 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.vocabulary.cross_vocab_merger import (
+    AlignmentMethod,
     CrossVocabMergeConfig,
     CrossVocabMerger,
 )
@@ -287,10 +288,10 @@ class TestCrossVocabMergerMerge:
         assert result.alignment is not None
         assert result.source_stats is not None
         assert result.target_stats is not None
+        assert isinstance(result.alignment_method, AlignmentMethod)
         assert isinstance(result.tokens_preserved_from_source, int)
         assert isinstance(result.tokens_preserved_from_target, int)
         assert isinstance(result.tokens_interpolated, int)
-        assert isinstance(result.warnings, list)
 
     def test_merge_with_vocab_dicts(self, merger, backend):
         backend.random_seed(42)
@@ -306,15 +307,14 @@ class TestCrossVocabMergerMerge:
 
         assert result.merged_embeddings.shape == (10, 32)
 
-    def test_merge_warnings_without_vocab_dicts(self, merger, backend):
+    def test_merge_alignment_method_without_vocab_dicts(self, merger, backend):
         backend.random_seed(42)
         source = backend.random_normal((10, 32))
         target = backend.random_normal((10, 32))
 
         result = merger.merge(source, target)
 
-        # Should warn about using index-based alignment
-        assert any("index-based" in w.lower() for w in result.warnings)
+        assert result.alignment_method == AlignmentMethod.INDEX
 
 
 class TestCrossVocabMergeResultToDict:
@@ -376,7 +376,7 @@ class TestCrossVocabMergeResultToDict:
         assert "tokens_preserved_from_source" in d
         assert "tokens_preserved_from_target" in d
         assert "tokens_interpolated" in d
-        assert "warnings" in d
+        assert "alignment_method" in d
 
 
 class TestCrossVocabMergerAnalyzeMergeQuality:
@@ -434,7 +434,7 @@ class TestCrossVocabMergerAnalyzeMergeQuality:
         assert "alignment_score" in quality
         assert "vocab_overlap_ratio" in quality
 
-    def test_contains_warnings_count(self, merger, backend):
+    def test_contains_alignment_method(self, merger, backend):
         backend.random_seed(42)
         source = backend.random_normal((10, 16))
         target = backend.random_normal((10, 16))
@@ -442,5 +442,4 @@ class TestCrossVocabMergerAnalyzeMergeQuality:
         result = merger.merge(source, target)
         quality = merger.analyze_merge_quality(result)
 
-        assert "warnings_count" in quality
-        assert isinstance(quality["warnings_count"], int)
+        assert "alignment_method" in quality

@@ -48,6 +48,11 @@ from modelcypher.core.domain.entropy.layer_entropy_projector import (
     LayerEntropyResult,
     ModelLayerEntropyProfile,
 )
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
+
+def _eps(backend) -> float:
+    return machine_epsilon(backend, backend.array([1.0]))
 
 
 class TestLayerEntropyResult:
@@ -111,8 +116,9 @@ class TestModelLayerEntropyProfile:
         )
 
         normalized = profile.normalized_trajectory()
+        eps = _eps(get_default_backend())
         assert len(normalized) == 1
-        assert abs(normalized[0] - 0.5) < 1e-6
+        assert abs(normalized[0] - 0.5) <= eps * max(1.0, abs(normalized[0]))
 
 
 class TestLayerEntropyProjector:
@@ -129,11 +135,10 @@ class TestLayerEntropyProjector:
         return LayerEntropyProjector(backend=backend)
 
     def test_initialization(self, backend):
-        """Should initialize with backend and epsilon."""
-        projector = LayerEntropyProjector(backend=backend, epsilon=1e-10)
+        """Should initialize with backend."""
+        projector = LayerEntropyProjector(backend=backend)
 
         assert projector._backend is backend
-        assert projector._epsilon == 1e-10
         assert projector._unembedding_matrix is None
 
     def test_uniform_logits_gives_max_entropy(self, projector, backend):
@@ -155,7 +160,8 @@ class TestLayerEntropyProjector:
 
         # Entropy of uniform distribution = log(vocab_size)
         expected = math.log(vocab_size)
-        assert abs(entropy - expected) < 0.1  # Allow some tolerance
+        eps = _eps(backend)
+        assert abs(entropy - expected) <= eps * max(1.0, expected)
 
     def test_concentrated_logits_gives_low_entropy(self, projector, backend):
         """One-hot distribution should give near-zero entropy."""
@@ -182,7 +188,9 @@ class TestLayerEntropyProjector:
         entropy, _ = projector.compute_layer_entropy(hidden_state)
 
         # Entropy should be very low (near 0) for concentrated distribution
-        assert entropy < 0.1
+        eps = _eps(backend)
+        max_entropy = math.log(vocab_size)
+        assert entropy <= eps * max(1.0, max_entropy)
 
     def test_flatten_to_hidden_3d(self, projector, backend):
         """Should extract last token from [batch, seq, hidden] tensor."""
@@ -196,8 +204,12 @@ class TestLayerEntropyProjector:
         # Should be last token of batch 0
         expected = [4.0, 5.0, 6.0]
         assert flattened.shape == (3,)
+        eps = _eps(backend)
         flattened_np = backend.to_numpy(flattened)
-        assert all(abs(flattened_np[i] - expected[i]) < 1e-6 for i in range(3))
+        assert all(
+            abs(flattened_np[i] - expected[i]) <= eps * max(1.0, abs(expected[i]))
+            for i in range(3)
+        )
 
     def test_flatten_to_hidden_2d(self, projector, backend):
         """Should extract last token from [seq, hidden] tensor."""
@@ -210,8 +222,12 @@ class TestLayerEntropyProjector:
 
         expected = [4.0, 5.0, 6.0]
         assert flattened.shape == (3,)
+        eps = _eps(backend)
         flattened_np = backend.to_numpy(flattened)
-        assert all(abs(flattened_np[i] - expected[i]) < 1e-6 for i in range(3))
+        assert all(
+            abs(flattened_np[i] - expected[i]) <= eps * max(1.0, abs(expected[i]))
+            for i in range(3)
+        )
 
     def test_flatten_to_hidden_1d(self, projector, backend):
         """Should return 1D tensor as-is."""
@@ -221,8 +237,12 @@ class TestLayerEntropyProjector:
 
         expected = [1.0, 2.0, 3.0]
         assert flattened.shape == (3,)
+        eps = _eps(backend)
         flattened_np = backend.to_numpy(flattened)
-        assert all(abs(flattened_np[i] - expected[i]) < 1e-6 for i in range(3))
+        assert all(
+            abs(flattened_np[i] - expected[i]) <= eps * max(1.0, abs(expected[i]))
+            for i in range(3)
+        )
 
     def test_compute_layer_entropy_requires_unembedding(self, projector, backend):
         """Should raise error if unembedding matrix not set."""
@@ -271,8 +291,10 @@ class TestLayerEntropyProjector:
 
         assert isinstance(entropy, float)
         assert isinstance(variance, float)
-        assert entropy >= 0
-        assert entropy <= math.log(vocab_size) + 0.1  # Allow small tolerance
+        eps = _eps(backend)
+        max_entropy = math.log(vocab_size)
+        assert entropy >= -eps
+        assert entropy <= max_entropy + eps * max(1.0, max_entropy)
 
 
 class TestLayerEntropyProjectorIntegration:

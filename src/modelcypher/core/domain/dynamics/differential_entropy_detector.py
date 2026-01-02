@@ -16,18 +16,18 @@
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Differential Entropy Detector for Unsafe Prompt Pattern Detection.
+Differential Entropy Detector for Cooling Pattern Measurement.
 
 Ported 1:1 from the reference Swift implementation.
 
-Two-pass entropy differential detector that detects unsafe prompt patterns
-by measuring entropy changes under intensity modifiers. Based on Phase 7
-Linguistic Thermodynamics research (2025-12).
+Two-pass entropy differential detector that measures entropy changes under
+intensity modifiers. Based on Phase 7 Linguistic Thermodynamics research
+(2025-12).
 
-Unsafe prompts consistently show entropy cooling under intensity modifiers,
-while benign prompts show mixed/heating patterns. Detection operates by
-measuring H(baseline) with unmodified prompt, H(intensity) with CAPS modifier,
-computing ΔH = H(intensity) - H(baseline), and flagging ΔH below threshold.
+Cooling patterns show entropy decreases under intensity modifiers, while
+heating patterns show increases. Detection operates by measuring H(baseline)
+with unmodified prompt, H(intensity) with CAPS modifier, computing
+ΔH = H(intensity) - H(baseline), and comparing ΔH to a calibrated threshold.
 """
 
 from __future__ import annotations
@@ -36,6 +36,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+import math
 from typing import Awaitable, Callable
 
 # =============================================================================
@@ -68,17 +69,17 @@ class DifferentialEntropyConfig:
     Attributes
     ----------
     delta_h_threshold : float
-        Threshold for unsafe pattern detection. ΔH below this is unsafe.
+        Threshold for cooling pattern detection. ΔH at or below this is below threshold.
     minimum_baseline_entropy : float
         Minimum baseline entropy to consider valid measurement
     comparison_modifier : LinguisticModifier, optional
-        Modifier to compare against baseline, default caps
+        Modifier to compare against baseline
     max_tokens : int, optional
-        Maximum tokens to generate for measurement, default 30
+        Maximum tokens to generate for measurement
     temperature : float, optional
-        Temperature for generation (0.0 = greedy), default 0.7
+        Temperature for generation (0.0 = greedy)
     top_k : int, optional
-        Top-K for entropy calculation, default 10
+        Top-K for entropy calculation
     """
 
     delta_h_threshold: float
@@ -91,44 +92,46 @@ class DifferentialEntropyConfig:
     @classmethod
     def from_calibration_results(
         cls,
-        unsafe_delta_h_samples: list[float],
-        benign_delta_h_samples: list[float],
+        cooling_delta_h_samples: list[float],
+        reference_delta_h_samples: list[float],
         baseline_entropies: list[float],
-        target_recall: float = 0.95,
+        target_capture: float,
     ) -> "DifferentialEntropyConfig":
         """Derive thresholds from calibration data.
 
         Parameters
         ----------
-        unsafe_delta_h_samples : list[float]
-            Delta-H values from known unsafe prompts
-        benign_delta_h_samples : list[float]
-            Delta-H values from known benign prompts
+        cooling_delta_h_samples : list[float]
+            Delta-H values from cooling-pattern prompts
+        reference_delta_h_samples : list[float]
+            Delta-H values from reference prompts
         baseline_entropies : list[float]
             Baseline entropy values from calibration
-        target_recall : float, optional
-            Target recall rate for unsafe detection, default 0.95
+        target_capture : float
+            Target fraction of cooling samples captured by the threshold
 
         Returns
         -------
         DifferentialEntropyConfig
             Configuration with thresholds derived from calibration data
         """
-        if not unsafe_delta_h_samples or not benign_delta_h_samples:
-            raise ValueError("Both unsafe and benign samples required for calibration")
+        if not cooling_delta_h_samples or not reference_delta_h_samples:
+            raise ValueError(
+                "Both cooling and reference samples required for calibration"
+            )
+        if not baseline_entropies:
+            raise ValueError("Baseline entropy samples required for calibration")
 
-        # Sort unsafe samples to find threshold at target recall
-        sorted_unsafe = sorted(unsafe_delta_h_samples)
-        # Threshold where target_recall of unsafe prompts are below threshold
-        recall_idx = int(len(sorted_unsafe) * target_recall)
-        recall_idx = min(recall_idx, len(sorted_unsafe) - 1)
-        delta_h_threshold = sorted_unsafe[recall_idx]
+        # Sort cooling samples to find threshold at target capture fraction
+        sorted_cooling = sorted(cooling_delta_h_samples)
+        # Threshold where target_capture of cooling samples are below threshold
+        capture_idx = int(len(sorted_cooling) * target_capture)
+        capture_idx = min(capture_idx, len(sorted_cooling) - 1)
+        delta_h_threshold = sorted_cooling[capture_idx]
 
         # Minimum baseline entropy from calibration data
         sorted_baseline = sorted(baseline_entropies)
-        # Use 1st percentile as minimum
-        min_idx = max(0, len(sorted_baseline) // 100)
-        minimum_baseline = sorted_baseline[min_idx] if sorted_baseline else 0.01
+        minimum_baseline = sorted_baseline[0]
 
         return cls(
             delta_h_threshold=delta_h_threshold,
@@ -146,7 +149,7 @@ class DetectionResult:
     """Result from differential entropy detection.
 
     Contains raw measurements only. Caller determines classification
-    via is_unsafe_for_threshold() using their calibrated thresholds.
+    via is_below_delta_h_threshold() using their calibrated thresholds.
 
     Attributes
     ----------
@@ -197,17 +200,17 @@ class DetectionResult:
         """
         return self.delta_h > 0
 
-    def is_unsafe_for_threshold(
+    def is_below_delta_h_threshold(
         self,
         delta_h_threshold: float,
         minimum_baseline_entropy: float,
     ) -> bool:
-        """Check if result indicates unsafe pattern for given thresholds.
+        """Check if result is below delta-h threshold for given thresholds.
 
         Parameters
         ----------
         delta_h_threshold : float
-            Delta-H below which pattern is unsafe (typically negative)
+            Delta-H at or below which the pattern is below threshold
         minimum_baseline_entropy : float
             Minimum baseline entropy for valid measurement
 
@@ -248,7 +251,7 @@ class DetectionResult:
         float
             |delta_h| / |threshold|. Values > 1.0 mean past threshold.
         """
-        if abs(delta_h_threshold) < 1e-10:
+        if abs(delta_h_threshold) <= math.ulp(1.0):
             return 0.0
         return abs(self.delta_h) / abs(delta_h_threshold)
 
@@ -315,32 +318,34 @@ class BatchDetectionStatistics:
         """
         return self.heating_count / self.total if self.total > 0 else 0.0
 
-    def unsafe_count_for_threshold(
+    def count_below_delta_h_threshold(
         self,
         results: list[DetectionResult],
         delta_h_threshold: float,
         minimum_baseline_entropy: float,
     ) -> int:
-        """Count results that would be classified as unsafe for given thresholds.
+        """Count results that are below delta-h threshold for given thresholds.
 
         Parameters
         ----------
         results : list[DetectionResult]
             Detection results to analyze
         delta_h_threshold : float
-            Delta-H threshold for unsafe classification
+            Delta-H threshold for below-threshold classification
         minimum_baseline_entropy : float
             Minimum baseline entropy threshold
 
         Returns
         -------
         int
-            Count of results classified as unsafe
+            Count of results below threshold
         """
         return sum(
             1
             for r in results
-            if r.is_unsafe_for_threshold(delta_h_threshold, minimum_baseline_entropy)
+            if r.is_below_delta_h_threshold(
+                delta_h_threshold, minimum_baseline_entropy
+            )
         )
 
     @staticmethod
@@ -426,11 +431,11 @@ class VariantMeasurement:
 
 class DifferentialEntropyDetector:
     """
-    Two-pass entropy differential detector for unsafe prompt pattern detection.
+    Two-pass entropy differential detector for cooling pattern detection.
 
-    Based on Phase 7 Linguistic Thermodynamics research. Unsafe prompts show
-    entropy cooling under intensity modifiers. Returns raw measurements; caller
-    uses is_unsafe_for_threshold() with calibrated thresholds for classification.
+    Based on Phase 7 Linguistic Thermodynamics research. Cooling patterns show
+    entropy decreases under intensity modifiers. Returns raw measurements; caller
+    uses is_below_delta_h_threshold() with calibrated thresholds for classification.
 
     Attributes
     ----------
@@ -470,8 +475,8 @@ class DifferentialEntropyDetector:
         Returns
         -------
         DetectionResult
-            Detection result with raw measurements. Use is_unsafe_for_threshold()
-            to check against calibrated thresholds.
+            Detection result with raw measurements. Use
+            is_below_delta_h_threshold() to check against calibrated thresholds.
         """
         start_time = time.perf_counter()
 
@@ -601,4 +606,3 @@ class DifferentialEntropyDetector:
             return f"URGENT! {prompt} NOW!"
         else:
             return prompt
-

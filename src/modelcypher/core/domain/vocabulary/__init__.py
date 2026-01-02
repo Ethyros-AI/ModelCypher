@@ -32,6 +32,7 @@ from .alignment_map import (
     format_comparison_report,
 )
 from .cross_vocab_merger import (
+    AlignmentMethod,
     CrossVocabMergeConfig,
     CrossVocabMergeResult,
     CrossVocabMerger,
@@ -71,4 +72,5 @@ __all__ = [
     "CrossVocabMerger",
     "CrossVocabMergeConfig",
     "CrossVocabMergeResult",
+    "AlignmentMethod",
 ]
