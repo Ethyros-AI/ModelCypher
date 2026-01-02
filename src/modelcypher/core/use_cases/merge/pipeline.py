@@ -171,6 +171,37 @@ def run_merge(
             % (mean_cka, min_cka)
         )
 
+    # Log transform results from probe stage
+    if feature_transforms:
+        logger.info(
+            "PROBE: Computed %d hidden transforms (layers: %s)",
+            len(feature_transforms),
+            sorted(feature_transforms.keys())[:5],  # First 5 for brevity
+        )
+    else:
+        logger.warning("PROBE: No hidden transforms computed - cross-arch merge will fail")
+
+    if attention_transforms:
+        logger.info(
+            "PROBE: Computed %d attention Q transforms",
+            len(attention_transforms),
+        )
+
+    if kv_transforms:
+        logger.info(
+            "PROBE: Computed %d KV transforms",
+            len(kv_transforms),
+        )
+
+    if layer_mapping:
+        logger.info(
+            "PROBE: Layer mapping has %d entries (first 5: %s)",
+            len(layer_mapping),
+            dict(list(layer_mapping.items())[:5]),
+        )
+    else:
+        logger.warning("PROBE: No layer mapping - cross-arch merge will fail")
+
     # Log activation collection results
     if source_activations and target_activations:
         logger.info(

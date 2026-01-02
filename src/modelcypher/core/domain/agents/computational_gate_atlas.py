@@ -33,6 +33,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
 from modelcypher.core.domain.geometry.signature_base import LabeledSignatureMixin
 from modelcypher.core.domain.geometry.vector_math import VectorMath
 from modelcypher.data import load_json
@@ -647,8 +648,6 @@ class ComputationalGateSignature(LabeledSignatureMixin):
 @dataclass
 class GateAtlasConfiguration:
     enabled: bool = True
-    max_characters_per_text: int = 4096
-    top_k: int = 8
     use_probe_subset: bool = True
     # Volume-based representation (CABE-4: Riemannian density)
     use_volume_representation: bool = False
@@ -706,8 +705,7 @@ class ComputationalGateAtlas:
             if len(gate_embeddings) != len(self.inventory):
                 return None
 
-            capped = trimmed[: self.config.max_characters_per_text]
-            embeddings = await self.embedder.embed([capped])
+            embeddings = await self.embedder.embed([trimmed])
             if not embeddings:
                 return None
 
@@ -919,8 +917,7 @@ class ComputationalGateAtlas:
                 return await self.signature(text)  # Fall back
 
             # Embed the input text
-            capped = trimmed[: self.config.max_characters_per_text]
-            embeddings = await self.embedder.embed([capped])
+            embeddings = await self.embedder.embed([trimmed])
             if not embeddings:
                 return None
 
@@ -940,8 +937,11 @@ class ComputationalGateAtlas:
                     # Convert Mahalanobis distance to similarity
                     # Higher distance = lower similarity
                     mahal_dist = volume.mahalanobis_distance(text_vec)
-                    # Use exponential decay: sim = exp(-dist/scale)
-                    similarity = float(backend.to_numpy(backend.exp(-mahal_dist / 3.0)))
+                    scale = max(
+                        float(volume.geodesic_radius),
+                        regularization_epsilon(backend, text_vec),
+                    )
+                    similarity = float(backend.to_numpy(backend.exp(-mahal_dist / scale)))
                 else:
                     # Use density at point as similarity
                     density = volume.density_at(text_vec)

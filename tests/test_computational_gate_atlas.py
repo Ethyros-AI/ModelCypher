@@ -254,6 +254,7 @@ def test_signature_cosine_similarity_orthogonal():
 
 def test_signature_cosine_similarity_mismatched_ids():
     """Mismatched gate IDs still compute similarity (geometry always fits)."""
+    backend = get_default_backend()
     sig1 = ComputationalGateSignature(
         gate_ids=["1", "2"],
         values=[1.0, 0.0],
@@ -265,11 +266,13 @@ def test_signature_cosine_similarity_mismatched_ids():
     similarity = sig1.cosine_similarity(sig2)
 
     # Orthogonal vectors = 0.0 similarity (not None)
-    assert similarity == 0.0
+    eps = division_epsilon(backend, backend.array(sig1.values, dtype="float32"))
+    assert abs(similarity) <= eps
 
 
 def test_signature_cosine_similarity_different_lengths():
     """Different length signatures truncate to shared dimension (geometry always fits)."""
+    backend = get_default_backend()
     sig1 = ComputationalGateSignature(
         gate_ids=["1", "2"],
         values=[1.0, 0.0],
@@ -281,7 +284,8 @@ def test_signature_cosine_similarity_different_lengths():
     similarity = sig1.cosine_similarity(sig2)
 
     # Truncates to shared 2 dimensions: [1,0] vs [0,1] = orthogonal = 0.0
-    assert similarity == 0.0
+    eps = division_epsilon(backend, backend.array(sig1.values, dtype="float32"))
+    assert abs(similarity) <= eps
 
 
 def test_signature_l2_normalized():
@@ -326,8 +330,7 @@ def test_config_defaults():
     config = GateAtlasConfiguration()
 
     assert config.enabled is True
-    assert config.max_characters_per_text > 0
-    assert config.top_k > 0
+    assert config.use_probe_subset is True
 
 
 def test_config_disabled():

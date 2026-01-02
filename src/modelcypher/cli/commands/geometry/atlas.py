@@ -36,7 +36,6 @@ from modelcypher.core.domain.agents.unified_atlas import (
 )
 from modelcypher.core.domain.geometry.concept_dimensionality import (
     ConceptDimensionalityAnalyzer,
-    ConceptDimensionalityConfig,
     ConceptDimensionalityReport,
     ConceptDimensionalityStudy,
 )
@@ -195,28 +194,8 @@ def atlas_dimensionality(
         None, "--domain", "-d", help="Filter by atlas domain (repeatable)"
     ),
     max_probes: int = typer.Option(0, "--max-probes", help="Limit probes (0 = all)"),
-    min_support_texts: int = typer.Option(
-        3, "--min-support-texts", help="Minimum support texts required"
-    ),
-    max_support_texts: int = typer.Option(
-        6, "--max-support-texts", help="Maximum support texts per probe"
-    ),
-    max_total_texts: int = typer.Option(
-        8, "--max-total-texts", help="Maximum total texts used per probe"
-    ),
-    bootstrap: int = typer.Option(0, "--bootstrap", help="Bootstrap resamples (0 = none)"),
-    regression: bool = typer.Option(
-        True,
-        "--regression/--no-regression",
-        is_flag=True,
-        flag_value=True,
-        help="Use regression-based TwoNN estimation",
-    ),
     calibration_file: str | None = typer.Option(
         None, "--calibration", help="Calibration JSON file for probe weights"
-    ),
-    min_calibration: float | None = typer.Option(
-        None, "--min-calibration", help="Skip probes below this calibration weight"
     ),
 ) -> None:
     """Measure intrinsic dimension for UnifiedAtlas probes at a model layer."""
@@ -261,19 +240,10 @@ def atlas_dimensionality(
         frechet_max_k_neighbors=None,
     )
     analyzer = ConceptDimensionalityAnalyzer(backend=backend)
-    config = ConceptDimensionalityConfig(
-        min_support_texts=min_support_texts,
-        max_support_texts=max_support_texts,
-        max_total_texts=max_total_texts,
-        use_regression=regression,
-        bootstrap_resamples=bootstrap,
-        min_calibration_weight=min_calibration,
-    )
     report = analyzer.analyze(
         probes=probes,
         activation_provider=provider,
         layer=target_layer,
-        config=config,
         calibration_weights=calibration_weights,
     )
 
@@ -337,28 +307,8 @@ def atlas_dimensionality_study(
         None, "--domain", "-d", help="Filter by atlas domain (repeatable)"
     ),
     max_probes: int = typer.Option(0, "--max-probes", help="Limit probes (0 = all)"),
-    min_support_texts: int = typer.Option(
-        3, "--min-support-texts", help="Minimum support texts required"
-    ),
-    max_support_texts: int = typer.Option(
-        6, "--max-support-texts", help="Maximum support texts per probe"
-    ),
-    max_total_texts: int = typer.Option(
-        8, "--max-total-texts", help="Maximum total texts used per probe"
-    ),
-    bootstrap: int = typer.Option(0, "--bootstrap", help="Bootstrap resamples (0 = none)"),
-    regression: bool = typer.Option(
-        True,
-        "--regression/--no-regression",
-        is_flag=True,
-        flag_value=True,
-        help="Use regression-based TwoNN estimation",
-    ),
     calibration_file: str | None = typer.Option(
         None, "--calibration", help="Calibration JSON file for probe weights"
-    ),
-    min_calibration: float | None = typer.Option(
-        None, "--min-calibration", help="Skip probes below this calibration weight"
     ),
     include_results: bool = typer.Option(
         False,
@@ -420,14 +370,6 @@ def atlas_dimensionality_study(
         frechet_max_k_neighbors=None,
     )
     analyzer = ConceptDimensionalityAnalyzer(backend=backend)
-    config = ConceptDimensionalityConfig(
-        min_support_texts=min_support_texts,
-        max_support_texts=max_support_texts,
-        max_total_texts=max_total_texts,
-        use_regression=regression,
-        bootstrap_resamples=bootstrap,
-        min_calibration_weight=min_calibration,
-    )
 
     reports: list[ConceptDimensionalityReport] = []
     for layer_idx in resolved_layers:
@@ -435,7 +377,6 @@ def atlas_dimensionality_study(
             probes=probes,
             activation_provider=provider,
             layer=layer_idx,
-            config=config,
             calibration_weights=calibration_weights,
         )
         reports.append(report)

@@ -19,13 +19,8 @@
 
 from __future__ import annotations
 
-import math
-
-import pytest
-
 from modelcypher.core.domain.geometry.concept_dimensionality import (
     ConceptDimensionalityAnalyzer,
-    ConceptDimensionalityConfig,
     ConceptDimensionalityReport,
     ConceptDimensionalityResult,
     ConceptDimensionalityStudy,
@@ -35,54 +30,13 @@ from modelcypher.core.domain.geometry.concept_dimensionality import (
     LayerDimensionalitySummary,
     SkippedProbe,
 )
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 
-class TestConceptDimensionalityConfig:
-    """Tests for ConceptDimensionalityConfig dataclass."""
-
-    def test_default_values(self):
-        """Test default configuration values."""
-        config = ConceptDimensionalityConfig()
-
-        assert config.min_support_texts == 3
-        assert config.max_support_texts == 6
-        assert config.max_total_texts == 8
-        assert config.include_name_description is True
-        assert config.include_probe_name is True
-        assert config.use_regression is True
-        assert config.bootstrap_resamples == 0
-        assert config.bootstrap_seed == 42
-        # k_neighbors is derived from geometry (connectivity-based selection)
-        # so it's not a configurable parameter
-        assert config.geodesic_distance_power == 2.0
-        assert config.min_calibration_weight is None
-
-    def test_custom_values(self):
-        """Test custom configuration values."""
-        config = ConceptDimensionalityConfig(
-            min_support_texts=5,
-            max_support_texts=10,
-            max_total_texts=15,
-            include_name_description=False,
-            include_probe_name=False,
-            use_regression=False,
-            bootstrap_resamples=100,
-            bootstrap_seed=123,
-            # k_neighbors is derived from geometry - not configurable
-            geodesic_distance_power=1.5,
-            min_calibration_weight=0.5,
-        )
-
-        assert config.min_support_texts == 5
-        assert config.max_support_texts == 10
-        assert config.max_total_texts == 15
-        assert config.include_name_description is False
-        assert config.include_probe_name is False
-        assert config.use_regression is False
-        assert config.bootstrap_resamples == 100
-        assert config.bootstrap_seed == 123
-        assert config.geodesic_distance_power == 1.5
-        assert config.min_calibration_weight == 0.5
+def _scalar_tol(value: float) -> float:
+    backend = get_default_backend()
+    return division_epsilon(backend, backend.array([value]))
 
 
 class TestConceptDimensionalityResult:
@@ -301,7 +255,7 @@ class TestMeanDimension:
 
         mean = ConceptDimensionalityAnalyzer._mean_dimension(results)
 
-        assert mean == pytest.approx(2.5)
+        assert abs(mean - 2.5) <= _scalar_tol(mean)
 
     def test_multiple_results(self):
         """Test mean dimension with multiple results."""
@@ -313,7 +267,7 @@ class TestMeanDimension:
 
         mean = ConceptDimensionalityAnalyzer._mean_dimension(results)
 
-        assert mean == pytest.approx(2.0)
+        assert abs(mean - 2.0) <= _scalar_tol(mean)
 
 
 class TestWeightedMeanDimension:
@@ -342,7 +296,7 @@ class TestWeightedMeanDimension:
         mean = ConceptDimensionalityAnalyzer._weighted_mean_dimension(results)
 
         # (1.0*1.0 + 3.0*1.0) / (1.0 + 1.0) = 2.0
-        assert mean == pytest.approx(2.0)
+        assert abs(mean - 2.0) <= _scalar_tol(mean)
 
     def test_weighted_mean_with_unequal_weights(self):
         """Test weighted mean with unequal weights."""
@@ -354,7 +308,7 @@ class TestWeightedMeanDimension:
         mean = ConceptDimensionalityAnalyzer._weighted_mean_dimension(results)
 
         # (1.0*3.0 + 5.0*1.0) / (3.0 + 1.0) = 8.0 / 4.0 = 2.0
-        assert mean == pytest.approx(2.0)
+        assert abs(mean - 2.0) <= _scalar_tol(mean)
 
 
 class TestConceptDimensionalityStudy:
@@ -408,8 +362,10 @@ class TestConceptDimensionalityStudy:
 
         # endpoint_mean = (4.0 + 4.0) / 2 = 4.0
         # collapse_ratio = 2.0 / 4.0 = 0.5
-        assert summary.endpoint_mean_dimension == pytest.approx(4.0)
-        assert summary.collapse_ratio == pytest.approx(0.5)
+        assert abs(summary.endpoint_mean_dimension - 4.0) <= _scalar_tol(
+            summary.endpoint_mean_dimension
+        )
+        assert abs(summary.collapse_ratio - 0.5) <= _scalar_tol(summary.collapse_ratio)
 
     def test_layers_sorted_in_summary(self):
         """Test that layers are sorted in summary."""

@@ -53,10 +53,7 @@ def register_geometry_crm_tools(ctx: ServiceContext) -> None:
             includePolyglot: bool = True,
             includeSequenceInvariants: bool = True,
             sequenceFamilies: list[str] | None = None,
-            maxPromptsPerAnchor: int = 3,
-            maxPolyglotTextsPerLanguage: int = 2,
             anchorPrefixes: list[str] | None = None,
-            maxAnchors: int | None = None,
         ) -> dict:
             """Build a concept response matrix (CRM) for a model."""
             from modelcypher.core.domain.agents.sequence_invariant_atlas import SequenceFamily
@@ -80,10 +77,7 @@ def register_geometry_crm_tools(ctx: ServiceContext) -> None:
                 include_polyglot=includePolyglot,
                 include_sequence_invariants=includeSequenceInvariants,
                 sequence_families=parsed_families,
-                max_prompts_per_anchor=maxPromptsPerAnchor,
-                max_polyglot_texts_per_language=maxPolyglotTextsPerLanguage,
                 anchor_prefixes=anchorPrefixes,
-                max_anchors=maxAnchors,
             )
             summary = ctx.geometry_crm_service.build(
                 model_path=model_path,

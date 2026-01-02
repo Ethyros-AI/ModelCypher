@@ -27,7 +27,6 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol, enum_key
 from modelcypher.core.domain.geometry.intrinsic_dimension import (
-    BootstrapConfiguration,
     GeodesicConfiguration,
     IntrinsicDimension,
     TwoNNConfiguration,
@@ -41,28 +40,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class ConceptDimensionalityConfig:
-    """Configuration for concept dimensionality analysis.
-
-    The k_neighbors for geodesic computation is NOT configurable - it is
-    derived from the geometry itself using connectivity-based selection
-    (Berry & Sauer 2016): binary search for the minimum k that makes the
-    k-NN graph connected. This is a geometric property of the point cloud.
-
-    See riemannian_utils.geodesic_distances() for details.
-    """
-
-    min_support_texts: int = 3
-    max_support_texts: int = 6
-    max_total_texts: int = 8
-    include_name_description: bool = True
-    include_probe_name: bool = True
-    use_regression: bool = True
-    bootstrap_resamples: int = 0
-    bootstrap_seed: int = 42
-    geodesic_distance_power: float = 2.0
-    min_calibration_weight: float | None = None
+MIN_SAMPLE_COUNT = 3
 
 
 @dataclass(frozen=True)
@@ -160,33 +138,16 @@ class ConceptDimensionalityAnalyzer:
         probes: list[AtlasProbeProtocol],
         activation_provider: ActivationProvider,
         layer: int,
-        config: ConceptDimensionalityConfig | None = None,
         calibration_weights: dict[str, float] | None = None,
     ) -> ConceptDimensionalityReport:
-        resolved = config or ConceptDimensionalityConfig()
         results: list[ConceptDimensionalityResult] = []
         skipped: list[SkippedProbe] = []
 
         for probe in probes:
             weight = calibration_weights.get(probe.probe_id) if calibration_weights else None
-            if (
-                resolved.min_calibration_weight is not None
-                and weight is not None
-                and weight < resolved.min_calibration_weight
-            ):
-                skipped.append(
-                    SkippedProbe(
-                        probe_id=probe.probe_id,
-                        name=probe.name,
-                        reason="calibration_below_threshold",
-                        support_text_count=0,
-                        calibration_weight=weight,
-                    )
-                )
-                continue
 
-            texts = self._build_support_texts(probe, resolved)
-            if len(texts) < resolved.min_support_texts:
+            texts = self._build_support_texts(probe)
+            if len(texts) < MIN_SAMPLE_COUNT:
                 skipped.append(
                     SkippedProbe(
                         probe_id=probe.probe_id,
@@ -214,7 +175,7 @@ class ConceptDimensionalityAnalyzer:
                 continue
 
             vectors, invalid_counts = self._filter_vectors(activations)
-            if len(vectors) < resolved.min_support_texts:
+            if len(vectors) < MIN_SAMPLE_COUNT:
                 skipped.append(
                     SkippedProbe(
                         probe_id=probe.probe_id,
@@ -228,7 +189,7 @@ class ConceptDimensionalityAnalyzer:
                 )
                 continue
 
-            estimate = self._compute_intrinsic_dimension(vectors, resolved)
+            estimate = self._compute_intrinsic_dimension(vectors)
             if estimate is None:
                 skipped.append(
                     SkippedProbe(
@@ -280,35 +241,28 @@ class ConceptDimensionalityAnalyzer:
     @staticmethod
     def _build_support_texts(
         probe: AtlasProbeProtocol,
-        config: ConceptDimensionalityConfig,
     ) -> list[str]:
         texts: list[str] = []
 
-        if config.include_name_description:
-            if probe.name and probe.description:
-                texts.append(f"{probe.name}: {probe.description}")
-            elif probe.name:
-                texts.append(probe.name)
-            elif probe.description:
-                texts.append(probe.description)
+        if probe.name and probe.description:
+            texts.append(f"{probe.name}: {probe.description}")
+        elif probe.name:
+            texts.append(probe.name)
+        elif probe.description:
+            texts.append(probe.description)
 
         support_texts = list(probe.support_texts)
-        if config.max_support_texts > 0:
-            support_texts = support_texts[: config.max_support_texts]
         for text in support_texts:
             if text and text not in texts:
                 texts.append(text)
 
-        if config.include_probe_name and probe.name and probe.name not in texts:
+        if probe.name and probe.name not in texts:
             texts.append(probe.name)
 
         if probe.name:
             fallback = f"The concept of {probe.name}"
             if fallback not in texts:
                 texts.append(fallback)
-
-        if config.max_total_texts > 0 and len(texts) > config.max_total_texts:
-            texts = texts[: config.max_total_texts]
 
         return texts
 
@@ -339,31 +293,22 @@ class ConceptDimensionalityAnalyzer:
     def _compute_intrinsic_dimension(
         self,
         vectors: list[list[float]],
-        config: ConceptDimensionalityConfig,
     ):
-        if len(vectors) < 3:
+        if len(vectors) < MIN_SAMPLE_COUNT:
             return None
         # k_neighbors is NOT passed - it is derived from the geometry:
         # 1. Euclidean TwoNN → ID
         # 2. k = max(3, 2 * ID)
         # 3. Geodesic computation uses that k
         two_nn = TwoNNConfiguration(
-            use_regression=config.use_regression,
+            use_regression=True,
             geodesic=GeodesicConfiguration(
                 k_neighbors=None,  # Let the geometry determine k
-                distance_power=config.geodesic_distance_power,
             ),
         )
-        bootstrap = None
-        if config.bootstrap_resamples and config.bootstrap_resamples > 0:
-            bootstrap = BootstrapConfiguration(
-                resamples=config.bootstrap_resamples,
-                confidence_level=0.95,
-                seed=config.bootstrap_seed,
-            )
         try:
             points = self._backend.array(vectors)
-            return IntrinsicDimension(self._backend).compute(points, two_nn, bootstrap=bootstrap)
+            return IntrinsicDimension(self._backend).compute(points, two_nn)
         except Exception as exc:
             logger.debug("Intrinsic dimension failed: %s", exc)
             return None

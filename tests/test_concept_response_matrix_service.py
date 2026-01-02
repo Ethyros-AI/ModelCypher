@@ -20,7 +20,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResponseMatrix
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.use_cases.concept_response_matrix_service import (
     ConceptResponseMatrixService,
     CRMBuildConfig,
@@ -67,8 +69,8 @@ def test_crm_build_and_compare(tmp_path: Path) -> None:
         include_primes=True,
         include_gates=False,
         include_polyglot=False,
-        max_prompts_per_anchor=1,
-        max_anchors=2,
+        include_sequence_invariants=False,
+        include_emotions=False,
     )
 
     summary = service.build(
@@ -78,12 +80,12 @@ def test_crm_build_and_compare(tmp_path: Path) -> None:
     )
 
     assert output_path.exists()
-    assert summary.anchor_count == 2
+    assert summary.anchor_count > 0
     assert summary.layer_count == 2
     assert summary.hidden_dim == 2
 
     crm = ConceptResponseMatrix.load(str(output_path))
-    assert crm.anchor_metadata.total_count == 2
+    assert crm.anchor_metadata.total_count == summary.anchor_count
     assert crm.layer_count == 2
     assert crm.hidden_dim == 2
 
@@ -97,4 +99,6 @@ def test_crm_build_and_compare(tmp_path: Path) -> None:
     compare = service.compare(str(output_path), str(output_path_2))
     assert compare.common_anchor_count == summary.anchor_count
     assert compare.cka_matrix is None
-    assert compare.overall_alignment > 0.99
+    backend = get_default_backend()
+    eps = division_epsilon(backend, backend.array([1.0]))
+    assert abs(compare.overall_alignment - 1.0) <= eps

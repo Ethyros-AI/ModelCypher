@@ -52,8 +52,6 @@ from modelcypher.utils.json import dump_json
 
 app = typer.Typer(no_args_is_help=True)
 
-_CRM_DEFAULTS = CRMBuildConfig()
-
 
 def _context(ctx: typer.Context) -> CLIContext:
     return ctx.obj
@@ -90,32 +88,16 @@ def geometry_crm_build(
         "--sequence-families",
         help="Comma-separated sequence families: fibonacci,lucas,tribonacci,primes,catalan,ramanujan,logic,ordering,arithmetic,causality",
     ),
-    max_prompts_per_anchor: int = typer.Option(
-        _CRM_DEFAULTS.max_prompts_per_anchor,
-        "--max-prompts-per-anchor",
-        help="Max prompts per anchor",
-    ),
-    max_polyglot_texts_per_language: int = typer.Option(
-        _CRM_DEFAULTS.max_polyglot_texts_per_language,
-        "--max-polyglot-texts-per-language",
-        help="Max polyglot texts per language",
-    ),
     anchor_prefixes: str | None = typer.Option(
         None,
         "--anchor-prefixes",
         help="Comma-separated anchor prefixes (prime, gate)",
-    ),
-    max_anchors: int | None = typer.Option(
-        None,
-        "--max-anchors",
-        help="Limit number of anchors for quick runs",
     ),
 ) -> None:
     """Build a concept response matrix (CRM) for a model.
 
     Examples:
         mc geometry crm build --model ./model --output-path ./crm.json
-        mc geometry crm build --model ./model --output-path ./crm.json --max-anchors 10
     """
     context = _context(ctx)
     service = ConceptResponseMatrixService(engine=LocalInferenceEngine())
@@ -142,10 +124,7 @@ def geometry_crm_build(
         include_polyglot=include_polyglot,
         include_sequence_invariants=include_sequence_invariants,
         sequence_families=parsed_families,
-        max_prompts_per_anchor=max_prompts_per_anchor,
-        max_polyglot_texts_per_language=max_polyglot_texts_per_language,
         anchor_prefixes=prefixes,
-        max_anchors=max_anchors,
     )
 
     try:

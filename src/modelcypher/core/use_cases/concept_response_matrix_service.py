@@ -61,8 +61,6 @@ from modelcypher.ports.inference import HiddenStateEngine
 from modelcypher.utils.paths import ensure_dir, expand_path
 
 logger = logging.getLogger(__name__)
-DEFAULT_MAX_PROMPTS_PER_ANCHOR = 3  # Balanced default; override for deeper sampling.
-DEFAULT_MAX_POLYGLOT_TEXTS_PER_LANGUAGE = 2  # Mirrors AnchorExtractor defaults.
 
 
 @dataclass(frozen=True)
@@ -74,10 +72,7 @@ class CRMBuildConfig:
     include_emotions: bool = True
     sequence_families: frozenset[SequenceFamily] | None = None
     emotion_categories: frozenset[EmotionCategory] | None = None
-    max_prompts_per_anchor: int = DEFAULT_MAX_PROMPTS_PER_ANCHOR
-    max_polyglot_texts_per_language: int = DEFAULT_MAX_POLYGLOT_TEXTS_PER_LANGUAGE
     anchor_prefixes: list[str] | None = None
-    max_anchors: int | None = None
 
 
 @dataclass(frozen=True)
@@ -184,8 +179,6 @@ class ConceptResponseMatrixService:
 
         layer_count, hidden_dim = self._resolve_model_shape(resolved_model)
         anchor_entries = self._build_anchor_prompts(cfg)
-        if cfg.max_anchors is not None:
-            anchor_entries = anchor_entries[: max(0, cfg.max_anchors)]
 
         anchor_ids = [anchor_id for anchor_id, _ in anchor_entries]
         prime_count = sum(1 for anchor_id in anchor_ids if anchor_id.startswith("prime:"))
@@ -605,10 +598,7 @@ class ConceptResponseMatrixService:
         primes = SemanticPrimeFrames.enriched()
         polyglot_by_id: dict[str, list[str]] = {}
         if config.include_polyglot:
-            polyglot_by_id = _load_polyglot_prompts(
-                [prime.id for prime in primes],
-                max_per_language=config.max_polyglot_texts_per_language,
-            )
+            polyglot_by_id = _load_polyglot_prompts([prime.id for prime in primes])
 
         entries: list[tuple[str, list[str]]] = []
         for prime in primes:
@@ -618,7 +608,7 @@ class ConceptResponseMatrixService:
             if prime.contrast:
                 texts.append(prime.contrast)
             texts.extend(polyglot_by_id.get(prime.id, []))
-            prompts = _limit_texts(texts, config.max_prompts_per_anchor)
+            prompts = _dedupe_texts(texts)
             entries.append((f"prime:{prime.id}", prompts))
         return entries
 
@@ -632,7 +622,7 @@ class ConceptResponseMatrixService:
             texts.append(gate_name)
             texts.extend(gate.examples)
             texts.extend(gate.polyglot_examples)
-            prompts = _limit_texts(texts, config.max_prompts_per_anchor)
+            prompts = _dedupe_texts(texts)
             entries.append((f"gate:{gate.id}", prompts))
         return entries
 
@@ -645,7 +635,7 @@ class ConceptResponseMatrixService:
             if probe.description:
                 texts.append(probe.description)
             texts.extend(probe.support_texts)
-            prompts = _limit_texts(texts, config.max_prompts_per_anchor)
+            prompts = _dedupe_texts(texts)
             entries.append((f"seq:{probe.id}", prompts))
         return entries
 
@@ -662,7 +652,7 @@ class ConceptResponseMatrixService:
             if emotion.description:
                 texts.append(f"{emotion.name}: {emotion.description}")
             texts.extend(emotion.support_texts)
-            prompts = _limit_texts(texts, config.max_prompts_per_anchor)
+            prompts = _dedupe_texts(texts)
             entries.append((f"emotion:{emotion.id}", prompts))
 
         # Also include dyads
@@ -671,15 +661,13 @@ class ConceptResponseMatrixService:
             if dyad.description:
                 texts.append(f"{dyad.name}: {dyad.description}")
             texts.extend(dyad.support_texts)
-            prompts = _limit_texts(texts, config.max_prompts_per_anchor)
+            prompts = _dedupe_texts(texts)
             entries.append((f"emotion:{dyad.id}", prompts))
 
         return entries
 
 
-def _limit_texts(texts: list[str], limit: int) -> list[str]:
-    if limit <= 0:
-        return []
+def _dedupe_texts(texts: list[str]) -> list[str]:
     seen: set[str] = set()
     unique: list[str] = []
     for text in texts:
@@ -688,8 +676,6 @@ def _limit_texts(texts: list[str], limit: int) -> list[str]:
             continue
         seen.add(trimmed)
         unique.append(trimmed)
-        if len(unique) >= limit:
-            break
     return unique
 
 
@@ -731,7 +717,7 @@ def _normalize_prefixes(prefixes: list[str] | None) -> list[str]:
     return normalized
 
 
-def _load_polyglot_prompts(prime_ids: list[str], max_per_language: int) -> dict[str, list[str]]:
+def _load_polyglot_prompts(prime_ids: list[str]) -> dict[str, list[str]]:
     try:
         inventory = SemanticPrimeMultilingualInventoryLoader.global_diverse()
     except Exception as exc:  # pragma: no cover - defensive fallback
@@ -745,8 +731,8 @@ def _load_polyglot_prompts(prime_ids: list[str], max_per_language: int) -> dict[
             continue
         texts: list[str] = []
         for bucket in prime.languages:
-            texts.extend(bucket.texts[: max(0, max_per_language)])
-        prompts[prime.id] = _limit_texts(texts, limit=len(texts))
+            texts.extend(bucket.texts)
+        prompts[prime.id] = _dedupe_texts(texts)
     return prompts
 
 
