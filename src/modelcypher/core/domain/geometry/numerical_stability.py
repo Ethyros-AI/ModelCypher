@@ -1052,9 +1052,11 @@ def compute_shared_relational_rank(
     rank_source = max(1, int(erank_source))
     rank_target = max(1, int(erank_target))
 
-    # Shared relational rank = min of both
-    # This is where BOTH have signal, not noise
-    shared_rank = min(rank_source, rank_target)
+    # Use MAX of both ranks to preserve ALL signal from both representations.
+    # The Platonic hypothesis: all models encode the same shape, just at different
+    # resolutions. Using min() truncates signal; using max() preserves it.
+    # The Procrustes alignment will find the best mapping between the full spaces.
+    shared_rank = max(rank_source, rank_target)
 
     # Also compute threshold-based ranks for comparison
     max_sv_s = max(source_singular_values) if source_singular_values else 0
@@ -1185,12 +1187,19 @@ def solve_via_gram_alignment(
     if shared_rank == 0:
         return None, diagnostics
 
-    # Use the SHARED RELATIONAL RANK for Procrustes alignment
-    # This is the key insight: CKA = 1.0 is achievable ONLY on the shared
-    # relational space. Beyond this, we're comparing signal to noise.
+    # Clamp shared_rank to available dimensions (pad if needed)
+    # When max(rank_source, rank_target) > available SVD dimensions,
+    # we use what we have and pad the smaller representation.
+    avail_s = len(S_s_np)
+    avail_t = len(S_t_np)
+    actual_rank = min(shared_rank, avail_s, avail_t)
 
-    U_s_k = U_s[:, :shared_rank]  # [n, k]
-    U_t_k = U_t[:, :shared_rank]  # [n, k]
+    if actual_rank == 0:
+        return None, diagnostics
+
+    # Use actual_rank for Procrustes alignment
+    U_s_k = U_s[:, :actual_rank]  # [n, k]
+    U_t_k = U_t[:, :actual_rank]  # [n, k]
     b.eval(U_s_k, U_t_k)
 
     # Orthogonal Procrustes: find R such that U_s @ R ≈ U_t
@@ -1229,14 +1238,14 @@ def solve_via_gram_alignment(
     # Build the full transform F = V_s @ S_s^{-1} @ R @ S_t @ V_t^T
     # But we need to handle rank truncation carefully
 
-    # S_s^{-1} for the k dimensions we're using
+    # S_s^{-1} for the k dimensions we're using (use actual_rank, not shared_rank)
     S_s_inv = b.array([1.0 / S_s_np[i] if S_s_np[i] > thresh_s else 0.0
-                       for i in range(shared_rank)])
-    S_t_k = b.array([S_t_np[i] for i in range(shared_rank)])
+                       for i in range(actual_rank)])
+    S_t_k = b.array([S_t_np[i] for i in range(actual_rank)])
     b.eval(S_s_inv, S_t_k)
 
-    V_s_k = b.transpose(Vt_s[:shared_rank, :])  # [d_s, k]
-    V_t_k = b.transpose(Vt_t[:shared_rank, :])  # [d_t, k]
+    V_s_k = b.transpose(Vt_s[:actual_rank, :])  # [d_s, k]
+    V_t_k = b.transpose(Vt_t[:actual_rank, :])  # [d_t, k]
     b.eval(V_s_k, V_t_k)
 
     # F = V_s @ diag(S_s^{-1}) @ R @ diag(S_t) @ V_t^T

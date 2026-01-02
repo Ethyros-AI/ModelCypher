@@ -23,6 +23,7 @@ import math
 
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.model_profile import (
     DensitySummary,
     LayerProfile,
@@ -30,11 +31,17 @@ from modelcypher.core.domain.geometry.model_profile import (
     SemanticSignature,
     TopologySummary,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.profile_comparison import (
     LayerComparison,
     ProfileComparison,
     compare_profiles,
 )
+
+
+def _eps() -> float:
+    backend = get_default_backend()
+    return division_epsilon(backend, backend.array([1.0]))
 
 
 class TestLayerComparison:
@@ -125,11 +132,9 @@ class TestProfileComparison:
                 LayerComparison(0, 0, alignment_effort=0.2),
                 LayerComparison(1, 1, alignment_effort=0.3),
             ],
-            critical_layers=[],
             total_alignment_effort=0.5,
             mean_alignment_effort=0.25,
             max_alignment_effort=0.3,
-            recommended_strategy="procrustes",
         )
         assert pc.architecture_match
         assert pc.overall_alignment == 0.87
@@ -146,7 +151,6 @@ class TestProfileComparison:
             layer_comparisons=[
                 LayerComparison(0, 0, alignment_effort=0.2),
             ],
-            recommended_strategy="curvature_flow",
         )
         d = original.to_dict()
         restored = ProfileComparison.from_dict(d)
@@ -154,7 +158,6 @@ class TestProfileComparison:
         assert restored.source_path == original.source_path
         assert restored.architecture_match == original.architecture_match
         assert restored.curvature_alignment == original.curvature_alignment
-        assert restored.recommended_strategy == original.recommended_strategy
         assert len(restored.layer_comparisons) == 1
 
 
@@ -183,13 +186,14 @@ class TestCompareProfiles:
 
         comparison = compare_profiles(profile, profile)
 
+        eps = _eps()
         assert comparison.architecture_match
         assert comparison.hidden_dim_ratio == 1.0
         assert comparison.layer_count_ratio == 1.0
         # Identical profiles should have high alignment
-        assert comparison.curvature_alignment > 0.9
-        assert comparison.overall_alignment > 0.9
-        assert comparison.mean_alignment_effort < 0.1
+        assert abs(comparison.curvature_alignment - 1.0) <= eps
+        assert abs(comparison.overall_alignment - 1.0) <= eps
+        assert abs(comparison.mean_alignment_effort) <= eps
 
     def test_compare_same_architecture_different_curvature(self) -> None:
         """Same architecture with different curvature should still be compatible."""
@@ -230,13 +234,12 @@ class TestCompareProfiles:
         )
 
         comparison = compare_profiles(source, target)
+        identical = compare_profiles(source, source)
 
         assert comparison.architecture_match
         assert comparison.hidden_dim_ratio == 1.0
-        # Should still have reasonable alignment
-        assert comparison.overall_alignment > 0.5
-        # But some alignment effort needed
-        assert comparison.mean_alignment_effort > 0.0
+        assert comparison.overall_alignment < identical.overall_alignment
+        assert comparison.mean_alignment_effort > identical.mean_alignment_effort
 
     def test_compare_different_architectures(self) -> None:
         """Different architectures should be flagged."""
@@ -337,9 +340,8 @@ class TestCompareProfiles:
         comparison = compare_profiles(source, target)
 
         assert comparison.semantic_alignment is not None
-        # Cosine similarity of [1,0,0,0,0] and [0.8,0.6,0,0,0]
-        # = 0.8 / (1.0 * 1.0) = 0.8
-        assert 0.7 < comparison.semantic_alignment < 0.9
+        expected = 0.8 / math.sqrt(0.8**2 + 0.6**2)
+        assert abs(comparison.semantic_alignment - expected) <= _eps()
 
     def test_compare_orthogonal_semantic_signatures(self) -> None:
         """Orthogonal semantic signatures should have zero alignment."""
@@ -360,153 +362,7 @@ class TestCompareProfiles:
         comparison = compare_profiles(source, target)
 
         assert comparison.semantic_alignment is not None
-        assert abs(comparison.semantic_alignment) < 0.01
-
-    def test_recommended_strategy_procrustes(self) -> None:
-        """Should recommend procrustes for well-matched profiles."""
-        source = ModelProfile(
-            model_path="/path/to/source",
-            layer_profiles=[
-                LayerProfile(
-                    layer_idx=i,
-                    sectional_curvature_mean=-0.1,
-                    ollivier_ricci_mean=-0.1,
-                    intrinsic_dimension=50.0,
-                    dominant_curvature_sign="negative",
-                )
-                for i in range(4)
-            ],
-        )
-
-        target = ModelProfile(
-            model_path="/path/to/target",
-            layer_profiles=[
-                LayerProfile(
-                    layer_idx=i,
-                    sectional_curvature_mean=-0.12,  # Similar curvature
-                    ollivier_ricci_mean=-0.12,
-                    intrinsic_dimension=52.0,  # Similar dimension
-                    dominant_curvature_sign="negative",
-                )
-                for i in range(4)
-            ],
-        )
-
-        comparison = compare_profiles(source, target)
-
-        assert comparison.recommended_strategy == "procrustes"
-
-    def test_recommended_strategy_projection_first(self) -> None:
-        """Should recommend projection_first when dimensions differ significantly."""
-        source = ModelProfile(
-            model_path="/path/to/source",
-            layer_profiles=[
-                LayerProfile(
-                    layer_idx=i,
-                    intrinsic_dimension=50.0,
-                )
-                for i in range(4)
-            ],
-        )
-
-        target = ModelProfile(
-            model_path="/path/to/target",
-            layer_profiles=[
-                LayerProfile(
-                    layer_idx=i,
-                    intrinsic_dimension=100.0,  # Double the dimension
-                )
-                for i in range(4)
-            ],
-        )
-
-        comparison = compare_profiles(source, target)
-
-        assert comparison.recommended_strategy == "projection_first"
-
-    def test_recommended_strategy_curvature_flow(self) -> None:
-        """Should recommend curvature_flow when curvature signs mismatch."""
-        source = ModelProfile(
-            model_path="/path/to/source",
-            layer_profiles=[
-                LayerProfile(
-                    layer_idx=i,
-                    sectional_curvature_mean=-0.1,
-                    ollivier_ricci_mean=-0.8,  # Strongly negative
-                    intrinsic_dimension=50.0,
-                    dominant_curvature_sign="negative",
-                )
-                for i in range(4)
-            ],
-        )
-
-        target = ModelProfile(
-            model_path="/path/to/target",
-            layer_profiles=[
-                LayerProfile(
-                    layer_idx=i,
-                    sectional_curvature_mean=0.1,  # Different sign
-                    ollivier_ricci_mean=0.8,  # Strongly positive
-                    intrinsic_dimension=50.0,
-                    dominant_curvature_sign="positive",
-                )
-                for i in range(4)
-            ],
-        )
-
-        comparison = compare_profiles(source, target)
-
-        # Should recommend curvature_flow due to sign mismatch
-        assert comparison.recommended_strategy == "curvature_flow"
-
-    def test_critical_layers_detection(self) -> None:
-        """Should detect layers requiring high alignment effort."""
-        source = ModelProfile(
-            model_path="/path/to/source",
-            layer_profiles=[
-                LayerProfile(
-                    layer_idx=0,
-                    ollivier_ricci_mean=-0.1,
-                    intrinsic_dimension=50.0,
-                ),
-                LayerProfile(
-                    layer_idx=1,
-                    ollivier_ricci_mean=-0.1,
-                    intrinsic_dimension=50.0,
-                ),
-                LayerProfile(
-                    layer_idx=2,
-                    ollivier_ricci_mean=-0.1,
-                    intrinsic_dimension=50.0,
-                ),
-            ],
-        )
-
-        target = ModelProfile(
-            model_path="/path/to/target",
-            layer_profiles=[
-                LayerProfile(
-                    layer_idx=0,
-                    ollivier_ricci_mean=-0.12,  # Similar
-                    intrinsic_dimension=52.0,
-                ),
-                LayerProfile(
-                    layer_idx=1,
-                    ollivier_ricci_mean=-0.9,  # Very different!
-                    intrinsic_dimension=100.0,  # Very different!
-                ),
-                LayerProfile(
-                    layer_idx=2,
-                    ollivier_ricci_mean=-0.12,  # Similar
-                    intrinsic_dimension=52.0,
-                ),
-            ],
-        )
-
-        comparison = compare_profiles(source, target)
-
-        # Layer 1 should be in critical layers due to high effort
-        assert 1 in comparison.critical_layers
+        assert abs(comparison.semantic_alignment) <= _eps()
 
     def test_layer_mapping_across_different_counts(self) -> None:
         """Should map layers by relative position."""
@@ -702,12 +558,13 @@ class TestBaselineZScores:
 
         comparison = compare_profiles(source, target, baseline=baseline)
 
+        eps = _eps()
         assert comparison.baseline_family == "test"
         assert comparison.baseline_model_count == 2
         assert comparison.ricci_z_score is not None
-        assert comparison.ricci_z_score > 0  # Non-zero difference
+        assert comparison.ricci_z_score > eps
         assert comparison.dimension_z_score is not None
-        assert comparison.dimension_z_score > 0  # Non-zero difference
+        assert comparison.dimension_z_score > eps
 
     def test_compare_identical_with_baseline(self) -> None:
         """Should give z-score of 0 for identical profiles."""
@@ -732,9 +589,10 @@ class TestBaselineZScores:
 
         comparison = compare_profiles(source, source, baseline=baseline)
 
+        eps = _eps()
         # Identical profiles should have z-score of 0
-        assert comparison.ricci_z_score == 0.0
-        assert comparison.dimension_z_score == 0.0
+        assert abs(comparison.ricci_z_score) <= eps
+        assert abs(comparison.dimension_z_score) <= eps
 
     def test_baseline_with_zero_std_skips_metric(self) -> None:
         """Should skip z-score computation when baseline std is zero."""

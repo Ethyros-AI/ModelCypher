@@ -983,7 +983,7 @@ def get_probe_ids(sources: set[AtlasSource] | None = None) -> list[str]:
         List of probe IDs in format "source:category_id"
     """
     if sources is None:
-        sources = DEFAULT_ATLAS_SOURCES
+        sources = set(ALL_ATLAS_SOURCES)
 
     probes = UnifiedAtlasInventory.probes_by_source(sources)
     return [probe.probe_id for probe in probes]

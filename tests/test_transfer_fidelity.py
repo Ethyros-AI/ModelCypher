@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import math
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.transfer_fidelity import TransferFidelityPrediction
 
 
@@ -36,7 +38,9 @@ def test_transfer_fidelity_identical():
     ]
     result = TransferFidelityPrediction.predict(gram, gram, n=3)
     assert result is not None
-    assert abs(result.expected_fidelity - 1.0) < 1e-6
+    backend = get_default_backend()
+    eps = division_epsilon(backend, backend.array([1.0]))
+    assert abs(result.expected_fidelity - 1.0) <= eps
     assert result.sample_size == 3
 
 
@@ -103,7 +107,9 @@ def test_transfer_fidelity_raw_measurements():
     result = TransferFidelityPrediction.predict(gram_perfect, gram_perfect, n=3)
     assert result is not None
     # Perfect self-correlation. The number IS the answer.
-    assert result.expected_fidelity == 1.0
+    backend = get_default_backend()
+    eps = division_epsilon(backend, backend.array([1.0]))
+    assert abs(result.expected_fidelity - 1.0) <= eps
 
 
 def test_transfer_fidelity_fisher_z_confidence_interval():

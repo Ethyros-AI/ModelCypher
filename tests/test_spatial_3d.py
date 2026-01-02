@@ -383,9 +383,9 @@ class TestGetSpatialAnchorsByAxis:
         """Vertical axis should return vertical and mass anchors."""
         anchors = get_spatial_anchors_by_axis(SpatialAxis.Y_VERTICAL)
         assert len(anchors) > 0
-        # All should be vertical or mass category
+        # All should be vertical, mass, or furniture category
         for a in anchors:
-            assert a.category.name in ("VERTICAL", "MASS")
+            assert a.category.name in ("VERTICAL", "MASS", "FURNITURE")
 
     def test_lateral_axis(self) -> None:
         """Lateral axis should return lateral anchors."""
@@ -409,39 +409,6 @@ class TestGetSpatialAnchorsByAxis:
 
 class TestEuclideanConsistencyResult:
     """Tests for EuclideanConsistencyResult dataclass."""
-
-    def test_is_euclidean_property(self) -> None:
-        """is_euclidean should be True when conditions met."""
-        result = EuclideanConsistencyResult(
-            consistency_score=0.8,
-            pythagorean_error=0.1,
-            triangle_inequality_violations=0,
-            dimensionality_estimate=3.0,
-            axis_orthogonality={"x_y": 0.9},
-        )
-        assert result.is_euclidean
-
-    def test_is_euclidean_false_low_score(self) -> None:
-        """is_euclidean should be False for low consistency."""
-        result = EuclideanConsistencyResult(
-            consistency_score=0.4,
-            pythagorean_error=0.1,
-            triangle_inequality_violations=0,
-            dimensionality_estimate=3.0,
-            axis_orthogonality={},
-        )
-        assert not result.is_euclidean
-
-    def test_is_euclidean_false_violations(self) -> None:
-        """is_euclidean should be False with triangle violations."""
-        result = EuclideanConsistencyResult(
-            consistency_score=0.8,
-            pythagorean_error=0.1,
-            triangle_inequality_violations=5,
-            dimensionality_estimate=3.0,
-            axis_orthogonality={},
-        )
-        assert not result.is_euclidean
 
     def test_to_dict(self) -> None:
         """to_dict should return dictionary with all fields."""

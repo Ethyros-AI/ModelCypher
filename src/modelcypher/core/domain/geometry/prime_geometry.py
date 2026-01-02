@@ -512,10 +512,11 @@ def compute_gram_matrix(X: "Array", backend: "Backend | None" = None) -> "Array"
         Gram matrix [n_samples, n_samples].
     """
     # Delegate to canonical implementation
-    from modelcypher.core.domain.geometry.backend_matrix_utils import MatrixUtils
+    from modelcypher.core.domain.geometry.backend_matrix_utils import BackendMatrixUtils
 
     backend = backend or get_default_backend()
-    utils = MatrixUtils(backend)
+    X = backend.astype(X, "float32")
+    utils = BackendMatrixUtils(backend)
     return utils.compute_gram_matrix(X, kernel="linear")
 
 

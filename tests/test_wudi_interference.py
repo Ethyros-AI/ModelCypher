@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.wudi_interference import (
     compute_wudi_interference,
     subspace_overlap,
@@ -29,7 +29,7 @@ def test_wudi_overlap_identical(any_backend: Backend) -> None:
     b = any_backend
     a = b.array([[1.0, 2.0], [3.0, 4.0]], dtype="float32")
     overlap = subspace_overlap(a, a, b)
-    tol = max(1e-5, machine_epsilon(b, a) * 100)
+    tol = division_epsilon(b, a)
     assert abs(overlap - 1.0) <= tol
 
 
@@ -38,7 +38,7 @@ def test_wudi_overlap_orthogonal(any_backend: Backend) -> None:
     a = b.array([[1.0, 0.0], [0.0, 0.0]], dtype="float32")
     b_mat = b.array([[0.0, 1.0], [0.0, 0.0]], dtype="float32")
     overlap = subspace_overlap(a, b_mat, b)
-    tol = max(1e-5, machine_epsilon(b, a) * 100)
+    tol = division_epsilon(b, a)
     assert overlap <= tol
 
 
@@ -46,5 +46,5 @@ def test_wudi_loss_single_vector_zero(any_backend: Backend) -> None:
     b = any_backend
     tau = b.array([[1.0, 0.0], [0.0, 1.0]], dtype="float32")
     result = compute_wudi_interference({(2, 2): [tau]}, b)
-    tol = max(1e-5, machine_epsilon(b, tau) * 100)
+    tol = division_epsilon(b, tau)
     assert abs(result.mean_loss) <= tol

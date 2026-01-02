@@ -26,6 +26,7 @@ from pathlib import Path
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from modelcypher.adapters.filesystem_storage import FileSystemStore
 from modelcypher.core.use_cases.storage_service import StorageService
 
 
@@ -89,7 +90,14 @@ def test_storage_cleanup_frees_non_negative_space(targets: list[str], file_sizes
                 if "rag" in targets:
                     _write_bytes(home / "rag" / f"index_{i}.bin", size)
 
-            service = StorageService(cache_ttl_seconds=0.0)
+            store = FileSystemStore()
+            service = StorageService(
+                model_store=store,
+                job_store=store,
+                base_dir=store.paths.base,
+                logs_dir=store.paths.logs,
+                cache_ttl_seconds=0.0,
+            )
             cleared = service.cleanup(targets)
 
             # Property: cleared list length is non-negative
@@ -148,7 +156,14 @@ def test_storage_cleanup_with_empty_directories(targets: list[str]):
             (home / "rag").mkdir(parents=True, exist_ok=True)
             hf_home.mkdir(parents=True, exist_ok=True)
 
-            service = StorageService(cache_ttl_seconds=0.0)
+            store = FileSystemStore()
+            service = StorageService(
+                model_store=store,
+                job_store=store,
+                base_dir=store.paths.base,
+                logs_dir=store.paths.logs,
+                cache_ttl_seconds=0.0,
+            )
             cleared = service.cleanup(targets)
 
             # Property: cleared list length is non-negative

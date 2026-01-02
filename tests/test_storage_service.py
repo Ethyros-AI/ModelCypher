@@ -23,6 +23,8 @@ from pathlib import Path
 
 from modelcypher.adapters.filesystem_storage import FileSystemStore
 from modelcypher.core.domain.models import CheckpointRecord, ModelInfo
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.use_cases.storage_service import BYTES_PER_GB, StorageService
 
 
@@ -92,12 +94,17 @@ def test_storage_usage_computes_sizes(tmp_path, monkeypatch) -> None:
         cache_ttl_seconds=0.0,
     )
     usage = service.storage_usage()
+    backend = get_default_backend()
+    eps = division_epsilon(
+        backend,
+        backend.array([usage.models_gb, usage.checkpoints_gb, usage.other_gb]),
+    )
 
     assert usage.total_gb == 10.0
-    assert abs(usage.models_gb - (2048 / BYTES_PER_GB)) < 1e-9
-    assert abs(usage.checkpoints_gb - (512 / BYTES_PER_GB)) < 1e-9
-    expected_other = (256 + 64) / BYTES_PER_GB
-    assert abs(usage.other_gb - expected_other) < 1e-9
+    assert abs(usage.models_gb - (2048 / BYTES_PER_GB)) <= eps
+    assert abs(usage.checkpoints_gb - (512 / BYTES_PER_GB)) <= eps
+    expected_other = (256 + 64 + 128) / BYTES_PER_GB
+    assert abs(usage.other_gb - expected_other) <= eps
 
 
 def test_storage_cleanup_clears_targets(tmp_path, monkeypatch) -> None:

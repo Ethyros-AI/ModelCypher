@@ -44,7 +44,7 @@ def _hyperparameters(**overrides):
         "optimizer_type": "adamw",
     }
     values.update(overrides)
-    return _hyperparameters(**values)
+    return Hyperparameters(**values)
 
 
 class TestValidationSeverity:
@@ -106,7 +106,10 @@ class TestBatchSizeValidation:
         assert batch_violations[0].severity == ValidationSeverity.ERROR
 
     def test_batch_size_1_to_4_no_violation(self):
-        for bs in [1, 2, 3, 4]:
+        for bs in range(
+            TrainingHyperparameterValidator.BATCH_SIZE_RANGE.start,
+            TrainingHyperparameterValidator.BATCH_SIZE_INFO_THRESHOLD + 1,
+        ):
             params = _hyperparameters(batch_size=bs)
             violations = TrainingHyperparameterValidator.comprehensive_violations(params)
             batch_violations = [v for v in violations if v.field == "batch_size"]
@@ -114,7 +117,10 @@ class TestBatchSizeValidation:
             assert len(batch_violations) == 0, f"batch_size={bs} should have no violations"
 
     def test_batch_size_5_to_8_info(self):
-        for bs in [5, 6, 7, 8]:
+        for bs in range(
+            TrainingHyperparameterValidator.BATCH_SIZE_INFO_THRESHOLD + 1,
+            TrainingHyperparameterValidator.BATCH_SIZE_RANGE.stop,
+        ):
             params = _hyperparameters(batch_size=bs)
             violations = TrainingHyperparameterValidator.comprehensive_violations(params)
             batch_violations = [v for v in violations if v.field == "batch_size"]
@@ -122,7 +128,7 @@ class TestBatchSizeValidation:
             assert batch_violations[0].severity == ValidationSeverity.INFO
 
     def test_batch_size_9_is_error(self):
-        params = _hyperparameters(batch_size=9)
+        params = _hyperparameters(batch_size=TrainingHyperparameterValidator.BATCH_SIZE_RANGE.stop)
         violations = TrainingHyperparameterValidator.comprehensive_violations(params)
         batch_violations = [v for v in violations if v.field == "batch_size"]
         assert len(batch_violations) == 1
@@ -133,34 +139,46 @@ class TestSequenceLengthValidation:
     """Tests for sequence length validation rules."""
 
     def test_sequence_below_min_is_error(self):
-        params = _hyperparameters(sequence_length=64)
+        params = _hyperparameters(
+            sequence_length=TrainingHyperparameterValidator.SEQUENCE_MIN - 1
+        )
         violations = TrainingHyperparameterValidator.comprehensive_violations(params)
         seq_violations = [v for v in violations if v.field == "sequence_length"]
         assert len(seq_violations) == 1
         assert seq_violations[0].severity == ValidationSeverity.ERROR
 
     def test_sequence_at_min_no_violation(self):
-        params = _hyperparameters(sequence_length=128)
+        params = _hyperparameters(sequence_length=TrainingHyperparameterValidator.SEQUENCE_MIN)
         violations = TrainingHyperparameterValidator.comprehensive_violations(params)
         seq_violations = [v for v in violations if v.field == "sequence_length"]
         assert len(seq_violations) == 0
 
     def test_sequence_normal_range_no_violation(self):
-        for seq in [256, 512, 1024, 2048]:
+        mid = (
+            TrainingHyperparameterValidator.SEQUENCE_MIN
+            + TrainingHyperparameterValidator.SEQUENCE_WARNING
+        ) // 2
+        for seq in [
+            TrainingHyperparameterValidator.SEQUENCE_MIN + 1,
+            mid,
+            TrainingHyperparameterValidator.SEQUENCE_WARNING,
+        ]:
             params = _hyperparameters(sequence_length=seq)
             violations = TrainingHyperparameterValidator.comprehensive_violations(params)
             seq_violations = [v for v in violations if v.field == "sequence_length"]
             assert len(seq_violations) == 0, f"sequence_length={seq} should have no violations"
 
     def test_sequence_above_warning_threshold(self):
-        params = _hyperparameters(sequence_length=3000)
+        params = _hyperparameters(
+            sequence_length=TrainingHyperparameterValidator.SEQUENCE_WARNING + 1
+        )
         violations = TrainingHyperparameterValidator.comprehensive_violations(params)
         seq_violations = [v for v in violations if v.field == "sequence_length"]
         assert len(seq_violations) == 1
         assert seq_violations[0].severity == ValidationSeverity.WARNING
 
     def test_sequence_at_max_is_warning(self):
-        params = _hyperparameters(sequence_length=4096)
+        params = _hyperparameters(sequence_length=TrainingHyperparameterValidator.SEQUENCE_MAX)
         violations = TrainingHyperparameterValidator.comprehensive_violations(params)
         seq_violations = [v for v in violations if v.field == "sequence_length"]
         # 4096 is at max but > warning threshold, so WARNING
@@ -168,7 +186,9 @@ class TestSequenceLengthValidation:
         assert seq_violations[0].severity == ValidationSeverity.WARNING
 
     def test_sequence_above_max_is_error(self):
-        params = _hyperparameters(sequence_length=5000)
+        params = _hyperparameters(
+            sequence_length=TrainingHyperparameterValidator.SEQUENCE_MAX + 1
+        )
         violations = TrainingHyperparameterValidator.comprehensive_violations(params)
         seq_violations = [v for v in violations if v.field == "sequence_length"]
         assert len(seq_violations) == 1
@@ -179,14 +199,16 @@ class TestLearningRateValidation:
     """Tests for learning rate validation rules."""
 
     def test_lr_below_min_is_error(self):
-        params = _hyperparameters(learning_rate=1e-7)
+        params = _hyperparameters(
+            learning_rate=TrainingHyperparameterValidator.LR_MIN / 10
+        )
         violations = TrainingHyperparameterValidator.comprehensive_violations(params)
         lr_violations = [v for v in violations if v.field == "learning_rate"]
         assert len(lr_violations) == 1
         assert lr_violations[0].severity == ValidationSeverity.ERROR
 
     def test_lr_at_min_is_info(self):
-        params = _hyperparameters(learning_rate=1e-6)
+        params = _hyperparameters(learning_rate=TrainingHyperparameterValidator.LR_MIN)
         violations = TrainingHyperparameterValidator.comprehensive_violations(params)
         lr_violations = [v for v in violations if v.field == "learning_rate"]
         # 1e-6 is valid but < INFO threshold (1e-5)
@@ -194,21 +216,33 @@ class TestLearningRateValidation:
         assert lr_violations[0].severity == ValidationSeverity.INFO
 
     def test_lr_normal_range_no_violation(self):
-        for lr in [3e-5, 5e-5, 1e-4, 3e-4]:
+        mid = (
+            TrainingHyperparameterValidator.LR_INFO_LOW
+            + TrainingHyperparameterValidator.LR_WARN_HIGH
+        ) / 2
+        for lr in [
+            TrainingHyperparameterValidator.LR_INFO_LOW * 2,
+            mid,
+            TrainingHyperparameterValidator.LR_WARN_HIGH,
+        ]:
             params = _hyperparameters(learning_rate=lr)
             violations = TrainingHyperparameterValidator.comprehensive_violations(params)
             lr_violations = [v for v in violations if v.field == "learning_rate"]
             assert len(lr_violations) == 0, f"learning_rate={lr} should have no violations"
 
     def test_lr_above_warning_threshold(self):
-        params = _hyperparameters(learning_rate=7e-4)
+        params = _hyperparameters(
+            learning_rate=TrainingHyperparameterValidator.LR_WARN_HIGH
+            + (TrainingHyperparameterValidator.LR_MAX - TrainingHyperparameterValidator.LR_WARN_HIGH)
+            / 2
+        )
         violations = TrainingHyperparameterValidator.comprehensive_violations(params)
         lr_violations = [v for v in violations if v.field == "learning_rate"]
         assert len(lr_violations) == 1
         assert lr_violations[0].severity == ValidationSeverity.WARNING
 
     def test_lr_at_max_is_warning(self):
-        params = _hyperparameters(learning_rate=1e-3)
+        params = _hyperparameters(learning_rate=TrainingHyperparameterValidator.LR_MAX)
         violations = TrainingHyperparameterValidator.comprehensive_violations(params)
         lr_violations = [v for v in violations if v.field == "learning_rate"]
         # 1e-3 is at max but > warning threshold, so WARNING
@@ -216,7 +250,9 @@ class TestLearningRateValidation:
         assert lr_violations[0].severity == ValidationSeverity.WARNING
 
     def test_lr_above_max_is_error(self):
-        params = _hyperparameters(learning_rate=2e-3)
+        params = _hyperparameters(
+            learning_rate=TrainingHyperparameterValidator.LR_MAX * 2
+        )
         violations = TrainingHyperparameterValidator.comprehensive_violations(params)
         lr_violations = [v for v in violations if v.field == "learning_rate"]
         assert len(lr_violations) == 1
@@ -227,28 +263,31 @@ class TestEpochsValidation:
     """Tests for epochs validation rules."""
 
     def test_epochs_zero_is_error(self):
-        params = _hyperparameters(epochs=0)
+        params = _hyperparameters(epochs=TrainingHyperparameterValidator.EPOCHS_MIN - 1)
         violations = TrainingHyperparameterValidator.comprehensive_violations(params)
         epoch_violations = [v for v in violations if v.field == "epochs"]
         assert len(epoch_violations) == 1
         assert epoch_violations[0].severity == ValidationSeverity.ERROR
 
     def test_epochs_negative_is_error(self):
-        params = _hyperparameters(epochs=-1)
+        params = _hyperparameters(epochs=TrainingHyperparameterValidator.EPOCHS_MIN - 2)
         violations = TrainingHyperparameterValidator.comprehensive_violations(params)
         epoch_violations = [v for v in violations if v.field == "epochs"]
         assert len(epoch_violations) == 1
         assert epoch_violations[0].severity == ValidationSeverity.ERROR
 
     def test_epochs_1_to_10_no_violation(self):
-        for epochs in [1, 3, 5, 8, 10]:
+        for epochs in range(
+            TrainingHyperparameterValidator.EPOCHS_MIN,
+            TrainingHyperparameterValidator.EPOCHS_MAX_REC + 1,
+        ):
             params = _hyperparameters(epochs=epochs)
             violations = TrainingHyperparameterValidator.comprehensive_violations(params)
             epoch_violations = [v for v in violations if v.field == "epochs"]
             assert len(epoch_violations) == 0, f"epochs={epochs} should have no violations"
 
     def test_epochs_above_max_is_warning(self):
-        params = _hyperparameters(epochs=15)
+        params = _hyperparameters(epochs=TrainingHyperparameterValidator.EPOCHS_MAX_REC + 1)
         violations = TrainingHyperparameterValidator.comprehensive_violations(params)
         epoch_violations = [v for v in violations if v.field == "epochs"]
         assert len(epoch_violations) == 1
@@ -260,10 +299,10 @@ class TestValidateForEngine:
 
     def test_valid_config_does_not_raise(self):
         params = _hyperparameters(
-            batch_size=4,
-            learning_rate=3e-5,
-            epochs=3,
-            sequence_length=512,
+            batch_size=TrainingHyperparameterValidator.BATCH_SIZE_INFO_THRESHOLD,
+            learning_rate=TrainingHyperparameterValidator.LR_INFO_LOW * 2,
+            epochs=TrainingHyperparameterValidator.EPOCHS_MIN + 1,
+            sequence_length=TrainingHyperparameterValidator.SEQUENCE_MIN + 1,
         )
         # Should not raise
         TrainingHyperparameterValidator.validate_for_engine(params)
@@ -276,13 +315,15 @@ class TestValidateForEngine:
 
     def test_warning_only_does_not_raise(self):
         # epochs=15 gives WARNING, not ERROR
-        params = _hyperparameters(epochs=15)
+        params = _hyperparameters(epochs=TrainingHyperparameterValidator.EPOCHS_MAX_REC + 1)
         # Should not raise (warnings don't block)
         TrainingHyperparameterValidator.validate_for_engine(params)
 
     def test_info_only_does_not_raise(self):
         # batch_size=5 gives INFO, not ERROR
-        params = _hyperparameters(batch_size=5)
+        params = _hyperparameters(
+            batch_size=TrainingHyperparameterValidator.BATCH_SIZE_INFO_THRESHOLD + 1
+        )
         # Should not raise
         TrainingHyperparameterValidator.validate_for_engine(params)
 
@@ -292,20 +333,20 @@ class TestComprehensiveViolations:
 
     def test_valid_config_returns_empty_list(self):
         params = _hyperparameters(
-            batch_size=2,
-            learning_rate=3e-5,
-            epochs=3,
-            sequence_length=512,
+            batch_size=TrainingHyperparameterValidator.BATCH_SIZE_INFO_THRESHOLD,
+            learning_rate=TrainingHyperparameterValidator.LR_INFO_LOW * 2,
+            epochs=TrainingHyperparameterValidator.EPOCHS_MIN + 1,
+            sequence_length=TrainingHyperparameterValidator.SEQUENCE_MIN + 1,
         )
         violations = TrainingHyperparameterValidator.comprehensive_violations(params)
         assert violations == []
 
     def test_multiple_violations_all_returned(self):
         params = _hyperparameters(
-            batch_size=0,  # ERROR
-            learning_rate=2e-3,  # ERROR
-            epochs=0,  # ERROR
-            sequence_length=50,  # ERROR
+            batch_size=TrainingHyperparameterValidator.BATCH_SIZE_RANGE.start - 1,  # ERROR
+            learning_rate=TrainingHyperparameterValidator.LR_MAX * 2,  # ERROR
+            epochs=TrainingHyperparameterValidator.EPOCHS_MIN - 1,  # ERROR
+            sequence_length=TrainingHyperparameterValidator.SEQUENCE_MIN - 1,  # ERROR
         )
         violations = TrainingHyperparameterValidator.comprehensive_violations(params)
         error_count = sum(1 for v in violations if v.severity == ValidationSeverity.ERROR)

@@ -713,14 +713,14 @@ class TopologicalFingerprint:
     def _compute_entropy(values: list[float]) -> float:
         total = sum(values)
         backend = get_default_backend()
-        eps = machine_epsilon(backend, backend.array([0.0]))
+        eps = division_epsilon(backend, backend.array(values))
         if total <= eps:
             return 0.0
         entropy = 0.0
         for v in values:
             p = v / total
             if p > 0:
-                entropy -= p * math.log(p)
+                entropy -= p * math.log(p + eps)
         return entropy
 
 

@@ -38,6 +38,10 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.cross_architecture_layer_matcher import (
+    CrossArchitectureLayerMatcher,
+)
+from modelcypher.core.domain.geometry.gram_aligner import GramAligner
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -83,6 +87,11 @@ class ProbeResult:
     target_kv_activations: dict[int, list[Any]] | None = None
     probe_ids: list[str] | None = None
     probe_domains: list[str] | None = None
+    # Layer alignment transforms: source_acts @ feature_transforms[layer] -> aligned_source
+    # These transforms achieve CKA = 1.0 for each aligned layer pair
+    feature_transforms: dict[int, list[list[float]]] | None = None
+    # Layer mapping: target_layer -> source_layer (from DP alignment)
+    layer_mapping: dict[int, int] | None = None
 
 
 def stage_probe(
@@ -374,36 +383,127 @@ def _probe_precise(
             logger.warning("Failed to build IntersectionMap: %s", e)
             intersection_map_obj = None
 
-    # Compute per-layer CKA directly from activation stacks
+    # Compute CKA matrix for ALL source-target layer pairs, then use DP alignment
+    # to find the correct layer correspondence. Layer indices don't match across
+    # architectures - we must find the geometric correspondence.
+    #
+    # CRITICAL: Use GramAligner to find the transformation that achieves CKA = 1.0.
+    # Raw CKA will be < 1.0 because coordinate systems differ. GramAligner FINDS
+    # the correct transformation. If it can't achieve CKA = 1.0, the algorithm is broken.
+    layer_mapping: dict[int, int] = {}  # target_layer -> source_layer
+    feature_transforms: dict[int, list[list[float]]] = {}  # target_layer -> transform
+    gram_aligner = GramAligner(backend=b)
+
     if source_layer_activations and target_layer_activations:
-        for layer_idx in sorted(source_layer_activations.keys()):
-            if layer_idx not in target_layer_activations:
-                continue
-            src_list = source_layer_activations[layer_idx]
-            tgt_list = target_layer_activations[layer_idx]
-            n_samples = min(len(src_list), len(tgt_list))
-            if n_samples < 2:
-                continue
-            try:
-                src_stacked = b.stack(src_list[:n_samples], axis=0)
-                tgt_stacked = b.stack(tgt_list[:n_samples], axis=0)
-                b.eval(src_stacked, tgt_stacked)
-                cka_result = compute_cka(
-                    src_stacked,
-                    tgt_stacked,
-                    backend=b,
-                    estimator=HSICEstimator.AUTO,
-                    feature_bias_correction=True,
-                )
-                if cka_result.is_valid:
-                    layer_cka_scores_raw[layer_idx] = cka_result.cka
-                    layer_cka_scores[layer_idx] = (
-                        cka_result.cka_corrected
-                        if cka_result.cka_corrected is not None
-                        else cka_result.cka
+        source_layers = sorted(source_layer_activations.keys())
+        target_layers = sorted(target_layer_activations.keys())
+        n_source = len(source_layers)
+        n_target = len(target_layers)
+
+        if n_source > 0 and n_target > 0:
+            # Build full CKA similarity matrix [n_source x n_target]
+            # Use RAW CKA for layer matching (to find correspondence)
+            # Then use GramAligner for the matched pairs (to achieve CKA = 1.0)
+            cka_matrix: list[list[float]] = []
+            for src_layer in source_layers:
+                row: list[float] = []
+                src_list = source_layer_activations[src_layer]
+                for tgt_layer in target_layers:
+                    tgt_list = target_layer_activations[tgt_layer]
+                    n_samples = min(len(src_list), len(tgt_list))
+                    if n_samples < 2:
+                        row.append(0.0)
+                        continue
+                    try:
+                        src_stacked = b.stack(src_list[:n_samples], axis=0)
+                        tgt_stacked = b.stack(tgt_list[:n_samples], axis=0)
+                        b.eval(src_stacked, tgt_stacked)
+                        cka_result = compute_cka(
+                            src_stacked,
+                            tgt_stacked,
+                            backend=b,
+                            estimator=HSICEstimator.AUTO,
+                            feature_bias_correction=True,
+                        )
+                        if cka_result.is_valid:
+                            row.append(
+                                cka_result.cka_corrected
+                                if cka_result.cka_corrected is not None
+                                else cka_result.cka
+                            )
+                        else:
+                            row.append(0.0)
+                    except Exception:
+                        row.append(0.0)
+                cka_matrix.append(row)
+
+            # Use DP to find optimal monotonic layer alignment
+            dp_path, _ = CrossArchitectureLayerMatcher._dynamic_programming_alignment(
+                cka_matrix
+            )
+
+            # For each matched layer pair, use GramAligner to find PERFECT alignment
+            # GramAligner.achieved_cka should be 1.0 (or very close)
+            for src_idx, tgt_idx in dp_path:
+                src_layer = source_layers[src_idx]
+                tgt_layer = target_layers[tgt_idx]
+                layer_mapping[tgt_layer] = src_layer
+
+                # Get activations for this layer pair
+                src_list = source_layer_activations[src_layer]
+                tgt_list = target_layer_activations[tgt_layer]
+                n_samples = min(len(src_list), len(tgt_list))
+
+                if n_samples < 2:
+                    layer_cka_scores[tgt_layer] = 0.0
+                    layer_cka_scores_raw[tgt_layer] = cka_matrix[src_idx][tgt_idx]
+                    continue
+
+                try:
+                    src_stacked = b.stack(src_list[:n_samples], axis=0)
+                    tgt_stacked = b.stack(tgt_list[:n_samples], axis=0)
+                    b.eval(src_stacked, tgt_stacked)
+
+                    # GramAligner finds the transformation that achieves CKA = 1.0
+                    alignment_result = gram_aligner.find_perfect_alignment(
+                        src_stacked,
+                        tgt_stacked,
                     )
-            except Exception as e:
-                logger.debug("LAYER %d: CKA computation failed: %s", layer_idx, e)
+
+                    # Store the transform for transplant stage
+                    feature_transforms[tgt_layer] = alignment_result.feature_transform
+
+                    # achieved_cka should be 1.0 if alignment succeeded
+                    layer_cka_scores[tgt_layer] = alignment_result.achieved_cka
+                    layer_cka_scores_raw[tgt_layer] = cka_matrix[src_idx][tgt_idx]
+
+                    if not alignment_result.is_perfect:
+                        logger.warning(
+                            "PROBE: Layer %d -> %d alignment not perfect "
+                            "(achieved_cka=%.4f, threshold=%.2e). "
+                            "This indicates an alignment algorithm bug.",
+                            src_layer,
+                            tgt_layer,
+                            alignment_result.achieved_cka,
+                            alignment_result.precision_threshold,
+                        )
+                except Exception as e:
+                    logger.warning(
+                        "PROBE: GramAligner failed for layer %d -> %d: %s",
+                        src_layer,
+                        tgt_layer,
+                        e,
+                    )
+                    layer_cka_scores[tgt_layer] = cka_matrix[src_idx][tgt_idx]
+                    layer_cka_scores_raw[tgt_layer] = cka_matrix[src_idx][tgt_idx]
+
+            logger.info(
+                "PROBE: Cross-architecture layer alignment found %d mappings "
+                "(source: %d layers, target: %d layers)",
+                len(dp_path),
+                n_source,
+                n_target,
+            )
 
     # Extract layer confidences (CKA-first, IntersectionMap as fallback)
     # No fallbacks beyond geometric signals - if we don't have alignment, we don't merge
@@ -458,10 +558,13 @@ def _probe_precise(
     min_cka_raw = min(raw_cka_vals) if raw_cka_vals else 0.0
     layers_with_data = set(source_layer_activations.keys()) & set(target_layer_activations.keys())
     missing_cka_layers = [layer for layer in layers_with_data if layer not in layer_cka_scores]
+    # Perfect alignment: all aligned layers have CKA >= 1.0 - precision_threshold
+    # The threshold is sqrt(machine_epsilon) ≈ 1e-4 for float32
+    precision_threshold = math.sqrt(machine_epsilon(b, b.array([1.0])))
     perfect_alignment = (
         bool(layers_with_data)
         and not missing_cka_layers
-        and min_cka == 1.0
+        and min_cka >= 1.0 - precision_threshold
     )
 
     metrics = {
@@ -515,6 +618,8 @@ def _probe_precise(
         target_kv_activations=target_kv_activations,
         probe_ids=probe_ids,
         probe_domains=probe_domains,
+        feature_transforms=feature_transforms if feature_transforms else None,
+        layer_mapping=layer_mapping if layer_mapping else None,
     )
 
 

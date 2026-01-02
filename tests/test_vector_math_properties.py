@@ -32,10 +32,23 @@ import pytest
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.vector_math import (
     SparseVectorMath,
     VectorMath,
 )
+
+
+def _eps() -> float:
+    backend = get_default_backend()
+    return division_epsilon(backend, backend.array([1.0]))
+
+
+def _scaled_eps(*values: float) -> float:
+    eps = _eps()
+    scale = max(1.0, *(abs(v) for v in values))
+    return eps * scale
 
 # =============================================================================
 # Dense Vector Property Tests
@@ -60,7 +73,7 @@ class TestL2NormInvariants:
         """
         # Skip vectors that underflow to zero sum_squares
         sum_sq = sum(v * v for v in vector)
-        assume(sum_sq > 1e-300)
+        assume(sum_sq > _eps())
 
         norm = VectorMath.l2_norm(vector)
 
@@ -81,13 +94,13 @@ class TestL2NormInvariants:
         Mathematical property: ||v / ||v||| = 1.
         """
         norm_sq = sum(v * v for v in vector)
-        assume(norm_sq > 1e-10)  # Skip near-zero vectors
+        assume(norm_sq > _eps())  # Skip near-zero vectors
 
         normalized = VectorMath.l2_normalized(vector)
         norm_of_normalized = VectorMath.l2_norm(normalized)
 
         assert norm_of_normalized is not None
-        assert norm_of_normalized == pytest.approx(1.0, abs=1e-6)
+        assert abs(norm_of_normalized - 1.0) <= _eps()
 
 
 class TestDotProductInvariants:
@@ -117,7 +130,7 @@ class TestDotProductInvariants:
         if ab is None:
             assert ba is None
         else:
-            assert ab == pytest.approx(ba, rel=1e-9)
+            assert abs(ab - ba) <= _scaled_eps(ab, ba)
 
     @given(
         st.lists(
@@ -145,7 +158,7 @@ class TestDotProductInvariants:
             return  # Skip degenerate cases
 
         # |a · b| ≤ ||a|| × ||b||
-        assert abs(dot_ab) <= norm_a * norm_b + 1e-6
+        assert abs(dot_ab) <= norm_a * norm_b + _scaled_eps(norm_a * norm_b)
 
 
 class TestCosineSimilarityInvariants:
@@ -169,10 +182,13 @@ class TestCosineSimilarityInvariants:
         random.seed(42)
         b = [random.gauss(0, 10) for _ in range(len(a))]
 
-        sim = VectorMath.cosine_similarity(a, b)
+        try:
+            sim = VectorMath.cosine_similarity(a, b)
+        except ValueError:
+            return
 
-        if sim is not None:
-            assert -1.0 <= sim <= 1.0
+        eps = _eps()
+        assert -1.0 - eps <= sim <= 1.0 + eps
 
     @given(
         st.lists(
@@ -188,12 +204,12 @@ class TestCosineSimilarityInvariants:
         Mathematical property: cos(0) = 1.
         """
         norm_sq = sum(v * v for v in a)
-        assume(norm_sq > 1e-10)
+        assume(norm_sq > _eps())
 
         sim = VectorMath.cosine_similarity(a, a)
 
         assert sim is not None
-        assert sim == pytest.approx(1.0, abs=1e-6)
+        assert abs(sim - 1.0) <= _eps()
 
     def test_cosine_opposite_vectors_is_negative_one(self) -> None:
         """Cosine similarity of opposite vectors = -1.
@@ -206,7 +222,7 @@ class TestCosineSimilarityInvariants:
         sim = VectorMath.cosine_similarity(a, b)
 
         assert sim is not None
-        assert sim == pytest.approx(-1.0, abs=1e-6)
+        assert abs(sim + 1.0) <= _eps()
 
     def test_cosine_orthogonal_vectors_is_zero(self) -> None:
         """Cosine similarity of orthogonal vectors = 0.
@@ -219,7 +235,7 @@ class TestCosineSimilarityInvariants:
         sim = VectorMath.cosine_similarity(a, b)
 
         assert sim is not None
-        assert sim == pytest.approx(0.0, abs=1e-6)
+        assert abs(sim) <= _eps()
 
 
 # =============================================================================
@@ -233,9 +249,9 @@ class TestSparseL2NormInvariants:
     @pytest.mark.parametrize("seed", range(5))
     def test_sparse_l2_norm_non_negative(self, seed: int) -> None:
         """Sparse L2 norm must be >= 0."""
-        import numpy as np
+        import random
 
-        rng = np.random.default_rng(seed)
+        rng = random.Random(seed)
 
         vector = {f"key_{i}": rng.uniform(-10, 10) for i in range(10)}
 
@@ -251,9 +267,9 @@ class TestSparseCosineInvariants:
     @pytest.mark.parametrize("seed", range(5))
     def test_sparse_cosine_bounded(self, seed: int) -> None:
         """Sparse cosine similarity must be in [-1, 1]."""
-        import numpy as np
+        import random
 
-        rng = np.random.default_rng(seed)
+        rng = random.Random(seed)
 
         keys = [f"key_{i}" for i in range(10)]
         a = {k: rng.uniform(-10, 10) for k in keys}
@@ -262,7 +278,8 @@ class TestSparseCosineInvariants:
         sim = SparseVectorMath.cosine_similarity(a, b)
 
         if sim is not None:
-            assert -1.0 <= sim <= 1.0
+            eps = _eps()
+            assert -1.0 - eps <= sim <= 1.0 + eps
 
     def test_sparse_cosine_self_is_one(self) -> None:
         """Sparse cosine of vector with itself = 1."""
@@ -271,7 +288,7 @@ class TestSparseCosineInvariants:
         sim = SparseVectorMath.cosine_similarity(a, a)
 
         assert sim is not None
-        assert sim == pytest.approx(1.0, abs=1e-6)
+        assert abs(sim - 1.0) <= _eps()
 
     def test_sparse_cosine_disjoint_is_zero(self) -> None:
         """Sparse cosine of disjoint vectors = 0."""
@@ -281,4 +298,4 @@ class TestSparseCosineInvariants:
         sim = SparseVectorMath.cosine_similarity(a, b)
 
         assert sim is not None
-        assert sim == pytest.approx(0.0, abs=1e-6)
+        assert abs(sim) <= _eps()

@@ -21,6 +21,7 @@ Tests the cross-model rotation analysis that determines whether
 global vs per-layer alignment is needed for model merging.
 """
 
+import math
 from typing import Dict, List
 
 import pytest
@@ -32,6 +33,35 @@ from modelcypher.core.domain.geometry.generalized_procrustes import (
     RotationContinuityAnalyzer,
     RotationContinuityResult,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
+
+def _eps(backend) -> float:
+    return division_epsilon(backend, backend.array([1.0]))
+
+
+def _config(backend) -> Config:
+    return Config(per_layer_smoothness_threshold=_eps(backend))
+
+
+def _rotation_matrix(backend, dim: int, theta: float):
+    cos_t = math.cos(theta)
+    sin_t = math.sin(theta)
+    rotation = [[0.0] * dim for _ in range(dim)]
+    for i in range(dim):
+        rotation[i][i] = 1.0
+    rotation[0][0] = cos_t
+    rotation[0][1] = -sin_t
+    rotation[1][0] = sin_t
+    rotation[1][1] = cos_t
+    return backend.array(rotation)
+
+
+def _max_abs_diff(backend, left, right) -> float:
+    diff = backend.abs(left - right)
+    max_diff = backend.max(diff)
+    backend.eval(max_diff)
+    return float(backend.to_numpy(max_diff))
 
 
 class TestRotationContinuityAnalyzer:
@@ -62,16 +92,7 @@ class TestRotationContinuityAnalyzer:
         # Apply same rotation to all layers (should result in global alignment sufficient)
         theta = 0.3
         dim = 8
-
-        # Build a simple rotation in 8D (rotate first 2 dims) using numpy for rotation matrix construction
-        import numpy as np
-        rotation = np.eye(dim, dtype=np.float64)
-        rotation[0, 0] = np.cos(theta)
-        rotation[0, 1] = -np.sin(theta)
-        rotation[1, 0] = np.sin(theta)
-        rotation[1, 1] = np.cos(theta)
-
-        rotation_tensor = backend.array(rotation)
+        rotation_tensor = _rotation_matrix(backend, dim, theta)
         backend.eval(rotation_tensor)
 
         result = {}
@@ -86,34 +107,40 @@ class TestRotationContinuityAnalyzer:
 
     def test_identical_activations_returns_low_error(self, base_activations):
         """Identical activations should have near-zero error."""
-        analyzer = RotationContinuityAnalyzer()
+        backend = get_default_backend()
+        analyzer = RotationContinuityAnalyzer(backend=backend)
         result = analyzer.compute_per_layer_alignments(
             source_activations=base_activations,
             target_activations=base_activations,
             source_model="model_a",
             target_model="model_a",
+            config=_config(backend),
         )
 
         assert result is not None
-        assert result.global_rotation_error < 1e-6
+        eps = _eps(backend)
+        assert result.global_rotation_error <= eps
         for layer in result.layers:
-            assert layer.error < 1e-6
+            assert layer.error <= eps
 
     def test_global_rotation_detected(self, base_activations, rotated_activations):
         """Consistent rotation across layers should have low errors."""
-        analyzer = RotationContinuityAnalyzer()
+        backend = get_default_backend()
+        analyzer = RotationContinuityAnalyzer(backend=backend)
         result = analyzer.compute_per_layer_alignments(
             source_activations=base_activations,
             target_activations=rotated_activations,
             source_model="base",
             target_model="rotated",
+            config=_config(backend),
         )
 
         assert result is not None
         # Both global and per-layer errors should be very low for consistent rotation
-        assert result.global_rotation_error < 1e-6
+        eps = _eps(backend)
+        assert result.global_rotation_error <= eps
         for layer in result.layers:
-            assert layer.error < 1e-6
+            assert layer.error <= eps
         # When both are near-zero, the actual recommendation doesn't matter
         # The key insight is that the errors are uniformly low
 
@@ -124,17 +151,10 @@ class TestRotationContinuityAnalyzer:
 
         # Create per-layer rotations with different angles
         per_layer_rotated = {}
-        import numpy as np
         for layer, anchors in base_activations.items():
             # Different angle for each layer
             theta = 0.3 + layer * 0.5  # 0.3, 0.8, 1.3 radians
-            rotation = np.eye(dim, dtype=np.float64)
-            rotation[0, 0] = np.cos(theta)
-            rotation[0, 1] = -np.sin(theta)
-            rotation[1, 0] = np.sin(theta)
-            rotation[1, 1] = np.cos(theta)
-
-            rotation_tensor = backend.array(rotation)
+            rotation_tensor = _rotation_matrix(backend, dim, theta)
             backend.eval(rotation_tensor)
 
             per_layer_rotated[layer] = {}
@@ -150,18 +170,20 @@ class TestRotationContinuityAnalyzer:
             target_activations=per_layer_rotated,
             source_model="base",
             target_model="per_layer_rotated",
+            config=_config(backend),
         )
 
         assert result is not None
         # Should require per-layer alignment due to varying rotations
         # The smoothness ratio should be low
-        assert result.rotation_roughness > 0.1
+        eps = _eps(backend)
+        assert result.rotation_roughness > eps
         # Angular deviation should be non-zero
         angular_devs = [
             l.angular_deviation for l in result.layers if l.angular_deviation is not None
         ]
         assert len(angular_devs) > 0
-        assert any(d > 0.1 for d in angular_devs)
+        assert any(d > eps for d in angular_devs)
 
     def test_returns_none_for_no_common_layers(self):
         """Should return None when no layers overlap."""
@@ -174,6 +196,7 @@ class TestRotationContinuityAnalyzer:
             target_activations=target,
             source_model="s",
             target_model="t",
+            config=_config(get_default_backend()),
         )
 
         assert result is None
@@ -189,18 +212,21 @@ class TestRotationContinuityAnalyzer:
             target_activations=target,
             source_model="s",
             target_model="t",
+            config=_config(get_default_backend()),
         )
 
         assert result is None
 
     def test_result_metadata(self, base_activations, rotated_activations):
         """Verify result metadata is populated correctly."""
-        analyzer = RotationContinuityAnalyzer()
+        backend = get_default_backend()
+        analyzer = RotationContinuityAnalyzer(backend=backend)
         result = analyzer.compute_per_layer_alignments(
             source_activations=base_activations,
             target_activations=rotated_activations,
             source_model="model_source",
             target_model="model_target",
+            config=_config(backend),
         )
 
         assert result is not None
@@ -214,12 +240,13 @@ class TestRotationContinuityAnalyzer:
     def test_layer_results_have_rotation_matrices(self, base_activations, rotated_activations):
         """Each layer should have a rotation matrix."""
         backend = get_default_backend()
-        analyzer = RotationContinuityAnalyzer()
+        analyzer = RotationContinuityAnalyzer(backend=backend)
         result = analyzer.compute_per_layer_alignments(
             source_activations=base_activations,
             target_activations=rotated_activations,
             source_model="s",
             target_model="t",
+            config=_config(backend),
         )
 
         assert result is not None
@@ -235,19 +262,20 @@ class TestRotationContinuityAnalyzer:
             rotation_t = backend.transpose(rotation)
             identity_approx = backend.matmul(rotation, rotation_t)
             backend.eval(identity_approx)
-            identity_approx_np = backend.to_numpy(identity_approx)
-
-            expected_identity = backend.to_numpy(backend.eye(rotation_np.shape[0]))
-            assert backend.allclose(backend.array(identity_approx_np), backend.array(expected_identity), atol=1e-5)
+            expected_identity = backend.eye(rotation_np.shape[0])
+            eps = _eps(backend)
+            assert _max_abs_diff(backend, identity_approx, expected_identity) <= eps
 
     def test_summary_property(self, base_activations, rotated_activations):
         """Verify summary string is generated correctly."""
-        analyzer = RotationContinuityAnalyzer()
+        backend = get_default_backend()
+        analyzer = RotationContinuityAnalyzer(backend=backend)
         result = analyzer.compute_per_layer_alignments(
             source_activations=base_activations,
             target_activations=rotated_activations,
             source_model="base_model",
             target_model="target_model",
+            config=_config(backend),
         )
 
         assert result is not None
@@ -273,7 +301,7 @@ class TestRotationContinuityAnalyzer:
                 arr_np[0] = -arr_np[0]  # Negate first dimension
                 reflected[layer][anchor] = arr_np.tolist()
 
-        analyzer = RotationContinuityAnalyzer()
+        analyzer = RotationContinuityAnalyzer(backend=backend)
 
         # With reflections disallowed (default)
         result_no_reflect = analyzer.compute_per_layer_alignments(
@@ -281,7 +309,10 @@ class TestRotationContinuityAnalyzer:
             target_activations=reflected,
             source_model="s",
             target_model="t",
-            config=Config(allow_reflections=False),
+            config=Config(
+                allow_reflections=False,
+                per_layer_smoothness_threshold=_eps(backend),
+            ),
         )
 
         # With reflections allowed
@@ -290,7 +321,10 @@ class TestRotationContinuityAnalyzer:
             target_activations=reflected,
             source_model="s",
             target_model="t",
-            config=Config(allow_reflections=True),
+            config=Config(
+                allow_reflections=True,
+                per_layer_smoothness_threshold=_eps(backend),
+            ),
         )
 
         assert result_no_reflect is not None
@@ -322,6 +356,7 @@ class TestRotationContinuityAnalyzer:
             target_activations=target,
             source_model="large",
             target_model="small",
+            config=_config(backend),
         )
 
         assert result is not None

@@ -735,8 +735,8 @@ class TestComputeEntropyEffectiveRank:
 class TestComputeSharedRelationalRank:
     """Tests for compute_shared_relational_rank function."""
 
-    def test_shared_rank_is_minimum(self, any_backend: "Backend") -> None:
-        """Shared rank should be min of source and target effective ranks."""
+    def test_shared_rank_is_maximum(self, any_backend: "Backend") -> None:
+        """Shared rank should preserve signal from both source and target."""
         b = any_backend
         # Source: high effective rank
         source_sv = [1.0, 1.0, 1.0, 1.0]
@@ -745,9 +745,9 @@ class TestComputeSharedRelationalRank:
 
         shared_rank, diag = compute_shared_relational_rank(b, source_sv, target_sv)
 
-        # Shared should be min of the two
-        assert shared_rank <= diag["integer_rank_source"]
-        assert shared_rank <= diag["integer_rank_target"]
+        # Shared should preserve the maximum of the two ranks
+        assert shared_rank >= diag["integer_rank_source"]
+        assert shared_rank >= diag["integer_rank_target"]
 
     def test_shared_rank_diagnostics(self, any_backend: "Backend") -> None:
         """Diagnostics should contain all expected fields."""
