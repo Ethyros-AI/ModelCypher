@@ -41,16 +41,17 @@ from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.utils.errors import ErrorDetail
 
-# Direct command, not a subcommand group - there's only one way to merge
-app = typer.Typer(invoke_without_command=True)
+# Direct command - there's only one way to merge
+# Using invoke_without_command=True with a callback function that has no subcommands
+app = typer.Typer()
 
 
 def _context(ctx: typer.Context) -> CLIContext:
     return ctx.obj
 
 
-@app.callback(invoke_without_command=True)
-def merge(
+@app.command()
+def run(
     ctx: typer.Context,
     source: str = typer.Option(..., "--source", "-s", help="Path to source model (knowledge donor)"),
     target: str = typer.Option(..., "--target", "-t", help="Path to target model (receives knowledge)"),
