@@ -156,28 +156,6 @@ class RefusalDistanceMetrics:
     token_index: int
 
 
-# --- Transport Guided Merger Types ---
-# Note: GWConfig and MergerConfig removed. GromovWassersteinDistance now
-# uses internally-derived algorithm parameters. TransportGuidedMerger uses
-# the transport plan directly without arbitrary blending thresholds.
-
-
-@dataclass
-class MergerResult:
-    merged_weights: Any  # Matrix
-    gw_distance: float
-    marginal_error: float
-    effective_rank: int
-    converged: bool
-    iterations: int
-    dimension_confidences: list[float]
-
-
-@dataclass
-class BatchMergerResult:
-    layer_results: dict[str, MergerResult]
-    mean_gw_distance: float
-    mean_marginal_error: float
     failed_layers: list[str]
     quality_score: float
 

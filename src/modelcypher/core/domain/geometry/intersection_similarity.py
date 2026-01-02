@@ -40,11 +40,9 @@ if TYPE_CHECKING:
 
 __all__ = [
     "IntersectionSimilarityMode",
-    "EnsembleWeights",
     "compute_jaccard_similarity",
     "compute_weighted_jaccard_similarity",
     "compute_cosine_similarity",
-    "compute_ensemble_similarity",
     "build_layer_correlations",
     "build_intersection_map",
     "intersection_map_from_dict",
@@ -61,28 +59,7 @@ class IntersectionSimilarityMode(str, Enum):
     JACCARD = "jaccard"  # Binary set overlap (sparse activation patterns)
     WEIGHTED_JACCARD = "weighted_jaccard"  # Magnitude-weighted Jaccard
     CKA = "cka"  # Centered Kernel Alignment
-    ENSEMBLE = "ensemble"  # Combined weighted Jaccard + CKA + cosine
     GROMOV_WASSERSTEIN = "gromov_wasserstein"  # Optimal transport-based
-
-
-@dataclass
-class EnsembleWeights:
-    """Weights for ensemble similarity mode."""
-
-    weighted_jaccard: float = 1.0 / 3.0
-    cka: float = 1.0 / 3.0
-    cosine: float = 1.0 / 3.0
-
-    def normalized(self) -> "EnsembleWeights":
-        """Return normalized weights summing to 1."""
-        total = self.weighted_jaccard + self.cka + self.cosine
-        if total <= 0:
-            return EnsembleWeights(1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0)
-        return EnsembleWeights(
-            weighted_jaccard=self.weighted_jaccard / total,
-            cka=self.cka / total,
-            cosine=self.cosine / total,
-        )
 
 
 def compute_jaccard_similarity(
@@ -154,40 +131,11 @@ def compute_cosine_similarity(
     return dot_product / norm_product if norm_product > eps else 0.0
 
 
-def compute_ensemble_similarity(
-    source_activations: dict[int, float],
-    target_activations: dict[int, float],
-    weights: EnsembleWeights | None = None,
-) -> float:
-    """
-    Compute ensemble similarity combining multiple metrics.
-
-    Ensemble = w_j * weighted_jaccard + w_c * cka + w_cos * cosine
-    """
-    if weights is None:
-        weights = EnsembleWeights()
-    weights = weights.normalized()
-
-    weighted_jaccard = compute_weighted_jaccard_similarity(source_activations, target_activations)
-    cosine = compute_cosine_similarity(source_activations, target_activations)
-
-    # CKA for sparse vectors is approximately cosine^2 for centered data
-    # For sparse activations, use squared cosine as CKA approximation
-    cka = cosine * cosine
-
-    return (
-        weights.weighted_jaccard * weighted_jaccard
-        + weights.cka * cka
-        + weights.cosine * max(0.0, cosine)  # Cosine can be negative
-    )
-
-
 def build_layer_correlations(
     source_fingerprints: list["ActivationFingerprint"],
     target_fingerprints: list["ActivationFingerprint"],
     layer: int,
     mode: IntersectionSimilarityMode = IntersectionSimilarityMode.JACCARD,
-    ensemble_weights: EnsembleWeights | None = None,
 ) -> list["DimensionCorrelation"]:
     """
     Build dimension correlations for a layer using the specified similarity mode.
@@ -197,7 +145,6 @@ def build_layer_correlations(
         target_fingerprints: Fingerprints from target model
         layer: Layer index to analyze
         mode: Similarity mode to use
-        ensemble_weights: Weights for ensemble mode
     Returns:
         List of dimension correlations
     """
@@ -255,14 +202,6 @@ def build_layer_correlations(
                     t_vec = {i: t_primes.get(p, 0.0) for i, p in enumerate(common_primes)}
                     cosine = compute_cosine_similarity(s_vec, t_vec)
                     similarity = cosine * cosine  # CKA ≈ cos^2 for centered vectors
-            elif mode == IntersectionSimilarityMode.ENSEMBLE:
-                common_primes = set(s_primes.keys()) & set(t_primes.keys())
-                if not common_primes:
-                    similarity = 0.0
-                else:
-                    s_vec = {i: s_primes.get(p, 0.0) for i, p in enumerate(common_primes)}
-                    t_vec = {i: t_primes.get(p, 0.0) for i, p in enumerate(common_primes)}
-                    similarity = compute_ensemble_similarity(s_vec, t_vec, ensemble_weights)
             elif mode == IntersectionSimilarityMode.GROMOV_WASSERSTEIN:
                 # GW requires full pairwise distance matrices - defer to external module
                 # For now, fall back to CKA as approximation
@@ -299,7 +238,6 @@ def build_intersection_map(
     source_model: str,
     target_model: str,
     mode: IntersectionSimilarityMode = IntersectionSimilarityMode.JACCARD,
-    ensemble_weights: EnsembleWeights | None = None,
 ) -> "IntersectionMap":
     """
     Build an intersection map between source and target fingerprints.
@@ -312,7 +250,6 @@ def build_intersection_map(
         source_model: Source model identifier
         target_model: Target model identifier
         mode: Similarity mode to use
-        ensemble_weights: Weights for ensemble mode
     Returns:
         IntersectionMap with dimension correlations and layer confidences
     """
@@ -343,7 +280,6 @@ def build_intersection_map(
             target_fingerprints=target_fingerprints,
             layer=layer,
             mode=mode,
-            ensemble_weights=ensemble_weights,
         )
 
         dimension_correlations[layer] = correlations

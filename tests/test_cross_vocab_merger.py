@@ -36,7 +36,6 @@ class TestCrossVocabMergeConfig:
     def test_defaults(self):
         config = CrossVocabMergeConfig()
         assert config.projection_strategy == ProjectionStrategy.PROCRUSTES
-        assert config.blend_alpha == 0.5
         assert config.preserve_special_tokens is True
         assert config.max_alignments_per_token == 3
         assert config.anchor_count == 1000
@@ -46,10 +45,6 @@ class TestCrossVocabMergeConfig:
     def test_custom_projection_strategy(self):
         config = CrossVocabMergeConfig(projection_strategy=ProjectionStrategy.PCA)
         assert config.projection_strategy == ProjectionStrategy.PCA
-
-    def test_custom_blend_alpha(self):
-        config = CrossVocabMergeConfig(blend_alpha=0.7)
-        assert config.blend_alpha == 0.7
 
     def test_custom_preserve_special_tokens(self):
         config = CrossVocabMergeConfig(preserve_special_tokens=False)

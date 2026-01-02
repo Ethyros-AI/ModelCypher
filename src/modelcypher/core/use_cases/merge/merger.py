@@ -39,8 +39,8 @@ References:
 - AlphaEdit (null-space): Fang et al. (2025) ICLR Outstanding Paper
 
 REMOVED (proven broken):
-- rotate_blend: Alpha-blending has no constraint, destroys coherence
-- ROTATE/BLEND/PROPAGATE: Only served rotate_blend
+- rotate: No boundary preservation guarantee
+- ROTATE/PROPAGATE: Only served rotate
 
 Stage implementations are in merge/stages for modularity.
 """
@@ -115,7 +115,6 @@ class UnifiedGeometricMerger:
         output_dir: str | None = None,
         output_path: str | None = None,
         dry_run: bool = False,
-        use_full_geometry: bool = True,
         knowledge_delta_mask_path: str | None = None,
         transplant_domains: list[str] | None = None,
         target_weights: dict[str, "Array"] | None = None,
@@ -131,7 +130,6 @@ class UnifiedGeometricMerger:
             output_dir=output_dir,
             output_path=output_path,
             dry_run=dry_run,
-            use_full_geometry=use_full_geometry,
             knowledge_delta_mask_path=knowledge_delta_mask_path,
             transplant_domains=transplant_domains,
             target_weights=target_weights,
@@ -229,9 +227,6 @@ class UnifiedGeometricMerger:
 
     def _load_weights_as_arrays(self, model_path: str) -> tuple[dict[str, "Array"], str]:
         return merge_helpers.load_weights_as_arrays(self._model_loader, model_path)
-
-    def _load_knowledge_delta_mask(self, mask_path: str) -> dict[int, float]:
-        return merge_helpers.load_knowledge_delta_mask(mask_path)
 
     def _infer_hidden_dim(self, weights: dict[str, Any]) -> int:
         return merge_helpers.infer_hidden_dim(weights)

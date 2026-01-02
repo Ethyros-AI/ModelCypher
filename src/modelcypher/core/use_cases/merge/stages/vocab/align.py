@@ -71,7 +71,7 @@ def stage_vocabulary_align(
     Uses CrossVocabMerger for sophisticated vocabulary alignment with:
     - Multi-strategy projection (Procrustes, PCA, Optimal Transport)
     - Embedding similarity for unmapped tokens
-    - Null space addition for aligned tokens (no blending)
+    - Null space addition for aligned tokens
 
     Args:
         source_weights: Source model weights

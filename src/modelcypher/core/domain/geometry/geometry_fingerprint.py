@@ -40,35 +40,6 @@ class AnchorSet(str, Enum):
 
 
 @dataclass(frozen=True)
-class FitPrediction:
-    """Geometric fit between models.
-
-    Attributes
-    ----------
-    fit_score : float
-        Composite geometric fit [0,1].
-    location_score : float
-        Centroid alignment.
-    direction_score : float
-        Directional alignment.
-    rotation_penalty : float
-        Rotation complexity.
-    """
-
-    fit_score: float
-    location_score: float
-    direction_score: float
-    rotation_penalty: float
-
-
-class CompositionStrategy(str, Enum):
-    weight_blending = "weightBlending"
-    attention_routing = "attentionRouting"
-    sequential = "sequential"
-    automatic = "automatic"
-
-
-@dataclass(frozen=True)
 class GeometricFingerprint:
     gram_hash: str
     gram_mean_off_diagonal: float
@@ -84,88 +55,6 @@ class GeometricFingerprint:
     hidden_size: int = 0
     model_id: str = ""
     computed_at: datetime = field(default_factory=datetime.utcnow)
-
-    def predict_fit(
-        self,
-        other: GeometricFingerprint,
-        location_weight: float = 1.0 / 3.0,
-        direction_weight: float = 1.0 / 3.0,
-        rotation_weight: float = 1.0 / 3.0,
-    ) -> FitPrediction:
-        mean_diff = abs(self.gram_mean_off_diagonal - other.gram_mean_off_diagonal)
-        std_diff = abs(self.gram_std_off_diagonal - other.gram_std_off_diagonal)
-        spectral_ratio = min(self.gram_spectral_radius, other.gram_spectral_radius) / max(
-            self.gram_spectral_radius,
-            other.gram_spectral_radius,
-            1e-6,
-        )
-        location_score = max(0.0, 1.0 - mean_diff - 0.5 * std_diff) * spectral_ratio
-
-        semantic_diff = _mean_abs_diff(
-            self.semantic_path_self_correlations,
-            other.semantic_path_self_correlations,
-        )
-        computational_diff = _mean_abs_diff(
-            self.computational_path_self_correlations,
-            other.computational_path_self_correlations,
-        )
-        direction_score = max(0.0, 1.0 - semantic_diff - computational_diff)
-
-        rotation_penalty = (
-            self.estimated_rotation_complexity + other.estimated_rotation_complexity
-        ) / 2.0
-
-        fit_score = (
-            location_weight * location_score
-            + direction_weight * direction_score
-            - rotation_weight * rotation_penalty
-        )
-
-        return FitPrediction(
-            fit_score=max(0.0, min(1.0, fit_score)),
-            location_score=location_score,
-            direction_score=direction_score,
-            rotation_penalty=rotation_penalty,
-        )
-
-    @staticmethod
-    def suggest_composition_strategy(
-        fingerprints: Iterable[GeometricFingerprint],
-        blending_threshold: float = 0.8,
-        routing_fit_threshold: float = 0.5,
-        routing_direction_threshold: float = 0.6,
-        sequential_threshold: float = 0.5,
-    ) -> CompositionStrategy:
-        """Suggest composition strategy based on geometric measurements."""
-        items = list(fingerprints)
-        if len(items) < 2:
-            return CompositionStrategy.automatic
-
-        avg_fit = 0.0
-        comparisons = 0
-        for i in range(len(items)):
-            for j in range(i + 1, len(items)):
-                avg_fit += items[i].predict_fit(items[j]).fit_score
-                comparisons += 1
-        avg_fit = avg_fit / max(comparisons, 1)
-
-        if avg_fit >= blending_threshold:
-            return CompositionStrategy.weight_blending
-
-        avg_direction = 0.0
-        for fp in items:
-            semantic = safe_arithmetic_mean(fp.semantic_path_self_correlations)
-            computational = safe_arithmetic_mean(fp.computational_path_self_correlations)
-            avg_direction += (semantic + computational) / 2.0
-        avg_direction = avg_direction / max(len(items), 1)
-
-        if avg_fit >= routing_fit_threshold and avg_direction < routing_direction_threshold:
-            return CompositionStrategy.attention_routing
-
-        if avg_fit < sequential_threshold:
-            return CompositionStrategy.sequential
-
-        return CompositionStrategy.automatic
 
     @staticmethod
     def gram_statistics(gram: list[float], n: int) -> tuple[float, float, str]:

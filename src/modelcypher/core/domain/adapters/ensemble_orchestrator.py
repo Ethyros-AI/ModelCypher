@@ -21,7 +21,7 @@ Enables combining multiple specialized LoRA adapters at inference time,
 allowing models to leverage multiple skill domains simultaneously.
 
 Two composition strategies are supported:
-- **Weight Blending**: High-alignment adapters merged via linear interpolation
+- **Additive Stacking**: High-alignment adapters stacked via delta addition
 - **Attention Routing**: Different specializations route tokens to specific experts
 """
 
@@ -36,10 +36,11 @@ from uuid import UUID, uuid4
 class CompositionStrategy(str, Enum):
     """Strategy for composing multiple adapters."""
 
-    WEIGHT_BLENDING = "weight_blending"
-    """Blend adapter weights via linear interpolation: W' = Σ αᵢ * W_loraᵢ
+    ADDITIVE_STACKING = "additive_stacking"
+    """Stack adapter deltas via addition: W' = W_base + Σ ΔW_loraᵢ
 
     Best for adapters with similar specializations or high geometric alignment.
+    Each LoRA delta is ADDED to the base, not interpolated.
     """
 
     ATTENTION_ROUTING = "attention_routing"
@@ -122,8 +123,8 @@ class OrchestratorConfiguration:
     min_fit_score: float
     """Minimum fit score required for an adapter to join an ensemble."""
 
-    weight_blending_threshold: float
-    """Threshold above which weight blending is preferred."""
+    additive_stacking_threshold: float
+    """Threshold above which additive stacking is preferred."""
 
     auto_select_strategy: bool = True
     """Whether to auto-select composition strategy based on alignment."""
@@ -134,7 +135,7 @@ class OrchestratorConfiguration:
         alignment_scores: list[float],
         *,
         fit_percentile: float = 0.25,
-        blending_percentile: float = 0.50,
+        stacking_percentile: float = 0.50,
         max_adapters: int = 4,
         auto_select_strategy: bool = True,
     ) -> "OrchestratorConfiguration":
@@ -143,7 +144,7 @@ class OrchestratorConfiguration:
         Args:
             alignment_scores: List of alignment scores from adapter pairs.
             fit_percentile: Percentile for min_fit_score (exclude bottom N%).
-            blending_percentile: Percentile for weight_blending_threshold.
+            stacking_percentile: Percentile for additive_stacking_threshold.
             max_adapters: Maximum number of adapters in an ensemble.
             auto_select_strategy: Whether to auto-select composition strategy.
 
@@ -158,12 +159,12 @@ class OrchestratorConfiguration:
 
         # Derive thresholds from percentiles
         fit_idx = min(int(fit_percentile * n), n - 1)
-        blending_idx = min(int(blending_percentile * n), n - 1)
+        stacking_idx = min(int(stacking_percentile * n), n - 1)
 
         return cls(
             max_adapters=max_adapters,
             min_fit_score=sorted_scores[fit_idx],
-            weight_blending_threshold=sorted_scores[blending_idx],
+            additive_stacking_threshold=sorted_scores[stacking_idx],
             auto_select_strategy=auto_select_strategy,
         )
 
@@ -171,7 +172,7 @@ class OrchestratorConfiguration:
     def with_thresholds(
         cls,
         min_fit_score: float,
-        weight_blending_threshold: float,
+        additive_stacking_threshold: float,
         *,
         max_adapters: int = 4,
         auto_select_strategy: bool = True,
@@ -180,7 +181,7 @@ class OrchestratorConfiguration:
 
         Args:
             min_fit_score: Minimum fit score for adapter inclusion.
-            weight_blending_threshold: Threshold for preferring weight blending.
+            additive_stacking_threshold: Threshold for preferring additive stacking.
             max_adapters: Maximum number of adapters in an ensemble.
             auto_select_strategy: Whether to auto-select composition strategy.
 
@@ -189,15 +190,15 @@ class OrchestratorConfiguration:
         """
         if min_fit_score < 0.0 or min_fit_score > 1.0:
             raise ValueError(f"min_fit_score must be in [0, 1], got {min_fit_score}")
-        if weight_blending_threshold < 0.0 or weight_blending_threshold > 1.0:
+        if additive_stacking_threshold < 0.0 or additive_stacking_threshold > 1.0:
             raise ValueError(
-                f"weight_blending_threshold must be in [0, 1], got {weight_blending_threshold}"
+                f"additive_stacking_threshold must be in [0, 1], got {additive_stacking_threshold}"
             )
 
         return cls(
             max_adapters=max_adapters,
             min_fit_score=min_fit_score,
-            weight_blending_threshold=weight_blending_threshold,
+            additive_stacking_threshold=additive_stacking_threshold,
             auto_select_strategy=auto_select_strategy,
         )
 
@@ -317,8 +318,8 @@ class EnsembleOrchestrator:
         # Select strategy
         avg_alignment = sum(scores.values()) / len(scores) if scores else 0.0
         suggested_strategy = (
-            CompositionStrategy.WEIGHT_BLENDING
-            if avg_alignment >= self.configuration.weight_blending_threshold
+            CompositionStrategy.ADDITIVE_STACKING
+            if avg_alignment >= self.configuration.additive_stacking_threshold
             else CompositionStrategy.ATTENTION_ROUTING
         )
 
@@ -331,7 +332,7 @@ class EnsembleOrchestrator:
         elif self.configuration.auto_select_strategy:
             selected_strategy = suggested_strategy
         else:
-            selected_strategy = CompositionStrategy.WEIGHT_BLENDING
+            selected_strategy = CompositionStrategy.ADDITIVE_STACKING
 
         ensemble = Ensemble(
             id=uuid4(),
@@ -397,7 +398,7 @@ class EnsembleOrchestrator:
             id=uuid4(),
             adapters=[stabilizer],
             weights={stabilizer.id: 1.0},
-            strategy=CompositionStrategy.WEIGHT_BLENDING,
+            strategy=CompositionStrategy.ADDITIVE_STACKING,
         )
 
     def set_stabilizer(self, adapter: AdapterInfo | None) -> None:

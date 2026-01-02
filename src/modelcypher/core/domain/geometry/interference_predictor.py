@@ -49,10 +49,10 @@ class TransformationType(str, Enum):
     These are factual descriptions of the geometry, not judgments.
     """
 
-    ALPHA_SCALING = "alpha_scaling"  # Overlapping regions need weighted blending
-    CURVATURE_CORRECTION = "curvature_correction"  # Apply curvature-corrected interpolation
+    NULL_SPACE_CONSTRAINT = "null_space_constraint"  # High overlap = null space is small, less transfers
+    CURVATURE_CORRECTION = "curvature_correction"  # Apply geodesic transport on curved manifold
     PROCRUSTES_ROTATION = "procrustes_rotation"  # Align subspaces before merge
-    BOUNDARY_SMOOTHING = "boundary_smoothing"  # Apply Gaussian smoothing at edges
+    BOUNDARY_PROJECTION = "boundary_projection"  # Project to preserve boundary activations
     SEMANTIC_VERIFICATION = "semantic_verification"  # Verify with knowledge probes
 
 
@@ -66,8 +66,8 @@ class MergeAnalysisConfig:
     """
 
     # Thresholds for triggering transformations
-    # When overlap exceeds this, apply alpha scaling
-    alpha_scaling_threshold: float = 0.5
+    # When overlap exceeds this, null space is constrained (less knowledge transfers)
+    null_space_threshold: float = 0.5
 
     # When curvature divergence exceeds this, apply curvature correction
     curvature_correction_threshold: float = 0.25
@@ -117,7 +117,7 @@ class MergeAnalysisConfig:
             return sorted_scores[idx]
 
         return cls(
-            alpha_scaling_threshold=percentile(alpha_percentile),
+            null_space_threshold=percentile(alpha_percentile),
             curvature_correction_threshold=percentile(curvature_percentile),
             procrustes_threshold=1.0 - percentile(procrustes_percentile),
         )
@@ -339,11 +339,11 @@ class MergeAnalyzer:
         transformations = []
         cfg = self.config
 
-        # High overlap -> need alpha scaling
-        if overlap_score > cfg.alpha_scaling_threshold:
-            transformations.append(TransformationType.ALPHA_SCALING)
+        # High overlap -> null space is constrained, less source knowledge transfers
+        if overlap_score > cfg.null_space_threshold:
+            transformations.append(TransformationType.NULL_SPACE_CONSTRAINT)
 
-        # Curvature divergence -> need curvature correction
+        # Curvature divergence -> need geodesic transport on curved manifold
         if curvature_divergence > cfg.curvature_correction_threshold:
             transformations.append(TransformationType.CURVATURE_CORRECTION)
 
@@ -351,7 +351,7 @@ class MergeAnalyzer:
         if alignment_score < cfg.procrustes_threshold:
             transformations.append(TransformationType.PROCRUSTES_ROTATION)
 
-        # Asymmetric Mahalanobis distances -> boundary smoothing
+        # Asymmetric Mahalanobis distances -> boundary projection needed
         mahal_sum = relation.mahalanobis_distance_ab + relation.mahalanobis_distance_ba
         backend = get_default_backend()
         eps = division_epsilon(backend, backend.array([mahal_sum]))
@@ -361,7 +361,7 @@ class MergeAnalyzer:
             ) / mahal_sum
 
             if mahal_asymmetry > cfg.boundary_asymmetry_threshold:
-                transformations.append(TransformationType.BOUNDARY_SMOOTHING)
+                transformations.append(TransformationType.BOUNDARY_PROJECTION)
 
         return transformations
 
@@ -372,14 +372,14 @@ class MergeAnalyzer:
         descriptions = []
 
         for t in transformations:
-            if t == TransformationType.ALPHA_SCALING:
-                descriptions.append("Apply weighted alpha scaling in overlapping regions")
+            if t == TransformationType.NULL_SPACE_CONSTRAINT:
+                descriptions.append("High overlap constrains null space - less knowledge transfers")
             elif t == TransformationType.CURVATURE_CORRECTION:
-                descriptions.append("Apply curvature-corrected interpolation")
+                descriptions.append("Apply geodesic transport on curved manifold")
             elif t == TransformationType.PROCRUSTES_ROTATION:
                 descriptions.append("Apply Procrustes rotation to align subspaces")
-            elif t == TransformationType.BOUNDARY_SMOOTHING:
-                descriptions.append("Apply Gaussian smoothing at volume boundaries")
+            elif t == TransformationType.BOUNDARY_PROJECTION:
+                descriptions.append("Project to preserve boundary activations")
             elif t == TransformationType.SEMANTIC_VERIFICATION:
                 descriptions.append("Verify semantic alignment with knowledge probes")
 

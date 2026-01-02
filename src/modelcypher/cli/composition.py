@@ -37,7 +37,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from modelcypher.core.use_cases.checkpoint_service import CheckpointService
     from modelcypher.core.use_cases.compare_service import CompareService
-    from modelcypher.core.use_cases.ensemble_service import EnsembleService
     from modelcypher.core.use_cases.evaluation_service import EvaluationService
     from modelcypher.core.use_cases.export_service import ExportService
     from modelcypher.core.use_cases.inventory_service import InventoryService
@@ -126,11 +125,6 @@ def get_export_service() -> "ExportService":
 def get_checkpoint_service() -> "CheckpointService":
     """Get CheckpointService with proper dependency injection."""
     return _get_factory().checkpoint_service()
-
-
-def get_ensemble_service() -> "EnsembleService":
-    """Get EnsembleService with proper dependency injection."""
-    return _get_factory().ensemble_service()
 
 
 def get_evaluation_service() -> "EvaluationService":

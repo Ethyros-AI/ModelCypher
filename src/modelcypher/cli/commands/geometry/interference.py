@@ -257,10 +257,10 @@ def predict_interference(
         summary_parts.append(f"Procrustes rotation for {global_transformation_counts['procrustes_rotation']} concept pairs")
     if global_transformation_counts.get("curvature_correction", 0) > 0:
         summary_parts.append(f"Curvature correction for {global_transformation_counts['curvature_correction']} pairs")
-    if global_transformation_counts.get("alpha_scaling", 0) > 0:
-        summary_parts.append(f"Alpha scaling for {global_transformation_counts['alpha_scaling']} overlapping regions")
-    if global_transformation_counts.get("boundary_smoothing", 0) > 0:
-        summary_parts.append(f"Boundary smoothing for {global_transformation_counts['boundary_smoothing']} edges")
+    if global_transformation_counts.get("null_space_constraint", 0) > 0:
+        summary_parts.append(f"Null space constraint for {global_transformation_counts['null_space_constraint']} overlapping regions")
+    if global_transformation_counts.get("boundary_projection", 0) > 0:
+        summary_parts.append(f"Boundary projection for {global_transformation_counts['boundary_projection']} edges")
 
     if not summary_parts:
         transformation_summary = "Minimal transformation needed. Direct merge."

@@ -225,9 +225,12 @@ class VectorMath:
     ) -> list[float]:
         """Spherical linear interpolation (SLERP) between two vectors.
 
-        SLERP follows the geodesic (great circle arc) on the hypersphere,
-        providing smoother interpolation than linear averaging for neural
-        network weight merging.
+        SLERP follows the geodesic (great circle arc) on the hypersphere.
+        Useful for animation and visualization of smooth transitions.
+
+        WARNING: Do NOT use SLERP for model weight merging. SLERP interpolates
+        between vectors, destroying information from both. For model merging,
+        use null space addition: target + null_space_projection(source - target).
 
         Formula: SLERP(v0, v1, t) = (sin((1-t)θ)/sinθ)v0 + (sin(tθ)/sinθ)v1
         where θ = arccos(v0·v1) is the angle between normalized vectors.
@@ -324,21 +327,22 @@ class VectorMath:
         epsilon: float | None = None,
         interpolate_magnitude: bool = True,
     ) -> dict[str, list[float]]:
-        """Apply SLERP to dictionaries of weight vectors (per-layer merging).
+        """Apply SLERP to dictionaries of vectors.
 
-        Useful for merging model weights where each key corresponds to a layer.
+        WARNING: Do NOT use this for model weight merging. SLERP interpolates
+        between vectors, destroying information from both. For model merging,
+        use null space addition. This function is for visualization/animation.
 
         Args:
-            weights_a: First model's weights as {layer_name: vector}
-            weights_b: Second model's weights as {layer_name: vector}
+            weights_a: First dict of vectors as {name: vector}
+            weights_b: Second dict of vectors as {name: vector}
             t: Interpolation factor in [0, 1]
             epsilon: Threshold for near-parallel detection. If None, derived from dtype.
             interpolate_magnitude: Whether to interpolate magnitudes
 
         Returns:
-            Merged weights as {layer_name: interpolated_vector}.
+            Interpolated vectors as {name: interpolated_vector}.
             Keys present in only one dict are included unchanged.
-            Keys with incompatible vectors are skipped with a warning.
         """
         result: dict[str, list[float]] = {}
         if epsilon is None:
@@ -668,8 +672,11 @@ class BackendVectorMath:
     ) -> Any | None:
         """Spherical linear interpolation using backend operations.
 
-        GPU-accelerated SLERP that works directly on Backend arrays.
+        GPU-accelerated SLERP for animation and visualization.
         Formula: SLERP(v0, v1, t) = (sin((1-t)θ)/sinθ)v0 + (sin(tθ)/sinθ)v1
+
+        WARNING: Do NOT use for model weight merging. SLERP interpolates,
+        destroying information. Use null space addition for merging.
 
         Args:
             v0: First vector (Backend array or convertible)
@@ -750,13 +757,16 @@ class BackendVectorMath:
         t: float,
         epsilon: float | None = None,
     ) -> tuple[Any, dict[str, float | str]] | None:
-        """Spherical linear interpolation for 2D weight matrices.
+        """Spherical linear interpolation for 2D matrices.
 
         Treats each matrix as a high-dimensional vector and applies SLERP.
-        This preserves both source and target geometry proportionally,
-        unlike SVD-based merging which uses only target geometry.
+        Useful for visualization of transformation paths, NOT model merging.
 
-        For weight matrices W₀ and W₁:
+        WARNING: Do NOT use for model weight merging. SLERP interpolates,
+        destroying information from both matrices. For merging, use null space
+        addition: target + null_space_projection(source - target).
+
+        For matrices M₀ and M₁:
         1. Flatten to vectors v₀, v₁
         2. Compute angle θ = arccos(v₀·v₁ / (||v₀|| ||v₁||))
         3. SLERP: v_merged = (sin((1-t)θ)/sinθ)v₀ + (sin(tθ)/sinθ)v₁
@@ -862,19 +872,22 @@ class BackendVectorMath:
         epsilon: float | None = None,
         interpolate_magnitude: bool = True,
     ) -> dict[str, Any]:
-        """Apply SLERP to dictionaries of weight vectors.
+        """Apply SLERP to dictionaries of vectors.
 
-        GPU-accelerated batch SLERP for model weight merging.
+        GPU-accelerated batch SLERP for visualization/animation.
+
+        WARNING: Do NOT use for model weight merging. SLERP interpolates,
+        destroying information. Use null space addition for merging.
 
         Args:
-            weights_a: First model's weights as {layer_name: array}
-            weights_b: Second model's weights as {layer_name: array}
+            weights_a: First dict of arrays as {name: array}
+            weights_b: Second dict of arrays as {name: array}
             t: Interpolation factor in [0, 1]
             epsilon: Threshold for near-parallel detection
             interpolate_magnitude: Whether to interpolate magnitudes
 
         Returns:
-            Merged weights as {layer_name: interpolated_array}.
+            Interpolated arrays as {name: interpolated_array}.
         """
         result: dict[str, Any] = {}
         all_keys = set(weights_a.keys()) | set(weights_b.keys())

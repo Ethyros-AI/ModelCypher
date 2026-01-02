@@ -447,7 +447,7 @@ class InvariantLayerMappingService:
         """Convert LayerMappingResult to IntersectionMap for merge integration.
 
         This enables the merge engine to use per-layer similarity from
-        multi-atlas triangulation as raw confidence for alpha blending.
+        multi-atlas triangulation as raw confidence for alignment analysis.
 
         Args:
             result: Layer mapping result from map_layers()
@@ -497,45 +497,6 @@ class InvariantLayerMappingService:
         )
 
     @staticmethod
-    def confidence_based_alpha(layer_confidence: LayerConfidence) -> float:
-        """Compute alpha directly from confidence.
-
-        alpha = 1.0 - confidence
-        High confidence -> low alpha (trust source)
-        Low confidence -> high alpha (trust target)
-        """
-        return 1.0 - layer_confidence.confidence
-
-    @staticmethod
-    def alpha_by_layer(result: LayerMappingResult) -> dict[int, float]:
-        """Compute per-layer adaptive alpha from layer mapping results.
-
-        This is the main entry point for geometry-driven merge alpha.
-        All alphas are derived from the geometry (confidence scores).
-
-        Args:
-            result: Layer mapping result from map_layers()
-
-        Returns:
-            Dict mapping layer_index → adaptive_alpha
-
-        Raises:
-            ValueError: If confidence data unavailable for any layer
-        """
-        intersection_map = InvariantLayerMappingService.to_intersection_map(result)
-        confidence_by_layer = {lc.layer: lc for lc in intersection_map.layer_confidences}
-
-        alpha_map: dict[int, float] = {}
-        for mapping in result.report.mappings:
-            layer = mapping.source_layer
-            layer_conf = confidence_by_layer.get(layer)
-            if layer_conf is None:
-                raise ValueError("Missing per-layer confidence for alpha computation.")
-            alpha_map[layer] = InvariantLayerMappingService.confidence_based_alpha(layer_conf)
-
-        return alpha_map
-
-    @staticmethod
     def intersection_map_payload(intersection_map: IntersectionMap) -> dict:
         """Convert IntersectionMap to JSON-serializable payload."""
         return {
@@ -568,7 +529,7 @@ class InvariantLayerMappingService:
         }
 
     # =========================================================================
-    # Dimension Blending Methods
+    # Dimension Analysis Helpers
     # =========================================================================
 
     @staticmethod
@@ -589,7 +550,7 @@ class InvariantLayerMappingService:
         fingerprints: ModelFingerprints,
     ) -> list[dict]:
         """
-        Convert ActivationFingerprint objects to dicts for dimension blending.
+        Convert ActivationFingerprint objects to dicts for dimension analysis.
 
         Args:
             fingerprints: ModelFingerprints with list of ActivationFingerprint
@@ -611,4 +572,3 @@ class InvariantLayerMappingService:
                 }
             )
         return result
-

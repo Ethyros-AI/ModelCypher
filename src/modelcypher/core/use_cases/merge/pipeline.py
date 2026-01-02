@@ -31,7 +31,6 @@ from .helpers import (
     extract_layer_index,
     extract_layer_indices,
     infer_hidden_dim,
-    load_knowledge_delta_mask,
     load_model_for_probing,
     load_tokenizer,
     load_weights,
@@ -64,7 +63,6 @@ def run_merge(
     output_dir: str | None = None,
     output_path: str | None = None,
     dry_run: bool = False,
-    use_full_geometry: bool = True,
     knowledge_delta_mask_path: str | None = None,
     transplant_domains: list[str] | None = None,
     target_weights: dict[str, "Array"] | None = None,
@@ -94,24 +92,8 @@ def run_merge(
             transplant_domains=tuple(transplant_domains or merge_config.transplant_domains),
         )
 
-    # Transplant strategy bypasses full geometry merge (uses null-space projection)
-    if use_full_geometry and merge_config.transplant_domains:
-        logger.info(
-            "Transplant domains specified; using null-space constrained transplant."
-        )
-        use_full_geometry = False
-
-    if use_full_geometry:
-        return run_full_geometry_merge(
-            model_loader=model_loader,
-            backend=backend,
-            config=merge_config,
-            source_path=source_path,
-            target_path=target_path,
-            output_dir=output_dir,
-            dry_run=dry_run,
-            knowledge_delta_mask_path=knowledge_delta_mask_path,
-        )
+    if merge_config.transplant_domains:
+        logger.info("Using null-space constrained transplant.")
 
     # Load weights (CPU first to reduce GPU memory pressure during merge)
     source_weights, _ = load_weights_cpu(model_loader, source_path)
@@ -294,7 +276,7 @@ def run_merge(
     # =================================================================
     # STAGE 3: TRANSPLANT (Null-space constrained knowledge transfer)
     # =================================================================
-    # ROTATE/BLEND was removed - alpha-blending produces gibberish.
+    # ROTATE/PROPAGATE was removed - no boundary preservation guarantee.
     # Only null-space constrained transplant preserves boundary relationships.
     if not merge_config.transplant_domains:
         raise RuntimeError(
@@ -452,321 +434,6 @@ def run_merge(
         result.weight_count,
         result.mean_confidence,
         result.mean_procrustes_error,
-    )
-
-    return result
-
-
-def run_full_geometry_merge(
-    *,
-    model_loader: "ModelLoaderPort",
-    backend: "Backend",
-    config: UnifiedMergeConfig,
-    source_path: str,
-    target_path: str,
-    output_dir: str | None = None,
-    dry_run: bool = False,
-    knowledge_delta_mask_path: str | None = None,
-) -> UnifiedMergeResult:
-    """
-    Execute merge using GeometricMergeOrchestrator with ALL 84 geometry files.
-
-    This is the comprehensive merge that uses NULL SPACE ADDITION:
-    - intrinsic_dimension: Per-layer intrinsic dimension
-    - manifold_curvature: Curvature measurements
-    - shared_subspace_projector: CCA-based shared dimension discovery
-    - relative_representation: Anchor-based dimension-agnostic alignment
-    - null_space_filter: Projects deltas to null space (interference elimination)
-    - dare_sparsity: Identifies droppable parameters
-
-    NO BLENDING. NO ALPHAS. Null space addition only.
-    Source knowledge is ADDED where target has nothing.
-    """
-    from modelcypher.core.use_cases.geometric_merge_orchestrator import (
-        GeometricMergeOrchestrator,
-    )
-
-    logger.info("=== FULL GEOMETRY MERGE (84 files) ===")
-    logger.info("Source: %s", source_path)
-    logger.info("Target: %s", target_path)
-    logger.info("Backend: %s", type(backend).__name__)
-
-    # Load weights
-    source_weights, _ = load_weights(model_loader, source_path)
-    target_weights, target_format = load_weights(model_loader, target_path)
-
-    # Load tokenizers
-    source_tokenizer = load_tokenizer(source_path)
-    target_tokenizer = load_tokenizer(target_path)
-
-    # Stage 0: Vocabulary alignment
-    logger.info("STAGE 0: VOCABULARY ALIGNMENT")
-    stage_start = time.perf_counter()
-    source_weights, vocab_metrics, vocab_aligned, vocab_alignment_map = stage_vocabulary(
-        source_weights=source_weights,
-        target_weights=target_weights,
-        source_tokenizer=source_tokenizer,
-        target_tokenizer=target_tokenizer,
-    )
-    require_vocab_phase_lock(vocab_metrics, vocab_aligned)
-    logger.info(
-        "STAGE 0: VOCABULARY ALIGNMENT completed in %.2fs",
-        time.perf_counter() - stage_start,
-    )
-
-    # Collect activations if models can be loaded
-    source_activations = None
-    target_activations = None
-    source_model = None
-    target_model = None
-
-    if config.probe_mode == "precise":
-        logger.info("Loading models for activation collection...")
-        load_start = time.perf_counter()
-        source_model = load_model_for_probing(source_path)
-        target_model = load_model_for_probing(target_path)
-        logger.info(
-            "STAGE 1: Model load completed in %.2fs",
-            time.perf_counter() - load_start,
-        )
-
-        if source_model and target_model and source_tokenizer and target_tokenizer:
-            from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
-            from modelcypher.core.use_cases.merge.stages.probe import (
-                _encode_probe_ids,
-                build_token_id_map,
-                collect_layer_activations_mlx,
-                map_token_ids,
-            )
-
-            probes = UnifiedAtlasInventory.all_probes()
-            max_probes = config.max_probes if config.max_probes > 0 else len(probes)
-
-            source_activations = {}
-            target_activations = {}
-            token_id_map = None
-            if vocab_alignment_map is not None:
-                token_id_map = build_token_id_map(vocab_alignment_map)
-                if token_id_map:
-                    logger.info(
-                        "STAGE 1: Using aligned token map for probes (%d tokens).",
-                        len(token_id_map),
-                    )
-
-            for i, probe in enumerate(probes[:max_probes]):
-                try:
-                    probe_text = None
-                    source_ids: list[int] | None = None
-                    target_ids: list[int] | None = None
-                    for candidate in probe.support_texts or []:
-                        if not candidate or len(candidate.strip()) < 2:
-                            continue
-                        if token_id_map is None:
-                            probe_text = candidate
-                            break
-                        candidate_source_ids = _encode_probe_ids(
-                            source_tokenizer, candidate, add_special_tokens=False
-                        )
-                        candidate_target_ids = map_token_ids(
-                            candidate_source_ids, token_id_map
-                        )
-                        if candidate_target_ids is None:
-                            continue
-                        probe_text = candidate
-                        source_ids = candidate_source_ids
-                        target_ids = candidate_target_ids
-                        break
-
-                    if probe_text is None:
-                        continue
-
-                    src_acts = collect_layer_activations_mlx(
-                        source_model,
-                        source_tokenizer,
-                        probe_text,
-                        token_ids=source_ids,
-                    )
-                    tgt_acts = collect_layer_activations_mlx(
-                        target_model,
-                        target_tokenizer,
-                        probe_text,
-                        token_ids=target_ids,
-                    )
-
-                    for layer_idx, act in src_acts.items():
-                        if layer_idx not in source_activations:
-                            source_activations[layer_idx] = []
-                        source_activations[layer_idx].append(act)
-
-                    for layer_idx, act in tgt_acts.items():
-                        if layer_idx not in target_activations:
-                            target_activations[layer_idx] = []
-                        target_activations[layer_idx].append(act)
-                except Exception:
-                    continue
-
-                if (i + 1) % 20 == 0:
-                    logger.info("Collected activations from %d/%d probes", i + 1, max_probes)
-
-            logger.info(
-                "Collected activations: %d source layers, %d target layers",
-                len(source_activations),
-                len(target_activations),
-            )
-
-    # Clear model memory
-    del source_model
-    del target_model
-    backend.clear_cache()
-
-    # Create orchestrator and analyze geometry
-    logger.info("ANALYZING FULL GEOMETRY...")
-    analyze_start = time.perf_counter()
-    orchestrator = GeometricMergeOrchestrator(backend=backend)
-    geometry = orchestrator.analyze_merge(
-        source_weights=source_weights,
-        target_weights=target_weights,
-        source_activations=source_activations,
-        target_activations=target_activations,
-        tokenizer=target_tokenizer,
-    )
-    logger.info(
-        "ANALYZING FULL GEOMETRY completed in %.2fs",
-        time.perf_counter() - analyze_start,
-    )
-
-    from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
-
-    sample_array = next(iter(source_weights.values()), None)
-    if sample_array is None:
-        raise RuntimeError("No weights available to derive numerical tolerance")
-    # Use regularization_epsilon (sqrt(machine_eps)) for CKA comparison tolerance.
-    # This is the standard choice for comparing computed quantities that accumulate
-    # numerical error through matrix operations like Gram matrix computation.
-    phase_tol = regularization_epsilon(backend, sample_array)
-    if geometry.overall_cka < 1.0 - phase_tol:
-        raise RuntimeError(
-            "PROBE BAROMETER: Overall CKA=%.6f < 1.0. "
-            "Exact kernel alignment is required before merging."
-            % geometry.overall_cka
-        )
-
-    # Execute merge using geometry
-    logger.info("EXECUTING MERGE...")
-    merge_start = time.perf_counter()
-    layer_alpha_scale = None
-    if knowledge_delta_mask_path:
-        layer_alpha_scale = load_knowledge_delta_mask(knowledge_delta_mask_path)
-        logger.info(
-            "Applying knowledge delta mask: %s (%d layers)",
-            knowledge_delta_mask_path,
-            len(layer_alpha_scale),
-        )
-    merged_weights, merge_metrics = orchestrator.merge_weights(
-        source_weights=source_weights,
-        target_weights=target_weights,
-        geometry=geometry,
-        extract_layer_index_fn=extract_layer_index,
-        checkpoint_dir=output_dir,
-        layer_alpha_scale=layer_alpha_scale,
-    )
-    logger.info(
-        "EXECUTING MERGE completed in %.2fs",
-        time.perf_counter() - merge_start,
-    )
-
-    # Detect target quantization and requantize merged weights to match
-    target_is_quantized = any(
-        k.endswith(".scales") or k.endswith(".biases") for k in target_weights.keys()
-    )
-
-    if target_is_quantized:
-        import json
-
-        from modelcypher.core.use_cases.quantization_utils import (
-            QuantizationHint,
-            quantization_config_from_payload,
-            requantize_weights,
-        )
-
-        # Read target config to get quantization params
-        config_path = Path(target_path) / "config.json"
-        quant_hint = QuantizationHint(bits=4, group_size=64, mode="affine")  # Default
-        if config_path.exists():
-            try:
-                with open(config_path) as f:
-                    config_data = json.load(f)
-                quant_config = quantization_config_from_payload(config_data)
-                if quant_config and quant_config.default:
-                    quant_hint = quant_config.default
-                    logger.info(
-                        "Detected target quantization: %d-bit, group_size=%d",
-                        quant_hint.bits,
-                        quant_hint.group_size,
-                    )
-            except Exception as exc:
-                logger.warning("Could not read target config for quantization: %s", exc)
-
-        logger.info("Requantizing merged weights to match target format...")
-        merged_weights = requantize_weights(
-            merged_weights,
-            backend,
-            quant_hint,
-        )
-        logger.info("Requantization complete: %d weights", len(merged_weights))
-
-    # Save if requested
-    if output_dir and not dry_run:
-        save_weights(output_dir, merged_weights, target_format, backend)
-        copy_config_files(target_path, output_dir)
-        output_path = output_dir
-    else:
-        output_path = None
-
-    # Build result
-    layer_indices = extract_layer_indices(target_weights)
-
-    # Derive geometric confidence from MergeGeometry
-    # For full geometry merge, confidence IS the CKA - kernel alignment is the geometry
-    geometry_metrics_full = {
-        "overall_cka": geometry.overall_cka,
-        "mean_intrinsic_dim": geometry.mean_intrinsic_dimension,
-        "mean_shared_dim": geometry.mean_shared_dimension,
-        "mean_ollivier_ricci": geometry.mean_ollivier_ricci,
-        "curvature_alignment": geometry.curvature_alignment,
-        **geometry.curvature_alignment_details,
-    }
-
-    # Raw curvature alignment - no categorical verdict
-    # Callers interpret the value relative to their own baselines
-
-    result = UnifiedMergeResult(
-        merged_weights=merged_weights,
-        vocab_metrics=vocab_metrics,
-        probe_metrics={
-            "overall_cka": geometry.overall_cka,
-            "mean_intrinsic_dim": geometry.mean_intrinsic_dimension,
-            "mean_shared_dim": geometry.mean_shared_dimension,
-        },
-        permute_metrics={"skipped": True, "reason": "full_geometry_mode"},
-        transplant_metrics=merge_metrics,
-        mean_confidence=geometry.overall_cka,
-        mean_procrustes_error=0.0,
-        layer_count=len(layer_indices),
-        weight_count=len(merged_weights),
-        timestamp=datetime.utcnow(),
-        merge_strategy="full_geometry",
-        output_path=output_path,
-        vocab_aligned=vocab_aligned,
-        refusal_preserved=geometry.refusal_preserved,
-        geometry_metrics=geometry_metrics_full,
-    )
-
-    logger.info(
-        "FULL GEOMETRY MERGE COMPLETE: %d layers, %d weights, CKA=%.4f",
-        result.layer_count,
-        result.weight_count,
-        geometry.overall_cka,
     )
 
     return result

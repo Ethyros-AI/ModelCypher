@@ -83,7 +83,6 @@ def test_pipeline_forwards_graft_mask_to_transplant(monkeypatch) -> None:
         source_path="/source",
         target_path="/target",
         dry_run=True,
-        use_full_geometry=False,
         config=config,
     )
 

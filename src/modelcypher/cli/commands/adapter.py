@@ -18,11 +18,10 @@
 """Adapter CLI commands.
 
 Provides commands for:
-- Adapter inspection, projection, wrapping, smoothing, merging
+- Adapter inspection, projection, wrapping, smoothing
 
 Commands:
     mc adapter inspect <path>
-    mc adapter merge <path1> <path2> --output-dir <dir>
 """
 
 from __future__ import annotations
@@ -176,71 +175,6 @@ def adapter_smooth(
             f"Layers: {result.smoothed_layers}",
             f"Variance Reduction: {result.variance_reduction:.2%}",
         ]
-        write_output("\n".join(lines), context.output_format, context.pretty)
-        return
-
-    write_output(payload, context.output_format, context.pretty)
-
-
-@adapter_app.command("merge")
-def adapter_merge(
-    ctx: typer.Context,
-    adapter_paths: list[str] = typer.Argument(..., help="Paths to adapters to merge (at least 2)"),
-    output_dir: str = typer.Option(..., "--output-dir", help="Output directory for merged adapter"),
-    recommend_ensemble: bool = typer.Option(
-        False, "--recommend-ensemble", help="Compute ensemble routing weights"
-    ),
-) -> None:
-    """Merge multiple LoRA adapters using geometric alignment.
-
-    Uses Procrustes rotation and permutation re-basin for mathematically
-    correct manifold alignment.
-
-    Examples:
-        mc adapter merge ./adapter1 ./adapter2 --output-dir ./merged
-        mc adapter merge ./a1 ./a2 ./a3 --output-dir ./merged --recommend-ensemble
-    """
-    context = _context(ctx)
-    from modelcypher.core.use_cases.adapter_service import AdapterService
-
-    service = AdapterService()
-    try:
-        result = service.merge(
-            adapter_paths=adapter_paths,
-            output_dir=output_dir,
-            recommend_ensemble=recommend_ensemble,
-        )
-    except ValueError as exc:
-        error = ErrorDetail(
-            code="MC-1008",
-            title="Adapter merge failed",
-            detail=str(exc),
-            hint="Ensure all adapter paths exist and contain valid weights",
-            trace_id=context.trace_id,
-        )
-        write_error(error.as_dict(), context.output_format, context.pretty)
-        raise typer.Exit(code=1)
-
-    payload = {
-        "outputPath": result.output_path,
-        "mergedModules": result.merged_modules,
-        "procrustesError": result.procrustes_error,
-        "permutationQuality": result.permutation_quality,
-        "mergeConfidence": result.merge_confidence,
-        "ensembleRouting": result.ensemble_recommendation,
-    }
-
-    if context.output_format == "text":
-        lines = [
-            "ADAPTER MERGED (Geometric Alignment)",
-            f"Output: {result.output_path}",
-            f"Merged Parameters: {result.merged_modules:,}",
-            f"Procrustes Error: {result.procrustes_error:.4f}",
-            f"Permutation Quality: {result.permutation_quality:.4f}",
-            f"Merge Confidence: {result.merge_confidence:.4f}",
-        ]
-        if result.ensemble_recommendation:
-            lines.append(f"Ensemble Weights: {result.ensemble_recommendation.get('weights', [])}")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

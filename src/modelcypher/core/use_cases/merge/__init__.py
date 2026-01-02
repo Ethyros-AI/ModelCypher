@@ -25,7 +25,6 @@ from .models import (
     UnifiedMergeConfig,
     UnifiedMergeResult,
 )
-from .orchestrator import GeometricMergeOrchestrator
 from .service import MergePipelineService
 from .validation import MergeValidationService
 
@@ -34,7 +33,6 @@ __all__ = [
     "UnifiedMergeConfig",
     "UnifiedMergeResult",
     "CrossArchitectureInfo",
-    "GeometricMergeOrchestrator",
     "LayerGeometry",
     "MergeGeometry",
     "MergePipelineService",

@@ -1022,45 +1022,6 @@ def compute_cka_from_grams(
     return cka
 
 
-def ensemble_similarity(
-    jaccard: float,
-    cka: float,
-    cosine: float,
-    jaccard_weight: float = 0.5,
-    cka_weight: float = 0.5,
-) -> float:
-    """
-    Compute ensemble similarity score combining multiple metrics.
-
-    Formula:
-        score = w_jaccard * jaccard + w_cka * CKA + cosine_gate
-        cosine_gate = max(0, cosine)  # Avoid anti-correlation penalty
-
-    Args:
-        jaccard: Weighted Jaccard similarity [0, 1]
-        cka: CKA similarity [0, 1]
-        cosine: Cosine similarity [-1, 1]
-        jaccard_weight: Weight for Jaccard (default 0.5)
-        cka_weight: Weight for CKA (default 0.5)
-
-    Returns:
-        Ensemble similarity score
-    """
-    # Cosine gate: only add positive contribution
-    cosine_gate = max(0.0, cosine)
-
-    # Weighted combination
-    score = jaccard_weight * jaccard + cka_weight * cka + cosine_gate
-
-    # Normalize to [0, 1] approximately
-    # Max possible is jaccard_weight + cka_weight + 1.0 = 2.0
-    # But we typically want a score in [0, 1]
-    # Scale by expected max
-    max_score = jaccard_weight + cka_weight + 1.0
-
-    return score / max_score
-
-
 class CKAComputer:
     """Configurable CKA computation with HSIC estimator selection.
 

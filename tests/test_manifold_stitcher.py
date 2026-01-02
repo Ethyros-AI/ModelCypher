@@ -21,7 +21,6 @@ Tests mathematical invariants including:
 - Jaccard similarity: ∈ [0, 1], J(A, A) = 1, J(∅, ∅) = 0
 - Weighted Jaccard: ∈ [0, 1], sum(min)/sum(max) formula
 - Cosine similarity: ∈ [-1, 1], cos(x, x) = 1
-- Ensemble similarity: ∈ [0, 1], weighted combination
 - Proper rotation: det(R) = +1 (not reflection)
 - LayerConfidence: ∈ [0, 1]
 - ContinuousFingerprint.entropies: ∈ [0, 1]
@@ -36,9 +35,7 @@ from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.intersection_similarity import (
-    EnsembleWeights,
     compute_cosine_similarity,
-    compute_ensemble_similarity,
     compute_jaccard_similarity,
     compute_weighted_jaccard_similarity,
 )
@@ -269,54 +266,6 @@ class TestCosineSimilarity:
         result = compute_cosine_similarity(a, b)
         assert result == pytest.approx(-1.0)
 
-
-# =============================================================================
-# Ensemble Similarity Tests
-# =============================================================================
-
-
-class TestEnsembleSimilarity:
-    """Tests for compute_ensemble_similarity."""
-
-    @given(activation_dict(), activation_dict())
-    @settings(max_examples=50, deadline=None)
-    def test_ensemble_bounded_zero_one(self, dict_a: dict, dict_b: dict):
-        """Ensemble similarity must be in [0, 1].
-
-        Mathematical property: Weighted sum with non-negative weights
-        and bounded components produces bounded result.
-        """
-        result = compute_ensemble_similarity(dict_a, dict_b)
-        assert 0.0 <= result <= 1.0 + 1e-6
-
-    @given(activation_dict())
-    @settings(max_examples=50, deadline=None)
-    def test_ensemble_self_is_high(self, d: dict):
-        """Ensemble similarity with self should be high (near 1).
-
-        All components (Jaccard, CKA, cosine) should be maximal.
-        """
-        assume(len(d) > 0)
-        # Require at least one non-trivial activation to avoid numerical edge cases
-        assume(any(v > 0.01 for v in d.values()))
-        result = compute_ensemble_similarity(d, d)
-        # Self-similarity should be close to 1
-        assert result > 0.9
-
-    def test_ensemble_weights_normalize(self):
-        """EnsembleWeights.normalized() should sum to 1."""
-        weights = EnsembleWeights(weighted_jaccard=1.0, cka=2.0, cosine=3.0)
-        normalized = weights.normalized()
-        total = normalized.weighted_jaccard + normalized.cka + normalized.cosine
-        assert total == pytest.approx(1.0)
-
-    def test_ensemble_zero_weights_fallback(self):
-        """Zero weights should normalize to equal distribution."""
-        weights = EnsembleWeights(weighted_jaccard=0.0, cka=0.0, cosine=0.0)
-        normalized = weights.normalized()
-        assert normalized.weighted_jaccard == pytest.approx(1 / 3)
-        assert normalized.cka == pytest.approx(1 / 3)
-        assert normalized.cosine == pytest.approx(1 / 3)
 
 
 # =============================================================================

@@ -17,32 +17,4 @@
 
 """Domain adapter types for signal routing and coordination."""
 
-from modelcypher.core.domain.adapters.ensemble_orchestrator import (
-    AdapterInfo,
-    CompositionStrategy,
-    Ensemble,
-    EnsembleOrchestrator,
-    EnsembleOrchestratorError,
-    EnsembleResult,
-    InvalidAdapterIDError,
-    NoActiveEnsembleError,
-    NoAdaptersError,
-    NoAlignedAdaptersError,
-    OrchestratorConfiguration,
-    TooManyAdaptersError,
-)
-
-__all__ = [
-    "AdapterInfo",
-    "CompositionStrategy",
-    "Ensemble",
-    "EnsembleOrchestrator",
-    "EnsembleOrchestratorError",
-    "EnsembleResult",
-    "InvalidAdapterIDError",
-    "NoActiveEnsembleError",
-    "NoAdaptersError",
-    "NoAlignedAdaptersError",
-    "OrchestratorConfiguration",
-    "TooManyAdaptersError",
-]
+__all__: list[str] = []

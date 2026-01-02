@@ -96,20 +96,6 @@ def load_weights_as_arrays(
     return weights, "safetensors"
 
 
-def load_knowledge_delta_mask(mask_path: str) -> dict[int, float]:
-    """Load per-layer alpha scaling from a knowledge delta mask file."""
-    payload = json.loads(Path(mask_path).read_text())
-    alpha_by_layer = payload.get("alphaByLayer") or payload.get("alpha_by_layer")
-    if isinstance(alpha_by_layer, dict):
-        return {int(layer): float(alpha) for layer, alpha in alpha_by_layer.items()}
-
-    graft_layers = payload.get("graftLayers") or payload.get("graft_layers")
-    if isinstance(graft_layers, list):
-        return {int(layer): 1.0 for layer in graft_layers}
-
-    raise ValueError("Invalid knowledge delta mask: missing alphaByLayer or graftLayers.")
-
-
 def infer_hidden_dim(weights: dict[str, Any]) -> int:
     """Infer hidden dimension from weight shapes.
 

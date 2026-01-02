@@ -31,8 +31,7 @@ Stage 3: TRANSPLANT - Null-space constrained knowledge grafting
 Stage 6: VALIDATE - Safety checks (numerical + content)
 
 REMOVED (proven broken):
-- ROTATE/BLEND/PROPAGATE: Alpha-blending produces gibberish even for same-arch models.
-  No mathematical guarantee of boundary preservation.
+- ROTATE/PROPAGATE: No mathematical guarantee of boundary preservation.
 
 References:
 - Git Re-Basin: Ainsworth et al. (2023) arXiv:2209.04836

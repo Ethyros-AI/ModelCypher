@@ -23,14 +23,9 @@ delegates to the Backend abstraction for compute. No platform-specific
 merger classes needed—one correct geometric merge works everywhere.
 
 Usage:
-    from modelcypher.core.domain.merging._platform import (
-        get_merging_platform,
-        get_lora_adapter_merger_class,
-    )
+    from modelcypher.core.domain.merging._platform import get_merging_platform
 
     platform = get_merging_platform()
-    Merger = get_lora_adapter_merger_class()
-    report = Merger.merge(adapters, output)
 """
 
 from __future__ import annotations
@@ -94,22 +89,6 @@ def get_merging_platform() -> str:
     return "cpu"
 
 
-def get_lora_adapter_merger_class() -> type:
-    """Get the unified LoRAAdapterMerger class.
-
-    The merger uses geometric alignment (Procrustes + permutation re-basin)
-    and delegates to the Backend abstraction for compute operations.
-    Works on all platforms.
-
-    Returns:
-        LoRAAdapterMerger class.
-    """
-    from .lora_adapter_merger import LoRAAdapterMerger
-
-    return LoRAAdapterMerger
-
-
 __all__ = [
     "get_merging_platform",
-    "get_lora_adapter_merger_class",
 ]

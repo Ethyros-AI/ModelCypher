@@ -164,15 +164,6 @@ class ServiceFactory:
 
     # --- Inference Services ---
 
-    def ensemble_service(self):
-        """Create EnsembleService with injected stores and inference."""
-        from modelcypher.core.use_cases.ensemble_service import EnsembleService
-
-        return EnsembleService(
-            store=self._registry.model_store,
-            inference_engine=self._registry.inference_engine,
-        )
-
     def merge_validation_service(self):
         """Create MergeValidationService with injected inference engine."""
         from modelcypher.core.use_cases.merge import MergeValidationService

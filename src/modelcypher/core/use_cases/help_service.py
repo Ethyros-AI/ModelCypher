@@ -567,7 +567,7 @@ _mc_completions() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="model merge system geometry adapter entropy thermo safety agent stability dashboard storage ensemble infer agent-eval research help inventory explain train job checkpoint eval compare validate estimate calibration"
+    commands="model merge system geometry adapter entropy thermo safety agent stability dashboard storage infer agent-eval research help inventory explain train job checkpoint eval compare validate estimate calibration"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- ${cur}) )
@@ -631,7 +631,6 @@ _mc() {
         'stability:Stability testing'
         'dashboard:Dashboard metrics'
         'storage:Storage management'
-        'ensemble:Ensemble tools'
         'infer:Inference tools'
         'agent-eval:Agent evaluation'
         'research:Research tools'
@@ -670,7 +669,6 @@ complete -c mc -n "__fish_use_subcommand" -a stability -d "Stability testing"
 complete -c mc -n "__fish_use_subcommand" -a agent-eval -d "Agent evaluation"
 complete -c mc -n "__fish_use_subcommand" -a dashboard -d "Dashboard metrics"
 complete -c mc -n "__fish_use_subcommand" -a storage -d "Storage management"
-complete -c mc -n "__fish_use_subcommand" -a ensemble -d "Ensemble tools"
 complete -c mc -n "__fish_use_subcommand" -a infer -d "Inference tools"
 complete -c mc -n "__fish_use_subcommand" -a research -d "Research tools"
 complete -c mc -n "__fish_use_subcommand" -a help -d "Help commands"

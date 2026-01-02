@@ -321,31 +321,7 @@ class TestCrossVocabMergeConfig:
         config = CrossVocabMergeConfig()
 
         assert config.projection_strategy == ProjectionStrategy.PROCRUSTES
-        assert config.blend_alpha == 0.5
         assert config.preserve_special_tokens is True
-
-    def test_from_similarity_distribution(self) -> None:
-        """Should derive thresholds from similarity distribution."""
-        similarities = [0.1, 0.3, 0.5, 0.7, 0.9]
-
-        config = CrossVocabMergeConfig.from_similarity_distribution(
-            similarities,
-            high_similarity_percentile=0.8,
-            similar_percentile=0.6,
-            approximate_percentile=0.4,
-        )
-
-        # Thresholds should be derived from the distribution
-        assert config.high_similarity_threshold == pytest.approx(0.7)  # 80th percentile
-        assert config.similarity_threshold == pytest.approx(0.5)  # 60th percentile
-        assert config.confidence_threshold == pytest.approx(0.3)  # 40th percentile
-
-    def test_from_empty_distribution_uses_defaults(self) -> None:
-        """Empty distribution should use defaults."""
-        config = CrossVocabMergeConfig.from_similarity_distribution([])
-
-        assert config.high_similarity_threshold == 0.95  # Default
-        assert config.similarity_threshold == 0.8  # Default
 
     def test_to_projection_config(self) -> None:
         """Should convert to ProjectionConfig correctly."""
@@ -427,7 +403,6 @@ class TestCrossVocabMerger:
 
         config = CrossVocabMergeConfig(
             projection_strategy=ProjectionStrategy.TRUNCATE,
-            exact_match_only=True,  # Skip embedding similarity for speed
         )
         merger = CrossVocabMerger(config=config, backend=backend)
 
@@ -472,8 +447,7 @@ class TestCrossVocabMerger:
         assert "alignment_coverage" in quality
         assert "alignment_confidence" in quality
         assert "projection_alignment_score" in quality
-        assert "overall_quality_score" in quality
-        assert 0.0 <= quality["overall_quality_score"] <= 1.0
+        assert "alignment_score" in quality
 
 
 class TestSpecialTokenHandling:

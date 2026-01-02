@@ -18,18 +18,17 @@
 """
 Model Merging Package.
 
-Provides geometric alignment for merging models and adapters using:
+Provides geometric alignment for merging models using:
 1. Probe models with semantic primes to build intersection map
 2. Permutation align (re-basin neurons)
 3. Procrustes rotate (align weight spaces)
-4. Blend with confidence-weighted alpha
+4. Null-space constrained transplant (geometric addition)
 """
 
 from modelcypher.core.domain.merging.exceptions import MergeError
 
 # Platform detection (for backend selection, not merger selection)
 from ._platform import (
-    get_lora_adapter_merger_class,
     get_merging_platform,
 )
 from .entropy_merge_validator import (
@@ -39,13 +38,6 @@ from .entropy_merge_validator import (
     MergeEntropyValidation,
     ModelEntropyProfile,
 )
-from .lora_adapter_merger import (
-    LoRAAdapterMerger,
-)
-from .lora_adapter_merger import (
-    MergeReport as LoRAMergeReport,
-)
-
 __all__ = [
     # Entropy Merge Validator
     "EntropyMergeValidator",
@@ -55,10 +47,6 @@ __all__ = [
     "MergeEntropyValidation",
     # Exceptions
     "MergeError",
-    # LoRA Adapter Merger (geometric)
-    "LoRAAdapterMerger",
-    "LoRAMergeReport",
     # Platform detection
     "get_merging_platform",
-    "get_lora_adapter_merger_class",
 ]
