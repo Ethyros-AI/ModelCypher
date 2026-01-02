@@ -100,7 +100,6 @@ def alignment_signal_from_matrices(
     dimension: int = 3,
     cka_achieved: float = 0.0,
     iteration: int = 0,
-    top_k: int = 8,
 ) -> AlignmentSignal:
     """Build an AlignmentSignal from paired anchor matrices."""
     b = backend or get_default_backend()
@@ -130,9 +129,8 @@ def alignment_signal_from_matrices(
         distances = b.norm(diff, axis=1)
     dist_list = list(b.to_numpy(distances).tolist())
 
-    top_k = min(top_k, len(dist_list))
     ranked = sorted(range(len(dist_list)), key=lambda i: dist_list[i], reverse=True)
-    misaligned = [labels[i] for i in ranked[:top_k]]
+    misaligned = [labels[i] for i in ranked]
 
     shape_mismatch = b.shape(source_matrix) != b.shape(target_matrix)
 

@@ -1162,21 +1162,17 @@ def solve_via_gram_alignment(
     U_t, S_t, Vt_t = svd_via_eigh(b, target_c, full_matrices=False)
     b.eval(U_s, S_s, Vt_s, U_t, S_t, Vt_t)
 
-    # Determine effective ranks using entropy-based measure
-    # This separates SIGNAL (relational content) from NOISE (random fluctuations)
+    # Get singular values
     S_s_np = [float(v) for v in b.to_numpy(S_s)]
     S_t_np = [float(v) for v in b.to_numpy(S_t)]
 
     if not S_s_np or not S_t_np or max(S_s_np) == 0 or max(S_t_np) == 0:
         return None, diagnostics
 
-    # Compute shared relational rank - where BOTH models have signal
-    # This is the space where CKA alignment is meaningful and achievable.
-    # Beyond this rank, we're trying to align noise - mathematically impossible.
-    shared_rank, rank_diag = compute_shared_relational_rank(b, S_s_np, S_t_np, eps)
-    diagnostics.update(rank_diag)
-
-    # Also record threshold-based ranks for comparison
+    # Compute NUMERICAL rank - all dimensions above numerical zero
+    # NO entropy-based truncation. CKA = 1.0 is achievable at FULL rank.
+    # The "shared relational rank" concept was causing CKA < 1.0 by truncating
+    # signal dimensions prematurely.
     thresh_s = eps * max(S_s_np) * max(n, d_s)
     thresh_t = eps * max(S_t_np) * max(n, d_t)
     rank_s = sum(1 for s in S_s_np if s > thresh_s)
@@ -1184,15 +1180,11 @@ def solve_via_gram_alignment(
     diagnostics["rank_source"] = rank_s
     diagnostics["rank_target"] = rank_t
 
-    if shared_rank == 0:
-        return None, diagnostics
-
-    # Clamp shared_rank to available dimensions (pad if needed)
-    # When max(rank_source, rank_target) > available SVD dimensions,
-    # we use what we have and pad the smaller representation.
+    # Use ALL non-zero dimensions from both representations
+    # Procrustes alignment works on the minimum of available ranks
     avail_s = len(S_s_np)
     avail_t = len(S_t_np)
-    actual_rank = min(shared_rank, avail_s, avail_t)
+    actual_rank = min(rank_s, rank_t, avail_s, avail_t)
 
     if actual_rank == 0:
         return None, diagnostics

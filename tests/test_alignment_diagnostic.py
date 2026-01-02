@@ -366,11 +366,12 @@ class TestAlignmentSignalFromMatrices:
         assert len(signal.anchor_labels) == 5
         assert signal.anchor_labels[0] == "sample:0"
 
-    def test_top_k_limits_misaligned_anchors(self, backend):
-        """Test top_k limits number of misaligned anchors."""
+    def test_misaligned_anchors_include_all_samples(self, backend):
+        """Test misaligned anchors include all samples."""
         backend.random_seed(42)
-        source = backend.random_normal((20, 8))
-        target = backend.random_normal((20, 8))
+        n_samples = 20
+        source = backend.random_normal((n_samples, 8))
+        target = backend.random_normal((n_samples, 8))
         cka_achieved = 1.0 - division_epsilon(backend, source)
 
         signal = alignment_signal_from_matrices(
@@ -378,16 +379,16 @@ class TestAlignmentSignalFromMatrices:
             target_matrix=target,
             backend=backend,
             cka_achieved=cka_achieved,
-            top_k=3,
         )
 
-        assert len(signal.misaligned_anchors) == 3
+        assert len(signal.misaligned_anchors) == n_samples
 
-    def test_top_k_clamped_to_sample_count(self, backend):
-        """Test top_k doesn't exceed sample count."""
+    def test_misaligned_anchors_bounded_by_sample_count(self, backend):
+        """Test misaligned anchors are bounded by sample count."""
         backend.random_seed(42)
-        source = backend.random_normal((5, 8))
-        target = backend.random_normal((5, 8))
+        n_samples = 5
+        source = backend.random_normal((n_samples, 8))
+        target = backend.random_normal((n_samples, 8))
         cka_achieved = 1.0 - division_epsilon(backend, source)
 
         signal = alignment_signal_from_matrices(
@@ -395,10 +396,9 @@ class TestAlignmentSignalFromMatrices:
             target_matrix=target,
             backend=backend,
             cka_achieved=cka_achieved,
-            top_k=100,  # more than samples
         )
 
-        assert len(signal.misaligned_anchors) == 5
+        assert len(signal.misaligned_anchors) == n_samples
 
     def test_iteration_preserved(self, backend):
         """Test iteration number is preserved."""
@@ -629,10 +629,9 @@ class TestAlignmentSignalEdgeCases:
             target_matrix=target,
             backend=backend,
             cka_achieved=cka_achieved,
-            top_k=10,
         )
 
-        assert len(signal.misaligned_anchors) == 10
+        assert len(signal.misaligned_anchors) == 100
 
     def test_cka_achieved_zero(self, backend):
         """Test with CKA achieved = 0."""
