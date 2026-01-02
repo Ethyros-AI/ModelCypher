@@ -31,17 +31,14 @@ from typing import Awaitable, Callable, Protocol
 logger = logging.getLogger("modelcypher.adapter_pool")
 
 
-class MemoryPressure(Enum):
-    NORMAL = "normal"
-    WARNING = "warning"
-    CRITICAL = "critical"
-
-
 @dataclass
 class MemoryStats:
-    pressure: MemoryPressure
     available_bytes: int
     total_bytes: int
+
+    @property
+    def available_ratio(self) -> float:
+        return self.available_bytes / self.total_bytes if self.total_bytes else 0.0
 
 
 class MemoryManaging(Protocol):
@@ -50,10 +47,6 @@ class MemoryManaging(Protocol):
 
 class SystemMemoryManager(MemoryManaging):
     """Real memory manager that reads actual system memory stats."""
-
-    # Thresholds for memory pressure classification
-    WARNING_THRESHOLD = 0.75  # 75% used = warning
-    CRITICAL_THRESHOLD = 0.90  # 90% used = critical
 
     async def memory_stats(self) -> MemoryStats:
         """Get real system memory statistics."""
@@ -73,16 +66,7 @@ class SystemMemoryManager(MemoryManaging):
                 "implementation with explicit measurements."
             )
 
-        used_ratio = 1.0 - (available / total)
-
-        if used_ratio >= self.CRITICAL_THRESHOLD:
-            pressure = MemoryPressure.CRITICAL
-        elif used_ratio >= self.WARNING_THRESHOLD:
-            pressure = MemoryPressure.WARNING
-        else:
-            pressure = MemoryPressure.NORMAL
-
-        return MemoryStats(pressure, available, total)
+        return MemoryStats(available, total)
 
     def _get_memory_fallback(self) -> tuple[int, int]:
         """Platform-specific memory detection without psutil."""
@@ -200,14 +184,6 @@ class AdapterSwapResult:
     was_cache_hit: bool
 
 
-@dataclass
-class AdapterPoolConfiguration:
-    max_pooled_normal: int
-    max_pooled_warning: int
-    max_pooled_critical: int
-    target_swap_ms: float
-
-
 from modelcypher.core.domain.inference.types import AdapterPoolError
 
 
@@ -219,12 +195,10 @@ class MLXAdapterPool:
 
     def __init__(
         self,
-        config: AdapterPoolConfiguration,
         memory_manager: MemoryManaging | None = None,
     ):
         if memory_manager is None:
             memory_manager = SystemMemoryManager()
-        self.config = config
         self.memory_manager = memory_manager
 
         # State (protected by lock in async methods)
@@ -267,10 +241,9 @@ class MLXAdapterPool:
                 logger.debug(f"Adapter {adapter_id} updated priority to {priority}")
                 return
 
-            await self._ensure_capacity(priority)
-
             # Estimate memory
             mem_bytes = self._estimate_adapter_memory(path)
+            await self._ensure_capacity(mem_bytes, priority)
 
             entry = AdapterPoolEntry(
                 id=adapter_id, path=path, priority=priority, estimated_memory_bytes=mem_bytes
@@ -356,22 +329,22 @@ class MLXAdapterPool:
             self.usage_order.remove(uid)
         self.usage_order.append(uid)
 
-    async def _ensure_capacity(self, priority: AdapterPreloadPriority):
+    async def _ensure_capacity(self, required_bytes: int, priority: AdapterPreloadPriority):
         stats = await self.memory_manager.memory_stats()
-        max_cap = self._max_capacity_for_pressure(stats.pressure)
+        available_bytes = stats.available_bytes
+        if required_bytes > available_bytes:
+            raise AdapterPoolError(
+                f"Adapter requires {required_bytes} bytes but only {available_bytes} bytes available"
+            )
 
-        while len(self.pool) >= max_cap:
+        while self._current_pool_bytes() + required_bytes > available_bytes:
             victim = self._select_eviction_victim(sparing=self.current_active_id, priority=priority)
             if not victim:
-                raise AdapterPoolError(f"Pool at capacity {max_cap} and no evictable victim found")
+                raise AdapterPoolError(
+                    f"Pool uses {self._current_pool_bytes()} bytes with only "
+                    f"{available_bytes} bytes available"
+                )
             await self._evict_impl(victim)
-
-    def _max_capacity_for_pressure(self, pressure: MemoryPressure) -> int:
-        if pressure == MemoryPressure.NORMAL:
-            return self.config.max_pooled_normal
-        if pressure == MemoryPressure.WARNING:
-            return self.config.max_pooled_warning
-        return self.config.max_pooled_critical
 
     def _select_eviction_victim(
         self, sparing: uuid.UUID | None, priority: AdapterPreloadPriority
@@ -389,14 +362,22 @@ class MLXAdapterPool:
 
         return None
 
+    def _current_pool_bytes(self) -> int:
+        return sum(entry.estimated_memory_bytes for entry in self.pool.values())
+
     def _estimate_adapter_memory(self, path: str) -> int:
         # Simple recursive size
         total = 0
         try:
-            for root, dirs, files in os.walk(path):
-                for f in files:
-                    fp = os.path.join(root, f)
-                    total += os.path.getsize(fp)
+            if os.path.isfile(path):
+                total = os.path.getsize(path)
+            else:
+                for root, _, files in os.walk(path):
+                    for f in files:
+                        fp = os.path.join(root, f)
+                        total += os.path.getsize(fp)
         except Exception:
-            pass
-        return total if total > 0 else 50_000_000
+            total = 0
+        if total <= 0:
+            raise AdapterPoolError(f"Adapter size could not be measured for {path}")
+        return total

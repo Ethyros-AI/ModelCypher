@@ -24,26 +24,14 @@ import uuid
 import pytest
 
 from modelcypher.core.domain.inference.adapter_pool import (
-    AdapterPoolConfiguration,
     AdapterPoolEntry,
     AdapterPreloadPriority,
     AdapterSwapResult,
-    MemoryPressure,
     MemoryStats,
     MLXAdapterPool,
     SystemMemoryManager,
 )
 from modelcypher.core.domain.inference.types import AdapterPoolError
-
-
-class TestMemoryPressure:
-    """Tests for MemoryPressure enum."""
-
-    def test_pressure_values(self):
-        """Test memory pressure enum values."""
-        assert MemoryPressure.NORMAL.value == "normal"
-        assert MemoryPressure.WARNING.value == "warning"
-        assert MemoryPressure.CRITICAL.value == "critical"
 
 
 class TestMemoryStats:
@@ -52,24 +40,22 @@ class TestMemoryStats:
     def test_memory_stats_creation(self):
         """Test creating memory stats."""
         stats = MemoryStats(
-            pressure=MemoryPressure.NORMAL,
             available_bytes=8_000_000_000,
             total_bytes=16_000_000_000,
         )
 
-        assert stats.pressure == MemoryPressure.NORMAL
         assert stats.available_bytes == 8_000_000_000
         assert stats.total_bytes == 16_000_000_000
+        assert stats.available_ratio == 0.5
 
     def test_memory_stats_immutable_fields(self):
         """Test that memory stats fields are accessible."""
         stats = MemoryStats(
-            pressure=MemoryPressure.WARNING,
             available_bytes=4_000_000_000,
             total_bytes=16_000_000_000,
         )
 
-        assert stats.pressure == MemoryPressure.WARNING
+        assert stats.available_bytes == 4_000_000_000
 
 
 class TestAdapterPreloadPriority:
@@ -159,29 +145,6 @@ class TestAdapterSwapResult:
         assert result.new_adapter_id is None
 
 
-class TestAdapterPoolConfiguration:
-    """Tests for AdapterPoolConfiguration dataclass."""
-
-    def test_requires_explicit_values(self):
-        """AdapterPoolConfiguration requires explicit values."""
-        with pytest.raises(TypeError):
-            AdapterPoolConfiguration()
-
-    def test_custom_configuration(self):
-        """Test custom configuration values."""
-        config = AdapterPoolConfiguration(
-            max_pooled_normal=8,
-            max_pooled_warning=4,
-            max_pooled_critical=2,
-            target_swap_ms=50.0,
-        )
-
-        assert config.max_pooled_normal == 8
-        assert config.max_pooled_warning == 4
-        assert config.max_pooled_critical == 2
-        assert config.target_swap_ms == 50.0
-
-
 class TestSystemMemoryManager:
     """Tests for SystemMemoryManager."""
 
@@ -195,9 +158,10 @@ class TestSystemMemoryManager:
             pytest.skip(str(exc))
 
         assert isinstance(stats, MemoryStats)
-        assert isinstance(stats.pressure, MemoryPressure)
         # We can't assert exact values, but total should be non-negative
         assert stats.total_bytes >= 0
+        if stats.total_bytes > 0:
+            assert 0.0 <= stats.available_ratio <= 1.0
 
     def test_parse_linux_meminfo(self):
         """Test parsing Linux /proc/meminfo format."""
@@ -224,29 +188,25 @@ MemFree:         1234567 kB
         assert total == 16384000 * 1024
         assert available == 0  # Not found
 
-    def test_thresholds_defined(self):
-        """Test that thresholds are defined."""
-        assert SystemMemoryManager.WARNING_THRESHOLD == 0.75
-        assert SystemMemoryManager.CRITICAL_THRESHOLD == 0.90
-
-
 class MockMemoryManager:
     """Mock memory manager for testing."""
 
-    def __init__(self, pressure: MemoryPressure = MemoryPressure.NORMAL):
-        self.pressure = pressure
+    def __init__(
+        self, available_bytes: int = 8_000_000_000, total_bytes: int = 16_000_000_000
+    ):
+        self.available_bytes = available_bytes
+        self.total_bytes = total_bytes
         self.call_count = 0
 
     async def memory_stats(self) -> MemoryStats:
         self.call_count += 1
         return MemoryStats(
-            pressure=self.pressure,
-            available_bytes=8_000_000_000,
-            total_bytes=16_000_000_000,
+            available_bytes=self.available_bytes,
+            total_bytes=self.total_bytes,
         )
 
-    def set_pressure(self, pressure: MemoryPressure):
-        self.pressure = pressure
+    def set_available_bytes(self, available_bytes: int):
+        self.available_bytes = available_bytes
 
 
 class TestMLXAdapterPool:
@@ -258,15 +218,17 @@ class TestMLXAdapterPool:
         return MockMemoryManager()
 
     @pytest.fixture
-    def pool(self, mock_memory):
+    def adapter_bytes(self):
+        """Default adapter size for tests."""
+        return 100
+
+    @pytest.fixture
+    def pool(self, mock_memory, adapter_bytes, monkeypatch):
         """Create adapter pool with mock memory."""
-        config = AdapterPoolConfiguration(
-            max_pooled_normal=4,
-            max_pooled_warning=2,
-            max_pooled_critical=1,
-            target_swap_ms=100.0,
-        )
-        return MLXAdapterPool(config=config, memory_manager=mock_memory)
+        mock_memory.set_available_bytes(adapter_bytes * 4)
+        pool = MLXAdapterPool(memory_manager=mock_memory)
+        monkeypatch.setattr(pool, "_estimate_adapter_memory", lambda path: adapter_bytes)
+        return pool
 
     @pytest.mark.asyncio
     async def test_pool_initialization(self, pool):
@@ -332,21 +294,19 @@ class TestMLXAdapterPool:
         assert pool.usage_order == [id2, id3, id1]
 
     @pytest.mark.asyncio
-    async def test_capacity_limit_normal_pressure(self, pool, mock_memory):
-        """Test capacity is limited under normal pressure."""
-        mock_memory.set_pressure(MemoryPressure.NORMAL)
-        config = pool.config
+    async def test_capacity_limit_available_bytes(self, pool, mock_memory, adapter_bytes):
+        """Test capacity is limited by available bytes."""
+        max_capacity = mock_memory.available_bytes // adapter_bytes
 
-        # Preload up to max capacity
-        for i in range(config.max_pooled_normal):
+        for i in range(max_capacity):
             await pool.preload(uuid.uuid4(), f"/path{i}", AdapterPreloadPriority.NORMAL)
 
-        assert len(pool.pool) == config.max_pooled_normal
+        assert len(pool.pool) == max_capacity
 
     @pytest.mark.asyncio
     async def test_capacity_evicts_lru_when_full(self, pool, mock_memory):
         """Test oldest adapter is evicted when capacity is reached."""
-        mock_memory.set_pressure(MemoryPressure.NORMAL)
+        max_capacity = mock_memory.available_bytes // pool._estimate_adapter_memory("/path")
 
         id1 = uuid.uuid4()
         id2 = uuid.uuid4()
@@ -354,29 +314,28 @@ class TestMLXAdapterPool:
         id4 = uuid.uuid4()
         id5 = uuid.uuid4()
 
-        # Fill to capacity (4)
-        await pool.preload(id1, "/path1", AdapterPreloadPriority.NORMAL)
-        await pool.preload(id2, "/path2", AdapterPreloadPriority.NORMAL)
-        await pool.preload(id3, "/path3", AdapterPreloadPriority.NORMAL)
-        await pool.preload(id4, "/path4", AdapterPreloadPriority.NORMAL)
+        # Fill to capacity
+        preload_ids = [id1, id2, id3, id4]
+        for uid in preload_ids[:max_capacity]:
+            await pool.preload(uid, f"/path{uid}", AdapterPreloadPriority.NORMAL)
 
         # Add one more - should evict id1 (oldest)
         await pool.preload(id5, "/path5", AdapterPreloadPriority.NORMAL)
 
         assert id1 not in pool.pool
         assert id5 in pool.pool
-        assert len(pool.pool) == 4
+        assert len(pool.pool) == max_capacity
 
     @pytest.mark.asyncio
     async def test_high_priority_evicts_lower(self, pool, mock_memory):
         """Test high priority adapter evicts lower priority first."""
-        mock_memory.set_pressure(MemoryPressure.NORMAL)
+        max_capacity = mock_memory.available_bytes // pool._estimate_adapter_memory("/path")
 
         low_id = uuid.uuid4()
         high_id = uuid.uuid4()
 
         # Fill with low priority
-        for i in range(pool.config.max_pooled_normal):
+        for i in range(max_capacity):
             await pool.preload(uuid.uuid4(), f"/path{i}", AdapterPreloadPriority.NORMAL)
 
         # Preload one at start with NORMAL priority
@@ -481,36 +440,13 @@ class TestMLXAdapterPool:
             await pool.swap(unpooled_id, "model1")
 
     @pytest.mark.asyncio
-    async def test_capacity_for_pressure_levels(self, pool, mock_memory):
-        """Test capacity changes with pressure levels."""
-        assert pool._max_capacity_for_pressure(MemoryPressure.NORMAL) == 4
-        assert pool._max_capacity_for_pressure(MemoryPressure.WARNING) == 2
-        assert pool._max_capacity_for_pressure(MemoryPressure.CRITICAL) == 1
+    async def test_current_pool_bytes(self, pool, adapter_bytes):
+        """Test current pool byte count."""
+        id1 = uuid.uuid4()
+        id2 = uuid.uuid4()
 
+        await pool.preload(id1, "/path1", AdapterPreloadPriority.NORMAL)
+        await pool.preload(id2, "/path2", AdapterPreloadPriority.NORMAL)
 
-class TestMemoryPressureClassification:
-    """Tests for memory pressure classification logic."""
+        assert pool._current_pool_bytes() == adapter_bytes * 2
 
-    @pytest.mark.asyncio
-    async def test_normal_pressure_below_75_percent(self):
-        """Test normal pressure when less than 75% memory used."""
-        manager = SystemMemoryManager()
-        # Mock by creating stats directly
-        # 50% used = (1 - 0.5) = 50% available
-        used_ratio = 0.50
-        assert used_ratio < manager.WARNING_THRESHOLD
-
-    @pytest.mark.asyncio
-    async def test_warning_pressure_at_75_percent(self):
-        """Test warning pressure at 75% memory used."""
-        manager = SystemMemoryManager()
-        used_ratio = 0.75
-        assert used_ratio >= manager.WARNING_THRESHOLD
-        assert used_ratio < manager.CRITICAL_THRESHOLD
-
-    @pytest.mark.asyncio
-    async def test_critical_pressure_at_90_percent(self):
-        """Test critical pressure at 90% memory used."""
-        manager = SystemMemoryManager()
-        used_ratio = 0.90
-        assert used_ratio >= manager.CRITICAL_THRESHOLD

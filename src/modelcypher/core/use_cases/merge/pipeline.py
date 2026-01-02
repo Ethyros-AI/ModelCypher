@@ -132,6 +132,8 @@ def run_merge(
         target_attention_activations,
         source_kv_activations,
         target_kv_activations,
+        feature_transforms,
+        layer_mapping,
     ) = stage_probe(
         source_weights=source_weights,
         target_weights=loaded_target_weights,
@@ -306,6 +308,8 @@ def run_merge(
         extract_layer_index_fn=extract_layer_index,
         backend=backend,
         graft_mask=graft_mask,
+        feature_transforms=feature_transforms,
+        layer_mapping=layer_mapping,
     )
 
     # =================================================================

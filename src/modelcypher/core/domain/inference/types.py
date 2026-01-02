@@ -90,20 +90,6 @@ class ComparisonEvent:
 # --- Adapter Pool Types ---
 
 
-class MemoryPressure(Enum):
-    NORMAL = "normal"
-    WARNING = "warning"
-    CRITICAL = "critical"
-
-
-@dataclass
-class AdapterPoolConfiguration:
-    max_pooled_normal: int
-    max_pooled_warning: int
-    max_pooled_critical: int
-    target_swap_ms: float
-
-
 @dataclass
 class AdapterPoolEntry:
     id: uuid.UUID

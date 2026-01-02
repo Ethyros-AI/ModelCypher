@@ -20,9 +20,9 @@ import uuid
 from typing import Any, AsyncGenerator
 
 from modelcypher.core.domain.inference.adapter_pool import (
-    AdapterPoolConfiguration,
     AdapterPreloadPriority,
     MLXAdapterPool,
+    MemoryManaging,
 )
 from modelcypher.core.domain.inference.comparison import CheckpointComparisonCoordinator
 
@@ -38,8 +38,8 @@ from modelcypher.ports.async_inference import InferenceEnginePort
 
 
 class MLXInferenceAdapter(InferenceEnginePort):
-    def __init__(self, pool_config: AdapterPoolConfiguration):
-        self.adapter_pool = MLXAdapterPool(config=pool_config)
+    def __init__(self, memory_manager: MemoryManaging | None = None):
+        self.adapter_pool = MLXAdapterPool(memory_manager=memory_manager)
         self.comparison_coordinator = CheckpointComparisonCoordinator()
 
     async def generate_dual_path(

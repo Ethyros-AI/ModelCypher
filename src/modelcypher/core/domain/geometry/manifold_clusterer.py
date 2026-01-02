@@ -27,6 +27,7 @@ from modelcypher.core.domain.geometry.exceptions import EstimatorError
 from modelcypher.core.domain.geometry.intrinsic_dimension import (
     IntrinsicDimension,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.manifold_profile import (
     ManifoldPoint,
     ManifoldRegion,
@@ -42,10 +43,9 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class Configuration:
-    epsilon: float = 0.3
-    min_points: int = 5
+    epsilon: float | None = None
     compute_intrinsic_dimension: bool = True
-    max_clusters: int = 50
+    max_clusters: int | None = None
 
 
 @dataclass(frozen=True)
@@ -78,17 +78,28 @@ class ManifoldClusterer:
         # only an approximation that fails in high-dimensional curved spaces.
         geodesic_matrix = self._compute_geodesic_matrix(points)
 
+        epsilon = self._resolve_epsilon(geodesic_matrix)
+        min_cluster_size = 2
+
         labels = [-1 for _ in points]
         cluster_id = 0
 
         for i in range(len(points)):
             if labels[i] != -1:
                 continue
-            neighbors = self._region_query_geodesic(geodesic_matrix, i)
-            if len(neighbors) < self.config.min_points:
+            neighbors = self._region_query_geodesic(geodesic_matrix, i, epsilon)
+            if len(neighbors) < min_cluster_size:
                 labels[i] = -2
             else:
-                self._expand_cluster_geodesic(geodesic_matrix, labels, i, neighbors, cluster_id)
+                self._expand_cluster_geodesic(
+                    geodesic_matrix,
+                    labels,
+                    i,
+                    neighbors,
+                    cluster_id,
+                    epsilon,
+                    min_cluster_size,
+                )
                 cluster_id += 1
 
         regions: list[ManifoldRegion] = []
@@ -138,6 +149,8 @@ class ManifoldClusterer:
         noise_points = list(existing_noise)
         assigned_to_existing = 0
         new_clusters_formed = 0
+        epsilon = self._resolve_epsilon(self._compute_geodesic_matrix(new_points))
+        min_cluster_size = 2
 
         # For incremental assignment, compute geodesic distance between each new point
         # and region centroids. When comparing a single point to a single centroid,
@@ -153,7 +166,7 @@ class ManifoldClusterer:
                 if distance < nearest_distance:
                     nearest_distance = distance
                     nearest_region = region
-            if nearest_region is not None and nearest_distance <= self.config.epsilon:
+            if nearest_region is not None and nearest_distance <= epsilon:
                 region_point_additions.setdefault(str(nearest_region.id), []).append(point)
                 assigned_to_existing += 1
             else:
@@ -178,7 +191,7 @@ class ManifoldClusterer:
             if updated_region is not None:
                 updated_regions[idx] = updated_region
 
-        if len(noise_points) >= self.config.min_points:
+        if len(noise_points) >= min_cluster_size:
             noise_cluster_result = self.cluster(noise_points)
             updated_regions.extend(noise_cluster_result.regions)
             noise_points = noise_cluster_result.noise_points
@@ -223,11 +236,39 @@ class ManifoldClusterer:
 
         rg = RiemannianGeometry(backend)
 
-        # k_neighbors scales with sqrt(n) for good graph connectivity
-        n = len(points)
-        k_neighbors = max(2, min(n - 1, int(n**0.5)))
-        result = rg.geodesic_distances(features, k_neighbors=k_neighbors)
+        # Use connectivity-derived k to avoid arbitrary neighborhood choices.
+        result = rg.geodesic_distances(features, k_neighbors=None)
         return result.distances
+
+    def _resolve_epsilon(self, geodesic_matrix) -> float:
+        if self.config.epsilon is not None:
+            return self.config.epsilon
+        return self._derive_epsilon(geodesic_matrix)
+
+    def _derive_epsilon(self, geodesic_matrix) -> float:
+        """Derive epsilon from the median nearest-neighbor geodesic distance."""
+        backend = get_default_backend()
+        backend.eval(geodesic_matrix)
+        geo_np = backend.to_numpy(geodesic_matrix)
+        n = int(geo_np.shape[0])
+        if n <= 1:
+            return 0.0
+
+        nearest: list[float] = []
+        for i in range(n):
+            min_dist = None
+            for j in range(n):
+                if i == j:
+                    continue
+                dist = float(geo_np[i, j])
+                if min_dist is None or dist < min_dist:
+                    min_dist = dist
+            nearest.append(min_dist if min_dist is not None else 0.0)
+
+        if not nearest:
+            return 0.0
+        nearest.sort()
+        return float(nearest[len(nearest) // 2])
 
     def _geodesic_distance_pair(self, p1: ManifoldPoint, p2: ManifoldPoint) -> float:
         """Compute geodesic distance between two points.
@@ -241,7 +282,9 @@ class ManifoldClusterer:
         backend.eval(matrix)
         return float(backend.to_numpy(matrix)[0, 1])
 
-    def _region_query_geodesic(self, geodesic_matrix, point_index: int) -> list[int]:
+    def _region_query_geodesic(
+        self, geodesic_matrix, point_index: int, epsilon: float
+    ) -> list[int]:
         """Find epsilon-neighborhood using precomputed geodesic distances.
 
         Args:
@@ -257,7 +300,7 @@ class ManifoldClusterer:
         distances = geo_np[point_index, :]
         neighbors: list[int] = []
         for j, dist in enumerate(distances):
-            if dist <= self.config.epsilon:
+            if dist <= epsilon:
                 neighbors.append(j)
         return neighbors
 
@@ -268,6 +311,8 @@ class ManifoldClusterer:
         point_index: int,
         neighbors: list[int],
         cluster_id: int,
+        epsilon: float,
+        min_cluster_size: int,
     ) -> None:
         """DBSCAN cluster expansion using geodesic distances."""
         labels[point_index] = cluster_id
@@ -279,8 +324,10 @@ class ManifoldClusterer:
                 labels[neighbor_index] = cluster_id
             if labels[neighbor_index] == -1:
                 labels[neighbor_index] = cluster_id
-                neighbor_neighbors = self._region_query_geodesic(geodesic_matrix, neighbor_index)
-                if len(neighbor_neighbors) >= self.config.min_points:
+                neighbor_neighbors = self._region_query_geodesic(
+                    geodesic_matrix, neighbor_index, epsilon
+                )
+                if len(neighbor_neighbors) >= min_cluster_size:
                     for nn in neighbor_neighbors:
                         if nn not in seed_set:
                             seed_set.append(nn)
@@ -458,6 +505,8 @@ class ManifoldClusterer:
             return None
 
     def _enforce_max_clusters(self, regions: list[ManifoldRegion]) -> list[ManifoldRegion]:
+        if self.config.max_clusters is None:
+            return regions
         if len(regions) <= self.config.max_clusters:
             return regions
         sorted_regions = sorted(
@@ -490,9 +539,9 @@ class ManifoldClusterer:
 
         is_within = nearest_region is not None and nearest_distance <= nearest_region.radius
         if nearest_region is not None:
-            confidence = max(
-                0.0, 1.0 - (nearest_distance / (nearest_region.radius + self.config.epsilon))
-            )
+            backend = get_default_backend()
+            eps = division_epsilon(backend, backend.array([nearest_region.radius]))
+            confidence = max(0.0, 1.0 - (nearest_distance / (nearest_region.radius + eps)))
         else:
             confidence = 0.0
 

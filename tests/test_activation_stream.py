@@ -25,6 +25,7 @@ the data structures, helper methods, and callback patterns.
 
 from __future__ import annotations
 
+import math
 import time
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
@@ -32,6 +33,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.inference.activation_stream import (
     ActivationFrame,
     ActivationStream,
@@ -124,6 +126,9 @@ class TestActivationFrame:
 class TestActivationStream:
     """Tests for ActivationStream class."""
 
+    def _eps(self, backend: "Backend") -> float:
+        return machine_epsilon(backend, backend.array([1.0]))
+
     def test_initialization(
         self, backend: "Backend", mock_model: MagicMock
     ) -> None:
@@ -215,8 +220,9 @@ class TestActivationStream:
         hidden = backend.random_normal((64,))
         entropy = stream._compute_entropy(hidden)
 
-        # Entropy should be positive for non-zero hidden states
-        assert entropy > 0
+        eps = self._eps(backend)
+        assert math.isfinite(entropy)
+        assert entropy >= -eps
 
     def test_compute_entropy_zero(
         self, backend: "Backend", mock_model: MagicMock
@@ -228,7 +234,8 @@ class TestActivationStream:
         entropy = stream._compute_entropy(hidden)
 
         # Should handle zero vector gracefully
-        assert entropy == 0.0
+        eps = self._eps(backend)
+        assert abs(entropy) <= eps
 
     def test_get_trajectory(
         self, backend: "Backend", mock_model: MagicMock

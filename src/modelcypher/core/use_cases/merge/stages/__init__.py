@@ -86,6 +86,8 @@ def stage_probe(
     dict | None,
     dict | None,
     dict | None,
+    dict[int, list[list[float]]] | None,  # feature_transforms
+    dict[int, int] | None,  # layer_mapping
 ]:
     """Stage 1: Compute layer correspondences via CKA."""
     collect_fn = (
@@ -123,6 +125,8 @@ def stage_probe(
         result.target_attention_activations,
         result.source_kv_activations,
         result.target_kv_activations,
+        result.feature_transforms,
+        result.layer_mapping,
     )
 
 
@@ -188,11 +192,15 @@ def stage_transplant(
     extract_layer_index_fn: Callable[[str], int | None] = lambda x: None,
     backend: "Backend | None" = None,
     graft_mask: dict[str, dict[int, bool]] | None = None,
+    feature_transforms: dict[int, list[list[float]]] | None = None,
+    layer_mapping: dict[int, int] | None = None,
 ) -> tuple[dict[str, "Array"], dict[str, Any]]:
     """Stage 3: Null-space constrained transplant."""
     stage_config = TransplantStageConfig(
         core_domains=tuple(transplant_domains),
         graft_mask=graft_mask,
+        feature_transforms=feature_transforms,
+        layer_mapping=layer_mapping,
     )
 
     result = stage_transplant_impl(

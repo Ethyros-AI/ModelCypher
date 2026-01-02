@@ -82,6 +82,13 @@ class TransplantStageConfig:
     # If None, graft all core probes.
     graft_mask: dict[str, dict[int, bool]] | None = None
 
+    # Per-layer feature transforms from probe stage (CKA=1.0 aligned)
+    # target_layer -> transform matrix (as nested lists)
+    feature_transforms: dict[int, list[list[float]]] | None = None
+
+    # Layer mapping from probe stage: target_layer -> source_layer
+    layer_mapping: dict[int, int] | None = None
+
     # NOTE: boundary_k and geodesic_k_neighbors REMOVED - boundary is full complement
     # NOTE: projection_method REMOVED - always use GRAM_TRANSPORT
     # NOTE: transplant_layers REMOVED - always transplant all layers

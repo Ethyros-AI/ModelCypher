@@ -35,11 +35,12 @@ from modelcypher.core.domain.agents.agent_eval_suite_engine import (
     AgentActionKind,
     AgentEvalCase,
     AgentEvalCaseCategory,
-    AgentEvalRisk,
+    AgentEvalCaseProfile,
     AgentEvalScoringEngine,
     EvalCaseConstraints,
     Expected,
     ExpectedOption,
+    ExpectedToolSpec,
 )
 from modelcypher.core.domain.agents.semantic_prime_atlas import SemanticPrimeAtlas
 from modelcypher.core.domain.agents.semantic_prime_drift import (
@@ -256,12 +257,9 @@ class AgentEvalService:
         prompt: str = "",
         expected_kinds: list[str] | None = None,
         expected_tools: list[str] | None = None,
-        expected_text_patterns: list[str] | None = None,
-        constraints_max_turns: int = 10,
-        constraints_require_tool: bool = False,
-        constraints_allow_delegation: bool = True,
-        category: str = "functional",
-        risk: str = "low",
+        max_steps: int | None = None,
+        category: str = "tool_call",
+        profile: str = "open",
     ) -> dict[str, Any]:
         """Score an agent output for action quality.
 
@@ -269,101 +267,92 @@ class AgentEvalService:
             output: The agent's output text to score
             eval_case_id: Identifier for this evaluation case
             prompt: The prompt that generated the output
-            expected_kinds: List of allowed action kinds (text, tool_call, delegation)
+            expected_kinds: List of expected action kinds (by value, e.g. "tool_call")
             expected_tools: List of expected tool names if tool_call is expected
-            expected_text_patterns: List of regex patterns to match in text output
-            constraints_max_turns: Maximum turns allowed
-            constraints_require_tool: Whether a tool call is required
-            constraints_allow_delegation: Whether delegation is allowed
-            category: Evaluation category (functional, safety, robustness, efficiency)
-            risk: Risk level (low, medium, high, critical)
+            max_steps: Optional maximum step constraint
+            category: Evaluation category (tool_call, constraint, regression, routing, other)
+            profile: Case profile (open, restricted, ambiguous)
 
         Returns:
-            Dict with scoring results including parsed actions, scores, and assessment
+            Dict with scoring results including parsed actions and raw scores
         """
-        # Map string category to enum
         category_map = {
-            "functional": AgentEvalCaseCategory.functional,
-            "safety": AgentEvalCaseCategory.safety,
-            "robustness": AgentEvalCaseCategory.robustness,
-            "efficiency": AgentEvalCaseCategory.efficiency,
+            "tool_call": AgentEvalCaseCategory.TOOL_CALL,
+            "constraint": AgentEvalCaseCategory.CONSTRAINT,
+            "regression": AgentEvalCaseCategory.REGRESSION,
+            "routing": AgentEvalCaseCategory.ROUTING,
+            "other": AgentEvalCaseCategory.OTHER,
         }
-        risk_map = {
-            "low": AgentEvalRisk.low,
-            "medium": AgentEvalRisk.medium,
-            "high": AgentEvalRisk.high,
-            "critical": AgentEvalRisk.critical,
+        profile_map = {
+            "open": AgentEvalCaseProfile.OPEN,
+            "restricted": AgentEvalCaseProfile.RESTRICTED,
+            "ambiguous": AgentEvalCaseProfile.AMBIGUOUS,
         }
 
-        # Build expected structure
+        def parse_kind(kind_value: str) -> AgentActionKind:
+            for kind in AgentActionKind:
+                if kind.value == kind_value:
+                    return kind
+            return AgentActionKind.RESPOND
+
         expected_options: list[ExpectedOption] = []
         if expected_kinds:
-            for kind_str in expected_kinds:
-                kind = (
-                    AgentActionKind[kind_str]
-                    if kind_str in AgentActionKind.__members__
-                    else AgentActionKind.text
-                )
-                expected_options.append(
-                    ExpectedOption(
-                        action_kind=kind,
-                        tool_name=expected_tools[0] if expected_tools else None,
-                        text_pattern=expected_text_patterns[0] if expected_text_patterns else None,
-                    )
-                )
+            for kind_value in expected_kinds:
+                kind = parse_kind(kind_value)
+                if kind == AgentActionKind.TOOL_CALL and expected_tools:
+                    for tool_name in expected_tools:
+                        expected_options.append(
+                            ExpectedOption(
+                                kind=kind,
+                                tool=ExpectedToolSpec(name=tool_name),
+                            )
+                        )
+                else:
+                    expected_options.append(ExpectedOption(kind=kind))
         else:
-            # Default: allow text output
-            expected_options.append(ExpectedOption(action_kind=AgentActionKind.text))
+            expected_options.append(ExpectedOption(kind=AgentActionKind.RESPOND))
 
-        expected = Expected(options=expected_options)
+        expected = Expected(any_of=tuple(expected_options))
         constraints = EvalCaseConstraints(
-            max_turns=constraints_max_turns,
-            require_tool=constraints_require_tool,
-            allow_delegation=constraints_allow_delegation,
+            allowed_action_kinds=tuple({parse_kind(k) for k in expected_kinds})
+            if expected_kinds
+            else None,
+            allowed_tools=tuple(expected_tools) if expected_tools else None,
+            max_steps=max_steps,
         )
 
+        messages = ({"role": "user", "content": prompt},) if prompt else ()
         eval_case = AgentEvalCase(
             case_id=eval_case_id,
-            prompt=prompt,
-            expected=expected,
+            category=category_map.get(category, AgentEvalCaseCategory.OTHER),
+            profile=profile_map.get(profile, AgentEvalCaseProfile.AMBIGUOUS),
+            tags=(),
+            messages=messages,
             constraints=constraints,
-            category=category_map.get(category, AgentEvalCaseCategory.functional),
-            risk=risk_map.get(risk, AgentEvalRisk.low),
+            expected=expected,
         )
 
-        # Determine allowed action kinds and tools
-        allowed_kinds = set(expected_kinds) if expected_kinds else {AgentActionKind.text.name}
-        allowed_tools = set(expected_tools) if expected_tools else set()
-
-        # Score the output
         scored = AgentEvalScoringEngine.score(
             eval_case=eval_case,
             output=output,
-            allowed_action_kinds=allowed_kinds,
-            allowed_tools=allowed_tools,
+            allowed_action_kinds=constraints.allowed_action_kinds,
+            allowed_tools=constraints.allowed_tools,
         )
+
+        action_payload = None
+        if scored.action:
+            action_payload = {"kind": scored.action.kind.value}
+            if scored.action.tool:
+                action_payload["tool"] = {
+                    "name": scored.action.tool.name,
+                    "arguments": scored.action.tool.arguments,
+                }
 
         return {
             "case_id": eval_case_id,
-            "parsed_action": {
-                "kind": scored.parsed_action.kind.name,
-                "tool_call": {
-                    "name": scored.parsed_action.tool_call.name,
-                    "arguments": scored.parsed_action.tool_call.arguments,
-                }
-                if scored.parsed_action.tool_call
-                else None,
-                "text": scored.parsed_action.text,
-            },
-            "expectation_matched": scored.expectation_matched,
-            "constraint_violations": scored.constraint_violations,
-            "is_overrefusal": scored.is_overrefusal,
-            "is_unsafe_completion": scored.is_unsafe_completion,
-            "scores": {
-                "functional": scored.scores.functional,
-                "safety": scored.scores.safety,
-                "constraint": scored.scores.constraint,
-            },
+            "action": action_payload,
+            "scores": scored.scores,
+            "error_taxonomy": list(scored.error_taxonomy),
         }
 
     def assess_drift(

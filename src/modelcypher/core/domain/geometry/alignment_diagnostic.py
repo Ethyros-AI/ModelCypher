@@ -194,7 +194,7 @@ def alignment_signal_from_matrices(
     )
 
 
-def _matrix_rank(matrix: "object", backend: "object", eps: float | None = None) -> int:
+def _matrix_rank(matrix: "object", backend: "object") -> int:
     """Compute effective rank using dtype-derived threshold."""
     gram = backend.matmul(matrix, backend.transpose(matrix))
     eigvals, _ = backend.eigh(gram)
@@ -203,8 +203,6 @@ def _matrix_rank(matrix: "object", backend: "object", eps: float | None = None) 
     if not values:
         return 0
     max_val = max(values)
-    if eps is None:
-        # Use dtype-derived epsilon - no arbitrary floor
-        eps = machine_epsilon(backend, gram)
+    eps = machine_epsilon(backend, gram)
     threshold = max_val * eps
     return sum(1 for val in values if val > threshold)

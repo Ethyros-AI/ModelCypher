@@ -36,7 +36,7 @@ from .agent_eval_suite_engine import (
     AgentActionKind,
     AgentEvalCase,
     AgentEvalCaseCategory,
-    AgentEvalRisk,
+    AgentEvalCaseProfile,
     AgentEvalScoringEngine,
     AggregateScores,
     CaseResult,

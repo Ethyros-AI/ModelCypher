@@ -27,12 +27,22 @@ from modelcypher.core.domain.geometry.alignment_diagnostic import (
     alignment_signal_from_matrices,
     _matrix_rank,
 )
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+    regularization_epsilon,
+)
 
 
 @pytest.fixture
 def backend():
     """Get compute backend."""
     return get_default_backend()
+
+
+def _eps() -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array([1.0]))
 
 
 class TestAlignmentSignalFields:
@@ -42,60 +52,65 @@ class TestAlignmentSignalFields:
         """Test required fields are set correctly."""
         signal = AlignmentSignal(
             dimension=3,
-            cka_achieved=0.85,
-            metadata={"phase_tol": 1e-6},
+            cka_achieved=1.0 - _eps(),
+            metadata={"phase_tol": _eps()},
         )
         assert signal.dimension == 3
-        assert signal.cka_achieved == 0.85
+        assert signal.cka_achieved == 1.0 - _eps()
         assert signal.cka_target == 1.0  # default
 
     def test_default_cka_target(self):
         """Test default cka_target is 1.0."""
         signal = AlignmentSignal(
             dimension=2,
-            cka_achieved=0.9,
-            metadata={"phase_tol": 1e-6},
+            cka_achieved=1.0 - _eps(),
+            metadata={"phase_tol": _eps()},
         )
         assert signal.cka_target == 1.0
 
     def test_gap_computed_automatically(self):
         """Test gap is computed from cka_target - cka_achieved."""
+        cka_achieved = 1.0 - _eps()
         signal = AlignmentSignal(
             dimension=3,
-            cka_achieved=0.75,
+            cka_achieved=cka_achieved,
             cka_target=1.0,
-            metadata={"phase_tol": 1e-6},
+            metadata={"phase_tol": _eps()},
         )
-        assert abs(signal.gap - 0.25) < 1e-9
+        expected_gap = 1.0 - cka_achieved
+        assert abs(signal.gap - expected_gap) <= _eps()
 
     def test_gap_explicit_overrides(self):
         """Test explicit gap value is used."""
+        gap = 3.0 * _eps()
         signal = AlignmentSignal(
             dimension=3,
-            cka_achieved=0.75,
+            cka_achieved=1.0 - _eps(),
             cka_target=1.0,
-            gap=0.3,  # explicit
-            metadata={"phase_tol": 1e-6},
+            gap=gap,  # explicit
+            metadata={"phase_tol": _eps()},
         )
-        assert signal.gap == 0.3
+        assert signal.gap == gap
 
     def test_gap_zero_not_computed(self):
         """Test that gap=0.0 triggers computation."""
+        cka_achieved = 1.0 - 2.0 * _eps()
         signal = AlignmentSignal(
             dimension=3,
-            cka_achieved=0.8,
+            cka_achieved=cka_achieved,
             gap=0.0,  # will be recomputed
-            metadata={"phase_tol": 1e-6},
+            metadata={"phase_tol": _eps()},
         )
-        assert abs(signal.gap - 0.2) < 1e-9
+        expected_gap = 1.0 - cka_achieved
+        assert abs(signal.gap - expected_gap) <= _eps()
 
     def test_gap_negative_clamped(self):
         """Test gap is clamped to non-negative."""
         signal = AlignmentSignal(
             dimension=3,
-            cka_achieved=1.1,  # above target
+            cka_achieved=1.0 + _eps(),  # above target
             cka_target=1.0,
-            metadata={"phase_tol": 1e-6},
+            metadata={"phase_tol": _eps()},
         )
         assert signal.gap == 0.0
 
@@ -103,8 +118,8 @@ class TestAlignmentSignalFields:
         """Test default list fields are empty."""
         signal = AlignmentSignal(
             dimension=2,
-            cka_achieved=0.9,
-            metadata={"phase_tol": 1e-6},
+            cka_achieved=1.0 - _eps(),
+            metadata={"phase_tol": _eps()},
         )
         assert signal.misaligned_anchors == []
         assert signal.anchor_labels == []
@@ -114,8 +129,8 @@ class TestAlignmentSignalFields:
         """Test default string fields."""
         signal = AlignmentSignal(
             dimension=2,
-            cka_achieved=0.9,
-            metadata={"phase_tol": 1e-6},
+            cka_achieved=1.0 - _eps(),
+            metadata={"phase_tol": _eps()},
         )
         assert signal.divergence_pattern == "unknown"
         assert signal.suggested_transformation == "refine"
@@ -124,8 +139,8 @@ class TestAlignmentSignalFields:
         """Test dataclass is frozen."""
         signal = AlignmentSignal(
             dimension=3,
-            cka_achieved=0.85,
-            metadata={"phase_tol": 1e-6},
+            cka_achieved=1.0 - _eps(),
+            metadata={"phase_tol": _eps()},
         )
         with pytest.raises(AttributeError):
             signal.dimension = 4
@@ -136,21 +151,27 @@ class TestAlignmentSignalIsPhaseLocked:
 
     def test_phase_locked_when_gap_below_tolerance(self):
         """Test phase_locked returns True when gap < phase_tol."""
+        phase_tol = _eps()
+        gap = phase_tol / 2.0
         signal = AlignmentSignal(
             dimension=3,
-            cka_achieved=0.9999999,
+            cka_achieved=1.0 - gap,
             cka_target=1.0,
-            metadata={"phase_tol": 1e-5},
+            gap=gap,
+            metadata={"phase_tol": phase_tol},
         )
         assert signal.is_phase_locked is True
 
     def test_not_phase_locked_when_gap_above_tolerance(self):
         """Test phase_locked returns False when gap > phase_tol."""
+        phase_tol = _eps()
+        gap = phase_tol * 2.0
         signal = AlignmentSignal(
             dimension=3,
-            cka_achieved=0.9,
+            cka_achieved=1.0 - gap,
             cka_target=1.0,
-            metadata={"phase_tol": 1e-5},
+            gap=gap,
+            metadata={"phase_tol": phase_tol},
         )
         assert signal.is_phase_locked is False
 
@@ -158,7 +179,7 @@ class TestAlignmentSignalIsPhaseLocked:
         """Test phase_locked raises without phase_tol in metadata."""
         signal = AlignmentSignal(
             dimension=3,
-            cka_achieved=0.99,
+            cka_achieved=1.0 - _eps(),
             metadata={},  # no phase_tol
         )
         with pytest.raises(ValueError, match="phase_tol"):
@@ -166,12 +187,14 @@ class TestAlignmentSignalIsPhaseLocked:
 
     def test_phase_locked_edge_case_exactly_at_tolerance(self):
         """Test gap exactly at tolerance is considered phase locked."""
+        phase_tol = _eps()
+        gap = phase_tol
         signal = AlignmentSignal(
             dimension=3,
-            cka_achieved=0.9,
+            cka_achieved=1.0 - gap,
             cka_target=1.0,
-            gap=0.1,
-            metadata={"phase_tol": 0.1},
+            gap=gap,
+            metadata={"phase_tol": phase_tol},
         )
         assert signal.is_phase_locked is True
 
@@ -181,31 +204,35 @@ class TestAlignmentSignalToDict:
 
     def test_to_dict_basic(self):
         """Test basic to_dict conversion."""
+        eps = _eps()
+        cka_achieved = 1.0 - eps
         signal = AlignmentSignal(
             dimension=3,
-            cka_achieved=0.85,
+            cka_achieved=cka_achieved,
             cka_target=1.0,
-            metadata={"phase_tol": 1e-6},
+            metadata={"phase_tol": eps},
         )
         d = signal.to_dict()
 
         assert d["dimension"] == 3
-        assert d["cka_achieved"] == 0.85
+        assert d["cka_achieved"] == cka_achieved
         assert d["cka_target"] == 1.0
-        assert abs(d["gap"] - 0.15) < 1e-9
+        expected_gap = 1.0 - cka_achieved
+        assert abs(d["gap"] - expected_gap) <= eps
 
     def test_to_dict_includes_all_fields(self):
         """Test to_dict includes all fields."""
+        eps = _eps()
         signal = AlignmentSignal(
             dimension=2,
-            cka_achieved=0.9,
+            cka_achieved=1.0 - 2.0 * eps,
             misaligned_anchors=["token:1", "token:2"],
             anchor_labels=["a", "b", "c"],
             anchor_divergence=[0.1, 0.2, 0.05],
             divergence_pattern="scale",
             suggested_transformation="scale_normalization",
             iteration=5,
-            metadata={"phase_tol": 1e-6, "scale_ratio": 1.5},
+            metadata={"phase_tol": eps, "scale_ratio": 1.5},
         )
         d = signal.to_dict()
 
@@ -221,9 +248,9 @@ class TestAlignmentSignalToDict:
         """Test to_dict returns copies of mutable fields."""
         signal = AlignmentSignal(
             dimension=3,
-            cka_achieved=0.8,
+            cka_achieved=1.0 - _eps(),
             misaligned_anchors=["a", "b"],
-            metadata={"phase_tol": 1e-6},
+            metadata={"phase_tol": _eps()},
         )
         d = signal.to_dict()
         d["misaligned_anchors"].append("c")
@@ -255,13 +282,14 @@ class TestAlignmentSignalFromMatrices:
         """Test near-perfect alignment (CKA close to 1.0)."""
         backend.random_seed(42)
         matrix = backend.random_normal((10, 8))
+        phase_tol = machine_epsilon(backend, matrix)
 
         # Very close to 1.0
         signal = alignment_signal_from_matrices(
             source_matrix=matrix,
             target_matrix=matrix,
             backend=backend,
-            cka_achieved=0.999999999,
+            cka_achieved=1.0 - phase_tol / 2.0,
         )
 
         assert signal.divergence_pattern == "phase_locked"
@@ -271,29 +299,31 @@ class TestAlignmentSignalFromMatrices:
         backend.random_seed(42)
         source = backend.random_normal((10, 8))
         target = backend.random_normal((10, 8))  # different
+        cka_achieved = 1.0 - division_epsilon(backend, source)
 
         signal = alignment_signal_from_matrices(
             source_matrix=source,
             target_matrix=target,
             backend=backend,
-            cka_achieved=0.5,
+            cka_achieved=cka_achieved,
         )
 
         # May be rotation, scale, or rank_deficient depending on matrices
         assert signal.divergence_pattern in ["rotation", "scale", "rank_deficient"]
-        assert signal.cka_achieved == 0.5
+        assert signal.cka_achieved == cka_achieved
 
     def test_dimension_mismatch_detected(self, backend):
         """Test different dimensions detected as dimension_mismatch."""
         backend.random_seed(42)
         source = backend.random_normal((10, 8))
         target = backend.random_normal((10, 12))  # different dimension
+        cka_achieved = 1.0 - division_epsilon(backend, source)
 
         signal = alignment_signal_from_matrices(
             source_matrix=source,
             target_matrix=target,
             backend=backend,
-            cka_achieved=0.7,
+            cka_achieved=cka_achieved,
         )
 
         assert signal.divergence_pattern == "dimension_mismatch"

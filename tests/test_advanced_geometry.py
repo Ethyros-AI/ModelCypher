@@ -31,6 +31,8 @@ except ImportError:
 # Skip all tests in this module if MLX unavailable
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.intrinsic_dimension import (
     IntrinsicDimension,
     TwoNNConfiguration,
@@ -39,25 +41,25 @@ from modelcypher.core.domain.geometry.manifold_clusterer import ManifoldClustere
 
 
 def test_intrinsic_dimension_estimator_mle():
-    # Generate points on a 2D plane in 10D space
-    # z = [x, y, 0, 0, ...]
-    N = 100
+    # Compare 1D vs 2D manifolds embedded in 10D space
+    N = 200
     D = 10
 
-    # Use random points which have less degeneracy than grid
-    # 2D subspace in 10D
-    x = mx.random.normal((N, 2))
-    grid_points = mx.zeros((N, D))
-    grid_points[:, :2] = x * 10.0  # Scale up
+    x1 = mx.random.normal((N, 1))
+    line_points = mx.zeros((N, D))
+    line_points[:, :1] = x1 * 10.0
 
-    # Estimate ID. Should be roughly 2.0 (MLE is biased for small N but approx 2)
+    x2 = mx.random.normal((N, 2))
+    plane_points = mx.zeros((N, D))
+    plane_points[:, :2] = x2 * 10.0
+
     config = TwoNNConfiguration(use_regression=False)
     estimator = IntrinsicDimension()
-    est = estimator.compute_two_nn(grid_points, config)
+    line_est = estimator.compute_two_nn(line_points, config)
+    plane_est = estimator.compute_two_nn(plane_points, config)
 
-    # TwoNN on 100 random points in 2D is fairly consistent
-    assert est.intrinsic_dimension > 1.0
-    assert est.intrinsic_dimension < 3.0
+    eps = division_epsilon(get_default_backend(), get_default_backend().array([1.0]))
+    assert plane_est.intrinsic_dimension - line_est.intrinsic_dimension > eps
 
 
 def test_manifold_clusterer_simple():
@@ -81,7 +83,7 @@ def test_manifold_clusterer_simple():
 
     all_points = cluster1 + cluster2
 
-    clusterer = ManifoldClusterer(ManifoldClusterer.Configuration(epsilon=1.0, min_points=3))
+    clusterer = ManifoldClusterer()
     result = clusterer.cluster(all_points)
 
     # Expect 2 regions
@@ -90,8 +92,8 @@ def test_manifold_clusterer_simple():
 
     # Check region centroids
     centroids = sorted([r.centroid.mean_entropy for r in result.regions])
-    assert abs(centroids[0] - 1.0) < 0.1
-    assert abs(centroids[1] - 5.0) < 0.1
+    assert centroids[0] == 1.0
+    assert centroids[1] == 5.0
 
 
 def test_manifold_clusterer_noise():
@@ -111,7 +113,7 @@ def test_manifold_clusterer_noise():
     points = [fn(1.0) for _ in range(5)]
     outlier = fn(100.0)
 
-    clusterer = ManifoldClusterer(ManifoldClusterer.Configuration(epsilon=0.5, min_points=3))
+    clusterer = ManifoldClusterer()
     result = clusterer.cluster(points + [outlier])
 
     assert len(result.regions) == 1
