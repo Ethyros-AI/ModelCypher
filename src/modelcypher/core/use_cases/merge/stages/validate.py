@@ -434,10 +434,11 @@ def _compute_layer_importance(
             # Use backend for norm computation
             source_arr = b.astype(b.array(source_weights[key]), "float32")
             target_arr = b.astype(b.array(target_weights[key]), "float32")
-            b.eval(source_arr)
-            b.eval(target_arr)
-            source_norm += float(b.to_numpy(b.norm(source_arr)))
-            target_norm += float(b.to_numpy(b.norm(target_arr)))
+            source_norm_arr = b.norm(source_arr)
+            target_norm_arr = b.norm(target_arr)
+            b.eval(source_norm_arr, target_norm_arr)
+            source_norm += float(b.to_scalar(source_norm_arr))
+            target_norm += float(b.to_scalar(target_norm_arr))
             count += 1
 
     if count == 0:
@@ -614,10 +615,9 @@ def _check_refusal_preservation(
         # Compute projection using backend
         dot_val = b.sum(merged_flat * direction_arr)
         norm_val = b.norm(merged_flat)
-        b.eval(dot_val)
-        b.eval(norm_val)
+        b.eval(dot_val, norm_val)
         div_eps = float(machine_epsilon(b, norm_val))
-        projection = float(b.to_numpy(dot_val)) / (float(b.to_numpy(norm_val)) + div_eps)
+        projection = float(b.to_scalar(dot_val)) / (float(b.to_scalar(norm_val)) + div_eps)
 
         preservation = min(1.0, abs(projection) / (refusal_dir.strength + div_eps))
         projection_preservations.append(preservation)

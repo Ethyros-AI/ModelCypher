@@ -198,7 +198,9 @@ def _rbf_gram_matrix(
         sorted_dist = backend.sort(flat_dist)
         # Skip zeros (diagonal elements)
         mid_idx = (n * n) // 2
-        median_dist = float(backend.to_numpy(sorted_dist[mid_idx]))
+        median_elem = sorted_dist[mid_idx]
+        backend.eval(median_elem)
+        median_dist = float(backend.to_scalar(median_elem))
         if median_dist > 0:
             sigma = math.sqrt(median_dist / 2)
         else:
@@ -297,8 +299,8 @@ def _compute_hsic(
     y_norm = backend.norm(centered_y)
     backend.eval(x_norm, y_norm)
 
-    x_norm_val = float(backend.to_numpy(x_norm))
-    y_norm_val = float(backend.to_numpy(y_norm))
+    x_norm_val = float(backend.to_scalar(x_norm))
+    y_norm_val = float(backend.to_scalar(y_norm))
 
     # Use precision-aware threshold for near-zero detection
     eps = division_epsilon(backend, centered_x)
@@ -313,7 +315,7 @@ def _compute_hsic(
     backend.eval(trace_product)
 
     # Scale back
-    trace_val = float(backend.to_numpy(trace_product)) * x_norm_val * y_norm_val
+    trace_val = float(backend.to_scalar(trace_product)) * x_norm_val * y_norm_val
 
     # Normalize by (n-1)^2
     hsic = trace_val / ((n - 1) ** 2)
@@ -385,7 +387,7 @@ def _compute_hsic_unbiased(
     hsic = (term1 + term2 - term3) / (n * (n - 3))
     backend.eval(hsic)
 
-    result = float(backend.to_numpy(hsic))
+    result = float(backend.to_scalar(hsic))
 
     # HSIC should be non-negative; clamp to avoid numerical issues
     return max(0.0, result) if math.isfinite(result) else 0.0
@@ -448,8 +450,8 @@ def _participation_ratio(
     sum_sq = backend.sum(eigvals * eigvals)
     backend.eval(sum_vals, sum_sq)
 
-    sum_val = float(backend.to_numpy(sum_vals))
-    sum_sq_val = float(backend.to_numpy(sum_sq))
+    sum_val = float(backend.to_scalar(sum_vals))
+    sum_sq_val = float(backend.to_scalar(sum_sq))
 
     if not math.isfinite(sum_val) or not math.isfinite(sum_sq_val):
         return 0.0

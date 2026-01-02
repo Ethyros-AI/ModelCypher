@@ -219,7 +219,7 @@ class LowRankGromovWasserstein:
             b.eval(max_diff)
             # Use precision-aware threshold
             eps = regularization_epsilon(b, C1)
-            if float(b.to_numpy(max_diff)) < eps:
+            if float(b.to_scalar(max_diff)) < eps:
                 # Identical matrices: return identity coupling (represented in low-rank form)
                 # P = I/n can be expressed as P = Q @ diag(1/g) @ R^T where:
                 # Q = R = e_k (standard basis), g = 1/n (for each of n columns)
@@ -287,7 +287,9 @@ class LowRankGromovWasserstein:
             b.eval(Q_new, g_new, R_new)
 
             # Check for NaN and skip update if found
-            q_sum = float(b.to_numpy(b.sum(Q_new)))
+            q_sum_arr = b.sum(Q_new)
+            b.eval(q_sum_arr)
+            q_sum = float(b.to_scalar(q_sum_arr))
             if not (q_sum == q_sum):  # NaN check
                 logger.warning("NaN detected in iteration %d, using previous values", it)
                 break
@@ -504,7 +506,8 @@ class LowRankGromovWasserstein:
         # For simplicity, use the mean cost value as a constant matrix
         # This is a rough approximation but numerically stable
         mean_cost = b.mean(cost_sampled)
-        cost = b.full((n, m), float(b.to_numpy(mean_cost)))
+        b.eval(mean_cost)
+        cost = b.full((n, m), float(b.to_scalar(mean_cost)))
         b.eval(cost)
 
         return cost
@@ -627,10 +630,12 @@ class LowRankGromovWasserstein:
             g_safe = b.maximum(g, b.full(g.shape, eps))
             row_margin = b.sum(Q * (1.0 / g_safe) * b.sum(R, axis=0), axis=1)
             col_margin = b.sum(R * (1.0 / g_safe) * b.sum(Q, axis=0), axis=1)
-            b.eval(row_margin, col_margin)
+            row_err_arr = b.max(b.abs(row_margin - a))
+            col_err_arr = b.max(b.abs(col_margin - p))
+            b.eval(row_err_arr, col_err_arr)
 
-            row_err = float(b.to_numpy(b.max(b.abs(row_margin - a))))
-            col_err = float(b.to_numpy(b.max(b.abs(col_margin - p))))
+            row_err = float(b.to_scalar(row_err_arr))
+            col_err = float(b.to_scalar(col_err_arr))
 
             if row_err < threshold and col_err < threshold:
                 break
@@ -666,7 +671,7 @@ class LowRankGromovWasserstein:
         col_error = b.sum(b.abs(col_margin - p))
         b.eval(row_error, col_error)
 
-        return float(b.to_numpy(row_error)) + float(b.to_numpy(col_error))
+        return float(b.to_scalar(row_error)) + float(b.to_scalar(col_error))
 
     def _compute_gw_distance(
         self,
@@ -747,7 +752,7 @@ class LowRankGromovWasserstein:
             distance = term1 + term2 - 2.0 * term3
             b.eval(distance)
 
-            return max(0.0, float(b.to_numpy(distance)))
+            return max(0.0, float(b.to_scalar(distance)))
 
         # For larger matrices, use sampling
         return self._compute_gw_distance_sampled(Q, g, R, C1, C2, n, m, b)
@@ -807,7 +812,7 @@ class LowRankGromovWasserstein:
 
         # Scale by sampling ratio
         scale = (n * m) / (len(idx_n) * len(idx_m))
-        return max(0.0, float(b.to_numpy(distance)) * scale)
+        return max(0.0, float(b.to_scalar(distance)) * scale)
 
 
 def compute_lowrank_gw(

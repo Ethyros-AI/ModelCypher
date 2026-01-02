@@ -146,8 +146,8 @@ def alignment_signal_from_matrices(
     src_norm = b.mean(b.norm(source_matrix, axis=1))
     tgt_norm = b.mean(b.norm(target_matrix, axis=1))
     b.eval(src_norm, tgt_norm)
-    src_norm_val = float(b.to_numpy(src_norm))
-    tgt_norm_val = float(b.to_numpy(tgt_norm))
+    src_norm_val = float(b.to_scalar(src_norm))
+    tgt_norm_val = float(b.to_scalar(tgt_norm))
     scale_ratio = src_norm_val / (tgt_norm_val + div_eps)
 
     divergence_pattern = "rotation"

@@ -610,8 +610,8 @@ def _probe_precise(
                             logger.debug(
                                 "PROBE: KV Procrustes layer %d: error %.4f -> %.4f",
                                 src_layer,
-                                float(b.to_numpy(pre_err)),
-                                float(b.to_numpy(post_err)),
+                                float(b.to_scalar(pre_err)),
+                                float(b.to_scalar(post_err)),
                             )
 
                             # Now run GramAligner on Procrustes-aligned activations
