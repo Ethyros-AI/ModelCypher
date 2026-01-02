@@ -465,32 +465,27 @@ class ThermoMeasurement:
         return self.behavioral_outcome.is_ridge_crossed
 
     @property
-    def entropy_trend(self) -> EntropyDirection:
-        """Entropy trend direction based on trajectory."""
+    def entropy_trend_delta(self) -> float | None:
+        """Entropy trend: difference between second half and first half mean.
+
+        Returns None if trajectory has fewer than 3 samples.
+        Positive = entropy increasing, Negative = entropy decreasing.
+        Caller interprets significance based on their noise floor calibration.
+        """
         if len(self.entropy_trajectory) < 3:
-            return EntropyDirection.NEUTRAL
+            return None
 
         mid = len(self.entropy_trajectory) // 2
         first_half = self.entropy_trajectory[:mid]
         second_half = self.entropy_trajectory[mid:]
 
         if not first_half or not second_half:
-            return EntropyDirection.NEUTRAL
+            return None
 
         first_mean = sum(first_half) / len(first_half)
         second_mean = sum(second_half) / len(second_half)
 
-        delta = second_mean - first_mean
-        if delta > 0.1:
-            return EntropyDirection.INCREASE
-        elif delta < -0.1:
-            return EntropyDirection.DECREASE
-        return EntropyDirection.NEUTRAL
-
-    @property
-    def shows_distress_signature(self) -> bool:
-        """Distress signature: high entropy + low variance."""
-        return self.mean_entropy >= 3.0 and self.top_k_concentration < 0.2
+        return second_mean - first_mean
 
     @classmethod
     def create(
@@ -705,13 +700,12 @@ class MultilingualMeasurement:
 
     @property
     def delta_h(self) -> float:
-        """Entropy change: modified - baseline."""
-        return self.modified_entropy - self.baseline_entropy
+        """Entropy change: modified - baseline.
 
-    @property
-    def shows_cooling(self) -> bool:
-        """Whether this measurement shows entropy cooling (delta_H < 0)."""
-        return self.delta_h < -0.05
+        Negative = cooling (entropy decreased), Positive = heating.
+        Caller interprets significance based on their noise floor calibration.
+        """
+        return self.modified_entropy - self.baseline_entropy
 
     @classmethod
     def create(

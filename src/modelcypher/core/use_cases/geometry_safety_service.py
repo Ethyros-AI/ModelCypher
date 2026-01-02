@@ -335,15 +335,21 @@ class GeometrySafetyService:
     def _action_for_severity(
         self, severity: float, is_tripped: bool
     ) -> "RecommendedAction":
-        """Determine action from pre-computed severity."""
+        """Determine action from pre-computed severity.
+
+        Returns only stop/continue based on boolean is_tripped state.
+        Severity is returned in CircuitBreakerState for caller interpretation.
+        No hardcoded threshold for human_review - the severity value itself
+        tells the caller how concerned to be.
+        """
         from modelcypher.core.domain.safety.circuit_breaker_integration import (
             RecommendedAction,
         )
 
         if is_tripped:
             return RecommendedAction.stop_generation
-        if severity >= 0.5:
-            return RecommendedAction.human_review
+        # Severity is returned in the state; caller can decide if it warrants
+        # human_review based on their context and calibration.
         return RecommendedAction.continue_generation
 
     def persona_drift(self, job_id: str) -> PersonaDriftInfo | None:

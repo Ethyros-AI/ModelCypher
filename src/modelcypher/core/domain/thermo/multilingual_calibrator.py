@@ -392,7 +392,7 @@ class MultilingualCalibrator:
                 baseline_entropy=baseline_entropy,
                 modified_entropy=modified_entropy,
                 delta_h=delta_h,
-                shows_cooling=delta_h < -0.05,
+                shows_cooling=delta_h < 0,  # Any negative delta is cooling
                 relative_effect=relative_effect,
             )
             results.append(result)

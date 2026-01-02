@@ -68,12 +68,12 @@ class TrajectoryStats:
     @property
     def is_cooling(self) -> bool:
         """True if entropy decreased over generation (cooling effect)."""
-        return self.entropy_delta < -0.1
+        return self.entropy_delta < 0  # Any decrease is cooling
 
     @property
     def is_heating(self) -> bool:
         """True if entropy increased over generation."""
-        return self.entropy_delta > 0.1
+        return self.entropy_delta > 0  # Any increase is heating
 
 
 class EntropyMath:

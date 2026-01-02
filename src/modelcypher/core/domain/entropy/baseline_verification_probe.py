@@ -230,6 +230,9 @@ class VerificationConfiguration:
     temperature: float
     # Timeout per prompt in seconds
     prompt_timeout_seconds: float
+    # Anomaly score threshold for adversarial prompt flagging (optional)
+    # If None, all adversarial samples with anomaly_score > 0 are flagged.
+    adversarial_anomaly_threshold: float | None = None
 
     @classmethod
     def with_statistical_thresholds(
@@ -397,11 +400,12 @@ class BaselineVerificationProbe:
                     )
                     all_samples.extend(prompt_samples)
 
-                    # Check for adversarial flag
-                    # Threshold: midpoint of [0, 1] range - above this is anomalous
+                    # Check for adversarial flag using configurable threshold
                     if self._is_adversarial_prompt(prompt):
+                        threshold = self.config.adversarial_anomaly_threshold
                         for sample in prompt_samples:
-                            if sample.anomaly_score > 0.5:
+                            # If threshold not configured, flag any nonzero anomaly
+                            if sample.anomaly_score > (threshold if threshold is not None else 0.0):
                                 adversarial_flags.append(
                                     AdversarialFlag(
                                         prompt_index=index,

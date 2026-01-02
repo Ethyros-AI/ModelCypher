@@ -210,7 +210,22 @@ class GeometricTrainingMetrics:
         return metrics
 
     @classmethod
-    def from_progress_metrics(cls, metrics: dict[str, float]) -> "GeometricTrainingMetrics" | None:
+    def from_progress_metrics(
+        cls,
+        metrics: dict[str, float],
+        *,
+        active_layer_threshold: float | None = None,
+        drift_threshold: float | None = None,
+    ) -> "GeometricTrainingMetrics" | None:
+        """Parse geometry metrics from training progress dict.
+
+        Args:
+            metrics: Dictionary of metric name → value from training.
+            active_layer_threshold: Gradient fraction above which layer is "active".
+                If None, uses any nonzero contribution (> 0).
+            drift_threshold: Persona delta magnitude above which trait is "drifting".
+                If None, uses any nonzero delta (> 0).
+        """
         if not metrics:
             return None
         has_geometry = any(key.startswith("geometry/") for key in metrics)
@@ -225,6 +240,9 @@ class GeometricTrainingMetrics:
         grad_norm_suffix = "/grad_norm"
         grad_frac_suffix = "/grad_frac"
 
+        # Use provided threshold or default to any nonzero contribution
+        effective_active_threshold = active_layer_threshold if active_layer_threshold is not None else 0.0
+
         for key, value in metrics.items():
             if not key.startswith(layer_prefix):
                 continue
@@ -235,16 +253,20 @@ class GeometricTrainingMetrics:
             if key.endswith(grad_frac_suffix):
                 layer_name = key[len(layer_prefix) : -len(grad_frac_suffix)]
                 layer_fractions[layer_name] = float(value)
-                if value > 0.05:
+                if value > effective_active_threshold:
                     active_layers.append(layer_name)
 
         drifting_traits: list[str] = []
         persona_delta_prefix = "geometry/persona/"
         persona_delta_suffix = "/delta"
+
+        # Use provided threshold or default to any nonzero delta
+        effective_drift_threshold = drift_threshold if drift_threshold is not None else 0.0
+
         for key, value in metrics.items():
             if not key.startswith(persona_delta_prefix) or not key.endswith(persona_delta_suffix):
                 continue
-            if abs(value) > 0.2:
+            if abs(value) > effective_drift_threshold:
                 trait = key[len(persona_delta_prefix) : -len(persona_delta_suffix)]
                 drifting_traits.append(trait)
 

@@ -78,7 +78,6 @@ from .validate import (
     stage_validate,
 )
 # NOTE: ValidateConfig was REMOVED. Validation always runs all checks.
-# entropy_phase is passed directly to stage_validate (input data, not config).
 
 logger = logging.getLogger(__name__)
 

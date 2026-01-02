@@ -70,11 +70,14 @@ class ProfileSection(Enum):
 
 @dataclass
 class ManifoldRegion:
-    """A region of the manifold with consistent properties."""
+    """A region of the manifold with consistent properties.
+
+    Contains only raw measurements. The mean_entropy value is the raw
+    measurement - callers interpret relative to baselines.
+    """
 
     start_position: float  # 0.0-1.0 relative position
     end_position: float
-    phase: str  # "ordered", "critical", "chaotic"
     mean_entropy: float
 
 
@@ -105,7 +108,6 @@ class LayerProfile:
     # === ENTROPY ===
     shannon_entropy: float | None = None
     renyi_entropy_alpha2: float | None = None
-    entropy_phase: str = "unknown"  # "ordered", "critical", "chaotic"
 
     # === TOPOLOGY ===
     betti_0: int | None = None  # Connected components
@@ -147,7 +149,6 @@ class LayerProfile:
             # Entropy
             "shannon_entropy": safe_float(self.shannon_entropy),
             "renyi_entropy_alpha2": safe_float(self.renyi_entropy_alpha2),
-            "entropy_phase": self.entropy_phase,
             # Topology
             "betti_0": self.betti_0,
             "betti_1": self.betti_1,
@@ -160,7 +161,6 @@ class LayerProfile:
                 {
                     "start_position": r.start_position,
                     "end_position": r.end_position,
-                    "phase": r.phase,
                     "mean_entropy": r.mean_entropy,
                 }
                 for r in self.manifold_regions
@@ -179,7 +179,6 @@ class LayerProfile:
             ManifoldRegion(
                 start_position=r["start_position"],
                 end_position=r["end_position"],
-                phase=r["phase"],
                 mean_entropy=r["mean_entropy"],
             )
             for r in d.get("manifold_regions", [])
@@ -200,7 +199,6 @@ class LayerProfile:
             intrinsic_dimension_method=d.get("intrinsic_dimension_method", "mle"),
             shannon_entropy=d.get("shannon_entropy"),
             renyi_entropy_alpha2=d.get("renyi_entropy_alpha2"),
-            entropy_phase=d.get("entropy_phase", "unknown"),
             betti_0=d.get("betti_0"),
             betti_1=d.get("betti_1"),
             max_persistence=d.get("max_persistence"),
@@ -615,11 +613,6 @@ class ModelProfile:
                             lp.renyi_entropy_alpha2
                             if lp.renyi_entropy_alpha2 is not None
                             else olp.renyi_entropy_alpha2
-                        ),
-                        entropy_phase=(
-                            lp.entropy_phase
-                            if lp.entropy_phase != "unknown"
-                            else olp.entropy_phase
                         ),
                         betti_0=lp.betti_0 if lp.betti_0 is not None else olp.betti_0,
                         betti_1=lp.betti_1 if lp.betti_1 is not None else olp.betti_1,

@@ -27,43 +27,42 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from modelcypher.core.use_cases.thermo_service import (
-    DETECT_PRESETS,
     ThermoDetectResult,
     ThermoMeasureResult,
     ThermoService,
 )
 
 
-# **Feature: cli-mcp-parity, Property 2: Thermo detect returns valid classification**
+# **Feature: cli-mcp-parity, Property 2: Thermo detect returns raw measurements**
 # **Validates: Requirements 1.5**
 @given(
     prompt=st.text(min_size=1, max_size=200),
-    preset=st.sampled_from(["default", "strict", "sensitive", "quick"]),
 )
 @settings(max_examples=100, deadline=None)
-def test_thermo_detect_returns_valid_classification(prompt: str, preset: str):
-    """Property 2: For any prompt and model, detect() returns a classification in
-    {"safe", "unsafe", "ambiguous"} with risk_level in [0, 3] and confidence in [0, 1].
+def test_thermo_detect_returns_raw_measurements(prompt: str):
+    """Property 2: For any prompt, detect() returns raw entropy measurements.
+
+    ThermoDetectResult contains:
+    - baseline_entropy: entropy of original prompt
+    - intensity_entropy: entropy of modified prompt
+    - delta_h: difference in entropy
+    - processing_time: time to process
+
+    No interpretation or classification is provided - caller decides meaning.
     """
     service = ThermoService()
     # Use a dummy model path since we're using simulated entropy
-    result = service.detect(prompt, "/tmp/model", preset)
+    result = service.detect(prompt, "/tmp/model")
 
     # Verify result is correct type
     assert isinstance(result, ThermoDetectResult)
 
-    # Verify classification is valid
-    assert result.classification in {"safe", "unsafe", "ambiguous"}
-
-    # Verify risk_level is in [0, 3]
-    assert 0 <= result.risk_level <= 3
-
-    # Verify confidence is in [0, 1]
-    assert 0.0 <= result.confidence <= 1.0
-
     # Verify entropy values are non-negative
     assert result.baseline_entropy >= 0.0
     assert result.intensity_entropy >= 0.0
+
+    # delta_h can be positive or negative (entropy increase or decrease)
+    assert isinstance(result.delta_h, float)
 
     # Verify processing_time is non-negative
     assert result.processing_time >= 0.0
@@ -76,10 +75,9 @@ def test_thermo_detect_returns_valid_classification(prompt: str, preset: str):
 # **Validates: Requirements 1.6**
 @given(
     prompts=st.lists(st.text(min_size=1, max_size=100), min_size=1, max_size=20),
-    preset=st.sampled_from(["default", "strict", "sensitive", "quick"]),
 )
 @settings(max_examples=100, deadline=None)
-def test_thermo_detect_batch_preserves_count(prompts: list[str], preset: str):
+def test_thermo_detect_batch_preserves_count(prompts: list[str]):
     """Property 3: For any prompts file with N prompts, detect_batch() returns exactly N results."""
     service = ThermoService()
 
@@ -89,17 +87,17 @@ def test_thermo_detect_batch_preserves_count(prompts: list[str], preset: str):
         prompts_file = f.name
 
     try:
-        results = service.detect_batch(prompts_file, "/tmp/model", preset)
+        results = service.detect_batch(prompts_file, "/tmp/model")
 
         # Verify count is preserved
         assert len(results) == len(prompts)
 
-        # Verify each result is valid
+        # Verify each result is valid raw measurement
         for i, result in enumerate(results):
             assert isinstance(result, ThermoDetectResult)
-            assert result.classification in {"safe", "unsafe", "ambiguous"}
-            assert 0 <= result.risk_level <= 3
-            assert 0.0 <= result.confidence <= 1.0
+            assert result.baseline_entropy >= 0.0
+            assert result.intensity_entropy >= 0.0
+            assert isinstance(result.delta_h, float)
             assert result.prompt == prompts[i]
     finally:
         Path(prompts_file).unlink()
@@ -147,11 +145,12 @@ def test_thermo_measure_returns_statistics():
     assert result.statistics.min_entropy <= result.statistics.max_entropy
 
 
-def test_thermo_detect_presets_exist():
-    """Test that all presets are properly configured."""
-    for preset_name, config in DETECT_PRESETS.items():
-        assert "threshold_safe" in config
-        assert "threshold_unsafe" in config
-        assert "modifiers" in config
-        assert config["threshold_safe"] < config["threshold_unsafe"]
-        assert len(config["modifiers"]) > 0
+def test_thermo_detect_returns_consistent_delta():
+    """Test that delta_h is consistent with baseline and intensity entropy."""
+    service = ThermoService()
+    result = service.detect("Test prompt", "/tmp/model")
+
+    # delta_h should be intensity_entropy - baseline_entropy
+    # (within floating point tolerance)
+    expected_delta = result.intensity_entropy - result.baseline_entropy
+    assert abs(result.delta_h - expected_delta) < 1e-6

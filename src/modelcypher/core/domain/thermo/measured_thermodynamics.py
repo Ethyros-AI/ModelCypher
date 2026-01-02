@@ -281,7 +281,7 @@ class MeasuredBasinTopology:
         barrier = self.transition_ridge.value - self.caution_energy.value
         return math.exp(-barrier / temperature)
 
-    def basin_weights(self, temperature: float) -> dict[str, float]:
+    def basin_weights(self, temperature: float) -> list[float]:
         """Boltzmann weights for each basin at given temperature.
 
         w_i = exp(-E_i / T)
@@ -294,25 +294,22 @@ class MeasuredBasinTopology:
 
         Returns
         -------
-        dict[str, float]
-            Normalized weights for each basin.
+        list[float]
+            Normalized weights for each basin [basin_0, basin_1, basin_2].
+            Indices correspond to energy levels in order of increasing energy.
         """
         if temperature <= 0:
-            return {"refusal": 1.0, "caution": 0.0, "solution": 0.0}
+            return [1.0, 0.0, 0.0]
 
-        w_refusal = math.exp(-self.refusal_energy.value / temperature)
-        w_caution = math.exp(-self.caution_energy.value / temperature)
-        w_solution = math.exp(-self.solution_energy.value / temperature)
-        partition = w_refusal + w_caution + w_solution
+        w_0 = math.exp(-self.refusal_energy.value / temperature)
+        w_1 = math.exp(-self.caution_energy.value / temperature)
+        w_2 = math.exp(-self.solution_energy.value / temperature)
+        partition = w_0 + w_1 + w_2
 
         if partition <= 0:
-            return {"refusal": 0.33, "caution": 0.33, "solution": 0.33}
+            return [0.33, 0.33, 0.33]
 
-        return {
-            "refusal": w_refusal / partition,
-            "caution": w_caution / partition,
-            "solution": w_solution / partition,
-        }
+        return [w_0 / partition, w_1 / partition, w_2 / partition]
 
     def to_dict(self) -> dict:
         """Serialize to dictionary for storage."""

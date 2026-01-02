@@ -658,19 +658,19 @@ def compare_score(
     payload = {
         "comparisonId": result.comparison_id,
         "scores": result.scores,
-        "winner": result.winner,
     }
 
     if context.output_format == "text":
         lines = [
             "COMPARISON SCORES",
             f"Comparison ID: {result.comparison_id}",
-            f"Quality: {result.scores.get('quality', 'N/A')}",
-            f"Speed: {result.scores.get('speed', 'N/A')}",
-            f"Overall: {result.scores.get('overall', 'N/A')}",
         ]
-        if result.winner:
-            lines.append(f"Winner: {result.winner}")
+        checkpoints = result.scores.get("checkpoints", [])
+        for cp in checkpoints:
+            path = cp.get("checkpoint_path", "unknown")
+            latency = cp.get("latency_ms")
+            latency_str = f"{latency:.1f}ms" if latency else "N/A"
+            lines.append(f"  {path}: latency={latency_str}")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

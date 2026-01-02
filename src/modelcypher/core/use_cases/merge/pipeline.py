@@ -313,12 +313,19 @@ def run_merge(
     # Compute which concepts to graft based on source/target density.
     # Only graft where source is denser than target (fills gaps, no overwrites).
     logger.info("STAGE 2.5: DENSITY (computing graft mask)")
+    # Density requires per-layer activations from both models. In cross-arch merges,
+    # the layer counts can differ, so only analyze layers present in both.
+    density_layers = sorted(
+        set(source_activations.keys()) & set(target_activations.keys())
+    )
+    if not density_layers:
+        raise RuntimeError("DENSITY: No overlapping layers between source and target")
     graft_mask, density_metrics = stage_density(
         source_activations=source_activations,
         target_activations=target_activations,
         probe_ids=probe_result.get("probe_ids"),
         probe_domains=probe_result.get("probe_domains"),
-        layers=layer_indices,
+        layers=density_layers,
         backend=backend,
     )
 

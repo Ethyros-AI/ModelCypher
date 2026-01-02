@@ -42,7 +42,6 @@ logger = logging.getLogger(__name__)
 
 
 # ValidateConfig was REMOVED. Validation always runs all checks.
-# entropy_phase is passed directly to stage_validate (input data, not config).
 # Ridge test prompts are internal test data.
 
 _RIDGE_TEST_PROMPTS = (
@@ -68,7 +67,6 @@ class BehavioralProbeResult:
 class CircuitBreakerResult:
     """Raw circuit breaker input signals."""
 
-    entropy_phase: str
     refusal_score: float | None
     persona_drift_magnitude: float
 
@@ -99,7 +97,6 @@ class ValidateResult:
     behavioral_probe_result: BehavioralProbeResult | None = None
     circuit_breaker_result: CircuitBreakerResult | None = None
     ridge_resistance_result: RidgeResistanceResult | None = None
-    entropy_phase: str = "ordered"  # Thermodynamic phase (measurement)
 
 
 def stage_validate(
@@ -114,7 +111,6 @@ def stage_validate(
     collect_activations_fn: Callable | None = None,
     merged_model_path: str | None = None,
     backend: "Backend | None" = None,
-    entropy_phase: str = "ordered",
 ) -> ValidateResult:
     """
     Stage 6: Validation of merged weights.
@@ -134,7 +130,6 @@ def stage_validate(
         collect_activations_fn: Function to collect layer activations
         merged_model_path: Path to merged model (for ridge validation)
         backend: Backend for tensor operations
-        entropy_phase: Thermodynamic phase from earlier stages (input data)
 
     Returns:
         ValidateResult with raw metrics
@@ -361,20 +356,17 @@ def stage_validate(
     probe_drift = float(total_findings)
 
     circuit_breaker_result = CircuitBreakerResult(
-        entropy_phase=entropy_phase,
         refusal_score=refusal_score,
         persona_drift_magnitude=probe_drift,
     )
 
     metrics["circuit_breaker"] = {
-        "entropy_phase": entropy_phase,
         "refusal_score": refusal_score,
         "persona_drift_magnitude": probe_drift,
     }
 
     logger.info(
-        "VALIDATE: Circuit breaker signals recorded (entropy_phase=%s, drift=%.3f)",
-        entropy_phase,
+        "VALIDATE: Circuit breaker signals recorded (drift=%.3f)",
         probe_drift,
     )
 
@@ -410,21 +402,13 @@ def stage_validate(
     # =========================================================================
     # RECORD RAW MEASUREMENTS (No verdicts - the geometry IS what it is)
     # =========================================================================
-    # All raw measurements go into metrics dict
-    metrics["entropy_phase"] = entropy_phase
-
-    # Log summary of raw measurements
-    logger.info(
-        "VALIDATE: Complete. entropy_phase=%s",
-        entropy_phase,
-    )
+    logger.info("VALIDATE: Complete.")
 
     return ValidateResult(
         metrics=metrics,
         behavioral_probe_result=behavioral_result,
         circuit_breaker_result=circuit_breaker_result,
         ridge_resistance_result=ridge_result,
-        entropy_phase=entropy_phase,
     )
 
 

@@ -231,8 +231,8 @@ class TestThermoMeasurement:
         )
         assert measurement.ridge_crossed is True
 
-    def test_entropy_trend_decreasing(self, sample_prompt):
-        """Decreasing trajectory should report DECREASE."""
+    def test_entropy_trend_delta_decreasing(self, sample_prompt):
+        """Decreasing trajectory should report negative delta."""
         measurement = ThermoMeasurement.create(
             prompt=sample_prompt,
             first_token_entropy=2.0,
@@ -246,10 +246,12 @@ class TestThermoMeasurement:
             token_count=10,
             stop_reason="max_tokens",
         )
-        assert measurement.entropy_trend == EntropyDirection.DECREASE
+        delta = measurement.entropy_trend_delta
+        assert delta is not None
+        assert delta < 0  # Second half mean < first half mean
 
-    def test_entropy_trend_increasing(self, sample_prompt):
-        """Increasing trajectory should report INCREASE."""
+    def test_entropy_trend_delta_increasing(self, sample_prompt):
+        """Increasing trajectory should report positive delta."""
         measurement = ThermoMeasurement.create(
             prompt=sample_prompt,
             first_token_entropy=1.0,
@@ -263,10 +265,12 @@ class TestThermoMeasurement:
             token_count=10,
             stop_reason="max_tokens",
         )
-        assert measurement.entropy_trend == EntropyDirection.INCREASE
+        delta = measurement.entropy_trend_delta
+        assert delta is not None
+        assert delta > 0  # Second half mean > first half mean
 
-    def test_entropy_trend_short_trajectory(self, sample_prompt):
-        """Short trajectory should report NEUTRAL."""
+    def test_entropy_trend_delta_short_trajectory(self, sample_prompt):
+        """Short trajectory should return None (insufficient data)."""
         measurement = ThermoMeasurement.create(
             prompt=sample_prompt,
             first_token_entropy=1.5,
@@ -280,24 +284,7 @@ class TestThermoMeasurement:
             token_count=10,
             stop_reason="max_tokens",
         )
-        assert measurement.entropy_trend == EntropyDirection.NEUTRAL
-
-    def test_distress_signature_detection(self, sample_prompt):
-        """High entropy + low variance should show distress."""
-        measurement = ThermoMeasurement.create(
-            prompt=sample_prompt,
-            first_token_entropy=3.5,
-            mean_entropy=3.5,
-            entropy_variance=0.01,
-            entropy_trajectory=[3.5, 3.5, 3.5],
-            top_k_concentration=0.1,  # Low concentration
-            model_state="distressed",
-            behavioral_outcome=BehavioralOutcome.HEDGED,
-            generated_text="I'm not sure...",
-            token_count=10,
-            stop_reason="max_tokens",
-        )
-        assert measurement.shows_distress_signature is True
+        assert measurement.entropy_trend_delta is None
 
 
 class TestLocalizedModifiers:
@@ -405,25 +392,25 @@ class TestMultilingualMeasurement:
         )
         assert measurement.delta_h == pytest.approx(-0.5)
 
-    def test_shows_cooling_negative_delta(self, sample_prompt):
-        """Negative delta should show cooling."""
+    def test_negative_delta_h(self, sample_prompt):
+        """Negative delta_h indicates cooling (entropy decreased)."""
         measurement = MultilingualMeasurement.create(
             prompt=sample_prompt,
             baseline_entropy=2.0,
             modified_entropy=1.5,  # Lower = cooling
             token_count=10,
         )
-        assert measurement.shows_cooling is True
+        assert measurement.delta_h < 0  # Caller interprets as cooling
 
-    def test_no_cooling_positive_delta(self, sample_prompt):
-        """Positive delta should not show cooling."""
+    def test_positive_delta_h(self, sample_prompt):
+        """Positive delta_h indicates heating (entropy increased)."""
         measurement = MultilingualMeasurement.create(
             prompt=sample_prompt,
             baseline_entropy=1.5,
             modified_entropy=2.0,  # Higher = heating
             token_count=10,
         )
-        assert measurement.shows_cooling is False
+        assert measurement.delta_h > 0  # Caller interprets as heating
 
     def test_accessors(self, sample_prompt):
         """Accessors should return correct values."""

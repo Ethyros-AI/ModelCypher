@@ -314,12 +314,27 @@ class TestFromProgressMetrics:
         assert result is not None
         assert "layer_0" in result.per_layer_gradient_fractions
 
-    def test_active_layers_threshold(self):
+    def test_active_layers_default_any_nonzero(self):
+        """Without threshold, any nonzero gradient fraction is active."""
+        metrics_dict = {
+            "geometry/layer/layer_0/grad_frac": 0.1,
+            "geometry/layer/layer_1/grad_frac": 0.01,
+        }
+        result = GeometricTrainingMetrics.from_progress_metrics(metrics_dict)
+        assert result is not None
+        # Both layers have nonzero contribution, so both are active
+        assert "layer_0" in result.active_layers
+        assert "layer_1" in result.active_layers
+
+    def test_active_layers_with_threshold(self):
+        """With explicit threshold, only layers above it are active."""
         metrics_dict = {
             "geometry/layer/layer_0/grad_frac": 0.1,  # Active (> 0.05)
             "geometry/layer/layer_1/grad_frac": 0.01,  # Not active (< 0.05)
         }
-        result = GeometricTrainingMetrics.from_progress_metrics(metrics_dict)
+        result = GeometricTrainingMetrics.from_progress_metrics(
+            metrics_dict, active_layer_threshold=0.05
+        )
         assert result is not None
         assert "layer_0" in result.active_layers
         assert "layer_1" not in result.active_layers

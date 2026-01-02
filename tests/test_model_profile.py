@@ -63,12 +63,10 @@ class TestManifoldRegion:
         region = ManifoldRegion(
             start_position=0.0,
             end_position=0.3,
-            phase="ordered",
             mean_entropy=1.5,
         )
         assert region.start_position == 0.0
         assert region.end_position == 0.3
-        assert region.phase == "ordered"
         assert region.mean_entropy == 1.5
 
 
@@ -98,16 +96,15 @@ class TestLayerProfile:
             intrinsic_dimension_method="mle",
             shannon_entropy=3.2,
             renyi_entropy_alpha2=2.8,
-            entropy_phase="critical",
             betti_0=1,
             betti_1=3,
             max_persistence=0.45,
             gradient_norm=0.001,
             condition_number=150.0,
             manifold_regions=[
-                ManifoldRegion(0.0, 0.3, "ordered", 1.5),
-                ManifoldRegion(0.3, 0.7, "critical", 2.5),
-                ManifoldRegion(0.7, 1.0, "chaotic", 3.5),
+                ManifoldRegion(0.0, 0.3, 1.5),
+                ManifoldRegion(0.3, 0.7, 2.5),
+                ManifoldRegion(0.7, 1.0, 3.5),
             ],
         )
         assert lp.layer_idx == 5
@@ -160,7 +157,7 @@ class TestLayerProfile:
             betti_0=1,
             betti_1=2,
             manifold_regions=[
-                ManifoldRegion(0.0, 0.5, "ordered", 1.8),
+                ManifoldRegion(0.0, 0.5, 1.8),
             ],
         )
         d = original.to_dict()

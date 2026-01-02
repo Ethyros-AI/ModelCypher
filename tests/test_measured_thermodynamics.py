@@ -205,23 +205,21 @@ class TestMeasuredBasinTopology:
         """Test that basin weights sum to 1."""
         weights = balanced_topology.basin_weights(1.0)
 
-        total = sum(weights.values())
+        assert len(weights) == 3
+        total = sum(weights)
         assert total == pytest.approx(1.0)
 
-    def test_basin_weights_keys(self, balanced_topology):
-        """Test basin weight dictionary has expected keys."""
+    def test_basin_weights_length(self, balanced_topology):
+        """Test basin weight list has 3 elements."""
         weights = balanced_topology.basin_weights(1.0)
-
-        assert "refusal" in weights
-        assert "caution" in weights
-        assert "solution" in weights
+        assert len(weights) == 3
 
     def test_basin_weights_refusal_heavy(self, refusal_heavy_topology):
-        """Test basin weights favor refusal when refusal rate is high."""
+        """Test basin weights favor first basin when refusal rate is high."""
         weights = refusal_heavy_topology.basin_weights(1.0)
 
-        # Refusal should have higher weight (lower energy = higher probability)
-        assert weights["refusal"] > weights["solution"]
+        # First basin (index 0) should have higher weight (lower energy = higher probability)
+        assert weights[0] > weights[2]
 
     def test_model_id_preserved(self, balanced_topology):
         """Test model_id is preserved."""
@@ -304,10 +302,10 @@ class TestThermodynamicProperties:
         weights_cold = topology.basin_weights(0.5)
         weights_hot = topology.basin_weights(2.0)
 
-        # At low temperature, weight concentrates in lowest energy (refusal)
+        # At low temperature, weight concentrates in lowest energy (basin 0)
         # At high temperature, weights become more uniform
-        # So refusal weight should be higher at low temperature
-        assert weights_cold["refusal"] > weights_hot["refusal"]
+        # So basin 0 weight should be higher at low temperature
+        assert weights_cold[0] > weights_hot[0]
 
     def test_confidence_increases_with_samples(self):
         """Test that confidence in energy measurements increases with samples."""

@@ -718,13 +718,13 @@ class SpatialStereoscopy:
         else:
             correlation = 0.0
 
-        # Check if there's a consistent Z-axis (depth)
+        # Check if there's a consistent Z-axis (depth) - any variance indicates depth
         z_values = [m[2] for m in measured.values()]
         if z_values and len(z_values) > 1:
             z_mean = sum(z_values) / len(z_values)
             z_variance = sum((z - z_mean) ** 2 for z in z_values) / len(z_values)
             z_std = math.sqrt(z_variance)
-            depth_detected = z_std > 0.01
+            depth_detected = z_std > 0  # Any variance indicates depth axis
         else:
             depth_detected = False
 
@@ -909,7 +909,8 @@ class GravityGradientAnalyzer:
         float_anchors = [a.name for a in available if a.expected_y > 0.3]
 
         return GravityGradientResult(
-            gravity_axis_detected=gravity_dir is not None and abs(mass_correlation) > 0.3,
+            # Gravity axis detected if we found a direction and any measurable correlation
+            gravity_axis_detected=gravity_dir is not None and abs(mass_correlation) > 0,
             gravity_direction=gravity_dir,
             mass_correlation=mass_correlation,
             layer_gravity_strengths=layer_strengths,
@@ -1216,16 +1217,14 @@ class OcclusionProber:
         a_z = float(a_act[max_change_idx])
         b_z = float(b_act[max_change_idx])
 
-        # Z shift should be significant and consistent (one object moves "forward")
+        # Z shift magnitude - caller interprets significance based on their context
         z_shift_magnitude = abs(z_shift)
-        # Compute std manually
-        a_mean = sum(a_act) / len(a_act)
-        a_variance = sum((x - a_mean) ** 2 for x in a_act) / len(a_act)
-        a_std = math.sqrt(a_variance)
-        z_shift_detected = z_shift_magnitude > 0.1 * a_std
+        # Detected if any measurable shift exists (above numerical noise)
+        z_shift_detected = z_shift_magnitude > 0
 
-        # Occlusion understood if swapping causes consistent Z movement
-        occlusion_understood = z_shift_detected and z_shift_magnitude > 0.05
+        # Occlusion understood if swapping causes any measurable Z movement
+        # The z_swap_magnitude field quantifies how much - caller interprets significance
+        occlusion_understood = z_shift_detected
 
         return OcclusionResult(
             scene_id=probe.scene_id,
@@ -1351,7 +1350,8 @@ class Spatial3DAnalyzer:
             + 0.15 * occlusion_score
         )
 
-        physics_detected = gravity.gravity_axis_detected and density.density_mass_correlation > 0.3
+        # Physics detected if gravity axis exists and any measurable density-mass correlation
+        physics_detected = gravity.gravity_axis_detected and density.density_mass_correlation > 0
 
         return Spatial3DReport(
             euclidean_consistency=euclidean,

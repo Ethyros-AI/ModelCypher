@@ -77,7 +77,6 @@ class CompareScoreResult:
 
     comparison_id: str
     scores: dict
-    winner: str | None
 
 
 class CompareService:
@@ -291,22 +290,19 @@ class CompareService:
         if not session:
             raise RuntimeError(f"Comparison not found: {comparison_id}")
 
-        winner = None
-        best_latency = float("inf")
-
+        # Collect per-checkpoint metrics
+        checkpoint_metrics = []
         for cp in session.checkpoints:
             if cp.status == "completed":
-                latency = cp.metrics.get("latency_ms", float("inf"))
-                if latency < best_latency:
-                    best_latency = latency
-                    winner = cp.checkpoint_path
+                checkpoint_metrics.append({
+                    "checkpoint_path": cp.checkpoint_path,
+                    "latency_ms": cp.metrics.get("latency_ms"),
+                    "metrics": cp.metrics,
+                })
 
         return CompareScoreResult(
             comparison_id=comparison_id,
             scores={
-                "quality": 1.0,  # Needs NLP scoring (e.g. BERTScore or LLM-as-a-judge)
-                "speed": 1.0 if best_latency < 500 else 0.5,
-                "overall": 0.9,
+                "checkpoints": checkpoint_metrics,
             },
-            winner=winner,
         )

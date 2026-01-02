@@ -139,15 +139,15 @@ class EntropyTransition:
     def description(self) -> str:
         """Human-readable description of the transition."""
         delta = self.entropy_delta
-        if delta > 0.5:
-            direction = "escalated"
-        elif delta < -0.5:
-            direction = "recovered"
+        if delta > 0:
+            direction = "increased"
+        elif delta < 0:
+            direction = "decreased"
         else:
-            direction = "changed"
+            direction = "unchanged"
         return (
             f"Entropy {direction} from {self.from_entropy:.2f} to "
-            f"{self.to_entropy:.2f} at token {self.token_index}"
+            f"{self.to_entropy:.2f} (delta={delta:+.2f}) at token {self.token_index}"
         )
 
 
@@ -171,7 +171,13 @@ def is_uncertain(entropy: float, baseline: EntropyBaseline) -> bool:
     """
     return baseline.is_high(entropy)
 
-def is_distressed(entropy: float, variance: float, baseline: EntropyBaseline) -> bool:
+def is_distressed(
+    entropy: float,
+    variance: float,
+    baseline: EntropyBaseline,
+    *,
+    z_threshold: float = 2.0,
+) -> bool:
     """Check if entropy indicates distress (high entropy + low variance).
 
     High entropy with low variance suggests the model is "stuck" - uncertain
@@ -181,12 +187,12 @@ def is_distressed(entropy: float, variance: float, baseline: EntropyBaseline) ->
         entropy: Current entropy value.
         variance: Current variance.
         baseline: Model entropy baseline.
+        z_threshold: Z-score threshold for "high entropy" (default: 2σ from baseline).
     """
-    # High entropy (> 2 std above mean) + low variance relative to entropy
-    # Variance should scale with entropy; low relative variance is suspicious
-    is_high_entropy = baseline.z_score(entropy) > 2.0
-    expected_variance = baseline.std * 0.5  # Rough heuristic
-    is_low_variance = variance < expected_variance
+    # High entropy relative to baseline
+    is_high_entropy = baseline.z_score(entropy) > z_threshold
+    # Low variance relative to baseline standard deviation
+    is_low_variance = variance < baseline.std
     return is_high_entropy and is_low_variance
 
 
