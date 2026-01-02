@@ -23,6 +23,8 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.vector_math import VectorMath
 
 if TYPE_CHECKING:
@@ -101,9 +103,6 @@ class EntropyPathAnalysis:
     max_entropy: float
     max_entropy_index: int
     mean_gradient: float
-    spike_count: int
-    spike_indices: list[int]
-    stability_score: float
 
 
 @dataclass(frozen=True)
@@ -129,73 +128,32 @@ class ComprehensiveComparison:
     frechet: FrechetResult
     dtw: DTWResult
     signature_similarity: float
-    overall_similarity: float
-
-
-@dataclass
-class SimilarityWeights:
-    """
-    Weights for combining distance metrics into overall similarity.
-
-    Default: Equal weights (0.25 each).
-
-    Information-theoretic justification: When combining metrics of
-    comparable scale with no prior about which is more informative,
-    equal weighting is the maximum-entropy (least-assuming) choice.
-
-    Alternative weightings can be derived via:
-    - Inverse-variance weighting if metric variances are known
-    - Cross-validation on labeled trajectory pairs
-    - Domain-specific knowledge about metric relevance
-    """
-
-    # Weight for Levenshtein (edit distance) similarity.
-    # Captures structural/sequential similarity.
-    levenshtein_weight: float = 0.25
-
-    # Weight for Frechet distance similarity.
-    # Captures worst-case geometric deviation.
-    frechet_weight: float = 0.25
-
-    # Weight for DTW (Dynamic Time Warping) similarity.
-    # Captures temporal alignment quality.
-    dtw_weight: float = 0.25
-
-    # Weight for path signature similarity.
-    # Captures geometric shape invariants.
-    signature_weight: float = 0.25
-
-    def __post_init__(self) -> None:
-        total = (
-            self.levenshtein_weight + self.frechet_weight + self.dtw_weight + self.signature_weight
-        )
-        if abs(total - 1.0) > 0.01:
-            raise ValueError(f"Weights must sum to 1.0, got {total}")
-
-
-@dataclass
-class SignatureSimilarityWeights:
-    """
-    Weights for combining signature distance components.
-
-    The path signature encodes geometric information at multiple levels:
-    - Level 1: First-order increments (displacement)
-    - Level 2: Second-order (curvature, enclosed area)
-
-    Equal contribution from each signature component.
-    """
-
-    # L1 distance weight (level-1 signature component).
-    l1_weight: float = 1.0
-
-    # Signed area difference weight (level-2 antisymmetric part).
-    area_weight: float = 1.0
-
-    # Signature norm difference weight.
-    norm_weight: float = 1.0
 
 
 class PathGeometry:
+    @staticmethod
+    def _division_epsilon() -> float:
+        backend = get_default_backend()
+        arr = backend.array([0.0])
+        return division_epsilon(backend, arr)
+
+    @staticmethod
+    def _projection_dim(gate_embeddings: dict[str, list[float]]) -> int:
+        if not gate_embeddings:
+            return 1
+        return max(len(vec) for vec in gate_embeddings.values()) + 1
+
+    @staticmethod
+    def _entropy_normalization(entropies: list[float]) -> tuple[float, float]:
+        if not entropies:
+            return 0.0, PathGeometry._division_epsilon()
+        n = float(len(entropies))
+        mean = sum(entropies) / n
+        variance = sum((val - mean) ** 2 for val in entropies) / n
+        std = math.sqrt(variance)
+        eps = PathGeometry._division_epsilon()
+        return mean, std if std > eps else eps
+
     @staticmethod
     def compare(
         path_a: PathSignature,
@@ -351,7 +309,6 @@ class PathGeometry:
         path_a: PathSignature,
         path_b: PathSignature,
         gate_embeddings: dict[str, list[float]],
-        window_size: int | None = None,
     ) -> DTWResult:
         n = len(path_a.nodes)
         m = len(path_b.nodes)
@@ -362,6 +319,9 @@ class PathGeometry:
                 warping_path=[],
                 compression_ratio=0.0,
             )
+
+        entropy_values = [node.entropy for node in path_a.nodes + path_b.nodes]
+        _, entropy_scale = PathGeometry._entropy_normalization(entropy_values)
 
         def dist(i: int, j: int) -> float:
             node_a = path_a.nodes[i]
@@ -375,29 +335,20 @@ class PathGeometry:
                     d_val = 1.0 - (VectorMath.cosine_similarity(vec_a, vec_b) or 0.0)
                 else:
                     d_val = 1.0
-            entropy_diff = abs(node_a.entropy - node_b.entropy) / 10.0
+            entropy_diff = abs(node_a.entropy - node_b.entropy) / entropy_scale
             return d_val + entropy_diff
-
-        def in_window(i: int, j: int) -> bool:
-            if window_size is None:
-                return True
-            return abs(i - j) <= window_size
 
         dp = [[float("inf")] * m for _ in range(n)]
         dp[0][0] = dist(0, 0)
 
         for j in range(1, m):
-            if in_window(0, j):
-                dp[0][j] = dp[0][j - 1] + dist(0, j)
+            dp[0][j] = dp[0][j - 1] + dist(0, j)
 
         for i in range(1, n):
-            if in_window(i, 0):
-                dp[i][0] = dp[i - 1][0] + dist(i, 0)
+            dp[i][0] = dp[i - 1][0] + dist(i, 0)
 
         for i in range(1, n):
             for j in range(1, m):
-                if not in_window(i, j):
-                    continue
                 d_val = dist(i, j)
                 dp[i][j] = d_val + min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1])
 
@@ -445,8 +396,8 @@ class PathGeometry:
     def compute_signature(
         path: PathSignature,
         gate_embeddings: dict[str, list[float]],
-        projection_dim: int = 8,
     ) -> TruncatedSignature:
+        projection_dim = PathGeometry._projection_dim(gate_embeddings)
         if len(path.nodes) < 2:
             return TruncatedSignature(
                 level1=[0.0] * projection_dim,
@@ -455,6 +406,9 @@ class PathGeometry:
                 signature_norm=0.0,
             )
 
+        entropies = [node.entropy for node in path.nodes]
+        entropy_mean, entropy_scale = PathGeometry._entropy_normalization(entropies)
+
         coords: list[list[float]] = []
         for node in path.nodes:
             emb = gate_embeddings.get(node.gate_id)
@@ -462,11 +416,11 @@ class PathGeometry:
                 proj = list(emb[: projection_dim - 1])
                 while len(proj) < projection_dim - 1:
                     proj.append(0.0)
-                proj.append(node.entropy / 10.0)
+                proj.append((node.entropy - entropy_mean) / entropy_scale)
                 coords.append(proj)
             else:
                 proj = [0.0] * (projection_dim - 1)
-                proj.append(node.entropy / 10.0)
+                proj.append((node.entropy - entropy_mean) / entropy_scale)
                 coords.append(proj)
 
         level1 = [0.0] * projection_dim
@@ -512,18 +466,13 @@ class PathGeometry:
     def signature_similarity(
         sig_a: TruncatedSignature,
         sig_b: TruncatedSignature,
-        weights: SignatureSimilarityWeights | None = None,
     ) -> float:
         """Compute similarity between two path signatures.
 
         Args:
             sig_a: First signature.
             sig_b: Second signature.
-            weights: Optional weights for combining distance components.
-                     Defaults to equal-ish weighting if not provided.
         """
-        w = weights or SignatureSimilarityWeights()
-
         l1_dist = 0.0
         count = min(len(sig_a.level1), len(sig_b.level1))
         for i in range(count):
@@ -531,9 +480,18 @@ class PathGeometry:
             l1_dist += diff * diff
         l1_dist = math.sqrt(l1_dist)
 
-        area_diff = abs(sig_a.signed_area - sig_b.signed_area)
-        norm_diff = abs(sig_a.signature_norm - sig_b.signature_norm)
-        total_dist = w.l1_weight * l1_dist + w.area_weight * area_diff + w.norm_weight * norm_diff
+        level2_dist = 0.0
+        rows = min(len(sig_a.level2), len(sig_b.level2))
+        for p in range(rows):
+            row_a = sig_a.level2[p]
+            row_b = sig_b.level2[p]
+            cols = min(len(row_a), len(row_b))
+            for q in range(cols):
+                diff = row_a[q] - row_b[q]
+                level2_dist += diff * diff
+        level2_dist = math.sqrt(level2_dist)
+
+        total_dist = math.sqrt(l1_dist * l1_dist + level2_dist * level2_dist)
         return 1.0 / (1.0 + total_dist)
 
     @staticmethod
@@ -546,9 +504,6 @@ class PathGeometry:
                 max_entropy=0.0,
                 max_entropy_index=0,
                 mean_gradient=0.0,
-                spike_count=0,
-                spike_indices=[],
-                stability_score=1.0,
             )
 
         entropies = [node.entropy for node in path.nodes]
@@ -565,18 +520,8 @@ class PathGeometry:
                 max_val = val
                 max_idx = i
         variance = variance / n
-        std_dev = math.sqrt(variance)
-
         gradients = [entropies[i] - entropies[i - 1] for i in range(1, len(entropies))]
         mean_gradient = sum(gradients) / len(gradients) if gradients else 0.0
-
-        spike_threshold = mean + 2.0 * std_dev
-        spikes = [i for i, val in enumerate(entropies) if val > spike_threshold]
-
-        variance_score = 1.0 / (1.0 + variance)
-        spike_score = 1.0 / (1.0 + float(len(spikes)))
-        max_score = 1.0 / (1.0 + max_val / 10.0)
-        stability_score = (variance_score + spike_score + max_score) / 3.0
 
         return EntropyPathAnalysis(
             total_entropy=total,
@@ -585,17 +530,14 @@ class PathGeometry:
             max_entropy=max_val,
             max_entropy_index=max_idx,
             mean_gradient=mean_gradient,
-            spike_count=len(spikes),
-            spike_indices=spikes,
-            stability_score=stability_score,
         )
 
     @staticmethod
     def compute_local_geometry(
         path: PathSignature,
         gate_embeddings: dict[str, list[float]],
-        projection_dim: int = 8,
     ) -> LocalGeometry:
+        projection_dim = PathGeometry._projection_dim(gate_embeddings)
         if len(path.nodes) < 3:
             return LocalGeometry(
                 curvatures=[],
@@ -606,6 +548,8 @@ class PathGeometry:
                 mean_torsion=0.0,
             )
 
+        entropies = [node.entropy for node in path.nodes]
+        entropy_mean, entropy_scale = PathGeometry._entropy_normalization(entropies)
         coords = []
         for node in path.nodes:
             emb = gate_embeddings.get(node.gate_id)
@@ -613,11 +557,11 @@ class PathGeometry:
                 proj = list(emb[: projection_dim - 1])
                 while len(proj) < projection_dim - 1:
                     proj.append(0.0)
-                proj.append(node.entropy / 10.0)
+                proj.append((node.entropy - entropy_mean) / entropy_scale)
                 coords.append(proj)
             else:
                 proj = [0.0] * (projection_dim - 1)
-                proj.append(node.entropy / 10.0)
+                proj.append((node.entropy - entropy_mean) / entropy_scale)
                 coords.append(proj)
 
         tangents: list[list[float]] = []
@@ -670,26 +614,19 @@ class PathGeometry:
         path_a: PathSignature,
         path_b: PathSignature,
         gate_embeddings: dict[str, list[float]],
-        similarity_weights: SimilarityWeights | None = None,
     ) -> ComprehensiveComparison:
         """Comprehensive trajectory comparison using multiple distance metrics.
 
-        Computes four distance metrics and combines them into an overall
-        similarity score using the provided weights. Returns only objective
-        geometric quantities - no subjective categorical classifications.
+        Computes four distance metrics and reports them directly with
+        signature similarity. Returns only objective geometric quantities.
 
         Args:
             path_a: First path signature.
             path_b: Second path signature.
             gate_embeddings: Embedding vectors for gate IDs.
-            similarity_weights: Optional weights for combining metrics.
-                                Defaults to equal weights (maximum-entropy prior).
-
         Returns:
-            ComprehensiveComparison with individual metrics and overall similarity.
+            ComprehensiveComparison with individual metrics.
         """
-        sw = similarity_weights or SimilarityWeights()
-
         lev = PathGeometry.compare(path_a, path_b, gate_embeddings)
         frech = PathGeometry.frechet_distance(path_a, path_b, gate_embeddings)
         dtw = PathGeometry.dynamic_time_warping(path_a, path_b, gate_embeddings)
@@ -698,23 +635,11 @@ class PathGeometry:
         sig_b = PathGeometry.compute_signature(path_b, gate_embeddings)
         sig_sim = PathGeometry.signature_similarity(sig_a, sig_b)
 
-        lev_sim = 1.0 - lev.normalized_distance
-        frech_sim = 1.0 / (1.0 + frech.distance)
-        dtw_sim = 1.0 / (1.0 + dtw.normalized_cost)
-
-        overall = (
-            sw.levenshtein_weight * lev_sim
-            + sw.frechet_weight * frech_sim
-            + sw.dtw_weight * dtw_sim
-            + sw.signature_weight * sig_sim
-        )
-
         return ComprehensiveComparison(
             levenshtein=lev,
             frechet=frech,
             dtw=dtw,
             signature_similarity=sig_sim,
-            overall_similarity=overall,
         )
 
 
@@ -743,18 +668,17 @@ class BackendPathGeometry:
         self,
         path: PathSignature,
         gate_embeddings: dict[str, list[float]],
-        projection_dim: int = 8,
     ) -> TruncatedSignature:
         """Compute path signature using GPU-accelerated operations.
 
         Args:
             path: Path signature with nodes.
             gate_embeddings: Embedding vectors for gate IDs.
-            projection_dim: Dimension for projection.
 
         Returns:
             TruncatedSignature with level1, level2, signed_area, signature_norm.
         """
+        projection_dim = PathGeometry._projection_dim(gate_embeddings)
         if len(path.nodes) < 2:
             return TruncatedSignature(
                 level1=[0.0] * projection_dim,
@@ -764,6 +688,9 @@ class BackendPathGeometry:
             )
 
         # Build coordinate matrix [n_nodes, projection_dim]
+        entropies = [node.entropy for node in path.nodes]
+        entropy_mean, entropy_scale = PathGeometry._entropy_normalization(entropies)
+
         coords_list: list[list[float]] = []
         for node in path.nodes:
             emb = gate_embeddings.get(node.gate_id)
@@ -771,11 +698,11 @@ class BackendPathGeometry:
                 proj = list(emb[: projection_dim - 1])
                 while len(proj) < projection_dim - 1:
                     proj.append(0.0)
-                proj.append(node.entropy / 10.0)
+                proj.append((node.entropy - entropy_mean) / entropy_scale)
                 coords_list.append(proj)
             else:
                 proj = [0.0] * (projection_dim - 1)
-                proj.append(node.entropy / 10.0)
+                proj.append((node.entropy - entropy_mean) / entropy_scale)
                 coords_list.append(proj)
 
         coords = self.backend.array(coords_list)  # [n, d]
@@ -834,33 +761,43 @@ class BackendPathGeometry:
         self,
         sig_a: TruncatedSignature,
         sig_b: TruncatedSignature,
-        weights: SignatureSimilarityWeights | None = None,
     ) -> float:
         """Compute similarity between two path signatures using GPU.
 
         Args:
             sig_a: First signature.
             sig_b: Second signature.
-            weights: Optional weights for combining distance components.
 
         Returns:
             Similarity score in [0, 1].
         """
-        w = weights or SignatureSimilarityWeights()
-
-        # L1 distance using backend norm
+        # Level-1 distance
         count = min(len(sig_a.level1), len(sig_b.level1))
         a_arr = self.backend.array(sig_a.level1[:count])
         b_arr = self.backend.array(sig_b.level1[:count])
         diff = a_arr - b_arr
-        l1_dist_sq = self.backend.sum(diff * diff)
-        self.backend.eval(l1_dist_sq)
-        l1_dist = math.sqrt(self._to_scalar(l1_dist_sq))
+        level1_dist_sq = self.backend.sum(diff * diff)
+        self.backend.eval(level1_dist_sq)
 
-        area_diff = abs(sig_a.signed_area - sig_b.signed_area)
-        norm_diff = abs(sig_a.signature_norm - sig_b.signature_norm)
+        # Level-2 distance
+        rows = min(len(sig_a.level2), len(sig_b.level2))
+        cols = (
+            min(len(sig_a.level2[0]), len(sig_b.level2[0]))
+            if rows > 0 and sig_a.level2[0] and sig_b.level2[0]
+            else 0
+        )
+        if rows > 0 and cols > 0:
+            a2 = self.backend.array([row[:cols] for row in sig_a.level2[:rows]])
+            b2 = self.backend.array([row[:cols] for row in sig_b.level2[:rows]])
+            diff2 = a2 - b2
+            level2_dist_sq = self.backend.sum(diff2 * diff2)
+            self.backend.eval(level2_dist_sq)
+        else:
+            level2_dist_sq = self.backend.array(0.0)
 
-        total_dist = w.l1_weight * l1_dist + w.area_weight * area_diff + w.norm_weight * norm_diff
+        total_dist_sq = level1_dist_sq + level2_dist_sq
+        self.backend.eval(total_dist_sq)
+        total_dist = math.sqrt(self._to_scalar(total_dist_sq))
         return 1.0 / (1.0 + total_dist)
 
     def analyze_entropy_path(self, path: PathSignature) -> EntropyPathAnalysis:
@@ -880,9 +817,6 @@ class BackendPathGeometry:
                 max_entropy=0.0,
                 max_entropy_index=0,
                 mean_gradient=0.0,
-                spike_count=0,
-                spike_indices=[],
-                stability_score=1.0,
             )
 
         entropies_list = [node.entropy for node in path.nodes]
@@ -901,8 +835,6 @@ class BackendPathGeometry:
         variance = self.backend.sum(diff_from_mean * diff_from_mean) / float(n)
         self.backend.eval(variance)
         variance_val = self._to_scalar(variance)
-        std_dev = math.sqrt(variance_val)
-
         # Max entropy and index
         max_val = entropies_list[0]
         max_idx = 0
@@ -920,16 +852,6 @@ class BackendPathGeometry:
         else:
             mean_gradient_val = 0.0
 
-        # Spikes (values > mean + 2*std)
-        spike_threshold = mean_val + 2.0 * std_dev
-        spikes = [i for i, val in enumerate(entropies_list) if val > spike_threshold]
-
-        # Stability score
-        variance_score = 1.0 / (1.0 + variance_val)
-        spike_score = 1.0 / (1.0 + float(len(spikes)))
-        max_score = 1.0 / (1.0 + max_val / 10.0)
-        stability_score = (variance_score + spike_score + max_score) / 3.0
-
         return EntropyPathAnalysis(
             total_entropy=total_val,
             mean_entropy=mean_val,
@@ -937,27 +859,22 @@ class BackendPathGeometry:
             max_entropy=max_val,
             max_entropy_index=max_idx,
             mean_gradient=mean_gradient_val,
-            spike_count=len(spikes),
-            spike_indices=spikes,
-            stability_score=stability_score,
         )
 
     def compute_local_geometry(
         self,
         path: PathSignature,
         gate_embeddings: dict[str, list[float]],
-        projection_dim: int = 8,
     ) -> LocalGeometry:
         """Compute local geometry (curvature, torsion) using GPU acceleration.
 
         Args:
             path: Path signature with nodes.
             gate_embeddings: Embedding vectors for gate IDs.
-            projection_dim: Dimension for projection.
-
         Returns:
             LocalGeometry with curvatures and torsions.
         """
+        projection_dim = PathGeometry._projection_dim(gate_embeddings)
         if len(path.nodes) < 3:
             return LocalGeometry(
                 curvatures=[],
@@ -969,6 +886,8 @@ class BackendPathGeometry:
             )
 
         # Build coordinate matrix
+        entropies = [node.entropy for node in path.nodes]
+        entropy_mean, entropy_scale = PathGeometry._entropy_normalization(entropies)
         coords_list: list[list[float]] = []
         for node in path.nodes:
             emb = gate_embeddings.get(node.gate_id)
@@ -976,11 +895,11 @@ class BackendPathGeometry:
                 proj = list(emb[: projection_dim - 1])
                 while len(proj) < projection_dim - 1:
                     proj.append(0.0)
-                proj.append(node.entropy / 10.0)
+                proj.append((node.entropy - entropy_mean) / entropy_scale)
                 coords_list.append(proj)
             else:
                 proj = [0.0] * (projection_dim - 1)
-                proj.append(node.entropy / 10.0)
+                proj.append((node.entropy - entropy_mean) / entropy_scale)
                 coords_list.append(proj)
 
         coords = self.backend.array(coords_list)  # [n, d]
@@ -1041,7 +960,6 @@ class BackendPathGeometry:
         path_a: PathSignature,
         path_b: PathSignature,
         gate_embeddings: dict[str, list[float]],
-        similarity_weights: SimilarityWeights | None = None,
     ) -> ComprehensiveComparison:
         """Comprehensive trajectory comparison with GPU-accelerated signatures.
 
@@ -1052,13 +970,9 @@ class BackendPathGeometry:
             path_a: First path signature.
             path_b: Second path signature.
             gate_embeddings: Embedding vectors for gate IDs.
-            similarity_weights: Optional weights for combining metrics.
-
         Returns:
-            ComprehensiveComparison with individual metrics and overall similarity.
+            ComprehensiveComparison with individual metrics.
         """
-        sw = similarity_weights or SimilarityWeights()
-
         # Use pure Python for DP algorithms (sequential dependencies)
         lev = PathGeometry.compare(path_a, path_b, gate_embeddings)
         frech = PathGeometry.frechet_distance(path_a, path_b, gate_embeddings)
@@ -1069,23 +983,11 @@ class BackendPathGeometry:
         sig_b = self.compute_signature(path_b, gate_embeddings)
         sig_sim = self.signature_similarity(sig_a, sig_b)
 
-        lev_sim = 1.0 - lev.normalized_distance
-        frech_sim = 1.0 / (1.0 + frech.distance)
-        dtw_sim = 1.0 / (1.0 + dtw.normalized_cost)
-
-        overall = (
-            sw.levenshtein_weight * lev_sim
-            + sw.frechet_weight * frech_sim
-            + sw.dtw_weight * dtw_sim
-            + sw.signature_weight * sig_sim
-        )
-
         return ComprehensiveComparison(
             levenshtein=lev,
             frechet=frech,
             dtw=dtw,
             signature_similarity=sig_sim,
-            overall_similarity=overall,
         )
 
     def _outer_product(self, a: Any, b: Any) -> Any:

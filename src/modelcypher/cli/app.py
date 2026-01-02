@@ -65,6 +65,7 @@ from modelcypher.cli.commands.geometry import emotion as geometry_emotion_comman
 from modelcypher.cli.commands.geometry import geom_adapter as geometry_adapter_commands
 from modelcypher.cli.commands.geometry import invariant as geometry_invariant_commands
 from modelcypher.cli.commands.geometry import manifold as geometry_manifold_commands
+from modelcypher.cli.commands.geometry import metaphor as geometry_metaphor_commands
 from modelcypher.cli.commands.geometry import metrics as geometry_metrics_commands
 from modelcypher.cli.commands.geometry import moral as geometry_moral_commands
 from modelcypher.cli.commands.geometry import number_theory as geometry_number_theory_commands
@@ -187,6 +188,7 @@ geometry_app.add_typer(geometry_sparse_commands.app, name="sparse")
 geometry_app.add_typer(geometry_refusal_commands.app, name="refusal")
 geometry_app.add_typer(geometry_persona_commands.app, name="persona")
 geometry_app.add_typer(geometry_manifold_commands.app, name="manifold")
+geometry_app.add_typer(geometry_metaphor_commands.app, name="metaphor")
 geometry_app.add_typer(geometry_invariant_commands.app, name="invariant")
 geometry_app.add_typer(geometry_emotion_commands.app, name="emotion")
 geometry_app.add_typer(geometry_transfer_cabe_commands.app, name="transfer")
