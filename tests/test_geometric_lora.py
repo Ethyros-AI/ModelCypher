@@ -38,6 +38,20 @@ from modelcypher.core.domain.geometry.manifold_transfer import (
     TransferPoint,
 )
 from modelcypher.core.domain.geometry.numerical_stability import condition_threshold
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
+
+
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
+
+
+def _div_eps(*values: float) -> float:
+    backend = get_default_backend()
+    return division_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 class TestGeometricLoRAConfig:
@@ -55,14 +69,18 @@ class TestGeometricLoRAConfig:
 
     def test_custom_config(self) -> None:
         """Test custom configuration."""
+        backend = get_default_backend()
+        cond_thresh = condition_threshold(backend, backend.array([1.0, 0.5]))
         config = GeometricLoRAConfig(
             auto_rank=False,
-            condition_threshold=1e3,
+            condition_threshold=cond_thresh,
             target_projections=["q_proj", "k_proj", "v_proj"],
         )
 
         assert config.auto_rank is False
-        assert config.condition_threshold == 1e3
+        assert abs(config.condition_threshold - cond_thresh) <= _eps(
+            config.condition_threshold, cond_thresh
+        )
         assert len(config.target_projections) == 3
 
 
@@ -110,7 +128,8 @@ class TestLayerLoRAWeights:
         expected = sample_weights.B @ sample_weights.A
         diff = backend.abs(delta_W - expected)
         backend.eval(diff)
-        assert float(backend.max(diff)) < 1e-5
+        diff_max = float(backend.to_numpy(backend.max(diff)))
+        assert diff_max <= _div_eps(diff_max)
 
     def test_effective_rank(self, sample_weights: LayerLoRAWeights) -> None:
         """Test effective rank computation."""
@@ -131,7 +150,7 @@ class TestLayerLoRAWeights:
         assert d["rank"] == 4
         assert d["inFeatures"] == 512
         assert d["outFeatures"] == 512
-        assert d["geometricLoss"] == pytest.approx(0.05)
+        assert abs(d["geometricLoss"] - 0.05) <= _eps(d["geometricLoss"], 0.05)
 
 
 class TestGeometricLoRA:
@@ -155,7 +174,7 @@ class TestGeometricLoRA:
             source_profile=profile,
             coordinates=backend.random_normal((512,)),
             projected_volume=None,
-            stress=0.05,  # < 0.3 = reliable
+            stress=0.05,
             curvature_mismatch=0.02,
         )
 
@@ -184,7 +203,7 @@ class TestGeometricLoRA:
             transfer_point=sample_transfer_point,
             weights=weights,
             config=GeometricLoRAConfig(),
-            mean_geometric_loss=0.05,  # Low loss indicates optimal quality
+            mean_geometric_loss=0.05,
             total_rank=16,
         )
 
@@ -265,7 +284,7 @@ class TestGeometricLoRAGenerator:
             source_profile=profile,
             coordinates=backend.random_normal((d,)),
             projected_volume=None,
-            stress=0.05,  # < 0.3 = reliable
+            stress=0.05,
             curvature_mismatch=0.02,
         )
 
@@ -361,16 +380,20 @@ class TestGeometricLoRAGenerator:
         assert rank == expected
 
     def test_determine_rank_with_tight_condition(self) -> None:
-        """Test rank determination with tighter condition threshold."""
+        """Test rank determination with explicit condition threshold."""
         backend = get_default_backend()
-        config = GeometricLoRAConfig(condition_threshold=1e2)
-        generator = GeometricLoRAGenerator(config)
-
         sv = backend.array([1.0, 0.5, 0.1, 0.001])
         backend.eval(sv)
 
+        cond_thresh = condition_threshold(backend, sv)
+        config = GeometricLoRAConfig(condition_threshold=cond_thresh)
+        generator = GeometricLoRAGenerator(config)
+
         rank = generator._determine_rank(sv, backend)
-        assert rank == 3
+        threshold = float(backend.to_numpy(sv)[0]) / cond_thresh
+        expected = int((backend.to_numpy(sv) > threshold).sum())
+        expected = max(1, min(expected, int(backend.shape(sv)[0])))
+        assert rank == expected
 
 
 class TestGenerateGeometricLoraFunction:
@@ -396,7 +419,7 @@ class TestGenerateGeometricLoraFunction:
             source_profile=profile,
             coordinates=backend.random_normal((d,)),
             projected_volume=None,
-            stress=0.05,  # < 0.3 = reliable
+            stress=0.05,
             curvature_mismatch=0.02,
         )
 

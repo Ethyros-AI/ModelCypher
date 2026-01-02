@@ -29,6 +29,11 @@ from modelcypher.core.use_cases.merge.metrics import (
 )
 
 
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
+
+
 class TestComputeGeometricMetricsFromTransplant:
     """Tests for compute_geometric_metrics_from_transplant."""
 
@@ -36,14 +41,14 @@ class TestComputeGeometricMetricsFromTransplant:
         """Empty transplant metrics should return zero values."""
         result = compute_geometric_metrics_from_transplant({})
 
-        assert result["mean_preserved_fraction"] == 0.0
-        assert result["mean_cka_after"] == 0.0
-        assert result["mean_projection_loss"] == 0.0
-        assert result["transplant_ratio"] == 0.0
+        eps = _eps()
+        assert abs(result["mean_preserved_fraction"]) <= eps
+        assert abs(result["mean_cka_after"]) <= eps
+        assert abs(result["mean_projection_loss"]) <= eps
+        assert abs(result["transplant_ratio"]) <= eps
 
     def test_full_metrics_returns_correct_averages(self):
         """Full metrics should compute correct averages."""
-        backend = get_default_backend()
         metrics = {
             "preserved_fractions": [0.8, 0.9, 0.7],
             "cka_after": [0.95, 0.90, 0.85],
@@ -57,7 +62,7 @@ class TestComputeGeometricMetricsFromTransplant:
         }
 
         result = compute_geometric_metrics_from_transplant(metrics)
-        eps = machine_epsilon(backend, backend.array([0.0]))
+        eps = _eps()
 
         assert abs(result["mean_preserved_fraction"] - 0.8) <= eps
         assert abs(result["mean_cka_after"] - 0.9) <= eps
@@ -85,28 +90,26 @@ class TestComputeGeometricMetricsFromTransplant:
 
     def test_handles_single_value_lists(self):
         """Should handle single-element lists correctly."""
-        backend = get_default_backend()
         metrics = {
             "preserved_fractions": [0.75],
             "cka_after": [0.92],
         }
 
         result = compute_geometric_metrics_from_transplant(metrics)
-        eps = machine_epsilon(backend, backend.array([0.0]))
+        eps = _eps()
 
         assert abs(result["mean_preserved_fraction"] - 0.75) <= eps
         assert abs(result["mean_cka_after"] - 0.92) <= eps
 
     def test_division_by_zero_protection(self):
         """Should not crash when weights_considered is 0."""
-        backend = get_default_backend()
         metrics = {
             "weights_transplanted": 10,
             "weights_considered": 0,
         }
 
         result = compute_geometric_metrics_from_transplant(metrics)
-        eps = machine_epsilon(backend, backend.array([0.0]))
+        eps = _eps()
 
         # Should use max(0, 1) = 1 to avoid division by zero
         assert abs(result["transplant_ratio"] - 10.0) <= eps
@@ -117,7 +120,6 @@ class TestIntegration:
 
     def test_full_flow_high_preservation_merge(self):
         """Test full flow for a merge with high preservation."""
-        backend = get_default_backend()
         transplant_metrics = {
             "preserved_fractions": [0.85, 0.90, 0.88],
             "cka_after": [0.95, 0.92, 0.94],
@@ -129,18 +131,21 @@ class TestIntegration:
         }
 
         geometry = compute_geometric_metrics_from_transplant(transplant_metrics)
-        eps = machine_epsilon(backend, backend.array([0.0]))
+        eps = _eps()
         expected_preserved = sum(transplant_metrics["preserved_fractions"]) / len(
             transplant_metrics["preserved_fractions"]
+        )
+        expected_ratio = (
+            transplant_metrics["weights_transplanted"]
+            / max(1, transplant_metrics["weights_considered"])
         )
 
         # Raw measurements available for caller interpretation
         assert abs(geometry["mean_preserved_fraction"] - expected_preserved) <= eps
-        assert abs(geometry["transplant_ratio"] - 0.9) <= eps
+        assert abs(geometry["transplant_ratio"] - expected_ratio) <= eps
 
     def test_full_flow_low_preservation_merge(self):
         """Test full flow for a merge with low preservation."""
-        backend = get_default_backend()
         transplant_metrics = {
             "preserved_fractions": [0.3, 0.4, 0.35],
             "cka_after": [0.6, 0.55, 0.58],
@@ -149,7 +154,7 @@ class TestIntegration:
         }
 
         geometry = compute_geometric_metrics_from_transplant(transplant_metrics)
-        eps = machine_epsilon(backend, backend.array([0.0]))
+        eps = _eps()
         expected_preserved = sum(transplant_metrics["preserved_fractions"]) / len(
             transplant_metrics["preserved_fractions"]
         )
@@ -159,7 +164,6 @@ class TestIntegration:
 
     def test_full_flow_failed_merge(self):
         """Test full flow for a failed merge (nothing transplanted)."""
-        backend = get_default_backend()
         transplant_metrics = {
             "preserved_fractions": [],
             "cka_after": [],
@@ -168,6 +172,10 @@ class TestIntegration:
         }
 
         geometry = compute_geometric_metrics_from_transplant(transplant_metrics)
-        eps = machine_epsilon(backend, backend.array([0.0]))
+        eps = _eps()
+        expected_ratio = (
+            transplant_metrics["weights_transplanted"]
+            / max(1, transplant_metrics["weights_considered"])
+        )
 
-        assert abs(geometry["transplant_ratio"] - 0.0) <= eps
+        assert abs(geometry["transplant_ratio"] - expected_ratio) <= eps

@@ -48,7 +48,7 @@ from modelcypher.core.domain.geometry.numerical_stability import division_epsilo
 
 
 def _eps(backend, *values: float) -> float:
-    return division_epsilon(backend, backend.array(list(values)))
+    return division_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 def test_dora_decomposition_direction_change():
@@ -63,9 +63,9 @@ def test_dora_decomposition_direction_change():
     # Same magnitude (both unit vectors), different direction -> direction_dominated
     assert result.dominant_change_type.value == "direction_dominated"
     # Magnitude change should be ~0.0 (both are unit vectors, no magnitude change)
-    assert abs(result.overall_magnitude_change - 0.0) < eps
+    assert abs(result.overall_magnitude_change - 0.0) <= eps
     # Directional drift should be ~1.0 (orthogonal vectors = cosine similarity 0)
-    assert abs(result.overall_directional_drift - 1.0) < eps
+    assert abs(result.overall_directional_drift - 1.0) <= eps
 
 
 def test_procrustes_alignment_recovers_rotation():
@@ -99,7 +99,7 @@ def test_procrustes_alignment_recovers_rotation():
     denom_val = float(backend.to_numpy(denom))
     eps = _eps(backend, rss_val, denom_val)
     ratio = rss_val / max(denom_val, eps)
-    assert abs(result.error - ratio) < eps
+    assert abs(result.error - ratio) <= eps
 
 
 def test_sinkhorn_plan_marginals():
@@ -131,4 +131,4 @@ def test_lora_geometry_metrics():
     }
     metrics = engine.compute_lora_geometry(params, None, scale=1.0)
     assert metrics.trainable_scalar_count == 4 * 2 + 2 * 3
-    assert metrics.parameter_l2 > 0
+    assert metrics.parameter_l2 > _eps(backend, metrics.parameter_l2)

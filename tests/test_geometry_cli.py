@@ -47,7 +47,7 @@ class _StubEmbeddingProvider:
         return self._dimension
 
 
-def _seed_geometry_job(tmp_home: Path, job_id: str) -> None:
+def _seed_geometry_job(tmp_home: Path, job_id: str) -> int:
     previous_home = os.environ.get("MODELCYPHER_HOME")
     os.environ["MODELCYPHER_HOME"] = str(tmp_home)
     try:
@@ -81,6 +81,7 @@ def _seed_geometry_job(tmp_home: Path, job_id: str) -> None:
             metrics_history=metrics_history,
         )
         store.save_job(job)
+        return len(metrics_history)
     finally:
         if previous_home is None:
             os.environ.pop("MODELCYPHER_HOME", None)
@@ -194,7 +195,7 @@ def test_geometry_training_status_cli(tmp_path: Path):
 
 def test_geometry_training_history_cli(tmp_path: Path):
     tmp_home = tmp_path / "home"
-    _seed_geometry_job(tmp_home, "job-geometry-1")
+    expected_samples = _seed_geometry_job(tmp_home, "job-geometry-1")
     result = runner.invoke(
         app,
         ["geometry", "training", "history", "--job", "job-geometry-1", "--output", "json"],
@@ -203,7 +204,7 @@ def test_geometry_training_history_cli(tmp_path: Path):
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["jobId"] == "job-geometry-1"
-    assert payload["sampleCount"] >= 1
+    assert payload["sampleCount"] == expected_samples
 
 
 def test_geometry_safety_circuit_breaker_cli(tmp_path: Path):

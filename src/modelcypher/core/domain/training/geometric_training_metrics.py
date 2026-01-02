@@ -22,6 +22,9 @@ import sys
 from dataclasses import dataclass, field
 from enum import Enum
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
 
 class GeometricInstrumentationLevel(str, Enum):
     minimal = "minimal"
@@ -214,9 +217,9 @@ class GeometricTrainingMetrics:
         Args:
             metrics: Dictionary of metric name → value from training.
             active_layer_threshold: Gradient fraction above which layer is "active".
-                If None, uses any nonzero contribution (> 0).
+                If None, uses machine-epsilon threshold from the data dtype.
             drift_threshold: Persona delta magnitude above which trait is "drifting".
-                If None, uses any nonzero delta (> 0).
+                If None, uses machine-epsilon threshold from the data dtype.
         """
         if not metrics:
             return None
@@ -232,8 +235,20 @@ class GeometricTrainingMetrics:
         grad_norm_suffix = "/grad_norm"
         grad_frac_suffix = "/grad_frac"
 
-        # Use provided threshold or default to any nonzero contribution
-        effective_active_threshold = active_layer_threshold if active_layer_threshold is not None else 0.0
+        def _default_threshold(values: list[float]) -> float:
+            try:
+                backend = get_default_backend()
+                return machine_epsilon(backend, backend.array(values or [0.0]))
+            except Exception:
+                return sys.float_info.epsilon
+
+        effective_active_threshold = (
+            active_layer_threshold
+            if active_layer_threshold is not None
+            else _default_threshold(
+                [value for key, value in metrics.items() if key.endswith(grad_frac_suffix)]
+            )
+        )
 
         for key, value in metrics.items():
             if not key.startswith(layer_prefix):
@@ -252,8 +267,18 @@ class GeometricTrainingMetrics:
         persona_delta_prefix = "geometry/persona/"
         persona_delta_suffix = "/delta"
 
-        # Use provided threshold or default to any nonzero delta
-        effective_drift_threshold = drift_threshold if drift_threshold is not None else 0.0
+        effective_drift_threshold = (
+            drift_threshold
+            if drift_threshold is not None
+            else _default_threshold(
+                [
+                    value
+                    for key, value in metrics.items()
+                    if key.startswith(persona_delta_prefix)
+                    and key.endswith(persona_delta_suffix)
+                ]
+            )
+        )
 
         for key, value in metrics.items():
             if not key.startswith(persona_delta_prefix) or not key.endswith(persona_delta_suffix):

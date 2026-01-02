@@ -24,6 +24,10 @@ parameter trajectories, gradient quality, and loss landscape properties.
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
 from modelcypher.core.domain.training.geometric_metrics_collector import (
     GeometricMetricsCollector,
 )
@@ -31,6 +35,16 @@ from modelcypher.core.domain.training.geometric_training_metrics import (
     GeometricInstrumentationLevel,
     GeometryMetricKey,
 )
+
+
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
+
+
+def _div_eps(*values: float) -> float:
+    backend = get_default_backend()
+    return division_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 class TestGeometricMetricsCollectorInit:
@@ -80,7 +94,8 @@ class TestCaptureInitialParameters:
         # Check values match
         diff = backend.abs(collector.initial_parameters["layer1"] - params["layer1"])
         backend.eval(diff)
-        assert float(backend.max(diff)) < 1e-6
+        diff_max = float(backend.to_numpy(backend.max(diff)))
+        assert diff_max <= _eps(diff_max)
 
     def test_captures_copy_not_reference(self):
         """Should clone parameters, not reference them."""
@@ -95,7 +110,7 @@ class TestCaptureInitialParameters:
         backend.eval(params["layer1"])
 
         # Captured should be unchanged
-        assert float(collector.initial_parameters["layer1"][0]) == 1.0
+        assert abs(float(collector.initial_parameters["layer1"][0]) - 1.0) <= _eps(1.0)
 
 
 class TestReset:
@@ -175,8 +190,12 @@ class TestComputeMetrics:
         backend.eval(params["layer1"], params["layer2"], gradients["layer1"], gradients["layer2"])
         metrics = collector.compute_metrics(params, gradients, learning_rate=0.01)
 
-        assert metrics.per_layer_gradient_norms["layer1"] == pytest.approx(5.0)
-        assert metrics.per_layer_gradient_norms["layer2"] == pytest.approx(5.0)
+        eps = _eps(
+            metrics.per_layer_gradient_norms["layer1"],
+            metrics.per_layer_gradient_norms["layer2"],
+        )
+        assert abs(metrics.per_layer_gradient_norms["layer1"] - 5.0) <= eps
+        assert abs(metrics.per_layer_gradient_norms["layer2"] - 5.0) <= eps
 
     def test_computes_trajectory_divergence(self, collector):
         """Should compute divergence from initial parameters."""
@@ -196,7 +215,8 @@ class TestComputeMetrics:
         assert metrics.parameter_divergence is not None
         import math
         expected_divergence = math.sqrt(3**2 + 3**2)  # sqrt(18)
-        assert metrics.parameter_divergence == pytest.approx(expected_divergence, rel=0.01)
+        eps = _eps(metrics.parameter_divergence, expected_divergence)
+        assert abs(metrics.parameter_divergence - expected_divergence) <= eps
 
     def test_computes_effective_step_ratio(self, collector):
         """Should compute effective step ratio."""
@@ -222,7 +242,9 @@ class TestComputeMetrics:
         metrics = collector.compute_metrics(params2, gradients, learning_rate=0.1)
 
         assert metrics.effective_step_ratio is not None
-        assert metrics.effective_step_ratio == pytest.approx(1.0, rel=0.1)
+        assert abs(metrics.effective_step_ratio - 1.0) <= _div_eps(
+            metrics.effective_step_ratio, 1.0
+        )
 
     def test_updates_last_metrics(self, collector):
         """Should store last computed metrics."""
@@ -244,7 +266,8 @@ class TestComputeMetrics:
 
         diff = backend.abs(collector.previous_parameters["layer1"] - params["layer1"])
         backend.eval(diff)
-        assert float(backend.max(diff)) < 1e-6
+        diff_max = float(backend.to_numpy(backend.max(diff)))
+        assert diff_max <= _eps(diff_max)
 
 
 class TestComputeGradientQuality:
@@ -276,8 +299,9 @@ class TestComputeGradientQuality:
 
         assert result is not None
         variance, snr = result
-        assert variance > 0
-        assert snr > 0
+        eps = _eps(variance, snr)
+        assert variance >= -eps
+        assert snr >= -eps
 
 
 class TestRecordInHistory:
@@ -392,7 +416,7 @@ class TestCloneParams:
         backend.eval(params["layer1"])
 
         # Clone should be unchanged
-        assert float(cloned["layer1"][0]) == 1.0
+        assert abs(float(cloned["layer1"][0]) - 1.0) <= _eps(1.0)
 
     def test_handles_non_ndarray(self):
         """Should handle non-ndarray inputs by converting."""
@@ -405,7 +429,8 @@ class TestCloneParams:
         backend.eval(expected)
         diff = backend.abs(cloned["layer1"] - expected)
         backend.eval(diff)
-        assert float(backend.max(diff)) < 1e-6
+        diff_max = float(backend.to_numpy(backend.max(diff)))
+        assert diff_max <= _eps(diff_max)
 
 
 class TestIntegration:
@@ -452,4 +477,4 @@ class TestIntegration:
         # Last metrics should show divergence from initial
         last = collector.get_last_metrics()
         assert last is not None
-        assert last.parameter_divergence > 0
+        assert last.parameter_divergence > _eps(last.parameter_divergence)

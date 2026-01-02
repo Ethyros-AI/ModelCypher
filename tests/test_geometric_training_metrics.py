@@ -21,6 +21,8 @@ import sys
 
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.training.geometric_training_metrics import (
     GeometricInstrumentationLevel,
     GeometricMetricsHistory,
@@ -28,6 +30,11 @@ from modelcypher.core.domain.training.geometric_training_metrics import (
     GeometryMetricKey,
     MetricEntry,
 )
+
+
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 class TestGeometricInstrumentationLevel:
@@ -194,15 +201,22 @@ class TestGeometricTrainingMetrics:
             top_hessian_eigenvalue=0.1,
             gradient_snr=10.0,
         )
-        assert metrics.hessian_trace_estimate == 0.5
-        assert metrics.top_hessian_eigenvalue == 0.1
-        assert metrics.gradient_snr == 10.0
+        eps = _eps(
+            metrics.hessian_trace_estimate or 0.0,
+            metrics.top_hessian_eigenvalue or 0.0,
+            metrics.gradient_snr or 0.0,
+        )
+        assert abs(metrics.hessian_trace_estimate - 0.5) <= eps
+        assert abs(metrics.top_hessian_eigenvalue - 0.1) <= eps
+        assert abs(metrics.gradient_snr - 10.0) <= eps
 
     def test_flatness_score_with_positive_eigenvalue(self):
         metrics = GeometricTrainingMetrics(top_hessian_eigenvalue=0.01)
         score = metrics.flatness_score
         assert score is not None
-        assert 0.0 <= score <= 1.0
+        eps = _eps(score, 1.0)
+        assert score >= -eps
+        assert score <= 1.0 + eps
 
     def test_flatness_score_none_when_no_eigenvalue(self):
         metrics = GeometricTrainingMetrics()
@@ -220,12 +234,16 @@ class TestGeometricTrainingMetrics:
         # Very small eigenvalue should give high flatness
         metrics_small = GeometricTrainingMetrics(top_hessian_eigenvalue=0.0001)
         assert metrics_small.flatness_score is not None
-        assert 0.0 <= metrics_small.flatness_score <= 1.0
+        eps = _eps(metrics_small.flatness_score, 1.0)
+        assert metrics_small.flatness_score >= -eps
+        assert metrics_small.flatness_score <= 1.0 + eps
 
         # Very large eigenvalue should give low flatness
         metrics_large = GeometricTrainingMetrics(top_hessian_eigenvalue=1000.0)
         assert metrics_large.flatness_score is not None
-        assert 0.0 <= metrics_large.flatness_score <= 1.0
+        eps = _eps(metrics_large.flatness_score, 1.0)
+        assert metrics_large.flatness_score >= -eps
+        assert metrics_large.flatness_score <= 1.0 + eps
 
 
 class TestToMetricsDict:
@@ -240,13 +258,17 @@ class TestToMetricsDict:
         metrics = GeometricTrainingMetrics(hessian_trace_estimate=0.5)
         result = metrics.to_metrics_dict()
         assert GeometryMetricKey.hessian_trace in result
-        assert result[GeometryMetricKey.hessian_trace] == 0.5
+        assert abs(result[GeometryMetricKey.hessian_trace] - 0.5) <= _eps(
+            result[GeometryMetricKey.hessian_trace], 0.5
+        )
 
     def test_includes_gradient_snr(self):
         metrics = GeometricTrainingMetrics(gradient_snr=15.0)
         result = metrics.to_metrics_dict()
         assert GeometryMetricKey.gradient_snr in result
-        assert result[GeometryMetricKey.gradient_snr] == 15.0
+        assert abs(result[GeometryMetricKey.gradient_snr] - 15.0) <= _eps(
+            result[GeometryMetricKey.gradient_snr], 15.0
+        )
 
     def test_includes_per_layer_norms(self):
         metrics = GeometricTrainingMetrics(
@@ -254,7 +276,9 @@ class TestToMetricsDict:
         )
         result = metrics.to_metrics_dict()
         assert "geometry/layer/layer_0/grad_norm" in result
-        assert result["geometry/layer/layer_0/grad_norm"] == 0.1
+        assert abs(result["geometry/layer/layer_0/grad_norm"] - 0.1) <= _eps(
+            result["geometry/layer/layer_0/grad_norm"], 0.1
+        )
 
     def test_includes_per_layer_fractions(self):
         metrics = GeometricTrainingMetrics(
@@ -284,7 +308,9 @@ class TestFromProgressMetrics:
         metrics_dict = {"geometry/hessian_trace": 0.5}
         result = GeometricTrainingMetrics.from_progress_metrics(metrics_dict)
         assert result is not None
-        assert result.hessian_trace_estimate == 0.5
+        assert abs(result.hessian_trace_estimate - 0.5) <= _eps(
+            result.hessian_trace_estimate, 0.5
+        )
 
     def test_parses_layer_norms(self):
         metrics_dict = {
@@ -294,7 +320,9 @@ class TestFromProgressMetrics:
         result = GeometricTrainingMetrics.from_progress_metrics(metrics_dict)
         assert result is not None
         assert "layer_0" in result.per_layer_gradient_norms
-        assert result.per_layer_gradient_norms["layer_0"] == 0.1
+        assert abs(result.per_layer_gradient_norms["layer_0"] - 0.1) <= _eps(
+            result.per_layer_gradient_norms["layer_0"], 0.1
+        )
 
     def test_parses_layer_fractions(self):
         metrics_dict = {
@@ -319,11 +347,12 @@ class TestFromProgressMetrics:
     def test_active_layers_with_threshold(self):
         """With explicit threshold, only layers above it are active."""
         metrics_dict = {
-            "geometry/layer/layer_0/grad_frac": 0.1,  # Active (> 0.05)
-            "geometry/layer/layer_1/grad_frac": 0.01,  # Not active (< 0.05)
+            "geometry/layer/layer_0/grad_frac": 0.1,
+            "geometry/layer/layer_1/grad_frac": 0.01,
         }
+        threshold = max(metrics_dict.values()) - _eps(*metrics_dict.values())
         result = GeometricTrainingMetrics.from_progress_metrics(
-            metrics_dict, active_layer_threshold=0.05
+            metrics_dict, active_layer_threshold=threshold
         )
         assert result is not None
         assert "layer_0" in result.active_layers
@@ -337,7 +366,9 @@ class TestMetricEntry:
         metrics = GeometricTrainingMetrics(gradient_snr=5.0)
         entry = MetricEntry(step=100, metrics=metrics)
         assert entry.step == 100
-        assert entry.metrics.gradient_snr == 5.0
+        assert abs(entry.metrics.gradient_snr - 5.0) <= _eps(
+            entry.metrics.gradient_snr, 5.0
+        )
 
 
 class TestGeometricMetricsHistory:
@@ -372,8 +403,11 @@ class TestGeometricMetricsHistory:
 
         snr = history.snr_history
         assert len(snr) == 2
-        assert snr[0] == (100, 10.0)
-        assert snr[1] == (200, 15.0)
+        eps = _eps(snr[0][1], snr[1][1])
+        assert snr[0][0] == 100
+        assert abs(snr[0][1] - 10.0) <= eps
+        assert snr[1][0] == 200
+        assert abs(snr[1][1] - 15.0) <= eps
 
     def test_divergence_history(self):
         history = GeometricMetricsHistory()
@@ -382,7 +416,8 @@ class TestGeometricMetricsHistory:
 
         divergence = history.divergence_history
         assert len(divergence) == 1
-        assert divergence[0] == (100, 0.5)
+        assert divergence[0][0] == 100
+        assert abs(divergence[0][1] - 0.5) <= _eps(divergence[0][1], 0.5)
 
     def test_to_payload(self):
         history = GeometricMetricsHistory()
