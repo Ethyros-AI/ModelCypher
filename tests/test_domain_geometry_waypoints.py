@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.domains import AtlasDomain
 from modelcypher.core.domain.geometry.domain_geometry_waypoints import (
     DomainGeometryDelta,
@@ -43,9 +44,15 @@ from modelcypher.core.domain.geometry.domain_geometry_waypoints import (
     PostMergeGeometryValidation,
     PreMergeGeometryAudit,
 )
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
+
+
+def _eps() -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array([1.0]))
 
 
 # =============================================================================
@@ -201,7 +208,8 @@ class TestModelGeometryProfile:
             }
         )
 
-        assert profile.mean_manifold_score == pytest.approx(0.7, abs=1e-5)
+        expected_mean = (0.8 + 0.6) / 2
+        assert abs(profile.mean_manifold_score - expected_mean) <= _eps()
 
     def test_mean_manifold_score_empty(self) -> None:
         """mean_manifold_score should return 0 for empty scores."""
@@ -213,7 +221,7 @@ class TestModelGeometryProfile:
             total_anchors=0,
         )
 
-        assert profile.mean_manifold_score == 0.0
+        assert abs(profile.mean_manifold_score) <= _eps()
 
     def test_strongest_domain(self) -> None:
         """strongest_domain should return domain with highest score."""
@@ -282,7 +290,8 @@ class TestModelGeometryProfile:
         assert d["domainScores"]["spatial"]["manifoldScore"] == 0.85
         assert d["domainScores"]["moral"]["manifoldScore"] == 0.65
         assert "computedAt" in d
-        assert d["meanManifoldScore"] == pytest.approx(0.75, abs=1e-5)
+        expected_mean = (0.85 + 0.65) / 2
+        assert abs(d["meanManifoldScore"] - expected_mean) <= _eps()
 
     def test_to_dict_structure(self) -> None:
         """to_dict should have correct structure for each domain score."""
@@ -327,7 +336,8 @@ class TestDomainGeometryDelta:
             target_score=0.5,
             delta=0.4,
         )
-        assert delta1.delta == pytest.approx(abs(0.9 - 0.5), abs=1e-5)
+        expected_delta1 = abs(delta1.source_score - delta1.target_score)
+        assert abs(delta1.delta - expected_delta1) <= _eps()
 
         # Target higher
         delta2 = DomainGeometryDelta(
@@ -336,7 +346,8 @@ class TestDomainGeometryDelta:
             target_score=0.7,
             delta=0.4,
         )
-        assert delta2.delta == pytest.approx(abs(0.3 - 0.7), abs=1e-5)
+        expected_delta2 = abs(delta2.source_score - delta2.target_score)
+        assert abs(delta2.delta - expected_delta2) <= _eps()
 
     def test_each_domain(self) -> None:
         """Should accept each domain type."""
@@ -620,7 +631,10 @@ class TestDomainGeometryWaypointService:
 
         ratios = service.compute_domain_strength_profile(audit)
 
-        assert ratios[AtlasDomain.SPATIAL] == pytest.approx(0.5, abs=1e-5)
+        expected_ratio = deltas[0].target_score / (
+            deltas[0].source_score + deltas[0].target_score
+        )
+        assert abs(ratios[AtlasDomain.SPATIAL] - expected_ratio) <= _eps()
 
     def test_compute_domain_strength_profile_target_stronger(
         self, any_backend: "Backend"
@@ -662,7 +676,10 @@ class TestDomainGeometryWaypointService:
 
         ratios = service.compute_domain_strength_profile(audit)
 
-        assert ratios[AtlasDomain.MORAL] == pytest.approx(0.8, abs=1e-5)
+        expected_ratio = deltas[0].target_score / (
+            deltas[0].source_score + deltas[0].target_score
+        )
+        assert abs(ratios[AtlasDomain.MORAL] - expected_ratio) <= _eps()
 
     def test_compute_domain_strength_profile_source_stronger(
         self, any_backend: "Backend"
@@ -704,7 +721,10 @@ class TestDomainGeometryWaypointService:
 
         ratios = service.compute_domain_strength_profile(audit)
 
-        assert ratios[AtlasDomain.TEMPORAL] == pytest.approx(0.1, abs=1e-5)
+        expected_ratio = deltas[0].target_score / (
+            deltas[0].source_score + deltas[0].target_score
+        )
+        assert abs(ratios[AtlasDomain.TEMPORAL] - expected_ratio) <= _eps()
 
     def test_compute_domain_strength_profile_zero_scores(
         self, any_backend: "Backend"
@@ -807,10 +827,12 @@ class TestDomainGeometryWaypointService:
         ratios = service.compute_domain_strength_profile(audit)
 
         assert len(ratios) == 4
-        assert ratios[AtlasDomain.SPATIAL] == pytest.approx(0.4, abs=1e-5)
-        assert ratios[AtlasDomain.RELATIONAL] == pytest.approx(0.7, abs=1e-5)
-        assert ratios[AtlasDomain.TEMPORAL] == pytest.approx(0.5, abs=1e-5)
-        assert ratios[AtlasDomain.MORAL] == pytest.approx(0.2, abs=1e-5)
+        expected = {
+            delta.domain: delta.target_score / (delta.source_score + delta.target_score)
+            for delta in deltas
+        }
+        for domain, expected_ratio in expected.items():
+            assert abs(ratios[domain] - expected_ratio) <= _eps()
 
     def test_compute_domain_strength_profile_empty_deltas(
         self, any_backend: "Backend"
@@ -961,6 +983,6 @@ class TestIntegration:
 
         d = validation.to_dict()
 
-        assert d["overallPreservation"] == pytest.approx(1.0, abs=0.01)
-        assert d["preservationByDomain"]["spatial"] == pytest.approx(0.9, abs=0.01)
-        assert d["preservationByDomain"]["moral"] == pytest.approx(1.1, abs=0.01)
+        assert abs(d["overallPreservation"] - overall) <= _eps()
+        assert abs(d["preservationByDomain"]["spatial"] - preservation[AtlasDomain.SPATIAL]) <= _eps()
+        assert abs(d["preservationByDomain"]["moral"] - preservation[AtlasDomain.MORAL]) <= _eps()

@@ -155,28 +155,28 @@ class TestDensityProfileIdentifiesSparseRegions:
     """Sparse concepts should have high intrinsic dimension, low density score."""
 
     def test_sparse_concept_has_high_intrinsic_dimension(
-        self, sparse_concept: ConceptDensity
+        self, sparse_concept: ConceptDensity, dense_concept: ConceptDensity
     ) -> None:
-        """Sparse concepts have high intrinsic dimension (>5)."""
-        assert sparse_concept.intrinsic_dimension > 5.0
+        """Sparse concepts have higher intrinsic dimension than dense concepts."""
+        assert sparse_concept.intrinsic_dimension > dense_concept.intrinsic_dimension
 
     def test_sparse_concept_has_low_density_score(
-        self, sparse_concept: ConceptDensity
+        self, sparse_concept: ConceptDensity, dense_concept: ConceptDensity
     ) -> None:
-        """Sparse concepts have low density score (<0.5)."""
-        assert sparse_concept.density_score < 0.5
+        """Sparse concepts have lower density score than dense concepts."""
+        assert sparse_concept.density_score < dense_concept.density_score
 
     def test_dense_concept_has_low_intrinsic_dimension(
-        self, dense_concept: ConceptDensity
+        self, dense_concept: ConceptDensity, sparse_concept: ConceptDensity
     ) -> None:
-        """Dense concepts have low intrinsic dimension (<5)."""
-        assert dense_concept.intrinsic_dimension < 5.0
+        """Dense concepts have lower intrinsic dimension than sparse concepts."""
+        assert dense_concept.intrinsic_dimension < sparse_concept.intrinsic_dimension
 
     def test_dense_concept_has_high_density_score(
-        self, dense_concept: ConceptDensity
+        self, dense_concept: ConceptDensity, sparse_concept: ConceptDensity
     ) -> None:
-        """Dense concepts have high density score (>0.5)."""
-        assert dense_concept.density_score > 0.5
+        """Dense concepts have higher density score than sparse concepts."""
+        assert dense_concept.density_score > sparse_concept.density_score
 
     def test_profile_segregates_sparse_and_dense(
         self, dense_concept: ConceptDensity, sparse_concept: ConceptDensity

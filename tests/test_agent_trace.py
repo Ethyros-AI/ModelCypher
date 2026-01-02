@@ -28,6 +28,7 @@ import time
 from datetime import datetime, timedelta
 from uuid import uuid4
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.agents.agent_trace import (
     AgentTrace,
     InferenceMetrics,
@@ -40,6 +41,12 @@ from modelcypher.core.domain.agents.agent_trace import (
     TraceStore,
     TraceSummary,
 )
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
+
+def _eps() -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array([1.0]))
 
 # =============================================================================
 # PayloadDigest Tests
@@ -192,7 +199,7 @@ class TestTraceSpan:
             start_time=start,
             end_time=end,
         )
-        assert span.duration_ms == 500.0
+        assert abs(span.duration_ms - 500.0) <= _eps()
 
 
 # =============================================================================
@@ -263,9 +270,9 @@ class TestAgentTrace:
         assert trace.status == TraceStatus.success
         assert trace.completed_at is not None
         assert trace.output_digest is not None
-        assert trace.average_entropy == 1.8
+        assert abs(trace.average_entropy - 1.8) <= _eps()
         assert trace.duration_ms is not None
-        assert trace.duration_ms > 0
+        assert trace.duration_ms > _eps()
 
     def test_fail_trace(self) -> None:
         """Test failing a trace."""
