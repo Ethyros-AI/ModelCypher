@@ -80,11 +80,11 @@ def register_thermo_tools(ctx: ServiceContext) -> None:
             """
             Run thermodynamic path integration with gate detection.
 
-            Returns ALL gates with their confidence scores. The confidence
+            Returns ALL gates with their similarity scores. The similarity
             IS the geometry - no arbitrary threshold filtering.
             """
             model_path = require_existing_directory(model)
-            # Return all gates - confidence scores speak for themselves
+            # Return all gates - similarity scores speak for themselves
             result = ctx.thermo_service.path_integration(
                 prompt=prompt,
                 model_path=model_path,
@@ -111,7 +111,7 @@ def register_thermo_tools(ctx: ServiceContext) -> None:
                         "gateId": gate.gate_id,
                         "gateName": gate.gate_name,
                         "localEntropy": gate.local_entropy,
-                        "confidence": gate.confidence,
+                        "similarity": gate.similarity,
                     }
                     for gate in measurement.gate_details
                 ],

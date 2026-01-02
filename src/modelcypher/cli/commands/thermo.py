@@ -160,7 +160,7 @@ def thermo_path_integration(
                 "gateId": gate.gate_id,
                 "gateName": gate.gate_name,
                 "localEntropy": gate.local_entropy,
-                "confidence": gate.confidence,
+                "similarity": gate.similarity,
             }
             for gate in measurement.gate_details
         ],

@@ -344,7 +344,7 @@ class ManifoldClusterer:
                     entropy_variance=0.0,
                     first_token_entropy=0.0,
                     gate_count=0,
-                    mean_gate_confidence=0.0,
+                    mean_gate_similarity=0.0,
                     dominant_gate_category=0.0,
                     entropy_path_correlation=0.0,
                     assessment_strength=0.0,

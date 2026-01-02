@@ -65,7 +65,7 @@ logger = logging.getLogger(__name__)
 class DetectedGate:
     gate_id: str
     gate_name: str
-    confidence: float
+    similarity: float
     character_span: tuple[int, int]
     trigger_text: str
     local_entropy: float | None = None
@@ -80,10 +80,10 @@ class DetectionResult:
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
     @property
-    def mean_confidence(self) -> float:
+    def mean_similarity(self) -> float:
         if not self.detected_gates:
             return 0.0
-        total = sum(gate.confidence for gate in self.detected_gates)
+        total = sum(gate.similarity for gate in self.detected_gates)
         return total / float(len(self.detected_gates))
 
     @property
@@ -193,7 +193,7 @@ class GateDetector:
                     DetectedGate(
                         gate_id=best_gate_id,
                         gate_name=gate_meta.name,
-                        confidence=float(best_similarity),
+                        similarity=float(best_similarity),
                         character_span=(window_start, window_end),
                         trigger_text=truncate(window_text, 50),
                         local_entropy=local_entropy,
@@ -328,6 +328,6 @@ class GateDetector:
         for gate in gates[1:]:
             if gate.gate_id != collapsed[-1].gate_id:
                 collapsed.append(gate)
-            elif gate.confidence > collapsed[-1].confidence:
+            elif gate.similarity > collapsed[-1].similarity:
                 collapsed[-1] = gate
         return collapsed

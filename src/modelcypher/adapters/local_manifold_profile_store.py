@@ -372,7 +372,7 @@ class LocalManifoldProfileStore(ManifoldProfileStore):
             "entropyVariance": point.entropy_variance,
             "firstTokenEntropy": point.first_token_entropy,
             "gateCount": point.gate_count,
-            "meanGateConfidence": point.mean_gate_confidence,
+            "meanGateSimilarity": point.mean_gate_similarity,
             "dominantGateCategory": point.dominant_gate_category,
             "entropyPathCorrelation": point.entropy_path_correlation,
             "assessmentStrength": point.assessment_strength,
@@ -393,9 +393,7 @@ class LocalManifoldProfileStore(ManifoldProfileStore):
                 payload.get("firstTokenEntropy", payload.get("first_token_entropy", 0.0))
             ),
             gate_count=int(payload.get("gateCount", payload.get("gate_count", 0))),
-            mean_gate_confidence=float(
-                payload.get("meanGateConfidence", payload.get("mean_gate_confidence", 0.0))
-            ),
+            mean_gate_similarity=float(payload.get("meanGateSimilarity", 0.0)),
             dominant_gate_category=float(
                 payload.get("dominantGateCategory", payload.get("dominant_gate_category", 0.0))
             ),

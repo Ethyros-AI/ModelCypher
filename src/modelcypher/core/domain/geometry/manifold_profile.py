@@ -94,7 +94,7 @@ class ManifoldPoint:
     entropy_variance: float
     first_token_entropy: float
     gate_count: int
-    mean_gate_confidence: float
+    mean_gate_similarity: float
     dominant_gate_category: float
     entropy_path_correlation: float
     assessment_strength: float
@@ -109,7 +109,7 @@ class ManifoldPoint:
         "entropyVariance",
         "firstTokenEntropy",
         "gateCount",
-        "meanGateConfidence",
+        "meanGateSimilarity",
         "dominantGateCategory",
         "entropyPathCorrelation",
         "assessmentStrength",
@@ -122,7 +122,7 @@ class ManifoldPoint:
             float(self.entropy_variance),
             float(self.first_token_entropy),
             float(self.gate_count),
-            float(self.mean_gate_confidence),
+            float(self.mean_gate_similarity),
             float(self.dominant_gate_category),
             float(self.entropy_path_correlation),
             float(self.assessment_strength),
@@ -135,11 +135,11 @@ class ManifoldPoint:
         intervention_level: int | None = None,
     ) -> "ManifoldPoint":
         if measurement.gate_details:
-            mean_confidence = sum(detail.confidence for detail in measurement.gate_details) / float(
+            mean_similarity = sum(detail.similarity for detail in measurement.gate_details) / float(
                 len(measurement.gate_details)
             )
         else:
-            mean_confidence = 0.0
+            mean_similarity = 0.0
 
         dominant_category = ManifoldPoint._compute_dominant_gate_category(measurement.gate_sequence)
         # Use raw correlation magnitude as assessment strength (0-1 range)
@@ -152,7 +152,7 @@ class ManifoldPoint:
             entropy_variance=measurement.entropy_variance,
             first_token_entropy=measurement.first_token_entropy,
             gate_count=measurement.gate_count,
-            mean_gate_confidence=mean_confidence,
+            mean_gate_similarity=mean_similarity,
             dominant_gate_category=dominant_category,
             entropy_path_correlation=measurement.entropy_path_correlation or 0.0,
             assessment_strength=assessment_strength,
@@ -321,7 +321,7 @@ class ManifoldRegion:
     @property
     def coherence(self) -> float:
         """Gate coherence of the region centroid."""
-        return self.centroid.mean_gate_confidence
+        return self.centroid.mean_gate_similarity
 
     @staticmethod
     def classify(
@@ -342,7 +342,7 @@ class ManifoldRegion:
         cfg = config or _DEFAULT_CLASSIFICATION_CONFIG
         entropy = centroid.mean_entropy
         variance = centroid.entropy_variance
-        coherence = centroid.mean_gate_confidence
+        coherence = centroid.mean_gate_similarity
 
         # High variance indicates transitional region
         if variance > cfg.high_variance:

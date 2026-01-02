@@ -143,7 +143,7 @@ class GeometryService:
                 {
                     "gateID": gate.gate_id,
                     "gateName": gate.gate_name,
-                    "confidence": gate.confidence,
+                    "similarity": gate.similarity,
                     "characterSpan": {
                         "lowerBound": gate.character_span[0],
                         "upperBound": gate.character_span[1],
@@ -153,7 +153,7 @@ class GeometryService:
                 }
                 for gate in result.detected_gates
             ],
-            "meanConfidence": result.mean_confidence,
+            "meanSimilarity": result.mean_similarity,
             "timestamp": GeometryService._iso_timestamp(result.timestamp),
         }
 

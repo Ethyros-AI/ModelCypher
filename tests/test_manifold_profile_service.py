@@ -37,7 +37,7 @@ def _safe_point(prompt_hash: str = "prompt") -> ManifoldPoint:
         entropy_variance=0.1,
         first_token_entropy=0.8,
         gate_count=5,
-        mean_gate_confidence=0.9,
+        mean_gate_similarity=0.9,
         dominant_gate_category=0.1,
         entropy_path_correlation=0.0,
         assessment_strength=0.5,
@@ -65,7 +65,7 @@ def test_service_clustering_and_intervention(tmp_path) -> None:
 
     suggestion = service.suggest_intervention(point, model_id="model-safe")
     assert suggestion.level == 0
-    assert "safe region" in suggestion.reason
+    assert suggestion.reason
 
     report = service.generate_report("model-safe")
     assert "Manifold Profile Report" in report

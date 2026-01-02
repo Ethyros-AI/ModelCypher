@@ -41,7 +41,7 @@ def sample_points():
             entropy_variance=0.2 + i * 0.01,
             first_token_entropy=2.0 + i * 0.05,
             gate_count=5 + i % 3,
-            mean_gate_confidence=0.8 + i * 0.01,
+            mean_gate_similarity=0.8 + i * 0.01,
             dominant_gate_category=float(i % 4),
             entropy_path_correlation=0.6 + i * 0.02,
             assessment_strength=0.7 + i * 0.015,
@@ -70,7 +70,7 @@ class TestManifoldPointCreation:
         assert vector[1] == pytest.approx(point.entropy_variance)
         assert vector[2] == pytest.approx(point.first_token_entropy)
         assert vector[3] == pytest.approx(float(point.gate_count))
-        assert vector[4] == pytest.approx(point.mean_gate_confidence)
+        assert vector[4] == pytest.approx(point.mean_gate_similarity)
 
     def test_point_has_unique_id(self, sample_points):
         """Each point should have a unique ID."""

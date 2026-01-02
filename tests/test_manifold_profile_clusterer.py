@@ -24,7 +24,7 @@ from modelcypher.core.domain.geometry.manifold_profile import ManifoldPoint, Man
 
 
 def _make_point(
-    mean_entropy: float, mean_gate_confidence: float, prompt_hash: str
+    mean_entropy: float, mean_gate_similarity: float, prompt_hash: str
 ) -> ManifoldPoint:
     return ManifoldPoint(
         id=uuid4(),
@@ -32,7 +32,7 @@ def _make_point(
         entropy_variance=0.1,
         first_token_entropy=mean_entropy,
         gate_count=2,
-        mean_gate_confidence=mean_gate_confidence,
+        mean_gate_similarity=mean_gate_similarity,
         dominant_gate_category=0.0,
         entropy_path_correlation=0.0,
         assessment_strength=0.5,
@@ -47,7 +47,7 @@ def test_region_classification() -> None:
         entropy_variance=0.1,
         first_token_entropy=1.0,
         gate_count=1,
-        mean_gate_confidence=0.9,
+        mean_gate_similarity=0.9,
         dominant_gate_category=0.0,
         entropy_path_correlation=0.0,
         assessment_strength=0.5,
@@ -66,7 +66,7 @@ def test_clusterer_groups_identical_points() -> None:
                 entropy_variance=0.1,
                 first_token_entropy=1.0,
                 gate_count=1,
-                mean_gate_confidence=0.9,
+                mean_gate_similarity=0.9,
                 dominant_gate_category=0.0,
                 entropy_path_correlation=0.0,
                 assessment_strength=0.5,

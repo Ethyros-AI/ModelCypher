@@ -66,7 +66,7 @@ class GateDetail:
     gate_id: str
     gate_name: str
     local_entropy: float | None
-    confidence: float
+    similarity: float
 
 
 @dataclass(frozen=True)
@@ -173,7 +173,7 @@ class ThermoPathIntegration:
                     gate_id=gate.gate_id,
                     gate_name=gate.gate_name,
                     local_entropy=local_entropy,
-                    confidence=gate.confidence,
+                    similarity=gate.similarity,
                 )
             )
 
@@ -293,4 +293,3 @@ class ThermoPathIntegration:
             measurement_count=1,
             rationale=rationale,
         )
-

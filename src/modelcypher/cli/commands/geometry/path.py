@@ -99,10 +99,10 @@ def geometry_path_detect(
             "Detected Gates:",
         ]
         for gate in detection.detected_gates:
-            lines.append(f"  [{gate.gate_name}] confidence={gate.confidence:.2f}")
+            lines.append(f"  [{gate.gate_name}] similarity={gate.similarity:.2f}")
             lines.append(f'    trigger: "{gate.trigger_text}"')
         lines.append("")
-        lines.append(f"Mean Confidence: {detection.mean_confidence:.3f}")
+        lines.append(f"Mean Similarity: {detection.mean_similarity:.3f}")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

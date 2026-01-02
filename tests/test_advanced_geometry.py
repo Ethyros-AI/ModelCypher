@@ -69,7 +69,7 @@ def test_manifold_clusterer_simple():
             entropy_variance=0.1,
             first_token_entropy=base_entropy,
             gate_count=5,
-            mean_gate_confidence=mean_gate,
+            mean_gate_similarity=mean_gate,
             dominant_gate_category=0,
             entropy_path_correlation=0.5,
             assessment_strength=0.5,
@@ -97,7 +97,17 @@ def test_manifold_clusterer_simple():
 def test_manifold_clusterer_noise():
     # 5 points in cluster, 1 outlier far away
     def fn(e):
-        return ManifoldPoint(e, 0, e, 0, 0, 0, 0, 0, "h")
+        return ManifoldPoint(
+            mean_entropy=e,
+            entropy_variance=0.0,
+            first_token_entropy=e,
+            gate_count=0,
+            mean_gate_similarity=0.0,
+            dominant_gate_category=0.0,
+            entropy_path_correlation=0.0,
+            assessment_strength=0.0,
+            prompt_hash="h",
+        )
     points = [fn(1.0) for _ in range(5)]
     outlier = fn(100.0)
 

@@ -27,8 +27,8 @@ Tests computational gate detection in model responses:
 
 from __future__ import annotations
 
-import pytest
-
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.agents.computational_gate_atlas import (
     ComputationalGate,
     ComputationalGateCategory,
@@ -123,8 +123,8 @@ class TestBasicDetection:
         assert "alpha" in result.gate_sequence
         assert "beta" in result.gate_sequence
 
-    def test_mean_confidence_positive(self) -> None:
-        """Mean confidence should be positive when gates are detected."""
+    def test_mean_similarity_positive(self) -> None:
+        """Mean similarity should be positive when gates are detected."""
         detector = _make_detector()
         result = detector.detect(
             text="alpha. beta.",
@@ -132,7 +132,7 @@ class TestBasicDetection:
             prompt_id="p",
         )
 
-        assert result.mean_confidence > 0
+        assert result.mean_similarity > 0
 
     def test_empty_text_returns_empty_result(self) -> None:
         """Empty text should return result with no detected gates."""
@@ -140,7 +140,7 @@ class TestBasicDetection:
         result = detector.detect(text="", model_id="m", prompt_id="p")
 
         assert result.detected_gates == []
-        assert result.mean_confidence == 0.0
+        assert result.mean_similarity == 0.0
 
     def test_no_matching_text_returns_empty(self) -> None:
         """Text with no matching keywords should return empty gates."""
@@ -208,7 +208,7 @@ class TestDetectedGate:
         gate = DetectedGate(
             gate_id="test",
             gate_name="TEST",
-            confidence=0.85,
+            similarity=0.85,
             character_span=(10, 20),
             trigger_text="test text",
             local_entropy=1.5,
@@ -216,7 +216,7 @@ class TestDetectedGate:
 
         assert gate.gate_id == "test"
         assert gate.gate_name == "TEST"
-        assert gate.confidence == 0.85
+        assert gate.similarity == 0.85
         assert gate.character_span == (10, 20)
         assert gate.trigger_text == "test text"
         assert gate.local_entropy == 1.5
@@ -307,11 +307,15 @@ class TestGateEmbeddings:
         detector = _make_detector()
 
         embeddings = detector.get_gate_embeddings()
+        backend = get_default_backend()
 
         for gate_id, embedding in embeddings.items():
             norm = sum(x * x for x in embedding) ** 0.5
             if norm > 0:  # Skip zero vectors
-                assert abs(norm - 1.0) < 0.01, f"Gate {gate_id} not normalized: {norm}"
+                eps = machine_epsilon(backend, backend.array(embedding))
+                assert abs(norm - 1.0) <= eps * max(1, len(embedding)), (
+                    f"Gate {gate_id} not normalized: {norm}"
+                )
 
 
 class TestMaxGatesLimit:
