@@ -79,19 +79,19 @@ class FrechetMeanConfig:
             Default True - use Fréchet mean. Only set False for debugging.
         k_neighbors: Number of neighbors for geodesic distance (None = derive from geometry).
         max_iterations: Maximum Fréchet mean iterations.
-        tolerance: Convergence tolerance for Fréchet mean.
+        tolerance: Convergence tolerance for Fréchet mean (None = machine epsilon).
     """
 
     enabled: bool = True  # Fréchet mean by default - arithmetic mean is wrong
     k_neighbors: int | None = None  # Derived from intrinsic dimension
     max_iterations: int = 50
-    tolerance: float = 1e-5
+    tolerance: float | None = None  # Derived from machine epsilon
 
 
 @dataclass(frozen=True)
 class Config:
     max_iterations: int = 100
-    convergence_threshold: float = 1e-4
+    convergence_threshold: float | None = None  # Derived from machine epsilon
     allow_reflections: bool = False
     min_models: int = 2
     allow_scaling: bool = False
@@ -266,11 +266,18 @@ class GeneralizedProcrustes:
             # Get all M model representations for this sample: [M, K]
             sample_points = aligned_X[:, sample_idx, :]
 
+            # Derive tolerance from machine epsilon if not specified
+            if config.frechet_mean.tolerance is None:
+                from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+                tol = math.sqrt(machine_epsilon(backend, sample_points))
+            else:
+                tol = config.frechet_mean.tolerance
+
             # Compute Fréchet mean of these M points (uses geodesic distances)
             result = self._riemannian.frechet_mean(
                 sample_points,
                 max_iterations=config.frechet_mean.max_iterations,
-                tolerance=config.frechet_mean.tolerance,
+                tolerance=tol,
             )
             consensus_rows.append(result.mean)
 
@@ -304,6 +311,14 @@ class GeneralizedProcrustes:
             X = self._backend.array(activations)
         except Exception:
             return None
+
+        # Derive convergence threshold from machine epsilon if not specified
+        if config.convergence_threshold is None:
+            from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+            eps = machine_epsilon(self._backend, X)
+            convergence_threshold = math.sqrt(eps)  # sqrt(eps) for relative error
+        else:
+            convergence_threshold = config.convergence_threshold
 
         # 1. Centering
         means = self._backend.mean(X, axis=1, keepdims=True)
@@ -376,7 +391,7 @@ class GeneralizedProcrustes:
             # This is scale-invariant: same behavior regardless of input magnitude
             eps = float(division_epsilon(self._backend, aligned_X))
             rel_change = current_error / max(total_energy, eps)
-            if rel_change < config.convergence_threshold:
+            if rel_change < convergence_threshold:
                 converged = True
                 consensus = new_consensus
                 break

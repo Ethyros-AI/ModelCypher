@@ -382,8 +382,11 @@ class MergeValidationService:
         )
 
         try:
-            import mlx.core as mx
             from mlx_lm import load as mlx_load
+
+            from modelcypher.core.domain._backend import get_default_backend
+
+            b = get_default_backend()
 
             # Load merged and source weights
             _, merged_weights = mlx_load(merged_model, lazy=True)
@@ -401,9 +404,9 @@ class MergeValidationService:
                 merged = merged_weights[name]
                 if source.shape != merged.shape:
                     continue
-                delta = merged - source
-                mx.eval(delta)
-                flat = delta.flatten().tolist()
+                delta = b.array(merged) - b.array(source)
+                b.eval(delta)
+                flat = b.to_numpy(b.reshape(delta, (-1,))).tolist()
                 if len(flat) > 10000:
                     import random
 

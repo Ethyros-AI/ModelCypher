@@ -239,12 +239,8 @@ class GramAligner:
     ) -> "Array | None":
         """Solve for F such that Gram(source @ F) = Gram(target).
 
-        PRIMARY approach: Use Gram-space alignment via SVD + Procrustes.
-        This directly targets Gram equality (CKA = 1.0) rather than feature
-        equality (source @ F = target), which only implies Gram equality
-        when the solve is exact.
-
-        FALLBACK: QR-based least-squares for feature alignment.
+        Tries all methods and selects the one with lowest error.
+        No "good enough" thresholds - always returns the best solution.
         """
         from modelcypher.core.domain.geometry.numerical_stability import (
             machine_epsilon,
@@ -258,44 +254,36 @@ class GramAligner:
             return None
 
         eps = machine_epsilon(b, source_centered)
+        candidates: list[tuple[float, "Array", str]] = []
 
-        # PRIMARY: Gram-space alignment via SVD + Procrustes
-        # This directly targets Gram(source @ F) = Gram(target)
+        # Method 1: Gram-space alignment via SVD + Procrustes
         F_gram, gram_diag = solve_via_gram_alignment(b, source_centered, target_centered)
         if F_gram is not None:
             procrustes_err = gram_diag.get("procrustes_error", float("inf"))
-            if procrustes_err < eps * 1e6:  # Procrustes worked well
-                self._logger.debug(
-                    "Gram alignment: procrustes_error=%.2e, rank_s=%d, rank_t=%d",
-                    procrustes_err,
-                    gram_diag.get("rank_source", 0),
-                    gram_diag.get("rank_target", 0),
-                )
-                return F_gram
+            candidates.append((procrustes_err, F_gram, "gram_procrustes"))
             self._logger.debug(
-                "Gram alignment had high Procrustes error (%.2e), trying QR",
+                "Gram alignment: procrustes_error=%.2e, rank_s=%d, rank_t=%d",
                 procrustes_err,
+                gram_diag.get("rank_source", 0),
+                gram_diag.get("rank_target", 0),
             )
 
-        # FALLBACK: QR-based solve for feature alignment
-        # Only use if Gram alignment failed or had high error
-        F_qr, diag = solve_full_row_rank_via_qr(b, source_centered, target_centered)
-        if F_qr is not None and diag.get("residual_norm", float("inf")) < eps * 1000:
+        # Method 2: QR-based solve for feature alignment
+        F_qr, qr_diag = solve_full_row_rank_via_qr(b, source_centered, target_centered)
+        if F_qr is not None:
+            residual = qr_diag.get("residual_norm", float("inf"))
+            candidates.append((residual, F_qr, "qr"))
             self._logger.debug(
                 "QR solve: method=%s, cond=%.2e, residual=%.2e",
-                diag.get("method", "unknown"),
-                diag.get("condition", float("inf")),
-                diag.get("residual_norm", float("inf")),
+                qr_diag.get("method", "unknown"),
+                qr_diag.get("condition", float("inf")),
+                residual,
             )
-            return F_qr
 
-        # Last resort: eigendecomposition
-        self._logger.debug("Falling back to eigendecomposition solve")
-
+        # Method 3: Eigendecomposition
         gram = b.matmul(source_centered, b.transpose(source_centered))
         b.eval(gram)
 
-        # Cast to float32 for eigendecomposition (MLX doesn't support bfloat16 for eigh)
         gram_dtype = str(b.dtype(gram))
         if "bfloat16" in gram_dtype:
             gram_f32 = b.astype(gram, "float32")
@@ -306,7 +294,7 @@ class GramAligner:
         b.eval(eigvals, eigvecs)
 
         inv_vals = b.where(
-            eigvals > 0.0,
+            eigvals > eps,
             1.0 / eigvals,
             b.zeros_like(eigvals),
         )
@@ -319,12 +307,30 @@ class GramAligner:
         )
         b.eval(gram_inv_subspace)
 
-        F = b.matmul(
+        F_eig = b.matmul(
             b.transpose(source_centered),
             b.matmul(gram_inv_subspace, target_centered),
         )
-        b.eval(F)
-        return F
+        b.eval(F_eig)
+
+        # Compute residual for eigendecomposition method
+        reconstructed = b.matmul(source_centered, F_eig)
+        residual_eig = b.norm(reconstructed - target_centered)
+        target_norm = b.norm(target_centered)
+        b.eval(residual_eig, target_norm)
+        rel_residual = float(b.to_scalar(residual_eig)) / (float(b.to_scalar(target_norm)) + eps)
+        candidates.append((rel_residual, F_eig, "eigendecomposition"))
+
+        # Select best method (lowest error)
+        if not candidates:
+            return None
+
+        best_err, best_F, best_method = min(candidates, key=lambda x: x[0])
+        self._logger.debug(
+            "Selected %s with error %.2e (machine_eps=%.2e)",
+            best_method, best_err, eps,
+        )
+        return best_F
 
     def _solve_feature_transform_uncentered(
         self,
@@ -333,8 +339,8 @@ class GramAligner:
     ) -> "Array | None":
         """Solve for F such that Gram(source @ F) = Gram(target) on uncentered data.
 
-        PRIMARY: Gram-space alignment via SVD + Procrustes.
-        FALLBACK: QR-based least-squares, then eigendecomposition.
+        Tries all methods and selects the one with lowest error.
+        No "good enough" thresholds - always returns the best solution.
         """
         from modelcypher.core.domain.geometry.numerical_stability import (
             machine_epsilon,
@@ -348,24 +354,24 @@ class GramAligner:
             return None
 
         eps = machine_epsilon(b, source)
+        candidates: list[tuple[float, "Array", str]] = []
 
-        # PRIMARY: Gram-space alignment via SVD + Procrustes
+        # Method 1: Gram-space alignment via SVD + Procrustes
         F_gram, gram_diag = solve_via_gram_alignment(b, source, target)
         if F_gram is not None:
             procrustes_err = gram_diag.get("procrustes_error", float("inf"))
-            if procrustes_err < eps * 1e6:
-                return F_gram
+            candidates.append((procrustes_err, F_gram, "gram_procrustes"))
 
-        # FALLBACK: QR-based solve
-        F_qr, diag = solve_full_row_rank_via_qr(b, source, target)
-        if F_qr is not None and diag.get("residual_norm", float("inf")) < eps * 1000:
-            return F_qr
+        # Method 2: QR-based solve
+        F_qr, qr_diag = solve_full_row_rank_via_qr(b, source, target)
+        if F_qr is not None:
+            residual = qr_diag.get("residual_norm", float("inf"))
+            candidates.append((residual, F_qr, "qr"))
 
-        # Last resort: eigendecomposition (requires positive definite gram)
+        # Method 3: Eigendecomposition (requires positive definite gram)
         gram = b.matmul(source, b.transpose(source))
         b.eval(gram)
 
-        # Cast to float32 for eigendecomposition (MLX doesn't support bfloat16 for eigh)
         gram_dtype = str(b.dtype(gram))
         if "bfloat16" in gram_dtype:
             gram_f32 = b.astype(gram, "float32")
@@ -376,31 +382,42 @@ class GramAligner:
         b.eval(eigvals, eigvecs)
 
         values = [float(v) for v in b.to_numpy(eigvals).tolist()]
-        if not values:
+        if values:
+            min_eig = min(values)
+            if min_eig > 0.0:
+                inv_vals = b.where(
+                    eigvals > eps,
+                    1.0 / eigvals,
+                    b.zeros_like(eigvals),
+                )
+                b.eval(inv_vals)
+
+                gram_inv = b.matmul(
+                    eigvecs * b.reshape(inv_vals, (1, -1)),
+                    b.transpose(eigvecs),
+                )
+                b.eval(gram_inv)
+
+                F_eig = b.matmul(
+                    b.transpose(source),
+                    b.matmul(gram_inv, target),
+                )
+                b.eval(F_eig)
+
+                # Compute residual for eigendecomposition
+                reconstructed = b.matmul(source, F_eig)
+                residual_eig = b.norm(reconstructed - target)
+                target_norm = b.norm(target)
+                b.eval(residual_eig, target_norm)
+                rel_residual = float(b.to_scalar(residual_eig)) / (float(b.to_scalar(target_norm)) + eps)
+                candidates.append((rel_residual, F_eig, "eigendecomposition"))
+
+        # Select best method (lowest error)
+        if not candidates:
             return None
-        min_eig = min(values)
-        if min_eig <= 0.0:
-            return None
 
-        inv_vals = b.where(
-            eigvals > 0.0,
-            1.0 / eigvals,
-            b.zeros_like(eigvals),
-        )
-        b.eval(inv_vals)
-
-        gram_inv = b.matmul(
-            eigvecs * b.reshape(inv_vals, (1, -1)),
-            b.transpose(eigvecs),
-        )
-        b.eval(gram_inv)
-
-        transform = b.matmul(
-            b.transpose(source),
-            b.matmul(gram_inv, target),
-        )
-        b.eval(transform)
-        return transform
+        best_err, best_F, best_method = min(candidates, key=lambda x: x[0])
+        return best_F
 
     def find_perfect_alignment(
         self,

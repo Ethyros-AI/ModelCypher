@@ -27,24 +27,17 @@ Ported 1:1 from the reference Swift implementation.
 from __future__ import annotations
 
 import math
-import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    safe_log_epsilon,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
-
-# Machine epsilon for float64 (native Python float)
-_MACHINE_EPS = sys.float_info.epsilon
-
-# Smallest positive float for log safety (prevents log(0))
-_LOG_SAFE_MIN = sys.float_info.min
-
-# Minimum temperature to avoid division by zero
-MINIMUM_TEMPERATURE: float = _MACHINE_EPS
-
 
 @dataclass(frozen=True)
 class BasinTopology:
@@ -417,10 +410,11 @@ class RegimeStateDetector:
         """Compute logit variance under temperature-scaled distribution."""
         if temperature <= 0:
             return 0.0
-        safe_temp = max(temperature, MINIMUM_TEMPERATURE)
         b = self._backend
 
         logits_f32 = b.astype(logits, "float32")
+        temp_eps = division_epsilon(b, logits_f32)
+        safe_temp = max(temperature, temp_eps)
 
         # Temperature-scaled softmax
         scaled = logits_f32 / safe_temp
@@ -458,7 +452,7 @@ class RegimeStateDetector:
         self,
         logits: "Array",
         temperature: float,
-        threshold: float = 1e-4,
+        threshold: float | None = None,
     ) -> int:
         """Compute effective vocabulary size (tokens with p > threshold)."""
         if temperature <= 0:
@@ -466,10 +460,13 @@ class RegimeStateDetector:
         b = self._backend
 
         logits_f32 = b.astype(logits, "float32")
-        scaled = logits_f32 / max(temperature, MINIMUM_TEMPERATURE)
+        temp_eps = division_epsilon(b, logits_f32)
+        scaled = logits_f32 / max(temperature, temp_eps)
         probs = b.softmax(scaled, axis=-1)
 
-        mask = probs > threshold
+        prob_eps = division_epsilon(b, probs)
+        effective_threshold = prob_eps if threshold is None else threshold
+        mask = probs > effective_threshold
         count = b.sum(b.astype(mask, "int32"), axis=-1)
         b.eval(count)
 
@@ -482,10 +479,12 @@ class RegimeStateDetector:
         b = self._backend
 
         logits_f32 = b.astype(logits, "float32")
-        scaled = logits_f32 / max(temperature, MINIMUM_TEMPERATURE)
+        temp_eps = division_epsilon(b, logits_f32)
+        scaled = logits_f32 / max(temperature, temp_eps)
         probs = b.softmax(scaled, axis=-1)
 
-        log_probs = b.log(probs + _LOG_SAFE_MIN)
+        log_eps = safe_log_epsilon(b, probs)
+        log_probs = b.log(probs + log_eps)
         entropy = -b.sum(probs * log_probs, axis=-1)
         b.eval(entropy)
 
