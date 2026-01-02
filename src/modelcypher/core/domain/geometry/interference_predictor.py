@@ -17,7 +17,7 @@
 
 """Merge analysis using ConceptVolume geometry.
 
-Identifies geometric transformations needed to align models for merging.
+Reports raw geometric measurements used to align models for merging.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class MergeAnalysisResult:
-    """Geometric measurements and transformations for a volume pair."""
+    """Geometric measurements for a volume pair."""
 
     # Volumes analyzed
     volume_a_id: str
@@ -58,7 +58,7 @@ class MergeAnalysisResult:
 
 @dataclass
 class GlobalMergeAnalysisReport:
-    """Aggregate transformations needed across all concept pairs."""
+    """Aggregate geometric measurements across all concept pairs."""
 
     # Per-pair results
     pair_results: dict[tuple[str, str], MergeAnalysisResult]
@@ -72,19 +72,9 @@ class GlobalMergeAnalysisReport:
     mean_alignment: float
     mean_distance: float
 
-    def get_pairs_needing_transformation(
-        self, transformation: TransformationType
-    ) -> list[tuple[str, str]]:
-        """Get all pairs that need a specific transformation."""
-        return [
-            pair
-            for pair, result in self.pair_results.items()
-            if transformation in result.transformations
-        ]
-
 
 class MergeAnalyzer:
-    """Analyzes concept volumes to determine merge transformations."""
+    """Analyzes concept volumes to report merge geometry."""
 
     def __init__(self) -> None:
         self.density_estimator = RiemannianDensityEstimator()

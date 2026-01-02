@@ -48,8 +48,8 @@ class TestPreMergeAnalysis:
             },
             mean_overlap=0.75,
             mean_alignment=0.875,
-            transformation_counts={"procrustes_rotation": 5, "curvature_correction": 3},
-            total_transformations_needed=8,
+            mean_curvature_divergence=0.05,
+            mean_distance=0.15,
         )
 
         assert analysis.source_model == "/path/to/source"
@@ -57,7 +57,7 @@ class TestPreMergeAnalysis:
         assert len(analysis.domains_analyzed) == 2
         assert analysis.mean_overlap == 0.75
         assert analysis.mean_alignment == 0.875
-        assert analysis.total_transformations_needed == 8
+        assert analysis.mean_curvature_divergence == 0.05
 
     def test_pre_merge_analysis_is_frozen(self):
         """Test that PreMergeAnalysis is immutable."""
@@ -69,8 +69,8 @@ class TestPreMergeAnalysis:
             domain_results={},
             mean_overlap=0.0,
             mean_alignment=0.0,
-            transformation_counts={},
-            total_transformations_needed=0,
+            mean_curvature_divergence=0.0,
+            mean_distance=0.0,
         )
 
         with pytest.raises(Exception):  # FrozenInstanceError
@@ -86,8 +86,8 @@ class TestPreMergeAnalysis:
             domain_results={"spatial": {"mean_overlap": 0.8}},
             mean_overlap=0.8,
             mean_alignment=0.9,
-            transformation_counts={},
-            total_transformations_needed=0,
+            mean_curvature_divergence=0.0,
+            mean_distance=0.0,
         )
 
         d = asdict(analysis)
@@ -147,8 +147,8 @@ class TestPipelineResult:
             domain_results={},
             mean_overlap=0.8,
             mean_alignment=0.9,
-            transformation_counts={},
-            total_transformations_needed=0,
+            mean_curvature_divergence=0.0,
+            mean_distance=0.0,
         )
 
         post_merge = PostMergeValidation(
@@ -171,7 +171,6 @@ class TestPipelineResult:
             pre_merge=pre_merge,
             merge_result={"layer_count": 24, "weight_count": 48},
             post_merge=post_merge,
-            verification=None,
             pre_merge_duration_s=10.5,
             merge_duration_s=120.0,
             validation_duration_s=5.0,
@@ -183,8 +182,8 @@ class TestPipelineResult:
         assert result.post_merge.mean_cka_after == 0.95
         assert result.merge_duration_s == 120.0
 
-    def test_pipeline_result_with_verification(self):
-        """Test PipelineResult with verification results."""
+    def test_pipeline_result_with_merge_result(self):
+        """Test PipelineResult with merge result dictionary."""
         pre_merge = PreMergeAnalysis(
             source_model="/s",
             target_model="/t",
@@ -193,8 +192,8 @@ class TestPipelineResult:
             domain_results={},
             mean_overlap=0.0,
             mean_alignment=0.0,
-            transformation_counts={},
-            total_transformations_needed=0,
+            mean_curvature_divergence=0.0,
+            mean_distance=0.0,
         )
 
         post_merge = PostMergeValidation(
@@ -208,12 +207,10 @@ class TestPipelineResult:
             mean_cka_after=0.0,
         )
 
-        verification = {
-            "merge_id": "abc123",
-            "mean_absolute_error": 0.05,
-            "overlap_delta": 0.02,
-            "alignment_delta": -0.01,
-            "transformation_accuracy": {"procrustes_rotation": True},
+        merge_result = {
+            "layer_count": 24,
+            "weight_count": 48,
+            "mean_confidence": 0.9,
         }
 
         result = PipelineResult(
@@ -223,14 +220,13 @@ class TestPipelineResult:
             target_model="/t",
             output_dir="/o",
             pre_merge=pre_merge,
-            merge_result={},
+            merge_result=merge_result,
             post_merge=post_merge,
-            verification=verification,
         )
 
-        assert result.verification is not None
-        assert result.verification["merge_id"] == "abc123"
-        assert result.verification["mean_absolute_error"] == 0.05
+        assert result.merge_result is not None
+        assert result.merge_result["layer_count"] == 24
+        assert result.merge_result["mean_confidence"] == 0.9
 
 
 class TestMergePipelineService:
@@ -272,39 +268,30 @@ class TestMergePipelineService:
 class TestPipelineServiceInternals:
     """Tests for internal pipeline service methods."""
 
-    def test_store_prediction_without_registry(self):
-        """Test that storing prediction without registry returns None gracefully."""
-        service = MergePipelineService(verification_registry_path=None)
+    def test_service_with_registry_path(self, tmp_path):
+        """Test service can be created with a registry path."""
+        registry_path = tmp_path / "test_registry.json"
+        service = MergePipelineService(verification_registry_path=registry_path)
+        assert service.verification_registry_path == registry_path
 
-        pre_merge = PreMergeAnalysis(
-            source_model="/s",
-            target_model="/t",
-            timestamp="2025-12-31T00:00:00",
-            domains_analyzed=[],
-            domain_results={},
-            mean_overlap=0.0,
-            mean_alignment=0.0,
-            transformation_counts={},
-            total_transformations_needed=0,
-        )
-
-        # Should not raise, returns merge_id or None
-        result = service._store_prediction(pre_merge)
-        # With no registry path, it still stores in-memory
-        assert result is not None or result is None  # Either is valid
-
-    def test_verify_predictions_without_match(self):
-        """Test verification when no matching prediction exists."""
+    def test_merge_result_to_dict_with_geometry_metrics(self):
+        """Test _merge_result_to_dict handles geometry_metrics correctly."""
         service = MergePipelineService()
 
         class MockMergeResult:
-            geometry_metrics = {}
-            transplant_metrics = {}
-            mean_confidence = 0.5
+            output_path = "/output"
+            layer_count = 12
+            weight_count = 24
+            mean_confidence = 0.92
+            vocab_aligned = False
+            mean_procrustes_error = 0.002
+            geometry_metrics = {"mean_cka_after": 0.98}
+            transplant_metrics = {"layers_transplanted": 12}
 
-        # Verify with non-existent merge_id
-        result = service._verify_predictions("nonexistent-id", MockMergeResult())
-        assert result is None
+        result = service._merge_result_to_dict(MockMergeResult())
+        assert result["layer_count"] == 12
+        assert result["mean_confidence"] == 0.92
+        assert result["geometry_metrics"]["mean_cka_after"] == 0.98
 
 
 class TestPipelineTimingFields:
@@ -320,8 +307,8 @@ class TestPipelineTimingFields:
             domain_results={},
             mean_overlap=0.0,
             mean_alignment=0.0,
-            transformation_counts={},
-            total_transformations_needed=0,
+            mean_curvature_divergence=0.0,
+            mean_distance=0.0,
         )
 
         post_merge = PostMergeValidation(
@@ -364,8 +351,8 @@ class TestPreMergeAnalysisLayerPredictions:
             domain_results={},
             mean_overlap=0.0,
             mean_alignment=0.0,
-            transformation_counts={},
-            total_transformations_needed=0,
+            mean_curvature_divergence=0.0,
+            mean_distance=0.0,
         )
 
         assert analysis.layer_predictions == {}
@@ -385,8 +372,8 @@ class TestPreMergeAnalysisLayerPredictions:
             domain_results={},
             mean_overlap=0.85,
             mean_alignment=0.9,
-            transformation_counts={},
-            total_transformations_needed=0,
+            mean_curvature_divergence=0.0,
+            mean_distance=0.0,
             layer_predictions=layer_predictions,
         )
 

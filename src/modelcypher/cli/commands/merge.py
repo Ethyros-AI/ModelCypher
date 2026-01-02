@@ -24,7 +24,6 @@ Pipeline stages:
 1. Pre-merge analysis: Interference prediction
 2. Execute merge: Unified geometric merge
 3. Post-merge validation: Extract geometry metrics
-4. Verification: Compare predictions to actuals
 """
 
 from __future__ import annotations
@@ -64,16 +63,6 @@ def pipeline(
         "--skip-pre-analysis",
         help="Skip pre-merge interference analysis",
     ),
-    verify: bool = typer.Option(
-        True,
-        "--verify/--no-verify",
-        help="Enable/disable prediction verification",
-    ),
-    registry_path: str | None = typer.Option(
-        None,
-        "--registry-path",
-        help="Path to store prediction/verification registry",
-    ),
     output_file: str | None = typer.Option(
         None,
         "--output-file",
@@ -87,7 +76,6 @@ def pipeline(
     1. Pre-merge: Interference analysis
     2. Merge: Null-space constrained transplant
     3. Post-merge: Extract geometry metrics
-    4. Verify: Compare predictions to actuals
 
     Examples:
         mc merge pipeline --source ./instruct --target ./coder --output-dir ./merged \\
@@ -107,7 +95,7 @@ def pipeline(
             "transplant-domains must specify at least one domain (e.g., mathematical,logical)"
         )
 
-    service = MergePipelineService(verification_registry_path=registry_path)
+    service = MergePipelineService()
 
     try:
         with prevent_sleep():
@@ -117,7 +105,6 @@ def pipeline(
                 output_dir=output_dir,
                 transplant_domains=domain_list,
                 skip_pre_analysis=skip_pre_analysis,
-                verify_predictions=verify,
             )
 
         # Build output payload
@@ -132,8 +119,8 @@ def pipeline(
                 "domainsAnalyzed": result.pre_merge.domains_analyzed,
                 "meanOverlap": result.pre_merge.mean_overlap,
                 "meanAlignment": result.pre_merge.mean_alignment,
-                "transformationCounts": result.pre_merge.transformation_counts,
-                "totalTransformationsNeeded": result.pre_merge.total_transformations_needed,
+                "meanCurvatureDivergence": result.pre_merge.mean_curvature_divergence,
+                "meanDistance": result.pre_merge.mean_distance,
             },
             "mergeResult": {
                 "layerCount": result.merge_result.get("layer_count"),
@@ -147,7 +134,6 @@ def pipeline(
                 "meanPreservedFraction": result.post_merge.mean_preserved_fraction,
                 "meanCkaAfter": result.post_merge.mean_cka_after,
             },
-            "verification": result.verification,
             "timing": {
                 "preMergeDurationS": round(result.pre_merge_duration_s, 2),
                 "mergeDurationS": round(result.merge_duration_s, 2),
@@ -167,7 +153,6 @@ def pipeline(
                 "preMerge": asdict(result.pre_merge),
                 "mergeResult": result.merge_result,
                 "postMerge": asdict(result.post_merge),
-                "verification": result.verification,
                 "timing": {
                     "preMergeDurationS": result.pre_merge_duration_s,
                     "mergeDurationS": result.merge_duration_s,
@@ -192,7 +177,8 @@ def pipeline(
                 f"  Domains: {', '.join(result.pre_merge.domains_analyzed)}",
                 f"  Mean Overlap: {result.pre_merge.mean_overlap:.4f}",
                 f"  Mean Alignment: {result.pre_merge.mean_alignment:.4f}",
-                f"  Transformations Needed: {result.pre_merge.total_transformations_needed}",
+                f"  Mean Curvature Divergence: {result.pre_merge.mean_curvature_divergence:.4f}",
+                f"  Mean Distance: {result.pre_merge.mean_distance:.4f}",
                 "",
                 "MERGE RESULT",
                 f"  Layers: {result.merge_result.get('layer_count')}",

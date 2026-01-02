@@ -40,7 +40,6 @@ except ImportError:
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.interference_predictor import (
     MergeAnalyzer,
-    TransformationType,
     quick_merge_analysis,
 )
 from modelcypher.core.domain.geometry.manifold_curvature import (
@@ -435,8 +434,6 @@ class TestMergeAnalyzer:
 
         # Distant concepts should have LESS overlap than overlapping concepts
         assert result_distant.overlap_score < result_overlap.overlap_score
-        # Measurement confidence should be positive
-        assert result_distant.measurement_confidence > 0.0
 
     def test_overlapping_concepts_have_mechanisms(self, two_overlapping_concepts):
         """Overlapping concepts should have identified mechanisms."""
@@ -449,10 +446,9 @@ class TestMergeAnalyzer:
         predictor = MergeAnalyzer()
         result = predictor.analyze(vol_a, vol_b)
 
-        # Overlapping concepts should have some transformations identified
-        # Type can vary but the analysis should produce meaningful scores
+        # Overlapping concepts should produce meaningful scores
         assert result.overlap_score >= 0
-        assert result.measurement_confidence > 0
+        assert result.alignment_score >= 0
 
     def test_identical_volumes_high_overlap(self, simple_gaussian_samples):
         """Identical volumes should have high overlap score."""
@@ -468,37 +464,6 @@ class TestMergeAnalyzer:
         assert result.distance_score == 0.0
         # Alignment should be perfect
         assert result.alignment_score > 0.99
-
-    def test_result_has_transformation_descriptions(self, two_overlapping_concepts):
-        """Merge analysis result should include transformation descriptions."""
-        samples_a, samples_b = two_overlapping_concepts
-        estimator = RiemannianDensityEstimator()
-
-        vol_a = estimator.estimate_concept_volume("A", samples_a)
-        vol_b = estimator.estimate_concept_volume("B", samples_b)
-
-        predictor = MergeAnalyzer()
-        result = predictor.analyze(vol_a, vol_b)
-
-        # Should have transformation descriptions (even if empty for direct merge)
-        assert isinstance(result.transformation_descriptions, list)
-        assert len(result.transformation_descriptions) > 0
-        # Should have transformations list (may be empty)
-        assert isinstance(result.transformations, list)
-
-    def test_measurement_confidence_bounded(self, two_overlapping_concepts):
-        """Measurement confidence should be in [0, 1]."""
-        samples_a, samples_b = two_overlapping_concepts
-        estimator = RiemannianDensityEstimator()
-
-        vol_a = estimator.estimate_concept_volume("A", samples_a)
-        vol_b = estimator.estimate_concept_volume("B", samples_b)
-
-        predictor = MergeAnalyzer()
-        result = predictor.analyze(vol_a, vol_b)
-
-        assert 0 <= result.measurement_confidence <= 1
-
 
 class TestGlobalMergeAnalysisReport:
     """Tests for global merge analysis."""
@@ -531,11 +496,9 @@ class TestGlobalMergeAnalysisReport:
         assert report.total_pairs == 3
         assert len(report.pair_results) == 3
 
-        # Transformation counts should exist for all transformation types
-        assert len(report.transformation_counts) > 0
-        # Total transformation counts across all pairs
-        total_transformations = sum(report.transformation_counts.values())
-        assert total_transformations >= 0  # Could be 0 if no transformations needed
+        # Global metrics should be computed
+        assert report.mean_overlap >= 0
+        assert report.mean_alignment >= 0
 
     def test_pair_results_have_geometric_measurements(self):
         """Each pair should have geometric measurements."""
@@ -561,7 +524,8 @@ class TestGlobalMergeAnalysisReport:
         for pair, result in report.pair_results.items():
             assert 0 <= result.overlap_score <= 1
             assert 0 <= result.alignment_score <= 1
-            assert result.measurement_confidence >= 0
+            assert result.curvature_divergence >= 0
+            assert result.distance_score >= 0
 
 
 class TestQuickInterferenceCheck:
@@ -612,8 +576,8 @@ class TestQuickInterferenceCheck:
         report = quick_merge_analysis(source, target)
 
         assert report.total_pairs == 0
-        # No pairs means no transformations needed
-        assert len(report.transformation_counts) == 0 or sum(report.transformation_counts.values()) == 0
+        # Empty report should have zero metrics
+        assert report.mean_overlap == 0.0
 
 
 # ============================================================================
@@ -702,7 +666,8 @@ class TestRiemannianDensityProperties:
         eps = 1e-6
         assert -eps <= result.overlap_score <= 1 + eps
         assert -eps <= result.alignment_score <= 1 + eps
-        assert -eps <= result.measurement_confidence <= 1 + eps
+        assert result.curvature_divergence >= -eps
+        assert result.distance_score >= -eps
 
 
 # ============================================================================

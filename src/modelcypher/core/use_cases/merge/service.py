@@ -55,8 +55,8 @@ class PreMergeAnalysis:
     # Global metrics
     mean_overlap: float
     mean_alignment: float
-    transformation_counts: dict[str, int]
-    total_transformations_needed: int
+    mean_curvature_divergence: float
+    mean_distance: float
 
     # Layer predictions (for later verification)
     layer_predictions: dict[int, dict[str, Any]] = field(default_factory=dict)
@@ -103,9 +103,6 @@ class PipelineResult:
     merge_result: dict[str, Any]
     post_merge: PostMergeValidation
 
-    # Verification (if predictions were made)
-    verification: dict[str, Any] | None = None
-
     # Timing
     pre_merge_duration_s: float = 0.0
     merge_duration_s: float = 0.0
@@ -142,7 +139,6 @@ class MergePipelineService:
         transplant_domains: list[str],
         *,
         skip_pre_analysis: bool = False,
-        verify_predictions: bool = True,
     ) -> PipelineResult:
         """Run the complete merge pipeline.
 
@@ -152,8 +148,6 @@ class MergePipelineService:
             output_dir: Output directory for merged model
             transplant_domains: Domains to transplant (e.g., ["mathematical", "logical"])
             skip_pre_analysis: Skip pre-merge interference analysis
-            verify_predictions: Enable prediction verification
-
         Returns:
             PipelineResult with all stage results
         """
@@ -173,8 +167,8 @@ class MergePipelineService:
                 domain_results={},
                 mean_overlap=0.0,
                 mean_alignment=0.0,
-                transformation_counts={},
-                total_transformations_needed=0,
+                mean_curvature_divergence=0.0,
+                mean_distance=0.0,
             )
         else:
             pre_merge = self._run_pre_merge_analysis(
@@ -182,11 +176,6 @@ class MergePipelineService:
             )
         pre_duration = time.time() - pre_start
         logger.info("Pre-merge analysis completed in %.2fs", pre_duration)
-
-        # Store prediction for later verification
-        merge_id = None
-        if verify_predictions and not skip_pre_analysis:
-            merge_id = self._store_prediction(pre_merge)
 
         # Stage 2: Execute merge
         merge_start = time.time()
@@ -204,11 +193,6 @@ class MergePipelineService:
         post_merge = self._extract_post_merge_validation(merge_result, output_dir)
         val_duration = time.time() - val_start
 
-        # Stage 4: Verification (compare predictions to actuals)
-        verification = None
-        if verify_predictions and merge_id:
-            verification = self._verify_predictions(merge_id, merge_result)
-
         return PipelineResult(
             pipeline_id=pipeline_id,
             timestamp=datetime.utcnow().isoformat(),
@@ -218,7 +202,6 @@ class MergePipelineService:
             pre_merge=pre_merge,
             merge_result=self._merge_result_to_dict(merge_result),
             post_merge=post_merge,
-            verification=verification,
             pre_merge_duration_s=pre_duration,
             merge_duration_s=merge_duration,
             validation_duration_s=val_duration,
@@ -239,7 +222,6 @@ class MergePipelineService:
         )
         from modelcypher.core.domain.geometry.interference_predictor import (
             MergeAnalyzer,
-            TransformationType,
         )
         from modelcypher.core.domain.geometry.riemannian_density import (
             RiemannianDensityEstimator,
@@ -304,54 +286,64 @@ class MergePipelineService:
 
             domain_analysis = {
                 "concepts_analyzed": len(common_concepts),
-                "transformation_counts": {t.value: 0 for t in TransformationType},
                 "overlap_scores": [],
                 "alignment_scores": [],
+                "curvature_scores": [],
+                "distance_scores": [],
             }
 
             for concept_id in common_concepts:
                 result = predictor.analyze(
                     source_volumes[concept_id], target_volumes[concept_id]
                 )
-                for t in result.transformations:
-                    domain_analysis["transformation_counts"][t.value] += 1
                 domain_analysis["overlap_scores"].append(result.overlap_score)
                 domain_analysis["alignment_scores"].append(result.alignment_score)
+                domain_analysis["curvature_scores"].append(result.curvature_divergence)
+                domain_analysis["distance_scores"].append(result.distance_score)
 
             if domain_analysis["overlap_scores"]:
                 overlap_arr = backend.array(domain_analysis["overlap_scores"])
                 align_arr = backend.array(domain_analysis["alignment_scores"])
+                curvature_arr = backend.array(domain_analysis["curvature_scores"])
+                distance_arr = backend.array(domain_analysis["distance_scores"])
                 domain_analysis["mean_overlap"] = float(backend.mean(overlap_arr))
                 domain_analysis["mean_alignment"] = float(backend.mean(align_arr))
+                domain_analysis["mean_curvature_divergence"] = float(backend.mean(curvature_arr))
+                domain_analysis["mean_distance"] = float(backend.mean(distance_arr))
             else:
                 domain_analysis["mean_overlap"] = 0.0
                 domain_analysis["mean_alignment"] = 1.0
+                domain_analysis["mean_curvature_divergence"] = 0.0
+                domain_analysis["mean_distance"] = 0.0
 
             del domain_analysis["overlap_scores"]
             del domain_analysis["alignment_scores"]
+            del domain_analysis["curvature_scores"]
+            del domain_analysis["distance_scores"]
             domain_results[domain_name] = domain_analysis
 
         # Compute global metrics
-        global_transformation_counts: dict[str, int] = {}
         all_overlap_scores = []
         all_alignment_scores = []
-        total_transformations = 0
+        all_curvature_scores = []
+        all_distance_scores = []
 
         for dr in domain_results.values():
             all_overlap_scores.append(dr["mean_overlap"])
             all_alignment_scores.append(dr["mean_alignment"])
-            for ttype, count in dr.get("transformation_counts", {}).items():
-                global_transformation_counts[ttype] = (
-                    global_transformation_counts.get(ttype, 0) + count
-                )
-                total_transformations += count
+            all_curvature_scores.append(dr["mean_curvature_divergence"])
+            all_distance_scores.append(dr["mean_distance"])
 
         if all_overlap_scores:
             mean_overlap = float(backend.mean(backend.array(all_overlap_scores)))
             mean_alignment = float(backend.mean(backend.array(all_alignment_scores)))
+            mean_curvature = float(backend.mean(backend.array(all_curvature_scores)))
+            mean_distance = float(backend.mean(backend.array(all_distance_scores)))
         else:
             mean_overlap = 0.0
             mean_alignment = 1.0
+            mean_curvature = 0.0
+            mean_distance = 0.0
 
         return PreMergeAnalysis(
             source_model=source_path,
@@ -361,8 +353,8 @@ class MergePipelineService:
             domain_results=domain_results,
             mean_overlap=mean_overlap,
             mean_alignment=mean_alignment,
-            transformation_counts=global_transformation_counts,
-            total_transformations_needed=total_transformations,
+            mean_curvature_divergence=mean_curvature,
+            mean_distance=mean_distance,
         )
 
     def _extract_domain_activations(
@@ -420,60 +412,6 @@ class MergePipelineService:
             mean_preserved_fraction=transplant_metrics.get("mean_preserved_fraction", 0.0),
             mean_cka_after=geometry_metrics.get("mean_cka_after", 0.0),
         )
-
-    def _store_prediction(self, pre_merge: PreMergeAnalysis) -> str | None:
-        """Store prediction for later verification."""
-        try:
-            from modelcypher.core.use_cases.interference_verification_service import (
-                InterferenceVerificationService,
-            )
-
-            service = InterferenceVerificationService(
-                registry_path=self.verification_registry_path
-            )
-
-            prediction = service.create_prediction_from_analysis(
-                source_model=pre_merge.source_model,
-                target_model=pre_merge.target_model,
-                layer_predictions=pre_merge.layer_predictions,
-                transformation_counts=pre_merge.transformation_counts,
-                config_thresholds={},
-            )
-
-            return prediction.merge_id
-        except Exception as e:
-            logger.warning("Failed to store prediction: %s", e)
-            return None
-
-    def _verify_predictions(
-        self,
-        merge_id: str,
-        merge_result: "UnifiedMergeResult",
-    ) -> dict[str, Any] | None:
-        """Verify predictions against actual merge outcome."""
-        try:
-            from modelcypher.core.use_cases.interference_verification_service import (
-                InterferenceVerificationService,
-            )
-
-            service = InterferenceVerificationService(
-                registry_path=self.verification_registry_path
-            )
-
-            result = service.verify_merge_result(merge_id, merge_result)
-            if result:
-                return {
-                    "merge_id": result.merge_id,
-                    "overlap_delta": result.overlap_delta,
-                    "curvature_delta": result.curvature_delta,
-                    "alignment_delta": result.alignment_delta,
-                    "transformation_accuracy": result.transformation_accuracy,
-                    "mean_absolute_error": result.mean_absolute_error,
-                }
-            return None
-        except Exception as e:
-            logger.warning("Failed to verify predictions: %s", e)
-            return None
 
     def _merge_result_to_dict(self, merge_result: "UnifiedMergeResult") -> dict[str, Any]:
         """Convert merge result to dictionary."""

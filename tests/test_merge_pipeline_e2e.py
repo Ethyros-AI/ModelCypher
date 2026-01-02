@@ -72,7 +72,6 @@ def test_pipeline_forwards_graft_mask_to_transplant(monkeypatch) -> None:
     monkeypatch.setattr(pipeline, "infer_hidden_dim", fake_infer_hidden_dim)
 
     config = UnifiedMergeConfig(
-        probe_mode="fast",
         transplant_domains=("mathematical",),
     )
 
