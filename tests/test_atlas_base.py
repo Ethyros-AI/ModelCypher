@@ -25,15 +25,22 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.agents.atlas_base import (
     AtlasConcept,
     BaseAtlas,
     BaseAtlasConfiguration,
     BaseAtlasSignature,
 )
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.embedding import EmbeddingProvider
+
+
+def _eps() -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array([1.0]))
 
 
 # Test implementation of AtlasConcept
@@ -116,23 +123,12 @@ class TestBaseAtlasConfiguration:
         config = BaseAtlasConfiguration()
 
         assert config.enabled is True
-        assert config.max_characters_per_text == 4096
-        assert config.top_k == 8
-        assert config.use_volume_representation is False
 
     def test_custom_values(self):
         """Test custom configuration values."""
-        config = BaseAtlasConfiguration(
-            enabled=False,
-            max_characters_per_text=2048,
-            top_k=5,
-            use_volume_representation=True,
-        )
+        config = BaseAtlasConfiguration(enabled=False)
 
         assert config.enabled is False
-        assert config.max_characters_per_text == 2048
-        assert config.top_k == 5
-        assert config.use_volume_representation is True
 
 
 class TestBaseAtlasSignature:
@@ -173,6 +169,7 @@ class TestBaseAtlasSignature:
 
     def test_l2_normalized(self):
         """Test L2 normalization."""
+        eps = _eps()
         sig = BaseAtlasSignature(
             concept_ids=["a", "b"],
             values=[3.0, 4.0],
@@ -181,8 +178,8 @@ class TestBaseAtlasSignature:
         normalized = sig.l2_normalized()
 
         assert normalized.concept_ids == ["a", "b"]
-        assert normalized.values[0] == pytest.approx(0.6)
-        assert normalized.values[1] == pytest.approx(0.8)
+        assert abs(normalized.values[0] - 0.6) <= eps
+        assert abs(normalized.values[1] - 0.8) <= eps
 
     def test_cosine_similarity(self):
         """Test cosine similarity between signatures."""
@@ -197,7 +194,7 @@ class TestBaseAtlasSignature:
 
         similarity = sig1.cosine_similarity(sig2)
 
-        assert similarity == pytest.approx(1.0)
+        assert abs(similarity - 1.0) <= _eps()
 
     def test_cosine_similarity_orthogonal(self):
         """Test cosine similarity for orthogonal vectors."""
@@ -212,7 +209,7 @@ class TestBaseAtlasSignature:
 
         similarity = sig1.cosine_similarity(sig2)
 
-        assert similarity == pytest.approx(0.0)
+        assert abs(similarity) <= _eps()
 
 
 class TestAtlasConcept:
@@ -285,10 +282,9 @@ class TestBaseAtlas:
         assert sig is None
 
     @pytest.mark.asyncio
-    async def test_signature_text_capped(self):
-        """Test that long text is truncated to max_characters_per_text."""
-        config = BaseAtlasConfiguration(max_characters_per_text=10)
-
+    async def test_signature_text_trimmed(self):
+        """Test that text is trimmed before embedding."""
+        config = BaseAtlasConfiguration()
         class RecordingEmbedder:
             def __init__(self):
                 self.texts: list[str] = []
@@ -299,13 +295,13 @@ class TestBaseAtlas:
 
         embedder = RecordingEmbedder()
         atlas = MockAtlas(embedder=embedder, configuration=config)
+        text = "  This is a very long text that should be preserved.  "
 
-        await atlas.signature("This is a very long text that should be truncated")
+        await atlas.signature(text)
 
-        # The last text embedded (the input) should be truncated
-        # First 3 are concept texts, then the input
+        # First 3 are concept texts, then the input.
         input_text = embedder.texts[-1]
-        assert len(input_text) <= 10
+        assert input_text == text.strip()
 
     @pytest.mark.asyncio
     async def test_embeddings_cached(self, atlas):
@@ -347,14 +343,14 @@ class TestNormalizedEntropy:
         values = [1.0, 1.0, 1.0, 1.0]
         entropy = BaseAtlas.normalized_entropy(values)
 
-        assert entropy == pytest.approx(1.0)
+        assert abs(entropy - 1.0) <= _eps()
 
     def test_single_peak(self):
         """Test entropy of single-peak distribution is 0.0."""
         values = [1.0, 0.0, 0.0, 0.0]
         entropy = BaseAtlas.normalized_entropy(values)
 
-        assert entropy == pytest.approx(0.0)
+        assert abs(entropy) <= _eps()
 
     def test_moderate_entropy(self):
         """Test entropy of moderate distribution."""
@@ -363,7 +359,7 @@ class TestNormalizedEntropy:
 
         # Entropy of [0.5, 0.5] = -0.5*log(0.5) - 0.5*log(0.5) = log(2)
         # Normalized by log(2) = 1.0
-        assert entropy == pytest.approx(1.0)
+        assert abs(entropy - 1.0) <= _eps()
 
     def test_zero_values_returns_none(self):
         """Test all-zero values returns None."""
@@ -378,11 +374,11 @@ class TestNormalizedEntropy:
         entropy = BaseAtlas.normalized_entropy(values)
 
         # After clamping: [0.0, 1.0, 0.0, 0.0] -> single peak -> 0
-        assert entropy == pytest.approx(0.0)
+        assert abs(entropy) <= _eps()
 
     def test_single_nonzero_value(self):
         """Test single non-zero value has 0 entropy."""
         values = [0.0, 0.0, 5.0]
         entropy = BaseAtlas.normalized_entropy(values)
 
-        assert entropy == pytest.approx(0.0)
+        assert abs(entropy) <= _eps()

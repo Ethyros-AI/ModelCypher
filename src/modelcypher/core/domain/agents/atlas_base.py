@@ -22,7 +22,7 @@ including EmotionConceptAtlas, ComputationalGateAtlas, SemanticPrimeAtlas, and
 SequenceInvariantAtlas.
 
 Common patterns extracted:
-- Configuration dataclass with enabled, max_characters_per_text, top_k
+- Configuration dataclass with enabled flag
 - Concept protocol with id, canonical_name
 - Signature computation (text → embedding → cosine similarities)
 - Embedding caching
@@ -57,17 +57,9 @@ class BaseAtlasConfiguration:
 
     Attributes:
         enabled: Whether the atlas is active. When False, signature() returns None.
-        max_characters_per_text: Maximum text length for embedding. Longer texts
-            are truncated to prevent embedding API issues.
-        top_k: Number of top concepts to return in filtered signature views.
-        use_volume_representation: If True, use CABE-4 Riemannian density volumes
-            instead of centroid embeddings (slower but more accurate).
     """
 
     enabled: bool = True
-    max_characters_per_text: int = 4096
-    top_k: int = 8
-    use_volume_representation: bool = False
 
 
 @runtime_checkable
@@ -261,8 +253,7 @@ class BaseAtlas(ABC, Generic[C, S]):
             if len(concept_embeddings) != len(self.inventory):
                 return None
 
-            capped = trimmed[: self.config.max_characters_per_text]
-            embeddings = await self.embedder.embed([capped])
+            embeddings = await self.embedder.embed([trimmed])
             if not embeddings:
                 return None
 
