@@ -51,61 +51,35 @@ class TestConflictScoreResult:
         """Should create with raw measurements only."""
         result = ConflictScoreResult(
             mean_kl=0.3,
-            base_approval_rate=0.9,
+            base_frontier_rate=0.9,
             conflict_score=0.03,
         )
 
         assert result.mean_kl == 0.3
-        assert result.base_approval_rate == 0.9
+        assert result.base_frontier_rate == 0.9
         assert result.conflict_score == 0.03
 
-    def test_exceeds_threshold_false(self):
-        """Low conflict_score should not exceed threshold."""
-        result = ConflictScoreResult(
-            mean_kl=0.3,
-            base_approval_rate=0.9,
-            conflict_score=0.03,
-        )
-
-        assert not result.exceeds_threshold(0.3)
-
-    def test_exceeds_threshold_true(self):
-        """High conflict_score should exceed threshold."""
-        result = ConflictScoreResult(
-            mean_kl=2.0,
-            base_approval_rate=0.3,
-            conflict_score=1.4,
-        )
-
-        assert result.exceeds_threshold(0.3)
-
     def test_conflict_score_formula(self):
-        """Verify conflict_score = KL × (1 - approval)."""
+        """Verify conflict_score = KL × (1 - frontier_rate)."""
         result = ConflictScoreResult(
             mean_kl=2.0,
-            base_approval_rate=0.3,
+            base_frontier_rate=0.3,
             conflict_score=1.4,  # 2.0 * (1 - 0.3) = 1.4
         )
 
-        expected = result.mean_kl * (1.0 - result.base_approval_rate)
-        assert abs(result.conflict_score - expected) < 0.01
+        expected = result.mean_kl * (1.0 - result.base_frontier_rate)
+        backend = get_default_backend()
+        assert abs(result.conflict_score - expected) < _eps(backend, result.conflict_score)
 
 
 class TestConflictScoreCalculator:
     """Tests for ConflictScoreCalculator."""
 
     def test_initialization(self):
-        """Should initialize with default top_k."""
+        """Should initialize with a backend."""
         calc = ConflictScoreCalculator()
 
-        assert calc.top_k == 10
-        assert calc.epsilon > 0
-
-    def test_custom_top_k(self):
-        """Should accept custom top_k."""
-        calc = ConflictScoreCalculator(top_k=5)
-
-        assert calc.top_k == 5
+        assert calc._backend is not None
 
     def test_flatten_to_vocab_1d(self):
         """1D input should pass through."""
@@ -127,7 +101,7 @@ class TestConflictScoreCalculator:
 
     def test_compute_identical_logits(self):
         """Identical logits should have zero KL."""
-        calc = ConflictScoreCalculator(top_k=5)
+        calc = ConflictScoreCalculator()
         logits = mx.array([1.0, 2.0, 3.0, 4.0, 5.0])
 
         result = calc.compute(
@@ -137,15 +111,16 @@ class TestConflictScoreCalculator:
         )
 
         # KL should be ~0 for identical distributions
-        assert result.mean_kl < 0.01
-        # Top token should be approved
-        assert result.base_approval_rate == 1.0
+        backend = get_default_backend()
+        assert result.mean_kl < _eps(backend, result.mean_kl)
+        # Top token should be in frontier
+        assert result.base_frontier_rate == 1.0
         # Conflict should be ~0
-        assert result.conflict_score < 0.01
+        assert result.conflict_score < _eps(backend, result.conflict_score)
 
     def test_compute_different_logits(self):
         """Different logits should have positive KL."""
-        calc = ConflictScoreCalculator(top_k=5)
+        calc = ConflictScoreCalculator()
         base = mx.array([5.0, 4.0, 3.0, 2.0, 1.0])
         adapted = mx.array([1.0, 2.0, 3.0, 4.0, 5.0])  # Reversed
 
@@ -158,57 +133,62 @@ class TestConflictScoreCalculator:
         # KL should be positive
         assert result.mean_kl > 0
 
-    def test_is_in_top_k(self):
-        """Should correctly identify top-K membership."""
+    def test_is_in_frontier(self):
+        """Should correctly identify frontier membership."""
         calc = ConflictScoreCalculator()
-        logits = mx.array([1.0, 5.0, 3.0, 4.0, 2.0])  # Sorted order: [1, 3, 4, 2, 0]
+        logits = mx.array([10.0, 9.5, 2.0, 1.0, 0.5])
 
-        # Token 1 (value 5.0) is top
-        assert calc._is_in_top_k(logits, token_id=1, k=3)
-        # Token 0 (value 1.0) is lowest
-        assert not calc._is_in_top_k(logits, token_id=0, k=3)
+        # Largest gap is between 9.5 and 2.0, so frontier size = 2
+        assert calc._is_in_frontier(logits, token_id=0)
+        assert calc._is_in_frontier(logits, token_id=1)
+        assert not calc._is_in_frontier(logits, token_id=2)
 
 
 class TestConflictAnalysis:
     """Tests for ConflictAnalysis static computation - raw measurements only."""
 
-    def test_compute_high_approval(self):
-        """High approval rate with raw measurements."""
+    def test_compute_high_frontier_rate(self):
+        """High frontier rate with raw measurements."""
         result = ConflictAnalysis.compute(
             kl_divergences=[0.1, 0.2, 0.1, 0.15],
-            base_approved_top_k=[True, True, True, True],
+            base_frontier_hit=[True, True, True, True],
         )
 
         assert result is not None
-        assert result.base_approval_rate == 1.0
+        assert result.base_frontier_rate == 1.0
         assert result.token_count == 4
-        # Low KL + high approval = low conflict
-        assert result.conflict_score < 0.01
+        # Low KL + high frontier rate = low conflict
+        backend = get_default_backend()
+        assert result.conflict_score < _eps(backend, result.conflict_score)
 
-    def test_compute_mid_approval(self):
-        """Mid approval rate with raw measurements."""
+    def test_compute_mid_frontier_rate(self):
+        """Mid frontier rate with raw measurements."""
         result = ConflictAnalysis.compute(
             kl_divergences=[0.3, 0.4, 0.5, 0.3, 0.4, 0.3, 0.4],  # Low KL
-            base_approved_top_k=[True, True, True, True, True, False, True],  # 6/7 = ~85%
+            base_frontier_hit=[True, True, True, True, True, False, True],  # 6/7
         )
 
         assert result is not None
-        assert abs(result.base_approval_rate - 6 / 7) < 0.01
+        backend = get_default_backend()
+        assert abs(result.base_frontier_rate - 6 / 7) < _eps(
+            backend, result.base_frontier_rate
+        )
         assert result.token_count == 7
 
-    def test_compute_low_approval(self):
-        """Low approval rate with raw measurements."""
+    def test_compute_low_frontier_rate(self):
+        """Low frontier rate with raw measurements."""
         result = ConflictAnalysis.compute(
             kl_divergences=[2.0, 3.0, 2.5, 3.0],
-            base_approved_top_k=[False, False, False, False],
+            base_frontier_hit=[False, False, False, False],
         )
 
         assert result is not None
-        assert result.base_approval_rate == 0.0
+        assert result.base_frontier_rate == 0.0
         assert result.token_count == 4
-        # High KL + zero approval = high conflict
+        # High KL + zero frontier rate = high conflict
         mean_kl = sum([2.0, 3.0, 2.5, 3.0]) / 4
-        assert abs(result.conflict_score - mean_kl) < 0.01
+        backend = get_default_backend()
+        assert abs(result.conflict_score - mean_kl) < _eps(backend, result.conflict_score)
 
     def test_compute_empty(self):
         """Empty input should return None."""
@@ -220,23 +200,12 @@ class TestConflictAnalysis:
         """Should skip None values."""
         result = ConflictAnalysis.compute(
             kl_divergences=[0.1, None, 0.2, 0.1],
-            base_approved_top_k=[True, None, True, True],
+            base_frontier_hit=[True, None, True, True],
         )
 
         assert result is not None
-        assert result.base_approval_rate == 1.0
+        assert result.base_frontier_rate == 1.0
         assert result.token_count == 3  # Only 3 valid pairs
-
-    def test_exceeds_threshold(self):
-        """Should correctly identify when conflict exceeds threshold."""
-        result = ConflictAnalysis.compute(
-            kl_divergences=[2.0, 3.0],
-            base_approved_top_k=[False, False],
-        )
-
-        assert result is not None
-        assert result.exceeds_threshold(0.5)  # High conflict
-        assert not result.exceeds_threshold(10.0)  # Very high threshold
 
 
 # =============================================================================
@@ -255,7 +224,7 @@ class TestKLDivergenceInvariants:
         """
         backend = get_default_backend()
         backend.random_seed(seed)
-        calc = ConflictScoreCalculator(top_k=5)
+        calc = ConflictScoreCalculator()
 
         base_data = backend.random_normal((100,))
         adapted_data = backend.random_normal((100,))
@@ -277,7 +246,7 @@ class TestKLDivergenceInvariants:
 
         Mathematical property: Self-divergence is zero.
         """
-        calc = ConflictScoreCalculator(top_k=5)
+        calc = ConflictScoreCalculator()
 
         logits = mx.array([1.0, 2.0, 3.0, 4.0, 5.0])
 
@@ -287,7 +256,8 @@ class TestKLDivergenceInvariants:
             sampled_token=4,
         )
 
-        assert result.mean_kl < 0.01  # Approximately zero
+        backend = get_default_backend()
+        assert result.mean_kl < _eps(backend, result.mean_kl)
 
     @pytest.mark.parametrize("seed", range(5))
     def test_kl_asymmetry(self, seed: int) -> None:
@@ -297,7 +267,7 @@ class TestKLDivergenceInvariants:
         """
         backend = get_default_backend()
         backend.random_seed(seed)
-        calc = ConflictScoreCalculator(top_k=5)
+        calc = ConflictScoreCalculator()
 
         # Generate random uniform values in [0.1, 5.0]
         p_data = backend.random_uniform(low=0.1, high=5.0, shape=(100,))
@@ -316,18 +286,15 @@ class TestKLDivergenceInvariants:
         assert result_qp.mean_kl >= 0.0
 
 
-class TestApprovalRateInvariants:
-    """Tests for approval rate bounds."""
+class TestFrontierRateInvariants:
+    """Tests for frontier rate bounds."""
 
     @pytest.mark.parametrize("seed", range(5))
-    def test_approval_rate_bounded_zero_one(self, seed: int) -> None:
-        """Approval rate must be in [0, 1].
-
-        Mathematical property: Approval rate is a proportion.
-        """
+    def test_frontier_rate_bounded_zero_one(self, seed: int) -> None:
+        """Frontier rate must be in [0, 1]."""
         backend = get_default_backend()
         backend.random_seed(seed)
-        calc = ConflictScoreCalculator(top_k=5)
+        calc = ConflictScoreCalculator()
 
         base_data = backend.random_normal((100,))
         adapted_data = backend.random_normal((100,))
@@ -342,11 +309,11 @@ class TestApprovalRateInvariants:
             sampled_token=0,
         )
 
-        assert 0.0 <= result.base_approval_rate <= 1.0
+        assert 0.0 <= result.base_frontier_rate <= 1.0
 
-    def test_approval_rate_one_for_top_token(self) -> None:
-        """Approval rate should be 1.0 when sampling top token of base."""
-        calc = ConflictScoreCalculator(top_k=5)
+    def test_frontier_rate_one_for_top_token(self) -> None:
+        """Frontier rate should be 1.0 when sampling top token of base."""
+        calc = ConflictScoreCalculator()
 
         # Token 4 has highest logit (5.0)
         base = mx.array([1.0, 2.0, 3.0, 4.0, 5.0])
@@ -358,11 +325,11 @@ class TestApprovalRateInvariants:
             sampled_token=4,  # Top token in base
         )
 
-        assert result.base_approval_rate == 1.0
+        assert result.base_frontier_rate == 1.0
 
-    def test_approval_rate_zero_for_bottom_token(self) -> None:
-        """Approval rate should be 0.0 when sampling non-top-k token."""
-        calc = ConflictScoreCalculator(top_k=3)
+    def test_frontier_rate_zero_for_bottom_token(self) -> None:
+        """Frontier rate should be 0.0 when sampling non-frontier token."""
+        calc = ConflictScoreCalculator()
 
         # Token 0 has lowest logit (1.0), not in top-3
         base = mx.array([1.0, 2.0, 3.0, 4.0, 5.0])
@@ -374,9 +341,8 @@ class TestApprovalRateInvariants:
             sampled_token=0,  # Bottom token in base
         )
 
-        # This is a single sample, so approval rate is 0 or 1
-        # Token 0 is NOT in top-3 of base, so approval_rate = 0
-        assert result.base_approval_rate == 0.0
+        # This is a single sample, so frontier rate is 0 or 1
+        assert result.base_frontier_rate == 0.0
 
 
 class TestConflictScoreInvariants:
@@ -390,7 +356,7 @@ class TestConflictScoreInvariants:
         """
         backend = get_default_backend()
         backend.random_seed(seed)
-        calc = ConflictScoreCalculator(top_k=5)
+        calc = ConflictScoreCalculator()
 
         base_data = backend.random_normal((100,))
         adapted_data = backend.random_normal((100,))
@@ -409,7 +375,7 @@ class TestConflictScoreInvariants:
 
     def test_identical_logits_no_conflict(self) -> None:
         """Identical logits should have zero conflict score."""
-        calc = ConflictScoreCalculator(top_k=5)
+        calc = ConflictScoreCalculator()
 
         logits = mx.array([1.0, 2.0, 3.0, 4.0, 5.0])
 
@@ -419,5 +385,5 @@ class TestConflictScoreInvariants:
             sampled_token=4,
         )
 
-        assert result.conflict_score < 0.01
-        assert not result.exceeds_threshold(0.01)  # Very low threshold
+        backend = get_default_backend()
+        assert result.conflict_score < _eps(backend, result.conflict_score)

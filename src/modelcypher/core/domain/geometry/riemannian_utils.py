@@ -687,7 +687,7 @@ class RiemannianGeometry:
 
         # Count disconnected pairs (inf values represent genuinely infinite
         # geodesic distance between disconnected manifold components)
-        inf_count = int(backend.to_numpy(backend.sum(near_inf_indicator)).item())
+        inf_count = int(backend.to_scalar(backend.sum(near_inf_indicator)))
         connected = inf_count == 0
 
         # Create indicator for "x < near_zero_eps" (i.e., near_zero_eps - x > 0)

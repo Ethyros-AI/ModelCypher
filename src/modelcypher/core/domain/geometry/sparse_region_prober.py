@@ -284,7 +284,7 @@ class SparseRegionProber:
             b = get_default_backend()
             norm = b.norm(hidden_state)
             b.eval(norm)
-            return float(b.to_numpy(norm).item())
+            return float(b.to_scalar(norm))
 
         total = SparseRegionProber._sum_squares(hidden_state)
         return math.sqrt(total)

@@ -130,7 +130,7 @@ class GradientSmoothnessEstimator:
                 flattened = b.reshape(v, (-1,))
                 sq_sum = b.sum(flattened * flattened)
                 b.eval(sq_sum)
-                squared_norm += float(b.to_numpy(sq_sum).item())
+                squared_norm += float(b.to_scalar(sq_sum))
             total_norm_sum += squared_norm**0.5
 
         mean_norm = total_norm_sum / count
@@ -146,7 +146,7 @@ class GradientSmoothnessEstimator:
                     flattened = b.reshape(diff, (-1,))
                     sq_sum = b.sum(flattened * flattened)
                     b.eval(sq_sum)
-                    sample_diff_sq += float(b.to_numpy(sq_sum).item())
+                    sample_diff_sq += float(b.to_scalar(sq_sum))
             variance_sum += sample_diff_sq
 
         variance = variance_sum / (count - 1)
@@ -160,7 +160,7 @@ class GradientSmoothnessEstimator:
             flattened = b.reshape(v, (-1,))
             sq_sum = b.sum(flattened * flattened)
             b.eval(sq_sum)
-            mean_grad_norm_sq += float(b.to_numpy(sq_sum).item())
+            mean_grad_norm_sq += float(b.to_scalar(sq_sum))
 
         snr = mean_grad_norm_sq / (variance + _MACHINE_EPS)
 

@@ -295,7 +295,7 @@ class LinguisticCalorimeter:
             # Sample next token
             if temperature <= 0:
                 # Greedy
-                next_token = int(b.to_numpy(b.argmax(logits[0, -1, :], axis=-1)).item())
+                next_token = int(b.to_scalar(b.argmax(logits[0, -1, :], axis=-1)))
             else:
                 # Temperature sampling
                 scaled_logits = logits[0, -1, :] / temperature
@@ -303,9 +303,9 @@ class LinguisticCalorimeter:
                 b.eval(probs)
                 # Use random_categorical if available, else argmax
                 if hasattr(b, "random_categorical"):
-                    next_token = int(b.to_numpy(b.random_categorical(b.log(probs))).item())
+                    next_token = int(b.to_scalar(b.random_categorical(b.log(probs))))
                 else:
-                    next_token = int(b.to_numpy(b.argmax(probs, axis=-1)).item())
+                    next_token = int(b.to_scalar(b.argmax(probs, axis=-1)))
 
             generated_tokens.append(next_token)
             current_tokens.append(next_token)

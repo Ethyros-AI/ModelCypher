@@ -578,7 +578,7 @@ class SectionalCurvatureEstimator:
 
         # Regularize for numerical stability (dtype-derived)
         reg = regularization_epsilon(backend, cov)
-        max_abs = float(backend.to_numpy(backend.max(backend.abs(cov))).item())
+        max_abs = float(backend.to_scalar(backend.max(backend.abs(cov))))
         reg_scale = reg * max_abs if max_abs > 0 else reg
         cov = cov + reg_scale * backend.eye(d)
 
@@ -711,7 +711,7 @@ class SectionalCurvatureEstimator:
         # Compute Christoffel symbols
         # Regularize metric for stable inversion - no fallback to identity
         reg = regularization_epsilon(backend, g)
-        max_abs = float(backend.to_numpy(backend.max(backend.abs(g))).item())
+        max_abs = float(backend.to_scalar(backend.max(backend.abs(g))))
         reg_scale = reg * max_abs if max_abs > 0 else reg
         g_reg = g + reg_scale * backend.eye(d)
         g_inv = backend.inv(g_reg)
@@ -870,7 +870,7 @@ class SectionalCurvatureEstimator:
             # Shape operator = g^{-1} @ H
             # Regularize metric for stable inversion - no fallback
             reg = regularization_epsilon(backend, metric)
-            max_abs = float(backend.to_numpy(backend.max(backend.abs(metric))).item())
+            max_abs = float(backend.to_scalar(backend.max(backend.abs(metric))))
             reg_scale = reg * max_abs if max_abs > 0 else reg
             metric_reg = metric + reg_scale * backend.eye(d)
             metric_inv = backend.inv(metric_reg)
@@ -1325,7 +1325,7 @@ class OllivierRicciCurvature:
         )
 
         if epsilon is None:
-            cost_max = float(backend.to_numpy(backend.max(cost_matrix)).item())
+            cost_max = float(backend.to_scalar(backend.max(cost_matrix)))
             epsilon = cost_max * eps if cost_max > 0 else eps
 
         if threshold is None:

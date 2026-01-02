@@ -593,7 +593,7 @@ def _probe_precise(
                             # Ensure proper rotation (det = +1), not reflection
                             det_val = b.det(R_procrustes)
                             b.eval(det_val)
-                            if float(b.to_numpy(det_val).item()) < 0:
+                            if float(b.to_scalar(det_val)) < 0:
                                 # Fix reflection by negating last column of U
                                 U_fixed = b.concatenate([U[:, :-1], -U[:, -1:]], axis=1)
                                 R_procrustes = b.matmul(U_fixed, Vt)

@@ -194,21 +194,21 @@ class DARESparsityAnalyzer:
             layer_non_zero_arr = b.sum(flat > 0)
             b.eval(layer_max_arr, layer_mean_arr, layer_sum_sq_arr, layer_non_zero_arr)
 
-            layer_max = float(b.to_numpy(layer_max_arr).item())
-            layer_mean = float(b.to_numpy(layer_mean_arr).item())
-            layer_non_zero = int(b.to_numpy(layer_non_zero_arr).item())
+            layer_max = float(b.to_scalar(layer_max_arr))
+            layer_mean = float(b.to_scalar(layer_mean_arr))
+            layer_non_zero = int(b.to_scalar(layer_non_zero_arr))
 
             if layer_non_zero > 0:
                 sorted_layer = b.sort(flat)
                 first_nz_idx = layer_count - layer_non_zero
                 layer_min_nz = sorted_layer[first_nz_idx : first_nz_idx + 1]
                 b.eval(layer_min_nz)
-                min_non_zero = min(min_non_zero, float(b.to_numpy(layer_min_nz).item()))
+                min_non_zero = min(min_non_zero, float(b.to_scalar(layer_min_nz)))
 
             global_max = max(global_max, layer_max)
             total_count += layer_count
             total_sum += layer_mean * layer_count
-            total_sum_sq += float(b.to_numpy(layer_sum_sq_arr).item())
+            total_sum_sq += float(b.to_scalar(layer_sum_sq_arr))
             non_zero_count += layer_non_zero
 
         if total_count == 0 or global_max == 0:
@@ -237,7 +237,7 @@ class DARESparsityAnalyzer:
                 partitioned = b.partition(all_magnitudes, kth)
                 val = partitioned[kth : kth + 1]
                 b.eval(val)
-                return float(b.to_numpy(val).item())
+                return float(b.to_scalar(val))
 
             p1 = find_percentile_fast(0.01)
             p5 = find_percentile_fast(0.05)
@@ -250,7 +250,7 @@ class DARESparsityAnalyzer:
             sample_indices = [int(i * total_count / 1000) for i in range(1000)]
             sorted_mags = b.sort(all_magnitudes)
             b.eval(sorted_mags)
-            samples = [float(b.to_numpy(sorted_mags[idx : idx + 1]).item()) for idx in sample_indices]
+            samples = [float(b.to_scalar(sorted_mags[idx : idx + 1])) for idx in sample_indices]
             gap_threshold = find_magnitude_gap_threshold(samples, eps=eps)
         else:
             def count_below(threshold: float) -> int:
@@ -258,7 +258,7 @@ class DARESparsityAnalyzer:
                 for flat in per_layer_arrays.values():
                     cnt = b.sum(flat <= threshold)
                     b.eval(cnt)
-                    total += int(b.to_numpy(cnt).item())
+                    total += int(b.to_scalar(cnt))
                 return total
 
             def find_percentile(p: float) -> float:
@@ -292,15 +292,15 @@ class DARESparsityAnalyzer:
             layer_mean_arr = b.mean(flat)
             b.eval(layer_max_arr, layer_mean_arr)
 
-            layer_max = float(b.to_numpy(layer_max_arr).item())
-            layer_mean = float(b.to_numpy(layer_mean_arr).item())
+            layer_max = float(b.to_scalar(layer_max_arr))
+            layer_mean = float(b.to_scalar(layer_mean_arr))
 
             if layer_max == 0:
                 layer_droppable = layer_count
             else:
                 droppable_arr = b.sum(flat <= drop_threshold)
                 b.eval(droppable_arr)
-                layer_droppable = int(b.to_numpy(droppable_arr).item())
+                layer_droppable = int(b.to_scalar(droppable_arr))
 
             total_droppable += layer_droppable
             layer_sparsity = float(layer_droppable) / float(layer_count) if layer_count > 0 else 1.0

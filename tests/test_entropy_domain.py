@@ -31,6 +31,7 @@ except ImportError:
     mx = None  # type: ignore
 
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.entropy.conflict_score import ConflictScoreCalculator
 from modelcypher.core.domain.entropy.entropy_tracker import (
     EntropyTracker,
@@ -44,6 +45,12 @@ from modelcypher.core.domain.entropy.logit_entropy_calculator import (
     LogitEntropySample,
 )
 from modelcypher.core.domain.entropy.metrics_ring_buffer import MetricsRingBuffer
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
+
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return division_epsilon(backend, backend.array(list(values)))
 
 
 def _create_test_baseline() -> CalibratedBaseline:
@@ -80,8 +87,9 @@ def test_logit_entropy_calculator_uniform():
 
     entropy, variance = calculator.compute(logits)
 
-    assert entropy == pytest.approx(math.log(vocab_size), rel=1e-5)
-    assert variance == pytest.approx(0.0)
+    expected_entropy = math.log(vocab_size)
+    assert abs(entropy - expected_entropy) < _eps(entropy, expected_entropy)
+    assert abs(variance - 0.0) < _eps(variance, 0.0)
 
 
 def test_logit_entropy_calculator_delta():
@@ -93,7 +101,7 @@ def test_logit_entropy_calculator_delta():
     calculator = LogitEntropyCalculator(top_k=10)
     entropy, _ = calculator.compute(logits)
 
-    assert entropy == pytest.approx(0.0, abs=1e-5)
+    assert abs(entropy - 0.0) < _eps(entropy, 0.0)
 
 
 def test_logit_entropy_batch():
@@ -102,7 +110,8 @@ def test_logit_entropy_batch():
     results = calculator.compute_batch(logits_batch)
 
     assert len(results) == 2
-    assert results[0][0] == pytest.approx(math.log(10))
+    expected_entropy = math.log(10)
+    assert abs(results[0][0] - expected_entropy) < _eps(results[0][0], expected_entropy)
 
 
 # --- ConflictScoreCalculator Tests ---
@@ -113,23 +122,23 @@ def test_conflict_score_calculation():
     base_logits = mx.array([10.0, 0.0, 0.0])
     adapted_logits = mx.array([0.0, 10.0, 0.0])
 
-    calculator = ConflictScoreCalculator(top_k=1)
+    calculator = ConflictScoreCalculator()
     result = calculator.compute(base_logits, adapted_logits, sampled_token=1)
 
-    assert result.mean_kl > 0.5
-    assert result.base_approval_rate == 0.0
+    assert result.mean_kl > 0.0
+    assert result.base_frontier_rate == 0.0
     assert result.conflict_score > 0.0
 
 
 def test_conflict_score_agreement():
     """Test conflict score with identical distributions."""
     logits = mx.array([10.0, 0.0, 0.0])
-    calculator = ConflictScoreCalculator(top_k=3)
+    calculator = ConflictScoreCalculator()
     result = calculator.compute(logits, logits, sampled_token=0)
 
-    assert result.mean_kl == pytest.approx(0.0, abs=1e-3)
-    assert result.base_approval_rate == 1.0
-    assert result.conflict_score == pytest.approx(0.0, abs=1e-3)
+    assert abs(result.mean_kl - 0.0) < _eps(result.mean_kl, 0.0)
+    assert result.base_frontier_rate == 1.0
+    assert abs(result.conflict_score - 0.0) < _eps(result.conflict_score, 0.0)
 
 
 # --- EntropyTracker Tests ---
@@ -173,8 +182,8 @@ def test_entropy_tracker_state_measurements():
     asyncio.run(record_high_entropy())
 
     assert tracker.current_entropy == 4.2
-    assert tracker.current_variance <= 0.2
-    assert tracker.current_z_score == pytest.approx(1.7)
+    assert abs(tracker.current_variance - 0.1) < _eps(tracker.current_variance, 0.1)
+    assert abs(tracker.current_z_score - 1.7) < _eps(tracker.current_z_score, 1.7)
     tracker.end_session()
 
 

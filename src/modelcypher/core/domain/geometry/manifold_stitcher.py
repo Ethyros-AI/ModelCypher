@@ -135,7 +135,7 @@ def _ensure_proper_rotation(
         # Compute determinant using backend
         det_arr = backend.det(omega)
         backend.eval(det_arr)
-        det_val = float(backend.to_numpy(det_arr).item())
+        det_val = float(backend.to_scalar(det_arr))
 
         if det_val < 0:
             # Flip last column of U to change sign of determinant
@@ -195,7 +195,7 @@ class ContinuousFingerprint:
             probs = exp_acts / (b.sum(exp_acts) + eps)
 
             log_probs = b.log(probs + eps)
-            entropy = -float(b.to_numpy(b.sum(probs * log_probs)).item())
+            entropy = -float(b.to_scalar(b.sum(probs * log_probs)))
             max_entropy = math.log(max(len(activations), 1))
             entropies[layer] = min(max(entropy / max_entropy, 0.0), 1.0) if max_entropy > 0 else 0.0
 
@@ -203,7 +203,7 @@ class ContinuousFingerprint:
             max_abs = b.max(abs_acts)
             eps = division_epsilon(b, abs_acts)
             threshold = b.maximum(max_abs * eps, b.array(eps))
-            near_zero = float(b.to_numpy(b.sum(abs_acts <= threshold)).item())
+            near_zero = float(b.to_scalar(b.sum(abs_acts <= threshold)))
             sparsities[layer] = near_zero / max(len(activations), 1)
 
         return ContinuousFingerprint(
@@ -569,9 +569,9 @@ class ManifoldStitcher:
         min_len = min(s_vec.size, t_vec.size)
         s_trunc, t_trunc = s_vec[:min_len], t_vec[:min_len]
 
-        dot_prod = float(b.to_numpy(b.sum(s_trunc * t_trunc)).item())
-        s_norm = float(b.to_numpy(b.norm(s_vec)).item())
-        t_norm = float(b.to_numpy(b.norm(t_vec)).item())
+        dot_prod = float(b.to_scalar(b.sum(s_trunc * t_trunc)))
+        s_norm = float(b.to_scalar(b.norm(s_vec)))
+        t_norm = float(b.to_scalar(b.norm(t_vec)))
         norm_eps = division_epsilon(b, s_vec)
         cosine = dot_prod / (s_norm * t_norm) if (s_norm > norm_eps and t_norm > norm_eps) else 0.0
 
@@ -748,8 +748,8 @@ class ManifoldStitcher:
             # Error
             projected = b.matmul(s_centered, omega)
             error = projected - t_centered
-            error_norm = float(b.to_numpy(b.sqrt(b.sum(error * error))).item())
-            target_norm = float(b.to_numpy(b.sqrt(b.sum(t_centered * t_centered))).item())
+            error_norm = float(b.to_scalar(b.sqrt(b.sum(error * error))))
+            target_norm = float(b.to_scalar(b.sqrt(b.sum(t_centered * t_centered))))
             norm_eps = division_epsilon(b, t_centered)
             procrustes_error = error_norm / target_norm if target_norm > norm_eps else 0.0
 
@@ -854,7 +854,7 @@ class ManifoldStitcher:
             return b.stack(rows, axis=1)
 
         # K-Means++ Initialization using actual data points as initial centroids
-        first_idx = int(b.to_numpy(b.random_randint(0, n, shape=(1,))).item())
+        first_idx = int(b.to_scalar(b.random_randint(0, n, shape=(1,))))
         centroid_indices = [first_idx]
 
         for _ in range(1, min(k, n)):
@@ -867,15 +867,15 @@ class ManifoldStitcher:
             prob_sum = b.sum(probs)
             b.eval(prob_sum)
             prob_eps = division_epsilon(b, probs)
-            if float(b.to_numpy(prob_sum)) <= prob_eps:
+            if float(b.to_scalar(prob_sum)) <= prob_eps:
                 # All points are at centroids, pick randomly
-                next_idx = int(b.to_numpy(b.random_randint(0, n, shape=(1,))).item())
+                next_idx = int(b.to_scalar(b.random_randint(0, n, shape=(1,))))
             else:
                 probs = probs / prob_sum
                 cumsum = b.cumsum(probs)
                 r = b.random_uniform(shape=(1,))
                 next_idx = int(
-                    b.to_numpy(b.argmax(cumsum > float(b.to_numpy(r).item()))).item()
+                    b.to_scalar(b.argmax(cumsum > float(b.to_scalar(r))))
                 )
             centroid_indices.append(next_idx)
 

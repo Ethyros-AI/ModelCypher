@@ -343,7 +343,7 @@ class LayerEntropyProjector:
 
         # Evaluate and convert
         b.eval(entropy)
-        entropy_val = float(b.to_numpy(entropy).item())
+        entropy_val = float(b.to_scalar(entropy))
 
         return entropy_val, 0.0
 

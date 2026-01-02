@@ -43,8 +43,8 @@ def test_entropy_delta_sample_anomaly_metrics() -> None:
         adapter_entropy=1.0,  # Low = confident
         adapter_top_k_variance=0.5,
         adapter_top_token=2,  # Disagreement with base_top_token=1
-        base_surprisal=7.0,
-        normalized_approval_score=0.05,
+        base_logit_margin=7.0,
+        base_rank_fraction=0.05,
         latency_ms=12.0,
     )
 

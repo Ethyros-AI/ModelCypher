@@ -360,7 +360,7 @@ class NullSpaceFilter:
         if projection.null_dim == 0:
             norm_arr = backend.norm(delta_flat)
             backend.eval(norm_arr)
-            delta_norm = float(backend.to_numpy(norm_arr).item())
+            delta_norm = float(backend.to_scalar(norm_arr))
 
             logger.debug("Null space is empty (full rank activations). No filtering applied.")
             return NullSpaceFilterResult(
@@ -383,8 +383,8 @@ class NullSpaceFilter:
         filtered_norm_arr = backend.norm(delta_safe)
         backend.eval(original_norm_arr, filtered_norm_arr)
 
-        original_norm = float(backend.to_numpy(original_norm_arr).item())
-        filtered_norm = float(backend.to_numpy(filtered_norm_arr).item())
+        original_norm = float(backend.to_scalar(original_norm_arr))
+        filtered_norm = float(backend.to_scalar(filtered_norm_arr))
 
         if original_norm > 0:
             preserved_fraction = filtered_norm / original_norm
@@ -408,7 +408,7 @@ class NullSpaceFilter:
                     proj_vh = backend.matmul(projection.projection_matrix, vh_i)
                     dot_product = backend.sum(vh_i * proj_vh)
                     backend.eval(dot_product)
-                    dir_pres.append(1.0 - float(backend.to_numpy(dot_product).item()))
+                    dir_pres.append(1.0 - float(backend.to_scalar(dot_product)))
                 direction_preservation = backend.array(dir_pres)
             except Exception:
                 direction_preservation = None

@@ -229,8 +229,8 @@ class LogitEntropyCalculator:
 
         return [
             (
-                float(self._backend.to_numpy(e).item()),
-                float(self._backend.to_numpy(v).item()),
+                float(self._backend.to_scalar(e)),
+                float(self._backend.to_scalar(v)),
             )
             for e, v in zip(entropies, variances)
         ]

@@ -112,14 +112,14 @@ class CompositionalProbes:
         # Centroid similarity
         centroid_sim_arr = CompositionalProbes._cosine_similarity(comp, centroid, b)
         b.eval(centroid_sim_arr)
-        centroid_sim = float(b.to_numpy(centroid_sim_arr).item())
+        centroid_sim = float(b.to_scalar(centroid_sim_arr))
 
         # Component angles
         angles = []
         for i in range(n):
             sim_arr = CompositionalProbes._cosine_similarity(comp, comps[i], b)
             b.eval(sim_arr)
-            angles.append(float(b.to_numpy(sim_arr).item()))
+            angles.append(float(b.to_scalar(sim_arr)))
 
         # Barycentric weights via normal equations
         # G = component_embeddings @ component_embeddings.T [N, N]
@@ -140,7 +140,7 @@ class CompositionalProbes:
         diff = comp - reconstructed
         residual_norm_arr = b.norm(diff)
         b.eval(residual_norm_arr)
-        residual_norm = float(b.to_numpy(residual_norm_arr).item())
+        residual_norm = float(b.to_scalar(residual_norm_arr))
 
         return CompositionAnalysis(
             probe=probe,
@@ -213,7 +213,7 @@ class CompositionalProbes:
         diff = bk.sum(bk.abs(va - vb))
         bk.eval(diff)
         eps = bk.finfo().eps
-        if float(bk.to_numpy(diff).item()) < eps * len(a):
+        if float(bk.to_scalar(diff)) < eps * len(a):
             return 1.0
 
         ma = bk.mean(va)
@@ -226,9 +226,9 @@ class CompositionalProbes:
         den = bk.sqrt(bk.sum(da**2) * bk.sum(db**2))
         bk.eval(num, den)
 
-        den_val = float(bk.to_numpy(den).item())
+        den_val = float(bk.to_scalar(den))
         if den_val > eps:
-            return float(bk.to_numpy(num).item()) / den_val
+            return float(bk.to_scalar(num)) / den_val
         return 0.0
 
     @staticmethod

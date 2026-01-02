@@ -98,10 +98,10 @@ class EntropyDeltaSample:
     adapter_entropy: float
     adapter_top_k_variance: float
     adapter_top_token: int
-    base_surprisal: float | None = None
-    base_approval_probability: float | None = None
-    normalized_approval_score: float | None = None
-    base_approved_top_k: bool | None = None
+    base_logit_margin: float | None = None
+    base_token_logit: float | None = None
+    base_rank_fraction: float | None = None
+    base_frontier_hit: bool | None = None
     kl_divergence_adapter_to_base: float | None = None
     timestamp: datetime = field(default_factory=datetime.utcnow)
     latency_ms: float = 0.0
@@ -118,10 +118,10 @@ class EntropyDeltaSample:
         adapter_entropy: float,
         adapter_top_k_variance: float,
         adapter_top_token: int,
-        base_surprisal: float | None = None,
-        base_approval_probability: float | None = None,
-        normalized_approval_score: float | None = None,
-        base_approved_top_k: bool | None = None,
+        base_logit_margin: float | None = None,
+        base_token_logit: float | None = None,
+        base_rank_fraction: float | None = None,
+        base_frontier_hit: bool | None = None,
         kl_divergence_adapter_to_base: float | None = None,
         latency_ms: float = 0.0,
         correlation_id: UUID | None = None,
@@ -137,10 +137,10 @@ class EntropyDeltaSample:
             adapter_entropy=adapter_entropy,
             adapter_top_k_variance=adapter_top_k_variance,
             adapter_top_token=adapter_top_token,
-            base_surprisal=base_surprisal,
-            base_approval_probability=base_approval_probability,
-            normalized_approval_score=normalized_approval_score,
-            base_approved_top_k=base_approved_top_k,
+            base_logit_margin=base_logit_margin,
+            base_token_logit=base_token_logit,
+            base_rank_fraction=base_rank_fraction,
+            base_frontier_hit=base_frontier_hit,
             kl_divergence_adapter_to_base=kl_divergence_adapter_to_base,
             latency_ms=latency_ms,
             correlation_id=correlation_id,
@@ -191,18 +191,14 @@ class EntropyDeltaSample:
             "latencyMs": PayloadValue.double(float(self.latency_ms)),
         }
 
-        if self.base_surprisal is not None:
-            payload["baseSurprisal"] = PayloadValue.double(float(self.base_surprisal))
-        if self.base_approval_probability is not None:
-            payload["baseApprovalProbability"] = PayloadValue.double(
-                float(self.base_approval_probability)
-            )
-        if self.normalized_approval_score is not None:
-            payload["normalizedApprovalScore"] = PayloadValue.double(
-                float(self.normalized_approval_score)
-            )
-        if self.base_approved_top_k is not None:
-            payload["baseApprovedTopK"] = PayloadValue.bool(self.base_approved_top_k)
+        if self.base_logit_margin is not None:
+            payload["baseLogitMargin"] = PayloadValue.double(float(self.base_logit_margin))
+        if self.base_token_logit is not None:
+            payload["baseTokenLogit"] = PayloadValue.double(float(self.base_token_logit))
+        if self.base_rank_fraction is not None:
+            payload["baseRankFraction"] = PayloadValue.double(float(self.base_rank_fraction))
+        if self.base_frontier_hit is not None:
+            payload["baseFrontierHit"] = PayloadValue.bool(self.base_frontier_hit)
         if self.kl_divergence_adapter_to_base is not None:
             payload["klDivergenceAdapterToBase"] = PayloadValue.double(
                 float(self.kl_divergence_adapter_to_base)

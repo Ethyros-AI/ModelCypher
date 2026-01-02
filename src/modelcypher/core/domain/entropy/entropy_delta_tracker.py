@@ -122,14 +122,14 @@ class PendingEntropyData:
         Variance of adapter model top-K logits.
     adapter_top_token : int
         Top predicted token from adapter model.
-    base_surprisal : float, optional
-        Surprisal of generated token under base model.
-    base_approval_probability : float, optional
-        Base model probability of generated token.
-    normalized_approval_score : float, optional
-        Normalized approval score.
-    base_approved_top_k : bool, optional
-        Whether token is in base model top-K.
+    base_logit_margin : float, optional
+        Margin between base top logit and generated token logit.
+    base_token_logit : float, optional
+        Base model logit for generated token.
+    base_rank_fraction : float, optional
+        Normalized rank fraction for the generated token.
+    base_frontier_hit : bool, optional
+        Whether token is in base model frontier.
     kl_divergence_adapter_to_base : float, optional
         KL divergence from adapter to base distribution.
     latency_ms : float
@@ -145,9 +145,9 @@ class PendingEntropyData:
     adapter_top_k_variance: float
     adapter_top_token: int
     base_surprisal: float | None = None
-    base_approval_probability: float | None = None
-    normalized_approval_score: float | None = None
-    base_approved_top_k: bool | None = None
+    base_token_logit: float | None = None
+    base_rank_fraction: float | None = None
+    base_frontier_hit: bool | None = None
     kl_divergence_adapter_to_base: float | None = None
     latency_ms: float = 0.0
 
@@ -292,9 +292,9 @@ class EntropyDeltaTracker:
             adapter_top_k_variance=data.adapter_top_k_variance,
             adapter_top_token=data.adapter_top_token,
             base_surprisal=data.base_surprisal,
-            base_approval_probability=data.base_approval_probability,
-            normalized_approval_score=data.normalized_approval_score,
-            base_approved_top_k=data.base_approved_top_k,
+            base_token_logit=data.base_token_logit,
+            base_rank_fraction=data.base_rank_fraction,
+            base_frontier_hit=data.base_frontier_hit,
             kl_divergence_adapter_to_base=data.kl_divergence_adapter_to_base,
             latency_ms=data.latency_ms,
             correlation_id=self._correlation_id,
@@ -344,8 +344,8 @@ class EntropyDeltaTracker:
 
         # Compute conflict analysis
         kl_divergences = [s.kl_divergence_adapter_to_base for s in self._samples]
-        base_approved_top_k = [s.base_approved_top_k for s in self._samples]
-        conflict_analysis = ConflictAnalysis.compute(kl_divergences, base_approved_top_k)
+        base_frontier_hit = [s.base_frontier_hit for s in self._samples]
+        conflict_analysis = ConflictAnalysis.compute(kl_divergences, base_frontier_hit)
 
         result = EntropyDeltaSessionResult(
             session_id=self._correlation_id or uuid4(),

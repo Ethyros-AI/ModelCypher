@@ -63,44 +63,44 @@ class ConflictAnalysis:
     ----------
     mean_kl : float
         Mean KL divergence from adapter to base.
-    base_approval_rate : float
-        Fraction of tokens where base model approved adapter's top-k.
+    base_frontier_rate : float
+        Fraction of tokens inside the base logit frontier.
     conflict_score : float
-        Combined conflict signal: mean_kl * (1 - approval_rate).
+        Combined conflict signal: mean_kl * (1 - frontier_rate).
     token_count : int
         Number of tokens measured.
     """
 
     mean_kl: float
-    base_approval_rate: float
+    base_frontier_rate: float
     conflict_score: float
     token_count: int
 
     @staticmethod
     def compute(
-        kl_divergences: list[float | None], base_approved_top_k: list[bool | None]
+        kl_divergences: list[float | None], base_frontier_hit: list[bool | None]
     ) -> "ConflictAnalysis" | None:
         kl_sum = 0.0
         token_count = 0
-        approved_count = 0
+        frontier_count = 0
 
-        for kl, approved in zip(kl_divergences, base_approved_top_k):
-            if kl is not None and approved is not None:
+        for kl, hit in zip(kl_divergences, base_frontier_hit):
+            if kl is not None and hit is not None:
                 token_count += 1
                 kl_sum += kl
-                if approved:
-                    approved_count += 1
+                if hit:
+                    frontier_count += 1
 
         if token_count == 0:
             return None
 
         mean_kl = kl_sum / token_count
-        approval_rate = float(approved_count) / token_count
-        conflict_score = mean_kl * (1.0 - approval_rate)
+        frontier_rate = float(frontier_count) / token_count
+        conflict_score = mean_kl * (1.0 - frontier_rate)
 
         return ConflictAnalysis(
             mean_kl=mean_kl,
-            base_approval_rate=approval_rate,
+            base_frontier_rate=frontier_rate,
             conflict_score=conflict_score,
             token_count=token_count,
         )
@@ -156,7 +156,7 @@ class EntropyDeltaSample:
     base_surprisal: float | None = None
     base_approval_probability: float | None = None
     normalized_approval_score: float | None = None
-    base_approved_top_k: bool | None = None
+    base_frontier_hit: bool | None = None
     kl_divergence_adapter_to_base: float | None = None
 
     @property
@@ -204,8 +204,8 @@ class EntropyDeltaSample:
             payload["baseApprovalProbability"] = self.base_approval_probability
         if self.normalized_approval_score is not None:
             payload["normalizedApprovalScore"] = self.normalized_approval_score
-        if self.base_approved_top_k is not None:
-            payload["baseApprovedTopK"] = self.base_approved_top_k
+        if self.base_frontier_hit is not None:
+            payload["baseFrontierHit"] = self.base_frontier_hit
         if self.kl_divergence_adapter_to_base is not None:
             payload["klDivergenceAdapterToBase"] = self.kl_divergence_adapter_to_base
         if self.correlation_id:
@@ -416,7 +416,7 @@ class EntropyDeltaTracker:
                 flat = logits[0, -1] if logits.ndim == 3 else logits[0]
             idx = b.argmax(flat, axis=-1)
             b.eval(idx)
-            return int(b.to_numpy(idx).item())
+            return int(b.to_scalar(idx))
 
         base_top = get_top(base_logits)
         adap_top = get_top(adapter_logits)
@@ -452,7 +452,7 @@ class EntropyDeltaTracker:
 
         # Conflict Analysis
         kls = [s.kl_divergence_adapter_to_base for s in self.samples]
-        approvals = [s.base_approved_top_k for s in self.samples]
+        approvals = [s.base_frontier_hit for s in self.samples]
         conflict = ConflictAnalysis.compute(kls, approvals)
 
         return EntropyDeltaSessionResult(
