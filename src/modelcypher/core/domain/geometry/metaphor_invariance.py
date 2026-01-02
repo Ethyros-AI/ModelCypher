@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import logging
 import math
+import sys
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -167,7 +168,8 @@ class MetaphorInvarianceAnalyzer:
 
         # Compute convergence layer delta (normalized by max layer count)
         max_layers = max(trajectory_a.layer_count, trajectory_b.layer_count)
-        eps = 1e-10
+        # Use machine epsilon for division safety
+        eps = sys.float_info.epsilon
         convergence_delta = abs(
             trajectory_a.convergence_layer - trajectory_b.convergence_layer
         )

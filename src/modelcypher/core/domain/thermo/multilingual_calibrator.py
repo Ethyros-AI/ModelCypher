@@ -24,10 +24,14 @@ entropy effects due to weaker safety alignment.
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
+
+# Machine epsilon for float64 (native Python float)
+_MACHINE_EPS = sys.float_info.epsilon
 
 from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
     LinguisticModifier,
@@ -260,7 +264,7 @@ class MultilingualCalibrator:
         self._reference_language = reference_language
 
         for lang, entropy in entropy_by_language.items():
-            if entropy > 1e-10:
+            if entropy > _MACHINE_EPS:
                 self._calibration[lang] = reference_entropy / entropy
             else:
                 self._calibration[lang] = 1.0
@@ -383,7 +387,7 @@ class MultilingualCalibrator:
 
             # Compute relative effect (1.0 = same as reference)
             relative_effect: float | None = None
-            if reference_effect > 1e-10:
+            if reference_effect > _MACHINE_EPS:
                 relative_effect = abs(delta_h) / reference_effect
 
             result = LanguageParityResult(

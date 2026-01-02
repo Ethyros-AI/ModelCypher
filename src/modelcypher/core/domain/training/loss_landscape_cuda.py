@@ -43,8 +43,12 @@ from __future__ import annotations
 
 import logging
 import math
+import sys
 from dataclasses import dataclass
 from typing import Callable
+
+# Machine epsilon for float64 (native Python float)
+_MACHINE_EPS = sys.float_info.epsilon
 
 try:
     import torch
@@ -257,7 +261,7 @@ class LossLandscapeComputerCUDA:
             trace += self._dot_product(r, hr)
         trace /= 5
 
-        condition_number = max_eigenvalue / max(min_eigenvalue, 1e-10)
+        condition_number = max_eigenvalue / max(min_eigenvalue, _MACHINE_EPS)
         sharpness = max_eigenvalue / (1.0 + max_eigenvalue)
 
         logger.info(
@@ -303,7 +307,7 @@ class LossLandscapeComputerCUDA:
                 p = params[k]
                 d_norm = float(torch.norm(d).item())
                 p_norm = float(torch.norm(p).item())
-                if d_norm > 1e-10:
+                if d_norm > _MACHINE_EPS:
                     result[k] = d * (p_norm / d_norm)
                 else:
                     result[k] = d.clone()
@@ -315,7 +319,7 @@ class LossLandscapeComputerCUDA:
                 total_norm_sq += float(torch.sum(d**2).item())
             total_norm = math.sqrt(total_norm_sq)
 
-            if total_norm > 1e-10:
+            if total_norm > _MACHINE_EPS:
                 return {k: d / total_norm for k, d in direction.items()}
             return {k: d.clone() for k, d in direction.items()}
 

@@ -40,12 +40,17 @@ For typical LLMs:
 from __future__ import annotations
 
 import math
+import sys
 from dataclasses import dataclass
 from enum import Enum
 
 from modelcypher.core.domain.thermo.linguistic_thermodynamics import AttractorBasin
 
-MINIMUM_TEMPERATURE: float = 1e-6
+# Machine epsilon for float64 - used for temperature floor
+MINIMUM_TEMPERATURE: float = sys.float_info.epsilon
+
+# Minimum positive float value for log safety
+_LOG_SAFE_MIN: float = sys.float_info.min
 
 
 class Phase(str, Enum):
@@ -441,8 +446,7 @@ class PhaseTransitionTheory:
         probs = [e / partition for e in exp_scaled]
 
         # H = -Σ p log p (with numerical stability)
-        epsilon = 1e-10
-        entropy = -sum(p * math.log(p + epsilon) for p in probs)
+        entropy = -sum(p * math.log(p + _LOG_SAFE_MIN) for p in probs)
         return entropy
 
     @staticmethod

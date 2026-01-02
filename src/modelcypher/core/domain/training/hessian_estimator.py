@@ -18,8 +18,12 @@
 from __future__ import annotations
 
 import math
+import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable
+
+# Machine epsilon for float64 (native Python float)
+_MACHINE_EPS = sys.float_info.epsilon
 
 from modelcypher.core.domain._backend import get_default_backend
 
@@ -148,7 +152,7 @@ def trajectory(
         initial_norm_sq += float(backend.sum(initial_arr * initial_arr))
 
     divergence = float(math.sqrt(divergence_sq))
-    denom = max(math.sqrt(current_norm_sq) * math.sqrt(initial_norm_sq), 1e-10)
+    denom = max(math.sqrt(current_norm_sq) * math.sqrt(initial_norm_sq), _MACHINE_EPS)
     cosine = float(dot_product / denom) if denom > 0 else 0.0
 
     return TrajectoryMetrics(divergence=divergence, cosine_similarity=cosine)
@@ -178,7 +182,7 @@ def effective_step_ratio(
 
     actual_norm = float(math.sqrt(actual_sq))
     theoretical_norm = float(math.sqrt(theoretical_sq))
-    denom = max(theoretical_norm, 1e-10)
+    denom = max(theoretical_norm, _MACHINE_EPS)
     return float(actual_norm / denom)
 
 

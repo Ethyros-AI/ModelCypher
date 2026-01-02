@@ -18,12 +18,16 @@
 from __future__ import annotations
 
 import math
+import sys
 from dataclasses import dataclass
 from typing import Iterable
 
 from modelcypher.core.domain.geometry.numerical_stability import (
     compute_pearson_correlation,
 )
+
+# Machine epsilon for float64 (native Python float)
+_MACHINE_EPS = sys.float_info.epsilon
 
 
 @dataclass(frozen=True)
@@ -76,7 +80,7 @@ class TraversalCoherence:
         raw = TraversalCoherence.transition_inner_product(gram, n, a, b, c, d)
         norm_ab = TraversalCoherence.transition_norm_squared(gram, n, a, b)
         norm_cd = TraversalCoherence.transition_norm_squared(gram, n, c, d)
-        if norm_ab <= 1e-12 or norm_cd <= 1e-12:
+        if norm_ab <= _MACHINE_EPS or norm_cd <= _MACHINE_EPS:
             return float("nan")
         return raw / math.sqrt(norm_ab * norm_cd)
 

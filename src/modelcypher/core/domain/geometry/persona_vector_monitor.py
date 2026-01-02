@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import math
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -265,7 +266,8 @@ class PersonaVectorMonitor:
         projection_value = float(projection)
 
         direction_norm = VectorMath.l2_norm(persona_vector.direction) or 1.0
-        normalized_position = projection_value / max(direction_norm, 1e-8)
+        # Use machine epsilon for division safety
+        normalized_position = projection_value / max(direction_norm, sys.float_info.epsilon)
         clamped = max(-1.0, min(1.0, normalized_position))
 
         delta = None

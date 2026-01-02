@@ -26,10 +26,14 @@ from __future__ import annotations
 import json
 import logging
 import math
+import sys
 from pathlib import Path
 from typing import Any
 
 import mlx.core as mx
+
+# Machine epsilon for float64 (native Python float)
+_MACHINE_EPS = sys.float_info.epsilon
 
 from modelcypher.ports.model_probe import (
     AlignmentAnalysisResult,
@@ -293,7 +297,7 @@ class MLXModelProbe(BaseModelProbe):
         norm_a = float(mx.sqrt(mx.sum(a_flat * a_flat)))
         norm_b = float(mx.sqrt(mx.sum(b_flat * b_flat)))
 
-        max_norm = max(norm_a, norm_b, 1e-8)
+        max_norm = max(norm_a, norm_b, _MACHINE_EPS)
         relative_drift = norm_diff / max_norm
 
         # Normalize to [0, 1] using exponential decay

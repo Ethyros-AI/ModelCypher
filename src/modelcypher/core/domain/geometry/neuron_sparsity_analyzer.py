@@ -37,119 +37,30 @@ from modelcypher.core.domain.geometry.numerical_stability import division_epsilo
 logger = logging.getLogger(__name__)
 
 
-# =============================================================================
-# Configuration
-# =============================================================================
+def _gap_upper_threshold(values: list[float]) -> float:
+    """Return the upper boundary at the largest relative magnitude gap."""
+    if not values:
+        return 0.0
 
+    sorted_values = sorted(values)
+    if len(sorted_values) < 2:
+        return sorted_values[-1]
 
-@dataclass
-class NeuronSparsityConfig:
-    """Configuration for per-neuron sparsity analysis.
+    backend = get_default_backend()
+    eps = division_epsilon(backend, backend.array([1.0]))
 
-    Thresholds should be derived from data, not guessed. Use the class method
-    `from_activation_distribution()` to calibrate thresholds from actual activations.
+    max_gap = -1.0
+    gap_index = len(sorted_values) // 2
+    for i in range(len(sorted_values) - 1):
+        curr = sorted_values[i]
+        next_val = sorted_values[i + 1]
+        denom = curr if curr > eps else eps
+        relative_gap = (next_val - curr) / denom
+        if relative_gap > max_gap:
+            max_gap = relative_gap
+            gap_index = i
 
-    Default thresholds are conservative placeholders that signal the need for
-    calibration - they will work but are not optimal for any specific model.
-    """
-
-    activation_threshold: float | None = None
-    """Activation magnitude below this is considered inactive.
-
-    If None, derived from machine epsilon scaled to activation magnitude.
-    A neuron with |activation| < threshold is considered inactive for that sample.
-    """
-
-    sparsity_sigma: float = 2.0
-    """Standard deviations above mean sparsity to qualify as 'sparse'.
-
-    Used when sparsity_threshold is None to derive threshold from distribution.
-    """
-
-    sparsity_threshold: float | None = None
-    """Neurons with sparsity above this are candidates for grafting.
-
-    If None, derived as mean + sparsity_sigma * std of the sparsity distribution.
-    """
-
-    dead_neuron_sigma: float = 3.0
-    """Standard deviations above mean sparsity to qualify as 'dead'.
-
-    Used when dead_neuron_threshold is None.
-    """
-
-    dead_neuron_threshold: float | None = None
-    """Neurons with sparsity above this are considered dead.
-
-    If None, derived as mean + dead_neuron_sigma * std, clamped to 0.99 max.
-    """
-
-    min_prompts: int = 20
-    """Minimum number of prompts for statistical significance."""
-
-    normalize_activations: bool = True
-    """Whether to normalize activations per sample before analysis."""
-
-    use_absolute_values: bool = True
-    """Whether to use |activation| instead of raw values."""
-
-    @classmethod
-    def from_activation_distribution(
-        cls,
-        activations: list[list[float]],
-        sparsity_sigma: float = 2.0,
-        dead_neuron_sigma: float = 3.0,
-    ) -> "NeuronSparsityConfig":
-        """Derive thresholds from actual activation distribution.
-
-        This is the preferred way to create a config - let the data tell us
-        what 'sparse' means rather than guessing with magic numbers.
-
-        Args:
-            activations: Flattened list of activation values from model.
-            sparsity_sigma: Std devs above mean for sparse classification.
-            dead_neuron_sigma: Std devs above mean for dead classification.
-
-        Returns:
-            NeuronSparsityConfig with data-derived thresholds.
-
-        Raises:
-            ValueError: If activations list is empty or contains no values.
-        """
-        if not activations or not any(activations):
-            raise ValueError(
-                "Cannot derive thresholds from empty activations. "
-                "Provide activation data from model inference."
-            )
-
-        # Flatten all activations
-        all_values = [abs(v) for row in activations for v in row if v is not None]
-        if not all_values:
-            raise ValueError(
-                "Cannot derive thresholds: all activation values are None. "
-                "Check activation extraction."
-            )
-
-        # Activation threshold: noise floor based on distribution
-        # Use median of small values as noise floor, or machine epsilon scaled
-        sorted_vals = sorted(all_values)
-        n = len(sorted_vals)
-
-        # Get 10th percentile as noise floor estimate
-        p10_idx = max(0, int(n * 0.10) - 1)
-        noise_floor = sorted_vals[p10_idx]
-
-        # Ensure threshold is at least machine epsilon * max_activation
-        max_val = sorted_vals[-1] if sorted_vals else 1.0
-        min_threshold = max_val * 1e-6  # 6 orders of magnitude below max
-        activation_threshold = max(noise_floor, min_threshold)
-
-        return cls(
-            activation_threshold=activation_threshold,
-            sparsity_sigma=sparsity_sigma,
-            dead_neuron_sigma=dead_neuron_sigma,
-            # Leave sparsity/dead thresholds as None - derived during analysis
-        )
+    return sorted_values[min(gap_index + 1, len(sorted_values) - 1)]
 
 
 # =============================================================================
@@ -216,75 +127,36 @@ class NeuronSparsityMap:
     """Per-neuron sparsity analysis across all layers.
 
     Provides methods to identify sparse neurons suitable for knowledge grafting.
-    Thresholds are derived from the sparsity distribution when not explicitly set.
+    Thresholds are derived from the sparsity distribution.
     """
 
     stats: dict[int, list[NeuronStats]]
     """layer_index -> list of NeuronStats for each neuron."""
 
-    config: NeuronSparsityConfig
-    """Configuration used for this analysis."""
-
     total_prompts: int
     """Total number of prompts used in analysis."""
 
-    # Cached derived thresholds
-    _derived_sparsity_threshold: float | None = None
-    _derived_dead_threshold: float | None = None
+    activation_threshold: float
+    """Activation magnitude threshold used for active fraction."""
 
-    def _derive_thresholds(self) -> tuple[float, float]:
-        """Derive sparsity and dead thresholds from the actual distribution.
+    sparsity_threshold: float | None = None
+    """Derived sparsity threshold separating sparse from active neurons."""
 
-        Uses mean + N*sigma where N is configurable. This lets the data
-        tell us what 'sparse' means for this specific model.
+    def __post_init__(self) -> None:
+        if self.sparsity_threshold is None:
+            self.sparsity_threshold = self._derive_sparsity_threshold()
 
-        Returns:
-            (sparsity_threshold, dead_neuron_threshold)
-        """
-        if self._derived_sparsity_threshold is not None:
-            return self._derived_sparsity_threshold, self._derived_dead_threshold
-
-        # Collect all sparsity scores
+    def _derive_sparsity_threshold(self) -> float:
+        """Derive sparsity threshold from the distribution of sparsity scores."""
         all_scores = [n.sparsity_score for neurons in self.stats.values() for n in neurons]
         if not all_scores:
-            raise ValueError(
-                "Cannot derive thresholds: no neuron statistics available. "
-                "Collect activation data first."
-            )
-
-        n = len(all_scores)
-        mean = sum(all_scores) / n
-        variance = sum((s - mean) ** 2 for s in all_scores) / n
-        std = math.sqrt(variance)
-
-        # Derive thresholds: mean + sigma * std_devs
-        sparsity_thresh = mean + self.config.sparsity_sigma * std
-        dead_thresh = mean + self.config.dead_neuron_sigma * std
-
-        # Clamp to valid range [0, 1]
-        self._derived_sparsity_threshold = max(0.0, min(1.0, sparsity_thresh))
-        self._derived_dead_threshold = max(0.0, min(1.0, dead_thresh))
-
-        return self._derived_sparsity_threshold, self._derived_dead_threshold
-
-    @property
-    def effective_sparsity_threshold(self) -> float:
-        """The sparsity threshold in use (explicit or derived)."""
-        if self.config.sparsity_threshold is not None:
-            return self.config.sparsity_threshold
-        return self._derive_thresholds()[0]
-
-    @property
-    def effective_dead_threshold(self) -> float:
-        """The dead neuron threshold in use (explicit or derived)."""
-        if self.config.dead_neuron_threshold is not None:
-            return self.config.dead_neuron_threshold
-        return self._derive_thresholds()[1]
+            return 0.0
+        return _gap_upper_threshold(all_scores)
 
     @property
     def sparse_neurons(self) -> dict[int, list[int]]:
         """Layer -> list of sparse neuron indices."""
-        thresh = self.effective_sparsity_threshold
+        thresh = self.sparsity_threshold if self.sparsity_threshold is not None else 0.0
         result: dict[int, list[int]] = {}
         for layer, neurons in self.stats.items():
             sparse = [n.neuron_idx for n in neurons if n.sparsity_score >= thresh]
@@ -295,24 +167,20 @@ class NeuronSparsityMap:
     @property
     def dead_neurons(self) -> dict[int, list[int]]:
         """Layer -> list of never-activating neuron indices."""
-        thresh = self.effective_dead_threshold
         result: dict[int, list[int]] = {}
         for layer, neurons in self.stats.items():
-            dead = [n.neuron_idx for n in neurons if n.sparsity_score >= thresh]
+            dead = [n.neuron_idx for n in neurons if n.is_dead]
             if dead:
                 result[layer] = dead
         return result
 
-    def get_graft_candidates(self, threshold: float | None = None) -> dict[int, list[int]]:
+    def get_graft_candidates(self) -> dict[int, list[int]]:
         """Return neurons sparse enough for knowledge grafting.
-
-        Args:
-            threshold: Override sparsity threshold (default: derived from distribution)
 
         Returns:
             Dict mapping layer index to list of graftable neuron indices.
         """
-        thresh = threshold if threshold is not None else self.effective_sparsity_threshold
+        thresh = self.sparsity_threshold if self.sparsity_threshold is not None else 0.0
         result: dict[int, list[int]] = {}
         for layer, neurons in self.stats.items():
             candidates = [n.neuron_idx for n in neurons if n.sparsity_score >= thresh]
@@ -335,8 +203,9 @@ class NeuronSparsityMap:
             return {}
 
         sparsity_scores = [n.sparsity_score for n in neurons]
-        sparse_count = sum(1 for s in sparsity_scores if s >= self.effective_sparsity_threshold)
-        dead_count = sum(1 for s in sparsity_scores if s >= self.effective_dead_threshold)
+        thresh = self.sparsity_threshold if self.sparsity_threshold is not None else 0.0
+        sparse_count = sum(1 for s in sparsity_scores if s >= thresh)
+        dead_count = sum(1 for n in neurons if n.is_dead)
 
         return {
             "total_neurons": total,
@@ -379,10 +248,8 @@ class NeuronSparsityMap:
             "total_prompts": self.total_prompts,
             "graft_candidates": sum(len(v) for v in self.get_graft_candidates().values()),
             "thresholds": {
-                "sparsity": self.effective_sparsity_threshold,
-                "dead_neuron": self.effective_dead_threshold,
-                "sparsity_derived": self.config.sparsity_threshold is None,
-                "dead_derived": self.config.dead_neuron_threshold is None,
+                "activation": self.activation_threshold,
+                "sparsity": self.sparsity_threshold,
             },
         }
 
@@ -402,8 +269,6 @@ class NeuronActivationCollector:
             collector.add_sample(prompt_activations)
         sparsity_map = collector.compute_sparsity_map()
     """
-
-    config: NeuronSparsityConfig = field(default_factory=NeuronSparsityConfig)
 
     # Internal storage: layer -> neuron_idx -> list of activation values
     _activations: dict[int, dict[int, list[float]]] = field(default_factory=dict, repr=False)
@@ -427,9 +292,8 @@ class NeuronActivationCollector:
                 if neuron_idx not in self._activations[layer]:
                     self._activations[layer][neuron_idx] = []
 
-                # Normalize and take absolute value if configured
-                value = abs(activation) if self.config.use_absolute_values else activation
-                self._activations[layer][neuron_idx].append(value)
+                # Use activation magnitude for sparsity tracking.
+                self._activations[layer][neuron_idx].append(abs(activation))
 
     def add_batch(self, batch_activations: list[dict[int, list[float]]]) -> None:
         """Add multiple samples at once.
@@ -443,7 +307,7 @@ class NeuronActivationCollector:
     def _derive_activation_threshold(self) -> float:
         """Derive activation threshold from collected data.
 
-        Uses the 10th percentile of all activation magnitudes as the noise floor,
+        Uses the largest relative magnitude gap to separate noise from signal,
         with a minimum of machine epsilon scaled to the activation range.
 
         Returns:
@@ -462,17 +326,14 @@ class NeuronActivationCollector:
             )
 
         sorted_vals = sorted(all_values)
-        n = len(sorted_vals)
-
-        # 10th percentile as noise floor
-        p10_idx = max(0, int(n * 0.10) - 1)
-        noise_floor = sorted_vals[p10_idx]
-
-        # Ensure at least 6 orders of magnitude below max
         max_val = sorted_vals[-1] if sorted_vals else 1.0
-        min_threshold = max_val * 1e-6
 
-        return max(noise_floor, min_threshold)
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([max_val]))
+        min_threshold = max_val * eps
+        gap_threshold = _gap_upper_threshold(sorted_vals)
+
+        return max(gap_threshold, min_threshold)
 
     def compute_sparsity_map(self) -> NeuronSparsityMap:
         """Compute neuron sparsity statistics from collected activations.
@@ -483,17 +344,8 @@ class NeuronActivationCollector:
         Raises:
             ValueError: If insufficient samples collected.
         """
-        if self._sample_count < self.config.min_prompts:
-            logger.warning(
-                f"Only {self._sample_count} samples collected, "
-                f"minimum recommended is {self.config.min_prompts}"
-            )
-
-        # Derive activation threshold if not explicitly set
-        activation_threshold = self.config.activation_threshold
-        if activation_threshold is None:
-            activation_threshold = self._derive_activation_threshold()
-            logger.debug(f"Derived activation threshold: {activation_threshold:.2e}")
+        activation_threshold = self._derive_activation_threshold()
+        logger.debug(f"Derived activation threshold: {activation_threshold:.2e}")
 
         stats: dict[int, list[NeuronStats]] = {}
 
@@ -535,8 +387,8 @@ class NeuronActivationCollector:
 
         return NeuronSparsityMap(
             stats=stats,
-            config=self.config,
             total_prompts=self._sample_count,
+            activation_threshold=activation_threshold,
         )
 
     def clear(self) -> None:
@@ -552,7 +404,6 @@ class NeuronActivationCollector:
 
 def compute_neuron_sparsity_map(
     activations: dict[int, list[list[float]]],
-    config: NeuronSparsityConfig | None = None,
 ) -> NeuronSparsityMap:
     """Compute per-neuron sparsity from activation data.
 
@@ -564,12 +415,11 @@ def compute_neuron_sparsity_map(
     Returns:
         NeuronSparsityMap with per-neuron statistics.
     """
-    cfg = config or NeuronSparsityConfig()
-    collector = NeuronActivationCollector(cfg)
+    collector = NeuronActivationCollector()
 
     # Transpose: activations[layer][prompt][neuron] -> per-prompt dicts
     if not activations:
-        return NeuronSparsityMap(stats={}, config=cfg, total_prompts=0)
+        return NeuronSparsityMap(stats={}, total_prompts=0, activation_threshold=0.0)
 
     # Get number of prompts from first layer
     first_layer = next(iter(activations.values()))
@@ -626,12 +476,12 @@ def compare_neuron_sparsity(
         source_active = set(
             n.neuron_idx
             for n in source_map.stats.get(layer, [])
-            if n.sparsity_score < source_map.effective_sparsity_threshold
+            if n.sparsity_score < source_map.sparsity_threshold
         )
         target_active = set(
             n.neuron_idx
             for n in target_map.stats.get(layer, [])
-            if n.sparsity_score < target_map.effective_sparsity_threshold
+            if n.sparsity_score < target_map.sparsity_threshold
         )
         collision = list(source_active & target_active)
         if collision:
@@ -660,8 +510,6 @@ def compare_neuron_sparsity(
 def identify_domain_specific_neurons(
     baseline_map: NeuronSparsityMap,
     domain_map: NeuronSparsityMap,
-    specificity_threshold: float | None = None,
-    specificity_sigma: float = 2.0,
 ) -> dict[int, list[tuple[int, float]]]:
     """Identify neurons that activate specifically for a domain.
 
@@ -671,12 +519,6 @@ def identify_domain_specific_neurons(
     Args:
         baseline_map: Sparsity from general prompts.
         domain_map: Sparsity from domain-specific prompts.
-        specificity_threshold: Minimum sparsity difference for specificity.
-            If None, derived as mean + specificity_sigma * std of all
-            specificity scores.
-        specificity_sigma: Standard deviations above mean for threshold
-            when specificity_threshold is None.
-
     Returns:
         Dict mapping layer to (neuron_idx, specificity_score) tuples.
     """
@@ -706,22 +548,19 @@ def identify_domain_specific_neurons(
         if layer_scores:
             layer_specificities[layer] = layer_scores
 
-    # Derive threshold if not provided
-    if specificity_threshold is None:
-        if not all_specificities:
-            raise ValueError(
-                "Cannot derive specificity threshold: no matching neurons between "
-                "baseline and domain maps. Check that maps have overlapping layers."
-            )
-        n = len(all_specificities)
-        mean = sum(all_specificities) / n
-        variance = sum((s - mean) ** 2 for s in all_specificities) / n
-        std = math.sqrt(variance)
-        specificity_threshold = mean + specificity_sigma * std
-        logger.debug(
-            f"Derived specificity threshold: {specificity_threshold:.4f} "
-            f"(mean={mean:.4f}, std={std:.4f})"
+    if not all_specificities:
+        raise ValueError(
+            "Cannot derive specificity threshold: no matching neurons between "
+            "baseline and domain maps. Check that maps have overlapping layers."
         )
+
+    backend = get_default_backend()
+    eps = division_epsilon(backend, backend.array([1.0]))
+    positive_specificities = [s for s in all_specificities if s > eps]
+    if not positive_specificities:
+        return {}
+
+    specificity_threshold = _gap_upper_threshold(positive_specificities)
 
     # Second pass: filter by threshold
     domain_specific: dict[int, list[tuple[int, float]]] = {}

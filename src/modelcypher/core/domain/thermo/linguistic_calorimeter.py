@@ -38,6 +38,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import math
+import sys
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -46,6 +47,9 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from modelcypher.core.domain._backend import get_default_backend
+
+# Machine epsilon for float64 (native Python float)
+_MACHINE_EPS = sys.float_info.epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
@@ -157,7 +161,7 @@ class LinguisticCalorimeter:
         adapter_path: str | None = None,
         simulated: bool = False,
         top_k: int = 10,
-        epsilon: float = 1e-10,
+        epsilon: float = _MACHINE_EPS,
         backend: "Backend | None" = None,
         model: object | None = None,
         tokenizer: object | None = None,

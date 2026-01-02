@@ -26,8 +26,12 @@ from __future__ import annotations
 import json
 import logging
 import math
+import sys
 from pathlib import Path
 from typing import Any
+
+# Machine epsilon for float64 (native Python float)
+_MACHINE_EPS = sys.float_info.epsilon
 
 from modelcypher.ports.model_probe import (
     AlignmentAnalysisResult,
@@ -311,7 +315,7 @@ class JAXModelProbe(BaseModelProbe):
         norm_a = float(self.jnp.linalg.norm(a_f32.flatten()))
         norm_b = float(self.jnp.linalg.norm(b_f32.flatten()))
 
-        max_norm = max(norm_a, norm_b, 1e-8)
+        max_norm = max(norm_a, norm_b, _MACHINE_EPS)
         relative_drift = norm_diff / max_norm
 
         normalized = 1.0 - math.exp(-relative_drift)

@@ -39,7 +39,11 @@ from __future__ import annotations
 import json
 import logging
 import math
+import sys
 from dataclasses import dataclass, field
+
+# Minimum positive float value for log safety
+_LOG_SAFE_MIN = sys.float_info.min
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -99,9 +103,9 @@ class MeasuredEnergy:
         MeasuredEnergy
             Energy derived from the measurement.
         """
-        # Numerical stability
-        p = max(probability, 1e-10)
-        p_ref = max(reference_probability, 1e-10)
+        # Numerical stability - use float_info.min for log safety
+        p = max(probability, _LOG_SAFE_MIN)
+        p_ref = max(reference_probability, _LOG_SAFE_MIN)
 
         # E(x) - E(ref) = -T * log(p(x)/p(ref))
         energy = -temperature * math.log(p / p_ref)
@@ -208,7 +212,7 @@ class MeasuredBasinTopology:
         p_solved = solved_count / total
 
         # Reference state: refusal (E=0)
-        p_ref = max(p_refused, 1e-10)
+        p_ref = max(p_refused, _LOG_SAFE_MIN)
 
         # Derive energies: E(x) = -T * log(p(x)/p(ref))
         refusal = MeasuredEnergy(
@@ -241,7 +245,7 @@ class MeasuredBasinTopology:
             # Approximate as (attempted + solved) / total
             escape_rate = (p_attempted + p_solved)
 
-        escape_rate = max(escape_rate, 1e-10)  # Numerical stability
+        escape_rate = max(escape_rate, _LOG_SAFE_MIN)  # Log safety
         barrier_height = -temperature * math.log(escape_rate)
         ridge_energy = caution.value + barrier_height
 

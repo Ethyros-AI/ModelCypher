@@ -43,6 +43,7 @@ from modelcypher.core.domain.geometry.atlas_protocols import (
     axis_key,
 )
 from modelcypher.core.domain.geometry.atlas_registry import get_temporal_concepts
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 _AXIS_DIRECTION = "direction"
 _AXIS_DURATION = "duration"
@@ -179,7 +180,8 @@ class TemporalTopologyAnalyzer:
         # Normalize for cosine similarity
         norms_arr = backend.norm(matrix, axis=1, keepdims=True)
         backend.eval(norms_arr)
-        matrix_norm = matrix / (norms_arr + 1e-8)
+        div_eps = division_epsilon(backend, matrix)
+        matrix_norm = matrix / (norms_arr + div_eps)
         backend.eval(matrix_norm)
 
         # PCA for axis analysis
@@ -303,7 +305,8 @@ class TemporalTopologyAnalyzer:
             backend.eval(n1_arr, n2_arr)
             n1 = float(backend.to_numpy(n1_arr).item())
             n2 = float(backend.to_numpy(n2_arr).item())
-            if n1 < 1e-8 or n2 < 1e-8:
+            div_eps = division_epsilon(backend, v1)
+            if n1 < div_eps or n2 < div_eps:
                 return 0.0
             dot_arr = backend.sum(v1 * v2)
             backend.eval(dot_arr)

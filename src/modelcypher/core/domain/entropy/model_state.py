@@ -31,8 +31,12 @@ Use z-scores relative to model baseline, not absolute thresholds.
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
+
+# Machine epsilon for float64 (native Python float)
+_MACHINE_EPS = sys.float_info.epsilon
 
 
 @dataclass(frozen=True)
@@ -50,7 +54,7 @@ class EntropyBaseline:
 
     def z_score(self, entropy: float) -> float:
         """Compute z-score of entropy relative to baseline."""
-        if self.std < 1e-10:
+        if self.std < _MACHINE_EPS:
             return 0.0
         return (entropy - self.mean) / self.std
 
@@ -64,7 +68,7 @@ class EntropyBaseline:
 
     def normalized(self, entropy: float) -> float:
         """Normalize entropy to [0, 1] using theoretical max."""
-        if self.max_theoretical < 1e-10:
+        if self.max_theoretical < _MACHINE_EPS:
             return 0.0
         return entropy / self.max_theoretical
 
@@ -113,7 +117,7 @@ class EntropyTransition:
 
     def z_score_delta(self, baseline: EntropyBaseline) -> float:
         """Change in z-score terms (model-appropriate significance)."""
-        if baseline.std < 1e-10:
+        if baseline.std < _MACHINE_EPS:
             return 0.0
         return self.entropy_delta / baseline.std
 

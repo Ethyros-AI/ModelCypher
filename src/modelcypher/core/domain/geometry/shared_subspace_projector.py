@@ -549,7 +549,7 @@ class SharedSubspaceProjector:
             for row in range(col + 1, d):
                 if abs(work[row, col]) > abs(work[max_row, col]):
                     max_row = row
-            if abs(work[max_row, col]) < 1e-15:
+            if abs(work[max_row, col]) < sys.float_info.min:
                 det = 0.0
                 break
             if max_row != col:
@@ -1062,7 +1062,9 @@ class SharedSubspaceProjector:
         if eigenvalues is None:
             return None
         eigen_float = [float(val) for val in eigenvalues]
-        min_eigen = min([val for val in eigen_float if val > 1e-6], default=1e-6)
+        # Use machine epsilon as threshold for meaningful eigenvalues
+        eps = sys.float_info.epsilon
+        min_eigen = min([val for val in eigen_float if val > eps], default=eps)
 
         inv_sqrt = [0.0 for _ in range(dim * dim)]
         for i in range(dim):
@@ -1094,7 +1096,8 @@ class SharedSubspaceProjector:
                 norm = 0.0
                 for i in range(dim):
                     norm += new_vecs[i * k + j] * new_vecs[i * k + j]
-                norm = math.sqrt(max(norm, 1e-12))
+                # Use float_info.min as floor for sqrt to avoid zero division
+                norm = math.sqrt(max(norm, sys.float_info.min))
                 for i in range(dim):
                     eigenvectors[i * k + j] = new_vecs[i * k + j] / norm
 
@@ -1108,7 +1111,7 @@ class SharedSubspaceProjector:
                 norm = 0.0
                 for i in range(dim):
                     norm += eigenvectors[i * k + j] * eigenvectors[i * k + j]
-                norm = math.sqrt(max(norm, 1e-12))
+                norm = math.sqrt(max(norm, sys.float_info.min))
                 for i in range(dim):
                     eigenvectors[i * k + j] /= norm
 
@@ -1145,7 +1148,7 @@ class SharedSubspaceProjector:
             sigma = 0.0
             for i in range(m):
                 sigma += mvj[i] * mvj[i]
-            sigma = math.sqrt(max(sigma, 1e-12))
+            sigma = math.sqrt(max(sigma, sys.float_info.min))
             singular_values.append(sigma)
             for i in range(m):
                 u_vecs[i * k_dim + j] = mvj[i] / sigma
@@ -1226,7 +1229,7 @@ class SharedSubspaceProjector:
                     max_row = row
 
             # Check for singular matrix
-            if max_val < 1e-15:
+            if max_val < sys.float_info.min:
                 return 0.0
 
             # Swap rows if needed

@@ -44,10 +44,14 @@ MLX-Specific:
 from __future__ import annotations
 
 import math
+import sys
 from dataclasses import dataclass
 from typing import Callable
 
 import mlx.core as mx
+
+# Machine epsilon for float64 (native Python float)
+_MACHINE_EPS = sys.float_info.epsilon
 
 
 @dataclass
@@ -218,7 +222,7 @@ class LossLandscapeComputer:
             trace += self._dot_product(r, hr)
         trace /= 5
 
-        condition_number = max_eigenvalue / max(min_eigenvalue, 1e-10)
+        condition_number = max_eigenvalue / max(min_eigenvalue, _MACHINE_EPS)
         sharpness = max_eigenvalue / (1.0 + max_eigenvalue)
 
         return CurvatureMetrics(
@@ -254,7 +258,7 @@ class LossLandscapeComputer:
                 p = params[k]
                 d_norm = float(mx.sqrt(mx.sum(d**2)).item())
                 p_norm = float(mx.sqrt(mx.sum(p**2)).item())
-                if d_norm > 1e-10:
+                if d_norm > _MACHINE_EPS:
                     result[k] = d * (p_norm / d_norm)
                 else:
                     result[k] = d
@@ -266,7 +270,7 @@ class LossLandscapeComputer:
                 total_norm += float(mx.sum(d**2).item())
             total_norm = math.sqrt(total_norm)
 
-            if total_norm > 1e-10:
+            if total_norm > _MACHINE_EPS:
                 return {k: d / total_norm for k, d in direction.items()}
             return direction
 

@@ -539,6 +539,13 @@ def _probe_precise(
                     # ================================================================
                     # ATTENTION KV TRANSFORMS: Separate for GQA models (k_proj, v_proj)
                     # KV heads are typically fewer than Q heads (e.g., 5 vs 15)
+                    #
+                    # IMPORTANT: KV caches are near-orthogonal in raw space (cosine ≈ 0)
+                    # but are LOW-RANK. We apply Orthogonal Procrustes pre-alignment
+                    # before GramAligner to rotate source KV into target's coordinate
+                    # frame. This follows "Align Attention Heads Before Merging Them"
+                    # (Jin et al., 2024) which shows Procrustes significantly improves
+                    # cross-architecture KV alignment.
                     # ================================================================
                     if (
                         src_layer in source_kv_activations
@@ -554,16 +561,88 @@ def _probe_precise(
                             tgt_kv = b.astype(tgt_kv, "float32")
                             b.eval(src_kv, tgt_kv)
 
-                            kv_result = gram_aligner.find_perfect_alignment(
-                                src_kv,
-                                tgt_kv,
+                            # ==============================================================
+                            # PROCRUSTES PRE-ALIGNMENT: Rotate source KV to target frame
+                            # KV heads have rotation symmetry - we find optimal R such that
+                            # ||src_kv @ R - tgt_kv||_F is minimized. This is the Orthogonal
+                            # Procrustes problem: R = U @ Vt where SVD(src^T @ tgt) = U Σ Vt
+                            #
+                            # For different dimensions, we project to shared space first.
+                            # ==============================================================
+                            src_dim = b.shape(src_kv)[1]
+                            tgt_dim = b.shape(tgt_kv)[1]
+                            shared_dim = min(src_dim, tgt_dim)
+
+                            # Project to shared dimension for Procrustes
+                            src_kv_shared = src_kv[:, :shared_dim]
+                            tgt_kv_shared = tgt_kv[:, :shared_dim]
+
+                            # Center for Procrustes (important for rotation invariance)
+                            src_mean = b.mean(src_kv_shared, axis=0, keepdims=True)
+                            tgt_mean = b.mean(tgt_kv_shared, axis=0, keepdims=True)
+                            src_centered = src_kv_shared - src_mean
+                            tgt_centered = tgt_kv_shared - tgt_mean
+                            b.eval(src_centered, tgt_centered)
+
+                            # Procrustes: M = src^T @ tgt, SVD(M) = U Σ Vt, R = U @ Vt
+                            M = b.matmul(b.transpose(src_centered), tgt_centered)
+                            b.eval(M)
+                            U, _, Vt = b.svd(M)
+                            R_procrustes = b.matmul(U, Vt)
+
+                            # Ensure proper rotation (det = +1), not reflection
+                            det_val = b.det(R_procrustes)
+                            b.eval(det_val)
+                            if float(b.to_numpy(det_val).item()) < 0:
+                                # Fix reflection by negating last column of U
+                                U_fixed = b.concatenate([U[:, :-1], -U[:, -1:]], axis=1)
+                                R_procrustes = b.matmul(U_fixed, Vt)
+                            b.eval(R_procrustes)
+
+                            # Apply Procrustes rotation to source (in shared space)
+                            src_kv_rotated = b.matmul(src_kv_shared, R_procrustes)
+                            b.eval(src_kv_rotated)
+
+                            # Log Procrustes alignment improvement
+                            pre_err = b.sum((src_centered - tgt_centered) ** 2)
+                            post_err = b.sum((src_kv_rotated - tgt_mean - tgt_centered) ** 2)
+                            b.eval(pre_err, post_err)
+                            logger.debug(
+                                "PROBE: KV Procrustes layer %d: error %.4f -> %.4f",
+                                src_layer,
+                                float(b.to_numpy(pre_err)),
+                                float(b.to_numpy(post_err)),
                             )
-                            kv_transforms[tgt_layer] = kv_result.feature_transform
+
+                            # Now run GramAligner on Procrustes-aligned activations
+                            kv_result = gram_aligner.find_perfect_alignment(
+                                src_kv_rotated,
+                                tgt_kv_shared,
+                            )
+
+                            # Store combined transform: Procrustes rotation + Gram alignment
+                            # If source has extra dims, pad Procrustes with identity
+                            if src_dim > shared_dim:
+                                # Pad R_procrustes to [src_dim, shared_dim] with zeros
+                                pad_rows = b.zeros((src_dim - shared_dim, shared_dim))
+                                R_padded = b.concatenate(
+                                    [R_procrustes, pad_rows], axis=0
+                                )
+                                b.eval(R_padded)
+                                R_procrustes_full = R_padded
+                            else:
+                                R_procrustes_full = R_procrustes
+
+                            # Combine: source @ R_procrustes @ gram_transform -> target
+                            gram_transform = b.array(kv_result.feature_transform)
+                            combined_transform = b.matmul(R_procrustes_full, gram_transform)
+                            b.eval(combined_transform)
+                            kv_transforms[tgt_layer] = b.to_numpy(combined_transform).tolist()
 
                             if not kv_result.is_perfect:
                                 logger.warning(
                                     "PROBE: Layer %d -> %d attention KV alignment not perfect "
-                                    "(achieved_cka=%.4f).",
+                                    "(achieved_cka=%.4f after Procrustes).",
                                     src_layer,
                                     tgt_layer,
                                     kv_result.achieved_cka,

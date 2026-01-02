@@ -43,8 +43,12 @@ from __future__ import annotations
 
 import logging
 import math
+import sys
 from dataclasses import dataclass
 from typing import Any, Callable
+
+# Machine epsilon for float64 (native Python float)
+_MACHINE_EPS = sys.float_info.epsilon
 
 try:
     import jax
@@ -260,7 +264,7 @@ class LossLandscapeComputerJAX:
             trace += self._dot_product(r, hr)
         trace /= 5
 
-        condition_number = max_eigenvalue / max(min_eigenvalue, 1e-10)
+        condition_number = max_eigenvalue / max(min_eigenvalue, _MACHINE_EPS)
         sharpness = max_eigenvalue / (1.0 + max_eigenvalue)
 
         logger.info(
@@ -312,7 +316,7 @@ class LossLandscapeComputerJAX:
                     return d
                 d_norm = float(jnp.linalg.norm(d))
                 p_norm = float(jnp.linalg.norm(p))
-                if d_norm > 1e-10:
+                if d_norm > _MACHINE_EPS:
                     return d * (p_norm / d_norm)
                 return d
 
@@ -323,7 +327,7 @@ class LossLandscapeComputerJAX:
             total_norm_sq = sum(float(jnp.sum(d**2)) for d in leaves if hasattr(d, "shape"))
             total_norm = math.sqrt(total_norm_sq)
 
-            if total_norm > 1e-10:
+            if total_norm > _MACHINE_EPS:
                 return jax.tree.map(
                     lambda d: d / total_norm if hasattr(d, "shape") else d,
                     direction,

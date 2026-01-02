@@ -47,6 +47,7 @@ MLX-Specific:
 from __future__ import annotations
 
 import math
+import sys
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -55,6 +56,9 @@ from typing import Callable, Iterator
 
 import mlx.core as mx
 import mlx.nn as nn
+
+# Smallest positive float for log safety (prevents log(0))
+_LOG_SAFE_MIN = sys.float_info.min
 
 
 class EvaluationMetric(str, Enum):
@@ -263,7 +267,7 @@ class EvaluationEngine:
 
         # Cross-entropy without reduction
         # CE = -log(softmax(logits)[target])
-        log_probs = mx.log(mx.softmax(logits_flat, axis=-1) + 1e-10)
+        log_probs = mx.log(mx.softmax(logits_flat, axis=-1) + _LOG_SAFE_MIN)
 
         # Gather target log probs
         batch_indices = mx.arange(targets_flat.shape[0])

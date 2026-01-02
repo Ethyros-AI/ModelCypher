@@ -34,6 +34,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 
 logger = logging.getLogger(__name__)
 
+# IEEE 754 float32 machine epsilon (2^-23)
+# This is the smallest value where 1.0 + eps != 1.0 in float32.
+_FLOAT32_MACHINE_EPS = 2.0 ** -23
+
 
 class TransformationType(str, Enum):
     """Types of transformations that may be needed for merging."""
@@ -420,8 +424,7 @@ def create_diagnostic_vector(
     importance_score = min(1.0, max(0.0, refinement_density))
 
     # Use float32 precision bounds for stability normalization.
-    float32_eps = 2.0 ** -23
-    max_stable_condition = 1.0 / math.sqrt(float32_eps)
+    max_stable_condition = 1.0 / math.sqrt(_FLOAT32_MACHINE_EPS)
     if condition_number <= 1.0:
         instability_score = 0.0
     else:

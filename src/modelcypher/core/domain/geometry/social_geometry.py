@@ -207,7 +207,8 @@ class SocialGeometryAnalyzer:
             backend.eval(norm_a, norm_b)
             norm_a_val = float(backend.to_numpy(norm_a))
             norm_b_val = float(backend.to_numpy(norm_b))
-            if norm_a_val < 1e-8 or norm_b_val < 1e-8:
+            div_eps = division_epsilon(backend, a)
+            if norm_a_val < div_eps or norm_b_val < div_eps:
                 return 0.0
             dot_prod = backend.sum(a * b)
             backend.eval(dot_prod)
@@ -386,7 +387,8 @@ class SocialGeometryAnalyzer:
             norm = backend.norm(power_direction)
             backend.eval(norm)
             norm_val = float(backend.to_numpy(norm))
-            if norm_val > 1e-8:
+            div_eps = division_epsilon(backend, power_direction)
+            if norm_val > div_eps:
                 power_direction = power_direction / norm
             else:
                 power_direction = backend.zeros_like(power_direction)

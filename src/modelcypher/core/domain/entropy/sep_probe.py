@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -257,8 +258,9 @@ class SEPProbe:
             else:
                 h = hidden_state
 
-            # Normalize
-            h_normalized = (h - probe.train_mean) / max(probe.train_std, 1e-6)
+            # Normalize - use division_epsilon for precision-aware threshold
+            div_eps = division_epsilon(b, h)
+            h_normalized = (h - probe.train_mean) / max(probe.train_std, div_eps)
 
             # Linear projection: ŜE_l = w_l^T h_l + b_l
             projection = b.sum(weight_array * h_normalized)
@@ -302,7 +304,8 @@ class SEPProbe:
 
         b = self._backend
         h = hidden_state[-1] if hidden_state.ndim > 1 else hidden_state
-        h_normalized = (h - probe.train_mean) / max(probe.train_std, 1e-6)
+        div_eps = division_epsilon(b, h)
+        h_normalized = (h - probe.train_mean) / max(probe.train_std, div_eps)
 
         projection = b.sum(weight_array * h_normalized)
         prediction = projection + probe.bias

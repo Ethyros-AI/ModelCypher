@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import logging
 import math
+import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -56,7 +57,10 @@ from modelcypher.core.domain.geometry.atlas_protocols import (
     enum_key,
 )
 from modelcypher.core.domain.geometry.atlas_registry import get_spatial_concepts
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -374,6 +378,7 @@ class EuclideanConsistencyAnalyzer:
         pythagorean_error = sum(pyth_errors) / len(pyth_errors) if pyth_errors else float("inf")
 
         # Test 2: Triangle inequality violations
+        # Use scale-relative tolerance based on the distance matrix
         violations = 0
         for i in range(n):
             for j in range(n):
@@ -382,11 +387,13 @@ class EuclideanConsistencyAnalyzer:
                         d_ij = latent_dists[i, j]
                         d_jk = latent_dists[j, k]
                         d_ik = latent_dists[i, k]
-                        if d_ij + d_jk < d_ik - 1e-6:
+                        # Relative tolerance: machine epsilon times the scale
+                        tol = sys.float_info.epsilon * max(d_ij, d_jk, d_ik, 1.0)
+                        if d_ij + d_jk < d_ik - tol:
                             violations += 1
-                        if d_ij + d_ik < d_jk - 1e-6:
+                        if d_ij + d_ik < d_jk - tol:
                             violations += 1
-                        if d_jk + d_ik < d_ij - 1e-6:
+                        if d_jk + d_ik < d_ij - tol:
                             violations += 1
 
         # Test 3: Intrinsic dimensionality via MDS stress
@@ -534,7 +541,8 @@ class EuclideanConsistencyAnalyzer:
             norm1 = _backend_vector_norm(b, v1)
             norm2 = _backend_vector_norm(b, v2)
 
-            if norm1 < 1e-6 or norm2 < 1e-6:
+            div_eps = division_epsilon(b, v1)
+            if norm1 < div_eps or norm2 < div_eps:
                 results[name] = 0.0
                 return
 
@@ -846,7 +854,8 @@ class GravityGradientAnalyzer:
         if ceiling_act is not None and floor_act is not None:
             gravity_dir_array = floor_act - ceiling_act
             norm = _backend_vector_norm(b, gravity_dir_array)
-            if norm > 1e-6 and not _scalar_isnan(norm) and not _scalar_isinf(norm):
+            div_eps = division_epsilon(b, gravity_dir_array)
+            if norm > div_eps and not _scalar_isnan(norm) and not _scalar_isinf(norm):
                 # Normalize on backend
                 gravity_dir_array = gravity_dir_array / norm
                 b.eval(gravity_dir_array)
@@ -888,7 +897,8 @@ class GravityGradientAnalyzer:
             std_m = _backend_std(b, masses_arr)
             std_p = _backend_std(b, positions_arr)
 
-            if std_m > 1e-6 and std_p > 1e-6 and not _scalar_isnan(std_p) and not _scalar_isinf(std_p):
+            std_eps = division_epsilon(b, masses_arr)
+            if std_m > std_eps and std_p > std_eps and not _scalar_isnan(std_p) and not _scalar_isinf(std_p):
                 mass_correlation = _backend_corrcoef(b, masses_arr, positions_arr)
                 if _scalar_isnan(mass_correlation):
                     mass_correlation = 0.0
@@ -946,7 +956,8 @@ class GravityGradientAnalyzer:
         std_m = _backend_std(b, masses_arr)
         std_p = _backend_std(b, positions_arr)
 
-        if std_m > 1e-6 and std_p > 1e-6:
+        std_eps = division_epsilon(b, masses_arr)
+        if std_m > std_eps and std_p > std_eps:
             return _backend_corrcoef(b, masses_arr, positions_arr)
         return 0.0
 
@@ -1032,7 +1043,8 @@ class VolumetricDensityProber:
             var = _backend_var(b, act)
 
             # Density metric: higher norm and lower variance = more concentrated
-            if var > 1e-6 and not _scalar_isnan(var) and not _scalar_isinf(var):
+            var_eps = division_epsilon(b, act)
+            if var > var_eps and not _scalar_isnan(var) and not _scalar_isinf(var):
                 density = norm / math.sqrt(var)
             else:
                 density = norm
@@ -1055,7 +1067,8 @@ class VolumetricDensityProber:
             dens_arr = b.array([p[1] for p in density_mass_pairs])
             std_m = _backend_std(b, masses_arr)
             std_d = _backend_std(b, dens_arr)
-            if std_m > 1e-6 and std_d > 1e-6:
+            std_eps = division_epsilon(b, masses_arr)
+            if std_m > std_eps and std_d > std_eps:
                 density_mass_corr = _backend_corrcoef(b, masses_arr, dens_arr)
             else:
                 density_mass_corr = 0.0
@@ -1074,7 +1087,8 @@ class VolumetricDensityProber:
             dens_arr = b.array([p[1] for p in depth_density_pairs])
             std_depths = _backend_std(b, depths_arr)
             std_dens = _backend_std(b, dens_arr)
-            if std_depths > 1e-6 and std_dens > 1e-6:
+            std_eps = division_epsilon(b, depths_arr)
+            if std_depths > std_eps and std_dens > std_eps:
                 perspective_atten = _backend_corrcoef(b, depths_arr, dens_arr)
             else:
                 perspective_atten = 0.0

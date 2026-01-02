@@ -23,7 +23,11 @@ classification or thresholding logic lives here.
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
+
+# Machine epsilon for float64 (native Python float)
+_MACHINE_EPS = sys.float_info.epsilon
 
 
 @dataclass(frozen=True)
@@ -59,8 +63,8 @@ class CalibratedBaseline:
 
     def z_score(self, entropy: float) -> float:
         """Compute z-score (standard deviations from mean)."""
-        if self.std_dev < 1e-10:
-            return 0.0 if abs(entropy - self.mean) < 1e-10 else float("inf")
+        if self.std_dev < _MACHINE_EPS:
+            return 0.0 if abs(entropy - self.mean) < _MACHINE_EPS else float("inf")
         return (entropy - self.mean) / self.std_dev
 
 

@@ -26,10 +26,14 @@ Ported 1:1 from the reference Swift implementation.
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+
+# Machine epsilon for float64 (native Python float)
+_MACHINE_EPS = sys.float_info.epsilon
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -158,7 +162,7 @@ class GradientSmoothnessEstimator:
             b.eval(sq_sum)
             mean_grad_norm_sq += float(b.to_numpy(sq_sum).item())
 
-        snr = mean_grad_norm_sq / (variance + 1e-8)
+        snr = mean_grad_norm_sq / (variance + _MACHINE_EPS)
 
         return LayerGradientQuality(
             variance=variance, snr=snr, mean_norm=mean_norm, sample_count=count
