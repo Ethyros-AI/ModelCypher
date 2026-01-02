@@ -28,14 +28,14 @@ Tests the mathematical validation suite that verifies:
 
 from __future__ import annotations
 
-import pytest
-
 from modelcypher.core.domain.geometry.geometry_validation_suite import (
     Config,
     GeometryValidationSuite,
-    Thresholds,
 )
-from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    regularization_epsilon,
+)
 
 
 class TestSuiteExecution:
@@ -72,10 +72,7 @@ class TestSuiteExecution:
 
     def test_suite_with_fixtures_included(self) -> None:
         """Suite can include fixtures in report for debugging."""
-        config = Config(
-            include_fixtures=True,
-            thresholds=Thresholds.standard(),
-        )
+        config = Config.with_parameters(include_fixtures=True)
         suite = GeometryValidationSuite()
         report = suite.run(config)
 
@@ -101,9 +98,8 @@ class TestGromovWassersteinValidation:
         gw = report.gromov_wasserstein
 
         # The identity test computes GW(source, source)
-        assert gw.distance_identity < 1e-6, (
-            f"Identity distance {gw.distance_identity} should be near zero"
-        )
+        eps = machine_epsilon(suite._backend, suite._backend.array([gw.distance_identity]))
+        assert abs(gw.distance_identity) <= eps
 
     def test_permutation_distance_small(self) -> None:
         """GW distance between a matrix and its permutation should be small.
@@ -116,9 +112,8 @@ class TestGromovWassersteinValidation:
         gw = report.gromov_wasserstein
 
         # Permutation of same points should have small distance
-        assert gw.distance_permutation < 0.02, (
-            f"Permutation distance {gw.distance_permutation} too large"
-        )
+        eps = machine_epsilon(suite._backend, suite._backend.array([gw.distance_permutation]))
+        assert abs(gw.distance_permutation) <= eps
 
     def test_symmetry_holds(self) -> None:
         """GW(A, B) should equal GW(B, A).
@@ -130,7 +125,8 @@ class TestGromovWassersteinValidation:
         gw = report.gromov_wasserstein
 
         # symmetry_delta = |GW(A,B) - GW(B,A)|
-        assert gw.symmetry_delta < 1e-3, f"Symmetry delta {gw.symmetry_delta} too large"
+        eps = machine_epsilon(suite._backend, suite._backend.array([gw.symmetry_delta]))
+        assert gw.symmetry_delta <= eps
 
     def test_coupling_mass_conservation(self) -> None:
         """Optimal coupling should preserve marginal mass.
@@ -142,10 +138,12 @@ class TestGromovWassersteinValidation:
         report = suite.run()
         gw = report.gromov_wasserstein
 
-        assert gw.max_row_mass_error < 0.02, f"Row mass error {gw.max_row_mass_error} too large"
-        assert gw.max_column_mass_error < 0.02, (
-            f"Column mass error {gw.max_column_mass_error} too large"
+        eps = regularization_epsilon(
+            suite._backend,
+            suite._backend.array([gw.max_row_mass_error, gw.max_column_mass_error]),
         )
+        assert gw.max_row_mass_error <= eps
+        assert gw.max_column_mass_error <= eps
 
     def test_algorithm_converges(self) -> None:
         """GW solver should converge within iteration budget."""
@@ -168,9 +166,11 @@ class TestTraversalCoherenceValidation:
         report = suite.run()
         tc = report.traversal_coherence
 
-        assert tc.self_correlation >= 0.999, (
-            f"Self correlation {tc.self_correlation} should be ~1.0"
+        eps = machine_epsilon(
+            suite._backend,
+            suite._backend.array([tc.self_correlation]),
         )
+        assert abs(tc.self_correlation - 1.0) <= eps
 
     def test_perturbed_correlation_differs(self) -> None:
         """Comparing with perturbed Gram should give lower correlation.
@@ -182,10 +182,11 @@ class TestTraversalCoherenceValidation:
         report = suite.run()
         tc = report.traversal_coherence
 
-        # Perturbed should be noticeably different from self
-        assert tc.perturbed_correlation < tc.self_correlation, (
-            "Perturbed correlation should be lower than self correlation"
+        eps = machine_epsilon(
+            suite._backend,
+            suite._backend.array([tc.self_correlation, tc.perturbed_correlation]),
         )
+        assert tc.self_correlation - tc.perturbed_correlation >= eps
 
     def test_paths_processed(self) -> None:
         """Validation should process the fixture paths."""
@@ -209,9 +210,8 @@ class TestPathSignatureValidation:
         report = suite.run()
         ps = report.path_signature
 
-        assert ps.frechet_distance == pytest.approx(0.0, abs=1e-5), (
-            f"Self Frechet distance {ps.frechet_distance} should be zero"
-        )
+        eps = machine_epsilon(suite._backend, suite._backend.array([ps.frechet_distance]))
+        assert abs(ps.frechet_distance) <= eps
 
     def test_signature_properties_computed(self) -> None:
         """Signature properties should be computed."""
@@ -233,11 +233,11 @@ class TestPathSignatureValidation:
         report = suite.run()
         ps = report.path_signature
 
-        # Similarity should be high for translated embeddings
-        # (The fixture uses shifted_embeddings which are translations)
-        assert ps.signature_similarity >= 0.999, (
-            f"Signature similarity {ps.signature_similarity} should be ~1.0 for translations"
+        eps = machine_epsilon(
+            suite._backend,
+            suite._backend.array([ps.signature_similarity]),
         )
+        assert abs(ps.signature_similarity - 1.0) <= eps
 
 
 class TestSpectralSignatureValidation:
@@ -293,69 +293,30 @@ class TestDimensionConstraintValidation:
         report = suite.run()
         validation = report.dimension_constraint
 
-        assert validation.gram_cka >= 0.999999
-        assert validation.geodesic_mean_abs_diff <= 1e-6
-        assert validation.geodesic_max_abs_diff <= 1e-6
-        assert validation.spectral_eigen_mean_abs_diff <= 1e-6
-        assert validation.spectral_eigen_max_abs_diff <= 1e-6
+        cka_eps = machine_epsilon(
+            suite._backend,
+            suite._backend.array([validation.gram_cka]),
+        )
+        geo_eps = regularization_epsilon(
+            suite._backend,
+            suite._backend.array(
+                [validation.geodesic_mean_abs_diff, validation.geodesic_max_abs_diff],
+            ),
+        )
+        spectral_eps = regularization_epsilon(
+            suite._backend,
+            suite._backend.array(
+                [
+                    validation.spectral_eigen_mean_abs_diff,
+                    validation.spectral_eigen_max_abs_diff,
+                ],
+            ),
+        )
+        assert abs(validation.gram_cka - 1.0) <= cka_eps
+        assert validation.geodesic_mean_abs_diff <= geo_eps
+        assert validation.geodesic_max_abs_diff <= geo_eps
+        assert validation.spectral_eigen_mean_abs_diff <= spectral_eps
+        assert validation.spectral_eigen_max_abs_diff <= spectral_eps
         assert validation.component_count_base == validation.component_count_padded
         assert validation.cycle_count_base == validation.cycle_count_padded
         assert validation.betti_numbers_base == validation.betti_numbers_padded
-
-
-class TestThresholds:
-    """Tests for validation thresholds."""
-
-    def test_standard_thresholds_are_reasonable(self) -> None:
-        """Standard thresholds should be numerically reasonable."""
-        thresholds = Thresholds.standard()
-
-        assert thresholds.identity_distance_max > 0, "Identity threshold must be positive"
-        assert thresholds.identity_distance_max < 1e-3, "Identity threshold should be tight"
-
-        assert thresholds.symmetry_delta_max > 0, "Symmetry threshold must be positive"
-        assert thresholds.symmetry_delta_max < 0.01, "Symmetry threshold should be tight"
-
-        assert thresholds.traversal_self_correlation_min > 0.9, (
-            "Self correlation threshold should be near 1.0"
-        )
-        assert thresholds.dimension_constraint_cka_min > 0.99, (
-            "Dimension constraint CKA threshold should be near 1.0"
-        )
-        assert thresholds.dimension_constraint_geodesic_max_abs_diff_max < 1e-3, (
-            "Dimension constraint geodesic threshold should be tight"
-        )
-        assert thresholds.dimension_constraint_spectral_eigen_max_abs_diff_max < 1e-3, (
-            "Dimension constraint spectral threshold should be tight"
-        )
-
-    def test_custom_thresholds_affect_pass_status(self) -> None:
-        """Custom thresholds should affect validation pass/fail."""
-        # Create impossibly tight thresholds
-        tight_thresholds = Thresholds(
-            identity_distance_max=1e-20,  # Impossible
-            permutation_distance_max=1e-20,
-            symmetry_delta_max=1e-20,
-            coupling_mass_error_max=1e-20,
-            traversal_self_correlation_min=1.0001,  # Impossible (>1)
-            traversal_perturbed_correlation_max=0.0,
-            signature_similarity_min=1.0001,
-            frechet_distance_max=1e-20,
-            dimension_constraint_cka_min=1.1,
-            dimension_constraint_geodesic_mean_abs_diff_max=-1.0,
-            dimension_constraint_geodesic_max_abs_diff_max=-1.0,
-            dimension_constraint_spectral_eigen_mean_abs_diff_max=-1.0,
-            dimension_constraint_spectral_eigen_max_abs_diff_max=-1.0,
-            dimension_constraint_spectral_entropy_abs_diff_max=-1.0,
-            dimension_constraint_heat_trace_max_abs_diff_max=-1.0,
-            dimension_constraint_topology_abs_diff_max=-1.0,
-        )
-        config = Config(
-            include_fixtures=False,
-            thresholds=tight_thresholds,
-        )
-        suite = GeometryValidationSuite()
-        report = suite.run(config)
-
-        # With impossible thresholds, validation should fail
-        assert not report.passed, "Impossible thresholds should cause failure"

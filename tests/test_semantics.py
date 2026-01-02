@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.semantics.vector_space import (
     ConceptNode,
     ConceptVectorSpace,
@@ -37,7 +37,7 @@ def backend() -> "Backend":
 
 
 def _eps(backend: "Backend", *values: float) -> float:
-    return division_epsilon(backend, backend.array(list(values) or [1.0]))
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 # =============================================================================
@@ -129,7 +129,7 @@ class TestConceptVectorSpace:
         # First neighbor should be "a" (identical after normalization)
         assert neighbors[0][0] == "a"
         # Similarity to self should be high (close to 1.0)
-        assert neighbors[0][1] > 0.9
+        assert abs(neighbors[0][1] - 1.0) <= _eps(backend, neighbors[0][1])
 
     def test_find_nearest_neighbors_respects_k(self, backend: "Backend") -> None:
         """Should return at most k neighbors."""
@@ -321,4 +321,6 @@ class TestActivationGraphProjector:
         projector.record_co_occurrence(["alone"])
 
         # No edges created, no nodes in adjacency
-        assert projector.get_density() == 0.0
+        density = projector.get_density()
+        backend = get_default_backend()
+        assert abs(density - 0.0) <= _eps(backend, density, 0.0)

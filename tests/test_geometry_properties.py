@@ -23,6 +23,8 @@ from hypothesis import assume, given, settings
 pytestmark = pytest.mark.property
 from hypothesis import strategies as st
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.geometry.generalized_procrustes import Config, GeneralizedProcrustes
 from modelcypher.core.domain.geometry.gromov_wasserstein import (
     GromovWassersteinDistance,
@@ -60,7 +62,15 @@ def point_cloud(draw, n_points=st.integers(3, 20), dims=st.integers(2, 5)):
     return points
 
 
-def has_distinct_points(points: list[list[float]], min_separation: float = 1e-6) -> bool:
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
+
+
+def has_distinct_points(
+    points: list[list[float]],
+    min_separation: float | None = None,
+) -> bool:
     """Check if point cloud has at least 2 distinct points.
 
     When all points are identical, geodesic distances become infinite
@@ -69,6 +79,9 @@ def has_distinct_points(points: list[list[float]], min_separation: float = 1e-6)
     """
     if len(points) < 2:
         return False
+    if min_separation is None:
+        backend = get_default_backend()
+        min_separation = machine_epsilon(backend, backend.array(points))
     for i in range(len(points)):
         for j in range(i + 1, len(points)):
             dist_sq = sum((a - b) ** 2 for a, b in zip(points[i], points[j]))
@@ -97,7 +110,7 @@ class TestProcrustesProperties:
         if result is not None:
             # Self-alignment must be exactly 0 (within floating point tolerance)
             # This tests the core mathematical property: d(X, X) = 0
-            assert result.alignment_error == pytest.approx(0.0, abs=1e-6)
+            assert abs(result.alignment_error - 0.0) <= _eps(result.alignment_error)
 
     @given(matrix_2d(), matrix_2d())
     @settings(max_examples=30, deadline=None)
@@ -110,7 +123,8 @@ class TestProcrustesProperties:
         result = GeneralizedProcrustes().align([matrix_a, matrix_b], config=config)
 
         if result is not None:
-            assert result.alignment_error >= 0
+            eps = _eps(result.alignment_error)
+            assert result.alignment_error >= -eps
 
     @given(st.lists(matrix_2d(), min_size=2, max_size=5))
     @settings(max_examples=20, deadline=None)
@@ -139,7 +153,9 @@ class TestProcrustesProperties:
         result = GeneralizedProcrustes().align([matrix, matrix], config=config)
 
         if result is not None:
-            assert 0.0 <= result.consensus_variance_ratio <= 1.0 + 1e-6
+            eps = _eps(result.consensus_variance_ratio, 1.0)
+            assert result.consensus_variance_ratio >= -eps
+            assert result.consensus_variance_ratio <= 1.0 + eps
 
 
 class TestGromovWassersteinProperties:
@@ -163,7 +179,7 @@ class TestGromovWassersteinProperties:
 
         # Implementation has fast-path for identical matrices returning 0
         # This is a fundamental mathematical property: d(X, X) = 0
-        assert result.distance == pytest.approx(0.0, abs=1e-6)
+        assert abs(result.distance - 0.0) <= _eps(result.distance)
 
     @given(point_cloud(), point_cloud())
     @settings(max_examples=20, deadline=None)
@@ -178,7 +194,8 @@ class TestGromovWassersteinProperties:
 
         result = gw.compute(distances_a, distances_b)
 
-        assert result.distance >= 0
+        eps = _eps(result.distance)
+        assert result.distance >= -eps
 
     @given(point_cloud(), point_cloud())
     @settings(max_examples=20, deadline=None)
@@ -193,7 +210,9 @@ class TestGromovWassersteinProperties:
 
         result = gw.compute(distances_a, distances_b)
 
-        assert 0.0 <= result.normalized_distance <= 1.0
+        eps = _eps(result.normalized_distance, 1.0)
+        assert result.normalized_distance >= -eps
+        assert result.normalized_distance <= 1.0 + eps
 
     @given(point_cloud(), point_cloud())
     @settings(max_examples=20, deadline=None)
@@ -208,7 +227,9 @@ class TestGromovWassersteinProperties:
 
         result = gw.compute(distances_a, distances_b)
 
-        assert 0.0 <= result.alignment_score <= 1.0
+        eps = _eps(result.alignment_score, 1.0)
+        assert result.alignment_score >= -eps
+        assert result.alignment_score <= 1.0 + eps
 
     @given(point_cloud())
     @settings(max_examples=30, deadline=None)
@@ -246,7 +267,8 @@ class TestGromovWassersteinProperties:
         n = len(points)
         for i in range(n):
             for j in range(n):
-                assert abs(dist_np[i][j] - dist_np[j][i]) < 1e-6
+                eps = _eps(dist_np[i][j], dist_np[j][i])
+                assert abs(dist_np[i][j] - dist_np[j][i]) <= eps
 
     @given(point_cloud())
     @settings(max_examples=30, deadline=None)
@@ -261,6 +283,4 @@ class TestGromovWassersteinProperties:
         for i in range(len(points)):
             # Extract scalar value from array
             diag_val = float(distances[i, i]) if hasattr(distances, '__getitem__') else distances[i][i]
-            # Allow for floating-point precision in distance calculation
-            # Float32 precision can have larger errors for large coordinate values
-            assert abs(diag_val) < 0.01
+            assert abs(diag_val) <= _eps(diag_val)

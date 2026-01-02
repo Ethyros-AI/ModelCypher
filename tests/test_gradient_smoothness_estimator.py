@@ -23,6 +23,9 @@ variance, SNR, and mean gradient norms.
 
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
 # Attempt MLX import - skip module entirely if unavailable
 try:
     import mlx.core as mx
@@ -39,6 +42,12 @@ from modelcypher.core.domain.training.gradient_smoothness_estimator import (
     GradientSmoothnessEstimator,
     LayerGradientQuality,
 )
+
+
+@pytest.fixture
+def backend():
+    """Get the default backend for dtype-derived epsilons."""
+    return get_default_backend()
 
 
 class TestLayerGradientQuality:
@@ -155,7 +164,7 @@ class TestPerLayerQuality:
         result = GradientSmoothnessEstimator.per_layer_quality([])
         assert result == {}
 
-    def test_two_samples_same_gradients(self):
+    def test_two_samples_same_gradients(self, backend):
         """Two identical samples should have zero variance."""
         grad = mx.array([1.0, 2.0, 3.0])
         gradients = [
@@ -167,7 +176,8 @@ class TestPerLayerQuality:
 
         assert 0 in result
         # Zero variance when gradients are identical
-        assert result[0].variance == 0.0
+        eps = machine_epsilon(backend, backend.array([result[0].variance]))
+        assert abs(result[0].variance) <= eps
         assert result[0].sample_count == 2
 
     def test_two_samples_different_gradients(self):
@@ -232,7 +242,7 @@ class TestComputeGradientQuality:
         result = GradientSmoothnessEstimator._compute_gradient_quality(samples)
         assert result is None
 
-    def test_mean_norm_computation(self):
+    def test_mean_norm_computation(self, backend):
         """Mean norm should be computed correctly."""
         # Gradient norm of [3, 4] = 5
         samples = [
@@ -242,9 +252,10 @@ class TestComputeGradientQuality:
         result = GradientSmoothnessEstimator._compute_gradient_quality(samples)
 
         assert result is not None
-        assert abs(result.mean_norm - 5.0) < 0.01
+        eps = machine_epsilon(backend, backend.array([result.mean_norm]))
+        assert abs(result.mean_norm - 5.0) <= eps
 
-    def test_snr_high_for_consistent_gradients(self):
+    def test_snr_high_for_consistent_gradients(self, backend):
         """SNR should be high (and variance low) for consistent gradients."""
         grad = mx.array([1.0, 1.0, 1.0, 1.0])
         samples = [{"w": grad}, {"w": grad}, {"w": grad}]
@@ -253,7 +264,8 @@ class TestComputeGradientQuality:
 
         assert result is not None
         # Zero variance should give very high SNR
-        assert result.variance == 0.0
+        eps = machine_epsilon(backend, backend.array([result.variance]))
+        assert abs(result.variance) <= eps
 
     def test_snr_low_for_noisy_gradients(self):
         """SNR should be lower for noisy gradients."""

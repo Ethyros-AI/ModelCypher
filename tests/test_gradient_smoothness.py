@@ -17,9 +17,8 @@
 
 """Tests for gradient smoothness estimator (per-layer gradient quality)."""
 
-import pytest
-
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.training.gradient_smoothness_estimator import (
     GradientSmoothnessEstimator,
     LayerGradientQuality,
@@ -227,7 +226,8 @@ class TestComputeGradientQuality:
         result = GradientSmoothnessEstimator._compute_gradient_quality(samples, backend)
 
         assert result is not None
-        assert result.variance == pytest.approx(0.0, abs=1e-6)
+        eps = machine_epsilon(backend, backend.array([result.variance]))
+        assert abs(result.variance) <= eps
 
     def test_different_gradients_nonzero_variance(self, backend):
         samples = [

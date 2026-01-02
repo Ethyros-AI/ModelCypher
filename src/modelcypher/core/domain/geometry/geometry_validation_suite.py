@@ -25,7 +25,10 @@ from uuid import UUID
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.cka import compute_cka_from_grams
 from modelcypher.core.domain.geometry.gromov_wasserstein import GromovWassersteinDistance
-from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    regularization_epsilon,
+)
 from modelcypher.core.domain.geometry.path_geometry import PathGeometry, PathNode, PathSignature
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 from modelcypher.core.domain.geometry.spectral_signature import (
@@ -43,145 +46,30 @@ SUITE_VERSION = "1.0"
 
 
 @dataclass(frozen=True)
-class Thresholds:
-    """Validation thresholds for geometry suite.
-
-    Use with_parameters() to create with explicit values.
-    """
-
-    identity_distance_max: float
-    permutation_distance_max: float
-    symmetry_delta_max: float
-    coupling_mass_error_max: float
-    traversal_self_correlation_min: float
-    traversal_perturbed_correlation_max: float
-    signature_similarity_min: float
-    frechet_distance_max: float
-    dimension_constraint_cka_min: float
-    dimension_constraint_geodesic_mean_abs_diff_max: float
-    dimension_constraint_geodesic_max_abs_diff_max: float
-    dimension_constraint_spectral_eigen_mean_abs_diff_max: float
-    dimension_constraint_spectral_eigen_max_abs_diff_max: float
-    dimension_constraint_spectral_entropy_abs_diff_max: float
-    dimension_constraint_heat_trace_max_abs_diff_max: float
-    dimension_constraint_topology_abs_diff_max: float
-
-    @classmethod
-    def with_parameters(
-        cls,
-        *,
-        identity_distance_max: float = 1e-6,
-        permutation_distance_max: float = 0.02,
-        symmetry_delta_max: float = 1e-3,
-        coupling_mass_error_max: float = 0.02,
-        traversal_self_correlation_min: float = 0.999,
-        traversal_perturbed_correlation_max: float = 0.995,
-        signature_similarity_min: float = 0.999,
-        frechet_distance_max: float = 1e-5,
-        dimension_constraint_cka_min: float = 0.999999,
-        dimension_constraint_geodesic_mean_abs_diff_max: float = 1e-6,
-        dimension_constraint_geodesic_max_abs_diff_max: float = 1e-6,
-        dimension_constraint_spectral_eigen_mean_abs_diff_max: float = 1e-6,
-        dimension_constraint_spectral_eigen_max_abs_diff_max: float = 1e-6,
-        dimension_constraint_spectral_entropy_abs_diff_max: float = 1e-6,
-        dimension_constraint_heat_trace_max_abs_diff_max: float = 1e-6,
-        dimension_constraint_topology_abs_diff_max: float = 1e-9,
-    ) -> "Thresholds":
-        """Create thresholds with explicit parameters.
-
-        Args:
-            identity_distance_max: Maximum distance for identity test.
-            permutation_distance_max: Maximum distance for permutation test.
-            symmetry_delta_max: Maximum symmetry deviation.
-            coupling_mass_error_max: Maximum coupling mass error.
-            traversal_self_correlation_min: Minimum self-correlation.
-            traversal_perturbed_correlation_max: Maximum perturbed correlation.
-            signature_similarity_min: Minimum signature similarity.
-            frechet_distance_max: Maximum Frechet distance.
-            dimension_constraint_cka_min: Minimum Gram CKA for padding invariance.
-            dimension_constraint_geodesic_mean_abs_diff_max: Maximum mean geodesic diff.
-            dimension_constraint_geodesic_max_abs_diff_max: Maximum max geodesic diff.
-            dimension_constraint_spectral_eigen_mean_abs_diff_max: Maximum mean eigen diff.
-            dimension_constraint_spectral_eigen_max_abs_diff_max: Maximum max eigen diff.
-            dimension_constraint_spectral_entropy_abs_diff_max: Maximum spectral entropy diff.
-            dimension_constraint_heat_trace_max_abs_diff_max: Maximum heat trace diff.
-            dimension_constraint_topology_abs_diff_max: Maximum topology summary diff.
-
-        Returns:
-            Thresholds with specified parameters.
-        """
-        return cls(
-            identity_distance_max=identity_distance_max,
-            permutation_distance_max=permutation_distance_max,
-            symmetry_delta_max=symmetry_delta_max,
-            coupling_mass_error_max=coupling_mass_error_max,
-            traversal_self_correlation_min=traversal_self_correlation_min,
-            traversal_perturbed_correlation_max=traversal_perturbed_correlation_max,
-            signature_similarity_min=signature_similarity_min,
-            frechet_distance_max=frechet_distance_max,
-            dimension_constraint_cka_min=dimension_constraint_cka_min,
-            dimension_constraint_geodesic_mean_abs_diff_max=(
-                dimension_constraint_geodesic_mean_abs_diff_max
-            ),
-            dimension_constraint_geodesic_max_abs_diff_max=(
-                dimension_constraint_geodesic_max_abs_diff_max
-            ),
-            dimension_constraint_spectral_eigen_mean_abs_diff_max=(
-                dimension_constraint_spectral_eigen_mean_abs_diff_max
-            ),
-            dimension_constraint_spectral_eigen_max_abs_diff_max=(
-                dimension_constraint_spectral_eigen_max_abs_diff_max
-            ),
-            dimension_constraint_spectral_entropy_abs_diff_max=(
-                dimension_constraint_spectral_entropy_abs_diff_max
-            ),
-            dimension_constraint_heat_trace_max_abs_diff_max=(
-                dimension_constraint_heat_trace_max_abs_diff_max
-            ),
-            dimension_constraint_topology_abs_diff_max=dimension_constraint_topology_abs_diff_max,
-        )
-
-    @classmethod
-    def standard(cls) -> "Thresholds":
-        """Return standard thresholds."""
-        return cls.with_parameters()
-
-    @classmethod
-    def default(cls) -> "Thresholds":
-        """Alias for standard thresholds."""
-        return cls.standard()
-
-
-@dataclass(frozen=True)
 class Config:
     """Configuration for geometry validation suite.
 
-    Use with_parameters() to create with explicit values.
     GW solver parameters are derived from dtype - no configuration needed.
     """
 
     include_fixtures: bool
-    thresholds: Thresholds
 
     @classmethod
     def with_parameters(
         cls,
         *,
         include_fixtures: bool = False,
-        thresholds: Thresholds | None = None,
     ) -> "Config":
         """Create configuration with explicit parameters.
 
         Args:
             include_fixtures: Whether to include test fixtures in report.
-            thresholds: Validation thresholds (uses with_parameters() defaults if None).
 
         Returns:
             Configuration with specified parameters.
         """
         return cls(
             include_fixtures=include_fixtures,
-            thresholds=thresholds or Thresholds.with_parameters(),
         )
 
     @classmethod
@@ -352,15 +240,12 @@ class GeometryValidationSuite:
         fixtures = self._build_fixtures()
         gw_validation = self._validate_gromov_wasserstein(
             fixture=fixtures.gromov_wasserstein,
-            thresholds=resolved.thresholds,
         )
         traversal_validation = self._validate_traversal_coherence(
             fixture=fixtures.traversal_coherence,
-            thresholds=resolved.thresholds,
         )
         path_validation = self._validate_path_signature(
             fixture=fixtures.path_signature,
-            thresholds=resolved.thresholds,
         )
         spectral_validation = self._validate_spectral_signature(
             fixture=fixtures.spectral_signature,
@@ -370,7 +255,6 @@ class GeometryValidationSuite:
         )
         dimension_constraint_validation = self._validate_dimension_constraint(
             fixture=fixtures.dimension_constraint,
-            thresholds=resolved.thresholds,
         )
 
         passed = (
@@ -544,7 +428,6 @@ class GeometryValidationSuite:
     def _validate_gromov_wasserstein(
         self,
         fixture: GromovWassersteinFixture,
-        thresholds: Thresholds,
     ) -> GromovWassersteinValidation:
         backend = self._backend
 
@@ -574,12 +457,14 @@ class GeometryValidationSuite:
         symmetry_delta = abs(symmetry_forward.distance - symmetry_reverse.distance)
         row_error, column_error = self._coupling_mass_errors(permuted.coupling)
 
+        distance_eps = machine_epsilon(backend, source_dist)
+        coupling_eps = regularization_epsilon(backend, permuted.coupling)
         passed = (
-            identity.distance <= thresholds.identity_distance_max
-            and permuted.distance <= thresholds.permutation_distance_max
-            and symmetry_delta <= thresholds.symmetry_delta_max
-            and row_error <= thresholds.coupling_mass_error_max
-            and column_error <= thresholds.coupling_mass_error_max
+            abs(identity.distance) <= distance_eps
+            and abs(permuted.distance) <= distance_eps
+            and symmetry_delta <= distance_eps
+            and row_error <= coupling_eps
+            and column_error <= coupling_eps
             and permuted.converged
         )
 
@@ -621,8 +506,8 @@ class GeometryValidationSuite:
     def _validate_traversal_coherence(
         self,
         fixture: TraversalCoherenceFixture,
-        thresholds: Thresholds,
     ) -> TraversalCoherenceValidation:
+        backend = self._backend
         self_result = TraversalCoherence.compare(
             paths=fixture.paths,
             gram_a=fixture.anchor_gram,
@@ -643,11 +528,13 @@ class GeometryValidationSuite:
         transition_count = self_result.transition_count if self_result else 0
         path_count = self_result.path_count if self_result else 0
 
+        corr_arr = backend.array([self_corr, perturbed_corr], dtype="float32")
+        corr_eps = machine_epsilon(backend, corr_arr)
         passed = (
             self_corr == self_corr
             and perturbed_corr == perturbed_corr
-            and self_corr >= thresholds.traversal_self_correlation_min
-            and perturbed_corr <= thresholds.traversal_perturbed_correlation_max
+            and abs(self_corr - 1.0) <= corr_eps
+            and perturbed_corr <= self_corr - corr_eps
         )
 
         return TraversalCoherenceValidation(
@@ -661,8 +548,8 @@ class GeometryValidationSuite:
     def _validate_path_signature(
         self,
         fixture: PathSignatureFixture,
-        thresholds: Thresholds,
     ) -> PathSignatureValidation:
+        backend = self._backend
         signature = PathGeometry.compute_signature(
             fixture.path,
             gate_embeddings=fixture.gate_embeddings,
@@ -678,9 +565,15 @@ class GeometryValidationSuite:
             gate_embeddings=fixture.gate_embeddings,
         )
 
+        signature_eps = machine_epsilon(
+            backend,
+            backend.array([signature.signature_norm, shifted_signature.signature_norm]),
+        )
+        similarity_eps = machine_epsilon(backend, backend.array([similarity]))
+        frechet_eps = machine_epsilon(backend, backend.array([frechet.distance]))
         passed = (
-            similarity >= thresholds.signature_similarity_min
-            and frechet.distance <= thresholds.frechet_distance_max
+            abs(similarity - 1.0) <= similarity_eps
+            and abs(frechet.distance) <= frechet_eps
         )
 
         return PathSignatureValidation(
@@ -745,7 +638,6 @@ class GeometryValidationSuite:
     def _validate_dimension_constraint(
         self,
         fixture: DimensionConstraintFixture,
-        thresholds: Thresholds,
     ) -> DimensionConstraintValidation:
         backend = self._backend
         points = fixture.points
@@ -775,6 +667,8 @@ class GeometryValidationSuite:
         backend.eval(geo_mean, geo_max)
         geodesic_mean_abs_diff = float(backend.to_scalar(geo_mean))
         geodesic_max_abs_diff = float(backend.to_scalar(geo_max))
+
+        geo_eps = regularization_epsilon(backend, geo_base.distances)
 
         spectral_config = SpectralSignatureConfig(
             k_neighbors=fixture.k_neighbors,
@@ -814,23 +708,42 @@ class GeometryValidationSuite:
             and fp_base.summary.cycle_count == fp_padded.summary.cycle_count
         )
 
+        cka_eps = machine_epsilon(backend, gram_base)
+        eigen_eps = regularization_epsilon(
+            backend,
+            backend.array(sig_base.eigenvalues or [0.0], dtype="float32"),
+        )
+        entropy_eps = machine_epsilon(
+            backend,
+            backend.array([sig_base.spectral_entropy, sig_padded.spectral_entropy]),
+        )
+        heat_eps = regularization_epsilon(
+            backend,
+            backend.array(sig_base.heat_trace or [0.0], dtype="float32"),
+        )
+        topo_eps = machine_epsilon(
+            backend,
+            backend.array(
+                [
+                    fp_base.summary.persistence_entropy,
+                    fp_padded.summary.persistence_entropy,
+                    fp_base.summary.max_persistence,
+                    fp_padded.summary.max_persistence,
+                ],
+                dtype="float32",
+            ),
+        )
         passed = (
-            float(gram_cka) >= thresholds.dimension_constraint_cka_min
-            and geodesic_mean_abs_diff
-            <= thresholds.dimension_constraint_geodesic_mean_abs_diff_max
-            and geodesic_max_abs_diff
-            <= thresholds.dimension_constraint_geodesic_max_abs_diff_max
-            and spectral_eigen_mean_abs_diff
-            <= thresholds.dimension_constraint_spectral_eigen_mean_abs_diff_max
-            and spectral_eigen_max_abs_diff
-            <= thresholds.dimension_constraint_spectral_eigen_max_abs_diff_max
-            and spectral_entropy_diff
-            <= thresholds.dimension_constraint_spectral_entropy_abs_diff_max
-            and heat_trace_max_abs_diff
-            <= thresholds.dimension_constraint_heat_trace_max_abs_diff_max
+            abs(float(gram_cka) - 1.0) <= cka_eps
+            and geodesic_mean_abs_diff <= geo_eps
+            and geodesic_max_abs_diff <= geo_eps
+            and spectral_eigen_mean_abs_diff <= eigen_eps
+            and spectral_eigen_max_abs_diff <= eigen_eps
+            and spectral_entropy_diff <= entropy_eps
+            and heat_trace_max_abs_diff <= heat_eps
             and topology_matches
-            and persistence_entropy_diff <= thresholds.dimension_constraint_topology_abs_diff_max
-            and max_persistence_diff <= thresholds.dimension_constraint_topology_abs_diff_max
+            and persistence_entropy_diff <= topo_eps
+            and max_persistence_diff <= topo_eps
         )
 
         return DimensionConstraintValidation(

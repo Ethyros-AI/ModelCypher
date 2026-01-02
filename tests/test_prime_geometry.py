@@ -71,11 +71,11 @@ from modelcypher.core.domain.geometry.prime_geometry import (
     shuffled_gaps,
     time_delay_embedding,
 )
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
 
 def _eps(backend, *values: float) -> float:
-    return division_epsilon(backend, backend.array(list(values) or [1.0]))
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 # =============================================================================

@@ -21,12 +21,11 @@ Tests verify the API works correctly. Thresholds are derived from machine
 epsilon at runtime - we don't test for specific arbitrary values.
 """
 
-import pytest
+import math
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.gram_aligner import (
     GramAligner,
-    AlignmentResult,
     find_alignment,
 )
 from modelcypher.core.domain.geometry.cka import compute_cka
@@ -62,25 +61,23 @@ class TestGramAlignerFindPerfectAlignment:
         result = aligner.find_perfect_alignment(A, A)
 
         assert result.is_perfect
-        assert result.achieved_cka > 0.999
+        assert abs(result.achieved_cka - 1.0) <= result.precision_threshold
 
-    def test_similar_matrices(self):
-        """Similar matrices should achieve high CKA."""
+    def test_orthonormal_transform(self):
+        """Orthonormal transforms preserve Gram structure exactly."""
         b = get_default_backend()
         b.random_seed(42)
 
         A = b.random_normal((20, 8))
-        noise = b.random_normal((20, 8))
-        noise_np = b.to_numpy(noise)
-        A_np = b.to_numpy(A)
-        # Small perturbation
-        B = b.array(A_np + 0.01 * noise_np)
-        b.eval(A, B)
+        q, _ = b.qr(b.random_normal((8, 8)))
+        B = b.matmul(A, q)
+        b.eval(A, B, q)
 
         aligner = GramAligner(b)
         result = aligner.find_perfect_alignment(A, B)
 
-        assert result.achieved_cka > 0.95
+        assert result.is_perfect
+        assert abs(result.achieved_cka - 1.0) <= result.precision_threshold
 
     def test_returns_valid_transforms(self):
         """Alignment should return valid transformation matrices."""
@@ -110,8 +107,12 @@ class TestGramAlignerFindPerfectAlignment:
         aligner = GramAligner(b)
         result = aligner.find_perfect_alignment(A, B)
 
-        assert result.achieved_cka >= 0.0
-        assert result.iterations > 0
+        aligned = b.matmul(A, b.array(result.feature_transform))
+        b.eval(aligned)
+        cka = compute_cka(aligned, B, backend=b)
+        eps = result.precision_threshold
+        assert abs(cka - result.achieved_cka) <= eps
+        assert result.is_perfect
 
 
 class TestFindAlignment:
@@ -128,7 +129,7 @@ class TestFindAlignment:
         result = find_alignment(A, A, backend=b)
 
         assert result.is_perfect
-        assert result.achieved_cka > 0.999
+        assert abs(result.achieved_cka - 1.0) <= result.precision_threshold
 
     def test_find_alignment_uses_default_backend(self):
         """find_alignment should use default backend when none provided."""
@@ -140,7 +141,7 @@ class TestFindAlignment:
 
         # Should not raise
         result = find_alignment(A, A)
-        assert result.achieved_cka > 0.9
+        assert result.is_perfect
 
 
 class TestEdgeCases:
@@ -158,7 +159,7 @@ class TestEdgeCases:
         aligner = GramAligner(b)
         result = aligner.find_perfect_alignment(A, B)
 
-        assert result.achieved_cka >= 0.0
+        assert result.is_perfect
 
     def test_single_sample(self):
         """Should handle single sample gracefully."""
@@ -172,3 +173,4 @@ class TestEdgeCases:
         # May return degenerate result but shouldn't crash
         result = aligner.find_perfect_alignment(A, B)
         assert result is not None
+        assert math.isfinite(result.achieved_cka)

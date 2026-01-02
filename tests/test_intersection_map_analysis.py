@@ -18,7 +18,7 @@
 from __future__ import annotations
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.geometry.intersection_map_analysis import (
     IntersectionMapAnalysis,
     MarkdownReportOptions,
@@ -32,7 +32,7 @@ from modelcypher.core.domain.geometry.manifold_stitcher import (
 
 def _eps(*values: float) -> float:
     backend = get_default_backend()
-    return division_epsilon(backend, backend.array(list(values)))
+    return machine_epsilon(backend, backend.array(list(values)))
 
 
 def test_intersection_map_analysis_counts() -> None:
@@ -61,9 +61,14 @@ def test_intersection_map_analysis_counts() -> None:
     assert abs(analysis.overall_stats.mean_correlation - 0.55) < _eps(
         analysis.overall_stats.mean_correlation, 0.55
     )
-    assert analysis.overall_stats.min_correlation == 0.3
-    assert analysis.overall_stats.max_correlation == 0.8
-    assert analysis.average_layer_confidence == 0.65
+    eps = _eps(
+        analysis.overall_stats.min_correlation,
+        analysis.overall_stats.max_correlation,
+        analysis.average_layer_confidence,
+    )
+    assert abs(analysis.overall_stats.min_correlation - 0.3) <= eps
+    assert abs(analysis.overall_stats.max_correlation - 0.8) <= eps
+    assert abs(analysis.average_layer_confidence - 0.65) <= eps
 
 
 def test_intersection_map_report() -> None:

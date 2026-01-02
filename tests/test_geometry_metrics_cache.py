@@ -19,6 +19,9 @@
 
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
 from modelcypher.core.domain.geometry.geometry_metrics_cache import (
     CachedGWResult,
     CachedIDResult,
@@ -26,6 +29,11 @@ from modelcypher.core.domain.geometry.geometry_metrics_cache import (
     CachedTopoResult,
     GeometryMetricsCache,
 )
+
+
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 class TestCachedGWResult:
@@ -40,9 +48,10 @@ class TestCachedGWResult:
             iterations=100,
             coupling_shape=(50, 60),
         )
-        assert result.distance == 0.5
-        assert result.normalized_distance == 0.25
-        assert result.alignment_score == 0.8
+        eps = _eps(result.distance, result.normalized_distance, result.alignment_score)
+        assert abs(result.distance - 0.5) <= eps
+        assert abs(result.normalized_distance - 0.25) <= eps
+        assert abs(result.alignment_score - 0.8) <= eps
         assert result.converged is True
         assert result.iterations == 100
         assert result.coupling_shape == (50, 60)
@@ -83,9 +92,10 @@ class TestCachedIDResult:
             sample_count=100,
             use_regression=True,
         )
-        assert result.dimension == 3.5
-        assert result.confidence_lower == 3.0
-        assert result.confidence_upper == 4.0
+        eps = _eps(result.dimension, result.confidence_lower, result.confidence_upper)
+        assert abs(result.dimension - 3.5) <= eps
+        assert abs(result.confidence_lower - 3.0) <= eps
+        assert abs(result.confidence_upper - 4.0) <= eps
         assert result.sample_count == 100
         assert result.use_regression is True
 
@@ -124,8 +134,9 @@ class TestCachedTopoResult:
         )
         assert result.betti_0 == 1
         assert result.betti_1 == 2
-        assert result.persistence_entropy == 0.5
-        assert result.total_persistence == 1.5
+        eps = _eps(result.persistence_entropy, result.total_persistence)
+        assert abs(result.persistence_entropy - 0.5) <= eps
+        assert abs(result.total_persistence - 1.5) <= eps
 
     def test_frozen(self):
         result = CachedTopoResult(
@@ -168,7 +179,7 @@ class TestCachedSpectralResult:
         )
         assert result.eigenvalues == [0.0, 0.1, 0.5, 1.0]
         assert result.heat_trace == [1.0, 0.9, 0.8]
-        assert result.spectral_entropy == 2.5
+        assert abs(result.spectral_entropy - 2.5) <= _eps(result.spectral_entropy, 2.5)
         assert result.node_count == 100
         assert result.connected is True
 
@@ -241,7 +252,9 @@ class TestGeometryMetricsCacheGW:
 
         loaded = cache.get_gw_result(source, target, epsilon=0.01, max_iterations=100)
         assert loaded is not None
-        assert loaded.distance == sample_gw_result.distance
+        assert abs(loaded.distance - sample_gw_result.distance) <= _eps(
+            loaded.distance, sample_gw_result.distance
+        )
         assert loaded.converged == sample_gw_result.converged
 
     def test_get_uncached(self, cache, sample_points):
@@ -295,7 +308,9 @@ class TestGeometryMetricsCacheID:
 
         loaded = cache.get_id_result(sample_points, use_regression=True, bootstrap_samples=50)
         assert loaded is not None
-        assert loaded.dimension == sample_id_result.dimension
+        assert abs(loaded.dimension - sample_id_result.dimension) <= _eps(
+            loaded.dimension, sample_id_result.dimension
+        )
 
     def test_get_uncached(self, cache, sample_points):
         result = cache.get_id_result(sample_points, use_regression=True, bootstrap_samples=50)
@@ -337,7 +352,9 @@ class TestGeometryMetricsCacheTopo:
         loaded = cache.get_topo_result(sample_points, max_dimension=1, max_filtration=2.0, num_steps=100)
         assert loaded is not None
         assert loaded.betti_0 == sample_topo_result.betti_0
-        assert loaded.persistence_entropy == sample_topo_result.persistence_entropy
+        assert abs(loaded.persistence_entropy - sample_topo_result.persistence_entropy) <= _eps(
+            loaded.persistence_entropy, sample_topo_result.persistence_entropy
+        )
 
     def test_get_uncached(self, cache, sample_points):
         result = cache.get_topo_result(sample_points, max_dimension=1, max_filtration=2.0, num_steps=100)
@@ -399,7 +416,9 @@ class TestGeometryMetricsCacheSpectral:
         )
         assert loaded is not None
         assert loaded.eigenvalues == sample_spectral_result.eigenvalues
-        assert loaded.spectral_entropy == sample_spectral_result.spectral_entropy
+        assert abs(loaded.spectral_entropy - sample_spectral_result.spectral_entropy) <= _eps(
+            loaded.spectral_entropy, sample_spectral_result.spectral_entropy
+        )
 
     def test_get_uncached(self, cache, sample_points):
         result = cache.get_spectral_result(
@@ -446,8 +465,9 @@ class TestGeometryMetricsCacheSerialization:
         serialized = GeometryMetricsCache._serialize_gw(original)
         restored = GeometryMetricsCache._deserialize_gw(serialized)
 
-        assert restored.distance == original.distance
-        assert restored.normalized_distance == original.normalized_distance
+        eps = _eps(restored.distance, restored.normalized_distance)
+        assert abs(restored.distance - original.distance) <= eps
+        assert abs(restored.normalized_distance - original.normalized_distance) <= eps
         assert restored.converged == original.converged
         assert restored.coupling_shape == original.coupling_shape
 
@@ -462,8 +482,9 @@ class TestGeometryMetricsCacheSerialization:
         serialized = GeometryMetricsCache._serialize_id(original)
         restored = GeometryMetricsCache._deserialize_id(serialized)
 
-        assert restored.dimension == original.dimension
-        assert restored.confidence_lower == original.confidence_lower
+        eps = _eps(restored.dimension, restored.confidence_lower)
+        assert abs(restored.dimension - original.dimension) <= eps
+        assert abs(restored.confidence_lower - original.confidence_lower) <= eps
         assert restored.use_regression == original.use_regression
 
     def test_topo_serialization_roundtrip(self):
@@ -478,7 +499,9 @@ class TestGeometryMetricsCacheSerialization:
 
         assert restored.betti_0 == original.betti_0
         assert restored.betti_1 == original.betti_1
-        assert restored.persistence_entropy == original.persistence_entropy
+        assert abs(restored.persistence_entropy - original.persistence_entropy) <= _eps(
+            restored.persistence_entropy, original.persistence_entropy
+        )
 
     def test_spectral_serialization_roundtrip(self):
         original = CachedSpectralResult(
@@ -500,7 +523,9 @@ class TestGeometryMetricsCacheSerialization:
 
         assert restored.eigenvalues == original.eigenvalues
         assert restored.heat_trace == original.heat_trace
-        assert restored.spectral_entropy == original.spectral_entropy
+        assert abs(restored.spectral_entropy - original.spectral_entropy) <= _eps(
+            restored.spectral_entropy, original.spectral_entropy
+        )
         assert restored.connected == original.connected
 
 

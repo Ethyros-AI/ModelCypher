@@ -50,7 +50,9 @@ class TestNeuronStats:
             prompt_count=100,
         )
 
-        assert stats.sparsity_score == 0.7
+        backend = get_default_backend()
+        eps = machine_epsilon(backend, backend.array([stats.sparsity_score, 0.7]))
+        assert abs(stats.sparsity_score - 0.7) <= eps
 
     def test_is_dead_detection(self):
         """Dead neurons should have near-zero max activation."""
@@ -201,14 +203,19 @@ class TestNeuronActivationCollector:
 
         # Neuron 0 should have 100% active fraction
         neuron_0 = sparsity_map.stats[0][0]
-        assert neuron_0.active_fraction == 1.0
+        eps = machine_epsilon(backend, backend.array([neuron_0.active_fraction, 1.0]))
+        assert abs(neuron_0.active_fraction - 1.0) <= eps
 
         # Neuron 1 active fraction follows the derived threshold.
         neuron_1 = sparsity_map.stats[0][1]
         threshold = sparsity_map.activation_threshold
         values = [0.05] * 10 + [0.5] * 10
         expected_active = sum(1 for v in values if v > threshold) / len(values)
-        assert neuron_1.active_fraction == expected_active
+        eps = machine_epsilon(
+            backend,
+            backend.array([neuron_1.active_fraction, expected_active]),
+        )
+        assert abs(neuron_1.active_fraction - expected_active) <= eps
 
     def test_clear(self):
         """Should clear collected data."""

@@ -93,9 +93,9 @@ class TestDoRADecomposition:
 
         assert metrics is not None
         eps = _div_eps()
-        assert abs(metrics.magnitude_ratio - 1.0) < eps
-        assert abs(metrics.directional_drift - 0.0) < eps
-        assert abs(metrics.direction_cosine - 1.0) < eps
+        assert abs(metrics.magnitude_ratio - 1.0) <= eps
+        assert abs(metrics.directional_drift - 0.0) <= eps
+        assert abs(metrics.direction_cosine - 1.0) <= eps
 
     def test_scaled_weights(self):
         """Scaled weights should show magnitude change only."""
@@ -107,9 +107,9 @@ class TestDoRADecomposition:
 
         assert metrics is not None
         eps = _div_eps()
-        assert abs(metrics.magnitude_ratio - 2.0) < eps
+        assert abs(metrics.magnitude_ratio - 2.0) <= eps
         # Direction should be same
-        assert abs(metrics.direction_cosine - 1.0) < eps
+        assert abs(metrics.direction_cosine - 1.0) <= eps
 
     def test_adapter_analysis(self):
         """Test multi-layer adapter analysis."""
@@ -127,8 +127,9 @@ class TestDoRADecomposition:
         result = dora.analyze_adapter(base, current)
 
         assert len(result.per_layer_metrics) == 2
-        assert result.overall_magnitude_change >= 0
-        assert result.overall_directional_drift >= 0
+        eps = _div_eps()
+        assert result.overall_magnitude_change >= -eps
+        assert result.overall_directional_drift >= -eps
 
     def test_change_type_classification(self):
         """Test dominant change type classification."""
@@ -151,8 +152,9 @@ class TestTangentSpaceAlignment:
         result = aligner.compute_layer_metrics(points, points)
 
         assert result is not None
-        assert abs(result.mean_cosine - 1.0) < _div_eps()
-        assert result.coverage > 0
+        eps = _div_eps()
+        assert abs(result.mean_cosine - 1.0) <= eps
+        assert result.coverage > eps
 
     def test_orthogonal_points(self):
         """Orthogonal point sets should have lower alignment."""
@@ -192,10 +194,12 @@ class TestManifoldFidelitySweep:
         assert result is not None
         assert len(result.metrics) == 3  # 3 ranks
         for m in result.metrics:
-            assert m.cka >= 0
-            assert m.procrustes_error >= 0
-            assert m.knn_overlap >= 0
-            assert m.distance_correlation >= -1 and m.distance_correlation <= 1
+            eps = _div_eps()
+            assert m.cka >= -eps
+            assert m.procrustes_error >= -eps
+            assert m.knn_overlap >= -eps
+            assert m.distance_correlation >= -1 - eps
+            assert m.distance_correlation <= 1 + eps
 
     def test_identical_points_high_cka(self):
         """Identical activations should have CKA close to 1."""
@@ -205,7 +209,8 @@ class TestManifoldFidelitySweep:
         result = sweep.run_sweep(points, points)
 
         assert result is not None
-        assert result.metrics[0].cka >= 0.99
+        eps = _div_eps()
+        assert abs(result.metrics[0].cka - 1.0) <= eps
 
     def test_plateau_detection(self):
         """Plateau should be detected at optimal rank."""
@@ -244,4 +249,6 @@ class TestCKA:
             result = sweep.run_sweep(source, target)
 
             if result:
-                assert 0 <= result.metrics[0].cka <= 1.01  # Allow small numerical error
+                eps = _div_eps()
+                assert result.metrics[0].cka >= -eps
+                assert result.metrics[0].cka <= 1.0 + eps

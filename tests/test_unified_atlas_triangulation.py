@@ -50,12 +50,13 @@ from modelcypher.core.domain.agents.unified_atlas import (
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     find_magnitude_gap_threshold,
+    machine_epsilon,
 )
 
 
 def _eps(*values: float) -> float:
     backend = get_default_backend()
-    return division_epsilon(backend, backend.array(list(values) or [1.0]))
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 def make_probe(
@@ -134,7 +135,8 @@ class TestSourceMultiplier:
 
         score = MultiAtlasTriangulationScorer.compute_score(activations)
 
-        assert score.source_multiplier == 1.0
+        eps = _eps(score.source_multiplier, 1.0)
+        assert abs(score.source_multiplier - 1.0) <= eps
         assert len(score.sources_detected) == 1
 
     def test_two_sources_multiplier_is_1_1(self) -> None:
@@ -197,7 +199,8 @@ class TestDomainMultiplier:
 
         score = MultiAtlasTriangulationScorer.compute_score(activations)
 
-        assert score.domain_multiplier == 1.0
+        eps = _eps(score.domain_multiplier, 1.0)
+        assert abs(score.domain_multiplier - 1.0) <= eps
         assert len(score.domains_detected) == 1
 
     def test_two_domains_multiplier_is_1_15(self) -> None:
@@ -324,9 +327,10 @@ class TestActivationThreshold:
         """Empty activations should return multiplier of 1.0."""
         score = MultiAtlasTriangulationScorer.compute_score({})
 
-        assert score.source_multiplier == 1.0
-        assert score.domain_multiplier == 1.0
-        assert score.combined_multiplier == 1.0
+        eps = _eps(score.source_multiplier, score.domain_multiplier, score.combined_multiplier, 1.0)
+        assert abs(score.source_multiplier - 1.0) <= eps
+        assert abs(score.domain_multiplier - 1.0) <= eps
+        assert abs(score.combined_multiplier - 1.0) <= eps
 
 
 class TestGetProbeIds:

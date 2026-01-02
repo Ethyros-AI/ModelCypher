@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.thermo.linguistic_calorimeter import LinguisticCalorimeter
 from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
     LinguisticModifier,
@@ -32,6 +34,11 @@ from modelcypher.core.domain.thermo.multilingual_calibrator import (
     MultilingualCalibrator,
     ParityReport,
 )
+
+
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 class TestMultilingualCalibrator:
@@ -52,8 +59,9 @@ class TestMultilingualCalibrator:
         )
 
         assert isinstance(result, CalibratedIntensity)
-        assert result.scaling_factor == 1.0
-        assert result.calibrated_intensity == 0.5
+        eps = _eps(result.scaling_factor, result.calibrated_intensity, 1.0, 0.5)
+        assert abs(result.scaling_factor - 1.0) <= eps
+        assert abs(result.calibrated_intensity - 0.5) <= eps
         assert "no calibration" in result.rationale.lower()
 
     def test_calibrate_intensity_with_calibration_data(
@@ -105,7 +113,8 @@ class TestMultilingualCalibrator:
             base_intensity=0.9,
         )
 
-        assert result.calibrated_intensity <= 1.0
+        eps = _eps(result.calibrated_intensity, 1.0)
+        assert result.calibrated_intensity <= 1.0 + eps
 
     def test_expected_delta_h_scales_by_calibration(
         self, calibrator: MultilingualCalibrator
@@ -136,7 +145,8 @@ class TestMultilingualCalibrator:
         delta = calibrator.expected_delta_h(PromptLanguage.ENGLISH, measured_effect)
 
         # No calibration = scaling factor of 1.0
-        assert delta == measured_effect
+        eps = _eps(delta, measured_effect)
+        assert abs(delta - measured_effect) <= eps
 
     def test_cross_lingual_parity_test_returns_report(
         self, calibrator: MultilingualCalibrator
@@ -204,7 +214,8 @@ class TestLanguageParityResult:
             shows_cooling=True,
         )
 
-        assert result.effect_magnitude == 0.3
+        eps = _eps(result.effect_magnitude, 0.3)
+        assert abs(result.effect_magnitude - 0.3) <= eps
 
     def test_relative_effect(self) -> None:
         """Should store relative effect when provided."""
@@ -218,7 +229,8 @@ class TestLanguageParityResult:
             relative_effect=1.5,
         )
 
-        assert result.relative_effect == 1.5
+        eps = _eps(result.relative_effect, 1.5)
+        assert abs(result.relative_effect - 1.5) <= eps
 
 
 class TestParityReport:
@@ -310,7 +322,8 @@ class TestParityReport:
         )
 
         # Both languages show cooling
-        assert report.cooling_rate == 1.0
+        eps = _eps(report.cooling_rate, 1.0)
+        assert abs(report.cooling_rate - 1.0) <= eps
 
     def test_effect_variance(self, sample_results: list[LanguageParityResult]) -> None:
         """Should compute variance in effect magnitudes."""
@@ -354,7 +367,8 @@ class TestCalibratedIntensity:
         )
 
         assert result.language == PromptLanguage.SWAHILI
-        assert result.base_intensity == 0.5
-        assert result.calibrated_intensity == 0.7
-        assert result.scaling_factor == 1.4
+        eps = _eps(result.base_intensity, result.calibrated_intensity, result.scaling_factor)
+        assert abs(result.base_intensity - 0.5) <= eps
+        assert abs(result.calibrated_intensity - 0.7) <= eps
+        assert abs(result.scaling_factor - 1.4) <= eps
         assert "40%" in result.rationale
