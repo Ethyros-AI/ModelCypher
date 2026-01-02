@@ -71,7 +71,8 @@ class TestFrechetMeanConfig:
         # k_neighbors is None by default - computed from intrinsic dimension
         assert config.k_neighbors is None
         assert config.max_iterations > 0
-        assert config.tolerance > 0.0
+        # tolerance is None by default - derived from machine epsilon at runtime
+        assert config.tolerance is None
 
     def test_custom_values(self) -> None:
         """Should accept custom values."""
@@ -107,7 +108,8 @@ class TestConfig:
         """Default config values - smoothness threshold must be explicitly set."""
         config = Config()
         assert config.max_iterations > 0
-        assert config.convergence_threshold > 0.0
+        # convergence_threshold is None by default - derived from machine epsilon at runtime
+        assert config.convergence_threshold is None
         assert config.allow_reflections is False
         assert config.min_models == 2
         assert config.allow_scaling is False

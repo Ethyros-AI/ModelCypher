@@ -51,6 +51,11 @@ import math
 from dataclasses import dataclass
 from enum import Enum
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    find_magnitude_gap_threshold,
+)
 from modelcypher.core.domain.agents.computational_gate_atlas import (
     ComputationalGateCategory,
     ComputationalGateInventory,
@@ -936,14 +941,12 @@ class MultiAtlasTriangulationScorer:
     @staticmethod
     def compute_score(
         activations: dict[AtlasProbe, float],
-        threshold: float = 0.3,
     ) -> MultiAtlasTriangulationScore:
         """
         Compute triangulation score from probe activations.
 
         Args:
             activations: Map of probes to their activation values
-            threshold: Minimum activation to count as detected
 
         Returns:
             MultiAtlasTriangulationScore with multipliers
@@ -951,15 +954,26 @@ class MultiAtlasTriangulationScorer:
         sources_detected: set[AtlasSource] = set()
         domains_detected: set[AtlasDomain] = set()
 
-        for probe, activation in activations.items():
-            if activation > threshold:
-                sources_detected.add(probe.source)
-                domains_detected.add(probe.domain)
+        activation_values = [abs(value) for value in activations.values()]
+        if activation_values:
+            backend = get_default_backend()
+            eps = division_epsilon(backend, backend.array(activation_values))
+            if len(activation_values) < 3:
+                threshold = eps
+            else:
+                threshold = find_magnitude_gap_threshold(sorted(activation_values), eps=eps)
+                max_value = max(activation_values)
+                if threshold >= max_value - eps:
+                    threshold = eps
+            for probe, activation in activations.items():
+                if abs(activation) > threshold:
+                    sources_detected.add(probe.source)
+                    domains_detected.add(probe.domain)
 
         source_count = len(sources_detected)
         domain_count = len(domains_detected)
-        source_multiplier = 1.0 + max(0, source_count - 1) * 0.1
-        domain_multiplier = 1.0 + max(0, domain_count - 1) * 0.15
+        source_multiplier = max(1.0, float(source_count))
+        domain_multiplier = max(1.0, float(domain_count))
         combined_multiplier = math.sqrt(source_multiplier * domain_multiplier)
 
         return MultiAtlasTriangulationScore(

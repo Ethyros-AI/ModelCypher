@@ -17,12 +17,12 @@
 
 """Tests for UnifiedAtlas triangulation scoring.
 
-Tests the cross-atlas triangulation math that boosts confidence when
+Tests the cross-atlas triangulation math that measures support when
 concepts are detected across multiple atlas sources and domains.
 
 Mathematical invariants tested:
-- Source multiplier: 1.0 + (source_count - 1) * 0.1
-- Domain multiplier: 1.0 + (domain_count - 1) * 0.15
+- Source multiplier: max(1.0, source_count)
+- Domain multiplier: max(1.0, domain_count)
 - Combined multiplier: geometric mean = sqrt(source * domain)
 - Detection across more sources/domains increases score
 """
@@ -35,6 +35,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.agents.unified_atlas import (
     LINGUISTIC_DOMAINS,
     MATHEMATICAL_DOMAINS,
@@ -46,6 +47,15 @@ from modelcypher.core.domain.agents.unified_atlas import (
     UnifiedAtlasInventory,
     get_probe_ids,
 )
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    find_magnitude_gap_threshold,
+)
+
+
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return division_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 def make_probe(
@@ -128,7 +138,7 @@ class TestSourceMultiplier:
         assert len(score.sources_detected) == 1
 
     def test_two_sources_multiplier_is_1_1(self) -> None:
-        """2 sources detected should give multiplier of 1.1."""
+        """2 sources detected should give multiplier of 2.0."""
         probes = [
             make_probe(AtlasSource.SEQUENCE_INVARIANT, AtlasDomain.MATHEMATICAL, "a"),
             make_probe(AtlasSource.SEMANTIC_PRIME, AtlasDomain.LINGUISTIC, "b"),
@@ -137,11 +147,12 @@ class TestSourceMultiplier:
 
         score = MultiAtlasTriangulationScorer.compute_score(activations)
 
-        assert score.source_multiplier == pytest.approx(1.1)
+        eps = _eps(score.source_multiplier, 2.0)
+        assert abs(score.source_multiplier - 2.0) <= eps
         assert len(score.sources_detected) == 2
 
     def test_source_multiplier_formula(self) -> None:
-        """Source multiplier should follow: 1.0 + (count - 1) * 0.1"""
+        """Source multiplier should follow: max(1.0, source_count)."""
         # Test with 3 sources
         probes = [
             make_probe(AtlasSource.SEQUENCE_INVARIANT, AtlasDomain.MATHEMATICAL, "a"),
@@ -152,12 +163,12 @@ class TestSourceMultiplier:
 
         score = MultiAtlasTriangulationScorer.compute_score(activations)
 
-        # 1.0 + (3 - 1) * 0.1 = 1.2
-        expected = 1.0 + (3 - 1) * 0.1
-        assert score.source_multiplier == pytest.approx(expected)
+        expected = float(len(probes))
+        eps = _eps(score.source_multiplier, expected)
+        assert abs(score.source_multiplier - expected) <= eps
 
     def test_all_seven_sources_multiplier(self) -> None:
-        """All 7 sources should give multiplier of 1.6."""
+        """All 7 sources should give multiplier of 7.0."""
         probes = [
             make_probe(AtlasSource.SEQUENCE_INVARIANT, AtlasDomain.MATHEMATICAL, "a"),
             make_probe(AtlasSource.SEMANTIC_PRIME, AtlasDomain.LINGUISTIC, "b"),
@@ -171,9 +182,9 @@ class TestSourceMultiplier:
 
         score = MultiAtlasTriangulationScorer.compute_score(activations)
 
-        # 1.0 + (7 - 1) * 0.1 = 1.6
-        expected = 1.0 + (7 - 1) * 0.1
-        assert score.source_multiplier == pytest.approx(expected)
+        expected = float(len(probes))
+        eps = _eps(score.source_multiplier, expected)
+        assert abs(score.source_multiplier - expected) <= eps
 
 
 class TestDomainMultiplier:
@@ -190,7 +201,7 @@ class TestDomainMultiplier:
         assert len(score.domains_detected) == 1
 
     def test_two_domains_multiplier_is_1_15(self) -> None:
-        """2 domains detected should give multiplier of 1.15."""
+        """2 domains detected should give multiplier of 2.0."""
         probes = [
             make_probe(AtlasSource.SEQUENCE_INVARIANT, AtlasDomain.MATHEMATICAL, "a"),
             make_probe(AtlasSource.SEMANTIC_PRIME, AtlasDomain.LINGUISTIC, "b"),
@@ -199,11 +210,12 @@ class TestDomainMultiplier:
 
         score = MultiAtlasTriangulationScorer.compute_score(activations)
 
-        assert score.domain_multiplier == pytest.approx(1.15)
+        eps = _eps(score.domain_multiplier, 2.0)
+        assert abs(score.domain_multiplier - 2.0) <= eps
         assert len(score.domains_detected) == 2
 
     def test_domain_multiplier_formula(self) -> None:
-        """Domain multiplier should follow: 1.0 + (count - 1) * 0.15"""
+        """Domain multiplier should follow: max(1.0, domain_count)."""
         # Test with 4 domains
         probes = [
             make_probe(AtlasSource.SEQUENCE_INVARIANT, AtlasDomain.MATHEMATICAL, "a"),
@@ -215,9 +227,9 @@ class TestDomainMultiplier:
 
         score = MultiAtlasTriangulationScorer.compute_score(activations)
 
-        # 1.0 + (4 - 1) * 0.15 = 1.45
-        expected = 1.0 + (4 - 1) * 0.15
-        assert score.domain_multiplier == pytest.approx(expected)
+        expected = float(len(probes))
+        eps = _eps(score.domain_multiplier, expected)
+        assert abs(score.domain_multiplier - expected) <= eps
 
 
 class TestCombinedMultiplier:
@@ -234,7 +246,8 @@ class TestCombinedMultiplier:
         score = MultiAtlasTriangulationScorer.compute_score(activations)
 
         expected = math.sqrt(score.source_multiplier * score.domain_multiplier)
-        assert score.combined_multiplier == pytest.approx(expected)
+        eps = _eps(score.combined_multiplier, expected)
+        assert abs(score.combined_multiplier - expected) <= eps
 
     def test_combined_always_at_least_one(self) -> None:
         """Combined multiplier should be >= 1.0 when any probe detected."""
@@ -243,7 +256,8 @@ class TestCombinedMultiplier:
 
         score = MultiAtlasTriangulationScorer.compute_score(activations)
 
-        assert score.combined_multiplier >= 1.0
+        eps = _eps(score.combined_multiplier, 1.0)
+        assert score.combined_multiplier >= 1.0 - eps
 
     def test_combined_increases_with_more_sources(self) -> None:
         """More sources should increase combined multiplier."""
@@ -265,29 +279,46 @@ class TestCombinedMultiplier:
 class TestActivationThreshold:
     """Tests for activation threshold filtering."""
 
-    def test_below_threshold_not_counted(self) -> None:
-        """Activations below threshold should not be counted."""
+    def test_data_derived_threshold_filters_low_activation(self) -> None:
+        """Largest magnitude gap should separate strong vs weak activations."""
+        probes = [
+            make_probe(AtlasSource.SEQUENCE_INVARIANT, AtlasDomain.MATHEMATICAL, "a"),
+            make_probe(AtlasSource.SEMANTIC_PRIME, AtlasDomain.LINGUISTIC, "b"),
+            make_probe(AtlasSource.COMPUTATIONAL_GATE, AtlasDomain.COMPUTATIONAL, "c"),
+            make_probe(AtlasSource.EMOTION_CONCEPT, AtlasDomain.AFFECTIVE, "d"),
+            make_probe(AtlasSource.TEMPORAL_CONCEPT, AtlasDomain.TEMPORAL, "e"),
+            make_probe(AtlasSource.SOCIAL_CONCEPT, AtlasDomain.RELATIONAL, "f"),
+        ]
+        values = [0.9, 0.85, 0.8, 0.1, 0.09, 0.08]
+        activations = {probe: value for probe, value in zip(probes, values)}
+
+        score = MultiAtlasTriangulationScorer.compute_score(activations)
+
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array(values))
+        threshold = find_magnitude_gap_threshold(sorted(values), eps=eps)
+
+        expected_sources = {
+            probe.source for probe, value in activations.items() if abs(value) > threshold
+        }
+        expected_domains = {
+            probe.domain for probe, value in activations.items() if abs(value) > threshold
+        }
+
+        assert score.sources_detected == expected_sources
+        assert score.domains_detected == expected_domains
+
+    def test_small_activation_set_uses_precision_floor(self) -> None:
+        """Small activation sets should count values above precision floor."""
         probes = [
             make_probe(AtlasSource.SEQUENCE_INVARIANT, AtlasDomain.MATHEMATICAL, "a"),
             make_probe(AtlasSource.SEMANTIC_PRIME, AtlasDomain.LINGUISTIC, "b"),
         ]
-        # One above threshold, one below
         activations = {probes[0]: 0.5, probes[1]: 0.1}
+        score = MultiAtlasTriangulationScorer.compute_score(activations)
 
-        score = MultiAtlasTriangulationScorer.compute_score(activations, threshold=0.3)
-
-        assert len(score.sources_detected) == 1
-        assert AtlasSource.SEQUENCE_INVARIANT in score.sources_detected
-        assert AtlasSource.SEMANTIC_PRIME not in score.sources_detected
-
-    def test_exactly_at_threshold_not_counted(self) -> None:
-        """Activation exactly at threshold should not be counted (> not >=)."""
-        probe = make_probe(AtlasSource.SEQUENCE_INVARIANT, AtlasDomain.MATHEMATICAL)
-        activations = {probe: 0.3}
-
-        score = MultiAtlasTriangulationScorer.compute_score(activations, threshold=0.3)
-
-        assert len(score.sources_detected) == 0
+        assert score.sources_detected == {AtlasSource.SEQUENCE_INVARIANT, AtlasSource.SEMANTIC_PRIME}
+        assert score.domains_detected == {AtlasDomain.MATHEMATICAL, AtlasDomain.LINGUISTIC}
 
     def test_empty_activations(self) -> None:
         """Empty activations should return multiplier of 1.0."""
@@ -377,8 +408,9 @@ class TestMathematicalInvariants:
 
         score = MultiAtlasTriangulationScorer.compute_score(activations)
 
-        expected = 1.0 + (n_sources - 1) * 0.1
-        assert score.source_multiplier == pytest.approx(expected)
+        expected = float(n_sources)
+        eps = _eps(score.source_multiplier, expected)
+        assert abs(score.source_multiplier - expected) <= eps
 
     @given(
         n_domains=st.integers(min_value=1, max_value=len(AtlasDomain)),
@@ -395,8 +427,9 @@ class TestMathematicalInvariants:
 
         score = MultiAtlasTriangulationScorer.compute_score(activations)
 
-        expected = 1.0 + (n_domains - 1) * 0.15
-        assert score.domain_multiplier == pytest.approx(expected)
+        expected = float(n_domains)
+        eps = _eps(score.domain_multiplier, expected)
+        assert abs(score.domain_multiplier - expected) <= eps
 
     def test_combined_multiplier_is_geometric_mean(self) -> None:
         """Combined should always equal sqrt(source * domain)."""
@@ -411,4 +444,5 @@ class TestMathematicalInvariants:
         score = MultiAtlasTriangulationScorer.compute_score(activations)
 
         expected = math.sqrt(score.source_multiplier * score.domain_multiplier)
-        assert score.combined_multiplier == pytest.approx(expected, rel=1e-6)
+        eps = _eps(score.combined_multiplier, expected)
+        assert abs(score.combined_multiplier - expected) <= eps
