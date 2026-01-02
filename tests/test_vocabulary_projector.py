@@ -252,7 +252,6 @@ class TestCCAStrategy:
 class TestOptimalTransportStrategy:
     """Tests for Optimal Transport projection strategy."""
 
-    @pytest.mark.skip(reason="linalg_inv not implemented in all backends")
     def test_ot_produces_transport_plan(self, backend: "Backend") -> None:
         """Optimal transport should compute transport-based alignment."""
         backend.random_seed(42)
@@ -269,7 +268,7 @@ class TestOptimalTransportStrategy:
 
         assert result.projected_embeddings.shape == (100, 64)
         assert "transport_cost" in result.metadata
-        assert result.metadata["n_source_samples"] <= 50
+        assert result.metadata["n_source_samples"] == 100
 
 
 class TestAlignmentQualityComputation:

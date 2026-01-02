@@ -178,6 +178,15 @@ class JAXBackend(Backend):
     def sign(self, array: Array) -> Array:
         return self.jnp.sign(array)
 
+    def isnan(self, array: Array) -> Array:
+        return self.jnp.isnan(array)
+
+    def isinf(self, array: Array) -> Array:
+        return self.jnp.isinf(array)
+
+    def isfinite(self, array: Array) -> Array:
+        return self.jnp.isfinite(array)
+
     def sin(self, array: Array) -> Array:
         return self.jnp.sin(array)
 

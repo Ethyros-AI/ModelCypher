@@ -115,6 +115,24 @@ class Backend(Protocol):
     def log(self, array: Array) -> Array: ...
     def abs(self, array: Array) -> Array: ...
     def sign(self, array: Array) -> Array: ...
+    def isnan(self, array: Array) -> Array:
+        """Element-wise test for NaN (Not a Number).
+
+        Returns a boolean array with True where elements are NaN.
+        """
+        ...
+    def isinf(self, array: Array) -> Array:
+        """Element-wise test for infinity (positive or negative).
+
+        Returns a boolean array with True where elements are +/- inf.
+        """
+        ...
+    def isfinite(self, array: Array) -> Array:
+        """Element-wise test for finite values.
+
+        Returns a boolean array with True where elements are neither NaN nor inf.
+        """
+        ...
     def sin(self, array: Array) -> Array:
         """Element-wise sine (radians)."""
         ...

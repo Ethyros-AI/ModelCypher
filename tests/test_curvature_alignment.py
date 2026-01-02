@@ -283,21 +283,29 @@ class TestComputeLayerGuidance:
             ollivier_ricci_mean=-0.1,
         )
         guidance = _compute_layer_guidance(src, tgt, layer_idx=0)
-        assert guidance.dimension_scale == 0.5  # tgt/src = 50/100
+        backend = get_default_backend()
+        eps = machine_epsilon(backend, backend.array([1.0]))
+        expected_scale = tgt.intrinsic_dimension / src.intrinsic_dimension
+        assert abs(guidance.dimension_scale - expected_scale) <= eps
 
     def test_dimension_scale_computed_correctly(self):
         """Dimension scale is target/source."""
         src = LayerCurvature(layer_idx=0, intrinsic_dimension=64.0, ollivier_ricci_mean=-0.1)
         tgt = LayerCurvature(layer_idx=0, intrinsic_dimension=128.0, ollivier_ricci_mean=-0.1)
         guidance = _compute_layer_guidance(src, tgt, layer_idx=0)
-        assert guidance.dimension_scale == 2.0
+        backend = get_default_backend()
+        eps = machine_epsilon(backend, backend.array([1.0]))
+        expected_scale = tgt.intrinsic_dimension / src.intrinsic_dimension
+        assert abs(guidance.dimension_scale - expected_scale) <= eps
 
     def test_zero_dimension_defaults_to_one(self):
         """Zero intrinsic dimension defaults to 1.0 to avoid division by zero."""
         src = LayerCurvature(layer_idx=0, intrinsic_dimension=0.0, ollivier_ricci_mean=-0.1)
         tgt = LayerCurvature(layer_idx=0, intrinsic_dimension=64.0, ollivier_ricci_mean=-0.1)
         guidance = _compute_layer_guidance(src, tgt, layer_idx=0)
-        assert guidance.dimension_scale == 1.0
+        backend = get_default_backend()
+        eps = machine_epsilon(backend, backend.array([1.0]))
+        assert abs(guidance.dimension_scale - 1.0) <= eps
 
     def test_same_sign_curvature_lower_correction(self):
         """Same sign curvatures have lower correction than opposite signs."""
@@ -318,11 +326,13 @@ class TestComputeLayerGuidance:
         assert math.isfinite(guidance.curvature_correction)
 
     def test_alignment_weight_range(self):
-        """Alignment weight should be in range [0.3, 1.0]."""
+        """Alignment weight should be in range [0, 1]."""
         src = LayerCurvature(layer_idx=0, intrinsic_dimension=64.0, ollivier_ricci_mean=-0.1)
         tgt = LayerCurvature(layer_idx=0, intrinsic_dimension=64.0, ollivier_ricci_mean=0.5)
         guidance = _compute_layer_guidance(src, tgt, layer_idx=0)
-        assert 0.0 <= guidance.alignment_weight <= 1.0
+        backend = get_default_backend()
+        eps = machine_epsilon(backend, backend.array([1.0]))
+        assert -eps <= guidance.alignment_weight <= 1.0 + eps
 
 
 # =============================================================================
@@ -394,7 +404,9 @@ class TestComputeAlignmentGuidance:
         )
         plan = compute_alignment_guidance(empty_src, empty_tgt)
         assert len(plan.layer_guidance) == 0
-        assert plan.mean_dimension_scale == 1.0
+        backend = get_default_backend()
+        eps = machine_epsilon(backend, backend.array([1.0]))
+        assert abs(plan.mean_dimension_scale - 1.0) <= eps
 
     def test_different_layer_counts_uses_relative_position(self):
         """Different layer counts map by relative position."""
@@ -489,7 +501,7 @@ class TestCurvatureWeightedProcrustes:
         frobenius_norm = (diff ** 2).sum() ** 0.5
         eps = division_epsilon(backend, R_low)
         assert math.isfinite(frobenius_norm)
-        assert frobenius_norm >= 0.0
+        assert frobenius_norm >= -eps
 
     def test_high_curvature_correction_more_damping(self, backend):
         """High curvature correction adds significant damping."""

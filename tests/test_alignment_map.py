@@ -19,6 +19,8 @@
 
 from __future__ import annotations
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.vocabulary.alignment_map import (
     AlignmentQuality,
     TokenAlignment,
@@ -27,6 +29,11 @@ from modelcypher.core.domain.vocabulary.alignment_map import (
     build_alignment_from_vocabs,
     format_comparison_report,
 )
+
+
+def _eps() -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array([1.0]))
 
 
 class TestTokenAlignment:
@@ -182,12 +189,15 @@ class TestVocabularyAlignmentMap:
                 )
             )
 
-        assert map_.coverage == 0.8
+        expected_coverage = (
+            (map_.source_vocab_size - map_.unmapped_count) / map_.source_vocab_size
+        )
+        assert abs(map_.coverage - expected_coverage) <= _eps()
 
     def test_coverage_zero_vocab(self):
         """Test coverage with zero vocab size."""
         map_ = VocabularyAlignmentMap(source_vocab_size=0, target_vocab_size=10)
-        assert map_.coverage == 0.0
+        assert abs(map_.coverage) <= _eps()
 
     def test_to_dict(self):
         """Test serialization to summary dict."""
@@ -270,7 +280,8 @@ class TestBuildAlignmentFromVocabs:
         result = build_alignment_from_vocabs(source, target)
 
         assert result.exact_matches == 2
-        assert result.coverage == 1.0
+        expected_coverage = (len(source) - result.unmapped_count) / len(source)
+        assert abs(result.coverage - expected_coverage) <= _eps()
 
         hello_align = result.get_alignment(0)
         assert hello_align is not None
@@ -295,7 +306,8 @@ class TestBuildAlignmentFromVocabs:
         result = build_alignment_from_vocabs(source, target)
 
         assert result.unmapped_count == 2
-        assert result.coverage == 0.0
+        expected_coverage = (len(source) - result.unmapped_count) / len(source)
+        assert abs(result.coverage - expected_coverage) <= _eps()
 
     def test_prefix_matching(self):
         """Test prefix-based approximate matching."""
@@ -354,8 +366,8 @@ class TestTokenizerComparisonResult:
         assert d["sourceVocabSize"] == 32000
         assert d["targetVocabSize"] == 50000
         assert d["overlapCount"] == 25000
-        assert d["overlapRatio"] == 0.7812
-        assert d["coverage"] == 0.9375
+        assert abs(d["overlapRatio"] - round(result.overlap_ratio, 4)) <= _eps()
+        assert abs(d["coverage"] - round(result.coverage, 4)) <= _eps()
 
 
 class TestFormatComparisonReport:

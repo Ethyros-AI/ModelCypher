@@ -215,6 +215,16 @@ class NullSpaceFilter:
         activation_matrix = backend.array(activation_matrix)
         backend.eval(activation_matrix)
 
+        # Check for NaN/Inf before SVD - these cause crashes in some backends
+        nan_count = backend.sum(backend.astype(backend.isnan(activation_matrix), "int32"))
+        inf_count = backend.sum(backend.astype(backend.isinf(activation_matrix), "int32"))
+        backend.eval(nan_count, inf_count)
+        if int(backend.to_scalar(nan_count)) > 0 or int(backend.to_scalar(inf_count)) > 0:
+            raise ValueError(
+                "Activation matrix contains NaN or Inf values. "
+                "Cannot compute null space projection on invalid data."
+            )
+
         n_samples = int(activation_matrix.shape[0])
         d = int(activation_matrix.shape[1])
 

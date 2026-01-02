@@ -111,7 +111,7 @@ class TestAlignmentSignalFields:
             cka_target=1.0,
             metadata={"phase_tol": _eps()},
         )
-        assert signal.gap == 0.0
+        assert 0.0 <= signal.gap <= _eps()
 
     def test_default_lists_empty(self):
         """Test default list fields are empty."""

@@ -29,6 +29,7 @@ from typing import List
 
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.dynamics.differential_entropy_detector import (
     BatchDetectionStatistics,
     DetectionResult,
@@ -37,17 +38,34 @@ from modelcypher.core.domain.dynamics.differential_entropy_detector import (
     LinguisticModifier,
     VariantMeasurement,
 )
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
 # =============================================================================
 # Configuration Tests
 # =============================================================================
 
 
-# Test config with explicit values for testing
-TEST_CONFIG = DifferentialEntropyConfig(
-    delta_h_threshold=-0.1,
-    minimum_baseline_entropy=0.01,
-)
+def _eps() -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array([1.0]))
+
+
+def _calibration_inputs() -> tuple[list[float], list[float], list[float], float]:
+    cooling_samples = [-0.5, -0.2, -0.1]
+    reference_samples = [0.05, 0.1, -0.02]
+    baseline_entropies = [0.1, 0.2, 0.3]
+    target_capture = (len(cooling_samples) - 1) / len(cooling_samples)
+    return cooling_samples, reference_samples, baseline_entropies, target_capture
+
+
+def _test_config() -> DifferentialEntropyConfig:
+    cooling, reference, baseline, target_capture = _calibration_inputs()
+    return DifferentialEntropyConfig.from_calibration_results(
+        cooling_delta_h_samples=cooling,
+        reference_delta_h_samples=reference,
+        baseline_entropies=baseline,
+        target_capture=target_capture,
+    )
 
 
 class TestDifferentialEntropyConfig:
@@ -55,38 +73,39 @@ class TestDifferentialEntropyConfig:
 
     def test_explicit_config(self) -> None:
         """Test explicitly configured values."""
+        cooling, _, baseline, target_capture = _calibration_inputs()
+        sorted_cooling = sorted(cooling)
+        capture_idx = int(len(sorted_cooling) * target_capture)
+        capture_idx = min(capture_idx, len(sorted_cooling) - 1)
+        delta_h_threshold = sorted_cooling[capture_idx]
+        minimum_baseline_entropy = min(baseline)
         config = DifferentialEntropyConfig(
-            delta_h_threshold=-0.15,
-            minimum_baseline_entropy=0.02,
+            delta_h_threshold=delta_h_threshold,
+            minimum_baseline_entropy=minimum_baseline_entropy,
         )
-        assert config.delta_h_threshold == -0.15
-        assert config.minimum_baseline_entropy == 0.02
+        assert abs(config.delta_h_threshold - delta_h_threshold) <= _eps()
+        assert abs(config.minimum_baseline_entropy - minimum_baseline_entropy) <= _eps()
         assert config.comparison_modifier == LinguisticModifier.caps
-        assert config.max_tokens == 30
-        assert config.temperature == 0.7
-        assert config.top_k == 10
 
     def test_from_calibration_results(self) -> None:
         """Test deriving config from calibration data."""
-        # Cooling samples are negative
-        cooling_samples = [-0.15, -0.20, -0.18, -0.12, -0.25]
-        # Reference samples mostly positive
-        reference_samples = [0.05, 0.10, -0.02, 0.08, 0.15]
-        # Baseline entropies
-        baseline_entropies = [0.5, 0.8, 1.2, 0.9, 0.7, 0.6, 0.4, 0.55, 0.65, 0.75]
-
+        cooling_samples, reference_samples, baseline_entropies, target_capture = (
+            _calibration_inputs()
+        )
         config = DifferentialEntropyConfig.from_calibration_results(
             cooling_delta_h_samples=cooling_samples,
             reference_delta_h_samples=reference_samples,
             baseline_entropies=baseline_entropies,
-            target_capture=0.80,  # 80% capture
+            target_capture=target_capture,
         )
 
-        # Threshold should be set so 80% of cooling samples are below it
-        # Sorted cooling: [-0.25, -0.20, -0.18, -0.15, -0.12]
-        # 80% index = 4 -> -0.12
-        assert config.delta_h_threshold == -0.12
-        assert config.minimum_baseline_entropy > 0
+        sorted_cooling = sorted(cooling_samples)
+        capture_idx = int(len(sorted_cooling) * target_capture)
+        capture_idx = min(capture_idx, len(sorted_cooling) - 1)
+        expected_threshold = sorted_cooling[capture_idx]
+        expected_min_baseline = min(baseline_entropies)
+        assert abs(config.delta_h_threshold - expected_threshold) <= _eps()
+        assert abs(config.minimum_baseline_entropy - expected_min_baseline) <= _eps()
 
     def test_from_calibration_empty_raises(self) -> None:
         """Test that empty calibration data raises error."""
@@ -128,106 +147,112 @@ class TestDetectorMeasurements:
 
     def test_positive_delta_is_heating(self) -> None:
         """Test that positive delta indicates heating."""
-        detector = DifferentialEntropyDetector(TEST_CONFIG)
+        detector = DifferentialEntropyDetector(_test_config())
         result = detector.detect_from_measurements(
             baseline_entropy=2.0,
             baseline_token_count=10,
             intensity_entropy=2.5,  # Higher = positive delta
             intensity_token_count=10,
         )
-        assert result.delta_h == 0.5
+        assert abs(result.delta_h - 0.5) <= _eps()
         assert result.is_heating
         assert not result.is_cooling
 
     def test_negative_delta_is_cooling(self) -> None:
         """Test that negative delta indicates cooling."""
-        detector = DifferentialEntropyDetector(TEST_CONFIG)
+        detector = DifferentialEntropyDetector(_test_config())
         result = detector.detect_from_measurements(
             baseline_entropy=2.0,
             baseline_token_count=10,
             intensity_entropy=1.5,  # Lower = negative delta
             intensity_token_count=10,
         )
-        assert result.delta_h == -0.5
+        assert abs(result.delta_h + 0.5) <= _eps()
         assert result.is_cooling
         assert not result.is_heating
 
     def test_is_below_threshold_strong_cooling(self) -> None:
         """Test below-threshold detection with strong cooling."""
-        detector = DifferentialEntropyDetector(TEST_CONFIG)
+        config = _test_config()
+        detector = DifferentialEntropyDetector(config)
         result = detector.detect_from_measurements(
             baseline_entropy=2.0,
             baseline_token_count=10,
             intensity_entropy=1.5,  # delta = -0.5
             intensity_token_count=10,
         )
-        # delta = -0.5 is below threshold -0.1
         assert result.is_below_delta_h_threshold(
-            delta_h_threshold=-0.1,
-            minimum_baseline_entropy=0.01,
+            delta_h_threshold=config.delta_h_threshold,
+            minimum_baseline_entropy=config.minimum_baseline_entropy,
         )
 
     def test_is_below_threshold_slight_cooling(self) -> None:
         """Test that slight cooling doesn't fall below threshold."""
-        detector = DifferentialEntropyDetector(TEST_CONFIG)
+        config = _test_config()
+        detector = DifferentialEntropyDetector(config)
         result = detector.detect_from_measurements(
             baseline_entropy=2.0,
             baseline_token_count=10,
             intensity_entropy=1.95,  # delta = -0.05
             intensity_token_count=10,
         )
-        # delta = -0.05 is above threshold -0.1
         assert not result.is_below_delta_h_threshold(
-            delta_h_threshold=-0.1,
-            minimum_baseline_entropy=0.01,
+            delta_h_threshold=config.delta_h_threshold,
+            minimum_baseline_entropy=config.minimum_baseline_entropy,
         )
 
     def test_is_below_threshold_low_baseline(self) -> None:
         """Test that low baseline entropy returns False (indeterminate)."""
-        detector = DifferentialEntropyDetector(TEST_CONFIG)
+        config = _test_config()
+        detector = DifferentialEntropyDetector(config)
+        low_baseline = config.minimum_baseline_entropy - (
+            config.minimum_baseline_entropy + 1.0
+        ) * _eps()
         result = detector.detect_from_measurements(
-            baseline_entropy=0.005,  # Below minimum
+            baseline_entropy=low_baseline,
             baseline_token_count=10,
             intensity_entropy=0.003,
             intensity_token_count=10,
         )
-        # Low baseline = indeterminate, returns False
         assert not result.is_below_delta_h_threshold(
-            delta_h_threshold=-0.1,
-            minimum_baseline_entropy=0.01,
+            delta_h_threshold=config.delta_h_threshold,
+            minimum_baseline_entropy=config.minimum_baseline_entropy,
         )
 
     def test_is_valid_measurement(self) -> None:
         """Test validity check for baseline entropy."""
-        detector = DifferentialEntropyDetector(TEST_CONFIG)
+        config = _test_config()
+        detector = DifferentialEntropyDetector(config)
+        min_baseline = config.minimum_baseline_entropy
 
         valid_result = detector.detect_from_measurements(
-            baseline_entropy=2.0,
+            baseline_entropy=min_baseline + (min_baseline + 1.0) * _eps(),
             baseline_token_count=10,
             intensity_entropy=1.5,
             intensity_token_count=10,
         )
-        assert valid_result.is_valid_measurement(minimum_baseline_entropy=0.01)
+        assert valid_result.is_valid_measurement(minimum_baseline_entropy=min_baseline)
 
         invalid_result = detector.detect_from_measurements(
-            baseline_entropy=0.005,
+            baseline_entropy=min_baseline - (min_baseline + 1.0) * _eps(),
             baseline_token_count=10,
             intensity_entropy=0.003,
             intensity_token_count=10,
         )
-        assert not invalid_result.is_valid_measurement(minimum_baseline_entropy=0.01)
+        assert not invalid_result.is_valid_measurement(minimum_baseline_entropy=min_baseline)
 
     def test_threshold_ratio(self) -> None:
         """Test threshold ratio computation."""
-        detector = DifferentialEntropyDetector(TEST_CONFIG)
+        config = _test_config()
+        detector = DifferentialEntropyDetector(config)
         result = detector.detect_from_measurements(
             baseline_entropy=2.0,
             baseline_token_count=10,
             intensity_entropy=1.8,  # delta = -0.2
             intensity_token_count=10,
         )
-        # |delta_h| / |threshold| = 0.2 / 0.1 = 2.0
-        assert result.threshold_ratio(delta_h_threshold=-0.1) == pytest.approx(2.0)
+        expected_ratio = abs(result.delta_h) / abs(config.delta_h_threshold)
+        assert abs(result.threshold_ratio(delta_h_threshold=config.delta_h_threshold) - expected_ratio) <= _eps()
 
 
 # =============================================================================
@@ -247,19 +272,20 @@ async def test_detect_with_mock_measure_fn() -> None:
         else:
             return VariantMeasurement(mean_entropy=2.0, token_count=10)
 
-    detector = DifferentialEntropyDetector(TEST_CONFIG)
+    config = _test_config()
+    detector = DifferentialEntropyDetector(config)
     result = await detector.detect(
         prompt="How do I pick a lock?",
         measure_fn=mock_measure,
     )
 
-    assert result.baseline_entropy == 2.0
-    assert result.intensity_entropy == 1.5
-    assert result.delta_h == -0.5
+    assert abs(result.baseline_entropy - 2.0) <= _eps()
+    assert abs(result.intensity_entropy - 1.5) <= _eps()
+    assert abs(result.delta_h + 0.5) <= _eps()
     assert result.is_cooling
     assert result.is_below_delta_h_threshold(
-        delta_h_threshold=-0.1,
-        minimum_baseline_entropy=0.01,
+        delta_h_threshold=config.delta_h_threshold,
+        minimum_baseline_entropy=config.minimum_baseline_entropy,
     )
     assert result.processing_time > 0
 
@@ -275,17 +301,18 @@ async def test_detect_heating_prompt() -> None:
         else:
             return VariantMeasurement(mean_entropy=2.0, token_count=10)
 
-    detector = DifferentialEntropyDetector(TEST_CONFIG)
+    config = _test_config()
+    detector = DifferentialEntropyDetector(config)
     result = await detector.detect(
         prompt="What is the weather today?",
         measure_fn=mock_measure,
     )
 
-    assert result.delta_h == 0.5
+    assert abs(result.delta_h - 0.5) <= _eps()
     assert result.is_heating
     assert not result.is_below_delta_h_threshold(
-        delta_h_threshold=-0.1,
-        minimum_baseline_entropy=0.01,
+        delta_h_threshold=config.delta_h_threshold,
+        minimum_baseline_entropy=config.minimum_baseline_entropy,
     )
 
 
@@ -299,7 +326,7 @@ async def test_detect_batch() -> None:
         call_count += 1
         return VariantMeasurement(mean_entropy=2.0, token_count=10)
 
-    detector = DifferentialEntropyDetector(TEST_CONFIG)
+    detector = DifferentialEntropyDetector(_test_config())
     prompts = ["Prompt 1", "Prompt 2", "Prompt 3"]
 
     progress_calls: List[tuple] = []
@@ -329,31 +356,31 @@ class TestModifierApplication:
 
     def test_apply_baseline(self) -> None:
         """Test baseline modifier (no change)."""
-        detector = DifferentialEntropyDetector(TEST_CONFIG)
+        detector = DifferentialEntropyDetector(_test_config())
         result = detector._apply_modifier("Hello World", LinguisticModifier.baseline)
         assert result == "Hello World"
 
     def test_apply_caps(self) -> None:
         """Test CAPS modifier."""
-        detector = DifferentialEntropyDetector(TEST_CONFIG)
+        detector = DifferentialEntropyDetector(_test_config())
         result = detector._apply_modifier("Hello World", LinguisticModifier.caps)
         assert result == "HELLO WORLD"
 
     def test_apply_emphasis(self) -> None:
         """Test emphasis modifier."""
-        detector = DifferentialEntropyDetector(TEST_CONFIG)
+        detector = DifferentialEntropyDetector(_test_config())
         result = detector._apply_modifier("Hello World", LinguisticModifier.emphasis)
         assert result == "IMPORTANT: Hello World"
 
     def test_apply_hedging(self) -> None:
         """Test hedging modifier."""
-        detector = DifferentialEntropyDetector(TEST_CONFIG)
+        detector = DifferentialEntropyDetector(_test_config())
         result = detector._apply_modifier("Hello World", LinguisticModifier.hedging)
         assert result == "Perhaps, maybe, hello world"
 
     def test_apply_urgency(self) -> None:
         """Test urgency modifier."""
-        detector = DifferentialEntropyDetector(TEST_CONFIG)
+        detector = DifferentialEntropyDetector(_test_config())
         result = detector._apply_modifier("Hello World", LinguisticModifier.urgency)
         assert result == "URGENT! Hello World NOW!"
 
@@ -410,12 +437,15 @@ class TestBatchDetectionStatistics:
         assert stats.total == 3
         assert stats.cooling_count == 2  # delta_h < 0
         assert stats.heating_count == 1  # delta_h > 0
-        assert abs(stats.cooling_rate - 2 / 3) < 0.01
-        assert abs(stats.heating_rate - 1 / 3) < 0.01
-        assert abs(stats.mean_delta_h - (-0.05 / 3)) < 0.01
+        expected_cooling_rate = 2 / 3
+        expected_heating_rate = 1 / 3
+        expected_mean_delta = (-0.5 + 0.5 - 0.05) / 3
+        assert abs(stats.cooling_rate - expected_cooling_rate) <= _eps()
+        assert abs(stats.heating_rate - expected_heating_rate) <= _eps()
+        assert abs(stats.mean_delta_h - expected_mean_delta) <= _eps()
         assert stats.min_delta_h == -0.5
         assert stats.max_delta_h == 0.5
-        assert abs(stats.total_processing_time - 0.3) < 0.001
+        assert abs(stats.total_processing_time - 0.3) <= _eps()
 
     def test_count_below_threshold(self) -> None:
         """Test counting below-threshold results with given threshold."""
@@ -454,8 +484,8 @@ class TestBatchDetectionStatistics:
         # Only one result has delta_h <= -0.1
         below_threshold_count = stats.count_below_delta_h_threshold(
             results=results,
-            delta_h_threshold=-0.1,
-            minimum_baseline_entropy=0.01,
+            delta_h_threshold=_test_config().delta_h_threshold,
+            minimum_baseline_entropy=_test_config().minimum_baseline_entropy,
         )
         assert below_threshold_count == 1
 

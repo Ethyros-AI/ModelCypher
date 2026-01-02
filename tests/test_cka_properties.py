@@ -91,7 +91,8 @@ class TestCKABounds:
         y = _random_matrix(backend, 20, 10, seed + 1000)
 
         result = compute_cka(x, y, backend)
-        assert 0.0 <= result.cka <= 1.0
+        tol = _scalar_tol(backend)
+        assert -tol <= result.cka <= 1.0 + tol
 
     @pytest.mark.parametrize("seed", range(10))
     def test_cka_self_is_one(self, seed: int):
@@ -194,7 +195,8 @@ class TestHSIC:
         x = _random_matrix(backend, 20, 10, seed)
 
         result = compute_cka(x, x, backend)
-        assert result.hsic_xx >= 0.0
+        tol = _scalar_tol(backend)
+        assert result.hsic_xx >= -tol
 
     @pytest.mark.parametrize("seed", range(10))
     def test_hsic_xy_bounded(self, seed: int):
@@ -327,7 +329,8 @@ class TestCKAEdgeCases:
         backend = get_default_backend()
         x = backend.array([[1.0, 2.0, 3.0]])
         result = compute_cka(x, x, backend)
-        assert result.cka == 0.0
+        tol = _scalar_tol(backend)
+        assert abs(result.cka) <= tol
         assert result.sample_count == 1
 
     def test_two_samples_valid(self):
@@ -336,7 +339,8 @@ class TestCKAEdgeCases:
         x = backend.array([[1.0, 2.0], [3.0, 4.0]])
         y = backend.array([[1.1, 2.1], [3.1, 4.1]])
         result = compute_cka(x, y, backend)
-        assert 0.0 <= result.cka <= 1.0
+        tol = _scalar_tol(backend)
+        assert -tol <= result.cka <= 1.0 + tol
         assert result.sample_count == 2
 
     def test_different_feature_dimensions(self):
@@ -346,7 +350,8 @@ class TestCKAEdgeCases:
         y = _random_matrix(backend, 20, 15, 43)
 
         result = compute_cka(x, y, backend)
-        assert 0.0 <= result.cka <= 1.0
+        tol = _scalar_tol(backend)
+        assert -tol <= result.cka <= 1.0 + tol
         assert result.is_valid
 
     def test_zero_matrix_returns_zero_cka(self):
@@ -356,7 +361,8 @@ class TestCKAEdgeCases:
         y = _random_matrix(backend, 10, 5, 42)
 
         result = compute_cka(x, y, backend)
-        assert result.cka == 0.0
+        tol = _scalar_tol(backend)
+        assert abs(result.cka) <= tol
 
     def test_rbf_kernel_bounds(self):
         """RBF kernel CKA should also be in [0, 1]."""
@@ -365,7 +371,8 @@ class TestCKAEdgeCases:
         y = _random_matrix(backend, 20, 10, 43)
 
         result = compute_cka(x, y, backend, use_linear_kernel=False)
-        assert 0.0 <= result.cka <= 1.0
+        tol = _scalar_tol(backend)
+        assert -tol <= result.cka <= 1.0 + tol
         assert result.is_valid
 
     def test_identical_with_noise(self):

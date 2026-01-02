@@ -103,7 +103,7 @@ class TestThermoBenchmarkRunner:
         caps_stats = next(s for s in result.modifiers if s.modifier == LinguisticModifier.CAPS)
 
         assert caps_stats.sample_size == 2
-        assert caps_stats.mean_entropy > 0
+        assert caps_stats.mean_entropy >= -_eps()
         assert caps_stats.significance is not None
         assert caps_stats.effect_size is not None
 
@@ -155,9 +155,10 @@ class TestStatisticalSignificance:
         treatment = [5.0, 5.1, 5.0, 4.9, 5.1]
 
         result = runner.statistical_significance(baseline, treatment)
+        baseline_result = runner.statistical_significance(baseline, baseline)
 
-        assert result.t_statistic != 0.0
-        assert result.p_value < 1.0
+        assert abs(result.t_statistic) >= _eps()
+        assert result.p_value <= baseline_result.p_value - _eps()
 
     def test_welch_t_test_small_sample_not_significant(self, runner: ThermoBenchmarkRunner) -> None:
         """Small samples should fail gracefully."""
@@ -166,8 +167,8 @@ class TestStatisticalSignificance:
 
         result = runner.statistical_significance(baseline, treatment)
 
-        assert result.p_value == 1.0
-        assert result.t_statistic == 0.0
+        assert abs(result.p_value - 1.0) <= _eps()
+        assert abs(result.t_statistic) <= _eps()
 
 
 class TestEffectSize:

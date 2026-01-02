@@ -474,9 +474,8 @@ class TestEdgeCases:
         # All of space is null
         assert projection.null_dim == 20
 
-    @pytest.mark.skip(reason="MLX aborts on NaN in eigh - cannot catch SIGABRT in Python")
     def test_nan_handling(self):
-        """NaN in activations should be handled gracefully."""
+        """NaN in activations should raise ValueError before reaching SVD."""
         backend = get_default_backend()
         null_filter = NullSpaceFilter(backend)
 
@@ -491,14 +490,26 @@ class TestEdgeCases:
         backend.eval(A)
         backend.eval(delta)
 
-        # Should not crash (may produce warnings)
-        try:
-            result = null_filter.filter_delta(delta, A)
-            # If it doesn't crash, check result is reasonable
-            backend.eval(result.filtered_delta)
-            has_nan = backend.any(backend.isnan(result.filtered_delta))
-            backend.eval(has_nan)
-            assert not bool(backend.to_numpy(has_nan)) or not result.filtering_applied
-        except (ValueError, RuntimeError):
-            # Acceptable to raise on NaN
-            pass
+        # Should raise ValueError with clear message about NaN
+        with pytest.raises(ValueError, match="NaN or Inf"):
+            null_filter.filter_delta(delta, A)
+
+    def test_inf_handling(self):
+        """Inf in activations should raise ValueError before reaching SVD."""
+        backend = get_default_backend()
+        null_filter = NullSpaceFilter(backend)
+
+        backend.random_seed(42)
+        A = backend.random_normal((30, 20))
+        delta = backend.random_normal((20,))
+        # Set one element to Inf
+        A_np = backend.to_numpy(A)
+        import numpy as np
+        A_np[0, 0] = np.inf
+        A = backend.array(A_np)
+        backend.eval(A)
+        backend.eval(delta)
+
+        # Should raise ValueError with clear message about Inf
+        with pytest.raises(ValueError, match="NaN or Inf"):
+            null_filter.filter_delta(delta, A)

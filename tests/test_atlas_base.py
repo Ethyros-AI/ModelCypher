@@ -332,7 +332,7 @@ class TestBaseAtlas:
 
         assert sig is not None
         for v in sig.values:
-            assert v >= 0.0
+            assert v >= -_eps()
 
 
 class TestNormalizedEntropy:

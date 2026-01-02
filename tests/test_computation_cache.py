@@ -158,7 +158,9 @@ class TestCacheStatistics:
         cache.get_or_compute_gram(activations, backend)  # hit
 
         stats = cache.get_stats()
-        assert stats.hit_rate == 0.75
+        expected_hit_rate = 3 / 4
+        eps = division_epsilon(backend, backend.array([1.0]))
+        assert abs(stats.hit_rate - expected_hit_rate) <= eps
 
     def test_compute_time_saved_tracked(self, cache: ComputationCache, backend):
         """Test that compute time saved is tracked."""

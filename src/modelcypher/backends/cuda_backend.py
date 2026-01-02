@@ -229,6 +229,15 @@ class CUDABackend(Backend):
     def sign(self, array: Array) -> Array:
         return array.sign()
 
+    def isnan(self, array: Array) -> Array:
+        return self.torch.isnan(array)
+
+    def isinf(self, array: Array) -> Array:
+        return self.torch.isinf(array)
+
+    def isfinite(self, array: Array) -> Array:
+        return self.torch.isfinite(array)
+
     def clip(
         self, array: Array, min_val: float | Array | None, max_val: float | Array | None
     ) -> Array:

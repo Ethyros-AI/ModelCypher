@@ -74,20 +74,11 @@ class DifferentialEntropyConfig:
         Minimum baseline entropy to consider valid measurement
     comparison_modifier : LinguisticModifier, optional
         Modifier to compare against baseline
-    max_tokens : int, optional
-        Maximum tokens to generate for measurement
-    temperature : float, optional
-        Temperature for generation (0.0 = greedy)
-    top_k : int, optional
-        Top-K for entropy calculation
     """
 
     delta_h_threshold: float
     minimum_baseline_entropy: float
     comparison_modifier: LinguisticModifier = LinguisticModifier.caps
-    max_tokens: int = 30
-    temperature: float = 0.7
-    top_k: int = 10
 
     @classmethod
     def from_calibration_results(

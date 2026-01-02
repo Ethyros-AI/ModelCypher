@@ -41,27 +41,27 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 
-def _test_tracker_config() -> EntropyDeltaTracker.Configuration:
-    """Create test config with explicit values."""
+def _test_tracker_config(vocab_size: int) -> EntropyDeltaTracker.Configuration:
+    """Create test config derived from the vocabulary size."""
     return EntropyDeltaTracker.Configuration(
-        top_k=10,
+        top_k=vocab_size,
         compute_variance=True,
         source="EntropyDeltaTracker",
     )
 
 
 def test_logit_entropy_calculator():
-    calc = LogitEntropyCalculator(top_k=2)
-
     # High entropy: uniform distribution [10, 10, 10]
     # Softmax([10,10,10]) = [0.33, 0.33, 0.33]
-    # Entropy = - sum(0.33 * log(0.33)) = ln(3) approx 1.098
+    # Entropy = - sum(0.33 * log(0.33)) = ln(3)
     logits = mx.array([10.0, 10.0, 10.0])
+    calc = LogitEntropyCalculator(top_k=int(logits.shape[-1]))
     ent, var = calc.compute(logits)
 
     backend = get_default_backend()
     eps = division_epsilon(backend, backend.array([0.0]))
-    assert math.isclose(ent, 1.0986, rel_tol=eps, abs_tol=eps)
+    expected_uniform_entropy = math.log(float(logits.shape[-1]))
+    assert math.isclose(ent, expected_uniform_entropy, rel_tol=eps, abs_tol=eps)
 
     # Low entropy: peaked distribution [100, 0, 0]
     # Softmax approx [1, 0, 0]
@@ -93,12 +93,12 @@ def test_logit_divergence_calculator():
 
 
 def test_entropy_delta_tracker_anomaly():
-    tracker = EntropyDeltaTracker(_test_tracker_config())
+    base_logits = mx.array([1.0, 1.0, 1.0])
+    tracker = EntropyDeltaTracker(_test_tracker_config(int(base_logits.shape[-1])))
     tracker.start_session()
 
     # Base uncertain (high entropy), Adapter confident (low entropy) -> Anomaly
     # Base: Uniform
-    base_logits = mx.array([1.0, 1.0, 1.0])
     # Adapter: Peaked
     adapter_logits = mx.array([100.0, 0.0, 0.0])
 
@@ -106,14 +106,17 @@ def test_entropy_delta_tracker_anomaly():
         base_logits, adapter_logits, token_index=0, generated_token=0
     )
 
-    assert sample.base_entropy > 1.0
-    assert sample.adapter_entropy < 0.1
-    assert sample.delta > 0.9
+    backend = get_default_backend()
+    eps = division_epsilon(backend, backend.array([0.0]))
+    expected_uniform_entropy = math.log(float(base_logits.shape[-1]))
+    assert math.isclose(sample.base_entropy, expected_uniform_entropy, rel_tol=eps, abs_tol=eps)
+    assert sample.adapter_entropy <= eps
+    assert sample.base_entropy >= sample.adapter_entropy + eps
 
     # Anomaly score is the entropy ratio for positive deltas.
     expected_ratio = sample.delta / sample.base_entropy
-    backend = get_default_backend()
-    eps = division_epsilon(backend, backend.array([0.0]))
+    expected_delta = sample.base_entropy - sample.adapter_entropy
+    assert math.isclose(sample.delta, expected_delta, rel_tol=eps, abs_tol=eps)
     assert math.isclose(sample.anomaly_score, expected_ratio, rel_tol=eps, abs_tol=eps)
 
     # End session

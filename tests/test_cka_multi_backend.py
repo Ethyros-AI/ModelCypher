@@ -95,7 +95,8 @@ class TestCKADefaultBackend:
         x = _random_matrix(backend, 50, 128, 42)
         y = _random_matrix(backend, 50, 64, 43)
         result = compute_cka(x, y, backend)
-        assert 0.0 <= result.cka <= 1.0
+        tol = _scalar_tol(backend)
+        assert -tol <= result.cka <= 1.0 + tol
 
     def test_scale_invariance(self):
         """CKA(αX, Y) = CKA(X, Y) for any scalar α > 0."""
@@ -161,7 +162,8 @@ class TestCKADefaultBackend:
         x = _random_matrix(backend, 1, 10, 42)
         y = _random_matrix(backend, 1, 10, 43)
         result = compute_cka(x, y, backend)
-        assert result.cka == 0.0
+        tol = _scalar_tol(backend)
+        assert abs(result.cka) <= tol
         assert result.sample_count == 1
 
 
@@ -202,7 +204,10 @@ class TestCKAMultiBackend:
         y = _random_matrix(any_backend, 50, 32, 43)
 
         cka = compute_cka_backend(x, y, any_backend)
-        assert 0.0 <= cka <= 1.0, f"Range violation on {type(any_backend).__name__}: CKA={cka}"
+        tol = _scalar_tol(any_backend)
+        assert -tol <= cka <= 1.0 + tol, (
+            f"Range violation on {type(any_backend).__name__}: CKA={cka}"
+        )
 
     def test_scale_invariance(self, any_backend: Backend):
         """CKA(αX, Y) = CKA(X, Y) on all backends."""
@@ -282,7 +287,8 @@ class TestCKAAccelerator:
 
         cka = compute_cka_backend(x, y, accelerated_backend)
 
-        assert 0.0 <= cka <= 1.0
+        tol = _scalar_tol(accelerated_backend)
+        assert -tol <= cka <= 1.0 + tol
         assert math.isfinite(cka)
 
     def test_numerical_stability_extreme_values(self, accelerated_backend: Backend):
@@ -296,7 +302,8 @@ class TestCKAAccelerator:
         cka = compute_cka_backend(x_large, y_large, accelerated_backend)
 
         assert math.isfinite(cka), f"CKA is not finite: {cka}"
-        assert 0.0 <= cka <= 1.0
+        tol = _scalar_tol(accelerated_backend)
+        assert -tol <= cka <= 1.0 + tol
 
     def test_batch_consistency(self, accelerated_backend: Backend):
         """Multiple CKA computations should be consistent."""

@@ -70,6 +70,14 @@ def _array_tol(backend: "Backend", array) -> float:
     return division_epsilon(backend, array)
 
 
+def _assert_unit_interval(value: float, tol: float) -> None:
+    assert -tol <= value <= 1.0 + tol
+
+
+def _assert_non_negative(value: float, tol: float) -> None:
+    assert value >= -tol
+
+
 # =============================================================================
 # HSICEstimator Enum Tests
 # =============================================================================
@@ -332,7 +340,8 @@ class TestComputeHSIC:
         gram = backend.matmul(X, backend.transpose(X))
 
         hsic = _compute_hsic(gram, gram, backend)
-        assert hsic > 0.0
+        tol = _scalar_tol(backend)
+        assert hsic >= tol
 
     def test_hsic_different_grams(self, any_backend: "Backend") -> None:
         """HSIC of different Gram matrices should be finite."""
@@ -351,7 +360,8 @@ class TestComputeHSIC:
         backend = any_backend
         gram = backend.ones((1, 1))
         hsic = _compute_hsic(gram, gram, backend)
-        assert hsic == 0.0
+        tol = _scalar_tol(backend)
+        assert abs(hsic) <= tol
 
     def test_hsic_two_samples(self, any_backend: "Backend") -> None:
         """HSIC with n=2 should return finite value."""
@@ -368,7 +378,8 @@ class TestComputeHSIC:
         backend = any_backend
         gram = backend.zeros((5, 5))
         hsic = _compute_hsic(gram, gram, backend)
-        assert hsic == 0.0
+        tol = _scalar_tol(backend)
+        assert abs(hsic) <= tol
 
 
 class TestComputeHSICUnbiased:
@@ -381,14 +392,15 @@ class TestComputeHSICUnbiased:
         # n=3 should return 0
         gram_3 = backend.ones((3, 3))
         hsic_3 = _compute_hsic_unbiased(gram_3, gram_3, backend)
-        assert hsic_3 == 0.0
+        tol = _scalar_tol(backend)
+        assert abs(hsic_3) <= tol
 
         # n=4 should compute
         backend.random_seed(42)
         X_4 = backend.random_normal((4, 5))
         gram_4 = backend.matmul(X_4, backend.transpose(X_4))
         hsic_4 = _compute_hsic_unbiased(gram_4, gram_4, backend)
-        assert hsic_4 >= 0.0
+        _assert_non_negative(hsic_4, tol)
 
     def test_unbiased_identical_grams_positive(self, any_backend: "Backend") -> None:
         """Unbiased HSIC of identical Gram matrices should be non-negative."""
@@ -398,7 +410,8 @@ class TestComputeHSICUnbiased:
         gram = backend.matmul(X, backend.transpose(X))
 
         hsic = _compute_hsic_unbiased(gram, gram, backend)
-        assert hsic >= 0.0
+        tol = _scalar_tol(backend)
+        _assert_non_negative(hsic, tol)
 
     def test_unbiased_non_negative(self, any_backend: "Backend") -> None:
         """Unbiased HSIC should be clamped to non-negative."""
@@ -410,7 +423,8 @@ class TestComputeHSICUnbiased:
         gram_y = backend.matmul(Y, backend.transpose(Y))
 
         hsic = _compute_hsic_unbiased(gram_x, gram_y, backend)
-        assert hsic >= 0.0
+        tol = _scalar_tol(backend)
+        _assert_non_negative(hsic, tol)
 
     def test_unbiased_uses_zero_diagonal(self, any_backend: "Backend") -> None:
         """Unbiased HSIC zeros out diagonal before computation."""
@@ -420,7 +434,8 @@ class TestComputeHSICUnbiased:
 
         # With diagonal zeroed, all entries become 0, so HSIC should be 0
         hsic = _compute_hsic_unbiased(gram, gram, backend)
-        assert hsic == 0.0
+        tol = _scalar_tol(backend)
+        assert abs(hsic) <= tol
 
 
 class TestComputeHSICDispatch:
@@ -436,7 +451,8 @@ class TestComputeHSICDispatch:
         hsic = _compute_hsic_dispatch(
             gram, gram, backend, HSICEstimator.BIASED, n_features_x=5, n_features_y=5
         )
-        assert hsic >= 0.0
+        tol = _scalar_tol(backend)
+        _assert_non_negative(hsic, tol)
 
     def test_dispatch_unbiased(self, any_backend: "Backend") -> None:
         """Dispatch with UNBIASED should use unbiased estimator."""
@@ -448,7 +464,8 @@ class TestComputeHSICDispatch:
         hsic = _compute_hsic_dispatch(
             gram, gram, backend, HSICEstimator.UNBIASED, n_features_x=5, n_features_y=5
         )
-        assert hsic >= 0.0
+        tol = _scalar_tol(backend)
+        _assert_non_negative(hsic, tol)
 
     def test_dispatch_unbiased_fallback_for_small_n(self, any_backend: "Backend") -> None:
         """Dispatch with UNBIASED but n<4 should fall back to biased."""
@@ -481,7 +498,8 @@ class TestComputeHSICDispatch:
             n_features_x=n_features,
             n_features_y=n_features,
         )
-        assert hsic >= 0.0
+        tol = _scalar_tol(backend)
+        _assert_non_negative(hsic, tol)
 
     def test_dispatch_auto_uses_biased_low_dim(self, any_backend: "Backend") -> None:
         """Dispatch with AUTO should use BIASED when samples >= features."""
@@ -500,7 +518,8 @@ class TestComputeHSICDispatch:
             n_features_x=n_features,
             n_features_y=n_features,
         )
-        assert hsic >= 0.0
+        tol = _scalar_tol(backend)
+        _assert_non_negative(hsic, tol)
 
 
 # =============================================================================
@@ -548,7 +567,8 @@ class TestParticipationRatio:
         backend = any_backend
         eigvals = backend.zeros((5,))
         pr = _participation_ratio(eigvals, backend)
-        assert pr == 0.0
+        tol = _array_tol(backend, eigvals)
+        assert abs(pr) <= tol
 
 
 class TestFeatureSamplingCorrection:
@@ -564,8 +584,9 @@ class TestFeatureSamplingCorrection:
 
         correction, intrinsic_dim = _feature_sampling_correction(centered, 20, backend)
 
-        assert correction >= 1.0
-        assert intrinsic_dim >= 0.0
+        tol = _array_tol(backend, centered)
+        assert correction >= 1.0 - tol
+        _assert_non_negative(intrinsic_dim, tol)
 
     def test_correction_zero_feature_dim(self, any_backend: "Backend") -> None:
         """Zero feature dimension should return correction = 1.0."""
@@ -574,8 +595,9 @@ class TestFeatureSamplingCorrection:
         centered = _center_gram_matrix(gram, backend)
 
         correction, intrinsic_dim = _feature_sampling_correction(centered, 0, backend)
-        assert correction == 1.0
-        assert intrinsic_dim == 0.0
+        tol = _array_tol(backend, centered)
+        assert abs(correction - 1.0) <= tol
+        assert abs(intrinsic_dim) <= tol
 
     def test_correction_negative_feature_dim(self, any_backend: "Backend") -> None:
         """Negative feature dimension should return correction = 1.0."""
@@ -584,7 +606,8 @@ class TestFeatureSamplingCorrection:
         centered = _center_gram_matrix(gram, backend)
 
         correction, _ = _feature_sampling_correction(centered, -5, backend)
-        assert correction == 1.0
+        tol = _array_tol(backend, centered)
+        assert abs(correction - 1.0) <= tol
 
 
 # =============================================================================
@@ -617,7 +640,7 @@ class TestComputeCKA:
         result = compute_cka(X, Y, backend)
 
         assert result.is_valid
-        assert 0.0 <= result.cka <= 1.0
+        _assert_unit_interval(result.cka, _scalar_tol(backend))
 
     def test_cka_sample_count_mismatch_error(self, any_backend: "Backend") -> None:
         """CKA should raise ValueError for sample count mismatch."""
@@ -637,7 +660,8 @@ class TestComputeCKA:
 
         result = compute_cka(X, Y, backend)
 
-        assert result.cka == 0.0
+        tol = _scalar_tol(backend)
+        assert abs(result.cka) <= tol
         assert result.sample_count == 1
 
     def test_cka_linear_kernel(self, any_backend: "Backend") -> None:
@@ -650,7 +674,7 @@ class TestComputeCKA:
         result = compute_cka(X, Y, backend, use_linear_kernel=True)
 
         assert result.is_valid
-        assert 0.0 <= result.cka <= 1.0
+        _assert_unit_interval(result.cka, _scalar_tol(backend))
 
     def test_cka_rbf_kernel(self, any_backend: "Backend") -> None:
         """CKA with RBF kernel should work."""
@@ -662,7 +686,7 @@ class TestComputeCKA:
         result = compute_cka(X, Y, backend, use_linear_kernel=False)
 
         assert result.is_valid
-        assert 0.0 <= result.cka <= 1.0
+        _assert_unit_interval(result.cka, _scalar_tol(backend))
 
     def test_cka_with_bias_correction(self, any_backend: "Backend") -> None:
         """CKA with feature bias correction should compute corrected value."""
@@ -700,7 +724,7 @@ class TestComputeCKA:
         result = compute_cka(X, Y, backend, estimator=HSICEstimator.UNBIASED)
 
         assert result.is_valid
-        assert 0.0 <= result.cka <= 1.0
+        _assert_unit_interval(result.cka, _scalar_tol(backend))
 
     def test_cka_auto_estimator(self, any_backend: "Backend") -> None:
         """CKA with AUTO estimator should work."""
@@ -712,7 +736,7 @@ class TestComputeCKA:
         result = compute_cka(X, Y, backend, estimator=HSICEstimator.AUTO)
 
         assert result.is_valid
-        assert 0.0 <= result.cka <= 1.0
+        _assert_unit_interval(result.cka, _scalar_tol(backend))
 
     def test_cka_cross_dimensional(self, any_backend: "Backend") -> None:
         """CKA should work with different feature dimensions."""
@@ -724,7 +748,7 @@ class TestComputeCKA:
         result = compute_cka(X, Y, backend)
 
         assert result.is_valid
-        assert 0.0 <= result.cka <= 1.0
+        _assert_unit_interval(result.cka, _scalar_tol(backend))
         assert result.feature_dim_x == 10
         assert result.feature_dim_y == 20
 
@@ -881,8 +905,9 @@ class TestComputeCKAMatrix:
         matrix, _, _ = compute_cka_matrix(source, target, backend)
 
         matrix_np = backend.to_numpy(matrix)
-        assert (matrix_np >= 0.0).all()
-        assert (matrix_np <= 1.0).all()
+        tol = _array_tol(backend, matrix)
+        assert (matrix_np >= -tol).all()
+        assert (matrix_np <= 1.0 + tol).all()
 
     def test_insufficient_samples_returns_zero(self, any_backend: "Backend") -> None:
         """CKA matrix should return 0 for probes with < 2 samples."""
@@ -895,7 +920,8 @@ class TestComputeCKAMatrix:
         matrix, _, _ = compute_cka_matrix(source, target, backend)
 
         matrix_np = backend.to_numpy(matrix)
-        assert matrix_np[0, 0] == 0.0
+        tol = _array_tol(backend, matrix)
+        assert abs(matrix_np[0, 0]) <= tol
 
 
 # =============================================================================
@@ -916,7 +942,7 @@ class TestComputeLayerCKA:
         result = compute_layer_cka(source, target, backend)
 
         assert result.is_valid
-        assert 0.0 <= result.cka <= 1.0
+        _assert_unit_interval(result.cka, _scalar_tol(backend))
 
     def test_identical_weights_cka_one(self, any_backend: "Backend") -> None:
         """Identical weights should have CKA = 1.0."""
@@ -985,7 +1011,7 @@ class TestComputeCKABackend:
 
         cka = compute_cka_backend(X, Y, backend)
 
-        assert 0.0 <= cka <= 1.0
+        _assert_unit_interval(cka, _scalar_tol(backend))
 
     def test_insufficient_samples_returns_zero(self, any_backend: "Backend") -> None:
         """Less than 2 samples should return 0.0."""
@@ -994,7 +1020,8 @@ class TestComputeCKABackend:
         Y = backend.random_normal((1, 10))
 
         cka = compute_cka_backend(X, Y, backend)
-        assert cka == 0.0
+        tol = _scalar_tol(backend)
+        assert abs(cka) <= tol
 
     def test_with_unbiased_estimator(self, any_backend: "Backend") -> None:
         """CKA backend with unbiased estimator."""
@@ -1005,7 +1032,7 @@ class TestComputeCKABackend:
 
         cka = compute_cka_backend(X, Y, backend, estimator=HSICEstimator.UNBIASED)
 
-        assert 0.0 <= cka <= 1.0
+        _assert_unit_interval(cka, _scalar_tol(backend))
 
     def test_with_feature_bias_correction(self, any_backend: "Backend") -> None:
         """CKA backend with feature bias correction."""
@@ -1016,7 +1043,7 @@ class TestComputeCKABackend:
 
         cka = compute_cka_backend(X, Y, backend, feature_bias_correction=True)
 
-        assert 0.0 <= cka <= 1.0
+        _assert_unit_interval(cka, _scalar_tol(backend))
 
 
 # =============================================================================
@@ -1036,7 +1063,7 @@ class TestComputeCKAFromLists:
 
         cka = compute_cka_from_lists(x, y, backend)
 
-        assert 0.0 <= cka <= 1.0
+        _assert_unit_interval(cka, _scalar_tol(backend))
 
     def test_identical_lists_returns_one(self, any_backend: "Backend") -> None:
         """Identical lists should return CKA close to 1.0."""
@@ -1057,7 +1084,8 @@ class TestComputeCKAFromLists:
         y = [[3.0, 4.0]]
 
         cka = compute_cka_from_lists(x, y, backend)
-        assert cka == 0.0
+        tol = _scalar_tol(backend)
+        assert abs(cka) <= tol
 
     def test_different_list_lengths(self, any_backend: "Backend") -> None:
         """Lists with different lengths should use minimum."""
@@ -1068,7 +1096,7 @@ class TestComputeCKAFromLists:
 
         cka = compute_cka_from_lists(x, y, backend)
 
-        assert 0.0 <= cka <= 1.0
+        _assert_unit_interval(cka, _scalar_tol(backend))
 
 
 # =============================================================================
@@ -1091,7 +1119,7 @@ class TestComputeCKAFromGrams:
 
         cka = compute_cka_from_grams(gram_a, gram_b, backend=backend)
 
-        assert 0.0 <= cka <= 1.0
+        _assert_unit_interval(cka, _scalar_tol(backend))
 
     def test_from_flattened_grams(self, any_backend: "Backend") -> None:
         """Compute CKA from flattened Gram matrices."""
@@ -1130,7 +1158,8 @@ class TestComputeCKAFromGrams:
 
         cka = compute_cka_from_grams(gram_a, gram_b, backend=backend)
 
-        assert cka == 0.0
+        tol = _scalar_tol(backend)
+        assert abs(cka) <= tol
 
     def test_non_square_gram_returns_zero(self, any_backend: "Backend") -> None:
         """Non-square Gram matrices should return 0.0."""
@@ -1141,7 +1170,8 @@ class TestComputeCKAFromGrams:
 
         cka = compute_cka_from_grams(gram_a, gram_b, backend=backend)
 
-        assert cka == 0.0
+        tol = _scalar_tol(backend)
+        assert abs(cka) <= tol
 
     def test_single_sample_gram_returns_zero(self, any_backend: "Backend") -> None:
         """Gram matrices with n=1 should return 0.0."""
@@ -1150,7 +1180,8 @@ class TestComputeCKAFromGrams:
         gram = backend.ones((1, 1))
         cka = compute_cka_from_grams(gram, gram, backend=backend)
 
-        assert cka == 0.0
+        tol = _scalar_tol(backend)
+        assert abs(cka) <= tol
 
     def test_from_python_lists(self, any_backend: "Backend") -> None:
         """Compute CKA from Python lists representing Gram matrices."""
@@ -1232,7 +1263,7 @@ class TestCKAComputer:
 
         cka = computer.linear_cka(X, Y)
 
-        assert 0.0 <= cka <= 1.0
+        _assert_unit_interval(cka, _scalar_tol(backend))
 
     def test_linear_cka_identical(self, any_backend: "Backend") -> None:
         """Linear CKA of identical arrays should be 1.0."""
@@ -1258,7 +1289,7 @@ class TestCKAComputer:
 
         cka = computer.rbf_cka(X, Y)
 
-        assert 0.0 <= cka <= 1.0
+        _assert_unit_interval(cka, _scalar_tol(backend))
 
     def test_full_returns_cka_result(self, any_backend: "Backend") -> None:
         """Test full method returns CKAResult."""
@@ -1338,7 +1369,7 @@ class TestEdgeCasesAndNumericalStability:
         result = compute_cka(X, Y, backend)
 
         assert result.is_valid
-        assert 0.0 <= result.cka <= 1.0
+        _assert_unit_interval(result.cka, _scalar_tol(backend))
 
     def test_mixed_scales(self, any_backend: "Backend") -> None:
         """CKA should handle activations with very different scales."""
@@ -1401,7 +1432,7 @@ class TestEdgeCasesAndNumericalStability:
         result = compute_cka(X, Y, backend, estimator=HSICEstimator.AUTO)
 
         assert result.is_valid
-        assert 0.0 <= result.cka <= 1.0
+        _assert_unit_interval(result.cka, _scalar_tol(backend))
 
     def test_minimal_samples(self, any_backend: "Backend") -> None:
         """CKA with exactly 2 samples."""
@@ -1487,7 +1518,7 @@ class TestCrossDimensionalComparison:
         result = compute_cka(X, Y, backend)
 
         assert result.is_valid
-        assert 0.0 <= result.cka <= 1.0
+        _assert_unit_interval(result.cka, _scalar_tol(backend))
         assert result.feature_dim_x == 32
         assert result.feature_dim_y == 64
 
@@ -1507,7 +1538,7 @@ class TestCrossDimensionalComparison:
         cka = compute_cka_from_grams(gram_x, gram_y, backend=backend)
 
         # Same Gram shape, should work
-        assert 0.0 <= cka <= 1.0
+        _assert_unit_interval(cka, _scalar_tol(backend))
 
     def test_very_different_dimensions(self, any_backend: "Backend") -> None:
         """CKA should handle very different feature dimensions."""
@@ -1520,4 +1551,4 @@ class TestCrossDimensionalComparison:
         result = compute_cka(X, Y, backend)
 
         assert result.is_valid
-        assert 0.0 <= result.cka <= 1.0
+        _assert_unit_interval(result.cka, _scalar_tol(backend))

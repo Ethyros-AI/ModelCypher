@@ -181,9 +181,10 @@ class TestPairwiseDistances:
         X = mlx_backend.random_normal((10, 4))
         sq_dists = utils.pairwise_squared_distances(X)
         sq_dists_np = mlx_backend.to_numpy(sq_dists)
+        tol = machine_epsilon(mlx_backend, sq_dists)
 
         import numpy as np
-        assert np.all(sq_dists_np >= 0)
+        assert np.all(sq_dists_np >= -tol)
 
     def test_distance_correct_value(self, utils: BackendMatrixUtils, mlx_backend: Backend):
         """Verify distance calculation against known values."""

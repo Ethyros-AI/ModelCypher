@@ -357,6 +357,15 @@ class MLXBackend(Backend):
     def sign(self, array: Array) -> Array:
         return self.mx.sign(array)
 
+    def isnan(self, array: Array) -> Array:
+        return self.mx.isnan(array)
+
+    def isinf(self, array: Array) -> Array:
+        return self.mx.isinf(array)
+
+    def isfinite(self, array: Array) -> Array:
+        return self.mx.isfinite(array)
+
     def sin(self, array: Array) -> Array:
         return self.mx.sin(array)
 
