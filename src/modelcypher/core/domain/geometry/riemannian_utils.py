@@ -292,6 +292,31 @@ class RiemannianGeometry:
                 final_variance=0.0,
             )
 
+        if n == 2:
+            # With two points, the k-NN graph is a single edge and the geodesic
+            # is that edge. The Fréchet mean lies at the weighted midpoint.
+            if weights is None:
+                weights_arr = backend.array([0.5, 0.5])
+            else:
+                weights_arr = backend.array(weights)
+                weight_sum = backend.sum(weights_arr)
+                weights_arr = weights_arr / weight_sum
+
+            mean = points[0] * weights_arr[0] + points[1] * weights_arr[1]
+            diff0 = points[0] - mean
+            diff1 = points[1] - mean
+            variance = (
+                weights_arr[0] * backend.sum(diff0 * diff0)
+                + weights_arr[1] * backend.sum(diff1 * diff1)
+            )
+            backend.eval(mean, variance)
+            return FrechetMeanResult(
+                mean=mean,
+                iterations=1,
+                converged=True,
+                final_variance=float(backend.to_scalar(variance)),
+            )
+
         k_start = None
         if k_neighbors is not None:
             k_start = max(1, min(int(k_neighbors), n - 1))

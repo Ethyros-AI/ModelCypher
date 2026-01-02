@@ -245,6 +245,11 @@ class GeneralizedProcrustes:
             )
             return self._backend.mean(aligned_X, axis=0)
 
+        # With two models, each sample has two points. The k-NN graph collapses
+        # to a single edge, so the Fréchet mean is the midpoint along that edge.
+        if aligned_X.shape[0] <= 2:
+            return self._backend.mean(aligned_X, axis=0)
+
         # Fréchet mean for curvature-aware consensus
         # For each sample point (row), compute Fréchet mean across models
         # aligned_X: [M, N, K] -> iterate over N samples
