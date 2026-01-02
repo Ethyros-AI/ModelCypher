@@ -17,13 +17,18 @@
 
 from __future__ import annotations
 
-import pytest
-
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.compositional_probes import (
     CompositionalProbes,
     CompositionCategory,
     CompositionProbe,
 )
+
+
+def _scalar_tol():
+    backend = get_default_backend()
+    return division_epsilon(backend, backend.array([1.0]))
 
 
 def test_analyze_composition_basic() -> None:
@@ -32,9 +37,10 @@ def test_analyze_composition_basic() -> None:
     composition = [0.5, 0.5]
     analysis = CompositionalProbes.analyze_composition(composition, components, probe)
 
-    assert analysis.barycentric_weights[0] == pytest.approx(0.5, abs=1e-3)
-    assert analysis.barycentric_weights[1] == pytest.approx(0.5, abs=1e-3)
-    assert analysis.residual_norm == pytest.approx(0.0, abs=1e-6)
+    tol = _scalar_tol()
+    assert abs(analysis.barycentric_weights[0] - 0.5) <= tol
+    assert abs(analysis.barycentric_weights[1] - 0.5) <= tol
+    assert abs(analysis.residual_norm) <= tol
     assert analysis.is_compositional is True
 
 
@@ -45,9 +51,10 @@ def test_check_consistency_identical() -> None:
     result = CompositionalProbes.check_consistency([analysis], [analysis])
 
     # Raw measurements. The numbers ARE the answer.
-    assert result.barycentric_correlation == pytest.approx(1.0, abs=1e-6)
-    assert result.angular_correlation == pytest.approx(1.0, abs=1e-6)
-    assert result.consistency_score == pytest.approx(1.0, abs=1e-6)
+    tol = _scalar_tol()
+    assert abs(result.barycentric_correlation - 1.0) <= tol
+    assert abs(result.angular_correlation - 1.0) <= tol
+    assert abs(result.consistency_score - 1.0) <= tol
 
 
 def test_analyze_all_probes_custom() -> None:

@@ -15,15 +15,17 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Merge pipeline CLI commands.
+"""Merge models via null-space knowledge transplant.
 
-Provides commands for the end-to-end merge pipeline:
-    mc merge pipeline --source A --target B --output-dir OUT --transplant-domains mathematical,logical
+Usage:
+    mc merge --source A --target B --output-dir OUT --transplant-domains mathematical,logical
 
-Pipeline stages:
-1. Pre-merge analysis: Interference prediction
-2. Execute merge: Unified geometric merge
-3. Post-merge validation: Extract geometry metrics
+There is exactly ONE correct way to merge high-dimensional Legos:
+1. Find geometric correspondence (CKA alignment)
+2. Project source knowledge into target's null space
+3. Add (not blend) the projected knowledge
+
+This command runs the complete pipeline automatically.
 """
 
 from __future__ import annotations
@@ -39,24 +41,25 @@ from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.utils.errors import ErrorDetail
 
-app = typer.Typer(help="Merge pipeline commands")
+# Direct command, not a subcommand group - there's only one way to merge
+app = typer.Typer(invoke_without_command=True)
 
 
 def _context(ctx: typer.Context) -> CLIContext:
     return ctx.obj
 
 
-@app.command("pipeline")
-def pipeline(
+@app.callback(invoke_without_command=True)
+def merge(
     ctx: typer.Context,
-    source: str = typer.Option(..., "--source", "-s", help="Path to source model"),
-    target: str = typer.Option(..., "--target", "-t", help="Path to target model"),
+    source: str = typer.Option(..., "--source", "-s", help="Path to source model (knowledge donor)"),
+    target: str = typer.Option(..., "--target", "-t", help="Path to target model (receives knowledge)"),
     output_dir: str = typer.Option(..., "--output-dir", "-o", help="Output directory for merged model"),
     transplant_domains: str = typer.Option(
         ...,
         "--transplant-domains",
         "-d",
-        help="Comma-separated domains for transplant (e.g., mathematical,logical)",
+        help="Comma-separated domains to transplant (e.g., mathematical,logical,spatial)",
     ),
     skip_pre_analysis: bool = typer.Option(
         False,
@@ -70,19 +73,16 @@ def pipeline(
         help="Save full pipeline result to JSON file",
     ),
 ) -> None:
-    """Run the complete merge pipeline.
+    """Merge two models via null-space knowledge transplant.
 
-    Executes all stages:
-    1. Pre-merge: Interference analysis
-    2. Merge: Null-space constrained transplant
-    3. Post-merge: Extract geometry metrics
+    Takes knowledge from SOURCE and adds it to TARGET without destroying
+    TARGET's existing capabilities. The result is a denser model.
 
     Examples:
-        mc merge pipeline --source ./instruct --target ./coder --output-dir ./merged \\
-            --transplant-domains mathematical,logical
+        mc merge -s ./qwen -t ./smol -o ./merged -d mathematical,logical
 
-        mc merge pipeline -s /path/a -t /path/b -o /out -d spatial,social \\
-            --skip-pre-analysis --output-file result.json
+        mc merge --source /models/coder --target /models/instruct \\
+            --output-dir /out --transplant-domains spatial,social
     """
     from modelcypher.core.use_cases.merge import MergePipelineService
 

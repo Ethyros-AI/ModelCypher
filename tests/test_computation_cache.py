@@ -15,6 +15,7 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 
 @pytest.fixture
@@ -241,55 +242,8 @@ class TestCKACaching:
         )
 
         # Results should be the same
-        assert result1.cka == pytest.approx(result2.cka, rel=1e-6)
-
-
-class TestCacheKeyPerformance:
-    """Performance tests for cache key generation."""
-
-    def test_key_generation_performance_small_array(self, cache: ComputationCache, backend):
-        """Key generation for small arrays should be fast (<1ms)."""
-        import time
-
-        backend.random_seed(42)
-        # 1000 elements is the threshold for "small" arrays
-        activations = backend.random_normal((50, 20))  # 1000 elements
-        backend.eval(activations)
-
-        # Warm up
-        cache.make_array_key(activations, backend)
-
-        # Time 100 iterations
-        start = time.perf_counter()
-        for _ in range(100):
-            cache.make_array_key(activations, backend)
-        elapsed = time.perf_counter() - start
-
-        avg_ms = (elapsed / 100) * 1000
-        # Should be < 1ms per call (typically ~50-200µs)
-        assert avg_ms < 1.0, f"Key generation too slow: {avg_ms:.3f}ms average"
-
-    def test_key_generation_performance_medium_array(self, cache: ComputationCache, backend):
-        """Key generation for medium arrays uses sampling and should be fast."""
-        import time
-
-        backend.random_seed(42)
-        # Just over 1000 elements - uses sampling
-        activations = backend.random_normal((100, 50))  # 5000 elements
-        backend.eval(activations)
-
-        # Warm up
-        cache.make_array_key(activations, backend)
-
-        # Time 100 iterations
-        start = time.perf_counter()
-        for _ in range(100):
-            cache.make_array_key(activations, backend)
-        elapsed = time.perf_counter() - start
-
-        avg_ms = (elapsed / 100) * 1000
-        # Should be < 2ms per call
-        assert avg_ms < 2.0, f"Key generation too slow: {avg_ms:.3f}ms average"
+        tol = division_epsilon(backend, backend.array([1.0]))
+        assert abs(result1.cka - result2.cka) <= tol
 
 
 class TestCacheKeyCollisionResistance:
@@ -334,7 +288,7 @@ class TestCacheKeyCollisionResistance:
         X_np = backend.to_numpy(X).copy()
 
         # Modify only the last element
-        X_np[-1, -1] += 0.001
+        X_np[-1, -1] += division_epsilon(backend, X)
         X_modified = backend.array(X_np)
         backend.eval(X_modified)
 

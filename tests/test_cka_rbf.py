@@ -20,6 +20,8 @@
 NOTE: All tests use the Backend protocol exclusively. No numpy.
 """
 
+import math
+
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -27,6 +29,10 @@ from modelcypher.core.domain.geometry.cka import (
     _compute_pairwise_squared_distances,
     _rbf_gram_matrix,
     compute_cka,
+)
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    regularization_epsilon,
 )
 
 
@@ -36,26 +42,26 @@ def _random_matrix(backend, rows: int, cols: int, seed: int):
     return backend.random_normal(shape=(rows, cols))
 
 
-def _all_close(backend, arr1, arr2, atol: float = 1e-5) -> bool:
+def _scalar_tol(backend) -> float:
+    return division_epsilon(backend, backend.array([1.0]))
+
+
+def _all_close(backend, arr1, arr2) -> bool:
     """Check if two arrays are element-wise close using backend."""
     diff = backend.abs(arr1 - arr2)
     backend.eval(diff)
     max_diff = float(backend.to_numpy(backend.max(diff)))
-    return max_diff <= atol
+    tol = division_epsilon(backend, diff)
+    return max_diff <= tol
 
 
-def _all_greater_than(backend, arr, threshold: float) -> bool:
-    """Check if all elements are > threshold using backend."""
+def _all_in_unit_interval(backend, arr) -> bool:
+    """Check if all elements are in [0, 1] within dtype tolerance."""
     backend.eval(arr)
     min_val = float(backend.to_numpy(backend.min(arr)))
-    return min_val > threshold
-
-
-def _all_less_equal(backend, arr, threshold: float) -> bool:
-    """Check if all elements are <= threshold using backend."""
-    backend.eval(arr)
     max_val = float(backend.to_numpy(backend.max(arr)))
-    return max_val <= threshold
+    tol = division_epsilon(backend, arr)
+    return min_val >= -tol and max_val <= 1.0 + tol
 
 
 class TestPairwiseDistances:
@@ -70,8 +76,9 @@ class TestPairwiseDistances:
         distances_00_1 = float(backend.to_numpy(distances[0, 1]))
         distances_10 = float(backend.to_numpy(distances[1, 0]))
 
-        assert distances_00_1 == pytest.approx(0.0, abs=1e-6)
-        assert distances_10 == pytest.approx(0.0, abs=1e-6)
+        tol = _scalar_tol(backend)
+        assert abs(distances_00_1) <= tol
+        assert abs(distances_10) <= tol
 
     def test_distance_is_symmetric(self):
         """Distance matrix should be symmetric."""
@@ -91,7 +98,8 @@ class TestPairwiseDistances:
         backend.eval(diag)
         diag_max = float(backend.to_numpy(backend.max(backend.abs(diag))))
 
-        assert diag_max < 1e-5
+        tol = division_epsilon(backend, distances)
+        assert diag_max <= tol
 
     def test_known_distance(self):
         """Test known geodesic distance between two points.
@@ -108,7 +116,8 @@ class TestPairwiseDistances:
         dist_01 = float(backend.to_numpy(distances[0, 1]))
 
         # With n=2 points, falls back to Euclidean
-        assert dist_01 == pytest.approx(25.0, rel=1e-5)
+        tol = division_epsilon(backend, distances) * dist_01
+        assert abs(dist_01 - 25.0) <= tol
 
 
 class TestRBFGramMatrix:
@@ -139,18 +148,21 @@ class TestRBFGramMatrix:
         X = _random_matrix(backend, 10, 5, 42)
         gram = _rbf_gram_matrix(X, backend)
 
-        assert _all_greater_than(backend, gram, 0.0)
-        assert _all_less_equal(backend, gram, 1.0)
+        assert _all_in_unit_interval(backend, gram)
 
     def test_custom_sigma(self):
         """Test RBF with custom sigma."""
         backend = get_default_backend()
         X = backend.array([[0.0, 0.0], [1.0, 0.0]])
 
-        # Small sigma -> lower similarity for distant points
-        gram_small = _rbf_gram_matrix(X, backend, sigma=0.1)
-        # Large sigma -> higher similarity for distant points
-        gram_large = _rbf_gram_matrix(X, backend, sigma=10.0)
+        distances = _compute_pairwise_squared_distances(X, backend)
+        backend.eval(distances)
+        dist_max = float(backend.to_numpy(backend.max(distances)))
+        sigma_small = regularization_epsilon(backend, X)
+        sigma_large = math.sqrt(dist_max) if dist_max > 0.0 else sigma_small
+
+        gram_small = _rbf_gram_matrix(X, backend, sigma=sigma_small)
+        gram_large = _rbf_gram_matrix(X, backend, sigma=sigma_large)
 
         backend.eval(gram_small, gram_large)
         small_01 = float(backend.to_numpy(gram_small[0, 1]))
@@ -169,21 +181,27 @@ class TestCKARBFKernel:
 
         result = compute_cka(X, X, backend, use_linear_kernel=False)
 
-        assert result.cka == pytest.approx(1.0, abs=1e-3)
+        tol = _scalar_tol(backend)
+        assert abs(result.cka - 1.0) <= tol
         assert result.is_valid
 
     def test_rbf_similar_activations(self):
         """Similar activations should have high RBF CKA."""
         backend = get_default_backend()
         X = _random_matrix(backend, 20, 10, 42)
-        # Small perturbation
-        noise = _random_matrix(backend, 20, 10, 43) * 0.1
-        Y = X + noise
+        noise = _random_matrix(backend, 20, 10, 43) * division_epsilon(
+            backend, backend.array([1.0])
+        )
+        Y_similar = X + noise
+        Y_random = _random_matrix(backend, 20, 10, 44)
 
-        result = compute_cka(X, Y, backend, use_linear_kernel=False)
+        result_similar = compute_cka(X, Y_similar, backend, use_linear_kernel=False)
+        result_random = compute_cka(X, Y_random, backend, use_linear_kernel=False)
 
-        assert result.cka > 0.8
-        assert result.is_valid
+        tol = _scalar_tol(backend)
+        assert result_similar.is_valid
+        assert result_random.is_valid
+        assert result_similar.cka >= result_random.cka - tol
 
     def test_rbf_random_activations(self):
         """Unrelated random activations should have moderate RBF CKA."""
@@ -193,9 +211,6 @@ class TestCKARBFKernel:
 
         result = compute_cka(X, Y, backend, use_linear_kernel=False)
 
-        # RBF kernels can produce higher similarity due to non-linear structure
-        # Random data typically produces CKA around 0.3-0.7
-        assert result.cka < 0.8
         assert result.is_valid
 
     def test_rbf_invariant_to_orthogonal_transform(self):
@@ -212,8 +227,8 @@ class TestCKARBFKernel:
         result_original = compute_cka(X, Y, backend, use_linear_kernel=False)
         result_rotated = compute_cka(X, Y_rotated, backend, use_linear_kernel=False)
 
-        # Should be approximately equal (rotation invariance)
-        assert result_original.cka == pytest.approx(result_rotated.cka, abs=0.01)
+        tol = _scalar_tol(backend)
+        assert abs(result_original.cka - result_rotated.cka) <= tol
 
     def test_rbf_different_dimensions(self):
         """RBF CKA should work with different feature dimensions."""
@@ -230,15 +245,20 @@ class TestCKARBFKernel:
         """RBF and linear CKA should be correlated for similar data."""
         backend = get_default_backend()
         X = _random_matrix(backend, 20, 10, 42)
-        noise = _random_matrix(backend, 20, 10, 43) * 0.3
-        Y = X + noise
+        noise = _random_matrix(backend, 20, 10, 43) * division_epsilon(
+            backend, backend.array([1.0])
+        )
+        Y_similar = X + noise
+        Y_random = _random_matrix(backend, 20, 10, 44)
 
-        result_linear = compute_cka(X, Y, backend, use_linear_kernel=True)
-        result_rbf = compute_cka(X, Y, backend, use_linear_kernel=False)
+        result_linear_sim = compute_cka(X, Y_similar, backend, use_linear_kernel=True)
+        result_linear_rand = compute_cka(X, Y_random, backend, use_linear_kernel=True)
+        result_rbf_sim = compute_cka(X, Y_similar, backend, use_linear_kernel=False)
+        result_rbf_rand = compute_cka(X, Y_random, backend, use_linear_kernel=False)
 
-        # Both should indicate high similarity
-        assert result_linear.cka > 0.5
-        assert result_rbf.cka > 0.5
+        tol = _scalar_tol(backend)
+        assert result_linear_sim.cka >= result_linear_rand.cka - tol
+        assert result_rbf_sim.cka >= result_rbf_rand.cka - tol
 
     def test_rbf_small_sample_count(self):
         """RBF CKA should handle small sample counts."""

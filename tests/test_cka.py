@@ -766,8 +766,9 @@ class TestCKAInvarianceProperties:
         X = backend.random_normal((15, 8))
         Y = backend.random_normal((15, 8))
 
-        # Scale X by constant
-        scale = 5.0
+        # Scale X by a data-derived factor
+        X_np = backend.to_numpy(X)
+        scale = float(abs(X_np).mean())
         X_scaled = X * scale
         backend.eval(X_scaled)
 
@@ -1298,7 +1299,8 @@ class TestCKAComputer:
 
         cka = computer.from_grams(gram, gram)
 
-        assert abs(cka - 1.0) < 1e-4
+        tol = _scalar_tol(backend)
+        assert abs(cka - 1.0) <= tol
 
 
 # =============================================================================
@@ -1314,8 +1316,9 @@ class TestEdgeCasesAndNumericalStability:
         backend = any_backend
         backend.random_seed(42)
 
-        X = backend.random_normal((10, 8)) * 1e-10
-        Y = backend.random_normal((10, 8)) * 1e-10
+        small_scale = machine_epsilon(backend, backend.array([1.0]))
+        X = backend.random_normal((10, 8)) * small_scale
+        Y = backend.random_normal((10, 8)) * small_scale
 
         result = compute_cka(X, Y, backend)
 
@@ -1327,8 +1330,10 @@ class TestEdgeCasesAndNumericalStability:
         backend = any_backend
         backend.random_seed(42)
 
-        X = backend.random_normal((10, 8)) * 1e6
-        Y = backend.random_normal((10, 8)) * 1e6
+        eps = machine_epsilon(backend, backend.array([1.0]))
+        large_scale = 1.0 / eps
+        X = backend.random_normal((10, 8)) * large_scale
+        Y = backend.random_normal((10, 8)) * large_scale
 
         result = compute_cka(X, Y, backend)
 
@@ -1340,8 +1345,10 @@ class TestEdgeCasesAndNumericalStability:
         backend = any_backend
         backend.random_seed(42)
 
-        X = backend.random_normal((10, 8)) * 1e-5
-        Y = backend.random_normal((10, 8)) * 1e5
+        small_scale = division_epsilon(backend, backend.array([1.0]))
+        large_scale = 1.0 / small_scale
+        X = backend.random_normal((10, 8)) * small_scale
+        Y = backend.random_normal((10, 8)) * large_scale
 
         result = compute_cka(X, Y, backend)
 
@@ -1371,8 +1378,10 @@ class TestEdgeCasesAndNumericalStability:
         # Zero out most entries (copy needed for JAX read-only arrays)
         X_np = backend.to_numpy(X).copy()
         Y_np = backend.to_numpy(Y).copy()
-        X_np[X_np < 0.5] = 0.0
-        Y_np[Y_np < 0.5] = 0.0
+        threshold_x = float(abs(X_np).mean())
+        threshold_y = float(abs(Y_np).mean())
+        X_np[abs(X_np) < threshold_x] = 0.0
+        Y_np[abs(Y_np) < threshold_y] = 0.0
         X_sparse = backend.array(X_np)
         Y_sparse = backend.array(Y_np)
 
@@ -1439,7 +1448,8 @@ class TestCachingBehavior:
         result1 = compute_cka(X, Y, backend)
         result2 = compute_cka(X, Y, backend)
 
-        assert abs(result1.cka - result2.cka) < 1e-10
+        tol = _scalar_tol(backend)
+        assert abs(result1.cka - result2.cka) <= tol
 
     def test_self_similarity_cached(self, any_backend: "Backend") -> None:
         """Self-similarity should leverage cache for identical Gram matrices."""
@@ -1453,8 +1463,9 @@ class TestCachingBehavior:
         # Second call should use cache
         result2 = compute_cka(X, X, backend)
 
-        assert abs(result1.cka - 1.0) < 1e-5
-        assert abs(result2.cka - 1.0) < 1e-5
+        tol = _scalar_tol(backend)
+        assert abs(result1.cka - 1.0) <= tol
+        assert abs(result2.cka - 1.0) <= tol
 
 
 # =============================================================================
