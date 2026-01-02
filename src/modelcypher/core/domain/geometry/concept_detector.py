@@ -49,10 +49,10 @@ class DetectedConcept:
 
     concept_id: str
     category: str
-    confidence: float
+    similarity: float
     character_span: tuple[int, int]
     trigger_text: str
-    cross_modal_confidence: float | None = None
+    cross_modal_similarity: float | None = None
 
 
 @dataclass(frozen=True)
@@ -66,19 +66,19 @@ class DetectionResult:
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
     @property
-    def mean_confidence(self) -> float:
-        """Mean confidence across all detected concepts."""
+    def mean_similarity(self) -> float:
+        """Mean similarity across all detected concepts."""
         if not self.detected_concepts:
             return 0.0
-        return sum(c.confidence for c in self.detected_concepts) / len(self.detected_concepts)
+        return sum(c.similarity for c in self.detected_concepts) / len(self.detected_concepts)
 
     @property
-    def mean_cross_modal_confidence(self) -> float | None:
-        """Mean cross-modal confidence across concepts that have it."""
+    def mean_cross_modal_similarity(self) -> float | None:
+        """Mean cross-modal similarity across concepts that have it."""
         with_cross_modal = [
-            c.cross_modal_confidence
+            c.cross_modal_similarity
             for c in self.detected_concepts
-            if c.cross_modal_confidence is not None
+            if c.cross_modal_similarity is not None
         ]
         if not with_cross_modal:
             return None
@@ -204,7 +204,7 @@ class ConceptDetector:
             if best_similarity <= acceptance_floor:
                 continue
 
-            cross_modal_confidence = self._cross_modal_confidence(
+            cross_modal_similarity = self._cross_modal_similarity(
                 segment_embedding, best_probe.support_embeddings
             )
 
@@ -212,10 +212,10 @@ class ConceptDetector:
                 DetectedConcept(
                     concept_id=best_probe.probe_id,
                     category=best_probe.category,
-                    confidence=float(best_similarity),
+                    similarity=float(best_similarity),
                     character_span=(start, end),
                     trigger_text=truncate(segment, 100),
-                    cross_modal_confidence=cross_modal_confidence,
+                    cross_modal_similarity=cross_modal_similarity,
                 )
             )
 
@@ -331,7 +331,7 @@ class ConceptDetector:
         return segments
 
     @staticmethod
-    def _cross_modal_confidence(
+    def _cross_modal_similarity(
         segment_embedding: list[float],
         support_embeddings: list[list[float]],
     ) -> float | None:

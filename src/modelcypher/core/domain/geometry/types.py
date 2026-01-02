@@ -70,10 +70,10 @@ class ConceptConfiguration:
 class DetectedConcept:
     concept_id: str
     category: str
-    confidence: float
+    similarity: float
     character_span: slice  # slice(start, end)
     trigger_text: str
-    cross_modal_confidence: float | None = None
+    cross_modal_similarity: float | None = None
 
 
 @dataclass(frozen=True)
@@ -82,8 +82,8 @@ class DetectionResult:
     prompt_id: str
     response_text: str
     detected_concepts: list[DetectedConcept]
-    mean_confidence: float
-    mean_cross_modal_confidence: float | None
+    mean_similarity: float
+    mean_cross_modal_similarity: float | None
     timestamp: float = field(default_factory=time.time)
 
     @property

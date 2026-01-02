@@ -101,18 +101,18 @@ def concept_detect(
             {
                 "conceptId": concept.concept_id,
                 "category": concept.category,
-                "confidence": concept.confidence,
+                "similarity": concept.similarity,
                 "characterSpan": {
                     "lowerBound": concept.character_span[0],
                     "upperBound": concept.character_span[1],
                 },
                 "triggerText": concept.trigger_text,
-                "crossModalConfidence": concept.cross_modal_confidence,
+                "crossModalSimilarity": concept.cross_modal_similarity,
             }
             for concept in detection.detected_concepts
         ],
-        "meanConfidence": detection.mean_confidence,
-        "meanCrossModalConfidence": detection.mean_cross_modal_confidence,
+        "meanSimilarity": detection.mean_similarity,
+        "meanCrossModalSimilarity": detection.mean_cross_modal_similarity,
     }
 
     if file:
@@ -127,13 +127,15 @@ def concept_detect(
         ]
         for concept in detection.detected_concepts:
             lines.append(
-                f"  [{concept.category}] {concept.concept_id} confidence={concept.confidence:.2f}"
+                f"  [{concept.category}] {concept.concept_id} similarity={concept.similarity:.2f}"
             )
             lines.append(f'    trigger: "{concept.trigger_text}"')
         lines.append("")
-        lines.append(f"Mean Confidence: {detection.mean_confidence:.3f}")
-        if detection.mean_cross_modal_confidence is not None:
-            lines.append(f"Mean Cross-Modal Confidence: {detection.mean_cross_modal_confidence:.3f}")
+        lines.append(f"Mean Similarity: {detection.mean_similarity:.3f}")
+        if detection.mean_cross_modal_similarity is not None:
+            lines.append(
+                f"Mean Cross-Modal Similarity: {detection.mean_cross_modal_similarity:.3f}"
+            )
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

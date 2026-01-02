@@ -19,9 +19,9 @@
 
 Tests mathematical invariants:
 - Spectral norm ≥ 0 (non-negative)
-- Spectral confidence ∈ [0, 1]
+- Spectral alignment ∈ [0, 1]
 - Condition number ≥ 1 (by definition)
-- Spectral ratio symmetry: confidence(a/b) = confidence(b/a)
+- Spectral ratio symmetry: alignment(a/b) = alignment(b/a)
 - Frobenius norm ≥ 0
 """
 
@@ -30,13 +30,19 @@ from __future__ import annotations
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.geometry.spectral_analysis import (
+    SpectralConfig,
     compute_spectral_metrics,
 )
 
 # =============================================================================
 # Spectral Norm Invariants
 # =============================================================================
+
+
+def _compute_metrics(source, target):
+    return compute_spectral_metrics(source, target, config=SpectralConfig())
 
 
 class TestSpectralNormInvariants:
@@ -57,7 +63,7 @@ class TestSpectralNormInvariants:
         target = backend.astype(target, "float32")
         backend.eval(source, target)
 
-        metrics = compute_spectral_metrics(source, target)
+        metrics = _compute_metrics(source, target)
 
         assert metrics.source_spectral_norm >= 0
         assert metrics.target_spectral_norm >= 0
@@ -77,24 +83,24 @@ class TestSpectralNormInvariants:
         target = backend.astype(target, "float32")
         backend.eval(source, target)
 
-        metrics = compute_spectral_metrics(source, target)
+        metrics = _compute_metrics(source, target)
 
         assert metrics.delta_frobenius >= 0
 
 
 # =============================================================================
-# Spectral Confidence Invariants
+# Spectral Alignment Invariants
 # =============================================================================
 
 
-class TestSpectralConfidenceInvariants:
-    """Tests for spectral confidence bounds."""
+class TestSpectralAlignmentInvariants:
+    """Tests for spectral alignment bounds."""
 
     @pytest.mark.parametrize("seed", range(5))
-    def test_spectral_confidence_in_zero_one(self, seed: int) -> None:
-        """Spectral confidence must be in [0, 1].
+    def test_spectral_alignment_in_zero_one(self, seed: int) -> None:
+        """Spectral alignment must be in [0, 1].
 
-        Mathematical property: confidence = min(r, 1/r) where r > 0.
+        Mathematical property: alignment = min(r, 1/r) where r > 0.
         """
         backend = get_default_backend()
         backend.random_seed(seed)
@@ -105,14 +111,14 @@ class TestSpectralConfidenceInvariants:
         target = backend.astype(target, "float32")
         backend.eval(source, target)
 
-        metrics = compute_spectral_metrics(source, target)
+        metrics = _compute_metrics(source, target)
 
-        assert 0.0 <= metrics.spectral_confidence <= 1.0
+        assert 0.0 <= metrics.spectral_alignment <= 1.0
 
-    def test_identical_matrices_have_unit_confidence(self) -> None:
-        """Identical matrices should have spectral confidence = 1.
+    def test_identical_matrices_have_unit_alignment(self) -> None:
+        """Identical matrices should have spectral alignment = 1.
 
-        Mathematical property: ratio = 1 → confidence = min(1, 1) = 1.
+        Mathematical property: ratio = 1 → alignment = min(1, 1) = 1.
         """
         backend = get_default_backend()
         backend.random_seed(42)
@@ -120,35 +126,35 @@ class TestSpectralConfidenceInvariants:
         matrix = backend.astype(matrix, "float32")
         backend.eval(matrix)
 
-        metrics = compute_spectral_metrics(matrix, matrix)
+        metrics = _compute_metrics(matrix, matrix)
+        eps = machine_epsilon(backend, matrix)
 
-        assert metrics.spectral_confidence == pytest.approx(1.0, abs=1e-6)
-        assert metrics.spectral_ratio == pytest.approx(1.0, abs=1e-6)
+        assert abs(metrics.spectral_alignment - 1.0) <= eps
+        assert abs(metrics.spectral_ratio - 1.0) <= eps
 
     @pytest.mark.parametrize("scale", [0.1, 0.5, 2.0, 10.0])
-    def test_spectral_confidence_symmetric(self, scale: float) -> None:
-        """Spectral confidence should be symmetric with respect to scaling.
+    def test_spectral_alignment_symmetric(self, scale: float) -> None:
+        """Spectral alignment should be symmetric with respect to scaling.
 
-        Mathematical property: confidence(a/b) = confidence(b/a).
+        Mathematical property: alignment(a/b) = alignment(b/a).
         """
         backend = get_default_backend()
         backend.random_seed(42)
         base = backend.random_normal((10, 8))
         base = backend.astype(base, "float32")
         backend.eval(base)
+        eps = machine_epsilon(backend, base)
 
         scaled = base * scale
         backend.eval(scaled)
 
         # Forward: base vs scaled
-        metrics_fwd = compute_spectral_metrics(base, scaled)
+        metrics_fwd = _compute_metrics(base, scaled)
         # Reverse: scaled vs base
-        metrics_rev = compute_spectral_metrics(scaled, base)
+        metrics_rev = _compute_metrics(scaled, base)
 
-        # Confidence should be the same either way
-        assert metrics_fwd.spectral_confidence == pytest.approx(
-            metrics_rev.spectral_confidence, rel=1e-6
-        )
+        # Alignment should be the same either way
+        assert abs(metrics_fwd.spectral_alignment - metrics_rev.spectral_alignment) <= eps
 
 
 # =============================================================================
@@ -174,7 +180,7 @@ class TestConditionNumberInvariants:
         target = backend.astype(target, "float32")
         backend.eval(source, target)
 
-        metrics = compute_spectral_metrics(source, target)
+        metrics = _compute_metrics(source, target)
 
         assert metrics.condition_number >= 1.0
 
@@ -188,9 +194,10 @@ class TestConditionNumberInvariants:
         identity = backend.astype(identity, "float32")
         backend.eval(identity)
 
-        metrics = compute_spectral_metrics(identity, identity)
+        metrics = _compute_metrics(identity, identity)
 
-        assert metrics.condition_number == pytest.approx(1.0, abs=1e-6)
+        eps = machine_epsilon(backend, identity)
+        assert abs(metrics.condition_number - 1.0) <= eps
 
     def test_ill_conditioned_detection(self) -> None:
         """Ill-conditioned matrix should be detected.
@@ -215,9 +222,10 @@ class TestConditionNumberInvariants:
         source = backend.astype(source, "float32")
         backend.eval(source, target)
 
-        metrics = compute_spectral_metrics(source, target)
+        metrics = _compute_metrics(source, target)
 
-        assert metrics.is_ill_conditioned is True
+        expected_condition = 100.0 / 0.001
+        assert metrics.condition_number >= expected_condition
         assert metrics.condition_number > 100
 
 
@@ -241,7 +249,7 @@ class Test1DVectorInvariants:
         target = backend.astype(target, "float32")
         backend.eval(source, target)
 
-        metrics = compute_spectral_metrics(source, target)
+        metrics = _compute_metrics(source, target)
 
         assert metrics.source_spectral_norm >= 0
         assert metrics.target_spectral_norm >= 0
@@ -257,7 +265,7 @@ class Test1DVectorInvariants:
         target = backend.astype(target, "float32")
         backend.eval(source, target)
 
-        metrics = compute_spectral_metrics(source, target)
+        metrics = _compute_metrics(source, target)
 
         assert metrics.condition_number == 1.0
 
@@ -285,7 +293,7 @@ class TestSpectralRatioInvariants:
         target = backend.astype(target, "float32")
         backend.eval(source, target)
 
-        metrics = compute_spectral_metrics(source, target)
+        metrics = _compute_metrics(source, target)
 
         assert metrics.spectral_ratio > 0
 
@@ -297,6 +305,7 @@ class TestSpectralRatioInvariants:
         matrix = backend.astype(matrix, "float32")
         backend.eval(matrix)
 
-        metrics = compute_spectral_metrics(matrix, matrix)
+        metrics = _compute_metrics(matrix, matrix)
 
-        assert metrics.delta_frobenius == pytest.approx(0.0, abs=1e-6)
+        eps = machine_epsilon(backend, matrix)
+        assert abs(metrics.delta_frobenius) <= eps

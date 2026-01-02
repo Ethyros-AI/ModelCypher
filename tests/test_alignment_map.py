@@ -19,8 +19,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from modelcypher.core.domain.vocabulary.alignment_map import (
     AlignmentQuality,
     TokenAlignment,
@@ -41,9 +39,7 @@ class TestTokenAlignment:
             source_token="hello",
             target_ids=[0],
             target_tokens=["hello"],
-            weights=[1.0],
             quality=AlignmentQuality.EXACT,
-            confidence=1.0,
         )
 
         d = alignment.to_dict()
@@ -52,7 +48,6 @@ class TestTokenAlignment:
         assert d["source_token"] == "hello"
         assert d["target_ids"] == [0]
         assert d["quality"] == "exact"
-        assert d["confidence"] == 1.0
 
     def test_to_dict_with_metadata(self):
         """Test serialization includes metadata."""
@@ -61,9 +56,7 @@ class TestTokenAlignment:
             source_token="foo",
             target_ids=[2, 3],
             target_tokens=["fo", "o"],
-            weights=[0.5, 0.5],
             quality=AlignmentQuality.APPROXIMATE,
-            confidence=0.6,
             metadata={"edit_distance": 1, "method": "prefix"},
         )
 
@@ -87,9 +80,7 @@ class TestVocabularyAlignmentMap:
                 source_token="a",
                 target_ids=[0],
                 target_tokens=["a"],
-                weights=[1.0],
                 quality=AlignmentQuality.EXACT,
-                confidence=1.0,
             )
         )
 
@@ -100,9 +91,7 @@ class TestVocabularyAlignmentMap:
                 source_token="B",
                 target_ids=[1],
                 target_tokens=["b"],
-                weights=[1.0],
                 quality=AlignmentQuality.SIMILAR,
-                confidence=0.9,
             )
         )
 
@@ -113,9 +102,7 @@ class TestVocabularyAlignmentMap:
                 source_token="xyz",
                 target_ids=[],
                 target_tokens=[],
-                weights=[],
                 quality=AlignmentQuality.UNMAPPED,
-                confidence=0.0,
             )
         )
 
@@ -132,9 +119,7 @@ class TestVocabularyAlignmentMap:
             source_token="test",
             target_ids=[5],
             target_tokens=["test"],
-            weights=[1.0],
             quality=AlignmentQuality.EXACT,
-            confidence=1.0,
         )
         map_.add_alignment(alignment)
 
@@ -152,9 +137,7 @@ class TestVocabularyAlignmentMap:
                 source_token="hi",
                 target_ids=[0],
                 target_tokens=["hello"],
-                weights=[1.0],
                 quality=AlignmentQuality.SIMILAR,
-                confidence=0.9,
             )
         )
         map_.add_alignment(
@@ -163,9 +146,7 @@ class TestVocabularyAlignmentMap:
                 source_token="hey",
                 target_ids=[0],
                 target_tokens=["hello"],
-                weights=[1.0],
                 quality=AlignmentQuality.SIMILAR,
-                confidence=0.8,
             )
         )
 
@@ -185,9 +166,7 @@ class TestVocabularyAlignmentMap:
                     source_token=f"t{i}",
                     target_ids=[i],
                     target_tokens=[f"t{i}"],
-                    weights=[1.0],
                     quality=AlignmentQuality.EXACT,
-                    confidence=1.0,
                 )
             )
 
@@ -199,9 +178,7 @@ class TestVocabularyAlignmentMap:
                     source_token=f"u{i}",
                     target_ids=[],
                     target_tokens=[],
-                    weights=[],
                     quality=AlignmentQuality.UNMAPPED,
-                    confidence=0.0,
                 )
             )
 
@@ -211,52 +188,6 @@ class TestVocabularyAlignmentMap:
         """Test coverage with zero vocab size."""
         map_ = VocabularyAlignmentMap(source_vocab_size=0, target_vocab_size=10)
         assert map_.coverage == 0.0
-
-    def test_mean_confidence(self):
-        """Test mean confidence calculation."""
-        map_ = VocabularyAlignmentMap(source_vocab_size=3, target_vocab_size=3)
-
-        map_.add_alignment(
-            TokenAlignment(
-                source_id=0,
-                source_token="a",
-                target_ids=[0],
-                target_tokens=["a"],
-                weights=[1.0],
-                quality=AlignmentQuality.EXACT,
-                confidence=1.0,
-            )
-        )
-        map_.add_alignment(
-            TokenAlignment(
-                source_id=1,
-                source_token="b",
-                target_ids=[1],
-                target_tokens=["b"],
-                weights=[1.0],
-                quality=AlignmentQuality.SIMILAR,
-                confidence=0.8,
-            )
-        )
-        map_.add_alignment(
-            TokenAlignment(
-                source_id=2,
-                source_token="c",
-                target_ids=[2],
-                target_tokens=["c"],
-                weights=[1.0],
-                quality=AlignmentQuality.APPROXIMATE,
-                confidence=0.5,
-            )
-        )
-
-        # Mean of (1.0, 0.8, 0.5) = 0.766...
-        assert abs(map_.mean_confidence - 0.7666666) < 0.01
-
-    def test_mean_confidence_empty(self):
-        """Test mean confidence with no alignments."""
-        map_ = VocabularyAlignmentMap(source_vocab_size=10, target_vocab_size=10)
-        assert map_.mean_confidence == 0.0
 
     def test_to_dict(self):
         """Test serialization to summary dict."""
@@ -269,9 +200,7 @@ class TestVocabularyAlignmentMap:
                     source_token=f"t{i}",
                     target_ids=[i],
                     target_tokens=[f"t{i}"],
-                    weights=[1.0],
                     quality=AlignmentQuality.EXACT,
-                    confidence=1.0,
                 )
             )
 
@@ -292,9 +221,7 @@ class TestVocabularyAlignmentMap:
                 source_token="a",
                 target_ids=[0],
                 target_tokens=["a"],
-                weights=[1.0],
                 quality=AlignmentQuality.EXACT,
-                confidence=1.0,
             )
         )
         map_.add_alignment(
@@ -303,9 +230,7 @@ class TestVocabularyAlignmentMap:
                 source_token="b",
                 target_ids=[1],
                 target_tokens=["b"],
-                weights=[1.0],
                 quality=AlignmentQuality.INTERPOLATED,
-                confidence=0.7,
             )
         )
 
@@ -326,9 +251,7 @@ class TestVocabularyAlignmentMap:
                     source_token=f"t{i}",
                     target_ids=[i],
                     target_tokens=[f"t{i}"],
-                    weights=[1.0],
                     quality=AlignmentQuality.EXACT,
-                    confidence=1.0,
                 )
             )
 

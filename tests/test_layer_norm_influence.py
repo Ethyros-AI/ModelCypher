@@ -15,10 +15,11 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-import pytest
-
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
 from modelcypher.core.domain.geometry.spectral_analysis import (
     SpectralConfig,
     compute_spectral_metrics,
@@ -46,12 +47,13 @@ def test_layer_norm_spectral_norm():
     expected_target_norm = float(
         backend.to_numpy(backend.sqrt(backend.array(1.0**2 + 1.0**2 + 1.1**2)))
     )
-    assert metrics.source_spectral_norm == pytest.approx(expected_source_norm)
-    assert metrics.target_spectral_norm == pytest.approx(expected_target_norm)
+    eps = machine_epsilon(backend, source_ln)
+    assert abs(metrics.source_spectral_norm - expected_source_norm) <= eps
+    assert abs(metrics.target_spectral_norm - expected_target_norm) <= eps
 
 
-def test_layer_norm_mismatch_confidence():
-    """Test spectral confidence for LayerNorm mismatch."""
+def test_layer_norm_mismatch_alignment():
+    """Test spectral alignment for LayerNorm mismatch."""
     backend = get_default_backend()
     source_ln = backend.array([1.0, 0.0])
     target_ln = backend.array([10.0, 0.0])
@@ -64,9 +66,10 @@ def test_layer_norm_mismatch_confidence():
     metrics = compute_spectral_metrics(source_np, target_np, config=config)
 
     # ratio = 1/10 = 0.1
-    # confidence = min(0.1, 10.0) = 0.1
-    assert metrics.spectral_ratio == pytest.approx(0.1)
-    assert metrics.spectral_confidence == pytest.approx(0.1)
+    # alignment = min(0.1, 10.0) = 0.1
+    eps = machine_epsilon(backend, source_ln)
+    assert abs(metrics.spectral_ratio - 0.1) <= eps
+    assert abs(metrics.spectral_alignment - 0.1) <= eps
 
 
 def test_layer_norm_zero_norm_stability():
@@ -87,11 +90,12 @@ def test_layer_norm_zero_norm_stability():
     assert metrics.target_spectral_norm == eps
     # sqrt(5) / epsilon
     expected_ratio = float(backend.to_numpy(backend.sqrt(backend.array(5.0)))) / eps
-    assert metrics.spectral_ratio == pytest.approx(expected_ratio)
+    eps_ratio = machine_epsilon(backend, source_ln) * max(1.0, abs(expected_ratio))
+    assert abs(metrics.spectral_ratio - expected_ratio) <= eps_ratio
 
 
-def test_layer_norm_identical_confidence():
-    """Identical LayerNorms should have 1.0 confidence."""
+def test_layer_norm_identical_alignment():
+    """Identical LayerNorms should have 1.0 alignment."""
     backend = get_default_backend()
     backend.random_seed(42)
     ln = backend.random_normal((128,))
@@ -101,21 +105,6 @@ def test_layer_norm_identical_confidence():
     config = SpectralConfig()
     metrics = compute_spectral_metrics(ln_np, ln_np, config=config)
 
-    assert metrics.spectral_confidence == pytest.approx(1.0)
-    assert metrics.delta_frobenius == pytest.approx(0.0)
-
-
-def test_layer_norm_influence_on_penalty():
-    """Test how LayerNorm mismatch influences spectral penalty."""
-    from modelcypher.core.domain.geometry.spectral_analysis import apply_spectral_penalty
-
-    # Low confidence (0.2) should significantly increase alpha
-    alpha = 0.3
-    confidence = 0.2
-    strength = 0.5
-
-    adjusted = apply_spectral_penalty(alpha, confidence, strength)
-
-    # penalty = (1 - 0.2) * 0.5 = 0.4
-    # adjusted = 0.3 + (1 - 0.3) * 0.4 = 0.3 + 0.28 = 0.58
-    assert adjusted == pytest.approx(0.58)
+    eps = machine_epsilon(backend, ln)
+    assert abs(metrics.spectral_alignment - 1.0) <= eps
+    assert abs(metrics.delta_frobenius) <= eps

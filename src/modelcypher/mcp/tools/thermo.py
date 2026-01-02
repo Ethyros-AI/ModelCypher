@@ -88,7 +88,7 @@ def register_thermo_tools(ctx: ServiceContext) -> None:
             result = ctx.thermo_service.path_integration(
                 prompt=prompt,
                 model_path=model_path,
-                gate_threshold=0.0,  # No filtering - return all with confidence
+                gate_threshold=0.0,  # No filtering - return all with similarity
                 max_tokens=maxTokens,
                 temperature=temperature,
                 capture_trajectory=captureTrajectory,

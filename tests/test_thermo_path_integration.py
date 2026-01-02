@@ -28,7 +28,7 @@ from modelcypher.core.domain.geometry.thermo_path_integration import (
 class DummyGate:
     gate_id: str
     gate_name: str
-    confidence: float
+    similarity: float
     character_span: tuple[int, int]
     local_entropy: float | None = None
 

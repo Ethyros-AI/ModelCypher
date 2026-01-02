@@ -124,8 +124,8 @@ def thermo_path_integration(
 ) -> None:
     """Integrate entropy trajectories with gate detections.
 
-    Returns ALL gates with their confidence scores.
-    The confidence scores ARE the signal - no threshold filtering.
+    Returns ALL gates with their similarity scores.
+    The similarity scores ARE the signal - no threshold filtering.
     """
     context = _context(ctx)
     from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
@@ -135,7 +135,7 @@ def thermo_path_integration(
     result = service.path_integration(
         prompt=prompt,
         model_path=model,
-        gate_threshold=0.0,  # Return all gates with confidence
+        gate_threshold=0.0,  # Return all gates with similarity
         max_tokens=max_tokens,
         temperature=temperature,
         capture_trajectory=capture_trajectory,

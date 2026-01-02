@@ -54,6 +54,33 @@ class MetaphorFamily(str, Enum):
     RESILIENCE = "resilience"
     """Strength through adversity."""
 
+    # CMT-based families (Lakoff & Johnson, 1980)
+    # These have explicit source→target domain structure for trajectory analysis
+
+    TIME_AS_RESOURCE = "time_as_resource"
+    """TIME IS MONEY - treating time as spendable/wasteable resource."""
+
+    ARGUMENT_AS_CONFLICT = "argument_as_conflict"
+    """ARGUMENT IS WAR - debates as battles with attacks and defenses."""
+
+    LIFE_AS_JOURNEY = "life_as_journey"
+    """LIFE IS A JOURNEY - existence as travel with paths and destinations."""
+
+    IDEAS_AS_OBJECTS = "ideas_as_objects"
+    """IDEAS ARE FOOD/TOOLS - concepts as consumable or usable things."""
+
+    EMOTIONS_AS_SUBSTANCES = "emotions_as_substances"
+    """EMOTIONS ARE FLUIDS - feelings as liquids that fill, overflow, drain."""
+
+    MIND_AS_SPACE = "mind_as_space"
+    """MIND IS A CONTAINER - consciousness as bounded space."""
+
+    UNDERSTANDING_AS_PERCEPTION = "understanding_as_perception"
+    """UNDERSTANDING IS SEEING - comprehension as visual perception."""
+
+    RELATIONSHIPS_AS_JOURNEYS = "relationships_as_journeys"
+    """LOVE IS A JOURNEY - relationships as shared travel."""
+
 
 @dataclass(frozen=True)
 class CulturalExpression:

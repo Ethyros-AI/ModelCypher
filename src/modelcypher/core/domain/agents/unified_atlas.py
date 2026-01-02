@@ -20,14 +20,14 @@ Unified Atlas.
 
 Combines all atlas sources (sequence invariants, semantic primes, computational gates,
 emotion concepts, temporal, social, moral, compositional, philosophical, conceptual
-genealogy, safety ethics) into a single unified probe system for cross-domain
-triangulation in layer mapping operations.
+genealogy, metaphor invariants, conceptual metaphors, safety ethics) into a single
+unified probe system for cross-domain triangulation in layer mapping operations.
 
 Philosophy IS conceptual math. These probes measure the fundamental categories of
 thought - the structural preconditions for coherent reasoning that are INVARIANT
 across all models. Knowledge occupies fixed probability clouds in hyperspace.
 
-Total probe count: 499
+Total probe count: 507
 - Sequence Invariants: 70 probes (10 families)
 - Semantic Primes: 65 probes (17 categories)
 - Computational Gates: 76 probes (14 categories)
@@ -40,6 +40,7 @@ Total probe count: 499
 - Philosophical: 30 probes (ontological, epistemological, logical, modal, mereological)
 - Conceptual Genealogy: 29 probes (etymology + lineage)
 - Metaphor Invariants: 14 probes (cross-cultural semantic anchors)
+- Conceptual Metaphors: 8 probes (CMT pairs: TIME IS MONEY, ARGUMENT IS WAR, etc.)
 - Syntax Concepts: 24 probes (syntax, morphology, word order, punctuation)
 - Safety Ethics: 34 probes (consent, autonomy, coercion, boundaries, vulnerability)
 """
@@ -61,6 +62,10 @@ from modelcypher.core.domain.agents.conceptual_genealogy_atlas import (
 from modelcypher.core.domain.agents.emotion_concept_atlas import (
     EmotionCategory,
     EmotionConceptInventory,
+)
+from modelcypher.core.domain.agents.conceptual_metaphor_atlas import (
+    CMTFamily,
+    ConceptualMetaphorInventory,
 )
 from modelcypher.core.domain.agents.metaphor_invariant_atlas import (
     MetaphorFamily,
@@ -116,6 +121,7 @@ class AtlasSource(str, Enum):
     PHILOSOPHICAL_CONCEPT = "philosophical_concept"  # Fundamental categories of thought
     CONCEPTUAL_GENEALOGY = "conceptual_genealogy"
     METAPHOR_INVARIANT = "metaphor_invariant"
+    CONCEPTUAL_METAPHOR = "conceptual_metaphor"  # CMT pairs (Lakoff & Johnson)
     SYNTAX_CONCEPT = "syntax_concept"
     SAFETY_ETHICS = "safety_ethics"  # Consent, autonomy, coercion, boundaries, vulnerability
 
@@ -259,6 +265,27 @@ _METAPHOR_DOMAIN_MAP: dict[MetaphorFamily, AtlasDomain] = {
     MetaphorFamily.FRAGILITY: AtlasDomain.LINGUISTIC,
     MetaphorFamily.DECEPTION: AtlasDomain.LINGUISTIC,
     MetaphorFamily.RESILIENCE: AtlasDomain.LINGUISTIC,
+    # CMT-based families
+    MetaphorFamily.TIME_AS_RESOURCE: AtlasDomain.TEMPORAL,
+    MetaphorFamily.ARGUMENT_AS_CONFLICT: AtlasDomain.LINGUISTIC,
+    MetaphorFamily.LIFE_AS_JOURNEY: AtlasDomain.TEMPORAL,
+    MetaphorFamily.IDEAS_AS_OBJECTS: AtlasDomain.MENTAL,
+    MetaphorFamily.EMOTIONS_AS_SUBSTANCES: AtlasDomain.AFFECTIVE,
+    MetaphorFamily.MIND_AS_SPACE: AtlasDomain.MENTAL,
+    MetaphorFamily.UNDERSTANDING_AS_PERCEPTION: AtlasDomain.MENTAL,
+    MetaphorFamily.RELATIONSHIPS_AS_JOURNEYS: AtlasDomain.RELATIONAL,
+}
+
+# CMT (Conceptual Metaphor Theory) domain mapping
+_CMT_DOMAIN_MAP: dict[CMTFamily, AtlasDomain] = {
+    CMTFamily.TIME_AS_RESOURCE: AtlasDomain.TEMPORAL,
+    CMTFamily.ARGUMENT_AS_CONFLICT: AtlasDomain.LINGUISTIC,
+    CMTFamily.LIFE_AS_JOURNEY: AtlasDomain.TEMPORAL,
+    CMTFamily.IDEAS_AS_OBJECTS: AtlasDomain.MENTAL,
+    CMTFamily.EMOTIONS_AS_SUBSTANCES: AtlasDomain.AFFECTIVE,
+    CMTFamily.MIND_AS_SPACE: AtlasDomain.MENTAL,
+    CMTFamily.UNDERSTANDING_AS_PERCEPTION: AtlasDomain.MENTAL,
+    CMTFamily.RELATIONSHIPS_AS_JOURNEYS: AtlasDomain.RELATIONAL,
 }
 
 _SAFETY_DOMAIN_MAP: dict[SafetyCategory, AtlasDomain] = {
@@ -311,6 +338,7 @@ _DEFAULT_WEIGHTS: dict[AtlasSource, float] = {
     AtlasSource.PHILOSOPHICAL_CONCEPT: 1.0,
     AtlasSource.CONCEPTUAL_GENEALOGY: 1.0,
     AtlasSource.METAPHOR_INVARIANT: 1.0,
+    AtlasSource.CONCEPTUAL_METAPHOR: 1.0,
     AtlasSource.SYNTAX_CONCEPT: 1.0,
     AtlasSource.SAFETY_ETHICS: 1.0,
 }
@@ -333,10 +361,11 @@ class UnifiedAtlasInventory:
     - 30 philosophical concepts (ontological, epistemological, logical, modal, mereological)
     - 29 conceptual genealogy probes (etymology + lineage)
     - 14 metaphor invariants (cross-cultural semantic anchors)
+    - 8 conceptual metaphors (CMT pairs: TIME IS MONEY, ARGUMENT IS WAR, etc.)
     - 24 syntax concepts (parts of speech, morphology, word order)
     - 34 safety ethics concepts (consent, autonomy, coercion, boundaries, vulnerability)
 
-    Total: 499 probes for cross-domain triangulation
+    Total: 507 probes for cross-domain triangulation
     """
 
     _cached_probes: list[AtlasProbe] | None = None
@@ -360,6 +389,7 @@ class UnifiedAtlasInventory:
         probes.extend(cls._philosophical_concept_probes())
         probes.extend(cls._conceptual_genealogy_probes())
         probes.extend(cls._metaphor_invariant_probes())
+        probes.extend(cls._conceptual_metaphor_probes())
         probes.extend(cls._syntax_concept_probes())
         probes.extend(cls._safety_ethics_probes())
 
@@ -749,6 +779,35 @@ class UnifiedAtlasInventory:
                     description=invariant.universal_concept,
                     cross_domain_weight=base_weight,
                     category_name=invariant.family.value,
+                    support_texts=support_texts,
+                )
+            )
+
+        return probes
+
+    @classmethod
+    def _conceptual_metaphor_probes(cls) -> list[AtlasProbe]:
+        """Convert CMT (Conceptual Metaphor Theory) mappings to unified probes.
+
+        Each CMT mapping becomes a probe with source/target domain exemplars
+        as support texts for embedding-based analysis.
+        """
+        probes: list[AtlasProbe] = []
+        base_weight = _DEFAULT_WEIGHTS[AtlasSource.CONCEPTUAL_METAPHOR]
+
+        for mapping in ConceptualMetaphorInventory.ALL_MAPPINGS:
+            domain = _CMT_DOMAIN_MAP.get(mapping.family, AtlasDomain.LINGUISTIC)
+            # Combine bridging expressions as support texts
+            support_texts = mapping.bridging_expressions
+            probes.append(
+                AtlasProbe(
+                    id=mapping.id,
+                    source=AtlasSource.CONCEPTUAL_METAPHOR,
+                    domain=domain,
+                    name=mapping.name,
+                    description=f"{mapping.source_domain} maps to {mapping.target_domain}",
+                    cross_domain_weight=base_weight,
+                    category_name=mapping.family.value,
                     support_texts=support_texts,
                 )
             )

@@ -88,6 +88,9 @@ _SUBMODULES = {
     # Real-time visualization support
     "dimension_cascade",
     "density_estimator",
+    # Metaphor geometry (CMT trajectory and invariance analysis)
+    "metaphor_trajectory",
+    "metaphor_invariance",
 }
 
 # Attribute to submodule mapping for commonly used classes
@@ -114,6 +117,14 @@ _ATTR_TO_MODULE = {
     # Density estimation for visualization
     "DensityEstimator": ("density_estimator", "DensityEstimator"),
     "DensityResult": ("density_estimator", "DensityResult"),
+    # Metaphor geometry
+    "MetaphorTrajectory": ("metaphor_trajectory", "MetaphorTrajectory"),
+    "MetaphorTrajectoryPoint": ("metaphor_trajectory", "MetaphorTrajectoryPoint"),
+    "MetaphorTrajectoryCollector": ("metaphor_trajectory", "MetaphorTrajectoryCollector"),
+    "ConvergenceProfile": ("metaphor_trajectory", "ConvergenceProfile"),
+    "MetaphorInvarianceResult": ("metaphor_invariance", "MetaphorInvarianceResult"),
+    "MetaphorInvarianceAnalyzer": ("metaphor_invariance", "MetaphorInvarianceAnalyzer"),
+    "PlatonicMetaphorValidator": ("metaphor_invariance", "PlatonicMetaphorValidator"),
 }
 
 

@@ -40,7 +40,7 @@
 |------|---------|--------|-------------|--------|
 | 01_basic_geometry_probe.py | Demo model probing via ModelProbeService | Yes | No | **AUDITED** |
 | 02_safety_audit.py | Demo safety audit via SafetyProbeService & EntropyProbeService | Yes | No | **AUDITED** |
-| 03_adapter_blending.py | Demo adapter blending via AdapterService | Yes | No | **AUDITED** |
+| 03_adapter_inspection.py | Demo adapter inspection via AdapterService | Yes | No | **AUDITED** |
 | 04_entropy_analysis.py | Demo entropy analysis via ThermoService | Yes | No | **AUDITED** |
 | 05_model_merge.py | Demo model merging | Yes | No | **AUDITED** |
 
@@ -405,9 +405,9 @@ Files that are not imported or used anywhere:
 
 **MERGE Subsystem** (16 files) - WELL ORGANIZED:
 - Layer 1 (Alignment): generalized_procrustes, gram_aligner, permutation_aligner, shared_subspace_projector
-- Layer 2 (Transport): gromov_wasserstein, transport_guided_merger, manifold_stitcher
-- Layer 3 (Weighting): fisher_blending, dare_sparsity, dora_decomposition, dimension_blender, null_space_filter
-- Layer 4 (Analysis): cross_architecture_layer_matcher, interference_predictor, tangent_space_alignment, affine_stitching_layer
+- Layer 2 (Transport): gromov_wasserstein, low_rank_gw, manifold_stitcher
+- Layer 3 (Grafting): null_space_filter, transplant, constrained_transplant, dare_sparsity, dora_decomposition
+- Layer 4 (Analysis): cross_architecture_layer_matcher, interference_predictor, tangent_space_alignment
 - **NO REDUNDANCY** - Each file solves distinct problem in pipeline
 
 **MEASURE Subsystem** (16 files) - WELL ORGANIZED:

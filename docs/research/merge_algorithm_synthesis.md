@@ -95,45 +95,42 @@ T_reduced = U[:, :k] @ diag(S[:k]) @ V[:k, :]
 
 ### Integration with ModelCypher
 
-**Current**: `unified_manifold_merger.py` uses full weight blending.
+**Current**: Merge pipeline uses Gram alignment + null-space transplant (no averaging).
 
-**Enhancement**: SVD-based selective merging:
+**Enhancement**: SVD-based selective grafting (null-space addition):
 
 ```python
 @dataclass
-class TSVMergeConfig:
+class TSVGraftConfig:
     rank_fraction: float = 0.03      # Keep top 3% of singular values
     min_singular_ratio: float = 0.01 # Drop if σ_i/σ_1 < threshold
     per_layer_rank: bool = True      # Adaptive rank per layer
 
-def tsv_selective_merge(
+def tsv_selective_graft(
     source_weights: mx.array,
     target_weights: mx.array,
     base_weights: mx.array,
-    alpha: float,
-    config: TSVMergeConfig,
+    boundary_activations: mx.array,
+    config: TSVGraftConfig,
 ) -> mx.array:
-    """Merge using only dominant Task Singular Vectors."""
+    """Add dominant TSV directions into the target null space."""
     task_source = source_weights - base_weights
-    task_target = target_weights - base_weights
 
     # SVD decomposition
     U_s, S_s, V_s = svd(reshape(task_source, [-1, dim]))
-    U_t, S_t, V_t = svd(reshape(task_target, [-1, dim]))
 
     # Select top-k components
     k_s = select_rank(S_s, config)
-    k_t = select_rank(S_t, config)
 
     # Reconstruct reduced task vectors
     task_s_reduced = reconstruct(U_s, S_s, V_s, k_s)
-    task_t_reduced = reconstruct(U_t, S_t, V_t, k_t)
 
-    # Blend reduced representations
-    return base_weights + alpha * task_s_reduced + (1 - alpha) * task_t_reduced
+    # Project into target boundary null space (no averaging)
+    delta = null_space_projection(task_s_reduced, boundary_activations)
+    return target_weights + delta
 ```
 
-**File**: Extend `src/modelcypher/core/domain/merging/unified_manifold_merger.py`
+**File**: Integrate TSV extraction into `src/modelcypher/core/use_cases/merge/stages/transplant.py`
 
 ---
 
@@ -208,67 +205,17 @@ F = E[(∇_θ log p(x|θ))(∇_θ log p(x|θ))^T]
 # Fisher-weighted distance
 d_Fisher(θ_1, θ_2) = (θ_1 - θ_2)^T F (θ_1 - θ_2)
 
-# Fisher-weighted merging
-θ_merged = (F_1 θ_1 + F_2 θ_2) / (F_1 + F_2)
+# Fisher-weighted constraint (no averaging)
+minimize (θ - θ_target)^T F (θ - θ_target)
 ```
 
 ### Integration with ModelCypher
 
-**Current**: `fisher_blending.py` exists but is incomplete.
+**Current**: No Fisher-weighted averaging in ModelCypher. Fisher is treated as
+geometry for diagnostics or constraining only.
 
-**Enhancement**: Complete Fisher-weighted merging:
-
-```python
-@dataclass
-class FisherBlendingConfig:
-    sample_count: int = 100        # Samples for FIM estimation
-    diagonal_only: bool = True     # Use only diagonal (memory efficient)
-    regularization: float = 1e-6   # Prevent division by zero
-    blend_strength: float = 0.5    # How much to trust Fisher weights
-
-def compute_fisher_weights(
-    model: nn.Module,
-    sample_prompts: list[str],
-    tokenizer: Tokenizer,
-) -> dict[str, mx.array]:
-    """Estimate diagonal Fisher Information for each parameter."""
-    fisher = {name: zeros_like(param) for name, param in model.named_parameters()}
-
-    for prompt in sample_prompts:
-        # Forward + backward pass
-        loss = compute_loss(model, prompt, tokenizer)
-        grads = compute_gradients(loss, model.parameters())
-
-        # Accumulate squared gradients (diagonal FIM estimate)
-        for name, grad in grads.items():
-            fisher[name] += grad ** 2
-
-    # Normalize
-    for name in fisher:
-        fisher[name] /= len(sample_prompts)
-
-    return fisher
-
-def fisher_weighted_merge(
-    source_weights: dict[str, mx.array],
-    target_weights: dict[str, mx.array],
-    fisher_source: dict[str, mx.array],
-    fisher_target: dict[str, mx.array],
-    config: FisherBlendingConfig,
-) -> dict[str, mx.array]:
-    """Merge weights using Fisher Information as importance weighting."""
-    merged = {}
-    for name in source_weights:
-        f_s = fisher_source[name] + config.regularization
-        f_t = fisher_target[name] + config.regularization
-
-        # Fisher-weighted average
-        merged[name] = (f_s * source_weights[name] + f_t * target_weights[name]) / (f_s + f_t)
-
-    return merged
-```
-
-**File**: Complete `src/modelcypher/core/domain/geometry/fisher_blending.py`
+**Enhancement**: If Fisher is used, it must inform null-space constraints or
+stability bounds (never averaging). Keep this in the transplant path.
 
 ---
 
@@ -386,9 +333,8 @@ InterferencePrediction (existing)
       │
       ▼
 ┌─────────────────────────────────────────┐
-│  Weight Selection                       │
+│  Delta Shaping                          │
 │  - TSV extraction (keep dominant SVs)   │
-│  - Fisher importance weighting          │
 │  - Per-dimension correlation            │
 └─────────────────────────────────────────┘
       │
@@ -397,7 +343,7 @@ InterferencePrediction (existing)
 │  Null-Space Transplant                  │
 │  - Constrained functional replacement   │
 │  - Boundary preservation guarantee      │
-│  - No alpha-blending (proven broken)    │
+│  - No parameter averaging (proven broken) │
 └─────────────────────────────────────────┘
       │
       ▼
@@ -420,7 +366,7 @@ InterferencePrediction (existing)
 | TSV Selective Merge | ⏳ Planned | Extends SVD infrastructure |
 | WUDI Subspace Detection | ⏳ Planned | Enhances interference analysis |
 | Ricci Curvature | ⏳ Planned | Extends `manifold_curvature.py` |
-| Fisher Completion | ⏳ Planned | Complete `fisher_blending.py` |
+| Fisher Diagnostics | ⏳ Planned | Use Fisher as curvature diagnostics only |
 
 ### Implementation Notes
 
@@ -428,8 +374,8 @@ InterferencePrediction (existing)
 - Mathematical primitive validated by AlphaEdit (ICLR 2025 Outstanding Paper)
 - Guarantee: `A_boundary @ W' = A_boundary @ W_target`
 - Formula: `W' = W_target + P_null(A_boundary) @ (W_source - W_target)`
-- Alpha-blending removed (produces gibberish even for same-architecture models)
-- Files: `transplant.py`, `null_space_filter.py`, `stage_3_transplant.py`
+- Parameter averaging removed (produces gibberish even for same-architecture models)
+- Files: `transplant.py`, `null_space_filter.py`, `use_cases/merge/stages/transplant.py`
 
 **Git Re-Basin** (FUTURE WORK)
 - Valid geometry for same-architecture neuron alignment
@@ -447,8 +393,8 @@ InterferencePrediction (existing)
    - Keep only dominant singular vectors
    - Reduces noise and storage
 
-3. **Complete Fisher weighting**
-   - Prioritize high-importance parameters during transplant
+3. **Add Fisher diagnostics (optional)**
+   - Use Fisher as a curvature signal only
 
 ---
 
@@ -476,5 +422,5 @@ InterferencePrediction (existing)
 | `knowledge_diff.py` | ✅ Active | Graft opportunity scoring |
 | `riemannian_density.py` | ✅ Active | ConceptVolume distribution modeling |
 | `manifold_curvature.py` | ⏳ Planned | Sectional curvature → extend to Ricci |
-| `fisher_blending.py` | ⏳ Planned | Stub → complete with CAMEx insights |
+| `spectral_analysis.py` | ✅ Active | Raw spectral measurements for stability |
 | `domain_geometry_waypoints.py` | ✅ Active | Validation anchors (465 probes) |

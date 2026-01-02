@@ -278,11 +278,11 @@ class MLXConceptAdapter(ConceptDiscoveryPort):
                 res = await self._detect_in_window(text_slice, start_char, end_char)
                 if res:
                     # Filter threshold
-                    if res.confidence >= config.detection_threshold:
+                    if res.similarity >= config.detection_threshold:
                         detections.append(res)
 
         # Deduplicate
-        detections.sort(key=lambda x: x.confidence, reverse=True)
+        detections.sort(key=lambda x: x.similarity, reverse=True)
         unique = []
         # Simple interval overlap check or keep best per span?
         # Swift kept highest confidence per "span-concept" key.
@@ -303,17 +303,17 @@ class MLXConceptAdapter(ConceptDiscoveryPort):
         # Limit
         unique = unique[: config.max_concepts_per_response]
 
-        mean_conf = 0.0
+        mean_similarity = 0.0
         if unique:
-            mean_conf = sum(d.confidence for d in unique) / len(unique)
+            mean_similarity = sum(d.similarity for d in unique) / len(unique)
 
         return DetectionResult(
             model_id=model_id,
             prompt_id=prompt_id,
             response_text=response,
             detected_concepts=unique,
-            mean_confidence=mean_conf,
-            mean_cross_modal_confidence=None,
+            mean_similarity=mean_similarity,
+            mean_cross_modal_similarity=None,
         )
 
     async def _detect_in_window(self, text: str, start: int, end: int) -> DetectedConcept | None:
@@ -342,7 +342,7 @@ class MLXConceptAdapter(ConceptDiscoveryPort):
             return DetectedConcept(
                 concept_id=concept_id,
                 category=category,
-                confidence=score,
+                similarity=score,
                 character_span=slice(start, end),
                 trigger_text=text,
             )

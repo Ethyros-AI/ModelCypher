@@ -1,17 +1,17 @@
 # Fisher Information Matrix
 
-> Importance-weighted parameter merging via information geometry.
+> Information geometry for curvature diagnostics and constraining (no averaging).
 
 ---
 
 ## Why This Matters for Model Merging
 
-Not all parameters are equally important. The Fisher Information Matrix quantifies **how much each parameter contributes to the model's predictions**. In merging, we use Fisher information to:
-1. **Weight parameters by importance** during averaging
-2. **Preserve critical parameters** from each model
-3. **Avoid catastrophic interference** between tasks
+Not all parameters are equally important. The Fisher Information Matrix quantifies **how much each parameter contributes to the model's predictions**. In geometry-first merging, Fisher can:
+1. **Identify sensitive directions** that must be preserved
+2. **Bound transplant deltas** in high-curvature regions
+3. **Diagnose interference risk** before grafting
 
-**In ModelCypher**: Implemented in `fisher_blending.py` for importance-weighted model merging.
+**In ModelCypher**: Fisher-weighted averaging is prohibited. Use Fisher only as a diagnostic or constraint.
 
 ---
 
@@ -35,9 +35,12 @@ $$F_\theta = -\mathbb{E}_{x,y} \left[ \nabla_\theta^2 \log p_\theta(y|x) \right]
 
 ---
 
-## Fisher Merging
+## Fisher Geometry (Reference Only)
 
 ### The Algorithm (Matena & Raffel, 2022)
+
+> ModelCypher does NOT apply Fisher-weighted averaging. The formulas below are
+> included for background only; any use must feed into null-space constraints.
 
 Given models $\theta_1, \ldots, \theta_T$ with Fisher matrices $F_1, \ldots, F_T$:
 
@@ -51,7 +54,7 @@ Full Fisher is intractable ($|\theta|^2$ elements). Use diagonal:
 
 $$\theta_{merged,j} = \frac{\sum_{i=1}^{T} \lambda_i F_{i,jj} \theta_{i,j}}{\sum_{i=1}^{T} \lambda_i F_{i,jj}}$$
 
-**Interpretation**: Each parameter is averaged, weighted by its importance in each model.
+**Interpretation (reference only)**: Each parameter is averaged, weighted by its importance in each model.
 
 ---
 
@@ -73,7 +76,7 @@ The natural gradient uses Fisher to normalize gradients:
 
 $$\tilde{\nabla}_\theta = F_\theta^{-1} \nabla_\theta$$
 
-Fisher merging is the natural generalization of averaging in this geometry.
+Outside ModelCypher, Fisher merging is the natural generalization of averaging in this geometry.
 
 ---
 
@@ -119,27 +122,17 @@ This gives "Fishers for Free" without extra computation.
 
 ## Code Implementation
 
-**Primary Location**: [`src/modelcypher/core/domain/geometry/fisher_blending.py`](../../../../src/modelcypher/core/domain/geometry/fisher_blending.py)
-
-| Class/Function | Line | Description |
-|----------------|------|-------------|
-| `FisherBlendingConfig` | 67 | Configuration with diagonal approx, per-layer settings |
-| `FisherBlendingResult` | 184 | Result with merged weights, importance maps |
-| `fisher_weighted_merge()` | 360 | Main Fisher-weighted merge function |
-
-**Design decisions**:
-1. **Diagonal by default**: Full Fisher is impractical for LLMs
-2. **Per-layer Fisher**: Compute separately for each layer
-3. **Fallback weighting**: If no Fisher, use equal weights
+No Fisher-weighted averaging is implemented. If Fisher signals are added, they
+must apply to constraining or diagnostics inside the transplant pipeline.
 
 ---
 
 ## Relationship to Other Methods
 
-| Method | Weighting Scheme |
+| Method | Geometry Role |
 |--------|-----------------|
-| Simple Average | Uniform |
-| **Fisher Merge** | Importance-weighted |
+| Simple Average | Prohibited (averaging) |
+| Fisher Geometry | Importance diagnostics |
 | TIES-Merge | Sign-based with trimming |
 | DARE | Random with rescaling |
 | Task Arithmetic | Task vector addition |
@@ -206,4 +199,5 @@ This penalizes changes to important parameters, preventing catastrophic forgetti
 
 ---
 
-*Fisher information tells us which parameters matter. This knowledge is essential for intelligent model merging.*
+*Fisher information tells us which directions are sensitive. Use it to protect
+geometry during grafting, not to average models.*

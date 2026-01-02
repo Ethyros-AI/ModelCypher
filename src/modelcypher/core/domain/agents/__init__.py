@@ -97,7 +97,7 @@ from .lora_expert import (
     AdapterBackedLoRAExpert,
     AgentIntent,
     AgentQuery,
-    BlendedAdapterActivator,
+    CompositeAdapterActivator,
     LoRAExpert,
     LoRAExpertInfo,
     LoRAExpertRegistry,

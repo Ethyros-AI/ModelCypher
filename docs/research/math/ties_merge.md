@@ -299,7 +299,7 @@ def geometric_ties_merge(models, pretrained, activations, density=0.2):
 **Related implementations**:
 - [`task_singular_vectors.py`](../../../../src/modelcypher/core/domain/geometry/task_singular_vectors.py) - SVD-based task vector handling
 - [`dare_sparsity.py`](../../../../src/modelcypher/core/domain/geometry/dare_sparsity.py) - Sparsification (often combined with TIES)
-- [`fisher_blending.py`](../../../../src/modelcypher/core/domain/geometry/fisher_blending.py) - Importance-weighted merging
+- [`null_space_filter.py`](../../../../src/modelcypher/core/domain/geometry/null_space_filter.py) - Null-space gating for grafting
 
 The sign election and trimming concepts from TIES are integrated into the geometric merge pipeline rather than implemented as a separate module.
 

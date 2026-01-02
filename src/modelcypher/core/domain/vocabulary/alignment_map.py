@@ -52,9 +52,7 @@ class TokenAlignment:
     source_token: str
     target_ids: list[int]  # Can map to multiple targets
     target_tokens: list[str]
-    weights: list[float]  # Weights for each target (sum to 1)
     quality: AlignmentQuality
-    confidence: float  # 0.0 to 1.0
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -64,9 +62,7 @@ class TokenAlignment:
             "source_token": self.source_token,
             "target_ids": self.target_ids,
             "target_tokens": self.target_tokens,
-            "weights": self.weights,
             "quality": self.quality.value,
-            "confidence": self.confidence,
             **self.metadata,
         }
 
@@ -139,13 +135,6 @@ class VocabularyAlignmentMap:
         mapped = self.source_vocab_size - self.unmapped_count
         return mapped / self.source_vocab_size
 
-    @property
-    def mean_confidence(self) -> float:
-        """Mean confidence across all alignments."""
-        if not self.alignments:
-            return 0.0
-        return sum(a.confidence for a in self.alignments.values()) / len(self.alignments)
-
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary (summary only, not full alignments)."""
         return {
@@ -153,7 +142,6 @@ class VocabularyAlignmentMap:
             "target_vocab_size": self.target_vocab_size,
             "total_alignments": len(self.alignments),
             "coverage": self.coverage,
-            "mean_confidence": self.mean_confidence,
             "exact_matches": self.exact_matches,
             "similar_matches": self.similar_matches,
             "approximate_matches": self.approximate_matches,
@@ -209,9 +197,7 @@ def build_alignment_from_vocabs(
                 source_token=source_token,
                 target_ids=[target_id],
                 target_tokens=[source_token],
-                weights=[1.0],
                 quality=AlignmentQuality.EXACT,
-                confidence=1.0,
             )
         elif not exact_only and source_token.lower() in target_by_lower:
             target_id, target_token = target_by_lower[source_token.lower()][0]
@@ -220,9 +206,7 @@ def build_alignment_from_vocabs(
                 source_token=source_token,
                 target_ids=[target_id],
                 target_tokens=[target_token],
-                weights=[1.0],
                 quality=AlignmentQuality.SIMILAR,
-                confidence=1.0,
                 metadata={"method": "casefold"},
             )
         elif not exact_only:
@@ -238,20 +222,12 @@ def build_alignment_from_vocabs(
                 top_matches = [m for m in prefix_matches if m[0] == max_overlap]
                 target_ids = [match[1] for match in top_matches]
                 target_tokens = [match[2] for match in top_matches]
-                total = sum(match[0] for match in top_matches)
-                weights = [
-                    match[0] / total if total > 0 else 1.0 / len(top_matches)
-                    for match in top_matches
-                ]
-                confidence = max_overlap / max(len(source_token), 1)
                 alignment = TokenAlignment(
                     source_id=source_id,
                     source_token=source_token,
                     target_ids=target_ids,
                     target_tokens=target_tokens,
-                    weights=weights,
                     quality=AlignmentQuality.APPROXIMATE,
-                    confidence=confidence,
                     metadata={"method": "prefix", "overlap": max_overlap},
                 )
             else:
@@ -260,9 +236,7 @@ def build_alignment_from_vocabs(
                     source_token=source_token,
                     target_ids=[],
                     target_tokens=[],
-                    weights=[],
                     quality=AlignmentQuality.UNMAPPED,
-                    confidence=0.0,
                 )
         else:
             alignment = TokenAlignment(
@@ -270,9 +244,7 @@ def build_alignment_from_vocabs(
                 source_token=source_token,
                 target_ids=[],
                 target_tokens=[],
-                weights=[],
                 quality=AlignmentQuality.UNMAPPED,
-                confidence=0.0,
             )
 
         alignment_map.add_alignment(alignment)

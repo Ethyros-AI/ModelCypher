@@ -211,18 +211,18 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
                     {
                         "conceptId": concept.concept_id,
                         "category": concept.category,
-                        "confidence": concept.confidence,
+                        "similarity": concept.similarity,
                         "characterSpan": {
                             "lowerBound": concept.character_span[0],
                             "upperBound": concept.character_span[1],
                         },
                         "triggerText": concept.trigger_text,
-                        "crossModalConfidence": concept.cross_modal_confidence,
+                        "crossModalSimilarity": concept.cross_modal_similarity,
                     }
                     for concept in detection.detected_concepts
                 ],
-                "meanConfidence": detection.mean_confidence,
-                "meanCrossModalConfidence": detection.mean_cross_modal_confidence,
+                "meanSimilarity": detection.mean_similarity,
+                "meanCrossModalSimilarity": detection.mean_cross_modal_similarity,
             }
             return payload
 

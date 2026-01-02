@@ -138,19 +138,19 @@ class AdapterActivator(Protocol):
 
 
 @runtime_checkable
-class BlendedAdapterActivator(AdapterActivator, Protocol):
-    """Extended protocol for activators that support geometric weight blending."""
+class CompositeAdapterActivator(AdapterActivator, Protocol):
+    """Extended protocol for activators that support geometric adapter composition."""
 
-    async def activate_blended_adapters(
+    async def activate_composed_adapters(
         self,
         adapters: list[tuple[str, float]],
         base_model_id: str,
     ) -> UUID:
-        """Load blended adapter weights from multiple sources."""
+        """Activate adapters as a composed set (no parameter averaging)."""
         ...
 
-    async def deactivate_blended_adapter(self, ephemeral_id: UUID) -> None:
-        """Deactivate an ephemeral blended adapter."""
+    async def deactivate_composed_adapter(self, ephemeral_id: UUID) -> None:
+        """Deactivate an ephemeral composed adapter."""
         ...
 
 
@@ -306,10 +306,9 @@ class AdapterBackedLoRAExpert(LoRAExpert):
         Routing Strategy:
         1. Hard constraints (required tags, category) act as gates - fail = 0.0
         2. Geometric similarity (embedding cosine) is the primary signal
-        3. Metadata (tags, complexity, intent) provides bonus/penalty only when
-           geometry is unavailable or as a tiebreaker
+        3. If no embeddings are available, use measurable tag overlap only.
 
-        No arbitrary blending ratios - geometry is truth when available.
+        No arbitrary weighting - measurements only.
         """
         # Hard constraint: Required tags must ALL match
         if query.required_skill_tags:
@@ -321,55 +320,30 @@ class AdapterBackedLoRAExpert(LoRAExpert):
         if query.required_category is not None and query.required_category != self._skill_category:
             return 0.0
 
-        # Geometric routing: Use embedding similarity as PRIMARY signal
+        # Hard constraint: Minimum complexity must be met if specified
+        if query.minimum_complexity is not None:
+            if not self._complexity_meets_minimum(self._skill_complexity, query.minimum_complexity):
+                return 0.0
+
+        # Hard constraint: Intent-category alignment must be valid if specified
+        if query.intent is not None:
+            if self._intent_category_alignment(query.intent, self._skill_category) <= 0:
+                return 0.0
+
+        # Geometric routing: Use embedding similarity as the sole signal
         if query.embedding is not None and self._embedding is not None:
             geometric_score = VectorMath.cosine_similarity(query.embedding, self._embedding) or 0.0
-            geometric_score = max(0.0, geometric_score)
+            return max(0.0, min(1.0, geometric_score))
 
-            # Metadata acts as small bonus/penalty for tiebreaking, not blending
-            # Each factor contributes ±0.05 max (total metadata influence capped at ~15%)
-            metadata_adjustment = 0.0
-
-            # Preferred tags bonus: proportion matched * 0.05
-            if query.preferred_skill_tags:
-                matched = query.preferred_skill_tags.intersection(self._skill_tags)
-                metadata_adjustment += 0.05 * (len(matched) / len(query.preferred_skill_tags))
-
-            # Complexity appropriateness: +0.02 if meets minimum, 0 otherwise
-            if query.minimum_complexity is not None:
-                if self._complexity_meets_minimum(self._skill_complexity, query.minimum_complexity):
-                    metadata_adjustment += 0.02
-
-            # Intent alignment: +0.03 if aligned
-            if query.intent is not None:
-                if self._intent_category_alignment(query.intent, self._skill_category) > 0:
-                    metadata_adjustment += 0.03
-
-            return max(0.0, min(1.0, geometric_score + metadata_adjustment))
-
-        # Fallback when no embeddings: use metadata-only scoring
-        # This path should be rare - embeddings are expected for geometric routing
-        metadata_score = 0.5  # Neutral starting point (not arbitrary 0.3)
-
-        # Preferred tags: adjust by overlap proportion
+        # No embeddings available: use measurable tag overlap only
         if query.preferred_skill_tags:
             matched = query.preferred_skill_tags.intersection(self._skill_tags)
-            overlap = len(matched) / len(query.preferred_skill_tags)
-            metadata_score += 0.2 * (overlap - 0.5)  # Center around 0.5 overlap
+            return len(matched) / len(query.preferred_skill_tags)
 
-        # Complexity: small adjustment
-        if query.minimum_complexity is not None:
-            if self._complexity_meets_minimum(self._skill_complexity, query.minimum_complexity):
-                metadata_score += 0.1
-            else:
-                metadata_score -= 0.1
+        if query.required_skill_tags:
+            return 1.0
 
-        # Intent alignment
-        if query.intent is not None:
-            if self._intent_category_alignment(query.intent, self._skill_category) > 0:
-                metadata_score += 0.1
-
-        return max(0.0, min(1.0, metadata_score))
+        return 0.0
 
     async def activate(self, activator: AdapterActivator) -> None:
         await activator.activate_adapter(self._adapter_id, self._adapter_path)
@@ -449,7 +423,7 @@ class LoRAExpertSelection:
     """Confidence score for this selection (0.0-1.0)."""
 
     weight: float
-    """Routing weight for blending (for ensemble strategies)."""
+    """Routing allocation weight (not parameter averaging)."""
 
     activation_reason: str
     """Human-readable reason for selection."""

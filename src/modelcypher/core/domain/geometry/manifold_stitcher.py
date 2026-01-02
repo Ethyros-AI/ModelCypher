@@ -941,45 +941,6 @@ class ManifoldStitcher:
         return (b.to_numpy(assignments).tolist(), b.to_numpy(centroids).tolist())
 
     @staticmethod
-    def soft_rotation(
-        weight: Any,
-        clusters: list["AlignmentCluster"],
-        temperature: float = 0.3,
-        backend: "Backend | None" = None,
-    ) -> Any:
-        b = backend or get_default_backend()
-        if not clusters:
-            return weight
-        if weight.ndim != 2:
-            return weight
-
-        in_dim = weight.shape[1]
-        cluster_dim = clusters[0].local_rotation.shape[0]
-        if in_dim != cluster_dim:
-            return weight
-
-        # Weighted average
-        weights = []
-        for c in clusters:
-            w = math.exp(-c.procrustes_error / temperature) * c.member_count
-            weights.append(w)
-
-        total_weight = sum(weights)
-        if total_weight <= 0:
-            return weight
-
-        weighted_omega = b.zeros((cluster_dim, cluster_dim))
-        for i, c in enumerate(clusters):
-            norm_w = weights[i] / total_weight
-            weighted_omega = weighted_omega + (c.local_rotation * norm_w)
-
-        # Re-orthogonalize
-        u, _, vt = b.svd(weighted_omega)
-        omega = b.matmul(u, vt)
-
-        return b.matmul(weight, b.transpose(omega))
-
-    @staticmethod
     async def validate_merged_model(
         merged_model_ctx: Any,  # ModelContext
         merged_model_id: str,

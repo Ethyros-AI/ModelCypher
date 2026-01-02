@@ -54,7 +54,7 @@ Common scopes: `geometry`, `merge`, `training`, `safety`, `cli`, `mcp`, `thermo`
 
 ```
 feat(geometry): add Gromov-Wasserstein distance computation
-fix(merge): correct weight normalization in alpha blending
+fix(merge): correct null-space projection normalization
 docs(readme): update installation instructions for JAX backend
 refactor(training): extract checkpoint logic into separate module
 test(safety): add property tests for behavioral probes

@@ -38,18 +38,17 @@ python examples/02_safety_audit.py /path/to/adapter.safetensors
 - Entropy baseline verification
 - Pattern analysis for distress signals
 
-### 03. Adapter Blending
+### 03. Adapter Inspection
 
-Blend multiple LoRA adapters into a single adapter.
+Inspect LoRA adapters without blending or interpolation.
 
 ```bash
-python examples/03_adapter_blending.py adapter1.safetensors adapter2.safetensors -o blended.safetensors
+python examples/03_adapter_inspection.py /path/to/adapter_dir
 ```
 
 **What it does:**
-- Inspects adapter compatibility
-- Blends with configurable weights
-- Outputs a combined adapter
+- Reports adapter rank, alpha, sparsity, and layer count
+- Outputs raw measurements only
 
 ### 04. Entropy Analysis
 
