@@ -86,7 +86,9 @@ def stage_probe(
     dict | None,
     dict | None,
     dict | None,
-    dict[int, list[list[float]]] | None,  # feature_transforms
+    dict[int, list[list[float]]] | None,  # feature_transforms (hidden)
+    dict[int, list[list[float]]] | None,  # attention_transforms (Q)
+    dict[int, list[list[float]]] | None,  # kv_transforms (KV)
     dict[int, int] | None,  # layer_mapping
 ]:
     """Stage 1: Compute layer correspondences via CKA."""
@@ -126,6 +128,8 @@ def stage_probe(
         result.source_kv_activations,
         result.target_kv_activations,
         result.feature_transforms,
+        result.attention_transforms,
+        result.kv_transforms,
         result.layer_mapping,
     )
 
@@ -193,6 +197,8 @@ def stage_transplant(
     backend: "Backend | None" = None,
     graft_mask: dict[str, dict[int, bool]] | None = None,
     feature_transforms: dict[int, list[list[float]]] | None = None,
+    attention_transforms: dict[int, list[list[float]]] | None = None,
+    kv_transforms: dict[int, list[list[float]]] | None = None,
     layer_mapping: dict[int, int] | None = None,
 ) -> tuple[dict[str, "Array"], dict[str, Any]]:
     """Stage 3: Null-space constrained transplant."""
@@ -200,6 +206,8 @@ def stage_transplant(
         core_domains=tuple(transplant_domains),
         graft_mask=graft_mask,
         feature_transforms=feature_transforms,
+        attention_transforms=attention_transforms,
+        kv_transforms=kv_transforms,
         layer_mapping=layer_mapping,
     )
 

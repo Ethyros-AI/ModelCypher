@@ -29,25 +29,6 @@ from enum import Enum
 from uuid import UUID, uuid4
 
 
-class RiskLevel(str, Enum):
-    """Risk level classification for capabilities."""
-
-    SAFE = "safe"
-    MODERATE = "moderate"
-    ELEVATED = "elevated"
-    HIGH = "high"
-
-    @property
-    def color(self) -> str:
-        """Color for UI display."""
-        return {
-            RiskLevel.SAFE: "green",
-            RiskLevel.MODERATE: "yellow",
-            RiskLevel.ELEVATED: "orange",
-            RiskLevel.HIGH: "red",
-        }[self]
-
-
 class ResourceCapability(str, Enum):
     """Declared resource access capabilities for LoRA adapters.
 
@@ -117,18 +98,6 @@ class ResourceCapability(str, Enum):
             ResourceCapability.CODE_EXEC: ("Execute code or scripts in a sandboxed environment."),
             ResourceCapability.NONE: ("No resource access required - pure text generation only."),
         }[self]
-
-    @property
-    def risk_level(self) -> RiskLevel:
-        """Risk level for UI display (affects badge color)."""
-        return {
-            ResourceCapability.NONE: RiskLevel.SAFE,
-            ResourceCapability.FILE_READ: RiskLevel.MODERATE,
-            ResourceCapability.NETWORK_HTTP: RiskLevel.MODERATE,
-            ResourceCapability.FILE_WRITE: RiskLevel.ELEVATED,
-            ResourceCapability.CODE_EXEC: RiskLevel.HIGH,
-        }[self]
-
 
 @dataclass(frozen=True)
 class CapabilityViolation:
@@ -239,23 +208,10 @@ class CapabilityGuardConfiguration:
 
     Attributes
     ----------
-    is_enabled : bool
-        Whether enforcement is enabled.
     enforcement_mode : EnforcementMode
         Whether to hard-block violations or just log them.
-    max_violations_before_disable : int
-        Maximum violations before the adapter is disabled.
-    audit_logging_enabled : bool
-        Whether to log violations to the audit log.
-    always_allowed_capabilities : frozenset[ResourceCapability]
-        Capabilities that are always allowed (e.g., for debugging).
     """
-
-    is_enabled: bool = True
     enforcement_mode: EnforcementMode = EnforcementMode.ENFORCE
-    max_violations_before_disable: int = 3
-    audit_logging_enabled: bool = True
-    always_allowed_capabilities: frozenset[ResourceCapability] = frozenset()
 
     @classmethod
     def default(cls) -> CapabilityGuardConfiguration:
@@ -270,8 +226,4 @@ class CapabilityGuardConfiguration:
     @classmethod
     def disabled(cls) -> CapabilityGuardConfiguration:
         """Configuration with enforcement disabled."""
-        return cls(
-            is_enabled=False,
-            enforcement_mode=EnforcementMode.DISABLED,
-            audit_logging_enabled=False,
-        )
+        return cls(enforcement_mode=EnforcementMode.DISABLED)

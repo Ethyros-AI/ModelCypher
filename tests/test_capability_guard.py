@@ -27,7 +27,6 @@ from modelcypher.core.domain.safety.adapter_capability import (
     CapabilityViolation,
     EnforcementMode,
     ResourceCapability,
-    RiskLevel,
 )
 from modelcypher.core.domain.safety.capability_guard import (
     AuditEventType,
@@ -71,13 +70,6 @@ class TestResourceCapability:
         """capability_string returns formatted string."""
         assert ResourceCapability.FILE_READ.capability_string == "resource:file_read"
         assert ResourceCapability.NONE.capability_string == "resource:none"
-
-    def test_risk_levels(self) -> None:
-        """Risk levels are correctly assigned."""
-        assert ResourceCapability.NONE.risk_level == RiskLevel.SAFE
-        assert ResourceCapability.FILE_READ.risk_level == RiskLevel.MODERATE
-        assert ResourceCapability.FILE_WRITE.risk_level == RiskLevel.ELEVATED
-        assert ResourceCapability.CODE_EXEC.risk_level == RiskLevel.HIGH
 
 
 class TestCapabilityViolation:
@@ -235,16 +227,6 @@ class TestCapabilityGuard:
         outcome = guard.check_access(uuid4(), ResourceCapability.CODE_EXEC)
         assert outcome.result == CapabilityCheckResult.ALLOWED
 
-    def test_always_allowed_capabilities(self) -> None:
-        """Always-allowed capabilities bypass checks."""
-        config = CapabilityGuardConfiguration(
-            always_allowed_capabilities=frozenset([ResourceCapability.FILE_READ])
-        )
-        guard = CapabilityGuard(configuration=config)
-        # Don't register adapter, but FILE_READ should still be allowed
-        outcome = guard.check_access(uuid4(), ResourceCapability.FILE_READ)
-        assert outcome.result == CapabilityCheckResult.ALLOWED
-
     def test_unregister_adapter(self) -> None:
         """Unregistered adapter loses capabilities."""
         guard = CapabilityGuard()
@@ -266,46 +248,6 @@ class TestCapabilityGuard:
         assert len(violations) == 2
         assert guard.total_violation_count == 2
 
-    def test_adapter_disabled_after_max_violations(self) -> None:
-        """Adapter is disabled after max violations."""
-        config = CapabilityGuardConfiguration(max_violations_before_disable=2)
-        guard = CapabilityGuard(configuration=config)
-        adapter_id = uuid4()
-        guard.register_adapter(adapter_id, "test", frozenset())
-
-        guard.check_access(adapter_id, ResourceCapability.FILE_READ)
-        assert not guard.is_adapter_disabled(adapter_id)
-
-        guard.check_access(adapter_id, ResourceCapability.FILE_WRITE)
-        assert guard.is_adapter_disabled(adapter_id)
-
-    def test_disabled_adapter_denied(self) -> None:
-        """Disabled adapter is always denied."""
-        config = CapabilityGuardConfiguration(max_violations_before_disable=1)
-        guard = CapabilityGuard(configuration=config)
-        adapter_id = uuid4()
-        guard.register_adapter(adapter_id, "test", frozenset([ResourceCapability.FILE_READ]))
-
-        # Trigger violation to disable
-        guard.check_access(adapter_id, ResourceCapability.CODE_EXEC)
-        assert guard.is_adapter_disabled(adapter_id)
-
-        # Now even declared capability is denied
-        outcome = guard.check_access(adapter_id, ResourceCapability.FILE_READ)
-        assert outcome.result == CapabilityCheckResult.DENIED
-
-    def test_reenable_adapter(self) -> None:
-        """Disabled adapter can be re-enabled."""
-        config = CapabilityGuardConfiguration(max_violations_before_disable=1)
-        guard = CapabilityGuard(configuration=config)
-        adapter_id = uuid4()
-        guard.register_adapter(adapter_id, "test", frozenset([ResourceCapability.FILE_READ]))
-
-        guard.check_access(adapter_id, ResourceCapability.CODE_EXEC)
-        assert guard.is_adapter_disabled(adapter_id)
-
-        guard.reenable_adapter(adapter_id)
-        assert not guard.is_adapter_disabled(adapter_id)
 
     def test_check_access_batch(self) -> None:
         """check_access_batch checks multiple capabilities."""

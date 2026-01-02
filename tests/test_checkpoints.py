@@ -127,9 +127,9 @@ class TestCheckpointManagerInit:
     """Tests for CheckpointManager initialization."""
 
     def test_default_max_checkpoints(self):
-        """Default max checkpoints is 3."""
+        """Default max checkpoints is None (no pruning)."""
         manager = CheckpointManager()
-        assert manager.max_checkpoints == 3
+        assert manager.max_checkpoints is None
 
     def test_custom_max_checkpoints(self):
         """Custom max checkpoints is respected."""

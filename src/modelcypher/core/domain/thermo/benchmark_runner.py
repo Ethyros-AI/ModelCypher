@@ -18,7 +18,7 @@
 """Thermodynamic benchmark runner for modifier effectiveness analysis.
 
 Framework for comparative analysis of modifier effectiveness across
-prompt corpora with statistical significance testing.
+prompt corpora with raw statistical measurements.
 """
 
 from __future__ import annotations
@@ -47,17 +47,14 @@ class SignificanceResult:
     t_statistic: float
     p_value: float
     degrees_of_freedom: float
-    is_significant: bool
-    alpha: float = 0.05
 
 
 @dataclass
 class EffectSizeResult:
-    """Cohen's d effect size with confidence interval."""
+    """Cohen's d effect size with standard error."""
 
     cohens_d: float
-    ci_lower: float
-    ci_upper: float
+    standard_error: float
 
 
 @dataclass
@@ -82,8 +79,6 @@ class BenchmarkResult:
     modifiers: list[ModifierStats]
     baseline_mean: float
     baseline_std: float
-    best_modifier: LinguisticModifier
-    best_effect_size: float
     timestamp: datetime = field(default_factory=datetime.now)
 
 
@@ -102,23 +97,18 @@ class ThermoBenchmarkRunner:
     ----------
     calorimeter : LinguisticCalorimeter | None
         LinguisticCalorimeter instance. If None, creates simulated.
-    alpha : float
-        Significance level for hypothesis testing.
     """
 
     def __init__(
         self,
         calorimeter: LinguisticCalorimeter | None = None,
-        alpha: float = 0.05,
     ):
         """Initialize the benchmark runner.
 
         Args:
             calorimeter: LinguisticCalorimeter instance. If None, creates simulated.
-            alpha: Significance level for hypothesis testing.
         """
         self.calorimeter = calorimeter or LinguisticCalorimeter(simulated=True)
-        self.alpha = alpha
 
     def run_modifier_comparison(
         self,
@@ -171,9 +161,6 @@ class ThermoBenchmarkRunner:
 
         # Compute stats for each modifier
         modifier_stats = []
-        best_modifier = LinguisticModifier.BASELINE
-        best_effect = 0.0
-
         for modifier in modifiers:
             measurements = measurements_by_modifier[modifier]
             entropies = [m.mean_entropy for m in measurements]
@@ -200,11 +187,6 @@ class ThermoBenchmarkRunner:
                     entropies,
                 )
 
-                # Track best modifier
-                if effect_size and abs(effect_size.cohens_d) > abs(best_effect):
-                    best_effect = effect_size.cohens_d
-                    best_modifier = modifier
-
             stats = ModifierStats(
                 modifier=modifier,
                 sample_size=len(measurements),
@@ -222,8 +204,6 @@ class ThermoBenchmarkRunner:
             modifiers=modifier_stats,
             baseline_mean=baseline_mean,
             baseline_std=baseline_std,
-            best_modifier=best_modifier,
-            best_effect_size=best_effect,
         )
 
     def statistical_significance(
@@ -250,8 +230,6 @@ class ThermoBenchmarkRunner:
                 t_statistic=0.0,
                 p_value=1.0,
                 degrees_of_freedom=0.0,
-                is_significant=False,
-                alpha=self.alpha,
             )
 
         mean1 = sum(baseline) / n1
@@ -274,14 +252,12 @@ class ThermoBenchmarkRunner:
 
         # Approximate p-value using normal approximation for large df
         # For accurate p-values, would need scipy.stats.t
-        p_value = self._approximate_t_pvalue(abs(t_stat), df)
+        p_value = self._approximate_t_pvalue(abs(t_stat))
 
         return SignificanceResult(
             t_statistic=t_stat,
             p_value=p_value,
             degrees_of_freedom=df,
-            is_significant=p_value < self.alpha,
-            alpha=self.alpha,
         )
 
     def _compute_effect_size(
@@ -304,8 +280,7 @@ class ThermoBenchmarkRunner:
         if n1 < 2 or n2 < 2:
             return EffectSizeResult(
                 cohens_d=0.0,
-                ci_lower=0.0,
-                ci_upper=0.0,
+                standard_error=0.0,
             )
 
         mean1 = sum(baseline) / n1
@@ -321,16 +296,13 @@ class ThermoBenchmarkRunner:
         # Cohen's d
         d = (mean1 - mean2) / pooled_std if pooled_std > 0 else 0.0
 
-        # Approximate 95% CI for Cohen's d
+        # Standard error for Cohen's d
         # SE(d) ≈ sqrt((n1+n2)/(n1*n2) + d^2/(2*(n1+n2)))
         se_d = math.sqrt((n1 + n2) / (n1 * n2) + d**2 / (2 * (n1 + n2)))
-        ci_lower = d - 1.96 * se_d
-        ci_upper = d + 1.96 * se_d
 
         return EffectSizeResult(
             cohens_d=d,
-            ci_lower=ci_lower,
-            ci_upper=ci_upper,
+            standard_error=se_d,
         )
 
     def effect_size_analysis(
@@ -368,23 +340,22 @@ class ThermoBenchmarkRunner:
             "## Summary",
             "",
             f"- **Baseline Mean Entropy**: {result.baseline_mean:.4f} ± {result.baseline_std:.4f}",
-            f"- **Best Modifier**: {result.best_modifier.display_name}",
-            f"- **Best Effect Size**: d = {result.best_effect_size:.3f}",
             "",
             "## Modifier Comparison",
             "",
-            "| Modifier | Mean H | Δ H | Ridge Rate | Effect Size | Significant |",
-            "|----------|--------|-----|------------|-------------|-------------|",
+            "| Modifier | Mean H | Δ H | Ridge Rate | Effect Size | t-stat | p-value |",
+            "|----------|--------|-----|------------|-------------|--------|---------|",
         ]
 
         for stats in result.modifiers:
             delta_h = f"{stats.mean_delta_h:.4f}" if stats.mean_delta_h is not None else "—"
             effect = f"d={stats.effect_size.cohens_d:.3f}" if stats.effect_size else "—"
-            sig = "✓" if stats.significance and stats.significance.is_significant else "—"
+            t_stat = f"{stats.significance.t_statistic:.3f}" if stats.significance else "—"
+            p_value = f"{stats.significance.p_value:.4f}" if stats.significance else "—"
 
             lines.append(
                 f"| {stats.modifier.display_name} | {stats.mean_entropy:.4f} | "
-                f"{delta_h} | {stats.ridge_cross_rate:.1%} | {effect} | {sig} |"
+                f"{delta_h} | {stats.ridge_cross_rate:.1%} | {effect} | {t_stat} | {p_value} |"
             )
 
         lines.extend(
@@ -404,7 +375,6 @@ class ThermoBenchmarkRunner:
                         f"- t-statistic: {stats.significance.t_statistic:.4f}",
                         f"- p-value: {stats.significance.p_value:.4f}",
                         f"- df: {stats.significance.degrees_of_freedom:.1f}",
-                        f"- Significant (α={stats.significance.alpha}): {'Yes' if stats.significance.is_significant else 'No'}",
                         "",
                     ]
                 )
@@ -412,7 +382,7 @@ class ThermoBenchmarkRunner:
                     lines.extend(
                         [
                             f"- Cohen's d: {stats.effect_size.cohens_d:.4f}",
-                            f"- 95% CI: [{stats.effect_size.ci_lower:.4f}, {stats.effect_size.ci_upper:.4f}]",
+                            f"- SE(d): {stats.effect_size.standard_error:.4f}",
                             "",
                         ]
                     )
@@ -431,33 +401,6 @@ class ThermoBenchmarkRunner:
         variance = sum((v - mean) ** 2 for v in values) / (len(values) - 1)
         return math.sqrt(variance)
 
-    def _approximate_t_pvalue(self, t: float, df: float) -> float:
-        """Approximate two-tailed p-value for t-distribution.
-
-        Uses normal approximation for large df, otherwise
-        uses a simple lookup approximation.
-        """
-        if df > 30:
-            # Normal approximation
-            # P(|Z| > t) ≈ 2 * (1 - Φ(t))
-            # Using approximation: Φ(t) ≈ 1 - 0.5 * exp(-1.7 * t)
-            if t > 5:
-                return 0.0001
-            p = 2 * 0.5 * math.exp(-0.5 * t * t) * (1 + t * 0.2316419)
-            return max(0.0001, min(1.0, p))
-        else:
-            # Simple threshold-based approximation
-            if t > 4.0:
-                return 0.001
-            elif t > 3.0:
-                return 0.01
-            elif t > 2.5:
-                return 0.02
-            elif t > 2.0:
-                return 0.05
-            elif t > 1.5:
-                return 0.15
-            elif t > 1.0:
-                return 0.3
-            else:
-                return 0.5
+    def _approximate_t_pvalue(self, t: float) -> float:
+        """Approximate two-tailed p-value using normal approximation."""
+        return math.erfc(t / math.sqrt(2.0))

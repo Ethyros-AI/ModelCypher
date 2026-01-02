@@ -46,7 +46,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, TypeVar
 
 from modelcypher.core.domain.cache import ComputationCache
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon, svd_via_eigh
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    safe_log_epsilon,
+    svd_via_eigh,
+)
 from modelcypher.core.domain.geometry.types import PairwiseProcrustesResult
 
 if TYPE_CHECKING:
@@ -107,8 +111,8 @@ class BackendMatrixUtils:
             n = flat.shape[0] if hasattr(flat, "shape") else len(flat)
             mid_idx = n // 2
             median_dist = float(self.backend.to_numpy(sorted_dists)[mid_idx])
-
-            gamma = 1.0 / (2.0 * median_dist) if median_dist > 0 else 1.0
+            div_eps = division_epsilon(self.backend, sq_dists)
+            gamma = 1.0 / (2.0 * (median_dist + div_eps))
 
             # exp(-gamma * sq_dists)
             neg_gamma = self.backend.full(sq_dists.shape, -gamma)
@@ -210,9 +214,7 @@ class BackendMatrixUtils:
             geodesic_distance_matrix,
         )
 
-        n = X.shape[0] if hasattr(X, "shape") else len(X)
-        k_neighbors = min(max(3, n // 3), n - 1)
-        geo_dist = geodesic_distance_matrix(X, k_neighbors=k_neighbors, backend=self.backend)
+        geo_dist = geodesic_distance_matrix(X, k_neighbors=None, backend=self.backend)
         self.backend.eval(geo_dist)
         return geo_dist * geo_dist  # Squared
 
@@ -231,9 +233,7 @@ class BackendMatrixUtils:
             geodesic_distance_matrix,
         )
 
-        n = X.shape[0] if hasattr(X, "shape") else len(X)
-        k_neighbors = min(max(3, n // 3), n - 1)
-        return geodesic_distance_matrix(X, k_neighbors=k_neighbors, backend=self.backend)
+        return geodesic_distance_matrix(X, k_neighbors=None, backend=self.backend)
 
     def procrustes_rotation(
         self,
@@ -402,6 +402,8 @@ class BackendMatrixUtils:
                 max_gap = relative_drop
                 gap_index = i + 1
 
+        if max_gap <= 0.0:
+            return len(eig_positive)
         return gap_index
 
     def effective_rank(
@@ -484,8 +486,8 @@ class BackendMatrixUtils:
             return 0.0
 
         p = eig_arr / total
-        eps = b.full(p.shape, 1e-12)
-        log_p = b.log(p + eps)
+        log_eps = safe_log_epsilon(b, p)
+        log_p = b.log(p + b.full(p.shape, log_eps))
         entropy_arr = -b.sum(p * log_p)
         b.eval(entropy_arr)
         entropy = float(b.to_numpy(entropy_arr).item())
@@ -504,7 +506,7 @@ class BackendMatrixUtils:
         # Normalize rows: X / ||X||
         norms = self.backend.norm(X, axis=1, keepdims=True)
         # Avoid division by zero
-        eps = self.backend.full(norms.shape, 1e-12)
+        eps = self.backend.full(norms.shape, division_epsilon(self.backend, norms))
         norms = self.backend.maximum(norms, eps)
 
         X_normalized = X / norms

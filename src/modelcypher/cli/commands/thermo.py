@@ -786,8 +786,6 @@ def thermo_benchmark(
         "corpusSize": result.corpus_size,
         "baselineMean": result.baseline_mean,
         "baselineStd": result.baseline_std,
-        "bestModifier": result.best_modifier.value,
-        "bestEffectSize": result.best_effect_size,
         "modifiers": [
             {
                 "modifier": s.modifier.value,
@@ -799,7 +797,7 @@ def thermo_benchmark(
                     {
                         "tStatistic": s.significance.t_statistic,
                         "pValue": s.significance.p_value,
-                        "isSignificant": s.significance.is_significant,
+                        "degreesOfFreedom": s.significance.degrees_of_freedom,
                     }
                     if s.significance
                     else None
@@ -807,8 +805,7 @@ def thermo_benchmark(
                 "effectSize": (
                     {
                         "cohensD": s.effect_size.cohens_d,
-                        "ciLower": s.effect_size.ci_lower,
-                        "ciUpper": s.effect_size.ci_upper,
+                        "standardError": s.effect_size.standard_error,
                     }
                     if s.effect_size
                     else None

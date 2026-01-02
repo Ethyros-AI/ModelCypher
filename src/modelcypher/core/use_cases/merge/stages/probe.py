@@ -87,9 +87,14 @@ class ProbeResult:
     target_kv_activations: dict[int, list[Any]] | None = None
     probe_ids: list[str] | None = None
     probe_domains: list[str] | None = None
-    # Layer alignment transforms: source_acts @ feature_transforms[layer] -> aligned_source
+    # Layer alignment transforms: source_acts @ transforms[layer] -> aligned_source
     # These transforms achieve CKA = 1.0 for each aligned layer pair
+    # Hidden-space transforms: for hidden dimension (e.g., 960 -> 896)
     feature_transforms: dict[int, list[list[float]]] | None = None
+    # Attention Q-space transforms: for q_proj/o_proj (e.g., 960 -> 896 for Q heads)
+    attention_transforms: dict[int, list[list[float]]] | None = None
+    # Attention KV-space transforms: for k_proj/v_proj (e.g., 320 -> 128 for GQA)
+    kv_transforms: dict[int, list[list[float]]] | None = None
     # Layer mapping: target_layer -> source_layer (from DP alignment)
     layer_mapping: dict[int, int] | None = None
 
@@ -391,7 +396,9 @@ def _probe_precise(
     # Raw CKA will be < 1.0 because coordinate systems differ. GramAligner FINDS
     # the correct transformation. If it can't achieve CKA = 1.0, the algorithm is broken.
     layer_mapping: dict[int, int] = {}  # target_layer -> source_layer
-    feature_transforms: dict[int, list[list[float]]] = {}  # target_layer -> transform
+    feature_transforms: dict[int, list[list[float]]] = {}  # target_layer -> hidden transform
+    attention_transforms: dict[int, list[list[float]]] = {}  # target_layer -> Q attention transform
+    kv_transforms: dict[int, list[list[float]]] = {}  # target_layer -> KV attention transform
     gram_aligner = GramAligner(backend=b)
 
     if source_layer_activations and target_layer_activations:
@@ -487,7 +494,7 @@ def _probe_precise(
 
                     if not alignment_result.is_perfect:
                         logger.warning(
-                            "PROBE: Layer %d -> %d alignment not perfect "
+                            "PROBE: Layer %d -> %d hidden alignment not perfect "
                             "(achieved_cka=%.4f, threshold=%.2e). "
                             "This indicates an alignment algorithm bug.",
                             src_layer,
@@ -495,6 +502,73 @@ def _probe_precise(
                             alignment_result.achieved_cka,
                             alignment_result.precision_threshold,
                         )
+
+                    # ================================================================
+                    # ATTENTION Q TRANSFORMS: Same process for attention activations
+                    # These are needed for q_proj and o_proj weight transplants
+                    # ================================================================
+                    if (
+                        src_layer in source_attention_activations
+                        and tgt_layer in target_attention_activations
+                    ):
+                        src_attn_list = source_attention_activations[src_layer]
+                        tgt_attn_list = target_attention_activations[tgt_layer]
+                        n_attn = min(len(src_attn_list), len(tgt_attn_list))
+                        if n_attn >= 2:
+                            src_attn = b.stack(src_attn_list[:n_attn], axis=0)
+                            tgt_attn = b.stack(tgt_attn_list[:n_attn], axis=0)
+                            src_attn = b.astype(src_attn, "float32")
+                            tgt_attn = b.astype(tgt_attn, "float32")
+                            b.eval(src_attn, tgt_attn)
+
+                            attn_result = gram_aligner.find_perfect_alignment(
+                                src_attn,
+                                tgt_attn,
+                            )
+                            attention_transforms[tgt_layer] = attn_result.feature_transform
+
+                            if not attn_result.is_perfect:
+                                logger.warning(
+                                    "PROBE: Layer %d -> %d attention Q alignment not perfect "
+                                    "(achieved_cka=%.4f).",
+                                    src_layer,
+                                    tgt_layer,
+                                    attn_result.achieved_cka,
+                                )
+
+                    # ================================================================
+                    # ATTENTION KV TRANSFORMS: Separate for GQA models (k_proj, v_proj)
+                    # KV heads are typically fewer than Q heads (e.g., 5 vs 15)
+                    # ================================================================
+                    if (
+                        src_layer in source_kv_activations
+                        and tgt_layer in target_kv_activations
+                    ):
+                        src_kv_list = source_kv_activations[src_layer]
+                        tgt_kv_list = target_kv_activations[tgt_layer]
+                        n_kv = min(len(src_kv_list), len(tgt_kv_list))
+                        if n_kv >= 2:
+                            src_kv = b.stack(src_kv_list[:n_kv], axis=0)
+                            tgt_kv = b.stack(tgt_kv_list[:n_kv], axis=0)
+                            src_kv = b.astype(src_kv, "float32")
+                            tgt_kv = b.astype(tgt_kv, "float32")
+                            b.eval(src_kv, tgt_kv)
+
+                            kv_result = gram_aligner.find_perfect_alignment(
+                                src_kv,
+                                tgt_kv,
+                            )
+                            kv_transforms[tgt_layer] = kv_result.feature_transform
+
+                            if not kv_result.is_perfect:
+                                logger.warning(
+                                    "PROBE: Layer %d -> %d attention KV alignment not perfect "
+                                    "(achieved_cka=%.4f).",
+                                    src_layer,
+                                    tgt_layer,
+                                    kv_result.achieved_cka,
+                                )
+
                 except Exception as e:
                     logger.warning(
                         "PROBE: GramAligner failed for layer %d -> %d: %s",
@@ -626,6 +700,8 @@ def _probe_precise(
         probe_ids=probe_ids,
         probe_domains=probe_domains,
         feature_transforms=feature_transforms if feature_transforms else None,
+        attention_transforms=attention_transforms if attention_transforms else None,
+        kv_transforms=kv_transforms if kv_transforms else None,
         layer_mapping=layer_mapping if layer_mapping else None,
     )
 

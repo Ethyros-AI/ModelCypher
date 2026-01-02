@@ -25,12 +25,12 @@ from unittest import mock
 
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.training.checkpoint_models import (
     CheckpointErrorKind,
     CheckpointMetadataV2,
 )
 from modelcypher.core.domain.training.checkpoint_persistence import (
-    MIN_DISK_SPACE_BYTES,
     CheckpointPersistence,
 )
 from modelcypher.core.domain.training.exceptions import CheckpointError
@@ -40,6 +40,12 @@ from modelcypher.core.domain.training.exceptions import CheckpointError
 def persistence():
     """Create a CheckpointPersistence instance."""
     return CheckpointPersistence()
+
+
+def _bytes_per_parameter() -> int:
+    backend = get_default_backend()
+    arr = backend.array([1.0])
+    return int(backend.to_numpy(arr).dtype.itemsize)
 
 
 @pytest.fixture
@@ -53,24 +59,29 @@ class TestEstimateCheckpointSize:
     """Tests for estimate_checkpoint_size()."""
 
     def test_small_model(self, persistence):
-        # 1M parameters = 4MB base + 10% overhead = 4.4MB
-        size = persistence.estimate_checkpoint_size(1_000_000)
-        assert size == int(4_000_000 * 1.1)
+        bytes_per_param = _bytes_per_parameter()
+        size = persistence.estimate_checkpoint_size(1_000_000, bytes_per_param)
+        assert size == 1_000_000 * bytes_per_param
 
     def test_large_model(self, persistence):
-        # 7B parameters = 28GB base + 10% overhead
-        size = persistence.estimate_checkpoint_size(7_000_000_000)
-        expected = int(7_000_000_000 * 4 * 1.1)
+        bytes_per_param = _bytes_per_parameter()
+        size = persistence.estimate_checkpoint_size(7_000_000_000, bytes_per_param)
+        expected = 7_000_000_000 * bytes_per_param
         assert size == expected
 
     def test_zero_parameters(self, persistence):
-        size = persistence.estimate_checkpoint_size(0)
+        size = persistence.estimate_checkpoint_size(0, _bytes_per_parameter())
         assert size == 0
 
-    def test_formula_is_4_bytes_per_param_plus_10_percent(self, persistence):
+    def test_formula_is_bytes_per_param_plus_metadata(self, persistence):
         params = 1234567
-        expected = int(params * 4 * 1.1)
-        assert persistence.estimate_checkpoint_size(params) == expected
+        bytes_per_param = _bytes_per_parameter()
+        metadata_bytes = 1024
+        expected = params * bytes_per_param + metadata_bytes
+        assert (
+            persistence.estimate_checkpoint_size(params, bytes_per_param, metadata_bytes)
+            == expected
+        )
 
 
 class TestEnsureSufficientSpace:
@@ -205,14 +216,3 @@ class TestDeleteCheckpoint:
         metadata = self._make_metadata(100)
         # Should not raise
         persistence.delete_checkpoint(metadata, temp_dir)
-
-
-class TestMinDiskSpaceConstant:
-    """Tests for MIN_DISK_SPACE_BYTES constant."""
-
-    def test_min_disk_space_is_500mb(self):
-        assert MIN_DISK_SPACE_BYTES == 500 * 1024 * 1024
-
-    def test_min_disk_space_in_bytes(self):
-        # 500MB = 524,288,000 bytes
-        assert MIN_DISK_SPACE_BYTES == 524288000

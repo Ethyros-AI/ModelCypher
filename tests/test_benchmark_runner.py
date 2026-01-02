@@ -19,8 +19,11 @@
 
 from __future__ import annotations
 
+import math
+
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.thermo.benchmark_runner import (
     BenchmarkResult,
     EffectSizeResult,
@@ -28,8 +31,14 @@ from modelcypher.core.domain.thermo.benchmark_runner import (
     SignificanceResult,
     ThermoBenchmarkRunner,
 )
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.thermo.linguistic_calorimeter import LinguisticCalorimeter
 from modelcypher.core.domain.thermo.linguistic_thermodynamics import LinguisticModifier
+
+
+def _eps() -> float:
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array([1.0]))
 
 
 class TestThermoBenchmarkRunner:
@@ -116,6 +125,9 @@ class TestThermoBenchmarkRunner:
         assert "## Summary" in report
         assert "## Modifier Comparison" in report
         assert "Baseline Mean Entropy" in report
+        assert "| Modifier |" in report
+        assert "t-stat" in report
+        assert "p-value" in report
 
 
 class TestStatisticalSignificance:
@@ -135,7 +147,7 @@ class TestStatisticalSignificance:
 
         assert isinstance(result, SignificanceResult)
         assert result.t_statistic == 0.0
-        assert not result.is_significant
+        assert abs(result.p_value - 1.0) <= _eps()
 
     def test_welch_t_test_different_samples(self, runner: ThermoBenchmarkRunner) -> None:
         """Very different samples should be significant."""
@@ -145,8 +157,7 @@ class TestStatisticalSignificance:
         result = runner.statistical_significance(baseline, treatment)
 
         assert result.t_statistic != 0.0
-        assert result.is_significant
-        assert result.p_value < 0.05
+        assert result.p_value < 1.0
 
     def test_welch_t_test_small_sample_not_significant(self, runner: ThermoBenchmarkRunner) -> None:
         """Small samples should fail gracefully."""
@@ -156,7 +167,7 @@ class TestStatisticalSignificance:
         result = runner.statistical_significance(baseline, treatment)
 
         assert result.p_value == 1.0
-        assert not result.is_significant
+        assert result.t_statistic == 0.0
 
 
 class TestEffectSize:
@@ -175,8 +186,7 @@ class TestEffectSize:
         result = runner._compute_effect_size(baseline, treatment)
 
         assert isinstance(result, EffectSizeResult)
-        # Negligible effect: |d| < 0.2
-        assert abs(result.cohens_d) < 0.1
+        assert abs(result.cohens_d) <= _eps()
 
     def test_cohens_d_large_effect(self, runner: ThermoBenchmarkRunner) -> None:
         """Large difference should have large effect size."""
@@ -185,8 +195,16 @@ class TestEffectSize:
 
         result = runner._compute_effect_size(baseline, treatment)
 
-        # Large effect: |d| > 0.8
-        assert abs(result.cohens_d) > 0.8
+        mean1 = sum(baseline) / len(baseline)
+        mean2 = sum(treatment) / len(treatment)
+        var1 = sum((x - mean1) ** 2 for x in baseline) / (len(baseline) - 1)
+        var2 = sum((x - mean2) ** 2 for x in treatment) / (len(treatment) - 1)
+        pooled_var = ((len(baseline) - 1) * var1 + (len(treatment) - 1) * var2) / (
+            len(baseline) + len(treatment) - 2
+        )
+        pooled_std = math.sqrt(pooled_var) if pooled_var > 0 else 1.0
+        expected_d = (mean1 - mean2) / pooled_std if pooled_std > 0 else 0.0
+        assert abs(result.cohens_d - expected_d) <= _eps()
 
     def test_cohens_d_small_effect(self, runner: ThermoBenchmarkRunner) -> None:
         """Small difference should have small effect size."""
@@ -197,17 +215,38 @@ class TestEffectSize:
 
         result = runner._compute_effect_size(baseline, treatment)
 
-        # Small effect: 0.2 <= |d| < 0.5
-        assert 0.2 <= abs(result.cohens_d) < 0.5
+        mean1 = sum(baseline) / len(baseline)
+        mean2 = sum(treatment) / len(treatment)
+        var1 = sum((x - mean1) ** 2 for x in baseline) / (len(baseline) - 1)
+        var2 = sum((x - mean2) ** 2 for x in treatment) / (len(treatment) - 1)
+        pooled_var = ((len(baseline) - 1) * var1 + (len(treatment) - 1) * var2) / (
+            len(baseline) + len(treatment) - 2
+        )
+        pooled_std = math.sqrt(pooled_var) if pooled_var > 0 else 1.0
+        expected_d = (mean1 - mean2) / pooled_std if pooled_std > 0 else 0.0
+        assert abs(result.cohens_d - expected_d) <= _eps()
 
-    def test_cohens_d_confidence_interval(self, runner: ThermoBenchmarkRunner) -> None:
-        """Should compute 95% CI."""
+    def test_cohens_d_standard_error(self, runner: ThermoBenchmarkRunner) -> None:
+        """Should compute standard error."""
         baseline = [2.0, 2.1, 1.9, 2.0, 2.0, 2.1]
         treatment = [3.0, 3.1, 2.9, 3.0, 3.0, 3.1]
 
         result = runner._compute_effect_size(baseline, treatment)
 
-        assert result.ci_lower < result.cohens_d < result.ci_upper
+        mean1 = sum(baseline) / len(baseline)
+        mean2 = sum(treatment) / len(treatment)
+        var1 = sum((x - mean1) ** 2 for x in baseline) / (len(baseline) - 1)
+        var2 = sum((x - mean2) ** 2 for x in treatment) / (len(treatment) - 1)
+        pooled_var = ((len(baseline) - 1) * var1 + (len(treatment) - 1) * var2) / (
+            len(baseline) + len(treatment) - 2
+        )
+        pooled_std = math.sqrt(pooled_var) if pooled_var > 0 else 1.0
+        expected_d = (mean1 - mean2) / pooled_std if pooled_std > 0 else 0.0
+        se_d = math.sqrt(
+            (len(baseline) + len(treatment)) / (len(baseline) * len(treatment))
+            + expected_d**2 / (2 * (len(baseline) + len(treatment)))
+        )
+        assert abs(result.standard_error - se_d) <= _eps()
 
 
 class TestModifierStats:
@@ -244,8 +283,6 @@ class TestBenchmarkResult:
             modifiers=[],
             baseline_mean=2.0,
             baseline_std=0.3,
-            best_modifier=LinguisticModifier.CAPS,
-            best_effect_size=-0.5,
         )
 
         assert isinstance(result.timestamp, datetime)

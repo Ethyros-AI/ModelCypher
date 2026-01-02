@@ -17,7 +17,7 @@
 
 """Checkpoint retention policy enforcement.
 
-Keeps N most recent checkpoints to prevent unbounded disk growth.
+Prunes only when explicitly configured to keep a bounded number of checkpoints.
 """
 
 from __future__ import annotations
@@ -33,14 +33,11 @@ logger = logging.getLogger(__name__)
 
 
 class CheckpointRetention:
-    """Enforces checkpoint retention (keeps N most recent, optional confirmation).
-
-    Prevents unbounded disk growth by pruning old checkpoints.
-    """
+    """Enforces checkpoint retention (keeps N most recent, optional confirmation)."""
 
     def __init__(
         self,
-        max_checkpoints: int = 3,
+        max_checkpoints: int | None = None,
         confirm_prune: bool = False,
         on_prune_requested: Callable[[str, int, int], None] | None = None,
     ):
@@ -48,17 +45,20 @@ class CheckpointRetention:
 
         Args:
             max_checkpoints: Maximum number of checkpoints to retain (minimum: 1).
+                If None, retention pruning is disabled.
             confirm_prune: If True, notify instead of auto-deleting.
             on_prune_requested: Callback when prune confirmation is requested.
                 Args: (checkpoints_dir, keep_count, pending_delete_count)
         """
-        self._max_checkpoints = max(1, max_checkpoints)
+        self._max_checkpoints = (
+            max(1, max_checkpoints) if max_checkpoints is not None else None
+        )
         self._confirm_prune = confirm_prune
         self._on_prune_requested = on_prune_requested
 
     @property
-    def max_checkpoints(self) -> int:
-        """Maximum number of checkpoints to retain."""
+    def max_checkpoints(self) -> int | None:
+        """Maximum number of checkpoints to retain, or None if disabled."""
         return self._max_checkpoints
 
     async def prune_old_checkpoints(
@@ -83,6 +83,9 @@ class CheckpointRetention:
         """
         checkpoints = await self._list_checkpoints(directory)
         checkpoints.sort(key=lambda c: c.step, reverse=True)
+
+        if self._max_checkpoints is None:
+            return 0
 
         if len(checkpoints) <= self._max_checkpoints:
             return 0

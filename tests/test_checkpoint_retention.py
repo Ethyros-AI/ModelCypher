@@ -66,7 +66,7 @@ class TestCheckpointRetentionInit:
 
     def test_default_max_checkpoints(self):
         retention = CheckpointRetention()
-        assert retention.max_checkpoints == 3
+        assert retention.max_checkpoints is None
 
     def test_custom_max_checkpoints(self):
         retention = CheckpointRetention(max_checkpoints=5)

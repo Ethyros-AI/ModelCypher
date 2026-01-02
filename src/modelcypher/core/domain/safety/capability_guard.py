@@ -193,7 +193,6 @@ class CapabilityGuard:
         # State
         self._adapter_capabilities: dict[UUID, AdapterCapabilityRecord] = {}
         self._violation_history: dict[UUID, list[CapabilityViolation]] = {}
-        self._disabled_adapters: set[UUID] = set()
 
     def register_adapter(
         self,
@@ -251,21 +250,8 @@ class CapabilityGuard:
             Check outcome indicating allowed, denied, or monitor-only.
         """
         # Disabled guard = always allow
-        if not self._configuration.is_enabled:
+        if self._configuration.enforcement_mode == EnforcementMode.DISABLED:
             return CapabilityCheckOutcome(result=CapabilityCheckResult.ALLOWED)
-
-        # Always-allowed capabilities bypass checks
-        if capability in self._configuration.always_allowed_capabilities:
-            return CapabilityCheckOutcome(result=CapabilityCheckResult.ALLOWED)
-
-        # Check if adapter is disabled
-        if adapter_id in self._disabled_adapters:
-            violation = self._make_violation(
-                adapter_id=adapter_id,
-                capability=capability,
-                resource_identifier=resource_identifier,
-            )
-            return CapabilityCheckOutcome(result=CapabilityCheckResult.DENIED, violation=violation)
 
         # Get adapter record
         record = self._adapter_capabilities.get(adapter_id)
@@ -331,11 +317,6 @@ class CapabilityGuard:
         )
 
     @property
-    def is_enabled(self) -> bool:
-        """Whether enforcement is currently enabled."""
-        return self._configuration.is_enabled
-
-    @property
     def enforcement_mode(self) -> EnforcementMode:
         """Current enforcement mode."""
         return self._configuration.enforcement_mode
@@ -363,17 +344,6 @@ class CapabilityGuard:
             result.extend(violations)
         return result
 
-    def is_adapter_disabled(self, adapter_id: UUID) -> bool:
-        """Check if an adapter is disabled.
-
-        Args:
-            adapter_id: Adapter to check.
-
-        Returns:
-            True if disabled.
-        """
-        return adapter_id in self._disabled_adapters
-
     def capabilities_for(self, adapter_id: UUID) -> frozenset[ResourceCapability] | None:
         """Get capabilities for a registered adapter.
 
@@ -390,18 +360,8 @@ class CapabilityGuard:
         """Reset all state (for testing)."""
         self._adapter_capabilities.clear()
         self._violation_history.clear()
-        self._disabled_adapters.clear()
         self._audit_log.reset()
         logger.info("CapabilityGuard state reset")
-
-    def reenable_adapter(self, adapter_id: UUID) -> None:
-        """Re-enable a disabled adapter.
-
-        Args:
-            adapter_id: Adapter to re-enable.
-        """
-        self._disabled_adapters.discard(adapter_id)
-        logger.info("Re-enabled adapter: %s", str(adapter_id)[:8])
 
     def _handle_violation(self, violation: CapabilityViolation) -> CapabilityCheckOutcome:
         """Handle a capability violation.
@@ -418,8 +378,7 @@ class CapabilityGuard:
         self._violation_history[violation.adapter_id].append(violation)
 
         # Log to audit trail
-        if self._configuration.audit_logging_enabled:
-            self._audit_log.log_violation(violation)
+        self._audit_log.log_violation(violation)
 
         logger.warning(
             "Capability violation: adapter=%s requested=%s declared=%s",
@@ -427,15 +386,6 @@ class CapabilityGuard:
             violation.requested_capability.value,
             [c.value for c in violation.declared_capabilities],
         )
-
-        # Check if adapter should be disabled
-        adapter_violations = len(self._violation_history.get(violation.adapter_id, []))
-        if adapter_violations >= self._configuration.max_violations_before_disable:
-            self._disabled_adapters.add(violation.adapter_id)
-            logger.error(
-                "Adapter disabled due to repeated violations: %s",
-                violation.adapter_name,
-            )
 
         # Return based on enforcement mode
         if self._configuration.enforcement_mode == EnforcementMode.ENFORCE:

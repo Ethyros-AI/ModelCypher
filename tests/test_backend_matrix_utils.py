@@ -24,6 +24,11 @@ import pytest
 from modelcypher.core.domain.geometry.backend_matrix_utils import (
     BackendMatrixUtils,
 )
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+    regularization_epsilon,
+)
 from modelcypher.ports.backend import Backend
 from tests.conftest import HAS_MLX
 
@@ -53,10 +58,11 @@ class TestGramMatrix:
         X = mlx_backend.eye(4)
         gram = utils.compute_gram_matrix(X, kernel="linear")
         gram_np = mlx_backend.to_numpy(gram)
+        tol = regularization_epsilon(mlx_backend, gram)
 
         # Use numpy for assert_allclose - unavoidable
         import numpy as np
-        np.testing.assert_allclose(gram_np, np.eye(4), rtol=1e-5)
+        np.testing.assert_allclose(gram_np, np.eye(4), rtol=tol, atol=tol)
 
     def test_linear_gram_matrix_orthonormal(
         self, utils: BackendMatrixUtils, mlx_backend: Backend
@@ -70,18 +76,20 @@ class TestGramMatrix:
 
         gram = utils.compute_gram_matrix(X, kernel="linear")
         gram_np = mlx_backend.to_numpy(gram)
+        tol = regularization_epsilon(mlx_backend, gram)
 
         # Should be close to identity
-        np.testing.assert_allclose(gram_np, np.eye(4), atol=1e-5)
+        np.testing.assert_allclose(gram_np, np.eye(4), atol=tol)
 
     def test_gram_matrix_symmetric(self, utils: BackendMatrixUtils, mlx_backend: Backend):
         """Gram matrix should be symmetric."""
         X = mlx_backend.random_normal((10, 5))
         gram = utils.compute_gram_matrix(X, kernel="linear")
         gram_np = mlx_backend.to_numpy(gram)
+        tol = regularization_epsilon(mlx_backend, gram)
 
         import numpy as np
-        np.testing.assert_allclose(gram_np, gram_np.T, rtol=1e-5)
+        np.testing.assert_allclose(gram_np, gram_np.T, rtol=tol, atol=tol)
 
     def test_gram_matrix_positive_semidefinite(
         self, utils: BackendMatrixUtils, mlx_backend: Backend
@@ -90,12 +98,12 @@ class TestGramMatrix:
         X = mlx_backend.random_normal((10, 5))
         gram = utils.compute_gram_matrix(X, kernel="linear")
         gram_np = mlx_backend.to_numpy(gram)
+        tol = regularization_epsilon(mlx_backend, gram)
 
         # Use numpy for eigvalsh - unavoidable
         import numpy as np
         eigenvalues = np.linalg.eigvalsh(gram_np)
-        # Float32 precision is ~1e-7, so use 1e-6 tolerance
-        assert np.all(eigenvalues >= -1e-6)
+        assert np.all(eigenvalues >= -tol)
 
 
 class TestCenterMatrix:
@@ -113,16 +121,16 @@ class TestCenterMatrix:
 
         centered = utils.center_matrix(K)
         centered_np = mlx_backend.to_numpy(centered)
+        tol = regularization_epsilon(mlx_backend, centered)
 
         # Use numpy for mean and assert_allclose - unavoidable
         import numpy as np
-        # Row means should be ~0 (float32 precision is ~1e-7)
         row_means = np.mean(centered_np, axis=1)
-        np.testing.assert_allclose(row_means, 0, atol=1e-6)
+        np.testing.assert_allclose(row_means, 0, atol=tol)
 
         # Column means should be ~0
         col_means = np.mean(centered_np, axis=0)
-        np.testing.assert_allclose(col_means, 0, atol=1e-6)
+        np.testing.assert_allclose(col_means, 0, atol=tol)
 
     def test_centering_idempotent(self, utils: BackendMatrixUtils, mlx_backend: Backend):
         """Centering twice should give same result as once."""
@@ -133,13 +141,14 @@ class TestCenterMatrix:
 
         centered_once = utils.center_matrix(K)
         centered_twice = utils.center_matrix(centered_once)
+        tol = regularization_epsilon(mlx_backend, centered_once)
 
         import numpy as np
         np.testing.assert_allclose(
             mlx_backend.to_numpy(centered_once),
             mlx_backend.to_numpy(centered_twice),
-            rtol=1e-5,
-            atol=1e-6,  # Needed for values near zero after centering
+            rtol=tol,
+            atol=tol,
         )
 
 
@@ -151,19 +160,21 @@ class TestPairwiseDistances:
         X = mlx_backend.random_normal((5, 3))
         sq_dists = utils.pairwise_squared_distances(X)
         sq_dists_np = mlx_backend.to_numpy(sq_dists)
+        tol = machine_epsilon(mlx_backend, sq_dists)
 
         # Diagonal should be zeros
         import numpy as np
-        np.testing.assert_allclose(np.diag(sq_dists_np), 0, atol=1e-10)
+        np.testing.assert_allclose(np.diag(sq_dists_np), 0, atol=tol)
 
     def test_distance_symmetric(self, utils: BackendMatrixUtils, mlx_backend: Backend):
         """Distance matrix should be symmetric."""
         X = mlx_backend.random_normal((10, 4))
         sq_dists = utils.pairwise_squared_distances(X)
         sq_dists_np = mlx_backend.to_numpy(sq_dists)
+        tol = regularization_epsilon(mlx_backend, sq_dists)
 
         import numpy as np
-        np.testing.assert_allclose(sq_dists_np, sq_dists_np.T, rtol=1e-5)
+        np.testing.assert_allclose(sq_dists_np, sq_dists_np.T, rtol=tol, atol=tol)
 
     def test_distance_non_negative(self, utils: BackendMatrixUtils, mlx_backend: Backend):
         """Squared distances should be non-negative."""
@@ -182,11 +193,12 @@ class TestPairwiseDistances:
 
         sq_dists_np = mlx_backend.to_numpy(sq_dists)
         dists_np = mlx_backend.to_numpy(dists)
+        tol = regularization_epsilon(mlx_backend, sq_dists)
 
         # d(0,1) = sqrt(9 + 16) = 5
         import numpy as np
-        np.testing.assert_allclose(sq_dists_np[0, 1], 25.0, rtol=1e-5)
-        np.testing.assert_allclose(dists_np[0, 1], 5.0, rtol=1e-5)
+        np.testing.assert_allclose(sq_dists_np[0, 1], 25.0, rtol=tol, atol=tol)
+        np.testing.assert_allclose(dists_np[0, 1], 5.0, rtol=tol, atol=tol)
 
 
 class TestProcrustesRotation:
@@ -198,11 +210,13 @@ class TestProcrustesRotation:
         result = utils.procrustes_rotation(X, X)
 
         R_np = mlx_backend.to_numpy(result.rotation)
+        tol = regularization_epsilon(mlx_backend, result.rotation)
+        residual_tol = division_epsilon(mlx_backend, result.rotation)
 
         # Should be identity (or very close)
         import numpy as np
-        np.testing.assert_allclose(R_np, np.eye(4), atol=1e-5)
-        assert result.residual < 1e-10
+        np.testing.assert_allclose(R_np, np.eye(4), atol=tol)
+        assert result.residual <= residual_tol
 
     def test_rotation_is_orthogonal(self, utils: BackendMatrixUtils, mlx_backend: Backend):
         """Procrustes rotation should be orthogonal (R^T R = I)."""
@@ -215,9 +229,7 @@ class TestProcrustesRotation:
         # R^T @ R should be identity (within float32 precision)
         import numpy as np
         should_be_identity = R_np.T @ R_np
-        # Use tolerance appropriate for accumulated matrix operations on float32
-        eps = np.finfo(R_np.dtype).eps
-        tol = np.sqrt(eps) * 10  # ~3.5e-3 for float32
+        tol = division_epsilon(mlx_backend, result.rotation) * R_np.shape[0]
         np.testing.assert_allclose(should_be_identity, np.eye(5), atol=tol)
 
     def test_determinant_positive(self, utils: BackendMatrixUtils, mlx_backend: Backend):
@@ -229,11 +241,9 @@ class TestProcrustesRotation:
         R_np = mlx_backend.to_numpy(result.rotation)
 
         import numpy as np
-        import math
         det = np.linalg.det(R_np)
-        # Use sqrt(machine_epsilon) as tolerance - standard for accumulated matrix ops
-        eps = np.finfo(R_np.dtype).eps
-        np.testing.assert_allclose(det, 1.0, atol=math.sqrt(eps))
+        tol = division_epsilon(mlx_backend, result.rotation)
+        np.testing.assert_allclose(det, 1.0, atol=tol)
 
     def test_known_rotation(self, utils: BackendMatrixUtils, mlx_backend: Backend):
         """Test with a known 90-degree rotation."""
@@ -251,9 +261,11 @@ class TestProcrustesRotation:
 
         result = utils.procrustes_rotation(source, target)
         R_np = mlx_backend.to_numpy(result.rotation)
+        tol = regularization_epsilon(mlx_backend, result.rotation)
+        residual_tol = division_epsilon(mlx_backend, result.rotation)
 
-        np.testing.assert_allclose(R_np, R_known, atol=1e-5)
-        assert result.residual < 1e-10
+        np.testing.assert_allclose(R_np, R_known, atol=tol)
+        assert result.residual <= residual_tol
 
 
 class TestProcrustesAlign:
@@ -282,17 +294,14 @@ class TestProcrustesAlign:
 
     def test_align_with_scaling(self, utils: BackendMatrixUtils, mlx_backend: Backend):
         """Test alignment with scaling enabled."""
-        import numpy as np
-        source_np = np.random.randn(10, 3)
-        target_np = source_np * 2.5  # Scaled version
-
-        source = mlx_backend.array(source_np)
-        target = mlx_backend.array(target_np)
+        source = mlx_backend.random_normal((10, 3))
+        scale_factor = 1.0 + division_epsilon(mlx_backend, source)
+        target = source * scale_factor
 
         _, result = utils.procrustes_align(source, target, allow_scaling=True)
 
-        # Scale should be close to 2.5
-        np.testing.assert_allclose(result.scale, 2.5, rtol=0.1)
+        tol = division_epsilon(mlx_backend, source)
+        assert abs(result.scale - scale_factor) <= tol
 
 
 class TestCosineSimilarityMatrix:
@@ -303,28 +312,31 @@ class TestCosineSimilarityMatrix:
         X = mlx_backend.random_normal((8, 4))
         sim = utils.cosine_similarity_matrix(X)
         sim_np = mlx_backend.to_numpy(sim)
+        tol = regularization_epsilon(mlx_backend, sim)
 
         import numpy as np
-        np.testing.assert_allclose(np.diag(sim_np), 1.0, atol=1e-5)
+        np.testing.assert_allclose(np.diag(sim_np), 1.0, atol=tol)
 
     def test_symmetric(self, utils: BackendMatrixUtils, mlx_backend: Backend):
         """Cosine similarity matrix should be symmetric."""
         X = mlx_backend.random_normal((10, 5))
         sim = utils.cosine_similarity_matrix(X)
         sim_np = mlx_backend.to_numpy(sim)
+        tol = regularization_epsilon(mlx_backend, sim)
 
         import numpy as np
-        np.testing.assert_allclose(sim_np, sim_np.T, rtol=1e-5)
+        np.testing.assert_allclose(sim_np, sim_np.T, rtol=tol, atol=tol)
 
     def test_range_bounded(self, utils: BackendMatrixUtils, mlx_backend: Backend):
         """Cosine similarity should be in [-1, 1]."""
         X = mlx_backend.random_normal((15, 6))
         sim = utils.cosine_similarity_matrix(X)
         sim_np = mlx_backend.to_numpy(sim)
+        tol = division_epsilon(mlx_backend, sim)
 
         import numpy as np
-        assert np.all(sim_np >= -1.0 - 1e-5)
-        assert np.all(sim_np <= 1.0 + 1e-5)
+        assert np.all(sim_np >= -1.0 - tol)
+        assert np.all(sim_np <= 1.0 + tol)
 
 
 class TestEffectiveRank:
@@ -335,14 +347,14 @@ class TestEffectiveRank:
         # Equal eigenvalues = uniform variance
         eigenvalues = mlx_backend.array([1.0, 1.0, 1.0, 1.0])
 
-        rank = utils.effective_rank(eigenvalues, variance_threshold=0.95)
-        assert rank == 4  # All components needed for 95%
+        rank = utils.effective_rank(eigenvalues)
+        assert rank == 4
 
     def test_single_dominant(self, utils: BackendMatrixUtils, mlx_backend: Backend):
         """One dominant eigenvalue should give rank 1."""
         eigenvalues = mlx_backend.array([100.0, 0.1, 0.1, 0.1])
 
-        rank = utils.effective_rank(eigenvalues, variance_threshold=0.95)
+        rank = utils.effective_rank(eigenvalues)
         assert rank == 1
 
     def test_entropy_effective_rank(self, utils: BackendMatrixUtils, mlx_backend: Backend):
@@ -352,12 +364,13 @@ class TestEffectiveRank:
 
         erank = utils.entropy_effective_rank(eigenvalues)
         import numpy as np
-        np.testing.assert_allclose(erank, 4.0, rtol=1e-5)
+        tol = division_epsilon(mlx_backend, eigenvalues)
+        np.testing.assert_allclose(erank, 4.0, rtol=tol, atol=tol)
 
         # Single eigenvalue: entropy rank should be 1
         eigenvalues_single = mlx_backend.array([1.0, 0.0, 0.0, 0.0])
         erank_single = utils.entropy_effective_rank(eigenvalues_single)
-        np.testing.assert_allclose(erank_single, 1.0, rtol=1e-5)
+        np.testing.assert_allclose(erank_single, 1.0, rtol=tol, atol=tol)
 
 
 class TestEigendecomposition:
@@ -375,12 +388,13 @@ class TestEigendecomposition:
 
         eig_np = mlx_backend.to_numpy(eigenvalues)
         vec_np = mlx_backend.to_numpy(eigenvectors)
+        tol = regularization_epsilon(mlx_backend, A)
 
         # Verify: A @ V = V @ diag(eigenvalues)
         import numpy as np
         AV = A_sym @ vec_np
         VD = vec_np @ np.diag(eig_np)
-        np.testing.assert_allclose(AV, VD, atol=1e-5)
+        np.testing.assert_allclose(AV, VD, atol=tol)
 
 
 class TestTrace:
@@ -391,7 +405,8 @@ class TestTrace:
         I = mlx_backend.eye(5)
         trace = utils.trace(I)
         import numpy as np
-        np.testing.assert_allclose(trace, 5.0, rtol=1e-5)
+        tol = division_epsilon(mlx_backend, I)
+        np.testing.assert_allclose(trace, 5.0, rtol=tol, atol=tol)
 
     def test_trace_matches_numpy(self, utils: BackendMatrixUtils, mlx_backend: Backend):
         """Trace should match numpy computation."""
@@ -402,7 +417,8 @@ class TestTrace:
         import numpy as np
         expected = np.trace(A_np)
 
-        np.testing.assert_allclose(trace, expected, rtol=1e-5)
+        tol = division_epsilon(mlx_backend, A)
+        np.testing.assert_allclose(trace, expected, rtol=tol, atol=tol)
 
 
 # =============================================================================
@@ -428,7 +444,8 @@ class TestMLXBackendMatrixUtils:
         # Should be symmetric
         gram_np = mlx_backend.to_numpy(gram)
         import numpy as np
-        np.testing.assert_allclose(gram_np, gram_np.T, rtol=1e-4)
+        tol = regularization_epsilon(mlx_backend, gram)
+        np.testing.assert_allclose(gram_np, gram_np.T, rtol=tol, atol=tol)
 
     def test_procrustes_rotation_mlx(self, mlx_utils: BackendMatrixUtils, mlx_backend):
         """Verify Procrustes rotation works on MLX."""
@@ -440,11 +457,9 @@ class TestMLXBackendMatrixUtils:
         # Rotation should be orthogonal
         R_np = mlx_backend.to_numpy(result.rotation)
         import numpy as np
-        import math
         should_be_identity = R_np.T @ R_np
-        # Use sqrt(machine_epsilon) as tolerance - standard for accumulated matrix ops
-        eps = np.finfo(R_np.dtype).eps
-        np.testing.assert_allclose(should_be_identity, np.eye(4), atol=math.sqrt(eps))
+        tol = division_epsilon(mlx_backend, result.rotation) * R_np.shape[0]
+        np.testing.assert_allclose(should_be_identity, np.eye(4), atol=tol)
 
     def test_pairwise_distances_mlx(self, mlx_utils: BackendMatrixUtils, mlx_backend):
         """Verify pairwise distances work on MLX."""
@@ -454,7 +469,8 @@ class TestMLXBackendMatrixUtils:
 
         # Should be symmetric and non-negative
         import numpy as np
-        np.testing.assert_allclose(dists_np, dists_np.T, rtol=1e-4)
+        tol = regularization_epsilon(mlx_backend, dists)
+        np.testing.assert_allclose(dists_np, dists_np.T, rtol=tol, atol=tol)
         assert np.all(dists_np >= 0)
 
     def test_cosine_similarity_matrix_mlx(self, mlx_utils: BackendMatrixUtils, mlx_backend):
@@ -465,4 +481,5 @@ class TestMLXBackendMatrixUtils:
 
         # Diagonal should be 1
         import numpy as np
-        np.testing.assert_allclose(np.diag(sim_np), 1.0, atol=1e-4)
+        tol = regularization_epsilon(mlx_backend, sim)
+        np.testing.assert_allclose(np.diag(sim_np), 1.0, atol=tol)

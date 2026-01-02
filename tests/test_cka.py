@@ -36,6 +36,10 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
 from modelcypher.core.domain.geometry.cka import (
     CKAComputer,
     CKAResult,
@@ -56,6 +60,14 @@ from modelcypher.core.domain.geometry.cka import (
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
+
+
+def _scalar_tol(backend: "Backend") -> float:
+    return division_epsilon(backend, backend.array([1.0]))
+
+
+def _array_tol(backend: "Backend", array) -> float:
+    return division_epsilon(backend, array)
 
 
 # =============================================================================
@@ -221,13 +233,14 @@ class TestCenterGramMatrix:
         centered_np = backend.to_numpy(centered)
         expected_diag = 1.0 - 1.0 / n
         expected_off = -1.0 / n
+        tol = _array_tol(backend, centered)
 
         for i in range(n):
             for j in range(n):
                 if i == j:
-                    assert abs(centered_np[i, j] - expected_diag) < 1e-5
+                    assert abs(centered_np[i, j] - expected_diag) <= tol
                 else:
-                    assert abs(centered_np[i, j] - expected_off) < 1e-5
+                    assert abs(centered_np[i, j] - expected_off) <= tol
 
     def test_centering_zeros(self, any_backend: "Backend") -> None:
         """Centering zero matrix should stay zero."""
@@ -236,7 +249,8 @@ class TestCenterGramMatrix:
         centered = _center_gram_matrix(gram, backend)
 
         centered_np = backend.to_numpy(centered)
-        assert abs(centered_np.sum()) < 1e-10
+        tol = _array_tol(backend, centered)
+        assert abs(centered_np.sum()) <= tol
 
     def test_centering_ones(self, any_backend: "Backend") -> None:
         """Centering all-ones matrix should produce all zeros."""
@@ -248,7 +262,8 @@ class TestCenterGramMatrix:
         # All-ones: col_mean = 1, row_mean = 1, grand_mean = 1
         # Centered = 1 - 1 - 1 + 1 = 0
         centered_np = backend.to_numpy(centered)
-        assert abs(centered_np.sum()) < 1e-10
+        tol = _array_tol(backend, centered)
+        assert abs(centered_np.sum()) <= tol
 
     def test_centering_preserves_shape(self, any_backend: "Backend") -> None:
         """Centering should preserve matrix shape."""
@@ -272,8 +287,8 @@ class TestCenterGramMatrix:
         c2 = backend.to_numpy(centered_twice)
 
         # Should be numerically identical (up to floating point)
-        # Use 1e-5 tolerance for float32 precision (~7 digits)
-        assert abs(c1 - c2).max() < 1e-5
+        tol = _array_tol(backend, centered_once)
+        assert abs(c1 - c2).max() <= tol
 
     def test_centering_row_and_col_sums_zero(self, any_backend: "Backend") -> None:
         """Centered Gram matrix should have row and column sums = 0."""
@@ -289,9 +304,9 @@ class TestCenterGramMatrix:
         row_sums = centered_np.sum(axis=1)
         col_sums = centered_np.sum(axis=0)
 
-        # Use 1e-5 tolerance for float32 precision
-        assert abs(row_sums).max() < 1e-5
-        assert abs(col_sums).max() < 1e-5
+        tol = _array_tol(backend, centered)
+        assert abs(row_sums).max() <= tol
+        assert abs(col_sums).max() <= tol
 
     def test_centering_empty_matrix(self, any_backend: "Backend") -> None:
         """Centering empty matrix should return empty."""
@@ -504,7 +519,8 @@ class TestParticipationRatio:
         pr = _participation_ratio(eigvals, backend)
 
         # sum^2 / sum_sq = (5*1)^2 / (5*1^2) = 25/5 = 5
-        assert abs(pr - 5.0) < 1e-5
+        tol = _array_tol(backend, eigvals)
+        assert abs(pr - 5.0) <= tol
 
     def test_single_nonzero_eigenvalue(self, any_backend: "Backend") -> None:
         """Single non-zero eigenvalue should give participation ratio = 1."""
@@ -513,7 +529,8 @@ class TestParticipationRatio:
         pr = _participation_ratio(eigvals, backend)
 
         # sum^2 / sum_sq = 1^2 / 1^2 = 1
-        assert abs(pr - 1.0) < 1e-5
+        tol = _array_tol(backend, eigvals)
+        assert abs(pr - 1.0) <= tol
 
     def test_negative_eigenvalues_clamped(self, any_backend: "Backend") -> None:
         """Negative eigenvalues should be clamped to zero."""
@@ -523,7 +540,8 @@ class TestParticipationRatio:
 
         # After clamping: [1, 1, 0, 0]
         # sum^2 / sum_sq = 4 / 2 = 2
-        assert abs(pr - 2.0) < 1e-5
+        tol = _array_tol(backend, eigvals)
+        assert abs(pr - 2.0) <= tol
 
     def test_all_zero_eigenvalues(self, any_backend: "Backend") -> None:
         """All zero eigenvalues should give participation ratio = 0."""
@@ -586,7 +604,8 @@ class TestComputeCKA:
         result = compute_cka(X, X, backend)
 
         assert result.is_valid
-        assert abs(result.cka - 1.0) < 1e-5
+        tol = _scalar_tol(backend)
+        assert abs(result.cka - 1.0) <= tol
 
     def test_cka_in_valid_range(self, any_backend: "Backend") -> None:
         """CKA should be in [0, 1]."""
@@ -737,7 +756,8 @@ class TestCKAInvarianceProperties:
         result_original = compute_cka(X, Y, backend)
         result_rotated = compute_cka(X_rotated, Y, backend)
 
-        assert abs(result_original.cka - result_rotated.cka) < 1e-4
+        tol = _scalar_tol(backend)
+        assert abs(result_original.cka - result_rotated.cka) <= tol
 
     def test_scale_invariance(self, any_backend: "Backend") -> None:
         """CKA should be invariant to scaling."""
@@ -754,7 +774,8 @@ class TestCKAInvarianceProperties:
         result_original = compute_cka(X, Y, backend)
         result_scaled = compute_cka(X_scaled, Y, backend)
 
-        assert abs(result_original.cka - result_scaled.cka) < 1e-4
+        tol = _scalar_tol(backend)
+        assert abs(result_original.cka - result_scaled.cka) <= tol
 
     def test_permutation_invariance(self, any_backend: "Backend") -> None:
         """CKA should be invariant to sample permutation (when applied to both)."""
@@ -771,7 +792,8 @@ class TestCKAInvarianceProperties:
         result_original = compute_cka(X, Y, backend)
         result_permuted = compute_cka(X_perm, Y_perm, backend)
 
-        assert abs(result_original.cka - result_permuted.cka) < 1e-4
+        tol = _scalar_tol(backend)
+        assert abs(result_original.cka - result_permuted.cka) <= tol
 
     def test_symmetry(self, any_backend: "Backend") -> None:
         """CKA(X, Y) should equal CKA(Y, X)."""
@@ -783,7 +805,8 @@ class TestCKAInvarianceProperties:
         result_xy = compute_cka(X, Y, backend)
         result_yx = compute_cka(Y, X, backend)
 
-        assert abs(result_xy.cka - result_yx.cka) < 1e-5
+        tol = _scalar_tol(backend)
+        assert abs(result_xy.cka - result_yx.cka) <= tol
 
 
 # =============================================================================
@@ -902,7 +925,8 @@ class TestComputeLayerCKA:
 
         result = compute_layer_cka(weights, weights, backend)
 
-        assert abs(result.cka - 1.0) < 1e-5
+        tol = _scalar_tol(backend)
+        assert abs(result.cka - 1.0) <= tol
 
     def test_different_shape_weights_aligned(self, any_backend: "Backend") -> None:
         """Weights with different shapes should be aligned to common dimensions."""
@@ -948,7 +972,8 @@ class TestComputeCKABackend:
 
         cka = compute_cka_backend(X, X, backend)
 
-        assert abs(cka - 1.0) < 1e-5
+        tol = _scalar_tol(backend)
+        assert abs(cka - 1.0) <= tol
 
     def test_basic_computation(self, any_backend: "Backend") -> None:
         """Basic CKA computation should work."""
@@ -1020,7 +1045,8 @@ class TestComputeCKAFromLists:
 
         cka = compute_cka_from_lists(x, x, backend)
 
-        assert abs(cka - 1.0) < 1e-4
+        tol = _scalar_tol(backend)
+        assert abs(cka - 1.0) <= tol
 
     def test_insufficient_samples(self, any_backend: "Backend") -> None:
         """Less than 2 samples should return 0.0."""
@@ -1078,7 +1104,8 @@ class TestComputeCKAFromGrams:
         cka = compute_cka_from_grams(gram_flat, gram_flat, n=5, backend=backend)
 
         # Same Gram matrix should give CKA = 1.0
-        assert abs(cka - 1.0) < 1e-4
+        tol = _scalar_tol(backend)
+        assert abs(cka - 1.0) <= tol
 
     def test_identical_grams_returns_one(self, any_backend: "Backend") -> None:
         """Identical Gram matrices should return CKA = 1.0."""
@@ -1090,7 +1117,8 @@ class TestComputeCKAFromGrams:
 
         cka = compute_cka_from_grams(gram, gram, backend=backend)
 
-        assert abs(cka - 1.0) < 1e-4
+        tol = _scalar_tol(backend)
+        assert abs(cka - 1.0) <= tol
 
     def test_mismatched_gram_shapes(self, any_backend: "Backend") -> None:
         """Mismatched Gram shapes should return 0.0."""
@@ -1132,7 +1160,8 @@ class TestComputeCKAFromGrams:
 
         cka = compute_cka_from_grams(gram_list, gram_list, n=3, backend=backend)
 
-        assert abs(cka - 1.0) < 1e-4
+        tol = _scalar_tol(backend)
+        assert abs(cka - 1.0) <= tol
 
     def test_with_unbiased_estimator(self, any_backend: "Backend") -> None:
         """CKA from Grams with unbiased estimator."""
@@ -1146,7 +1175,8 @@ class TestComputeCKAFromGrams:
             gram, gram, backend=backend, estimator=HSICEstimator.UNBIASED
         )
 
-        assert abs(cka - 1.0) < 1e-4
+        tol = _scalar_tol(backend)
+        assert abs(cka - 1.0) <= tol
 
     def test_with_feature_bias_correction(self, any_backend: "Backend") -> None:
         """CKA from Grams with feature bias correction."""
@@ -1165,7 +1195,8 @@ class TestComputeCKAFromGrams:
             feature_bias_correction=True,
         )
 
-        assert abs(cka - 1.0) < 1e-4
+        tol = _scalar_tol(backend)
+        assert abs(cka - 1.0) <= tol
 
 
 # =============================================================================
@@ -1212,7 +1243,8 @@ class TestCKAComputer:
 
         cka = computer.linear_cka(X, X)
 
-        assert abs(cka - 1.0) < 1e-5
+        tol = _scalar_tol(backend)
+        assert abs(cka - 1.0) <= tol
 
     def test_rbf_cka(self, any_backend: "Backend") -> None:
         """Test rbf_cka method."""

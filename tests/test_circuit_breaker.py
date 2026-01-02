@@ -23,6 +23,9 @@ persona drift, and oscillation magnitude.
 
 import pytest
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+
 from modelcypher.core.domain.safety.circuit_breaker_integration import (
     CircuitBreakerIntegration,
     CircuitBreakerState,
@@ -30,6 +33,16 @@ from modelcypher.core.domain.safety.circuit_breaker_integration import (
     SignalContributions,
     TriggerSource,
 )
+
+
+@pytest.fixture
+def backend():
+    """Provide backend for dtype-derived tolerances."""
+    return get_default_backend()
+
+
+def _eps(backend) -> float:
+    return machine_epsilon(backend, backend.array([1.0]))
 
 
 class TestInputSignals:
@@ -67,7 +80,7 @@ class TestInputSignals:
 class TestCircuitBreakerEvaluate:
     """Tests for CircuitBreakerIntegration.evaluate()."""
 
-    def test_evaluate_safe_signals(self):
+    def test_evaluate_safe_signals(self, backend):
         """Safe signals produce low severity."""
         signals = InputSignals(
             entropy_signal=0.2,
@@ -82,9 +95,9 @@ class TestCircuitBreakerEvaluate:
         assert state.severity > 0.0
         assert state.dominant_source == TriggerSource.entropy_spike
         expected = (0.2 + 0.1 + 0.05 + 0.0) / 4.0
-        assert abs(state.severity - expected) < 1e-10
+        assert abs(state.severity - expected) <= _eps(backend)
 
-    def test_evaluate_high_entropy(self):
+    def test_evaluate_high_entropy(self, backend):
         """High entropy dominates severity."""
         signals = InputSignals(
             entropy_signal=0.99,
@@ -99,9 +112,9 @@ class TestCircuitBreakerEvaluate:
 
         assert state.dominant_source == TriggerSource.entropy_spike
         expected = (0.99 + 0.8 + 0.6 + 0.8) / 4.0
-        assert abs(state.severity - expected) < 1e-10
+        assert abs(state.severity - expected) <= _eps(backend)
 
-    def test_evaluate_refusal_approach(self):
+    def test_evaluate_refusal_approach(self, backend):
         """Refusal proximity dominates when closest to boundary."""
         signals = InputSignals(
             entropy_signal=0.1,
@@ -116,9 +129,9 @@ class TestCircuitBreakerEvaluate:
 
         assert state.dominant_source == TriggerSource.refusal_approach
         expected = (0.1 + 0.99 + 0.2 + 0.3) / 4.0
-        assert abs(state.severity - expected) < 1e-10
+        assert abs(state.severity - expected) <= _eps(backend)
 
-    def test_evaluate_persona_drift_contribution(self):
+    def test_evaluate_persona_drift_contribution(self, backend):
         """Persona drift contributes directly to severity."""
         signals = InputSignals(
             entropy_signal=0.6,
@@ -130,11 +143,11 @@ class TestCircuitBreakerEvaluate:
 
         state = CircuitBreakerIntegration.evaluate(signals)
 
-        assert abs(state.signal_contributions.persona_drift - 0.8) < 1e-10
+        assert abs(state.signal_contributions.persona_drift - 0.8) <= _eps(backend)
         expected = (0.6 + 0.5 + 0.8 + 0.0) / 4.0
-        assert abs(state.severity - expected) < 1e-10
+        assert abs(state.severity - expected) <= _eps(backend)
 
-    def test_evaluate_oscillation_contribution(self):
+    def test_evaluate_oscillation_contribution(self, backend):
         """Oscillation contributes directly to severity."""
         signals = InputSignals(
             entropy_signal=0.5,
@@ -147,15 +160,15 @@ class TestCircuitBreakerEvaluate:
 
         state = CircuitBreakerIntegration.evaluate(signals)
 
-        assert abs(state.signal_contributions.oscillation - 0.9) < 1e-10
+        assert abs(state.signal_contributions.oscillation - 0.9) <= _eps(backend)
         expected = (0.5 + 0.4 + 0.3 + 0.9) / 4.0
-        assert abs(state.severity - expected) < 1e-10
+        assert abs(state.severity - expected) <= _eps(backend)
 
 
 class TestSignalContributions:
     """Tests for signal contribution calculations."""
 
-    def test_contributions_sum_to_severity(self):
+    def test_contributions_sum_to_severity(self, backend):
         """Signal contributions mean should equal severity."""
         signals = InputSignals(
             entropy_signal=0.5,
@@ -169,7 +182,7 @@ class TestSignalContributions:
         contrib = state.signal_contributions
 
         total = contrib.entropy + contrib.refusal + contrib.persona_drift + contrib.oscillation
-        assert abs((total / 4.0) - state.severity) < 1e-10
+        assert abs((total / 4.0) - state.severity) <= _eps(backend)
 
     def test_dominant_source_calculation(self):
         """Dominant source should be the highest contributor."""

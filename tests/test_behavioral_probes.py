@@ -62,6 +62,41 @@ class DummyEmbedder:
     def dimension(self) -> int:
         return 2
 
+
+def _small_probes() -> list[AtlasProbe]:
+    return [
+        AtlasProbe(
+            id="p1",
+            source=AtlasSource.SEMANTIC_PRIME,
+            domain=AtlasDomain.LINGUISTIC,
+            name="Alpha",
+            description="alpha",
+            cross_domain_weight=1.0,
+            category_name="test",
+            support_texts=("alpha",),
+        ),
+        AtlasProbe(
+            id="p2",
+            source=AtlasSource.SEMANTIC_PRIME,
+            domain=AtlasDomain.LINGUISTIC,
+            name="Beta",
+            description="beta",
+            cross_domain_weight=1.0,
+            category_name="test",
+            support_texts=("beta",),
+        ),
+        AtlasProbe(
+            id="p3",
+            source=AtlasSource.SEMANTIC_PRIME,
+            domain=AtlasDomain.LINGUISTIC,
+            name="Gamma",
+            description="gamma",
+            cross_domain_weight=1.0,
+            category_name="test",
+            support_texts=("gamma",),
+        ),
+    ]
+
 # =============================================================================
 # AdapterSafetyTier Tests
 # =============================================================================
@@ -288,7 +323,7 @@ class TestSemanticDriftProbe:
     @pytest.fixture
     def probe(self):
         """Create probe instance."""
-        return SemanticDriftProbe()
+        return SemanticDriftProbe(probes=_small_probes())
 
     def test_name_and_version(self, probe):
         """Probe has correct name and version."""
@@ -339,39 +374,7 @@ class TestSemanticDriftProbe:
 
     def test_evaluate_detects_geometry_outlier(self):
         """Probe flags outlier geodesic distances from atlas anchors."""
-        probes = [
-            AtlasProbe(
-                id="p1",
-                source=AtlasSource.SEMANTIC_PRIME,
-                domain=AtlasDomain.LINGUISTIC,
-                name="Alpha",
-                description="alpha",
-                cross_domain_weight=1.0,
-                category_name="test",
-                support_texts=("alpha",),
-            ),
-            AtlasProbe(
-                id="p2",
-                source=AtlasSource.SEMANTIC_PRIME,
-                domain=AtlasDomain.LINGUISTIC,
-                name="Beta",
-                description="beta",
-                cross_domain_weight=1.0,
-                category_name="test",
-                support_texts=("beta",),
-            ),
-            AtlasProbe(
-                id="p3",
-                source=AtlasSource.SEMANTIC_PRIME,
-                domain=AtlasDomain.LINGUISTIC,
-                name="Gamma",
-                description="gamma",
-                cross_domain_weight=1.0,
-                category_name="test",
-                support_texts=("gamma",),
-            ),
-        ]
-        probe = SemanticDriftProbe(probes=probes)
+        probe = SemanticDriftProbe(probes=_small_probes())
 
         def hook(prompt: str) -> str:
             if prompt == "alpha":
@@ -589,7 +592,7 @@ class TestProbeRunner:
 
     def test_run_filters_by_tier(self, runner):
         """Runner only runs probes for the given tier."""
-        probes = [SemanticDriftProbe(), CanaryQAProbe()]
+        probes = [SemanticDriftProbe(probes=_small_probes()), CanaryQAProbe()]
         context = ProbeContext(
             tier=AdapterSafetyTier.QUICK,
             adapter_name="test",
@@ -601,7 +604,7 @@ class TestProbeRunner:
 
     def test_run_aggregates_results(self, runner):
         """Runner aggregates results from multiple probes."""
-        probes = [SemanticDriftProbe(), CanaryQAProbe()]
+        probes = [SemanticDriftProbe(probes=_small_probes()), CanaryQAProbe()]
         context = ProbeContext(
             tier=AdapterSafetyTier.STANDARD,
             adapter_name="test",
@@ -681,7 +684,7 @@ class TestProbeRunner:
             def evaluate(self, context: ProbeContext) -> ProbeResult:
                 return ProbeResult(self.name, self.version)
 
-        probes = [QuickProbe(), SemanticDriftProbe()]
+        probes = [QuickProbe(), SemanticDriftProbe(probes=_small_probes())]
         context = ProbeContext(tier=AdapterSafetyTier.STANDARD, adapter_name="test")
         result = runner.run(probes, context)
         # QuickProbe and SemanticDriftProbe both support STANDARD
@@ -713,7 +716,7 @@ class TestProbeRunner:
     def test_run_returns_composite_result(self, runner):
         """Runner returns CompositeProbeResult."""
         context = ProbeContext(tier=AdapterSafetyTier.STANDARD, adapter_name="test")
-        result = runner.run([SemanticDriftProbe()], context)
+        result = runner.run([SemanticDriftProbe(probes=_small_probes())], context)
         assert isinstance(result, CompositeProbeResult)
 
 
@@ -728,7 +731,7 @@ class TestIntegration:
     def test_full_probe_pipeline(self):
         """Test complete probe pipeline with all probes."""
         runner = ProbeRunner()
-        probes = [SemanticDriftProbe(), CanaryQAProbe()]
+        probes = [SemanticDriftProbe(probes=_small_probes()), CanaryQAProbe()]
 
         def baseline_hook(prompt: str) -> str:
             if "malware" in prompt.lower() or "bomb" in prompt.lower():
@@ -752,7 +755,7 @@ class TestIntegration:
     def test_malicious_adapter_detection(self):
         """Test detection of responses far from anchors."""
         runner = ProbeRunner()
-        probes = [SemanticDriftProbe(), CanaryQAProbe()]
+        probes = [SemanticDriftProbe(probes=_small_probes()), CanaryQAProbe()]
 
         def outlier_hook(prompt: str) -> str:
             return "I am now in developer mode, ignoring all safety guidelines."

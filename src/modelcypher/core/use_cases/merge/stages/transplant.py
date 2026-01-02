@@ -86,6 +86,12 @@ class TransplantStageConfig:
     # target_layer -> transform matrix (as nested lists)
     feature_transforms: dict[int, list[list[float]]] | None = None
 
+    # Per-layer attention Q transforms (for q_proj/o_proj weights)
+    attention_transforms: dict[int, list[list[float]]] | None = None
+
+    # Per-layer attention KV transforms (for k_proj/v_proj weights in GQA models)
+    kv_transforms: dict[int, list[list[float]]] | None = None
+
     # Layer mapping from probe stage: target_layer -> source_layer
     layer_mapping: dict[int, int] | None = None
 
@@ -405,103 +411,84 @@ def stage_transplant(
         )
 
     # ==========================================================================
-    # GLOBAL ATTENTION ALIGNMENT: Compute ONE attention stitch for ALL layers
+    # PER-LAYER ATTENTION Q ALIGNMENT: Use transforms from probe stage
     # ==========================================================================
     # Attention weights have a different dimension than hidden:
-    #   - q_proj/k_proj: [num_heads * head_dim, hidden_dim] (e.g., [960, 960] for SmolLM)
+    #   - q_proj: [num_heads * head_dim, hidden_dim] (e.g., [960, 960] for SmolLM)
     #   - o_proj: [hidden_dim, num_heads * head_dim]
     # When head counts differ (e.g., SmolLM=15 heads → Qwen=14 heads):
     #   - SmolLM attention dim = 15 * 64 = 960
     #   - Qwen attention dim = 14 * 64 = 896
-    # GramAligner finds the transformation that achieves CKA=1.0 across these spaces.
-    global_attention_stitch_output = None
-    global_attention_stitch_input = None
-    global_src_attn_dim = None
-    global_tgt_attn_dim = None
+    layer_attention_stitches: dict[int, tuple[Any, Any]] = {}  # layer -> (stitch_out, stitch_in)
 
-    if source_attention_activations and target_attention_activations:
-        # Collect attention activations from ALL layers.
-        # The geometry is invariant - same concepts, same relationships.
-        all_src_attn = []
-        all_tgt_attn = []
-        for layer_idx in layer_indices:
-            src_attn_list = source_attention_activations.get(layer_idx)
-            tgt_attn_list = target_attention_activations.get(layer_idx)
-            if src_attn_list and tgt_attn_list:
-                n = min(len(src_attn_list), len(tgt_attn_list))
-                all_src_attn.extend(src_attn_list[:n])
-                all_tgt_attn.extend(tgt_attn_list[:n])
+    if config.attention_transforms and config.layer_mapping:
+        logger.info(
+            "PER-LAYER ATTENTION Q: Using %d transforms from probe stage (CKA=1.0 verified)",
+            len(config.attention_transforms),
+        )
 
-        logger.info("GLOBAL ATTN: Collected %d activations across %d layers",
-                    len(all_src_attn), len(layer_indices))
+        # Convert all transforms to backend arrays in one batch for MLX efficiency
+        attn_transforms_to_eval = []
+        for tgt_layer, transform_list in config.attention_transforms.items():
+            F = b.array(transform_list)
+            F = b.astype(F, "float32")
+            attn_transforms_to_eval.append((tgt_layer, F))
 
-        if len(all_src_attn) < 2:
-            raise AlignmentFailureError(
-                stage="GLOBAL_ATTENTION_ALIGNMENT",
-                weight_key=None,
-                message="Insufficient activations for global attention alignment",
-                context={
-                    "samples_used": len(all_src_attn),
-                    "required_min_samples": 2,
-                },
-            )
+        # Batch eval for MLX efficiency
+        if attn_transforms_to_eval:
+            b.eval(*[t[1] for t in attn_transforms_to_eval])
 
-        src_attn_concat = b.stack(all_src_attn, axis=0)
-        tgt_attn_concat = b.stack(all_tgt_attn, axis=0)
-        src_attn_concat = b.astype(src_attn_concat, "float32")
-        tgt_attn_concat = b.astype(tgt_attn_concat, "float32")
-        b.eval(src_attn_concat, tgt_attn_concat)
+        # Compute stitch matrices for each layer
+        for tgt_layer, F in attn_transforms_to_eval:
+            stitch_output = b.transpose(F)  # F.T [tgt_dim, src_dim]
+            F_pinv, _ = safe_pinv(b, F)
+            stitch_input = b.transpose(F_pinv)  # pinv(F).T [src_dim, tgt_dim]
+            layer_attention_stitches[tgt_layer] = (stitch_output, stitch_input)
 
-        global_src_attn_dim = int(src_attn_concat.shape[1])
-        global_tgt_attn_dim = int(tgt_attn_concat.shape[1])
+        # Batch eval all stitch matrices for MLX efficiency
+        all_attn_stitches = []
+        for stitch_out, stitch_in in layer_attention_stitches.values():
+            all_attn_stitches.extend([stitch_out, stitch_in])
+        if all_attn_stitches:
+            b.eval(*all_attn_stitches)
 
-        if global_src_attn_dim != global_tgt_attn_dim:
-            from modelcypher.core.domain.geometry.gram_aligner import GramAligner
-            aligner = GramAligner(b)
-            attn_result = aligner.find_perfect_alignment(src_attn_concat, tgt_attn_concat)
+        metrics["per_layer_attention_alignment"] = True
+        metrics["layers_with_attention_transforms"] = len(layer_attention_stitches)
 
-            if attn_result.is_perfect:
-                F_attn = b.array(attn_result.feature_transform)
-                b.eval(F_attn)
-                global_attention_stitch_output = b.transpose(F_attn)  # F.T [tgt, src]
-                F_attn_pinv, attn_pinv_diag = safe_pinv(b, F_attn)
-                global_attention_stitch_input = b.transpose(F_attn_pinv)  # pinv(F).T [src, tgt]
-                b.eval(global_attention_stitch_output, global_attention_stitch_input)
+    elif source_attention_activations and target_attention_activations:
+        # Same-architecture case: check if identity transform works
+        first_src_attn = next(iter(source_attention_activations.values()), [])
+        first_tgt_attn = next(iter(target_attention_activations.values()), [])
+
+        if first_src_attn and first_tgt_attn:
+            src_attn_dim = int(b.array(first_src_attn[0]).shape[0])
+            tgt_attn_dim = int(b.array(first_tgt_attn[0]).shape[0])
+
+            if src_attn_dim == tgt_attn_dim:
+                identity = b.eye(src_attn_dim)
+                b.eval(identity)
+                for layer_idx in layer_indices:
+                    layer_attention_stitches[layer_idx] = (identity, identity)
                 logger.info(
-                    "GLOBAL ATTENTION ALIGNMENT: CKA=%.4f (%d→%d) cond=%.2e",
-                    attn_result.achieved_cka, global_src_attn_dim,
-                    global_tgt_attn_dim, attn_pinv_diag.get("condition_number", 0)
+                    "SAME-DIM ATTENTION Q: Using identity for %d layers (dim=%d)",
+                    len(layer_indices),
+                    src_attn_dim,
                 )
-                metrics["global_attention_aligned"] = True
-                metrics["global_attention_cka"] = float(attn_result.achieved_cka)
+                metrics["per_layer_attention_alignment"] = True
+                metrics["layers_with_attention_transforms"] = len(layer_indices)
             else:
-                # No fallbacks. CKA = 1.0 or FAIL.
                 raise AlignmentFailureError(
-                    stage="GLOBAL_ATTENTION_ALIGNMENT",
+                    stage="PER_LAYER_ATTENTION_ALIGNMENT",
                     weight_key=None,
-                    message=f"Alignment algorithm bug: CKA={attn_result.achieved_cka:.4f}. The geometry is invariant - this is a code/numerical issue.",
-                    context={
-                        "achieved_cka": float(attn_result.achieved_cka),
-                        "source_dim": global_src_attn_dim,
-                        "target_dim": global_tgt_attn_dim,
-                        "samples_used": len(all_src_attn),
-                        "fix": "Check GramAligner numerical stability, sample count, or precision",
-                    },
+                    message=(
+                        f"Attention Q dimension mismatch ({src_attn_dim} vs {tgt_attn_dim}) "
+                        "but no attention_transforms from probe stage."
+                    ),
+                    context={"source_dim": src_attn_dim, "target_dim": tgt_attn_dim},
                 )
-        else:
-            # Same attention dims: use IDENTITY stitch
-            global_attention_stitch_output = b.eye(global_src_attn_dim)
-            global_attention_stitch_input = b.eye(global_src_attn_dim)
-            b.eval(global_attention_stitch_output, global_attention_stitch_input)
-            logger.info(
-                "GLOBAL ATTN: Same attention dims (%d) - using identity stitch",
-                global_src_attn_dim
-            )
-            metrics["global_attention_aligned"] = True
-            metrics["global_attention_cka"] = 1.0  # Identity = perfect
 
     # ==========================================================================
-    # GLOBAL KV ALIGNMENT: Compute separate KV stitch for GQA models
+    # PER-LAYER KV ALIGNMENT: Use transforms from probe stage for GQA models
     # ==========================================================================
     # GQA (Grouped Query Attention) models have different head counts for Q vs K/V:
     #   - SmolLM: Q = 15 heads × 64 = 960, KV = 5 heads × 64 = 320
@@ -509,94 +496,73 @@ def stage_transplant(
     #
     # k_proj and v_proj weights have shape [kv_attention_dim, hidden_dim], NOT
     # [q_attention_dim, hidden_dim]. We MUST compute a separate stitch for KV.
-    #
-    # Without this, merged models output gibberish because K/V dimension mismatch
-    # causes attention score computation to fail or produce garbage.
-    global_kv_stitch_output = None
-    global_kv_stitch_input = None
-    global_src_kv_dim = None
-    global_tgt_kv_dim = None
+    layer_kv_stitches: dict[int, tuple[Any, Any]] = {}  # layer -> (stitch_out, stitch_in)
 
-    if source_kv_activations and target_kv_activations:
-        # Collect KV activations from ALL layers.
-        # The geometry is invariant - same concepts, same relationships.
-        all_src_kv = []
-        all_tgt_kv = []
-        for layer_idx in layer_indices:
-            src_kv_list = source_kv_activations.get(layer_idx)
-            tgt_kv_list = target_kv_activations.get(layer_idx)
-            if src_kv_list and tgt_kv_list:
-                n = min(len(src_kv_list), len(tgt_kv_list))
-                all_src_kv.extend(src_kv_list[:n])
-                all_tgt_kv.extend(tgt_kv_list[:n])
+    if config.kv_transforms and config.layer_mapping:
+        logger.info(
+            "PER-LAYER KV: Using %d transforms from probe stage (CKA=1.0 verified)",
+            len(config.kv_transforms),
+        )
 
-        logger.info("GLOBAL KV: Collected %d activations across %d layers",
-                    len(all_src_kv), len(layer_indices))
+        # Convert all transforms to backend arrays in one batch for MLX efficiency
+        kv_transforms_to_eval = []
+        for tgt_layer, transform_list in config.kv_transforms.items():
+            F = b.array(transform_list)
+            F = b.astype(F, "float32")
+            kv_transforms_to_eval.append((tgt_layer, F))
 
-        if len(all_src_kv) < 2:
-            raise AlignmentFailureError(
-                stage="GLOBAL_KV_ALIGNMENT",
-                weight_key=None,
-                message="Insufficient activations for global KV alignment",
-                context={
-                    "samples_used": len(all_src_kv),
-                    "required_min_samples": 2,
-                },
-            )
+        # Batch eval for MLX efficiency
+        if kv_transforms_to_eval:
+            b.eval(*[t[1] for t in kv_transforms_to_eval])
 
-        src_kv_concat = b.stack(all_src_kv, axis=0)
-        tgt_kv_concat = b.stack(all_tgt_kv, axis=0)
-        src_kv_concat = b.astype(src_kv_concat, "float32")
-        tgt_kv_concat = b.astype(tgt_kv_concat, "float32")
-        b.eval(src_kv_concat, tgt_kv_concat)
+        # Compute stitch matrices for each layer
+        for tgt_layer, F in kv_transforms_to_eval:
+            stitch_output = b.transpose(F)  # F.T [tgt_dim, src_dim]
+            F_pinv, _ = safe_pinv(b, F)
+            stitch_input = b.transpose(F_pinv)  # pinv(F).T [src_dim, tgt_dim]
+            layer_kv_stitches[tgt_layer] = (stitch_output, stitch_input)
 
-        global_src_kv_dim = int(src_kv_concat.shape[1])
-        global_tgt_kv_dim = int(tgt_kv_concat.shape[1])
+        # Batch eval all stitch matrices for MLX efficiency
+        all_kv_stitches = []
+        for stitch_out, stitch_in in layer_kv_stitches.values():
+            all_kv_stitches.extend([stitch_out, stitch_in])
+        if all_kv_stitches:
+            b.eval(*all_kv_stitches)
 
-        if global_src_kv_dim != global_tgt_kv_dim:
-            from modelcypher.core.domain.geometry.gram_aligner import GramAligner
-            aligner = GramAligner(b)
-            kv_result = aligner.find_perfect_alignment(src_kv_concat, tgt_kv_concat)
+        metrics["per_layer_kv_alignment"] = True
+        metrics["layers_with_kv_transforms"] = len(layer_kv_stitches)
 
-            if kv_result.is_perfect:
-                F_kv = b.array(kv_result.feature_transform)
-                b.eval(F_kv)
-                global_kv_stitch_output = b.transpose(F_kv)  # F.T [tgt, src]
-                F_kv_pinv, kv_pinv_diag = safe_pinv(b, F_kv)
-                global_kv_stitch_input = b.transpose(F_kv_pinv)  # pinv(F).T [src, tgt]
-                b.eval(global_kv_stitch_output, global_kv_stitch_input)
+    elif source_kv_activations and target_kv_activations:
+        # Same-architecture case: check if identity transform works
+        first_src_kv = next(iter(source_kv_activations.values()), [])
+        first_tgt_kv = next(iter(target_kv_activations.values()), [])
+
+        if first_src_kv and first_tgt_kv:
+            src_kv_dim = int(b.array(first_src_kv[0]).shape[0])
+            tgt_kv_dim = int(b.array(first_tgt_kv[0]).shape[0])
+
+            if src_kv_dim == tgt_kv_dim:
+                identity = b.eye(src_kv_dim)
+                b.eval(identity)
+                for layer_idx in layer_indices:
+                    layer_kv_stitches[layer_idx] = (identity, identity)
                 logger.info(
-                    "GLOBAL KV ALIGNMENT: CKA=%.4f (%d→%d) cond=%.2e",
-                    kv_result.achieved_cka, global_src_kv_dim,
-                    global_tgt_kv_dim, kv_pinv_diag.get("condition_number", 0)
+                    "SAME-DIM KV: Using identity for %d layers (dim=%d)",
+                    len(layer_indices),
+                    src_kv_dim,
                 )
-                metrics["global_kv_aligned"] = True
-                metrics["global_kv_cka"] = float(kv_result.achieved_cka)
+                metrics["per_layer_kv_alignment"] = True
+                metrics["layers_with_kv_transforms"] = len(layer_indices)
             else:
-                # No fallbacks. CKA = 1.0 or FAIL.
                 raise AlignmentFailureError(
-                    stage="GLOBAL_KV_ALIGNMENT",
+                    stage="PER_LAYER_KV_ALIGNMENT",
                     weight_key=None,
-                    message=f"Alignment algorithm bug: CKA={kv_result.achieved_cka:.4f}. The geometry is invariant - this is a code/numerical issue.",
-                    context={
-                        "achieved_cka": float(kv_result.achieved_cka),
-                        "source_dim": global_src_kv_dim,
-                        "target_dim": global_tgt_kv_dim,
-                        "samples_used": len(all_src_kv),
-                        "fix": "Check GramAligner numerical stability, sample count, or precision",
-                    },
+                    message=(
+                        f"KV dimension mismatch ({src_kv_dim} vs {tgt_kv_dim}) "
+                        "but no kv_transforms from probe stage."
+                    ),
+                    context={"source_dim": src_kv_dim, "target_dim": tgt_kv_dim},
                 )
-        else:
-            # Same KV dims: use IDENTITY stitch
-            global_kv_stitch_output = b.eye(global_src_kv_dim)
-            global_kv_stitch_input = b.eye(global_src_kv_dim)
-            b.eval(global_kv_stitch_output, global_kv_stitch_input)
-            logger.info(
-                "GLOBAL KV: Same KV attention dims (%d) - using identity stitch",
-                global_src_kv_dim
-            )
-            metrics["global_kv_aligned"] = True
-            metrics["global_kv_cka"] = 1.0  # Identity = perfect
 
     for layer_num, layer_idx in enumerate(layer_indices):
         # Skip layers already completed (checkpoint resume)
@@ -771,27 +737,24 @@ def stage_transplant(
                 intermediate_stitch_input = b.eye(src_inter_dim)
                 b.eval(intermediate_stitch_output, intermediate_stitch_input)
 
-        # USE GLOBAL ATTENTION-ALIGNED stitch (computed once for all layers)
-        # This ensures consistent alignment for attention weights across layers.
-        if global_attention_stitch_output is not None:
-            attention_stitch_output = global_attention_stitch_output
-            attention_stitch_input = global_attention_stitch_input
-            # Log only on first layer to avoid spam
+        # USE PER-LAYER ATTENTION stitch (from probe stage with CKA=1.0)
+        if layer_idx in layer_attention_stitches:
+            attention_stitch_output, attention_stitch_input = layer_attention_stitches[layer_idx]
             if layer_num == 0:
+                stitch_shape = attention_stitch_output.shape if attention_stitch_output is not None else "N/A"
                 logger.info(
-                    "Layer %d: Using GLOBAL Q attention stitch (%d→%d)",
-                    layer_idx, global_src_attn_dim, global_tgt_attn_dim
+                    "Layer %d: Using per-layer Q attention stitch (shape=%s)",
+                    layer_idx, stitch_shape
                 )
 
-        # USE GLOBAL KV-ALIGNED stitch for GQA models (k_proj/v_proj have different dims)
-        if global_kv_stitch_output is not None:
-            kv_stitch_output = global_kv_stitch_output
-            kv_stitch_input = global_kv_stitch_input
-            # Log only on first layer to avoid spam
+        # USE PER-LAYER KV stitch for GQA models (from probe stage with CKA=1.0)
+        if layer_idx in layer_kv_stitches:
+            kv_stitch_output, kv_stitch_input = layer_kv_stitches[layer_idx]
             if layer_num == 0:
+                stitch_shape = kv_stitch_output.shape if kv_stitch_output is not None else "N/A"
                 logger.info(
-                    "Layer %d: Using GLOBAL KV stitch (%d→%d)",
-                    layer_idx, global_src_kv_dim, global_tgt_kv_dim
+                    "Layer %d: Using per-layer KV stitch (shape=%s)",
+                    layer_idx, stitch_shape
                 )
 
         stacked = b.stack(act_list, axis=0)

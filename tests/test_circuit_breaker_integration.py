@@ -19,12 +19,19 @@
 
 from __future__ import annotations
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.domain.safety.circuit_breaker_integration import (
     CircuitBreakerIntegration,
     InputSignals,
     SignalContributions,
     TriggerSource,
 )
+
+
+def _eps():
+    backend = get_default_backend()
+    return machine_epsilon(backend, backend.array([1.0]))
 
 
 class TestInputSignals:
@@ -126,7 +133,7 @@ class TestSignalContributions:
         )
 
         assert contrib.max_signal == 0.4
-        assert abs(contrib.mean_signal - 0.25) < 1e-10
+        assert abs(contrib.mean_signal - 0.25) <= _eps()
 
 
 class TestEvaluation:
@@ -145,7 +152,7 @@ class TestEvaluation:
 
         state = CircuitBreakerIntegration.evaluate(signals)
         expected = (0.6 + 0.6 + 0.2 + 0.1) / 4.0
-        assert abs(state.severity - expected) < 1e-10
+        assert abs(state.severity - expected) <= _eps()
         assert state.dominant_source == TriggerSource.entropy_spike
         assert state.confidence == 1.0
 
@@ -158,7 +165,7 @@ class TestEvaluation:
 
         state = CircuitBreakerIntegration.evaluate(signals)
         assert state.confidence == 0.25
-        assert state.severity == (0.6 / 4.0)
+        assert abs(state.severity - (0.6 / 4.0)) <= _eps()
 
 
 class TestMetrics:

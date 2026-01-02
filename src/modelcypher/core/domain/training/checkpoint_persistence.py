@@ -38,10 +38,6 @@ from modelcypher.core.domain.training.exceptions import CheckpointError
 
 logger = logging.getLogger(__name__)
 
-# Minimum required disk space in bytes (500MB)
-MIN_DISK_SPACE_BYTES = 500 * 1024 * 1024
-
-
 class CheckpointPersistence:
     """Atomic checkpoint writer using temp-file/rename, fsync, and disk-space checks.
 
@@ -59,19 +55,23 @@ class CheckpointPersistence:
         """
         self._retention = retention or CheckpointRetention()
 
-    def estimate_checkpoint_size(self, parameter_count: int) -> int:
+    def estimate_checkpoint_size(
+        self,
+        parameter_count: int,
+        bytes_per_parameter: int,
+        metadata_bytes: int = 0,
+    ) -> int:
         """Estimate checkpoint size in bytes (for disk space checks).
 
         Args:
             parameter_count: Number of model parameters.
+            bytes_per_parameter: Bytes per parameter (derived from dtype).
+            metadata_bytes: Extra metadata bytes to include.
 
         Returns:
-            Estimated size in bytes (with 10% overhead for metadata).
+            Estimated size in bytes.
         """
-        # 4 bytes per float32 parameter
-        base_bytes = parameter_count * 4
-        # 10% overhead for metadata and safetensors format
-        return int(base_bytes * 1.1)
+        return int(parameter_count * bytes_per_parameter + metadata_bytes)
 
     def ensure_sufficient_space(
         self,

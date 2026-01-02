@@ -51,10 +51,6 @@ import mlx.core as mx
 from .exceptions import CheckpointError
 from .types import CheckpointMetadata, ComputePrecision, Hyperparameters, LoRAConfig, TrainingConfig
 
-# Minimum required disk space in bytes (500MB)
-MIN_DISK_SPACE_BYTES = 500 * 1024 * 1024
-
-
 """Raised when checkpoint operations fail."""
 
 
@@ -74,7 +70,7 @@ class CheckpointManager:
     - Best checkpoint alias
     """
 
-    def __init__(self, max_checkpoints: int = 3):
+    def __init__(self, max_checkpoints: int | None = None):
         self.max_checkpoints = max_checkpoints
         self._best_loss: float = float("inf")
         self._best_step: int = -1
@@ -95,8 +91,13 @@ class CheckpointManager:
         checkpoints_dir = os.path.join(output_dir, "checkpoints")
         os.makedirs(checkpoints_dir, exist_ok=True)
 
-        # Check disk space
-        await self._validate_disk_space(checkpoints_dir)
+        flat_weights = self._flatten_weights(model_weights)
+        optimizer_arrays: dict[str, mx.array] = {}
+        if optimizer_state is not None:
+            optimizer_arrays = self._extract_optimizer_arrays(optimizer_state)
+
+        required_bytes = self._estimate_required_bytes(flat_weights, optimizer_arrays)
+        await self._validate_disk_space(checkpoints_dir, required_bytes)
 
         # Temp directory for atomic writes
         temp_dir = os.path.join(checkpoints_dir, ".tmp", f"step_{step}")
@@ -109,17 +110,14 @@ class CheckpointManager:
             weights_filename = f"checkpoint-{step}.safetensors"
             temp_weights_path = os.path.join(temp_dir, weights_filename)
 
-            flat_weights = self._flatten_weights(model_weights)
             mx.save_safetensors(temp_weights_path, flat_weights)
 
             # 2. Save optimizer state
             optimizer_filename = None
-            if optimizer_state is not None:
+            if optimizer_state is not None and optimizer_arrays:
                 optimizer_filename = f"optimizer-{step}.safetensors"
                 temp_optimizer_path = os.path.join(temp_dir, optimizer_filename)
-                optimizer_arrays = self._extract_optimizer_arrays(optimizer_state)
-                if optimizer_arrays:
-                    mx.save_safetensors(temp_optimizer_path, optimizer_arrays)
+                mx.save_safetensors(temp_optimizer_path, optimizer_arrays)
 
             # 3. Calculate Checksum
             checksum = await self._calculate_checksum(temp_weights_path)
@@ -256,14 +254,22 @@ class CheckpointManager:
             return mx.load(path)
         return None
 
-    async def _validate_disk_space(self, checkpoints_dir: str):
-        """Ensure sufficient disk space for checkpoint."""
+    def _estimate_required_bytes(
+        self, weights: dict[str, mx.array], optimizer_arrays: dict[str, mx.array]
+    ) -> int:
+        """Estimate bytes required for checkpoint tensors."""
+        weights_bytes = sum(int(array.nbytes) for array in weights.values())
+        optimizer_bytes = sum(int(array.nbytes) for array in optimizer_arrays.values())
+        return weights_bytes + optimizer_bytes
+
+    async def _validate_disk_space(self, checkpoints_dir: str, required_bytes: int):
+        """Ensure sufficient disk space for checkpoint data."""
         try:
             usage = shutil.disk_usage(checkpoints_dir)
-            if usage.free < MIN_DISK_SPACE_BYTES:
+            if required_bytes > 0 and usage.free < required_bytes:
                 raise InsufficientDiskSpaceError(
                     f"Insufficient disk space: {usage.free / (1024**2):.1f}MB available, "
-                    f"need at least {MIN_DISK_SPACE_BYTES / (1024**2):.1f}MB"
+                    f"need at least {required_bytes / (1024**2):.1f}MB"
                 )
         except OSError:
             # Can't check disk space, proceed anyway
@@ -293,6 +299,9 @@ class CheckpointManager:
 
     async def _prune_checkpoints(self, checkpoints_dir: str):
         """Remove old checkpoints beyond retention limit."""
+        if self.max_checkpoints is None:
+            return
+
         files = [
             f
             for f in os.listdir(checkpoints_dir)
