@@ -74,20 +74,23 @@ def register_safety_tools(ctx: ServiceContext) -> None:
                 }
 
             # Raw measurements - no arbitrary classifications
-            max_severity = max((ind.severity for ind in indicators), default=0.0)
+            max_mean_distance = max(
+                (ind.mean_distance for ind in indicators),
+                default=0.0,
+            )
 
             return {
                 "_schema": "mc.safety.circuit_breaker.v1",
                 "adapterName": adapterName,
                 # Raw measurements - consumer interprets
                 "threatIndicatorCount": len(indicators),
-                "maxThreatSeverity": max_severity,
+                "maxMeanDistance": max_mean_distance,
                 "entropyStats": entropy_stats if entropy_stats else None,
                 "indicators": [
                     {
-                        "pattern": ind.pattern,
-                        "location": ind.location,
-                        "severity": ind.severity,
+                        "field": ind.field,
+                        "text": ind.text,
+                        "meanDistance": ind.mean_distance,
                     }
                     for ind in indicators[:5]
                 ],

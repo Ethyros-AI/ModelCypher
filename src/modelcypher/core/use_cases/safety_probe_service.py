@@ -24,8 +24,6 @@ Provides behavioral and static analysis probing for adapter safety.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from modelcypher.core.domain.safety.behavioral_probes import (
     AdapterSafetyTier,
     CanaryQAProbe,
@@ -40,16 +38,7 @@ from modelcypher.core.domain.safety.red_team_probe import (
     RedTeamScanner,
     ThreatIndicator,
 )
-
-
-@dataclass(frozen=True)
-class ProbeConfig:
-    """Configuration for probe service operations."""
-
-    tier: AdapterSafetyTier = AdapterSafetyTier.STANDARD
-    max_tokens: int = 200
-    temperature: float = 0.0
-
+from modelcypher.ports.embedding import EmbeddingProvider
 
 class SafetyProbeService:
     """
@@ -58,12 +47,13 @@ class SafetyProbeService:
     Provides behavioral and static analysis probing for adapter safety.
     """
 
-    def __init__(self):
+    def __init__(self, embedder: EmbeddingProvider | None = None):
         """Initialize the service."""
+        self._embedder = embedder
         self.semantic_drift_probe = SemanticDriftProbe()
         self.canary_probe = CanaryQAProbe()
         self.redteam_probe = RedTeamProbe()
-        self.scanner = RedTeamScanner()
+        self.scanner = RedTeamScanner(embedder=embedder)
         self.runner = ProbeRunner()
 
     def scan_adapter_metadata(
@@ -137,6 +127,7 @@ class SafetyProbeService:
             creator=creator,
             base_model_id=base_model_id,
             inference_hook=None,  # No inference hook in CLI context
+            embedder=self._embedder,
         )
 
         probes = [self.semantic_drift_probe, self.canary_probe, self.redteam_probe]
@@ -145,18 +136,21 @@ class SafetyProbeService:
     @staticmethod
     def threat_indicators_payload(indicators: list[ThreatIndicator]) -> dict:
         """Convert threat indicators to CLI/MCP payload."""
+        max_mean_distance = max(
+            (ind.mean_distance for ind in indicators),
+            default=0.0,
+        )
         return {
             "indicators": [
                 {
-                    "pattern": ind.pattern,
-                    "location": ind.location,
-                    "severity": ind.severity,
-                    "description": ind.description,
+                    "field": ind.field,
+                    "text": ind.text,
+                    "meanDistance": ind.mean_distance,
                 }
                 for ind in indicators
             ],
             "count": len(indicators),
-            "maxSeverity": max((ind.severity for ind in indicators), default=0.0),
+            "maxMeanDistance": max_mean_distance,
         }
 
     @staticmethod

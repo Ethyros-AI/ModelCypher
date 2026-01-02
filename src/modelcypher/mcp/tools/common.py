@@ -350,8 +350,11 @@ class ServiceContext:
     def safety_probe_service(self):
         if self._safety_probe_service is None:
             from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
+            from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
 
-            self._safety_probe_service = SafetyProbeService()
+            self._safety_probe_service = SafetyProbeService(
+                embedder=EmbeddingDefaults.make_default_embedder()
+            )
         return self._safety_probe_service
 
     @property

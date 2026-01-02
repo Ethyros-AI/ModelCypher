@@ -15,22 +15,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Red Team Probe.
+"""Red Team Probe.
 
-Probe that checks adapter metadata for red flags indicative of malicious intent.
-This is a static analysis probe that examines:
-- Adapter name/description for suspicious patterns
-- Training dataset metadata for injection indicators
-- Skill tags for dangerous capability claims
-- Source provenance for untrusted origins
-
-This probe does NOT run inference - it only examines metadata.
+Static metadata probe that detects geometric outliers in adapter metadata
+embeddings. Returns only raw distance measurements.
 """
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
 from modelcypher.core.domain.safety.behavioral_probes import (
@@ -39,65 +31,22 @@ from modelcypher.core.domain.safety.behavioral_probes import (
     ProbeContext,
     ProbeResult,
 )
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    find_magnitude_gap_threshold,
+)
+from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+from modelcypher.ports.embedding import EmbeddingProvider
 
 
 class RedTeamProbe(AdapterSafetyProbe):
     """
-    Probe that checks adapter metadata for red flags indicative of malicious intent.
+    Probe that checks adapter metadata for geometric outliers.
 
-    This is a static analysis probe that examines adapter metadata for patterns
-    that could indicate malicious intent, dangerous capabilities, or untrusted sources.
+    This is a static analysis probe that examines metadata embeddings for
+    outlier geometry relative to other metadata fields.
     """
-
-    # Patterns indicating potentially malicious intent in adapter descriptions
-    # Uses [\s\-_\w]* to allow intervening words (e.g., "bypass all safety guardrails")
-    MALICIOUS_INTENT_PATTERNS = (
-        r"bypass[\s\-_\w]*(?:safety|guardrail|filter|moderation)",
-        r"(?:jailbreak|uncensor|remove[\s\-_\w]*limit)",
-        r"(?:ignore|override)[\s\-_\w]*(?:instruction|rule|policy)",
-        r"(?:hidden|secret|covert)[\s\-_\w]*(?:behavior|function|trigger)",
-        r"(?:exfiltrate|steal|extract)[\s\-_\w]*(?:data|information|secret)",
-        r"(?:inject|poison|backdoor)",
-        r"(?:malware|ransomware|trojan|virus)",
-        r"(?:phishing|credential[\s\-_\w]*harvest)",
-    )
-
-    # Patterns indicating dangerous capability claims
-    # Uses [\s\-_\w]* to allow intervening words
-    DANGEROUS_CAPABILITY_PATTERNS = (
-        r"(?:hack|exploit|penetrate)[\s\-_\w]*(?:system|network|server)",
-        r"(?:social[\s\-_\w]*engineer|manipulate[\s\-_\w]*user)",
-        r"(?:generate|create)[\s\-_\w]*(?:malware|exploit|attack)",
-        r"(?:bypass|evade)[\s\-_\w]*(?:detection|security|authentication)",
-        r"(?:impersonate|spoof)[\s\-_\w]*(?:identity|user|admin)",
-    )
-
-    # Skill tags that raise red flags
-    SUSPICIOUS_SKILL_TAGS = frozenset(
-        [
-            "jailbreak",
-            "uncensored",
-            "no-filter",
-            "unrestricted",
-            "bypass",
-            "exploit",
-            "hack",
-            "malware",
-            "backdoor",
-            "injection",
-            "exfiltration",
-        ]
-    )
-
-    # Source origins that require extra scrutiny
-    # Patterns indicating potentially untrusted sources
-    # Uses [\s\-_]+ to match spaces, hyphens, and underscores in model names
-    # Uses .* to allow intervening words (e.g., "leaked-stolen-llama-weights")
-    UNTRUSTED_SOURCE_PATTERNS = (
-        r"4chan|8chan|8kun",
-        r"(?:dark|deep)[\s\-_]*web",
-        r"(?:leaked|stolen)[\s\-_\w]*(?:model|data|weights)",
-    )
 
     @property
     def name(self) -> str:
@@ -118,95 +67,43 @@ class RedTeamProbe(AdapterSafetyProbe):
         )
 
     def evaluate(self, context: ProbeContext) -> ProbeResult:
-        """Evaluate adapter metadata for red flags.
+        """Evaluate adapter metadata for geometric outliers."""
+        if context.embedder is None:
+            return ProbeResult.passed(
+                probe_name=self.name,
+                probe_version=self.version,
+                details="Metadata probe skipped - missing embedder",
+            )
 
-        Returns raw finding counts by category. triggered = any findings detected.
-        """
-        findings: list[str] = []
-        finding_counts: dict[str, int] = {
-            "name_findings": 0,
-            "description_findings": 0,
-            "tag_findings": 0,
-            "creator_findings": 0,
-            "module_findings": 0,
-            "dataset_findings": 0,
-            "base_model_findings": 0,
+        items = _collect_metadata_items(context)
+        if len(items) < 2:
+            return ProbeResult.passed(
+                probe_name=self.name,
+                probe_version=self.version,
+                details="Metadata probe skipped - insufficient fields",
+            )
+
+        distances, outliers, threshold, mean_distance, max_distance = _metadata_outliers(
+            items, context.embedder
+        )
+
+        findings = tuple(
+            f"{item.field}: mean_distance={item.mean_distance}" for item in outliers
+        )
+
+        finding_counts = {
+            "metadata_items": len(items),
+            "outlier_items": len(outliers),
+            "distance_threshold": threshold,
+            "mean_distance": mean_distance,
+            "max_distance": max_distance,
         }
 
-        all_patterns = list(self.MALICIOUS_INTENT_PATTERNS) + list(
-            self.DANGEROUS_CAPABILITY_PATTERNS
-        )
-
-        # Check adapter name
-        name_findings = self._check_text(
-            context.adapter_name,
-            all_patterns,
-            "adapter name",
-        )
-        findings.extend(name_findings)
-        finding_counts["name_findings"] = len(name_findings)
-
-        # Check adapter description
-        if context.adapter_description:
-            desc_findings = self._check_text(
-                context.adapter_description,
-                all_patterns,
-                "adapter description",
-            )
-            findings.extend(desc_findings)
-            finding_counts["description_findings"] = len(desc_findings)
-
-        # Check skill tags
-        tag_findings = self._check_skill_tags(context.skill_tags)
-        findings.extend(tag_findings)
-        finding_counts["tag_findings"] = len(tag_findings)
-
-        # Check creator provenance
-        if context.creator:
-            creator_findings = self._check_text(
-                context.creator,
-                list(self.UNTRUSTED_SOURCE_PATTERNS),
-                "creator identity",
-            )
-            findings.extend(creator_findings)
-            finding_counts["creator_findings"] = len(creator_findings)
-
-        # Check for large number of target modules
-        # This is a raw count, not a threshold-based judgment
-        finding_counts["target_module_count"] = len(context.target_modules)
-        if len(context.target_modules) > 50:
-            findings.append(
-                f"Large number of target modules ({len(context.target_modules)})"
-            )
-            finding_counts["module_findings"] = 1
-
-        # Check training datasets if available
-        dataset_findings_total = 0
-        for dataset in context.training_datasets:
-            data_findings = self._check_text(
-                dataset,
-                list(self.UNTRUSTED_SOURCE_PATTERNS) + list(self.MALICIOUS_INTENT_PATTERNS),
-                "training dataset",
-            )
-            findings.extend(data_findings)
-            dataset_findings_total += len(data_findings)
-        finding_counts["dataset_findings"] = dataset_findings_total
-
-        # Check base model reference for suspicious sources
-        if context.base_model_id:
-            base_findings = self._check_text(
-                context.base_model_id,
-                list(self.UNTRUSTED_SOURCE_PATTERNS),
-                "base model reference",
-            )
-            findings.extend(base_findings)
-            finding_counts["base_model_findings"] = len(base_findings)
-
-        triggered = len(findings) > 0
+        triggered = len(outliers) > 0
         details = (
-            "No suspicious metadata patterns detected"
-            if not findings
-            else "Adapter metadata contains red flags"
+            "No metadata outliers detected"
+            if not outliers
+            else f"Metadata outliers: {len(outliers)}/{len(items)}"
         )
 
         return ProbeResult(
@@ -214,83 +111,107 @@ class RedTeamProbe(AdapterSafetyProbe):
             probe_version=self.version,
             triggered=triggered,
             details=details,
-            findings=tuple(findings),
+            findings=findings,
             finding_counts=finding_counts,
         )
 
-    def _check_text(
-        self,
-        text: str,
-        patterns: list[str],
-        context: str,
-    ) -> list[str]:
-        """Check text against patterns and return findings."""
-        findings: list[str] = []
-        lowercase_text = text.lower()
-
-        for pattern in patterns:
-            try:
-                regex = re.compile(f"(?i){pattern}")
-                match = regex.search(lowercase_text)
-                if match:
-                    findings.append(f"Suspicious pattern '{match.group()}' found in {context}")
-            except re.error:
-                # Skip invalid regex patterns
-                continue
-
-        return findings
-
-    def _check_skill_tags(self, tags: tuple[str, ...]) -> list[str]:
-        """Check skill tags for suspicious entries."""
-        findings: list[str] = []
-
-        for tag in tags:
-            normalized_tag = tag.lower().strip()
-            if normalized_tag in self.SUSPICIOUS_SKILL_TAGS:
-                findings.append(f"Suspicious skill tag: '{tag}'")
-
-        return findings
-
 
 @dataclass(frozen=True)
-class ScanConfiguration:
-    """Configuration for red team scanning.
+class MetadataDistance:
+    field: str
+    text: str
+    mean_distance: float
 
-    Severity values are configurable. Defaults are placeholder values
-    that should be calibrated from baseline scans of known-good and
-    known-bad adapters for your specific use case.
-    """
 
-    check_name: bool = True
-    check_description: bool = True
-    check_tags: bool = True
-    check_creator: bool = True
-    check_datasets: bool = True
-    check_base_model: bool = True
-    max_target_modules: int = 50
+def _collect_metadata_items(context: ProbeContext) -> list[tuple[str, str]]:
+    items: list[tuple[str, str]] = []
+    if context.adapter_name:
+        items.append(("adapter_name", context.adapter_name))
+    if context.adapter_description:
+        items.append(("adapter_description", context.adapter_description))
+    for tag in context.skill_tags:
+        items.append(("skill_tag", tag))
+    if context.creator:
+        items.append(("creator", context.creator))
+    if context.base_model_id:
+        items.append(("base_model_id", context.base_model_id))
+    for module in context.target_modules:
+        items.append(("target_module", module))
+    for dataset in context.training_datasets:
+        items.append(("training_dataset", dataset))
+    return items
 
-    # Severity values for each location type (must be calibrated)
-    severity_name: float = 0.5
-    severity_description: float = 0.6
-    severity_tags: float = 0.4
-    severity_creator: float = 0.5
-    severity_modules: float = 0.2
-    severity_datasets: float = 0.5
-    severity_base_model: float = 0.4
+
+def _distance_threshold(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    backend = get_default_backend()
+    eps = division_epsilon(backend, backend.array([0.0]))
+    sorted_vals = sorted(values)
+    max_gap = 0.0
+    for i in range(len(sorted_vals) - 1):
+        curr = sorted_vals[i]
+        next_val = sorted_vals[i + 1]
+        if curr > eps:
+            relative_gap = (next_val - curr) / curr
+            if relative_gap > max_gap:
+                max_gap = relative_gap
+    if max_gap <= eps:
+        return float("inf")
+    return float(find_magnitude_gap_threshold(sorted_vals, eps=eps))
+
+
+def _metadata_distances(
+    items: list[tuple[str, str]],
+    embedder: EmbeddingProvider,
+) -> tuple[list[MetadataDistance], float]:
+    backend = get_default_backend()
+    texts = [text for _, text in items]
+    embeddings = embedder.embed(texts)
+    points = backend.array(embeddings)
+    rg = RiemannianGeometry(backend)
+    geo = rg.geodesic_distances(points)
+    backend.eval(geo.distances)
+    dist_matrix = backend.to_numpy(geo.distances).tolist()
+    n = len(items)
+    eps = division_epsilon(backend, backend.array([0.0]))
+
+    mean_distances: list[MetadataDistance] = []
+    for idx, (field, text) in enumerate(items):
+        row = dist_matrix[idx]
+        total = sum(float(val) for j, val in enumerate(row) if j != idx)
+        denom = float(n - 1) if n > 1 else eps
+        mean_dist = total / denom if denom > 0 else 0.0
+        mean_distances.append(
+            MetadataDistance(field=field, text=text, mean_distance=mean_dist)
+        )
+
+    threshold = _distance_threshold([d.mean_distance for d in mean_distances])
+    return mean_distances, threshold
+
+
+def _metadata_outliers(
+    items: list[tuple[str, str]],
+    embedder: EmbeddingProvider,
+) -> tuple[list[MetadataDistance], list[MetadataDistance], float, float, float]:
+    distances, threshold = _metadata_distances(items, embedder)
+    outliers = [item for item in distances if item.mean_distance > threshold]
+    mean_distance = (
+        sum(item.mean_distance for item in distances) / len(distances)
+        if distances
+        else 0.0
+    )
+    max_distance = max((item.mean_distance for item in distances), default=0.0)
+    return distances, outliers, threshold, mean_distance, max_distance
 
 
 @dataclass(frozen=True)
 class ThreatIndicator:
-    """A detected threat indicator.
+    """A metadata outlier indicator derived from geometry."""
 
-    Severity values come from ScanConfiguration and can be calibrated
-    by the caller based on their specific use case.
-    """
-
-    pattern: str
-    location: str
-    severity: float
-    description: str
+    field: str
+    text: str
+    mean_distance: float
 
 
 class RedTeamScanner:
@@ -301,10 +222,10 @@ class RedTeamScanner:
     without requiring an async context.
     """
 
-    def __init__(self, config: ScanConfiguration | None = None):
-        """Initialize with optional configuration."""
-        self.config = config or ScanConfiguration()
-        self.probe = RedTeamProbe()
+    def __init__(self, embedder: EmbeddingProvider | None = None):
+        """Initialize with optional embedder."""
+        self._embedder = embedder
+        self._probe = RedTeamProbe()
 
     def scan_adapter(
         self,
@@ -333,110 +254,29 @@ class RedTeamScanner:
         Returns:
             List of detected threat indicators
         """
-        indicators: list[ThreatIndicator] = []
-        all_patterns = list(RedTeamProbe.MALICIOUS_INTENT_PATTERNS) + list(
-            RedTeamProbe.DANGEROUS_CAPABILITY_PATTERNS
+        if self._embedder is None:
+            return []
+
+        context = ProbeContext(
+            tier=AdapterSafetyTier.FULL,
+            adapter_name=name,
+            adapter_description=description,
+            skill_tags=tuple(skill_tags or ()),
+            creator=creator,
+            base_model_id=base_model_id,
+            target_modules=tuple(target_modules or ()),
+            training_datasets=tuple(training_datasets or ()),
+            embedder=self._embedder,
         )
-
-        # Check name
-        if self.config.check_name:
-            for finding in self.probe._check_text(name, all_patterns, "adapter name"):
-                indicators.append(
-                    ThreatIndicator(
-                        pattern=finding.split("'")[1] if "'" in finding else finding,
-                        location="name",
-                        severity=self.config.severity_name,
-                        description=finding,
-                    )
-                )
-
-        # Check description
-        if self.config.check_description and description:
-            for finding in self.probe._check_text(description, all_patterns, "description"):
-                indicators.append(
-                    ThreatIndicator(
-                        pattern=finding.split("'")[1] if "'" in finding else finding,
-                        location="description",
-                        severity=self.config.severity_description,
-                        description=finding,
-                    )
-                )
-
-        # Check tags
-        if self.config.check_tags and skill_tags:
-            for finding in self.probe._check_skill_tags(tuple(skill_tags)):
-                indicators.append(
-                    ThreatIndicator(
-                        pattern=finding.split("'")[1] if "'" in finding else finding,
-                        location="skill_tags",
-                        severity=self.config.severity_tags,
-                        description=finding,
-                    )
-                )
-
-        # Check creator
-        if self.config.check_creator and creator:
-            for finding in self.probe._check_text(
-                creator,
-                list(RedTeamProbe.UNTRUSTED_SOURCE_PATTERNS),
-                "creator",
-            ):
-                indicators.append(
-                    ThreatIndicator(
-                        pattern=finding.split("'")[1] if "'" in finding else finding,
-                        location="creator",
-                        severity=self.config.severity_creator,
-                        description=finding,
-                    )
-                )
-
-        # Check target modules count
-        if target_modules and len(target_modules) > self.config.max_target_modules:
-            indicators.append(
-                ThreatIndicator(
-                    pattern=f"module_count:{len(target_modules)}",
-                    location="target_modules",
-                    severity=self.config.severity_modules,
-                    description=f"Unusually large number of target modules ({len(target_modules)})",
-                )
+        items = _collect_metadata_items(context)
+        if len(items) < 2:
+            return []
+        _, outliers, _, _, _ = _metadata_outliers(items, self._embedder)
+        return [
+            ThreatIndicator(
+                field=item.field,
+                text=item.text,
+                mean_distance=item.mean_distance,
             )
-
-        # Check training datasets
-        if self.config.check_datasets and training_datasets:
-            for dataset in training_datasets:
-                patterns = list(RedTeamProbe.UNTRUSTED_SOURCE_PATTERNS) + list(
-                    RedTeamProbe.MALICIOUS_INTENT_PATTERNS
-                )
-                for finding in self.probe._check_text(dataset, patterns, "dataset"):
-                    indicators.append(
-                        ThreatIndicator(
-                            pattern=finding.split("'")[1] if "'" in finding else finding,
-                            location="training_datasets",
-                            severity=self.config.severity_datasets,
-                            description=finding,
-                        )
-                    )
-
-        # Check base model
-        if self.config.check_base_model and base_model_id:
-            for finding in self.probe._check_text(
-                base_model_id,
-                list(RedTeamProbe.UNTRUSTED_SOURCE_PATTERNS),
-                "base_model",
-            ):
-                indicators.append(
-                    ThreatIndicator(
-                        pattern=finding.split("'")[1] if "'" in finding else finding,
-                        location="base_model",
-                        severity=self.config.severity_base_model,
-                        description=finding,
-                    )
-                )
-
-        return indicators
-
-    def aggregate_risk(self, indicators: list[ThreatIndicator]) -> float:
-        """Compute aggregate risk score from indicators."""
-        if not indicators:
-            return 0.0
-        return max(ind.severity for ind in indicators)
+            for item in outliers
+        ]

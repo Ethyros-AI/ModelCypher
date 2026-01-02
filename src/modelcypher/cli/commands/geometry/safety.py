@@ -40,6 +40,7 @@ from modelcypher.cli.composition import get_geometry_safety_service
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 from modelcypher.core.use_cases.safety_probe_service import SafetyProbeService
+from modelcypher.adapters.embedding_defaults import EmbeddingDefaults
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -237,7 +238,7 @@ def geometry_safety_probe_redteam(
         mc geometry safety probe-redteam --name my-adapter --tag skill1 --tag skill2
     """
     context = _context(ctx)
-    service = SafetyProbeService()
+    service = SafetyProbeService(embedder=EmbeddingDefaults.make_default_embedder())
 
     indicators = service.scan_adapter_metadata(
         name=name,
@@ -254,13 +255,15 @@ def geometry_safety_probe_redteam(
             "RED TEAM STATIC ANALYSIS",
             f"Adapter: {name}",
             f"Threat Indicators: {payload['count']}",
-            f"Max Severity: {payload['maxSeverity']:.2f}",
+            f"Max Mean Distance: {payload['maxMeanDistance']:.4f}",
         ]
         if indicators:
             lines.append("")
-            lines.append("DETECTED THREATS:")
+            lines.append("DETECTED OUTLIERS:")
             for ind in indicators:
-                lines.append(f"  [{ind.severity:.2f}] {ind.location}: {ind.description}")
+                lines.append(
+                    f"  [{ind.mean_distance:.4f}] {ind.field}: {ind.text}"
+                )
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -286,7 +289,7 @@ def geometry_safety_probe_behavioral(
     from modelcypher.core.domain.safety.behavioral_probes import AdapterSafetyTier
 
     context = _context(ctx)
-    service = SafetyProbeService()
+    service = SafetyProbeService(embedder=EmbeddingDefaults.make_default_embedder())
 
     tier_map = {
         "quick": AdapterSafetyTier.QUICK,
