@@ -37,6 +37,12 @@ from modelcypher.core.domain.entropy.logit_entropy_calculator import (
     LogitEntropyCalculator,
     LogitEntropySample,
 )
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
+
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return division_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 class TestLogitEntropyCalculator:
@@ -65,8 +71,8 @@ class TestLogitEntropyCalculator:
         entropy, variance = calc.compute(logits)
 
         expected_entropy = math.log(vocab_size)
-        assert abs(entropy - expected_entropy) < 0.1
-        assert variance == pytest.approx(0.0)
+        assert abs(entropy - expected_entropy) < _eps(entropy, expected_entropy)
+        assert abs(variance - 0.0) < _eps(variance, 0.0)
 
     def test_compute_peaked_distribution(self):
         """Peaked logits should have low entropy."""
@@ -78,7 +84,7 @@ class TestLogitEntropyCalculator:
 
         entropy, _ = calc.compute(logits)
 
-        assert entropy < 0.1
+        assert entropy <= _eps(entropy, 0.0)
 
     def test_flatten_to_vocab_1d(self):
         """1D input should pass through."""

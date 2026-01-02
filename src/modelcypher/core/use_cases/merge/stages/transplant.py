@@ -191,8 +191,8 @@ def _compute_alignment_metrics(
     dist_after_arr = b.norm(output_after - output_source)
     b.eval(dist_before_arr, dist_after_arr)
 
-    dist_before = float(b.to_numpy(dist_before_arr))
-    dist_after = float(b.to_numpy(dist_after_arr))
+    dist_before = float(b.to_scalar(dist_before_arr))
+    dist_after = float(b.to_scalar(dist_after_arr))
 
     eps = float(machine_epsilon(b, weight_before))
     if dist_before > eps:
@@ -1226,8 +1226,8 @@ def stage_transplant(
                     target_norm_arr = b.norm(b.reshape(target_output, (-1,)))
                     b.eval(diff_norm_arr, target_norm_arr)
 
-                    diff_norm = float(b.to_numpy(diff_norm_arr))
-                    target_norm = float(b.to_numpy(target_norm_arr))
+                    diff_norm = float(b.to_scalar(diff_norm_arr))
+                    target_norm = float(b.to_scalar(target_norm_arr))
                     eps = float(machine_epsilon(b, target_w))
 
                     if target_norm > eps:

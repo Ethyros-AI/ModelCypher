@@ -15,11 +15,20 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with ModelCypher.  If not, see <https://www.gnu.org/licenses/>.
 
-import pytest
-
 from modelcypher.core.domain.geometry.topological_fingerprint import (
     TopologicalFingerprint,
 )
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+
+
+def _step(min_filtration: float, max_filtration: float, num_steps: int) -> float:
+    return (max_filtration - min_filtration) / float(max(1, num_steps))
+
+
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return division_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 def test_ripser_filtration_0dim():
@@ -28,8 +37,15 @@ def test_ripser_filtration_0dim():
     points = [[0.0, 0.0], [0.1, 0.0], [10.0, 0.0]]
 
     distances = TopologicalFingerprint._compute_pairwise_distances(points)
+    min_filtration = 0.0
+    max_filtration = 20.0
+    num_steps = 100
     diagram = TopologicalFingerprint._vietoris_rips_filtration(
-        distances=distances, min_filtration=0.0, max_filtration=20.0, num_steps=100, max_dimension=0
+        distances=distances,
+        min_filtration=min_filtration,
+        max_filtration=max_filtration,
+        num_steps=num_steps,
+        max_dimension=0,
     )
 
     # Dimension 0 points should track merges
@@ -40,10 +56,10 @@ def test_ripser_filtration_0dim():
     # Then P0+P1 and P2 merge at dist 9.9
 
     deaths = sorted([p.death for p in points0])
-    # Use approximate comparison due to floating point
-    assert any(d == pytest.approx(0.1, rel=0.1) for d in deaths)
-    assert any(d == pytest.approx(9.9, rel=0.1) for d in deaths)
-    assert any(d == pytest.approx(20.0, rel=0.1) for d in deaths)
+    step = _step(min_filtration, max_filtration, num_steps)
+    assert any(abs(d - 0.1) <= step for d in deaths)
+    assert any(abs(d - 9.9) <= step for d in deaths)
+    assert any(abs(d - 20.0) <= step for d in deaths)
 
 
 def test_ripser_filtration_1dim_cycle():
@@ -52,14 +68,22 @@ def test_ripser_filtration_1dim_cycle():
     points = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
 
     distances = TopologicalFingerprint._compute_pairwise_distances(points)
+    min_filtration = 0.0
+    max_filtration = 10.0
+    num_steps = 50
     diagram = TopologicalFingerprint._vietoris_rips_filtration(
-        distances=distances, min_filtration=0.0, max_filtration=10.0, num_steps=50, max_dimension=1
+        distances=distances,
+        min_filtration=min_filtration,
+        max_filtration=max_filtration,
+        num_steps=num_steps,
+        max_dimension=1,
     )
 
     points1 = [p for p in diagram.points if p.dimension == 1]
     assert len(points1) > 0
     # Birth should be the distance that completes the cycle (side length 1.0)
-    assert any(p.birth == pytest.approx(1.0) for p in points1)
+    step = _step(min_filtration, max_filtration, num_steps)
+    assert any(abs(p.birth - 1.0) <= step for p in points1)
 
 
 def test_ripser_bottleneck_distance():
@@ -69,7 +93,7 @@ def test_ripser_bottleneck_distance():
     diag_b = TopologicalFingerprint.compute([[0, 0], [1, 0]]).diagram
 
     dist = TopologicalFingerprint._bottleneck_distance(diag_a, diag_b)
-    assert dist == pytest.approx(0.0)
+    assert abs(dist - 0.0) <= _eps(dist, 0.0)
 
 
 def test_ripser_wasserstein_distance():
@@ -78,7 +102,7 @@ def test_ripser_wasserstein_distance():
     diag_b = TopologicalFingerprint.compute([[0, 0], [1, 0]]).diagram
 
     dist = TopologicalFingerprint._wasserstein_distance(diag_a, diag_b)
-    assert dist == pytest.approx(0.0)
+    assert abs(dist - 0.0) <= _eps(dist, 0.0)
 
 
 def test_ripser_adapter_elder_rule():

@@ -211,11 +211,7 @@ def stage_permute(
         # Ensure det(R) = 1 to avoid reflection.
         det_R = b.det(embedding_rotation)
         b.eval(det_R)
-        det_val = (
-            float(det_R.item())
-            if hasattr(det_R, "item")
-            else float(b.to_numpy(det_R))
-        )
+        det_val = float(b.to_scalar(det_R))
         if det_val < 0:
             n = embedding_rotation.shape[1]
             rot_cols = [embedding_rotation[:, i : i + 1] for i in range(n - 1)]

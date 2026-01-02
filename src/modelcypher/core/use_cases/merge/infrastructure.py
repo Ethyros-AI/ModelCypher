@@ -117,7 +117,7 @@ def select_shared_full_rank_indices(
         if not basis:
             res_norm = backend.norm(vec)
             backend.eval(res_norm)
-            if float(backend.to_numpy(res_norm)) <= eps:
+            if float(backend.to_scalar(res_norm)) <= eps:
                 return False, vec
             return True, vec / res_norm
 
@@ -128,7 +128,7 @@ def select_shared_full_rank_indices(
         residual = vec_col - proj
         res_norm = backend.norm(residual)
         backend.eval(res_norm)
-        if float(backend.to_numpy(res_norm)) <= eps:
+        if float(backend.to_scalar(res_norm)) <= eps:
             return False, vec
         return True, backend.reshape(residual / res_norm, (-1,))
 
@@ -191,13 +191,13 @@ def select_full_rank_indices(
             residual = vec_col - proj
             res_norm = backend.norm(residual)
             backend.eval(res_norm)
-            if float(backend.to_numpy(res_norm)) <= eps:
+            if float(backend.to_scalar(res_norm)) <= eps:
                 continue
             vec = backend.reshape(residual / res_norm, (-1,))
         else:
             res_norm = backend.norm(vec)
             backend.eval(res_norm)
-            if float(backend.to_numpy(res_norm)) <= eps:
+            if float(backend.to_scalar(res_norm)) <= eps:
                 continue
             vec = vec / res_norm
 

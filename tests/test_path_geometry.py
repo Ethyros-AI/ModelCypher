@@ -81,8 +81,8 @@ class TestLevenshteinDistance:
         result = PathGeometry.compare(path, path, gate_embeddings=_simple_embeddings())
 
         eps = _eps()
-        assert result.total_distance == pytest.approx(0.0, abs=eps)
-        assert result.normalized_distance == pytest.approx(0.0, abs=eps)
+        assert abs(result.total_distance - 0.0) <= eps
+        assert abs(result.normalized_distance - 0.0) <= eps
 
     def test_different_paths_positive_distance(self) -> None:
         """Different paths should have positive distance."""
@@ -142,7 +142,7 @@ class TestFrechetDistance:
         result = PathGeometry.frechet_distance(path, path, gate_embeddings=_simple_embeddings())
 
         eps = _eps()
-        assert result.distance == pytest.approx(0.0, abs=eps)
+        assert abs(result.distance - 0.0) <= eps
 
     def test_optimal_coupling_starts_at_origin(self) -> None:
         """Optimal coupling should start at (0, 0)."""
@@ -183,8 +183,8 @@ class TestDTW:
         result = PathGeometry.dynamic_time_warping(path, path, gate_embeddings=_simple_embeddings())
 
         eps = _eps()
-        assert result.total_cost == pytest.approx(0.0, abs=eps)
-        assert result.normalized_cost == pytest.approx(0.0, abs=eps)
+        assert abs(result.total_cost - 0.0) <= eps
+        assert abs(result.normalized_cost - 0.0) <= eps
 
     def test_warping_path_covers_all_points(self) -> None:
         """Warping path should cover all points in both sequences."""
@@ -244,7 +244,7 @@ class TestPathSignatures:
         similarity = PathGeometry.signature_similarity(sig, sig)
 
         eps = _eps()
-        assert similarity == pytest.approx(1.0, abs=eps)
+        assert abs(similarity - 1.0) <= eps
 
     def test_single_node_path_zero_signature(self) -> None:
         """Single node path has no increments, so signature components are zero."""
@@ -252,7 +252,7 @@ class TestPathSignatures:
         sig = PathGeometry.compute_signature(path, gate_embeddings=_simple_embeddings())
 
         eps = _eps()
-        assert sig.signature_norm == pytest.approx(0.0, abs=eps)
+        assert abs(sig.signature_norm - 0.0) <= eps
 
     def test_signed_area_non_negative(self) -> None:
         """Signed area (magnitude) should be non-negative."""
@@ -341,14 +341,12 @@ class TestComprehensiveCompare:
         sig_sim = PathGeometry.signature_similarity(sig_a, sig_b)
 
         eps = _eps()
-        assert result.levenshtein.total_distance == pytest.approx(lev.total_distance, abs=eps)
-        assert result.levenshtein.normalized_distance == pytest.approx(
-            lev.normalized_distance, abs=eps
-        )
-        assert result.frechet.distance == pytest.approx(frech.distance, abs=eps)
-        assert result.dtw.total_cost == pytest.approx(dtw.total_cost, abs=eps)
-        assert result.dtw.normalized_cost == pytest.approx(dtw.normalized_cost, abs=eps)
-        assert result.signature_similarity == pytest.approx(sig_sim, abs=eps)
+        assert abs(result.levenshtein.total_distance - lev.total_distance) <= eps
+        assert abs(result.levenshtein.normalized_distance - lev.normalized_distance) <= eps
+        assert abs(result.frechet.distance - frech.distance) <= eps
+        assert abs(result.dtw.total_cost - dtw.total_cost) <= eps
+        assert abs(result.dtw.normalized_cost - dtw.normalized_cost) <= eps
+        assert abs(result.signature_similarity - sig_sim) <= eps
 
         assert result.levenshtein.alignment == lev.alignment
         assert result.frechet.optimal_coupling == frech.optimal_coupling
@@ -377,11 +375,11 @@ class TestBackendPathGeometry:
 
         # Compare level1
         for i in range(len(pure_sig.level1)):
-            assert pure_sig.level1[i] == pytest.approx(backend_sig.level1[i], abs=eps)
+            assert abs(pure_sig.level1[i] - backend_sig.level1[i]) <= eps
 
         # Compare signed area and norm
-        assert pure_sig.signed_area == pytest.approx(backend_sig.signed_area, abs=eps)
-        assert pure_sig.signature_norm == pytest.approx(backend_sig.signature_norm, abs=eps)
+        assert abs(pure_sig.signed_area - backend_sig.signed_area) <= eps
+        assert abs(pure_sig.signature_norm - backend_sig.signature_norm) <= eps
 
     def test_signature_similarity_identical_to_pure_python(self, pg) -> None:
         """Backend signature similarity should match pure Python."""
@@ -396,7 +394,7 @@ class TestBackendPathGeometry:
         backend_sim = pg.signature_similarity(sig_a, sig_b)
 
         eps = _eps()
-        assert pure_sim == pytest.approx(backend_sim, abs=eps)
+        assert abs(pure_sim - backend_sim) <= eps
 
     def test_analyze_entropy_path_identical_to_pure_python(self, pg) -> None:
         """Backend entropy analysis should match pure Python."""
@@ -413,20 +411,12 @@ class TestBackendPathGeometry:
         backend_analysis = pg.analyze_entropy_path(path)
         eps = _eps()
 
-        assert pure_analysis.total_entropy == pytest.approx(
-            backend_analysis.total_entropy, abs=eps
-        )
-        assert pure_analysis.mean_entropy == pytest.approx(
-            backend_analysis.mean_entropy, abs=eps
-        )
-        assert pure_analysis.entropy_variance == pytest.approx(
-            backend_analysis.entropy_variance, abs=eps
-        )
+        assert abs(pure_analysis.total_entropy - backend_analysis.total_entropy) <= eps
+        assert abs(pure_analysis.mean_entropy - backend_analysis.mean_entropy) <= eps
+        assert abs(pure_analysis.entropy_variance - backend_analysis.entropy_variance) <= eps
         assert pure_analysis.max_entropy == backend_analysis.max_entropy
         assert pure_analysis.max_entropy_index == backend_analysis.max_entropy_index
-        assert pure_analysis.mean_gradient == pytest.approx(
-            backend_analysis.mean_gradient, abs=eps
-        )
+        assert abs(pure_analysis.mean_gradient - backend_analysis.mean_gradient) <= eps
 
     def test_compute_local_geometry_identical_to_pure_python(self, pg) -> None:
         """Backend local geometry should match pure Python."""
@@ -439,17 +429,11 @@ class TestBackendPathGeometry:
 
         assert len(pure_geom.curvatures) == len(backend_geom.curvatures)
         for i in range(len(pure_geom.curvatures)):
-            assert pure_geom.curvatures[i] == pytest.approx(
-                backend_geom.curvatures[i], abs=eps
-            )
+            assert abs(pure_geom.curvatures[i] - backend_geom.curvatures[i]) <= eps
 
-        assert pure_geom.mean_curvature == pytest.approx(
-            backend_geom.mean_curvature, abs=eps
-        )
-        assert pure_geom.max_curvature == pytest.approx(backend_geom.max_curvature, abs=eps)
-        assert pure_geom.total_curvature == pytest.approx(
-            backend_geom.total_curvature, abs=eps
-        )
+        assert abs(pure_geom.mean_curvature - backend_geom.mean_curvature) <= eps
+        assert abs(pure_geom.max_curvature - backend_geom.max_curvature) <= eps
+        assert abs(pure_geom.total_curvature - backend_geom.total_curvature) <= eps
 
     def test_comprehensive_compare_identical_to_pure_python(self, pg) -> None:
         """Backend comprehensive comparison should match pure Python."""
@@ -467,9 +451,7 @@ class TestBackendPathGeometry:
         assert pure_result.dtw.total_cost == backend_result.dtw.total_cost
 
         # Signature similarity computed by Backend
-        assert pure_result.signature_similarity == pytest.approx(
-            backend_result.signature_similarity, abs=eps
-        )
+        assert abs(pure_result.signature_similarity - backend_result.signature_similarity) <= eps
 
     def test_empty_path_handling(self, pg) -> None:
         """Backend should handle empty paths correctly."""

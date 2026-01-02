@@ -17,8 +17,8 @@
 
 from __future__ import annotations
 
-import pytest
-
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.intersection_map_analysis import (
     IntersectionMapAnalysis,
     MarkdownReportOptions,
@@ -28,6 +28,11 @@ from modelcypher.core.domain.geometry.manifold_stitcher import (
     IntersectionMap,
     LayerConfidence,
 )
+
+
+def _eps(*values: float) -> float:
+    backend = get_default_backend()
+    return division_epsilon(backend, backend.array(list(values)))
 
 
 def test_intersection_map_analysis_counts() -> None:
@@ -53,7 +58,9 @@ def test_intersection_map_analysis_counts() -> None:
 
     analysis = IntersectionMapAnalysis.analyze(map_data)
     assert analysis.overall_stats.pair_count == 2
-    assert analysis.overall_stats.mean_correlation == pytest.approx(0.55)
+    assert abs(analysis.overall_stats.mean_correlation - 0.55) < _eps(
+        analysis.overall_stats.mean_correlation, 0.55
+    )
     assert analysis.overall_stats.min_correlation == 0.3
     assert analysis.overall_stats.max_correlation == 0.8
     assert analysis.average_layer_confidence == 0.65

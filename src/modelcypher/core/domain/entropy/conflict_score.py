@@ -211,9 +211,7 @@ class ConflictScoreCalculator:
         # Evaluate and extract scalar
         kl_f32 = b.astype(kl, "float32")
         b.eval(kl_f32)
-
-        kl_np = b.to_numpy(kl_f32)
-        return max(0.0, float(kl_np.item()))
+        return max(0.0, float(b.to_scalar(kl_f32)))
 
     def _is_in_frontier(self, logits: "Array", token_id: int) -> bool:
         """Check if token_id is inside the base logit frontier."""
@@ -224,7 +222,9 @@ class ConflictScoreCalculator:
             return True
 
         token_logit = logits[token_id]
-        token_rank = int(b.to_numpy(b.sum(b.astype(logits > token_logit, "float32"))))
+        rank_sum = b.sum(b.astype(logits > token_logit, "float32"))
+        b.eval(rank_sum)
+        token_rank = int(b.to_scalar(rank_sum))
         frontier_size = self._frontier_size(logits)
         return token_rank < frontier_size
 
@@ -238,10 +238,13 @@ class ConflictScoreCalculator:
         sorted_logits = -b.sort(-logits)
         gaps = sorted_logits[:-1] - sorted_logits[1:]
         eps = division_epsilon(b, logits)
-        max_gap = float(b.to_numpy(b.max(gaps)))
+        max_gap_arr = b.max(gaps)
+        argmax_arr = b.argmax(gaps)
+        b.eval(max_gap_arr, argmax_arr)
+        max_gap = float(b.to_scalar(max_gap_arr))
         if max_gap <= eps:
             return vocab_size
-        return int(b.to_numpy(b.argmax(gaps))) + 1
+        return int(b.to_scalar(argmax_arr)) + 1
 
 
 # =============================================================================

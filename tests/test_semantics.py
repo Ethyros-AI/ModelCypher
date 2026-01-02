@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.semantics.vector_space import (
     ConceptNode,
     ConceptVectorSpace,
@@ -33,6 +34,10 @@ if TYPE_CHECKING:
 def backend() -> "Backend":
     """Get the default backend."""
     return get_default_backend()
+
+
+def _eps(backend: "Backend", *values: float) -> float:
+    return division_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 # =============================================================================
@@ -80,7 +85,7 @@ class TestConceptVectorSpace:
         # Stored vector should be normalized (norm ≈ 1.0)
         stored = space.concepts["test"].vector
         norm = float(backend.to_numpy(backend.norm(stored)))
-        assert norm == pytest.approx(1.0, rel=1e-4)
+        assert abs(norm - 1.0) < _eps(backend, norm, 1.0)
 
     def test_add_concept_dimension_mismatch_raises(self, backend: "Backend") -> None:
         """Adding concept with wrong dimension should raise."""
@@ -176,7 +181,7 @@ class TestConceptVectorSpace:
         backend.eval(result)
 
         norm = float(backend.to_numpy(backend.norm(result)))
-        assert norm == pytest.approx(0.0, abs=1e-6)
+        assert abs(norm - 0.0) < _eps(backend, norm, 0.0)
 
     def test_arithmetics_missing_concepts_ignored(self, backend: "Backend") -> None:
         """Missing concepts should be silently ignored."""
@@ -292,7 +297,9 @@ class TestActivationGraphProjector:
         projector.record_co_occurrence(["a", "b", "c"])
 
         # All 3 edges present: density = 2*3 / (3*2) = 1.0
-        assert projector.get_density() == pytest.approx(1.0)
+        density = projector.get_density()
+        backend = get_default_backend()
+        assert abs(density - 1.0) < _eps(backend, density, 1.0)
 
     def test_density_partial_graph(self) -> None:
         """Partial graph should have density < 1.0."""
@@ -303,7 +310,10 @@ class TestActivationGraphProjector:
         projector.record_co_occurrence(["b", "c"])
 
         # 2 edges, 3 nodes: density = 2*2 / (3*2) = 2/3 ≈ 0.667
-        assert projector.get_density() == pytest.approx(2.0 / 3.0)
+        density = projector.get_density()
+        backend = get_default_backend()
+        expected = 2.0 / 3.0
+        assert abs(density - expected) < _eps(backend, density, expected)
 
     def test_density_single_node(self) -> None:
         """Single node graph should have density 0."""

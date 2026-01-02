@@ -42,9 +42,9 @@ def backend() -> "Backend":
     return get_default_backend()
 
 
-def _div_eps() -> float:
+def _div_eps(*values: float) -> float:
     backend = get_default_backend()
-    return division_epsilon(backend, backend.array([1.0]))
+    return division_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
 # =============================================================================
@@ -71,8 +71,9 @@ class TestProjectionResult:
 
         d = result.to_dict()
 
-        assert d["reconstruction_error"] == pytest.approx(0.5)
-        assert d["alignment_score"] == pytest.approx(0.85)
+        eps = _div_eps(d["reconstruction_error"], d["alignment_score"])
+        assert abs(d["reconstruction_error"] - 0.5) < eps
+        assert abs(d["alignment_score"] - 0.85) < eps
         assert d["strategy_used"] == "truncate"
         assert d["output_shape"] == [100, 64]
         assert d["has_projection_matrix"] is False

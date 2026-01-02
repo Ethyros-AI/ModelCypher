@@ -459,9 +459,13 @@ class GramAligner:
         # This avoids numerical noise from SVD/Procrustes on the same data.
         if d_s == d_t:
             diff = source_activations - target_activations
-            diff_norm = float(b.to_numpy(b.norm(diff)))
-            source_norm = float(b.to_numpy(b.norm(source_activations)))
-            target_norm = float(b.to_numpy(b.norm(target_activations)))
+            diff_norm_arr = b.norm(diff)
+            source_norm_arr = b.norm(source_activations)
+            target_norm_arr = b.norm(target_activations)
+            b.eval(diff_norm_arr, source_norm_arr, target_norm_arr)
+            diff_norm = float(b.to_scalar(diff_norm_arr))
+            source_norm = float(b.to_scalar(source_norm_arr))
+            target_norm = float(b.to_scalar(target_norm_arr))
 
             # Check for identical inputs
             if diff_norm < precision_threshold * (source_norm + precision_threshold):
@@ -491,7 +495,9 @@ class GramAligner:
             if source_norm > precision_threshold and target_norm > precision_threshold:
                 scale = target_norm / source_norm
                 scaled_diff = target_activations - source_activations * scale
-                scaled_diff_norm = float(b.to_numpy(b.norm(scaled_diff)))
+                scaled_diff_norm_arr = b.norm(scaled_diff)
+                b.eval(scaled_diff_norm_arr)
+                scaled_diff_norm = float(b.to_scalar(scaled_diff_norm_arr))
                 if scaled_diff_norm < precision_threshold * target_norm:
                     # Inputs are scaled versions - use scaling transform
                     scale_transform = b.eye(d_s) * scale
@@ -526,8 +532,11 @@ class GramAligner:
             b.eval(K_s, K_t)
 
             gram_diff = K_s - K_t
-            gram_diff_norm = float(b.to_numpy(b.norm(gram_diff)))
-            gram_norm = float(b.to_numpy(b.norm(K_s)))
+            gram_diff_norm_arr = b.norm(gram_diff)
+            gram_norm_arr = b.norm(K_s)
+            b.eval(gram_diff_norm_arr, gram_norm_arr)
+            gram_diff_norm = float(b.to_scalar(gram_diff_norm_arr))
+            gram_norm = float(b.to_scalar(gram_norm_arr))
             if gram_diff_norm < precision_threshold * (gram_norm + precision_threshold):
                 # Gram matrices are equal - this is a rotation/reflection
                 # Find the rotation via Procrustes: R = V @ U^T where source^T @ target = U @ S @ V^T
@@ -658,8 +667,11 @@ class GramAligner:
 
         # Error is Frobenius norm of difference (normalized)
         diff = K_s_t_c - K_t_c
-        error = float(b.to_numpy(b.sqrt(b.sum(diff * diff))))
-        norm_t = float(b.to_numpy(b.sqrt(b.sum(K_t_c * K_t_c))))
+        error_arr = b.sqrt(b.sum(diff * diff))
+        norm_t_arr = b.sqrt(b.sum(K_t_c * K_t_c))
+        b.eval(error_arr, norm_t_arr)
+        error = float(b.to_scalar(error_arr))
+        norm_t = float(b.to_scalar(norm_t_arr))
         alignment_error = error / (norm_t + division_epsilon(b, K_t_c))
 
         diagnostic = self._diagnose_alignment(source_transformed, target_centered, final_cka)
@@ -935,7 +947,7 @@ class GramAligner:
 
             grad_norm = b.sqrt(b.sum(grad * grad))
             b.eval(grad_norm)
-            grad_norm_val = float(b.to_numpy(grad_norm))
+            grad_norm_val = float(b.to_scalar(grad_norm))
             if grad_norm_val < eps:
                 break
 
@@ -975,9 +987,13 @@ class GramAligner:
         n = b.shape(K_x_c)[0]
 
         # HSIC = trace(K_x_c @ K_y_c) / (n-1)^2
-        hsic_xy = float(b.to_numpy(b.sum(K_x_c * K_y_c))) / ((n - 1) ** 2)
-        hsic_xx = float(b.to_numpy(b.sum(K_x_c * K_x_c))) / ((n - 1) ** 2)
-        hsic_yy = float(b.to_numpy(b.sum(K_y_c * K_y_c))) / ((n - 1) ** 2)
+        hsic_xy_arr = b.sum(K_x_c * K_y_c)
+        hsic_xx_arr = b.sum(K_x_c * K_x_c)
+        hsic_yy_arr = b.sum(K_y_c * K_y_c)
+        b.eval(hsic_xy_arr, hsic_xx_arr, hsic_yy_arr)
+        hsic_xy = float(b.to_scalar(hsic_xy_arr)) / ((n - 1) ** 2)
+        hsic_xx = float(b.to_scalar(hsic_xx_arr)) / ((n - 1) ** 2)
+        hsic_yy = float(b.to_scalar(hsic_yy_arr)) / ((n - 1) ** 2)
 
         denominator = math.sqrt(hsic_xx * hsic_yy)
         # Use dtype-derived epsilon for denominator floor
