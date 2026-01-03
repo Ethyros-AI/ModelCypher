@@ -141,8 +141,8 @@ class BaseAtlas(ABC, Generic[C, S]):
 
     Example usage:
         class MyAtlas(BaseAtlas[MyConcept, MySignature]):
-            def __init__(self, embedder, config):
-                super().__init__(embedder, config)
+            def __init__(self, embedder):
+                super().__init__(embedder)
 
             @property
             def inventory(self) -> list[MyConcept]:
@@ -158,17 +158,14 @@ class BaseAtlas(ABC, Generic[C, S]):
     def __init__(
         self,
         embedder: EmbeddingProvider | None = None,
-        configuration: BaseAtlasConfiguration | None = None,
     ):
-        """Initialize atlas with embedder and configuration.
+        """Initialize atlas with embedder.
 
         Args:
             embedder: Embedding provider for computing text embeddings.
                 If None, signature() will return None.
-            configuration: Atlas configuration. Uses defaults if None.
         """
         self.embedder = embedder
-        self.config = configuration or BaseAtlasConfiguration()
         self._cached_concept_embeddings: list[list[float]] | None = None
 
     @property
@@ -221,14 +218,10 @@ class BaseAtlas(ABC, Generic[C, S]):
 
         Returns:
             Signature with activation values for each concept, or None if:
-            - Atlas is disabled (config.enabled = False)
             - Text is empty after stripping whitespace
             - No embedder is configured
             - Embedding operation fails
         """
-        if not self.config.enabled:
-            return None
-
         trimmed = text.strip()
         if not trimmed:
             return None
