@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     ceil_scalar,
+    geodesic_svd,
     log_scalar,
     machine_epsilon,
     sqrt_scalar,
@@ -629,10 +630,11 @@ def _probe_precise(
                             tgt_centered = tgt_kv_shared - tgt_mean
                             b.eval(src_centered, tgt_centered)
 
-                            # Procrustes: M = src^T @ tgt, SVD(M) = U Σ Vt, R = U @ Vt
+                            # Procrustes: M = src^T @ tgt, geodesic SVD, R = U @ Vt
+                            # Uses GPU-only power iteration - no CPU linear algebra
                             M = b.matmul(b.transpose(src_centered), tgt_centered)
                             b.eval(M)
-                            U, _, Vt = b.svd(M)
+                            U, _, Vt = geodesic_svd(b, M)
                             R_procrustes = b.matmul(U, Vt)
 
                             # Ensure proper rotation (det = +1), not reflection

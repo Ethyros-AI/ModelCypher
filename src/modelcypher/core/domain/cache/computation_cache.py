@@ -383,6 +383,10 @@ class ComputationCache:
         start = time.perf_counter()
         if kernel_type == "linear":
             gram = backend.matmul(activations, backend.transpose(activations))
+        elif kernel_type == "geodesic_cosine":
+            from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_matrix
+
+            gram = geodesic_cosine_matrix(activations, backend)
         else:
             raise ValueError(f"Unsupported kernel type: {kernel_type}")
         backend.eval(gram)

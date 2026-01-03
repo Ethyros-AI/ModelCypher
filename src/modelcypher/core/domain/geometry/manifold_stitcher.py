@@ -103,6 +103,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     regularization_epsilon,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_norms,
+    geodesic_pairwise_metrics,
+)
 
 __all__ = [
     # Constants
@@ -270,9 +274,9 @@ class ContinuousFingerprint:
 
         for layer, activations in layer_activations.items():
             arr = b.array(activations)
-            norm_arr = b.norm(arr)
-            b.eval(norm_arr)
-            magnitudes[layer] = float(b.to_scalar(norm_arr))
+            norms = geodesic_norms(b.reshape(arr, (1, -1)), b)
+            b.eval(norms)
+            magnitudes[layer] = float(b.to_scalar(norms[0]))
 
             logits = arr
             max_val = b.max(logits)
@@ -618,15 +622,12 @@ class ManifoldStitcher:
         min_len = min(s_vec.size, t_vec.size)
         s_trunc, t_trunc = s_vec[:min_len], t_vec[:min_len]
 
-        dot_arr = b.sum(s_trunc * t_trunc)
-        s_norm_arr = b.norm(s_vec)
-        t_norm_arr = b.norm(t_vec)
-        b.eval(dot_arr, s_norm_arr, t_norm_arr)
-        dot_prod = float(b.to_scalar(dot_arr))
-        s_norm = float(b.to_scalar(s_norm_arr))
-        t_norm = float(b.to_scalar(t_norm_arr))
+        s_mat = b.reshape(s_trunc, (1, -1))
+        t_mat = b.reshape(t_trunc, (1, -1))
+        cos_arr, _ = geodesic_pairwise_metrics(s_mat, t_mat, b)
+        b.eval(cos_arr)
+        cosine = float(b.to_scalar(cos_arr))
         norm_eps = division_epsilon(b, s_vec)
-        cosine = dot_prod / (s_norm * t_norm) if (s_norm > norm_eps and t_norm > norm_eps) else 0.0
 
         mag_ratio = (
             source.magnitudes.get(layer, 1.0) / target.magnitudes.get(layer, 1.0)

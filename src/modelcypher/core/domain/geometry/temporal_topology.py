@@ -48,6 +48,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     is_nan,
 )
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_norms,
+    geodesic_pairwise_metrics,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array
@@ -184,11 +188,11 @@ class TemporalTopologyAnalyzer:
         matrix = backend.array([self.activations[c] for c in concepts], dtype="float32")
         backend.eval(matrix)
 
-        # Normalize for cosine similarity
-        norms_arr = backend.norm(matrix, axis=1, keepdims=True)
-        backend.eval(norms_arr)
-        div_eps = division_epsilon(backend, matrix)
-        matrix_norm = matrix / (norms_arr + div_eps)
+        # Normalize for geodesic cosine similarity
+        norms_arr = geodesic_norms(matrix, backend)
+        norms_arr = backend.reshape(norms_arr, (-1, 1))
+        div_eps = division_epsilon(backend, norms_arr)
+        matrix_norm = matrix / backend.maximum(norms_arr, backend.full(norms_arr.shape, div_eps))
         backend.eval(matrix_norm)
 
         # PCA for axis analysis
@@ -310,18 +314,11 @@ class TemporalTopologyAnalyzer:
 
         def orthogonality(v1: "object", v2: "object") -> float:
             """Compute orthogonality as 1 - |cos(angle)|."""
-            n1_arr = backend.norm(v1)
-            n2_arr = backend.norm(v2)
-            backend.eval(n1_arr, n2_arr)
-            n1 = float(backend.to_scalar(n1_arr))
-            n2 = float(backend.to_scalar(n2_arr))
-            div_eps = division_epsilon(backend, v1)
-            if n1 < div_eps or n2 < div_eps:
-                return 0.0
-            dot_arr = backend.sum(v1 * v2)
-            backend.eval(dot_arr)
-            dot_val = float(backend.to_scalar(dot_arr))
-            cos_sim = abs(dot_val / (n1 * n2))
+            v1_mat = backend.reshape(v1, (1, -1))
+            v2_mat = backend.reshape(v2, (1, -1))
+            cos_arr, _ = geodesic_pairwise_metrics(v1_mat, v2_mat, backend)
+            backend.eval(cos_arr)
+            cos_sim = abs(float(backend.to_scalar(cos_arr)))
             return 1.0 - cos_sim
 
         dir_dur = orthogonality(dir_vec, dur_vec)

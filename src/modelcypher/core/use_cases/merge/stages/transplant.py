@@ -41,6 +41,7 @@ from modelcypher.core.domain.geometry.transplant import (
     compute_transplant_delta,
     partition_core_boundary,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_paired_distances
 
 
 def _geodesic_pinv(backend: "Backend", F: "Array") -> "Array":
@@ -215,8 +216,12 @@ def _compute_alignment_metrics(
     output_source = b.matmul(core_acts, b.transpose(weight_source))
     b.eval(output_before, output_after, output_source)
 
-    dist_before_arr = b.norm(output_before - output_source)
-    dist_after_arr = b.norm(output_after - output_source)
+    # Geodesic distance respects manifold curvature. Euclidean systematically errs.
+    # Aggregate per-sample geodesic distances with RSS (Frobenius-equivalent).
+    geo_distances_before = geodesic_paired_distances(output_before, output_source, b)
+    geo_distances_after = geodesic_paired_distances(output_after, output_source, b)
+    dist_before_arr = b.sqrt(b.sum(geo_distances_before * geo_distances_before))
+    dist_after_arr = b.sqrt(b.sum(geo_distances_after * geo_distances_after))
     b.eval(dist_before_arr, dist_after_arr)
 
     dist_before = float(b.to_scalar(dist_before_arr))
@@ -1428,9 +1433,13 @@ def stage_transplant(
                     merged_output = b.matmul(
                         boundary_acts, b.transpose(actual_merged_weight)
                     )
-                    diff = merged_output - target_output
-                    diff_norm_arr = b.norm(b.reshape(diff, (-1,)))
-                    target_norm_arr = b.norm(b.reshape(target_output, (-1,)))
+                    # Geodesic distance: works in all dimensions (reduces to Euclidean
+                    # in flat spaces). Euclidean fails in high dimensions (4D+).
+                    geo_diffs = geodesic_paired_distances(merged_output, target_output, b)
+                    origin = b.zeros_like(target_output)
+                    geo_norms = geodesic_paired_distances(origin, target_output, b)
+                    diff_norm_arr = b.sqrt(b.sum(geo_diffs * geo_diffs))
+                    target_norm_arr = b.sqrt(b.sum(geo_norms * geo_norms))
                     b.eval(diff_norm_arr, target_norm_arr)
 
                     diff_norm = float(b.to_scalar(diff_norm_arr))

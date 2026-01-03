@@ -47,6 +47,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     is_nan,
 )
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_norms,
+    geodesic_pairwise_metrics,
+)
 
 from modelcypher.core.domain.geometry.atlas_protocols import (
     MoralConceptProtocol,
@@ -250,10 +254,11 @@ class MoralGeometryAnalyzer:
         matrix = backend.concatenate(reshaped, axis=0)
         matrix = backend.astype(matrix, "float32")
 
-        # Normalize for cosine similarity
-        norms = backend.norm(matrix, axis=1, keepdims=True)
+        # Normalize for geodesic cosine similarity
+        norms = geodesic_norms(matrix, backend)
+        norms = backend.reshape(norms, (-1, 1))
         eps = division_epsilon(backend, norms)
-        matrix_norm = matrix / (norms + eps)
+        matrix_norm = matrix / backend.maximum(norms, backend.full(norms.shape, eps))
 
         # PCA for axis analysis
         mean_vec = backend.mean(matrix_norm, axis=0, keepdims=True)
@@ -361,18 +366,11 @@ class MoralGeometryAnalyzer:
 
         def orthogonality(v1: "Array", v2: "Array") -> float:
             """Compute orthogonality as 1 - |cos(angle)|."""
-            n1 = backend.norm(v1)
-            n2 = backend.norm(v2)
-            backend.eval(n1, n2)
-            n1_val = float(backend.to_scalar(n1))
-            n2_val = float(backend.to_scalar(n2))
-            eps = division_epsilon(backend, v1)
-            if n1_val < eps or n2_val < eps:
-                return 0.0
-            dot = backend.sum(v1 * v2)
-            backend.eval(dot)
-            dot_val = float(backend.to_scalar(dot))
-            cos_sim = abs(dot_val / (n1_val * n2_val))
+            v1_mat = backend.reshape(v1, (1, -1))
+            v2_mat = backend.reshape(v2, (1, -1))
+            cos_arr, _ = geodesic_pairwise_metrics(v1_mat, v2_mat, backend)
+            backend.eval(cos_arr)
+            cos_sim = abs(float(backend.to_scalar(cos_arr)))
             return 1.0 - cos_sim
 
         val_agen = orthogonality(val_vec, agen_vec)
@@ -458,15 +456,10 @@ class MoralGeometryAnalyzer:
                 foundation_indices[foundation_key] = []
             foundation_indices[foundation_key].append(i)
 
-        # Pre-compute cosine similarity matrix once (vectorized, with caching)
-        # sim_matrix[i,j] = cos(matrix[i], matrix[j])
-        norms = backend.norm(matrix, axis=1, keepdims=True)
-        eps = division_epsilon(backend, norms)
-        matrix_normalized = matrix / backend.maximum(norms, backend.full(norms.shape, eps))
-        backend.eval(matrix_normalized)
-
-        # Use cached Gram matrix for normalized vectors = cosine similarity matrix
-        sim_matrix = _cache.get_or_compute_gram(matrix_normalized, backend)
+        # Pre-compute geodesic cosine similarity matrix once (vectorized, with caching)
+        sim_matrix = _cache.get_or_compute_gram(
+            matrix, backend, kernel_type="geodesic_cosine"
+        )
 
         # Compute within-foundation similarity (backend vectorized)
         within_sum = 0.0
@@ -564,19 +557,11 @@ class MoralGeometryAnalyzer:
                 return 0.0
 
             v1, v2 = matrix[vi], matrix[vci]
-            n1_arr = backend.norm(v1)
-            n2_arr = backend.norm(v2)
-            backend.eval(n1_arr, n2_arr)
-            n1 = float(backend.to_scalar(n1_arr))
-            n2 = float(backend.to_scalar(n2_arr))
-            eps = division_epsilon(backend, v1)
-            if n1 < eps or n2 < eps:
-                return 0.0
-
-            dot_arr = backend.sum(v1 * v2)
-            backend.eval(dot_arr)
-            dot = float(backend.to_scalar(dot_arr))
-            cos_sim = dot / (n1 * n2)
+            v1_mat = backend.reshape(v1, (1, -1))
+            v2_mat = backend.reshape(v2, (1, -1))
+            cos_arr, _ = geodesic_pairwise_metrics(v1_mat, v2_mat, backend)
+            backend.eval(cos_arr)
+            cos_sim = float(backend.to_scalar(cos_arr))
             # Distance = 1 - similarity (higher = more opposed)
             return float(1.0 - cos_sim)
 

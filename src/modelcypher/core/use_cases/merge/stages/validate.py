@@ -34,10 +34,10 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    geodesic_svd,
     log_scalar,
     machine_epsilon,
     sqrt_scalar,
-    svd_via_eigh,
 )
 
 if TYPE_CHECKING:
@@ -484,7 +484,7 @@ def _compute_layer_condition_number(
             cache_key = _cache.make_svd_key(val_arr, b, full_matrices=False)
             cached = _cache.get_svd(cache_key)
             if cached is None:
-                U, s, Vt = svd_via_eigh(b, val_arr, full_matrices=False)
+                U, s, Vt = geodesic_svd(b, val_arr)
                 _cache.set_svd(cache_key, (U, s, Vt))
             else:
                 _, s, _ = cached
@@ -545,7 +545,7 @@ def _estimate_layer_intrinsic_dim(
             cache_key = _cache.make_svd_key(val_arr, b, full_matrices=False)
             cached = _cache.get_svd(cache_key)
             if cached is None:
-                U, s, Vt = svd_via_eigh(b, val_arr, full_matrices=False)
+                U, s, Vt = geodesic_svd(b, val_arr)
                 _cache.set_svd(cache_key, (U, s, Vt))
             else:
                 _, s, _ = cached

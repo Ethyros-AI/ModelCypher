@@ -42,7 +42,11 @@ from typing import TYPE_CHECKING, Sequence
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
-from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_between_sets
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_cosine_between_sets,
+    geodesic_norms,
+    geodesic_pairwise_metrics,
+)
 from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol
 from modelcypher.core.domain.geometry.atlas_registry import get_atlas_probes
 
@@ -217,13 +221,14 @@ def align_relative_representations(
     aligned = backend.matmul(source_rel, backend.transpose(R))
     diff = aligned - target_rel
     backend.eval(aligned, diff)
-    error_num = backend.norm(diff)
+    _, dist_vals = geodesic_pairwise_metrics(aligned, target_rel, backend)
+    mean_dist_arr = backend.mean(dist_vals)
+    target_norms = geodesic_norms(target_rel, backend)
+    mean_norm_arr = backend.mean(target_norms) if int(target_rel.shape[0]) > 0 else backend.array(0.0)
     error_eps = division_epsilon(backend, target_rel)
-    error_denom = backend.maximum(backend.norm(target_rel), backend.array(error_eps))
-    backend.eval(error_num, error_denom)
-    error_num_val = float(backend.to_scalar(error_num))
-    error_denom_val = float(backend.to_scalar(error_denom))
-    error = error_num_val / error_denom_val
+    denom_arr = backend.maximum(mean_norm_arr, backend.array(error_eps))
+    backend.eval(mean_dist_arr, denom_arr)
+    error = float(backend.to_scalar(mean_dist_arr)) / float(backend.to_scalar(denom_arr))
 
     return R, float(error)
 
@@ -274,15 +279,10 @@ def transfer_via_relative_space(
     # Step 3: Project back to target space using pseudo-inverse
     # target_hidden = source_rel @ pinv(target_rel_anchors)
     # where target_rel_anchors[i, j] = cos(anchor_j, anchor_i)
-    target_anchor_norms = backend.norm(target_anchors, axis=1, keepdims=True)
-    target_anchor_eps = division_epsilon(backend, target_anchor_norms)
-    target_anchors_normalized = target_anchors / backend.maximum(
-        target_anchor_norms, backend.full(target_anchor_norms.shape, target_anchor_eps)
-    )
-
     # Pseudo-inverse of anchor similarities (with SVD caching for efficiency)
-    backend.eval(target_anchors_normalized)
-    target_rel_anchors = _cache.get_or_compute_gram(target_anchors_normalized, backend)
+    target_rel_anchors = _cache.get_or_compute_gram(
+        target_anchors, backend, kernel_type="geodesic_cosine"
+    )
 
     # Use cached SVD to compute pseudo-inverse: A^+ = V @ S^{-1} @ U^T
     U, S, Vh = _cache.get_or_compute_svd(target_rel_anchors, backend)

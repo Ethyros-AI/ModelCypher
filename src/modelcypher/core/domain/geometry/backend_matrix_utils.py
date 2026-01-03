@@ -52,6 +52,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     safe_log_epsilon,
     svd_via_eigh,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_matrix
 from modelcypher.core.domain.geometry.types import PairwiseProcrustesResult
 
 if TYPE_CHECKING:
@@ -584,7 +585,7 @@ class BackendMatrixUtils:
         return exp_scalar(entropy, b)
 
     def cosine_similarity_matrix(self, X: Array) -> Array:
-        """Compute pairwise cosine similarity matrix.
+        """Compute pairwise geodesic cosine similarity matrix.
 
         Args:
             X: Data matrix of shape (n_samples, n_features)
@@ -592,17 +593,7 @@ class BackendMatrixUtils:
         Returns:
             Similarity matrix of shape (n_samples, n_samples)
         """
-        # Normalize rows: X / ||X||
-        norms = self.backend.norm(X, axis=1, keepdims=True)
-        # Avoid division by zero
-        eps = self.backend.full(norms.shape, division_epsilon(self.backend, norms))
-        norms = self.backend.maximum(norms, eps)
-
-        X_normalized = X / norms
-
-        # Cosine similarity = dot product of normalized vectors
-        X_normalized_T = self.backend.transpose(X_normalized)
-        return self.backend.matmul(X_normalized, X_normalized_T)
+        return geodesic_cosine_matrix(X, self.backend)
 
     def eigendecomposition(self, K: Array) -> tuple[Array, Array]:
         """Compute eigendecomposition of symmetric matrix.

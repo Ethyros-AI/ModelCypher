@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.vector_math import geodesic_paired_distances
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -88,10 +89,12 @@ def verify_boundary_invariance(
     output_target = b.matmul(boundary, b.transpose(target))
     b.eval(output_transplanted, output_target)
 
-    # Compute per-sample relative difference
-    diff = output_transplanted - output_target
-    diff_norms = b.norm(diff, axis=1)
-    target_norms = b.norm(output_target, axis=1)
+    # Compute per-sample relative difference using geodesic distance.
+    # Geodesic works in all dimensions (reduces to Euclidean in flat spaces).
+    # Euclidean systematically errs in high dimensions (4D+).
+    diff_norms = geodesic_paired_distances(output_transplanted, output_target, b)
+    origin = b.zeros_like(output_target)
+    target_norms = geodesic_paired_distances(origin, output_target, b)
     b.eval(diff_norms, target_norms)
 
     eps = float(machine_epsilon(b, target))

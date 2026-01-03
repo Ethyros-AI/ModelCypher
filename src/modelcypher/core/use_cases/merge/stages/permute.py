@@ -38,6 +38,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import power_iteration_eigh
 from modelcypher.core.use_cases.quantization_utils import dequantize_if_needed
 
 if TYPE_CHECKING:
@@ -177,17 +178,15 @@ def stage_permute(
         feature_bias_correction=True,
     ).best
     if embed_cka < 1.0 - precision_tol:
-        # Polar decomposition via eigendecomposition (no SVD).
+        # Polar decomposition via GPU-only power iteration eigendecomposition (no CPU linear algebra).
         M = b.matmul(b.transpose(source_anchors), target_anchors)
         mtm = b.matmul(b.transpose(M), M)
-        # Cast to float32 for eigendecomposition (MLX doesn't support bfloat16 for eigh)
-        mtm_dtype = str(b.dtype(mtm))
-        if "bfloat16" in mtm_dtype:
-            mtm_f32 = b.astype(mtm, "float32")
-            b.eval(mtm_f32)
-            eigvals, eigvecs = b.eigh(mtm_f32)
-        else:
-            eigvals, eigvecs = b.eigh(mtm)
+        # Cast to float32 for numerical stability
+        mtm_f32 = b.astype(mtm, "float32")
+        b.eval(mtm_f32)
+
+        n = int(mtm_f32.shape[0])
+        eigvals, eigvecs = power_iteration_eigh(b, mtm_f32, k=n)
         b.eval(eigvals, eigvecs)
 
         # Use backend operations to find min/max eigenvalues (avoid CPU conversion)

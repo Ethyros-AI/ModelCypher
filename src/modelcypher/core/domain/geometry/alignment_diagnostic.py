@@ -35,6 +35,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_paired_distances
 
 _cache = ComputationCache.shared()
 
@@ -113,15 +114,15 @@ def alignment_signal_from_matrices(
     n_samples = b.shape(source_matrix)[0]
     labels = list(labels) if labels is not None else [f"sample:{i}" for i in range(n_samples)]
 
-    # Per-anchor divergence (fallback to Gram-space when dimensions differ)
+    # Per-anchor divergence: geodesic distance respects manifold curvature.
+    # Euclidean is systematically wrong in high dimensions.
     if b.shape(source_matrix) != b.shape(target_matrix):
+        # Gram-space comparison when dimensions differ
         source_gram = _cache.get_or_compute_gram(source_matrix, b)
         target_gram = _cache.get_or_compute_gram(target_matrix, b)
-        diff = source_gram - target_gram
-        distances = b.norm(diff, axis=1)
+        distances = geodesic_paired_distances(source_gram, target_gram, b)
     else:
-        diff = source_matrix - target_matrix
-        distances = b.norm(diff, axis=1)
+        distances = geodesic_paired_distances(source_matrix, target_matrix, b)
     mean_dist = b.mean(distances)
     max_dist = b.max(distances)
     b.eval(distances, mean_dist, max_dist)

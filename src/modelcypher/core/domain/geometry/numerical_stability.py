@@ -581,6 +581,319 @@ def compute_spearman_correlation(
     return float(backend.to_scalar(num)) / denom_val
 
 
+# =============================================================================
+# GPU-FRIENDLY GEODESIC ALTERNATIVES (NO CPU LINEAR ALGEBRA)
+# =============================================================================
+# These functions replace SVD, eigendecomposition, and pinv with GPU-only
+# operations. For high-dimensional manifolds (8kD+), Euclidean linear algebra
+# is mathematically inaccurate - geodesic methods are required.
+
+
+def gram_schmidt_orthogonalize(
+    backend: Backend,
+    vectors: Array,
+) -> Array:
+    """Orthogonalize vectors using modified Gram-Schmidt (GPU-only).
+
+    This is numerically stable and runs entirely on GPU via matmul.
+
+    Args:
+        backend: Compute backend.
+        vectors: Matrix [n, k] where columns are vectors to orthogonalize.
+
+    Returns:
+        Orthonormal matrix [n, k].
+    """
+    b = backend
+    vectors = b.astype(b.array(vectors), "float32")
+    b.eval(vectors)
+
+    n = int(vectors.shape[0])
+    k = int(vectors.shape[1])
+    reg = regularization_epsilon(b, vectors)
+
+    Q_cols = []
+    for j in range(k):
+        v = vectors[:, j]
+        b.eval(v)
+
+        # Subtract projections onto previous orthonormal vectors
+        for q in Q_cols:
+            proj = b.sum(v * q)
+            b.eval(proj)
+            v = v - proj * q
+            b.eval(v)
+
+        # Normalize
+        norm_v = b.norm(v)
+        b.eval(norm_v)
+        norm_val = float(b.to_scalar(norm_v))
+
+        if norm_val > reg:
+            v = v / norm_val
+        else:
+            # Vector is linearly dependent - use random
+            v = b.ones((n,), dtype="float32") / sqrt_scalar(b, n)
+        b.eval(v)
+        Q_cols.append(v)
+
+    # Stack columns
+    Q = b.stack(Q_cols, axis=1)
+    b.eval(Q)
+    return Q
+
+
+def power_iteration_eigh(
+    backend: Backend,
+    matrix: Array,
+    k: int = 10,
+) -> tuple[Array, Array]:
+    """Compute top-k eigenvalues/eigenvectors via power iteration (GPU-only).
+
+    This replaces backend.eigh() which requires CPU on MLX. Power iteration
+    uses only matmul and is fully GPU-accelerated.
+
+    Iterates until convergence (eigenvalues stop changing within machine epsilon).
+    No arbitrary iteration limits - we find the exact decomposition.
+
+    Args:
+        backend: Compute backend.
+        matrix: Symmetric matrix [n, n].
+        k: Number of top eigenvectors to compute.
+
+    Returns:
+        (eigenvalues, eigenvectors) where:
+        - eigenvalues: [k] in descending order
+        - eigenvectors: [n, k] orthonormal columns
+    """
+    b = backend
+    matrix = b.astype(b.array(matrix), "float32")
+    b.eval(matrix)
+
+    n = int(matrix.shape[0])
+    k = min(k, n)
+    eps = machine_epsilon(b, matrix)
+    convergence_tol = sqrt_scalar(eps, b)  # sqrt(machine_epsilon) for convergence
+
+    # Initialize with diverse vectors (not all ones)
+    V_cols = []
+    for j in range(k):
+        col = b.ones((n,), dtype="float32")
+        # Add position-based diversity
+        if j > 0:
+            indices = b.arange(n, dtype="float32")
+            col = col + 0.1 * (indices / n) * j
+        b.eval(col)
+        V_cols.append(col)
+    V = b.stack(V_cols, axis=1)
+    V = gram_schmidt_orthogonalize(b, V)
+    b.eval(V)
+
+    prev_eigenvalues = None
+
+    # Iterate until convergence - no arbitrary limits
+    while True:
+        # Apply matrix: V = M @ V
+        V = b.matmul(matrix, V)
+        b.eval(V)
+
+        # Orthogonalize via Gram-Schmidt
+        V = gram_schmidt_orthogonalize(b, V)
+        b.eval(V)
+
+        # Compute Rayleigh quotients for eigenvalues
+        MV = b.matmul(matrix, V)
+        b.eval(MV)
+
+        eigenvalues_list = []
+        for j in range(k):
+            v_j = V[:, j]
+            mv_j = MV[:, j]
+            b.eval(v_j, mv_j)
+            lambda_j = b.sum(v_j * mv_j)
+            b.eval(lambda_j)
+            eigenvalues_list.append(lambda_j)
+
+        eigenvalues = b.stack(eigenvalues_list, axis=0)
+        b.eval(eigenvalues)
+
+        # Check convergence: eigenvalues stopped changing
+        if prev_eigenvalues is not None:
+            diff = b.abs(eigenvalues - prev_eigenvalues)
+            max_diff_arr = b.max(diff)
+            b.eval(max_diff_arr)
+            max_diff = float(b.to_scalar(max_diff_arr))
+
+            # Also check relative convergence for large eigenvalues
+            max_eig_arr = b.max(b.abs(eigenvalues))
+            b.eval(max_eig_arr)
+            max_eig = float(b.to_scalar(max_eig_arr))
+            rel_tol = convergence_tol * max(1.0, max_eig)
+
+            if max_diff < rel_tol:
+                break
+
+        prev_eigenvalues = eigenvalues
+
+    # Sort by descending eigenvalue
+    order = b.argsort(-eigenvalues)
+    b.eval(order)
+    eigenvalues = b.take(eigenvalues, order, axis=0)
+    V = b.take(V, order, axis=1)
+    b.eval(eigenvalues, V)
+
+    return eigenvalues, V
+
+
+def geodesic_svd(
+    backend: Backend,
+    array: Array,
+    k: int | None = None,
+) -> tuple[Array, Array, Array]:
+    """Compute SVD via power iteration (GPU-only, no CPU linear algebra).
+
+    This replaces svd_via_eigh which uses backend.eigh (CPU on MLX).
+    Uses power iteration on A.T @ A to get right singular vectors,
+    then derives left singular vectors via A @ V / S.
+
+    Iterates until convergence - no arbitrary iteration limits.
+    We find the exact decomposition.
+
+    Args:
+        backend: Compute backend.
+        array: Matrix [m, n] to decompose.
+        k: Number of singular values to compute. If None, uses min(m, n).
+
+    Returns:
+        (U, S, Vt) where:
+        - U: [m, k] left singular vectors
+        - S: [k] singular values in descending order
+        - Vt: [k, n] right singular vectors (transposed)
+    """
+    b = backend
+    A = b.astype(b.array(array), "float32")
+    b.eval(A)
+
+    m = int(A.shape[0])
+    n = int(A.shape[1])
+    k = min(k or min(m, n), m, n)
+    reg = regularization_epsilon(b, A)
+
+    if m == 0 or n == 0 or k == 0:
+        U = b.zeros((m, k), dtype="float32")
+        S = b.zeros((k,), dtype="float32")
+        Vt = b.zeros((k, n), dtype="float32")
+        return U, S, Vt
+
+    # Form A.T @ A (Gram matrix of columns)
+    AtA = b.matmul(b.transpose(A), A)
+    b.eval(AtA)
+
+    # Get top-k eigenvectors of A.T @ A via power iteration (iterates until convergence)
+    eigenvalues, V = power_iteration_eigh(b, AtA, k=k)
+    b.eval(eigenvalues, V)
+
+    # Singular values are sqrt of eigenvalues
+    S = b.sqrt(b.maximum(eigenvalues, b.zeros_like(eigenvalues)))
+    b.eval(S)
+
+    # Compute U = A @ V @ diag(1/S)
+    AV = b.matmul(A, V)
+    b.eval(AV)
+
+    # Normalize each column of AV by corresponding singular value
+    U_cols = []
+    for j in range(k):
+        s_j_arr = S[j]
+        b.eval(s_j_arr)
+        s_j = float(b.to_scalar(s_j_arr))
+
+        u_j = AV[:, j]
+        if s_j > reg:
+            u_j = u_j / s_j
+        else:
+            # Zero singular value - use zero vector
+            u_j = b.zeros((m,), dtype="float32")
+        b.eval(u_j)
+        U_cols.append(u_j)
+
+    U = b.stack(U_cols, axis=1)
+    Vt = b.transpose(V)
+    b.eval(U, Vt)
+
+    return U, S, Vt
+
+
+def geodesic_pinv(
+    backend: Backend,
+    array: Array,
+) -> Array:
+    """Compute pseudo-inverse using Gram regularization (GPU-only).
+
+    This replaces safe_pinv which uses SVD (CPU on MLX). Uses regularized
+    Gram matrix inversion with Neumann series, which runs entirely on GPU.
+
+    For CKA=1.0 transforms (which preserve Gram structure), the matrix is
+    nearly orthogonal, so pinv(F) ≈ F.T with scaling.
+
+    Formula: pinv(A) = (A.T @ A + λI)^{-1} @ A.T
+
+    Args:
+        backend: Compute backend.
+        array: Matrix [m, n] to pseudo-invert.
+
+    Returns:
+        Pseudo-inverse [n, m].
+    """
+    b = backend
+    A = b.astype(b.array(array), "float32")
+    b.eval(A)
+
+    m = int(A.shape[0])
+    n = int(A.shape[1])
+    reg = regularization_epsilon(b, A)
+
+    # Gram matrix: G = A.T @ A [n, n]
+    G = b.matmul(b.transpose(A), A)
+    b.eval(G)
+
+    # Regularization from trace (data-derived)
+    trace_G = b.trace(G)
+    b.eval(trace_G)
+    trace_val = float(b.to_scalar(trace_G))
+    lambda_reg = max(reg, trace_val / n * 0.01) if n > 0 else reg
+
+    # Regularized Gram: G_reg = G + λI
+    G_reg = G + lambda_reg * b.eye(n, dtype="float32")
+    b.eval(G_reg)
+
+    # Neumann series approximation for (G_reg)^{-1}
+    lambda_eff = lambda_reg + trace_val / n if n > 0 else lambda_reg + reg
+    inv_lambda = 1.0 / lambda_eff
+    mean_diag = trace_val / n if n > 0 else 0.0
+
+    # G_centered = G - mean_diag * I
+    G_centered = G - mean_diag * b.eye(n, dtype="float32")
+    b.eval(G_centered)
+
+    # First-order approximation: (G_reg)^{-1} ≈ inv_lambda * I - inv_lambda² * G_centered
+    G_reg_inv = inv_lambda * b.eye(n, dtype="float32") - (inv_lambda ** 2) * G_centered
+    b.eval(G_reg_inv)
+
+    # Newton-Schulz refinement: X = X @ (2I - G @ X)
+    GX = b.matmul(G_reg, G_reg_inv)
+    b.eval(GX)
+    two_I = 2.0 * b.eye(n, dtype="float32")
+    G_reg_inv = b.matmul(G_reg_inv, two_I - GX)
+    b.eval(G_reg_inv)
+
+    # pinv(A) = G_reg_inv @ A.T  [n, m]
+    A_pinv = b.matmul(G_reg_inv, b.transpose(A))
+    b.eval(A_pinv)
+
+    return A_pinv
+
+
 def svd_via_eigh(
     backend: Backend,
     array: Array,

@@ -88,6 +88,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_cosine_matrix,
+    geodesic_norms,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -103,11 +107,14 @@ class AnchorActivation:
     norm: float = field(init=False)
 
     def __post_init__(self) -> None:
-        norm = (
-            sqrt_scalar(sum(float(value) * float(value) for value in self.activation), get_default_backend())
-            if self.activation
-            else 0.0
-        )
+        if not self.activation:
+            norm = 0.0
+        else:
+            backend = get_default_backend()
+            arr = backend.array(self.activation)
+            norms = geodesic_norms(backend.reshape(arr, (1, -1)), backend)
+            backend.eval(norms)
+            norm = float(backend.to_scalar(norms[0]))
         object.__setattr__(self, "norm", float(norm))
 
 
@@ -754,11 +761,7 @@ def _cosine_similarity_matrix(activations: list[list[float]]) -> "Array | None":
     arr = backend.array(activations)
     if arr.ndim != 2 or arr.shape[0] == 0:
         return None
-    norms = backend.norm(arr, axis=1, keepdims=True)
-    eps = division_epsilon(backend, norms)
-    norms = backend.clip(norms, eps, None)
-    normalized = arr / norms
-    return normalized @ normalized.T
+    return geodesic_cosine_matrix(arr, backend)
 
 
 def _mean_absolute_difference(a: "Array", b: "Array") -> float:

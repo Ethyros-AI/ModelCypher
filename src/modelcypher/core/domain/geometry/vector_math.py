@@ -324,6 +324,29 @@ def geodesic_pairwise_metrics(a: Any, b: Any, backend: "Backend") -> tuple[Any, 
     return cos_vals, dab_diag
 
 
+def geodesic_paired_distances(a: Any, b: Any, backend: "Backend") -> Any:
+    """Compute geodesic distances between paired vectors.
+
+    Given matrices A and B of shape [n, d], returns an array of n geodesic
+    distances where result[i] = geodesic_distance(A[i], B[i]).
+
+    Uses k-NN graph to model the discrete manifold structure. This is the
+    correct distance metric for curved representation spaces. Euclidean
+    distance is systematically wrong: it underestimates on positive curvature
+    and overestimates on negative curvature.
+
+    Args:
+        a: First matrix [n, d]
+        b: Second matrix [n, d] (must have same shape as a)
+        backend: Backend for tensor operations
+
+    Returns:
+        Array of shape [n] with geodesic distance for each pair
+    """
+    _, distances = geodesic_pairwise_metrics(a, b, backend)
+    return distances
+
+
 def geodesic_cosine_sparse(
     a: dict[int, float],
     b: dict[int, float],

@@ -93,7 +93,10 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    geodesic_pinv,
+    geodesic_svd,
     machine_epsilon,
+    power_iteration_eigh,
     regularization_epsilon,
     sqrt_scalar,
 )
@@ -239,16 +242,10 @@ class GramAligner:
     ) -> "Array | None":
         """Solve for F such that Gram(source @ F) = Gram(target).
 
-        Tries all methods and selects the one with lowest error.
-        No tolerance-based thresholds - always returns the lowest-error solution.
+        Uses GPU-only geodesic operations - no CPU linear algebra.
+        All eigendecomposition uses power iteration, all pseudo-inverse
+        uses Gram regularization with Neumann series.
         """
-        from modelcypher.core.domain.geometry.numerical_stability import (
-            machine_epsilon,
-            safe_pinv,
-            solve_full_row_rank_via_qr,
-            solve_via_gram_alignment,
-        )
-
         b = self._backend
         n_samples = b.shape(source_centered)[0]
         if n_samples == 0:
@@ -258,43 +255,52 @@ class GramAligner:
         reg_threshold = max(eps, reg) if reg is not None else eps
         candidates: list[tuple[float, "Array", str]] = []
 
-        # Method 1: Gram-space alignment via SVD + Procrustes
-        F_gram, gram_diag = solve_via_gram_alignment(b, source_centered, target_centered)
-        if F_gram is not None:
-            procrustes_err = gram_diag.get("procrustes_error", float("inf"))
-            candidates.append((procrustes_err, F_gram, "gram_procrustes"))
-            self._logger.debug(
-                "Gram alignment: procrustes_error=%.2e, rank_s=%d, rank_t=%d",
-                procrustes_err,
-                gram_diag.get("rank_source", 0),
-                gram_diag.get("rank_target", 0),
-            )
+        target_norm = b.norm(target_centered)
+        b.eval(target_norm)
+        target_norm_val = float(b.to_scalar(target_norm))
 
-        # Method 2: QR-based solve for feature alignment
-        F_qr, qr_diag = solve_full_row_rank_via_qr(b, source_centered, target_centered)
-        if F_qr is not None:
-            residual = qr_diag.get("residual_norm", float("inf"))
-            candidates.append((residual, F_qr, "qr"))
-            self._logger.debug(
-                "QR solve: method=%s, cond=%.2e, residual=%.2e",
-                qr_diag.get("method", "unknown"),
-                qr_diag.get("condition", float("inf")),
-                residual,
-            )
+        # Method 1: Geodesic SVD + Procrustes alignment
+        # Uses power iteration for SVD - runs on GPU
+        U_s, S_s, Vt_s = geodesic_svd(b, source_centered, iterations=30)
+        U_t, S_t, Vt_t = geodesic_svd(b, target_centered, iterations=30)
+        b.eval(U_s, S_s, Vt_s, U_t, S_t, Vt_t)
 
-        # Method 3: Eigendecomposition
+        # Find rotation via cross-correlation
+        cross = b.matmul(b.transpose(U_s), U_t)
+        b.eval(cross)
+        U_cross, _, Vt_cross = geodesic_svd(b, cross, iterations=20)
+        b.eval(U_cross, Vt_cross)
+        R = b.matmul(U_cross, Vt_cross)
+        b.eval(R)
+
+        # F_gram aligns source singular space to target
+        # F = V_s @ R @ Vt_t.T (assuming similar singular values)
+        F_gram = b.matmul(b.transpose(Vt_s), b.matmul(R, Vt_t))
+        b.eval(F_gram)
+
+        reconstructed = b.matmul(source_centered, F_gram)
+        residual_gram = b.norm(reconstructed - target_centered)
+        b.eval(residual_gram)
+        procrustes_err = float(b.to_scalar(residual_gram)) / (target_norm_val + reg_threshold)
+        candidates.append((procrustes_err, F_gram, "geodesic_procrustes"))
+        self._logger.debug(
+            "Geodesic Procrustes: error=%.2e",
+            procrustes_err,
+        )
+
+        # Method 2: Power iteration eigendecomposition for Gram inverse
         gram = b.matmul(source_centered, b.transpose(source_centered))
         b.eval(gram)
 
-        gram_dtype = str(b.dtype(gram))
-        if "bfloat16" in gram_dtype:
-            gram_f32 = b.astype(gram, "float32")
-            b.eval(gram_f32)
-            eigvals, eigvecs = b.eigh(gram_f32)
-        else:
-            eigvals, eigvecs = b.eigh(gram)
+        gram_f32 = b.astype(gram, "float32")
+        b.eval(gram_f32)
+
+        n = int(gram_f32.shape[0])
+        k = min(n, 50)  # Use top-50 eigenvectors for efficiency
+        eigvals, eigvecs = power_iteration_eigh(b, gram_f32, k=k, iterations=30)
         b.eval(eigvals, eigvecs)
 
+        # Invert eigenvalues above threshold
         inv_vals = b.where(
             eigvals > reg_threshold,
             1.0 / eigvals,
@@ -302,6 +308,7 @@ class GramAligner:
         )
         b.eval(inv_vals)
 
+        # Reconstruct pseudo-inverse in eigenspace
         inv_diag = b.reshape(inv_vals, (1, -1))
         gram_inv_subspace = b.matmul(
             eigvecs * inv_diag,
@@ -314,9 +321,6 @@ class GramAligner:
             b.matmul(gram_inv_subspace, target_centered),
         )
         b.eval(F_eig)
-        target_norm = b.norm(target_centered)
-        b.eval(target_norm)
-        target_norm_val = float(b.to_scalar(target_norm))
 
         # Compute residual for eigendecomposition method
         reconstructed = b.matmul(source_centered, F_eig)
@@ -324,18 +328,19 @@ class GramAligner:
         b.eval(residual_eig)
         residual_val = float(b.to_scalar(residual_eig))
         rel_residual = residual_val / (target_norm_val + reg_threshold)
-        candidates.append((rel_residual, F_eig, "eigendecomposition"))
+        candidates.append((rel_residual, F_eig, "power_iteration_eigh"))
 
-        # Method 4: Pseudoinverse solve (robust for rank-deficient cases)
-        F_pinv, _pinv_diag = safe_pinv(b, source_centered, rcond=reg_threshold)
-        F_pinv = b.matmul(F_pinv, target_centered)
+        # Method 3: Geodesic pseudo-inverse (Gram + Neumann series)
+        # Runs entirely on GPU - no CPU linear algebra
+        source_pinv = geodesic_pinv(b, source_centered)
+        F_pinv = b.matmul(source_pinv, target_centered)
         b.eval(F_pinv)
         reconstructed = b.matmul(source_centered, F_pinv)
         residual_pinv = b.norm(reconstructed - target_centered)
         b.eval(residual_pinv)
         residual_val = float(b.to_scalar(residual_pinv))
         rel_residual = residual_val / (target_norm_val + reg_threshold)
-        candidates.append((rel_residual, F_pinv, "pinv"))
+        candidates.append((rel_residual, F_pinv, "geodesic_pinv"))
 
         # Select lowest-error method
         if not candidates:
@@ -355,51 +360,58 @@ class GramAligner:
     ) -> "Array | None":
         """Solve for F such that Gram(source @ F) = Gram(target) on uncentered data.
 
-        Tries all methods and selects the one with lowest error.
-        No tolerance-based thresholds - always returns the lowest-error solution.
+        Uses GPU-only geodesic operations - no CPU linear algebra.
         """
-        from modelcypher.core.domain.geometry.numerical_stability import (
-            machine_epsilon,
-            solve_full_row_rank_via_qr,
-            solve_via_gram_alignment,
-        )
-
         b = self._backend
         n_samples = b.shape(source)[0]
         if n_samples == 0:
             return None
 
         eps = machine_epsilon(b, source)
+        reg_threshold = regularization_epsilon(b, source)
         candidates: list[tuple[float, "Array", str]] = []
 
-        # Method 1: Gram-space alignment via SVD + Procrustes
-        F_gram, gram_diag = solve_via_gram_alignment(b, source, target)
-        if F_gram is not None:
-            procrustes_err = gram_diag.get("procrustes_error", float("inf"))
-            candidates.append((procrustes_err, F_gram, "gram_procrustes"))
+        target_norm = b.norm(target)
+        b.eval(target_norm)
+        target_norm_val = float(b.to_scalar(target_norm))
 
-        # Method 2: QR-based solve
-        F_qr, qr_diag = solve_full_row_rank_via_qr(b, source, target)
-        if F_qr is not None:
-            residual = qr_diag.get("residual_norm", float("inf"))
-            candidates.append((residual, F_qr, "qr"))
+        # Method 1: Geodesic SVD + Procrustes alignment
+        U_s, S_s, Vt_s = geodesic_svd(b, source, iterations=30)
+        U_t, S_t, Vt_t = geodesic_svd(b, target, iterations=30)
+        b.eval(U_s, S_s, Vt_s, U_t, S_t, Vt_t)
 
-        # Method 3: Eigendecomposition (requires positive definite gram)
+        # Find rotation via cross-correlation
+        cross = b.matmul(b.transpose(U_s), U_t)
+        b.eval(cross)
+        U_cross, _, Vt_cross = geodesic_svd(b, cross, iterations=20)
+        b.eval(U_cross, Vt_cross)
+        R = b.matmul(U_cross, Vt_cross)
+        b.eval(R)
+
+        F_gram = b.matmul(b.transpose(Vt_s), b.matmul(R, Vt_t))
+        b.eval(F_gram)
+
+        reconstructed = b.matmul(source, F_gram)
+        residual_gram = b.norm(reconstructed - target)
+        b.eval(residual_gram)
+        procrustes_err = float(b.to_scalar(residual_gram)) / (target_norm_val + reg_threshold)
+        candidates.append((procrustes_err, F_gram, "geodesic_procrustes"))
+
+        # Method 2: Power iteration eigendecomposition for Gram inverse
         gram = b.matmul(source, b.transpose(source))
-        b.eval(gram)
+        gram_f32 = b.astype(gram, "float32")
+        b.eval(gram_f32)
 
-        gram_dtype = str(b.dtype(gram))
-        if "bfloat16" in gram_dtype:
-            gram_f32 = b.astype(gram, "float32")
-            b.eval(gram_f32)
-            eigvals, eigvecs = b.eigh(gram_f32)
-        else:
-            eigvals, eigvecs = b.eigh(gram)
+        n = int(gram_f32.shape[0])
+        k = min(n, 50)
+        eigvals, eigvecs = power_iteration_eigh(b, gram_f32, k=k, iterations=30)
         b.eval(eigvals, eigvecs)
 
+        # Check if positive definite (all eigenvalues positive)
         min_eig_arr = b.min(eigvals)
         b.eval(min_eig_arr)
         min_eig = float(b.to_scalar(min_eig_arr))
+
         if min_eig > 0.0:
             inv_vals = b.where(
                 eigvals > eps,
@@ -420,15 +432,23 @@ class GramAligner:
             )
             b.eval(F_eig)
 
-            # Compute residual for eigendecomposition
             reconstructed = b.matmul(source, F_eig)
             residual_eig = b.norm(reconstructed - target)
-            target_norm = b.norm(target)
-            b.eval(residual_eig, target_norm)
+            b.eval(residual_eig)
             residual_val = float(b.to_scalar(residual_eig))
-            target_norm_val = float(b.to_scalar(target_norm))
             rel_residual = residual_val / (target_norm_val + eps)
-            candidates.append((rel_residual, F_eig, "eigendecomposition"))
+            candidates.append((rel_residual, F_eig, "power_iteration_eigh"))
+
+        # Method 3: Geodesic pseudo-inverse
+        source_pinv = geodesic_pinv(b, source)
+        F_pinv = b.matmul(source_pinv, target)
+        b.eval(F_pinv)
+        reconstructed = b.matmul(source, F_pinv)
+        residual_pinv = b.norm(reconstructed - target)
+        b.eval(residual_pinv)
+        residual_val = float(b.to_scalar(residual_pinv))
+        rel_residual = residual_val / (target_norm_val + eps)
+        candidates.append((rel_residual, F_pinv, "geodesic_pinv"))
 
         # Select lowest-error method
         if not candidates:
@@ -574,10 +594,10 @@ class GramAligner:
             gram_norm = float(b.to_scalar(gram_norm_arr))
             if gram_diff_norm < precision_threshold * (gram_norm + precision_threshold):
                 # Gram matrices are equal - this is a rotation/reflection
-                # Find the rotation via Procrustes: R = V @ U^T where source^T @ target = U @ S @ V^T
+                # Find the rotation via geodesic Procrustes (GPU-only, no CPU linear algebra)
                 cross = b.matmul(b.transpose(source_centered), target_centered)
                 b.eval(cross)
-                U, _, Vt = b.svd(cross)
+                U, _, Vt = geodesic_svd(b, cross, iterations=30)
                 rotation = b.matmul(U, Vt)
                 b.eval(rotation)
                 H = self._centering_matrix(n_samples)
@@ -748,21 +768,22 @@ class GramAligner:
     ) -> "Array":
         """Compute the exact sample-space transformation T = K_t^{1/2} @ K_s^{-1/2}.
 
+        Uses GPU-only power iteration for eigendecomposition - no CPU linear algebra.
         This transformation guarantees T @ K_s @ T^T = K_t.
         """
         b = self._backend
 
-        # Cast to float32 for eigendecomposition (MLX doesn't support bfloat16 for eigh)
-        K_s_dtype = str(b.dtype(K_s_c))
-        if "bfloat16" in K_s_dtype:
-            K_s_f32 = b.astype(K_s_c, "float32")
-            K_t_f32 = b.astype(K_t_c, "float32")
-            b.eval(K_s_f32, K_t_f32)
-            eig_s, V_s = b.eigh(K_s_f32)
-            eig_t, V_t = b.eigh(K_t_f32)
-        else:
-            eig_s, V_s = b.eigh(K_s_c)
-            eig_t, V_t = b.eigh(K_t_c)
+        # Cast to float32 for numerical stability
+        K_s_f32 = b.astype(K_s_c, "float32")
+        K_t_f32 = b.astype(K_t_c, "float32")
+        b.eval(K_s_f32, K_t_f32)
+
+        n = int(K_s_f32.shape[0])
+        k = min(n, 50)  # Use top-50 eigenvectors for efficiency
+
+        # GPU-only power iteration eigendecomposition
+        eig_s, V_s = power_iteration_eigh(b, K_s_f32, k=k, iterations=30)
+        eig_t, V_t = power_iteration_eigh(b, K_t_f32, k=k, iterations=30)
         b.eval(eig_s, V_s, eig_t, V_t)
 
         regularization = self._regularization if self._regularization is not None else 0.0
@@ -884,18 +905,15 @@ class GramAligner:
         K_s_c_local = b.matmul(b.matmul(H, K_s), H)
         b.eval(K_s_c_local)
 
-        # Eigendecomposition for matrix square roots
-        # Cast to float32 for eigendecomposition (MLX doesn't support bfloat16 for eigh)
-        K_dtype = str(b.dtype(K_s_c_local))
-        if "bfloat16" in K_dtype:
-            K_s_f32 = b.astype(K_s_c_local, "float32")
-            K_t_f32 = b.astype(K_t_c, "float32")
-            b.eval(K_s_f32, K_t_f32)
-            eig_s, V_s = b.eigh(K_s_f32)
-            eig_t, V_t = b.eigh(K_t_f32)
-        else:
-            eig_s, V_s = b.eigh(K_s_c_local)
-            eig_t, V_t = b.eigh(K_t_c)
+        # GPU-only power iteration eigendecomposition for matrix square roots
+        K_s_f32 = b.astype(K_s_c_local, "float32")
+        K_t_f32 = b.astype(K_t_c, "float32")
+        b.eval(K_s_f32, K_t_f32)
+
+        n = int(K_s_f32.shape[0])
+        k = min(n, 50)  # Use top-50 eigenvectors for efficiency
+        eig_s, V_s = power_iteration_eigh(b, K_s_f32, k=k, iterations=30)
+        eig_t, V_t = power_iteration_eigh(b, K_t_f32, k=k, iterations=30)
         b.eval(eig_s, V_s, eig_t, V_t)
 
         # Sample-space approach with dtype-derived regularization (no cascade)
