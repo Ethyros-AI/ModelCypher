@@ -770,12 +770,15 @@ class JAXBackend(Backend):
 
     # --- File I/O (Native Backend Serialization) ---
 
-    def save_safetensors(self, path: str, weights: dict[str, Any]) -> None:
+    def save_safetensors(
+        self, path: str, weights: dict[str, Any], metadata: dict[str, str] | None = None
+    ) -> None:
         """Save weights to safetensors using JAX/Flax native I/O.
 
         Args:
             path: File path to save to.
             weights: Dictionary of weight name -> array.
+            metadata: Optional dictionary of string metadata to include.
         """
         from safetensors.flax import save_file
 
@@ -786,7 +789,10 @@ class JAXBackend(Backend):
                 jax_weights[key] = value
             else:
                 jax_weights[key] = self.array(value)
-        save_file(jax_weights, path)
+        if metadata:
+            save_file(jax_weights, path, metadata=metadata)
+        else:
+            save_file(jax_weights, path)
 
     def load_safetensors(self, path: str) -> dict[str, Any]:
         """Load weights from safetensors using JAX/Flax native I/O.

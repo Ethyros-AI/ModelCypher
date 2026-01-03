@@ -20,9 +20,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-import numpy as _np_io  # I/O boundary: numpy required for npz file format
-from safetensors.numpy import save_file
-
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.ports.exporter import Exporter
 from modelcypher.utils.paths import expand_path
 
@@ -38,7 +36,7 @@ class LocalExporter(Exporter):
         output_path : str
             Destination path for exported model.
         export_format : str
-            Target format (npz, safetensors, mlx).
+            Target format (safetensors only - npz is deprecated).
 
         Returns
         -------
@@ -57,7 +55,7 @@ class LocalExporter(Exporter):
         output_path : str
             Destination path for exported checkpoint.
         export_format : str
-            Target format (npz, safetensors, mlx).
+            Target format (safetensors only - npz is deprecated).
 
         Returns
         -------
@@ -71,12 +69,12 @@ class LocalExporter(Exporter):
         target = expand_path(output_path)
         export_format = export_format.lower()
 
-        if export_format == "npz":
-            self._export_npz(source, target)
-        elif export_format == "safetensors":
+        if export_format == "safetensors":
             self._export_safetensors(source, target)
-        elif export_format == "mlx":
-            self._export_mlx(source, target)
+        elif export_format in ("npz", "mlx"):
+            raise NotImplementedError(
+                f"{export_format.upper()} format is deprecated. Use safetensors format instead."
+            )
         elif export_format == "gguf":
             raise NotImplementedError(
                 "GGUF export requires llama.cpp conversion tools. "
@@ -102,51 +100,34 @@ class LocalExporter(Exporter):
 
         return {"format": export_format, "outputPath": str(target)}
 
-    def _export_npz(self, source: Path, target: Path) -> None:
-        if source.is_dir():
-            source = source / "weights.npz"
-        if source.suffix != ".npz":
-            raise ValueError("NPZ export expects an .npz source")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, target)
-
     def _export_safetensors(self, source: Path, target: Path) -> None:
+        """Export to safetensors format using backend native I/O."""
+        backend = get_default_backend()
+
         if source.is_dir():
-            # If dir, look for weights.npz or safetensors
-            if (source / "weights.npz").exists():
-                source = source / "weights.npz"
-            elif (source / "model.safetensors").exists():
+            # Look for safetensors files in directory
+            if (source / "model.safetensors").exists():
                 # Already safetensors, copy
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy(source / "model.safetensors", target)
                 return
+            # Try to find any safetensors file
+            safetensor_files = list(source.glob("*.safetensors"))
+            if safetensor_files:
+                # Load and merge all safetensors files
+                weights = {}
+                for sf in safetensor_files:
+                    weights.update(backend.load_safetensors(str(sf)))
+                target.parent.mkdir(parents=True, exist_ok=True)
+                backend.save_safetensors(str(target), weights)
+                return
+            raise ValueError(f"No safetensors files found in {source}")
 
-        if source.suffix == ".npz":
-            data = _np_io.load(source)
-            tensors = {name: data[name] for name in data.files}  # Use data.files to iterate
-            target.parent.mkdir(parents=True, exist_ok=True)
-            save_file(tensors, target)
-        else:
-            # Assume it's already a file we can copy if not handled above
+        if source.suffix == ".safetensors":
+            # Copy safetensors file directly
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(source, target)
-
-    def _export_mlx(self, source: Path, target: Path) -> None:
-        """Export as compressed NPZ archive (NumPy's zip-based format)."""
-        target.parent.mkdir(parents=True, exist_ok=True)
-        if hasattr(target, "with_suffix") and target.suffix != ".npz":
-            target = target.with_suffix(".npz")
-
-        if source.is_dir():
-            if (source / "weights.npz").exists():
-                source = source / "weights.npz"
-
-        # If source is NPZ, load and re-save (or just copy if format identical)
-        # MLX savez produces compressed npz by default
-        if source.suffix == ".npz":
-            shutil.copy(source, target)
         else:
-            # Load and save
-            # This part assumes we can load 'source' via numpy
-            data = _np_io.load(source)
-            _np_io.savez_compressed(target, **data)
+            raise ValueError(
+                f"Unsupported source format: {source.suffix}. Only .safetensors is supported."
+            )

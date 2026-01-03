@@ -502,15 +502,10 @@ def save_geometric_lora(
         output_path: Path to save (should end in .safetensors).
         include_metadata: Whether to include generation metadata.
     """
-    try:
-        from safetensors.numpy import save_file
-    except ImportError:
-        logger.error("safetensors not installed, cannot save LoRA")
-        raise
-
+    backend = get_default_backend()
     tensors = lora.to_safetensors_dict()
 
-    metadata = {}
+    metadata: dict[str, str] | None = None
     if include_metadata:
         c = lora.transfer_point.confidence_components
         metadata = {
@@ -525,5 +520,5 @@ def save_geometric_lora(
             "generator": "ModelCypher Geometric LoRA",
         }
 
-    save_file(tensors, output_path, metadata=metadata)
+    backend.save_safetensors(output_path, tensors, metadata=metadata)
     logger.info(f"Saved geometric LoRA to {output_path}")

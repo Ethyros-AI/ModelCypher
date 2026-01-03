@@ -174,15 +174,10 @@ class SafeLoRAProjector:
         Returns:
             Number of weight matrices projected.
         """
-        try:
-            from safetensors.numpy import load_file, save_file
-        except ImportError as exc:
-            raise ImportError("safetensors required for Safe LoRA projection") from exc
-
         backend = get_default_backend()
 
-        # Load projection matrix
-        projection_weights = load_file(str(projection_path))
+        # Load projection matrix using backend native I/O
+        projection_weights = backend.load_safetensors(str(projection_path))
 
         # The projection file should contain projection matrices for each layer
         # Format: {"layers.N.proj": array} where proj is the projection matrix
@@ -196,7 +191,7 @@ class SafeLoRAProjector:
         if not adapter_file.exists():
             raise ValueError(f"No adapter weights found in {adapter_path}")
 
-        adapter_weights = load_file(str(adapter_file))
+        adapter_weights = backend.load_safetensors(str(adapter_file))
         projected_count = 0
 
         # Apply projection to each LoRA weight matrix
@@ -227,9 +222,9 @@ class SafeLoRAProjector:
             # Keep original weight if no projection available
             new_weights[key] = weight
 
-        # Save projected weights
+        # Save projected weights using backend native I/O
         if projected_count > 0:
-            save_file(new_weights, str(adapter_file))
+            backend.save_safetensors(str(adapter_file), new_weights)
 
         return projected_count
 

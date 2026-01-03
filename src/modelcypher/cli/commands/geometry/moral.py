@@ -159,7 +159,8 @@ def moral_probe_model(
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.backends.mlx_backend import MLXBackend
     from modelcypher.core.domain.agents.moral_atlas import MoralConceptInventory
-    from modelcypher.core.domain.geometry.moral_geometry import MoralGeometryAnalyzer
+from modelcypher.core.domain.geometry.moral_geometry import MoralGeometryAnalyzer
+from modelcypher.core.support.array_utils import array_to_list
 
     typer.echo(f"Loading model from {model_path}...")
     model, tokenizer = load_model_for_training(model_path)
@@ -202,7 +203,7 @@ def moral_probe_model(
 
             activation = backend.mean(hidden[0], axis=0)
             backend.eval(activation)
-            anchor_activations[concept.id] = backend.to_numpy(activation)
+            anchor_activations[concept.id] = activation
 
         except Exception as e:
             typer.echo(f"  Warning: Failed anchor {concept.id}: {e}", err=True)
@@ -217,7 +218,9 @@ def moral_probe_model(
 
     # Save activations if requested
     if output_file:
-        activations_json = {name: act.tolist() for name, act in anchor_activations.items()}
+        activations_json = {
+            name: array_to_list(backend, act) for name, act in anchor_activations.items()
+        }
         Path(output_file).write_text(json.dumps(activations_json, indent=2))
         typer.echo(f"Saved activations to {output_file}")
 
@@ -296,12 +299,9 @@ def moral_analyze(
     with open(path) as f:
         raw_activations = json.load(f)
 
-    # Convert to backend arrays then to numpy for analyzer
+    # Convert to backend arrays for analyzer
     backend = MLXBackend()
-    activations = {
-        name: backend.to_numpy(backend.array(vec))
-        for name, vec in raw_activations.items()
-    }
+    activations = {name: backend.array(vec) for name, vec in raw_activations.items()}
 
     analyzer = MoralGeometryAnalyzer(backend=backend)
     report = analyzer.full_analysis(activations)

@@ -27,6 +27,7 @@ from modelcypher.cli.commands.geometry.helpers import (
 )
 from modelcypher.cli.context import CLIContext
 from modelcypher.core.domain.agents.unified_atlas import AtlasDomain, AtlasSource
+from modelcypher.core.support.array_utils import array_to_list
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +93,7 @@ class BackboneActivationProvider:
         if pending:
             self._backend.eval(*pending)
 
-        return [self._backend.to_numpy(vec).tolist() for vec in activations]
+        return [array_to_list(self._backend, vec) for vec in activations]
 
 
 def parse_sources(values: list[str] | None) -> set[AtlasSource] | None:

@@ -30,6 +30,7 @@ from modelcypher.cli.composition import get_domain_geometry_waypoint_service
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.support.array_utils import array_to_list
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.domains import AtlasDomain
@@ -407,7 +408,7 @@ def compute_volume(
                 backend.eval(hidden)
                 act = backend.mean(hidden[0], axis=0)
                 backend.eval(act)
-                activations.append(backend.to_numpy(act))
+                activations.append(act)
 
         except Exception as e:
             logger.warning(f"Failed to extract: {e}")
@@ -417,17 +418,15 @@ def compute_volume(
         raise typer.Exit(1)
 
     # Estimate volume - use backend for stacking activations
-    act_array = backend.stack([backend.array(a) for a in activations])
-    # Convert to numpy for RiemannianDensityEstimator which may expect numpy
-    act_array_np = backend.to_numpy(act_array)
+    act_array = backend.stack(activations)
     estimator = RiemannianDensityEstimator()
-    volume = estimator.estimate_concept_volume(concept, act_array_np)
+    volume = estimator.estimate_concept_volume(concept, act_array)
 
     # Compute eigenvalues using backend.eigh (returns eigenvalues, eigenvectors)
     cov_arr = backend.array(volume.covariance)
     eigenvalues, _ = backend.eigh(cov_arr)
     backend.eval(eigenvalues)
-    eigenvalues_list = backend.to_numpy(eigenvalues).tolist()
+    eigenvalues_list = array_to_list(backend, eigenvalues)
     top_eigenvalues = sorted(eigenvalues_list, reverse=True)[:5]
 
     payload = {
@@ -568,7 +567,7 @@ def null_space_filter(
                     backend.eval(hidden)
                     act = backend.mean(hidden[0], axis=0)
                     backend.eval(act)
-                    layer_activations[i].append(backend.to_numpy(act))
+                    layer_activations[i].append(act)
 
                     if i == target_layer:
                         break
@@ -581,9 +580,7 @@ def null_space_filter(
 
     # Stack activations using backend and convert to numpy for NullSpaceFilter
     layer_arrays = {
-        layer_idx: backend.to_numpy(
-            backend.stack([backend.array(a) for a in acts])
-        )
+        layer_idx: backend.stack(acts)
         for layer_idx, acts in layer_activations.items()
     }
 

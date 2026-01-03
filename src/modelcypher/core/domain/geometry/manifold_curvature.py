@@ -46,7 +46,6 @@ References:
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable
@@ -54,7 +53,11 @@ from typing import TYPE_CHECKING, Any, Callable
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    is_finite,
+    log_scalar,
     regularization_epsilon,
+    sqrt_scalar,
+    tiny_value,
 )
 
 if TYPE_CHECKING:
@@ -963,13 +966,13 @@ class SectionalCurvatureEstimator:
             # Assume unit radius for simplicity
             discriminant = 1 + 4 * mean_scalar
             if discriminant > 0:
-                n_est = (1 + math.sqrt(discriminant)) / 2
+                n_est = (1 + sqrt_scalar(discriminant, backend)) / 2
                 return min(n_est, ambient_dim)
 
         # For negative curvature, use hyperbolic formula
         # Scalar curvature of n-dim hyperbolic space = -n(n-1)
         if mean_scalar < 0:
-            n_est = (1 + math.sqrt(1 - 4 * mean_scalar)) / 2
+            n_est = (1 + sqrt_scalar(1 - 4 * mean_scalar, backend)) / 2
             return min(n_est, ambient_dim)
 
         return None
@@ -1130,7 +1133,7 @@ class OllivierRicciCurvature:
             edge_kappas = [ec.curvature for ec in edge_curvatures]
             mean_edge = sum(edge_kappas) / len(edge_kappas)
             variance = sum((kappa - mean_edge) ** 2 for kappa in edge_kappas) / len(edge_kappas)
-            std_edge = math.sqrt(variance)
+            std_edge = sqrt_scalar(variance, backend)
         else:
             mean_edge = 0.0
             std_edge = 0.0
@@ -1182,7 +1185,7 @@ class OllivierRicciCurvature:
             neighbors = [
                 int(idx)
                 for idx, dist in zip(idx_list, dist_list)
-                if math.isfinite(float(dist))
+                if is_finite(float(dist), backend)
             ]
             adjacency[i] = neighbors
 
@@ -1209,7 +1212,7 @@ class OllivierRicciCurvature:
 
         # Skip infinite or zero edge weights
         eps = division_epsilon(backend, geo_result.distances)
-        if not math.isfinite(edge_weight) or edge_weight < eps:
+        if not is_finite(edge_weight, backend) or edge_weight < eps:
             return None
 
         # Build lazy random walk measures with adaptive alpha
@@ -1352,7 +1355,7 @@ class OllivierRicciCurvature:
         log_K = -cost_centered / max(epsilon, eps)
 
         # Clamp to avoid underflow
-        min_log = math.log(floor)
+        min_log = log_scalar(floor, backend)
         log_K = backend.maximum(log_K, backend.full(log_K.shape, min_log))
         K = backend.exp(log_K)
         K = backend.maximum(K, backend.full(K.shape, floor))

@@ -152,10 +152,11 @@ def load_model_for_training(
 
 
 def load_weights_as_numpy(model_path: str) -> "dict[str, Any]":  # noqa: F821
-    """Load model weights as numpy-compatible arrays while preserving dtype.
+    """Load model weights as backend arrays (GPU-accelerated).
 
-    Uses the backend's to_numpy() method for conversion at the boundary.
-    bfloat16 is promoted to float32; integer/quantized dtypes are preserved.
+    Note: Despite the name, this now returns backend-native arrays for performance.
+    The name is kept for backwards compatibility with callers that expect
+    array-like objects. Backend arrays support the same operations.
     """
     import glob
     from pathlib import Path
@@ -167,22 +168,9 @@ def load_weights_as_numpy(model_path: str) -> "dict[str, Any]":  # noqa: F821
     if not safetensor_files:
         raise FileNotFoundError(f"No safetensors files found in {model_path}")
 
+    # Use backend's native safetensors loading (GPU-accelerated)
     weights: dict[str, Any] = {}
-    try:
-        from safetensors.numpy import load_file
-
-        for sf_path in safetensor_files:
-            weights.update(load_file(sf_path))
-        return weights
-    except Exception as e:
-        logger.warning(
-            "safetensors numpy load failed (%s); falling back to MLX loader",
-            e,
-        )
-
     for sf_path in safetensor_files:
-        mlx_weights = mx.load(sf_path)
-        for key, value in mlx_weights.items():
-            weights[key] = backend.to_numpy(value)
+        weights.update(backend.load_safetensors(sf_path))
 
     return weights

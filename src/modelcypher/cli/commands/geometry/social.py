@@ -137,7 +137,8 @@ def social_probe_model(
     from modelcypher.adapters.model_loader import load_model_for_training
     from modelcypher.backends.mlx_backend import MLXBackend
     from modelcypher.core.domain.agents.social_atlas import SocialConceptInventory
-    from modelcypher.core.domain.geometry.social_geometry import SocialGeometryAnalyzer
+from modelcypher.core.domain.geometry.social_geometry import SocialGeometryAnalyzer
+from modelcypher.core.support.array_utils import array_to_list
 
     typer.echo(f"Loading model from {model_path}...")
     model, tokenizer = load_model_for_training(model_path)
@@ -194,7 +195,7 @@ def social_probe_model(
     # Save activations if requested
     if output_file:
         activations_json = {
-            name: backend.to_numpy(act).tolist() for name, act in anchor_activations.items()
+            name: array_to_list(backend, act) for name, act in anchor_activations.items()
         }
         Path(output_file).write_text(json.dumps(activations_json, indent=2))
         typer.echo(f"Saved activations to {output_file}")

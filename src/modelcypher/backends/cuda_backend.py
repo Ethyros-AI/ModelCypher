@@ -705,12 +705,15 @@ class CUDABackend(Backend):
 
     # --- File I/O (Native Backend Serialization) ---
 
-    def save_safetensors(self, path: str, weights: dict[str, Any]) -> None:
+    def save_safetensors(
+        self, path: str, weights: dict[str, Any], metadata: dict[str, str] | None = None
+    ) -> None:
         """Save weights to safetensors using PyTorch native I/O.
 
         Args:
             path: File path to save to.
             weights: Dictionary of weight name -> array.
+            metadata: Optional dictionary of string metadata to include.
         """
         from safetensors.torch import save_file
 
@@ -721,7 +724,10 @@ class CUDABackend(Backend):
                 torch_weights[key] = value
             else:
                 torch_weights[key] = self.array(value)
-        save_file(torch_weights, path)
+        if metadata:
+            save_file(torch_weights, path, metadata=metadata)
+        else:
+            save_file(torch_weights, path)
 
     def load_safetensors(self, path: str) -> dict[str, Any]:
         """Load weights from safetensors using PyTorch native I/O.

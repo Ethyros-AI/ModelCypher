@@ -45,6 +45,7 @@ from modelcypher.core.domain.geometry.knowledge_diff import (
     compute_graft_mask,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
+from modelcypher.core.support.array_utils import array_to_list
 
 app = typer.Typer(no_args_is_help=True)
 logger = logging.getLogger(__name__)
@@ -109,7 +110,7 @@ class BackboneActivationProvider:
         if pending:
             self._backend.eval(*pending)
 
-        return [self._backend.to_numpy(vec).tolist() for vec in activations]
+        return [array_to_list(self._backend, vec) for vec in activations]
 
 
 def _parse_sources(values: list[str] | None) -> set[AtlasSource] | None:

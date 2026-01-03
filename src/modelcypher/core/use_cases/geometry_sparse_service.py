@@ -222,6 +222,20 @@ class GeometrySparseService:
     @staticmethod
     def refusal_direction_payload(direction: RefusalDirection) -> dict:
         """Convert refusal direction to CLI/MCP payload."""
+        if hasattr(direction.direction, "shape"):
+            from modelcypher.core.domain._backend import get_default_backend
+
+            b = get_default_backend()
+            dir_arr = direction.direction
+            norm_arr = b.norm(dir_arr)
+            b.eval(norm_arr)
+            direction_norm = float(b.to_scalar(norm_arr))
+        else:
+            direction_norm = (
+                sum(x * x for x in direction.direction) ** 0.5
+                if direction.direction
+                else 0.0
+            )
         return {
             "layerIndex": direction.layer_index,
             "hiddenSize": direction.hidden_size,
@@ -229,9 +243,7 @@ class GeometrySparseService:
             "explainedVariance": direction.explained_variance,
             "modelId": direction.model_id,
             "computedAt": direction.computed_at.isoformat(),
-            "directionNorm": sum(x * x for x in direction.direction) ** 0.5
-            if direction.direction
-            else 0.0,
+            "directionNorm": direction_norm,
         }
 
     @staticmethod

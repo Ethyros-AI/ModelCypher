@@ -62,7 +62,6 @@ References:
 from __future__ import annotations
 
 import logging
-import math
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -71,8 +70,13 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
+    cos_scalar,
     division_epsilon,
+    exp_scalar,
+    log_scalar,
     machine_epsilon,
+    pi_value,
+    sqrt_scalar,
 )
 
 if TYPE_CHECKING:
@@ -276,15 +280,15 @@ def generate_primes(n: int, backend: "Backend | None" = None) -> PrimeSequence:
     if n < 6:
         limit = 15
     else:
-        ln_n = math.log(n)
-        ln_ln_n = math.log(ln_n)
+        ln_n = log_scalar(float(n), backend)
+        ln_ln_n = log_scalar(ln_n, backend)
         limit = int(n * (ln_n + ln_ln_n)) + 100
 
     # Sieve of Eratosthenes
     is_prime = [True] * (limit + 1)
     is_prime[0] = is_prime[1] = False
 
-    for i in range(2, int(math.sqrt(limit)) + 1):
+    for i in range(2, int(sqrt_scalar(float(limit), backend)) + 1):
         if is_prime[i]:
             for j in range(i * i, limit + 1, i):
                 is_prime[j] = False
@@ -767,7 +771,7 @@ def generate_poisson_gaps(
         u = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
         float(backend.to_scalar(u))
 
-        L = math.exp(-rate)
+        L = exp_scalar(-rate, backend)
         k = 0
         p = 1.0
 
@@ -807,7 +811,7 @@ def generate_cramer_model(
 
     while len(pseudo_primes) < n_values:
         # P(m is "prime") = 1/ln(m)
-        prob = 1.0 / math.log(current) if current > 1 else 1.0
+        prob = 1.0 / log_scalar(float(current), backend) if current > 1 else 1.0
         u = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
         u_val = float(backend.to_scalar(u))
 
@@ -1108,7 +1112,7 @@ def bootstrap_confidence_interval(
     upper_idx = int((1 - alpha / 2) * n_bootstrap) - 1
 
     mean_val = sum(values) / len(values)
-    std_val = math.sqrt(sum((v - mean_val) ** 2 for v in values) / (len(values) - 1))
+    std_val = sqrt_scalar(sum((v - mean_val) ** 2 for v in values) / (len(values) - 1), backend)
 
     return ConfidenceInterval(
         lower=bootstrap_means[lower_idx],
@@ -1146,7 +1150,7 @@ def compute_cohens_d(
     var2 = sum((v - mean2) ** 2 for v in values2) / (n2 - 1)
 
     # Pooled standard deviation
-    pooled_std = math.sqrt(((n1 - 1) * var1 + (n2 - 1) * var2) / (n1 + n2 - 2))
+    pooled_std = sqrt_scalar(((n1 - 1) * var1 + (n2 - 1) * var2) / (n1 + n2 - 2), backend)
 
     eps = machine_epsilon(backend, backend.array([0.0]))
     if pooled_std < eps:
@@ -1530,7 +1534,8 @@ def run_perturbation_study(
                 u1_val = max(float(backend.to_scalar(u1)), u1_eps)
                 u2_val = float(backend.to_scalar(u2))
 
-                z = math.sqrt(-2 * math.log(u1_val)) * math.cos(2 * math.pi * u2_val)
+                pi = pi_value(backend)
+                z = sqrt_scalar(-2 * log_scalar(u1_val, backend), backend) * cos_scalar(2 * pi * u2_val, backend)
                 noise = z * noise_level * mean_gap
                 perturbed = max(2.0, g + noise)
                 perturbed_gaps.append(perturbed)

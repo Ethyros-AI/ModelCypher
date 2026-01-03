@@ -23,9 +23,10 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
 
-from .vector_math import VectorMath
+from .vector_math import BackendVectorMath, VectorMath
 
 if TYPE_CHECKING:
     pass
@@ -63,7 +64,7 @@ STANDARD_CONTRASTIVE_PAIRS: list[ContrastivePair] = [
 
 @dataclass(frozen=True)
 class RefusalDirection:
-    direction: list[float]
+    direction: Any
     layer_index: int
     hidden_size: int
     strength: float
@@ -141,38 +142,54 @@ class RefusalDirectionDetector:
         layer_index: int,
         model_id: str,
     ) -> RefusalDirection | None:
-        harmful_list = RefusalDirectionDetector._to_list_matrix(harmful_activations)
-        harmless_list = RefusalDirectionDetector._to_list_matrix(harmless_activations)
-        if not harmful_list or not harmless_list:
+        b = get_default_backend()
+        harmful_arr = (
+            harmful_activations
+            if hasattr(harmful_activations, "shape")
+            else b.array(harmful_activations)
+        )
+        harmless_arr = (
+            harmless_activations
+            if hasattr(harmless_activations, "shape")
+            else b.array(harmless_activations)
+        )
+        b.eval(harmful_arr, harmless_arr)
+
+        shape_h = b.shape(harmful_arr)
+        shape_b = b.shape(harmless_arr)
+        if len(shape_h) != 2 or len(shape_b) != 2:
             return None
-        hidden_size = len(harmful_list[0]) if harmful_list else 0
+        if int(shape_h[0]) == 0 or int(shape_b[0]) == 0:
+            return None
+        if int(shape_h[1]) != int(shape_b[1]):
+            return None
+        hidden_size = int(shape_h[1])
         if hidden_size <= 0:
             return None
 
-        harmful_mean = RefusalDirectionDetector._mean_vector(harmful_list)
-        harmless_mean = RefusalDirectionDetector._mean_vector(harmless_list)
-        if len(harmful_mean) != hidden_size or len(harmless_mean) != hidden_size:
-            return None
+        harmful_mean = RefusalDirectionDetector._mean_vector(harmful_arr)
+        harmless_mean = RefusalDirectionDetector._mean_vector(harmless_arr)
+        b.eval(harmful_mean, harmless_mean)
 
-        direction = [harmful_mean[i] - harmless_mean[i] for i in range(hidden_size)]
-        norm = VectorMath.l2_norm(direction)
-        if norm is None or norm <= 0:
+        direction_arr = harmful_mean - harmless_mean
+        norm_arr = b.norm(direction_arr)
+        b.eval(direction_arr, norm_arr)
+        norm = float(b.to_scalar(norm_arr))
+        eps = division_epsilon(b, direction_arr)
+        if norm <= eps:
             return None
-        strength = float(norm)
-        final_direction = VectorMath.l2_normalized(direction)
-        direction_value: Any = final_direction
-        # Convert to backend array if inputs were arrays (check via hasattr to avoid type coupling)
-        if hasattr(harmful_activations, "shape") or hasattr(harmless_activations, "shape"):
-            b = get_default_backend()
-            direction_value = b.array(final_direction)
+        strength = norm
+        final_direction = direction_arr / norm_arr
+        b.eval(final_direction)
         explained_variance = RefusalDirectionDetector._estimate_explained_variance(
-            harmful_activations=harmful_list,
-            harmless_activations=harmless_list,
+            harmful_activations=harmful_arr,
+            harmless_activations=harmless_arr,
             direction=final_direction,
+            backend=b,
         )
 
         return RefusalDirection(
-            direction=direction_value,
+            direction=final_direction,
             layer_index=layer_index,
             hidden_size=hidden_size,
             strength=strength,
@@ -188,19 +205,25 @@ class RefusalDirectionDetector:
         previous_projection: float | None,
         token_index: int,
     ) -> DistanceMetrics | None:
-        activation_list = RefusalDirectionDetector._to_list_vector(activation)
-        if len(activation_list) != len(refusal_direction.direction):
-            return None
+        b = get_default_backend()
+        backend_math = BackendVectorMath(b)
+        try:
+            projection_magnitude = backend_math.dot(activation, refusal_direction.direction)
+            cosine = backend_math.cosine_similarity(activation, refusal_direction.direction)
+            distance_to_refusal = float(1.0 - cosine)
+        except Exception:
+            activation_list = RefusalDirectionDetector._to_list_vector(activation)
+            if len(activation_list) != len(refusal_direction.direction):
+                return None
+            projection = VectorMath.dot(activation_list, refusal_direction.direction)
+            if projection is None:
+                return None
+            projection_magnitude = float(projection)
 
-        projection = VectorMath.dot(activation_list, refusal_direction.direction)
-        if projection is None:
-            return None
-        projection_magnitude = float(projection)
-
-        cosine = VectorMath.cosine_similarity(activation_list, refusal_direction.direction)
-        if cosine is None:
-            return None
-        distance_to_refusal = float(1.0 - cosine)
+            cosine = VectorMath.cosine_similarity(activation_list, refusal_direction.direction)
+            if cosine is None:
+                return None
+            distance_to_refusal = float(1.0 - cosine)
 
         is_approaching = projection_magnitude > (previous_projection or 0.0)
         return DistanceMetrics(
@@ -221,57 +244,67 @@ class RefusalDirectionDetector:
         }
 
     @staticmethod
-    def _mean_vector(vectors: list[list[float]]) -> list[float]:
+    def _mean_vector(vectors: Any) -> Any:
         """Compute Fréchet mean of embedding vectors on the representation manifold."""
-        if not vectors:
-            return []
-        dim = len(vectors[0])
-        # Filter to valid vectors of consistent dimension
-        valid_vectors = [v for v in vectors if len(v) == dim]
-        if not valid_vectors:
-            return []
-        # Use Fréchet mean (geodesic center of mass) instead of arithmetic mean
         backend = get_default_backend()
-        points = backend.array(valid_vectors)
+        points = vectors if hasattr(vectors, "shape") else backend.array(vectors)
+        if int(points.shape[0]) == 0:
+            return backend.zeros((0,))
         mean_arr = frechet_mean(points, backend=backend)
         backend.eval(mean_arr)
-        return [float(backend.to_scalar(mean_arr[i])) for i in range(int(mean_arr.shape[0]))]
+        return mean_arr
 
     @staticmethod
     def _estimate_explained_variance(
-        harmful_activations: list[list[float]],
-        harmless_activations: list[list[float]],
-        direction: list[float],
+        harmful_activations: Any,
+        harmless_activations: Any,
+        direction: Any,
+        backend: Any | None = None,
     ) -> float:
-        harmful_projections: list[float] = []
-        harmless_projections: list[float] = []
+        b = backend or get_default_backend()
+        harmful_arr = (
+            harmful_activations
+            if hasattr(harmful_activations, "shape")
+            else b.array(harmful_activations)
+        )
+        harmless_arr = (
+            harmless_activations
+            if hasattr(harmless_activations, "shape")
+            else b.array(harmless_activations)
+        )
+        direction_arr = direction if hasattr(direction, "shape") else b.array(direction)
+        b.eval(harmful_arr, harmless_arr, direction_arr)
 
-        for activation in harmful_activations:
-            projection = VectorMath.dot(activation, direction)
-            if projection is not None:
-                harmful_projections.append(float(projection))
-
-        for activation in harmless_activations:
-            projection = VectorMath.dot(activation, direction)
-            if projection is not None:
-                harmless_projections.append(float(projection))
-
-        if not harmful_projections or not harmless_projections:
+        if int(harmful_arr.shape[0]) == 0 or int(harmless_arr.shape[0]) == 0:
             return 0.0
 
-        harmful_mean = sum(harmful_projections) / float(len(harmful_projections))
-        harmless_mean = sum(harmless_projections) / float(len(harmless_projections))
-        between_class_var = (harmful_mean - harmless_mean) ** 2
+        direction_row = b.reshape(direction_arr, (1, -1))
+        harmful_proj = b.sum(harmful_arr * direction_row, axis=1)
+        harmless_proj = b.sum(harmless_arr * direction_row, axis=1)
+        b.eval(harmful_proj, harmless_proj)
 
-        within_class_var = sum((proj - harmful_mean) ** 2 for proj in harmful_projections)
-        within_class_var += sum((proj - harmless_mean) ** 2 for proj in harmless_projections)
-        total_count = float(len(harmful_projections) + len(harmless_projections))
-        within_class_var = within_class_var / total_count
-
-        total_var = between_class_var + within_class_var
-        if total_var <= 0:
+        n_h = int(harmful_proj.shape[0])
+        n_b = int(harmless_proj.shape[0])
+        total_count = n_h + n_b
+        if total_count == 0:
             return 0.0
-        return min(1.0, between_class_var / total_var)
+
+        mean_h = b.mean(harmful_proj)
+        mean_b = b.mean(harmless_proj)
+        b.eval(mean_h, mean_b)
+        between = (mean_h - mean_b) * (mean_h - mean_b)
+
+        diff_h = harmful_proj - mean_h
+        diff_b = harmless_proj - mean_b
+        within_sum = b.sum(diff_h * diff_h) + b.sum(diff_b * diff_b)
+        within = within_sum / float(total_count)
+        total_var = between + within
+        eps = division_epsilon(b, direction_arr)
+        total_safe = b.maximum(total_var, b.full(total_var.shape, eps))
+        ratio = between / total_safe
+        ratio = b.clip(ratio, 0.0, 1.0)
+        b.eval(ratio)
+        return float(b.to_scalar(ratio))
 
     @staticmethod
     def _to_list_matrix(values: Any) -> list[list[float]]:
