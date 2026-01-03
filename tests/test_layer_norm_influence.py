@@ -91,9 +91,8 @@ def test_layer_norm_identical_alignment():
     ln = backend.random_normal((128,))
     backend.eval(ln)
 
-    ln_np = backend.tolist(ln)
     config = SpectralConfig()
-    metrics = compute_spectral_metrics(ln_np, ln_np, config=config)
+    metrics = compute_spectral_metrics(ln, ln, config=config)
 
     eps = machine_epsilon(backend, ln)
     assert abs(metrics.spectral_alignment - 1.0) <= eps
