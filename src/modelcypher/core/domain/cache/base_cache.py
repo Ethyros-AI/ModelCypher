@@ -27,7 +27,6 @@ import json
 import logging
 import threading
 import time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Generic, TypeVar
 
@@ -36,20 +35,6 @@ import xxhash
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
-
-
-@dataclass(frozen=True)
-class CacheConfig:
-    """Configuration for cache behavior."""
-
-    memory_limit: int = 100
-    """Maximum number of entries in memory cache."""
-
-    disk_ttl_seconds: float = 7 * 24 * 60 * 60  # 7 days
-    """Time-to-live for disk cache entries in seconds."""
-
-    cache_version: int = 1
-    """Cache format version for invalidation on schema changes."""
 
 
 class TwoLevelCache(Generic[T]):
@@ -78,7 +63,9 @@ class TwoLevelCache(Generic[T]):
         cache_directory: Path,
         serializer: Callable[[T], dict],
         deserializer: Callable[[dict], T],
-        config: CacheConfig | None = None,
+        memory_limit: int = 100,
+        disk_ttl_seconds: float = 7 * 24 * 60 * 60,
+        cache_version: int = 1,
     ):
         """
         Initialize the cache.
@@ -87,12 +74,16 @@ class TwoLevelCache(Generic[T]):
             cache_directory: Directory for disk cache files
             serializer: Function to convert T to dict for JSON storage
             deserializer: Function to convert dict back to T
-            config: Cache configuration (uses defaults if None)
+            memory_limit: Maximum number of entries in memory cache
+            disk_ttl_seconds: Time-to-live for disk cache entries in seconds
+            cache_version: Cache format version for invalidation on schema changes
         """
         self.cache_directory = cache_directory
         self._serializer = serializer
         self._deserializer = deserializer
-        self._config = config or CacheConfig()
+        self._memory_limit = memory_limit
+        self._disk_ttl_seconds = disk_ttl_seconds
+        self._cache_version = cache_version
         self._memory_cache: dict[str, tuple[T, float]] = {}
         self._order: list[str] = []
         self._lock = threading.Lock()
@@ -122,13 +113,13 @@ class TwoLevelCache(Generic[T]):
                 payload = json.loads(cache_file.read_text(encoding="utf-8"))
 
                 # Check version
-                if payload.get("version") != self._config.cache_version:
+                if payload.get("version") != self._cache_version:
                     logger.debug("Cache version mismatch for %s", key)
                     return None
 
                 # Check TTL
                 cached_at = payload.get("cached_at", 0)
-                if time.time() - cached_at > self._config.disk_ttl_seconds:
+                if time.time() - cached_at > self._disk_ttl_seconds:
                     logger.debug("Cache expired for %s", key)
                     cache_file.unlink()
                     return None
@@ -169,7 +160,7 @@ class TwoLevelCache(Generic[T]):
         cache_file = self._cache_file(key)
         try:
             payload = {
-                "version": self._config.cache_version,
+                "version": self._cache_version,
                 "cached_at": time.time(),
                 "data": self._serializer(value),
             }
@@ -243,7 +234,7 @@ class TwoLevelCache(Generic[T]):
 
     def _trim(self) -> None:
         """Trim memory cache to limit (must hold lock)."""
-        while len(self._memory_cache) > self._config.memory_limit:
+        while len(self._memory_cache) > self._memory_limit:
             if not self._order:
                 break
             oldest = self._order.pop(0)

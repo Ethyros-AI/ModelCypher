@@ -88,17 +88,6 @@ class CacheEntry:
     compute_time_ms: float = 0.0
 
 
-@dataclass
-class ComputationCacheConfig:
-    """Configuration for computation cache behavior."""
-
-    max_gram_entries: int = 200
-    max_geodesic_entries: int = 1024
-    max_svd_entries: int = 32
-    max_frechet_entries: int = 1024
-    max_centered_gram_entries: int = 200
-
-
 class ComputationCache:
     """
     Session-scoped in-memory cache for expensive tensor computations.
@@ -131,14 +120,29 @@ class ComputationCache:
         with cls._shared_lock:
             cls._shared_instance = None
 
-    def __init__(self, config: ComputationCacheConfig | None = None) -> None:
+    def __init__(
+        self,
+        max_gram_entries: int = 200,
+        max_geodesic_entries: int = 1024,
+        max_svd_entries: int = 32,
+        max_frechet_entries: int = 1024,
+        max_centered_gram_entries: int = 200,
+    ) -> None:
         """
         Initialize the computation cache.
 
         Args:
-            config: Cache configuration (uses defaults if None)
+            max_gram_entries: Maximum number of Gram matrix entries.
+            max_geodesic_entries: Maximum number of geodesic distance entries.
+            max_svd_entries: Maximum number of SVD entries.
+            max_frechet_entries: Maximum number of Fréchet mean entries.
+            max_centered_gram_entries: Maximum number of centered Gram entries.
         """
-        self._config = config or ComputationCacheConfig()
+        self._max_gram_entries = max_gram_entries
+        self._max_geodesic_entries = max_geodesic_entries
+        self._max_svd_entries = max_svd_entries
+        self._max_frechet_entries = max_frechet_entries
+        self._max_centered_gram_entries = max_centered_gram_entries
 
         # Separate LRU caches for different computation types
         # Using OrderedDict for O(1) move_to_end() and eviction
@@ -351,7 +355,7 @@ class ComputationCache:
             compute_time_ms,
             self._gram_cache,
             self._gram_lock,
-            self._config.max_gram_entries,
+            self._max_gram_entries,
         )
 
     def get_or_compute_gram(
@@ -408,7 +412,7 @@ class ComputationCache:
             compute_time_ms,
             self._centered_gram_cache,
             self._centered_gram_lock,
-            self._config.max_centered_gram_entries,
+            self._max_centered_gram_entries,
         )
 
     # --- Geodesic Distance Cache ---
@@ -432,7 +436,7 @@ class ComputationCache:
             compute_time_ms,
             self._geodesic_cache,
             self._geodesic_lock,
-            self._config.max_geodesic_entries,
+            self._max_geodesic_entries,
         )
 
     # --- SVD Cache ---
@@ -454,7 +458,7 @@ class ComputationCache:
             compute_time_ms,
             self._svd_cache,
             self._svd_lock,
-            self._config.max_svd_entries,
+            self._max_svd_entries,
         )
 
     def get_or_compute_svd(
@@ -513,7 +517,7 @@ class ComputationCache:
             compute_time_ms,
             self._frechet_cache,
             self._frechet_lock,
-            self._config.max_frechet_entries,
+            self._max_frechet_entries,
         )
 
     # --- Internal Cache Operations ---

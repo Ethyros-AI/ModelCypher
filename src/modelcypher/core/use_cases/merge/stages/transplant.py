@@ -62,46 +62,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class TransplantStageConfig:
-    """Configuration for transplant stage.
-
-    Only user-provided data and infrastructure callbacks remain.
-    All geometric parameters are derived from the data.
-    """
-
-    # Core domains for transplant - THE ONLY user input beyond model paths
-    core_domains: tuple[str, ...]
-
-    # Infrastructure (not geometric parameters)
-    checkpoint_dir: Path | None = None  # Enable checkpointing if set
-    progress_callback: Callable[[str, int, int], None] | None = None  # (msg, current, total)
-
-    # Internal data from density analysis (stage 2) - not user configurable
-    # Maps probe_id -> layer -> should_graft.
-    # If None, graft all core probes.
-    graft_mask: dict[str, dict[int, bool]] | None = None
-
-    # Per-layer feature transforms from probe stage (CKA=1.0 aligned)
-    # target_layer -> transform matrix (as nested lists)
-    feature_transforms: dict[int, list[list[float]]] | None = None
-
-    # Per-layer attention Q transforms (for q_proj/o_proj weights)
-    attention_transforms: dict[int, list[list[float]]] | None = None
-
-    # Per-layer attention KV transforms (for k_proj/v_proj weights in GQA models)
-    kv_transforms: dict[int, list[list[float]]] | None = None
-
-    # Layer mapping from probe stage: target_layer -> source_layer
-    layer_mapping: dict[int, int] | None = None
-
-    # NOTE: boundary_k and geodesic_k_neighbors REMOVED - boundary is full complement
-    # NOTE: projection_method REMOVED - always use GRAM_TRANSPORT
-    # NOTE: transplant_layers REMOVED - always transplant all layers
-    # NOTE: Alpha interpolation was REMOVED - null-space projection determines preserved_fraction
-    # NOTE: strict_mode was REMOVED - all failures raise exceptions, no fallbacks
-
-
 @dataclass
 class TransplantStageResult:
     """Result of transplant stage."""
@@ -219,7 +179,6 @@ def stage_transplant(
     probe_ids: list[str] | None,
     probe_domains: list[str] | None,
     target_activations: dict[int, list["Array"]] | None,
-    config: TransplantStageConfig,
     extract_layer_index_fn: Callable[[str], int | None],
     source_activations: dict[int, list["Array"]] | None = None,
     source_intermediate_activations: dict[int, list["Array"]] | None = None,
@@ -228,6 +187,14 @@ def stage_transplant(
     target_attention_activations: dict[int, list["Array"]] | None = None,
     source_kv_activations: dict[int, list["Array"]] | None = None,
     target_kv_activations: dict[int, list["Array"]] | None = None,
+    transplant_domains: tuple[str, ...] = (),
+    graft_mask: dict[str, dict[int, bool]] | None = None,
+    feature_transforms: dict[int, list[list[float]]] | None = None,
+    attention_transforms: dict[int, list[list[float]]] | None = None,
+    kv_transforms: dict[int, list[list[float]]] | None = None,
+    layer_mapping: dict[int, int] | None = None,
+    checkpoint_dir: Path | None = None,
+    progress_callback: Callable[[str, int, int], None] | None = None,
     backend: "Backend | None" = None,
 ) -> TransplantStageResult:
     """Stage 3: Null-space constrained transplant using probe activations."""
@@ -267,14 +234,14 @@ def stage_transplant(
     if not probe_ids or not probe_domains:
         raise RuntimeError("Transplant requires probe metadata (probe_ids, probe_domains)")
 
-    if config.graft_mask is None:
+    if graft_mask is None:
         raise RuntimeError("Transplant requires graft_mask from density stage")
 
     if len(probe_ids) != len(probe_domains):
         metrics["transplant_skipped"] = "probe_metadata_mismatch"
         return TransplantStageResult(merged_weights=merged, metrics=metrics)
 
-    core_domains = _normalize_domains(config.core_domains)
+    core_domains = _normalize_domains(transplant_domains)
 
     if core_domains:
         # Legacy: domain-based filtering
@@ -311,8 +278,8 @@ def stage_transplant(
 
     # Check for existing checkpoint
     resume_from_layer = -1
-    if config.checkpoint_dir:
-        checkpoint_result = _load_checkpoint(config.checkpoint_dir)
+    if checkpoint_dir:
+        checkpoint_result = _load_checkpoint(checkpoint_dir)
         if checkpoint_result:
             resume_from_layer, checkpoint_meta = checkpoint_result
             # Restore metrics from checkpoint
@@ -339,16 +306,16 @@ def stage_transplant(
     # of the geometry at different resolutions.
     layer_hidden_stitches: dict[int, tuple[Any, Any]] = {}  # layer -> (stitch_out, stitch_in)
 
-    if config.feature_transforms and config.layer_mapping:
+    if feature_transforms and layer_mapping:
         # Use pre-computed per-layer transforms from probe stage
         logger.info(
             "PER-LAYER ALIGNMENT: Using %d transforms from probe stage (CKA=1.0 verified)",
-            len(config.feature_transforms),
+            len(feature_transforms),
         )
 
         # Convert all transforms to backend arrays in one batch for MLX efficiency
         transforms_to_eval = []
-        for tgt_layer, transform_list in config.feature_transforms.items():
+        for tgt_layer, transform_list in feature_transforms.items():
             F = b.array(transform_list)
             F = b.astype(F, "float32")
             transforms_to_eval.append((tgt_layer, F))
@@ -437,15 +404,15 @@ def stage_transplant(
     #   - Qwen attention dim = 14 * 64 = 896
     layer_attention_stitches: dict[int, tuple[Any, Any]] = {}  # layer -> (stitch_out, stitch_in)
 
-    if config.attention_transforms and config.layer_mapping:
+    if attention_transforms and layer_mapping:
         logger.info(
             "PER-LAYER ATTENTION Q: Using %d transforms from probe stage (CKA=1.0 verified)",
-            len(config.attention_transforms),
+            len(attention_transforms),
         )
 
         # Convert all transforms to backend arrays in one batch for MLX efficiency
         attn_transforms_to_eval = []
-        for tgt_layer, transform_list in config.attention_transforms.items():
+        for tgt_layer, transform_list in attention_transforms.items():
             F = b.array(transform_list)
             F = b.astype(F, "float32")
             attn_transforms_to_eval.append((tgt_layer, F))
@@ -514,15 +481,15 @@ def stage_transplant(
     # [q_attention_dim, hidden_dim]. We MUST compute a separate stitch for KV.
     layer_kv_stitches: dict[int, tuple[Any, Any]] = {}  # layer -> (stitch_out, stitch_in)
 
-    if config.kv_transforms and config.layer_mapping:
+    if kv_transforms and layer_mapping:
         logger.info(
             "PER-LAYER KV: Using %d transforms from probe stage (CKA=1.0 verified)",
-            len(config.kv_transforms),
+            len(kv_transforms),
         )
 
         # Convert all transforms to backend arrays in one batch for MLX efficiency
         kv_transforms_to_eval = []
-        for tgt_layer, transform_list in config.kv_transforms.items():
+        for tgt_layer, transform_list in kv_transforms.items():
             F = b.array(transform_list)
             F = b.astype(F, "float32")
             kv_transforms_to_eval.append((tgt_layer, F))
@@ -792,7 +759,7 @@ def stage_transplant(
         effective_core_probes = filter_core_probes_by_graft_mask(
             core_probe_ids=core_probe_ids,
             layer_idx=layer_idx,
-            graft_mask=config.graft_mask,
+            graft_mask=graft_mask,
         )
 
         if not effective_core_probes:
@@ -844,8 +811,8 @@ def stage_transplant(
                 continue
 
             # Progress callback for external monitoring
-            if config.progress_callback:
-                config.progress_callback(
+            if progress_callback:
+                progress_callback(
                     f"Layer {layer_idx}: {key}",
                     weights_processed,
                     total_weights,
@@ -1265,8 +1232,8 @@ def stage_transplant(
         )
 
         # Save checkpoint after each layer
-        if config.checkpoint_dir:
-            _save_checkpoint(config.checkpoint_dir, layer_idx, merged, metrics)
+        if checkpoint_dir:
+            _save_checkpoint(checkpoint_dir, layer_idx, merged, metrics)
 
         if best_alignment is not None:
             metrics["alignment_improvements"].append(best_alignment["alignment_improvement"])
@@ -1343,7 +1310,6 @@ def stage_transplant(
 
 
 __all__ = [
-    "TransplantStageConfig",
     "TransplantStageResult",
     "stage_transplant",
 ]

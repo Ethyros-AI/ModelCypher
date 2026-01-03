@@ -35,7 +35,7 @@ from .helpers import (
     load_weights,
     save_weights,
 )
-from .models import UnifiedMergeConfig, UnifiedMergeResult
+from .models import UnifiedMergeResult
 from .stages import (
     stage_density,
     stage_permute,
@@ -53,14 +53,12 @@ logger = logging.getLogger(__name__)
 def run_merge(
     model_loader: "ModelLoaderPort",
     backend: "Backend",
-    default_config: UnifiedMergeConfig,
     source_path: str,
     target_path: str,
     output_dir: str | None = None,
     output_path: str | None = None,
     dry_run: bool = False,
     target_weights: dict[str, "Array"] | None = None,
-    config: UnifiedMergeConfig | None = None,
 ) -> UnifiedMergeResult:
     """
     Execute null-space constrained transplant merge.
@@ -74,9 +72,6 @@ def run_merge(
     logger.info("=== PURE GEOMETRIC MERGE ===")
     logger.info("Source: %s", source_path)
     logger.info("Target: %s", target_path)
-
-    # Use passed config or fall back to instance config
-    merge_config = config if config is not None else default_config
 
     # Resolve output path (prefer output_path over output_dir)
     effective_output = output_path or output_dir

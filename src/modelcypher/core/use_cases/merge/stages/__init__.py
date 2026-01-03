@@ -59,7 +59,6 @@ from .permute import (
 # Probe always uses precise mode with all probes.
 # Permute always runs (no enable_permutation toggle).
 from .transplant import (
-    TransplantStageConfig,
     TransplantStageResult,
     stage_transplant as stage_transplant_impl,
 )
@@ -207,15 +206,6 @@ def stage_transplant(
     layer_mapping: dict[int, int] | None = None,
 ) -> tuple[dict[str, "Array"], dict[str, Any]]:
     """Stage 3: Null-space constrained transplant."""
-    stage_config = TransplantStageConfig(
-        core_domains=tuple(transplant_domains),
-        graft_mask=graft_mask,
-        feature_transforms=feature_transforms,
-        attention_transforms=attention_transforms,
-        kv_transforms=kv_transforms,
-        layer_mapping=layer_mapping,
-    )
-
     result = stage_transplant_impl(
         source_weights=source_weights,
         target_weights=target_weights,
@@ -230,9 +220,14 @@ def stage_transplant(
         target_attention_activations=target_attention_activations,
         source_kv_activations=source_kv_activations,
         target_kv_activations=target_kv_activations,
-        config=stage_config,
         extract_layer_index_fn=extract_layer_index_fn,
         backend=backend,
+        transplant_domains=tuple(transplant_domains),
+        graft_mask=graft_mask,
+        feature_transforms=feature_transforms,
+        attention_transforms=attention_transforms,
+        kv_transforms=kv_transforms,
+        layer_mapping=layer_mapping,
     )
 
     return result.merged_weights, result.metrics
@@ -291,9 +286,8 @@ __all__ = [
     "stage_permute",
     "PermuteResult",
     "infer_hidden_dim",
-    # Stage 3: Transplant (simplified - only core_domains and graft_mask)
+    # Stage 3: Transplant (simplified - only transplant_domains and graft_mask)
     "stage_transplant",
-    "TransplantStageConfig",
     "TransplantStageResult",
     # Stage 4: Validate (safety checks for merged weights)
     "stage_validate",

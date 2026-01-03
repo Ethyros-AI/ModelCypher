@@ -20,11 +20,12 @@
 Uses pure geometry API - raw measurements, no classification.
 """
 
-from modelcypher.core.domain.entropy.geometric_alignment import (
-    GASConfig,
-    GeometricAlignmentSystem,
+from modelcypher.core.domain.entropy.geometric_alignment import GeometricAlignmentSystem
+import math
+import sys
+from modelcypher.core.domain.safety.calibration.geometric_alignment_calibration import (
+    GeometricAlignmentCalibration,
 )
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.safety.circuit_breaker_integration import (
     CircuitBreakerIntegration,
     InputSignals,
@@ -33,16 +34,22 @@ from modelcypher.core.domain.safety.circuit_breaker_integration import (
 
 
 def _div_eps() -> float:
-    from modelcypher.core.domain._backend import get_default_backend
+    return math.sqrt(sys.float_info.epsilon)
 
-    backend = get_default_backend()
-    return division_epsilon(backend, backend.array([1.0]))
+
+def _calibration() -> GeometricAlignmentCalibration:
+    base_samples = [2.0, 2.1, 2.2, 2.3, 3.2, 4.8, 4.9, 5.0]
+    samples = base_samples * 4
+    return GeometricAlignmentCalibration.from_entropy_samples("test-model", samples)
 
 
 def test_geometric_alignment_sentinel():
     """Test GeometricAlignmentSystem sentinel detects spikes and dips correctly."""
-    config = GASConfig.default()
-    session = GeometricAlignmentSystem.Session(config)
+    calibration = _calibration()
+    session = GeometricAlignmentSystem.Session(calibration)
+    ceiling = calibration.sentinel_thresholds.entropy_ceiling
+    assert ceiling > 3.0
+    assert ceiling < 4.5
 
     # Test 1: Stable entropy (no spike)
     decision = session.observe(entropy=2.0, token_index=0)
@@ -54,21 +61,20 @@ def test_geometric_alignment_sentinel():
     assert decision.sentinel.delta_h == 1.5
     assert decision.sentinel.is_negative_delta is False
 
-    # Test 3: Pseudo-dip (drop > 0.3 but entropy > ceiling)
-    # Ceiling is 4.0. Let's go up first
+    # Test 3: Pseudo-dip (drop below but still above ceiling)
     session.observe(entropy=5.0, token_index=2)
     decision = session.observe(entropy=4.5, token_index=3)  # Delta -0.5
     assert decision.sentinel.is_negative_delta is True
 
-    # Test 4: True dip (drop > 0.3 and entropy < ceiling)
-    decision = session.observe(entropy=3.0, token_index=4)  # Delta -1.5, Entropy 3.0 (<4.0)
+    # Test 4: True dip (drop below ceiling)
+    decision = session.observe(entropy=3.0, token_index=4)  # Delta -1.5, Entropy 3.0 (< ceiling)
     assert decision.sentinel.delta_h == -1.5
 
 
 def test_geometric_alignment_oscillation_pattern():
     """Test GeometricAlignmentSystem pattern detection for oscillations."""
-    config = GASConfig.default()
-    session = GeometricAlignmentSystem.Session(config)
+    calibration = _calibration()
+    session = GeometricAlignmentSystem.Session(calibration)
 
     # Simulate oscillation to trigger patterns: high-low-high-low-high
     # These sign changes should be detected

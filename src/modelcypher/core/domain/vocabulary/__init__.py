@@ -33,13 +33,11 @@ from .alignment_map import (
 )
 from .cross_vocab_merger import (
     AlignmentMethod,
-    CrossVocabMergeConfig,
     CrossVocabMergeResult,
     CrossVocabMerger,
 )
 from .embedding_projector import (
     EmbeddingProjector,
-    ProjectionConfig,
     ProjectionResult,
     ProjectionStrategy,
 )
@@ -65,12 +63,10 @@ __all__ = [
     "TokenizerType",
     # Projection
     "EmbeddingProjector",
-    "ProjectionConfig",
     "ProjectionResult",
     "ProjectionStrategy",
     # Merger
     "CrossVocabMerger",
-    "CrossVocabMergeConfig",
     "CrossVocabMergeResult",
     "AlignmentMethod",
 ]

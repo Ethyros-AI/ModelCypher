@@ -27,7 +27,7 @@ Commands:
     mc entropy window <samples>
     mc entropy conversation-track --session <file>
     mc entropy dual-path <samples>
-    mc entropy calibrate --model <path> --prompts <path> --max-tokens <n> --temperature <t>
+    mc entropy calibrate --model <path> --prompts <path>
 """
 
 from __future__ import annotations

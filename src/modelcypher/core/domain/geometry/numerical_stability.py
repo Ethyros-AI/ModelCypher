@@ -431,12 +431,12 @@ def find_magnitude_gap_threshold(
         The value at which the largest relative gap occurs.
         Returns the median if no clear gap is found.
     """
-    if backend is None:
-        from modelcypher.core.domain._backend import get_default_backend
-
-        backend = get_default_backend()
-
     if eps is None:
+        if backend is None:
+            from modelcypher.core.domain._backend import get_default_backend
+
+            backend = get_default_backend()
+
         scale = max(1.0, max((abs(v) for v in sorted_values), default=0.0))
         eps = ulp_scalar(scale, backend)
 

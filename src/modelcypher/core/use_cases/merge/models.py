@@ -25,30 +25,6 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Array
 
 
-@dataclass(frozen=True)
-class UnifiedMergeConfig:
-    """
-    Configuration for unified geometric merge.
-
-    Transplant formula:
-        W' = W_target + P_null(A_boundary) @ (W_source_aligned - W_target)
-
-    Guarantee:
-        A_boundary @ W' = A_boundary @ W_target  (boundary preserved)
-
-    This was validated empirically (Phase 6-8 research) and theoretically
-    (AlphaEdit, ICLR 2025 Outstanding Paper).
-    """
-
-    # Transplant domains are not user-configurable; geometry selects probes.
-    transplant_domains: tuple[str, ...] = ()
-    # NOTE: Alpha was REMOVED. The null-space projection determines preserved_fraction
-    # geometrically. Sequential single-domain transplants reduce cross-domain interference.
-
-    # Output quantization (None = preserve original dtype)
-    output_quant: str | None = None
-
-
 @dataclass
 class LayerMergeState:
     """State carried through layers during merge (zipper)."""

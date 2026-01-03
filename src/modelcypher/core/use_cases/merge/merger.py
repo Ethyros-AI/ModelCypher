@@ -54,7 +54,6 @@ from . import stages as merge_stages
 from .models import (
     CrossArchitectureInfo,
     LayerMergeState,
-    UnifiedMergeConfig,
     UnifiedMergeResult,
 )
 from .pipeline import run_merge
@@ -67,7 +66,6 @@ __all__ = [
     "CrossArchitectureInfo",
     "LayerMergeState",
     "UnifiedGeometricMerger",
-    "UnifiedMergeConfig",
     "UnifiedMergeResult",
 ]
 
@@ -89,19 +87,16 @@ class UnifiedGeometricMerger:
     def __init__(
         self,
         model_loader: "ModelLoaderPort",
-        config: UnifiedMergeConfig | None = None,
         backend: "Backend | None" = None,
     ) -> None:
         """Initialize with required dependencies.
 
         Args:
             model_loader: Model loader port for loading weights (REQUIRED).
-            config: Internal merge configuration; default used when omitted.
             backend: Compute backend for tensor operations (defaults to MLXBackend).
                      All geometric operations run on GPU when using MLXBackend.
         """
         self._model_loader = model_loader
-        self.config = config or UnifiedMergeConfig()
 
         # Default to configured backend (respects MC_BACKEND/MODELCYPHER_BACKEND)
         self._backend = backend or get_default_backend()
@@ -114,20 +109,17 @@ class UnifiedGeometricMerger:
         output_path: str | None = None,
         dry_run: bool = False,
         target_weights: dict[str, "Array"] | None = None,
-        config: "UnifiedMergeConfig | None" = None,
     ) -> UnifiedMergeResult:
         """Execute the unified geometric merge pipeline (geometry-only, no domain overrides)."""
         return run_merge(
             model_loader=self._model_loader,
             backend=self._backend,
-            default_config=self.config,
             source_path=source_path,
             target_path=target_path,
             output_dir=output_dir,
             output_path=output_path,
             dry_run=dry_run,
             target_weights=target_weights,
-            config=config,
         )
 
     def _stage_probe(
@@ -174,7 +166,6 @@ class UnifiedGeometricMerger:
         source_activations: dict | None,
         target_activations: dict | None,
         graft_mask: dict[str, dict[int, bool]],
-        config: UnifiedMergeConfig,
     ) -> tuple[dict[str, "Array"], dict[str, Any]]:
         return merge_stages.stage_transplant(
             source_weights=source_weights,
@@ -184,10 +175,10 @@ class UnifiedGeometricMerger:
             probe_domains=probe_domains,
             source_activations=source_activations,
             target_activations=target_activations,
-            config=config,
             extract_layer_index_fn=merge_helpers.extract_layer_index,
             backend=self._backend,
             graft_mask=graft_mask,
+            transplant_domains=(),
         )
 
     def _load_tokenizer(self, model_path: str) -> Any | None:

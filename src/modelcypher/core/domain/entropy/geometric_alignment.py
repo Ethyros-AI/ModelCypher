@@ -36,9 +36,11 @@ import threading
 from dataclasses import dataclass, field
 from enum import Enum
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 from modelcypher.core.domain.safety.calibration.geometric_alignment_calibration import (
     GeometricAlignmentCalibration,
-    SentinelConfiguration,
+    SentinelThresholds,
 )
 
 
@@ -147,7 +149,7 @@ class GeometricAlignmentSystem:
     class Session:
         """
         Per-generation session that computes entropy geometry.
-        Thread-safe.
+        Uses calibration-derived thresholds. Thread-safe.
         """
 
         @dataclass
@@ -182,28 +184,33 @@ class GeometricAlignmentSystem:
             max_severity: float = 0.0
 
         @staticmethod
-        def _derive_window_size(sample_count: int) -> int:
+        def _derive_window_size(sample_count: int, backend) -> int:
             if sample_count <= 0:
                 raise ValueError("Calibration sample_count must be positive")
-            size = int(math.sqrt(float(sample_count)))
+            size = int(sqrt_scalar(float(sample_count), backend))
             if size <= 0:
                 raise ValueError("Derived window size must be positive")
             return size
 
         @staticmethod
-        def _derive_rebound_window(window_size: int) -> int:
+        def _derive_rebound_window(window_size: int, backend) -> int:
             if window_size <= 0:
                 raise ValueError("Window size must be positive")
-            size = int(math.sqrt(float(window_size)))
+            size = int(sqrt_scalar(float(window_size), backend))
             if size <= 0:
                 raise ValueError("Derived rebound window must be positive")
             return size
 
         def __init__(self, calibration: GeometricAlignmentCalibration):
+            backend = get_default_backend()
             self._calibration = calibration
-            self._sentinel = calibration.sentinel_configuration
-            self._window_size_tokens = self._derive_window_size(calibration.sample_count)
-            self._rebound_window_tokens = self._derive_rebound_window(self._window_size_tokens)
+            self._sentinel = calibration.sentinel_thresholds
+            self._window_size_tokens = self._derive_window_size(
+                calibration.sample_count, backend
+            )
+            self._rebound_window_tokens = self._derive_rebound_window(
+                self._window_size_tokens, backend
+            )
             self._lock = threading.Lock()
             self._state = self._State()
 
@@ -296,7 +303,7 @@ class GeometricAlignmentSystem:
             entropy: float,
             token_index: int,
             previous_entropy: float | None,
-            config: SentinelConfiguration,
+            config: SentinelThresholds,
         ) -> SentinelSample:
             delta_h = entropy - previous_entropy if previous_entropy is not None else 0.0
             return SentinelSample(

@@ -28,7 +28,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from modelcypher.core.domain.cache import CacheConfig, TwoLevelCache, content_hash
+from modelcypher.core.domain.cache import TwoLevelCache, content_hash
 from modelcypher.core.domain.geometry.invariant_layer_mapper import (
     ActivatedDimension,
     ActivationFingerprint,
@@ -80,17 +80,13 @@ class ModelFingerprintCache:
             Path.home() / "Library" / "Caches" / "ModelCypher" / "fingerprints"
         )
 
-        config = CacheConfig(
-            memory_limit=10,  # Keep only 10 models in memory (fingerprints are large)
-            disk_ttl_seconds=30 * 24 * 60 * 60,  # 30 days (model fingerprints rarely change)
-            cache_version=self.CACHE_VERSION,
-        )
-
         self._cache: TwoLevelCache[CachedFingerprints] = TwoLevelCache(
             cache_directory=base,
             serializer=self._serialize,
             deserializer=self._deserialize,
-            config=config,
+            memory_limit=10,  # Keep only 10 models in memory (fingerprints are large)
+            disk_ttl_seconds=30 * 24 * 60 * 60,  # 30 days (model fingerprints rarely change)
+            cache_version=self.CACHE_VERSION,
         )
 
     def load(

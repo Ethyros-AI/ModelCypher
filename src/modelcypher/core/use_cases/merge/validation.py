@@ -35,6 +35,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from modelcypher.core.use_cases.evaluation_service import EvaluationService
     from modelcypher.ports import InferenceEngine
 
 logger = logging.getLogger(__name__)
@@ -44,29 +45,6 @@ def _array_to_list(backend, array):
     """Convert backend array to Python list using native tolist() - O(1) vs O(n)."""
     flat = backend.reshape(array, (-1,))
     return backend.tolist(flat)
-
-
-@dataclass
-class MergeValidationConfig:
-    """Configuration for merge validation.
-
-    Thresholds are derived from source model baseline - not configurable.
-    """
-
-    # Perplexity evaluation
-    perplexity_dataset: str | None
-    perplexity_max_samples: int
-    perplexity_batch_size: int
-
-    # Coherence scoring
-    coherence_prompts: list[str] | None
-    coherence_max_tokens: int
-
-    # Task probes: list of {name, prompt, expected_pattern}
-    task_probes: list[dict] | None
-
-    # Geometric diagnosis
-    geometric_diagnosis: bool
 
 
 @dataclass
@@ -162,20 +140,29 @@ class MergeValidationService:
     - Geometric diagnosis when issues are detected
     """
 
-    def __init__(self, inference_engine: "InferenceEngine") -> None:
+    def __init__(
+        self,
+        inference_engine: "InferenceEngine",
+        evaluation_service: "EvaluationService",
+    ) -> None:
         """Initialize MergeValidationService with required dependencies.
 
         Args:
             inference_engine: Inference engine port implementation (REQUIRED).
+            evaluation_service: Evaluation service (REQUIRED).
         """
         self._inference_engine = inference_engine
+        self._evaluation_service = evaluation_service
 
     def validate(
         self,
         merged_model: str,
-        config: MergeValidationConfig,
         source_model: str | None = None,
         target_model: str | None = None,
+        *,
+        perplexity_dataset: str | None = None,
+        coherence_prompts: list[str] | None = None,
+        task_probes: list[dict] | None = None,
     ) -> MergeValidationResult:
         """
         Execute full merge validation suite.
@@ -184,7 +171,9 @@ class MergeValidationService:
             merged_model: Path to merged model directory.
             source_model: Path to source model (for comparison).
             target_model: Path to target model (for comparison).
-            config: Validation configuration.
+            perplexity_dataset: Dataset for perplexity evaluation (optional).
+            coherence_prompts: Prompts for coherence scoring (optional).
+            task_probes: Task probes for capability checks (optional).
 
         Returns:
             MergeValidationResult with all metrics and diagnosis.
@@ -200,20 +189,16 @@ class MergeValidationService:
         )
 
         # 1. Perplexity evaluation
-        if config.perplexity_dataset:
+        if perplexity_dataset:
             try:
                 result.perplexity = self.compute_perplexity(
                     merged_model,
-                    config.perplexity_dataset,
-                    config.perplexity_max_samples,
-                    config.perplexity_batch_size,
+                    perplexity_dataset,
                 )
                 if source_model and result.perplexity is not None:
                     result.source_perplexity = self.compute_perplexity(
                         source_model,
-                        config.perplexity_dataset,
-                        config.perplexity_max_samples,
-                        config.perplexity_batch_size,
+                        perplexity_dataset,
                     )
                     if result.source_perplexity is not None:
                         result.perplexity_delta = result.perplexity - result.source_perplexity
@@ -222,21 +207,20 @@ class MergeValidationService:
                 result.warnings.append(f"Perplexity evaluation failed: {e}")
 
         # 2. Coherence scoring
-        if config.coherence_prompts:
+        if coherence_prompts:
             try:
                 result.coherence_score = self.compute_coherence(
                     merged_model,
-                    config.coherence_prompts,
-                    config.coherence_max_tokens,
+                    coherence_prompts,
                 )
             except Exception as e:
                 logger.warning(f"Coherence scoring failed: {e}")
                 result.warnings.append(f"Coherence scoring failed: {e}")
 
         # 3. Task probes
-        if config.task_probes:
+        if task_probes:
             try:
-                result.task_probe_results = self.run_task_probes(merged_model, config.task_probes)
+                result.task_probe_results = self.run_task_probes(merged_model, task_probes)
             except Exception as e:
                 logger.warning(f"Task probes failed: {e}")
                 result.warnings.append(f"Task probes failed: {e}")
@@ -244,7 +228,7 @@ class MergeValidationService:
         # 4. Geometric diagnosis (if enabled)
         # Run geometric diagnosis unconditionally when enabled - return raw measurements
         # and let the caller decide what constitutes "degradation"
-        if config.geometric_diagnosis and source_model and target_model:
+        if source_model and target_model:
             try:
                 result.geometric_diagnosis = self.diagnose_geometry(
                     merged_model, source_model, target_model
@@ -259,33 +243,19 @@ class MergeValidationService:
         self,
         model: str,
         dataset: str,
-        max_samples: int = 100,
-        batch_size: int = 4,
     ) -> float:
         """
         Compute perplexity on a held-out dataset.
 
         Uses MLX for efficient evaluation.
         """
-        from modelcypher.core.use_cases.evaluation_service import (
-            EvalConfig,
-            EvaluationService,
-        )
-
-        service = EvaluationService()
-        config = EvalConfig(
-            batch_size=batch_size,
-            max_samples=max_samples,
-        )
-
-        result = service.run(model, dataset, config)
+        result = self._evaluation_service.run(model, dataset)
         return result.perplexity
 
     def compute_coherence(
         self,
         model: str,
         prompts: list[str],
-        max_tokens: int | None = None,
     ) -> float:
         """
         Compute a response coherence proxy via sentence completion.
@@ -300,7 +270,6 @@ class MergeValidationService:
                 result = self._inference_engine.infer(
                     model,
                     prompt,
-                    max_tokens=max_tokens,
                 )
                 # Score based on response token uniqueness ratio
                 response = result.get("response", "")

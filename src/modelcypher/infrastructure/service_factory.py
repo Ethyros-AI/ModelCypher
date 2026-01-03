@@ -168,7 +168,10 @@ class ServiceFactory:
         """Create MergeValidationService with injected inference engine."""
         from modelcypher.core.use_cases.merge import MergeValidationService
 
-        return MergeValidationService(inference_engine=self._registry.inference_engine)
+        return MergeValidationService(
+            inference_engine=self._registry.inference_engine,
+            evaluation_service=self.evaluation_service(),
+        )
 
     def knowledge_transfer_service(self):
         """Create KnowledgeTransferService with injected inference engine."""

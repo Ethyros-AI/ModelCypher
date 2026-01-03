@@ -27,7 +27,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from modelcypher.core.domain.cache import CacheConfig, TwoLevelCache, content_hash
+from modelcypher.core.domain.cache import TwoLevelCache, content_hash
 
 logger = logging.getLogger(__name__)
 
@@ -117,38 +117,40 @@ class GeometryMetricsCache:
             Path.home() / "Library" / "Caches" / "ModelCypher" / "geometry_metrics"
         )
 
-        config = CacheConfig(
-            memory_limit=100,
-            disk_ttl_seconds=7 * 24 * 60 * 60,  # 7 days
-            cache_version=self.CACHE_VERSION,
-        )
-
         self._gw_cache: TwoLevelCache[CachedGWResult] = TwoLevelCache(
             cache_directory=base / "gromov_wasserstein",
             serializer=self._serialize_gw,
             deserializer=self._deserialize_gw,
-            config=config,
+            memory_limit=100,
+            disk_ttl_seconds=7 * 24 * 60 * 60,  # 7 days
+            cache_version=self.CACHE_VERSION,
         )
 
         self._id_cache: TwoLevelCache[CachedIDResult] = TwoLevelCache(
             cache_directory=base / "intrinsic_dimension",
             serializer=self._serialize_id,
             deserializer=self._deserialize_id,
-            config=config,
+            memory_limit=100,
+            disk_ttl_seconds=7 * 24 * 60 * 60,  # 7 days
+            cache_version=self.CACHE_VERSION,
         )
 
         self._topo_cache: TwoLevelCache[CachedTopoResult] = TwoLevelCache(
             cache_directory=base / "topological",
             serializer=self._serialize_topo,
             deserializer=self._deserialize_topo,
-            config=config,
+            memory_limit=100,
+            disk_ttl_seconds=7 * 24 * 60 * 60,  # 7 days
+            cache_version=self.CACHE_VERSION,
         )
 
         self._spectral_cache: TwoLevelCache[CachedSpectralResult] = TwoLevelCache(
             cache_directory=base / "spectral_signature",
             serializer=self._serialize_spectral,
             deserializer=self._deserialize_spectral,
-            config=config,
+            memory_limit=100,
+            disk_ttl_seconds=7 * 24 * 60 * 60,  # 7 days
+            cache_version=self.CACHE_VERSION,
         )
 
     # --- Gromov-Wasserstein ---
