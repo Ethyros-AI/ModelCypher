@@ -296,7 +296,7 @@ def test_stage_transplant_emits_alignment_metrics() -> None:
     )
 
     metrics = result.metrics
-    assert metrics.get("alignment_samples", 0) >= 1
+    assert metrics.get("core_distance_samples", 0) >= 1
     eps = _eps(
         backend,
         metrics.get("mean_cka_before", 0.0),

@@ -248,29 +248,35 @@ class TestAlignmentPlan:
 class TestComputeLayerGuidance:
     """Tests for _compute_layer_guidance function."""
 
-    def test_similar_layers_low_effort(
+    def test_similar_layers_low_ricci_relative_diff(
         self, simple_layer_curvature, similar_layer_curvature, different_layer_curvature
     ):
-        """Similar layers should have low alignment effort."""
+        """Similar layers should have lower ricci relative diff."""
         guidance_similar = _compute_layer_guidance(
             simple_layer_curvature, similar_layer_curvature, layer_idx=0
         )
         guidance_diff = _compute_layer_guidance(
             simple_layer_curvature, different_layer_curvature, layer_idx=0
         )
-        assert guidance_similar.alignment_effort <= guidance_diff.alignment_effort
+        assert (
+            guidance_similar.ollivier_ricci_relative_diff
+            <= guidance_diff.ollivier_ricci_relative_diff
+        )
 
-    def test_different_layers_high_effort(
+    def test_different_layers_high_ricci_relative_diff(
         self, simple_layer_curvature, different_layer_curvature, similar_layer_curvature
     ):
-        """Different layers should have high alignment effort."""
+        """Different layers should have higher ricci relative diff."""
         guidance = _compute_layer_guidance(
             simple_layer_curvature, different_layer_curvature, layer_idx=0
         )
         guidance_similar = _compute_layer_guidance(
             simple_layer_curvature, similar_layer_curvature, layer_idx=0
         )
-        assert guidance.alignment_effort >= guidance_similar.alignment_effort
+        assert (
+            guidance.ollivier_ricci_relative_diff
+            >= guidance_similar.ollivier_ricci_relative_diff
+        )
 
     def test_dimension_difference_triggers_projection(self):
         """Large dimension difference triggers projection flag."""
@@ -318,23 +324,26 @@ class TestComputeLayerGuidance:
         guidance_same = _compute_layer_guidance(src, tgt_same, layer_idx=0)
         guidance_diff = _compute_layer_guidance(src, tgt_diff, layer_idx=0)
 
-        assert guidance_same.curvature_correction < guidance_diff.curvature_correction
+        assert (
+            guidance_same.ollivier_ricci_relative_diff
+            < guidance_diff.ollivier_ricci_relative_diff
+        )
 
     def test_zero_curvature_uses_moderate_correction(self):
         """Zero curvature values yield a finite correction."""
         src = LayerCurvature(layer_idx=0, intrinsic_dimension=64.0, ollivier_ricci_mean=0.0)
         tgt = LayerCurvature(layer_idx=0, intrinsic_dimension=64.0, ollivier_ricci_mean=-0.1)
         guidance = _compute_layer_guidance(src, tgt, layer_idx=0)
-        assert is_finite(guidance.curvature_correction, get_default_backend())
+        assert is_finite(guidance.ollivier_ricci_relative_diff, get_default_backend())
 
-    def test_alignment_weight_range(self):
-        """Alignment weight should be in range [0, 1]."""
+    def test_ollivier_ricci_relative_diff_range(self):
+        """Ollivier-Ricci relative diff should be in range [0, 1]."""
         src = LayerCurvature(layer_idx=0, intrinsic_dimension=64.0, ollivier_ricci_mean=-0.1)
         tgt = LayerCurvature(layer_idx=0, intrinsic_dimension=64.0, ollivier_ricci_mean=0.5)
         guidance = _compute_layer_guidance(src, tgt, layer_idx=0)
         backend = get_default_backend()
         eps = machine_epsilon(backend, backend.array([1.0]))
-        assert -eps <= guidance.alignment_weight <= 1.0 + eps
+        assert -eps <= guidance.ollivier_ricci_relative_diff <= 1.0 + eps
 
 
 # =============================================================================
@@ -449,10 +458,10 @@ class TestCurvatureWeightedProcrustes:
         target = backend.random_normal((n, d))
         guidance = AlignmentGuidance(
             layer_idx=0,
-            alignment_effort=0.2,
             dimension_scale=1.0,
-            curvature_correction=0.1,
-            alignment_weight=0.9,
+            intrinsic_dimension_diff=0.0,
+            ollivier_ricci_delta=0.0,
+            ollivier_ricci_relative_diff=0.1,
         )
         R = curvature_weighted_procrustes(source, target, guidance, backend)
         backend.eval(R)
@@ -466,10 +475,10 @@ class TestCurvatureWeightedProcrustes:
         target = backend.random_normal((n, d_tgt))
         guidance = AlignmentGuidance(
             layer_idx=0,
-            alignment_effort=0.5,
             dimension_scale=0.5,
-            curvature_correction=0.2,
-            alignment_weight=0.7,
+            intrinsic_dimension_diff=10.0,
+            ollivier_ricci_delta=0.0,
+            ollivier_ricci_relative_diff=0.2,
         )
         R = curvature_weighted_procrustes(source, target, guidance, backend)
         backend.eval(R)
@@ -477,18 +486,18 @@ class TestCurvatureWeightedProcrustes:
         # After projection, source is d_tgt, so R is (d_tgt, d_tgt)
         assert shape == (d_tgt, d_tgt)
 
-    def test_low_curvature_correction_minimal_damping(self, backend):
-        """Low curvature correction has minimal damping effect."""
+    def test_low_ricci_relative_diff_minimal_damping(self, backend):
+        """Low ricci relative diff has minimal damping effect."""
         n, d = 50, 16
         source = backend.random_normal((n, d))
         target = backend.random_normal((n, d))
 
         guidance_low = AlignmentGuidance(
             layer_idx=0,
-            alignment_effort=0.1,
             dimension_scale=1.0,
-            curvature_correction=0.0,  # No correction
-            alignment_weight=1.0,
+            intrinsic_dimension_diff=0.0,
+            ollivier_ricci_delta=0.0,
+            ollivier_ricci_relative_diff=0.0,  # No correction
         )
         R_low = curvature_weighted_procrustes(source, target, guidance_low, backend)
         backend.eval(R_low)
@@ -507,18 +516,18 @@ class TestCurvatureWeightedProcrustes:
         assert is_finite(frobenius_norm, backend)
         assert frobenius_norm >= -eps
 
-    def test_high_curvature_correction_more_damping(self, backend):
-        """High curvature correction adds significant damping."""
+    def test_high_ricci_relative_diff_more_damping(self, backend):
+        """High ricci relative diff adds significant damping."""
         n, d = 50, 16
         source = backend.random_normal((n, d))
         target = backend.random_normal((n, d))
 
         guidance_high = AlignmentGuidance(
             layer_idx=0,
-            alignment_effort=0.9,
             dimension_scale=1.0,
-            curvature_correction=1.0,  # Maximum correction
-            alignment_weight=0.3,
+            intrinsic_dimension_diff=0.0,
+            ollivier_ricci_delta=0.0,
+            ollivier_ricci_relative_diff=1.0,  # Maximum correction
         )
         R_high = curvature_weighted_procrustes(source, target, guidance_high, backend)
         backend.eval(R_high)

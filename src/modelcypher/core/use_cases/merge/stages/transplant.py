@@ -128,7 +128,7 @@ def _compute_alignment_metrics(
     weight_source: "Array",
     backend: "Backend",
 ) -> dict[str, float]:
-    """Measure core alignment shift toward the source for a single weight.
+    """Measure core distance shift toward the source for a single weight.
 
     Metrics are only defined when activation and weight input dimensions match.
     """
@@ -156,9 +156,9 @@ def _compute_alignment_metrics(
 
     eps = float(machine_epsilon(b, weight_before))
     if dist_before > eps:
-        alignment_improvement = (dist_before - dist_after) / dist_before
+        core_distance_reduction = (dist_before - dist_after) / dist_before
     else:
-        alignment_improvement = 0.0
+        core_distance_reduction = 0.0
 
     cka_before = compute_cka(output_before, output_source, backend=b)
     cka_after = compute_cka(output_after, output_source, backend=b)
@@ -166,7 +166,7 @@ def _compute_alignment_metrics(
     return {
         "core_dist_to_source_before": dist_before,
         "core_dist_to_source_after": dist_after,
-        "alignment_improvement": alignment_improvement,
+        "core_distance_reduction": core_distance_reduction,
         "cka_before": cka_before.best,
         "cka_after": cka_after.best,
     }
@@ -289,7 +289,7 @@ def stage_transplant(
         "projection_losses": [],
         "null_dims": [],
         "boundary_relative_diffs": [],
-        "alignment_improvements": [],
+        "core_distance_reductions": [],
         "core_dist_to_source_before": [],
         "core_dist_to_source_after": [],
         "cka_before": [],
@@ -1392,7 +1392,7 @@ def stage_transplant(
             _save_checkpoint(checkpoint_dir, layer_idx, merged, metrics)
 
         if best_alignment is not None:
-            metrics["alignment_improvements"].append(best_alignment["alignment_improvement"])
+            metrics["core_distance_reductions"].append(best_alignment["core_distance_reduction"])
             metrics["core_dist_to_source_before"].append(
                 best_alignment["core_dist_to_source_before"]
             )
@@ -1415,10 +1415,10 @@ def stage_transplant(
         diffs = metrics["boundary_relative_diffs"]
         metrics["mean_boundary_relative_diff"] = sum(diffs) / len(diffs)
         metrics["max_boundary_relative_diff"] = max(diffs)
-    if metrics["alignment_improvements"]:
-        improvements = metrics["alignment_improvements"]
-        metrics["alignment_samples"] = len(improvements)
-        metrics["mean_alignment_improvement"] = sum(improvements) / len(improvements)
+    if metrics["core_distance_reductions"]:
+        reductions = metrics["core_distance_reductions"]
+        metrics["core_distance_samples"] = len(reductions)
+        metrics["mean_core_distance_reduction"] = sum(reductions) / len(reductions)
     if metrics["core_dist_to_source_before"]:
         dists = metrics["core_dist_to_source_before"]
         metrics["mean_core_dist_to_source_before"] = sum(dists) / len(dists)

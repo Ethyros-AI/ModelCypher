@@ -59,11 +59,11 @@ def _run_merge(
     output_file: str | None,
 ) -> None:
     """Core merge logic shared by callback and run command."""
-    from modelcypher.core.use_cases.merge import MergePipelineService
+    from modelcypher.cli.composition import get_merge_pipeline_service
 
     context = _context(ctx)
 
-    service = MergePipelineService()
+    service = get_merge_pipeline_service()
 
     try:
         with prevent_sleep():

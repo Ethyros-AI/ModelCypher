@@ -118,7 +118,7 @@ class TestThermoCalibrator:
         model_path = tmp_path / "model"
         model_path.mkdir()
         calibrator = ThermoCalibrator(model_path)
-        result = calibrator._calibrate_modifier_profile([])
+        result = calibrator._calibrate_modifier_profile([], temperature=0.7)
         assert result is None
 
     def test_calibrate_basin_topology_insufficient(self, tmp_path):

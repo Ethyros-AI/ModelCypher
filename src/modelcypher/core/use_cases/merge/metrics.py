@@ -36,6 +36,7 @@ def compute_geometric_metrics_from_transplant(
     - cka_after: Post-alignment CKA scores
     - projection_losses: Loss during null-space projection
     - weights_transplanted/considered: Transplant success rate
+    - core_distance_reductions: Core distance reduction ratios
 
     This function aggregates raw measurements for downstream use.
 
@@ -50,13 +51,14 @@ def compute_geometric_metrics_from_transplant(
         - transplant_ratio: Fraction of weights successfully transplanted
         - mean_null_dim: Average null space dimension found
         - mean_shared_subspace_dim: Average shared subspace dimension
+        - mean_core_distance_reduction: Average reduction of core distance to source
     """
     preserved = transplant_metrics.get("preserved_fractions", [])
     cka_after = transplant_metrics.get("cka_after", [])
     proj_losses = transplant_metrics.get("projection_losses", [])
     null_dims = transplant_metrics.get("null_dims", [])
     shared_dims = transplant_metrics.get("shared_subspace_dimensions", [])
-    alignment_improvements = transplant_metrics.get("alignment_improvements", [])
+    core_distance_reductions = transplant_metrics.get("core_distance_reductions", [])
 
     weights_transplanted = transplant_metrics.get("weights_transplanted", 0)
     weights_considered = transplant_metrics.get("weights_considered", 1)
@@ -79,10 +81,10 @@ def compute_geometric_metrics_from_transplant(
         "mean_shared_subspace_dim": (
             sum(shared_dims) / len(shared_dims) if shared_dims else 0.0
         ),
-        # Alignment improvement signal
-        "mean_alignment_improvement": (
-            sum(alignment_improvements) / len(alignment_improvements)
-            if alignment_improvements
+        # Core distance reduction signal
+        "mean_core_distance_reduction": (
+            sum(core_distance_reductions) / len(core_distance_reductions)
+            if core_distance_reductions
             else 0.0
         ),
         # Raw counts for transparency
