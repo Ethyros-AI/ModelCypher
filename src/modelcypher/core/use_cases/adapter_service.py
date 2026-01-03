@@ -181,22 +181,8 @@ class AdapterService:
             else:
                 projected_weights[name] = backend.astype(backend.array(tensor), "float32")
 
-        # Save using MLX native safetensors (no NumPy)
-        try:
-            import mlx.core as mx
-
-            mlx_weights = {}
-            for key, val in projected_weights.items():
-                if isinstance(val, mx.array):
-                    mlx_weights[key] = val
-                else:
-                    mlx_weights[key] = backend.array(val)
-            mx.save_safetensors(str(output / "adapter_model.safetensors"), mlx_weights)
-        except ImportError:
-            # Fallback to JAX
-            from safetensors.flax import save_file as save_flax
-
-            save_flax(projected_weights, str(output / "adapter_model.safetensors"))
+        # Save using backend native safetensors (hexagonal I/O)
+        backend.save_safetensors(str(output / "adapter_model.safetensors"), projected_weights)
 
         # Copy config
         config_path = path / "adapter_config.json"
@@ -231,12 +217,14 @@ class AdapterService:
 
         weights = self._load_weights(path)
         wrapped_weights = {}
+        backend = get_default_backend()
 
         for name, tensor in weights.items():
             # MLX expects [out, in] layout
-            wrapped_weights[name] = tensor.astype("float32")
+            wrapped_weights[name] = backend.astype(backend.array(tensor), "float32")
 
-        save_file(wrapped_weights, output / "adapters.safetensors")
+        # Save using backend native safetensors (hexagonal I/O)
+        backend.save_safetensors(str(output / "adapters.safetensors"), wrapped_weights)
 
         return WrapResult(
             output_path=str(output),

@@ -767,3 +767,36 @@ class JAXBackend(Backend):
         """Synchronize all computation (wait for all work to complete)."""
         # Block until all pending computations are complete
         self.jax.block_until_ready(self.jnp.array(0))
+
+    # --- File I/O (Native Backend Serialization) ---
+
+    def save_safetensors(self, path: str, weights: dict[str, Any]) -> None:
+        """Save weights to safetensors using JAX/Flax native I/O.
+
+        Args:
+            path: File path to save to.
+            weights: Dictionary of weight name -> array.
+        """
+        from safetensors.flax import save_file
+
+        # Ensure all arrays are JAX arrays
+        jax_weights = {}
+        for key, value in weights.items():
+            if hasattr(value, "__module__") and "jax" in type(value).__module__:
+                jax_weights[key] = value
+            else:
+                jax_weights[key] = self.array(value)
+        save_file(jax_weights, path)
+
+    def load_safetensors(self, path: str) -> dict[str, Any]:
+        """Load weights from safetensors using JAX/Flax native I/O.
+
+        Args:
+            path: File path to load from.
+
+        Returns:
+            Dictionary of weight name -> JAX array.
+        """
+        from safetensors.flax import load_file
+
+        return load_file(path)

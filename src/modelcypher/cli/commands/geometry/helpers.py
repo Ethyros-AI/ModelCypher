@@ -35,6 +35,8 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from modelcypher.core.support.array_utils import array_to_list
+
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
 
@@ -295,7 +297,7 @@ def save_activations_json(
         output_path: Path to save JSON file
         backend: Backend for array conversion
     """
-    activations_json = {name: backend.to_numpy(act).tolist() for name, act in activations.items()}
+    activations_json = {name: array_to_list(backend, act) for name, act in activations.items()}
     Path(output_path).write_text(json.dumps(activations_json, indent=2))
 
 

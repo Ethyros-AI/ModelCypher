@@ -807,3 +807,38 @@ class MLXBackend(Backend):
     def synchronize(self) -> None:
         """Synchronize all streams (wait for all GPU work to complete)."""
         self.mx.synchronize()
+
+    # --- File I/O (Native Backend Serialization) ---
+
+    def save_safetensors(
+        self, path: str, weights: dict[str, Any], metadata: dict[str, str] | None = None
+    ) -> None:
+        """Save weights to safetensors using MLX native I/O.
+
+        Args:
+            path: File path to save to.
+            weights: Dictionary of weight name -> array.
+            metadata: Optional dictionary of string metadata to include.
+        """
+        # Ensure all arrays are MLX arrays
+        mlx_weights = {}
+        for key, value in weights.items():
+            if hasattr(value, "__module__") and "mlx" in type(value).__module__:
+                mlx_weights[key] = value
+            else:
+                mlx_weights[key] = self.array(value)
+        if metadata:
+            self.mx.save_safetensors(path, mlx_weights, metadata=metadata)
+        else:
+            self.mx.save_safetensors(path, mlx_weights)
+
+    def load_safetensors(self, path: str) -> dict[str, Any]:
+        """Load weights from safetensors using MLX native I/O.
+
+        Args:
+            path: File path to load from.
+
+        Returns:
+            Dictionary of weight name -> MLX array.
+        """
+        return self.mx.load(path)

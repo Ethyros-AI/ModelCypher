@@ -702,3 +702,37 @@ class CUDABackend(Backend):
     def synchronize(self) -> None:
         """Synchronize all CUDA streams (wait for all GPU work to complete)."""
         self.torch.cuda.synchronize()
+
+    # --- File I/O (Native Backend Serialization) ---
+
+    def save_safetensors(self, path: str, weights: dict[str, Any]) -> None:
+        """Save weights to safetensors using PyTorch native I/O.
+
+        Args:
+            path: File path to save to.
+            weights: Dictionary of weight name -> array.
+        """
+        from safetensors.torch import save_file
+
+        # Ensure all arrays are torch tensors
+        torch_weights = {}
+        for key, value in weights.items():
+            if isinstance(value, self.torch.Tensor):
+                torch_weights[key] = value
+            else:
+                torch_weights[key] = self.array(value)
+        save_file(torch_weights, path)
+
+    def load_safetensors(self, path: str) -> dict[str, Any]:
+        """Load weights from safetensors using PyTorch native I/O.
+
+        Args:
+            path: File path to load from.
+
+        Returns:
+            Dictionary of weight name -> torch tensor on CUDA.
+        """
+        from safetensors.torch import load_file
+
+        weights = load_file(path, device="cuda")
+        return weights

@@ -383,3 +383,30 @@ class Backend(Protocol):
         Waits for all pending GPU operations to complete.
         """
         ...
+
+    # --- File I/O (Native Backend Serialization) ---
+    def save_safetensors(
+        self, path: str, weights: dict[str, Array], metadata: dict[str, str] | None = None
+    ) -> None:
+        """Save weights dictionary to safetensors format using native backend I/O.
+
+        This respects hexagonal architecture - the backend decides the optimal
+        serialization format for its array type.
+
+        Args:
+            path: File path to save to.
+            weights: Dictionary of weight name -> array.
+            metadata: Optional dictionary of string metadata to include.
+        """
+        ...
+
+    def load_safetensors(self, path: str) -> dict[str, Array]:
+        """Load weights from safetensors format using native backend I/O.
+
+        Args:
+            path: File path to load from.
+
+        Returns:
+            Dictionary of weight name -> backend array.
+        """
+        ...

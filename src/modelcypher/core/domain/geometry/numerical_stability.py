@@ -32,6 +32,8 @@ __all__ = [
     # Backend scalar helpers (use instead of math module)
     "sqrt_scalar",
     "is_finite",
+    "is_inf",
+    "is_nan",
     "log_scalar",
     "exp_scalar",
     "power_scalar",
@@ -40,6 +42,7 @@ __all__ = [
     "ulp_scalar",
     "lgamma_scalar",
     "acos_scalar",
+    "cos_scalar",
     "pi_value",
     "e_value",
     "inf_value",
@@ -93,6 +96,28 @@ def is_finite(value: float, backend: "Backend") -> bool:
     """
     arr = backend.array([value])
     result = backend.isfinite(arr)
+    backend.eval(result)
+    return bool(backend.to_scalar(result))
+
+
+def is_inf(value: float, backend: "Backend") -> bool:
+    """Check if scalar is infinite using backend.
+
+    Use instead of math.isinf(value).
+    """
+    arr = backend.array([value])
+    result = backend.isinf(arr)
+    backend.eval(result)
+    return bool(backend.to_scalar(result))
+
+
+def is_nan(value: float, backend: "Backend") -> bool:
+    """Check if scalar is NaN using backend.
+
+    Use instead of math.isnan(value).
+    """
+    arr = backend.array([value])
+    result = backend.isnan(arr)
     backend.eval(result)
     return bool(backend.to_scalar(result))
 
@@ -180,6 +205,17 @@ def acos_scalar(value: float, backend: "Backend") -> float:
     """
     arr = backend.array([value])
     result = backend.arccos(arr)
+    backend.eval(result)
+    return float(backend.to_scalar(result))
+
+
+def cos_scalar(value: float, backend: "Backend") -> float:
+    """Compute cosine of scalar using backend.
+
+    Use instead of math.cos(value).
+    """
+    arr = backend.array([value])
+    result = backend.cos(arr)
     backend.eval(result)
     return float(backend.to_scalar(result))
 
