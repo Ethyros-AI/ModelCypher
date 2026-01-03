@@ -33,7 +33,6 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
-    regularization_epsilon,
 )
 
 
@@ -49,8 +48,6 @@ class AlignmentSignal:
     misaligned_anchors: list[str] = field(default_factory=list)
     anchor_labels: list[str] = field(default_factory=list)
     anchor_divergence: list[float] = field(default_factory=list)
-    divergence_pattern: str = "unknown"
-    suggested_transformation: str = "refine"
     iteration: int = 0
     metadata: dict[str, float] = field(default_factory=dict)
 
@@ -85,8 +82,6 @@ class AlignmentSignal:
             "misaligned_anchors": list(self.misaligned_anchors),
             "anchor_labels": list(self.anchor_labels),
             "anchor_divergence": list(self.anchor_divergence),
-            "divergence_pattern": self.divergence_pattern,
-            "suggested_transformation": self.suggested_transformation,
             "iteration": self.iteration,
             "metadata": dict(self.metadata),
         }
@@ -109,8 +104,6 @@ def alignment_signal_from_matrices(
             dimension=dimension,
             cka_achieved=float(cka_achieved),
             cka_target=1.0,
-            divergence_pattern="phase_locked",
-            suggested_transformation="none",
             iteration=iteration,
             metadata={"phase_tol": float(phase_tol)},
         )
@@ -139,29 +132,14 @@ def alignment_signal_from_matrices(
     rank_target = _matrix_rank(target_matrix, b)
     min_rank = min(b.shape(source_matrix)[0], b.shape(source_matrix)[1])
 
-    # Scale diagnostics with dtype-derived thresholds
+    # Scale diagnostics
     div_eps = division_epsilon(b, source_matrix)
-    reg_eps = regularization_epsilon(b, source_matrix)
-
     src_norm = b.mean(b.norm(source_matrix, axis=1))
     tgt_norm = b.mean(b.norm(target_matrix, axis=1))
     b.eval(src_norm, tgt_norm)
     src_norm_val = float(b.to_scalar(src_norm))
     tgt_norm_val = float(b.to_scalar(tgt_norm))
     scale_ratio = src_norm_val / (tgt_norm_val + div_eps)
-
-    divergence_pattern = "rotation"
-    suggested = "rotation_refine"
-    if rank_source < min_rank or rank_target < min_rank or rank_source != rank_target:
-        divergence_pattern = "rank_deficient"
-        suggested = "expand_anchors"
-    elif abs(scale_ratio - 1.0) > reg_eps:
-        # Scale mismatch threshold: sqrt(eps) is the standard numerical tolerance
-        divergence_pattern = "scale"
-        suggested = "scale_normalization"
-    if shape_mismatch:
-        divergence_pattern = "dimension_mismatch"
-        suggested = "expand_anchors"
 
     mean_divergence = sum(dist_list) / len(dist_list) if dist_list else 0.0
     max_divergence = max(dist_list) if dist_list else 0.0
@@ -170,7 +148,9 @@ def alignment_signal_from_matrices(
     metadata = {
         "rank_source": float(rank_source),
         "rank_target": float(rank_target),
+        "rank_gap": float(abs(rank_source - rank_target)),
         "scale_ratio": float(scale_ratio),
+        "scale_gap": float(abs(scale_ratio - 1.0)),
         "max_divergence": max_divergence,
         "mean_divergence": mean_divergence,
         "balance_ratio": balance_ratio,
@@ -185,8 +165,6 @@ def alignment_signal_from_matrices(
         misaligned_anchors=misaligned,
         anchor_labels=labels,
         anchor_divergence=dist_list,
-        divergence_pattern=divergence_pattern,
-        suggested_transformation=suggested,
         iteration=iteration,
         metadata=metadata,
     )

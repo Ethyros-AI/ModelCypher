@@ -43,7 +43,6 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     compute_shared_relational_rank,
     division_epsilon,
-    machine_epsilon,
     regularization_epsilon,
     svd_rank_threshold,
     svd_via_eigh,
@@ -99,8 +98,9 @@ def project_cross_dimensional(
 
     THE UNIFIED API for all dimension mismatches.
 
-    PRECISION MATTERS. Being off by 1e-10 in alignment compounds through layers
-    and causes hallucinations at inference. No shortcuts. No approximations.
+    PRECISION MATTERS. Deviations on the order of machine epsilon compound
+    through layers and cause hallucinations at inference. No shortcuts.
+    No approximations.
 
     The key insight: Gram matrices K = X @ X^T capture relational geometry
     independent of feature dimension. For weight matrix [m, d]:
@@ -324,8 +324,7 @@ def _project_gram_transport(
                 G_target_row.shape[0], G_target_row.shape[1]
             )
 
-            # Configure low-rank GW for cross-architecture projection
-            # Rank 100-200 is typically sufficient for preserving structure
+            # Configure low-rank GW using shared relational rank from spectra
             svd_source = svd_via_eigh(b, projected, full_matrices=False)
             svd_target = svd_via_eigh(b, target, full_matrices=False)
             _, S_source, _ = svd_source
@@ -333,12 +332,10 @@ def _project_gram_transport(
             b.eval(S_source, S_target)
             S_source_np = [float(v) for v in b.to_numpy(S_source)]
             S_target_np = [float(v) for v in b.to_numpy(S_target)]
-            rank_eps = float(machine_epsilon(b, projected))
             shared_rank, _ = compute_shared_relational_rank(
                 b,
                 S_source_np,
                 S_target_np,
-                rank_eps,
             )
             rank = max(1, min(shared_rank, int(G_source_row.shape[0]), int(G_target_row.shape[0])))
 

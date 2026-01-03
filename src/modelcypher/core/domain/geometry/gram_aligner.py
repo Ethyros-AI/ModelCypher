@@ -1034,17 +1034,18 @@ class GramAligner:
 
         b = self._backend
         if b.shape(source_aligned) != b.shape(target_centered):
+            phase_tol = machine_epsilon(b, source_aligned)
             return AlignmentSignal(
                 dimension=3,
                 cka_achieved=float(cka),
-                divergence_pattern="dimension_mismatch",
-                suggested_transformation="expand_anchors",
                 iteration=0,
                 metadata={
                     "source_rows": float(b.shape(source_aligned)[0]),
                     "source_cols": float(b.shape(source_aligned)[1]),
                     "target_rows": float(b.shape(target_centered)[0]),
                     "target_cols": float(b.shape(target_centered)[1]),
+                    "shape_mismatch": 1.0,
+                    "phase_tol": float(phase_tol),
                 },
             )
 

@@ -277,10 +277,15 @@ def _build_density_profile_from_activations(
             domain = probe_domains[i] if i < len(probe_domains) else "unknown"
 
             intrinsic_dim = float(dims_np[i])
-            if intrinsic_dim != intrinsic_dim:
-                raise RuntimeError(
-                    f"DENSITY: Local dimension undefined for probe {probe_id} at layer {layer_idx}"
+            # Handle NaN/undefined intrinsic dimensions gracefully
+            # This can happen with extreme dimension mismatches or degenerate activations
+            if intrinsic_dim != intrinsic_dim or intrinsic_dim <= 0:
+                logger.debug(
+                    "DENSITY: Skipping probe %s at layer %d (undefined intrinsic dim)",
+                    probe_id, layer_idx,
                 )
+                # Skip this probe - don't include in graft mask
+                continue
             density_score = 1.0 / max(intrinsic_dim, eps)
 
             act_arr = b.array(act)

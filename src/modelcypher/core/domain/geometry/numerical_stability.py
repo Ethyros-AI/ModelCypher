@@ -126,7 +126,10 @@ def safe_log_epsilon(backend: Backend, array: Array) -> float:
     return backend.finfo(array.dtype).tiny
 
 
-def find_magnitude_gap_threshold(sorted_values: list[float], eps: float = 1e-10) -> float:
+def find_magnitude_gap_threshold(
+    sorted_values: list[float],
+    eps: float | None = None,
+) -> float:
     """Find the natural break point in a sorted magnitude distribution.
 
     Finds the threshold where the largest relative drop occurs between
@@ -135,12 +138,17 @@ def find_magnitude_gap_threshold(sorted_values: list[float], eps: float = 1e-10)
 
     Args:
         sorted_values: Magnitudes sorted in ascending order.
-        eps: Minimum denominator for numerical stability.
+        eps: Minimum denominator for numerical stability. If None, derives
+            epsilon from the float precision of the input scale.
 
     Returns:
         The value at which the largest relative gap occurs.
         Returns the median if no clear gap is found.
     """
+    if eps is None:
+        scale = max(1.0, max((abs(v) for v in sorted_values), default=0.0))
+        eps = math.ulp(scale)
+
     if len(sorted_values) < 3:
         return sorted_values[len(sorted_values) // 2] if sorted_values else 0.0
 
@@ -784,12 +792,12 @@ def _compute_residual_and_refine(
     rel_residual = res_norm / (tgt_norm + eps)
     diagnostics["residual_norm"] = rel_residual
 
+    n_samples = diagnostics["n_samples"]
+    d_source = diagnostics["d_source"]
+    refine_threshold = eps * max(n_samples, d_source)
     # Iterative refinement if residual is large
-    if rel_residual > eps * 100:
+    if rel_residual > refine_threshold:
         try:
-            n_samples = diagnostics["n_samples"]
-            d_source = diagnostics["d_source"]
-
             if n_samples <= d_source:
                 # Underdetermined: use transpose solve
                 R_T = b.transpose(R_reg)
@@ -999,7 +1007,6 @@ def _get_native_precision(backend: Backend, array: Array) -> str:
 def compute_entropy_effective_rank(
     backend: Backend,
     singular_values: list[float],
-    eps: float = 1e-12,
 ) -> float:
     """Compute entropy-based effective rank from singular values.
 
@@ -1016,20 +1023,24 @@ def compute_entropy_effective_rank(
     """
     import math
 
+    sv_array = backend.array(singular_values or [1.0])
+    eps = machine_epsilon(backend, sv_array)
+    log_eps = safe_log_epsilon(backend, sv_array)
+
     # Filter positive values
     positive_sv = [s for s in singular_values if s > eps]
     if not positive_sv:
         return 0.0
 
     total = sum(positive_sv)
-    if total <= 0:
+    if total <= eps:
         return 0.0
 
     # Compute normalized probabilities
     probs = [s / total for s in positive_sv]
 
     # Shannon entropy
-    entropy = -sum(p * math.log(p + eps) for p in probs if p > 0)
+    entropy = -sum(p * math.log(p + log_eps) for p in probs if p > 0)
 
     return math.exp(entropy)
 
@@ -1038,7 +1049,6 @@ def compute_shared_relational_rank(
     backend: Backend,
     source_singular_values: list[float],
     target_singular_values: list[float],
-    eps: float = 1e-12,
 ) -> tuple[int, dict]:
     """Compute the shared relational rank between source and target.
 
@@ -1055,8 +1065,8 @@ def compute_shared_relational_rank(
         of the shared relational space.
     """
     # Compute effective ranks
-    erank_source = compute_entropy_effective_rank(backend, source_singular_values, eps)
-    erank_target = compute_entropy_effective_rank(backend, target_singular_values, eps)
+    erank_source = compute_entropy_effective_rank(backend, source_singular_values)
+    erank_target = compute_entropy_effective_rank(backend, target_singular_values)
 
     # Integer ranks (floor of effective rank)
     rank_source = max(1, int(erank_source))
@@ -1069,12 +1079,27 @@ def compute_shared_relational_rank(
     shared_rank = max(rank_source, rank_target)
 
     # Also compute threshold-based ranks for comparison
-    max_sv_s = max(source_singular_values) if source_singular_values else 0
-    max_sv_t = max(target_singular_values) if target_singular_values else 0
-    thresh_s = eps * max_sv_s * 100  # Noise threshold
-    thresh_t = eps * max_sv_t * 100
-    threshold_rank_s = sum(1 for s in source_singular_values if s > thresh_s)
-    threshold_rank_t = sum(1 for s in target_singular_values if s > thresh_t)
+    if source_singular_values:
+        max_sv_s = max(source_singular_values)
+        source_array = backend.array(source_singular_values)
+        thresh_s = (
+            svd_rank_threshold(backend, source_array, max_dim=len(source_singular_values))
+            * max_sv_s
+        )
+        threshold_rank_s = sum(1 for s in source_singular_values if s > thresh_s)
+    else:
+        threshold_rank_s = 0
+
+    if target_singular_values:
+        max_sv_t = max(target_singular_values)
+        target_array = backend.array(target_singular_values)
+        thresh_t = (
+            svd_rank_threshold(backend, target_array, max_dim=len(target_singular_values))
+            * max_sv_t
+        )
+        threshold_rank_t = sum(1 for s in target_singular_values if s > thresh_t)
+    else:
+        threshold_rank_t = 0
 
     diagnostics = {
         "effective_rank_source": erank_source,
@@ -1312,11 +1337,6 @@ def solve_via_cca_procrustes(
     backend: Backend,
     source: Array,
     target: Array,
-    *,
-    regularization: float = 1e-4,
-    pca_variance_threshold: float = 0.95,
-    cca_variance_threshold: float = 0.95,
-    min_correlation: float = 0.1,
 ) -> tuple[Array | None, dict]:
     """Solve source @ F = target via SVCCA + Procrustes for perfect alignment.
 
@@ -1343,15 +1363,6 @@ def solve_via_cca_procrustes(
         Source matrix [n_samples, d_source].
     target : Array
         Target matrix [n_samples, d_target].
-    regularization : float
-        Regularization for CCA covariance matrices.
-    pca_variance_threshold : float
-        Fraction of variance to retain in PCA step (0.95 = 95%).
-    cca_variance_threshold : float
-        Fraction of CCA variance to retain (0.95 = 95%).
-    min_correlation : float
-        Minimum canonical correlation to include (0.1 = 10%).
-
     Returns
     -------
     tuple[Array | None, dict]
@@ -1375,7 +1386,6 @@ def solve_via_cca_procrustes(
     d_t = int(shape_t[1])
 
     eps = machine_epsilon(b, source)
-    sv_floor = eps  # Use machine epsilon, not hardcoded value
 
     diagnostics: dict = {
         "shared_dim": 0,
@@ -1399,7 +1409,7 @@ def solve_via_cca_procrustes(
     b.eval(source_c, target_c)
 
     # --- STEP 1: PCA reduction (using Gram-space when d > n) ---
-    def pca_reduce(matrix: Array, variance_thresh: float) -> tuple[Array, Array] | None:
+    def pca_reduce(matrix: Array) -> tuple[Array, Array] | None:
         """Reduce matrix to high-variance subspace using Gram-space PCA."""
         n_samp = int(matrix.shape[0])
         d_feat = int(matrix.shape[1])
@@ -1427,32 +1437,25 @@ def solve_via_cca_procrustes(
         eigenvalues_sorted = b.array([max(0.0, float(eig_np[i])) for i in order])
         b.eval(eigenvectors_sorted, eigenvalues_sorted)
 
-        # Select components by variance threshold
         eig_sorted_np = [float(v) for v in b.to_numpy(eigenvalues_sorted)]
         total_var = sum(eig_sorted_np)
         if total_var <= 0:
             return None
 
-        cum_var = 0.0
-        k = 0
-        for i, ev in enumerate(eig_sorted_np):
-            if i >= max_components:
-                break
-            cum_var += ev
-            k = i + 1
-            if cum_var / total_var >= variance_thresh:
-                break
-
-        if k == 0:
+        # Singular values from eigenvalues
+        singular_values = b.sqrt(eigenvalues_sorted)
+        b.eval(singular_values)
+        sv_all = [float(v) for v in b.to_numpy(singular_values)]
+        erank = compute_entropy_effective_rank(b, sv_all)
+        if erank <= 0:
             return None
 
-        # Singular values from eigenvalues
-        singular_values = b.sqrt(eigenvalues_sorted[:k])
-        b.eval(singular_values)
+        k = max(1, min(max_components, int(math.ceil(erank))))
 
         # Principal components: V = matrix.T @ U @ S^{-1}
         U_k = eigenvectors_sorted[:, :k]  # [n, k]
-        sv_np = [max(float(v), sv_floor) for v in b.to_numpy(singular_values)]
+        sv_floor = division_epsilon(b, matrix)
+        sv_np = [max(sv_all[i], sv_floor) for i in range(k)]
         inv_sv = b.array([1.0 / s for s in sv_np])
         b.eval(inv_sv)
 
@@ -1466,8 +1469,8 @@ def solve_via_cca_procrustes(
 
         return reduced, components
 
-    pca_result_s = pca_reduce(source_c, pca_variance_threshold)
-    pca_result_t = pca_reduce(target_c, pca_variance_threshold)
+    pca_result_s = pca_reduce(source_c)
+    pca_result_t = pca_reduce(target_c)
 
     if pca_result_s is None or pca_result_t is None:
         return None, diagnostics
@@ -1488,14 +1491,13 @@ def solve_via_cca_procrustes(
     cov_st = b.matmul(b.transpose(source_reduced), target_reduced) / n_float
     b.eval(cov_ss, cov_tt, cov_st)
 
-    # Regularize
-    cov_ss = cov_ss + regularization * b.eye(k_s)
-    cov_tt = cov_tt + regularization * b.eye(k_t)
-    b.eval(cov_ss, cov_tt)
-
     # Whitening via eigendecomposition
     def whiten_cov(cov: Array) -> Array | None:
         """Compute inverse sqrt of covariance for whitening."""
+        reg = regularization_epsilon(b, cov)
+        cov = cov + reg * b.eye(int(b.shape(cov)[0]))
+        b.eval(cov)
+
         # Cast to float32 for eigendecomposition (MLX doesn't support bfloat16 for eigh)
         cov_dtype = str(cov.dtype)
         if "bfloat16" in cov_dtype:
@@ -1511,7 +1513,7 @@ def solve_via_cca_procrustes(
             return None
 
         # Floor eigenvalues
-        floor_val = max(regularization, eps * 1e3)
+        floor_val = reg
         eigvals_floored = b.maximum(eigvals, b.full(eigvals.shape, floor_val))
         b.eval(eigvals_floored)
 
@@ -1548,17 +1550,16 @@ def solve_via_cca_procrustes(
 
     diagnostics["top_correlation"] = correlations[0]
 
-    # Select shared dimension
-    total_var = sum(c * c for c in correlations)
-    cum_var = 0.0
-    k = 0
-    for i, c in enumerate(correlations):
-        if c < min_correlation:
-            break
-        cum_var += c * c
-        k = i + 1
-        if total_var > 0 and cum_var / total_var >= cca_variance_threshold:
-            break
+    # Select shared dimension from correlation spectrum
+    signal_corrs = [c for c in correlations if c > eps]
+    if not signal_corrs:
+        return None, diagnostics
+
+    erank = compute_entropy_effective_rank(b, signal_corrs)
+    if erank <= 0:
+        return None, diagnostics
+
+    k = max(1, min(len(signal_corrs), int(math.ceil(erank))))
 
     if k == 0:
         return None, diagnostics

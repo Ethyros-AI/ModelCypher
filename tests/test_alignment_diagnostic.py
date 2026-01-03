@@ -124,16 +124,6 @@ class TestAlignmentSignalFields:
         assert signal.anchor_labels == []
         assert signal.anchor_divergence == []
 
-    def test_default_strings(self):
-        """Test default string fields."""
-        signal = AlignmentSignal(
-            dimension=2,
-            cka_achieved=1.0 - _eps(),
-            metadata={"phase_tol": _eps()},
-        )
-        assert signal.divergence_pattern == "unknown"
-        assert signal.suggested_transformation == "refine"
-
     def test_frozen_immutable(self):
         """Test dataclass is frozen."""
         signal = AlignmentSignal(
@@ -228,8 +218,6 @@ class TestAlignmentSignalToDict:
             misaligned_anchors=["token:1", "token:2"],
             anchor_labels=["a", "b", "c"],
             anchor_divergence=[0.1, 0.2, 0.05],
-            divergence_pattern="scale",
-            suggested_transformation="scale_normalization",
             iteration=5,
             metadata={"phase_tol": eps, "scale_ratio": 1.5},
         )
@@ -238,8 +226,6 @@ class TestAlignmentSignalToDict:
         assert d["misaligned_anchors"] == ["token:1", "token:2"]
         assert d["anchor_labels"] == ["a", "b", "c"]
         assert d["anchor_divergence"] == [0.1, 0.2, 0.05]
-        assert d["divergence_pattern"] == "scale"
-        assert d["suggested_transformation"] == "scale_normalization"
         assert d["iteration"] == 5
         assert d["metadata"]["scale_ratio"] == 1.5
 
@@ -262,7 +248,7 @@ class TestAlignmentSignalFromMatrices:
     """Tests for alignment_signal_from_matrices function."""
 
     def test_perfect_alignment_returns_phase_locked(self, backend):
-        """Test perfectly aligned matrices return phase_locked pattern."""
+        """Test perfectly aligned matrices are phase locked."""
         backend.random_seed(42)
         matrix = backend.random_normal((10, 8))
 
@@ -273,8 +259,7 @@ class TestAlignmentSignalFromMatrices:
             cka_achieved=1.0,
         )
 
-        assert signal.divergence_pattern == "phase_locked"
-        assert signal.suggested_transformation == "none"
+        assert signal.is_phase_locked is True
         assert signal.cka_achieved == 1.0
 
     def test_near_perfect_alignment(self, backend):
@@ -291,10 +276,10 @@ class TestAlignmentSignalFromMatrices:
             cka_achieved=1.0 - phase_tol / 2.0,
         )
 
-        assert signal.divergence_pattern == "phase_locked"
+        assert signal.is_phase_locked is True
 
-    def test_misaligned_matrices_return_rotation(self, backend):
-        """Test misaligned matrices detect rotation pattern."""
+    def test_misaligned_matrices_preserve_diagnostics(self, backend):
+        """Test misaligned matrices preserve diagnostics."""
         backend.random_seed(42)
         source = backend.random_normal((10, 8))
         target = backend.random_normal((10, 8))  # different
@@ -307,8 +292,6 @@ class TestAlignmentSignalFromMatrices:
             cka_achieved=cka_achieved,
         )
 
-        # May be rotation, scale, or rank_deficient depending on matrices
-        assert signal.divergence_pattern in ["rotation", "scale", "rank_deficient"]
         assert signal.cka_achieved == cka_achieved
 
     def test_dimension_mismatch_detected(self, backend):
@@ -325,8 +308,6 @@ class TestAlignmentSignalFromMatrices:
             cka_achieved=cka_achieved,
         )
 
-        assert signal.divergence_pattern == "dimension_mismatch"
-        assert signal.suggested_transformation == "expand_anchors"
         assert signal.metadata["shape_mismatch"] == 1.0
 
     def test_custom_labels_used(self, backend):
@@ -446,7 +427,9 @@ class TestAlignmentSignalFromMatrices:
 
         assert "rank_source" in signal.metadata
         assert "rank_target" in signal.metadata
+        assert "rank_gap" in signal.metadata
         assert "scale_ratio" in signal.metadata
+        assert "scale_gap" in signal.metadata
         assert "max_divergence" in signal.metadata
         assert "mean_divergence" in signal.metadata
         assert "balance_ratio" in signal.metadata
@@ -470,8 +453,8 @@ class TestAlignmentSignalFromMatrices:
         assert len(signal.anchor_divergence) == n_samples
 
 
-class TestAlignmentSignalPatternDetection:
-    """Tests for divergence pattern detection."""
+class TestAlignmentSignalDiagnostics:
+    """Tests for alignment diagnostic metrics."""
 
     def test_scale_mismatch_detected(self, backend):
         """Test scaled matrices detect scale pattern or numerical rank issues."""
@@ -506,11 +489,8 @@ class TestAlignmentSignalPatternDetection:
             f"Expected ~{expected_ratio}, got {scale_ratio}"
         )
 
-        # Pattern may be scale, rotation, or rank_deficient depending on
-        # numerical precision in eigenvalue computation
-        assert signal.divergence_pattern in ["scale", "rotation", "rank_deficient"]
-        if signal.divergence_pattern == "scale":
-            assert signal.suggested_transformation == "scale_normalization"
+        scale_gap = signal.metadata["scale_gap"]
+        assert abs(scale_gap - abs(scale_ratio - 1.0)) <= tolerance
 
     def test_rank_deficient_detected(self, backend):
         """Test rank-deficient matrices detected."""
@@ -531,8 +511,8 @@ class TestAlignmentSignalPatternDetection:
             cka_achieved=cka_achieved,
         )
 
-        assert signal.divergence_pattern == "rank_deficient"
-        assert signal.suggested_transformation == "expand_anchors"
+        min_rank = min(backend.shape(source)[0], backend.shape(source)[1])
+        assert signal.metadata["rank_source"] < float(min_rank)
 
 
 class TestMatrixRank:

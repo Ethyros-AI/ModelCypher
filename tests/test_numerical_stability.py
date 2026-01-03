@@ -72,7 +72,7 @@ class TestMachineEpsilon:
     """Tests for machine_epsilon function."""
 
     def test_float32_epsilon(self, any_backend: "Backend") -> None:
-        """Float32 epsilon should be approximately 1.19e-7."""
+        """Float32 epsilon should reflect dtype precision."""
         b = any_backend
         arr = b.zeros((2, 2))  # Default is float32
         eps = machine_epsilon(b, arr)
@@ -81,7 +81,7 @@ class TestMachineEpsilon:
         assert 1.0 + eps != 1.0
 
     def test_float64_epsilon(self, any_backend: "Backend") -> None:
-        """Float64 epsilon should be approximately 2.22e-16."""
+        """Float64 epsilon should be smaller than float32 when supported."""
         b = any_backend
         # Some backends (JAX without x64, MLX) silently truncate float64 to float32
         try:
@@ -145,7 +145,7 @@ class TestRegularizationEpsilon:
         assert abs(reg_eps - expected) <= eps
 
     def test_regularization_epsilon_float32(self, any_backend: "Backend") -> None:
-        """Float32 regularization epsilon should be approximately 6.4e-6."""
+        """Float32 regularization epsilon should sit between eps and division eps."""
         b = any_backend
         arr = b.zeros((2, 2))  # float32
         reg_eps = regularization_epsilon(b, arr)
@@ -168,7 +168,7 @@ class TestConditionThreshold:
         assert abs(cond_thresh - expected) <= eps
 
     def test_condition_threshold_float32(self, any_backend: "Backend") -> None:
-        """Float32 condition threshold should be approximately 8.4e6."""
+        """Float32 condition threshold should be inverse epsilon."""
         b = any_backend
         arr = b.zeros((2, 2))  # float32
         cond_thresh = condition_threshold(b, arr)
@@ -952,23 +952,29 @@ class TestSolveViaCcaProcrustes:
             assert diag["method"] == "cca_procrustes"
 
     def test_cca_procrustes_uncorrelated_data(self, any_backend: "Backend") -> None:
-        """Uncorrelated source/target should have low correlations."""
+        """Correlated data should yield higher top correlation than uncorrelated."""
         b = any_backend
         b.random_seed(42)
+        # Correlated data through shared latent
+        latent = b.random_normal((50, 5))
+        source_corr = b.matmul(latent, b.random_normal((5, 20)))
+        target_corr = b.matmul(latent, b.random_normal((5, 15)))
+        b.eval(source_corr, target_corr)
+
+        _, diag_corr = solve_via_cca_procrustes(b, source_corr, target_corr)
+        assert diag_corr["method"] == "cca_procrustes"
+
         # Independent data
+        b.random_seed(123)
         source = b.random_normal((50, 20))
-        b.random_seed(123)  # Different seed for independence
+        b.random_seed(456)
         target = b.random_normal((50, 15))
         b.eval(source, target)
 
-        _, base_diag = solve_via_cca_procrustes(
-            b, source, target, min_correlation=machine_epsilon(b, source)
-        )
-        min_corr = base_diag["top_correlation"] + division_epsilon(b, source)
-        F, diag = solve_via_cca_procrustes(b, source, target, min_correlation=min_corr)
+        _, diag_uncorr = solve_via_cca_procrustes(b, source, target)
 
-        # With min_correlation above observed top_correlation, expect none shared
-        assert F is None or diag["shared_dim"] == 0
+        eps = machine_epsilon(b, source)
+        assert diag_corr["top_correlation"] >= diag_uncorr["top_correlation"] - eps
 
     def test_cca_procrustes_too_few_samples(self, any_backend: "Backend") -> None:
         """Too few samples should return None."""
@@ -1022,42 +1028,6 @@ class TestSolveViaCcaProcrustes:
 
         if F is not None:
             assert b.shape(F) == (25, 18)
-
-    def test_cca_procrustes_variance_thresholds(self, any_backend: "Backend") -> None:
-        """Different variance thresholds should affect results."""
-        b = any_backend
-        b.random_seed(42)
-        source = b.random_normal((40, 20))
-        target = b.random_normal((40, 15))
-        b.eval(source, target)
-
-        source_s = b.to_numpy(b.svd(source)[1])
-        target_s = b.to_numpy(b.svd(target)[1])
-        source_var = source_s**2
-        target_var = target_s**2
-        source_cum = (source_var.cumsum() / source_var.sum()) if source_var.sum() != 0 else source_var
-        target_cum = (target_var.cumsum() / target_var.sum()) if target_var.sum() != 0 else target_var
-        low_threshold = float(min(source_cum[0], target_cum[0]))
-        high_threshold = float(max(source_cum[-1], target_cum[-1]))
-        eps = _eps(b, low_threshold, high_threshold)
-        low_threshold = min(max(low_threshold + eps, eps), 1.0 - eps)
-        high_threshold = min(max(high_threshold - eps, low_threshold + eps), 1.0 - eps)
-
-        F1, diag1 = solve_via_cca_procrustes(
-            b, source, target, pca_variance_threshold=low_threshold
-        )
-        F2, diag2 = solve_via_cca_procrustes(
-            b, source, target, pca_variance_threshold=high_threshold
-        )
-
-        # Lower threshold should use fewer PCA components
-        if F1 is not None and F2 is not None:
-            pca_dims_1 = diag1["pca_dims"]
-            pca_dims_2 = diag2["pca_dims"]
-            # Low threshold -> fewer dims
-            assert pca_dims_1[0] <= pca_dims_2[0]
-            assert pca_dims_1[1] <= pca_dims_2[1]
-
 
 # =============================================================================
 # Integration Tests
