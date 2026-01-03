@@ -30,8 +30,6 @@ Tests cover:
 """
 
 from __future__ import annotations
-
-import math
 from typing import TYPE_CHECKING
 
 import pytest
@@ -57,6 +55,7 @@ from modelcypher.core.domain.geometry.cka import (
     compute_cka_matrix,
     compute_layer_cka,
 )
+from modelcypher.core.support.array_utils import array_to_list
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
@@ -76,6 +75,16 @@ def _assert_unit_interval(value: float, tol: float) -> None:
 
 def _assert_non_negative(value: float, tol: float) -> None:
     assert value >= -tol
+
+
+def _is_finite(value: float) -> bool:
+    return value == value and value not in (float("inf"), float("-inf"))
+
+
+def _max_abs(backend: "Backend", array) -> float:
+    diff = backend.max(backend.abs(array))
+    backend.eval(diff)
+    return float(backend.to_scalar(diff))
 
 
 # =============================================================================
@@ -238,7 +247,7 @@ class TestCenterGramMatrix:
         # Diagonal entries: 1 - 1/n - 1/n + 1/n = 1 - 1/n
         # Off-diagonal: 0 - 1/n - 1/n + 1/n = -1/n
 
-        centered_np = backend.to_numpy(centered)
+        centered_list = array_to_list(backend, centered)
         expected_diag = 1.0 - 1.0 / n
         expected_off = -1.0 / n
         tol = _array_tol(backend, centered)
@@ -246,9 +255,9 @@ class TestCenterGramMatrix:
         for i in range(n):
             for j in range(n):
                 if i == j:
-                    assert abs(centered_np[i, j] - expected_diag) <= tol
+                    assert abs(centered_list[i][j] - expected_diag) <= tol
                 else:
-                    assert abs(centered_np[i, j] - expected_off) <= tol
+                    assert abs(centered_list[i][j] - expected_off) <= tol
 
     def test_centering_zeros(self, any_backend: "Backend") -> None:
         """Centering zero matrix should stay zero."""
@@ -256,9 +265,10 @@ class TestCenterGramMatrix:
         gram = backend.zeros((4, 4))
         centered = _center_gram_matrix(gram, backend)
 
-        centered_np = backend.to_numpy(centered)
         tol = _array_tol(backend, centered)
-        assert abs(centered_np.sum()) <= tol
+        sum_arr = backend.sum(centered)
+        backend.eval(sum_arr)
+        assert abs(float(backend.to_scalar(sum_arr))) <= tol
 
     def test_centering_ones(self, any_backend: "Backend") -> None:
         """Centering all-ones matrix should produce all zeros."""
@@ -269,9 +279,10 @@ class TestCenterGramMatrix:
 
         # All-ones: col_mean = 1, row_mean = 1, grand_mean = 1
         # Centered = 1 - 1 - 1 + 1 = 0
-        centered_np = backend.to_numpy(centered)
         tol = _array_tol(backend, centered)
-        assert abs(centered_np.sum()) <= tol
+        sum_arr = backend.sum(centered)
+        backend.eval(sum_arr)
+        assert abs(float(backend.to_scalar(sum_arr))) <= tol
 
     def test_centering_preserves_shape(self, any_backend: "Backend") -> None:
         """Centering should preserve matrix shape."""
@@ -291,12 +302,10 @@ class TestCenterGramMatrix:
         centered_once = _center_gram_matrix(gram, backend)
         centered_twice = _center_gram_matrix(centered_once, backend)
 
-        c1 = backend.to_numpy(centered_once)
-        c2 = backend.to_numpy(centered_twice)
-
         # Should be numerically identical (up to floating point)
         tol = _array_tol(backend, centered_once)
-        assert abs(c1 - c2).max() <= tol
+        diff = _max_abs(backend, centered_once - centered_twice)
+        assert diff <= tol
 
     def test_centering_row_and_col_sums_zero(self, any_backend: "Backend") -> None:
         """Centered Gram matrix should have row and column sums = 0."""
@@ -308,13 +317,12 @@ class TestCenterGramMatrix:
         gram = backend.matmul(X, backend.transpose(X))
         centered = _center_gram_matrix(gram, backend)
 
-        centered_np = backend.to_numpy(centered)
-        row_sums = centered_np.sum(axis=1)
-        col_sums = centered_np.sum(axis=0)
+        row_sums = backend.sum(centered, axis=1)
+        col_sums = backend.sum(centered, axis=0)
 
         tol = _array_tol(backend, centered)
-        assert abs(row_sums).max() <= tol
-        assert abs(col_sums).max() <= tol
+        assert _max_abs(backend, row_sums) <= tol
+        assert _max_abs(backend, col_sums) <= tol
 
     def test_centering_empty_matrix(self, any_backend: "Backend") -> None:
         """Centering empty matrix should return empty."""
@@ -353,7 +361,7 @@ class TestComputeHSIC:
         gram_y = backend.matmul(Y, backend.transpose(Y))
 
         hsic = _compute_hsic(gram_x, gram_y, backend)
-        assert math.isfinite(hsic)
+        assert _is_finite(hsic)
 
     def test_hsic_single_sample_returns_zero(self, any_backend: "Backend") -> None:
         """HSIC with n=1 should return 0."""
@@ -371,7 +379,7 @@ class TestComputeHSIC:
         gram = backend.matmul(X, backend.transpose(X))
 
         hsic = _compute_hsic(gram, gram, backend)
-        assert math.isfinite(hsic)
+        assert _is_finite(hsic)
 
     def test_hsic_zero_gram(self, any_backend: "Backend") -> None:
         """HSIC with zero Gram matrix should return 0."""
@@ -479,7 +487,7 @@ class TestComputeHSICDispatch:
             gram, gram, backend, HSICEstimator.UNBIASED, n_features_x=5, n_features_y=5
         )
         # Should use biased estimator, which works for n=3
-        assert math.isfinite(hsic)
+        assert _is_finite(hsic)
 
     def test_dispatch_auto_uses_unbiased_high_dim(self, any_backend: "Backend") -> None:
         """Dispatch with AUTO should use UNBIASED when features >> samples."""
@@ -791,8 +799,9 @@ class TestCKAInvarianceProperties:
         Y = backend.random_normal((15, 8))
 
         # Scale X by a data-derived factor
-        X_np = backend.to_numpy(X)
-        scale = float(abs(X_np).mean())
+        scale_arr = backend.mean(backend.abs(X))
+        backend.eval(scale_arr)
+        scale = float(backend.to_scalar(scale_arr))
         X_scaled = X * scale
         backend.eval(X_scaled)
 
@@ -811,8 +820,9 @@ class TestCKAInvarianceProperties:
 
         # Permute both X and Y with same permutation
         perm = [7, 2, 11, 0, 5, 3, 14, 8, 1, 12, 4, 9, 6, 13, 10]
-        X_perm = backend.array([backend.to_numpy(X[i]) for i in perm])
-        Y_perm = backend.array([backend.to_numpy(Y[i]) for i in perm])
+        perm_idx = backend.array(perm, dtype="int32")
+        X_perm = backend.take(X, perm_idx, axis=0)
+        Y_perm = backend.take(Y, perm_idx, axis=0)
 
         result_original = compute_cka(X, Y, backend)
         result_permuted = compute_cka(X_perm, Y_perm, backend)
@@ -904,10 +914,12 @@ class TestComputeCKAMatrix:
 
         matrix, _, _ = compute_cka_matrix(source, target, backend)
 
-        matrix_np = backend.to_numpy(matrix)
         tol = _array_tol(backend, matrix)
-        assert (matrix_np >= -tol).all()
-        assert (matrix_np <= 1.0 + tol).all()
+        min_val = backend.min(matrix)
+        max_val = backend.max(matrix)
+        backend.eval(min_val, max_val)
+        assert float(backend.to_scalar(min_val)) >= -tol
+        assert float(backend.to_scalar(max_val)) <= 1.0 + tol
 
     def test_insufficient_samples_returns_zero(self, any_backend: "Backend") -> None:
         """CKA matrix should return 0 for probes with < 2 samples."""
@@ -919,9 +931,9 @@ class TestComputeCKAMatrix:
 
         matrix, _, _ = compute_cka_matrix(source, target, backend)
 
-        matrix_np = backend.to_numpy(matrix)
         tol = _array_tol(backend, matrix)
-        assert abs(matrix_np[0, 0]) <= tol
+        value = float(backend.to_scalar(matrix[0, 0]))
+        assert abs(value) <= tol
 
 
 # =============================================================================
@@ -1354,7 +1366,7 @@ class TestEdgeCasesAndNumericalStability:
         result = compute_cka(X, Y, backend)
 
         # Should handle gracefully
-        assert math.isfinite(result.cka)
+        assert _is_finite(result.cka)
 
     def test_very_large_values(self, any_backend: "Backend") -> None:
         """CKA should handle very large activation values."""
@@ -1383,7 +1395,7 @@ class TestEdgeCasesAndNumericalStability:
 
         result = compute_cka(X, Y, backend)
 
-        assert math.isfinite(result.cka)
+        assert _is_finite(result.cka)
 
     def test_constant_activations(self, any_backend: "Backend") -> None:
         """CKA with constant activations should handle gracefully."""
@@ -1395,7 +1407,7 @@ class TestEdgeCasesAndNumericalStability:
         result = compute_cka(X, Y, backend)
 
         # Constant activations have no variance, CKA may be 0 or undefined
-        assert math.isfinite(result.cka)
+        assert _is_finite(result.cka)
 
     def test_sparse_activations(self, any_backend: "Backend") -> None:
         """CKA should handle sparse activations (many zeros)."""
@@ -1406,19 +1418,20 @@ class TestEdgeCasesAndNumericalStability:
         X = backend.random_normal((10, 8))
         Y = backend.random_normal((10, 8))
 
-        # Zero out most entries (copy needed for JAX read-only arrays)
-        X_np = backend.to_numpy(X).copy()
-        Y_np = backend.to_numpy(Y).copy()
-        threshold_x = float(abs(X_np).mean())
-        threshold_y = float(abs(Y_np).mean())
-        X_np[abs(X_np) < threshold_x] = 0.0
-        Y_np[abs(Y_np) < threshold_y] = 0.0
-        X_sparse = backend.array(X_np)
-        Y_sparse = backend.array(Y_np)
+        threshold_x = backend.mean(backend.abs(X))
+        threshold_y = backend.mean(backend.abs(Y))
+        backend.eval(threshold_x, threshold_y)
+        threshold_x_val = float(backend.to_scalar(threshold_x))
+        threshold_y_val = float(backend.to_scalar(threshold_y))
+
+        mask_x = backend.abs(X) < threshold_x_val
+        mask_y = backend.abs(Y) < threshold_y_val
+        X_sparse = backend.where(mask_x, backend.zeros_like(X), X)
+        Y_sparse = backend.where(mask_y, backend.zeros_like(Y), Y)
 
         result = compute_cka(X_sparse, Y_sparse, backend)
 
-        assert math.isfinite(result.cka)
+        assert _is_finite(result.cka)
 
     def test_high_dimensional_features(self, any_backend: "Backend") -> None:
         """CKA should handle high-dimensional features."""

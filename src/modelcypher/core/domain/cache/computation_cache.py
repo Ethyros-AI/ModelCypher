@@ -228,33 +228,33 @@ class ComputationCache:
         if n_elements <= 1000:
             # Small array - hash all values directly as bytes (not hex string!)
             # This is ~8× faster than converting to hex and back
+            # Use native tolist() for O(1) extraction instead of O(n) scalar extractions
             shape_bytes = f"{shape}|dtype={dtype}".encode()
+            flat_list = backend.tolist(flat)
             content_bytes = b"".join(
-                struct.pack(">d", float(backend.to_scalar(flat[i])))
-                for i in range(flat_len)
+                struct.pack(">d", float(val)) for val in flat_list
             )
             # Hash shape + content bytes directly (avoids hex conversion overhead)
             # xxhash is ~10-50× faster than SHA256 for non-cryptographic hashing
             return xxhash.xxh64(shape_bytes + content_bytes).hexdigest()[:16]
         else:
             # Large array - sample strategically
+            # Use native tolist() for O(1) extraction
+            flat_list = backend.tolist(flat)
             samples = []
             # First 10
-            for i in range(min(10, flat_len)):
-                samples.append(backend.to_scalar(flat[i]))
+            samples.extend(flat_list[:min(10, flat_len)])
             # Last 10
-            for i in range(max(0, flat_len - 10), flat_len):
-                samples.append(backend.to_scalar(flat[i]))
+            samples.extend(flat_list[max(0, flat_len - 10):])
             # Middle 10
             mid = flat_len // 2
             start_mid = max(0, mid - 5)
             end_mid = min(flat_len, mid + 5)
-            for i in range(start_mid, end_mid):
-                samples.append(backend.to_scalar(flat[i]))
+            samples.extend(flat_list[start_mid:end_mid])
             # Random-ish samples based on position (deterministic)
             step = max(1, flat_len // 20)
             for i in range(0, flat_len, step):
-                samples.append(backend.to_scalar(flat[i]))
+                samples.append(flat_list[i])
                 if len(samples) >= 40:
                     break
             shape_bytes = f"{shape}|dtype={dtype}".encode()

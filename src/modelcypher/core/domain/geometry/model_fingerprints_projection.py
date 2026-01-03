@@ -17,11 +17,12 @@
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from enum import Enum
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.manifold_stitcher import ModelFingerprints
+from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 
 
 class ProjectionMethod(str, Enum):
@@ -199,7 +200,8 @@ class ModelFingerprintsProjection:
                 sum_squares += value * value
             if sum_squares <= 0:
                 continue
-            inv_norm = 1.0 / math.sqrt(sum_squares)
+            _b = get_default_backend()
+            inv_norm = 1.0 / sqrt_scalar(sum_squares, _b)
             for col in range(cols):
                 matrix[offset + col] = matrix[offset + col] * inv_norm
 
@@ -278,7 +280,8 @@ class ModelFingerprintsProjection:
             sum_squares += value * value
         if sum_squares <= 0:
             return False
-        inv_norm = 1.0 / math.sqrt(sum_squares)
+        _b = get_default_backend()
+        inv_norm = 1.0 / sqrt_scalar(sum_squares, _b)
         for i in range(len(vector)):
             vector[i] *= inv_norm
         return True

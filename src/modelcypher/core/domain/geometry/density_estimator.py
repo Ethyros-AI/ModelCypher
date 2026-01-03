@@ -250,10 +250,12 @@ class DensityEstimator:
         max_pad = max_vals + padding
         b.eval(min_pad, max_pad)
 
-        # Create grid
-        x = b.linspace(float(b.to_scalar(min_pad[0])), float(b.to_scalar(max_pad[0])), grid_size)
-        y = b.linspace(float(b.to_scalar(min_pad[1])), float(b.to_scalar(max_pad[1])), grid_size)
-        z = b.linspace(float(b.to_scalar(min_pad[2])), float(b.to_scalar(max_pad[2])), grid_size)
+        # Create grid - use tolist() for efficient extraction of small arrays
+        min_pad_list = b.tolist(min_pad)
+        max_pad_list = b.tolist(max_pad)
+        x = b.linspace(float(min_pad_list[0]), float(max_pad_list[0]), grid_size)
+        y = b.linspace(float(min_pad_list[1]), float(max_pad_list[1]), grid_size)
+        z = b.linspace(float(min_pad_list[2]), float(max_pad_list[2]), grid_size)
         b.eval(x, y, z)
 
         # Meshgrid

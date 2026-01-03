@@ -158,10 +158,8 @@ def _metadata_distances(
     geo = rg.geodesic_distances(points)
     backend.eval(geo.distances)
     n = len(items)
-    dist_matrix = [
-        [backend.to_scalar(geo.distances[i, j]) for j in range(n)]
-        for i in range(n)
-    ]
+    # Use native tolist() for O(1) extraction instead of O(n²) scalar extractions
+    dist_matrix = backend.tolist(geo.distances)
 
     mean_distances: list[MetadataDistance] = []
     for idx, (field, text) in enumerate(items):

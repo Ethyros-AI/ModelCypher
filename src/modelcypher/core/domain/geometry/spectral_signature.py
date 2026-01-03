@@ -23,13 +23,13 @@ metrics (eigenvalues, heat trace, entropy) without interpretation.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    log_scalar,
     regularization_epsilon,
     tiny_value,
 )
@@ -268,23 +268,24 @@ def _median_flattened(values: "Array", backend: "Backend") -> float:
         return 0.0
     sorted_vals = backend.sort(flat)
     backend.eval(sorted_vals)
+    # Use native tolist() for O(1) extraction
+    sorted_list = backend.tolist(sorted_vals)
     mid = count // 2
     if count % 2 == 1:
-        return float(backend.to_scalar(sorted_vals[mid]))
-    lower = float(backend.to_scalar(sorted_vals[mid - 1]))
-    upper = float(backend.to_scalar(sorted_vals[mid]))
-    return 0.5 * (lower + upper)
+        return float(sorted_list[mid])
+    return 0.5 * (float(sorted_list[mid - 1]) + float(sorted_list[mid]))
 
 
 def _spectral_entropy(eigenvalues: list[float], eps: float) -> float:
     total = sum(eigenvalues)
     if total <= eps:
         return 0.0
+    _b = get_default_backend()
     entropy = 0.0
     for value in eigenvalues:
         if value > eps:
             prob = value / total
-            entropy -= prob * math.log(prob)
+            entropy -= prob * log_scalar(prob, _b)
     return entropy
 
 

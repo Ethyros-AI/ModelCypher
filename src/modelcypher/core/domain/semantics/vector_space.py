@@ -84,12 +84,13 @@ class ConceptVectorSpace:
         top_scores = self._backend.take(scores, top_k_indices)
         self._backend.eval(top_scores, top_k_indices)
 
-        results = []
-        k_count = int(top_k_indices.shape[0])
-        for i in range(k_count):
-            idx = int(self._backend.to_scalar(top_k_indices[i]))
-            score = float(self._backend.to_scalar(top_scores[i]))
-            results.append((ids[idx], score))
+        # Use native tolist() for O(1) extraction
+        indices_list = self._backend.tolist(top_k_indices)
+        scores_list = self._backend.tolist(top_scores)
+        results = [
+            (ids[int(idx)], float(score))
+            for idx, score in zip(indices_list, scores_list)
+        ]
 
         return results
 

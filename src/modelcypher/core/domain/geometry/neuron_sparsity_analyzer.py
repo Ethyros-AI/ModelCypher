@@ -28,11 +28,10 @@ Integrates with:
 """
 
 import logging
-import math
 from dataclasses import dataclass, field
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon, sqrt_scalar
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +118,7 @@ class NeuronStats:
         eps = division_epsilon(backend, backend.array([self.mean_activation]))
         if self.mean_activation < eps:
             return 0.0
-        return math.sqrt(self.activation_variance) / self.mean_activation
+        return sqrt_scalar(self.activation_variance, backend) / self.mean_activation
 
 
 @dataclass
@@ -234,7 +233,8 @@ class NeuronSparsityMap:
             if all_sparsity
             else 0
         )
-        std_sparsity = math.sqrt(variance)
+        _b = get_default_backend()
+        std_sparsity = sqrt_scalar(variance, _b)
 
         return {
             "num_layers": len(self.stats),

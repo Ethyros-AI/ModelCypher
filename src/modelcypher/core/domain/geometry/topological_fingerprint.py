@@ -64,13 +64,15 @@ See also: docs/geometry/topological_fingerprints.md
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    exp_scalar,
+    is_finite,
+    log_scalar,
     machine_epsilon,
 )
 
@@ -198,7 +200,7 @@ class TopologicalFingerprint:
         backend.eval(max_dist_arr)
         max_dist_val = float(backend.to_scalar(max_dist_arr))
 
-        if not math.isfinite(max_dist_val):
+        if not is_finite(max_dist_val, backend):
             max_dist_val = 0.0
 
         if max_filtration is None:
@@ -213,7 +215,7 @@ class TopologicalFingerprint:
         min_dist_arr = backend.min(min_candidates)
         backend.eval(min_dist_arr)
         min_dist_val = float(backend.to_scalar(min_dist_arr))
-        min_dist = min_dist_val if math.isfinite(min_dist_val) else 0.0
+        min_dist = min_dist_val if is_finite(min_dist_val, backend) else 0.0
 
         diagram = TopologicalFingerprint._vietoris_rips_filtration(
             distances=distances,
@@ -285,9 +287,10 @@ class TopologicalFingerprint:
         # Similarity score: purely geometric derivation
         # exp(-x) naturally maps distances to [0, 1] similarities
         # Product of independent factors (Betti, bottleneck, Wasserstein)
+        _b = get_default_backend()
         score = (
-            math.exp(-bottleneck / scale)
-            * math.exp(-wasserstein / scale)
+            exp_scalar(-bottleneck / scale, _b)
+            * exp_scalar(-wasserstein / scale, _b)
             * (1.0 / (1 + betti_diff))
         )
 
@@ -730,11 +733,12 @@ class TopologicalFingerprint:
         eps = division_epsilon(backend, backend.array(values))
         if total <= eps:
             return 0.0
+        _b = get_default_backend()
         entropy = 0.0
         for v in values:
             p = v / total
             if p > 0:
-                entropy -= p * math.log(p + eps)
+                entropy -= p * log_scalar(p + eps, _b)
         return entropy
 
 
@@ -799,7 +803,7 @@ class BackendTopologicalFingerprint:
         max_val = b.max(finite_vals)
         b.eval(max_val)
         max_dist_val = float(b.to_scalar(max_val))
-        if not math.isfinite(max_dist_val):
+        if not is_finite(max_dist_val, b):
             max_dist_val = 0.0
         max_dist = max_filtration if max_filtration is not None else max_dist_val
 
@@ -808,7 +812,7 @@ class BackendTopologicalFingerprint:
         min_val = b.min(min_candidates)
         b.eval(min_val)
         min_dist_val = float(b.to_scalar(min_val))
-        min_dist = min_dist_val if math.isfinite(min_dist_val) else 0.0
+        min_dist = min_dist_val if is_finite(min_dist_val, b) else 0.0
 
         diagram = self._vietoris_rips_filtration(
             distances=distances,
@@ -871,8 +875,8 @@ class BackendTopologicalFingerprint:
         )
 
         score = (
-            math.exp(-bottleneck / scale)
-            * math.exp(-wasserstein / scale)
+            exp_scalar(-bottleneck / scale, b)
+            * exp_scalar(-wasserstein / scale, b)
             * (1.0 / (1 + betti_diff))
         )
 

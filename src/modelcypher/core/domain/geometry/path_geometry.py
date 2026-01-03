@@ -150,10 +150,14 @@ class PathGeometry:
         if not entropies:
             return 0.0, PathGeometry._division_epsilon()
         backend = get_default_backend()
-        n = float(len(entropies))
-        mean = sum(entropies) / n
-        variance = sum((val - mean) ** 2 for val in entropies) / n
-        std = sqrt_scalar(variance, backend)
+        entropies_arr = backend.array(entropies)
+        mean_arr = backend.mean(entropies_arr)
+        diff = entropies_arr - mean_arr
+        variance_arr = backend.mean(diff * diff)
+        std_arr = backend.sqrt(variance_arr)
+        backend.eval(mean_arr, std_arr)
+        mean = float(backend.to_scalar(mean_arr))
+        std = float(backend.to_scalar(std_arr))
         eps = PathGeometry._division_epsilon()
         return mean, std if std > eps else eps
 
@@ -723,32 +727,21 @@ class BackendPathGeometry:
         level1 = self._to_list(level1_arr)
 
         # Level 2: Iterated integrals using Chen's identity
-        # level2[p,q] = sum_i (cumulative[p] * dx[q] + 0.5 * dx[p] * dx[q])
-        level2_arr = self.backend.zeros((projection_dim, projection_dim))
-
-        # Cumulative sums for the Chen integral
-        cumulative = self.backend.zeros((projection_dim,))
-
-        for i in range(n_nodes - 1):
-            dx = increments[i]  # [d]
-            # Outer product: cumulative[:, None] * dx[None, :]
-            outer = self._outer_product(cumulative, dx)
-            # Self outer: 0.5 * dx[:, None] * dx[None, :]
-            self_outer = self._outer_product(dx, dx) * 0.5
-            level2_arr = level2_arr + outer + self_outer
-            cumulative = cumulative + dx
-
+        # level2 = sum_i (cumulative_before_i ⊗ dx_i) + 0.5 * sum_i (dx_i ⊗ dx_i)
+        cumulative = self.backend.cumsum(increments, axis=0)
+        cumulative_before = cumulative - increments
+        outer_sum = self.backend.matmul(self.backend.transpose(cumulative_before), increments)
+        self_outer = self.backend.matmul(self.backend.transpose(increments), increments) * 0.5
+        level2_arr = outer_sum + self_outer
         self.backend.eval(level2_arr)
         level2 = self._to_nested_list(level2_arr)
 
         # Signed area: sqrt(0.5 * sum of squared antisymmetric parts)
-        antisym_sum = self.backend.array(0.0)
-        for p in range(projection_dim):
-            for q in range(p + 1, projection_dim):
-                antisym = level2_arr[p, q] - level2_arr[q, p]
-                antisym_sum = antisym_sum + antisym * antisym
-        self.backend.eval(antisym_sum)
-        signed_area = 0.5 * sqrt_scalar(self._to_scalar(antisym_sum), self.backend)
+        antisym = level2_arr - self.backend.transpose(level2_arr)
+        antisym_sum = self.backend.sum(antisym * antisym)
+        antisym_scaled = antisym_sum * 0.5
+        self.backend.eval(antisym_scaled)
+        signed_area = 0.5 * sqrt_scalar(self._to_scalar(antisym_scaled), self.backend)
 
         # Signature norm: sqrt(sum of all squared components)
         level1_norm_sq = self.backend.sum(level1_arr * level1_arr)
@@ -843,12 +836,11 @@ class BackendPathGeometry:
         self.backend.eval(variance)
         variance_val = self._to_scalar(variance)
         # Max entropy and index
-        max_val = entropies_list[0]
-        max_idx = 0
-        for i, val in enumerate(entropies_list):
-            if val > max_val:
-                max_val = val
-                max_idx = i
+        max_idx_arr = self.backend.argmax(entropies)
+        max_val_arr = self.backend.max(entropies)
+        self.backend.eval(max_idx_arr, max_val_arr)
+        max_idx = int(self._to_scalar(max_idx_arr))
+        max_val = float(self._to_scalar(max_val_arr))
 
         # Gradients
         if n > 1:
@@ -923,35 +915,37 @@ class BackendPathGeometry:
         # Curvatures: angle between consecutive tangents
         # curvature[i] = arccos(tangents[i] · tangents[i+1])
         n_tangents = len(coords_list) - 1
-        curvatures_list: list[float] = []
-
-        for i in range(n_tangents - 1):
-            t1 = tangents[i]
-            t2 = tangents[i + 1]
-            dot = self.backend.sum(t1 * t2)
-            self.backend.eval(dot)
-            dot_val = self._to_scalar(dot)
-            dot_val = max(-1.0, min(1.0, dot_val))
-            curvatures_list.append(acos_scalar(dot_val, self.backend))
-
-        mean_curv = sum(curvatures_list) / len(curvatures_list) if curvatures_list else 0.0
-        max_curv = max(curvatures_list) if curvatures_list else 0.0
-        total_curv = sum(curvatures_list)
+        if n_tangents > 1:
+            dot_arr = self.backend.sum(tangents[:-1] * tangents[1:], axis=1)
+            dot_clamped = self.backend.clip(dot_arr, -1.0, 1.0)
+            curvatures_arr = self.backend.arccos(dot_clamped)
+            mean_curv_arr = self.backend.mean(curvatures_arr)
+            max_curv_arr = self.backend.max(curvatures_arr)
+            total_curv_arr = self.backend.sum(curvatures_arr)
+            self.backend.eval(curvatures_arr, mean_curv_arr, max_curv_arr, total_curv_arr)
+            curvatures_list = [float(x) for x in self._to_list(curvatures_arr)]
+            mean_curv = float(self._to_scalar(mean_curv_arr))
+            max_curv = float(self._to_scalar(max_curv_arr))
+            total_curv = float(self._to_scalar(total_curv_arr))
+        else:
+            curvatures_list = []
+            mean_curv = 0.0
+            max_curv = 0.0
+            total_curv = 0.0
 
         # Torsions: deviation from linear interpolation of tangents
-        torsions_list: list[float] = []
         if n_tangents >= 3:
-            for i in range(n_tangents - 2):
-                t1 = tangents[i]
-                t2 = tangents[i + 1]
-                t3 = tangents[i + 2]
-                expected = (t1 + t3) / 2.0
-                deviation = t2 - expected
-                dev_norm_sq = self.backend.sum(deviation * deviation)
-                self.backend.eval(dev_norm_sq)
-                torsions_list.append(sqrt_scalar(self._to_scalar(dev_norm_sq), self.backend))
-
-        mean_tors = sum(torsions_list) / len(torsions_list) if torsions_list else 0.0
+            expected = (tangents[:-2] + tangents[2:]) / 2.0
+            deviation = tangents[1:-1] - expected
+            dev_norm_sq = self.backend.sum(deviation * deviation, axis=1)
+            torsions_arr = self.backend.sqrt(dev_norm_sq)
+            mean_tors_arr = self.backend.mean(torsions_arr)
+            self.backend.eval(torsions_arr, mean_tors_arr)
+            torsions_list = [float(x) for x in self._to_list(torsions_arr)]
+            mean_tors = float(self._to_scalar(mean_tors_arr))
+        else:
+            torsions_list = []
+            mean_tors = 0.0
 
         return LocalGeometry(
             curvatures=curvatures_list,

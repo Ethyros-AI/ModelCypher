@@ -215,11 +215,8 @@ class PermutationAligner:
         similarity = b.matmul(source_normalized, b.transpose(target_normalized))
         b.eval(similarity)
 
-        # Pull to CPU for Hungarian algorithm (scalar extraction only)
-        sim_data = [
-            [float(b.to_scalar(similarity[i, j])) for j in range(N)]
-            for i in range(N)
-        ]
+        # Pull to CPU for Hungarian algorithm - use native tolist() for O(1) extraction
+        sim_data = [[float(x) for x in row] for row in b.tolist(similarity)]
 
         # Convert similarity to cost matrix for Hungarian algorithm
         # We want to MAXIMIZE similarity, but Hungarian MINIMIZES cost
@@ -298,10 +295,7 @@ class PermutationAligner:
                 if 0 <= tgt < count:
                     inverse[tgt] = i
 
-            sign_values = [
-                float(b.to_scalar(alignment.signs[i]))
-                for i in range(int(alignment.signs.shape[0]))
-            ]
+            sign_values = [float(x) for x in b.tolist(alignment.signs)]
 
             index_tensor = b.array(inverse)
 
@@ -406,10 +400,7 @@ class PermutationAligner:
         similarity = b.matmul(source_normalized, b.transpose(target_normalized))
         b.eval(similarity)
 
-        sim_data = [
-            [float(b.to_scalar(similarity[i, j])) for j in range(N)]
-            for i in range(N)
-        ]
+        sim_data = [[float(x) for x in row] for row in b.tolist(similarity)]
         max_abs_sim = max(abs(sim_data[i][j]) for i in range(N) for j in range(N))
         cost_matrix = [[max_abs_sim - abs(sim_data[i][j]) for j in range(N)] for i in range(N)]
 

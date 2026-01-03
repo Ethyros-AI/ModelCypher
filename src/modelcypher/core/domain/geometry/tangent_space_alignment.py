@@ -255,9 +255,8 @@ class TangentSpaceAlignment:
         for i in range(int(n)):
             row = sorted_idx[i]
             k_row = row[1 : k + 1]
-            neighbors.append(
-                [int(b.to_scalar(k_row[j])) for j in range(int(k_row.shape[0]))]
-            )
+            row_list = b.tolist(k_row)
+            neighbors.append([int(idx) for idx in row_list])
 
         return neighbors
 
@@ -281,12 +280,9 @@ class TangentSpaceAlignment:
         anchor = points[anchor_idx]
 
         # Compute difference vectors
-        deltas = []
-        for idx in neighbor_indices:
-            delta = points[idx] - anchor
-            deltas.append(delta)
-
-        delta_matrix = b.stack(deltas)  # [k, dim]
+        idx_arr = b.array(neighbor_indices)
+        neighbor_points = b.take(points, idx_arr, axis=0)
+        delta_matrix = neighbor_points - anchor  # [k, dim]
 
         # Covariance matrix
         cov = b.matmul(b.transpose(delta_matrix), delta_matrix)  # [dim, dim]

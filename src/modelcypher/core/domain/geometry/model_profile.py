@@ -36,12 +36,14 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import is_inf, is_nan
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.geometry.curvature_profile import (
@@ -123,11 +125,12 @@ class LayerProfile:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
+        _b = get_default_backend()
 
         def safe_float(v: float | None) -> float | None:
             if v is None:
                 return None
-            if math.isnan(v) or math.isinf(v):
+            if is_nan(v, _b) or is_inf(v, _b):
                 return None
             return v
 
@@ -375,9 +378,10 @@ class ModelProfile:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
+        _b = get_default_backend()
 
         def safe_float(v: float) -> float | None:
-            if math.isnan(v) or math.isinf(v):
+            if is_nan(v, _b) or is_inf(v, _b):
                 return None
             return v
 
@@ -911,7 +915,7 @@ class ModelProfileExtractor:
 
                 # k is derived from geometry: k = 2 * intrinsic_dimension (minimum for manifold connectivity)
                 # If ID estimation failed, use n_samples^(1/3) as fallback (geometric heuristic)
-                if id_value > 0 and not math.isnan(id_value):
+                if id_value > 0 and not is_nan(id_value, self._backend):
                     k = max(3, int(2 * id_value))
                 else:
                     n_samples = activations.shape[0]
@@ -926,7 +930,7 @@ class ModelProfileExtractor:
                 curvature = result.mean_edge_curvature
 
                 # Skip NaN values
-                if math.isnan(curvature):
+                if is_nan(curvature, self._backend):
                     logger.debug("Layer %d returned NaN curvature, skipping", layer_idx)
                     continue
 
@@ -939,7 +943,7 @@ class ModelProfileExtractor:
                 )
                 layer_profiles.append(lp)
                 ricci_values.append(curvature)
-                if not math.isnan(id_value):
+                if not is_nan(id_value, self._backend):
                     id_values.append(id_value)
 
             except Exception as e:

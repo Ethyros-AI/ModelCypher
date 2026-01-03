@@ -1695,10 +1695,8 @@ def solve_via_cca_procrustes(
         # Singular values from eigenvalues
         singular_values = b.sqrt(eigenvalues_sorted)
         b.eval(singular_values)
-        sv_all = [
-            float(b.to_scalar(singular_values[i]))
-            for i in range(int(singular_values.shape[0]))
-        ]
+        # Use native tolist() for O(1) extraction
+        sv_all = [float(x) for x in b.tolist(singular_values)]
         erank = compute_entropy_effective_rank(b, sv_all)
         if erank <= 0:
             return None
@@ -1795,10 +1793,8 @@ def solve_via_cca_procrustes(
     b.eval(U, S, Vt)
 
     # Canonical correlations (SHOULD be in [0, 1] now!)
-    correlations = [
-        max(0.0, min(1.0, float(b.to_scalar(S[i]))))
-        for i in range(int(S.shape[0]))
-    ]
+    # Use native tolist() for O(1) extraction
+    correlations = [max(0.0, min(1.0, float(x))) for x in b.tolist(S)]
 
     if not correlations:
         return None, diagnostics

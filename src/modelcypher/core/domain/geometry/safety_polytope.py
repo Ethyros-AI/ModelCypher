@@ -24,12 +24,15 @@ overlap/interference, importance, instability, and complexity.
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass, field
 from enum import Enum
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     find_magnitude_gap_threshold,
+    log_scalar,
+    machine_epsilon,
+    sqrt_scalar,
 )
 
 logger = logging.getLogger(__name__)
@@ -89,7 +92,8 @@ class DiagnosticVector:
     def magnitude(self) -> float:
         """L2 norm of diagnostic vector (total transformation effort)."""
         vec = self.vector
-        return math.sqrt(sum(v * v for v in vec))
+        _b = get_default_backend()
+        return sqrt_scalar(sum(v * v for v in vec), _b)
 
     @property
     def max_dimension(self) -> str:
@@ -130,7 +134,9 @@ class PolytopeBounds:
 
         def gap_threshold(samples: list[float]) -> float:
             sorted_s = sorted(samples)
-            return find_magnitude_gap_threshold(sorted_s, eps=math.ulp(1.0))
+            _b = get_default_backend()
+            eps = machine_epsilon(_b, _b.array([1.0]))
+            return find_magnitude_gap_threshold(sorted_s, eps=eps)
 
         def high_threshold(samples: list[float]) -> float:
             return max(samples) if samples else 0.0
@@ -277,9 +283,11 @@ class SafetyPolytope:
             "complexity": TransformationType.TSV_PRUNE,
         }
 
+        _b = get_default_backend()
+        eps = machine_epsilon(_b, _b.array([1.0]))
         for val, threshold, name in zip(constraint_values, self.b, dimension_names):
             if val > threshold:
-                denom = max(1.0 - threshold, math.ulp(1.0))
+                denom = max(1.0 - threshold, eps)
                 intensity = (val - threshold) / denom
                 triggers.append(
                     TransformationTrigger(
@@ -330,8 +338,10 @@ class SafetyPolytope:
             constraint_val = sum(row[j] * x[j] for j in range(len(x)))
             distances.append(self.b[i] - constraint_val)
 
+        _b = get_default_backend()
+        eps = machine_epsilon(_b, _b.array([1.0]))
         normalized_distances = [
-            distances[i] / max(self.b[i], math.ulp(1.0)) for i in range(len(distances))
+            distances[i] / max(self.b[i], eps) for i in range(len(distances))
         ]
         min_distance = min(normalized_distances)
 
@@ -424,12 +434,13 @@ def create_diagnostic_vector(
     importance_score = min(1.0, max(0.0, refinement_density))
 
     # Use float32 precision bounds for stability normalization.
-    max_stable_condition = 1.0 / math.sqrt(_FLOAT32_MACHINE_EPS)
+    _b = get_default_backend()
+    max_stable_condition = 1.0 / sqrt_scalar(_FLOAT32_MACHINE_EPS, _b)
     if condition_number <= 1.0:
         instability_score = 0.0
     else:
-        log_cond = math.log(condition_number)
-        log_max = math.log(max_stable_condition)
+        log_cond = log_scalar(condition_number, _b)
+        log_max = log_scalar(max_stable_condition, _b)
         instability_score = min(1.0, log_cond / log_max)
 
     if hidden_dim > 0:

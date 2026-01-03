@@ -18,11 +18,12 @@
 from __future__ import annotations
 
 import logging
-import math
 import time
 from dataclasses import dataclass
 from typing import Callable
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 from modelcypher.core.domain.geometry.sparse_region_domains import (
     DomainDefinition,
     ProbeCorpus,
@@ -287,7 +288,8 @@ class SparseRegionProber:
             return float(b.to_scalar(norm))
 
         total = SparseRegionProber._sum_squares(hidden_state)
-        return math.sqrt(total)
+        _b = get_default_backend()
+        return sqrt_scalar(total, _b)
 
     def _aggregate_to_stats(
         self, prompt_activations: list[dict[int, float]], total_layers: int

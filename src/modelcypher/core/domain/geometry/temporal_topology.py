@@ -34,7 +34,6 @@ Scientific Method:
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -44,7 +43,7 @@ from modelcypher.core.domain.geometry.atlas_protocols import (
     axis_key,
 )
 from modelcypher.core.domain.geometry.atlas_registry import get_temporal_concepts
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon, is_nan
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array
@@ -205,10 +204,9 @@ class TemporalTopologyAnalyzer:
             else:
                 variance_explained = backend.zeros_like(s_squared)
             backend.eval(variance_explained)
-            pc_variance = [
-                float(backend.to_scalar(variance_explained[i]))
-                for i in range(min(5, int(variance_explained.shape[0])))
-            ]
+            # Use native tolist() for O(1) extraction
+            variance_list = backend.tolist(variance_explained)
+            pc_variance = [float(x) for x in variance_list[:5]]
         except Exception:
             pc_variance = [0.0] * 5
 
@@ -365,7 +363,7 @@ class TemporalTopologyAnalyzer:
                 return 0.0, False
 
             corr = VectorMath.spearman_correlation(levels, projections)
-            if corr is None or math.isnan(float(corr)):
+            if corr is None or is_nan(float(corr), backend):
                 corr = 0.0
 
             # Monotonic if any measurable correlation exists
@@ -423,7 +421,7 @@ class TemporalTopologyAnalyzer:
             projections.append(float(backend.to_scalar(proj_val)))
 
         corr = VectorMath.spearman_correlation(levels, projections)
-        if corr is None or math.isnan(float(corr)):
+        if corr is None or is_nan(float(corr), backend):
             corr = 0.0
 
         # Arrow detected if any measurable correlation exists

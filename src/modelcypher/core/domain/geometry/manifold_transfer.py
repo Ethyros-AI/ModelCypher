@@ -56,7 +56,9 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    exp_scalar,
     regularization_epsilon,
+    sqrt_scalar,
 )
 
 if TYPE_CHECKING:
@@ -667,8 +669,6 @@ class CrossManifoldProjector:
         Adjusts covariance based on curvature difference between manifolds.
         In flatter regions, volumes expand; in more curved regions, they contract.
         """
-        import math
-
         backend = get_default_backend()
 
         # Copy covariance using backend
@@ -684,15 +684,15 @@ class CrossManifoldProjector:
                 ratio = (1 - K_target / 6) / (1 - K_source / 6)
                 ratio = max(0.5, min(2.0, ratio))  # Clip to [0.5, 2.0]
                 projected_covariance = projected_covariance * ratio
-                projected_radius = projected_radius * math.sqrt(ratio)
+                projected_radius = projected_radius * sqrt_scalar(ratio, backend)
             elif abs(K_source) > eps:
                 expansion = 1 + abs(K_source) * source_volume.geodesic_radius**2 / 6
                 projected_covariance = projected_covariance * expansion
-                projected_radius = projected_radius * math.sqrt(expansion)
+                projected_radius = projected_radius * sqrt_scalar(expansion, backend)
             elif abs(K_target) > eps:
                 contraction = 1 / (1 + abs(K_target) * source_volume.geodesic_radius**2 / 6)
                 projected_covariance = projected_covariance * contraction
-                projected_radius = projected_radius * math.sqrt(contraction)
+                projected_radius = projected_radius * sqrt_scalar(contraction, backend)
 
         return ConceptVolume(
             concept_id=source_volume.concept_id + "_transferred",
@@ -715,11 +715,11 @@ class CrossManifoldProjector:
 
         Returns individual factors instead of a weighted composite.
         """
-        import math
+        _b = get_default_backend()
 
-        stress_factor = math.exp(-normalized_stress * 3)
-        anchor_factor = 1 - math.exp(-num_anchors / 20)
-        curvature_factor = math.exp(-curvature_mismatch * 2)
+        stress_factor = exp_scalar(-normalized_stress * 3, _b)
+        anchor_factor = 1 - exp_scalar(-num_anchors / 20, _b)
+        curvature_factor = exp_scalar(-curvature_mismatch * 2, _b)
         return TransferConfidenceComponents(
             stress_factor=stress_factor,
             anchor_factor=anchor_factor,

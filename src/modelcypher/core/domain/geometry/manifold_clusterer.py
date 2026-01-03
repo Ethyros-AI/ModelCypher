@@ -309,12 +309,10 @@ class ManifoldClusterer:
         # row is already 1D after squeeze; use directly as distances
         mask = row <= epsilon
         backend.eval(mask)
-        n = int(row.shape[0])
-        neighbors: list[int] = []
-        for i in range(n):
-            if bool(backend.to_scalar(mask[i])):
-                neighbors.append(i)
-        return neighbors
+        mask_list = backend.tolist(mask)
+        if not isinstance(mask_list, list):
+            return []
+        return [i for i, is_neighbor in enumerate(mask_list) if is_neighbor]
 
     def _expand_cluster_geodesic(
         self,
@@ -453,12 +451,13 @@ class ManifoldClusterer:
             row = backend.take(centroid_geodesic, backend.array([i]), axis=0)
             row = backend.squeeze(row, axis=0)
             backend.eval(row)
+            row_list = backend.tolist(row)
             for j in range(i + 1, len(regions)):
                 other = regions[j]
                 if str(other.id) in merged:
                     continue
                 # Use geodesic distance between centroids
-                distance = float(backend.to_scalar(row[j]))
+                distance = float(row_list[j])
                 overlap_threshold = current_region.radius + other.radius
                 if distance < overlap_threshold:
                     merged.add(str(other.id))

@@ -30,8 +30,6 @@ NOTE: All tests use the Backend protocol exclusively. No numpy.
 
 from __future__ import annotations
 
-import math
-
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -57,14 +55,18 @@ def _scalar_tol(backend) -> float:
 def _all_close(backend, arr1, arr2) -> bool:
     """Check if two arrays are element-wise close using backend."""
     diff = backend.abs(arr1 - arr2)
-    max_diff = float(backend.to_numpy(backend.max(diff)))
+    max_diff = backend.max(diff)
+    backend.eval(max_diff)
+    max_diff_val = float(backend.to_scalar(max_diff))
     tol = division_epsilon(backend, diff)
-    return max_diff <= tol
+    return max_diff_val <= tol
 
 
 def _all_non_negative(backend, arr) -> bool:
     """Check if all elements are >= -tol using backend."""
-    min_val = float(backend.to_numpy(backend.min(arr)))
+    min_val = backend.min(arr)
+    backend.eval(min_val)
+    min_val = float(backend.to_scalar(min_val))
     tol = division_epsilon(backend, arr)
     return min_val >= -tol
 
@@ -149,8 +151,9 @@ class TestCKAInvariance:
         backend = get_default_backend()
         x = _random_matrix(backend, 20, 10, 42)
         y = _random_matrix(backend, 20, 10, 43)
-        x_np = backend.to_numpy(x)
-        scale = float(abs(x_np).mean())
+        scale_arr = backend.mean(backend.abs(x))
+        backend.eval(scale_arr)
+        scale = float(backend.to_scalar(scale_arr))
         x_scaled = x * scale
 
         result_original = compute_cka(x, y, backend)
@@ -211,7 +214,9 @@ class TestHSIC:
         result = compute_cka(x, y, backend)
 
         # Cauchy-Schwarz bound
-        max_hsic = math.sqrt(result.hsic_xx * result.hsic_yy)
+        max_hsic_arr = backend.sqrt(backend.array(result.hsic_xx * result.hsic_yy))
+        backend.eval(max_hsic_arr)
+        max_hsic = float(backend.to_scalar(max_hsic_arr))
         tol = _scalar_tol(backend)
         if max_hsic > tol:
             assert abs(result.hsic_xy) <= max_hsic + tol
@@ -262,7 +267,9 @@ class TestGramMatrix:
 
         distances = _compute_pairwise_squared_distances(x, backend)
         diag = backend.diag(distances)
-        diag_max = float(backend.to_numpy(backend.max(backend.abs(diag))))
+        diag_max = backend.max(backend.abs(diag))
+        backend.eval(diag_max)
+        diag_max = float(backend.to_scalar(diag_max))
 
         tol = division_epsilon(backend, distances)
         assert diag_max <= tol
@@ -282,7 +289,9 @@ class TestGramMatrix:
         centered = _center_gram_matrix(gram, backend)
 
         row_sums = backend.sum(centered, axis=1)
-        max_row_sum = float(backend.to_numpy(backend.max(backend.abs(row_sums))))
+        max_row_sum = backend.max(backend.abs(row_sums))
+        backend.eval(max_row_sum)
+        max_row_sum = float(backend.to_scalar(max_row_sum))
 
         tol = division_epsilon(backend, centered)
         assert max_row_sum <= tol
@@ -594,8 +603,9 @@ class TestCKAHypothesis:
         X = _random_matrix(backend, n_samples, n_features, seed_x)
         Y = _random_matrix(backend, n_samples, n_features, seed_y)
 
-        X_np = backend.to_numpy(X)
-        scale = float(abs(X_np).mean())
+        scale_arr = backend.mean(backend.abs(X))
+        backend.eval(scale_arr)
+        scale = float(backend.to_scalar(scale_arr))
         scales = [scale, 1.0 / scale]
 
         result_original = compute_cka(X, Y, backend)
@@ -636,7 +646,7 @@ class TestCKAHypothesis:
         samples can have higher variance due to finite precision.
         Requires seed_x != seed_y to avoid correlated random structure.
         """
-        import numpy as np
+        import random
 
         # Reset cache to avoid pollution between Hypothesis examples
         ComputationCache.reset_shared()
@@ -646,22 +656,17 @@ class TestCKAHypothesis:
 
         backend = get_default_backend()
 
-        # Use numpy RNG (isolated from backend) to generate test data
-        # This avoids interference from Hypothesis with the backend's RNG
-        rng_x = np.random.RandomState(seed_x)
-        rng_y = np.random.RandomState(seed_y)
-        rng_p = np.random.RandomState(seed_p)
-
-        X = backend.array(rng_x.randn(n_samples, n_features_x).astype(np.float32))
-        Y = backend.array(rng_y.randn(n_samples, n_features_y).astype(np.float32))
+        backend.random_seed(seed_x)
+        X = backend.random_normal((n_samples, n_features_x))
+        backend.random_seed(seed_y)
+        Y = backend.random_normal((n_samples, n_features_y))
 
         # Create permutation matrix
         perm = list(range(n_samples))
-        rng_p.shuffle(perm)
-        P_np = np.zeros((n_samples, n_samples), dtype=np.float32)
-        for i, j in enumerate(perm):
-            P_np[i, j] = 1.0
-        P = backend.array(P_np)
+        random.seed(seed_p)
+        random.shuffle(perm)
+        P_list = [[1.0 if j == perm[i] else 0.0 for j in range(n_samples)] for i in range(n_samples)]
+        P = backend.array(P_list)
 
         # Ensure all tensors are materialized before computation
         backend.eval(X, Y, P)

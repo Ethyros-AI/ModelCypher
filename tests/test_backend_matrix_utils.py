@@ -33,6 +33,16 @@ from modelcypher.ports.backend import Backend
 from tests.conftest import HAS_MLX
 
 
+def _max_abs(backend: Backend, array) -> float:
+    diff = backend.max(backend.abs(array))
+    backend.eval(diff)
+    return float(backend.to_scalar(diff))
+
+
+def _max_abs_diff(backend: Backend, left, right) -> float:
+    return _max_abs(backend, left - right)
+
+
 @pytest.fixture
 def mlx_backend() -> Backend:
     """Provide MLXBackend for GPU-accelerated testing."""
@@ -57,39 +67,36 @@ class TestGramMatrix:
         """Identity matrix should give identity Gram matrix."""
         X = mlx_backend.eye(4)
         gram = utils.compute_gram_matrix(X, kernel="linear")
-        gram_np = mlx_backend.to_numpy(gram)
         tol = regularization_epsilon(mlx_backend, gram)
 
-        # Use numpy for assert_allclose - unavoidable
-        import numpy as np
-        np.testing.assert_allclose(gram_np, np.eye(4), rtol=tol, atol=tol)
+        eye = mlx_backend.eye(4)
+        diff = _max_abs_diff(mlx_backend, gram, eye)
+        assert diff <= tol
 
     def test_linear_gram_matrix_orthonormal(
         self, utils: BackendMatrixUtils, mlx_backend: Backend
     ):
         """Orthonormal rows should give identity-like Gram matrix."""
-        # Create orthonormal matrix via QR - use numpy unavoidably for QR decomposition
-        X_random = mlx_backend.random_normal((4, 8))
-        import numpy as np
-        Q, _ = np.linalg.qr(mlx_backend.to_numpy(X_random).T)
-        X = mlx_backend.array(Q.T)  # 4 orthonormal rows
+        X_random = mlx_backend.random_normal((8, 4))
+        Q, _ = mlx_backend.qr(X_random)
+        X = mlx_backend.transpose(Q)  # 4 orthonormal rows
 
         gram = utils.compute_gram_matrix(X, kernel="linear")
-        gram_np = mlx_backend.to_numpy(gram)
         tol = regularization_epsilon(mlx_backend, gram)
 
         # Should be close to identity
-        np.testing.assert_allclose(gram_np, np.eye(4), atol=tol)
+        eye = mlx_backend.eye(4)
+        diff = _max_abs_diff(mlx_backend, gram, eye)
+        assert diff <= tol
 
     def test_gram_matrix_symmetric(self, utils: BackendMatrixUtils, mlx_backend: Backend):
         """Gram matrix should be symmetric."""
         X = mlx_backend.random_normal((10, 5))
         gram = utils.compute_gram_matrix(X, kernel="linear")
-        gram_np = mlx_backend.to_numpy(gram)
         tol = regularization_epsilon(mlx_backend, gram)
 
-        import numpy as np
-        np.testing.assert_allclose(gram_np, gram_np.T, rtol=tol, atol=tol)
+        diff = _max_abs_diff(mlx_backend, gram, mlx_backend.transpose(gram))
+        assert diff <= tol
 
     def test_gram_matrix_positive_semidefinite(
         self, utils: BackendMatrixUtils, mlx_backend: Backend
@@ -97,13 +104,12 @@ class TestGramMatrix:
         """Gram matrix should be positive semi-definite."""
         X = mlx_backend.random_normal((10, 5))
         gram = utils.compute_gram_matrix(X, kernel="linear")
-        gram_np = mlx_backend.to_numpy(gram)
         tol = regularization_epsilon(mlx_backend, gram)
 
-        # Use numpy for eigvalsh - unavoidable
-        import numpy as np
-        eigenvalues = np.linalg.eigvalsh(gram_np)
-        assert np.all(eigenvalues >= -tol)
+        eigenvalues, _ = mlx_backend.eigh(gram)
+        min_val = mlx_backend.min(eigenvalues)
+        mlx_backend.eval(min_val)
+        assert float(mlx_backend.to_scalar(min_val)) >= -tol
 
 
 class TestCenterMatrix:
@@ -115,41 +121,31 @@ class TestCenterMatrix:
         """Centered matrix should have zero row and column means."""
         K = mlx_backend.random_normal((10, 10))
         # Make symmetric
-        K_np = mlx_backend.to_numpy(K)
-        K_sym = (K_np + K_np.T) / 2
-        K = mlx_backend.array(K_sym)
+        K_sym = (K + mlx_backend.transpose(K)) * 0.5
 
         centered = utils.center_matrix(K)
-        centered_np = mlx_backend.to_numpy(centered)
         tol = regularization_epsilon(mlx_backend, centered)
 
-        # Use numpy for mean and assert_allclose - unavoidable
-        import numpy as np
-        row_means = np.mean(centered_np, axis=1)
-        np.testing.assert_allclose(row_means, 0, atol=tol)
+        row_means = mlx_backend.mean(centered, axis=1)
+        row_max = _max_abs(mlx_backend, row_means)
+        assert row_max <= tol
 
         # Column means should be ~0
-        col_means = np.mean(centered_np, axis=0)
-        np.testing.assert_allclose(col_means, 0, atol=tol)
+        col_means = mlx_backend.mean(centered, axis=0)
+        col_max = _max_abs(mlx_backend, col_means)
+        assert col_max <= tol
 
     def test_centering_idempotent(self, utils: BackendMatrixUtils, mlx_backend: Backend):
         """Centering twice should give same result as once."""
         K = mlx_backend.random_normal((8, 8))
-        K_np = mlx_backend.to_numpy(K)
-        K_sym = (K_np + K_np.T) / 2
-        K = mlx_backend.array(K_sym)
+        K = (K + mlx_backend.transpose(K)) * 0.5
 
         centered_once = utils.center_matrix(K)
         centered_twice = utils.center_matrix(centered_once)
         tol = regularization_epsilon(mlx_backend, centered_once)
 
-        import numpy as np
-        np.testing.assert_allclose(
-            mlx_backend.to_numpy(centered_once),
-            mlx_backend.to_numpy(centered_twice),
-            rtol=tol,
-            atol=tol,
-        )
+        diff = _max_abs_diff(mlx_backend, centered_once, centered_twice)
+        assert diff <= tol
 
 
 class TestPairwiseDistances:
@@ -159,32 +155,31 @@ class TestPairwiseDistances:
         """Distance from point to itself should be zero."""
         X = mlx_backend.random_normal((5, 3))
         sq_dists = utils.pairwise_squared_distances(X)
-        sq_dists_np = mlx_backend.to_numpy(sq_dists)
         tol = machine_epsilon(mlx_backend, sq_dists)
 
         # Diagonal should be zeros
-        import numpy as np
-        np.testing.assert_allclose(np.diag(sq_dists_np), 0, atol=tol)
+        diag = mlx_backend.diag(sq_dists)
+        diff = _max_abs(mlx_backend, diag)
+        assert diff <= tol
 
     def test_distance_symmetric(self, utils: BackendMatrixUtils, mlx_backend: Backend):
         """Distance matrix should be symmetric."""
         X = mlx_backend.random_normal((10, 4))
         sq_dists = utils.pairwise_squared_distances(X)
-        sq_dists_np = mlx_backend.to_numpy(sq_dists)
         tol = regularization_epsilon(mlx_backend, sq_dists)
 
-        import numpy as np
-        np.testing.assert_allclose(sq_dists_np, sq_dists_np.T, rtol=tol, atol=tol)
+        diff = _max_abs_diff(mlx_backend, sq_dists, mlx_backend.transpose(sq_dists))
+        assert diff <= tol
 
     def test_distance_non_negative(self, utils: BackendMatrixUtils, mlx_backend: Backend):
         """Squared distances should be non-negative."""
         X = mlx_backend.random_normal((10, 4))
         sq_dists = utils.pairwise_squared_distances(X)
-        sq_dists_np = mlx_backend.to_numpy(sq_dists)
         tol = machine_epsilon(mlx_backend, sq_dists)
 
-        import numpy as np
-        assert np.all(sq_dists_np >= -tol)
+        min_val = mlx_backend.min(sq_dists)
+        mlx_backend.eval(min_val)
+        assert float(mlx_backend.to_scalar(min_val)) >= -tol
 
     def test_distance_correct_value(self, utils: BackendMatrixUtils, mlx_backend: Backend):
         """Verify distance calculation against known values."""
@@ -192,14 +187,13 @@ class TestPairwiseDistances:
         sq_dists = utils.pairwise_squared_distances(X)
         dists = utils.pairwise_distances(X)
 
-        sq_dists_np = mlx_backend.to_numpy(sq_dists)
-        dists_np = mlx_backend.to_numpy(dists)
         tol = regularization_epsilon(mlx_backend, sq_dists)
 
         # d(0,1) = sqrt(9 + 16) = 5
-        import numpy as np
-        np.testing.assert_allclose(sq_dists_np[0, 1], 25.0, rtol=tol, atol=tol)
-        np.testing.assert_allclose(dists_np[0, 1], 5.0, rtol=tol, atol=tol)
+        sq_val = float(mlx_backend.to_scalar(sq_dists[0, 1]))
+        dist_val = float(mlx_backend.to_scalar(dists[0, 1]))
+        assert abs(sq_val - 25.0) <= tol
+        assert abs(dist_val - 5.0) <= tol
 
 
 class TestProcrustesRotation:
@@ -210,13 +204,13 @@ class TestProcrustesRotation:
         X = mlx_backend.random_normal((10, 4))
         result = utils.procrustes_rotation(X, X)
 
-        R_np = mlx_backend.to_numpy(result.rotation)
         tol = regularization_epsilon(mlx_backend, result.rotation)
         residual_tol = division_epsilon(mlx_backend, result.rotation)
 
         # Should be identity (or very close)
-        import numpy as np
-        np.testing.assert_allclose(R_np, np.eye(4), atol=tol)
+        eye = mlx_backend.eye(4)
+        diff = _max_abs_diff(mlx_backend, result.rotation, eye)
+        assert diff <= tol
         assert result.residual <= residual_tol
 
     def test_rotation_is_orthogonal(self, utils: BackendMatrixUtils, mlx_backend: Backend):
@@ -225,13 +219,15 @@ class TestProcrustesRotation:
         target = mlx_backend.random_normal((20, 5))
 
         result = utils.procrustes_rotation(source, target)
-        R_np = mlx_backend.to_numpy(result.rotation)
 
         # R^T @ R should be identity (within float32 precision)
-        import numpy as np
-        should_be_identity = R_np.T @ R_np
-        tol = division_epsilon(mlx_backend, result.rotation) * R_np.shape[0]
-        np.testing.assert_allclose(should_be_identity, np.eye(5), atol=tol)
+        should_be_identity = mlx_backend.matmul(
+            mlx_backend.transpose(result.rotation), result.rotation
+        )
+        eye = mlx_backend.eye(5)
+        tol = division_epsilon(mlx_backend, result.rotation) * result.rotation.shape[0]
+        diff = _max_abs_diff(mlx_backend, should_be_identity, eye)
+        assert diff <= tol
 
     def test_determinant_positive(self, utils: BackendMatrixUtils, mlx_backend: Backend):
         """Rotation should have determinant +1 (proper rotation, not reflection)."""
@@ -239,33 +235,26 @@ class TestProcrustesRotation:
         target = mlx_backend.random_normal((15, 4))
 
         result = utils.procrustes_rotation(source, target)
-        R_np = mlx_backend.to_numpy(result.rotation)
 
-        import numpy as np
-        det = np.linalg.det(R_np)
+        det = mlx_backend.det(result.rotation)
+        mlx_backend.eval(det)
         tol = division_epsilon(mlx_backend, result.rotation)
-        np.testing.assert_allclose(det, 1.0, atol=tol)
+        assert abs(float(mlx_backend.to_scalar(det)) - 1.0) <= tol
 
     def test_known_rotation(self, utils: BackendMatrixUtils, mlx_backend: Backend):
         """Test with a known 90-degree rotation."""
-        # 2D 90-degree rotation matrix - use numpy for construction
-        import numpy as np
-        theta = np.pi / 2
-        R_known = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
+        R_known = mlx_backend.array([[0.0, -1.0], [1.0, 0.0]])
 
         # Create source and apply known rotation
-        source_np = np.random.randn(10, 2)
-        target_np = source_np @ R_known
-
-        source = mlx_backend.array(source_np)
-        target = mlx_backend.array(target_np)
+        source = mlx_backend.random_normal((10, 2))
+        target = mlx_backend.matmul(source, R_known)
 
         result = utils.procrustes_rotation(source, target)
-        R_np = mlx_backend.to_numpy(result.rotation)
         tol = regularization_epsilon(mlx_backend, result.rotation)
         residual_tol = division_epsilon(mlx_backend, result.rotation)
 
-        np.testing.assert_allclose(R_np, R_known, atol=tol)
+        diff = _max_abs_diff(mlx_backend, result.rotation, R_known)
+        assert diff <= tol
         assert result.residual <= residual_tol
 
 
@@ -277,21 +266,23 @@ class TestProcrustesAlign:
         source = mlx_backend.random_normal((15, 4))
         target = mlx_backend.random_normal((15, 4))
 
-        source_np = mlx_backend.to_numpy(source)
-        target_np = mlx_backend.to_numpy(target)
-
         # Distance before alignment
-        import numpy as np
-        before = np.sum((target_np - source_np) ** 2)
+        diff_before = target - source
+        before = mlx_backend.sum(diff_before * diff_before)
+        mlx_backend.eval(before)
+        before_val = float(mlx_backend.to_scalar(before))
 
         # Align
         aligned, result = utils.procrustes_align(source, target, center=True)
-        aligned_np = mlx_backend.to_numpy(aligned)
 
         # Distance after alignment
-        after = np.sum((target_np - aligned_np) ** 2)
+        diff_after = target - aligned
+        after = mlx_backend.sum(diff_after * diff_after)
+        mlx_backend.eval(after)
+        after_val = float(mlx_backend.to_scalar(after))
 
-        assert after <= before
+        eps = machine_epsilon(mlx_backend, target) * target.shape[0]
+        assert after_val <= before_val + eps
 
     def test_align_with_scaling(self, utils: BackendMatrixUtils, mlx_backend: Backend):
         """Test alignment with scaling enabled."""
@@ -312,32 +303,32 @@ class TestCosineSimilarityMatrix:
         """Diagonal should be 1 (self-similarity)."""
         X = mlx_backend.random_normal((8, 4))
         sim = utils.cosine_similarity_matrix(X)
-        sim_np = mlx_backend.to_numpy(sim)
         tol = regularization_epsilon(mlx_backend, sim)
 
-        import numpy as np
-        np.testing.assert_allclose(np.diag(sim_np), 1.0, atol=tol)
+        diag = mlx_backend.diag(sim)
+        diff = _max_abs(mlx_backend, diag - 1.0)
+        assert diff <= tol
 
     def test_symmetric(self, utils: BackendMatrixUtils, mlx_backend: Backend):
         """Cosine similarity matrix should be symmetric."""
         X = mlx_backend.random_normal((10, 5))
         sim = utils.cosine_similarity_matrix(X)
-        sim_np = mlx_backend.to_numpy(sim)
         tol = regularization_epsilon(mlx_backend, sim)
 
-        import numpy as np
-        np.testing.assert_allclose(sim_np, sim_np.T, rtol=tol, atol=tol)
+        diff = _max_abs_diff(mlx_backend, sim, mlx_backend.transpose(sim))
+        assert diff <= tol
 
     def test_range_bounded(self, utils: BackendMatrixUtils, mlx_backend: Backend):
         """Cosine similarity should be in [-1, 1]."""
         X = mlx_backend.random_normal((15, 6))
         sim = utils.cosine_similarity_matrix(X)
-        sim_np = mlx_backend.to_numpy(sim)
         tol = division_epsilon(mlx_backend, sim)
 
-        import numpy as np
-        assert np.all(sim_np >= -1.0 - tol)
-        assert np.all(sim_np <= 1.0 + tol)
+        min_val = mlx_backend.min(sim)
+        max_val = mlx_backend.max(sim)
+        mlx_backend.eval(min_val, max_val)
+        assert float(mlx_backend.to_scalar(min_val)) >= -1.0 - tol
+        assert float(mlx_backend.to_scalar(max_val)) <= 1.0 + tol
 
 
 class TestEffectiveRank:
@@ -364,14 +355,13 @@ class TestEffectiveRank:
         eigenvalues = mlx_backend.array([1.0, 1.0, 1.0, 1.0])
 
         erank = utils.entropy_effective_rank(eigenvalues)
-        import numpy as np
         tol = division_epsilon(mlx_backend, eigenvalues)
-        np.testing.assert_allclose(erank, 4.0, rtol=tol, atol=tol)
+        assert abs(erank - 4.0) <= tol
 
         # Single eigenvalue: entropy rank should be 1
         eigenvalues_single = mlx_backend.array([1.0, 0.0, 0.0, 0.0])
         erank_single = utils.entropy_effective_rank(eigenvalues_single)
-        np.testing.assert_allclose(erank_single, 1.0, rtol=tol, atol=tol)
+        assert abs(erank_single - 1.0) <= tol
 
 
 class TestEigendecomposition:
@@ -381,21 +371,17 @@ class TestEigendecomposition:
         """Test eigendecomposition of symmetric matrix."""
         # Create symmetric matrix
         A = mlx_backend.random_normal((5, 5))
-        A_np = mlx_backend.to_numpy(A)
-        A_sym = (A_np + A_np.T) / 2
-        A = mlx_backend.array(A_sym)
+        A = (A + mlx_backend.transpose(A)) * 0.5
 
         eigenvalues, eigenvectors = utils.eigendecomposition(A)
 
-        eig_np = mlx_backend.to_numpy(eigenvalues)
-        vec_np = mlx_backend.to_numpy(eigenvectors)
         tol = regularization_epsilon(mlx_backend, A)
 
         # Verify: A @ V = V @ diag(eigenvalues)
-        import numpy as np
-        AV = A_sym @ vec_np
-        VD = vec_np @ np.diag(eig_np)
-        np.testing.assert_allclose(AV, VD, atol=tol)
+        AV = mlx_backend.matmul(A, eigenvectors)
+        VD = mlx_backend.matmul(eigenvectors, mlx_backend.diag(eigenvalues))
+        diff = _max_abs_diff(mlx_backend, AV, VD)
+        assert diff <= tol
 
 
 class TestTrace:
@@ -405,21 +391,20 @@ class TestTrace:
         """Trace of identity should equal dimension."""
         I = mlx_backend.eye(5)
         trace = utils.trace(I)
-        import numpy as np
         tol = division_epsilon(mlx_backend, I)
-        np.testing.assert_allclose(trace, 5.0, rtol=tol, atol=tol)
+        assert abs(trace - 5.0) <= tol
 
-    def test_trace_matches_numpy(self, utils: BackendMatrixUtils, mlx_backend: Backend):
-        """Trace should match numpy computation."""
+    def test_trace_matches_diagonal_sum(self, utils: BackendMatrixUtils, mlx_backend: Backend):
+        """Trace should match diagonal sum."""
         A = mlx_backend.random_normal((6, 6))
-        A_np = mlx_backend.to_numpy(A)
-
         trace = utils.trace(A)
-        import numpy as np
-        expected = np.trace(A_np)
+        diag = mlx_backend.diag(A)
+        expected_arr = mlx_backend.sum(diag)
+        mlx_backend.eval(expected_arr)
+        expected = float(mlx_backend.to_scalar(expected_arr))
 
         tol = division_epsilon(mlx_backend, A)
-        np.testing.assert_allclose(trace, expected, rtol=tol, atol=tol)
+        assert abs(trace - expected) <= tol
 
 
 # =============================================================================
@@ -443,10 +428,9 @@ class TestMLXBackendMatrixUtils:
         gram = mlx_utils.compute_gram_matrix(X, kernel="linear")
 
         # Should be symmetric
-        gram_np = mlx_backend.to_numpy(gram)
-        import numpy as np
         tol = regularization_epsilon(mlx_backend, gram)
-        np.testing.assert_allclose(gram_np, gram_np.T, rtol=tol, atol=tol)
+        diff = _max_abs_diff(mlx_backend, gram, mlx_backend.transpose(gram))
+        assert diff <= tol
 
     def test_procrustes_rotation_mlx(self, mlx_utils: BackendMatrixUtils, mlx_backend):
         """Verify Procrustes rotation works on MLX."""
@@ -456,31 +440,34 @@ class TestMLXBackendMatrixUtils:
         result = mlx_utils.procrustes_rotation(source, target)
 
         # Rotation should be orthogonal
-        R_np = mlx_backend.to_numpy(result.rotation)
-        import numpy as np
-        should_be_identity = R_np.T @ R_np
-        tol = division_epsilon(mlx_backend, result.rotation) * R_np.shape[0]
-        np.testing.assert_allclose(should_be_identity, np.eye(4), atol=tol)
+        should_be_identity = mlx_backend.matmul(
+            mlx_backend.transpose(result.rotation), result.rotation
+        )
+        eye = mlx_backend.eye(4)
+        tol = division_epsilon(mlx_backend, result.rotation) * result.rotation.shape[0]
+        diff = _max_abs_diff(mlx_backend, should_be_identity, eye)
+        assert diff <= tol
 
     def test_pairwise_distances_mlx(self, mlx_utils: BackendMatrixUtils, mlx_backend):
         """Verify pairwise distances work on MLX."""
         X = mlx_backend.random_normal((15, 6))
         dists = mlx_utils.pairwise_distances(X)
-        dists_np = mlx_backend.to_numpy(dists)
 
         # Should be symmetric and non-negative
-        import numpy as np
         tol = regularization_epsilon(mlx_backend, dists)
-        np.testing.assert_allclose(dists_np, dists_np.T, rtol=tol, atol=tol)
-        assert np.all(dists_np >= 0)
+        diff = _max_abs_diff(mlx_backend, dists, mlx_backend.transpose(dists))
+        assert diff <= tol
+        min_val = mlx_backend.min(dists)
+        mlx_backend.eval(min_val)
+        assert float(mlx_backend.to_scalar(min_val)) >= 0.0
 
     def test_cosine_similarity_matrix_mlx(self, mlx_utils: BackendMatrixUtils, mlx_backend):
         """Verify cosine similarity works on MLX."""
         X = mlx_backend.random_normal((12, 8))
         sim = mlx_utils.cosine_similarity_matrix(X)
-        sim_np = mlx_backend.to_numpy(sim)
 
         # Diagonal should be 1
-        import numpy as np
         tol = regularization_epsilon(mlx_backend, sim)
-        np.testing.assert_allclose(np.diag(sim_np), 1.0, atol=tol)
+        diag = mlx_backend.diag(sim)
+        diff = _max_abs(mlx_backend, diag - 1.0)
+        assert diff <= tol
