@@ -515,19 +515,11 @@ class GeometryMetricsService:
     @staticmethod
     def spectral_signature_payload(
         result: SpectralSignatureResult,
-        max_eigenvalues: int | None = None,
     ) -> dict:
         """Convert spectral signature result to CLI/MCP payload."""
-        eigenvalues = result.eigenvalues
-        truncated = False
-        if max_eigenvalues is not None and max_eigenvalues >= 0:
-            if len(eigenvalues) > max_eigenvalues:
-                eigenvalues = eigenvalues[:max_eigenvalues]
-                truncated = True
         return {
-            "eigenvalues": eigenvalues,
+            "eigenvalues": result.eigenvalues,
             "eigenvalueCount": len(result.eigenvalues),
-            "eigenvaluesTruncated": truncated,
             "heatTrace": result.heat_trace,
             "heatTimes": result.heat_times,
             "spectralEntropy": result.spectral_entropy,

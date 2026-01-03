@@ -48,8 +48,6 @@ def _context(ctx: typer.Context) -> CLIContext:
 @app.command("anchors")
 def social_anchors(
     ctx: typer.Context,
-    axis: str = typer.Option(None, "--axis", help="Filter by axis: power, kinship, formality"),
-    category: str = typer.Option(None, "--category", help="Filter by category"),
 ) -> None:
     """
     List the Social Prime Atlas anchors.
@@ -64,32 +62,9 @@ def social_anchors(
     """
     context = _context(ctx)
 
-    from modelcypher.core.domain.agents.social_atlas import (
-        SocialAxis,
-        SocialCategory,
-        SocialConceptInventory,
-    )
+    from modelcypher.core.domain.agents.social_atlas import SocialConceptInventory
 
     anchors = SocialConceptInventory.all_concepts()
-
-    if axis:
-        try:
-            axis_enum = SocialAxis(axis.lower())
-            anchors = [a for a in anchors if a.axis == axis_enum]
-        except ValueError:
-            typer.echo(f"Invalid axis: {axis}. Use: power, kinship, formality", err=True)
-            raise typer.Exit(1)
-
-    if category:
-        try:
-            category_enum = SocialCategory(category)
-        except ValueError:
-            typer.echo(
-                f"Invalid category: {category}. Use: power_hierarchy, formality, kinship, status_markers, age",
-                err=True,
-            )
-            raise typer.Exit(1)
-        anchors = [a for a in anchors if a.category == category_enum]
 
     if context.output_format == "text":
         lines = [
@@ -128,7 +103,6 @@ def social_anchors(
 def social_probe_model(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to the model directory"),
-    layer: int = typer.Option(-1, help="Layer to analyze (default is last)"),
     output_file: str = typer.Option(None, "--output-file", "-o", help="File to save activations"),
 ) -> None:
     """Probe a model for social geometry structure."""
@@ -156,7 +130,7 @@ def social_probe_model(
         raise typer.Exit(1)
 
     num_layers = len(layers)
-    target_layer = layer if layer >= 0 else num_layers - 1
+    target_layer = num_layers - 1
     typer.echo(f"Architecture resolved: {num_layers} layers, probing layer {target_layer}")
 
     backend = MLXBackend()
@@ -209,7 +183,7 @@ def social_probe_model(
         "_schema": "mc.geometry.social.probe_model.v1",
         "model_path": model_path,
         "anchors_probed": len(anchor_activations),
-        "layer": layer,
+        "layer": target_layer,
         **report.to_dict(),
     }
 
@@ -220,7 +194,7 @@ def social_probe_model(
             "=" * 60,
             "",
             f"Anchors Probed: {len(anchor_activations)}/23",
-            f"Layer Analyzed: {layer if layer != -1 else 'last'}",
+            f"Layer Analyzed: {target_layer}",
             "",
             f"Has Social Manifold: {'YES' if report.has_social_manifold else 'NO'}",
             f"Social Manifold Score: {report.social_manifold_score:.2f}",

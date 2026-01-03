@@ -51,22 +51,6 @@ class RebasinResult:
 
 
 @dataclass(frozen=True)
-class ConceptConfiguration:
-    """Concept detection configuration.
-
-    Detection uses Otsu thresholding on similarity scores - no arbitrary
-    threshold required. The geometry of the similarity distribution determines
-    the optimal split point.
-    """
-
-    collapse_consecutive: bool = True
-    """Collapse consecutive detections of the same concept."""
-
-    source_modality_hint: str | None = None
-    """Optional hint for cross-modal detection."""
-
-
-@dataclass(frozen=True)
 class DetectedConcept:
     concept_id: str
     category: str
@@ -121,22 +105,6 @@ class ContrastivePair:
 
 
 @dataclass(frozen=True)
-class RefusalConfig:
-    """Refusal direction extraction configuration.
-
-    No arbitrary thresholds. The refusal direction is extracted via PCA
-    on the activation differences. Significance is determined by explained
-    variance ratio (geometric property), not magic numbers.
-    """
-
-    normalize_direction: bool = True
-    """Whether to L2-normalize the extracted direction."""
-
-    target_layers: list[int] | None = None
-    """Which layers to analyze. None = all layers."""
-
-
-@dataclass(frozen=True)
 class RefusalDirection:
     direction: Any  # Vector
     layer_index: int
@@ -184,25 +152,6 @@ class ClusteringResult:
     regions: list[ManifoldRegion]
     noise_points: list[ManifoldPoint]
     metrics: dict[str, float]
-
-
-@dataclass
-class ClusteringConfiguration:
-    """Clustering configuration for manifold analysis.
-
-    Epsilon and min_samples are data-derived, not arbitrary defaults.
-    - epsilon: Use HDBSCAN (auto-selects) or derive from k-NN distances
-    - min_samples: Standard heuristic is 2 * ambient_dimension
-    """
-
-    epsilon: float | None = None
-    """Neighborhood radius. None = auto-derive from k-NN graph."""
-
-    min_samples: int | None = None
-    """Minimum cluster size. None = 2 * ambient_dimension."""
-
-    metric: str = "geodesic"
-    """Distance metric. Geodesic is correct for curved manifolds."""
 
 
 # --- Intrinsic Dimension Types ---
@@ -350,37 +299,6 @@ class ConsistencyResult:
 
 
 # --- Generalized Procrustes Types ---
-
-
-@dataclass(frozen=True)
-class ProcrustesConfig:
-    """Configuration for Generalized Procrustes Analysis.
-
-    Attributes:
-        max_iterations: Maximum iterations. When None, derived as max(100, 2*sqrt(n*d)).
-        convergence_threshold: Stop when error change < threshold.
-            When None, derived from dtype machine epsilon.
-        allow_reflections: Whether to allow reflection matrices.
-        min_models: Minimum number of models for alignment.
-        allow_scaling: Whether to allow scaling in alignment.
-        use_frechet_mean: Use curvature-aware Fréchet mean for consensus.
-    """
-
-    max_iterations: int | None = None
-    convergence_threshold: float | None = None
-    allow_reflections: bool = False
-    min_models: int = 2
-    allow_scaling: bool = False
-    use_frechet_mean: bool = False
-
-    @staticmethod
-    def default() -> "ProcrustesConfig":
-        return ProcrustesConfig()
-
-    @staticmethod
-    def with_frechet_mean() -> "ProcrustesConfig":
-        """Create config with Fréchet mean enabled for curvature-aware consensus."""
-        return ProcrustesConfig(use_frechet_mean=True)
 
 
 @dataclass(frozen=True)

@@ -20,7 +20,6 @@ from typing import Protocol, runtime_checkable
 
 from modelcypher.core.domain.geometry.types import (
     ConceptComparisonResult,
-    ConceptConfiguration,
     DetectionResult,
 )
 
@@ -29,10 +28,14 @@ from modelcypher.core.domain.geometry.types import (
 class ConceptDiscoveryPort(Protocol):
     """
     Interface for semantic concept detection in generated text.
+
+    Detection uses Otsu thresholding on similarity scores - no configuration
+    required. The geometry of the similarity distribution determines the
+    optimal split point.
     """
 
     async def detect_concepts(
-        self, response: str, model_id: str, prompt_id: str, config: ConceptConfiguration
+        self, response: str, model_id: str, prompt_id: str
     ) -> DetectionResult: ...
 
     async def compare_results(

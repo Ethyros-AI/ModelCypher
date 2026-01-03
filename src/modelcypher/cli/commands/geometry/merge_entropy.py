@@ -20,7 +20,7 @@
 Provides commands for entropy-based model analysis and merge validation.
 
 Commands:
-    mc geometry merge-entropy profile <model> [--layers N]
+    mc geometry merge-entropy profile <model>
     mc geometry merge-entropy validate --source-ent <json> --target-ent <json> --merged-ent <json>
 """
 
@@ -70,9 +70,6 @@ def _compute_stats(values: list[float]) -> dict[str, float]:
 def entropy_profile(
     ctx: typer.Context,
     model: str = typer.Argument(..., help="Path to model directory"),
-    layers: int = typer.Option(
-        None, "--layers", "-n", help="Number of layers to profile (auto-detected)"
-    ),
 ) -> None:
     """Profile model entropy characteristics for merge planning.
 
@@ -81,7 +78,6 @@ def entropy_profile(
 
     Example:
         mc geometry merge-entropy profile ./my-model
-        mc geometry merge-entropy profile /Volumes/CodeCypher/models/qwen2.5-3b --layers 48
     """
     from modelcypher.adapters.mlx_model_loader import MLXModelLoader
 
@@ -90,7 +86,7 @@ def entropy_profile(
     try:
         validator = EntropyMergeValidator()
         model_loader = MLXModelLoader()
-        profile = validator.create_profile(model, model_loader=model_loader, num_layers=layers)
+        profile = validator.create_profile(model, model_loader=model_loader, num_layers=None)
 
         # Sort layers by entropy for reporting
         sorted_layers = sorted(
@@ -145,8 +141,6 @@ def entropy_validate(
     merged_ent: str = typer.Option(
         ..., "--merged-ent", help="Merged entropies JSON file or inline"
     ),
-    source_model: str = typer.Option("source", "--source-model", help="Source model name"),
-    target_model: str = typer.Option("target", "--target-model", help="Target model name"),
 ) -> None:
     """Validate merge stability via entropy comparison.
 
@@ -183,8 +177,8 @@ def entropy_validate(
             source_entropies=source_entropies,
             target_entropies=target_entropies,
             merged_entropies=merged_entropies,
-            source_model=source_model,
-            target_model=target_model,
+            source_model="source",
+            target_model="target",
         )
 
         sorted_layers = sorted(

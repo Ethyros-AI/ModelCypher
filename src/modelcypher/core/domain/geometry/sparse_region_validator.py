@@ -29,13 +29,6 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class Configuration:
-    validation_prompts: int = 10
-    max_tokens_per_prompt: int = 100
-    perturbation_magnitude: float | None = None  # Must be derived from weight scale
-
-
-@dataclass(frozen=True)
 class BaselineMetrics:
     mean_entropy: float
     entropy_std_dev: float
@@ -96,31 +89,49 @@ class ValidationProgress:
 
 
 class SparseRegionValidator:
-    def __init__(self, configuration: Configuration | None = None) -> None:
-        self.config = configuration or Configuration()
+    """Validates that sparse regions remain stable under perturbation.
+
+    All parameters are derived from the data:
+    - Prompts: All validation prompts are used (caller controls set)
+    - Perturbation magnitude: Must be derived from weight scale by caller
+    """
 
     def validate(
         self,
         perturbed_layers: list[int],
         validation_prompts: list[str],
+        perturbation_magnitude: float,
         measure_metrics: Callable[[list[str]], BaselineMetrics],
         apply_perturbation: Callable[[list[int], float], None],
         remove_perturbation: Callable[[], None],
         progress: Callable[[ValidationProgress], None] | None = None,
     ) -> ValidationResult:
-        prompts = validation_prompts[: self.config.validation_prompts]
+        """Validate sparse regions under perturbation.
 
+        Args:
+            perturbed_layers: Layer indices to perturb.
+            validation_prompts: Prompts for measuring behavior.
+            perturbation_magnitude: Perturbation scale derived from weight statistics
+                (e.g., std(weights) * sqrt(machine_epsilon)).
+            measure_metrics: Function to measure baseline metrics.
+            apply_perturbation: Function to apply perturbation.
+            remove_perturbation: Function to remove perturbation.
+            progress: Optional progress callback.
+
+        Returns:
+            ValidationResult with baseline and post-perturbation metrics.
+        """
         if progress:
             progress(
                 ValidationProgress(
                     phase=ValidationPhase.baseline,
                     current_prompt=0,
-                    total_prompts=len(prompts),
+                    total_prompts=len(validation_prompts),
                     status="Measuring baseline...",
                 )
             )
 
-        baseline = measure_metrics(prompts)
+        baseline = measure_metrics(validation_prompts)
 
         layers_to_perturb = sorted(set(perturbed_layers))
 
@@ -134,24 +145,19 @@ class SparseRegionValidator:
                 )
             )
 
-        if self.config.perturbation_magnitude is None:
-            raise ValueError(
-                "perturbation_magnitude must be set. Derive from weight scale "
-                "(e.g., std(weights) * sqrt(machine_epsilon))."
-            )
-        apply_perturbation(layers_to_perturb, self.config.perturbation_magnitude)
+        apply_perturbation(layers_to_perturb, perturbation_magnitude)
 
         if progress:
             progress(
                 ValidationProgress(
                     phase=ValidationPhase.post_measurement,
                     current_prompt=0,
-                    total_prompts=len(prompts),
+                    total_prompts=len(validation_prompts),
                     status="Measuring post-perturbation...",
                 )
             )
 
-        post_perturbation = measure_metrics(prompts)
+        post_perturbation = measure_metrics(validation_prompts)
         remove_perturbation()
 
         if progress:

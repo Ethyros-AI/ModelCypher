@@ -39,9 +39,7 @@ from modelcypher.core.domain.agents.unified_atlas import (
     UnifiedAtlasInventory,
 )
 from modelcypher.core.use_cases.invariant_layer_mapping_service import (
-    CollapseRiskConfig,
     InvariantLayerMappingService,
-    LayerMappingConfig,
 )
 from modelcypher.utils.errors import ErrorDetail
 
@@ -69,13 +67,8 @@ def geometry_invariant_map_layers(
     context = _context(ctx)
     service = InvariantLayerMappingService()
 
-    config = LayerMappingConfig(
-        source_model_path=source,
-        target_model_path=target,
-    )
-
     try:
-        result = service.map_layers(config)
+        result = service.map_layers(source, target)
         payload = InvariantLayerMappingService.result_payload(result)
 
         if context.output_format == "text":
@@ -152,12 +145,8 @@ def geometry_invariant_collapse_risk(
     context = _context(ctx)
     service = InvariantLayerMappingService()
 
-    config = CollapseRiskConfig(
-        model_path=model,
-    )
-
     try:
-        result = service.analyze_collapse_risk(config)
+        result = service.analyze_collapse_risk(model)
         payload = InvariantLayerMappingService.collapse_risk_payload(result)
 
         if context.output_format == "text":

@@ -29,7 +29,7 @@ The geometry you see is REAL:
 - The 3D "shadow" IS the manifold shape, not an approximation
 
 Commands:
-    mc geometry visualize create <model_path> --prompt <prompt> --output <file.html>
+    mc geometry visualize create <model_path> <prompt> --output <file.html>
     mc geometry visualize from-activations <activations.json> --output <file.html>
 
 Requires: poetry install -E viz (installs plotly>=5.18.0)
@@ -40,8 +40,6 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Optional
-
 import typer
 
 from modelcypher.cli.commands.geometry.helpers import (
@@ -73,43 +71,12 @@ def _ensure_viz_installed():
 def geometry_visualize_create(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to the model directory"),
-    prompt: str = typer.Option(
-        "The concept of justice involves fairness, equity, and moral rightness.",
-        "--prompt",
-        "-p",
-        help="Prompt to analyze (captures activations during forward pass)",
-    ),
+    prompt: str = typer.Argument(..., help="Prompt to analyze"),
     output: Path = typer.Option(
         Path("manifold.html"),
         "--output",
         "-o",
         help="Output file path (.html for interactive, .json for data)",
-    ),
-    layer: int = typer.Option(
-        -1,
-        "--layer",
-        "-l",
-        help="Target layer for activation capture (-1 = last layer)",
-    ),
-    target_dims: str = typer.Option(
-        "4,3",
-        "--dims",
-        "-d",
-        help="Comma-separated target dimensions for cascade (descending order)",
-    ),
-    compute_curvature: bool = typer.Option(
-        True,
-        "--curvature/--no-curvature",
-        is_flag=True,
-        flag_value=True,
-        help="Compute Ollivier-Ricci curvature at each dimension",
-    ),
-    show_browser: bool = typer.Option(
-        False,
-        "--show/--no-show",
-        is_flag=True,
-        flag_value=True,
-        help="Open visualization in browser after creation",
     ),
 ):
     """
@@ -125,7 +92,7 @@ def geometry_visualize_create(
     - The 3D "shadow" IS the manifold shape
 
     Example:
-        mc geometry visualize create /path/to/model --prompt "What is justice?" -o justice.html
+        mc geometry visualize create /path/to/model "What is justice?" -o justice.html
     """
     _ensure_viz_installed()
     context = _context(ctx)
@@ -135,9 +102,7 @@ def geometry_visualize_create(
     from modelcypher.core.domain.geometry.dimension_cascade import DimensionCascade
     from modelcypher.viz.manifold_viewer import ManifoldViewer, ViewerConfiguration
 
-    # Parse target dimensions
-    dims = [int(d.strip()) for d in target_dims.split(",")]
-    dims = sorted(dims, reverse=True)
+    dims = [4, 3]
 
     typer.echo(f"Loading model from {model_path}...")
     model, tokenizer = load_model_for_training(model_path)
@@ -152,7 +117,7 @@ def geometry_visualize_create(
 
     embed_tokens, layers, norm = resolved
     num_layers = len(layers)
-    target_layer = layer if layer >= 0 else num_layers - 1
+    target_layer = num_layers - 1
     typer.echo(f"Architecture resolved: {num_layers} layers, probing layer {target_layer}")
 
     backend = MLXBackend()
@@ -214,9 +179,6 @@ def geometry_visualize_create(
         viewer.export_html(result, output_path)
         typer.echo(f"Exported HTML to {output_path}")
 
-    if show_browser:
-        viewer.show(result)
-
     # Output summary
     payload = {
         "model_path": model_path,
@@ -264,32 +226,6 @@ def geometry_visualize_from_activations(
         "-o",
         help="Output file path (.html for interactive, .json for data)",
     ),
-    target_dims: str = typer.Option(
-        "4,3",
-        "--dims",
-        "-d",
-        help="Comma-separated target dimensions for cascade",
-    ),
-    compute_curvature: bool = typer.Option(
-        True,
-        "--curvature/--no-curvature",
-        is_flag=True,
-        flag_value=True,
-        help="Compute Ollivier-Ricci curvature",
-    ),
-    title: Optional[str] = typer.Option(
-        None,
-        "--title",
-        "-t",
-        help="Title for the visualization",
-    ),
-    show_browser: bool = typer.Option(
-        False,
-        "--show/--no-show",
-        is_flag=True,
-        flag_value=True,
-        help="Open visualization in browser",
-    ),
 ):
     """
     Create visualization from pre-computed activations.
@@ -309,9 +245,7 @@ def geometry_visualize_from_activations(
     from modelcypher.core.domain.geometry.dimension_cascade import DimensionCascade
     from modelcypher.viz.manifold_viewer import ManifoldViewer, ViewerConfiguration
 
-    # Parse target dimensions
-    dims = [int(d.strip()) for d in target_dims.split(",")]
-    dims = sorted(dims, reverse=True)
+    dims = [4, 3]
 
     # Load activations
     typer.echo(f"Loading activations from {activations_file}...")
@@ -347,7 +281,7 @@ def geometry_visualize_from_activations(
     # Create visualization
     typer.echo("Creating visualization...")
     viewer_config = ViewerConfiguration(
-        title=title or f"Manifold Geometry: {activations_file.stem}",
+        title=f"Manifold Geometry: {activations_file.stem}",
     )
     viewer = ManifoldViewer(backend, viewer_config)
 
@@ -364,9 +298,6 @@ def geometry_visualize_from_activations(
     else:
         viewer.export_html(result, output_path)
         typer.echo(f"Exported HTML to {output_path}")
-
-    if show_browser:
-        viewer.show(result)
 
     # Output summary
     payload = {

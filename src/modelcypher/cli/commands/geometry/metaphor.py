@@ -58,15 +58,12 @@ def _context(ctx: typer.Context) -> CLIContext:
 def _extract_metaphor_activations(
     model_path: str,
     metaphor_id: str,
-    layer: int = -1,
 ) -> dict[int, tuple["Array", "Array"]]:
     """Extract source and target domain activations for a metaphor.
 
     Args:
         model_path: Path to the model directory.
         metaphor_id: CMT mapping ID (e.g., "cmt_time_is_money").
-        layer: Specific layer to analyze, or -1 for all layers.
-
     Returns:
         Dictionary mapping layer_index to (source_activations, target_activations).
     """
@@ -92,12 +89,7 @@ def _extract_metaphor_activations(
     embed_tokens, layers, norm = resolved
     num_layers = len(layers)
 
-    if layer >= 0:
-        target_layers = [layer]
-    else:
-        # Sample layers: first, 25%, 50%, 75%, last
-        target_layers = [0, num_layers // 4, num_layers // 2, 3 * num_layers // 4, num_layers - 1]
-        target_layers = sorted(set(target_layers))
+    target_layers = list(range(num_layers))
 
     typer.echo(f"Architecture resolved: {num_layers} layers, probing {len(target_layers)} layers")
 
@@ -172,7 +164,6 @@ def _extract_metaphor_activations(
 @app.command("list")
 def metaphor_list(
     ctx: typer.Context,
-    family: str = typer.Option(None, "--family", help="Filter by CMT family"),
 ) -> None:
     """
     List available Conceptual Metaphor Theory (CMT) mappings.
@@ -193,21 +184,10 @@ def metaphor_list(
     context = _context(ctx)
 
     from modelcypher.core.domain.agents.conceptual_metaphor_atlas import (
-        CMTFamily,
         ConceptualMetaphorInventory,
     )
 
-    # Get mappings
-    if family:
-        try:
-            family_enum = CMTFamily(family)
-            mappings = ConceptualMetaphorInventory.mappings_by_family(family_enum)
-        except ValueError:
-            valid = ", ".join(f.value for f in CMTFamily)
-            typer.echo(f"Invalid family: {family}. Valid: {valid}", err=True)
-            raise typer.Exit(1)
-    else:
-        mappings = ConceptualMetaphorInventory.ALL_MAPPINGS
+    mappings = ConceptualMetaphorInventory.ALL_MAPPINGS
 
     payload = {
         "_schema": "mc.geometry.metaphor.list.v1",
@@ -240,12 +220,6 @@ def metaphor_list(
                 f"{m.id:<25} {m.name:<25} {m.source_domain} → {m.target_domain}"
             )
 
-        lines.extend(
-            [
-                "",
-                "Use --family to filter by family (e.g., --family time_as_resource)",
-            ]
-        )
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -259,7 +233,6 @@ def metaphor_trajectory(
     metaphor: str = typer.Option(
         "cmt_time_is_money", "--metaphor", "-m", help="CMT mapping ID"
     ),
-    layer: int = typer.Option(-1, "--layer", "-l", help="Layer to analyze (-1 for all)"),
     output_file: str = typer.Option(None, "--output-file", "-o", help="Save trajectory to JSON"),
 ) -> None:
     """
@@ -291,7 +264,7 @@ def metaphor_trajectory(
         raise typer.Exit(1)
 
     # Extract activations
-    layer_activations = _extract_metaphor_activations(model_path, metaphor, layer)
+    layer_activations = _extract_metaphor_activations(model_path, metaphor)
 
     # Collect trajectory
     backend = MLXBackend()
@@ -390,7 +363,7 @@ def metaphor_convergence(
     for mapping in ConceptualMetaphorInventory.ALL_MAPPINGS:
         typer.echo(f"\nAnalyzing: {mapping.name}")
         try:
-            layer_activations = _extract_metaphor_activations(model_path, mapping.id, layer=-1)
+            layer_activations = _extract_metaphor_activations(model_path, mapping.id)
             trajectory = collector.collect_from_activations(mapping, model_id, layer_activations)
             profile = compute_convergence_profile(trajectory)
 
@@ -518,13 +491,13 @@ def metaphor_invariance(
 
     # Collect trajectories for both models
     typer.echo(f"\n--- Model A: {Path(model_a_path).name} ---")
-    layer_acts_a = _extract_metaphor_activations(model_a_path, metaphor, layer=-1)
+    layer_acts_a = _extract_metaphor_activations(model_a_path, metaphor)
     trajectory_a = collector.collect_from_activations(
         mapping, Path(model_a_path).name, layer_acts_a
     )
 
     typer.echo(f"\n--- Model B: {Path(model_b_path).name} ---")
-    layer_acts_b = _extract_metaphor_activations(model_b_path, metaphor, layer=-1)
+    layer_acts_b = _extract_metaphor_activations(model_b_path, metaphor)
     trajectory_b = collector.collect_from_activations(
         mapping, Path(model_b_path).name, layer_acts_b
     )
@@ -622,7 +595,7 @@ def metaphor_invariance_batch(
         # Model A
         try:
             typer.echo(f"  Model A: {Path(model_a_path).name}")
-            layer_acts_a = _extract_metaphor_activations(model_a_path, mapping.id, layer=-1)
+            layer_acts_a = _extract_metaphor_activations(model_a_path, mapping.id)
             trajectory_a = collector.collect_from_activations(
                 mapping, Path(model_a_path).name, layer_acts_a
             )
@@ -633,7 +606,7 @@ def metaphor_invariance_batch(
         # Model B
         try:
             typer.echo(f"  Model B: {Path(model_b_path).name}")
-            layer_acts_b = _extract_metaphor_activations(model_b_path, mapping.id, layer=-1)
+            layer_acts_b = _extract_metaphor_activations(model_b_path, mapping.id)
             trajectory_b = collector.collect_from_activations(
                 mapping, Path(model_b_path).name, layer_acts_b
             )

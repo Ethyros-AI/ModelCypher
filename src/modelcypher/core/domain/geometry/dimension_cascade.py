@@ -384,6 +384,13 @@ class DimensionCascade:
             geo_result.connected,
         )
 
+        # Handle disconnected graph: replace inf with max finite distance
+        # This preserves the graph structure while avoiding numerical issues
+        max_finite = b.max(b.where(geo_dist < 1e30, geo_dist, b.zeros_like(geo_dist)))
+        b.eval(max_finite)
+        geo_dist = b.where(geo_dist < 1e30, geo_dist, max_finite)
+        b.eval(geo_dist)
+
         # Step 2: Classical MDS on geodesic distances
         # MDS finds embedding that preserves distances
         #
@@ -413,18 +420,49 @@ class DimensionCascade:
         B = 0.5 * (B + b.transpose(B))
         b.eval(B)
 
+        # Regularize B for numerical stability before SVD
+        # The regularization λ is derived from the matrix itself:
+        # λ = eps * ||B||_F where eps is machine epsilon
+        # This ensures B + λI is positive definite without distorting geometry
+        B_frob_sq = b.sum(B * B)
+        b.eval(B_frob_sq)
+        B_frob = b.sqrt(B_frob_sq)
+        b.eval(B_frob)
+
+        # Regularization: add λI where λ = machine_eps * ||B||_F
+        # This is the minimal perturbation that ensures numerical stability
+        eps = division_epsilon(b, B)
+        reg_lambda = eps * float(b.to_scalar(B_frob))
+
+        # B_reg = B + λI
+        eye_n = b.eye(n_points)
+        b.eval(eye_n)
+        B = B + reg_lambda * eye_n
+        b.eval(B)
+
+        logger.debug("Regularized B with lambda=%.2e (Frobenius=%.2e)", reg_lambda, float(b.to_scalar(B_frob)))
+
         # Step 3: Eigendecomposition of B
         # B is symmetric positive semi-definite for valid distance matrices
         # We need the top-k eigenvectors with largest eigenvalues
         #
-        # Use SVD since it's more numerically stable than eig for large matrices
-        # For symmetric B: B = U @ S @ U^T (U = V^T)
-        U, S, Vt = b.svd(B, full_matrices=False)
-        b.eval(U, S, Vt)
+        # Use eigh for symmetric matrices - correct operation and more stable than svd
+        eigenvalues, eigenvectors = b.eigh(B)
+        b.eval(eigenvalues, eigenvectors)
 
-        # Take top-k eigenvectors (largest eigenvalues = first k from SVD)
-        U_k = U[:, :target_dim]  # [n, target_dim]
-        S_k = S[:target_dim]  # [target_dim]
+        # eigh returns eigenvalues in ascending order, we need descending
+        # Get indices for descending sort
+        n_eig = eigenvalues.shape[0]
+        rev_idx = b.arange(n_eig - 1, -1, -1)
+        b.eval(rev_idx)
+
+        eigenvalues = b.take(eigenvalues, rev_idx, axis=0)
+        eigenvectors = b.take(eigenvectors, rev_idx, axis=1)
+        b.eval(eigenvalues, eigenvectors)
+
+        # Take top-k eigenvectors (largest eigenvalues)
+        U_k = eigenvectors[:, :target_dim]  # [n, target_dim]
+        S_k = eigenvalues[:target_dim]  # [target_dim]
         b.eval(U_k, S_k)
 
         # Eigenvalues should be non-negative for valid distance matrix
@@ -441,12 +479,12 @@ class DimensionCascade:
         projected = U_k * sqrt_S_k[None, :]  # [n, target_dim]
         b.eval(projected)
 
-        total_var_arr = b.sum(S)
+        total_var_arr = b.sum(eigenvalues)
         explained_arr = b.sum(S_k)
         b.eval(total_var_arr, explained_arr)
         total_var = float(b.to_scalar(total_var_arr))
         explained_val = float(b.to_scalar(explained_arr))
-        eps = division_epsilon(b, S)
+        eps = division_epsilon(b, eigenvalues)
         logger.debug(
             "Isomap embedding: explained variance ratio = %.2f%%",
             100.0 * explained_val / max(eps, total_var),
@@ -454,48 +492,39 @@ class DimensionCascade:
 
         # Step 5: Derive linear coupling for streaming
         # We want W such that points @ W ≈ projected
-        # This is least squares: W = (X^T @ X)^-1 @ X^T @ Y
-        # Or equivalently: W = pinv(X) @ Y
+        # This is least squares: W = (X^T @ X + λI)^-1 @ X^T @ Y
+        # Using regularized normal equations, solved via b.solve()
 
-        # Use SVD-based pseudoinverse for numerical stability
-        # X = U_x @ S_x @ Vt_x
-        # pinv(X) = V_x @ (1/S_x) @ Ut_x
-        U_x_full, S_x, Vt_x_full = b.svd(points, full_matrices=False)
-        b.eval(U_x_full, S_x, Vt_x_full)
+        # Compute X^T @ X  [d, d]
+        XtX = b.matmul(b.transpose(points), points)
+        b.eval(XtX)
 
-        # MLX backend may return full U or Vt even with full_matrices=False
-        # We need to slice to the reduced form based on min(n, d)
-        k = int(S_x.shape[0])  # Number of singular values = min(n, d)
-        U_x = U_x_full[:, :k]  # [n, k]
-        Vt_x = Vt_x_full[:k, :]  # [k, d]
-        b.eval(U_x, Vt_x)
+        # Add Tikhonov regularization: (X^T @ X + λI) where λ is derived from data
+        XtX_frob_sq = b.sum(XtX * XtX)
+        b.eval(XtX_frob_sq)
+        XtX_frob = b.sqrt(XtX_frob_sq)
+        b.eval(XtX_frob)
+
+        eps = division_epsilon(b, XtX)
+        reg_lambda = eps * float(b.to_scalar(XtX_frob))
+
+        eye_d = b.eye(source_dim)
+        b.eval(eye_d)
+        XtX_reg = XtX + reg_lambda * eye_d
+        b.eval(XtX_reg)
+
+        # Compute X^T @ Y  [d, target_dim]
+        XtY = b.matmul(b.transpose(points), projected)
+        b.eval(XtY)
+
+        # Solve (X^T @ X + λI) @ W = X^T @ Y for W
+        coupling = b.solve(XtX_reg, XtY)
+        b.eval(coupling)
 
         logger.debug(
-            "Pseudoinverse shapes: U_x=%s, S_x=%s, Vt_x=%s",
-            U_x.shape, S_x.shape, Vt_x.shape,
+            "Coupling via regularized normal equations: reg_lambda=%.2e",
+            reg_lambda,
         )
-
-        # Regularized inverse of singular values
-        eps = division_epsilon(b, S_x)
-        S_x_inv = 1.0 / (S_x + eps)
-        b.eval(S_x_inv)
-
-        # pinv(X) = V_x @ diag(S_x_inv) @ U_x^T
-        # W = pinv(X) @ projected
-        # W = (V_x @ diag(S_x_inv) @ U_x^T) @ projected
-        # W = V_x @ diag(S_x_inv) @ (U_x^T @ projected)
-
-        # U_x^T @ projected: [k, n] @ [n, target_dim] = [k, target_dim]
-        Ut_proj = b.matmul(b.transpose(U_x), projected)
-        b.eval(Ut_proj)
-
-        # diag(S_x_inv) @ (U_x^T @ projected): [k] * [k, target_dim] = [k, target_dim]
-        S_inv_Ut_proj = S_x_inv[:, None] * Ut_proj
-        b.eval(S_inv_Ut_proj)
-
-        # V_x @ ...: [d, k] @ [k, target_dim] = [d, target_dim]
-        coupling = b.matmul(b.transpose(Vt_x), S_inv_Ut_proj)
-        b.eval(coupling)
 
         logger.debug(
             "Isomap coupling: [%d, %d]",

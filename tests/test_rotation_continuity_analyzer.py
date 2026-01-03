@@ -27,7 +27,6 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.generalized_procrustes import (
-    Config,
     LayerRotationResult,
     RotationContinuityAnalyzer,
     RotationContinuityResult,
@@ -41,10 +40,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 
 def _eps(backend) -> float:
     return division_epsilon(backend, backend.array([1.0]))
-
-
-def _config(backend) -> Config:
-    return Config(per_layer_smoothness_threshold=_eps(backend))
 
 
 def _rotation_matrix(backend, dim: int, theta: float):
@@ -117,7 +112,6 @@ class TestRotationContinuityAnalyzer:
             target_activations=base_activations,
             source_model="model_a",
             target_model="model_a",
-            config=_config(backend),
         )
 
         assert result is not None
@@ -135,7 +129,6 @@ class TestRotationContinuityAnalyzer:
             target_activations=rotated_activations,
             source_model="base",
             target_model="rotated",
-            config=_config(backend),
         )
 
         assert result is not None
@@ -173,7 +166,6 @@ class TestRotationContinuityAnalyzer:
             target_activations=per_layer_rotated,
             source_model="base",
             target_model="per_layer_rotated",
-            config=_config(backend),
         )
 
         assert result is not None
@@ -199,7 +191,6 @@ class TestRotationContinuityAnalyzer:
             target_activations=target,
             source_model="s",
             target_model="t",
-            config=_config(get_default_backend()),
         )
 
         assert result is None
@@ -215,7 +206,6 @@ class TestRotationContinuityAnalyzer:
             target_activations=target,
             source_model="s",
             target_model="t",
-            config=_config(get_default_backend()),
         )
 
         assert result is None
@@ -229,7 +219,6 @@ class TestRotationContinuityAnalyzer:
             target_activations=rotated_activations,
             source_model="model_source",
             target_model="model_target",
-            config=_config(backend),
         )
 
         assert result is not None
@@ -249,7 +238,6 @@ class TestRotationContinuityAnalyzer:
             target_activations=rotated_activations,
             source_model="s",
             target_model="t",
-            config=_config(backend),
         )
 
         assert result is not None
@@ -278,7 +266,6 @@ class TestRotationContinuityAnalyzer:
             target_activations=rotated_activations,
             source_model="base_model",
             target_model="target_model",
-            config=_config(backend),
         )
 
         assert result is not None
@@ -288,50 +275,6 @@ class TestRotationContinuityAnalyzer:
         assert "target_model" in summary
         assert "Dimensions:" in summary
         assert "Conclusion:" in summary
-
-    def test_config_reflection_handling(self, base_activations):
-        """Test that reflections are handled based on config."""
-        backend = get_default_backend()
-
-        # Create a reflected version (negate one dimension)
-        reflected = {}
-        for layer, anchors in base_activations.items():
-            reflected[layer] = {}
-            for anchor, act in anchors.items():
-                reflected_vec = act.copy()
-                reflected_vec[0] = -reflected_vec[0]  # Negate first dimension
-                reflected[layer][anchor] = reflected_vec
-
-        analyzer = RotationContinuityAnalyzer(backend=backend)
-
-        # With reflections disallowed (default)
-        result_no_reflect = analyzer.compute_per_layer_alignments(
-            source_activations=base_activations,
-            target_activations=reflected,
-            source_model="s",
-            target_model="t",
-            config=Config(
-                allow_reflections=False,
-                per_layer_smoothness_threshold=_eps(backend),
-            ),
-        )
-
-        # With reflections allowed
-        result_reflect = analyzer.compute_per_layer_alignments(
-            source_activations=base_activations,
-            target_activations=reflected,
-            source_model="s",
-            target_model="t",
-            config=Config(
-                allow_reflections=True,
-                per_layer_smoothness_threshold=_eps(backend),
-            ),
-        )
-
-        assert result_no_reflect is not None
-        assert result_reflect is not None
-        # Reflection allowed should have lower error
-        assert result_reflect.global_rotation_error <= result_no_reflect.global_rotation_error
 
     def test_different_dimension_models(self):
         """Test alignment with different source and target dimensions."""
@@ -357,7 +300,6 @@ class TestRotationContinuityAnalyzer:
             target_activations=target,
             source_model="large",
             target_model="small",
-            config=_config(backend),
         )
 
         assert result is not None

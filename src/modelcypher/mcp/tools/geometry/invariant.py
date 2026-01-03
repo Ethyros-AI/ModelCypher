@@ -51,17 +51,14 @@ def register_geometry_invariant_tools(ctx: ServiceContext) -> None:
             """
             from modelcypher.core.use_cases.invariant_layer_mapping_service import (
                 InvariantLayerMappingService,
-                LayerMappingConfig,
             )
 
             source_path = require_existing_directory(sourcePath)
             target_path = require_existing_directory(targetPath)
-            config = LayerMappingConfig(
-                source_model_path=str(source_path),
-                target_model_path=str(target_path),
-                # collapse_threshold=None - derived from activation variance
+            result = ctx.invariant_mapping_service.map_layers(
+                str(source_path),
+                str(target_path),
             )
-            result = ctx.invariant_mapping_service.map_layers(config)
             payload = InvariantLayerMappingService.result_payload(result)
             return payload
 
@@ -77,16 +74,11 @@ def register_geometry_invariant_tools(ctx: ServiceContext) -> None:
             No user parameters for thresholds.
             """
             from modelcypher.core.use_cases.invariant_layer_mapping_service import (
-                CollapseRiskConfig,
                 InvariantLayerMappingService,
             )
 
             model_path = require_existing_directory(modelPath)
-            config = CollapseRiskConfig(
-                model_path=str(model_path),
-                # collapse_threshold=None - derived from variance distribution
-            )
-            result = ctx.invariant_mapping_service.analyze_collapse_risk(config)
+            result = ctx.invariant_mapping_service.analyze_collapse_risk(str(model_path))
             payload = InvariantLayerMappingService.collapse_risk_payload(result)
             return payload
 

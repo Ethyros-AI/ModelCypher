@@ -308,8 +308,8 @@ class TestProcrustesHypothesis:
                 model_acts.append(backend.tolist(row))
             activations.append(model_acts)
 
-        config = Config(max_iterations=30, frechet_mean=FrechetMeanConfig(enabled=False))
-        result = gpa.align(activations, config)
+        # All parameters are now derived from data at runtime
+        result = gpa.align(activations)
 
         if result is not None:
             for R in result.rotations:
@@ -327,56 +327,15 @@ class TestProcrustesHypothesis:
                         assert abs(prod_list[i][j] - expected) <= eps
 
 
-class TestProcrustesWithScaling:
-    """Test Procrustes with scaling enabled."""
-
-    def test_scaling_recovers_scale_difference(self) -> None:
-        """With scaling enabled, should handle scale differences."""
-        backend = get_default_backend()
-        gpa = GeneralizedProcrustes(backend)
-
-        # Base activations
-        X = [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0], [2.0, 0.0]]
-        # Scaled version
-        X_scaled = [[2.0, 0.0], [0.0, 2.0], [2.0, 2.0], [4.0, 0.0]]
-
-        activations = [X, X_scaled]
-        config = Config(allow_scaling=True, frechet_mean=FrechetMeanConfig(enabled=False))
-        result = gpa.align(activations, config)
-
-        assert result is not None
-        # Error should be small with scaling enabled
-        eps = _eps(result.alignment_error, 0.0)
-        assert abs(result.alignment_error - 0.0) <= eps
-
-    def test_no_scaling_higher_error_for_scaled_input(self) -> None:
-        """Without scaling, scaled inputs have higher error."""
-        backend = get_default_backend()
-        gpa = GeneralizedProcrustes(backend)
-
-        X = [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]
-        X_scaled = [[3.0, 0.0], [0.0, 3.0], [3.0, 3.0]]
-
-        activations = [X, X_scaled]
-
-        config_no_scale = Config(allow_scaling=False, frechet_mean=FrechetMeanConfig(enabled=False))
-        config_scale = Config(allow_scaling=True, frechet_mean=FrechetMeanConfig(enabled=False))
-
-        result_no_scale = gpa.align(activations, config_no_scale)
-        result_scale = gpa.align(activations, config_scale)
-
-        assert result_no_scale is not None
-        assert result_scale is not None
-        # With scaling should have lower error
-        eps = _eps(result_no_scale.alignment_error, result_scale.alignment_error)
-        assert result_scale.alignment_error <= result_no_scale.alignment_error + eps
-
-
 class TestProcrustesFrechetMean:
-    """Test Procrustes with Fréchet mean consensus."""
+    """Test Procrustes with Fréchet mean consensus.
+
+    Note: Fréchet mean is now always enabled (arithmetic mean is WRONG
+    for curved manifolds). All parameters are derived from data.
+    """
 
     def test_frechet_mean_converges(self) -> None:
-        """GPA with Fréchet mean should still converge."""
+        """GPA with Fréchet mean should converge."""
         backend = get_default_backend()
         backend.random_seed(42)
         gpa = GeneralizedProcrustes(backend)
@@ -390,14 +349,12 @@ class TestProcrustesFrechetMean:
                 model_acts.append(backend.tolist(row))
             activations.append(model_acts)
 
-        config = Config(
-            max_iterations=50,
-            frechet_mean=FrechetMeanConfig(enabled=True, k_neighbors=5)
-        )
-        result = gpa.align(activations, config)
+        # All parameters are now derived from data at runtime
+        # Fréchet mean is always enabled for curvature-aware consensus
+        result = gpa.align(activations)
 
         assert result is not None
-        # Should converge or hit max iterations
-        assert result.converged or result.iterations == 50
+        # Convergence threshold is derived from machine epsilon
+        assert result.converged or result.iterations > 0
         eps = _eps(result.alignment_error)
         assert result.alignment_error >= -eps

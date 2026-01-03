@@ -79,15 +79,6 @@ def geometry_persona_extract(
         ..., "--negative", "-n", help="JSON file with negative activations"
     ),
     trait_id: str = typer.Option(..., "--trait", "-t", help="Trait ID (helpful, harmless, honest)"),
-    layer_index: int = typer.Option(..., "--layer", "-l", help="Layer index"),
-    model_id: str = typer.Option("unknown", "--model", "-m", help="Model identifier"),
-    normalize: bool = typer.Option(
-        True,
-        "--normalize/--no-normalize",
-        is_flag=True,
-        flag_value=True,
-        help="Normalize direction vector",
-    ),
 ):
     """
     Extract a persona vector from contrastive activations.
@@ -99,6 +90,9 @@ def geometry_persona_extract(
 
     positive = json.loads(Path(positive_file).read_text())
     negative = json.loads(Path(negative_file).read_text())
+    layer_index = -1
+    model_id = "unknown"
+    normalize = True
 
     vector = service.extract_persona_vector(
         positive_activations=positive,

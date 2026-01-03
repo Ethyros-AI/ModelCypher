@@ -45,9 +45,6 @@ def _context(ctx: typer.Context) -> CLIContext:
 def profile_extract(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to model directory"),
-    layer: int = typer.Option(
-        -1, "--layer", "-l", help="Layer to analyze (-1 for sampled layers)"
-    ),
     output_dir: str | None = typer.Option(
         None, "--output-dir", "-o", help="Directory to save profile (default: ~/.modelcypher/profiles)"
     ),
@@ -76,7 +73,7 @@ def profile_extract(
         extractor = ModelProfileExtractor(model_loader=model_loader)
         profile = extractor.extract_profile(
             model_path=model_path,
-            layers=[layer] if layer != -1 else None,
+            layers=None,
         )
     except Exception as e:
         typer.echo(f"Error extracting profile: {e}", err=True)
@@ -129,9 +126,6 @@ def profile_compare(
     ctx: typer.Context,
     model1_path: str = typer.Argument(..., help="Path to first model"),
     model2_path: str = typer.Argument(..., help="Path to second model"),
-    layer: int = typer.Option(
-        -1, "--layer", "-l", help="Layer to analyze (-1 for sampled layers)"
-    ),
 ) -> None:
     """
     Compare geometry profiles of two models.
@@ -158,13 +152,13 @@ def profile_compare(
         typer.echo("Extracting profile from model 1...")
         profile1 = extractor.extract_profile(
             model_path=model1_path,
-            layers=[layer] if layer != -1 else None,
+            layers=None,
         )
 
         typer.echo("Extracting profile from model 2...")
         profile2 = extractor.extract_profile(
             model_path=model2_path,
-            layers=[layer] if layer != -1 else None,
+            layers=None,
         )
     except Exception as e:
         typer.echo(f"Error extracting profiles: {e}", err=True)

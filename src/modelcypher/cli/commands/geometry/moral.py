@@ -51,10 +51,6 @@ def _context(ctx: typer.Context) -> CLIContext:
 @app.command("anchors")
 def moral_anchors(
     ctx: typer.Context,
-    foundation: str = typer.Option(
-        None, "--foundation", help="Filter by foundation: care_harm, fairness_cheating, etc."
-    ),
-    axis: str = typer.Option(None, "--axis", help="Filter by axis: valence, agency, scope"),
 ) -> None:
     """
     List the Moral Prime Atlas anchors.
@@ -77,32 +73,9 @@ def moral_anchors(
     """
     context = _context(ctx)
 
-    from modelcypher.core.domain.agents.moral_atlas import (
-        MoralAxis,
-        MoralConceptInventory,
-        MoralFoundation,
-    )
+    from modelcypher.core.domain.agents.moral_atlas import MoralConceptInventory
 
     anchors = MoralConceptInventory.all_concepts()
-
-    if foundation:
-        try:
-            found_enum = MoralFoundation(foundation.lower())
-            anchors = [a for a in anchors if a.foundation == found_enum]
-        except ValueError:
-            typer.echo(
-                f"Invalid foundation: {foundation}. Options: care_harm, fairness_cheating, loyalty_betrayal, authority_subversion, sanctity_degradation, liberty_oppression",
-                err=True,
-            )
-            raise typer.Exit(1)
-
-    if axis:
-        try:
-            axis_enum = MoralAxis(axis.lower())
-            anchors = [a for a in anchors if a.axis == axis_enum]
-        except ValueError:
-            typer.echo(f"Invalid axis: {axis}. Use: valence, agency, scope", err=True)
-            raise typer.Exit(1)
 
     if context.output_format == "text":
         lines = [
@@ -141,7 +114,6 @@ def moral_anchors(
 def moral_probe_model(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to the model directory"),
-    layer: int = typer.Option(-1, help="Layer to analyze (default is last)"),
     output_file: str = typer.Option(None, "--output-file", "-o", help="File to save activations"),
 ) -> None:
     """
@@ -178,7 +150,7 @@ def moral_probe_model(
         raise typer.Exit(1)
 
     num_layers = len(layers)
-    target_layer = layer if layer >= 0 else num_layers - 1
+    target_layer = num_layers - 1
     typer.echo(f"Architecture resolved: {num_layers} layers, probing layer {target_layer}")
 
     backend = MLXBackend()
@@ -227,7 +199,11 @@ def moral_probe_model(
     # Run analysis
     typer.echo("Running moral geometry analysis...")
     analyzer = MoralGeometryAnalyzer(backend=backend)
-    report = analyzer.full_analysis(anchor_activations, model_path=model_path, layer=layer)
+    report = analyzer.full_analysis(
+        anchor_activations,
+        model_path=model_path,
+        layer=target_layer,
+    )
 
     payload = {
         "_schema": "mc.geometry.moral.probe_model.v1",
@@ -241,7 +217,7 @@ def moral_probe_model(
             "=" * 70,
             "",
             f"Anchors Probed: {report.anchors_probed}/30",
-            f"Layer Analyzed: {layer if layer != -1 else 'last'}",
+            f"Layer Analyzed: {target_layer}",
             "",
             f"Moral Manifold Score: {report.moral_manifold_score:.4f}",
             "",

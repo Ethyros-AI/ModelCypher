@@ -413,7 +413,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_spectral_signature(
             points: list[list[float]],
-            maxEigenvalues: int | None = None,
         ) -> dict:
             """Compute geodesic spectral signature from a point cloud.
 
@@ -426,9 +425,7 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             result = ctx.geometry_metrics_service.compute_spectral_signature(
                 points=points,
             )
-            payload = ctx.geometry_metrics_service.spectral_signature_payload(
-                result, max_eigenvalues=maxEigenvalues
-            )
+            payload = ctx.geometry_metrics_service.spectral_signature_payload(result)
             payload["_schema"] = "mc.geometry.spectral_signature.v1"
             return payload
 

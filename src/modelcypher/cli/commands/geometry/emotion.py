@@ -51,39 +51,20 @@ def _context(ctx: typer.Context) -> CLIContext:
 @app.command("inventory")
 def emotion_inventory(
     ctx: typer.Context,
-    category: str | None = typer.Option(
-        None, "--category", "-c", help="Filter by category (joy, sadness, fear, etc.)"
-    ),
-    no_dyads: bool = typer.Option(
-        False, "--no-dyads", is_flag=True, flag_value=True, help="Exclude emotion dyads"
-    ),
 ) -> None:
     """List all emotion concepts in the inventory.
 
     Displays the 24 base emotions (8 primaries × 3 intensities) and 8 primary dyads
     with their VAD (Valence-Arousal-Dominance) coordinates.
 
-    Examples:
+    Example:
         mc geometry emotion inventory
-        mc geometry emotion inventory --category joy
-        mc geometry emotion inventory --no-dyads
     """
     context = _context(ctx)
 
     try:
         emotions = EmotionConceptInventory.all_emotions()
-
-        # Filter by category if specified
-        if category:
-            try:
-                cat = EmotionCategory(category.lower())
-                emotions = [e for e in emotions if e.category == cat]
-            except ValueError:
-                valid = [c.value for c in EmotionCategory]
-                write_error(f"Invalid category '{category}'. Valid: {valid}", context.output_format)
-                raise typer.Exit(1)
-
-        dyads = EmotionConceptInventory.primary_dyads() if not no_dyads else []
+        dyads = EmotionConceptInventory.primary_dyads()
 
         payload = {
             "emotionCount": len(emotions),
@@ -171,13 +152,6 @@ def emotion_inventory(
 def emotion_analyze(
     ctx: typer.Context,
     text: str = typer.Argument(..., help="Text to analyze for emotion content"),
-    top_k: int = typer.Option(5, "--top-k", "-k", help="Number of top emotions to show"),
-    no_mild: bool = typer.Option(
-        False, "--no-mild", is_flag=True, flag_value=True, help="Exclude mild intensity emotions"
-    ),
-    no_intense: bool = typer.Option(
-        False, "--no-intense", is_flag=True, flag_value=True, help="Exclude intense emotions"
-    ),
 ) -> None:
     """Analyze text for emotion concept activations.
 
@@ -186,15 +160,17 @@ def emotion_analyze(
 
     Note: Requires an embedding provider. Without one, returns inventory metadata only.
 
-    Examples:
+    Example:
         mc geometry emotion analyze --text "I'm so happy today!"
-        mc geometry emotion analyze --text "This makes me furious" --top-k 3
     """
     context = _context(ctx)
 
     try:
-        include_mild = not no_mild
-        include_intense = not no_intense
+        include_mild = True
+        include_intense = True
+        top_k = len(EmotionConceptInventory.all_emotions()) + len(
+            EmotionConceptInventory.primary_dyads()
+        )
         config = EmotionAtlasConfiguration(
             include_mild=include_mild,
             include_intense=include_intense,

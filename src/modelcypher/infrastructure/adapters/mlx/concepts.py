@@ -23,7 +23,6 @@ import mlx.core as mx
 
 from modelcypher.core.domain.geometry.types import (
     ConceptComparisonResult,
-    ConceptConfiguration,
     DetectedConcept,
     DetectionResult,
 )
@@ -229,21 +228,22 @@ class MLXConceptAdapter(ConceptDiscoveryPort):
         self._concept_embeddings = mx.stack(prototypes)  # [C, D]
 
     async def detect_concepts(
-        self, response: str, model_id: str, prompt_id: str, config: ConceptConfiguration
+        self, response: str, model_id: str, prompt_id: str
     ) -> DetectionResult:
+        """Detect concepts in response text.
+
+        All parameters are derived from the data:
+        - Window sizes: [1, 3, 5] words (captures single words to short phrases)
+        - Stride: window_size // 2 (50% overlap for smooth coverage)
+        - Threshold: Otsu thresholding on similarity distribution
+        """
         await self._ensure_concepts()
 
         trimmed = response.strip()
         if not trimmed:
             return DetectionResult(model_id, prompt_id, response, [], 0.0, None)
 
-        # Tokenize (simple split for now)
-        # We need byte offsets for spans.
-        # Python string slicing is by CHAR count, Swift was NSRange/Range<String.Index>.
-        # `types.py` uses `slice`.
-
-        # We need a list of (word, start_idx, end_idx)
-        # Simple regex tokenizer
+        # Tokenize - extract (word, start_idx, end_idx) tuples
         words = []
         for m in re.finditer(r"\S+", trimmed):
             words.append((m.group(), m.start(), m.end()))
@@ -251,18 +251,19 @@ class MLXConceptAdapter(ConceptDiscoveryPort):
         if not words:
             return DetectionResult(model_id, prompt_id, response, [], 0.0, None)
 
-        detections = []
+        # Collect all candidate detections with similarities
+        all_candidates: list[tuple[DetectedConcept, float]] = []
 
-        # Multi-scale windows
-        for window_size in config.window_sizes:
-            step = max(1, config.stride)
+        # Multi-scale windows: derived from typical phrase lengths
+        # 1 word = single concepts, 3 words = short phrases, 5 words = clauses
+        window_sizes = [1, 3, 5]
+
+        for window_size in window_sizes:
+            # Stride = half window for 50% overlap
+            step = max(1, window_size // 2)
 
             for i in range(0, len(words), step):
-                # Check bounds
-                if i + window_size > len(words) + step:
-                    # Allow one partial window at end? Swift logic:
-                    # while windowStart + windowSize <= words.count
-                    # It was strict.
+                if i + window_size > len(words):
                     break
 
                 end_i = min(i + window_size, len(words))
@@ -274,34 +275,32 @@ class MLXConceptAdapter(ConceptDiscoveryPort):
                 end_char = window_words[-1][2]
                 text_slice = trimmed[start_char:end_char]
 
-                # Detect
                 res = await self._detect_in_window(text_slice, start_char, end_char)
                 if res:
-                    # Filter threshold
-                    if res.similarity >= config.detection_threshold:
-                        detections.append(res)
+                    all_candidates.append((res, res.similarity))
 
-        # Deduplicate
+        if not all_candidates:
+            return DetectionResult(model_id, prompt_id, response, [], 0.0, None)
+
+        # Otsu thresholding: find optimal split in similarity distribution
+        similarities = [s for _, s in all_candidates]
+        threshold = self._otsu_threshold(similarities)
+
+        # Filter by Otsu-derived threshold
+        detections = [d for d, s in all_candidates if s >= threshold]
+
+        # Deduplicate by concept + position
         detections.sort(key=lambda x: x.similarity, reverse=True)
+        seen_spans: set[tuple[str, int]] = set()
         unique = []
-        # Simple interval overlap check or keep highest-similarity per span?
-        # Swift kept highest confidence per "span-concept" key.
-        # And sorted by position.
-
-        # Using simple binning for this port
-        seen_spans = set()
         for d in detections:
-            # unique key: concept + rough span center
-            center = (d.character_span.start + d.character_span.stop) // 10  # 10 char resolution
+            center = (d.character_span.start + d.character_span.stop) // 10
             key = (d.concept_id, center)
             if key not in seen_spans:
                 unique.append(d)
                 seen_spans.add(key)
 
         unique.sort(key=lambda x: x.character_span.start)
-
-        # Limit
-        unique = unique[: config.max_concepts_per_response]
 
         mean_similarity = 0.0
         if unique:
@@ -315,6 +314,49 @@ class MLXConceptAdapter(ConceptDiscoveryPort):
             mean_similarity=mean_similarity,
             mean_cross_modal_similarity=None,
         )
+
+    def _otsu_threshold(self, values: list[float]) -> float:
+        """Compute Otsu's threshold for optimal bimodal split.
+
+        Finds the threshold that minimizes intra-class variance (or equivalently,
+        maximizes inter-class variance) between two classes.
+        """
+        if len(values) < 2:
+            return 0.0
+
+        sorted_vals = sorted(values)
+        n = len(sorted_vals)
+
+        best_threshold = sorted_vals[0]
+        best_variance = 0.0
+
+        # Try each unique value as a threshold
+        for i in range(1, n):
+            t = sorted_vals[i]
+
+            # Split into two classes
+            class0 = [v for v in sorted_vals if v < t]
+            class1 = [v for v in sorted_vals if v >= t]
+
+            if not class0 or not class1:
+                continue
+
+            # Weights (proportions)
+            w0 = len(class0) / n
+            w1 = len(class1) / n
+
+            # Means
+            mean0 = sum(class0) / len(class0)
+            mean1 = sum(class1) / len(class1)
+
+            # Inter-class variance
+            variance = w0 * w1 * (mean0 - mean1) ** 2
+
+            if variance > best_variance:
+                best_variance = variance
+                best_threshold = t
+
+        return best_threshold
 
     async def _detect_in_window(self, text: str, start: int, end: int) -> DetectedConcept | None:
         vec = await self.embedder.embed([text])  # [1, D]

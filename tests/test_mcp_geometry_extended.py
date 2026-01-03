@@ -342,7 +342,6 @@ class TestSpectralSignatureTool:
                     "mc_geometry_spectral_signature",
                     arguments={
                         "points": points,
-                        "maxEigenvalues": 5,
                     },
                 )
             )

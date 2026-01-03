@@ -125,10 +125,6 @@ def _extract_activations_from_model(
 @app.command("anchors")
 def spatial_anchors(
     ctx: typer.Context,
-    axis: str = typer.Option(None, "--axis", help="Filter by axis: x_lateral, y_vertical, z_depth"),
-    category: str = typer.Option(
-        None, "--category", help="Filter by category: vertical, lateral, depth, mass, furniture"
-    ),
 ) -> None:
     """
     List the Spatial Prime Atlas anchors.
@@ -145,36 +141,9 @@ def spatial_anchors(
     """
     context = _context(ctx)
 
-    from modelcypher.core.domain.agents.spatial_atlas import (
-        SpatialCategory,
-        SpatialConceptInventory,
-    )
-    from modelcypher.core.domain.geometry.spatial_3d import (
-        SpatialAxis,
-        get_spatial_anchors_by_axis,
-    )
+    from modelcypher.core.domain.agents.spatial_atlas import SpatialConceptInventory
 
-    # Filter anchors
-    if axis:
-        try:
-            axis_enum = SpatialAxis(axis)
-            anchors = get_spatial_anchors_by_axis(axis_enum)
-        except ValueError:
-            typer.echo(f"Invalid axis: {axis}. Use: x_lateral, y_vertical, z_depth", err=True)
-            raise typer.Exit(1)
-    else:
-        anchors = SpatialConceptInventory.all_concepts()
-
-    if category:
-        try:
-            category_enum = SpatialCategory(category)
-        except ValueError:
-            typer.echo(
-                f"Invalid category: {category}. Use: vertical, lateral, depth, mass, furniture",
-                err=True,
-            )
-            raise typer.Exit(1)
-        anchors = [a for a in anchors if a.category == category_enum]
+    anchors = SpatialConceptInventory.all_concepts()
 
     payload = {
         "_schema": "mc.geometry.spatial.anchors.v1",
@@ -289,7 +258,6 @@ def spatial_gravity(
     model: str = typer.Option(
         None, "--model", "-m", help="Model path (extracts activations automatically)"
     ),
-    layer: int = typer.Option(-1, "--layer", "-l", help="Layer to analyze (default is last)"),
 ) -> None:
     """
     Analyze gravity gradient in latent representations.
@@ -313,6 +281,7 @@ def spatial_gravity(
     )
 
     backend = MLXBackend()
+    layer = -1
 
     # Get activations from model or file
     if model:
@@ -429,7 +398,6 @@ def spatial_analyze(
     model: str = typer.Option(
         None, "--model", "-m", help="Model path (extracts activations automatically)"
     ),
-    layer: int = typer.Option(-1, "--layer", "-l", help="Layer to analyze (default is last)"),
 ) -> None:
     """
     Run full 3D world model analysis.
@@ -455,6 +423,7 @@ def spatial_analyze(
     )
 
     backend = MLXBackend()
+    layer = -1
 
     # Get activations from model or file
     if model:
@@ -517,7 +486,6 @@ def spatial_analyze(
 def spatial_probe_model(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to the model directory"),
-    layer: int = typer.Option(-1, help="Layer to analyze (default is last)"),
     output_file: str = typer.Option(None, "--output-file", "-o", help="File to save activations"),
 ) -> None:
     """Probe a model for 3D world model geometry."""
@@ -541,7 +509,7 @@ def spatial_probe_model(
 
     embed_tokens, layers, norm = resolved
     num_layers = len(layers)
-    target_layer = layer if layer >= 0 else num_layers - 1
+    target_layer = num_layers - 1
     typer.echo(f"Architecture resolved: {num_layers} layers, probing layer {target_layer}")
 
     backend = MLXBackend()
@@ -601,7 +569,7 @@ def spatial_probe_model(
         "_schema": "mc.geometry.spatial.probe_model.v1",
         "model_path": model_path,
         "anchors_probed": len(anchor_activations),
-        "layer": layer,
+        "layer": target_layer,
         **report.to_dict(),
     }
 
@@ -612,7 +580,7 @@ def spatial_probe_model(
             "=" * 60,
             "",
             f"Anchors Probed: {len(anchor_activations)}/23",
-            f"Layer Analyzed: {layer if layer != -1 else 'last'}",
+            f"Layer Analyzed: {target_layer}",
             "",
             f"World Model Score: {report.world_model_score:.2f}",
             "",

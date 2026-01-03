@@ -73,8 +73,6 @@ def geometry_refusal_detect(
     ctx: typer.Context,
     harmful_file: str = typer.Argument(..., help="Path to harmful activations JSON"),
     harmless_file: str = typer.Argument(..., help="Path to harmless activations JSON"),
-    layer_index: int = typer.Option(..., "--layer", help="Layer index"),
-    model_id: str = typer.Option(..., "--model-id", help="Model identifier"),
 ) -> None:
     """
     Detect refusal direction from contrastive activations.
@@ -87,6 +85,8 @@ def geometry_refusal_detect(
 
     harmful = json.loads(Path(harmful_file).read_text())
     harmless = json.loads(Path(harmless_file).read_text())
+    layer_index = -1
+    model_id = "unknown"
 
     direction = service.detect_refusal_direction(
         harmful_activations=harmful,

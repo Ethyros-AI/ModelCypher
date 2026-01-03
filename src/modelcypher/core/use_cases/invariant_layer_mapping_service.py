@@ -75,21 +75,6 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class LayerMappingConfig:
-    """Configuration for layer mapping operations."""
-
-    source_model_path: str
-    target_model_path: str
-
-
-@dataclass(frozen=True)
-class CollapseRiskConfig:
-    """Configuration for collapse risk analysis."""
-
-    model_path: str
-
-
-@dataclass(frozen=True)
 class LayerMappingResult:
     """Result of layer mapping operation."""
 
@@ -140,14 +125,19 @@ class InvariantLayerMappingService:
         register_default_atlas_inventories()
         self._cache = cache or ModelFingerprintCache.shared()
 
-    def map_layers(self, config: LayerMappingConfig) -> LayerMappingResult:
+    def map_layers(
+        self,
+        source_model_path: str,
+        target_model_path: str,
+    ) -> LayerMappingResult:
         """Map layers between source and target models.
 
         Uses multi-atlas triangulation to find corresponding layers
         between models with different architectures.
 
         Args:
-            config: Layer mapping configuration
+            source_model_path: Path to the source model directory
+            target_model_path: Path to the target model directory
 
         Returns:
             LayerMappingResult with raw mapping report
@@ -157,9 +147,9 @@ class InvariantLayerMappingService:
         """
         # Load fingerprints by running probes through models
         logger.info("Extracting fingerprints from source model...")
-        source_fingerprints = self._load_fingerprints(config.source_model_path)
+        source_fingerprints = self._load_fingerprints(source_model_path)
         logger.info("Extracting fingerprints from target model...")
-        target_fingerprints = self._load_fingerprints(config.target_model_path)
+        target_fingerprints = self._load_fingerprints(target_model_path)
 
         # Run mapping
         report = InvariantLayerMapper.map_layers(source_fingerprints, target_fingerprints)
@@ -168,20 +158,20 @@ class InvariantLayerMappingService:
             report=report,
         )
 
-    def analyze_collapse_risk(self, config: CollapseRiskConfig) -> CollapseRiskResult:
+    def analyze_collapse_risk(self, model_path: str) -> CollapseRiskResult:
         """Analyze layer collapse risk for a single model.
 
         Identifies layers where invariant activation is too sparse for
         reliable layer correspondence.
 
         Args:
-            config: Collapse risk configuration
+            model_path: Path to the model directory
 
         Returns:
             CollapseRiskResult with raw collapse measurements
         """
         # Load fingerprints
-        fingerprints = self._load_fingerprints(config.model_path)
+        fingerprints = self._load_fingerprints(model_path)
 
         # Build profile to assess collapse
         invariant_ids, _, _ = InvariantLayerMapper._get_invariants()
@@ -192,7 +182,7 @@ class InvariantLayerMappingService:
         collapse_ratio = collapsed_count / max(1, layer_count)
 
         return CollapseRiskResult(
-            model_path=config.model_path,
+            model_path=model_path,
             layer_count=layer_count,
             collapsed_layers=collapsed_count,
             collapse_ratio=collapse_ratio,

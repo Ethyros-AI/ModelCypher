@@ -50,8 +50,6 @@ def _context(ctx: typer.Context) -> CLIContext:
 @app.command("anchors")
 def temporal_anchors(
     ctx: typer.Context,
-    axis: str = typer.Option(None, "--axis", help="Filter by axis: direction, duration, causality"),
-    category: str = typer.Option(None, "--category", help="Filter by category"),
 ) -> None:
     """
     List the Temporal Prime Atlas anchors.
@@ -66,32 +64,9 @@ def temporal_anchors(
     """
     context = _context(ctx)
 
-    from modelcypher.core.domain.agents.temporal_atlas import (
-        TemporalAxis,
-        TemporalCategory,
-        TemporalConceptInventory,
-    )
+    from modelcypher.core.domain.agents.temporal_atlas import TemporalConceptInventory
 
     anchors = TemporalConceptInventory.all_concepts()
-
-    if axis:
-        try:
-            axis_enum = TemporalAxis(axis.lower())
-            anchors = [a for a in anchors if a.axis == axis_enum]
-        except ValueError:
-            typer.echo(f"Invalid axis: {axis}. Use: direction, duration, causality", err=True)
-            raise typer.Exit(1)
-
-    if category:
-        try:
-            category_enum = TemporalCategory(category)
-        except ValueError:
-            typer.echo(
-                f"Invalid category: {category}. Use: tense, duration, causality, lifecycle, sequence",
-                err=True,
-            )
-            raise typer.Exit(1)
-        anchors = [a for a in anchors if a.category == category_enum]
 
     if context.output_format == "text":
         lines = [
@@ -130,7 +105,6 @@ def temporal_anchors(
 def temporal_probe_model(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to the model directory"),
-    layer: int = typer.Option(-1, help="Layer to analyze (default is last)"),
     output_file: str = typer.Option(None, "--output-file", "-o", help="File to save activations"),
 ) -> None:
     """
@@ -166,7 +140,7 @@ def temporal_probe_model(
         raise typer.Exit(1)
 
     num_layers = len(layers)
-    target_layer = layer if layer >= 0 else num_layers - 1
+    target_layer = num_layers - 1
     typer.echo(f"Architecture resolved: {num_layers} layers, probing layer {target_layer}")
 
     backend = MLXBackend()
@@ -219,7 +193,7 @@ def temporal_probe_model(
         "_schema": "mc.geometry.temporal.probe_model.v1",
         "model_path": model_path,
         "anchors_probed": report.anchors_probed,
-        "layer": layer,
+        "layer": target_layer,
         "temporal_manifold_score": report.temporal_manifold_score,
         "has_temporal_manifold": report.has_temporal_manifold,
         "axis_orthogonality": {
@@ -258,7 +232,7 @@ def temporal_probe_model(
             "=" * 60,
             "",
             f"Anchors Probed: {report.anchors_probed}/23",
-            f"Layer Analyzed: {layer if layer != -1 else 'last'}",
+            f"Layer Analyzed: {target_layer}",
             "",
             f"Has Temporal Manifold: {'YES' if report.has_temporal_manifold else 'NO'}",
             f"Temporal Manifold Score: {report.temporal_manifold_score:.4f}",
