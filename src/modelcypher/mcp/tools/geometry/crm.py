@@ -48,37 +48,13 @@ def register_geometry_crm_tools(ctx: ServiceContext) -> None:
             modelPath: str,
             outputPath: str,
             adapter: str | None = None,
-            includePrimes: bool = True,
-            includeGates: bool = True,
-            includePolyglot: bool = True,
-            includeSequenceInvariants: bool = True,
-            sequenceFamilies: list[str] | None = None,
-            anchorPrefixes: list[str] | None = None,
         ) -> dict:
             """Build a concept response matrix (CRM) for a model."""
-            from modelcypher.core.domain.agents.sequence_invariant_atlas import SequenceFamily
             from modelcypher.core.use_cases.concept_response_matrix_service import CRMBuildConfig
 
             model_path = require_existing_directory(modelPath)
             output_path = str(Path(outputPath).expanduser().resolve())
-            parsed_families: frozenset[SequenceFamily] | None = None
-            if sequenceFamilies:
-                family_set: set[SequenceFamily] = set()
-                for name in sequenceFamilies:
-                    try:
-                        family_set.add(SequenceFamily(name.strip().lower()))
-                    except ValueError:
-                        pass
-                if family_set:
-                    parsed_families = frozenset(family_set)
-            config = CRMBuildConfig(
-                include_primes=includePrimes,
-                include_gates=includeGates,
-                include_polyglot=includePolyglot,
-                include_sequence_invariants=includeSequenceInvariants,
-                sequence_families=parsed_families,
-                anchor_prefixes=anchorPrefixes,
-            )
+            config = CRMBuildConfig()
             summary = ctx.geometry_crm_service.build(
                 model_path=model_path,
                 output_path=output_path,
@@ -103,14 +79,11 @@ def register_geometry_crm_tools(ctx: ServiceContext) -> None:
         def mc_geometry_crm_compare(
             sourcePath: str,
             targetPath: str,
-            includeMatrix: bool = False,
         ) -> dict:
             """Compare two CRMs and compute CKA-based correspondence."""
             source_path = require_existing_path(sourcePath)
             target_path = require_existing_path(targetPath)
-            summary = ctx.geometry_crm_service.compare(
-                source_path, target_path, include_matrix=includeMatrix
-            )
+            summary = ctx.geometry_crm_service.compare(source_path, target_path)
             payload = {
                 "_schema": "mc.geometry.crm.compare.v1",
                 "sourcePath": summary.source_path,
@@ -126,24 +99,13 @@ def register_geometry_crm_tools(ctx: ServiceContext) -> None:
     if "mc_geometry_crm_sequence_inventory" in tool_set:
 
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_geometry_crm_sequence_inventory(family: str | None = None) -> dict:
+        def mc_geometry_crm_sequence_inventory() -> dict:
             """List available sequence invariant probes for CRM anchoring."""
             from modelcypher.core.domain.agents.sequence_invariant_atlas import (
-                SequenceFamily,
                 SequenceInvariantInventory,
             )
 
-            family_filter: set[SequenceFamily] | None = None
-            if family:
-                try:
-                    family_filter = {SequenceFamily(family.strip().lower())}
-                except ValueError:
-                    return {
-                        "_schema": "mc.error.v1",
-                        "error": f"Unknown family '{family}'",
-                        "validFamilies": [f.value for f in SequenceFamily],
-                    }
-            probes = SequenceInvariantInventory.probes_for_families(family_filter)
+            probes = SequenceInvariantInventory.probes_for_families(None)
             counts = SequenceInvariantInventory.probe_count_by_family()
             return {
                 "_schema": "mc.geometry.crm.sequence_inventory.v1",

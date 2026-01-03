@@ -279,15 +279,12 @@ class RegionClassificationConfig:
         )
 
 
-# Default classification config - callers should derive from their data when possible
-_DEFAULT_CLASSIFICATION_CONFIG = RegionClassificationConfig(
-    low_entropy=3.0,
-    high_entropy=6.0,
-    low_variance=0.5,
-    high_variance=2.0,
-    high_coherence=0.7,
-    low_coherence=0.4,
-)
+# =============================================================================
+# NO DEFAULT THRESHOLDS
+# =============================================================================
+# All thresholds must be derived from data using RegionClassificationConfig.from_percentiles().
+# There are no "standard" thresholds - they depend on the data distribution.
+# =============================================================================
 
 
 @dataclass(frozen=True)
@@ -331,20 +328,19 @@ class ManifoldRegion:
     @staticmethod
     def classify(
         centroid: ManifoldPoint,
-        config: RegionClassificationConfig | None = None,
+        config: RegionClassificationConfig,
     ) -> "ManifoldRegion.RegionCharacter":
         """Classify region character based on centroid measurements.
 
         Args:
             centroid: The centroid point to classify.
-            config: Classification thresholds. If None, uses module default.
-                Use `RegionClassificationConfig.from_percentiles()` to derive
-                thresholds from your observed data distribution.
+            config: Classification thresholds. MUST be derived from your data using
+                `RegionClassificationConfig.from_percentiles()`. No defaults exist.
 
         Returns:
             Topological character (DENSE, SPARSE, or TRANSITIONAL).
         """
-        cfg = config or _DEFAULT_CLASSIFICATION_CONFIG
+        cfg = config
         entropy = centroid.mean_entropy
         variance = centroid.entropy_variance
         coherence = centroid.mean_gate_similarity

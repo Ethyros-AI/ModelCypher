@@ -71,11 +71,12 @@ class DensityConfiguration:
     """Configuration for density estimation.
 
     Attributes:
-        k_neighbors: Number of neighbors for density estimation
+        k_neighbors: Number of neighbors for density estimation.
+            When None, derived as sqrt(n) clamped to [3, n-1].
         normalize: Whether to normalize densities to [0, 1]
     """
 
-    k_neighbors: int = 10
+    k_neighbors: int | None = None
     normalize: bool = True
 
 
@@ -138,13 +139,19 @@ class DensityEstimator:
 
         n_points, d = points.shape
 
-        if n_points <= config.k_neighbors:
+        # Derive k from sqrt(n) when not specified
+        if config.k_neighbors is not None:
+            k = config.k_neighbors
+        else:
+            # sqrt(n) scaling with clamping to [3, n-1]
+            import math
+            k = max(3, min(n_points - 1, int(math.sqrt(n_points))))
+
+        if n_points <= k:
             raise ValueError(
-                f"Need more than {config.k_neighbors} points for density estimation, "
+                f"Need more than {k} points for density estimation, "
                 f"got {n_points}"
             )
-
-        k = config.k_neighbors
 
         # Compute pairwise squared distances
         # ||x - y||^2 = ||x||^2 + ||y||^2 - 2 * x @ y^T
@@ -283,7 +290,12 @@ class DensityEstimator:
         sorted_dists = b.sort(dist_sq, axis=1)
         b.eval(sorted_dists)
 
-        k = min(config.k_neighbors, n_points - 1)
+        # Derive k from sqrt(n) when not specified
+        if config.k_neighbors is not None:
+            k = min(config.k_neighbors, n_points - 1)
+        else:
+            import math
+            k = max(3, min(n_points - 1, int(math.sqrt(n_points))))
         kth_dist_sq = sorted_dists[:, k]
         distance_eps = division_epsilon(b, kth_dist_sq)
         kth_dist = b.sqrt(kth_dist_sq + distance_eps)

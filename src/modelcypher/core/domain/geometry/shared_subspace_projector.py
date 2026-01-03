@@ -135,15 +135,24 @@ class PcaMode(str, Enum):
 
 @dataclass(frozen=True)
 class Config:
+    """Configuration for shared subspace projection.
+
+    Most parameters default to None and are derived from data at runtime:
+    - variance_threshold: Uses spectral gap detection
+    - pca_variance_threshold: Uses spectral gap detection
+    - max_shared_dimension: min(source_dim, target_dim)
+    - cca_regularization: sqrt(machine_epsilon)
+    - min_samples: sqrt(n_features)
+    - min_canonical_correlation: Derived from data distribution
+    """
+
     alignment_method: AlignmentMethod = AlignmentMethod.cca
     variance_threshold: float | None = None
-    """Variance threshold for component selection. If None, uses spectral gap detection."""
     pca_variance_threshold: float | None = None
-    """Variance threshold for PCA reduction. If None, uses spectral gap detection."""
-    max_shared_dimension: int = 256
-    cca_regularization: float = 1e-4
-    min_samples: int = 10
-    min_canonical_correlation: float | None = None  # Derived from data if not set
+    max_shared_dimension: int | None = None
+    cca_regularization: float | None = None
+    min_samples: int | None = None
+    min_canonical_correlation: float | None = None
     pca_mode: PcaMode = PcaMode.auto
     anchor_prefixes: tuple[str, ...] | None = None
     anchor_weights: dict[str, float] | None = None
@@ -264,12 +273,15 @@ class SharedSubspaceProjector:
             return None
         source_matrix, target_matrix, weights = matrices
 
-        if len(source_matrix) != len(target_matrix) or len(source_matrix) < config.min_samples:
-            return None
-
         n = len(source_matrix)
         d_source = len(source_matrix[0])
         d_target = len(target_matrix[0])
+
+        # Derive min_samples from sqrt(n_features) when not specified
+        import math
+        min_samples = config.min_samples if config.min_samples is not None else max(3, int(math.sqrt(max(d_source, d_target))))
+        if len(source_matrix) != len(target_matrix) or n < min_samples:
+            return None
 
         method = config.alignment_method
         if isinstance(method, str):
@@ -317,14 +329,20 @@ class SharedSubspaceProjector:
         source_centered, _ = SharedSubspaceProjector._center_array(source_array, weight_vector, backend=b)
         target_centered, _ = SharedSubspaceProjector._center_array(target_array, weight_vector, backend=b)
 
+        # Derive max_shared_dimension from min(source_dim, target_dim) when not specified
+        max_shared_dim = config.max_shared_dimension if config.max_shared_dimension is not None else min(
+            int(source_centered.shape[1]),
+            int(target_centered.shape[1])
+        )
+
         # SVCCA: reduce to high-variance subspaces before CCA to avoid ill-conditioned covariance.
         max_components_source = min(
-            config.max_shared_dimension,
+            max_shared_dim,
             int(source_centered.shape[0]),
             int(source_centered.shape[1]),
         )
         max_components_target = min(
-            config.max_shared_dimension,
+            max_shared_dim,
             int(target_centered.shape[0]),
             int(target_centered.shape[1]),
         )
@@ -349,8 +367,14 @@ class SharedSubspaceProjector:
         cxy = b.matmul(source_reduced_t, target_reduced) / float(sample_count)
         b.eval(cxx, cyy, cxy)
 
-        cxx = SharedSubspaceProjector._regularize_covariance(cxx, config.cca_regularization, backend=b)
-        cyy = SharedSubspaceProjector._regularize_covariance(cyy, config.cca_regularization, backend=b)
+        # Derive cca_regularization from sqrt(machine_epsilon) when not specified
+        if config.cca_regularization is not None:
+            cca_reg = config.cca_regularization
+        else:
+            from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
+            cca_reg = regularization_epsilon(b, cxx)
+        cxx = SharedSubspaceProjector._regularize_covariance(cxx, cca_reg, backend=b)
+        cyy = SharedSubspaceProjector._regularize_covariance(cyy, cca_reg, backend=b)
         inv_sqrt_x, x_eigenvalues = SharedSubspaceProjector._whiten_covariance(cxx, backend=b)
         inv_sqrt_y, y_eigenvalues = SharedSubspaceProjector._whiten_covariance(cyy, backend=b)
         if inv_sqrt_x is None or inv_sqrt_y is None:

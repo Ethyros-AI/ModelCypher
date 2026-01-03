@@ -50,16 +50,17 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ProfilerConfig:
-    """Configuration for profile generation."""
+    """Configuration for profile generation.
+
+    Note: Curvature parameters (k_neighbors, num_probes) are derived from
+    data at runtime by the underlying geometry algorithms. They are not
+    configurable here.
+    """
 
     # Which sections to compute
     sections: list[str] = field(
         default_factory=lambda: [ProfileSection.IDENTITY.value, ProfileSection.GEOMETRY.value]
     )
-
-    # Curvature configuration
-    k_neighbors: int = 10
-    num_probes: int = 100
 
     # Layer selection (None = all layers)
     layers: list[int] | None = None

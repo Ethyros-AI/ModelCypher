@@ -49,40 +49,47 @@ if TYPE_CHECKING:
 class TangentConfig:
     """Configuration for tangent space alignment.
 
-    These are structural algorithm parameters, not classification thresholds.
-    Use with_parameters() to create with explicit values.
+    When None, parameters are derived from data at runtime:
+    - neighbor_count: sqrt(n_anchors), clamped to [2, n_anchors-1]
+    - tangent_rank: neighbor_count // 2, clamped to [1, neighbor_count]
+    - min_anchor_count: 3 (statistical minimum for variance estimation)
+
+    Use with_parameters() to create with explicit values when needed.
     """
 
-    neighbor_count: int = 8
-    tangent_rank: int = 4
-    min_anchor_count: int = 8
+    neighbor_count: int | None = None
+    tangent_rank: int | None = None
+    min_anchor_count: int | None = None
     epsilon: float | None = None
 
     @classmethod
     def with_parameters(
         cls,
         *,
-        neighbor_count: int = 8,
-        tangent_rank: int = 4,
-        min_anchor_count: int = 8,
+        neighbor_count: int | None = None,
+        tangent_rank: int | None = None,
+        min_anchor_count: int | None = None,
         epsilon: float | None = None,
     ) -> "TangentConfig":
         """Create configuration with explicit parameters.
 
         Args:
             neighbor_count: Number of neighbors for k-NN tangent computation.
+                When None, derived as sqrt(n_anchors).
             tangent_rank: Rank of tangent space (number of principal directions).
+                When None, derived as neighbor_count // 2.
             min_anchor_count: Minimum anchors required for alignment.
-        epsilon: Numerical stability threshold (dtype-derived if None).
+                When None, uses 3 (statistical minimum).
+            epsilon: Numerical stability threshold (dtype-derived if None).
 
         Returns:
             Configuration with specified parameters.
         """
-        if neighbor_count < 2:
+        if neighbor_count is not None and neighbor_count < 2:
             raise ValueError(f"neighbor_count must be >= 2, got {neighbor_count}")
-        if tangent_rank < 1:
+        if tangent_rank is not None and tangent_rank < 1:
             raise ValueError(f"tangent_rank must be >= 1, got {tangent_rank}")
-        if min_anchor_count < 3:
+        if min_anchor_count is not None and min_anchor_count < 3:
             raise ValueError(f"min_anchor_count must be >= 3, got {min_anchor_count}")
         return cls(
             neighbor_count=neighbor_count,
@@ -169,13 +176,26 @@ class TangentSpaceAlignment:
             LayerResult or None if insufficient data
         """
         n_anchors = min(source_points.shape[0], target_points.shape[0])
-        if n_anchors < max(self.config.min_anchor_count, 3):
+
+        # Derive min_anchor_count from config or use statistical minimum
+        min_anchor = self.config.min_anchor_count if self.config.min_anchor_count is not None else 3
+        if n_anchors < max(min_anchor, 3):
             return None
         if source_points.shape[0] != target_points.shape[0]:
             return None
 
-        neighbor_count = min(max(2, self.config.neighbor_count), n_anchors - 1)
-        tangent_rank = min(max(1, self.config.tangent_rank), neighbor_count)
+        # Derive neighbor_count from sqrt(n) when not specified
+        import math
+        if self.config.neighbor_count is not None:
+            neighbor_count = min(max(2, self.config.neighbor_count), n_anchors - 1)
+        else:
+            neighbor_count = min(max(2, int(math.sqrt(n_anchors))), n_anchors - 1)
+
+        # Derive tangent_rank from neighbor_count // 2 when not specified
+        if self.config.tangent_rank is not None:
+            tangent_rank = min(max(1, self.config.tangent_rank), neighbor_count)
+        else:
+            tangent_rank = min(max(1, neighbor_count // 2), neighbor_count)
         eps = (
             self.config.epsilon
             if self.config.epsilon is not None

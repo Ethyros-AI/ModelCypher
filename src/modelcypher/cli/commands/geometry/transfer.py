@@ -50,15 +50,9 @@ def transfer_project(
     source_model: str = typer.Option(..., "--source", help="Path to source model directory"),
     target_model: str = typer.Option(..., "--target", help="Path to target model directory"),
     concept: str = typer.Option(..., "--concept", help="Concept name to transfer"),
-    concept_probes: str = typer.Option(
-        None, "--probes", help="JSON file with concept probe prompts"
-    ),
     output: str = typer.Option(
         None, "-o", "--output-file", help="Output path for transfer result JSON"
     ),
-    generate_lora: bool = typer.Option(False, "--lora", help="Also generate geometric LoRA"),
-    lora_rank: int = typer.Option(4, "--rank", help="Target rank for geometric LoRA"),
-    min_anchors: int = typer.Option(10, "--min-anchors", help="Minimum anchors for projection"),
 ) -> None:
     """Project a concept from source to target manifold via landmark MDS.
 
@@ -77,13 +71,7 @@ def transfer_project(
     """
     context = _context(ctx)
 
-    from modelcypher.core.domain.geometry.geometric_lora import (
-        GeometricLoRAConfig,
-        GeometricLoRAGenerator,
-        save_geometric_lora,
-    )
     from modelcypher.core.domain.geometry.manifold_transfer import (
-        CrossManifoldConfig,
         CrossManifoldProjector,
     )
     from modelcypher.core.support.array_utils import array_to_list
@@ -96,24 +84,14 @@ def transfer_project(
     if not target_path.exists():
         raise typer.BadParameter(f"Target model not found: {target_model}")
 
-    # Load concept probes
-    probes = []
-    if concept_probes:
-        probes_path = Path(concept_probes)
-        if not probes_path.exists():
-            raise typer.BadParameter(f"Probes file not found: {concept_probes}")
-        probes = json.loads(probes_path.read_text())
-    else:
-        probes = [
-            f"Explain the concept of {concept}.",
-            f"How does {concept} work?",
-            f"Give an example of {concept}.",
-            f"What are the key properties of {concept}?",
-            f"Compare {concept} to related concepts.",
-        ]
-
-    config = CrossManifoldConfig(min_anchors=min_anchors)
-    projector = CrossManifoldProjector(config)
+    probes = [
+        f"Explain the concept of {concept}.",
+        f"How does {concept} work?",
+        f"Give an example of {concept}.",
+        f"What are the key properties of {concept}?",
+        f"Compare {concept} to related concepts.",
+    ]
+    projector = CrossManifoldProjector()
 
     # Mock activations for demonstration using backend
     # In production: run actual inference on both models
@@ -161,40 +139,6 @@ def transfer_project(
         "curvatureFactor": transfer.confidence_components.curvature_factor,
     }
 
-    if generate_lora:
-        lora_config = GeometricLoRAConfig(target_rank=lora_rank)
-        generator = GeometricLoRAGenerator(lora_config)
-
-        target_weights = {
-            layer: {
-                "q_proj": backend.random_normal((d, d)) * 0.01,
-                "v_proj": backend.random_normal((d, d)) * 0.01,
-            }
-            for layer in range(32)
-        }
-
-        lora = generator.generate(
-            transfer_point=transfer,
-            model_weights=target_weights,
-            anchor_activations=target_anchors,
-        )
-
-        result["lora"] = {
-            "numLayers": lora.num_layers,
-            "totalRank": lora.total_rank,
-            "numParameters": lora.num_parameters,
-            "meanGeometricLoss": lora.mean_geometric_loss,
-            "quality": lora.quality.value,
-        }
-
-        if output:
-            lora_output = output.replace(".json", ".safetensors")
-            try:
-                save_geometric_lora(lora, lora_output)
-                result["loraPath"] = lora_output
-            except ImportError:
-                result["loraWarning"] = "safetensors not installed, LoRA not saved"
-
     if output:
         output_path = Path(output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -214,18 +158,6 @@ def transfer_project(
             f"Curvature Factor: {transfer.confidence_components.curvature_factor:.4f}",
         ]
 
-        if generate_lora and "lora" in result:
-            lines.extend(
-                [
-                    "",
-                    "GEOMETRIC LORA:",
-                    f"  Layers: {result['lora']['numLayers']}",
-                    f"  Total Rank: {result['lora']['totalRank']}",
-                    f"  Parameters: {result['lora']['numParameters']:,}",
-                    f"  Geometric Loss: {result['lora']['meanGeometricLoss']:.4f}",
-                ]
-            )
-
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -237,7 +169,6 @@ def transfer_profile(
     ctx: typer.Context,
     model_path: str = typer.Option(..., "--model", help="Path to model directory"),
     concept: str = typer.Option(..., "--concept", help="Concept name"),
-    probes_file: str = typer.Option(None, "--probes", help="JSON file with probe prompts"),
     output: str = typer.Option(None, "-o", "--output-file", help="Output path for profile JSON"),
 ) -> None:
     """Compute anchor distance profile for a concept.
@@ -262,15 +193,11 @@ def transfer_profile(
     if not model.exists():
         raise typer.BadParameter(f"Model not found: {model_path}")
 
-    probes = []
-    if probes_file:
-        probes = json.loads(Path(probes_file).read_text())
-    else:
-        probes = [
-            f"Explain {concept}.",
-            f"How does {concept} work?",
-            f"Give an example of {concept}.",
-        ]
+    probes = [
+        f"Explain {concept}.",
+        f"How does {concept} work?",
+        f"Give an example of {concept}.",
+    ]
 
     # Generate mock activations using backend
     backend = get_default_backend()

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from modelcypher.core.domain.geometry.manifold_clusterer import Configuration, ManifoldClusterer
+from modelcypher.core.domain.geometry.manifold_clusterer import ManifoldClusterer
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.manifold_profile import (
     ManifoldPoint,
@@ -105,7 +105,7 @@ def test_clusterer_groups_identical_points() -> None:
             )
         )
 
-    clusterer = ManifoldClusterer(configuration=Configuration())
+    clusterer = ManifoldClusterer()
     result = clusterer.cluster(points)
     assert len(result.regions) == 1
     assert result.regions[0].member_count == 5

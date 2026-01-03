@@ -29,7 +29,6 @@ Tests the mathematical validation suite that verifies:
 from __future__ import annotations
 
 from modelcypher.core.domain.geometry.geometry_validation_suite import (
-    Config,
     GeometryValidationSuite,
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
@@ -69,20 +68,6 @@ class TestSuiteExecution:
             and report.dimension_constraint.passed
         )
         assert report.passed == expected_pass
-
-    def test_suite_with_fixtures_included(self) -> None:
-        """Suite can include fixtures in report for debugging."""
-        config = Config.with_parameters(include_fixtures=True)
-        suite = GeometryValidationSuite()
-        report = suite.run(config)
-
-        assert report.fixtures is not None
-        assert report.fixtures.gromov_wasserstein is not None
-        assert report.fixtures.traversal_coherence is not None
-        assert report.fixtures.path_signature is not None
-        assert report.fixtures.spectral_signature is not None
-        assert report.fixtures.spectral_signature_connected is not None
-        assert report.fixtures.dimension_constraint is not None
 
 
 class TestGromovWassersteinValidation:

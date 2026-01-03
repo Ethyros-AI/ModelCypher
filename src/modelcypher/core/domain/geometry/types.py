@@ -354,12 +354,24 @@ class ConsistencyResult:
 
 @dataclass(frozen=True)
 class ProcrustesConfig:
-    max_iterations: int = 100
-    convergence_threshold: float = 1e-4
+    """Configuration for Generalized Procrustes Analysis.
+
+    Attributes:
+        max_iterations: Maximum iterations. When None, derived as max(100, 2*sqrt(n*d)).
+        convergence_threshold: Stop when error change < threshold.
+            When None, derived from dtype machine epsilon.
+        allow_reflections: Whether to allow reflection matrices.
+        min_models: Minimum number of models for alignment.
+        allow_scaling: Whether to allow scaling in alignment.
+        use_frechet_mean: Use curvature-aware Fréchet mean for consensus.
+    """
+
+    max_iterations: int | None = None
+    convergence_threshold: float | None = None
     allow_reflections: bool = False
     min_models: int = 2
     allow_scaling: bool = False
-    use_frechet_mean: bool = False  # Use curvature-aware Fréchet mean for consensus
+    use_frechet_mean: bool = False
 
     @staticmethod
     def default() -> "ProcrustesConfig":

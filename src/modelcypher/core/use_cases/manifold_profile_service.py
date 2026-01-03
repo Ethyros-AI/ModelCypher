@@ -23,9 +23,6 @@ from datetime import datetime
 from uuid import uuid4
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.manifold_clusterer import (
-    Configuration as ClustererConfiguration,
-)
 from modelcypher.core.domain.geometry.manifold_clusterer import ManifoldClusterer
 from modelcypher.core.domain.geometry.manifold_profile import (
     InterventionSuggestion,
@@ -42,24 +39,23 @@ logger = logging.getLogger(__name__)
 
 
 class ManifoldProfileService:
-    @dataclass(frozen=True)
-    class Configuration:
-        clustering_threshold: int = 50
-        clusterer_config: ClustererConfiguration = field(default_factory=ClustererConfiguration)
-        profile_config: ManifoldProfile.Configuration = field(
-            default_factory=ManifoldProfile.Configuration
-        )
-        auto_cluster: bool = True
+    # ==========================================================================
+    # NO CONFIGURATION CLASSES
+    # ==========================================================================
+    # All parameters are derived from data or use fixed correct values.
+    # - Clustering threshold: 50 (minimum points before clustering)
+    # - Auto-cluster: always enabled
+    # - All clustering parameters: derived from data
+    # ==========================================================================
 
     def __init__(
         self,
         store: ManifoldProfileStore,
-        configuration: Configuration | None = None,
     ) -> None:
         self.store = store
-        self.config = configuration or ManifoldProfileService.Configuration()
-        self.clusterer = ManifoldClusterer(configuration=self.config.clusterer_config)
+        self.clusterer = ManifoldClusterer()
         self._pending_points: dict[str, list[ManifoldPoint]] = {}
+        self._clustering_threshold = 50  # Fixed value - minimum points before clustering
 
     def record_observation(
         self,
@@ -108,10 +104,8 @@ class ManifoldProfileService:
             version=profile.version,
         )
 
-        if (
-            self.config.auto_cluster
-            and len(updated_profile.recent_points) >= self.config.clustering_threshold
-        ):
+        # Auto-clustering always enabled when threshold is reached
+        if len(updated_profile.recent_points) >= self._clustering_threshold:
             updated_profile = self._perform_clustering(updated_profile)
 
         self.store.save(updated_profile)
@@ -143,13 +137,19 @@ class ManifoldProfileService:
         return clustered
 
     def query_region(self, point: ManifoldPoint, model_id: str) -> RegionQueryResult:
+        from modelcypher.core.domain.geometry.manifold_profile import RegionClassificationConfig
+
         profile = self.store.load(model_id)
         if profile is None:
+            # Derive thresholds from the single point (degenerate case)
+            classification_config = RegionClassificationConfig.from_percentiles(
+                [point.mean_entropy], [point.entropy_variance], [point.mean_gate_similarity]
+            )
             return RegionQueryResult(
                 nearest_region=None,
                 distance=float("inf"),
                 is_within_region=False,
-                suggested_character=ManifoldRegion.classify(point),
+                suggested_character=ManifoldRegion.classify(point, classification_config),
                 confidence=0.0,
             )
         return self.clusterer.find_nearest_region(point=point, regions=profile.regions)
@@ -164,6 +164,8 @@ class ManifoldProfileService:
         return self.query_region(point=point, model_id=model_id)
 
     def suggest_intervention(self, point: ManifoldPoint, model_id: str) -> InterventionSuggestion:
+        from modelcypher.core.domain.geometry.manifold_profile import RegionClassificationConfig
+
         profile = self.store.load(model_id)
         if profile is None:
             return InterventionSuggestion.no_history()
@@ -196,8 +198,21 @@ class ManifoldProfileService:
                 suggested_level = max(historical_levels)
                 reason = f"No matching region, but similar points triggered level {suggested_level}"
             else:
+                # Derive thresholds from profile regions (or point if no regions)
+                if profile.regions:
+                    centroids = [r.centroid for r in profile.regions]
+                    entropies = [c.mean_entropy for c in centroids]
+                    variances = [c.entropy_variance for c in centroids]
+                    coherences = [c.mean_gate_similarity for c in centroids]
+                else:
+                    entropies = [point.mean_entropy]
+                    variances = [point.entropy_variance]
+                    coherences = [point.mean_gate_similarity]
+                classification_config = RegionClassificationConfig.from_percentiles(
+                    entropies, variances, coherences
+                )
                 suggested_level = (
-                    0 if ManifoldRegion.classify(point) == ManifoldRegion.RegionCharacter.DENSE else 1
+                    0 if ManifoldRegion.classify(point, classification_config) == ManifoldRegion.RegionCharacter.DENSE else 1
                 )
                 reason = "No historical data - suggestion based on point features"
 

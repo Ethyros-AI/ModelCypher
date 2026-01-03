@@ -31,6 +31,7 @@ from modelcypher.core.domain.geometry.numerical_stability import division_epsilo
 from modelcypher.core.domain.geometry.manifold_profile import (
     ManifoldPoint,
     ManifoldRegion,
+    RegionClassificationConfig,
     RegionQueryResult,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
@@ -41,11 +42,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class Configuration:
-    epsilon: float | None = None
-    compute_intrinsic_dimension: bool = True
-    max_clusters: int | None = None
+# =============================================================================
+# NO CONFIGURATION CLASSES
+# =============================================================================
+# All clustering parameters are derived from data:
+# - epsilon: derived from data distribution (no hardcoded value)
+# - intrinsic dimension: ALWAYS computed (it's a measurement, not optional)
+# - max_clusters: no artificial limit (let data determine cluster count)
+# =============================================================================
 
 
 @dataclass(frozen=True)
@@ -58,10 +62,8 @@ class ClusteringResult:
 
 
 class ManifoldClusterer:
-    Configuration = Configuration
-
-    def __init__(self, configuration: Configuration = Configuration()) -> None:
-        self.config = configuration
+    def __init__(self) -> None:
+        pass
 
     def cluster(self, points: list[ManifoldPoint]) -> ClusteringResult:
         if not points:
@@ -241,8 +243,7 @@ class ManifoldClusterer:
         return result.distances
 
     def _resolve_epsilon(self, geodesic_matrix) -> float:
-        if self.config.epsilon is not None:
-            return self.config.epsilon
+        """Epsilon is always derived from data - no configuration."""
         return self._derive_epsilon(geodesic_matrix)
 
     def _derive_epsilon(self, geodesic_matrix) -> float:
@@ -375,11 +376,19 @@ class ManifoldClusterer:
         radius = float(backend.to_scalar(radius_arr))
         dominant_gates = self._compute_dominant_gates(points)
 
+        # ALWAYS compute intrinsic dimension - it's a measurement, not optional
         intrinsic_dimension = None
-        if self.config.compute_intrinsic_dimension and len(points) >= 3:
+        if len(points) >= 3:
             intrinsic_dimension = self._estimate_intrinsic_dimension(points)
 
-        region_type = ManifoldRegion.classify(centroid)
+        # Derive classification thresholds from actual point data
+        entropies = [pt.mean_entropy for pt in points]
+        variances = [pt.entropy_variance for pt in points]
+        coherences = [pt.mean_gate_similarity for pt in points]
+        classification_config = RegionClassificationConfig.from_percentiles(
+            entropies, variances, coherences
+        )
+        region_type = ManifoldRegion.classify(centroid, classification_config)
 
         return ManifoldRegion(
             id=existing_id or uuid4(),
@@ -530,25 +539,32 @@ class ManifoldClusterer:
             return None
 
     def _enforce_max_clusters(self, regions: list[ManifoldRegion]) -> list[ManifoldRegion]:
-        if self.config.max_clusters is None:
-            return regions
-        if len(regions) <= self.config.max_clusters:
-            return regions
-        sorted_regions = sorted(
-            regions,
-            key=lambda region: (region.member_count, region.updated_at),
-        )
-        return list(sorted_regions[-self.config.max_clusters :])
+        """No artificial cluster limit - let data determine cluster count."""
+        return regions
 
     def find_nearest_region(
         self, point: ManifoldPoint, regions: list[ManifoldRegion]
     ) -> RegionQueryResult:
+        # Derive classification thresholds from region centroids (or point if no regions)
+        if regions:
+            centroids = [r.centroid for r in regions]
+            entropies = [c.mean_entropy for c in centroids]
+            variances = [c.entropy_variance for c in centroids]
+            coherences = [c.mean_gate_similarity for c in centroids]
+        else:
+            entropies = [point.mean_entropy]
+            variances = [point.entropy_variance]
+            coherences = [point.mean_gate_similarity]
+        classification_config = RegionClassificationConfig.from_percentiles(
+            entropies, variances, coherences
+        )
+
         if not regions:
             return RegionQueryResult(
                 nearest_region=None,
                 distance=float("inf"),
                 is_within_region=False,
-                suggested_character=ManifoldRegion.classify(point),
+                suggested_character=ManifoldRegion.classify(point, classification_config),
                 confidence=0.0,
             )
 
@@ -574,6 +590,6 @@ class ManifoldClusterer:
             nearest_region=nearest_region,
             distance=nearest_distance,
             is_within_region=is_within,
-            suggested_character=ManifoldRegion.classify(point),
+            suggested_character=ManifoldRegion.classify(point, classification_config),
             confidence=confidence,
         )

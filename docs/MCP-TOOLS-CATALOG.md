@@ -750,7 +750,8 @@ Build Concept Response Matrix for model.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `modelPath` | string | Yes | Model path |
-| `anchors` | array | No | Custom anchor concepts |
+| `outputPath` | string | Yes | Output CRM JSON path |
+| `adapter` | string | No | Optional adapter directory |
 
 **Returns:** CRM tensor, layer fingerprints.
 
@@ -762,8 +763,8 @@ Compare CRMs between models.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `modelA` | string | Yes | First model CRM |
-| `modelB` | string | Yes | Second model CRM |
+| `sourcePath` | string | Yes | Source CRM JSON path |
+| `targetPath` | string | Yes | Target CRM JSON path |
 
 **Returns:** Layer correspondence via CKA matching.
 
@@ -772,10 +773,6 @@ Compare CRMs between models.
 ### mc_geometry_crm_sequence_inventory
 
 List available CRM sequences.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `family` | string | No | Filter by model family |
 
 ---
 

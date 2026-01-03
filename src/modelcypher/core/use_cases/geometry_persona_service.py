@@ -33,9 +33,6 @@ from modelcypher.core.domain.geometry.manifold_clusterer import (
     ClusteringResult,
     ManifoldClusterer,
 )
-from modelcypher.core.domain.geometry.manifold_clusterer import (
-    Configuration as ClustererConfig,
-)
 from modelcypher.core.domain.geometry.manifold_dimensionality import (
     IDEstimateSummary,
     ManifoldDimensionality,
@@ -226,25 +223,20 @@ class GeometryPersonaService:
     def cluster_points(
         self,
         points: list[dict],
-        epsilon: float | None = None,
-        compute_dimension: bool = True,
     ) -> ClusteringResult:
         """
         Cluster manifold points into regions.
 
+        All clustering parameters are derived from the geometry of the data.
+        No configuration is accepted or needed.
+
         Args:
             points: List of point dicts with feature values
-            epsilon: DBSCAN epsilon (distance threshold); derived if None
-            compute_dimension: Whether to estimate intrinsic dimension
 
         Returns:
             ClusteringResult with regions and noise points
         """
-        config = ClustererConfig(
-            epsilon=epsilon,
-            compute_intrinsic_dimension=compute_dimension,
-        )
-        clusterer = ManifoldClusterer(config)
+        clusterer = ManifoldClusterer()
 
         manifold_points = [
             ManifoldPoint(
@@ -285,15 +277,16 @@ class GeometryPersonaService:
         self,
         point: dict,
         regions: list[dict],
-        epsilon: float = 0.3,
     ) -> RegionQueryResult:
         """
         Find nearest region for a point.
 
+        Distance thresholds are derived from region geometry (radii).
+        No configuration is accepted or needed.
+
         Args:
             point: Point dict with feature values
             regions: List of region dicts
-            epsilon: Distance threshold for confidence calculation
 
         Returns:
             RegionQueryResult with nearest region and classification
@@ -340,8 +333,7 @@ class GeometryPersonaService:
                 )
             )
 
-        config = ClustererConfig(epsilon=epsilon)
-        clusterer = ManifoldClusterer(config)
+        clusterer = ManifoldClusterer()
         return clusterer.find_nearest_region(manifold_point, manifold_regions)
 
     @staticmethod
@@ -429,7 +421,6 @@ class GeometryPersonaService:
             "ci95Upper": summary.ci95_upper,
             "sampleCount": summary.sample_count,
             "usableCount": summary.usable_count,
-            "usesRegression": summary.uses_regression,
         }
 
     @staticmethod

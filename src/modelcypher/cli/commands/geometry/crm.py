@@ -39,7 +39,6 @@ from modelcypher.adapters.local_inference import LocalInferenceEngine
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_error, write_output
 from modelcypher.core.domain.agents.sequence_invariant_atlas import (
-    SequenceFamily,
     SequenceInvariantInventory,
 )
 from modelcypher.core.use_cases.concept_response_matrix_service import (
@@ -63,36 +62,6 @@ def geometry_crm_build(
     model_path: str = typer.Option(..., "--model", help="Path to model directory"),
     output_path: str = typer.Option(..., "--output-path", help="Output CRM JSON path"),
     adapter: str | None = typer.Option(None, "--adapter", help="Optional adapter directory"),
-    include_primes: bool = typer.Option(
-        True,
-        "--include-primes/--no-include-primes",
-        help="Include semantic prime anchors",
-    ),
-    include_gates: bool = typer.Option(
-        True,
-        "--include-gates/--no-include-gates",
-        help="Include computational gate anchors",
-    ),
-    include_polyglot: bool = typer.Option(
-        True,
-        "--include-polyglot/--no-include-polyglot",
-        help="Include multilingual prime variants",
-    ),
-    include_sequence_invariants: bool = typer.Option(
-        True,
-        "--include-sequence-invariants/--no-include-sequence-invariants",
-        help="Include sequence invariant anchors (fibonacci, logic, causality, etc.)",
-    ),
-    sequence_families: str | None = typer.Option(
-        None,
-        "--sequence-families",
-        help="Comma-separated sequence families: fibonacci,lucas,tribonacci,primes,catalan,ramanujan,logic,ordering,arithmetic,causality",
-    ),
-    anchor_prefixes: str | None = typer.Option(
-        None,
-        "--anchor-prefixes",
-        help="Comma-separated anchor prefixes (prime, gate)",
-    ),
 ) -> None:
     """Build a concept response matrix (CRM) for a model.
 
@@ -102,30 +71,7 @@ def geometry_crm_build(
     context = _context(ctx)
     service = ConceptResponseMatrixService(engine=LocalInferenceEngine())
 
-    prefixes = None
-    if anchor_prefixes:
-        prefixes = [value.strip() for value in anchor_prefixes.split(",") if value.strip()]
-
-    parsed_families: frozenset[SequenceFamily] | None = None
-    if sequence_families:
-        family_list = [val.strip().lower() for val in sequence_families.split(",") if val.strip()]
-        family_set: set[SequenceFamily] = set()
-        for name in family_list:
-            try:
-                family_set.add(SequenceFamily(name))
-            except ValueError:
-                pass  # Ignore invalid family names
-        if family_set:
-            parsed_families = frozenset(family_set)
-
-    config = CRMBuildConfig(
-        include_primes=include_primes,
-        include_gates=include_gates,
-        include_polyglot=include_polyglot,
-        include_sequence_invariants=include_sequence_invariants,
-        sequence_families=parsed_families,
-        anchor_prefixes=prefixes,
-    )
+    config = CRMBuildConfig()
 
     try:
         summary = service.build(
@@ -176,19 +122,17 @@ def geometry_crm_compare(
     ctx: typer.Context,
     source: str = typer.Option(..., "--source", help="Source CRM JSON path"),
     target: str = typer.Option(..., "--target", help="Target CRM JSON path"),
-    include_matrix: bool = typer.Option(False, "--include-matrix", help="Include full CKA matrix"),
 ) -> None:
     """Compare two CRMs and compute layer correspondence via CKA.
 
     Examples:
         mc geometry crm compare --source ./crm1.json --target ./crm2.json
-        mc geometry crm compare --source ./crm1.json --target ./crm2.json --include-matrix
     """
     context = _context(ctx)
     service = ConceptResponseMatrixService()
 
     try:
-        summary = service.compare(source, target, include_matrix=include_matrix)
+        summary = service.compare(source, target)
     except (ValueError, OSError) as exc:
         error = ErrorDetail(
             code="MC-1019",
@@ -236,24 +180,6 @@ def geometry_crm_delta_mask(
     ctx: typer.Context,
     source: str = typer.Option(..., "--source", help="Source CRM JSON path"),
     target: str = typer.Option(..., "--target", help="Target CRM JSON path"),
-    target_sparse_percentile: float | None = typer.Option(
-        None,
-        "--target-sparse-percentile",
-        help="Optional percentile for target sparsity cutoff (omit to derive from gap)",
-    ),
-    source_dense_percentile: float | None = typer.Option(
-        None,
-        "--source-dense-percentile",
-        help="Optional percentile for source density cutoff (omit to derive from gap)",
-    ),
-    density_ratio_percentile: float | None = typer.Option(
-        None,
-        "--density-ratio-percentile",
-        help="Optional percentile for density ratio cutoff (omit to derive from gap)",
-    ),
-    min_anchor_count: int = typer.Option(
-        1, "--min-anchor-count", help="Minimum anchors required per layer"
-    ),
     output_path: str | None = typer.Option(
         None, "--output-path", help="Write delta mask JSON to file"
     ),
@@ -266,12 +192,7 @@ def geometry_crm_delta_mask(
     context = _context(ctx)
     service = ConceptResponseMatrixService()
 
-    config = KnowledgeDeltaMaskConfig(
-        target_sparse_percentile=target_sparse_percentile,
-        source_dense_percentile=source_dense_percentile,
-        density_ratio_percentile=density_ratio_percentile,
-        min_anchor_count=min_anchor_count,
-    )
+    config = KnowledgeDeltaMaskConfig()
 
     try:
         summary = service.knowledge_delta_mask(source, target, config=config)
@@ -353,36 +274,15 @@ def geometry_crm_delta_mask(
 @app.command("sequence-inventory")
 def geometry_crm_sequence_inventory(
     ctx: typer.Context,
-    family: str | None = typer.Option(
-        None,
-        "--family",
-        help="Filter by family: fibonacci, lucas, tribonacci, primes, catalan, ramanujan, logic, ordering, arithmetic, causality",
-    ),
 ) -> None:
     """List available sequence invariant probes for CRM anchoring.
 
     Examples:
         mc geometry crm sequence-inventory
-        mc geometry crm sequence-inventory --family fibonacci
     """
     context = _context(ctx)
 
-    family_filter: set[SequenceFamily] | None = None
-    if family:
-        try:
-            family_filter = {SequenceFamily(family.strip().lower())}
-        except ValueError:
-            error = ErrorDetail(
-                code="MC-1050",
-                title="Invalid sequence family",
-                detail=f"Unknown family '{family}'",
-                hint="Valid families: fibonacci, lucas, tribonacci, primes, catalan, ramanujan, logic, ordering, arithmetic, causality",
-                trace_id=context.trace_id,
-            )
-            write_error(error.as_dict(), context.output_format, context.pretty)
-            raise typer.Exit(code=1)
-
-    probes = SequenceInvariantInventory.probes_for_families(family_filter)
+    probes = SequenceInvariantInventory.probes_for_families(None)
     counts = SequenceInvariantInventory.probe_count_by_family()
 
     probe_list = [
