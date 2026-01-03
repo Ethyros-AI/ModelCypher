@@ -835,8 +835,12 @@ class RiemannianGeometry:
             )
 
         # Derive thresholds from dtype
-        near_zero_eps = machine_epsilon(backend, geo_dist_arr)
-        tiny = division_epsilon(backend, geo_dist_arr)
+        # near_zero_eps must account for accumulated edge_eps across multi-hop paths
+        # Edge weights are floored to edge_eps, and Floyd-Warshall sums up to (n-1) hops
+        # So threshold = n * edge_eps to catch all accumulated numerical noise
+        edge_eps = division_epsilon(backend, geo_dist_arr)
+        near_zero_eps = n * edge_eps
+        tiny = machine_epsilon(backend, geo_dist_arr)
 
         # Create indicator for "x >= threshold" using sign arithmetic:
         # sign(x - threshold + tiny) = 1 for x >= threshold, -1 for x < threshold
@@ -1192,10 +1196,9 @@ class RiemannianGeometry:
         """
         backend = self._backend
         backend.eval(geo_dist)
-        geo_np = backend.to_numpy(geo_dist)
-        n = geo_np.shape[0]
+        n = int(geo_dist.shape[0])
 
-        total_dist = float(geo_np[start_idx, end_idx])
+        total_dist = float(backend.to_scalar(geo_dist[start_idx, end_idx]))
 
         if math.isinf(total_dist):
             # Disconnected - no path exists
@@ -1216,17 +1219,17 @@ class RiemannianGeometry:
         while current != end_idx:
             # Find next point: must satisfy triangle equality
             # d(current, next) + d(next, end) ≈ d(current, end)
-            dist_to_end = float(geo_np[current, end_idx])
+            dist_to_end = float(backend.to_scalar(geo_dist[current, end_idx]))
 
             best_next = end_idx
-            best_dist = float(geo_np[current, end_idx])
+            best_dist = dist_to_end
 
             for candidate in range(n):
                 if candidate == current or candidate in path:
                     continue
 
-                d_to_candidate = float(geo_np[current, candidate])
-                d_candidate_to_end = float(geo_np[candidate, end_idx])
+                d_to_candidate = float(backend.to_scalar(geo_dist[current, candidate]))
+                d_candidate_to_end = float(backend.to_scalar(geo_dist[candidate, end_idx]))
 
                 if math.isinf(d_to_candidate) or math.isinf(d_candidate_to_end):
                     continue
@@ -1391,6 +1394,9 @@ class RiemannianGeometry:
 
         # Initialize: select seed
         selected = [seed_idx]
+        index_grid = backend.arange(0, n)
+        mask = backend.astype(index_grid == seed_idx, "float32")
+        backend.eval(mask)
 
         # Min distance from each point to the selected set
         # Initially, just distance to seed
@@ -1400,36 +1406,30 @@ class RiemannianGeometry:
         # Iteratively select farthest point
         for _ in range(n_samples - 1):
             # Find point with maximum min-distance to selected set
-            # Use .copy() to get a writable array (JAX returns read-only)
-            min_dist_np = backend.to_numpy(min_distances).flatten().copy()
+            neg_inf = backend.full((n,), float("-inf"))
+            masked = backend.where(mask > 0, neg_inf, min_distances)
+            masked = backend.where(backend.isfinite(masked), masked, neg_inf)
+            backend.eval(masked)
 
-            # Exclude already selected points by setting their distance to -inf
-            for idx in selected:
-                min_dist_np[idx] = float("-inf")
-
-            # Find farthest (handle inf for disconnected points)
-            farthest_idx = 0
-            farthest_dist = float("-inf")
-            for i, d in enumerate(min_dist_np):
-                if not math.isinf(d) or d > 0:  # Skip -inf (selected) but allow +inf
-                    if d > farthest_dist:
-                        farthest_dist = d
-                        farthest_idx = i
-
+            farthest_idx = int(backend.to_scalar(backend.argmax(masked)))
             selected.append(farthest_idx)
+
+            # Update mask for selected points
+            one_hot = backend.astype(index_grid == farthest_idx, "float32")
+            mask = backend.minimum(mask + one_hot, backend.ones_like(mask))
 
             # Update min distances: element-wise minimum with new point's distances
             new_dists = geo_dist[farthest_idx]
             min_distances = backend.minimum(min_distances, new_dists)
-            backend.eval(min_distances)
+            backend.eval(min_distances, mask)
 
         # Compute coverage radius (max of final min-distances, excluding selected)
-        final_min_np = backend.to_numpy(min_distances).flatten()
-        coverage_vals = [
-            d for i, d in enumerate(final_min_np)
-            if i not in selected and not math.isinf(d)
-        ]
-        coverage_radius = max(coverage_vals) if coverage_vals else 0.0
+        neg_inf = backend.full((n,), float("-inf"))
+        masked = backend.where(mask > 0, neg_inf, min_distances)
+        masked = backend.where(backend.isfinite(masked), masked, neg_inf)
+        backend.eval(masked)
+        max_val = float(backend.to_scalar(backend.max(masked)))
+        coverage_radius = 0.0 if math.isinf(max_val) else max(0.0, max_val)
 
         return FarthestPointSamplingResult(
             selected_indices=selected,
@@ -1481,15 +1481,22 @@ class RiemannianGeometry:
 
         # Get geodesic distances for neighbor selection
         geo_result = self.geodesic_distances(points, k_neighbors=k)
-        geo_dist_np = backend.to_numpy(geo_result.distances)
+        geo_dist = geo_result.distances
+        backend.eval(geo_dist)
 
         # Find k nearest neighbors by geodesic distance
-        center_dists = geo_dist_np[point_idx, :].tolist()
-        sorted_pairs = sorted(enumerate(center_dists), key=lambda x: (x[1], x[0]))
-        # Exclude self (distance 0)
-        neighbors = [idx for idx, dist in sorted_pairs if idx != point_idx][:k]
+        row = backend.take(geo_dist, backend.array([point_idx]), axis=0)
+        row = backend.squeeze(row, axis=0)
+        inf = float("inf")
+        row_masked = backend.where(
+            backend.arange(0, n) == point_idx,
+            backend.full((n,), inf),
+            row,
+        )
+        sorted_indices = backend.argsort(row_masked)
+        neighbors = sorted_indices[:k]
 
-        if len(neighbors) == 0:
+        if int(neighbors.shape[0]) == 0:
             # Isolated point - any direction is sparse
             sparse_dir = backend.zeros((d,))
             if d > 0:
@@ -1506,7 +1513,7 @@ class RiemannianGeometry:
             )
 
         # Compute tangent vectors to neighbors
-        neighbor_pts = backend.stack([points[i] for i in neighbors], axis=0)
+        neighbor_pts = backend.take(points, neighbors, axis=0)
         tangent_vecs = neighbor_pts - backend.reshape(center, (1, d))
 
         # Normalize to unit tangent sphere
@@ -1541,13 +1548,8 @@ class RiemannianGeometry:
         backend.eval(max_sims)
 
         # The sparse direction is the candidate with minimum max-similarity
-        max_sims_np = backend.to_numpy(max_sims).flatten()
-        sparse_idx = 0
-        min_max_sim = float("inf")
-        for i, s in enumerate(max_sims_np):
-            if s < min_max_sim:
-                min_max_sim = s
-                sparse_idx = i
+        min_max_sim = float(backend.to_scalar(backend.min(max_sims)))
+        sparse_idx = int(backend.to_scalar(backend.argmin(max_sims)))
 
         sparse_direction = candidates[sparse_idx]
 
@@ -1561,10 +1563,11 @@ class RiemannianGeometry:
         # Coverage uniformity: ideal is uniform distribution on sphere
         # Measure as 1 - (variance of similarities)
         # If all neighbors are in one direction, variance is high -> low uniformity
-        sim_mean = sum(max_sims_np) / len(max_sims_np)
-        sim_var = sum((s - sim_mean) ** 2 for s in max_sims_np) / len(max_sims_np)
+        sim_mean = backend.mean(max_sims)
+        sim_var = backend.mean((max_sims - sim_mean) ** 2)
+        backend.eval(sim_var)
         # Normalize variance to [0, 1] range (max variance for similarities is ~1)
-        coverage_uniformity = max(0.0, 1.0 - sim_var)
+        coverage_uniformity = max(0.0, 1.0 - float(backend.to_scalar(sim_var)))
 
         return DirectionalCoverage(
             sparse_direction=sparse_direction,
@@ -1655,45 +1658,13 @@ class RiemannianGeometry:
             dist_sq_nan = count_nan(dist_sq, backend)
 
             if norms_nan > 0 or dots_nan > 0 or dist_sq_nan > 0 or norms_inf > 0 or dots_inf > 0:
-                # Find which entries are NaN (convert to numpy only when problem detected)
-                dist_sq_np = backend.to_numpy(dist_sq)
-                norms_np = backend.to_numpy(norms)
-                dots_np = backend.to_numpy(dots)
-                nan_mask = ~backend.to_numpy(backend.isfinite(dist_sq))
-                nan_entries = list(zip(*nan_mask.nonzero()))
-
-                # Identify problematic indices (columns that appear in NaN entries)
-                problem_cols = set(j for _, j in nan_entries)
-                problem_rows = set(i for i, _ in nan_entries)
-
-                # Get details about problematic points (norms_np is already a numpy array)
-                norms_flat = norms_np.flatten()
-                problem_norms = {idx: float(norms_flat[idx]) for idx in list(problem_cols | problem_rows)[:5]}
-
-                # Check dots values for problem indices
-                problem_dots = {}
-                for i, j in nan_entries[:5]:
-                    problem_dots[(i, j)] = float(dots_np[i, j])
-
-                # Check the actual dist_sq computation values
-                problem_components = {}
-                for i, j in nan_entries[:3]:
-                    ni = float(norms_flat[i])
-                    nj = float(norms_flat[j])
-                    dij = float(dots_np[i, j])
-                    computed = ni + nj - 2.0 * dij
-                    problem_components[(i, j)] = {
-                        "norms_i": ni, "norms_j": nj, "dots_ij": dij,
-                        "expected": computed, "actual": float(dist_sq_np[i, j])
-                    }
-
                 logger.warning(
-                    f"NaN/inf in distance computation: norms_nan={norms_nan}, norms_inf={norms_inf}, "
-                    f"dots_nan={dots_nan}, dots_inf={dots_inf}, dist_sq_nan={dist_sq_nan}, "
-                    f"first_nan_entries={nan_entries[:10]}, "
-                    f"problem_cols={list(problem_cols)[:5]}, problem_rows={list(problem_rows)[:5]}, "
-                    f"problem_norms={problem_norms}, problem_dots={problem_dots}, "
-                    f"problem_components={problem_components}"
+                    "NaN/inf in distance computation: norms_nan=%d, norms_inf=%d, dots_nan=%d, dots_inf=%d, dist_sq_nan=%d",
+                    norms_nan,
+                    norms_inf,
+                    dots_nan,
+                    dots_inf,
+                    dist_sq_nan,
                 )
 
         dist_sq = backend.maximum(dist_sq, backend.zeros_like(dist_sq))
@@ -1741,12 +1712,22 @@ class RiemannianGeometry:
         euc_list = backend.to_numpy(euc_dist).tolist()
         sorted_pairs = sorted(enumerate(euc_list), key=lambda x: (x[1], x[0]))
 
+        # Include all points tied at the k-th distance to ensure symmetric treatment
+        # Without this, equidistant points would be arbitrarily excluded by index order
+        def get_neighbors_with_ties(k: int) -> list[int]:
+            """Get k nearest neighbors, including all ties at the k-th distance."""
+            if k >= n:
+                return [idx for idx, _ in sorted_pairs]
+            threshold_dist = sorted_pairs[k - 1][1]  # Distance of k-th nearest
+            eps = division_epsilon(backend, euc_dist)
+            return [idx for idx, d in sorted_pairs if d <= threshold_dist + eps]
+
         # Adaptive k: start with k_neighbors, increase until all points reachable
         # This handles the case where the query's k nearest neighbors don't
         # form a connected subgraph that reaches all points
         current_k = k_neighbors
         while current_k <= n:
-            neighbors = [idx for idx, _ in sorted_pairs[:current_k]]
+            neighbors = get_neighbors_with_ties(current_k)
 
             neighbors_arr = backend.array(neighbors)
             neighbor_dists = backend.take(euc_dist, neighbors_arr, axis=0)

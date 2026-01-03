@@ -120,10 +120,13 @@ def alignment_signal_from_matrices(
     else:
         diff = source_matrix - target_matrix
         distances = b.norm(diff, axis=1)
+    b.eval(distances)
     dist_list = list(b.to_numpy(distances).tolist())
 
-    ranked = sorted(range(len(dist_list)), key=lambda i: dist_list[i], reverse=True)
-    misaligned = [labels[i] for i in ranked]
+    ranked = b.argsort(-distances)
+    b.eval(ranked)
+    ranked_idx = b.to_numpy(ranked).tolist()
+    misaligned = [labels[i] for i in ranked_idx]
 
     shape_mismatch = b.shape(source_matrix) != b.shape(target_matrix)
 
@@ -175,10 +178,10 @@ def _matrix_rank(matrix: "object", backend: "object") -> int:
     gram = backend.matmul(matrix, backend.transpose(matrix))
     eigvals, _ = backend.eigh(gram)
     backend.eval(eigvals)
-    values = list(backend.to_numpy(eigvals).tolist())
-    if not values:
-        return 0
-    max_val = max(values)
+    max_val = backend.max(eigvals)
     eps = machine_epsilon(backend, gram)
     threshold = max_val * eps
-    return sum(1 for val in values if val > threshold)
+    mask = eigvals > threshold
+    rank = backend.sum(backend.astype(mask, "int32"))
+    backend.eval(rank)
+    return int(backend.to_scalar(rank))

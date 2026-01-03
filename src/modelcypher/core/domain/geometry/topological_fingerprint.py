@@ -75,7 +75,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 )
 
 if TYPE_CHECKING:
-    from modelcypher.ports.backend import Backend
+    from modelcypher.ports.backend import Array, Backend
 
 
 @dataclass
@@ -108,10 +108,10 @@ class PersistenceDiagram:
             counts[p.dimension] = counts.get(p.dimension, 0) + 1
         return counts
 
-    def betti_numbers(self, persistence_threshold: float = 0.1) -> dict[int, int]:
-        betti = {}
+    def betti_numbers(self, persistence_threshold: float | None = None) -> dict[int, int]:
+        betti: dict[int, int] = {}
         for p in self.points:
-            if p.persistence >= persistence_threshold:
+            if persistence_threshold is None or p.persistence >= persistence_threshold:
                 betti[p.dimension] = betti.get(p.dimension, 0) + 1
         return betti
 
@@ -129,7 +129,7 @@ class TopologySummary:
 class TopologyConfig:
     """Configuration for topological fingerprinting.
 
-    ONLY contains numerical stability and noise filtering parameters.
+    ONLY contains numerical stability parameters.
     No arbitrary classification thresholds - the geometry speaks for itself.
 
     Similarity interpretation is left to the caller who understands their context.
@@ -138,11 +138,6 @@ class TopologyConfig:
     # Numerical stability threshold
     epsilon: float | None = None
 
-    # Persistence threshold: fraction of max filtration value
-    # Features with persistence < threshold * max_filtration are noise
-    # This is principled: persistence should be significant relative to scale
-    # Small features that appear and disappear quickly are topological noise
-    persistence_noise_fraction: float = 0.01  # 1% of scale = noise
 
 
 @dataclass
@@ -192,14 +187,33 @@ class TopologicalFingerprint:
                 summary=TopologySummary(len(points), 0, 0.0, 0.0, 0.0),
             )
 
-        distances = TopologicalFingerprint._compute_pairwise_distances(points)
+        backend = get_default_backend()
+        distances = TopologicalFingerprint._compute_pairwise_distances(points, backend=backend)
 
-        # Determine filtration range from the data itself
-        all_dists = [d for row in distances for d in row]
-        max_dist = (
-            max_filtration if max_filtration is not None else (max(all_dists) if all_dists else 1.0)
+        finite_mask = backend.isfinite(distances)
+        neg_inf = -float(backend.finfo().max)
+        pos_inf = float(backend.finfo().max)
+        finite_vals = backend.where(finite_mask, distances, backend.full(distances.shape, neg_inf))
+        max_dist_arr = backend.max(finite_vals)
+        backend.eval(max_dist_arr)
+        max_dist_val = float(backend.to_scalar(max_dist_arr))
+
+        if not math.isfinite(max_dist_val):
+            max_dist_val = 0.0
+
+        if max_filtration is None:
+            max_dist = max_dist_val
+        else:
+            max_dist = max_filtration
+
+        nonzero_mask = (distances > 0) & finite_mask
+        min_candidates = backend.where(
+            nonzero_mask, distances, backend.full(distances.shape, pos_inf)
         )
-        min_dist = min([d for d in all_dists if d > 0], default=0.0)
+        min_dist_arr = backend.min(min_candidates)
+        backend.eval(min_dist_arr)
+        min_dist_val = float(backend.to_scalar(min_dist_arr))
+        min_dist = min_dist_val if math.isfinite(min_dist_val) else 0.0
 
         diagram = TopologicalFingerprint._vietoris_rips_filtration(
             distances=distances,
@@ -209,10 +223,9 @@ class TopologicalFingerprint:
             max_dimension=max_dimension,
         )
 
-        # Filter noise: features with persistence < 1% of max scale are noise
-        # This is principled: if a feature appears and disappears within 1% of the
-        # total scale, it's not a stable topological feature
-        threshold = max_dist * config.persistence_noise_fraction
+        # Filter only numerical noise (dtype-derived)
+        eps = machine_epsilon(backend, distances)
+        threshold = max_dist * eps
         betti = diagram.betti_numbers(persistence_threshold=threshold)
 
         significant_points = [p for p in diagram.points if p.persistence > threshold]
@@ -293,7 +306,7 @@ class TopologicalFingerprint:
     @staticmethod
     def _compute_pairwise_distances(
         points: list[list[float]], backend: "Backend | None" = None
-    ) -> list[list[float]]:
+    ) -> "Array":
         """Compute pairwise geodesic distances for persistent homology.
 
         Uses geodesic distances to capture true topological structure
@@ -305,7 +318,8 @@ class TopologicalFingerprint:
 
         n = len(points)
         if n == 0:
-            return []
+            b = backend or get_default_backend()
+            return b.zeros((0, 0))
 
         b = backend or get_default_backend()
         pts = b.array(points)
@@ -314,7 +328,7 @@ class TopologicalFingerprint:
         k_neighbors = min(max(3, n // 3), n - 1)
         geo_dist = geodesic_distance_matrix(pts, k_neighbors=k_neighbors, backend=b)
         b.eval(geo_dist)
-        return b.to_numpy(geo_dist).tolist()
+        return geo_dist
 
     @staticmethod
     def _vietoris_rips_filtration(
@@ -776,27 +790,25 @@ class BackendTopologicalFingerprint:
 
         b = self.backend
         distances = self._compute_pairwise_distances(points)
+        b.eval(distances)
 
-        # Determine filtration range from the data itself
-        dist_arr = b.array(distances)
-        b.eval(dist_arr)
-
-        # Get max and min (excluding zeros) using backend
-        max_val = b.max(dist_arr)
+        finite_mask = b.isfinite(distances)
+        neg_inf = -float(b.finfo().max)
+        pos_inf = float(b.finfo().max)
+        finite_vals = b.where(finite_mask, distances, b.full(distances.shape, neg_inf))
+        max_val = b.max(finite_vals)
         b.eval(max_val)
-        max_dist = max_filtration if max_filtration is not None else float(b.to_scalar(max_val))
+        max_dist_val = float(b.to_scalar(max_val))
+        if not math.isfinite(max_dist_val):
+            max_dist_val = 0.0
+        max_dist = max_filtration if max_filtration is not None else max_dist_val
 
-        # For min nonzero, we need to mask zeros
-        flat = b.reshape(dist_arr, (-1,))
-        # Create mask for positive values
-        positive_mask = flat > 0
-        # Replace zeros with inf for min computation
-        masked = b.where(positive_mask, flat, b.full(flat.shape, float("inf")))
-        min_val = b.min(masked)
+        nonzero_mask = (distances > 0) & finite_mask
+        min_candidates = b.where(nonzero_mask, distances, b.full(distances.shape, pos_inf))
+        min_val = b.min(min_candidates)
         b.eval(min_val)
-        min_dist = float(b.to_scalar(min_val))
-        if min_dist == float("inf"):
-            min_dist = 0.0
+        min_dist_val = float(b.to_scalar(min_val))
+        min_dist = min_dist_val if math.isfinite(min_dist_val) else 0.0
 
         diagram = self._vietoris_rips_filtration(
             distances=distances,
@@ -806,8 +818,8 @@ class BackendTopologicalFingerprint:
             max_dimension=max_dimension,
         )
 
-        # Filter noise
-        threshold = max_dist * config.persistence_noise_fraction
+        # Filter only numerical noise (dtype-derived)
+        threshold = max_dist * machine_epsilon(b, distances)
         betti = diagram.betti_numbers(persistence_threshold=threshold)
 
         significant_points = [p for p in diagram.points if p.persistence > threshold]
@@ -875,7 +887,7 @@ class BackendTopologicalFingerprint:
             betti_numbers_match=betti_match,
         )
 
-    def _compute_pairwise_distances(self, points: list[list[float]]) -> list[list[float]]:
+    def _compute_pairwise_distances(self, points: list[list[float]]) -> "Array":
         """Compute pairwise geodesic distances using Backend."""
         from modelcypher.core.domain.geometry.riemannian_utils import (
             geodesic_distance_matrix,
@@ -883,7 +895,7 @@ class BackendTopologicalFingerprint:
 
         n = len(points)
         if n == 0:
-            return []
+            return self.backend.zeros((0, 0))
 
         b = self.backend
         pts = b.array(points)
@@ -891,11 +903,11 @@ class BackendTopologicalFingerprint:
         k_neighbors = min(max(3, n // 3), n - 1)
         geo_dist = geodesic_distance_matrix(pts, k_neighbors=k_neighbors, backend=b)
         b.eval(geo_dist)
-        return b.to_numpy(geo_dist).tolist()
+        return geo_dist
 
     def _vietoris_rips_filtration(
         self,
-        distances: list[list[float]],
+        distances: "Array",
         min_filtration: float,
         max_filtration: float,
         num_steps: int,
@@ -907,20 +919,19 @@ class BackendTopologicalFingerprint:
         remains sequential as it's inherently order-dependent.
         """
         b = self.backend
-        n = len(distances)
+        n = int(distances.shape[0])
         persistence_points: list[PersistencePoint] = []
 
         # Vectorized edge extraction using Backend
-        dist_arr = b.array(distances)
+        dist_arr = distances
         b.eval(dist_arr)
 
         # Get upper triangular indices and values
         # Build edges list more efficiently
         edges: list[tuple[int, int, float]] = []
-        dist_np = b.to_numpy(dist_arr)
         for i in range(n):
             for j in range(i + 1, n):
-                edges.append((i, j, float(dist_np[i, j])))
+                edges.append((i, j, float(b.to_scalar(dist_arr[i, j]))))
         edges.sort(key=lambda x: x[2])
 
         # 0-dim persistence (connected components) - Union-Find is sequential
@@ -992,13 +1003,13 @@ class BackendTopologicalFingerprint:
                     row_i = dist_arr[i, :]
                     row_j = dist_arr[j, :]
                     triangle_fills = b.maximum(b.maximum(row_i, row_j), b.full((n,), dist))
-                    # Set self-edges to inf
-                    # Use .copy() to get a writable array (JAX returns read-only)
-                    fills_np = b.to_numpy(triangle_fills).copy()
-                    fills_np[i] = float("inf")
-                    fills_np[j] = float("inf")
-
-                    min_fill = float(min(fills_np))
+                    # Mask self-edges to inf
+                    inf_val = float(b.finfo().max)
+                    mask = b.ones((n,))
+                    mask = b.where(b.arange(n) == i, b.full(mask.shape, 0.0), mask)
+                    mask = b.where(b.arange(n) == j, b.full(mask.shape, 0.0), mask)
+                    masked_fills = b.where(mask > 0, triangle_fills, b.full(triangle_fills.shape, inf_val))
+                    min_fill = float(b.to_scalar(b.min(masked_fills)))
                     if min_fill < max_filtration and min_fill > dist:
                         possible_cycles.append(PersistencePoint(dist, min_fill, 1))
                 else:
@@ -1055,10 +1066,9 @@ class BackendTopologicalFingerprint:
 
             # Build full cost matrix
             cost = [[float("inf")] * n for _ in range(n)]
-            match_np = b.to_numpy(match_costs)
             for i in range(n_a):
                 for j in range(n_b):
-                    cost[i][j] = float(match_np[i, j])
+                    cost[i][j] = float(b.to_scalar(match_costs[i, j]))
                 diag_cost_a = (pa[i].death - pa[i].birth) / 2.0
                 cost[i][n_b + i] = diag_cost_a
 
@@ -1123,10 +1133,9 @@ class BackendTopologicalFingerprint:
 
             # Build full cost matrix
             cost = [[float("inf")] * n for _ in range(n)]
-            match_np = b.to_numpy(match_costs)
             for i in range(n_a):
                 for j in range(n_b):
-                    cost[i][j] = float(match_np[i, j])
+                    cost[i][j] = float(b.to_scalar(match_costs[i, j]))
                 diag_cost_a = pa[i].death - pa[i].birth
                 cost[i][n_b + i] = diag_cost_a
 

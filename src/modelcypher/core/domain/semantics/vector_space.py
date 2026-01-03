@@ -81,10 +81,15 @@ class ConceptVectorSpace:
         # Take last k elements (highest scores) and reverse them
         top_k_indices = indices[-k:][::-1]
 
+        top_scores = self._backend.take(scores, top_k_indices)
+        self._backend.eval(top_scores, top_k_indices)
+
         results = []
-        np_scores = self._backend.to_numpy(scores)
-        for idx in self._backend.to_numpy(top_k_indices).tolist():
-            results.append((ids[idx], float(np_scores[idx])))
+        k_count = int(top_k_indices.shape[0])
+        for i in range(k_count):
+            idx = int(self._backend.to_scalar(top_k_indices[i]))
+            score = float(self._backend.to_scalar(top_scores[i]))
+            results.append((ids[idx], score))
 
         return results
 

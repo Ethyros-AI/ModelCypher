@@ -255,11 +255,17 @@ class MoralGeometryAnalyzer:
         try:
             _, s, vh = backend.svd(centered)
             backend.eval(s)
-            s_np = backend.to_numpy(s)
-            s_squared = [float(x) ** 2 for x in s_np.flatten()]
-            total = sum(s_squared)
-            variance_explained = [x / total for x in s_squared] if total > 0 else [0.0] * len(s_squared)
-            pc_variance = variance_explained[:5] + [0.0] * (5 - len(variance_explained[:5]))
+            s_squared = s * s
+            total = backend.sum(s_squared)
+            backend.eval(total)
+            total_val = float(backend.to_scalar(total))
+            if total_val > division_epsilon(backend, s):
+                variance_explained = s_squared / total
+            else:
+                variance_explained = backend.zeros_like(s_squared)
+            backend.eval(variance_explained)
+            variance_list = backend.to_numpy(variance_explained).tolist()
+            pc_variance = variance_list[:5] + [0.0] * (5 - len(variance_list[:5]))
         except Exception:
             pc_variance = [0.0] * 5
 
