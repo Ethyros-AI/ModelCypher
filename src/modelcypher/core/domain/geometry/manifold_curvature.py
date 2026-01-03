@@ -59,6 +59,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     sqrt_scalar,
     tiny_value,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -400,10 +401,10 @@ class SectionalCurvatureEstimator:
             # Sample random orthonormal pair
             u = backend.random_normal((d,))
             backend.eval(u)
-            u_norm = backend.norm(u)
+            u_norm = geodesic_norms(backend.reshape(u, (1, -1)), backend)
             backend.eval(u_norm)
             eps = division_epsilon(backend, u)
-            u_norm_val = float(backend.to_scalar(u_norm))
+            u_norm_val = float(backend.to_scalar(u_norm[0]))
             u = u / (u_norm_val + eps)
 
             v = backend.random_normal((d,))
@@ -414,9 +415,9 @@ class SectionalCurvatureEstimator:
             dot_uv = float(backend.to_scalar(dot_uv_arr))
             v = v - dot_uv * u
             backend.eval(v)
-            v_norm = backend.norm(v)
+            v_norm = geodesic_norms(backend.reshape(v, (1, -1)), backend)
             backend.eval(v_norm)
-            v_norm_val = float(backend.to_scalar(v_norm))
+            v_norm_val = float(backend.to_scalar(v_norm[0]))
             if v_norm_val < eps:
                 continue
             v = v / v_norm_val

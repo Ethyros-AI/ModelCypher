@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING, Any
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.geodesic_null_space import GeodesicNullSpaceFilter
 from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -179,9 +180,9 @@ def compute_transplant_delta(
 
     if n_boundary < 2:
         # Not enough boundary points for geodesic filtering - return original
-        delta_norm_arr = b.norm(b.reshape(delta, (-1,)))
+        delta_norm_arr = geodesic_norms(b.reshape(delta, (1, -1)), b)
         b.eval(delta_norm_arr)
-        delta_norm = float(b.to_scalar(delta_norm_arr))
+        delta_norm = float(b.to_scalar(delta_norm_arr[0]))
         return TransplantDeltaResult(
             merged_weight=weight_target + delta,
             applied=True,
@@ -222,14 +223,16 @@ def compute_transplant_delta(
     # σ_max ≈ ||A @ v|| / ||v|| where v converges to top right singular vector
 
     # Frobenius norm provides upper bound: σ_max ≤ ||A||_F
-    frob_norm_arr = b.norm(b.reshape(delta_filtered, (-1,)))
+    frob_norm_arr = geodesic_norms(b.reshape(delta_filtered, (1, -1)), b)
     b.eval(frob_norm_arr)
-    frob_norm = float(b.to_scalar(frob_norm_arr))
+    frob_norm = float(b.to_scalar(frob_norm_arr[0]))
 
     # Power iteration for tighter bound (3 iterations usually sufficient)
     reg = regularization_epsilon(b, delta_filtered)
     v = b.ones((in_dim,), dtype="float32")
-    v = v / (b.norm(v) + reg)
+    v_norms = geodesic_norms(b.reshape(v, (1, -1)), b)
+    b.eval(v_norms)
+    v = v / (float(b.to_scalar(v_norms[0])) + reg)
     b.eval(v)
 
     for _ in range(3):
@@ -242,9 +245,9 @@ def compute_transplant_delta(
         u = b.squeeze(u)
         b.eval(u)
         # Normalize
-        u_norm = b.norm(u)
-        b.eval(u_norm)
-        u_norm_val = float(b.to_scalar(u_norm))
+        u_norm_arr = geodesic_norms(b.reshape(u, (1, -1)), b)
+        b.eval(u_norm_arr)
+        u_norm_val = float(b.to_scalar(u_norm_arr[0]))
         if u_norm_val > reg:
             v = u / u_norm_val
         b.eval(v)
@@ -252,9 +255,9 @@ def compute_transplant_delta(
     # Spectral norm estimate
     w_final = b.matmul(delta_filtered, b.reshape(v, (in_dim, 1)))
     w_final = b.squeeze(w_final)
-    spectral_norm_arr = b.norm(w_final)
+    spectral_norm_arr = geodesic_norms(b.reshape(w_final, (1, -1)), b)
     b.eval(spectral_norm_arr)
-    spectral_norm = float(b.to_scalar(spectral_norm_arr))
+    spectral_norm = float(b.to_scalar(spectral_norm_arr[0]))
 
     # Scale if needed (preserves geodesic null-space exactly)
     max_norm = 1.0
@@ -272,11 +275,11 @@ def compute_transplant_delta(
     b.eval(merged_weight)
 
     # Compute metrics
-    delta_norm_arr = b.norm(b.reshape(delta, (-1,)))
-    filtered_norm_arr = b.norm(b.reshape(delta_stabilized, (-1,)))
+    delta_norm_arr = geodesic_norms(b.reshape(delta, (1, -1)), b)
+    filtered_norm_arr = geodesic_norms(b.reshape(delta_stabilized, (1, -1)), b)
     b.eval(delta_norm_arr, filtered_norm_arr)
-    delta_norm = float(b.to_scalar(delta_norm_arr))
-    filtered_norm = float(b.to_scalar(filtered_norm_arr))
+    delta_norm = float(b.to_scalar(delta_norm_arr[0]))
+    filtered_norm = float(b.to_scalar(filtered_norm_arr[0]))
 
     if delta_norm > 0.0:
         preserved_fraction = filtered_norm / delta_norm

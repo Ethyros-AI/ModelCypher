@@ -41,9 +41,9 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    geodesic_svd,
     machine_epsilon,
     svd_rank_threshold,
-    svd_via_eigh,
 )
 
 if TYPE_CHECKING:
@@ -378,8 +378,8 @@ def _project_procrustes(
     if m_s == m_t and d_s != d_t:
         # Use SVD on column space
         if d_s > d_t:
-            # Truncate: use SVD to project to smaller dimension
-            _, S, Vt = svd_via_eigh(b, source, full_matrices=False)
+            # Truncate: use geodesic SVD to project to smaller dimension
+            _, S, Vt = geodesic_svd(b, source)
             b.eval(S, Vt)
 
             # Number of components is limited by SVD rank
@@ -399,9 +399,9 @@ def _project_procrustes(
                 b.eval(projected)
 
             # Now projected has shape [m_s, d_t]
-            # Align to target via Procrustes
+            # Align to target via Procrustes using geodesic SVD
             M = b.matmul(b.transpose(target), projected)  # [d_t, d_t]
-            U, _, Vt_proc = svd_via_eigh(b, M, full_matrices=False)
+            U, _, Vt_proc = geodesic_svd(b, M)
             R = b.matmul(U, Vt_proc)  # [d_t, d_t]
             b.eval(R)
 
@@ -431,7 +431,7 @@ def _project_procrustes(
             target_shared = target[:, :d_s]
 
             M = b.matmul(b.transpose(target_shared), source_shared)
-            U, _, Vt_proc = svd_via_eigh(b, M, full_matrices=False)
+            U, _, Vt_proc = geodesic_svd(b, M)
             R = b.matmul(U, Vt_proc)
             b.eval(R)
 
@@ -491,11 +491,11 @@ def _project_svd(
     m_t, d_t = target.shape
 
     # =========================================================================
-    # STEP 1: SVD both matrices
+    # STEP 1: Geodesic SVD both matrices
     # =========================================================================
-    # Use a single stable path (svd_via_eigh) for all aspect ratios.
-    _, S_s, Vt_s = svd_via_eigh(b, source, full_matrices=False)
-    _, S_t, Vt_t = svd_via_eigh(b, target, full_matrices=False)
+    # Use GPU-only geodesic SVD - iterates until convergence
+    _, S_s, Vt_s = geodesic_svd(b, source)
+    _, S_t, Vt_t = geodesic_svd(b, target)
 
     b.eval(S_s, Vt_s, S_t, Vt_t)
 
@@ -626,8 +626,8 @@ def _project_svd(
     M = b.matmul(b.transpose(source_k_centered), target_k_centered)
     b.eval(M)
 
-    # SVD of M to find optimal rotation: M = U @ S @ V.T, R = V @ U.T
-    U_m, S_m, Vt_m = svd_via_eigh(b, M, full_matrices=False)
+    # Geodesic SVD of M to find optimal rotation: M = U @ S @ V.T, R = V @ U.T
+    U_m, S_m, Vt_m = geodesic_svd(b, M)
     b.eval(U_m, Vt_m)
 
     # R = V @ U.T is the optimal orthogonal matrix (Procrustes solution)

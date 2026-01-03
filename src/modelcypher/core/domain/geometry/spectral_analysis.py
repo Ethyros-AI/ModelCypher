@@ -53,6 +53,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     geodesic_svd,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -129,13 +130,15 @@ def compute_spectral_metrics(
     # Handle 1D weights (biases, layernorms)
     if source_weight.ndim == 1:
         # For 1D, use vector norms instead of singular values
-        source_norm_arr = b.norm(source_weight)
-        target_norm_arr = b.norm(target_weight)
-        delta_norm_arr = b.norm(source_weight - target_weight)
+        source_norm_arr = geodesic_norms(b.reshape(source_weight, (1, -1)), b)
+        target_norm_arr = geodesic_norms(b.reshape(target_weight, (1, -1)), b)
+        delta_norm_arr = geodesic_norms(
+            b.reshape(source_weight - target_weight, (1, -1)), b
+        )
         b.eval(source_norm_arr, target_norm_arr, delta_norm_arr)
-        source_norm = float(b.to_scalar(source_norm_arr))
-        target_norm = float(b.to_scalar(target_norm_arr))
-        delta_norm = float(b.to_scalar(delta_norm_arr))
+        source_norm = float(b.to_scalar(source_norm_arr[0]))
+        target_norm = float(b.to_scalar(target_norm_arr[0]))
+        delta_norm = float(b.to_scalar(delta_norm_arr[0]))
 
         if target_norm < eps:
             target_norm = eps
@@ -195,9 +198,9 @@ def compute_spectral_metrics(
         target_min_s = eps
 
     # Delta Frobenius norm
-    delta_arr = b.norm(source_arr - target_arr)
+    delta_arr = geodesic_norms(b.reshape(source_arr - target_arr, (1, -1)), b)
     b.eval(delta_arr)
-    delta_frobenius = _to_float(delta_arr)
+    delta_frobenius = float(b.to_scalar(delta_arr[0]))
 
     # Condition number of target
     condition_number = target_spectral / max(target_min_s, eps)

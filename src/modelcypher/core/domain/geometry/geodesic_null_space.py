@@ -74,6 +74,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     regularization_epsilon,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 from modelcypher.core.domain.geometry.riemannian_utils import (
     RiemannianGeometry,
 )
@@ -195,7 +196,7 @@ class GeodesicNullSpaceFilter:
                     f"Dimension mismatch: delta has {delta_dim} elements, "
                     f"activations have {d} features. Returning original delta."
                 )
-                norm_arr = backend.norm(delta_flat)
+                norm_arr = geodesic_norms(backend.reshape(delta_flat, (1, -1)), backend)
                 backend.eval(norm_arr)
                 return GeodesicNullSpaceResult(
                     filtered_delta=weight_delta,
@@ -203,8 +204,8 @@ class GeodesicNullSpaceFilter:
                     orthogonal_dim=0,
                     projection_loss=0.0,
                     preserved_fraction=1.0,
-                    original_norm=float(backend.to_scalar(norm_arr)),
-                    filtered_norm=float(backend.to_scalar(norm_arr)),
+                    original_norm=float(backend.to_scalar(norm_arr[0])),
+                    filtered_norm=float(backend.to_scalar(norm_arr[0])),
                     filtering_applied=False,
                     k_neighbors=0,
                     mean_geodesic_distance=0.0,
@@ -314,12 +315,12 @@ class GeodesicNullSpaceFilter:
             orthogonal_dim = d
 
         # Compute metrics
-        original_norm_arr = backend.norm(delta_flat)
-        filtered_norm_arr = backend.norm(delta_safe)
+        original_norm_arr = geodesic_norms(backend.reshape(delta_flat, (1, -1)), backend)
+        filtered_norm_arr = geodesic_norms(backend.reshape(delta_safe, (1, -1)), backend)
         backend.eval(original_norm_arr, filtered_norm_arr)
 
-        original_norm = float(backend.to_scalar(original_norm_arr))
-        filtered_norm = float(backend.to_scalar(filtered_norm_arr))
+        original_norm = float(backend.to_scalar(original_norm_arr[0]))
+        filtered_norm = float(backend.to_scalar(filtered_norm_arr[0]))
 
         if original_norm > 0:
             preserved_fraction = filtered_norm / original_norm

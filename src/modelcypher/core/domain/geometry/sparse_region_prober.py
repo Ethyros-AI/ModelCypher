@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 from modelcypher.core.domain.geometry.sparse_region_domains import (
     DomainDefinition,
     ProbeCorpus,
@@ -317,15 +317,11 @@ class SparseRegionProber:
     def compute_activation(hidden_state: object) -> float:
         from modelcypher.core.domain._backend import get_default_backend
 
-        if hasattr(hidden_state, "shape"):
-            b = get_default_backend()
-            norm = b.norm(hidden_state)
-            b.eval(norm)
-            return float(b.to_scalar(norm))
-
-        total = SparseRegionProber._sum_squares(hidden_state)
-        _b = get_default_backend()
-        return sqrt_scalar(total, _b)
+        b = get_default_backend()
+        arr = hidden_state if hasattr(hidden_state, "shape") else b.array(hidden_state)
+        norms = geodesic_norms(b.reshape(arr, (1, -1)), b)
+        b.eval(norms)
+        return float(b.to_scalar(norms[0]))
 
     def _aggregate_to_stats(
         self, prompt_activations: list[dict[int, float]], total_layers: int

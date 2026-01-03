@@ -105,6 +105,7 @@ from modelcypher.core.domain.geometry.geometry_fingerprint import GeometricFinge
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
+    power_iteration_eigh,
     sqrt_scalar,
 )
 
@@ -561,8 +562,9 @@ class SharedSubspaceProjector:
             gram = b.matmul(matrix, matrix_t)
             b.eval(gram)
 
-            # Eigendecomposition of Gram matrix
-            eigenvalues, eigenvectors = b.eigh(gram)
+            # GPU-only power iteration eigendecomposition - iterates until convergence
+            n_eig_full = int(gram.shape[0])
+            eigenvalues, eigenvectors = power_iteration_eigh(b, gram, k=n_eig_full)
             b.eval(eigenvalues, eigenvectors)
 
             # Sort in descending order (eigh returns ascending)
@@ -759,8 +761,9 @@ class SharedSubspaceProjector:
         if cov.size == 0:
             return None, None
 
-        # Eigendecomposition
-        eigenvalues, eigenvectors = b.eigh(cov)
+        # GPU-only power iteration eigendecomposition - iterates until convergence
+        n_cov = int(cov.shape[0])
+        eigenvalues, eigenvectors = power_iteration_eigh(b, cov, k=n_cov)
         b.eval(eigenvalues, eigenvectors)
 
         # Floor eigenvalues

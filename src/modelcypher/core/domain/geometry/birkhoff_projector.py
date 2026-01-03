@@ -53,10 +53,11 @@ from typing import TYPE_CHECKING, Any
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    geodesic_svd,
     regularization_epsilon,
-    svd_via_eigh,
     tiny_value,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -257,8 +258,8 @@ class BirkhoffProjector:
         """Compute spectral norm (largest singular value) of a matrix."""
         backend = self._backend
 
-        # SVD method (required - no fallback)
-        _, S, _ = svd_via_eigh(backend, matrix, full_matrices=False)
+        # Geodesic SVD - GPU-only, iterates until convergence
+        _, S, _ = geodesic_svd(backend, matrix)
         backend.eval(S)
         count = int(S.shape[0])
         if count > 0:
@@ -295,8 +296,8 @@ class BirkhoffProjector:
         # Need to clip: scale the matrix
         scale = max_norm / spectral_norm
 
-        # SVD-based clipping (required - no fallback)
-        U, S, Vh = svd_via_eigh(backend, matrix, full_matrices=False)
+        # Geodesic SVD - GPU-only, iterates until convergence
+        U, S, Vh = geodesic_svd(backend, matrix)
         backend.eval(U, S, Vh)
 
         # Scale singular values
@@ -359,9 +360,9 @@ class BirkhoffProjector:
         backend.eval(gram)
 
         # Normalize gram matrix for faster Sinkhorn convergence
-        gram_norm = backend.norm(gram)
+        gram_norm = geodesic_norms(backend.reshape(gram, (1, -1)), backend)
         backend.eval(gram_norm)
-        gram_norm_val = float(backend.to_scalar(gram_norm))
+        gram_norm_val = float(backend.to_scalar(gram_norm[0]))
 
         if gram_norm_val > 0:
             gram = gram / gram_norm_val

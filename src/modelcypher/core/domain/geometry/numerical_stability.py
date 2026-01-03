@@ -633,7 +633,7 @@ def gram_schmidt_orthogonalize(
             v = v / norm_val
         else:
             # Vector is linearly dependent - use random
-            v = b.ones((n,), dtype="float32") / sqrt_scalar(b, n)
+            v = b.ones((n,), dtype="float32") / sqrt_scalar(n, b)
         b.eval(v)
         Q_cols.append(v)
 
