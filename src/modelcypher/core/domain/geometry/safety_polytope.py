@@ -304,7 +304,7 @@ class SafetyPolytope:
         # Check overall magnitude
         magnitude = diagnostics.magnitude
         if magnitude > self.bounds.magnitude_threshold:
-            denom = max(self.bounds.magnitude_threshold, math.ulp(1.0))
+            denom = max(self.bounds.magnitude_threshold, eps)
             triggers.append(
                 TransformationTrigger(
                     dimension="magnitude",

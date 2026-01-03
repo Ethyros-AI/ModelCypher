@@ -29,8 +29,6 @@ Tests cover:
 """
 
 from __future__ import annotations
-
-import math
 from typing import TYPE_CHECKING
 
 import pytest
@@ -51,6 +49,7 @@ from modelcypher.core.domain.geometry.riemannian_utils import (
     frechet_mean,
     geodesic_distance_matrix,
 )
+from modelcypher.core.support.array_utils import array_to_list
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
@@ -62,6 +61,23 @@ def _eps(backend: "Backend", *values: float) -> float:
 
 def _div_eps(backend: "Backend", *values: float) -> float:
     return division_epsilon(backend, backend.array(list(values) or [1.0]))
+
+
+def _is_finite(value: float) -> bool:
+    return value == value and value not in (float("inf"), float("-inf"))
+
+
+def _is_inf(value: float) -> bool:
+    return value in (float("inf"), float("-inf"))
+
+
+def _max_abs(backend: "Backend", array) -> float:
+    diff = backend.max(backend.abs(array))
+    backend.eval(diff)
+    return float(backend.to_scalar(diff))
+
+
+PI = 3.141592653589793
 
 
 # =============================================================================
@@ -236,11 +252,19 @@ class TestFrechetMean:
         points = backend.array([[1.0, 2.0, 3.0]])
         result = rg.frechet_mean(points)
 
-        mean_np = backend.to_numpy(result.mean)
-        eps = _eps(backend, float(mean_np[0]), 1.0, float(mean_np[1]), 2.0, float(mean_np[2]), 3.0)
-        assert abs(mean_np[0] - 1.0) <= eps
-        assert abs(mean_np[1] - 2.0) <= eps
-        assert abs(mean_np[2] - 3.0) <= eps
+        mean_list = array_to_list(backend, result.mean)
+        eps = _eps(
+            backend,
+            float(mean_list[0]),
+            1.0,
+            float(mean_list[1]),
+            2.0,
+            float(mean_list[2]),
+            3.0,
+        )
+        assert abs(mean_list[0] - 1.0) <= eps
+        assert abs(mean_list[1] - 2.0) <= eps
+        assert abs(mean_list[2] - 3.0) <= eps
         assert result.converged is True
         assert result.iterations == 0
 
@@ -252,8 +276,8 @@ class TestFrechetMean:
         points = backend.zeros((0, 3))
         result = rg.frechet_mean(points)
 
-        mean_np = backend.to_numpy(result.mean)
-        assert len(mean_np) == 3
+        mean_list = array_to_list(backend, result.mean)
+        assert len(mean_list) == 3
         assert result.converged is True
 
     def test_two_points(self, any_backend: "Backend") -> None:
@@ -267,11 +291,11 @@ class TestFrechetMean:
         ])
         result = rg.frechet_mean(points)
 
-        mean_np = backend.to_numpy(result.mean)
+        mean_list = array_to_list(backend, result.mean)
         # Should be near (1.0, 0.0)
-        eps = _eps(backend, float(mean_np[0]), 1.0, float(mean_np[1]), 0.0)
-        assert abs(mean_np[0] - 1.0) <= eps
-        assert abs(mean_np[1]) <= eps
+        eps = _eps(backend, float(mean_list[0]), 1.0, float(mean_list[1]), 0.0)
+        assert abs(mean_list[0] - 1.0) <= eps
+        assert abs(mean_list[1]) <= eps
 
     def test_symmetric_points(self, any_backend: "Backend") -> None:
         """Fréchet mean of symmetric points should be at origin."""
@@ -287,11 +311,11 @@ class TestFrechetMean:
         ])
         result = rg.frechet_mean(points)
 
-        mean_np = backend.to_numpy(result.mean)
+        mean_list = array_to_list(backend, result.mean)
         # Should be near origin
-        eps = _eps(backend, float(mean_np[0]), float(mean_np[1]))
-        assert abs(mean_np[0]) <= eps
-        assert abs(mean_np[1]) <= eps
+        eps = _eps(backend, float(mean_list[0]), float(mean_list[1]))
+        assert abs(mean_list[0]) <= eps
+        assert abs(mean_list[1]) <= eps
 
     def test_with_weights(self, any_backend: "Backend") -> None:
         """Fréchet mean with weights should shift toward heavier weights."""
@@ -306,12 +330,12 @@ class TestFrechetMean:
         weights = backend.array([1.0, 3.0])
 
         result = rg.frechet_mean(points, weights=weights)
-        mean_np = backend.to_numpy(result.mean)
+        mean_list = array_to_list(backend, result.mean)
 
         # Weighted mean should be closer to (4, 0) than (0, 0)
         # Euclidean weighted mean would be at (3, 0)
-        eps = _eps(backend, float(mean_np[0]), 3.0)
-        assert abs(mean_np[0] - 3.0) <= eps
+        eps = _eps(backend, float(mean_list[0]), 3.0)
+        assert abs(mean_list[0] - 3.0) <= eps
 
     def test_convergence(self, any_backend: "Backend") -> None:
         """Fréchet mean should converge."""
@@ -405,11 +429,11 @@ class TestGeodesicDistances:
         points = backend.random_normal((8, 3))
         result = rg.geodesic_distances(points)
 
-        dist_np = backend.to_numpy(result.distances)
+        dist_list = array_to_list(backend, result.distances)
         for i in range(8):
             for j in range(8):
-                eps = _eps(backend, float(dist_np[i, j]), float(dist_np[j, i]))
-                assert abs(dist_np[i, j] - dist_np[j, i]) <= eps
+                eps = _eps(backend, float(dist_list[i][j]), float(dist_list[j][i]))
+                assert abs(dist_list[i][j] - dist_list[j][i]) <= eps
 
     def test_triangle_inequality(self, any_backend: "Backend") -> None:
         """Geodesic distances should satisfy triangle inequality."""
@@ -423,21 +447,21 @@ class TestGeodesicDistances:
         if not result.connected:
             pytest.skip("Graph not connected with k=5")
 
-        dist_np = backend.to_numpy(result.distances)
-        n = dist_np.shape[0]
+        dist_list = array_to_list(backend, result.distances)
+        n = len(dist_list)
 
         for i in range(n):
             for j in range(n):
                 for k in range(n):
-                    if not math.isinf(dist_np[i, j]) and not math.isinf(dist_np[j, k]) and not math.isinf(dist_np[i, k]):
+                    if not _is_inf(dist_list[i][j]) and not _is_inf(dist_list[j][k]) and not _is_inf(dist_list[i][k]):
                         # d(i, k) <= d(i, j) + d(j, k)
                         eps = _eps(
                             backend,
-                            float(dist_np[i, k]),
-                            float(dist_np[i, j]),
-                            float(dist_np[j, k]),
+                            float(dist_list[i][k]),
+                            float(dist_list[i][j]),
+                            float(dist_list[j][k]),
                         )
-                        assert dist_np[i, k] <= dist_np[i, j] + dist_np[j, k] + eps
+                        assert dist_list[i][k] <= dist_list[i][j] + dist_list[j][k] + eps
 
     def test_custom_k_neighbors(self, any_backend: "Backend") -> None:
         """Test with custom k_neighbors."""
@@ -509,7 +533,7 @@ class TestLocalCurvatureEstimation:
         points = backend.random_normal((10, 3))
         result = rg.estimate_local_curvature(points, center_idx=0, k_neighbors=5)
 
-        assert math.isfinite(result.sectional_curvature)
+        assert _is_finite(result.sectional_curvature)
         eps = _eps(backend, result.confidence)
         assert -eps <= result.confidence <= 1.0 + eps
 
@@ -530,10 +554,12 @@ class TestRiemannianCovariance:
         points = backend.array([[1.0, 2.0, 3.0]])
         cov = rg.riemannian_covariance(points)
 
-        cov_np = backend.to_numpy(cov)
-        assert cov_np.shape == (3, 3)
-        eps = _eps(backend, float(cov_np.sum()))
-        assert abs(cov_np.sum()) <= eps
+        assert cov.shape == (3, 3)
+        cov_sum = backend.sum(cov)
+        backend.eval(cov_sum)
+        cov_sum_val = float(backend.to_scalar(cov_sum))
+        eps = _eps(backend, cov_sum_val)
+        assert abs(cov_sum_val) <= eps
 
     def test_covariance_shape(self, any_backend: "Backend") -> None:
         """Covariance matrix should have correct shape."""
@@ -555,12 +581,12 @@ class TestRiemannianCovariance:
         points = backend.random_normal((8, 4))
         cov = rg.riemannian_covariance(points)
 
-        cov_np = backend.to_numpy(cov)
+        cov_list = array_to_list(backend, cov)
         # Check symmetry
         for i in range(4):
             for j in range(4):
-                eps = _eps(backend, float(cov_np[i, j]), float(cov_np[j, i]))
-                assert abs(cov_np[i, j] - cov_np[j, i]) <= eps
+                eps = _eps(backend, float(cov_list[i][j]), float(cov_list[j][i]))
+                assert abs(cov_list[i][j] - cov_list[j][i]) <= eps
 
     def test_with_precomputed_mean(self, any_backend: "Backend") -> None:
         """Covariance with precomputed mean."""
@@ -597,11 +623,11 @@ class TestGeodesicInterpolation:
         ])
 
         result = rg.geodesic_interpolation(p1, p2, t=0.0, points_context=context)
-        result_np = backend.to_numpy(result)
+        result_list = array_to_list(backend, result)
 
-        eps = _eps(backend, float(result_np[0]), float(result_np[1]))
-        assert abs(result_np[0]) <= eps
-        assert abs(result_np[1]) <= eps
+        eps = _eps(backend, float(result_list[0]), float(result_list[1]))
+        assert abs(result_list[0]) <= eps
+        assert abs(result_list[1]) <= eps
 
     def test_t_one_returns_end(self, any_backend: "Backend") -> None:
         """Interpolation at t=1 returns end point."""
@@ -617,11 +643,11 @@ class TestGeodesicInterpolation:
         ])
 
         result = rg.geodesic_interpolation(p1, p2, t=1.0, points_context=context)
-        result_np = backend.to_numpy(result)
+        result_list = array_to_list(backend, result)
 
-        eps = _eps(backend, float(result_np[0]), float(result_np[1]), 1.0)
-        assert abs(result_np[0] - 1.0) <= eps
-        assert abs(result_np[1] - 1.0) <= eps
+        eps = _eps(backend, float(result_list[0]), float(result_list[1]), 1.0)
+        assert abs(result_list[0] - 1.0) <= eps
+        assert abs(result_list[1] - 1.0) <= eps
 
     def test_requires_context(self, any_backend: "Backend") -> None:
         """Geodesic interpolation requires context points."""

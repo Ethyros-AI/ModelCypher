@@ -654,12 +654,9 @@ def _probe_precise(
                                     tgt_layer, src_dim, shared_dim, src_dim, tgt_dim,
                                 )
 
-                            # Convert to nested list using backend to_scalar - no NumPy
-                            rows = int(combined_transform.shape[0])
-                            cols = int(combined_transform.shape[1])
+                            # Convert to nested list using native tolist() for O(1) extraction
                             kv_transforms[tgt_layer] = [
-                                [float(b.to_scalar(combined_transform[r, c])) for c in range(cols)]
-                                for r in range(rows)
+                                [float(x) for x in row] for row in b.tolist(combined_transform)
                             ]
 
                             if not kv_result.is_perfect:
@@ -900,13 +897,16 @@ def _extract_top_k_dims(
     selected_abs = b.take(abs_vals, indices_arr, axis=0)
     b.eval(selected_acts, selected_abs)
 
+    # Use native tolist() for O(1) extraction
+    selected_acts_list = b.tolist(selected_acts)
+    selected_abs_list = b.tolist(selected_abs)
     return [
         ActivatedDimension(
             index=int(idx),
-            activation=float(b.to_scalar(selected_acts[i])),
+            activation=float(selected_acts_list[i]),
         )
         for i, idx in enumerate(top_indices)
-        if float(b.to_scalar(selected_abs[i])) > threshold
+        if float(selected_abs_list[i]) > threshold
     ]
 
 

@@ -17,13 +17,15 @@
 
 from __future__ import annotations
 
-import math
 import sys
 from dataclasses import dataclass
 from typing import Iterable
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     compute_pearson_correlation,
+    is_finite,
+    sqrt_scalar,
 )
 
 # Machine epsilon for float64 (native Python float)
@@ -82,7 +84,8 @@ class TraversalCoherence:
         norm_cd = TraversalCoherence.transition_norm_squared(gram, n, c, d)
         if norm_ab <= _MACHINE_EPS or norm_cd <= _MACHINE_EPS:
             return float("nan")
-        return raw / math.sqrt(norm_ab * norm_cd)
+        _b = get_default_backend()
+        return raw / sqrt_scalar(norm_ab * norm_cd, _b)
 
     @staticmethod
     def transition_gram(
@@ -148,15 +151,17 @@ class TraversalCoherence:
                     continue
                 a_val = trans_a[i * m + j]
                 b_val = trans_b[i * m + j]
-                if not math.isfinite(a_val) or not math.isfinite(b_val):
+                _b = get_default_backend()
+                if not is_finite(a_val, _b) or not is_finite(b_val, _b):
                     continue
                 vec_a.append(a_val)
                 vec_b.append(b_val)
 
         if len(vec_a) < 2:
             return None
+        _b = get_default_backend()
         correlation = compute_pearson_correlation(vec_a, vec_b)
-        if not math.isfinite(correlation):
+        if not is_finite(correlation, _b):
             return None
         return Result(
             transition_gram_correlation=correlation,

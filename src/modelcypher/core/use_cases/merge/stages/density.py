@@ -282,14 +282,17 @@ def _build_density_profile_from_activations(
         variances_vec = b.mean(act_centered * act_centered, axis=1)
         b.eval(variances_vec)
 
-        # Access backend arrays directly via to_scalar - no NumPy
+        # Use native tolist() for O(1) extraction instead of O(n) scalar extractions
         concept_densities: list[ConceptDensity] = []
+        dims_list = b.tolist(dims)
+        variances_list = b.tolist(variances_vec)
+        cluster_tightness_list = b.tolist(cluster_tightness_vec)
 
         for i in range(min(len(act_list), len(probe_ids))):
             probe_id = probe_ids[i]
             domain = probe_domains[i] if i < len(probe_domains) else "unknown"
 
-            intrinsic_dim = float(b.to_scalar(dims[i]))
+            intrinsic_dim = float(dims_list[i])
             # Handle NaN/undefined intrinsic dimensions gracefully
             # This can happen with extreme dimension mismatches or degenerate activations
             if intrinsic_dim != intrinsic_dim or intrinsic_dim <= 0:
@@ -301,8 +304,8 @@ def _build_density_profile_from_activations(
                 continue
             density_score = 1.0 / max(intrinsic_dim, eps)
 
-            variance = float(b.to_scalar(variances_vec[i]))
-            cluster_tightness = float(b.to_scalar(cluster_tightness_vec[i]))
+            variance = float(variances_list[i])
+            cluster_tightness = float(cluster_tightness_list[i])
 
             concept_densities.append(
                 ConceptDensity(

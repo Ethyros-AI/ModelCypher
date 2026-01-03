@@ -34,11 +34,19 @@ which are dimension-independent. Single-vector operations require matching dimen
 
 from __future__ import annotations
 
-import math
+import sys
 from typing import TYPE_CHECKING, Any, Sequence
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    acos_scalar,
+    division_epsilon,
+    sin_scalar,
+    sqrt_scalar,
+)
+
+# math.pi is just a constant, no GPU acceleration needed
+_PI = 3.141592653589793
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
@@ -127,7 +135,8 @@ class VectorMath:
 
         a_list = _to_list(a)
         sum_squares = sum(x * x for x in a_list)
-        return math.sqrt(max(0.0, sum_squares))
+        _b = get_default_backend()
+        return sqrt_scalar(max(0.0, sum_squares), _b)
 
     @staticmethod
     def l2_normalized(a: ArrayLike) -> list[float]:
@@ -194,7 +203,8 @@ class VectorMath:
         if norm_a_sq <= eps or norm_b_sq <= eps:
             raise ValueError("Cannot compute cosine similarity of zero vector")
 
-        return dot_product / (math.sqrt(norm_a_sq) * math.sqrt(norm_b_sq))
+        _b = get_default_backend()
+        return dot_product / (sqrt_scalar(norm_a_sq, _b) * sqrt_scalar(norm_b_sq, _b))
 
     @staticmethod
     def cosine_similarity_clamped(a: ArrayLike, b: ArrayLike) -> float:
@@ -288,7 +298,8 @@ class VectorMath:
         dot = max(-1.0, min(1.0, dot))
 
         # Compute angle between vectors
-        theta = math.acos(dot)
+        _b = get_default_backend()
+        theta = acos_scalar(dot, _b)
 
         # Handle near-parallel case (θ ≈ 0) - fall back to linear interpolation
         if theta < epsilon:
@@ -299,16 +310,16 @@ class VectorMath:
 
         # Handle near-antipodal case (θ ≈ π) - SLERP is undefined
         # Use linear interpolation as fallback (not ideal but defined)
-        if theta > math.pi - epsilon:
+        if theta > _PI - epsilon:
             result = [
                 (1.0 - t) * v0_list[i] + t * v1_list[i] for i in range(len_v0)
             ]
             return result
 
         # SLERP formula: s0 * v0_unit + s1 * v1_unit
-        sin_theta = math.sin(theta)
-        s0 = math.sin((1.0 - t) * theta) / sin_theta
-        s1 = math.sin(t * theta) / sin_theta
+        sin_theta = sin_scalar(theta, _b)
+        s0 = sin_scalar((1.0 - t) * theta, _b) / sin_theta
+        s1 = sin_scalar(t * theta, _b) / sin_theta
 
         result = [s0 * v0_unit[i] + s1 * v1_unit[i] for i in range(len_v0)]
 
@@ -436,7 +447,8 @@ class VectorMath:
 
         if den_a <= 0.0 or den_b <= 0.0:
             raise ValueError("Spearman correlation undefined for constant vectors (zero variance)")
-        return num / math.sqrt(den_a * den_b)
+        _b = get_default_backend()
+        return num / sqrt_scalar(den_a * den_b, _b)
 
 
 # Sparse vector operations (for dict-based vectors)
@@ -467,7 +479,8 @@ class SparseVectorMath:
         if not vector:
             raise ValueError("Cannot compute L2 norm of empty sparse vector")
         sum_squares = sum(v * v for v in vector.values())
-        return math.sqrt(max(0.0, sum_squares))
+        _b = get_default_backend()
+        return sqrt_scalar(max(0.0, sum_squares), _b)
 
     @staticmethod
     def cosine_similarity(a: SparseVector, b: SparseVector) -> float:
@@ -726,19 +739,19 @@ class BackendVectorMath:
         dot_val = _to_scalar(dot_clamped)
 
         # Compute angle
-        theta = math.acos(dot_val)  # Scalar operation, fine with Python math
+        theta = acos_scalar(dot_val, self.backend)
 
         # Handle edge cases
-        if theta < epsilon or theta > math.pi - epsilon:
+        if theta < epsilon or theta > _PI - epsilon:
             # Near-parallel or near-antipodal: fall back to linear
             result = v0_arr * (1.0 - t) + v1_arr * t
             self.backend.eval(result)
             return result
 
         # SLERP formula using backend trig functions
-        sin_theta = math.sin(theta)
-        s0 = math.sin((1.0 - t) * theta) / sin_theta
-        s1 = math.sin(t * theta) / sin_theta
+        sin_theta = sin_scalar(theta, self.backend)
+        s0 = sin_scalar((1.0 - t) * theta, self.backend) / sin_theta
+        s1 = sin_scalar(t * theta, self.backend) / sin_theta
 
         result = v0_unit * s0 + v1_unit * s1
 
@@ -823,8 +836,8 @@ class BackendVectorMath:
         dot_val = _to_scalar(dot_clamped)
 
         # Compute angle
-        theta = math.acos(dot_val)
-        angle_deg = math.degrees(theta)
+        theta = acos_scalar(dot_val, self.backend)
+        angle_deg = theta * 180.0 / _PI  # degrees conversion
 
         metrics: dict[str, float | str] = {
             "angle_deg": angle_deg,
@@ -838,15 +851,15 @@ class BackendVectorMath:
             # Near-identical: linear interpolation
             result_flat = v0 * (1.0 - t) + v1 * t
             metrics["interpolation_mode"] = "linear_parallel"
-        elif theta > math.pi - epsilon:
+        elif theta > _PI - epsilon:
             # Near-antipodal: linear interpolation (SLERP undefined)
             result_flat = v0 * (1.0 - t) + v1 * t
             metrics["interpolation_mode"] = "linear_antipodal"
         else:
             # Standard SLERP
-            sin_theta = math.sin(theta)
-            s0 = math.sin((1.0 - t) * theta) / sin_theta
-            s1 = math.sin(t * theta) / sin_theta
+            sin_theta = sin_scalar(theta, self.backend)
+            s0 = sin_scalar((1.0 - t) * theta, self.backend) / sin_theta
+            s1 = sin_scalar(t * theta, self.backend) / sin_theta
 
             # Interpolate on unit sphere then rescale
             result_unit = v0_unit * s0 + v1_unit * s1
