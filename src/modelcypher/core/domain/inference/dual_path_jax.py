@@ -24,7 +24,7 @@ This is the JAX implementation. For other backends:
 
 Use _platform.get_dual_path_generator() for automatic platform selection.
 
-Implementation based on JAX and Flax best practices (2025):
+Implementation based on JAX and Flax reference patterns (2025):
 - transformers FlaxAutoModelForCausalLM for model loading
 - jax.numpy for tensor operations
 - jax.random for sampling

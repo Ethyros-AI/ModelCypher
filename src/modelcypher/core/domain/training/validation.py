@@ -37,7 +37,7 @@ class Violation:
 
 class TrainingHyperparameterValidator:
     """
-    Validates training hyperparameters against known best practices for Apple Silicon (MLX).
+    Validates training hyperparameters against reference settings for Apple Silicon (MLX).
     Ported from Swift TrainingHyperparameterValidator.
     """
 

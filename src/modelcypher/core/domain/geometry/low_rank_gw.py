@@ -45,6 +45,7 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    machine_epsilon,
     regularization_epsilon,
 )
 
@@ -241,9 +242,31 @@ class LowRankGromovWasserstein:
                     final_error=0.0,
                 )
 
+        # Derive regularization from cost matrix scale if not provided
+        if config.reg is not None:
+            reg = config.reg
+        else:
+            # Use median of cost matrix scale * sqrt(machine_epsilon)
+            # This balances regularization strength with numerical precision
+            flat_c1 = b.reshape(C1, (-1,))
+            sorted_c1 = b.sort(flat_c1)
+            n_flat = int(flat_c1.shape[0])
+            mid = n_flat // 2
+            if n_flat % 2 == 1:
+                median_c1 = b.take(sorted_c1, b.array([mid]), axis=0)
+            else:
+                low = b.take(sorted_c1, b.array([mid - 1]), axis=0)
+                high = b.take(sorted_c1, b.array([mid]), axis=0)
+                median_c1 = (low + high) * 0.5
+            median_c1 = b.squeeze(median_c1)
+            b.eval(median_c1)
+            median_val = float(b.to_scalar(median_c1))
+            eps = float(machine_epsilon(b, C1))
+            reg = max(median_val * (eps ** 0.5), eps)
+
         logger.debug(
             "Low-Rank GW: n=%d, m=%d, rank=%d, reg=%.4f",
-            n, m, r, config.reg
+            n, m, r, reg
         )
 
         # Set random seed for reproducibility
@@ -282,7 +305,7 @@ class LowRankGromovWasserstein:
 
             # Solve low-rank OT with this cost using Sinkhorn
             Q_new, g_new, R_new = self._lowrank_sinkhorn(
-                cost, a, p, r, config.reg,
+                cost, a, p, r, reg,
                 config.max_inner_iterations, inner_threshold, b
             )
             b.eval(Q_new, g_new, R_new)

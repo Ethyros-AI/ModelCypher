@@ -122,13 +122,11 @@ class TestInvariantConvergenceAnalyzer:
     """Tests for the main analyzer class."""
 
     def test_default_thresholds(self):
-        """Should have default thresholds for known families."""
+        """Should have empty thresholds by default (no vibes)."""
         analyzer = InvariantConvergenceAnalyzer()
 
-        assert "fibonacci" in analyzer.thresholds
-        assert "lucas" in analyzer.thresholds
-        assert "primes" in analyzer.thresholds
-        assert "logic" in analyzer.thresholds
+        # No hardcoded thresholds - caller provides or raw measurements returned
+        assert analyzer.thresholds == {}
 
     def test_custom_thresholds(self):
         """Should accept custom thresholds."""

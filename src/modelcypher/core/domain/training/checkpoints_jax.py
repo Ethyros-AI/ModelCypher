@@ -24,7 +24,7 @@ This is the JAX/Orbax implementation. For other backends:
 
 Use _platform.get_checkpoint_manager() for automatic platform selection.
 
-Implementation based on Flax/Orbax best practices (2025):
+Implementation based on Flax/Orbax reference patterns (2025):
 - orbax.checkpoint.StandardCheckpointer for saving/loading
 - Pure dict serialization for simplicity
 - Atomic writes with temp directories

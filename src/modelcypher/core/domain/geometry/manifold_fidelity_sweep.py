@@ -40,6 +40,7 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    machine_epsilon,
     sqrt_scalar,
 )
 
@@ -438,9 +439,21 @@ class ManifoldFidelitySweep:
             return PlateauSummary()
 
         sorted_metrics = sorted(metrics, key=lambda m: m.rank)
-        eps = self.config.plateau_epsilon
 
         def find_plateau(values: list[float], higher_better: bool) -> int | None:
+            # Derive epsilon from data when not provided
+            if self.config.plateau_epsilon is not None:
+                eps = self.config.plateau_epsilon
+            elif len(values) >= 2:
+                # Use sqrt(machine_epsilon) * range as threshold
+                val_range = max(values) - min(values) if values else 0.0
+                backend = get_default_backend()
+                m_eps = float(machine_epsilon(backend, backend.array([1.0])))
+                eps = val_range * (m_eps ** 0.5)
+                if eps == 0:
+                    eps = m_eps
+            else:
+                eps = 1e-10  # Fallback for degenerate case
             if len(values) < 2:
                 return sorted_metrics[0].rank if values else None
 

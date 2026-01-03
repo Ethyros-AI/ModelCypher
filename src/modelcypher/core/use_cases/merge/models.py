@@ -44,7 +44,7 @@ class UnifiedMergeConfig:
     # Core domains define what concepts to transplant (e.g., "mathematical")
     transplant_domains: tuple[str, ...] = ()
     # NOTE: Alpha was REMOVED. The null-space projection determines preserved_fraction
-    # geometrically. For best results, do sequential single-domain transplants.
+    # geometrically. Sequential single-domain transplants reduce cross-domain interference.
 
     # Output quantization (None = preserve original dtype)
     output_quant: str | None = None

@@ -84,17 +84,17 @@ class CrossManifoldConfig:
     Attributes:
         max_iterations: Maximum iterations for stress minimization.
         convergence_tolerance: Stop when stress change < this value.
-        learning_rate: Step size for gradient descent.
+        learning_rate: Step size for gradient descent (derived from data scale if None).
         min_anchors: Minimum anchors required for reliable projection.
-        distance_weight_decay: Controls anchor weighting by distance.
+        distance_weight_decay: Controls anchor weighting by distance (derived if None).
         use_curvature_correction: Whether to apply curvature-aware adjustments.
     """
 
     max_iterations: int = 1000
     convergence_tolerance: float | None = None
-    learning_rate: float = 0.01
+    learning_rate: float | None = None  # Derived from stress gradient scale
     min_anchors: int = 10
-    distance_weight_decay: float = 0.1
+    distance_weight_decay: float | None = None  # Derived from distance distribution
     use_curvature_correction: bool = True
     stress_regularization: float | None = None
 
