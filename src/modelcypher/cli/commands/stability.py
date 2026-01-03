@@ -36,26 +36,14 @@ def _context(ctx: typer.Context) -> CLIContext:
 def stability_run(
     ctx: typer.Context,
     model: str = typer.Option(..., "--model", help="Path to model directory"),
-    num_runs: int = typer.Option(10, "--num-runs", help="Number of test runs"),
-    prompt_variations: int = typer.Option(5, "--prompt-variations", help="Prompt variations"),
-    seed: int | None = typer.Option(None, "--seed", help="Random seed"),
 ) -> None:
     """Execute stability suite on a model."""
     context = _context(ctx)
-    from modelcypher.core.use_cases.stability_service import (
-        StabilityConfig,
-        StabilityService,
-    )
-
-    config = StabilityConfig(
-        num_runs=num_runs,
-        prompt_variations=prompt_variations,
-        seed=seed,
-    )
+    from modelcypher.core.use_cases.stability_service import StabilityService
     service = StabilityService()
 
     try:
-        result = service.run(model, config)
+        result = service.run(model)
     except ValueError as exc:
         error = ErrorDetail(
             code="MC-1011",

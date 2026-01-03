@@ -57,26 +57,16 @@ from modelcypher.core.domain.inference import (
     DualPathGenerator,
     DualPathGeneratorConfiguration,
 )
-from modelcypher.core.domain.inference.entropy_dynamics import EntropyDeltaTracker
 
-# Create tracker configuration from baseline
-tracker_config = EntropyDeltaTracker.Configuration.from_baseline_distribution(
-    anomaly_score_samples=[0.1, 0.2, 0.3, 0.5, 0.7],  # From calibration run
-    alert_percentile=0.90,
-    consecutive_count=3,
-    top_k=10,
-)
-
-# Configure the generator
+# Configure the generator (all parameters are operational, not tuning knobs)
 config = DualPathGeneratorConfiguration(
     base_model_path="/path/to/base/model",
-    delta_tracker_config=tracker_config,
     adapter_path="/path/to/adapter",  # Optional
     max_tokens=512,
     temperature=0.7,
     top_p=0.95,
     repetition_penalty=1.0,
-    halt_on_circuit_breaker=True,
+    stop_sequences=[],
 )
 
 generator = DualPathGenerator(config)
@@ -147,14 +137,13 @@ For higher-resolution approval measurement than raw probability:
 ```python
 from modelcypher.core.domain.inference.dual_path_mlx import compute_token_rank_metrics
 
-rank, normalized_approval, top_k_hit = compute_token_rank_metrics(
-    probabilities=base_probs,
+rank, rank_fraction, frontier_hit = compute_token_rank_metrics(
+    scores=base_logits,
     token_id=selected_token,
-    top_k=10,
 )
-# rank=0 means highest probability token
-# normalized_approval=1.0 for top token, 0.0 for bottom
-# top_k_hit=True if token is in top-10
+# rank=0 means highest logit
+# rank_fraction=1.0 for top token, 0.0 for bottom
+# frontier_hit=True if token is inside the derived frontier
 ```
 
 ## Adapter Pool
@@ -299,18 +288,21 @@ If seeing OOM errors:
 
 ### Circuit Breaker Too Sensitive
 
-Recalibrate thresholds using baseline distribution:
+Calibrate thresholds outside the generator and apply them in your policy layer:
 
 ```python
+from modelcypher.core.domain.entropy.entropy_delta_tracker import EntropyDeltaCalibration
+
 # Collect anomaly scores from normal generation
 baseline_scores = []
 async for chunk in generator.generate("Normal prompt"):
     if chunk["type"] == "anomaly":
         baseline_scores.append(chunk["sample"].anomaly_score)
 
-# Rebuild configuration with new baseline
-new_config = EntropyDeltaTracker.Configuration.from_baseline_distribution(
+# Derive threshold from data geometry
+calibration = EntropyDeltaCalibration.from_baseline_distribution(
     baseline_scores,
-    alert_percentile=0.95,  # Less sensitive
+    source="baseline",
 )
+threshold = calibration.anomaly_threshold
 ```

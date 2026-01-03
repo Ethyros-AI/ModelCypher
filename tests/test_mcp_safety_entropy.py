@@ -406,7 +406,6 @@ class TestEntropyWindowTool:
                     "mc_entropy_window",
                     arguments={
                         "samples": samples,
-                        "windowSize": 3,
                     },
                 )
             )
@@ -549,7 +548,7 @@ class TestSafetyEntropyInvariants:
             return await _await_with_timeout(
                 session.call_tool(
                     "mc_entropy_window",
-                    arguments={"samples": samples, "windowSize": 5},
+                    arguments={"samples": samples},
                 )
             )
 

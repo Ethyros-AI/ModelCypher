@@ -34,16 +34,6 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class StabilityConfig:
-    """Configuration for stability testing."""
-
-    num_runs: int = 10
-    temperature_range: tuple[float, float] = (0.1, 1.0)
-    prompt_variations: int = 5
-    seed: int | None = None
-
-
-@dataclass
 class StabilityRunResult:
     """Result of a stability test run."""
 
@@ -85,14 +75,11 @@ class StabilityService:
     def run(
         self,
         model: str,
-        config: StabilityConfig | None = None,
     ) -> StabilityRunResult:
         """Execute stability suite on a model.
 
         Args:
             model: Path to model directory
-            config: Optional stability configuration
-
         Returns:
             StabilityRunResult with suite_id and initial status
 
@@ -106,16 +93,9 @@ class StabilityService:
         if not model_path.is_dir():
             raise ValueError(f"Model path is not a directory: {model_path}")
 
-        config = config or StabilityConfig()
+        config_dict = self._derive_run_parameters(model_path)
         suite_id = f"stab-{uuid.uuid4().hex[:12]}"
         started_at = datetime.now(timezone.utc).isoformat()
-
-        config_dict = {
-            "num_runs": config.num_runs,
-            "temperature_range": list(config.temperature_range),
-            "prompt_variations": config.prompt_variations,
-            "seed": config.seed,
-        }
 
         # Store suite state
         self._suites[suite_id] = {
@@ -136,7 +116,7 @@ class StabilityService:
 
         # Simulate stability testing
         # In production, this would run actual inference tests
-        self._run_stability_tests(suite_id, config)
+        self._run_stability_tests(suite_id, config_dict)
 
         return StabilityRunResult(
             suite_id=suite_id,
@@ -179,7 +159,7 @@ class StabilityService:
     def _run_stability_tests(
         self,
         suite_id: str,
-        config: StabilityConfig,
+        config: dict[str, Any],
     ) -> None:
         """Run stability tests (simulated).
 
@@ -198,7 +178,7 @@ class StabilityService:
             "prompt_sensitivity": 0.12,
             "output_variance": 0.08,
             "semantic_stability": 0.92,
-            "runs_completed": config.num_runs,
+            "runs_completed": config["num_runs"],
         }
 
         # Simulated per-prompt results
@@ -207,10 +187,62 @@ class StabilityService:
                 "prompt_id": f"prompt-{i}",
                 "consistency": 0.8 + (i * 0.02),
                 "variance": 0.1 - (i * 0.01),
-                "runs": config.num_runs,
+                "runs": config["num_runs"],
             }
-            for i in range(config.prompt_variations)
+            for i in range(config["prompt_variations"])
         ]
 
         suite["status"] = "completed"
         suite["completed_at"] = datetime.now(timezone.utc).isoformat()
+
+    @staticmethod
+    def _derive_run_parameters(model_path: Path) -> dict[str, Any]:
+        """Derive stability run parameters from model geometry."""
+        import json
+        import math
+
+        config_path = model_path / "config.json"
+        config_data: dict[str, Any] = {}
+        if config_path.exists():
+            try:
+                config_data = json.loads(config_path.read_text())
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"Invalid config.json for model: {model_path}") from exc
+
+        def _get_int(keys: tuple[str, ...]) -> int | None:
+            for key in keys:
+                value = config_data.get(key)
+                if isinstance(value, (int, float)) and value > 0:
+                    return int(value)
+            return None
+
+        layer_count = _get_int(("num_hidden_layers", "num_layers", "n_layer"))
+        head_count = _get_int(("num_attention_heads", "num_heads", "n_head"))
+        hidden_size = _get_int(("hidden_size", "d_model", "n_embd"))
+        vocab_size = _get_int(("vocab_size",))
+
+        if layer_count and head_count:
+            scale = layer_count * head_count
+        elif hidden_size:
+            scale = hidden_size
+        elif vocab_size:
+            scale = vocab_size
+        else:
+            scale = len(config_data)
+
+        if scale <= 0:
+            raise ValueError("Model config missing geometry for derived stability parameters")
+
+        num_runs = int(math.sqrt(float(scale)))
+        if num_runs <= 0:
+            raise ValueError("Derived stability num_runs must be positive")
+
+        prompt_variations = int(math.sqrt(float(num_runs)))
+        if prompt_variations <= 0:
+            raise ValueError("Derived stability prompt_variations must be positive")
+
+        return {
+            "num_runs": num_runs,
+            "prompt_variations": prompt_variations,
+            "derived_from": "model_config",
+        }

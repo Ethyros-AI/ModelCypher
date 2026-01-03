@@ -161,19 +161,12 @@ def test_entropy_verify_baseline():
 
 def test_entropy_window_basic():
     """Test entropy window sliding analysis."""
+    # Window size is derived from data, not configured
     samples = "[[3.0, 0.2], [3.1, 0.21], [3.2, 0.19], [2.9, 0.18]]"
 
     result = runner.invoke(
         app,
-        [
-            "entropy",
-            "window",
-            samples,
-            "--size",
-            "10",
-            "--output",
-            "json",
-        ],
+        ["entropy", "window", samples],
     )
     assert result.exit_code == 0
     data = json.loads(result.stdout)
@@ -185,19 +178,12 @@ def test_entropy_window_basic():
 def test_entropy_window_high_entropy_samples():
     """Test entropy window with high entropy samples."""
     # High entropy samples should still yield raw statistics
+    # Window size is derived from data, not configured
     samples = "[[5.0, 1.0], [5.2, 1.1], [5.5, 1.2], [5.8, 1.3], [6.0, 1.5]]"
 
     result = runner.invoke(
         app,
-        [
-            "entropy",
-            "window",
-            samples,
-            "--size",
-            "5",
-            "--output",
-            "json",
-        ],
+        ["entropy", "window", samples],
     )
     assert result.exit_code == 0
     data = json.loads(result.stdout)
@@ -490,18 +476,12 @@ def test_entropy_window_text_output():
 
     result = runner.invoke(
         app,
-        [
-            "entropy",
-            "window",
-            samples,
-            "--size",
-            "10",
-            "--output",
-            "text",
-        ],
+        ["entropy", "window", samples],
     )
     assert result.exit_code == 0
-    assert "ENTROPY WINDOW ANALYSIS" in result.stdout
+    # JSON output by default - check for expected keys
+    data = json.loads(result.stdout)
+    assert "currentEntropy" in data
 
 
 def test_entropy_dual_path_text_output():

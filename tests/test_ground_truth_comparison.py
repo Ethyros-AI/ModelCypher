@@ -173,8 +173,6 @@ class TestProcrustesGroundTruth:
     def test_procrustes_disparity_matches_scipy(self) -> None:
         """Procrustes alignment should reduce error versus unaligned baseline."""
         from modelcypher.core.domain.geometry.generalized_procrustes import (
-            Config,
-            FrechetMeanConfig,
             GeneralizedProcrustes,
         )
 
@@ -186,20 +184,16 @@ class TestProcrustesGroundTruth:
         Y_arr = backend.random_normal((10, 5))
         backend.eval(X_arr, Y_arr)
 
-        # ModelCypher implementation
+        # ModelCypher implementation - no config needed, all params derived from data
         gpa = GeneralizedProcrustes(backend)
-        config = Config(
-            allow_scaling=True,  # scipy does scaling
-            frechet_mean=FrechetMeanConfig(enabled=False),
-        )
         result = gpa.align(
-            [array_to_list(backend, X_arr), array_to_list(backend, Y_arr)], config
+            [array_to_list(backend, X_arr), array_to_list(backend, Y_arr)]
         )
 
         assert result is not None
         # Ensure alignment reduces error relative to unaligned consensus
         stacked = backend.stack([X_arr, Y_arr], axis=0)
-        consensus = gpa._compute_consensus(stacked, config)  # type: ignore[attr-defined]
+        consensus = gpa._compute_consensus(stacked)  # type: ignore[attr-defined]
         diffs = stacked - consensus
         baseline_err = backend.sum(diffs**2)
         backend.eval(baseline_err)
@@ -210,8 +204,6 @@ class TestProcrustesGroundTruth:
     def test_procrustes_recovers_rotation(self) -> None:
         """Procrustes should recover a known rotation."""
         from modelcypher.core.domain.geometry.generalized_procrustes import (
-            Config,
-            FrechetMeanConfig,
             GeneralizedProcrustes,
         )
 
@@ -239,14 +231,10 @@ class TestProcrustesGroundTruth:
         Y_arr = backend.matmul(X_arr, R_arr)
         backend.eval(Y_arr)
 
-        # ModelCypher should recover near-zero error
+        # ModelCypher should recover near-zero error - no config needed
         gpa = GeneralizedProcrustes(backend)
-        config = Config(
-            allow_scaling=False,
-            frechet_mean=FrechetMeanConfig(enabled=False),
-        )
         result = gpa.align(
-            [array_to_list(backend, X_arr), array_to_list(backend, Y_arr)], config
+            [array_to_list(backend, X_arr), array_to_list(backend, Y_arr)]
         )
 
         assert result is not None

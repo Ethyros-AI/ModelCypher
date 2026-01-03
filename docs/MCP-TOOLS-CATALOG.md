@@ -1015,7 +1015,7 @@ Verify entropy against baseline.
 
 ### mc_entropy_window
 
-Compute sliding window entropy.
+Compute sliding window entropy (window size derived from sample count).
 
 ---
 

@@ -535,7 +535,7 @@ mc entropy verify-baseline --mean 0.1 --std-dev 0.05 --max 0.3 --min 0.0 --obser
 ### mc entropy window
 Analyze entropy using a sliding window.
 ```bash
-mc entropy window '[[3.5, 0.2], [3.6, 0.1]]' --size 50
+mc entropy window '[[3.5, 0.2], [3.6, 0.1]]'
 ```
 
 ### mc entropy conversation-track

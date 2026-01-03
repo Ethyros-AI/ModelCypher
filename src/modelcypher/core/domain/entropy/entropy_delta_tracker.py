@@ -215,7 +215,7 @@ class EntropyDeltaTracker:
 
         Computes entropy for both paths, creates a delta sample, and checks
         for anomalies. May trigger circuit breaker if consecutive anomalies
-        exceed the configured threshold.
+        exceed the calibrated threshold.
 
         Args:
             base_logits: Logits from base model (no adapter).
