@@ -84,9 +84,10 @@ def _run_merge(
             "preMerge": {
                 "domainsAnalyzed": result.pre_merge.domains_analyzed,
                 "meanOverlap": result.pre_merge.mean_overlap,
-                "meanAlignment": result.pre_merge.mean_alignment,
+                "meanSubspaceAlignment": result.pre_merge.mean_subspace_alignment,
                 "meanCurvatureDivergence": result.pre_merge.mean_curvature_divergence,
                 "meanDistance": result.pre_merge.mean_distance,
+                "alignedPairs": result.pre_merge.aligned_pairs,
             },
             "mergeResult": {
                 "layerCount": result.merge_result.get("layer_count"),
@@ -141,9 +142,10 @@ def _run_merge(
                 "PRE-MERGE ANALYSIS",
                 f"  Domains: {', '.join(result.pre_merge.domains_analyzed)}",
                 f"  Mean Overlap: {result.pre_merge.mean_overlap:.4f}",
-                f"  Mean Alignment: {result.pre_merge.mean_alignment:.4f}",
+                f"  Mean Subspace Alignment: {result.pre_merge.mean_subspace_alignment:.4f}",
                 f"  Mean Curvature Divergence: {result.pre_merge.mean_curvature_divergence:.4f}",
                 f"  Mean Distance: {result.pre_merge.mean_distance:.4f}",
+                f"  Aligned Pairs: {result.pre_merge.aligned_pairs}",
                 "",
                 "MERGE RESULT",
                 f"  Layers: {result.merge_result.get('layer_count')}",

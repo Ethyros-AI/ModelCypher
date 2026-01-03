@@ -148,7 +148,7 @@ class TestGroundingRotation:
         angle_rad = acos_scalar(clamped, backend)
         angle_tol = angle_rad * (180.0 / pi_value(backend))
         assert abs(rotation.angle_degrees - 0.0) <= angle_tol
-        assert rotation.alignment_score >= 1.0 - eps
+        assert rotation.distance_correlation >= 1.0 - eps
 
     def test_rotated_anchors_detect_rotation(self, backend):
         """Significantly different anchor sets should show lower alignment."""
@@ -178,8 +178,8 @@ class TestGroundingRotation:
         rotation = estimator.estimate_rotation(source_anchors, target_anchors)
 
         # Should detect structural difference (lower alignment)
-        eps = _eps(backend, rotation.alignment_score, rotation.confidence)
-        assert rotation.alignment_score <= 1.0 + eps
+        eps = _eps(backend, rotation.distance_correlation, rotation.confidence)
+        assert rotation.distance_correlation <= 1.0 + eps
         assert rotation.confidence >= -eps
 
     def test_insufficient_anchors_return_low_confidence(self, backend):
@@ -191,9 +191,9 @@ class TestGroundingRotation:
 
         rotation = estimator.estimate_rotation(source, target)
 
-        eps = _eps(backend, rotation.confidence, rotation.alignment_score)
+        eps = _eps(backend, rotation.confidence, rotation.distance_correlation)
         assert abs(rotation.confidence - 0.0) <= eps
-        assert abs(rotation.alignment_score - 0.0) <= eps
+        assert abs(rotation.distance_correlation - 0.0) <= eps
 
 
 class TestCrossGroundingSynthesizer:
@@ -309,9 +309,9 @@ class TestCrossGroundingTransferEngine:
         assert result.mean_stress_preservation >= -eps
         assert result.mean_stress_preservation <= 1.0 + eps
         assert result.min_stress_preservation <= result.mean_stress_preservation
-        eps = _eps(backend, result.grounding_rotation.alignment_score)
-        assert result.grounding_rotation.alignment_score >= -eps
-        assert result.grounding_rotation.alignment_score <= 1.0 + eps
+        eps = _eps(backend, result.grounding_rotation.distance_correlation)
+        assert result.grounding_rotation.distance_correlation >= -eps
+        assert result.grounding_rotation.distance_correlation <= 1.0 + eps
 
     def test_estimate_feasibility_returns_valid_assessment(self, backend, sample_anchors):
         """Feasibility estimation should return valid assessment."""
@@ -321,7 +321,7 @@ class TestCrossGroundingTransferEngine:
 
         assert "common_anchors" in feasibility
         assert "grounding_rotation_degrees" in feasibility
-        assert "alignment_score" in feasibility
+        assert "distance_correlation" in feasibility
         assert "confidence" in feasibility
         assert feasibility["common_anchors"] == len(sample_anchors)
 
@@ -331,9 +331,9 @@ class TestCrossGroundingTransferEngine:
 
         feasibility = engine.estimate_transfer_feasibility(sample_anchors, sample_anchors)
 
-        eps = _eps(backend, feasibility["alignment_score"], feasibility["grounding_rotation_degrees"])
-        assert feasibility["alignment_score"] >= -eps
-        assert feasibility["alignment_score"] <= 1.0 + eps
+        eps = _eps(backend, feasibility["distance_correlation"], feasibility["grounding_rotation_degrees"])
+        assert feasibility["distance_correlation"] >= -eps
+        assert feasibility["distance_correlation"] <= 1.0 + eps
         assert feasibility["grounding_rotation_degrees"] >= -eps
 
 

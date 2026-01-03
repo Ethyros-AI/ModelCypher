@@ -166,8 +166,8 @@ class TestConversationTrackingIntegration:
         expected_mean = (0.1 - 0.1 + 0.1) / 3.0
         assert abs(assessment.mean_delta - expected_mean) <= eps
         assert assessment.anomaly_count == 1
-        assert assessment.max_anomaly_score == 0.3
-        assert assessment.oscillation_frequency == 1.0
+        assert abs(assessment.max_anomaly_score - 0.3) <= eps
+        assert abs(assessment.oscillation_frequency - 1.0) <= eps
 
     def test_tracker_baseline_drift(self) -> None:
         """Baseline drift should use baseline z-score of mean delta."""

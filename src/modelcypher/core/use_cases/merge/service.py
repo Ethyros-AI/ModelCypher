@@ -59,9 +59,10 @@ class PreMergeAnalysis:
 
     # Global metrics
     mean_overlap: float
-    mean_alignment: float
+    mean_subspace_alignment: float
     mean_curvature_divergence: float
     mean_distance: float
+    aligned_pairs: int
 
 
 @dataclass(frozen=True)
@@ -275,74 +276,80 @@ class MergePipelineService:
             domain_analysis = {
                 "concepts_analyzed": len(common_concepts),
                 "overlap_scores": [],
-                "alignment_scores": [],
+                "subspace_alignments": [],
                 "curvature_scores": [],
                 "distance_scores": [],
             }
+            aligned_pairs = 0
 
             for concept_id in common_concepts:
                 result = predictor.analyze(
                     source_volumes[concept_id], target_volumes[concept_id]
                 )
                 domain_analysis["overlap_scores"].append(result.overlap_score)
-                domain_analysis["alignment_scores"].append(result.alignment_score)
+                domain_analysis["subspace_alignments"].append(result.subspace_alignment)
                 domain_analysis["curvature_scores"].append(result.curvature_divergence)
                 domain_analysis["distance_scores"].append(result.distance_score)
+                if result.aligned:
+                    aligned_pairs += 1
 
             if domain_analysis["overlap_scores"]:
                 # Batch array creation and mean computation - single eval for all
                 overlap_arr = backend.array(domain_analysis["overlap_scores"])
-                align_arr = backend.array(domain_analysis["alignment_scores"])
+                subspace_arr = backend.array(domain_analysis["subspace_alignments"])
                 curvature_arr = backend.array(domain_analysis["curvature_scores"])
                 distance_arr = backend.array(domain_analysis["distance_scores"])
                 mean_overlap = backend.mean(overlap_arr)
-                mean_align = backend.mean(align_arr)
+                mean_subspace = backend.mean(subspace_arr)
                 mean_curv = backend.mean(curvature_arr)
                 mean_dist = backend.mean(distance_arr)
                 # Single eval for all 4 means
-                backend.eval(mean_overlap, mean_align, mean_curv, mean_dist)
+                backend.eval(mean_overlap, mean_subspace, mean_curv, mean_dist)
                 domain_analysis["mean_overlap"] = float(backend.to_scalar(mean_overlap))
-                domain_analysis["mean_alignment"] = float(backend.to_scalar(mean_align))
+                domain_analysis["mean_subspace_alignment"] = float(backend.to_scalar(mean_subspace))
                 domain_analysis["mean_curvature_divergence"] = float(backend.to_scalar(mean_curv))
                 domain_analysis["mean_distance"] = float(backend.to_scalar(mean_dist))
             else:
                 domain_analysis["mean_overlap"] = 0.0
-                domain_analysis["mean_alignment"] = 1.0
+                domain_analysis["mean_subspace_alignment"] = 1.0
                 domain_analysis["mean_curvature_divergence"] = 0.0
                 domain_analysis["mean_distance"] = 0.0
 
+            domain_analysis["aligned_pairs"] = aligned_pairs
             del domain_analysis["overlap_scores"]
-            del domain_analysis["alignment_scores"]
+            del domain_analysis["subspace_alignments"]
             del domain_analysis["curvature_scores"]
             del domain_analysis["distance_scores"]
             domain_results[domain_name] = domain_analysis
 
         # Compute global metrics
         all_overlap_scores = []
-        all_alignment_scores = []
+        all_subspace_alignments = []
         all_curvature_scores = []
         all_distance_scores = []
+        aligned_pairs_total = 0
 
         for dr in domain_results.values():
             all_overlap_scores.append(dr["mean_overlap"])
-            all_alignment_scores.append(dr["mean_alignment"])
+            all_subspace_alignments.append(dr["mean_subspace_alignment"])
             all_curvature_scores.append(dr["mean_curvature_divergence"])
             all_distance_scores.append(dr["mean_distance"])
+            aligned_pairs_total += int(dr.get("aligned_pairs", 0))
 
         if all_overlap_scores:
             # Batch array creation and eval
             overlap_global = backend.mean(backend.array(all_overlap_scores))
-            align_global = backend.mean(backend.array(all_alignment_scores))
+            subspace_global = backend.mean(backend.array(all_subspace_alignments))
             curv_global = backend.mean(backend.array(all_curvature_scores))
             dist_global = backend.mean(backend.array(all_distance_scores))
-            backend.eval(overlap_global, align_global, curv_global, dist_global)
+            backend.eval(overlap_global, subspace_global, curv_global, dist_global)
             mean_overlap = float(backend.to_scalar(overlap_global))
-            mean_alignment = float(backend.to_scalar(align_global))
+            mean_subspace_alignment = float(backend.to_scalar(subspace_global))
             mean_curvature = float(backend.to_scalar(curv_global))
             mean_distance = float(backend.to_scalar(dist_global))
         else:
             mean_overlap = 0.0
-            mean_alignment = 1.0
+            mean_subspace_alignment = 1.0
             mean_curvature = 0.0
             mean_distance = 0.0
 
@@ -353,9 +360,10 @@ class MergePipelineService:
             domains_analyzed=[d.value for d in domain_list],
             domain_results=domain_results,
             mean_overlap=mean_overlap,
-            mean_alignment=mean_alignment,
+            mean_subspace_alignment=mean_subspace_alignment,
             mean_curvature_divergence=mean_curvature,
             mean_distance=mean_distance,
+            aligned_pairs=aligned_pairs_total,
         )
 
     def _extract_domain_activations_cached(

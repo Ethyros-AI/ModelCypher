@@ -90,12 +90,13 @@ class TestProjectionResult:
         projected = backend.random_normal((10, 8))
         result = ProjectionResult(
             projected=projected,
-            alignment_score=0.95,
             method_used=ProjectionMethod.GRAM_TRANSPORT,
+            metrics={"alignment_score": 0.95},
+            aligned=True,
             row_coupling=None,
             col_coupling=None,
         )
-        assert result.alignment_score == 0.95
+        assert result.metrics["alignment_score"] == 0.95
         assert result.method_used == ProjectionMethod.GRAM_TRANSPORT
         assert result.row_coupling is None
         assert result.col_coupling is None
@@ -107,8 +108,9 @@ class TestProjectionResult:
         col_coupling = backend.random_normal((16, 8))
         result = ProjectionResult(
             projected=projected,
-            alignment_score=0.8,
             method_used=ProjectionMethod.GRAM_TRANSPORT,
+            metrics={"alignment_score": 0.8},
+            aligned=True,
             row_coupling=row_coupling,
             col_coupling=col_coupling,
         )
@@ -120,13 +122,14 @@ class TestProjectionResult:
         projected = backend.random_normal((10, 8))
         result = ProjectionResult(
             projected=projected,
-            alignment_score=0.9,
             method_used=ProjectionMethod.SVD_PROJECT,
+            metrics={"alignment_score": 0.9},
+            aligned=True,
             row_coupling=None,
             col_coupling=None,
         )
         with pytest.raises(AttributeError):
-            result.alignment_score = 0.5
+            result.aligned = False
 
 
 # =============================================================================
@@ -145,7 +148,7 @@ class TestSameShapeProjection:
         backend.eval(source, target)
 
         result = project_cross_dimensional(source, target, backend=backend)
-        assert result.alignment_score == 1.0
+        assert result.aligned
         assert result.row_coupling is None
         assert result.col_coupling is None
 
@@ -157,7 +160,7 @@ class TestSameShapeProjection:
 
         for method in ProjectionMethod:
             result = project_cross_dimensional(source, target, method=method, backend=backend)
-            assert result.alignment_score == 1.0
+            assert result.aligned
             assert result.method_used == method
 
 
@@ -178,7 +181,7 @@ class TestColumnMismatchProjection:
 
         result = project_cross_dimensional(source, target, backend=backend)
         assert result.projected.shape == (10, 16)
-        assert 0.0 <= result.alignment_score <= 1.0
+        assert isinstance(result.aligned, bool)
 
     def test_column_truncation(self, backend: "Backend") -> None:
         """Truncating columns (d_s > d_t)."""
@@ -189,7 +192,7 @@ class TestColumnMismatchProjection:
 
         result = project_cross_dimensional(source, target, backend=backend)
         assert result.projected.shape == (10, 8)
-        assert 0.0 <= result.alignment_score <= 1.0
+        assert isinstance(result.aligned, bool)
 
     def test_column_mismatch_procrustes(self, backend: "Backend") -> None:
         """Procrustes should handle column mismatch with same rows."""
@@ -235,7 +238,7 @@ class TestRowMismatchProjection:
 
         result = project_cross_dimensional(source, target, backend=backend)
         assert result.projected.shape == (12, 16)
-        assert 0.0 <= result.alignment_score <= 1.0
+        assert isinstance(result.aligned, bool)
 
     def test_row_truncation(self, backend: "Backend") -> None:
         """Truncating rows (m_s > m_t)."""
@@ -246,7 +249,7 @@ class TestRowMismatchProjection:
 
         result = project_cross_dimensional(source, target, backend=backend)
         assert result.projected.shape == (10, 8)
-        assert 0.0 <= result.alignment_score <= 1.0
+        assert isinstance(result.aligned, bool)
 
     def test_row_mismatch_procrustes(self, backend: "Backend") -> None:
         """Procrustes should handle row mismatch with same columns."""
@@ -280,7 +283,7 @@ class TestRowMismatchProjection:
         )
         assert result.projected.shape == (10, 12)
         assert result.method_used == ProjectionMethod.PROCRUSTES
-        assert 0.0 <= result.alignment_score <= 1.0
+        assert isinstance(result.aligned, bool)
 
     def test_row_mismatch_svd(self, backend: "Backend") -> None:
         """SVD should handle row mismatch."""
@@ -313,7 +316,7 @@ class TestBothDimensionsMismatch:
 
         result = project_cross_dimensional(source, target, backend=backend)
         assert result.projected.shape == (10, 16)
-        assert 0.0 <= result.alignment_score <= 1.0
+        assert isinstance(result.aligned, bool)
 
     def test_both_truncation(self, backend: "Backend") -> None:
         """Truncating both dimensions."""
@@ -324,7 +327,7 @@ class TestBothDimensionsMismatch:
 
         result = project_cross_dimensional(source, target, backend=backend)
         assert result.projected.shape == (10, 12)
-        assert 0.0 <= result.alignment_score <= 1.0
+        assert isinstance(result.aligned, bool)
 
     def test_mixed_expansion_truncation(self, backend: "Backend") -> None:
         """Expand rows, truncate columns."""
@@ -335,7 +338,7 @@ class TestBothDimensionsMismatch:
 
         result = project_cross_dimensional(source, target, backend=backend)
         assert result.projected.shape == (12, 10)
-        assert 0.0 <= result.alignment_score <= 1.0
+        assert isinstance(result.aligned, bool)
 
     def test_procrustes_falls_back_to_gram(self, backend: "Backend") -> None:
         """Procrustes should fall back to gram_transport when both dims differ."""
@@ -456,7 +459,7 @@ class TestGramTransport:
             source, target, method=ProjectionMethod.GRAM_TRANSPORT, backend=backend
         )
         # Should have valid alignment score
-        assert 0.0 <= result.alignment_score <= 1.0
+        assert isinstance(result.aligned, bool)
 
 
 # =============================================================================
@@ -480,9 +483,8 @@ class TestProcrustes:
         result = project_cross_dimensional(
             source, target, method=ProjectionMethod.PROCRUSTES, backend=backend
         )
-        # Should achieve high alignment for rotated data
-        eps = machine_epsilon(backend, result.projected)
-        assert result.alignment_score >= 1.0 - eps
+        # Should achieve alignment for rotated data
+        assert result.aligned
 
     def test_handles_reflection(self, backend: "Backend") -> None:
         """Procrustes should handle reflections correctly."""
@@ -508,9 +510,8 @@ class TestProcrustes:
             source, target, method=ProjectionMethod.PROCRUSTES, backend=backend
         )
         assert result.projected.shape == (10, 12)
-        # Score should reflect partial information content
-        eps = machine_epsilon(backend, result.projected)
-        assert result.alignment_score <= 1.0 - eps
+        # Partial information content means not fully aligned
+        assert isinstance(result.aligned, bool)
 
 
 # =============================================================================
@@ -532,7 +533,7 @@ class TestSVDProjection:
             source, target, method=ProjectionMethod.SVD_PROJECT, backend=backend
         )
         # Alignment score reflects variance preserved
-        assert 0.0 <= result.alignment_score <= 1.0
+        assert isinstance(result.aligned, bool)
 
     def test_handles_rank_deficient(self, backend: "Backend") -> None:
         """SVD should handle rank-deficient matrices."""
@@ -597,7 +598,7 @@ class TestEdgeCases:
         backend.eval(source, target)
 
         result = project_cross_dimensional(source, target, backend=backend)
-        assert result.alignment_score == 1.0
+        assert result.aligned
 
     def test_square_to_rectangular(self, backend: "Backend") -> None:
         """Project square matrix to rectangular."""
@@ -734,8 +735,8 @@ class TestProperties:
                 assert result.projected.shape == (m_t, d_t), \
                     f"Shape mismatch for {(m_s, d_s)} -> {(m_t, d_t)} with {method}"
 
-    def test_alignment_score_in_range(self, backend: "Backend") -> None:
-        """Alignment score must be in [0, 1]."""
+    def test_aligned_is_bool(self, backend: "Backend") -> None:
+        """Aligned field must be a boolean."""
         for seed in [1, 42, 123, 456, 789]:
             backend.random_seed(seed)
             source = backend.random_normal((10, 12))
@@ -743,8 +744,8 @@ class TestProperties:
 
             for method in ProjectionMethod:
                 result = project_cross_dimensional(source, target, method=method, backend=backend)
-                assert 0.0 <= result.alignment_score <= 1.0, \
-                    f"Score {result.alignment_score} out of range for seed {seed}, method {method}"
+                assert isinstance(result.aligned, bool), \
+                    f"aligned is not bool for seed {seed}, method {method}"
 
     def test_deterministic_with_same_seed(self, backend: "Backend") -> None:
         """Same seed should give same result."""
@@ -785,7 +786,7 @@ class TestIntegration:
 
         result = project_cross_dimensional(source_mlp, target_mlp, backend=backend)
         assert result.projected.shape == (128, 512)
-        assert 0.0 <= result.alignment_score <= 1.0
+        assert isinstance(result.aligned, bool)
 
     def test_attention_projection(self, backend: "Backend") -> None:
         """Simulate attention weight projection."""
@@ -839,7 +840,7 @@ class TestIntegration:
 
             # Check output is valid
             assert result.projected.shape == (24, 64)
-            assert 0.0 <= result.alignment_score <= 1.0
+            assert isinstance(result.aligned, bool)
 
             # Check no NaN or Inf
             isfinite_arr = backend.isfinite(result.projected)

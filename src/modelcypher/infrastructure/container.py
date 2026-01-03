@@ -96,23 +96,23 @@ class PortRegistry:
         from modelcypher.adapters.hf_hub import HfHubAdapter
         from modelcypher.adapters.hf_model_search import HfModelSearchAdapter
         from modelcypher.adapters.local_exporter import LocalExporter
-        from modelcypher.adapters.local_inference import LocalInferenceEngine
         from modelcypher.adapters.local_manifold_profile_store import (
             LocalManifoldProfileStore,
         )
         from modelcypher.adapters.local_training import LocalTrainingEngine
         from modelcypher.backends import default_backend
-        from modelcypher.infrastructure.model_loader_factory import get_model_loader
         from modelcypher.backends.lazy_backend import LazyBackend
         from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_inventories
+        from modelcypher.infrastructure.inference_engine_factory import get_inference_engine
+        from modelcypher.infrastructure.model_loader_factory import get_model_loader
 
         register_default_atlas_inventories()
 
         # FileSystemStore implements multiple storage protocols
         fs_store = FileSystemStore()
 
-        # LocalInferenceEngine implements both InferenceEngine and HiddenStateEngine
-        inference_engine = LocalInferenceEngine()
+        # Platform-appropriate inference engine (MLX/CUDA/JAX)
+        inference_engine = get_inference_engine()
 
         return cls(
             # Storage - FileSystemStore implements all these protocols

@@ -43,6 +43,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     is_inf,
     is_nan,
+    machine_epsilon,
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import safe_arithmetic_mean
@@ -291,19 +292,15 @@ class FamilyBaseline:
 
 @dataclass(frozen=True)
 class CurvatureAlignment:
-    """Curvature alignment score between two models.
+    """Curvature alignment measurements between two models.
 
     Uses z-scores relative to family baseline, NOT absolute thresholds.
-    Score of 1.0 = exact match, 0.0 = 3σ or more divergence.
     """
 
-    # Overall alignment (0.0 - 1.0)
-    score: float
-
-    # Component scores
-    sectional_alignment: float
-    ollivier_ricci_alignment: float
-    intrinsic_dimension_alignment: float
+    # Raw diffs
+    sectional_diff: float
+    ollivier_ricci_diff: float
+    intrinsic_dimension_diff: float
 
     # Raw z-scores for transparency
     sectional_z_score: float
@@ -313,19 +310,19 @@ class CurvatureAlignment:
     # Baseline used
     baseline_family: str
     baseline_model_count: int
+    aligned: bool
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "score": self.score,
-            "alignment_score": self.score,
-            "sectional_alignment": self.sectional_alignment,
-            "ollivier_ricci_alignment": self.ollivier_ricci_alignment,
-            "intrinsic_dimension_alignment": self.intrinsic_dimension_alignment,
+            "sectional_diff": self.sectional_diff,
+            "ollivier_ricci_diff": self.ollivier_ricci_diff,
+            "intrinsic_dimension_diff": self.intrinsic_dimension_diff,
             "sectional_z_score": self.sectional_z_score,
             "ollivier_ricci_z_score": self.ollivier_ricci_z_score,
             "intrinsic_dimension_z_score": self.intrinsic_dimension_z_score,
             "baseline_family": self.baseline_family,
             "baseline_model_count": self.baseline_model_count,
+            "aligned": self.aligned,
         }
 
 
@@ -384,25 +381,23 @@ def compute_curvature_alignment(
         baseline_family = "none"
         baseline_model_count = 0
 
-    # Convert z-scores to alignment (1.0 at z=0, 0.0 at z>=3)
-    sectional_alignment = max(0.0, 1.0 - sectional_z / 3.0)
-    ricci_alignment = max(0.0, 1.0 - ricci_z / 3.0)
-    dim_alignment = max(0.0, 1.0 - dim_z / 3.0)
-
-    # Overall score: weighted average
-    # Ollivier-Ricci is most important for manifold health
-    overall = 0.5 * ricci_alignment + 0.3 * sectional_alignment + 0.2 * dim_alignment
+    align_eps = float(machine_epsilon(backend, backend.array([1.0])))
+    aligned = (
+        abs(sectional_diff) <= align_eps
+        and abs(ricci_diff) <= align_eps
+        and abs(dim_diff) <= align_eps
+    )
 
     return CurvatureAlignment(
-        score=overall,
-        sectional_alignment=sectional_alignment,
-        ollivier_ricci_alignment=ricci_alignment,
-        intrinsic_dimension_alignment=dim_alignment,
+        sectional_diff=sectional_diff,
+        ollivier_ricci_diff=ricci_diff,
+        intrinsic_dimension_diff=dim_diff,
         sectional_z_score=sectional_z,
         ollivier_ricci_z_score=ricci_z,
         intrinsic_dimension_z_score=dim_z,
         baseline_family=baseline_family,
         baseline_model_count=baseline_model_count,
+        aligned=aligned,
     )
 
 

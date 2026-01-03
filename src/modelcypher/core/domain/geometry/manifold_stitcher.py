@@ -303,38 +303,12 @@ class ContinuousFingerprint:
         )
 
 
-@dataclass(frozen=True)
-class StitchingConstants:
-    similarity_weight: float = 0.25
-    cosine_weight: float = 0.25
-    magnitude_weight: float = 0.25
-    entropy_weight: float = 0.25
-    relationship_bonus: float = 0.0
-    cross_domain_multiplier: float = 1.0
-
-
 @dataclass
 class ContinuousCorrelationResult:
     cka: float
     cosine_similarity: float
     magnitude_ratio: float
     entropy_delta: float
-
-    @property
-    def alignment_score(self) -> float:
-        # Note: For 1D vectors (single prime activations), Linear CKA is equivalent to squared cosine similarity.
-        # CKA(x, y) = <x, y>^2 / (||x||^2 ||y||^2) = cosine_sim(x, y)^2
-
-        cka_score = self.cka if self.cosine_similarity >= 0 else 0.0
-
-        # Weighted combination of geometric invariants
-        return (
-            StitchingConstants.similarity_weight * cka_score
-            + StitchingConstants.cosine_weight * max(0.0, self.cosine_similarity)
-            + StitchingConstants.magnitude_weight
-            * (1.0 - min(abs(self.magnitude_ratio - 1.0), 1.0))
-            + StitchingConstants.entropy_weight * (1.0 - min(abs(self.entropy_delta), 1.0))
-        )
 
 
 @dataclass

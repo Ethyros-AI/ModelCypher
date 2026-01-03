@@ -44,6 +44,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     acos_scalar,
     division_epsilon,
     is_nan,
+    machine_epsilon,
     pi_value,
     sqrt_scalar,
     ulp_scalar,
@@ -113,7 +114,8 @@ class GroundingRotation:
     """
 
     angle_degrees: float  # Estimated rotation angle
-    alignment_score: float  # 1.0 = exactly aligned, 0.0 = orthogonal
+    distance_correlation: float  # Correlation between geodesic distance matrices
+    aligned: bool
     axis_correspondence: dict[str, str]  # source_axis -> target_axis mapping
     confidence: float  # How confident we are in the rotation estimate
 
@@ -388,7 +390,8 @@ class GroundingRotationEstimator:
         if len(common_anchors) < 5:
             return GroundingRotation(
                 angle_degrees=90.0,
-                alignment_score=0.0,
+                distance_correlation=0.0,
+                aligned=False,
                 axis_correspondence={},
                 confidence=0.0,
             )
@@ -444,8 +447,10 @@ class GroundingRotationEstimator:
             correlation = 0.0
 
         # Convert correlation to angle
-        alignment_score = max(0.0, correlation)
-        angle_degrees = acos_scalar(min(1.0, alignment_score), b) * 180.0 / pi_value(b)
+        corr_clamped = max(-1.0, min(1.0, correlation))
+        angle_degrees = acos_scalar(corr_clamped, b) * 180.0 / pi_value(b)
+        eps = float(machine_epsilon(b, source_arr))
+        aligned = abs(correlation - 1.0) <= eps
 
         # Estimate axis correspondence using Procrustes-like analysis
         axis_correspondence = self._estimate_axis_correspondence(
@@ -467,7 +472,8 @@ class GroundingRotationEstimator:
 
         return GroundingRotation(
             angle_degrees=angle_degrees,
-            alignment_score=float(alignment_score),
+            distance_correlation=float(correlation),
+            aligned=aligned,
             axis_correspondence=axis_correspondence,
             confidence=float(max(0.0, confidence)),
         )
@@ -892,7 +898,8 @@ class CrossGroundingTransferEngine:
         feasibility = {
             "common_anchors": len(common_anchors),
             "grounding_rotation_degrees": rotation.angle_degrees,
-            "alignment_score": rotation.alignment_score,
+            "distance_correlation": rotation.distance_correlation,
+            "aligned": rotation.aligned,
             "confidence": rotation.confidence,
         }
 

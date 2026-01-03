@@ -30,6 +30,7 @@ from modelcypher.cli.composition import get_domain_geometry_waypoint_service
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 from modelcypher.core.support.array_utils import array_to_list
 
 if TYPE_CHECKING:
@@ -169,7 +170,7 @@ def predict_interference(
         domain_analysis = {
             "concepts_analyzed": len(common_concepts),
             "overlap_scores": [],
-            "alignment_scores": [],
+            "subspace_alignments": [],
             "curvature_scores": [],
             "distance_scores": [],
         }
@@ -177,7 +178,7 @@ def predict_interference(
         for concept_id in common_concepts:
             result = predictor.analyze(source_volumes[concept_id], target_volumes[concept_id])
             domain_analysis["overlap_scores"].append(result.overlap_score)
-            domain_analysis["alignment_scores"].append(result.alignment_score)
+            domain_analysis["subspace_alignments"].append(result.subspace_alignment)
             domain_analysis["curvature_scores"].append(result.curvature_divergence)
             domain_analysis["distance_scores"].append(result.distance_score)
 
@@ -197,35 +198,36 @@ def predict_interference(
             domain_analysis["mean_distance"] = 0.0
 
         # Use domain-level CKA for alignment (computed above)
-        domain_analysis["mean_alignment"] = domain_cka
         domain_analysis["domain_cka"] = domain_cka
+        eps = float(machine_epsilon(backend, backend.array([1.0])))
+        domain_analysis["domain_aligned"] = abs(domain_cka - 1.0) <= eps
 
         del domain_analysis["overlap_scores"]  # Don't need raw lists in output
-        del domain_analysis["alignment_scores"]
+        del domain_analysis["subspace_alignments"]
         del domain_analysis["curvature_scores"]
         del domain_analysis["distance_scores"]
         domain_results[domain_name] = domain_analysis
 
     all_overlap_scores = []
-    all_alignment_scores = []
+    all_domain_cka = []
     all_curvature_scores = []
     all_distance_scores = []
 
     for domain_name, dr in domain_results.items():
         all_overlap_scores.append(dr["mean_overlap"])
-        all_alignment_scores.append(dr["mean_alignment"])
+        all_domain_cka.append(dr["domain_cka"])
         all_curvature_scores.append(dr["mean_curvature_divergence"])
         all_distance_scores.append(dr["mean_distance"])
 
     if all_overlap_scores:
         backend = get_default_backend()
         mean_overlap = float(backend.mean(backend.array(all_overlap_scores)))
-        mean_alignment = float(backend.mean(backend.array(all_alignment_scores)))
+        mean_cka = float(backend.mean(backend.array(all_domain_cka)))
         mean_curvature = float(backend.mean(backend.array(all_curvature_scores)))
         mean_distance = float(backend.mean(backend.array(all_distance_scores)))
     else:
         mean_overlap = 0.0
-        mean_alignment = 1.0
+        mean_cka = 1.0
         mean_curvature = 0.0
         mean_distance = 0.0
 
@@ -238,7 +240,7 @@ def predict_interference(
         "perDomain": domain_results,
         "globalMetrics": {
             "meanOverlap": mean_overlap,
-            "meanAlignment": mean_alignment,
+            "meanCka": mean_cka,
             "meanCurvatureDivergence": mean_curvature,
             "meanDistance": mean_distance,
         },
@@ -266,7 +268,8 @@ def predict_interference(
             lines.append(f"  {domain_name.upper()}:")
             lines.append(f"    Concepts: {dr['concepts_analyzed']}")
             lines.append(f"    Mean Overlap: {dr['mean_overlap']:.2f}")
-            lines.append(f"    Mean Alignment: {dr['mean_alignment']:.2f}")
+            lines.append(f"    Domain CKA: {dr['domain_cka']:.4f}")
+            lines.append(f"    Domain Aligned: {dr['domain_aligned']}")
             lines.append(f"    Mean Curvature Divergence: {dr['mean_curvature_divergence']:.2f}")
             lines.append(f"    Mean Distance: {dr['mean_distance']:.2f}")
 

@@ -594,7 +594,8 @@ def cross_grounding_feasibility(
             "",
             f"Common Anchors: {feasibility['common_anchors']}",
             f"Grounding Rotation: {feasibility['grounding_rotation_degrees']:.1f}°",
-            f"Alignment Score: {feasibility['alignment_score']:.2f}",
+            f"Distance Correlation: {feasibility['distance_correlation']:.4f}",
+            f"Aligned: {feasibility['aligned']}",
             f"Confidence: {feasibility['confidence']:.2f}",
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)
@@ -674,7 +675,8 @@ def cross_grounding_transfer(
         "target_grounding": result.target_model_grounding,
         "grounding_rotation": {
             "angle_degrees": result.grounding_rotation.angle_degrees,
-            "alignment_score": result.grounding_rotation.alignment_score,
+            "distance_correlation": result.grounding_rotation.distance_correlation,
+            "aligned": result.grounding_rotation.aligned,
             "confidence": result.grounding_rotation.confidence,
         },
         "ghost_anchors": ghost_anchors_serialized,

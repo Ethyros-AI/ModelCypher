@@ -189,11 +189,8 @@ class TestCacheEviction:
 
     def test_lru_eviction(self, backend):
         """Test that least recently used entries are evicted."""
-        from modelcypher.core.domain.cache import ComputationCacheConfig
-
         # Create cache with small limit
-        config = ComputationCacheConfig(max_gram_entries=3)
-        cache = ComputationCache(config)
+        cache = ComputationCache(max_gram_entries=3)
 
         backend.random_seed(42)
 

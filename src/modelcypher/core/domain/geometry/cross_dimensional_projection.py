@@ -41,8 +41,7 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
-    exp_scalar,
-    is_finite,
+    machine_epsilon,
     svd_rank_threshold,
     svd_via_eigh,
 )
@@ -80,8 +79,9 @@ class ProjectionMethod(str, Enum):
 class ProjectionResult:
     """Result of cross-dimensional projection."""
     projected: "Array"  # [m_t, d_t] - matches target shape
-    alignment_score: float  # 0-1, higher indicates more structural preservation
     method_used: ProjectionMethod
+    metrics: dict[str, float]
+    aligned: bool
     row_coupling: "Array | None"  # GW coupling for rows (if used)
     col_coupling: "Array | None"  # GW coupling for cols (if used)
 
@@ -116,7 +116,7 @@ def project_cross_dimensional(
         backend: Backend for GPU-accelerated operations
 
     Returns:
-        ProjectionResult with projected weights [m_t, d_t] and alignment score
+        ProjectionResult with projected weights [m_t, d_t] and raw metrics
     """
     b = backend or get_default_backend()
 
@@ -136,8 +136,9 @@ def project_cross_dimensional(
     if m_s == m_t and d_s == d_t:
         return ProjectionResult(
             projected=source_f32,
-            alignment_score=1.0,
             method_used=method,
+            metrics={},
+            aligned=True,
             row_coupling=None,
             col_coupling=None,
         )
@@ -194,8 +195,9 @@ def _project_gram_transport(
     gw = GromovWassersteinDistance(b)
     row_coupling = None
     col_coupling = None
-    total_score = 0.0
-    score_count = 0
+    metrics: dict[str, float] = {}
+    eps = float(machine_epsilon(b, source))
+    aligned = True
 
     projected = source
 
@@ -225,12 +227,12 @@ def _project_gram_transport(
         projected = b.matmul(projected, col_coupling)
         b.eval(projected)
 
-        total_score += result.alignment_score
-        score_count += 1
+        metrics["column_distance"] = result.distance
+        aligned = aligned and (abs(result.distance) <= eps)
 
         logger.debug(
-            "Col projection: %d -> %d, GW distance=%.4f, alignment=%.4f",
-            d_s, d_t, result.distance, result.alignment_score
+            "Col projection: %d -> %d, GW distance=%.4f",
+            d_s, d_t, result.distance
         )
 
     # =========================================================================
@@ -269,12 +271,12 @@ def _project_gram_transport(
             projected = b.matmul(b.transpose(row_coupling), projected)
             b.eval(projected)
 
-            total_score += result.alignment_score
-            score_count += 1
+            metrics["row_distance"] = result.distance
+            aligned = aligned and (abs(result.distance) <= eps)
 
             logger.debug(
-                "Row projection: %d -> %d, GW distance=%.4f, alignment=%.4f",
-                current_rows, m_t, result.distance, result.alignment_score
+                "Row projection: %d -> %d, GW distance=%.4f",
+                current_rows, m_t, result.distance
             )
         else:
             # Row dimension exceeds standard GW tractability limit (20k).
@@ -331,21 +333,19 @@ def _project_gram_transport(
             projected = row_coupling.apply_left(projected, b)
             b.eval(projected)
 
-            total_score += exp_scalar(-row_result.distance, b) if is_finite(row_result.distance, b) else 0.0
-            score_count += 1
+            metrics["row_distance"] = row_result.distance
+            aligned = aligned and (abs(row_result.distance) <= eps)
 
             logger.info(
                 "Low-rank row projection: %d -> %d, iterations=%d, distance=%.4f",
                 current_rows, m_t, row_result.iterations, row_result.distance
             )
 
-    # Compute alignment score
-    alignment_score = total_score / score_count if score_count > 0 else 1.0
-
     return ProjectionResult(
         projected=projected,
-        alignment_score=alignment_score,
         method_used=ProjectionMethod.GRAM_TRANSPORT,
+        metrics=metrics,
+        aligned=aligned,
         row_coupling=row_coupling,
         col_coupling=col_coupling,
     )
@@ -416,14 +416,14 @@ def _project_procrustes(
             projected = b.matmul(projected, R)  # [m_s, d_t]
             b.eval(projected)
 
-            # Alignment score from energy preserved
+            # Energy preserved ratio
             total_energy_arr = b.sum(S ** 2)
             kept_energy_arr = b.sum(S[:k] ** 2)
             b.eval(total_energy_arr, kept_energy_arr)
             total_energy = float(b.to_scalar(total_energy_arr))
             kept_energy = float(b.to_scalar(kept_energy_arr))
             eps = float(division_epsilon(b, S))
-            score = kept_energy / (total_energy + eps)
+            energy_ratio = kept_energy / (total_energy + eps)
         else:
             # Expand: Procrustes on shared dims, pad with zeros
             # Zeros are geometrically exact - introduce no spurious correlations
@@ -443,12 +443,15 @@ def _project_procrustes(
             projected = b.concatenate([projected_shared, padding], axis=1)
             b.eval(projected)
 
-            score = float(d_s) / float(d_t)  # Score reflects information content
+            energy_ratio = float(d_s) / float(d_t)  # Ratio of retained source dimensions
+        eps = float(machine_epsilon(b, source))
+        aligned = abs(energy_ratio - 1.0) <= eps
 
         return ProjectionResult(
             projected=projected,
-            alignment_score=score,
             method_used=ProjectionMethod.PROCRUSTES,
+            metrics={"energy_preservation_ratio": energy_ratio},
+            aligned=aligned,
             row_coupling=None,
             col_coupling=None,
         )
@@ -464,8 +467,9 @@ def _project_procrustes(
 
     return ProjectionResult(
         projected=projected,
-        alignment_score=result_T.alignment_score,
         method_used=ProjectionMethod.PROCRUSTES,
+        metrics=result_T.metrics,
+        aligned=result_T.aligned,
         row_coupling=None,
         col_coupling=None,
     )
@@ -681,7 +685,7 @@ def _project_svd(
     )
 
     # =========================================================================
-    # STEP 6: Compute alignment score from variance preserved
+    # STEP 6: Compute variance preserved ratio
     # =========================================================================
     total_var_s_arr = b.sum(S_s ** 2)
     kept_var_s_arr = b.sum(S_s[:k] ** 2)
@@ -694,12 +698,15 @@ def _project_svd(
     kept_var_t = float(b.to_scalar(kept_var_t_arr))
 
     var_eps = float(division_epsilon(b, S_s))
-    score = 0.5 * (kept_var_s / (total_var_s + var_eps) + kept_var_t / (total_var_t + var_eps))
+    variance_ratio = 0.5 * (kept_var_s / (total_var_s + var_eps) + kept_var_t / (total_var_t + var_eps))
+    eps = float(machine_epsilon(b, source))
+    aligned = abs(variance_ratio - 1.0) <= eps
 
     return ProjectionResult(
         projected=projected,
-        alignment_score=score,
         method_used=ProjectionMethod.SVD_PROJECT,
+        metrics={"variance_preservation_ratio": variance_ratio},
+        aligned=aligned,
         row_coupling=None,
         col_coupling=None,
     )

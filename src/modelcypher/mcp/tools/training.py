@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from modelcypher.core.domain.training import Hyperparameters, TrainingConfig
+from modelcypher.core.domain.training import Hyperparameters, TrainingSpec
 from modelcypher.mcp.security import ConfirmationError, create_confirmation_response
 
 from .common import (
@@ -172,7 +172,7 @@ def register_training_tools(ctx: ServiceContext) -> None:
                     target_modules=lora["targetModules"],
                 )
 
-            config = TrainingConfig(
+            config = TrainingSpec(
                 model_id=model,
                 dataset_path=dataset_path,
                 output_path=outputPath,
@@ -377,7 +377,7 @@ def register_training_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             dataset_path = require_existing_path(dataset)
             hyper = _parse_hyperparameters(hyperparameters)
-            config = TrainingConfig(
+            config = TrainingSpec(
                 model_id=model,
                 dataset_path=dataset_path,
                 output_path=outputPath,
@@ -404,7 +404,7 @@ def register_training_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             dataset_path = require_existing_path(dataset)
             hyper = _parse_hyperparameters(hyperparameters)
-            config = TrainingConfig(
+            config = TrainingSpec(
                 model_id=model,
                 dataset_path=dataset_path,
                 output_path=outputPath,
@@ -457,7 +457,7 @@ def register_training_tools(ctx: ServiceContext) -> None:
                 )
 
             hyper = _parse_hyperparameters(hyperparameters)
-            config = TrainingConfig(
+            config = TrainingSpec(
                 model_id=model,
                 dataset_path=dataset_path,
                 output_path=outputPath,

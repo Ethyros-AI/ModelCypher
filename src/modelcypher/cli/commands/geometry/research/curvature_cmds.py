@@ -336,7 +336,7 @@ def register(app: typer.Typer) -> None:
     ) -> None:
         """Compare curvature profiles of two models.
 
-        Computes curvature alignment score for merge planning.
+        Computes curvature diffs and z-scores for merge planning.
         Uses family baseline for z-score comparison when provided.
 
         Example:
@@ -357,22 +357,22 @@ def register(app: typer.Typer) -> None:
         # Load baseline if provided
         baseline = FamilyBaseline.load(baseline_path) if baseline_path else None
 
-        # Compute alignment
+        # Compute curvature deltas
         alignment = compute_curvature_alignment(src, tgt, baseline)
 
         # Output
         if context.output_format == "text":
             lines = [
-                "CURVATURE ALIGNMENT",
+                "CURVATURE COMPARISON",
                 f"Source: {Path(source_profile).name} ({src.model_family} {src.model_size})",
                 f"Target: {Path(target_profile).name} ({tgt.model_family} {tgt.model_size})",
                 "",
-                f"OVERALL SCORE: {alignment.score:.3f}",
+                f"Aligned: {alignment.aligned}",
                 "",
-                "COMPONENT ALIGNMENT:",
-                f"  Sectional curvature:   {alignment.sectional_alignment:.3f} (z={alignment.sectional_z_score:.2f})",
-                f"  Ollivier-Ricci:        {alignment.ollivier_ricci_alignment:.3f} (z={alignment.ollivier_ricci_z_score:.2f})",
-                f"  Intrinsic dimension:   {alignment.intrinsic_dimension_alignment:.3f} (z={alignment.intrinsic_dimension_z_score:.2f})",
+                "COMPONENT DIFFS:",
+                f"  Sectional curvature:   {alignment.sectional_diff:.6f} (z={alignment.sectional_z_score:.2f})",
+                f"  Ollivier-Ricci:        {alignment.ollivier_ricci_diff:.6f} (z={alignment.ollivier_ricci_z_score:.2f})",
+                f"  Intrinsic dimension:   {alignment.intrinsic_dimension_diff:.6f} (z={alignment.intrinsic_dimension_z_score:.2f})",
                 "",
                 f"Baseline: {alignment.baseline_family} ({alignment.baseline_model_count} models)",
             ]

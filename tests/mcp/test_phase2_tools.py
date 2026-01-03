@@ -30,7 +30,6 @@ class TestServiceContext:
         from modelcypher.mcp.tools.common import ServiceContext
 
         mock_mcp = MagicMock()
-        mock_security = MagicMock()
         mock_confirmation = MagicMock()
         mock_registry = MagicMock()
         mock_factory = MagicMock()
@@ -38,15 +37,15 @@ class TestServiceContext:
         ctx = ServiceContext(
             mcp=mock_mcp,
             tool_set={"mc_test_tool"},
-            security_config=mock_security,
             confirmation_manager=mock_confirmation,
+            confirmation_timeout_seconds=30,
             registry=mock_registry,
             factory=mock_factory,
         )
 
         assert ctx.mcp == mock_mcp
         assert "mc_test_tool" in ctx.tool_set
-        assert ctx.security_config == mock_security
+        assert ctx.confirmation_timeout_seconds == 30
 
     def test_service_context_lazy_loading(self):
         """Services are lazily loaded on first access."""
@@ -59,8 +58,8 @@ class TestServiceContext:
         ctx = ServiceContext(
             mcp=MagicMock(),
             tool_set=set(),
-            security_config=MagicMock(),
             confirmation_manager=MagicMock(),
+            confirmation_timeout_seconds=30,
             registry=MagicMock(),
             factory=mock_factory,
         )
@@ -81,8 +80,8 @@ class TestServiceContext:
         ctx = ServiceContext(
             mcp=MagicMock(),
             tool_set=set(),
-            security_config=MagicMock(),
             confirmation_manager=MagicMock(),
+            confirmation_timeout_seconds=30,
             registry=MagicMock(),
             factory=MagicMock(),
         )
@@ -159,8 +158,8 @@ class TestSafetyTools:
             tool_set={
                 "mc_safety_adapter_probe",
             },
-            security_config=MagicMock(),
             confirmation_manager=MagicMock(),
+            confirmation_timeout_seconds=30,
             registry=MagicMock(),
             factory=MagicMock(),
         )
@@ -187,8 +186,8 @@ class TestEntropyTools:
                 "mc_entropy_conversation_track",
                 "mc_entropy_dual_path",
             },
-            security_config=MagicMock(),
             confirmation_manager=MagicMock(),
+            confirmation_timeout_seconds=30,
             registry=MagicMock(),
             factory=MagicMock(),
         )
@@ -215,8 +214,8 @@ class TestAgentTools:
                 "mc_agent_trace_analyze",
                 "mc_agent_validate_action",
             },
-            security_config=MagicMock(),
             confirmation_manager=MagicMock(),
+            confirmation_timeout_seconds=30,
             registry=MagicMock(),
             factory=MagicMock(),
         )

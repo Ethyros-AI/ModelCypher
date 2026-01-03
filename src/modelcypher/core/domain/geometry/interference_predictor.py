@@ -27,7 +27,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array
@@ -52,8 +55,9 @@ class MergeAnalysisResult:
     # Raw geometric measurements (for diagnostics, not gating)
     overlap_score: float  # 0=no overlap, 1=complete overlap
     curvature_divergence: float  # 0=identical curvature, 1=maximum divergence
-    alignment_score: float  # 0=orthogonal, 1=aligned
+    subspace_alignment: float  # 0=orthogonal, 1=aligned
     distance_score: float  # 0=identical, 1=far apart
+    aligned: bool
 
 
 @dataclass
@@ -69,8 +73,9 @@ class GlobalMergeAnalysisReport:
     # Average geometric measurements (for diagnostics)
     mean_overlap: float
     mean_curvature_divergence: float
-    mean_alignment: float
+    mean_subspace_alignment: float
     mean_distance: float
+    aligned_pairs: int
 
 
 class MergeAnalyzer:
@@ -102,16 +107,20 @@ class MergeAnalyzer:
         # Compute raw geometric measurements
         overlap_score = self._compute_overlap_score(relation)
         curvature_divergence = self._compute_curvature_divergence(relation)
-        alignment_score = self._compute_alignment_score(relation)
+        subspace_alignment = self._compute_subspace_alignment(relation)
         distance_score = self._compute_distance_score(relation)
+        backend = get_default_backend()
+        eps = float(machine_epsilon(backend, backend.array([1.0])))
+        aligned = abs(subspace_alignment - 1.0) <= eps
 
         return MergeAnalysisResult(
             volume_a_id=volume_a.concept_id,
             volume_b_id=volume_b.concept_id,
             overlap_score=overlap_score,
             curvature_divergence=curvature_divergence,
-            alignment_score=alignment_score,
+            subspace_alignment=subspace_alignment,
             distance_score=distance_score,
+            aligned=aligned,
         )
 
     def analyze_global(
@@ -148,25 +157,28 @@ class MergeAnalyzer:
             mean_curvature = sum(
                 r.curvature_divergence for r in pair_results.values()
             ) / len(pair_results)
-            mean_alignment = sum(r.alignment_score for r in pair_results.values()) / len(
-                pair_results
-            )
+            mean_subspace_alignment = sum(
+                r.subspace_alignment for r in pair_results.values()
+            ) / len(pair_results)
             mean_distance = sum(r.distance_score for r in pair_results.values()) / len(
                 pair_results
             )
+            aligned_pairs = sum(1 for r in pair_results.values() if r.aligned)
         else:
             mean_overlap = 0.0
             mean_curvature = 0.0
-            mean_alignment = 1.0
+            mean_subspace_alignment = 1.0
             mean_distance = 0.0
+            aligned_pairs = 0
 
         return GlobalMergeAnalysisReport(
             pair_results=pair_results,
             total_pairs=len(pair_results),
             mean_overlap=mean_overlap,
             mean_curvature_divergence=mean_curvature,
-            mean_alignment=mean_alignment,
+            mean_subspace_alignment=mean_subspace_alignment,
             mean_distance=mean_distance,
+            aligned_pairs=aligned_pairs,
         )
 
     def _compute_overlap_score(self, relation: ConceptVolumeRelation) -> float:
@@ -182,8 +194,8 @@ class MergeAnalyzer:
         """Compute curvature divergence score."""
         return relation.curvature_divergence
 
-    def _compute_alignment_score(self, relation: ConceptVolumeRelation) -> float:
-        """Compute subspace alignment score (higher indicates larger alignment magnitude)."""
+    def _compute_subspace_alignment(self, relation: ConceptVolumeRelation) -> float:
+        """Compute subspace alignment magnitude."""
         return relation.subspace_alignment
 
     def _compute_distance_score(self, relation: ConceptVolumeRelation) -> float:
@@ -224,8 +236,9 @@ def quick_merge_analysis(
             total_pairs=0,
             mean_overlap=0.0,
             mean_curvature_divergence=0.0,
-            mean_alignment=1.0,
+            mean_subspace_alignment=1.0,
             mean_distance=0.0,
+            aligned_pairs=0,
         )
 
     # Estimate volumes
@@ -255,19 +268,24 @@ def quick_merge_analysis(
     if pair_results:
         mean_overlap = sum(r.overlap_score for r in pair_results.values()) / len(pair_results)
         mean_curvature = sum(r.curvature_divergence for r in pair_results.values()) / len(pair_results)
-        mean_alignment = sum(r.alignment_score for r in pair_results.values()) / len(pair_results)
+        mean_subspace_alignment = sum(
+            r.subspace_alignment for r in pair_results.values()
+        ) / len(pair_results)
         mean_distance = sum(r.distance_score for r in pair_results.values()) / len(pair_results)
+        aligned_pairs = sum(1 for r in pair_results.values() if r.aligned)
     else:
         mean_overlap = 0.0
         mean_curvature = 0.0
-        mean_alignment = 1.0
+        mean_subspace_alignment = 1.0
         mean_distance = 0.0
+        aligned_pairs = 0
 
     return GlobalMergeAnalysisReport(
         pair_results=pair_results,
         total_pairs=len(pair_results),
         mean_overlap=mean_overlap,
         mean_curvature_divergence=mean_curvature,
-        mean_alignment=mean_alignment,
+        mean_subspace_alignment=mean_subspace_alignment,
         mean_distance=mean_distance,
+        aligned_pairs=aligned_pairs,
     )

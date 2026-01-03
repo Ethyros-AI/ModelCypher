@@ -312,7 +312,7 @@ def validate_train(
     from modelcypher.core.domain.training import (
         ComputePrecision,
         Hyperparameters,
-        TrainingConfig,
+        TrainingSpec,
     )
 
     try:
@@ -336,7 +336,7 @@ def validate_train(
         deterministic=deterministic,
         optimizer_type=optimizer_type,
     )
-    config = TrainingConfig(
+    config = TrainingSpec(
         model_id=model,
         dataset_path=dataset,
         output_path=output_path,
@@ -637,7 +637,7 @@ def estimate_train(
     from modelcypher.core.domain.training import (
         ComputePrecision,
         Hyperparameters,
-        TrainingConfig,
+        TrainingSpec,
     )
 
     try:
@@ -661,7 +661,7 @@ def estimate_train(
         deterministic=deterministic,
         optimizer_type=optimizer_type,
     )
-    config = TrainingConfig(
+    config = TrainingSpec(
         model_id=model,
         dataset_path=dataset,
         output_path=output_path,

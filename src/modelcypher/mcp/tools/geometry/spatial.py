@@ -374,7 +374,8 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
                 "targetGrounding": result.target_model_grounding,
                 "groundingRotation": {
                     "angleDegrees": result.grounding_rotation.angle_degrees,
-                    "alignmentScore": result.grounding_rotation.alignment_score,
+                    "distanceCorrelation": result.grounding_rotation.distance_correlation,
+                    "aligned": result.grounding_rotation.aligned,
                     "confidence": result.grounding_rotation.confidence,
                 },
                 "ghostAnchors": ghost_anchors_serialized,

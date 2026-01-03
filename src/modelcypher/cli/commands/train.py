@@ -91,7 +91,7 @@ def train_start(
         mc train start --model ./local-model --dataset ./data.jsonl --lora-rank 8 --lora-alpha 16
     """
     context = _context(ctx)
-    from modelcypher.core.domain.training import ComputePrecision, Hyperparameters, LoRAConfig, TrainingConfig
+    from modelcypher.core.domain.training import ComputePrecision, Hyperparameters, LoRASettings, TrainingSpec
 
     # Build LoRA config if specified
     lora_config = None
@@ -100,7 +100,7 @@ def train_start(
             raise typer.BadParameter(
                 "lora-alpha, lora-dropout, and lora-targets are required when lora-rank is set."
             )
-        lora_config = LoRAConfig(
+        lora_config = LoRASettings(
             rank=lora_rank,
             alpha=lora_alpha,
             dropout=lora_dropout,
@@ -131,7 +131,7 @@ def train_start(
     )
 
     # Build training config
-    config = TrainingConfig(
+    config = TrainingSpec(
         model_id=model,
         dataset_path=dataset,
         output_path=out_dir,
@@ -193,7 +193,7 @@ def train_preflight(
         mc train preflight --model meta-llama/Llama-2-7b --dataset ./data.jsonl
     """
     context = _context(ctx)
-    from modelcypher.core.domain.training import ComputePrecision, Hyperparameters, LoRAConfig, TrainingConfig
+    from modelcypher.core.domain.training import ComputePrecision, Hyperparameters, LoRASettings, TrainingSpec
 
     # Build LoRA config if specified
     lora_config = None
@@ -202,7 +202,7 @@ def train_preflight(
             raise typer.BadParameter(
                 "lora-alpha, lora-dropout, and lora-targets are required when lora-rank is set."
             )
-        lora_config = LoRAConfig(
+        lora_config = LoRASettings(
             rank=lora_rank,
             alpha=lora_alpha,
             dropout=lora_dropout,
@@ -233,7 +233,7 @@ def train_preflight(
     )
 
     # Build training config
-    config = TrainingConfig(
+    config = TrainingSpec(
         model_id=model,
         dataset_path=dataset,
         output_path=out_dir,

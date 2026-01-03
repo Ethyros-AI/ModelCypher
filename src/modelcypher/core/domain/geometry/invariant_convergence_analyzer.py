@@ -128,9 +128,8 @@ class ConvergenceMetric:
 
     sequence_family: str
     step: int
-    alignment_score: float
+    cosine_similarity: float
     variance: float
-    is_converged: bool
 
 
 @dataclass
@@ -139,7 +138,7 @@ class ConvergenceReport:
 
     model_id: str
     metrics: list[ConvergenceMetric]
-    overall_convergence: float
+    overall_mean_cosine: float
     stable_families: list[str]
 
 
@@ -161,16 +160,8 @@ class InvariantConvergenceAnalyzer:
     - NORMALIZED: Normalized depth matching (cross-architecture)
     """
 
-    def __init__(self, thresholds: dict[str, float] | None = None):
-        """
-        Initialize with per-family convergence thresholds.
-
-        Args:
-            thresholds: Minimum cosine similarity to consider converged per family.
-                        If None, no threshold is applied (raw similarities returned).
-        """
-        # No hardcoded thresholds - caller provides or we return raw measurements
-        self.thresholds = thresholds or {}
+    def __init__(self) -> None:
+        """Initialize the analyzer (no thresholds; raw similarities only)."""
 
     def analyze(
         self,
