@@ -500,8 +500,10 @@ class EuclideanConsistencyAnalyzer:
         if len(positive_eigs) == 0:
             return float(min(n, 3))
 
-        # Count significant eigenvalues (> 1% of largest)
-        threshold = 0.01 * positive_eigs[0] if positive_eigs else 0
+        # Count significant eigenvalues using dtype-derived threshold
+        # Standard formula: n * eps * largest_eigenvalue
+        rank_scale = svd_rank_threshold(b, eigenvalues, n)
+        threshold = rank_scale * positive_eigs[0]
         significant = sum(1 for e in positive_eigs if e > threshold)
 
         return float(significant)

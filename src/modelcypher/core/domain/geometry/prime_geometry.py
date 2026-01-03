@@ -235,7 +235,7 @@ class HypothesisTest:
 
     hypothesis_id: str  # H1-H8
     description: str
-    passed: bool
+    passed: bool | None  # None when samples unavailable for statistical determination
     p_value: float | None  # None when samples unavailable for statistical test
     effect_size: EffectSize
     prime_value: float
@@ -1295,18 +1295,17 @@ def run_hypothesis_test(
 
     # Determine pass/fail
     # With samples: require statistical significance (p < 0.05)
-    # Without samples: rely on direction only (effect size still computed)
+    # Without samples: cannot determine statistically (passed = None)
+    passed: bool | None
     if p_value is not None:
         if one_sided:
             passed = prime_value < baseline_value and p_value < 0.05
         else:
             passed = prime_value != baseline_value and p_value < 0.05
     else:
-        # No p-value: pass based on direction and non-trivial effect size
-        if one_sided:
-            passed = prime_value < baseline_value and abs(effect.d) > 0.2
-        else:
-            passed = prime_value != baseline_value and abs(effect.d) > 0.2
+        # No samples = no statistical determination possible
+        # Effect size is still reported; consumer decides interpretation
+        passed = None
 
     return HypothesisTest(
         hypothesis_id=hypothesis_id,
@@ -1448,9 +1447,13 @@ def run_comprehensive_analysis(
     result.summary["prime_participation_ratio"] = prime_ev.participation_ratio
     result.summary["prime_spectral_entropy"] = prime_ev.spectral_entropy
     result.summary["n_baselines_tested"] = float(len(baselines))
-    result.summary["h1_pass_rate"] = sum(
-        1 for k, v in result.hypothesis_tests.items() if k.startswith("H1") and v.passed
-    ) / len(baselines)
+    # Count only determinable tests (passed is not None)
+    h1_tests = [v for k, v in result.hypothesis_tests.items() if k.startswith("H1")]
+    determinable = [t for t in h1_tests if t.passed is not None]
+    if determinable:
+        result.summary["h1_pass_rate"] = sum(1 for t in determinable if t.passed) / len(determinable)
+    else:
+        result.summary["h1_pass_rate"] = float("nan")  # No determinable tests
 
     logger.info("Comprehensive analysis complete.")
     return result
@@ -1653,7 +1656,12 @@ def format_comprehensive_result(result: ComprehensiveResult) -> str:
     lines.append("")
 
     for name, test in result.hypothesis_tests.items():
-        status = "✓ PASS" if test.passed else "✗ FAIL"
+        if test.passed is None:
+            status = "? INDETERMINATE (no samples)"
+        elif test.passed:
+            status = "✓ PASS"
+        else:
+            status = "✗ FAIL"
         lines.append(f"{name}: {status}")
         lines.append(f"  {test.description}")
         lines.append(f"  Prime: {test.prime_value:.3f}, Baseline: {test.baseline_value:.3f}")

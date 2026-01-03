@@ -588,7 +588,8 @@ class TestHypothesisValidation:
 
         assert isinstance(result, HypothesisTest)
         assert result.hypothesis_id == "H_test"
-        assert isinstance(result.passed, bool)
+        # passed is None when samples not provided (cannot determine statistically)
+        assert result.passed is None
         # p_value is None when samples not provided
         assert result.p_value is None
 
@@ -623,8 +624,8 @@ class TestHypothesisValidation:
         assert result.prime_value > result.baseline_value
         # p_value is None when samples not provided
         assert result.p_value is None
-        # Test should fail because direction is wrong (prime > baseline for one_sided)
-        assert not result.passed
+        # passed is None when samples not provided (cannot determine statistically)
+        assert result.passed is None
 
 
 # =============================================================================

@@ -288,10 +288,11 @@ class MergeValidationService:
         max_tokens: int | None = None,
     ) -> float:
         """
-        Compute coherence score via sentence completion.
+        Compute a response coherence proxy via sentence completion.
 
-        Measures how well the model continues given prompts.
-        Higher score = more coherent completions.
+        Returns the mean unique-token ratio (0-1) for completions.
+        Higher values indicate less repetition; callers interpret relative
+        to their own baselines.
         """
         scores = []
         for prompt in prompts:
@@ -301,7 +302,7 @@ class MergeValidationService:
                     prompt,
                     max_tokens=max_tokens,
                 )
-                # Score based on response quality heuristics
+                # Score based on response token uniqueness ratio
                 response = result.get("response", "")
                 score = self._score_coherence(prompt, response)
                 scores.append(score)
@@ -465,35 +466,16 @@ class MergeValidationService:
             )
 
     def _score_coherence(self, prompt: str, response: str) -> float:
-        """Score coherence of a response to a prompt."""
+        """Return the unique-token ratio for a response."""
         if not response or len(response.strip()) == 0:
             return 0.0
 
-        # Basic heuristics for coherence:
-        # 1. Non-empty response
-        # 2. Reasonable length (not too short, not just repetition)
-        # 3. No obvious error patterns
-
-        score = 0.5  # Base score for non-empty
-
-        # Length bonus
         words = response.split()
-        if 5 <= len(words) <= 200:
-            score += 0.2
+        if not words:
+            return 0.0
 
-        # Repetition penalty - use boundary value (any uniqueness > 0)
-        unique_words = set(words)
-        if len(words) > 0:
-            uniqueness = len(unique_words) / len(words)
-            if uniqueness > 0:
-                score += 0.2 * uniqueness  # Scale by uniqueness ratio
-
-        # Error pattern penalty
-        error_patterns = ["error", "sorry", "cannot", "unable", "as an ai"]
-        if any(p in response.lower() for p in error_patterns):
-            score -= 0.2
-
-        return max(0.0, min(1.0, score))
+        unique_ratio = len(set(words)) / len(words)
+        return max(0.0, min(1.0, unique_ratio))
 
     # NOTE: _derive_thresholds and _is_degraded were removed.
     # Validation returns raw measurements; callers decide what constitutes degradation.

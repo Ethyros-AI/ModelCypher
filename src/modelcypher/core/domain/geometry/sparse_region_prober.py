@@ -334,9 +334,14 @@ class SparseRegionProber:
 
             backend = get_default_backend()
             try:
-                return SparseRegionProber._sum_squares(backend.tolist(value))
+                sum_sq = backend.sum(value * value)
+                backend.eval(sum_sq)
+                return float(backend.to_scalar(sum_sq))
             except Exception:
-                return SparseRegionProber._sum_squares(value.tolist())
+                try:
+                    return SparseRegionProber._sum_squares(backend.tolist(value))
+                except Exception:
+                    return SparseRegionProber._sum_squares(value.tolist())
         try:
             scalar = float(value)
         except (TypeError, ValueError):
