@@ -59,6 +59,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     regularization_epsilon,
     tiny_value,
 )
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_norms,
+    geodesic_pairwise_metrics,
+)
 
 from .manifold_transfer import TransferPoint
 
@@ -417,11 +421,15 @@ class GeometricLoRAGenerator:
 
         # Compute geometric loss
         reconstructed = backend.matmul(backend.matmul(B, A), representative_input)
-        diff_norm = backend.norm(reconstructed - output_delta)
-        delta_norm = backend.norm(output_delta) + division_epsilon(backend, output_delta)
-        backend.eval(diff_norm, delta_norm)
-        diff_norm_val = float(backend.to_scalar(diff_norm))
-        delta_norm_val = float(backend.to_scalar(delta_norm))
+        recon_mat = backend.reshape(reconstructed, (1, -1))
+        delta_mat = backend.reshape(output_delta, (1, -1))
+        _, dist_arr = geodesic_pairwise_metrics(recon_mat, delta_mat, backend)
+        delta_norms = geodesic_norms(delta_mat, backend)
+        backend.eval(dist_arr, delta_norms)
+        diff_norm_val = float(backend.to_scalar(dist_arr[0]))
+        delta_norm_val = float(backend.to_scalar(delta_norms[0])) + division_epsilon(
+            backend, output_delta
+        )
         geometric_loss = diff_norm_val / delta_norm_val
 
         # A, B, S are already backend arrays

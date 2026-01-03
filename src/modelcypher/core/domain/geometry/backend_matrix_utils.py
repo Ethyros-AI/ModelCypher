@@ -49,8 +49,9 @@ from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     exp_scalar,
+    geodesic_svd,
+    power_iteration_eigh,
     safe_log_epsilon,
-    svd_via_eigh,
 )
 from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_matrix
 from modelcypher.core.domain.geometry.types import PairwiseProcrustesResult
@@ -271,13 +272,13 @@ class BackendMatrixUtils:
         source_T = self.backend.transpose(source)
         M = self.backend.matmul(source_T, target)
 
-        # SVD: M = U @ S @ Vt
-        U, S, Vt = svd_via_eigh(self.backend, M, full_matrices=False)
+        # Geodesic SVD: M = U @ S @ Vt (GPU-only, iterates until convergence)
+        U, S, Vt = geodesic_svd(self.backend, M)
 
         # Optimal orthogonal rotation: R = U @ Vt
         R = self.backend.matmul(U, Vt)
         # Re-project to the closest orthogonal matrix to suppress numeric drift.
-        U_r, _, Vt_r = svd_via_eigh(self.backend, R, full_matrices=False)
+        U_r, _, Vt_r = geodesic_svd(self.backend, R)
         R = self.backend.matmul(U_r, Vt_r)
 
         det_arr = self.backend.det(R)
@@ -598,13 +599,16 @@ class BackendMatrixUtils:
     def eigendecomposition(self, K: Array) -> tuple[Array, Array]:
         """Compute eigendecomposition of symmetric matrix.
 
+        Uses GPU-only power iteration, iterates until convergence.
+
         Args:
             K: Symmetric matrix of shape (n, n)
 
         Returns:
             Tuple of (eigenvalues, eigenvectors)
         """
-        return self.backend.eigh(K)
+        n = int(K.shape[0])
+        return power_iteration_eigh(self.backend, K, k=n)
 
     def trace(self, A: Array) -> float:
         """Compute trace of a matrix.

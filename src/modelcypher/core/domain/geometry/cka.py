@@ -64,9 +64,11 @@ from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     is_finite,
+    power_iteration_eigh,
     regularization_epsilon,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -304,20 +306,20 @@ def _compute_hsic(
         centered_y = _center_gram_matrix(gram_y, backend)
 
     # Normalize before multiplication to avoid overflow
-    x_norm = backend.norm(centered_x)
-    y_norm = backend.norm(centered_y)
-    backend.eval(x_norm, y_norm)
+    x_norms = geodesic_norms(backend.reshape(centered_x, (1, -1)), backend)
+    y_norms = geodesic_norms(backend.reshape(centered_y, (1, -1)), backend)
+    backend.eval(x_norms, y_norms)
 
-    x_norm_val = float(backend.to_scalar(x_norm))
-    y_norm_val = float(backend.to_scalar(y_norm))
+    x_norm_val = float(backend.to_scalar(x_norms[0]))
+    y_norm_val = float(backend.to_scalar(y_norms[0]))
 
     # Use precision-aware threshold for near-zero detection
     eps = division_epsilon(backend, centered_x)
     if x_norm_val < eps or y_norm_val < eps:
         return 0.0
 
-    centered_x_normalized = centered_x / x_norm
-    centered_y_normalized = centered_y / y_norm
+    centered_x_normalized = centered_x / x_norm_val
+    centered_y_normalized = centered_y / y_norm_val
 
     # Compute trace of normalized product using element-wise multiply and sum
     trace_product = backend.sum(centered_x_normalized * centered_y_normalized)
@@ -485,7 +487,9 @@ def _feature_sampling_correction(
     if feature_dim <= 0:
         return 1.0, 0.0
 
-    eigvals, _ = backend.eigh(centered_gram)
+    # Use power iteration for GPU-only eigendecomposition
+    n = int(centered_gram.shape[0])
+    eigvals, _ = power_iteration_eigh(backend, centered_gram, k=n)
     backend.eval(eigvals)
     gamma = _participation_ratio(eigvals, backend)
     if gamma <= 0.0:

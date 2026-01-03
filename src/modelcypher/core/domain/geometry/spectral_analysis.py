@@ -51,7 +51,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     condition_threshold,
     division_epsilon,
-    svd_via_eigh,
+    geodesic_svd,
 )
 
 if TYPE_CHECKING:
@@ -160,11 +160,11 @@ def compute_spectral_metrics(
     source_f32 = b.astype(source_arr, "float32")
     target_f32 = b.astype(target_arr, "float32")
 
-    # SVD - compute only singular values (not U or Vt) to avoid 92GB allocation
-    # For (vocab_size, hidden_dim) matrices, full U would be vocab_size^2
+    # Geodesic SVD - GPU-only power iteration, iterates until convergence
+    # For (vocab_size, hidden_dim) matrices, we compute the full SVD
     # We need all singular values for condition number (σ_max / σ_min)
-    _, source_s, _ = svd_via_eigh(b, source_f32, full_matrices=False)
-    _, target_s, _ = svd_via_eigh(b, target_f32, full_matrices=False)
+    _, source_s, _ = geodesic_svd(b, source_f32)
+    _, target_s, _ = geodesic_svd(b, target_f32)
 
     # Evaluate and extract values
     b.eval(source_s, target_s)

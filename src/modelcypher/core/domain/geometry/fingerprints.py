@@ -22,6 +22,7 @@ from enum import Enum
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 from modelcypher.ports.backend import Backend
 
 # Data Structures mimicking Swift ManifoldStitcher.ModelFingerprints
@@ -142,8 +143,9 @@ class ModelFingerprintsProjection:
         X = self._backend.array(matrix_data)
 
         # 3. Normalize & Center
-        # L2 Normalize rows
-        norms = self._backend.norm(X, axis=1, keepdims=True)
+        # Geodesic normalize rows
+        norms = geodesic_norms(X, self._backend)
+        norms = self._backend.reshape(norms, (-1, 1))
         # Avoid division by zero using dtype-aware epsilon
         div_eps = division_epsilon(self._backend, norms)
         mask = norms > div_eps

@@ -57,6 +57,7 @@ from modelcypher.core.domain.geometry.concept_response_matrix import ConceptResp
 from modelcypher.core.domain.geometry.numerical_stability import (
     acos_scalar,
     division_epsilon,
+    geodesic_svd,
     sqrt_scalar,
 )
 
@@ -287,7 +288,7 @@ class GeneralizedProcrustes:
                 )
 
             M = b.matmul(b.transpose(X1), X0)
-            U, _, Vt = b.svd(M)
+            U, _, Vt = geodesic_svd(b, M)
             R1 = b.matmul(U, Vt)
 
             # Never allow reflections - preserves orientation
@@ -352,8 +353,19 @@ class GeneralizedProcrustes:
             M_matrices = self._backend.matmul(X_t, consensus)
 
             b = self._backend
-            U_batch, _, Vt_batch = b.svd(M_matrices)
-            Rs = b.matmul(U_batch, Vt_batch)
+            # Apply geodesic_svd to each matrix in the batch
+            # Store U, Vt for each matrix to avoid redundant SVD calls
+            U_list = []
+            Vt_list = []
+            Rs_list = []
+            for i in range(model_count):
+                U_i, _, Vt_i = geodesic_svd(b, M_matrices[i])
+                U_list.append(U_i)
+                Vt_list.append(Vt_i)
+                Rs_list.append(b.matmul(U_i, Vt_i))
+            Rs = b.stack(Rs_list, axis=0)
+            U_batch = b.stack(U_list, axis=0)
+            Vt_batch = b.stack(Vt_list, axis=0)
 
             # Never allow reflections - preserves orientation
             for i in range(model_count):
@@ -674,8 +686,8 @@ class RotationContinuityAnalyzer:
             # M = source^T @ target
             M = backend.matmul(backend.transpose(source_arr), target_arr)  # [d, d]
 
-            # SVD
-            U, _, Vt = backend.svd(M)
+            # Geodesic SVD - iterates until convergence
+            U, _, Vt = geodesic_svd(backend, M)
 
             # R = U @ Vt
             rotation = backend.matmul(U, Vt)
@@ -750,7 +762,7 @@ class RotationContinuityAnalyzer:
         global_target = global_target - backend.mean(global_target, axis=0)
 
         M_global = backend.matmul(backend.transpose(global_source), global_target)
-        U_g, _, Vt_g = backend.svd(M_global)
+        U_g, _, Vt_g = geodesic_svd(backend, M_global)
         global_rotation = backend.matmul(U_g, Vt_g)
 
         # Never allow reflections - preserves orientation

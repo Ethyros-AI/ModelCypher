@@ -34,6 +34,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.riemannian_utils import safe_arithmetic_mean
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 
 class AnchorSet(str, Enum):
@@ -104,9 +105,9 @@ class GeometricFingerprint:
         backend.eval(gram_arr)
 
         v = backend.random_normal((n,))
-        norm_arr = backend.norm(v)
+        norm_arr = geodesic_norms(backend.reshape(v, (1, -1)), backend)
         backend.eval(norm_arr)
-        norm = float(backend.to_scalar(norm_arr))
+        norm = float(backend.to_scalar(norm_arr[0]))
         if norm > 0:
             v = v / norm
 
@@ -117,10 +118,10 @@ class GeometricFingerprint:
             backend.eval(w)
 
             dot_arr = backend.sum(v * w)
-            norm_arr = backend.norm(w)
+            norm_arr = geodesic_norms(backend.reshape(w, (1, -1)), backend)
             backend.eval(dot_arr, norm_arr)
             lam = float(backend.to_scalar(dot_arr))
-            norm = float(backend.to_scalar(norm_arr))
+            norm = float(backend.to_scalar(norm_arr[0]))
             eps = division_epsilon(backend, w)
             if norm <= eps:
                 break

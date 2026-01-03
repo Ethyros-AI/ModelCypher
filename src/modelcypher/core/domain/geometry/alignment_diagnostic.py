@@ -35,7 +35,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
 )
-from modelcypher.core.domain.geometry.vector_math import geodesic_paired_distances
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_norms,
+    geodesic_paired_distances,
+)
 
 _cache = ComputationCache.shared()
 
@@ -142,8 +145,8 @@ def alignment_signal_from_matrices(
 
     # Scale diagnostics
     div_eps = division_epsilon(b, source_matrix)
-    src_norm = b.mean(b.norm(source_matrix, axis=1))
-    tgt_norm = b.mean(b.norm(target_matrix, axis=1))
+    src_norm = b.mean(geodesic_norms(source_matrix, b))
+    tgt_norm = b.mean(geodesic_norms(target_matrix, b))
     b.eval(src_norm, tgt_norm)
     src_norm_val = float(b.to_scalar(src_norm))
     tgt_norm_val = float(b.to_scalar(tgt_norm))

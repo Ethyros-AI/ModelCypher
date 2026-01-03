@@ -260,15 +260,15 @@ class GramAligner:
         target_norm_val = float(b.to_scalar(target_norm))
 
         # Method 1: Geodesic SVD + Procrustes alignment
-        # Uses power iteration for SVD - runs on GPU
-        U_s, S_s, Vt_s = geodesic_svd(b, source_centered, iterations=30)
-        U_t, S_t, Vt_t = geodesic_svd(b, target_centered, iterations=30)
+        # Uses power iteration for SVD - runs on GPU, iterates until convergence
+        U_s, S_s, Vt_s = geodesic_svd(b, source_centered)
+        U_t, S_t, Vt_t = geodesic_svd(b, target_centered)
         b.eval(U_s, S_s, Vt_s, U_t, S_t, Vt_t)
 
         # Find rotation via cross-correlation
         cross = b.matmul(b.transpose(U_s), U_t)
         b.eval(cross)
-        U_cross, _, Vt_cross = geodesic_svd(b, cross, iterations=20)
+        U_cross, _, Vt_cross = geodesic_svd(b, cross)
         b.eval(U_cross, Vt_cross)
         R = b.matmul(U_cross, Vt_cross)
         b.eval(R)
@@ -297,7 +297,7 @@ class GramAligner:
 
         n = int(gram_f32.shape[0])
         k = min(n, 50)  # Use top-50 eigenvectors for efficiency
-        eigvals, eigvecs = power_iteration_eigh(b, gram_f32, k=k, iterations=30)
+        eigvals, eigvecs = power_iteration_eigh(b, gram_f32, k=k)
         b.eval(eigvals, eigvecs)
 
         # Invert eigenvalues above threshold
@@ -376,14 +376,15 @@ class GramAligner:
         target_norm_val = float(b.to_scalar(target_norm))
 
         # Method 1: Geodesic SVD + Procrustes alignment
-        U_s, S_s, Vt_s = geodesic_svd(b, source, iterations=30)
-        U_t, S_t, Vt_t = geodesic_svd(b, target, iterations=30)
+        # Uses power iteration - iterates until convergence
+        U_s, S_s, Vt_s = geodesic_svd(b, source)
+        U_t, S_t, Vt_t = geodesic_svd(b, target)
         b.eval(U_s, S_s, Vt_s, U_t, S_t, Vt_t)
 
         # Find rotation via cross-correlation
         cross = b.matmul(b.transpose(U_s), U_t)
         b.eval(cross)
-        U_cross, _, Vt_cross = geodesic_svd(b, cross, iterations=20)
+        U_cross, _, Vt_cross = geodesic_svd(b, cross)
         b.eval(U_cross, Vt_cross)
         R = b.matmul(U_cross, Vt_cross)
         b.eval(R)
@@ -404,7 +405,7 @@ class GramAligner:
 
         n = int(gram_f32.shape[0])
         k = min(n, 50)
-        eigvals, eigvecs = power_iteration_eigh(b, gram_f32, k=k, iterations=30)
+        eigvals, eigvecs = power_iteration_eigh(b, gram_f32, k=k)
         b.eval(eigvals, eigvecs)
 
         # Check if positive definite (all eigenvalues positive)
@@ -594,10 +595,10 @@ class GramAligner:
             gram_norm = float(b.to_scalar(gram_norm_arr))
             if gram_diff_norm < precision_threshold * (gram_norm + precision_threshold):
                 # Gram matrices are equal - this is a rotation/reflection
-                # Find the rotation via geodesic Procrustes (GPU-only, no CPU linear algebra)
+                # Find the rotation via geodesic Procrustes (GPU-only, iterates until convergence)
                 cross = b.matmul(b.transpose(source_centered), target_centered)
                 b.eval(cross)
-                U, _, Vt = geodesic_svd(b, cross, iterations=30)
+                U, _, Vt = geodesic_svd(b, cross)
                 rotation = b.matmul(U, Vt)
                 b.eval(rotation)
                 H = self._centering_matrix(n_samples)
@@ -781,9 +782,9 @@ class GramAligner:
         n = int(K_s_f32.shape[0])
         k = min(n, 50)  # Use top-50 eigenvectors for efficiency
 
-        # GPU-only power iteration eigendecomposition
-        eig_s, V_s = power_iteration_eigh(b, K_s_f32, k=k, iterations=30)
-        eig_t, V_t = power_iteration_eigh(b, K_t_f32, k=k, iterations=30)
+        # GPU-only power iteration eigendecomposition - iterates until convergence
+        eig_s, V_s = power_iteration_eigh(b, K_s_f32, k=k)
+        eig_t, V_t = power_iteration_eigh(b, K_t_f32, k=k)
         b.eval(eig_s, V_s, eig_t, V_t)
 
         regularization = self._regularization if self._regularization is not None else 0.0
@@ -912,8 +913,8 @@ class GramAligner:
 
         n = int(K_s_f32.shape[0])
         k = min(n, 50)  # Use top-50 eigenvectors for efficiency
-        eig_s, V_s = power_iteration_eigh(b, K_s_f32, k=k, iterations=30)
-        eig_t, V_t = power_iteration_eigh(b, K_t_f32, k=k, iterations=30)
+        eig_s, V_s = power_iteration_eigh(b, K_s_f32, k=k)
+        eig_t, V_t = power_iteration_eigh(b, K_t_f32, k=k)
         b.eval(eig_s, V_s, eig_t, V_t)
 
         # Sample-space approach with dtype-derived regularization (no cascade)

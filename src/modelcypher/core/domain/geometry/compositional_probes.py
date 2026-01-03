@@ -23,6 +23,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.vector_math import (
     BackendVectorMath,
     geodesic_cosine_batch,
+    geodesic_norms,
 )
 from modelcypher.core.domain.geometry.types import (
     CompositionAnalysis,
@@ -142,9 +143,9 @@ class CompositionalProbes:
         # Calc residual
         reconstructed = b.matmul(weights_arr, comps)  # [D]
         diff = comp - reconstructed
-        residual_norm_arr = b.norm(diff)
+        residual_norm_arr = geodesic_norms(b.reshape(diff, (1, -1)), b)
         b.eval(residual_norm_arr)
-        residual_norm = float(b.to_scalar(residual_norm_arr))
+        residual_norm = float(b.to_scalar(residual_norm_arr[0]))
 
         return CompositionAnalysis(
             probe=probe,

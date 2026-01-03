@@ -49,6 +49,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     sqrt_scalar,
     ulp_scalar,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -261,9 +262,9 @@ class RelationalStressComputer:
         curvature = self._estimate_local_curvature(concept_activation, anchor_activations)
 
         # Activation magnitude
-        concept_norm = b.norm(concept_activation)
-        b.eval(concept_norm)
-        magnitude = float(b.to_scalar(concept_norm))
+        concept_norms = geodesic_norms(b.reshape(concept_activation, (1, -1)), b)
+        b.eval(concept_norms)
+        magnitude = float(b.to_scalar(concept_norms[0]))
 
         # Create stress vector (sorted for consistency)
         stress_vector = tuple(distances[k] for k in sorted(distances.keys()))
@@ -321,9 +322,9 @@ class RelationalStressComputer:
         eps = division_epsilon(b, point)
         for idx in sorted_idx_list:
             direction = neighbors[neighbor_names[idx]] - point
-            norm_val = b.norm(direction)
-            b.eval(norm_val)
-            norm = float(b.to_scalar(norm_val))
+            norm_arr = geodesic_norms(b.reshape(direction, (1, -1)), b)
+            b.eval(norm_arr)
+            norm = float(b.to_scalar(norm_arr[0]))
             if norm > eps:
                 normalized = direction / norm
                 b.eval(normalized)
