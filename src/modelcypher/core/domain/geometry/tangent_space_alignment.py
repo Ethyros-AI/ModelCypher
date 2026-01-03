@@ -39,6 +39,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     acos_scalar,
     division_epsilon,
+    sqrt_scalar,
 )
 
 if TYPE_CHECKING:
@@ -137,8 +138,10 @@ class TangentSpaceAlignment:
             return None
 
         # Derive neighbor_count from sqrt(n)
-        import math
-        neighbor_count = min(max(2, int(math.sqrt(n_anchors))), n_anchors - 1)
+        neighbor_count = min(
+            max(2, int(sqrt_scalar(float(n_anchors), self._backend))),
+            n_anchors - 1,
+        )
 
         # Derive tangent_rank from neighbor_count // 2
         tangent_rank = min(max(1, neighbor_count // 2), neighbor_count)

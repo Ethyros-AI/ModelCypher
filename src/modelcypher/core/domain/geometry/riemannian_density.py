@@ -696,8 +696,7 @@ class RiemannianDensityEstimator:
         # Gaussian kurtosis = 3.0 (exact mathematical constant)
         # Threshold: kurtosis significantly > 3 → use Student-t
         # Standard error of kurtosis ≈ sqrt(24/n), use 2σ for significance
-        import math
-        se_kurtosis = math.sqrt(24.0 / n) if n > 0 else 0.0
+        se_kurtosis = sqrt_scalar(24.0 / float(n), backend) if n > 0 else 0.0
         kurtosis_threshold = 3.0 + 2.0 * se_kurtosis  # Data-derived threshold
         if kurtosis > kurtosis_threshold:
             influence_type = InfluenceType.STUDENT_T

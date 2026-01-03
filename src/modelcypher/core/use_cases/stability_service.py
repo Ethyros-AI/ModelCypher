@@ -30,6 +30,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 logger = logging.getLogger(__name__)
 
 
@@ -199,7 +201,6 @@ class StabilityService:
     def _derive_run_parameters(model_path: Path) -> dict[str, Any]:
         """Derive stability run parameters from model geometry."""
         import json
-        import math
 
         config_path = model_path / "config.json"
         config_data: dict[str, Any] = {}
@@ -233,11 +234,12 @@ class StabilityService:
         if scale <= 0:
             raise ValueError("Model config missing geometry for derived stability parameters")
 
-        num_runs = int(math.sqrt(float(scale)))
+        backend = get_default_backend()
+        num_runs = int(sqrt_scalar(float(scale), backend))
         if num_runs <= 0:
             raise ValueError("Derived stability num_runs must be positive")
 
-        prompt_variations = int(math.sqrt(float(num_runs)))
+        prompt_variations = int(sqrt_scalar(float(num_runs), backend))
         if prompt_variations <= 0:
             raise ValueError("Derived stability prompt_variations must be positive")
 

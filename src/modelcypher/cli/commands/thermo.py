@@ -802,6 +802,9 @@ def thermo_parity(
         ],
     }
 
+    if output_file:
+        Path(output_file).write_text(json.dumps(payload, indent=2))
+
     if context.output_format == "text":
         lines = [
             "THERMO PARITY",
@@ -815,9 +818,6 @@ def thermo_parity(
         if output_file:
             write_output(f"\nReport saved to: {output_file}", context.output_format, context.pretty)
         return
-
-    if output_file:
-        Path(output_file).write_text(json.dumps(payload, indent=2))
 
     write_output(payload, context.output_format, context.pretty)
 

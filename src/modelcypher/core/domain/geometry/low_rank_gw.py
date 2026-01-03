@@ -39,7 +39,6 @@ References:
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -48,6 +47,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
     regularization_epsilon,
+    sqrt_scalar,
 )
 
 if TYPE_CHECKING:
@@ -179,7 +179,7 @@ class LowRankGromovWasserstein:
         m = int(C2.shape[0])
 
         # Derive rank from problem size: sqrt(min(n, m)) clamped to [10, 500]
-        derived_rank = int(math.sqrt(min(n, m)))
+        derived_rank = int(sqrt_scalar(float(min(n, m)), b))
         derived_rank = max(10, min(500, derived_rank))
         r = min(derived_rank, n, m)
 
@@ -264,7 +264,7 @@ class LowRankGromovWasserstein:
         Q, g, R = self._initialize_factors(n, m, r, a, p, b)
 
         # Derive max_iterations from problem size: max(50, 2 * sqrt(n + m))
-        max_iterations = max(50, int(2 * math.sqrt(n + m)))
+        max_iterations = max(50, int(2 * sqrt_scalar(float(n + m), b)))
 
         # Derive inner iterations from rank: max(20, rank)
         max_inner_iterations = max(20, r)

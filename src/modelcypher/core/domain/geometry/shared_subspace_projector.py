@@ -262,8 +262,8 @@ class SharedSubspaceProjector:
         d_target = len(target_matrix[0])
 
         # Derive min_samples from sqrt(n_features)
-        import math
-        min_samples = max(3, int(math.sqrt(max(d_source, d_target))))
+        backend = get_default_backend()
+        min_samples = max(3, int(sqrt_scalar(float(max(d_source, d_target)), backend)))
         if len(source_matrix) != len(target_matrix) or n < min_samples:
             return None
 

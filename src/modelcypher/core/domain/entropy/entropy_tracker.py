@@ -238,8 +238,6 @@ class EntropyTracker:
             baseline: Calibrated baseline for z-score computation.
             source: Source identifier for sample metadata.
         """
-        import math
-
         self._baseline = baseline
         self._source = source
 
@@ -248,12 +246,13 @@ class EntropyTracker:
         baseline_n = int(baseline.sample_count)
         if baseline_n <= 0:
             raise ValueError("baseline.sample_count must be positive for derived windows")
-        self._window_size = int(math.sqrt(float(baseline_n)))
+        backend = get_default_backend()
+        self._window_size = int(sqrt_scalar(float(baseline_n), backend))
         if self._window_size <= 0:
             raise ValueError("derived window_size must be positive")
 
         # Derive emit_interval from window_size without arbitrary ratios
-        self._emit_interval = int(math.sqrt(float(self._window_size)))
+        self._emit_interval = int(sqrt_scalar(float(self._window_size), backend))
         if self._emit_interval <= 0:
             raise ValueError("derived emit_interval must be positive")
 

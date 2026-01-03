@@ -25,6 +25,7 @@ from modelcypher.core.domain.geometry.backend_matrix_utils import BackendMatrixU
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     is_finite,
+    sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.optimal_transport import (
     SinkhornResult,
@@ -225,14 +226,12 @@ class GeometryEngine:
         from modelcypher.core.domain.geometry.riemannian_utils import (
             geodesic_distance_matrix,
         )
-        import math
-
         combined = self.backend.concatenate([source, target], axis=0)
         combined = self.backend.astype(combined, "float32")
 
         # Derive k from data size: sqrt(n) is the standard rule for k-NN on manifolds
         total_points = int(combined.shape[0])
-        k_neighbors = max(3, int(math.sqrt(total_points)))
+        k_neighbors = max(3, int(sqrt_scalar(float(total_points), self.backend)))
 
         geo = geodesic_distance_matrix(combined, k_neighbors=k_neighbors, backend=self.backend)
         self.backend.eval(geo)

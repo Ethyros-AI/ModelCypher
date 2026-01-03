@@ -29,12 +29,12 @@ This is a utility class. The geometry decides which layers matter.
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array
@@ -107,7 +107,8 @@ class HiddenStateExtractor:
 
         # History depth derived from layer count - reasonable memory bound
         layer_count = max(target_layers) + 1 if target_layers else 32
-        self._max_history_tokens = max(5, int(math.sqrt(layer_count)))
+        backend = get_default_backend()
+        self._max_history_tokens = max(5, int(sqrt_scalar(float(layer_count), backend)))
         self._keep_history = False
 
         # Session state

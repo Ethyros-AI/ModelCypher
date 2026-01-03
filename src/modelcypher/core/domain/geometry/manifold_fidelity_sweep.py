@@ -147,8 +147,6 @@ class ManifoldFidelitySweep:
         Returns:
             LayerSweep with metrics at each rank level
         """
-        import math
-
         n_anchors = min(source_activations.shape[0], target_activations.shape[0])
         dim = min(source_activations.shape[1], target_activations.shape[1])
 
@@ -163,7 +161,7 @@ class ManifoldFidelitySweep:
             ranks = [min(4, dim)]
 
         # Derive neighbor_count from sqrt(n)
-        neighbor_count = max(2, int(math.sqrt(n_anchors)))
+        neighbor_count = max(2, int(sqrt_scalar(float(n_anchors), self._backend)))
 
         # Derive min_anchor_count from smallest rank
         min_anchor_count = max(2, min(ranks) if ranks else 4)
@@ -334,8 +332,7 @@ class ManifoldFidelitySweep:
             neighbor_count = getattr(self, "_derived_neighbor_count", None)
             if neighbor_count is None:
                 # Fallback: derive from sqrt(n)
-                import math
-                neighbor_count = max(2, int(math.sqrt(x.shape[0])))
+                neighbor_count = max(2, int(sqrt_scalar(float(x.shape[0]), b)))
             k = min(neighbor_count, x.shape[0] - 1)
 
         n = x.shape[0]
