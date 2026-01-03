@@ -217,8 +217,13 @@ class TopologicalFingerprint:
         min_dist_val = float(backend.to_scalar(min_dist_arr))
         min_dist = min_dist_val if is_finite(min_dist_val, backend) else 0.0
 
+        # Convert to Python list for pure-Python filtration algorithm
+        # This ensures PersistencePoints store Python floats, not MLX scalars
+        backend.eval(distances)
+        distances_list = backend.tolist(distances)
+
         diagram = TopologicalFingerprint._vietoris_rips_filtration(
-            distances=distances,
+            distances=distances_list,
             min_filtration=min_dist,
             max_filtration=max_dist,
             num_steps=num_steps,

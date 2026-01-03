@@ -1147,7 +1147,10 @@ class TestRiemannianHypothesis:
             d_jk = dist_list[j][k]
             d_ik = dist_list[i][k]
             if _is_finite(d_ij) and _is_finite(d_jk) and _is_finite(d_ik):
-                eps = _eps(backend, float(d_ik), float(d_ij), float(d_jk))
+                # Use relative epsilon scaled by max value for numerical stability
+                # Floyd-Warshall accumulates error over path steps
+                max_val = max(abs(d_ik), abs(d_ij), abs(d_jk), 1.0)
+                eps = _eps(backend, float(d_ik), float(d_ij), float(d_jk)) * max_val
                 assert d_ik <= d_ij + d_jk + eps
 
     @given(

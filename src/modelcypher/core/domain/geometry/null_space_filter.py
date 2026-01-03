@@ -169,17 +169,6 @@ def _compute_numerical_rank(
     return threshold, rank
 
 
-def _derive_min_samples(d: int) -> int:
-    """Derive minimum samples from dimension.
-
-    Uses log2(d) as the minimum - this is the information-theoretic
-    minimum needed to distinguish d dimensions from random noise.
-    """
-    backend = get_default_backend()
-    log2_val = log2_scalar(float(max(2, d)), backend)
-    return max(2, int(ceil_scalar(log2_val, backend)))
-
-
 class NullSpaceFilter:
     """
     Filters weight updates to the null space of prior activations.
@@ -233,22 +222,8 @@ class NullSpaceFilter:
         n_samples = int(activation_matrix.shape[0])
         d = int(activation_matrix.shape[1])
 
-        # Derive min_samples from dimension - information-theoretic minimum
-        min_samples = _derive_min_samples(d)
-
-        if n_samples < min_samples:
-            logger.warning(
-                f"Only {n_samples} samples, need {min_samples} for reliable null space. "
-                "Returning identity (no filtering)."
-            )
-            return NullSpaceProjection(
-                projection_matrix=backend.eye(d),
-                null_dim=d,
-                row_space_dim=0,
-                singular_values=backend.zeros((min(n_samples, d),)),
-                effective_threshold=0.0,
-                n_samples=n_samples,
-            )
+        # SVD gives exact null space computation regardless of sample count
+        # n samples span at most n dimensions, null space is d - rank(A) dimensions
 
         # Always normalize activations for numerical stability
         norms = backend.norm(activation_matrix, axis=1, keepdims=True)
@@ -604,5 +579,4 @@ __all__ = [
     "filter_merge_delta_to_null_space",
     # Helper functions for threshold derivation (exposed for testing)
     "_compute_numerical_rank",
-    "_derive_min_samples",
 ]
