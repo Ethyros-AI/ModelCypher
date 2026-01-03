@@ -114,7 +114,7 @@ class ThermoBenchmarkRunner:
         self,
         prompts: list[str],
         modifiers: list[LinguisticModifier] | None = None,
-        temperature: float = 1.0,
+        temperature: float | None = None,
         max_tokens: int = 64,
     ) -> BenchmarkResult:
         """Compare modifier effects across prompt corpus.
@@ -122,7 +122,7 @@ class ThermoBenchmarkRunner:
         Args:
             prompts: List of prompts to test.
             modifiers: Modifiers to compare. Defaults to all.
-            temperature: Sampling temperature.
+            temperature: Sampling temperature scale. If None, uses identity scaling.
             max_tokens: Max tokens per generation.
 
         Returns:

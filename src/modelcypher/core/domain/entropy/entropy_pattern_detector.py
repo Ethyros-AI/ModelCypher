@@ -279,9 +279,13 @@ class EntropyPatternAnalyzer:
 
         values_arr = backend.array(values)
         z_scores_arr = backend.abs((values_arr - mean) / std_dev)
-        backend.eval(z_scores_arr)
+        sorted_scores = backend.sort(z_scores_arr)
+        backend.eval(sorted_scores)
         z_scores = backend.tolist(z_scores_arr)
-        threshold = find_magnitude_gap_threshold(sorted(z_scores), eps=eps)
+        threshold = find_magnitude_gap_threshold(
+            [float(v) for v in backend.tolist(sorted_scores)],
+            eps=eps,
+        )
         if threshold <= 0.0:
             return []
 

@@ -24,7 +24,7 @@ Architecture:
     TokenizerChatSession -> InferenceViewModel -> OutputSafetyGuard -> InferenceView
                                                        |
                                                 StreamingTokenBuffer
-                                                (sliding window 200 chars)
+                                                (sliding window derived from filter)
 
 Design Decisions:
 - Uses sliding window to catch cross-token patterns ("ki" + "ll" = "kill")
@@ -49,10 +49,8 @@ from modelcypher.core.domain.safety.regex_content_filter import (
     SafetyCategory,
 )
 from modelcypher.core.domain.safety.safety_audit_log import SafetyAuditLog
-from modelcypher.core.domain.safety.streaming_token_buffer import (
-    DEFAULT_WINDOW_SIZE,
-    StreamingTokenBuffer,
-)
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.safety.streaming_token_buffer import StreamingTokenBuffer
 
 logger = logging.getLogger(__name__)
 
@@ -84,8 +82,8 @@ class OutputSafetyGuard:
     filter: RegexContentFilter = field(default_factory=RegexContentFilter.default)
     """Content filter for pattern matching."""
 
-    window_size: int = DEFAULT_WINDOW_SIZE
-    """Buffer window size."""
+    window_size: int | None = None
+    """Buffer window size (derived when not provided)."""
 
     _buffer: StreamingTokenBuffer = field(init=False)
     """Sliding window buffer for cross-token detection."""
@@ -106,8 +104,26 @@ class OutputSafetyGuard:
         """Initialize internal state."""
         if self.max_consecutive_violations < 1:
             self.max_consecutive_violations = 1
+        if self.window_size is None:
+            self.window_size = self._derive_window_size()
         self._buffer = StreamingTokenBuffer(window_size=self.window_size)
         self._audit_log = SafetyAuditLog()
+
+    def _derive_window_size(self) -> int:
+        """Derive buffer window size from filter rule lengths."""
+        rule_lengths = [len(rule.expression.pattern) for rule in self.filter.rules]
+        if rule_lengths:
+            backend = get_default_backend()
+            lengths_arr = backend.array(rule_lengths)
+            max_len_arr = backend.max(lengths_arr)
+            backend.eval(max_len_arr)
+            derived = int(backend.to_scalar(max_len_arr))
+        else:
+            derived = len(self.filtered_placeholder)
+
+        if derived <= 0:
+            raise ValueError("Derived window_size must be positive")
+        return derived
 
     def process(self, token: str) -> OutputSafetyResult:
         """Process a streaming token through the safety filter.

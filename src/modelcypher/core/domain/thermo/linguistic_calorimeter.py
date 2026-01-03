@@ -19,6 +19,8 @@
 
 Orchestrates entropy measurement from actual model inference, replacing
 simulated entropy computation with real logit-based Shannon entropy.
+Entropy differentials (delta_H) are the primary comparison signal; hidden-state
+geometry is captured alongside entropy when available.
 
 Notes
 -----
@@ -55,6 +57,7 @@ _MACHINE_EPS = sys.float_info.epsilon
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.inference.activation_stream import ActivationFrame
+    from modelcypher.core.domain.geometry.refusal_direction_detector import RefusalDirection
     from modelcypher.ports.backend import Backend
 
 from modelcypher.core.domain.entropy.entropy_math import EntropyMath
@@ -99,6 +102,9 @@ class EntropyMeasurement:
     temperature: float
     measurement_time: float  # seconds
     geometry_metrics: ThermoGeometryMetrics | None = None
+    refusal_direction_distance: float | None = None
+    refusal_projection_magnitude: float | None = None
+    is_approaching_refusal: bool | None = None
     timestamp: datetime = field(default_factory=datetime.now)
 
 
@@ -171,6 +177,7 @@ class LinguisticCalorimeter:
         model: object | None = None,
         tokenizer: object | None = None,
         calibration: ThermoCalibration | None = None,
+        refusal_direction: "RefusalDirection | None" = None,
     ):
         """Initialize the calorimeter.
 
@@ -185,6 +192,8 @@ class LinguisticCalorimeter:
             calibration: Optional thermodynamic calibration for this model.
                 If provided, classification thresholds will be derived from
                 calibrated measurements instead of hardcoded values.
+            refusal_direction: Optional precomputed refusal direction for geometry-first
+                assessment. If omitted, a cached direction will be used when available.
         """
         self.model_path = Path(model_path).expanduser().resolve() if model_path else None
         self.adapter_path = Path(adapter_path).expanduser().resolve() if adapter_path else None
@@ -192,6 +201,8 @@ class LinguisticCalorimeter:
         self.epsilon = epsilon
         self._backend = backend or get_default_backend()
         self._calibration = calibration
+        self._refusal_direction = refusal_direction
+        self._refusal_direction_checked = False
 
         # Lazy-loaded components (or pre-loaded)
         self._model = model
@@ -300,7 +311,8 @@ class LinguisticCalorimeter:
 
         Args:
             prompt: The input prompt.
-            temperature: Sampling temperature (defaults to model-native scale).
+            temperature: Sampling temperature scale. If None, uses identity scaling
+                (unmodified logits) for sampling.
             max_tokens: Maximum tokens to generate (derived if not provided).
 
         Returns:
@@ -421,8 +433,16 @@ class LinguisticCalorimeter:
         stats = EntropyMath.calculate_trajectory_stats(entropy_trajectory)
 
         geometry_metrics = None
+        refusal_direction_distance = None
+        refusal_projection_magnitude = None
+        is_approaching_refusal = None
         if geometry_enabled and geometry_stream is not None:
             geometry_metrics = self._compute_geometry_metrics(geometry_stream.frames)
+            (
+                refusal_direction_distance,
+                refusal_projection_magnitude,
+                is_approaching_refusal,
+            ) = self._compute_refusal_metrics(geometry_stream.frames)
 
         measurement_time = time.time() - start_time
 
@@ -439,6 +459,9 @@ class LinguisticCalorimeter:
             temperature=temperature,
             measurement_time=measurement_time,
             geometry_metrics=geometry_metrics,
+            refusal_direction_distance=refusal_direction_distance,
+            refusal_projection_magnitude=refusal_projection_magnitude,
+            is_approaching_refusal=is_approaching_refusal,
         )
 
     def _measure_simulated(
@@ -494,6 +517,79 @@ class LinguisticCalorimeter:
             temperature=temperature,
             measurement_time=measurement_time,
             geometry_metrics=None,
+            refusal_direction_distance=None,
+            refusal_projection_magnitude=None,
+            is_approaching_refusal=None,
+        )
+
+    def _get_refusal_direction(self) -> "RefusalDirection | None":
+        """Resolve refusal direction from cache or injected value."""
+        if self._refusal_direction_checked:
+            return self._refusal_direction
+
+        self._refusal_direction_checked = True
+        if self._refusal_direction is not None:
+            return self._refusal_direction
+
+        if self.model_path is None:
+            return None
+
+        try:
+            from modelcypher.core.domain.geometry.refusal_direction_cache import (
+                RefusalDirectionCache,
+            )
+        except Exception as exc:
+            logger.debug("RefusalDirection cache unavailable: %s", exc)
+            return None
+
+        cache = RefusalDirectionCache.shared()
+        self._refusal_direction = cache.load(self.model_path)
+        return self._refusal_direction
+
+    def _compute_refusal_metrics(
+        self,
+        frames: list["ActivationFrame"],
+    ) -> tuple[float | None, float | None, bool | None]:
+        """Compute refusal-direction metrics from captured activations."""
+        if not frames:
+            return (None, None, None)
+
+        refusal_direction = self._get_refusal_direction()
+        if refusal_direction is None:
+            return (None, None, None)
+
+        try:
+            from modelcypher.core.domain.geometry.refusal_direction_detector import (
+                RefusalDirectionDetector,
+            )
+        except Exception as exc:
+            logger.debug("RefusalDirection detector unavailable: %s", exc)
+            return (None, None, None)
+
+        previous_projection: float | None = None
+        last_metrics = None
+
+        for frame in frames:
+            if frame.layer_id != refusal_direction.layer_index:
+                continue
+            metrics = RefusalDirectionDetector.measure_distance(
+                frame.hidden_state,
+                refusal_direction,
+                previous_projection,
+                frame.token_idx,
+            )
+            if metrics is None:
+                continue
+            previous_projection = metrics.projection_magnitude
+            last_metrics = metrics
+
+        if last_metrics is None:
+            return (None, None, None)
+
+        return (
+            last_metrics.distance_to_refusal,
+            last_metrics.projection_magnitude,
+            last_metrics.is_approaching_refusal,
         )
 
     def _compute_geometry_metrics(
@@ -571,6 +667,90 @@ class LinguisticCalorimeter:
             mean_ricci_std=mean_ricci_std,
         )
 
+    @staticmethod
+    def _build_perturbed_prompt(
+        prompt: str,
+        modifier: LinguisticModifier,
+        language: PromptLanguage,
+    ) -> PerturbedPrompt:
+        """Build a prompt variant for the modifier/language pair."""
+        if language == PromptLanguage.ENGLISH:
+            return PerturbedPrompt.create(prompt, modifier)
+
+        full_prompt = LocalizedModifiers.apply(modifier, prompt, language)
+        return PerturbedPrompt(
+            base_content=prompt,
+            modifier=modifier,
+            full_prompt=full_prompt,
+        )
+
+    @staticmethod
+    def _compute_geometry_deltas(
+        baseline: ThermoGeometryMetrics | None,
+        current: ThermoGeometryMetrics | None,
+    ) -> tuple[
+        dict[int, float] | None,
+        dict[int, float] | None,
+        dict[int, float] | None,
+        float | None,
+        float | None,
+        float | None,
+    ]:
+        """Compute per-layer and mean deltas for geometry metrics."""
+        if baseline is None or current is None:
+            return (None, None, None, None, None, None)
+
+        def _delta_map(
+            current_map: dict[int, float],
+            baseline_map: dict[int, float],
+        ) -> dict[int, float] | None:
+            if not current_map or not baseline_map:
+                return None
+            common = set(current_map).intersection(baseline_map)
+            if not common:
+                return None
+            return {layer: current_map[layer] - baseline_map[layer] for layer in common}
+
+        delta_intrinsic_dimensions = _delta_map(
+            current.intrinsic_dimensions,
+            baseline.intrinsic_dimensions,
+        )
+        delta_ricci_curvatures = _delta_map(
+            current.ricci_curvatures,
+            baseline.ricci_curvatures,
+        )
+        delta_ricci_stds = _delta_map(
+            current.ricci_stds,
+            baseline.ricci_stds,
+        )
+
+        delta_mean_id = None
+        if (
+            baseline.mean_intrinsic_dimension is not None
+            and current.mean_intrinsic_dimension is not None
+        ):
+            delta_mean_id = current.mean_intrinsic_dimension - baseline.mean_intrinsic_dimension
+
+        delta_mean_ricci = None
+        if (
+            baseline.mean_ricci_curvature is not None
+            and current.mean_ricci_curvature is not None
+        ):
+            delta_mean_ricci = current.mean_ricci_curvature - baseline.mean_ricci_curvature
+
+        delta_mean_ricci_std = None
+        if baseline.mean_ricci_std is not None and current.mean_ricci_std is not None:
+            delta_mean_ricci_std = current.mean_ricci_std - baseline.mean_ricci_std
+
+        return (
+            delta_intrinsic_dimensions,
+            delta_ricci_curvatures,
+            delta_ricci_stds,
+            delta_mean_id,
+            delta_mean_ricci,
+            delta_mean_ricci_std,
+        )
+
     def measure_with_modifiers(
         self,
         prompt: str,
@@ -584,7 +764,7 @@ class LinguisticCalorimeter:
         Args:
             prompt: Base prompt content.
             modifiers: List of modifiers to apply. Defaults to all.
-            temperature: Sampling temperature (defaults to model-native scale).
+            temperature: Sampling temperature scale. If None, uses identity scaling.
             max_tokens: Maximum tokens to generate (derived if not provided).
             language: Language for localized modifiers.
 
@@ -595,56 +775,87 @@ class LinguisticCalorimeter:
             modifiers = list(LinguisticModifier)
 
         measurements = []
-        baseline_entropy: float | None = None
-        baseline_geometry: ThermoGeometryMetrics | None = None
+
+        baseline_prompt = self._build_perturbed_prompt(
+            prompt,
+            LinguisticModifier.BASELINE,
+            language,
+        )
+        baseline_raw = self.measure_entropy(
+            baseline_prompt.full_prompt,
+            temperature,
+            max_tokens,
+        )
+        baseline_geometry = baseline_raw.geometry_metrics
+        baseline_outcome = self._classify_outcome(
+            baseline_raw.mean_entropy,
+            baseline_raw.entropy_variance,
+        )
+        baseline_measurement = ThermoMeasurement(
+            id=uuid4(),
+            prompt=baseline_prompt,
+            first_token_entropy=baseline_raw.first_token_entropy,
+            mean_entropy=baseline_raw.mean_entropy,
+            entropy_variance=baseline_raw.entropy_variance,
+            entropy_trajectory=baseline_raw.entropy_trajectory,
+            top_k_concentration=baseline_raw.top_k_concentration,
+            geometry_metrics=baseline_raw.geometry_metrics,
+            model_state=self._classify_model_state(baseline_raw.mean_entropy),
+            behavioral_outcome=baseline_outcome,
+            delta_h=None,
+            refusal_direction_distance=baseline_raw.refusal_direction_distance,
+            refusal_projection_magnitude=baseline_raw.refusal_projection_magnitude,
+            is_approaching_refusal=baseline_raw.is_approaching_refusal,
+            temperature=baseline_raw.temperature,
+            generated_text=baseline_raw.generated_text,
+            token_count=baseline_raw.token_count,
+            stop_reason=baseline_raw.stop_reason,
+        )
 
         for modifier in modifiers:
-            # Create perturbed prompt
-            if language == PromptLanguage.ENGLISH:
-                perturbed = PerturbedPrompt.create(prompt, modifier)
-            else:
-                full_prompt = LocalizedModifiers.apply(modifier, prompt, language)
-                perturbed = PerturbedPrompt(
-                    base_content=prompt,
-                    modifier=modifier,
-                    full_prompt=full_prompt,
-                )
+            if modifier == LinguisticModifier.BASELINE:
+                measurements.append(baseline_measurement)
+                continue
+
+            perturbed = self._build_perturbed_prompt(prompt, modifier, language)
 
             # Measure entropy
             raw = self.measure_entropy(perturbed.full_prompt, temperature, max_tokens)
 
-            # Track baseline
-            if modifier == LinguisticModifier.BASELINE:
-                baseline_entropy = raw.mean_entropy
-                baseline_geometry = raw.geometry_metrics
-
             # Compute delta_h
-            delta_h = None
-            if baseline_entropy is not None and modifier != LinguisticModifier.BASELINE:
-                delta_h = raw.mean_entropy - baseline_entropy
-
-            delta_intrinsic_dimension = None
-            delta_ricci_curvature = None
+            delta_h = EntropyMath.compute_delta_h(
+                raw.mean_entropy,
+                baseline_raw.mean_entropy,
+            )
+            delta_refusal_distance = None
             if (
-                baseline_geometry
-                and raw.geometry_metrics
-                and baseline_geometry.mean_intrinsic_dimension is not None
-                and raw.geometry_metrics.mean_intrinsic_dimension is not None
+                baseline_raw.refusal_direction_distance is not None
+                and raw.refusal_direction_distance is not None
             ):
-                delta_intrinsic_dimension = (
-                    raw.geometry_metrics.mean_intrinsic_dimension
-                    - baseline_geometry.mean_intrinsic_dimension
+                delta_refusal_distance = (
+                    raw.refusal_direction_distance
+                    - baseline_raw.refusal_direction_distance
                 )
+            delta_refusal_projection = None
             if (
-                baseline_geometry
-                and raw.geometry_metrics
-                and baseline_geometry.mean_ricci_curvature is not None
-                and raw.geometry_metrics.mean_ricci_curvature is not None
+                baseline_raw.refusal_projection_magnitude is not None
+                and raw.refusal_projection_magnitude is not None
             ):
-                delta_ricci_curvature = (
-                    raw.geometry_metrics.mean_ricci_curvature
-                    - baseline_geometry.mean_ricci_curvature
+                delta_refusal_projection = (
+                    raw.refusal_projection_magnitude
+                    - baseline_raw.refusal_projection_magnitude
                 )
+            (
+                delta_intrinsic_dimensions,
+                delta_ricci_curvatures,
+                delta_ricci_stds,
+                delta_intrinsic_dimension,
+                delta_ricci_curvature,
+                delta_ricci_std,
+            ) = self._compute_geometry_deltas(
+                baseline_geometry,
+                raw.geometry_metrics,
+            )
 
             # Classify outcome
             outcome = self._classify_outcome(raw.mean_entropy, raw.entropy_variance)
@@ -661,9 +872,19 @@ class LinguisticCalorimeter:
                 geometry_metrics=raw.geometry_metrics,
                 delta_intrinsic_dimension_mean=delta_intrinsic_dimension,
                 delta_ricci_curvature_mean=delta_ricci_curvature,
+                delta_ricci_std_mean=delta_ricci_std,
+                delta_intrinsic_dimensions=delta_intrinsic_dimensions,
+                delta_ricci_curvatures=delta_ricci_curvatures,
+                delta_ricci_stds=delta_ricci_stds,
                 model_state=self._classify_model_state(raw.mean_entropy),
                 behavioral_outcome=outcome,
                 delta_h=delta_h,
+                refusal_direction_distance=raw.refusal_direction_distance,
+                refusal_projection_magnitude=raw.refusal_projection_magnitude,
+                is_approaching_refusal=raw.is_approaching_refusal,
+                delta_refusal_direction_distance=delta_refusal_distance,
+                delta_refusal_projection_magnitude=delta_refusal_projection,
+                temperature=raw.temperature,
                 generated_text=raw.generated_text,
                 token_count=raw.token_count,
                 stop_reason=raw.stop_reason,
@@ -682,7 +903,7 @@ class LinguisticCalorimeter:
 
         Args:
             corpus: List of reference prompts.
-            temperature: Sampling temperature (defaults to model-native scale).
+            temperature: Sampling temperature scale. If None, uses identity scaling.
             max_tokens: Maximum tokens per measurement (derived if not provided).
 
         Returns:
@@ -747,7 +968,7 @@ class LinguisticCalorimeter:
         Args:
             prompt: Input prompt.
             max_tokens: Maximum tokens to generate (derived if not provided).
-            temperature: Sampling temperature (defaults to model-native scale).
+            temperature: Sampling temperature scale. If None, uses identity scaling.
 
         Returns:
             EntropyTrajectory with per-token metrics.

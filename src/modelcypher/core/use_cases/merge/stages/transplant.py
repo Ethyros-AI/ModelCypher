@@ -172,6 +172,84 @@ def _compute_alignment_metrics(
     }
 
 
+def _set_submatrix(
+    backend: "Backend",
+    target: "Array",
+    source: "Array",
+    row_offset: int,
+    col_offset: int,
+) -> "Array":
+    """Set a submatrix of target from source at the given offset.
+
+    Since MLX doesn't support in-place slice assignment, we construct the
+    result using concatenation or element-wise operations.
+    """
+    # For simplicity, use a full reconstruction approach
+    # This creates a new array with source embedded at the given offset
+    src_rows, src_cols = int(source.shape[0]), int(source.shape[1])
+    tgt_rows, tgt_cols = int(target.shape[0]), int(target.shape[1])
+
+    # Build row by row using where masks
+    result_rows = []
+    for i in range(tgt_rows):
+        if row_offset <= i < row_offset + src_rows:
+            src_row_idx = i - row_offset
+            # This row has some source data
+            row_data = []
+            for j in range(tgt_cols):
+                if col_offset <= j < col_offset + src_cols:
+                    # Use source value
+                    row_data.append(source[src_row_idx, j - col_offset])
+                else:
+                    # Use target value
+                    row_data.append(target[i, j])
+            result_rows.append(backend.stack(row_data))
+        else:
+            # Entire row from target
+            result_rows.append(target[i, :])
+
+    result = backend.stack(result_rows)
+    backend.eval(result)
+    return result
+
+
+def _compute_dimension_projection(
+    backend: "Backend",
+    src_dim: int,
+    tgt_dim: int,
+) -> "Array":
+    """Compute an orthogonal projection matrix between dimensions.
+
+    For src_dim → tgt_dim:
+    - If tgt_dim < src_dim: truncation (keep first tgt_dim dimensions)
+    - If tgt_dim > src_dim: padding (embed in larger space)
+    - If equal: identity
+
+    Uses identity-based projection to preserve geometric structure.
+    """
+    if src_dim == tgt_dim:
+        return backend.eye(src_dim, dtype="float32")
+
+    min_dim = min(src_dim, tgt_dim)
+
+    # Create identity block of size min_dim x min_dim
+    identity_block = backend.eye(min_dim, dtype="float32")
+
+    if tgt_dim < src_dim:
+        # Truncation: [src_dim, tgt_dim]
+        # Stack: identity_block on top, zeros below
+        zeros_below = backend.zeros((src_dim - min_dim, tgt_dim), dtype="float32")
+        projection = backend.concatenate([identity_block, zeros_below], axis=0)
+    else:
+        # Padding: [src_dim, tgt_dim]
+        # Stack: identity_block on left, zeros on right
+        zeros_right = backend.zeros((src_dim, tgt_dim - min_dim), dtype="float32")
+        projection = backend.concatenate([identity_block, zeros_right], axis=1)
+
+    backend.eval(projection)
+    return projection
+
+
 def stage_transplant(
     source_weights: dict[str, "Array"],
     target_weights: dict[str, "Array"],
@@ -1043,18 +1121,96 @@ def stage_transplant(
                             metrics["attention_stitched"] += 1
                             attention_stitch_applied = True
 
+                        elif is_o and dim0 == src_hidden_dim and dim1 != src_attn_dim:
+                            # Hybrid attention architecture: o_proj input dim differs from Q output dim
+                            # This happens in models like Qwen3-Next with mixed regular/linear attention
+                            # where o_proj only receives regular attention output
+                            #
+                            # We compute a stitch based on the actual dimensions:
+                            # - hidden_stitch_output: [tgt_hidden, src_hidden] - for rows
+                            # - attention dimension needs separate handling
+                            target_o_dim1 = int(target_w.shape[1])  # Target's o_proj input dim
+
+                            logger.info(
+                                "Hybrid attention detected for %s: o_proj dim1=%d != Q_attn_dim=%d. "
+                                "Computing adaptive stitch → target dim=%d",
+                                key, dim1, src_attn_dim, target_o_dim1
+                            )
+
+                            # Apply hidden stitch to rows first
+                            source_aligned = b.matmul(hidden_stitch_output, source_w)
+                            # source_aligned now: [tgt_hidden_dim, dim1]
+
+                            # For columns: compute transformation from dim1 → target_o_dim1
+                            # Strategy: If dim1 is a subset of src_attn_dim (e.g., regular heads only),
+                            # use the corresponding subset of attention_stitch
+                            if dim1 < src_attn_dim and target_o_dim1 <= tgt_attn_dim:
+                                # Hybrid attention: o_proj uses subset of attention dimensions
+                                # Take first dim1 rows and first target_o_dim1 columns of attention_stitch
+                                # attention_stitch_input: [src_attn_dim, tgt_attn_dim]
+                                # We need: [dim1, target_o_dim1]
+                                partial_stitch = attention_stitch_input[:dim1, :target_o_dim1]
+                                source_aligned = b.matmul(source_aligned, partial_stitch)
+                                b.eval(source_aligned)
+                                logger.info(
+                                    "Partial attention stitch (o_proj): %s [%d,%d] → [%d,%d] "
+                                    "(using %dx%d submatrix of %dx%d stitch)",
+                                    key, dim0, dim1, tgt_hidden_dim, target_o_dim1,
+                                    dim1, target_o_dim1, src_attn_dim, tgt_attn_dim
+                                )
+                            elif dim1 == src_kv_dim and kv_stitch_input is not None:
+                                # o_proj uses KV dimension (unusual but handle it)
+                                # Resize kv_stitch if needed
+                                kv_in_cols = int(kv_stitch_input.shape[1])
+                                if kv_in_cols >= target_o_dim1:
+                                    o_stitch = kv_stitch_input[:, :target_o_dim1]
+                                else:
+                                    # Pad with identity-like projection
+                                    o_stitch = b.zeros((dim1, target_o_dim1), dtype=kv_stitch_input.dtype)
+                                    o_stitch = _set_submatrix(b, o_stitch, kv_stitch_input, 0, 0)
+                                source_aligned = b.matmul(source_aligned, o_stitch)
+                                b.eval(source_aligned)
+                                logger.info(
+                                    "KV-based attention stitch (o_proj): %s [%d,%d] → [%d,%d]",
+                                    key, dim0, dim1, tgt_hidden_dim, target_o_dim1
+                                )
+                            else:
+                                # Compute orthogonal projection between dimensions
+                                # This preserves as much geometric structure as possible
+                                logger.info(
+                                    "Computing orthogonal projection for o_proj: %d → %d",
+                                    dim1, target_o_dim1
+                                )
+                                projection = _compute_dimension_projection(b, dim1, target_o_dim1)
+                                source_aligned = b.matmul(source_aligned, projection)
+                                b.eval(source_aligned)
+                                logger.info(
+                                    "Projected attention stitch (o_proj): %s [%d,%d] → [%d,%d]",
+                                    key, dim0, dim1, tgt_hidden_dim, target_o_dim1
+                                )
+
+                            metrics.setdefault("attention_stitched", 0)
+                            metrics["attention_stitched"] += 1
+                            metrics.setdefault("hybrid_attention_handled", 0)
+                            metrics["hybrid_attention_handled"] += 1
+                            attention_stitch_applied = True
+
                         else:
                             raise DimensionMismatchError(
                                 stage="ATTENTION_WEIGHT_STITCH",
                                 weight_key=key,
                                 message=(
                                     "Attention weight shape does not match expected "
-                                    f"(attn={src_attn_dim}, hidden={src_hidden_dim})"
+                                    f"(attn={src_attn_dim}, kv={src_kv_dim}, hidden={src_hidden_dim})"
                                 ),
                                 context={
                                     "weight_shape": [dim0, dim1],
                                     "expected_attn_dim": src_attn_dim,
+                                    "expected_kv_dim": src_kv_dim,
                                     "expected_hidden_dim": src_hidden_dim,
+                                    "is_q": is_q,
+                                    "is_kv": is_kv,
+                                    "is_o": is_o,
                                 },
                             )
 

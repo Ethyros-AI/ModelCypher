@@ -44,6 +44,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
 
+from modelcypher.core.domain.entropy.entropy_math import EntropyMath
 from modelcypher.core.domain.thermo.linguistic_calorimeter import (
     LinguisticCalorimeter,
 )
@@ -137,6 +138,16 @@ class ThermoCalibrator:
             )
         return self._calorimeter
 
+    @staticmethod
+    def _resolve_temperature(measurements: list[ThermoMeasurement]) -> float:
+        """Resolve measurement temperature from collected samples."""
+        for measurement in measurements:
+            if measurement.temperature is not None:
+                return measurement.temperature
+
+        # Backward compatibility: older measurements omit temperature.
+        return 1.0
+
     def calibrate(
         self,
         probes: list[str],
@@ -208,9 +219,10 @@ class ThermoCalibrator:
         logger.info(f"Outcome distribution: {progress.outcomes_observed}")
 
         # Build calibration components
+        temperature = self._resolve_temperature(all_measurements)
         thresholds = self._calibrate_thresholds(baseline_entropies)
-        modifier_profile = self._calibrate_modifier_profile(modifier_measurements)
-        basin_topology = self._calibrate_basin_topology(progress.outcomes_observed)
+        modifier_profile = self._calibrate_modifier_profile(modifier_measurements, temperature)
+        basin_topology = self._calibrate_basin_topology(progress.outcomes_observed, temperature)
 
         return ThermoCalibration(
             basin_topology=basin_topology,
@@ -246,6 +258,7 @@ class ThermoCalibrator:
     def _calibrate_modifier_profile(
         self,
         measurements: list[tuple[str, float]],
+        temperature: float,
     ) -> MeasuredModifierProfile | None:
         """Build modifier profile from delta_h measurements."""
         if not measurements:
@@ -254,13 +267,14 @@ class ThermoCalibrator:
 
         return MeasuredModifierProfile.from_measurements(
             measurements=measurements,
-            temperature=1.0,  # Standard temperature
+            temperature=temperature,
             model_id=self.model_id,
         )
 
     def _calibrate_basin_topology(
         self,
         outcomes: dict[str, int],
+        temperature: float,
     ) -> MeasuredBasinTopology | None:
         """Derive basin topology from outcome distribution."""
         refused = outcomes.get("refused", 0)
@@ -280,7 +294,7 @@ class ThermoCalibrator:
             hedged_count=hedged,
             attempted_count=attempted,
             solved_count=solved,
-            temperature=1.0,  # Standard temperature
+            temperature=temperature,
             model_id=self.model_id,
         )
 
@@ -320,12 +334,13 @@ class ThermoCalibrator:
                 # Compute delta_h if we have baseline for this probe
                 baseline = baseline_entropy_by_probe.get(m.prompt.base_content)
                 if baseline is not None:
-                    delta_h = m.mean_entropy - baseline
+                    delta_h = EntropyMath.compute_delta_h(m.mean_entropy, baseline)
                     modifier_measurements.append((m.modifier.value, delta_h))
 
+        temperature = self._resolve_temperature(measurements)
         thresholds = self._calibrate_thresholds(baseline_entropies)
-        modifier_profile = self._calibrate_modifier_profile(modifier_measurements)
-        basin_topology = self._calibrate_basin_topology(outcomes)
+        modifier_profile = self._calibrate_modifier_profile(modifier_measurements, temperature)
+        basin_topology = self._calibrate_basin_topology(outcomes, temperature)
 
         return ThermoCalibration(
             basin_topology=basin_topology,

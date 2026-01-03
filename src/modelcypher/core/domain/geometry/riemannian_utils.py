@@ -2158,6 +2158,17 @@ class RiemannianGeometry:
 
         return log_vectors
 
+    def log_map(
+        self,
+        points: "Array",
+        base: "Array",
+        geo_result: GeodesicDistanceResult | None = None,
+    ) -> "Array":
+        """Map points to the tangent space at a base point."""
+        if geo_result is None:
+            geo_result = self.geodesic_distances(points)
+        return self._log_map_approximate(points, base, geo_result)
+
 
 # Convenience functions
 

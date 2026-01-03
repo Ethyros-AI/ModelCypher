@@ -384,8 +384,8 @@ def _probe_precise(
             )
             dimension_correlations = intersection_map_obj.dimension_correlations
             logger.info(
-                "PROBE PRECISE: Built IntersectionMap with overall_correlation=%.3f, %d layers",
-                intersection_map_obj.overall_correlation,
+                "PROBE PRECISE: Built IntersectionMap with raw_fingerprint_similarity=%.3f, %d layers",
+                intersection_map_obj.raw_fingerprint_similarity,
                 len(intersection_map_obj.layer_confidences),
             )
         except Exception as e:
@@ -774,16 +774,18 @@ def _probe_precise(
         "atlas_sources": list(set(p.source.value for p in probes)),
         "atlas_domains": list(set(p.domain.value for p in probes)),
         "intersection_map_built": intersection_map_obj is not None,
-        "overall_correlation": (
-            intersection_map_obj.overall_correlation if intersection_map_obj else 0.0
+        "raw_fingerprint_similarity": (
+            intersection_map_obj.raw_fingerprint_similarity if intersection_map_obj else 0.0
         ),
     }
 
+    # mean_cka = POST-ALIGNMENT quality (should be 1.0 when aligned correctly)
+    # raw_fingerprint_similarity = PRE-ALIGNMENT intrinsic similarity (expected low for different architectures)
     logger.info(
-        "PROBE PRECISE: %d layers, mean_cka=%.3f, overall_correlation=%.3f",
+        "PROBE PRECISE: %d layers, cka=%.3f (post-alignment), raw_similarity=%.3f (pre-alignment)",
         len(layer_confidences),
         mean_cka,
-        metrics["overall_correlation"],
+        metrics["raw_fingerprint_similarity"],
     )
 
     # =========================================================================

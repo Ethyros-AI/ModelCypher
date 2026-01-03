@@ -34,6 +34,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.entropy.entropy_math import EntropyMath
 from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
     AttractorBasin,
@@ -176,7 +177,10 @@ class RidgeCrossDetector:
             # Compute delta_H
             delta_h = variant.delta_h
             if delta_h is None:
-                delta_h = variant.mean_entropy - baseline.mean_entropy
+                delta_h = EntropyMath.compute_delta_h(
+                    variant.mean_entropy,
+                    baseline.mean_entropy,
+                )
 
             # Record ALL transitions - geometry determines significance
             if variant_basin != baseline_basin:

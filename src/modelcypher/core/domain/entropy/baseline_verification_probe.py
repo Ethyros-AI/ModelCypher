@@ -43,7 +43,6 @@ from typing import Awaitable, Callable
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
-    sqrt_scalar,
 )
 
 
@@ -367,12 +366,19 @@ class BaselineVerificationProbe:
                     pass
 
             prompt_duration = (datetime.now() - prompt_start).total_seconds()
-            avg_delta = (
-                sum(s.delta for s in prompt_samples) / len(prompt_samples)
-                if prompt_samples
-                else 0.0
-            )
-            max_anomaly = max(s.anomaly_score for s in prompt_samples) if prompt_samples else 0.0
+            if prompt_samples:
+                backend = get_default_backend()
+                deltas_arr = backend.array([s.delta for s in prompt_samples])
+                mean_arr = backend.mean(deltas_arr)
+                max_arr = backend.max(
+                    backend.array([s.anomaly_score for s in prompt_samples])
+                )
+                backend.eval(mean_arr, max_arr)
+                avg_delta = float(backend.to_scalar(mean_arr))
+                max_anomaly = float(backend.to_scalar(max_arr))
+            else:
+                avg_delta = 0.0
+                max_anomaly = 0.0
 
             prompt_results.append(
                 PromptResult(
@@ -458,21 +464,27 @@ class BaselineVerificationProbe:
                 sample_count=0,
             )
 
+        backend = get_default_backend()
         deltas = [s.delta for s in samples]
-        mean = sum(deltas) / len(deltas)
-
+        deltas_arr = backend.array(deltas)
+        mean_arr = backend.mean(deltas_arr)
         if len(deltas) > 1:
-            variance = sum((d - mean) ** 2 for d in deltas) / (len(deltas) - 1)
-            _b = get_default_backend()
-            std_dev = sqrt_scalar(variance, _b)
+            diff = deltas_arr - mean_arr
+            variance_arr = backend.sum(diff * diff) / float(len(deltas) - 1)
+            std_arr = backend.sqrt(variance_arr)
         else:
-            std_dev = 0.0
+            std_arr = backend.array([0.0])
+        max_arr = backend.max(deltas_arr)
+        min_arr = backend.min(deltas_arr)
+        backend.eval(mean_arr, std_arr, max_arr, min_arr)
+        mean = float(backend.to_scalar(mean_arr))
+        std_dev = float(backend.to_scalar(std_arr)) if len(deltas) > 1 else 0.0
 
         return EntropyBaseline(
             delta_mean=mean,
             delta_std_dev=std_dev,
-            delta_max=max(deltas),
-            delta_min=min(deltas),
+            delta_max=float(backend.to_scalar(max_arr)),
+            delta_min=float(backend.to_scalar(min_arr)),
             base_model_id=base_model_id,
             sample_count=len(samples),
             test_conditions=f"BaselineVerificationProbe with {len(self.test_prompts)} prompts",

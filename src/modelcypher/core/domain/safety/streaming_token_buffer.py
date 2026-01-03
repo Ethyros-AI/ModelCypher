@@ -26,13 +26,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-DEFAULT_WINDOW_SIZE = 200
-"""Default window size in characters."""
-
-MIN_WINDOW_SIZE = 10
-"""Minimum allowed window size."""
-
-
 @dataclass
 class StreamingTokenBuffer:
     """Circular buffer that accumulates streaming tokens for cross-token pattern detection.
@@ -44,7 +37,7 @@ class StreamingTokenBuffer:
     concurrently.
     """
 
-    window_size: int = DEFAULT_WINDOW_SIZE
+    window_size: int
     """Maximum characters to retain."""
 
     _content: str = field(default="", init=False, repr=False)
@@ -55,8 +48,8 @@ class StreamingTokenBuffer:
 
     def __post_init__(self) -> None:
         """Validate configuration."""
-        if self.window_size < MIN_WINDOW_SIZE:
-            object.__setattr__(self, "window_size", MIN_WINDOW_SIZE)
+        if self.window_size <= 0:
+            raise ValueError("window_size must be positive")
 
     def append(self, token: str) -> str:
         """Append a token to the buffer, maintaining the sliding window.

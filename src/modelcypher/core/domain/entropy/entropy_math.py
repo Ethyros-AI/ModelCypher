@@ -42,6 +42,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence
 
+from modelcypher.core.domain._backend import get_default_backend
+
 
 @dataclass(frozen=True)
 class TrajectoryStats:
@@ -116,13 +118,17 @@ class EntropyMath:
         n = len(trajectory)
         first_h = trajectory[0]
         last_h = trajectory[-1]
-        mean_h = sum(trajectory) / n
-
-        # Sample variance (Bessel's correction: n-1 denominator)
+        backend = get_default_backend()
+        traj_arr = backend.array(list(trajectory))
+        mean_arr = backend.mean(traj_arr)
         if n > 1:
-            variance_h = sum((x - mean_h) ** 2 for x in trajectory) / (n - 1)
+            diff = traj_arr - mean_arr
+            variance_arr = backend.sum(diff * diff) / float(n - 1)
         else:
-            variance_h = 0.0
+            variance_arr = backend.array([0.0])
+        backend.eval(mean_arr, variance_arr)
+        mean_h = float(backend.to_scalar(mean_arr))
+        variance_h = float(backend.to_scalar(variance_arr))
 
         return TrajectoryStats(
             mean_entropy=mean_h,
@@ -137,7 +143,11 @@ class EntropyMath:
         """Compute sample mean of a sequence."""
         if not values:
             return 0.0
-        return sum(values) / len(values)
+        backend = get_default_backend()
+        values_arr = backend.array(list(values))
+        mean_arr = backend.mean(values_arr)
+        backend.eval(mean_arr)
+        return float(backend.to_scalar(mean_arr))
 
     @staticmethod
     def sample_variance(values: Sequence[float], ddof: int = 1) -> float:
@@ -153,17 +163,22 @@ class EntropyMath:
         """
         if len(values) <= ddof:
             return 0.0
-        mean = sum(values) / len(values)
-        return sum((x - mean) ** 2 for x in values) / (len(values) - ddof)
+        backend = get_default_backend()
+        values_arr = backend.array(list(values))
+        mean_arr = backend.mean(values_arr)
+        diff = values_arr - mean_arr
+        variance_arr = backend.sum(diff * diff) / float(len(values) - ddof)
+        backend.eval(variance_arr)
+        return float(backend.to_scalar(variance_arr))
 
     @staticmethod
     def sample_std(values: Sequence[float], ddof: int = 1) -> float:
         """Compute sample standard deviation."""
-        from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 
-        _b = get_default_backend()
-        return sqrt_scalar(EntropyMath.sample_variance(values, ddof), _b)
+        backend = get_default_backend()
+        variance = EntropyMath.sample_variance(values, ddof)
+        return sqrt_scalar(variance, backend)
 
     @staticmethod
     def compute_delta_h(
@@ -198,11 +213,17 @@ class EntropyMath:
         """
         if not values:
             return 0.0
-        sorted_vals = sorted(values)
-        n = len(sorted_vals)
+        backend = get_default_backend()
+        values_arr = backend.array(list(values))
+        sorted_arr = backend.sort(values_arr)
+        backend.eval(sorted_arr)
+        n = int(sorted_arr.shape[0])
         idx = int(n * p / 100.0)
         idx = min(idx, n - 1)
-        return sorted_vals[idx]
+        idx_arr = backend.array([idx])
+        selected = backend.take(sorted_arr, idx_arr, axis=0)
+        backend.eval(selected)
+        return float(backend.to_scalar(selected))
 
     @staticmethod
     def entropy_percentiles(values: Sequence[float]) -> dict[int, float]:

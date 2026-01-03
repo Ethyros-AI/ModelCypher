@@ -18,7 +18,9 @@
 """Core types for linguistic thermodynamics research.
 
 Provides types and utilities for analyzing how linguistic modifiers affect
-model generation entropy and behavioral outcomes.
+model generation entropy and hidden-state geometry. Entropy differentials
+(delta_H) are the primary comparison signal; geometry measurements provide
+the structural context.
 
 Notes
 -----
@@ -122,10 +124,6 @@ class LinguisticModifier(str, Enum):
     COMBINED : str
         Multiple modifiers combined.
 
-    Notes
-    -----
-    Effective temperature model:
-        T_effective = T_softmax * (1 + alpha * I_linguistic)
     """
 
     BASELINE = "baseline"
@@ -436,7 +434,7 @@ class ThermoMeasurement:
     """Complete measurement result from the linguistic calorimeter.
 
     Captures all entropy-related metrics for a single prompt variant,
-    enabling analysis of how linguistic modifiers affect generation dynamics.
+    enabling analysis of entropy differentials alongside hidden-state geometry.
     """
 
     id: UUID
@@ -454,11 +452,17 @@ class ThermoMeasurement:
     refusal_projection_magnitude: float | None = None
     is_approaching_refusal: bool | None = None
     refusal_assessment: str | None = None
+    delta_refusal_direction_distance: float | None = None
+    delta_refusal_projection_magnitude: float | None = None
 
     # Hidden-state geometry (optional, computed from activations)
     geometry_metrics: "ThermoGeometryMetrics | None" = None
     delta_intrinsic_dimension_mean: float | None = None
     delta_ricci_curvature_mean: float | None = None
+    delta_ricci_std_mean: float | None = None
+    delta_intrinsic_dimensions: dict[int, float] | None = None
+    delta_ricci_curvatures: dict[int, float] | None = None
+    delta_ricci_stds: dict[int, float] | None = None
 
     # State Classification
     model_state: str = "normal"
@@ -466,6 +470,7 @@ class ThermoMeasurement:
 
     # Comparison Metrics
     delta_h: float | None = None  # Entropy delta vs baseline
+    temperature: float | None = None  # Sampling temperature (identity scale if None)
 
     # Generation Info
     generated_text: str = ""

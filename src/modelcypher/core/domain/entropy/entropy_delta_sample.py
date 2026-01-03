@@ -32,7 +32,7 @@ from modelcypher.core.domain.adapters.signal import (
 )
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.entropy.conflict_score import ConflictAnalysis
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon, inf_value
 
 # =============================================================================
 # Baseline Distribution for Geometry-Derived Comparisons
@@ -58,20 +58,36 @@ class BaselineDistribution:
         """Compute z-score: how many standard deviations from mean."""
         backend = get_default_backend()
         eps = division_epsilon(backend, backend.array([0.0]))
-        if self.std < eps:
-            return 0.0 if abs(value - self.mean) < eps else float("inf")
-        return (value - self.mean) / self.std
+        val_arr = backend.array([value])
+        mean_arr = backend.array([self.mean])
+        std_arr = backend.array([self.std])
+        diff = val_arr - mean_arr
+        abs_diff = backend.abs(diff)
+        eps_arr = backend.array([eps])
+        std_small = std_arr < eps_arr
+        within = abs_diff < eps_arr
+        zero_arr = backend.zeros_like(val_arr)
+        inf_arr = backend.full(val_arr.shape, inf_value(backend))
+        z_arr = diff / std_arr
+        result = backend.where(std_small, backend.where(within, zero_arr, inf_arr), z_arr)
+        backend.eval(result)
+        return float(backend.to_scalar(result))
 
     @classmethod
     def from_samples(cls, values: list[float]) -> "BaselineDistribution":
         """Compute baseline from calibration samples."""
         if not values:
             raise ValueError("Cannot compute baseline from empty samples")
-        n = len(values)
-        mean = sum(values) / n
-        variance = sum((v - mean) ** 2 for v in values) / n
-        std = variance**0.5
-        return cls(mean=mean, std=std)
+        backend = get_default_backend()
+        values_arr = backend.array(values)
+        mean_arr = backend.mean(values_arr)
+        variance_arr = backend.var(values_arr)
+        std_arr = backend.sqrt(variance_arr)
+        backend.eval(mean_arr, std_arr)
+        return cls(
+            mean=float(backend.to_scalar(mean_arr)),
+            std=float(backend.to_scalar(std_arr)),
+        )
 
 
 # =============================================================================
@@ -160,15 +176,24 @@ class EntropyDeltaSample:
     @property
     def variance_delta(self) -> float:
         """Variance delta: base - adapter."""
-        return self.base_top_k_variance - self.adapter_top_k_variance
+        backend = get_default_backend()
+        base_arr = backend.array([self.base_top_k_variance])
+        adapter_arr = backend.array([self.adapter_top_k_variance])
+        delta_arr = base_arr - adapter_arr
+        backend.eval(delta_arr)
+        return float(backend.to_scalar(delta_arr))
 
     @property
     def anomaly_score(self) -> float:
         """Entropy ratio measuring base uncertainty relative to adapter confidence."""
         backend = get_default_backend()
         eps = division_epsilon(backend, backend.array([0.0]))
-        positive_delta = max(0.0, self.delta)
-        return positive_delta / max(self.base_entropy, eps)
+        delta_arr = backend.array([self.delta])
+        positive_delta = backend.maximum(delta_arr, backend.array([0.0]))
+        denom = backend.maximum(backend.array([self.base_entropy]), backend.array([eps]))
+        score_arr = positive_delta / denom
+        backend.eval(score_arr)
+        return float(backend.to_scalar(score_arr))
 
     def anomaly_z_score(self, baseline: BaselineDistribution) -> float:
         """Compute z-score relative to calibration baseline."""
@@ -262,4 +287,8 @@ class EntropyDeltaSessionResult:
         """Average latency per token in milliseconds."""
         if not self.samples:
             return 0.0
-        return sum(sample.latency_ms for sample in self.samples) / float(len(self.samples))
+        backend = get_default_backend()
+        lat_arr = backend.array([sample.latency_ms for sample in self.samples])
+        mean_arr = backend.mean(lat_arr)
+        backend.eval(mean_arr)
+        return float(backend.to_scalar(mean_arr))

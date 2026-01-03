@@ -30,7 +30,7 @@ from uuid import UUID, uuid4
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
-    sqrt_scalar,
+    inf_value,
 )
 
 @dataclass(frozen=True)
@@ -46,18 +46,35 @@ class ConversationEntropyBaseline:
         if len(delta_samples) < 2:
             raise ValueError("Need at least 2 samples for baseline")
 
-        mean = sum(delta_samples) / len(delta_samples)
-        variance = sum((d - mean) ** 2 for d in delta_samples) / len(delta_samples)
-        _b = get_default_backend()
-        return cls(delta_mean=mean, delta_std_dev=sqrt_scalar(variance, _b))
+        backend = get_default_backend()
+        samples_arr = backend.array(delta_samples)
+        mean_arr = backend.mean(samples_arr)
+        variance_arr = backend.var(samples_arr)
+        std_arr = backend.sqrt(variance_arr)
+        backend.eval(mean_arr, std_arr)
+        return cls(
+            delta_mean=float(backend.to_scalar(mean_arr)),
+            delta_std_dev=float(backend.to_scalar(std_arr)),
+        )
 
     def z_score(self, value: float) -> float:
         """Compute z-score relative to the baseline mean/std."""
         backend = get_default_backend()
         eps = division_epsilon(backend, backend.array([0.0]))
-        if self.delta_std_dev < eps:
-            return 0.0 if abs(value - self.delta_mean) < eps else float("inf")
-        return (value - self.delta_mean) / self.delta_std_dev
+        val_arr = backend.array([value])
+        mean_arr = backend.array([self.delta_mean])
+        std_arr = backend.array([self.delta_std_dev])
+        diff = val_arr - mean_arr
+        abs_diff = backend.abs(diff)
+        eps_arr = backend.array([eps])
+        std_small = std_arr < eps_arr
+        within = abs_diff < eps_arr
+        zero_arr = backend.zeros_like(val_arr)
+        inf_arr = backend.full(val_arr.shape, inf_value(backend))
+        z_arr = diff / std_arr
+        result = backend.where(std_small, backend.where(within, zero_arr, inf_arr), z_arr)
+        backend.eval(result)
+        return float(backend.to_scalar(result))
 
 
 @dataclass(frozen=True)
@@ -168,23 +185,41 @@ class ConversationEntropyTracker:
                 delta_change_std=0.0,
             )
 
+        backend = get_default_backend()
         deltas = [t.avg_delta for t in self._turn_summaries]
-        mean_delta = sum(deltas) / turn_count
+        deltas_arr = backend.array(deltas)
+        mean_arr = backend.mean(deltas_arr)
+        backend.eval(mean_arr)
+        mean_delta = float(backend.to_scalar(mean_arr))
         std_delta = self._compute_std(deltas)
         oscillation_amplitude = std_delta
-        oscillation_frequency = self._compute_oscillation_frequency(deltas)
+        oscillation_frequency = self._compute_oscillation_frequency(deltas_arr)
         cumulative_drift = self._compute_cumulative_drift(mean_delta, std_delta)
 
-        anomaly_count = sum(t.anomaly_count for t in self._turn_summaries)
-        anomaly_rate = anomaly_count / turn_count
-        max_anomaly_score = max((t.max_anomaly_score for t in self._turn_summaries), default=0.0)
+        anomaly_arr = backend.array([t.anomaly_count for t in self._turn_summaries])
+        anomaly_count_arr = backend.sum(anomaly_arr)
+        max_anomaly_arr = backend.max(
+            backend.array([t.max_anomaly_score for t in self._turn_summaries])
+        )
+        anomaly_rate_arr = anomaly_count_arr / backend.array([float(turn_count)])
+        backend.eval(anomaly_count_arr, max_anomaly_arr, anomaly_rate_arr)
+        anomaly_count = int(backend.to_scalar(anomaly_count_arr))
+        anomaly_rate = float(backend.to_scalar(anomaly_rate_arr))
+        max_anomaly_score = float(backend.to_scalar(max_anomaly_arr))
 
-        delta_changes = [
-            deltas[i] - deltas[i - 1]
-            for i in range(1, len(deltas))
-        ]
-        delta_change_mean = sum(delta_changes) / len(delta_changes) if delta_changes else 0.0
-        delta_change_std = self._compute_std(delta_changes) if delta_changes else 0.0
+        if turn_count > 1:
+            idx_prev = backend.arange(0, turn_count - 1)
+            idx_next = backend.arange(1, turn_count)
+            prev_vals = backend.take(deltas_arr, idx_prev, axis=0)
+            next_vals = backend.take(deltas_arr, idx_next, axis=0)
+            changes_arr = next_vals - prev_vals
+            change_mean_arr = backend.mean(changes_arr)
+            backend.eval(change_mean_arr)
+            delta_change_mean = float(backend.to_scalar(change_mean_arr))
+            delta_change_std = self._compute_std(backend.tolist(changes_arr))
+        else:
+            delta_change_mean = 0.0
+            delta_change_std = 0.0
 
         return ConversationAssessment(
             conversation_id=self._conversation_id,
@@ -205,28 +240,41 @@ class ConversationEntropyTracker:
         """Compute population standard deviation."""
         if len(values) < 2:
             return 0.0
-        mean = sum(values) / len(values)
-        variance = sum((v - mean) ** 2 for v in values) / len(values)
-        _b = get_default_backend()
-        return sqrt_scalar(variance, _b)
+        backend = get_default_backend()
+        values_arr = backend.array(values)
+        mean_arr = backend.mean(values_arr)
+        diff = values_arr - mean_arr
+        variance_arr = backend.sum(diff * diff) / float(len(values))
+        std_arr = backend.sqrt(variance_arr)
+        backend.eval(std_arr)
+        return float(backend.to_scalar(std_arr))
 
-    def _compute_oscillation_frequency(self, deltas: list[float]) -> float:
+    def _compute_oscillation_frequency(self, deltas_arr) -> float:
         """Compute oscillation frequency (sign changes in delta differences)."""
-        if len(deltas) < 3:
+        count = int(deltas_arr.shape[0])
+        if count < 3:
             return 0.0
 
-        sign_changes = 0
-        previous_diff: float | None = None
+        backend = get_default_backend()
+        idx_prev = backend.arange(0, count - 1)
+        idx_next = backend.arange(1, count)
+        prev_vals = backend.take(deltas_arr, idx_prev, axis=0)
+        next_vals = backend.take(deltas_arr, idx_next, axis=0)
+        diffs = next_vals - prev_vals
+        signs = backend.sign(diffs)
+        if int(signs.shape[0]) < 2:
+            return 0.0
 
-        for i in range(1, len(deltas)):
-            diff = deltas[i] - deltas[i - 1]
-            if previous_diff is not None:
-                if (previous_diff > 0 and diff < 0) or (previous_diff < 0 and diff > 0):
-                    sign_changes += 1
-            previous_diff = diff
-
-        max_changes = len(deltas) - 2
-        return sign_changes / max_changes if max_changes > 0 else 0.0
+        idx_prev_s = backend.arange(0, int(signs.shape[0]) - 1)
+        idx_next_s = backend.arange(1, int(signs.shape[0]))
+        prev_sign = backend.take(signs, idx_prev_s, axis=0)
+        next_sign = backend.take(signs, idx_next_s, axis=0)
+        sign_change = (prev_sign * next_sign) < 0
+        count_arr = backend.sum(backend.astype(sign_change, "float32"))
+        max_changes_arr = backend.array([float(count - 2)])
+        freq_arr = count_arr / max_changes_arr
+        backend.eval(freq_arr)
+        return float(backend.to_scalar(freq_arr))
 
     def _compute_cumulative_drift(self, mean_delta: float, std_delta: float) -> float:
         """Compute cumulative drift from baseline or conversation start."""
@@ -239,4 +287,10 @@ class ConversationEntropyTracker:
         backend = get_default_backend()
         eps = division_epsilon(backend, backend.array([0.0]))
         first_delta = self._turn_summaries[0].avg_delta
-        return (mean_delta - first_delta) / max(std_delta, eps)
+        mean_arr = backend.array([mean_delta])
+        first_arr = backend.array([first_delta])
+        std_arr = backend.array([std_delta])
+        denom = backend.maximum(std_arr, backend.array([eps]))
+        drift_arr = (mean_arr - first_arr) / denom
+        backend.eval(drift_arr)
+        return float(backend.to_scalar(drift_arr))

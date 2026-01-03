@@ -31,10 +31,8 @@ Critical temperature formula:
     where σ_z = standard deviation of logits
           V_eff = effective vocabulary size (tokens with p > ε)
 
-For typical LLMs:
-    σ_z ≈ 3-5
-    V_eff ≈ 1000-5000
-    T_c ≈ 1.0
+T_c is model-specific and should be derived from measured logit statistics
+for the target model. No default is assumed.
 """
 
 from __future__ import annotations

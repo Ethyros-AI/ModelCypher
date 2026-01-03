@@ -32,6 +32,7 @@ from uuid import UUID, uuid4
 # Machine epsilon for float64 (native Python float)
 _MACHINE_EPS = sys.float_info.epsilon
 
+from modelcypher.core.domain.entropy.entropy_math import EntropyMath
 from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
     LinguisticModifier,
     MultilingualPerturbedPrompt,
@@ -265,7 +266,7 @@ class MultilingualCalibrator:
 
             baseline_entropy = baseline_measurement.mean_entropy
             modified_entropy = modified_measurement.mean_entropy
-            delta_h = modified_entropy - baseline_entropy
+            delta_h = EntropyMath.compute_delta_h(modified_entropy, baseline_entropy)
 
             measurements[language] = (baseline_entropy, modified_entropy, delta_h)
 

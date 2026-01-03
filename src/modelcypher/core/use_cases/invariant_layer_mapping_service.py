@@ -492,7 +492,7 @@ class InvariantLayerMappingService:
             source_model=report.source_model,
             target_model=report.target_model,
             dimension_correlations=dimension_correlations,
-            overall_correlation=summary.alignment_quality,
+            raw_fingerprint_similarity=summary.alignment_quality,
             aligned_dimension_count=summary.mapped_layers,
             total_source_dims=summary.mapped_layers,
             total_target_dims=summary.mapped_layers,
@@ -503,10 +503,10 @@ class InvariantLayerMappingService:
     def intersection_map_payload(intersection_map: IntersectionMap) -> dict:
         """Convert IntersectionMap to JSON-serializable payload."""
         return {
-            "_schema": "mc.geometry.intersection_map.v1",
+            "_schema": "mc.geometry.intersection_map.v2",
             "sourceModel": intersection_map.source_model,
             "targetModel": intersection_map.target_model,
-            "overallCorrelation": intersection_map.overall_correlation,
+            "rawFingerprintSimilarity": intersection_map.raw_fingerprint_similarity,
             "alignedDimensionCount": intersection_map.aligned_dimension_count,
             "totalSourceDims": intersection_map.total_source_dims,
             "totalTargetDims": intersection_map.total_target_dims,

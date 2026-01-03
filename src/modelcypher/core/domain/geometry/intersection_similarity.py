@@ -322,8 +322,9 @@ def build_intersection_map(
     total_source_dims = len(source_dims_per_layer)
     total_target_dims = len(target_dims_per_layer)
 
-    # Overall correlation as mean of layer confidences
-    overall_correlation = (
+    # Raw fingerprint similarity (PRE-ALIGNMENT) as mean of layer confidences
+    # This is NOT the same as CKA which measures post-alignment quality
+    raw_fingerprint_similarity = (
         sum(lc.confidence for lc in layer_confidences) / len(layer_confidences)
         if layer_confidences
         else 0.0
@@ -333,7 +334,7 @@ def build_intersection_map(
         source_model=source_model,
         target_model=target_model,
         dimension_correlations=dimension_correlations,
-        overall_correlation=overall_correlation,
+        raw_fingerprint_similarity=raw_fingerprint_similarity,
         aligned_dimension_count=total_aligned,
         total_source_dims=total_source_dims,
         total_target_dims=total_target_dims,
@@ -400,11 +401,18 @@ def intersection_map_from_dict(payload: dict[str, Any]) -> "IntersectionMap":
             )
         )
 
+    # Support both new and legacy field names for backwards compatibility
+    raw_sim = _get("rawFingerprintSimilarity", "raw_fingerprint_similarity")
+    if raw_sim is None:
+        # Fallback to legacy field name
+        raw_sim = _get("overallCorrelation", "overall_correlation")
+    raw_fingerprint_similarity = float(raw_sim or 0.0)
+
     return IntersectionMap(
         source_model=str(_get("sourceModel", "source_model") or ""),
         target_model=str(_get("targetModel", "target_model") or ""),
         dimension_correlations=dimension_correlations,
-        overall_correlation=float(_get("overallCorrelation", "overall_correlation") or 0.0),
+        raw_fingerprint_similarity=raw_fingerprint_similarity,
         aligned_dimension_count=int(_get("alignedDimensionCount", "aligned_dimension_count") or 0),
         total_source_dims=int(_get("totalSourceDims", "total_source_dims") or 0),
         total_target_dims=int(_get("totalTargetDims", "total_target_dims") or 0),
