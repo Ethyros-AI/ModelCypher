@@ -61,17 +61,17 @@ class ProjectionMethod(str, Enum):
     GRAM_TRANSPORT: Uses Gromov-Wasserstein on Gram matrices.
         - Works for ANY dimension mismatch
         - Preserves relational structure (distances between rows)
-        - Best for semantic/conceptual alignment
+        - Use for semantic/conceptual alignment
 
     PROCRUSTES: Uses orthogonal rotation.
         - Only works when ONE dimension matches
         - Finds R minimizing ||source @ R - target||_F
-        - Best for same-architecture alignment
+        - Use for same-architecture alignment
 
     SVD_PROJECT: Uses SVD to project to shared subspace.
         - Works for any dimension mismatch
         - Preserves top singular values (variance)
-        - Best when structure differs significantly
+        - Use when structure differs significantly
     """
     GRAM_TRANSPORT = "gram_transport"
     PROCRUSTES = "procrustes"

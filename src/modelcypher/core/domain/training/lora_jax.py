@@ -24,7 +24,7 @@ This is the JAX/Flax implementation. For other backends:
 
 Use _platform.get_lora_config_class() for automatic platform selection.
 
-Implementation based on JAX/Flax best practices (2025):
+Implementation based on JAX/Flax reference patterns (2025):
 - Flax NNX or Linen module patterns
 - Pure functional parameter handling
 - JAX pytree operations for parameter traversal

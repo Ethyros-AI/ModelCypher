@@ -305,7 +305,7 @@ def compute_layer_correspondence_by_curvature(
             lc.ollivier_ricci_std,
         )
 
-    # For each source layer, find best matching target layer
+    # For each source layer, find minimum-distance target layer
     # Constrained to preserve relative ordering (monotonic mapping)
     used_targets: set[int] = set()
 

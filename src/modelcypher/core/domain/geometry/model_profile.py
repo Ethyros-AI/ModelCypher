@@ -827,7 +827,7 @@ class ProfileRepository:
     def find_matching_profile(
         self, model_family: str, model_size: str
     ) -> ModelProfile | None:
-        """Find the best matching profile for a model.
+        """Find the closest matching profile for a model.
 
         First tries exact match, then falls back to same family.
         """

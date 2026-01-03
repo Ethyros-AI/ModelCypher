@@ -24,7 +24,7 @@ This is the JAX/Flax implementation. For other backends:
 
 Use _platform.get_evaluation_engine() for automatic platform selection.
 
-Implementation based on JAX best practices (2025):
+Implementation based on JAX reference patterns (2025):
 - jax.jit for optimized forward passes
 - optax.softmax_cross_entropy for loss computation
 - JAX numpy operations for accuracy computation

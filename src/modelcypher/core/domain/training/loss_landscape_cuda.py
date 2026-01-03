@@ -24,7 +24,7 @@ This is the PyTorch/CUDA implementation. For other backends:
 
 Use _platform.get_loss_landscape_computer() for automatic platform selection.
 
-Implementation based on PyTorch 2.x best practices (2025):
+Implementation based on PyTorch 2.x reference patterns (2025):
 - torch.randn_like for random direction generation
 - torch.autograd.grad for gradient computation
 - torch.no_grad() for parameter perturbation

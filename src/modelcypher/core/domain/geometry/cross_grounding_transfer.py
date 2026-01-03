@@ -510,7 +510,7 @@ class GroundingRotationEstimator:
             corr = b.abs(b.matmul(source_axes, b.transpose(target_axes)))
             b.eval(corr)
 
-            # Vectorized argmax: find best match for each source axis
+            # Vectorized argmax: find highest-correlation match for each source axis
             best_matches = b.argmax(corr, axis=1)
             b.eval(best_matches)
             # Use tolist() for O(1) extraction instead of O(n) scalar extractions

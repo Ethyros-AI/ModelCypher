@@ -40,7 +40,7 @@ class ManifoldProfile:
     class Configuration:
         max_recent_points: int = 100
         min_points_per_region: int = 5
-        clustering_epsilon: float = 0.3
+        clustering_epsilon: float | None = None  # Derived from point scale if not set
         compute_intrinsic_dimension: bool = True
 
     @dataclass(frozen=True)

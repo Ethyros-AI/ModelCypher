@@ -24,7 +24,7 @@ This is the PyTorch/CUDA implementation. For other backends:
 
 Use _platform.get_lora_config_class() for automatic platform selection.
 
-Implementation based on PyTorch 2.x and safetensors 0.5.x best practices (2025):
+Implementation based on PyTorch 2.x and safetensors 0.5.x reference patterns (2025):
 - torch.nn.Module subclass with proper Parameter registration
 - safetensors.torch for checkpoint I/O
 - Gradient freezing via requires_grad=False
@@ -204,7 +204,7 @@ class LoRALinearCUDA(nn.Module):
         self.lora_a = nn.Parameter(torch.empty(rank, in_features))
         self.lora_b = nn.Parameter(torch.zeros(out_features, rank))
 
-        # Initialize lora_a with Kaiming uniform (as per PEFT best practices)
+        # Initialize lora_a with Kaiming uniform (per PEFT reference initialization)
         _b = get_default_backend()
         nn.init.kaiming_uniform_(self.lora_a, a=sqrt_scalar(5.0, _b))
 

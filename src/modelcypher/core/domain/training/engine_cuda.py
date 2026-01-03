@@ -24,7 +24,7 @@ This is the PyTorch/CUDA implementation. For other backends:
 
 Use _platform.get_training_engine() for automatic platform selection.
 
-Implementation based on PyTorch 2.9 best practices (2025):
+Implementation based on PyTorch 2.9 reference patterns (2025):
 - torch.autocast for mixed precision forward passes
 - torch.amp.GradScaler for gradient scaling with fp16
 - Gradient accumulation with proper loss scaling

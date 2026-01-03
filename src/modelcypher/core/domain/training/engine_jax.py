@@ -24,7 +24,7 @@ This is the JAX/Flax/Optax implementation. For other backends:
 
 Use _platform.get_training_engine() for automatic platform selection.
 
-Implementation based on JAX/Flax/Optax best practices (2025):
+Implementation based on JAX/Flax/Optax reference patterns (2025):
 - jax.value_and_grad for gradient computation
 - optax.MultiSteps for gradient accumulation
 - jax.jit for XLA compilation

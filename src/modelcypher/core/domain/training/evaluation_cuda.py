@@ -24,7 +24,7 @@ This is the PyTorch/CUDA implementation. For other backends:
 
 Use _platform.get_evaluation_engine() for automatic platform selection.
 
-Implementation based on PyTorch 2.x best practices (2025):
+Implementation based on PyTorch 2.x reference patterns (2025):
 - torch.no_grad() context for inference efficiency
 - torch.nn.functional.cross_entropy for loss computation
 - torch.compile() optional for performance

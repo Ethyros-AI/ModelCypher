@@ -244,7 +244,7 @@ class GramAligner:
         """Solve for F such that Gram(source @ F) = Gram(target).
 
         Tries all methods and selects the one with lowest error.
-        No tolerance-based thresholds - always returns the best solution.
+        No tolerance-based thresholds - always returns the lowest-error solution.
         """
         from modelcypher.core.domain.geometry.numerical_stability import (
             machine_epsilon,
@@ -341,7 +341,7 @@ class GramAligner:
         rel_residual = residual_val / (target_norm_val + reg_threshold)
         candidates.append((rel_residual, F_pinv, "pinv"))
 
-        # Select best method (lowest error)
+        # Select lowest-error method
         if not candidates:
             return None
 
@@ -360,7 +360,7 @@ class GramAligner:
         """Solve for F such that Gram(source @ F) = Gram(target) on uncentered data.
 
         Tries all methods and selects the one with lowest error.
-        No tolerance-based thresholds - always returns the best solution.
+        No tolerance-based thresholds - always returns the lowest-error solution.
         """
         from modelcypher.core.domain.geometry.numerical_stability import (
             machine_epsilon,
@@ -434,7 +434,7 @@ class GramAligner:
             rel_residual = residual_val / (target_norm_val + eps)
             candidates.append((rel_residual, F_eig, "eigendecomposition"))
 
-        # Select best method (lowest error)
+        # Select lowest-error method
         if not candidates:
             return None
 

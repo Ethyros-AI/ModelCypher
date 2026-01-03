@@ -92,7 +92,7 @@ class Configuration:
         default_factory=lambda: list(STANDARD_TRAITS)
     )
     target_layers: set[int] = field(default_factory=set)
-    correlation_threshold: float = 0.5
+    correlation_threshold: float | None = None  # Caller provides based on baseline
     normalize_vectors: bool = True
     samples_per_trait: int = 10
 
@@ -301,7 +301,7 @@ class PersonaVectorMonitor:
     def compute_drift_metrics(
         positions: list[PersonaPosition],
         step: int,
-        drift_threshold: float = 0.2,
+        drift_threshold: float | None = None,
     ) -> TrainingDriftMetrics:
         total_drift = 0.0
         drifting_traits: list[str] = []
@@ -310,7 +310,8 @@ class PersonaVectorMonitor:
                 continue
             abs_delta = abs(position.delta_from_baseline)
             total_drift += abs_delta * abs_delta
-            if abs_delta > drift_threshold:
+            # Only classify as drifting if threshold provided
+            if drift_threshold is not None and abs_delta > drift_threshold:
                 drifting_traits.append(position.trait_id)
         overall_magnitude = sqrt_scalar(total_drift, get_default_backend())
         return TrainingDriftMetrics(

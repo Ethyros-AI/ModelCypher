@@ -24,7 +24,7 @@ This is the JAX implementation. For other backends:
 
 Use _platform.get_loss_landscape_computer() for automatic platform selection.
 
-Implementation based on JAX best practices (2025):
+Implementation based on JAX reference patterns (2025):
 - jax.random for direction generation
 - jax.grad for gradient computation
 - jax.jit for optimized evaluation

@@ -96,13 +96,15 @@ class OllivierRicciConfig:
     """
 
     # Base lazy random walk parameter from Ollivier (2009)
-    base_alpha: float = 0.5
+    # If None, derived from graph density: alpha = 1 / (1 + avg_degree)
+    base_alpha: float | None = None
 
     # Adaptive alpha: varies per node based on degree
     adaptive_alpha: bool = True
 
     # How much degree affects alpha: alpha = base * (1 - degree/max_degree * strength)
-    adaptive_strength: float = 0.3
+    # If None, derived from degree variance
+    adaptive_strength: float | None = None
 
     # Sinkhorn regularization for W_1 approximation
     sinkhorn_epsilon: float | None = None
@@ -1115,6 +1117,31 @@ class OllivierRicciCurvature:
         # Compute max degree for adaptive alpha
         max_degree = max(len(neighbors) for neighbors in adjacency_list.values()) if adjacency_list else 1
 
+        # Derive base_alpha and adaptive_strength if not provided
+        degrees = [len(neighbors) for neighbors in adjacency_list.values()] if adjacency_list else [1]
+        avg_degree = sum(degrees) / len(degrees) if degrees else 1.0
+
+        if self.config.base_alpha is not None:
+            base_alpha = self.config.base_alpha
+        else:
+            # Derive from average degree: denser graphs need more self-weight
+            base_alpha = 1.0 / (1.0 + avg_degree)
+
+        if self.config.adaptive_strength is not None:
+            adaptive_strength = self.config.adaptive_strength
+        else:
+            # Derive from coefficient of variation of degrees
+            if len(degrees) > 1 and avg_degree > 0:
+                deg_var = sum((d - avg_degree) ** 2 for d in degrees) / len(degrees)
+                deg_std = deg_var ** 0.5
+                adaptive_strength = min(1.0, deg_std / avg_degree)  # CV, clamped
+            else:
+                adaptive_strength = 0.0  # No variation
+
+        # Store derived values for use in lazy measure computation
+        self._derived_base_alpha = base_alpha
+        self._derived_adaptive_strength = adaptive_strength
+
         # 3. Compute edge curvatures
         edge_curvatures: list[EdgeCurvature] = []
         processed_edges: set[tuple[int, int]] = set()
@@ -1284,13 +1311,14 @@ class OllivierRicciCurvature:
         neighbors = adjacency_list.get(node_idx, [])
         degree = len(neighbors)
 
-        # Compute adaptive alpha
+        # Compute adaptive alpha using derived values
+        base_alpha = getattr(self, '_derived_base_alpha', self.config.base_alpha or 0.5)
+        adaptive_strength = getattr(self, '_derived_adaptive_strength', self.config.adaptive_strength or 0.0)
+
         if self.config.adaptive_alpha and max_degree > 0:
-            alpha = self.config.base_alpha * (
-                1.0 - (degree / max_degree) * self.config.adaptive_strength
-            )
+            alpha = base_alpha * (1.0 - (degree / max_degree) * adaptive_strength)
         else:
-            alpha = self.config.base_alpha
+            alpha = base_alpha
 
         # Clamp alpha to [0, 1]
         alpha = max(0.0, min(1.0, alpha))
