@@ -207,13 +207,13 @@ def primes_probe_model(
         if cat not in category_primes:
             category_primes[cat] = []
         if prime.id in prime_activations:
-            category_primes[cat].append(backend.to_numpy(prime_activations[prime.id]))
+            category_primes[cat].append(prime_activations[prime.id])
 
     category_coherence = {}
     for cat, acts in category_primes.items():
         if len(acts) >= 2:
             # Stack into matrix using backend and compute self-CKA
-            X = backend.to_numpy(backend.stack([backend.array(a) for a in acts]))
+            X = backend.stack([backend.array(a) for a in acts])
             result = compute_cka(
                 X,
                 X,
@@ -227,8 +227,8 @@ def primes_probe_model(
             category_coherence[cat] = None
 
     # Compute overall structure score
-    all_acts = [backend.to_numpy(a) for a in prime_activations.values()]
-    X_all = backend.to_numpy(backend.stack([backend.array(a) for a in all_acts]))
+    all_acts = [backend.array(a) for a in prime_activations.values()]
+    X_all = backend.stack(all_acts)
     overall_result = compute_cka(
         X_all,
         X_all,
@@ -305,8 +305,8 @@ def primes_compare(
 
     # Build matrices using backend
     backend = get_default_backend()
-    X = backend.to_numpy(backend.stack([backend.array(acts_a[p]) for p in common_primes]))
-    Y = backend.to_numpy(backend.stack([backend.array(acts_b[p]) for p in common_primes]))
+    X = backend.stack([backend.array(acts_a[p]) for p in common_primes])
+    Y = backend.stack([backend.array(acts_b[p]) for p in common_primes])
 
     # Compute CKA
     result = compute_cka(

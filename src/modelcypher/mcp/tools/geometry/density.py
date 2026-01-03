@@ -148,7 +148,9 @@ def register_geometry_density_tools(ctx: ServiceContext) -> None:
             if pending:
                 self._backend.eval(*pending)
 
-            return [self._backend.to_numpy(vec).tolist() for vec in activations]
+            from modelcypher.core.support.array_utils import array_to_list
+
+            return [array_to_list(self._backend, vec) for vec in activations]
 
     def _load_model_and_provider(model_path: str):
         from modelcypher.adapters.model_loader import load_model_for_training

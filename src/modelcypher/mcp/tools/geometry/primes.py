@@ -114,8 +114,10 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
 
             # Optionally save activations
             if outputFile:
+                from modelcypher.core.support.array_utils import array_to_list
+
                 activations_json = {
-                    name: backend.to_numpy(act).tolist() for name, act in activations.items()
+                    name: array_to_list(backend, act) for name, act in activations.items()
                 }
                 Path(outputFile).write_text(json.dumps(activations_json, indent=2))
 
@@ -124,8 +126,8 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
             X_all = backend.stack(all_acts)
             backend.eval(X_all)
             result = compute_cka(
-                backend.to_numpy(X_all),
-                backend.to_numpy(X_all),
+                X_all,
+                X_all,
                 estimator=HSICEstimator.AUTO,
                 feature_bias_correction=True,
             )
@@ -140,16 +142,16 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
                 if cat not in category_primes:
                     category_primes[cat] = []
                 if prime.id in activations:
-                    category_primes[cat].append(backend.to_numpy(activations[prime.id]))
+                    category_primes[cat].append(activations[prime.id])
 
             category_coherence = {}
             for cat, acts in category_primes.items():
                 if len(acts) >= 2:
-                    X = backend.stack([backend.array(a) for a in acts])
+                    X = backend.stack(acts)
                     backend.eval(X)
                     cat_result = compute_cka(
-                        backend.to_numpy(X),
-                        backend.to_numpy(X),
+                        X,
+                        X,
                         estimator=HSICEstimator.AUTO,
                         feature_bias_correction=True,
                     )
@@ -197,8 +199,8 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
             backend.eval(X)
             backend.eval(Y)
             result = compute_cka(
-                backend.to_numpy(X),
-                backend.to_numpy(Y),
+                X,
+                Y,
                 estimator=HSICEstimator.AUTO,
                 feature_bias_correction=True,
             )

@@ -71,7 +71,6 @@ Research Connections:
 from __future__ import annotations
 
 import logging
-import math
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -79,8 +78,11 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
+    acos_scalar,
     division_epsilon,
+    is_inf,
     machine_epsilon,
+    pi_value,
     regularization_epsilon,
 )
 
@@ -1196,7 +1198,7 @@ class RiemannianGeometry:
 
         total_dist = float(backend.to_scalar(geo_dist[start_idx, end_idx]))
 
-        if math.isinf(total_dist):
+        if is_inf(total_dist, backend):
             # Disconnected - no path exists
             return [start_idx]
 
@@ -1227,7 +1229,7 @@ class RiemannianGeometry:
                 d_to_candidate = float(backend.to_scalar(geo_dist[current, candidate]))
                 d_candidate_to_end = float(backend.to_scalar(geo_dist[candidate, end_idx]))
 
-                if math.isinf(d_to_candidate) or math.isinf(d_candidate_to_end):
+                if is_inf(d_to_candidate, backend) or is_inf(d_candidate_to_end, backend):
                     continue
 
                 # Check triangle equality (point is on geodesic)
@@ -1425,7 +1427,7 @@ class RiemannianGeometry:
         masked = backend.where(backend.isfinite(masked), masked, neg_inf)
         backend.eval(masked)
         max_val = float(backend.to_scalar(backend.max(masked)))
-        coverage_radius = 0.0 if math.isinf(max_val) else max(0.0, max_val)
+        coverage_radius = 0.0 if is_inf(max_val, backend) else max(0.0, max_val)
 
         return FarthestPointSamplingResult(
             selected_indices=selected,
@@ -1484,7 +1486,7 @@ class RiemannianGeometry:
                 sparse_dir = backend.reshape(sparse_dir, (d,))
             return DirectionalCoverage(
                 sparse_direction=sparse_dir,
-                max_gap_angle=math.pi,  # Full hemisphere is empty
+                max_gap_angle=pi_value(backend),  # Full hemisphere is empty
                 coverage_uniformity=0.0,
                 neighbor_directions=backend.zeros((0, d)),
                 point_idx=point_idx,
@@ -1519,7 +1521,7 @@ class RiemannianGeometry:
                 sparse_dir = backend.reshape(sparse_dir, (d,))
             return DirectionalCoverage(
                 sparse_direction=sparse_dir,
-                max_gap_angle=math.pi,  # Full hemisphere is empty
+                max_gap_angle=pi_value(backend),  # Full hemisphere is empty
                 coverage_uniformity=0.0,
                 neighbor_directions=backend.zeros((0, d)),
                 point_idx=point_idx,
@@ -1568,10 +1570,9 @@ class RiemannianGeometry:
 
         # Convert max similarity to angle: theta = arccos(similarity)
         # The "gap" is the angle to the nearest neighbor direction
-        max_gap_angle = math.acos(max(min(-1.0, min_max_sim), 1.0)) if abs(min_max_sim) <= 1.0 else 0.0
         # Fix: arccos domain is [-1, 1]
         clamped_sim = max(-1.0, min(1.0, min_max_sim))
-        max_gap_angle = math.acos(clamped_sim)
+        max_gap_angle = acos_scalar(clamped_sim, backend)
 
         # Coverage uniformity: ideal is uniform distribution on sphere
         # Measure as 1 - (variance of similarities)
@@ -1964,9 +1965,9 @@ class RiemannianGeometry:
         base_eta = 0.5
         max_step = 1.0  # Maximum distance to move in one iteration
 
-        if grad_norm > 0 and not math.isinf(grad_norm):
+        if grad_norm > 0 and not is_inf(grad_norm, backend):
             eta = min(base_eta, max_step / grad_norm)
-        elif math.isinf(grad_norm):
+        elif is_inf(grad_norm, backend):
             # Gradient is still inf after clipping - use minimal step
             eta = machine_epsilon(backend, gradient)
         else:

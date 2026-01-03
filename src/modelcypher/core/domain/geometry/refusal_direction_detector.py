@@ -277,6 +277,8 @@ class RefusalDirectionDetector:
 
         if int(harmful_arr.shape[0]) == 0 or int(harmless_arr.shape[0]) == 0:
             return 0.0
+        if int(harmful_arr.shape[1]) != int(direction_arr.shape[0]):
+            return 0.0
 
         direction_row = b.reshape(direction_arr, (1, -1))
         harmful_proj = b.sum(harmful_arr * direction_row, axis=1)

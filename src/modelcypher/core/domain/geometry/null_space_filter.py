@@ -44,6 +44,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     regularization_epsilon,
@@ -53,6 +54,7 @@ from modelcypher.core.domain.merging.exceptions import NullSpaceFilterError
 from modelcypher.ports.backend import Backend
 
 logger = logging.getLogger(__name__)
+_cache = ComputationCache.shared()
 
 
 @dataclass
@@ -270,7 +272,13 @@ class NullSpaceFilter:
         # SVD: A = U @ S @ Vh
         # Null space of A is spanned by rows of Vh with small singular values
         try:
-            U, S, Vh = svd_via_eigh(backend, A, full_matrices=True)
+            cache_key = _cache.make_svd_key(A, backend, full_matrices=True)
+            cached = _cache.get_svd(cache_key)
+            if cached is None:
+                U, S, Vh = svd_via_eigh(backend, A, full_matrices=True)
+                _cache.set_svd(cache_key, (U, S, Vh))
+            else:
+                U, S, Vh = cached
             backend.eval(U, S, Vh)
         except Exception:
             logger.warning("SVD failed, returning identity projection")

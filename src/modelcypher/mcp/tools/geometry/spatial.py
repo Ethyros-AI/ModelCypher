@@ -320,8 +320,10 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
 
             # Save activations if requested
             if saveActivations:
+                from modelcypher.core.support.array_utils import array_to_list
+
                 activations_json = {
-                    name: backend.to_numpy(act).tolist() for name, act in anchor_activations.items()
+                    name: array_to_list(backend, act) for name, act in anchor_activations.items()
                 }
                 Path(saveActivations).write_text(json.dumps(activations_json, indent=2))
 

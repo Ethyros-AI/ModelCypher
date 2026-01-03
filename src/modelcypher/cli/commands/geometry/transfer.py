@@ -77,15 +77,16 @@ def transfer_project(
     """
     context = _context(ctx)
 
-    from modelcypher.core.domain.geometry.geometric_lora import (
-        GeometricLoRAConfig,
-        GeometricLoRAGenerator,
-        save_geometric_lora,
-    )
-    from modelcypher.core.domain.geometry.manifold_transfer import (
-        CrossManifoldConfig,
-        CrossManifoldProjector,
-    )
+from modelcypher.core.domain.geometry.geometric_lora import (
+    GeometricLoRAConfig,
+    GeometricLoRAGenerator,
+    save_geometric_lora,
+)
+from modelcypher.core.domain.geometry.manifold_transfer import (
+    CrossManifoldConfig,
+    CrossManifoldProjector,
+)
+from modelcypher.core.support.array_utils import array_to_list
 
     source_path = Path(source_model)
     target_path = Path(target_model)
@@ -122,16 +123,15 @@ def transfer_project(
     n_anchors = 50
 
     backend.random_seed(42)
-    concept_activations = backend.to_numpy(backend.random_normal((n_samples, d)))
+    concept_activations = backend.random_normal((n_samples, d))
 
     source_anchors = {
-        f"anchor_{i}": backend.to_numpy(backend.random_normal((5, d)))
+        f"anchor_{i}": backend.random_normal((5, d))
         for i in range(n_anchors)
     }
     target_anchors = {
-        f"anchor_{i}": backend.to_numpy(
-            backend.random_normal((5, d)) + 0.1 * backend.random_normal((5, d))
-        )
+        f"anchor_{i}": backend.random_normal((5, d))
+        + 0.1 * backend.random_normal((5, d))
         for i in range(n_anchors)
     }
 
@@ -155,7 +155,7 @@ def transfer_project(
         "stress": transfer.stress,
         "curvatureMismatch": transfer.curvature_mismatch,
         "numAnchors": profile.num_anchors,
-        "coordinates": transfer.coordinates[:10].tolist(),
+        "coordinates": array_to_list(backend, transfer.coordinates[:10]),
         "stressFactor": transfer.confidence_components.stress_factor,
         "anchorFactor": transfer.confidence_components.anchor_factor,
         "curvatureFactor": transfer.confidence_components.curvature_factor,
@@ -167,8 +167,8 @@ def transfer_project(
 
         target_weights = {
             layer: {
-                "q_proj": backend.to_numpy(backend.random_normal((d, d))) * 0.01,
-                "v_proj": backend.to_numpy(backend.random_normal((d, d))) * 0.01,
+                "q_proj": backend.random_normal((d, d)) * 0.01,
+                "v_proj": backend.random_normal((d, d)) * 0.01,
             }
             for layer in range(32)
         }
@@ -279,9 +279,9 @@ def transfer_profile(
     n_anchors = 50
 
     backend.random_seed(42)
-    concept_activations = backend.to_numpy(backend.random_normal((n_samples, d)))
+    concept_activations = backend.random_normal((n_samples, d))
     anchor_activations = {
-        f"anchor_{i}": backend.to_numpy(backend.random_normal((5, d)))
+        f"anchor_{i}": backend.random_normal((5, d))
         for i in range(n_anchors)
     }
 

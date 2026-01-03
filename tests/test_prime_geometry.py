@@ -312,9 +312,14 @@ class TestGramMatrix:
         backend.eval(eigenvalues)
 
         min_eig = float(backend.min(eigenvalues).item())
-        eps = _eps(backend, min_eig)
+        # Eigenvalue perturbation bound: |λ_err| ≤ n * eps * ||G||_2
+        # Standard bound from Golub & Van Loan, Matrix Computations
+        eps = machine_epsilon(backend, G)
+        max_eig = float(backend.max(eigenvalues).item())
+        n = G.shape[0]
+        tol = n * eps * max(max_eig, 1.0)  # Scale by size and spectral norm
         # Allow small negative values due to numerical precision
-        assert min_eig >= -eps
+        assert min_eig >= -tol
 
     def test_gram_matrix_shape(self, backend):
         """Gram matrix should be n x n."""

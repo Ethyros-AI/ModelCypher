@@ -467,12 +467,7 @@ class GeometryAdapterService:
         weight_path = self._resolve_weight_path(resolved)
         b = self._backend
 
-        if weight_path.suffix == ".npz":
-            # Load npz file - keep on GPU after loading
-            import numpy as _np_io  # Only for file I/O at boundary
-            data = _np_io.load(weight_path)
-            weights = {key: b.array(value) for key, value in data.items()}
-        elif weight_path.suffix == ".safetensors":
+        if weight_path.suffix == ".safetensors":
             # Use model loader which handles bfloat16 via Backend
             loader = self._get_model_loader()
             gpu_weights = loader.load_weights(str(weight_path))
@@ -535,29 +530,25 @@ class GeometryAdapterService:
                 else:
                     weights[key] = value  # Keep as backend array
             return weights
-        elif resolved.suffix == ".npz":
-            import numpy as _np_io  # Only for file I/O at boundary
-            data = _np_io.load(resolved)
-            return {key: b.array(value) for key, value in data.items()}
         else:
-            raise ValueError(f"Unsupported format: {resolved.suffix}")
+            raise ValueError(
+                f"Unsupported format: {resolved.suffix}. Only .safetensors is supported."
+            )
 
     def _resolve_weight_path(self, path: Path) -> Path:
         if path.is_dir():
             candidates = [
-                path / "weights.npz",
                 path / "adapters.safetensors",
                 path / "adapter_model.safetensors",
+                path / "model.safetensors",
             ]
             for candidate in candidates:
                 if candidate.exists():
                     return candidate
-            npz_files = sorted(path.glob("*.npz"))
-            if npz_files:
-                return npz_files[0]
             tensor_files = sorted(path.glob("*.safetensors"))
             if tensor_files:
                 return tensor_files[0]
+            raise ValueError(f"No safetensors files found in {path}")
         if not path.exists():
             raise ValueError(f"Checkpoint not found: {path}")
         return path

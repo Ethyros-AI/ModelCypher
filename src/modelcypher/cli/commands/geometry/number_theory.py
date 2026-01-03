@@ -49,6 +49,7 @@ import typer
 
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
+from modelcypher.core.support.array_utils import array_to_list
 from modelcypher.core.domain._backend import get_default_backend
 
 app = typer.Typer(no_args_is_help=True)
@@ -134,8 +135,12 @@ def spectral_analysis(
     if output_file:
         raw_data = {
             **payload,
-            "prime_eigenvalues": backend.to_numpy(result.prime_eigenvalues.eigenvalues).tolist(),
-            "random_eigenvalues": backend.to_numpy(result.random_eigenvalues.eigenvalues).tolist(),
+            "prime_eigenvalues": array_to_list(
+                backend, result.prime_eigenvalues.eigenvalues
+            ),
+            "random_eigenvalues": array_to_list(
+                backend, result.random_eigenvalues.eigenvalues
+            ),
         }
         Path(output_file).write_text(json.dumps(raw_data, indent=2))
         typer.echo(f"Saved raw data to {output_file}")

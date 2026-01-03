@@ -45,6 +45,7 @@ from modelcypher.core.domain.geometry.density_estimator import (
     DensityEstimator,
 )
 from modelcypher.core.domain.geometry.dimension_cascade import CascadeResult
+from modelcypher.core.support.array_utils import array_to_list
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.inference.activation_stream import ActivationFrame
@@ -187,13 +188,13 @@ class ManifoldViewer:
         points_nd = cascade_result.projections[target_dim]
         n_points = points_nd.shape[0]
 
-        # Convert to numpy for Plotly
-        points = b.to_numpy(points_nd)
+        # Convert to lists for Plotly (no NumPy)
+        points = array_to_list(b, points_nd)
 
         # Get curvature if available
         curvature = None
         if target_dim in cascade_result.curvatures:
-            curvature = b.to_numpy(cascade_result.curvatures[target_dim])
+            curvature = array_to_list(b, cascade_result.curvatures[target_dim])
 
         # Compute density for sizing
         density_config = DensityConfiguration(
@@ -201,7 +202,9 @@ class ManifoldViewer:
             normalize=True,
         )
         density_result = self._density_estimator.compute(points_nd, density_config)
-        density = b.to_numpy(density_result.densities)
+        density_arr = density_result.densities
+        b.eval(density_arr)
+        density = array_to_list(b, density_arr)
 
         # Create colors from curvature (or uniform if not available)
         if curvature is not None:
@@ -213,10 +216,12 @@ class ManifoldViewer:
 
         # Create sizes from density (inverse: higher density = smaller)
         # Map density [0,1] -> [size_max, size_min]
-        sizes = (
-            self.config.point_size_max
-            - density * (self.config.point_size_max - self.config.point_size_min)
+        size_span = self.config.point_size_max - self.config.point_size_min
+        sizes_arr = b.full(density_arr.shape, self.config.point_size_max) - (
+            density_arr * size_span
         )
+        b.eval(sizes_arr)
+        sizes = array_to_list(b, sizes_arr)
 
         # Create hover text
         hover_text = []
@@ -232,7 +237,11 @@ class ManifoldViewer:
 
         # Get k-NN neighbor indices from density result for topology visualization
         # This shows the ACTUAL manifold structure - which points are neighbors
-        neighbor_indices = b.to_numpy(density_result.neighbors).astype(int)
+        neighbor_indices_raw = array_to_list(b, density_result.neighbors)
+        neighbor_indices = [
+            [int(idx) for idx in row] for row in neighbor_indices_raw
+        ]
+        neighbor_count = len(neighbor_indices[0]) if neighbor_indices else 0
 
         # Add point cloud
         if target_dim == 3:
@@ -240,14 +249,14 @@ class ManifoldViewer:
             # Each edge connects a point to its k nearest neighbors in the projected space
             edge_x, edge_y, edge_z = [], [], []
             for i in range(n_points):
-                for j_idx in range(neighbor_indices.shape[1]):
+                for j_idx in range(neighbor_count):
                     j = neighbor_indices[i, j_idx]
                     if j >= n_points:
                         continue  # Skip invalid indices
                     # Add edge as line segment with None separator
-                    edge_x.extend([points[i, 0], points[j, 0], None])
-                    edge_y.extend([points[i, 1], points[j, 1], None])
-                    edge_z.extend([points[i, 2], points[j, 2], None])
+                    edge_x.extend([points[i][0], points[j][0], None])
+                    edge_y.extend([points[i][1], points[j][1], None])
+                    edge_z.extend([points[i][2], points[j][2], None])
 
             fig.add_trace(go.Scatter3d(
                 x=edge_x,
@@ -264,9 +273,9 @@ class ManifoldViewer:
 
             # Then add the actual points with curvature coloring
             fig.add_trace(go.Scatter3d(
-                x=points[:, 0],
-                y=points[:, 1],
-                z=points[:, 2],
+                x=[p[0] for p in points],
+                y=[p[1] for p in points],
+                z=[p[2] for p in points],
                 mode="markers",
                 marker=dict(
                     size=sizes,
@@ -293,12 +302,12 @@ class ManifoldViewer:
             # Draw k-NN graph edges - the TRUE manifold topology
             edge_x, edge_y = [], []
             for i in range(n_points):
-                for j_idx in range(neighbor_indices.shape[1]):
+                for j_idx in range(neighbor_count):
                     j = neighbor_indices[i, j_idx]
                     if j >= n_points:
                         continue
-                    edge_x.extend([points[i, 0], points[j, 0], None])
-                    edge_y.extend([points[i, 1], points[j, 1], None])
+                    edge_x.extend([points[i][0], points[j][0], None])
+                    edge_y.extend([points[i][1], points[j][1], None])
 
             fig.add_trace(go.Scatter(
                 x=edge_x,
@@ -314,8 +323,8 @@ class ManifoldViewer:
 
             # Then add points with curvature coloring
             fig.add_trace(go.Scatter(
-                x=points[:, 0],
-                y=points[:, 1],
+                x=[p[0] for p in points],
+                y=[p[1] for p in points],
                 mode="markers",
                 marker=dict(
                     size=sizes,
@@ -429,7 +438,7 @@ class ManifoldViewer:
         trajectory = []
         for frame in frames:
             if frame.projected_3d is not None:
-                point = b.to_numpy(frame.projected_3d)
+                point = array_to_list(b, frame.projected_3d)
             else:
                 # Project using composite coupling
                 hidden = frame.hidden_state
@@ -439,7 +448,7 @@ class ManifoldViewer:
                 b.eval(projected)
                 if len(projected.shape) == 2:
                     projected = projected[0]
-                point = b.to_numpy(projected)
+                point = array_to_list(b, projected)
             trajectory.append(point)
 
         # Create animation frames

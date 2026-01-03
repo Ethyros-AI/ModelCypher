@@ -379,12 +379,43 @@ class MLXBackend(Backend):
         return self.mx.arctan(array)
 
     def lgamma(self, array: Array) -> Array:
-        # MLX doesn't have lgamma, use scipy through numpy conversion
-        import scipy.special
+        # Lanczos approximation (vectorized) for log-gamma without NumPy.
+        z = self.mx.array(array)
+        coeffs = [
+            0.99999999999980993,
+            676.5203681218851,
+            -1259.1392167224028,
+            771.3234287776531,
+            -176.61502916214059,
+            12.507343278686905,
+            -0.13857109526572012,
+            9.9843695780195716e-6,
+            1.5056327351493116e-7,
+        ]
+        g = 7.0
+        half = 0.5
+        one = 1.0
+        pi = 3.141592653589793
+        log_sqrt_two_pi = 0.9189385332046727  # 0.5*log(2*pi)
 
-        arr_np = self.to_numpy(array)
-        result_np = scipy.special.gammaln(arr_np)
-        return self.mx.array(result_np)
+        def _lgamma_lanczos(x: Array) -> Array:
+            x = x - one
+            series = self.mx.full(x.shape, coeffs[0])
+            for i, c in enumerate(coeffs[1:], start=1):
+                series = series + (c / (x + i))
+            t = x + g + half
+            return (
+                log_sqrt_two_pi
+                + (x + half) * self.mx.log(t)
+                - t
+                + self.mx.log(series)
+            )
+
+        reflect = z < half
+        z_reflect = one - z
+        main = _lgamma_lanczos(self.mx.where(reflect, z_reflect, z))
+        reflected = self.mx.log(pi) - self.mx.log(self.mx.sin(pi * z)) - main
+        return self.mx.where(reflect, reflected, main)
 
     def clip(
         self, array: Array, min_val: float | Array | None, max_val: float | Array | None
@@ -440,7 +471,7 @@ class MLXBackend(Backend):
         self.safe.eval(det_U)
 
         n = int(p.shape[0])
-        p_list = [int(x) for x in self.to_numpy(p).tolist()]
+        p_list = [int(self.to_scalar(p[i])) for i in range(n)]
         swaps = 0
         seen = [False] * n
         for i in range(n):

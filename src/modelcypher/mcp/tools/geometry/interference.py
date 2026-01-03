@@ -192,7 +192,12 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
             result = null_filter.filter_delta(delta_flat, activations)
 
             # Convert filtered_delta to list for JSON serialization
-            filtered_list = backend.to_numpy(result.filtered_delta).tolist() if hasattr(result.filtered_delta, 'shape') else result.filtered_delta
+            if hasattr(result.filtered_delta, "shape"):
+                from modelcypher.core.support.array_utils import array_to_list
+
+                filtered_list = array_to_list(backend, result.filtered_delta)
+            else:
+                filtered_list = result.filtered_delta
 
             return {
                 "_schema": "mc.geometry.null_space.filter.v1",
