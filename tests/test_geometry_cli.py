@@ -111,8 +111,15 @@ def _seed_adapter_files(tmp_path: Path) -> tuple[Path, Path]:
     backend.eval(lora_b)
 
     # Save as safetensors (MLXModelLoader format)
+    import numpy as np
     from safetensors.numpy import save_file
-    save_file({"layer.weight": backend.to_numpy(base_weight)}, str(base_dir / "model.safetensors"))
+
+    # Ensure numpy arrays for safetensors (to_numpy may return list on some backends)
+    def to_np(arr):
+        result = backend.to_numpy(arr)
+        return np.asarray(result) if not hasattr(result, "dtype") else result
+
+    save_file({"layer.weight": to_np(base_weight)}, str(base_dir / "model.safetensors"))
     save_file({
         "layer.lora_A": backend.to_numpy(lora_a),
         "layer.lora_B": backend.to_numpy(lora_b),

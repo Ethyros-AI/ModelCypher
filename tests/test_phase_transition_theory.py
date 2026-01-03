@@ -29,22 +29,33 @@ Key invariants tested:
 
 from __future__ import annotations
 
-import math
-
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.thermo.phase_transition_theory import (
     BasinTopology,
     Phase,
     PhaseTransitionTheory,
 )
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    log_scalar,
+    sqrt_scalar,
+    ulp_scalar,
+)
 
 
 def _eps(*values: float) -> float:
+    b = get_default_backend()
     if not values:
-        return math.ulp(1.0)
-    return max(math.ulp(value) for value in values)
+        arr = b.array([1.0])
+        b.eval(arr)
+        return division_epsilon(b, arr)
+    scale = max(1.0, max(abs(value) for value in values))
+    arr = b.array([scale])
+    b.eval(arr)
+    return division_epsilon(b, arr) * scale
 
 
 class TestCriticalTemperatureEstimation:
@@ -60,7 +71,8 @@ class TestCriticalTemperatureEstimation:
         )
 
         # T_c = 4.0 / √(2 × ln(2000)) = 4.0 / √(2 × 7.6) ≈ 1.03
-        expected = 4.0 / math.sqrt(2 * math.log(2000))
+        b = get_default_backend()
+        expected = 4.0 / sqrt_scalar(2.0 * log_scalar(2000.0, b), b)
         eps = _eps(tc, expected)
         assert abs(tc - expected) <= eps, f"T_c={tc}, expected={expected}"
 
@@ -128,7 +140,7 @@ class TestPhaseClassification:
 
     def test_ordered_phase_below_tc(self) -> None:
         """T < T_c should be classified as ORDERED."""
-        tol = math.ulp(1.0)
+        tol = ulp_scalar(1.0, get_default_backend())
         phase = PhaseTransitionTheory.classify_phase(
             temperature=1.0 - 2 * tol,
             critical_temperature=1.0,
@@ -137,7 +149,7 @@ class TestPhaseClassification:
 
     def test_disordered_phase_above_tc(self) -> None:
         """T > T_c should be classified as DISORDERED."""
-        tol = math.ulp(1.0)
+        tol = ulp_scalar(1.0, get_default_backend())
         phase = PhaseTransitionTheory.classify_phase(
             temperature=1.0 + 2 * tol,
             critical_temperature=1.0,
@@ -198,7 +210,7 @@ class TestEntropyComputation:
         logits = [1.0] * n  # Uniform
 
         entropy = PhaseTransitionTheory.compute_entropy(logits, 1.0)
-        max_entropy = math.log(n)
+        max_entropy = log_scalar(float(n), get_default_backend())
 
         # Should be close to max entropy
         eps = _eps(entropy, max_entropy)
@@ -218,7 +230,7 @@ class TestLogitStatistics:
         expected_var = 10.0 / 4  # (4+1+0+1+4) / 4
         eps = _eps(stats.variance, expected_var)
         assert abs(stats.variance - expected_var) <= eps
-        expected_std = math.sqrt(expected_var)
+        expected_std = sqrt_scalar(expected_var, get_default_backend())
         eps = _eps(stats.std_dev, expected_std)
         assert abs(stats.std_dev - expected_std) <= eps
 
@@ -385,7 +397,7 @@ class TestValidation:
 
     def test_valid_estimation(self) -> None:
         """Estimation within tolerance should be valid."""
-        delta = math.ulp(1.0)
+        delta = ulp_scalar(1.0, get_default_backend())
         assert PhaseTransitionTheory.validate_tc_estimation(
             estimated_tc=1.0,
             observed_tc=1.0 + delta,
@@ -393,7 +405,7 @@ class TestValidation:
 
     def test_invalid_estimation(self) -> None:
         """Estimation outside tolerance should be invalid."""
-        delta = math.ulp(1.0)
+        delta = ulp_scalar(1.0, get_default_backend())
         assert not PhaseTransitionTheory.validate_tc_estimation(
             estimated_tc=1.0,
             observed_tc=1.0 + 1000 * delta,

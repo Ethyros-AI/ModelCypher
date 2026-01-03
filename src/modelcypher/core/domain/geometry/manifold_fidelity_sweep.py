@@ -382,7 +382,9 @@ class ManifoldFidelitySweep:
         matches = x_exp == y_exp
         match_counts = b.sum(b.astype(matches, "float32"), axis=(1, 2))
         b.eval(match_counts)
-        overlap_sum = float(b.to_scalar(b.sum(match_counts))) / float(k)
+        overlap_sum_arr = b.sum(match_counts)
+        b.eval(overlap_sum_arr)
+        overlap_sum = float(b.to_scalar(overlap_sum_arr)) / float(k)
 
         return overlap_sum / n
 

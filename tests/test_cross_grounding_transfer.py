@@ -25,8 +25,6 @@ NO NUMPY. All data generation uses Backend protocol.
 
 from __future__ import annotations
 
-import math
-
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -37,7 +35,13 @@ from modelcypher.core.domain.geometry.cross_grounding_transfer import (
     GroundingRotationEstimator,
     RelationalStressComputer,
 )
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    acos_scalar,
+    division_epsilon,
+    machine_epsilon,
+    pi_value,
+    sqrt_scalar,
+)
 
 
 def _eps(backend, *values: float) -> float:
@@ -140,7 +144,9 @@ class TestGroundingRotation:
         rotation = estimator.estimate_rotation(sample_anchors, sample_anchors)
 
         eps = _eps(backend, 0.0)
-        angle_tol = math.degrees(math.acos(max(-1.0, min(1.0, 1.0 - eps))))
+        clamped = max(-1.0, min(1.0, 1.0 - eps))
+        angle_rad = acos_scalar(clamped, backend)
+        angle_tol = angle_rad * (180.0 / pi_value(backend))
         assert abs(rotation.angle_degrees - 0.0) <= angle_tol
         assert rotation.alignment_score >= 1.0 - eps
 
@@ -336,8 +342,6 @@ class TestRelationalStressInvariance:
 
     def test_stress_profile_invariant_under_rotation(self, backend):
         """Stress profile distances should be preserved under rotation."""
-        import math
-
         computer = RelationalStressComputer(backend)
         dim = 32
         backend.random_seed(123)
@@ -369,19 +373,14 @@ class TestRelationalStressInvariance:
         # Compute profile in rotated space
         rotated_profile = computer.compute_profile(rotated_concept, rotated_anchors)
 
-        # Distances should be identical within float32 matrix operation tolerance.
-        # The rotation Q @ vec introduces O(sqrt(dim) * eps) error per operation.
-        # With dim=32 and multiple matmuls, expect ~10x machine epsilon error.
-        eps = _eps(backend, 0.0)
-        rotation_tol = math.sqrt(dim) * eps * 10  # ~3.4e-6 for dim=32, float32
+        eps = division_epsilon(backend, concept)
+        rotation_tol = sqrt_scalar(float(dim), backend) * eps
         for anchor_name in anchors:
             diff = original_profile.anchor_distances[anchor_name] - rotated_profile.anchor_distances[anchor_name]
             assert abs(diff) <= rotation_tol
 
     def test_stress_distance_invariant_under_translation(self, backend):
         """Stress profile should not depend on absolute position."""
-        import math
-
         computer = RelationalStressComputer(backend)
         dim = 32
         backend.random_seed(456)
@@ -404,10 +403,8 @@ class TestRelationalStressInvariance:
 
         translated_profile = computer.compute_profile(translated_concept, translated_anchors)
 
-        # Distances should be identical within float32 arithmetic tolerance.
-        # Translation introduces O(sqrt(dim) * eps) error in distance computation.
-        eps = _eps(backend, 0.0)
-        translation_tol = math.sqrt(dim) * eps * 10  # ~3.4e-6 for dim=32, float32
+        eps = division_epsilon(backend, concept)
+        translation_tol = sqrt_scalar(float(dim), backend) * eps
         for anchor_name in anchors:
             diff = original_profile.anchor_distances[anchor_name] - translated_profile.anchor_distances[anchor_name]
             assert abs(diff) <= translation_tol
@@ -448,8 +445,6 @@ class TestEdgeCases:
 
     def test_identical_anchor_positions(self, backend):
         """Should handle degenerate case of identical anchors."""
-        import math
-
         computer = RelationalStressComputer(backend)
 
         vec = backend.array([1.0, 2.0, 3.0])
@@ -465,6 +460,5 @@ class TestEdgeCases:
         # All distances should be equal within float32 tolerance
         distances = list(profile.anchor_distances.values())
         eps = _eps(backend, distances[0])
-        # Geodesic computation introduces O(sqrt(n) * eps) error
-        tol = math.sqrt(len(anchors)) * eps * 10
+        tol = sqrt_scalar(float(len(anchors)), backend) * eps
         assert all(abs(d - distances[0]) <= tol for d in distances)

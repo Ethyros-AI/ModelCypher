@@ -946,9 +946,27 @@ class BackendTopologicalFingerprint:
         inf_val = float(b.finfo().max)
         masked_dist = b.where(flat_mask, flat_dist, b.full(flat_dist.shape, inf_val))
         sorted_idx = b.argsort(masked_dist)
-        b.eval(sorted_idx, masked_dist)
-        sorted_idx_list = b.tolist(sorted_idx)
-        masked_dist_list = b.tolist(masked_dist)
+        sorted_dist = b.take(masked_dist, sorted_idx, axis=0)
+        b.eval(sorted_idx, sorted_dist)
+
+        # Only pull the edge prefix we actually need (<= max_filtration and finite).
+        max_mask = sorted_dist <= max_filtration
+        finite_mask = sorted_dist < inf_val * 0.9
+        valid_mask = b.astype(max_mask, "int32") * b.astype(finite_mask, "int32")
+        edge_count_arr = b.sum(valid_mask)
+        b.eval(edge_count_arr)
+        edge_count = int(b.to_scalar(edge_count_arr))
+
+        if edge_count > 0:
+            prefix_idx = b.arange(edge_count)
+            edge_indices = b.take(sorted_idx, prefix_idx, axis=0)
+            edge_dists = b.take(sorted_dist, prefix_idx, axis=0)
+            b.eval(edge_indices, edge_dists)
+            sorted_idx_list = b.tolist(edge_indices)
+            masked_dist_list = b.tolist(edge_dists)
+        else:
+            sorted_idx_list = []
+            masked_dist_list = []
 
         # 0-dim persistence (connected components) - Union-Find is sequential
         parent = list(range(n))

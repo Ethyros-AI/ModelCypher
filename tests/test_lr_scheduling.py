@@ -17,12 +17,16 @@
 
 """Tests for learning rate scheduling."""
 
-import math
-
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    cos_scalar,
+    division_epsilon,
+    pi_value,
+)
 from modelcypher.core.domain.training.scheduling import (
     ConstantSchedule,
     CosineSchedule,
@@ -36,6 +40,32 @@ from modelcypher.core.domain.training.scheduling import (
     StepDecaySchedule,
     create_schedule,
 )
+
+
+def _eps(value: float) -> float:
+    b = get_default_backend()
+    arr = b.array([value])
+    b.eval(arr)
+    return division_epsilon(b, arr) * max(1.0, abs(value))
+
+
+def _cosine_expected(
+    base_lr: float,
+    total_steps: int,
+    warmup_steps: int,
+    min_lr: float,
+    step: int,
+) -> float:
+    if step < warmup_steps:
+        return base_lr * (step + 1) / max(warmup_steps, 1)
+    if step >= total_steps:
+        return min_lr
+    decay_steps = total_steps - warmup_steps
+    decay_step = step - warmup_steps
+    progress = decay_step / decay_steps
+    b = get_default_backend()
+    cosine_decay = 0.5 * (1.0 + cos_scalar(pi_value(b) * progress, b))
+    return min_lr + (base_lr - min_lr) * cosine_decay
 
 
 class TestScheduleType:
@@ -83,12 +113,14 @@ class TestLinearWarmupSchedule:
     def test_warmup_starts_at_fraction(self):
         schedule = LinearWarmupSchedule(base_lr=1e-4, warmup_steps=100)
         # Step 0 should give 1/100 of base_lr
-        assert schedule.get_lr(0) == pytest.approx(1e-4 / 100)
+        expected = 1e-4 / 100
+        assert abs(schedule.get_lr(0) - expected) <= _eps(expected)
 
     def test_warmup_ends_at_base_lr(self):
         schedule = LinearWarmupSchedule(base_lr=1e-4, warmup_steps=100)
         # At warmup_steps-1, should be close to base_lr
-        assert schedule.get_lr(99) == pytest.approx(1e-4)
+        expected = 1e-4
+        assert abs(schedule.get_lr(99) - expected) <= _eps(expected)
 
     def test_after_warmup_is_constant(self):
         schedule = LinearWarmupSchedule(base_lr=1e-4, warmup_steps=100)
@@ -141,8 +173,8 @@ class TestLinearDecaySchedule:
         schedule = LinearDecaySchedule(
             base_lr=1e-4, total_steps=1000, warmup_steps=0, min_lr=1e-6
         )
-        # At last step before total, should be close to min_lr (within 10%)
-        assert schedule.get_lr(999) == pytest.approx(1e-6, rel=0.1)
+        expected = 1e-6 + (1e-4 - 1e-6) * (1.0 - (999 / 1000))
+        assert abs(schedule.get_lr(999) - expected) <= _eps(expected)
 
     def test_after_total_steps_returns_min_lr(self):
         schedule = LinearDecaySchedule(
@@ -188,12 +220,10 @@ class TestCosineSchedule:
         schedule = CosineSchedule(
             base_lr=1e-4, total_steps=1000, warmup_steps=0, min_lr=0.0
         )
-        # At step 0, should be at base_lr
-        assert schedule.get_lr(0) == pytest.approx(1e-4)
-        # At midpoint, should be at 0.5 * base_lr (cosine = 0)
-        assert schedule.get_lr(500) == pytest.approx(0.5e-4, rel=0.01)
-        # Near end, should approach min_lr
-        assert schedule.get_lr(999) < 0.1e-4
+        for step in (0, 500, 999):
+            expected = _cosine_expected(1e-4, 1000, 0, 0.0, step)
+            lr = schedule.get_lr(step)
+            assert abs(lr - expected) <= _eps(expected)
 
     def test_warmup_then_cosine(self):
         schedule = CosineSchedule(
@@ -202,7 +232,8 @@ class TestCosineSchedule:
         # During warmup, increases
         assert schedule.get_lr(0) < schedule.get_lr(50)
         # At warmup end, at base_lr
-        assert schedule.get_lr(99) == pytest.approx(1e-4, rel=0.01)
+        expected = _cosine_expected(1e-4, 1000, 100, 0.0, 99)
+        assert abs(schedule.get_lr(99) - expected) <= _eps(expected)
         # After warmup, cosine decay begins
         assert schedule.get_lr(100) > schedule.get_lr(500)
 
@@ -226,7 +257,10 @@ class TestCosineSchedule:
         )
         for step in range(0, total_steps, max(1, total_steps // 20)):
             lr = schedule.get_lr(step)
-            assert min_lr <= lr <= base_lr, f"LR out of bounds at step {step}"
+            eps = _eps(base_lr)
+            assert min_lr - eps <= lr <= base_lr + eps, (
+                f"LR out of bounds at step {step}"
+            )
 
 
 class TestStepDecaySchedule:
@@ -242,13 +276,17 @@ class TestStepDecaySchedule:
     def test_decay_at_step_size(self):
         schedule = StepDecaySchedule(base_lr=1e-4, step_size=100, gamma=0.1)
         # At step 100, should decay by gamma
-        assert schedule.get_lr(100) == pytest.approx(1e-5)
+        expected = 1e-4 * 0.1
+        assert abs(schedule.get_lr(100) - expected) <= _eps(expected)
 
     def test_multiple_decays(self):
         schedule = StepDecaySchedule(base_lr=1e-4, step_size=100, gamma=0.5)
-        assert schedule.get_lr(0) == 1e-4  # 1e-4 * 0.5^0
-        assert schedule.get_lr(100) == pytest.approx(0.5e-4)  # 1e-4 * 0.5^1
-        assert schedule.get_lr(200) == pytest.approx(0.25e-4)  # 1e-4 * 0.5^2
+        expected_0 = 1e-4
+        expected_1 = 0.5e-4
+        expected_2 = 0.25e-4
+        assert abs(schedule.get_lr(0) - expected_0) <= _eps(expected_0)
+        assert abs(schedule.get_lr(100) - expected_1) <= _eps(expected_1)
+        assert abs(schedule.get_lr(200) - expected_2) <= _eps(expected_2)
 
     def test_respects_min_lr(self):
         schedule = StepDecaySchedule(base_lr=1e-4, step_size=10, gamma=0.1, min_lr=1e-8)

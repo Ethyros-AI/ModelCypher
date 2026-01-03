@@ -105,13 +105,17 @@ def verify_boundary_invariance(
         b.where(mask_small, b.zeros_like(diff_norms), b.full(diff_norms.shape, float("inf"))),
     )
     b.eval(relative_diffs)
-    max_rel_diff = float(b.to_scalar(b.max(relative_diffs)))
+    max_rel_diff_arr = b.max(relative_diffs)
+    b.eval(max_rel_diff_arr)
+    max_rel_diff = float(b.to_scalar(max_rel_diff_arr))
     inf_count = b.sum(b.astype(b.isinf(relative_diffs), "float32"))
     b.eval(inf_count)
     if float(b.to_scalar(inf_count)) > 0:
         mean_rel_diff = float("inf")
     else:
-        mean_rel_diff = float(b.to_scalar(b.mean(relative_diffs)))
+        mean_rel_diff_arr = b.mean(relative_diffs)
+        b.eval(mean_rel_diff_arr)
+        mean_rel_diff = float(b.to_scalar(mean_rel_diff_arr))
 
     return {
         "passed": max_rel_diff < tolerance,

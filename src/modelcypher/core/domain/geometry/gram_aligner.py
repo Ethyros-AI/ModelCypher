@@ -402,7 +402,9 @@ class GramAligner:
             eigvals, eigvecs = b.eigh(gram)
         b.eval(eigvals, eigvecs)
 
-        min_eig = float(b.to_scalar(b.min(eigvals)))
+        min_eig_arr = b.min(eigvals)
+        b.eval(min_eig_arr)
+        min_eig = float(b.to_scalar(min_eig_arr))
         if min_eig > 0.0:
             inv_vals = b.where(
                 eigvals > eps,
