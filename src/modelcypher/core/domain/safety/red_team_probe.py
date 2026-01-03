@@ -157,8 +157,11 @@ def _metadata_distances(
     rg = RiemannianGeometry(backend)
     geo = rg.geodesic_distances(points)
     backend.eval(geo.distances)
-    dist_matrix = backend.to_numpy(geo.distances).tolist()
     n = len(items)
+    dist_matrix = [
+        [backend.to_scalar(geo.distances[i, j]) for j in range(n)]
+        for i in range(n)
+    ]
 
     mean_distances: list[MetadataDistance] = []
     for idx, (field, text) in enumerate(items):

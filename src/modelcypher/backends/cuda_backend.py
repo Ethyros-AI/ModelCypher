@@ -272,6 +272,12 @@ class CUDABackend(Backend):
     def arccos(self, array: Array) -> Array:
         return self.torch.arccos(array)
 
+    def arctan(self, array: Array) -> Array:
+        return self.torch.arctan(array)
+
+    def lgamma(self, array: Array) -> Array:
+        return self.torch.lgamma(array)
+
     # --- Linear Algebra (new) ---
     def dot(self, a: Array, b: Array) -> Array:
         if a.ndim == 1 and b.ndim == 1:

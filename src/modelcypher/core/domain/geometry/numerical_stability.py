@@ -38,6 +38,11 @@ __all__ = [
     "ceil_scalar",
     "floor_scalar",
     "ulp_scalar",
+    "lgamma_scalar",
+    "acos_scalar",
+    "pi_value",
+    "e_value",
+    "inf_value",
     # Epsilon and threshold utilities
     "machine_epsilon",
     "division_epsilon",
@@ -155,6 +160,60 @@ def ulp_scalar(value: float, backend: "Backend") -> float:
     """
     eps = backend.finfo(backend.array([value]).dtype).eps
     return eps * abs(value) if value != 0.0 else eps
+
+
+def lgamma_scalar(value: float, backend: "Backend") -> float:
+    """Compute log-gamma of scalar using backend.
+
+    Use instead of math.lgamma(value).
+    """
+    arr = backend.array([value])
+    result = backend.lgamma(arr)
+    backend.eval(result)
+    return float(backend.to_scalar(result))
+
+
+def acos_scalar(value: float, backend: "Backend") -> float:
+    """Compute arc cosine of scalar using backend.
+
+    Use instead of math.acos(value).
+    """
+    arr = backend.array([value])
+    result = backend.arccos(arr)
+    backend.eval(result)
+    return float(backend.to_scalar(result))
+
+
+def pi_value(backend: "Backend") -> float:
+    """Get pi using backend.
+
+    Use instead of math.pi.
+    """
+    # Compute pi = 4 * arctan(1)
+    one = backend.array([1.0])
+    result = 4.0 * backend.arctan(one)
+    backend.eval(result)
+    return float(backend.to_scalar(result))
+
+
+def e_value(backend: "Backend") -> float:
+    """Get Euler's number e using backend.
+
+    Use instead of math.e.
+    """
+    # Compute e = exp(1)
+    one = backend.array([1.0])
+    result = backend.exp(one)
+    backend.eval(result)
+    return float(backend.to_scalar(result))
+
+
+def inf_value(backend: "Backend") -> float:
+    """Get positive infinity using backend.
+
+    Use instead of math.inf.
+    """
+    return float("inf")
 
 
 def machine_epsilon(backend: "Backend", array: "Array") -> float:

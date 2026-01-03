@@ -319,9 +319,9 @@ class GeometryEngine:
             return None
         if hasattr(array, "item"):
             return array.item()
-        # Convert to numpy using backend then extract item
-        np_arr = self.backend.to_numpy(self.backend.array(array))
-        return float(np_arr.item()) if hasattr(np_arr, "item") else float(np_arr)
+        arr = self.backend.array(array)
+        self.backend.eval(arr)
+        return self.backend.to_scalar(arr)
 
 
 @dataclass(frozen=True)
@@ -580,6 +580,6 @@ class SinkhornSolver:
     def _item(self, array: Any) -> Any:
         if hasattr(array, "item"):
             return array.item()
-        # Use backend to_numpy for conversion
-        np_arr = self.backend.to_numpy(self.backend.array(array))
-        return float(np_arr.item()) if hasattr(np_arr, "item") else float(np_arr)
+        arr = self.backend.array(array)
+        self.backend.eval(arr)
+        return self.backend.to_scalar(arr)

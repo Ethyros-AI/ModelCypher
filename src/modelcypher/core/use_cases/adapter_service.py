@@ -25,7 +25,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from safetensors import safe_open
-from safetensors.numpy import save_file
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
@@ -176,12 +175,28 @@ class AdapterService:
 
             if norm_scalar > 0:
                 normalized = tensor_backend / norm
+                normalized = backend.astype(normalized, "float32")
                 backend.eval(normalized)
-                projected_weights[name] = backend.to_numpy(normalized).astype("float32")
+                projected_weights[name] = normalized  # Keep as backend array
             else:
-                projected_weights[name] = tensor.astype("float32")
+                projected_weights[name] = backend.astype(backend.array(tensor), "float32")
 
-        save_file(projected_weights, output / "adapter_model.safetensors")
+        # Save using MLX native safetensors (no NumPy)
+        try:
+            import mlx.core as mx
+
+            mlx_weights = {}
+            for key, val in projected_weights.items():
+                if isinstance(val, mx.array):
+                    mlx_weights[key] = val
+                else:
+                    mlx_weights[key] = backend.array(val)
+            mx.save_safetensors(str(output / "adapter_model.safetensors"), mlx_weights)
+        except ImportError:
+            # Fallback to JAX
+            from safetensors.flax import save_file as save_flax
+
+            save_flax(projected_weights, str(output / "adapter_model.safetensors"))
 
         # Copy config
         config_path = path / "adapter_config.json"

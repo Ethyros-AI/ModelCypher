@@ -31,7 +31,6 @@ Geodesic radius measures extent along the manifold, not Euclidean distance.
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Callable
@@ -39,8 +38,15 @@ from typing import TYPE_CHECKING, Callable
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    e_value,
+    exp_scalar,
+    inf_value,
+    lgamma_scalar,
+    log_scalar,
     machine_epsilon,
+    pi_value,
     regularization_epsilon,
+    sqrt_scalar,
     tiny_value,
 )
 
@@ -243,7 +249,7 @@ class ConceptVolume:
             min_eig = backend.min(eigenvalues)
             backend.eval(min_eig)
             if float(backend.to_scalar(min_eig)) <= 0.0:
-                logdet = -math.inf
+                logdet = -inf_value(backend)
             else:
                 logdet = float(backend.to_scalar(backend.sum(backend.log(eigenvalues))))
             object.__setattr__(self, "_log_det_cov", logdet)
@@ -256,20 +262,24 @@ class ConceptVolume:
         For Gaussian, this is sqrt(det(2*pi*e*Cov)) ≈ exp(0.5 * log_det + d/2 * log(2*pi*e))
         For uniform ball, this is volume of d-dimensional sphere with geodesic_radius.
         """
+        backend = get_default_backend()
         d = self.dimension
         if self.influence_type == InfluenceType.UNIFORM:
             # Volume of d-sphere: (pi^(d/2) / Gamma(d/2 + 1)) * r^d
             if self.geodesic_radius <= 0:
                 return 0.0
+            pi = pi_value(backend)
             log_vol = (
-                (d / 2) * math.log(math.pi)
-                - math.lgamma(d / 2 + 1.0)
-                + d * math.log(self.geodesic_radius)
+                (d / 2) * log_scalar(pi, backend)
+                - lgamma_scalar(d / 2 + 1.0, backend)
+                + d * log_scalar(self.geodesic_radius, backend)
             )
-            return math.exp(log_vol)
+            return exp_scalar(log_vol, backend)
         else:
             # Gaussian effective volume
-            return math.exp(0.5 * self.log_det_covariance + d / 2 * math.log(2 * math.pi * math.e))
+            pi = pi_value(backend)
+            e = e_value(backend)
+            return exp_scalar(0.5 * self.log_det_covariance + d / 2 * log_scalar(2 * pi * e, backend), backend)
 
     @property
     def effective_radius(self) -> float:
@@ -282,7 +292,7 @@ class ConceptVolume:
         clamped = backend.maximum(eigenvalues, tiny)
         mean_log = backend.mean(backend.log(clamped))
         backend.eval(mean_log)
-        return math.exp(0.5 * float(backend.to_scalar(mean_log)))
+        return exp_scalar(0.5 * float(backend.to_scalar(mean_log)), backend)
 
     def _compute_tangent_vector(self, point: "Array") -> "Array":
         """Compute tangent vector from centroid to point using log map.
@@ -369,16 +379,17 @@ class ConceptVolume:
         mahal_sq = float(backend.to_scalar(mahal_sq_arr))
 
         d = self.dimension
+        pi = pi_value(backend)
 
         if self.influence_type == InfluenceType.GAUSSIAN:
             # Multivariate Gaussian
-            log_norm = -0.5 * (d * math.log(2 * math.pi) + self.log_det_covariance)
-            return math.exp(log_norm - 0.5 * mahal_sq)
+            log_norm = -0.5 * (d * log_scalar(2 * pi, backend) + self.log_det_covariance)
+            return exp_scalar(log_norm - 0.5 * mahal_sq, backend)
 
         elif self.influence_type == InfluenceType.LAPLACIAN:
             # Multivariate Laplacian (product of univariate)
-            mahal = math.sqrt(mahal_sq)
-            return math.exp(-mahal) / (2**d)
+            mahal = sqrt_scalar(mahal_sq, backend)
+            return exp_scalar(-mahal, backend) / (2**d)
 
         elif self.influence_type == InfluenceType.STUDENT_T:
             # Multivariate t-distribution
@@ -386,12 +397,12 @@ class ConceptVolume:
             if nu <= 0:
                 raise ValueError("student_t_df must be positive")
             log_norm = (
-                math.lgamma((nu + d) / 2)
-                - math.lgamma(nu / 2)
-                - d / 2 * math.log(nu * math.pi)
+                lgamma_scalar((nu + d) / 2, backend)
+                - lgamma_scalar(nu / 2, backend)
+                - d / 2 * log_scalar(nu * pi, backend)
                 - 0.5 * self.log_det_covariance
             )
-            return math.exp(log_norm) * (1 + mahal_sq / nu) ** (-(nu + d) / 2)
+            return exp_scalar(log_norm, backend) * (1 + mahal_sq / nu) ** (-(nu + d) / 2)
 
         elif self.influence_type == InfluenceType.UNIFORM:
             # Uniform ball
@@ -410,7 +421,7 @@ class ConceptVolume:
         mahal_sq_arr = backend.matmul(temp, diff)
         backend.eval(mahal_sq_arr)
         mahal_sq = float(backend.to_scalar(mahal_sq_arr))
-        return math.sqrt(mahal_sq)
+        return sqrt_scalar(mahal_sq, backend)
 
     def geodesic_distance(self, point: "Array") -> float:
         """Compute geodesic distance from centroid to point.
@@ -557,6 +568,7 @@ class ConceptVolume:
         """
         backend = get_default_backend()
         d = self.dimension
+        pi = pi_value(backend)
 
         # Compute tangent vectors (log map if geodesic context available)
         tangent = self._compute_tangent_vectors_batch(points)
@@ -567,7 +579,7 @@ class ConceptVolume:
 
         if self.influence_type == InfluenceType.GAUSSIAN:
             # Multivariate Gaussian: exp(log_norm - 0.5 * mahal_sq)
-            log_norm = -0.5 * (d * math.log(2 * math.pi) + self.log_det_covariance)
+            log_norm = -0.5 * (d * log_scalar(2 * pi, backend) + self.log_det_covariance)
             densities = backend.exp(backend.array(log_norm) - 0.5 * mahal_sq)
 
         elif self.influence_type == InfluenceType.LAPLACIAN:
@@ -579,9 +591,9 @@ class ConceptVolume:
             # Multivariate t-distribution
             nu = float(self.student_t_df)
             log_norm = (
-                math.lgamma((nu + d) / 2)
-                - math.lgamma(nu / 2)
-                - d / 2 * math.log(nu * math.pi)
+                lgamma_scalar((nu + d) / 2, backend)
+                - lgamma_scalar(nu / 2, backend)
+                - d / 2 * log_scalar(nu * pi, backend)
                 - 0.5 * self.log_det_covariance
             )
             densities = backend.exp(backend.array(log_norm)) * backend.pow(
@@ -1135,7 +1147,7 @@ class RiemannianDensityEstimator:
             )
 
             db = term1 + term2
-            return math.exp(-db)
+            return exp_scalar(-db, backend)
 
         except Exception:
             return 0.0

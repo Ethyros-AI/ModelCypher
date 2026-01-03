@@ -34,6 +34,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _array_to_list(backend: "Backend", array: Any) -> list[float]:
+    """Convert backend array to Python list without NumPy."""
+    flat = backend.reshape(array, (-1,))
+    count = int(flat.shape[0])
+    return [float(backend.to_scalar(flat[i])) for i in range(count)]
+
+
 @dataclass(frozen=True)
 class AdapterWeights:
     weights: dict[str, Any]
@@ -286,16 +293,20 @@ class GeometryAdapterService:
         b = self._backend
 
         # Check if already float - no dequantization needed
-        weight_np = b.to_numpy(weight)
-        dtype_str = str(weight_np.dtype)
-        if dtype_str in ("float16", "float32", "float64"):
-            return weight
+        # Backend arrays have .dtype property directly
+        weight_arr = b.array(weight)
+        dtype_str = str(weight_arr.dtype)
+        if dtype_str in ("float16", "float32", "float64", "bfloat16"):
+            return weight_arr
 
-        if weight_np.dtype.kind not in {"i", "u"}:
+        # Check if integer type (quantized)
+        # Integer dtypes typically have "int" or "uint" in the string
+        is_int = "int" in dtype_str.lower() or "uint" in dtype_str.lower()
+        if not is_int:
             logger.warning(
                 "Unsupported dtype for weight %s (dtype=%s); skipping.",
                 base_key,
-                weight_np.dtype,
+                dtype_str,
             )
             return None
 
@@ -317,11 +328,11 @@ class GeometryAdapterService:
         # Infer quantization parameters from shapes
         from modelcypher.core.use_cases.quantization_utils import resolve_quantization
 
-        scales_np = b.to_numpy(scales)
+        scales_arr = b.array(scales)
         params = resolve_quantization(
             base_key=base_key,
-            weight_shape=weight_np.shape,
-            scales_shape=scales_np.shape,
+            weight_shape=tuple(weight_arr.shape),
+            scales_shape=tuple(scales_arr.shape),
             hint=None,
             biases_present=biases is not None,
         )
@@ -340,10 +351,8 @@ class GeometryAdapterService:
             params.mode,
         )
 
-        # Dequantize on GPU
-        weight_arr = b.array(weight_np)
-        scales_arr = b.array(scales_np)
-        biases_arr = b.array(b.to_numpy(biases)) if biases is not None else None
+        # Dequantize on GPU - all arrays already backend arrays
+        biases_arr = b.array(biases) if biases is not None else None
 
         dequantized = b.dequantize(
             weight_arr,
@@ -399,9 +408,16 @@ class GeometryAdapterService:
                 delta_arr = b.astype(delta_arr, "float32")
                 b.eval(delta_arr)
 
-                # Check shape compatibility
-                expected_size = base_weight_np.size
-                delta_size = delta_arr.size if hasattr(delta_arr, "size") else len(b.to_numpy(delta_arr).flatten())
+                # Check shape compatibility using backend .shape
+                base_weight = b.array(base_weight_np)
+                base_weight = b.astype(base_weight, "float32")
+                b.eval(base_weight)
+                expected_size = 1
+                for dim in base_weight.shape:
+                    expected_size *= dim
+                delta_size = 1
+                for dim in delta_arr.shape:
+                    delta_size *= dim
                 if delta_size != expected_size:
                     logger.debug(
                         "Shape mismatch for %s: delta=%d, base=%d",
@@ -411,13 +427,11 @@ class GeometryAdapterService:
                     )
                     continue
 
-                base_weight = b.array(base_weight_np)
-                base_weight = b.astype(base_weight, "float32")
                 delta = b.reshape(delta_arr, base_weight.shape)
                 current = base_weight + delta
                 b.eval(base_weight, current)
-                base_vectors[prefix] = b.to_numpy(b.reshape(base_weight, (-1,))).tolist()
-                current_vectors[prefix] = b.to_numpy(b.reshape(current, (-1,))).tolist()
+                base_vectors[prefix] = _array_to_list(b, base_weight)
+                current_vectors[prefix] = _array_to_list(b, current)
 
             return base_vectors, current_vectors
 
@@ -436,8 +450,8 @@ class GeometryAdapterService:
             current_arr = b.array(current)
             current_arr = b.astype(current_arr, "float32")
             b.eval(base_arr, current_arr)
-            base_vectors[key] = b.to_numpy(b.reshape(base_arr, (-1,))).tolist()
-            current_vectors[key] = b.to_numpy(b.reshape(current_arr, (-1,))).tolist()
+            base_vectors[key] = _array_to_list(b, base_arr)
+            current_vectors[key] = _array_to_list(b, current_arr)
 
         return base_vectors, current_vectors
 
@@ -454,10 +468,10 @@ class GeometryAdapterService:
         b = self._backend
 
         if weight_path.suffix == ".npz":
-            # Load npz file using backend's to_numpy for I/O boundary
+            # Load npz file - keep on GPU after loading
             import numpy as _np_io  # Only for file I/O at boundary
             data = _np_io.load(weight_path)
-            weights = {key: b.to_numpy(b.array(value)) for key, value in data.items()}
+            weights = {key: b.array(value) for key, value in data.items()}
         elif weight_path.suffix == ".safetensors":
             # Use model loader which handles bfloat16 via Backend
             loader = self._get_model_loader()
@@ -466,7 +480,7 @@ class GeometryAdapterService:
             for key, value in gpu_weights.items():
                 arr_f32 = b.astype(value, "float32")
                 b.eval(arr_f32)
-                weights[key] = b.to_numpy(arr_f32)
+                weights[key] = arr_f32  # Keep as backend array
         else:
             raise ValueError(f"Unsupported adapter format: {weight_path.suffix}")
 
@@ -494,39 +508,37 @@ class GeometryAdapterService:
         loader = self._get_model_loader()
 
         if resolved.is_dir():
-            # Load weights via model loader (handles all shards)
+            # Load weights via model loader (handles all shards) - keep on GPU
             gpu_weights = loader.load_weights(str(resolved))
             all_weights: dict[str, Any] = {}
             for key, value in gpu_weights.items():
                 # Check if float type that needs conversion
-                value_np = b.to_numpy(value)
-                dtype_str = str(value_np.dtype)
+                dtype_str = str(value.dtype)
                 if dtype_str == "float16":
                     # Convert half to float32
                     arr_f32 = b.astype(value, "float32")
                     b.eval(arr_f32)
-                    all_weights[key] = b.to_numpy(arr_f32)
+                    all_weights[key] = arr_f32  # Keep as backend array
                 else:
                     # Keep original dtype (int/uint for quantized, float32/64 for float)
-                    all_weights[key] = value_np
+                    all_weights[key] = value  # Keep as backend array
             return all_weights
         elif resolved.suffix == ".safetensors":
             gpu_weights = loader.load_weights(str(resolved))
             weights: dict[str, Any] = {}
             for key, value in gpu_weights.items():
-                value_np = b.to_numpy(value)
-                dtype_str = str(value_np.dtype)
+                dtype_str = str(value.dtype)
                 if dtype_str == "float16":
                     arr_f32 = b.astype(value, "float32")
                     b.eval(arr_f32)
-                    weights[key] = b.to_numpy(arr_f32)
+                    weights[key] = arr_f32  # Keep as backend array
                 else:
-                    weights[key] = value_np
+                    weights[key] = value  # Keep as backend array
             return weights
         elif resolved.suffix == ".npz":
             import numpy as _np_io  # Only for file I/O at boundary
             data = _np_io.load(resolved)
-            return {key: b.to_numpy(b.array(value)) for key, value in data.items()}
+            return {key: b.array(value) for key, value in data.items()}
         else:
             raise ValueError(f"Unsupported format: {resolved.suffix}")
 
@@ -580,7 +592,7 @@ class GeometryAdapterService:
                 delta = delta * scale
             delta_f32 = b.astype(delta, "float32")
             b.eval(delta_f32)
-            deltas[prefix] = b.to_numpy(b.reshape(delta_f32, (-1,))).tolist()
+            deltas[prefix] = _array_to_list(b, delta_f32)
 
         return deltas
 

@@ -156,36 +156,57 @@ def save_weights(
         # Fall through to numpy-based save paths.
         pass
 
-    # Fallback to safetensors (convert arrays to numpy for save)
-    if output_format == "safetensors":
-        from safetensors.numpy import save_file
+    # Try JAX native safetensors save
+    try:
+        import jax.numpy as jnp
 
-        # Convert backend arrays to numpy for safetensors save
-        numpy_weights: dict[str, Any] = {}
-        for key, value in weights.items():
-            if type(value).__module__.startswith("numpy"):
-                numpy_weights[key] = value
-                continue
-            try:
-                numpy_weights[key] = backend.to_numpy(value)
-            except Exception:
-                numpy_weights[key] = value
-        save_file(numpy_weights, str(output_path))
-    else:
-        # For npz format, also convert to numpy
-        output_path = path / "weights.npz"
-        import numpy as _np_for_save  # Only for file I/O, not computation
+        if weights and all(isinstance(v, jnp.ndarray) for v in weights.values()):
+            from safetensors.flax import save_file as save_flax
 
-        numpy_weights: dict[str, Any] = {}
+            save_flax(weights, str(output_path))
+            logger.info("Saved merged weights to %s (JAX native)", output_path)
+            return
+    except Exception:
+        pass
+
+    # Convert to MLX arrays and use MLX native save
+    # The backend already provides native arrays - no numpy conversion needed
+    try:
+        import mlx.core as mx
+
+        mlx_weights: dict[str, Any] = {}
         for key, value in weights.items():
-            if type(value).__module__.startswith("numpy"):
-                numpy_weights[key] = value
-                continue
-            try:
-                numpy_weights[key] = backend.to_numpy(value)
-            except Exception:
-                numpy_weights[key] = value
-        _np_for_save.savez(str(output_path), **numpy_weights)
+            if isinstance(value, mx.array):
+                mlx_weights[key] = value
+            else:
+                # Backend arrays can be converted directly via backend.array()
+                # which returns native arrays (mx.array for MLX backend)
+                mlx_weights[key] = backend.array(value)
+        mx.save_safetensors(str(output_path), mlx_weights)
+        logger.info("Saved merged weights to %s (MLX converted)", output_path)
+        return
+    except Exception as e:
+        logger.warning("MLX save failed: %s, trying JAX path", e)
+
+    # Try JAX save path
+    try:
+        import jax.numpy as jnp
+        from safetensors.flax import save_file as save_flax
+
+        jax_weights: dict[str, Any] = {}
+        for key, value in weights.items():
+            if hasattr(value, "__jax_array__") or type(value).__module__.startswith("jax"):
+                jax_weights[key] = value
+            else:
+                # Backend.array() returns native jax arrays for JAX backend
+                jax_weights[key] = backend.array(value)
+        save_flax(jax_weights, str(output_path))
+        logger.info("Saved merged weights to %s (JAX converted)", output_path)
+        return
+    except Exception as e:
+        raise RuntimeError(
+            f"Cannot save weights without GPU backend (MLX or JAX required): {e}"
+        )
 
     logger.info("Saved merged weights to %s", output_path)
 

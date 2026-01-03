@@ -17,14 +17,18 @@
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    acos_scalar,
+    division_epsilon,
+    is_finite,
+    sqrt_scalar,
+)
 from modelcypher.core.domain.geometry.vector_math import VectorMath
 
 if TYPE_CHECKING:
@@ -145,10 +149,11 @@ class PathGeometry:
     def _entropy_normalization(entropies: list[float]) -> tuple[float, float]:
         if not entropies:
             return 0.0, PathGeometry._division_epsilon()
+        backend = get_default_backend()
         n = float(len(entropies))
         mean = sum(entropies) / n
         variance = sum((val - mean) ** 2 for val in entropies) / n
-        std = math.sqrt(variance)
+        std = sqrt_scalar(variance, backend)
         eps = PathGeometry._division_epsilon()
         return mean, std if std > eps else eps
 
@@ -350,8 +355,9 @@ class PathGeometry:
                 d_val = dist(i, j)
                 dp[i][j] = d_val + min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1])
 
+        backend = get_default_backend()
         final_cost = dp[n - 1][m - 1]
-        if not math.isfinite(final_cost):
+        if not is_finite(final_cost, backend):
             return DTWResult(
                 total_cost=float("inf"),
                 normalized_cost=float("inf"),
@@ -438,12 +444,13 @@ class PathGeometry:
             for d in range(projection_dim):
                 cumulative[d] += d_x[d]
 
+        backend = get_default_backend()
         antisymmetric_sum = 0.0
         for p in range(projection_dim):
             for q in range(p + 1, projection_dim):
                 antisym = level2[p][q] - level2[q][p]
                 antisymmetric_sum += antisym * antisym
-        signed_area = 0.5 * math.sqrt(antisymmetric_sum)
+        signed_area = 0.5 * sqrt_scalar(antisymmetric_sum, backend)
 
         norm = 0.0
         for d in range(projection_dim):
@@ -451,7 +458,7 @@ class PathGeometry:
         for p in range(projection_dim):
             for q in range(projection_dim):
                 norm += level2[p][q] * level2[p][q]
-        signature_norm = math.sqrt(norm)
+        signature_norm = sqrt_scalar(norm, backend)
 
         return TruncatedSignature(
             level1=level1,
@@ -471,12 +478,13 @@ class PathGeometry:
             sig_a: First signature.
             sig_b: Second signature.
         """
+        backend = get_default_backend()
         l1_dist = 0.0
         count = min(len(sig_a.level1), len(sig_b.level1))
         for i in range(count):
             diff = sig_a.level1[i] - sig_b.level1[i]
             l1_dist += diff * diff
-        l1_dist = math.sqrt(l1_dist)
+        l1_dist = sqrt_scalar(l1_dist, backend)
 
         level2_dist = 0.0
         rows = min(len(sig_a.level2), len(sig_b.level2))
@@ -487,9 +495,9 @@ class PathGeometry:
             for q in range(cols):
                 diff = row_a[q] - row_b[q]
                 level2_dist += diff * diff
-        level2_dist = math.sqrt(level2_dist)
+        level2_dist = sqrt_scalar(level2_dist, backend)
 
-        total_dist = math.sqrt(l1_dist * l1_dist + level2_dist * level2_dist)
+        total_dist = sqrt_scalar(l1_dist * l1_dist + level2_dist * level2_dist, backend)
         return 1.0 / (1.0 + total_dist)
 
     @staticmethod
@@ -562,6 +570,7 @@ class PathGeometry:
                 proj.append((node.entropy - entropy_mean) / entropy_scale)
                 coords.append(proj)
 
+        backend = get_default_backend()
         tangents: list[list[float]] = []
         for i in range(len(coords) - 1):
             t = [0.0] * projection_dim
@@ -569,7 +578,7 @@ class PathGeometry:
             for d in range(projection_dim):
                 t[d] = coords[i + 1][d] - coords[i][d]
                 norm += t[d] * t[d]
-            norm = math.sqrt(norm)
+            norm = sqrt_scalar(norm, backend)
             if norm > 0:
                 t = [val / norm for val in t]
             tangents.append(t)
@@ -578,7 +587,7 @@ class PathGeometry:
         for i in range(len(tangents) - 1):
             dot = sum(tangents[i][d] * tangents[i + 1][d] for d in range(projection_dim))
             dot = max(-1.0, min(1.0, dot))
-            curvatures.append(math.acos(dot))
+            curvatures.append(acos_scalar(dot, backend))
 
         mean_curv = sum(curvatures) / len(curvatures) if curvatures else 0.0
         max_curv = max(curvatures) if curvatures else 0.0
@@ -594,7 +603,7 @@ class PathGeometry:
                 for d in range(projection_dim):
                     expected = (t1[d] + t3[d]) / 2.0
                     deviation += (t2[d] - expected) ** 2
-                torsions.append(math.sqrt(deviation))
+                torsions.append(sqrt_scalar(deviation, backend))
 
         mean_tors = sum(torsions) / len(torsions) if torsions else 0.0
 
@@ -739,14 +748,14 @@ class BackendPathGeometry:
                 antisym = level2_arr[p, q] - level2_arr[q, p]
                 antisym_sum = antisym_sum + antisym * antisym
         self.backend.eval(antisym_sum)
-        signed_area = 0.5 * math.sqrt(self._to_scalar(antisym_sum))
+        signed_area = 0.5 * sqrt_scalar(self._to_scalar(antisym_sum), self.backend)
 
         # Signature norm: sqrt(sum of all squared components)
         level1_norm_sq = self.backend.sum(level1_arr * level1_arr)
         level2_norm_sq = self.backend.sum(level2_arr * level2_arr)
         total_norm_sq = level1_norm_sq + level2_norm_sq
         self.backend.eval(total_norm_sq)
-        signature_norm = math.sqrt(self._to_scalar(total_norm_sq))
+        signature_norm = sqrt_scalar(self._to_scalar(total_norm_sq), self.backend)
 
         return TruncatedSignature(
             level1=level1,
@@ -795,7 +804,7 @@ class BackendPathGeometry:
 
         total_dist_sq = level1_dist_sq + level2_dist_sq
         self.backend.eval(total_dist_sq)
-        total_dist = math.sqrt(self._to_scalar(total_dist_sq))
+        total_dist = sqrt_scalar(self._to_scalar(total_dist_sq), self.backend)
         return 1.0 / (1.0 + total_dist)
 
     def analyze_entropy_path(self, path: PathSignature) -> EntropyPathAnalysis:
@@ -923,7 +932,7 @@ class BackendPathGeometry:
             self.backend.eval(dot)
             dot_val = self._to_scalar(dot)
             dot_val = max(-1.0, min(1.0, dot_val))
-            curvatures_list.append(math.acos(dot_val))
+            curvatures_list.append(acos_scalar(dot_val, self.backend))
 
         mean_curv = sum(curvatures_list) / len(curvatures_list) if curvatures_list else 0.0
         max_curv = max(curvatures_list) if curvatures_list else 0.0
@@ -940,7 +949,7 @@ class BackendPathGeometry:
                 deviation = t2 - expected
                 dev_norm_sq = self.backend.sum(deviation * deviation)
                 self.backend.eval(dev_norm_sq)
-                torsions_list.append(math.sqrt(self._to_scalar(dev_norm_sq)))
+                torsions_list.append(sqrt_scalar(self._to_scalar(dev_norm_sq), self.backend))
 
         mean_tors = sum(torsions_list) / len(torsions_list) if torsions_list else 0.0
 

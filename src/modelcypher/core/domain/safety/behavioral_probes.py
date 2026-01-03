@@ -174,8 +174,10 @@ def _anchor_embedding(
     points = backend.array(embeddings)
     mean = frechet_mean(points, backend=backend)
     backend.eval(mean)
-    mean_list = backend.to_numpy(mean).tolist()
-    return mean_list if isinstance(mean_list, list) else [float(mean_list)]
+    if len(mean.shape) == 0:
+        return [float(backend.to_scalar(mean))]
+    count = int(mean.shape[0])
+    return [backend.to_scalar(mean[i]) for i in range(count)]
 
 
 def _geodesic_min_distance(anchor_points: list[list[float]], query: list[float]) -> float:
@@ -186,9 +188,14 @@ def _geodesic_min_distance(anchor_points: list[list[float]], query: list[float])
     rg = RiemannianGeometry(backend)
     geo = rg.geodesic_distances(points)
     backend.eval(geo.distances)
-    distances = backend.to_numpy(geo.distances).tolist()
-    row = distances[-1][:-1]
-    return min(float(val) for val in row) if row else 0.0
+    n = int(points.shape[0])
+    if n <= 1:
+        return 0.0
+    row = backend.take(geo.distances, backend.array([n - 1]), axis=0)
+    row = backend.squeeze(row, axis=0)
+    row = row[: n - 1]
+    backend.eval(row)
+    return float(backend.to_scalar(backend.min(row)))
 
 
 class SemanticDriftProbe(AdapterSafetyProbe):

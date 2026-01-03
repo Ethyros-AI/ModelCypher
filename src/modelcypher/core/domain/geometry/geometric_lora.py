@@ -202,13 +202,15 @@ class GeometricLoRA:
         Uses standard LoRA naming convention:
         base_model.model.layers.{layer}.{proj}.lora_A.weight
         base_model.model.layers.{layer}.{proj}.lora_B.weight
+
+        Returns backend arrays - caller (helpers.py save_weights) handles
+        native MLX/JAX safetensors serialization.
         """
-        backend = get_default_backend()
         result = {}
         for w in self.weights:
             prefix = f"base_model.model.layers.{w.layer_idx}.self_attn.{w.projection_name}"
-            result[f"{prefix}.lora_A.weight"] = backend.to_numpy(w.A)
-            result[f"{prefix}.lora_B.weight"] = backend.to_numpy(w.B)
+            result[f"{prefix}.lora_A.weight"] = w.A  # Keep as backend array
+            result[f"{prefix}.lora_B.weight"] = w.B
         return result
 
     def to_dict(self) -> dict:

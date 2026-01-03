@@ -381,10 +381,11 @@ class PhaseTransitionTheory:
         """
         if effective_vocab_size <= 1:
             return 1.0
-        log_v_eff = math.log(effective_vocab_size)
+        backend = get_default_backend()
+        log_v_eff = log_scalar(float(effective_vocab_size), backend)
         if log_v_eff <= 0:
             return 1.0
-        return logit_std_dev / math.sqrt(2.0 * log_v_eff)
+        return logit_std_dev / sqrt_scalar(2.0 * log_v_eff, backend)
 
     @staticmethod
     def effective_vocabulary_size(
@@ -408,17 +409,18 @@ class PhaseTransitionTheory:
         if temperature <= 0 or not logits:
             return 1
 
-        safe_temperature = max(temperature, math.ulp(temperature))
+        backend = get_default_backend()
+        safe_temperature = max(temperature, ulp_scalar(temperature, backend))
 
         # Temperature-scaled softmax
         scaled = [z / safe_temperature for z in logits]
         max_scaled = max(scaled)
-        exp_scaled = [math.exp(s - max_scaled) for s in scaled]
+        exp_scaled = [exp_scalar(s - max_scaled, backend) for s in scaled]
         partition = sum(exp_scaled)
         probs = [e / partition for e in exp_scaled]
 
         # Count tokens with p > threshold
-        prob_threshold = threshold if threshold is not None else math.ulp(1.0)
+        prob_threshold = threshold if threshold is not None else ulp_scalar(1.0, backend)
         count = sum(1 for p in probs if p > prob_threshold)
         return max(1, count)
 
@@ -441,18 +443,19 @@ class PhaseTransitionTheory:
         if temperature <= 0 or not logits:
             return 0.0
 
-        safe_temperature = max(temperature, math.ulp(temperature))
+        backend = get_default_backend()
+        safe_temperature = max(temperature, ulp_scalar(temperature, backend))
 
         # Temperature-scaled softmax
         scaled = [z / safe_temperature for z in logits]
         max_scaled = max(scaled)
-        exp_scaled = [math.exp(s - max_scaled) for s in scaled]
+        exp_scaled = [exp_scalar(s - max_scaled, backend) for s in scaled]
         partition = sum(exp_scaled)
         probs = [e / partition for e in exp_scaled]
 
         # H = -Σ p log p (with numerical stability)
-        log_eps = math.ulp(0.0)
-        entropy = -sum(p * math.log(p + log_eps) for p in probs)
+        log_eps = ulp_scalar(0.0, backend)
+        entropy = -sum(p * log_scalar(p + log_eps, backend) for p in probs)
         return entropy
 
     @staticmethod
@@ -476,7 +479,8 @@ class PhaseTransitionTheory:
 
         ratio = temperature / critical_temperature
 
-        tol = tolerance if tolerance is not None else math.ulp(1.0)
+        backend = get_default_backend()
+        tol = tolerance if tolerance is not None else ulp_scalar(1.0, backend)
 
         if ratio < 1.0 - tol:
             return Phase.ORDERED
@@ -600,5 +604,6 @@ class PhaseTransitionTheory:
         Returns:
             True if estimation is within tolerance.
         """
-        tol = tolerance if tolerance is not None else max(math.ulp(estimated_tc), math.ulp(observed_tc))
+        backend = get_default_backend()
+        tol = tolerance if tolerance is not None else max(ulp_scalar(estimated_tc, backend), ulp_scalar(observed_tc, backend))
         return abs(estimated_tc - observed_tc) <= tol

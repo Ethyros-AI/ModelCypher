@@ -196,6 +196,12 @@ class JAXBackend(Backend):
     def arccos(self, array: Array) -> Array:
         return self.jnp.arccos(array)
 
+    def arctan(self, array: Array) -> Array:
+        return self.jnp.arctan(array)
+
+    def lgamma(self, array: Array) -> Array:
+        return self.jax.scipy.special.gammaln(array)
+
     def maximum(self, lhs: Array, rhs: Array) -> Array:
         return self.jnp.maximum(lhs, rhs)
 

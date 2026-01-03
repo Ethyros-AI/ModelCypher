@@ -213,16 +213,14 @@ def percentile_array(arr: Any, p: float, backend: Backend) -> float:
         # Exact index - use partition for O(n) complexity
         partitioned = backend.partition(arr, kth=lower_idx)
         backend.eval(partitioned)
-        return float(backend.to_numpy(partitioned)[lower_idx])
+        return float(backend.to_scalar(partitioned[lower_idx]))
 
     # Need interpolation between two indices
     # For simplicity, use partial sort on the larger index
     partitioned = backend.partition(arr, kth=upper_idx)
     backend.eval(partitioned)
-    arr_np = backend.to_numpy(partitioned)
-
-    lower_val = float(arr_np[lower_idx])
-    upper_val = float(arr_np[upper_idx])
+    lower_val = float(backend.to_scalar(partitioned[lower_idx]))
+    upper_val = float(backend.to_scalar(partitioned[upper_idx]))
     fraction = position - float(lower_idx)
 
     return lower_val + (upper_val - lower_val) * fraction

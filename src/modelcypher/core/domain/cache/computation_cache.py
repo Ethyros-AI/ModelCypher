@@ -43,6 +43,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import struct
 import threading
 import time
 import weakref
@@ -214,39 +215,51 @@ class ComputationCache:
         """Compute cache key by hashing array content (slow path)."""
         backend.eval(arr)
         shape = tuple(int(d) for d in arr.shape)
+        dtype = str(backend.dtype(arr))
         n_elements = 1
         for d in shape:
             n_elements *= d
 
         # For efficiency, hash shape + sampled values instead of all values
         # Sample corners and center for large arrays
-        arr_np = backend.to_numpy(arr)
+        flat = backend.reshape(arr, (-1,))
+        flat_len = int(flat.shape[0])
 
         if n_elements <= 1000:
             # Small array - hash all values directly as bytes (not hex string!)
             # This is ~8× faster than converting to hex and back
-            flat = arr_np.flatten()
-            shape_bytes = str(shape).encode()
-            content_bytes = flat.tobytes()
+            shape_bytes = f"{shape}|dtype={dtype}".encode()
+            content_bytes = b"".join(
+                struct.pack(">d", float(backend.to_scalar(flat[i])))
+                for i in range(flat_len)
+            )
             # Hash shape + content bytes directly (avoids hex conversion overhead)
             # xxhash is ~10-50× faster than SHA256 for non-cryptographic hashing
             return xxhash.xxh64(shape_bytes + content_bytes).hexdigest()[:16]
         else:
             # Large array - sample strategically
-            flat = arr_np.flatten()
             samples = []
             # First 10
-            samples.extend(flat[:10].tolist())
+            for i in range(min(10, flat_len)):
+                samples.append(backend.to_scalar(flat[i]))
             # Last 10
-            samples.extend(flat[-10:].tolist())
+            for i in range(max(0, flat_len - 10), flat_len):
+                samples.append(backend.to_scalar(flat[i]))
             # Middle 10
-            mid = len(flat) // 2
-            samples.extend(flat[mid - 5 : mid + 5].tolist())
+            mid = flat_len // 2
+            start_mid = max(0, mid - 5)
+            end_mid = min(flat_len, mid + 5)
+            for i in range(start_mid, end_mid):
+                samples.append(backend.to_scalar(flat[i]))
             # Random-ish samples based on position (deterministic)
-            step = max(1, len(flat) // 20)
-            samples.extend(flat[::step][:10].tolist())
-            content = f"shape={shape}|samples={samples}"
-            return xxhash.xxh64(content.encode()).hexdigest()[:16]
+            step = max(1, flat_len // 20)
+            for i in range(0, flat_len, step):
+                samples.append(backend.to_scalar(flat[i]))
+                if len(samples) >= 40:
+                    break
+            shape_bytes = f"{shape}|dtype={dtype}".encode()
+            sample_bytes = b"".join(struct.pack(">d", float(val)) for val in samples)
+            return xxhash.xxh64(shape_bytes + sample_bytes).hexdigest()[:16]
 
     def _cache_array_id(self, arr_id: int, arr: "Array", key: str) -> None:
         """Cache id(array) → key mapping with LRU eviction."""

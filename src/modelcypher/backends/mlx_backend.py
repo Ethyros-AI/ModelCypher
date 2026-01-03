@@ -375,6 +375,17 @@ class MLXBackend(Backend):
     def arccos(self, array: Array) -> Array:
         return self.mx.arccos(array)
 
+    def arctan(self, array: Array) -> Array:
+        return self.mx.arctan(array)
+
+    def lgamma(self, array: Array) -> Array:
+        # MLX doesn't have lgamma, use scipy through numpy conversion
+        import scipy.special
+
+        arr_np = self.to_numpy(array)
+        result_np = scipy.special.gammaln(arr_np)
+        return self.mx.array(result_np)
+
     def clip(
         self, array: Array, min_val: float | Array | None, max_val: float | Array | None
     ) -> Array:

@@ -216,10 +216,11 @@ class SafeLoRAProjector:
                         proj_arr = backend.array(P)
                         projected_weight = weight_arr - backend.matmul(proj_arr, weight_arr)
                         backend.eval(projected_weight)
-                        projected_np = backend.to_numpy(projected_weight)
+                        # Keep as backend array - convert dtype if needed
                         if hasattr(weight, "dtype"):
-                            projected_np = projected_np.astype(weight.dtype)
-                        new_weights[key] = projected_np
+                            projected_weight = backend.astype(projected_weight, str(weight.dtype))
+                            backend.eval(projected_weight)
+                        new_weights[key] = projected_weight
                         projected_count += 1
                         continue
 

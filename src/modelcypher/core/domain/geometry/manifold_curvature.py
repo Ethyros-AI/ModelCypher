@@ -644,23 +644,29 @@ class SectionalCurvatureEstimator:
         dist_sq = backend.maximum(dist_sq, backend.zeros_like(dist_sq))
         dists = backend.sqrt(dist_sq)
 
-        # Extract upper triangle (excluding diagonal) for median
-        backend.eval(dists)
-        upper_tri = []
-        for i in range(m):
-            for j in range(i + 1, m):
-                upper_tri.append(float(backend.to_scalar(dists[i, j])))
-
-        if not upper_tri:
+        # Extract upper triangle (excluding diagonal) for median using backend ops
+        idx = backend.arange(m)
+        row = backend.reshape(idx, (m, 1))
+        col = backend.reshape(idx, (1, m))
+        upper_mask = col > row
+        backend.eval(upper_mask)
+        upper_count = int(backend.to_scalar(backend.sum(backend.astype(upper_mask, "int32"))))
+        if upper_count == 0:
             return division_epsilon(backend, neighbors)
 
-        upper_tri.sort()
-        median_dist = upper_tri[len(upper_tri) // 2]
+        pos_inf = backend.full(dists.shape, float("inf"))
+        upper_vals = backend.where(upper_mask, dists, pos_inf)
+        flat = backend.reshape(upper_vals, (-1,))
+        sorted_flat = backend.sort(flat)
+        backend.eval(sorted_flat)
+        median_dist = float(backend.to_scalar(sorted_flat[upper_count // 2]))
 
         # Adaptive epsilon formula with dimensional scaling
         eps = division_epsilon(backend, neighbors)
         epsilon = median_dist * eps * (d ** 0.25)
-        max_dist = max(upper_tri)
+        max_dist_arr = backend.max(backend.where(upper_mask, dists, backend.zeros_like(dists)))
+        backend.eval(max_dist_arr)
+        max_dist = float(backend.to_scalar(max_dist_arr))
         if max_dist > 0:
             epsilon = min(epsilon, max_dist)
         epsilon = max(eps, epsilon)
@@ -698,15 +704,14 @@ class SectionalCurvatureEstimator:
             g = metric_fn(point)
             # Initialize gradient tensor
             dg_list = []
-            point_vals = _array_to_list(backend, point)
+            eye = backend.eye(d)
             for k in range(d):
-                perturbed_plus = list(point_vals)
-                perturbed_plus[k] += eps
-                perturbed_minus = list(point_vals)
-                perturbed_minus[k] -= eps
+                delta = eye[k]
+                perturbed_plus = point + delta * eps
+                perturbed_minus = point - delta * eps
 
-                g_plus = metric_fn(backend.array(perturbed_plus))
-                g_minus = metric_fn(backend.array(perturbed_minus))
+                g_plus = metric_fn(perturbed_plus)
+                g_minus = metric_fn(perturbed_minus)
                 dg_k = (g_plus - g_minus) / (2 * eps)
                 dg_list.append(dg_k)
             dg = backend.stack(dg_list, axis=0)
@@ -724,27 +729,19 @@ class SectionalCurvatureEstimator:
         g_reg = g + reg_scale * backend.eye(d)
         g_inv = backend.inv(g_reg)
 
-        # Build christoffel tensor using pure Python loops
+        # Build christoffel tensor using backend ops
         backend.eval(g_inv, dg)
+        dg_ij_l = dg
+        dg_ji_l = backend.transpose(dg, (1, 0, 2))
+        dg_l_ij = backend.transpose(dg, (2, 0, 1))
+        term = dg_ij_l + dg_ji_l - dg_l_ij
+        term_flat = backend.reshape(term, (d * d, d))
+        term_flat_t = backend.transpose(term_flat)
+        christoffel_flat = backend.matmul(g_inv, term_flat_t)
+        christoffel = backend.reshape(christoffel_flat, (d, d, d)) * 0.5
+        backend.eval(christoffel)
 
-        christoffel_list = []
-        for k in range(d):
-            row_list = []
-            for i in range(d):
-                col_list = []
-                for j in range(d):
-                    total = 0.0
-                    for idx_l in range(d):
-                        total += float(backend.to_scalar(g_inv[k, idx_l])) * (
-                            float(backend.to_scalar(dg[i, j, idx_l]))
-                            + float(backend.to_scalar(dg[j, i, idx_l]))
-                            - float(backend.to_scalar(dg[idx_l, i, j]))
-                        )
-                    col_list.append(0.5 * total)
-                row_list.append(col_list)
-            christoffel_list.append(row_list)
-
-        return backend.array(christoffel_list)
+        return christoffel
 
     def _sectional_curvature(
         self,
@@ -761,42 +758,46 @@ class SectionalCurvatureEstimator:
         where R is the Riemann curvature tensor.
         """
         backend.eval(u, v, metric, christoffel)
-        u_vals = _array_to_list(backend, u)
-        v_vals = _array_to_list(backend, v)
-        d = len(u_vals)
+        d = int(u.shape[0])
 
-        # Compute Riemann tensor R^l_ijk
-        # Simplified: use approximate formula for nearly flat spaces
+        # Compute Riemann tensor component via backend contractions
         # K ≈ (Γ^l_im Γ^m_jk - Γ^l_jm Γ^m_ik) u^i v^j v^k u^l
+        u_col = backend.reshape(u, (d, 1))
+        v_col = backend.reshape(v, (d, 1))
+        v_row = backend.reshape(v, (1, d))
 
-        riemann_component = 0.0
+        # A_{l,m} = Σ_i Γ^l_im u_i
+        u_weight = backend.reshape(u, (1, d, 1))
+        A = backend.sum(christoffel * u_weight, axis=1)
 
-        for idx_l in range(d):
-            for i in range(d):
-                for j in range(d):
-                    for k in range(d):
-                        term1 = 0.0
-                        term2 = 0.0
-                        for m in range(d):
-                            term1 += float(backend.to_scalar(christoffel[idx_l, i, m])) * float(
-                                backend.to_scalar(christoffel[m, j, k])
-                            )
-                            term2 += float(backend.to_scalar(christoffel[idx_l, j, m])) * float(
-                                backend.to_scalar(christoffel[m, i, k])
-                            )
+        # C_{l,m} = Σ_j Γ^l_jm v_j
+        v_weight = backend.reshape(v, (1, d, 1))
+        C = backend.sum(christoffel * v_weight, axis=1)
 
-                        riemann_component += (term1 - term2) * float(u_vals[i]) * float(
-                            v_vals[j]
-                        ) * float(v_vals[k]) * float(u_vals[idx_l])
+        # B_m = Σ_{j,k} Γ^m_jk v_j v_k
+        outer_vv = backend.matmul(v_col, v_row)
+        B = backend.sum(christoffel * outer_vv, axis=(1, 2))
+
+        # D_m = Σ_{i,k} Γ^m_ik u_i v_k
+        outer_uv = backend.matmul(u_col, v_row)
+        D = backend.sum(christoffel * outer_uv, axis=(1, 2))
+
+        B_col = backend.reshape(B, (d, 1))
+        D_col = backend.reshape(D, (d, 1))
+        term1 = backend.sum(backend.matmul(A, B_col) * u_col)
+        term2 = backend.sum(backend.matmul(C, D_col) * u_col)
+        riemann_component_arr = term1 - term2
+        backend.eval(riemann_component_arr)
+        riemann_component = float(backend.to_scalar(riemann_component_arr))
 
         # Denominator: g(u,u)g(v,v) - g(u,v)^2
-        u_vec = backend.reshape(u, (-1, 1))
-        v_vec = backend.reshape(v, (-1, 1))
+        u_vec = backend.reshape(u, (d, 1))
+        v_vec = backend.reshape(v, (d, 1))
         g_u = backend.matmul(metric, u_vec)
         g_v = backend.matmul(metric, v_vec)
-        g_uu = backend.to_scalar(backend.matmul(backend.transpose(u_vec), g_u))
-        g_vv = backend.to_scalar(backend.matmul(backend.transpose(v_vec), g_v))
-        g_uv = backend.to_scalar(backend.matmul(backend.transpose(u_vec), g_v))
+        g_uu = float(backend.to_scalar(backend.matmul(backend.transpose(u_vec), g_u)))
+        g_vv = float(backend.to_scalar(backend.matmul(backend.transpose(v_vec), g_v)))
+        g_uv = float(backend.to_scalar(backend.matmul(backend.transpose(u_vec), g_v)))
 
         denom = g_uu * g_vv - g_uv * g_uv
 
@@ -908,10 +909,8 @@ class SectionalCurvatureEstimator:
         curv_arr = backend.array(sectional_curvatures)
         backend.eval(curv_arr)
         eps = division_epsilon(backend, curv_arr)
-        curv_vals = _array_to_list(backend, curv_arr)
-
-        has_pos = any(float(val) > eps for val in curv_vals)
-        has_neg = any(float(val) < -eps for val in curv_vals)
+        has_pos = bool(backend.to_scalar(backend.sum(backend.astype(curv_arr > eps, "int32"))))
+        has_neg = bool(backend.to_scalar(backend.sum(backend.astype(curv_arr < -eps, "int32"))))
 
         if has_pos and has_neg:
             return CurvatureSign.MIXED

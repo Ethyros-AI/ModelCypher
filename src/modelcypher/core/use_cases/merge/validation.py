@@ -40,6 +40,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _array_to_list(backend, array):
+    """Convert backend array to Python list without NumPy."""
+    flat = backend.reshape(array, (-1,))
+    count = int(flat.shape[0])
+    return [float(backend.to_scalar(flat[i])) for i in range(count)]
+
+
 @dataclass
 class MergeValidationConfig:
     """Configuration for merge validation.
@@ -406,7 +413,7 @@ class MergeValidationService:
                     continue
                 delta = b.array(merged) - b.array(source)
                 b.eval(delta)
-                flat = b.to_numpy(b.reshape(delta, (-1,))).tolist()
+                flat = _array_to_list(b, delta)
                 if len(flat) > 10000:
                     import random
 

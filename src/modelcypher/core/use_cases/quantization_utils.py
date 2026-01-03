@@ -180,7 +180,7 @@ def dequantize_if_needed(
         mode=params.mode,
     )
     backend.eval(dequantized)
-    return backend.to_numpy(dequantized)
+    return dequantized  # Return backend array, not numpy
 
 
 def requantize_weights(
@@ -200,10 +200,10 @@ def requantize_weights(
         if key.endswith(".scales") or key.endswith(".biases"):
             continue
 
-        weight_np = backend.to_numpy(value) if hasattr(value, 'shape') else value
-        ndim = len(getattr(weight_np, 'shape', []))
+        weight_arr = backend.array(value) if hasattr(value, 'shape') else value
+        ndim = len(getattr(weight_arr, 'shape', []))
         if not key.endswith(".weight") or ndim != 2:
-            quantized[key] = weight_np
+            quantized[key] = weight_arr  # Keep as backend array
             continue
 
         # Mirror MLX quantization: 2D weights (embeddings/linear) are quantized; norms remain float.
@@ -221,23 +221,27 @@ def requantize_weights(
                 key,
             )
             dequantized_f32 = backend.astype(backend.array(dequantized), "float32")
-            quantized[key] = backend.to_numpy(dequantized_f32)
+            backend.eval(dequantized_f32)
+            quantized[key] = dequantized_f32  # Keep as backend array
             continue
 
         dequantized_f32 = backend.astype(backend.array(dequantized), "float32")
-        weight_arr = dequantized_f32
+        backend.eval(dequantized_f32)
         q_weight, q_scales, q_biases = backend.quantize(
-            weight_arr,
+            dequantized_f32,
             group_size=output_hint.group_size,
             bits=output_hint.bits,
             mode=mode,
         )
+        backend.eval(q_weight, q_scales)
+        if q_biases is not None:
+            backend.eval(q_biases)
 
         base = key.replace(".weight", "")
-        quantized[key] = backend.to_numpy(q_weight)
-        quantized[f"{base}.scales"] = backend.to_numpy(q_scales)
+        quantized[key] = q_weight  # Keep as backend array
+        quantized[f"{base}.scales"] = q_scales
         if q_biases is not None:
-            quantized[f"{base}.biases"] = backend.to_numpy(q_biases)
+            quantized[f"{base}.biases"] = q_biases
 
     return quantized
 
