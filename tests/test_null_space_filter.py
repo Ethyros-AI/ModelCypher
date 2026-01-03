@@ -47,26 +47,30 @@ class TestNullSpaceProjection:
     data's dtype and spectral properties.
     """
 
-    def test_identity_projection_for_few_samples(self):
-        """Few samples should give identity projection (full null space)."""
+    def test_null_space_dimension_matches_rank_complement(self):
+        """Null space dimension = d - rank(A) for any number of samples."""
         backend = get_default_backend()
 
-        # Very few samples - min_samples is now derived from log2(d)
+        # 2 samples in 10D space: row space has rank at most 2, null space is 10-2=8
         backend.random_seed(42)
-        A = backend.random_normal((2, 10))  # 2 samples, 10 dims, needs log2(10)~4 samples
+        A = backend.random_normal((2, 10))  # 2 samples, 10 dims
         backend.eval(A)
         null_filter = NullSpaceFilter(backend)
 
         projection = null_filter.compute_null_space_projection(A)
 
-        # Should return identity-like projection due to insufficient samples
-        assert projection.null_dim == 10  # Full dimension
-        eye_mat = backend.eye(10)
-        backend.eval(projection.projection_matrix)
-        backend.eval(eye_mat)
-        diff = backend.max(backend.abs(projection.projection_matrix - eye_mat))
+        # 2 linearly independent samples span rank 2, so null_dim = 10 - 2 = 8
+        assert projection.null_dim == 8
+        assert projection.row_space_dim == 2
+
+        # Projection matrix should be idempotent (P @ P = P)
+        P = projection.projection_matrix
+        backend.eval(P)
+        P_squared = backend.matmul(P, P)
+        backend.eval(P_squared)
+        diff = backend.max(backend.abs(P - P_squared))
         backend.eval(diff)
-        eps = machine_epsilon(backend, projection.projection_matrix) * projection.projection_matrix.shape[0]
+        eps = machine_epsilon(backend, P) * P.shape[0]
         assert backend.to_scalar(diff) <= eps
 
     def test_null_space_orthogonal_to_row_space(self):

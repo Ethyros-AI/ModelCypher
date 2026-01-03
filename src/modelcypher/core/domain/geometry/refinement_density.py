@@ -216,9 +216,6 @@ class RefinementDensityAnalyzer:
         """Convenience method to compute DARE and DoRA internally and analyze."""
         from modelcypher.core.domain._backend import get_default_backend
         from modelcypher.core.domain.geometry.dare_sparsity import (
-            Configuration as DAREConfig,
-        )
-        from modelcypher.core.domain.geometry.dare_sparsity import (
             DARESparsityAnalyzer,
         )
         from modelcypher.core.domain.geometry.dora_decomposition import (
@@ -244,9 +241,7 @@ class RefinementDensityAnalyzer:
                 else:
                     delta_weights[name] = list(delta)
 
-        sparsity_analysis = DARESparsityAnalyzer.analyze(
-            delta_weights, DAREConfig(compute_per_layer_metrics=True)
-        )
+        sparsity_analysis = DARESparsityAnalyzer.analyze(delta_weights)
 
         base_arr: dict[str, any] = {}
         adapted_arr: dict[str, any] = {}

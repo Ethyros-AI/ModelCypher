@@ -60,40 +60,33 @@ class LinguisticModifier(str, Enum):
 
 
 # =============================================================================
-# Configuration
+# Calibration Data
 # =============================================================================
 
 
-@dataclass
-class DifferentialEntropyConfig:
-    """Configuration for differential entropy detection.
+@dataclass(frozen=True)
+class CalibrationThresholds:
+    """Thresholds derived from calibration data.
 
-    Thresholds must be explicitly provided or derived from calibration data.
-    No arbitrary defaults.
-
-    Attributes
-    ----------
-    delta_h_threshold : float
-        Threshold for cooling pattern detection. ΔH at or below this is below threshold.
-    minimum_baseline_entropy : float
-        Minimum baseline entropy to consider valid measurement
-    comparison_modifier : LinguisticModifier, optional
-        Modifier to compare against baseline
+    These values are computed from calibration samples, not user-provided.
+    Use from_calibration_samples() to create an instance.
     """
 
     delta_h_threshold: float
     minimum_baseline_entropy: float
-    comparison_modifier: LinguisticModifier = LinguisticModifier.caps
 
     @classmethod
-    def from_calibration_results(
+    def from_calibration_samples(
         cls,
         cooling_delta_h_samples: list[float],
         reference_delta_h_samples: list[float],
         baseline_entropies: list[float],
-        target_capture: float,
-    ) -> "DifferentialEntropyConfig":
+    ) -> "CalibrationThresholds":
         """Derive thresholds from calibration data.
+
+        All parameters are derived from the calibration samples:
+        - delta_h_threshold: median of cooling samples
+        - minimum_baseline_entropy: minimum of baseline samples
 
         Parameters
         ----------
@@ -103,13 +96,11 @@ class DifferentialEntropyConfig:
             Delta-H values from reference prompts
         baseline_entropies : list[float]
             Baseline entropy values from calibration
-        target_capture : float
-            Target fraction of cooling samples captured by the threshold
 
         Returns
         -------
-        DifferentialEntropyConfig
-            Configuration with thresholds derived from calibration data
+        CalibrationThresholds
+            Thresholds derived from calibration data
         """
         if not cooling_delta_h_samples or not reference_delta_h_samples:
             raise ValueError(
@@ -118,16 +109,16 @@ class DifferentialEntropyConfig:
         if not baseline_entropies:
             raise ValueError("Baseline entropy samples required for calibration")
 
-        # Sort cooling samples to find threshold at target capture fraction
+        # Threshold is median of cooling samples - not an arbitrary percentile
         sorted_cooling = sorted(cooling_delta_h_samples)
-        # Threshold where target_capture of cooling samples are below threshold
-        capture_idx = int(len(sorted_cooling) * target_capture)
-        capture_idx = min(capture_idx, len(sorted_cooling) - 1)
-        delta_h_threshold = sorted_cooling[capture_idx]
+        n = len(sorted_cooling)
+        if n % 2 == 0:
+            delta_h_threshold = (sorted_cooling[n // 2 - 1] + sorted_cooling[n // 2]) / 2
+        else:
+            delta_h_threshold = sorted_cooling[n // 2]
 
         # Minimum baseline entropy from calibration data
-        sorted_baseline = sorted(baseline_entropies)
-        minimum_baseline = sorted_baseline[0]
+        minimum_baseline = min(baseline_entropies)
 
         return cls(
             delta_h_threshold=delta_h_threshold,
@@ -432,22 +423,16 @@ class DifferentialEntropyDetector:
     entropy decreases under intensity modifiers. Returns raw measurements; caller
     uses is_below_delta_h_threshold() with calibrated thresholds for classification.
 
-    Attributes
-    ----------
-    config : DifferentialEntropyConfig
-        Detection configuration with thresholds
+    No configuration needed - always uses CAPS modifier for intensity comparison.
     """
 
-    def __init__(self, config: DifferentialEntropyConfig):
-        """Initialize detector with explicit configuration.
+    def __init__(self) -> None:
+        """Initialize detector.
 
-        Parameters
-        ----------
-        config : DifferentialEntropyConfig
-            Detection thresholds. Use from_calibration_results() to
-            derive from labeled calibration data.
+        No configuration needed. Always uses CAPS modifier for comparison.
+        Caller provides CalibrationThresholds to DetectionResult methods.
         """
-        self.config = config
+        pass
 
     async def detect(
         self,
@@ -475,9 +460,9 @@ class DifferentialEntropyDetector:
         """
         start_time = time.perf_counter()
 
-        # Create prompt variants
+        # Create prompt variants - always use CAPS for intensity comparison
         baseline_prompt = prompt
-        intensity_prompt = self._apply_modifier(prompt, self.config.comparison_modifier)
+        intensity_prompt = self._apply_modifier(prompt, LinguisticModifier.caps)
 
         # Measure baseline
         baseline_measurement = await measure_fn(baseline_prompt)

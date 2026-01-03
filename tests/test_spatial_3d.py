@@ -19,7 +19,6 @@
 
 Tests cover:
 - Backend-compatible numerical helpers
-- EuclideanConsistencyAnalyzer
 - SpatialStereoscopy
 - GravityGradientAnalyzer
 - VolumetricDensityProber
@@ -39,8 +38,6 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.spatial_3d import (
-    EuclideanConsistencyAnalyzer,
-    EuclideanConsistencyResult,
     GravityGradientAnalyzer,
     GravityGradientResult,
     OcclusionProber,
@@ -429,26 +426,6 @@ class TestGetSpatialAnchorsByAxis:
 # =============================================================================
 
 
-class TestEuclideanConsistencyResult:
-    """Tests for EuclideanConsistencyResult dataclass."""
-
-    def test_to_dict(self) -> None:
-        """to_dict should return dictionary with all fields."""
-        result = EuclideanConsistencyResult(
-            consistency_score=0.7,
-            pythagorean_error=0.2,
-            triangle_inequality_violations=1,
-            dimensionality_estimate=2.5,
-            axis_orthogonality={"x_y": 0.8},
-        )
-        d = result.to_dict()
-        assert "consistency_score" in d
-        assert "pythagorean_error" in d
-        assert "triangle_inequality_violations" in d
-        assert "dimensionality_estimate" in d
-        assert "axis_orthogonality" in d
-
-
 class TestViewpointPrompt:
     """Tests for ViewpointPrompt dataclass."""
 
@@ -556,50 +533,6 @@ class TestOcclusionResult:
 # =============================================================================
 # Analyzer Class Tests
 # =============================================================================
-
-
-class TestEuclideanConsistencyAnalyzer:
-    """Tests for EuclideanConsistencyAnalyzer class."""
-
-    def test_analyze_insufficient_anchors(self, any_backend: "Backend") -> None:
-        """Should return zero score for insufficient anchors."""
-        b = any_backend
-        analyzer = EuclideanConsistencyAnalyzer(backend=b)
-
-        # Only 2 anchors (need at least 4)
-        activations = {
-            "ceiling": b.random_normal((64,)),
-            "floor": b.random_normal((64,)),
-        }
-        for v in activations.values():
-            b.eval(v)
-
-        result = analyzer.analyze(activations)
-        assert result.consistency_score == 0.0
-
-    def test_analyze_with_valid_anchors(self, any_backend: "Backend") -> None:
-        """Should produce valid result with sufficient anchors."""
-        b = any_backend
-        b.random_seed(42)
-        analyzer = EuclideanConsistencyAnalyzer(backend=b)
-
-        # Create mock activations for spatial anchors
-        from modelcypher.core.domain.agents.spatial_atlas import SpatialConceptInventory
-        anchors = SpatialConceptInventory.all_concepts()[:8]
-
-        activations = {}
-        for a in anchors:
-            act = b.random_normal((32,))
-            b.eval(act)
-            activations[a.name] = act
-
-        result = analyzer.analyze(activations, anchors)
-
-        # Should have valid structure
-        assert hasattr(result, "consistency_score")
-        assert hasattr(result, "pythagorean_error")
-        assert hasattr(result, "triangle_inequality_violations")
-        assert hasattr(result, "dimensionality_estimate")
 
 
 class TestSpatialStereoscopy:
@@ -786,7 +719,6 @@ class TestSpatial3DAnalyzer:
         result = analyzer.full_analysis(activations)
 
         assert isinstance(result, Spatial3DReport)
-        assert hasattr(result, "euclidean_consistency")
         assert hasattr(result, "gravity_gradient")
         assert hasattr(result, "volumetric_density")
         assert hasattr(result, "world_model_score")
@@ -809,7 +741,6 @@ class TestSpatial3DAnalyzer:
         result = analyzer.full_analysis(activations)
         d = result.to_dict()
 
-        assert "euclidean_consistency" in d
         assert "gravity_gradient" in d
         assert "world_model_score" in d
 
@@ -830,27 +761,6 @@ class TestEdgeCases:
         result = analyzer.full_analysis({})
 
         assert result.world_model_score == 0.0
-
-    def test_nan_in_activations(self, any_backend: "Backend") -> None:
-        """Should handle NaN values in activations."""
-        b = any_backend
-
-        from modelcypher.core.domain.agents.spatial_atlas import SpatialConceptInventory
-        anchors = SpatialConceptInventory.all_concepts()[:5]
-
-        activations = {}
-        for a in anchors:
-            # Create array with some NaN
-            act = b.array([1.0, float("nan"), 3.0, 4.0])
-            b.eval(act)
-            activations[a.name] = act
-
-        # Should not crash
-        analyzer = EuclideanConsistencyAnalyzer(backend=b)
-        result = analyzer.analyze(activations, anchors)
-
-        # May have low score due to NaN, but shouldn't crash
-        assert hasattr(result, "consistency_score")
 
     def test_very_small_activations(self, any_backend: "Backend") -> None:
         """Should handle very small activation values."""

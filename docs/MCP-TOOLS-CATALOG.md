@@ -689,12 +689,6 @@ Get spatial reasoning anchors.
 
 ---
 
-### mc_geometry_spatial_euclidean
-
-Probe 3D Euclidean consistency of spatial anchors (2D/3D only).
-
----
-
 ### mc_geometry_spatial_gravity
 
 Analyze gravity/physics intuition.

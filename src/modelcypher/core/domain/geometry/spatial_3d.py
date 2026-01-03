@@ -42,15 +42,11 @@ spatial concepts—one shaped by tactile/auditory experience, one by visual.
 from __future__ import annotations
 
 import logging
-import sys
 from dataclasses import dataclass
 
-from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
-    is_inf,
-    is_nan,
+    division_epsilon,
     sqrt_scalar,
-    tiny_value,
 )
 from typing import TYPE_CHECKING, Any
 
@@ -61,11 +57,6 @@ from modelcypher.core.domain.geometry.atlas_protocols import (
     enum_key,
 )
 from modelcypher.core.domain.geometry.atlas_registry import get_spatial_concepts
-from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
-    machine_epsilon,
-    svd_rank_threshold,
-)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -266,309 +257,58 @@ def get_spatial_anchors_by_axis(axis: object) -> list[SpatialConceptProtocol]:
 
 
 # =============================================================================
-# 3D Euclidean Consistency Probe
+# Axis Orthogonality
 # =============================================================================
 
 
-@dataclass
-class EuclideanConsistencyResult:
-    """Result of 3D Euclidean consistency probe."""
+def _compute_axis_orthogonality(
+    backend: "Backend",
+    activations: "Array",
+    anchors: list[SpatialConceptProtocol],
+) -> dict[str, float]:
+    """Compute orthogonality between inferred X, Y, Z axes."""
+    b = backend
 
-    consistency_score: float
-    pythagorean_error: float
-    triangle_inequality_violations: int
-    dimensionality_estimate: float
-    axis_orthogonality: dict[str, float]
+    # Find axis-defining anchor pairs
+    def find_axis_vector(pos_anchor: str, neg_anchor: str) -> "Array | None":
+        pos_idx = next((i for i, a in enumerate(anchors) if a.name == pos_anchor), None)
+        neg_idx = next((i for i, a in enumerate(anchors) if a.name == neg_anchor), None)
+        if pos_idx is None or neg_idx is None:
+            return None
+        pos_act = activations[pos_idx]
+        neg_act = activations[neg_idx]
+        diff = pos_act - neg_act
+        b.eval(diff)
+        return diff
 
+    x_axis = find_axis_vector("right_hand", "left_hand")
+    y_axis = find_axis_vector("ceiling", "floor")
+    z_axis = find_axis_vector("foreground", "background")
 
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "consistency_score": self.consistency_score,
-            "pythagorean_error": self.pythagorean_error,
-            "triangle_inequality_violations": self.triangle_inequality_violations,
-            "dimensionality_estimate": self.dimensionality_estimate,
-            "axis_orthogonality": self.axis_orthogonality,
-        }
+    results: dict[str, float] = {}
 
+    def orthogonality(v1: "Array | None", v2: "Array | None", name: str) -> None:
+        if v1 is None or v2 is None:
+            results[name] = 0.0
+            return
 
-class EuclideanConsistencyAnalyzer:
-    """
-    Tests whether latent distances satisfy 3D Euclidean constraints.
+        norm1 = _backend_vector_norm(b, v1)
+        norm2 = _backend_vector_norm(b, v2)
 
-    Core Test: Given three points A, B, C forming a right angle at B,
-    check if dist(A,C)² ≈ dist(A,B)² + dist(B,C)² (Pythagorean theorem).
+        div_eps = division_epsilon(b, v1)
+        if norm1 < div_eps or norm2 < div_eps:
+            results[name] = 0.0
+            return
 
-    This is a 3D probe only; high-dimensional geometry remains geodesic.
-    """
+        dot = _backend_vector_dot(b, v1, v2)
+        cos = dot / (norm1 * norm2)
+        results[name] = 1.0 - abs(cos)
 
-    def __init__(self, backend: "Backend | None" = None) -> None:
-        self._backend = backend or get_default_backend()
+    orthogonality(x_axis, y_axis, "x_y_orthogonality")
+    orthogonality(y_axis, z_axis, "y_z_orthogonality")
+    orthogonality(x_axis, z_axis, "x_z_orthogonality")
 
-    def analyze(
-        self,
-        anchor_activations: dict[str, "Array"],
-        anchors: list[SpatialConceptProtocol] | None = None,
-    ) -> EuclideanConsistencyResult:
-        """
-        Analyze 3D Euclidean constraints for spatial anchor representations.
-
-        Args:
-            anchor_activations: Map from anchor name to activation vector
-            anchors: Spatial anchors (uses registry if None)
-
-        Returns:
-            EuclideanConsistencyResult with raw consistency measurements
-        """
-        b = self._backend
-        anchors = anchors or list(get_spatial_concepts())
-
-        # Filter to anchors we have activations for
-        available = [a for a in anchors if a.name in anchor_activations]
-        if len(available) < 4:
-            return EuclideanConsistencyResult(
-                consistency_score=0.0,
-                pythagorean_error=float("inf"),
-                triangle_inequality_violations=0,
-                dimensionality_estimate=0.0,
-                axis_orthogonality={},
-            )
-
-        # Build activation matrix and expected position matrix
-        names = [a.name for a in available]
-        # Convert to float32 before numpy (handles bfloat16)
-        act_list = [_safe_to_list(b, anchor_activations[name]) for name in names]
-        activations = b.stack([b.array(act) for act in act_list])
-        expected_3d_list = [[a.expected_x, a.expected_y, a.expected_z] for a in available]
-
-        # Compute pairwise latent distances
-        n = len(available)
-        latent_dists = self._compute_distance_matrix(activations)
-
-        # Compute expected 3D distances (not used currently, kept for future reference)
-        # This would compute 3D Euclidean distances in expected coordinate space
-
-        # Test 1: Pythagorean theorem on right-angle triplets
-        pyth_errors = []
-        for i in range(n):
-            for j in range(n):
-                for k in range(n):
-                    if i == j or j == k or i == k:
-                        continue
-
-                    # Check if j forms ~90° angle
-                    vec_ij = [expected_3d_list[j][d] - expected_3d_list[i][d] for d in range(3)]
-                    vec_jk = [expected_3d_list[k][d] - expected_3d_list[j][d] for d in range(3)]
-                    backend = get_default_backend()
-                    dot = sum(vec_ij[d] * vec_jk[d] for d in range(3))
-                    norm_ij = sqrt_scalar(sum(v * v for v in vec_ij), backend)
-                    norm_jk = sqrt_scalar(sum(v * v for v in vec_jk), backend)
-                    norm_prod = norm_ij * norm_jk
-
-                    # Use dtype-derived threshold to avoid degenerate (near-zero) vectors
-                    norm_threshold = tiny_value(backend, backend.array([norm_prod]))
-                    if norm_prod > norm_threshold:
-                        cos_angle = dot / norm_prod
-                        # Select pairs with angles close to 90° for Pythagorean test.
-                        # In high-d, vectors are typically nearly orthogonal, so we use
-                        # sqrt(eps) as tolerance: cos(angle) ≈ 0 means angle ≈ 90°
-                        cos_tolerance = machine_epsilon(backend, backend.array([1.0])) ** 0.5
-                        if abs(cos_angle) < cos_tolerance:
-                            # Test Pythagorean: dist(i,k)² ≈ dist(i,j)² + dist(j,k)²
-                            lhs = latent_dists[i, k] ** 2
-                            rhs = latent_dists[i, j] ** 2 + latent_dists[j, k] ** 2
-
-                            # Skip invalid values
-                            if rhs > 0 and not is_nan(rhs, backend) and not is_inf(rhs, backend):
-                                if not is_nan(lhs, backend) and not is_inf(lhs, backend):
-                                    error = abs(lhs - rhs) / rhs
-                                    if not is_nan(error, backend) and not is_inf(error, backend):
-                                        pyth_errors.append(error)
-
-        pythagorean_error = sum(pyth_errors) / len(pyth_errors) if pyth_errors else float("inf")
-
-        # Test 2: Triangle inequality violations
-        # Use scale-relative tolerance based on the distance matrix
-        violations = 0
-        for i in range(n):
-            for j in range(n):
-                for k in range(n):
-                    if i < j < k:
-                        d_ij = latent_dists[i, j]
-                        d_jk = latent_dists[j, k]
-                        d_ik = latent_dists[i, k]
-                        # Relative tolerance: machine epsilon times the scale
-                        tol = sys.float_info.epsilon * max(d_ij, d_jk, d_ik, 1.0)
-                        if d_ij + d_jk < d_ik - tol:
-                            violations += 1
-                        if d_ij + d_ik < d_jk - tol:
-                            violations += 1
-                        if d_jk + d_ik < d_ij - tol:
-                            violations += 1
-
-        # Test 3: Intrinsic dimensionality via MDS stress
-        # If 3D, MDS with 3 components should have low stress
-        dim_estimate = self._estimate_intrinsic_dimension(latent_dists)
-
-        # Test 4: Axis orthogonality
-        axis_ortho = self._compute_axis_orthogonality(activations, available)
-
-        # Compute overall consistency score
-        pyth_score = max(0, 1.0 - pythagorean_error) if pythagorean_error < float("inf") else 0.0
-        triangle_score = 1.0 - min(1.0, violations / max(1, n * (n - 1) * (n - 2) / 6))
-        dim_score = max(0, 1.0 - abs(dim_estimate - 3.0) / 3.0)
-
-        consistency_score = 0.4 * pyth_score + 0.3 * triangle_score + 0.3 * dim_score
-
-        return EuclideanConsistencyResult(
-            consistency_score=consistency_score,
-            pythagorean_error=pythagorean_error,
-            triangle_inequality_violations=violations,
-            dimensionality_estimate=dim_estimate,
-            axis_orthogonality=axis_ortho,
-        )
-
-    def _compute_distance_matrix(self, activations: "Array") -> "Array":
-        """Compute pairwise geodesic distances.
-
-        Uses k-NN graph shortest paths to compute true manifold distances.
-        In high-dimensional curved spaces, Euclidean distance is incorrect.
-        """
-        from modelcypher.core.domain.geometry.riemannian_utils import (
-            geodesic_distance_matrix,
-        )
-
-        b = self._backend
-        n = activations.shape[0] if hasattr(activations, "shape") else len(activations)
-
-        # Use geodesic distance matrix for true manifold distances
-        k_neighbors = min(max(3, n // 3), n - 1)
-        geo_dist = geodesic_distance_matrix(activations, k_neighbors=k_neighbors, backend=b)
-        b.eval(geo_dist)
-
-        # Ensure float32 for numerical stability
-        geo_dist = b.astype(geo_dist, "float32")
-
-        # Handle any NaN/inf from geodesic computation using backend ops
-        geo_dist = _backend_nan_to_num(b, geo_dist, nan_val=0.0, posinf_val=1e10, neginf_val=0.0)
-
-        return geo_dist
-
-    def _estimate_intrinsic_dimension(self, dist_matrix: "Array") -> float:
-        """Estimate intrinsic dimension using MDS eigenvalue decay.
-
-        Uses backend ops for all computation - no numpy.
-        """
-        b = self._backend
-        n = dist_matrix.shape[0]
-
-        # Ensure backend array
-        dist_matrix = b.array(dist_matrix)
-        dist_matrix = b.astype(dist_matrix, "float32")
-
-        # Handle NaN/inf values using backend ops
-        dist_matrix = _backend_nan_to_num(b, dist_matrix, nan_val=0.0, posinf_val=1e10, neginf_val=-1e10)
-
-        # Double centering for MDS: B = -0.5 * H @ D² @ H
-        # where H = I - (1/n) * 11^T (centering matrix)
-        ones = b.ones((n, n))
-        eye = b.eye(n)
-        H = eye - ones / float(n)
-        b.eval(H)
-
-        dist_sq = dist_matrix * dist_matrix
-        B = b.matmul(H, b.matmul(dist_sq, H)) * -0.5
-        b.eval(B)
-
-        # Handle numerical issues in B matrix
-        B = _backend_nan_to_num(b, B, nan_val=0.0, posinf_val=1e10, neginf_val=-1e10)
-
-        # Eigendecomposition using backend eigh (for symmetric matrices)
-        try:
-            eigenvalues, _ = b.eigh(B)
-            b.eval(eigenvalues)
-
-            # Sort descending (eigh returns ascending)
-            eigenvalues = b.sort(eigenvalues, axis=-1)
-            b.eval(eigenvalues)
-            # Reverse to get descending
-            eig_list = _safe_to_list(b, eigenvalues)
-            eig_list = sorted(eig_list, reverse=True)
-        except Exception:
-            # Eigendecomposition failed
-            return float(min(n, 10))
-
-        # Filter out NaN/negative eigenvalues
-        positive_eigs = [e for e in eig_list if e > 0 and e == e]  # e == e filters NaN
-
-        if len(positive_eigs) == 0:
-            return float(min(n, 3))
-
-        # Count significant eigenvalues using dtype-derived threshold
-        # Standard formula: n * eps * largest_eigenvalue
-        rank_scale = svd_rank_threshold(b, eigenvalues, n)
-        threshold = rank_scale * positive_eigs[0]
-        significant = sum(1 for e in positive_eigs if e > threshold)
-
-        return float(significant)
-
-    def _compute_axis_orthogonality(
-        self,
-        activations: "Array",
-        anchors: list[SpatialConceptProtocol],
-    ) -> dict[str, float]:
-        """Compute orthogonality between inferred X, Y, Z axes.
-
-        Uses backend ops for all computation - no numpy.
-        """
-        b = self._backend
-
-        # Find axis-defining anchor pairs
-        def find_axis_vector(pos_anchor: str, neg_anchor: str) -> "Array | None":
-            pos_idx = next((i for i, a in enumerate(anchors) if a.name == pos_anchor), None)
-            neg_idx = next((i for i, a in enumerate(anchors) if a.name == neg_anchor), None)
-            if pos_idx is None or neg_idx is None:
-                return None
-            # Keep as backend array
-            pos_act = activations[pos_idx]
-            neg_act = activations[neg_idx]
-            diff = pos_act - neg_act
-            b.eval(diff)
-            return diff
-
-        # Infer axis directions
-        x_axis = find_axis_vector("right_hand", "left_hand")
-        y_axis = find_axis_vector("ceiling", "floor")
-        z_axis = find_axis_vector("foreground", "background")
-
-        results = {}
-
-        # Compute pairwise orthogonality (cosine should be ~0)
-        def orthogonality(v1: "Array | None", v2: "Array | None", name: str) -> None:
-            if v1 is None or v2 is None:
-                results[name] = 0.0
-                return
-
-            # Use backend helpers for norm and dot
-            norm1 = _backend_vector_norm(b, v1)
-            norm2 = _backend_vector_norm(b, v2)
-
-            div_eps = division_epsilon(b, v1)
-            if norm1 < div_eps or norm2 < div_eps:
-                results[name] = 0.0
-                return
-
-            dot = _backend_vector_dot(b, v1, v2)
-            cos = dot / (norm1 * norm2)
-
-            # Orthogonality score: 1 = orthogonal, 0 = parallel
-            results[name] = 1.0 - abs(cos)
-
-        orthogonality(x_axis, y_axis, "x_y_orthogonality")
-        orthogonality(y_axis, z_axis, "y_z_orthogonality")
-        orthogonality(x_axis, z_axis, "x_z_orthogonality")
-
-        return results
+    return results
 
 
 # =============================================================================
@@ -1272,7 +1012,7 @@ class OcclusionProber:
 class Spatial3DReport:
     """Comprehensive 3D world model analysis."""
 
-    euclidean_consistency: EuclideanConsistencyResult
+    axis_orthogonality: dict[str, float]
     gravity_gradient: GravityGradientResult
     volumetric_density: VolumetricDensityResult
     stereoscopy_results: list[StereoscopyResult]
@@ -1284,7 +1024,7 @@ class Spatial3DReport:
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
-            "euclidean_consistency": self.euclidean_consistency.to_dict(),
+            "axis_orthogonality": self.axis_orthogonality,
             "gravity_gradient": self.gravity_gradient.to_dict(),
             "volumetric_density": self.volumetric_density.to_dict(),
             "stereoscopy_results": [s.to_dict() for s in self.stereoscopy_results],
@@ -1297,13 +1037,11 @@ class Spatial3DAnalyzer:
     """
     Unified analyzer for 3D world model analysis.
 
-    Combines all spatial probes to measure geometric consistency in 3D.
-    Includes a 3D Euclidean consistency probe; all manifold distances remain geodesic.
+    Combines spatial probes to measure geometric consistency in 3D.
     """
 
     def __init__(self, backend: "Backend | None" = None) -> None:
         self._backend = backend or get_default_backend()
-        self._euclidean = EuclideanConsistencyAnalyzer(backend)
         self._gravity = GravityGradientAnalyzer(backend)
         self._density = VolumetricDensityProber(backend)
         self._stereoscopy = SpatialStereoscopy(backend)
@@ -1327,9 +1065,17 @@ class Spatial3DAnalyzer:
             Spatial3DReport with comprehensive analysis
         """
         # Run component analyses
-        euclidean = self._euclidean.analyze(anchor_activations)
         gravity = self._gravity.analyze(anchor_activations)
         density = self._density.analyze(anchor_activations)
+        axis_orthogonality = {}
+
+        anchors = list(get_spatial_concepts())
+        available = [a for a in anchors if a.name in anchor_activations]
+        if available:
+            names = [a.name for a in available]
+            act_list = [_safe_to_list(self._backend, anchor_activations[name]) for name in names]
+            activations = self._backend.stack([self._backend.array(act) for act in act_list])
+            axis_orthogonality = _compute_axis_orthogonality(self._backend, activations, available)
 
         # Stereoscopy analysis
         stereo_results = []
@@ -1350,7 +1096,11 @@ class Spatial3DAnalyzer:
                     occlusion_results.append(result)
 
         # Compute summary scores
-        euclidean_score = euclidean.consistency_score
+        if axis_orthogonality:
+            axis_vals = list(axis_orthogonality.values())
+            axis_score = sum(axis_vals) / len(axis_vals)
+        else:
+            axis_score = 0.0
         gravity_score = abs(gravity.mass_correlation) if gravity.gravity_axis_detected else 0.0
         density_score = max(0, density.inverse_square_compliance)
 
@@ -1368,11 +1118,11 @@ class Spatial3DAnalyzer:
 
         # Equal weights - let individual scores speak for themselves
         world_model_score = (
-            euclidean_score + gravity_score + density_score + stereo_score + occlusion_score
+            axis_score + gravity_score + density_score + stereo_score + occlusion_score
         ) / 5.0
 
         return Spatial3DReport(
-            euclidean_consistency=euclidean,
+            axis_orthogonality=axis_orthogonality,
             gravity_gradient=gravity,
             volumetric_density=density,
             stereoscopy_results=stereo_results,
@@ -1384,9 +1134,6 @@ class Spatial3DAnalyzer:
 __all__ = [
     # Data structures
     "get_spatial_anchors_by_axis",
-    # Euclidean consistency
-    "EuclideanConsistencyResult",
-    "EuclideanConsistencyAnalyzer",
     # Stereoscopy
     "ViewpointPrompt",
     "STEREOSCOPIC_SCENES",

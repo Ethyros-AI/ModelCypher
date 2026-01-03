@@ -523,7 +523,6 @@ class HelpService:
             "geometry_spatial_cross_grounding_feasibility": "mc.geometry.spatial.cross_grounding_feasibility.v1",
             "geometry_spatial_cross_grounding_transfer": "mc.geometry.spatial.cross_grounding_transfer.v1",
             "geometry_spatial_density": "mc.geometry.spatial.density.v1",
-            "geometry_spatial_euclidean": "mc.geometry.spatial.euclidean.v1",
             "geometry_spatial_gravity": "mc.geometry.spatial.gravity.v1",
             "geometry_spatial_probe_model": "mc.geometry.spatial.probe_model.v1",
             "geometry_temporal_analyze": "mc.geometry.temporal.analyze.v1",

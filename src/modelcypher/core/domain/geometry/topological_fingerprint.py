@@ -309,7 +309,7 @@ class TopologicalFingerprint:
             return b.zeros((0, 0))
 
         b = backend or get_default_backend()
-        pts = b.array(points)
+        pts = b.astype(b.array(points), "float32")  # Ensure float for numerical operations
 
         # Use geodesic distances for correct topology on curved manifolds
         k_neighbors = derive_k_neighbors(pts, b)

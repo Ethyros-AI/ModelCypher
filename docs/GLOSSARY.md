@@ -52,7 +52,7 @@ A measure of overlap between the *active* dimensions of two models.
 -   **Use**: Determines if two models "speak the same language" regarding a specific prompt corpus.
 
 ### Refusal Vector Magnitude
-The Euclidean length of the activation vector associated with a refusal response (e.g., "I cannot do that").
+The norm of the activation vector associated with a refusal response (e.g., "I cannot do that").
 
 ### Flavor Token
 Active but non-functional tokens (e.g., "Sure!", "Here is a...", "calibrating flux") that do not advance the reasoning trajectory but serve to "grease" the conversation.
@@ -160,12 +160,6 @@ The degree to which a model's latent space encodes a "down" direction where heav
 -   **Analogy**: In physics, heavy objects fall toward Earth. In a model with a gravity gradient, representations of "anvil" and "stone" cluster near "floor" and "ground," while "balloon" and "feather" cluster near "ceiling" and "sky."
 -   **Mass Correlation**: A score from -1 to +1 measuring how well perceived mass correlates with position on the vertical axis.
 -   **Human explanation**: "The model treats 'heavy' and 'down' as geometrically related, not just semantically related."
-
-### Euclidean Consistency Score
-A measure of whether the model's spatial representations obey the Pythagorean theorem.
--   **Test**: For triplets of anchors that should form right triangles (e.g., floor→left_hand→ceiling), we check if $dist(A,C)^2 ≈ dist(A,B)^2 + dist(B,C)^2$.
--   **Scope**: 3D probe only; high-dimensional geometry remains geodesic.
--   **Human explanation**: "Spatial anchors satisfy (or deviate from) 3D Euclidean constraints."
 
 ### Volumetric Density
 A measure of representational "mass" based on activation magnitude and neighborhood crowding.

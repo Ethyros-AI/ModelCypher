@@ -32,8 +32,8 @@ import pytest
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.dynamics.differential_entropy_detector import (
     BatchDetectionStatistics,
+    CalibrationThresholds,
     DetectionResult,
-    DifferentialEntropyConfig,
     DifferentialEntropyDetector,
     LinguisticModifier,
     VariantMeasurement,
@@ -50,21 +50,19 @@ def _eps() -> float:
     return machine_epsilon(backend, backend.array([1.0]))
 
 
-def _calibration_inputs() -> tuple[list[float], list[float], list[float], float]:
+def _calibration_inputs() -> tuple[list[float], list[float], list[float]]:
     cooling_samples = [-0.5, -0.2, -0.1]
     reference_samples = [0.05, 0.1, -0.02]
     baseline_entropies = [0.1, 0.2, 0.3]
-    target_capture = (len(cooling_samples) - 1) / len(cooling_samples)
-    return cooling_samples, reference_samples, baseline_entropies, target_capture
+    return cooling_samples, reference_samples, baseline_entropies
 
 
-def _test_config() -> DifferentialEntropyConfig:
-    cooling, reference, baseline, target_capture = _calibration_inputs()
-    return DifferentialEntropyConfig.from_calibration_results(
+def _test_thresholds() -> CalibrationThresholds:
+    cooling, reference, baseline = _calibration_inputs()
+    return CalibrationThresholds.from_calibration_samples(
         cooling_delta_h_samples=cooling,
         reference_delta_h_samples=reference,
         baseline_entropies=baseline,
-        target_capture=target_capture,
     )
 
 

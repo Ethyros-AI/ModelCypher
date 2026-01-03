@@ -19,7 +19,6 @@
 
 Contains tools for 3D spatial metrology:
 - Spatial anchors listing
-- Euclidean consistency analysis
 - Gravity gradient analysis
 - Volumetric density probing
 - Full 3D world model analysis
@@ -87,39 +86,6 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
                     "Y": "Vertical (Down=-1, Up=+1) - Gravity axis",
                     "Z": "Depth (Far=-1, Near=+1) - Perspective axis",
                 },
-            }
-
-    if "mc_geometry_spatial_euclidean" in tool_set:
-
-        @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_geometry_spatial_euclidean(
-            anchorActivations: dict[str, list[float]],
-        ) -> dict:
-            """Probe 3D Euclidean consistency for spatial anchors.
-
-            Checks if the Pythagorean theorem holds in latent space:
-            dist(A,C)² ≈ dist(A,B)² + dist(B,C)² for right-angle triplets.
-
-            This is a 3D probe only; high-dimensional geometry remains geodesic.
-
-            Args:
-                anchorActivations: Dict mapping anchor_name to activation vector
-
-            Returns:
-                Euclidean consistency analysis with raw measurements
-            """
-            from modelcypher.backends.mlx_backend import MLXBackend
-            from modelcypher.core.domain.geometry.spatial_3d import EuclideanConsistencyAnalyzer
-
-            backend = MLXBackend()
-            activations = {name: backend.array(vec) for name, vec in anchorActivations.items()}
-
-            analyzer = EuclideanConsistencyAnalyzer(backend=backend)
-            result = analyzer.analyze(activations)
-
-            return {
-                "_schema": "mc.geometry.spatial.euclidean.v1",
-                **result.to_dict(),
             }
 
     if "mc_geometry_spatial_gravity" in tool_set:
@@ -197,7 +163,7 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             """Run full 3D world model analysis.
 
             Comprehensive analysis combining:
-            - Euclidean consistency (Pythagorean theorem test)
+            - Axis orthogonality (X ⟂ Y ⟂ Z in latent space)
             - Gravity gradient (mass -> down correlation)
             - Volumetric density (inverse-square law)
 

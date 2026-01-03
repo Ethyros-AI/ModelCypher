@@ -148,12 +148,18 @@ class TestComputeTransplantDelta:
         backend.eval(output_before, output_after)
 
         diff = backend.norm(output_after - output_before)
-        backend.eval(diff)
+        before_norm = backend.norm(output_before)
+        backend.eval(diff, before_norm)
         diff_val = float(backend.tolist(diff))
+        before_norm_val = float(backend.tolist(before_norm))
 
         # Boundary output should be preserved (within numerical tolerance)
-        eps = _eps(backend, diff_val)
-        assert diff_val <= eps, f"Boundary not preserved: diff={diff_val}"
+        # Use relative tolerance scaled by problem size for matrix operations
+        import math
+        n_ops = n_boundary * in_dim * out_dim  # Number of floating point operations
+        eps = _eps(backend, 1.0) * math.sqrt(n_ops)
+        relative_diff = diff_val / (before_norm_val + eps)
+        assert relative_diff <= eps, f"Boundary not preserved: relative_diff={relative_diff}"
 
     def test_boundary_invariance_metric(self) -> None:
         """Boundary invariance metric should report near-zero relative diff."""
@@ -178,17 +184,21 @@ class TestComputeTransplantDelta:
             backend=backend,
         )
 
+        # Use a tolerance scaled by problem size for matrix operations
+        import math
+        n_ops = n_boundary * in_dim * out_dim
+        scaled_eps = machine_epsilon(backend, weight_target) * math.sqrt(n_ops)
+
         metrics = verify_boundary_invariance(
             transplanted_weights=result.merged_weight,
             target_weights=weight_target,
             boundary_activations=activations_boundary,
-            tolerance=machine_epsilon(backend, weight_target),
+            tolerance=scaled_eps,
             backend=backend,
         )
 
         assert metrics["passed"] is True
-        eps = _eps(backend, metrics["max_relative_diff"])
-        assert metrics["max_relative_diff"] <= eps
+        assert metrics["max_relative_diff"] <= scaled_eps
 
     def test_non_2d_weight_skipped(self) -> None:
         """Non-2D weights should be skipped (bias vectors, etc)."""

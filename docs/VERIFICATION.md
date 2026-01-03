@@ -15,13 +15,11 @@ When merging two 7B models (e.g., Llama-3 and Mistral-7B), a naive weighted aver
 
 We measured spatial grounding metrics across model sizes using the `mc geometry spatial` suite.
 
-| Model | World Model Score | Pythagorean Error |
-| :--- | :---: | :---: |
-| **Qwen2-0.5B-4bit** | 0.45 | 0.79 |
-| **Qwen2.5-3B-bf16** | 0.50 | 0.73 |
-| **Mistral-7B-4bit** | 0.48 | 0.79 |
-
-Observation: The 0.5B model shows high axis orthogonality (93.4%) alongside lower 3D Euclidean consistency in this sample.
+| Model | World Model Score |
+| :--- | :---: |
+| **Qwen2-0.5B-4bit** | 0.45 |
+| **Qwen2.5-3B-bf16** | 0.50 |
+| **Mistral-7B-4bit** | 0.48 |
 
 ## 3. Safety: Pre-Emission Detection ($\Delta H$)
 

@@ -376,9 +376,6 @@ class MergeValidationService:
         Identifies which layers diverged using refinement density scores.
         """
         from modelcypher.core.domain.geometry.dare_sparsity import (
-            Configuration as DAREConfig,
-        )
-        from modelcypher.core.domain.geometry.dare_sparsity import (
             DARESparsityAnalyzer,
         )
         from modelcypher.core.domain.geometry.dora_decomposition import (
@@ -421,9 +418,7 @@ class MergeValidationService:
                 delta_weights[name] = flat
 
             # DARE sparsity analysis
-            sparsity_analysis = DARESparsityAnalyzer.analyze(
-                delta_weights, DAREConfig(compute_per_layer_metrics=True)
-            )
+            sparsity_analysis = DARESparsityAnalyzer.analyze(delta_weights)
 
             # DoRA decomposition
             dora = DoRADecomposition()

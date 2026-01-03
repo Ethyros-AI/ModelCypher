@@ -27,7 +27,6 @@ from modelcypher.core.domain.dynamics.prompt_perturbation_suite import (
     LinguisticModifier,
     ModifierMechanism,
     ModifierTemplate,
-    PerturbationConfig,
     PerturbedPrompt,
     PromptPerturbationSuite,
     TextTransform,
@@ -150,28 +149,6 @@ class TestPerturbedPrompt:
 
 
 # =============================================================================
-# PerturbationConfig Tests
-# =============================================================================
-
-
-class TestPerturbationConfig:
-    """Tests for PerturbationConfig."""
-
-    def test_default_config(self) -> None:
-        """Test default configuration."""
-        config = PerturbationConfig.default()
-        assert config.always_include_baseline is True
-        assert len(config.default_modifiers) == len(LinguisticModifier)
-
-    def test_minimal_config(self) -> None:
-        """Test minimal configuration."""
-        config = PerturbationConfig.minimal()
-        assert len(config.default_modifiers) == 4
-        assert LinguisticModifier.baseline in config.default_modifiers
-        assert LinguisticModifier.caps in config.default_modifiers
-
-
-# =============================================================================
 # PromptPerturbationSuite Tests
 # =============================================================================
 
@@ -198,18 +175,6 @@ class TestPromptPerturbationSuite:
         assert len(variants) == 3  # baseline + 2 specified
         variant_modifiers = [v.modifier for v in variants]
         assert LinguisticModifier.baseline in variant_modifiers
-
-    def test_generate_variants_no_baseline(self) -> None:
-        """Test generating variants without always including baseline."""
-        config = PerturbationConfig(
-            default_modifiers=[LinguisticModifier.caps],
-            always_include_baseline=False,
-        )
-        suite = PromptPerturbationSuite(config=config)
-        variants = suite.generate_variants("Test")
-
-        assert len(variants) == 1
-        assert variants[0].modifier == LinguisticModifier.caps
 
     def test_generate_single_variant(self) -> None:
         """Test generating a single variant."""
@@ -240,28 +205,19 @@ class TestPromptPerturbationSuite:
         # All modifiers should be present
         assert len(sequence) == len(LinguisticModifier)
 
-    def test_research_suite(self) -> None:
-        """Test research-grade suite creation."""
-        suite = PromptPerturbationSuite.research()
-        variants = suite.generate_variants("Test prompt")
+    def test_research_templates_different_from_defaults(self) -> None:
+        """Test that research templates are calibrated for intensity variation."""
+        default = PromptPerturbationSuite.default_templates()
+        research = PromptPerturbationSuite.research_templates()
 
-        # Research templates should be different from defaults
-        polite_variant = next(v for v in variants if v.modifier == LinguisticModifier.polite)
-        assert "greatly appreciate" in polite_variant.full_prompt
+        # Research polite template should have different content
+        default_polite = default[LinguisticModifier.polite]
+        research_polite = research[LinguisticModifier.polite]
 
-    def test_custom_templates(self) -> None:
-        """Test using custom templates."""
-        custom = {
-            LinguisticModifier.baseline: ModifierTemplate(prefix="[CUSTOM] "),
-        }
-        config = PerturbationConfig(
-            default_modifiers=[LinguisticModifier.baseline],
-            custom_templates=custom,
-        )
-        suite = PromptPerturbationSuite(config=config)
-
-        variants = suite.generate_variants("Test")
-        assert variants[0].full_prompt == "[CUSTOM] Test"
+        # Both should have prefixes but with different wording
+        assert default_polite.prefix is not None
+        assert research_polite.prefix is not None
+        assert default_polite.prefix != research_polite.prefix
 
 
 # =============================================================================
@@ -274,27 +230,25 @@ class TestBatchGeneration:
 
     def test_generate_batch_variants(self) -> None:
         """Test batch variant generation."""
-        suite = PromptPerturbationSuite(config=PerturbationConfig.minimal())
+        suite = PromptPerturbationSuite()
         prompts = ["Prompt A", "Prompt B", "Prompt C"]
+        modifiers = [LinguisticModifier.baseline, LinguisticModifier.caps]
 
-        batch = suite.generate_batch_variants(prompts)
+        batch = suite.generate_batch_variants(prompts, modifiers=modifiers)
 
         assert len(batch) == 3
         assert "Prompt A" in batch
         assert "Prompt B" in batch
-        assert len(batch["Prompt A"]) == 4  # minimal has 4 modifiers
+        # Baseline + caps = 2 modifiers
+        assert len(batch["Prompt A"]) == 2
 
     def test_generate_cross_product(self) -> None:
         """Test cross-product generation."""
-        suite = PromptPerturbationSuite(
-            config=PerturbationConfig(
-                default_modifiers=[LinguisticModifier.baseline, LinguisticModifier.caps],
-                always_include_baseline=False,
-            )
-        )
+        suite = PromptPerturbationSuite()
         prompts = ["A", "B"]
+        modifiers = [LinguisticModifier.baseline, LinguisticModifier.caps]
 
-        cross = suite.generate_cross_product(prompts)
+        cross = suite.generate_cross_product(prompts, modifiers=modifiers)
 
         # 2 prompts × 2 modifiers = 4 variants
         assert len(cross) == 4
@@ -310,9 +264,10 @@ class TestAnalysisHelpers:
 
     def test_estimate_token_overhead(self) -> None:
         """Test token overhead estimation."""
-        suite = PromptPerturbationSuite(config=PerturbationConfig.minimal())
+        suite = PromptPerturbationSuite()
+        modifiers = [LinguisticModifier.baseline, LinguisticModifier.combined]
 
-        avg, max_overhead = suite.estimate_token_overhead(100)
+        avg, max_overhead = suite.estimate_token_overhead(100, modifiers=modifiers)
 
         assert avg >= 0
         assert max_overhead >= avg

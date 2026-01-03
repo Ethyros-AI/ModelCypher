@@ -218,28 +218,41 @@ class EntropyWindow:
 # =============================================================================
 
 
-@dataclass
-class EntropyTrackerConfig:
-    """Configuration for EntropyTracker."""
-
-    top_k: int | None
-    window_size: int
-    emit_interval: int
-    source: str
-
-
 class EntropyTracker:
-    """Coordinates entropy tracking for cognitive state analysis."""
+    """Coordinates entropy tracking for cognitive state analysis.
+
+    All parameters are derived from the calibrated baseline:
+    - window_size: sqrt(baseline sample count), minimum 8
+    - emit_interval: window_size // 2
+    - top_k: None (use all logits for full entropy)
+    """
 
     def __init__(
         self,
         baseline: CalibratedBaseline,
-        config: EntropyTrackerConfig,
+        source: str = "entropy_tracker",
     ):
-        """Create entropy tracker."""
+        """Create entropy tracker.
+
+        Args:
+            baseline: Calibrated baseline for z-score computation.
+            source: Source identifier for sample metadata.
+        """
+        import math
+
         self._baseline = baseline
-        self.config = config
-        self.calculator = LogitEntropyCalculator(top_k=self.config.top_k)
+        self._source = source
+
+        # Derive window_size from baseline sample count
+        # sqrt(n) scaling, minimum 8 for statistical stability
+        baseline_n = baseline.sample_count if hasattr(baseline, "sample_count") else 64
+        self._window_size = max(8, int(math.sqrt(baseline_n)))
+
+        # Derive emit_interval from window_size (emit at half-window intervals)
+        self._emit_interval = max(1, self._window_size // 2)
+
+        # Use all logits for full entropy (no arbitrary top_k filtering)
+        self.calculator = LogitEntropyCalculator(top_k=None)
 
         # Session state
         self._window: EntropyWindow | None = None
@@ -270,7 +283,7 @@ class EntropyTracker:
         self._correlation_id = correlation_id or str(uuid.uuid4())
         self._window = EntropyWindow(
             self._baseline,
-            window_size=self.config.window_size,
+            window_size=self._window_size,
         )
         self._token_count = 0
         self._session_start = datetime.now()
@@ -292,7 +305,7 @@ class EntropyTracker:
             return None
 
         sample = self._window.to_entropy_sample(
-            source=self.config.source,
+            source=self._source,
             correlation_id=self._correlation_id,
         )
 
@@ -342,7 +355,7 @@ class EntropyTracker:
         self._token_count += 1
 
         # Emit periodic samples
-        if self._token_count % self.config.emit_interval == 0:
+        if self._token_count % self._emit_interval == 0:
             sample = EntropySample(
                 window_id=status.window_id,
                 token_start=status.token_start,
@@ -351,7 +364,7 @@ class EntropyTracker:
                 top_k_variance=variance,
                 z_score=z_score,
                 latency_ms=latency_ms,
-                source=self.config.source,
+                source=self._source,
                 correlation_id=self._correlation_id,
             )
             if self.on_entropy_sample:
@@ -359,7 +372,7 @@ class EntropyTracker:
 
         # Track history
         self._sample_history.append((entropy, variance))
-        if len(self._sample_history) > self.config.window_size:
+        if len(self._sample_history) > self._window_size:
             self._sample_history.pop(0)
 
         self._trajectory_buffer.append((entropy, variance, z_score, token_index))
@@ -376,7 +389,7 @@ class EntropyTracker:
                 token_index=token_index,
             )
             self._transition_history.append(transition)
-            if len(self._transition_history) > self.config.window_size:
+            if len(self._transition_history) > self._window_size:
                 self._transition_history.pop(0)
 
             if self.on_entropy_changed:

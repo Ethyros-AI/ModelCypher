@@ -315,14 +315,19 @@ class DomainGeometryWaypointService:
         report = analyzer.full_analysis(activations)
 
         # Extract mean orthogonality from axis_orthogonality dict
-        ortho_dict = report.euclidean_consistency.axis_orthogonality
+        ortho_dict = report.axis_orthogonality
         mean_ortho = sum(ortho_dict.values()) / len(ortho_dict) if ortho_dict else 0.0
+        gravity_consistency = (
+            abs(report.gravity_gradient.mass_correlation)
+            if report.gravity_gradient.gravity_axis_detected
+            else 0.0
+        )
 
         return DomainGeometryScore(
             domain=AtlasDomain.SPATIAL,
             manifold_score=report.world_model_score,
             axis_orthogonality=mean_ortho,
-            gradient_consistency=report.euclidean_consistency.consistency_score,
+            gradient_consistency=gravity_consistency,
             anchors_probed=len(activations),
             layer_analyzed=layer,
         )

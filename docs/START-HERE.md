@@ -35,15 +35,15 @@ World Model Score: 0.40
 
 ----------------------------------------
 Key Metrics:
-  3D Euclidean Consistency: 0.47
-  Gravity Correlation: 0.61
   Axis Orthogonality: 94.58%
+  Gravity Correlation: 0.61
+  Inverse-Square Compliance: 0.52
 ```
 
 **What you just measured:**
 - This output reports spatial geometry measurements for the probed model.
 - We call this the "Blind Physicist" — it knows the math of 3D space without seeing it
-- Axis Orthogonality of 94.58% means concepts are cleanly separated (compare to baseline)
+- Axis Orthogonality of 94.58% means axes separate cleanly (compare to baseline)
 
 If you got different numbers, that's real data about your model. If the command failed, [file an issue](https://github.com/Ethyros-AI/ModelCypher/issues).
 

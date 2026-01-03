@@ -222,7 +222,7 @@ Variance increases with drop rate—hence the limit on practical $p$.
 
 | Class/Function | Line | Description |
 |----------------|------|-------------|
-| `Configuration` | 31 | Config with sparsity threshold, droppable percentile |
+| _(none)_ | — | Thresholds derived from data (machine epsilon + magnitude gaps) |
 | `LayerSparsityMetrics` | 47 | Per-layer sparsity result |
 | `SparsityAnalysis` | 71 | Full DARE analysis result |
 | `DARESparsityAnalyzer` | 87 | Main analyzer class with `analyze()` method |

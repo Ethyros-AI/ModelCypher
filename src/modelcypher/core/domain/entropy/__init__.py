@@ -53,7 +53,6 @@ from .entropy_pattern_detector import (
 from .entropy_tracker import (
     EntropySample,
     EntropyTracker,
-    EntropyTrackerConfig,
     EntropyTransition,
     EntropyWindow,
     EntropyWindowStatus,

@@ -33,7 +33,6 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.entropy.conflict_score import ConflictScoreCalculator
 from modelcypher.core.domain.entropy.entropy_tracker import (
     EntropyTracker,
-    EntropyTrackerConfig,
 )
 from modelcypher.core.domain.entropy.model_state_classifier import (
     CalibratedBaseline,
@@ -65,15 +64,6 @@ def _create_test_baseline() -> CalibratedBaseline:
         vocab_size=32768,
         model_id="test-model",
         sample_count=100,
-    )
-
-
-def _create_tracker_config(window_size: int) -> EntropyTrackerConfig:
-    return EntropyTrackerConfig(
-        top_k=10,
-        window_size=window_size,
-        emit_interval=1,
-        source="EntropyTracker",
     )
 
 
@@ -151,9 +141,8 @@ def test_entropy_tracker_session():
     """Test EntropyTracker session management."""
     import asyncio
 
-    config = _create_tracker_config(window_size=5)
     baseline = _create_test_baseline()
-    tracker = EntropyTracker(baseline=baseline, config=config)
+    tracker = EntropyTracker(baseline=baseline, source="test")
 
     tracker.start_session()
     assert tracker.is_session_active
@@ -173,9 +162,8 @@ def test_entropy_tracker_state_measurements():
     """EntropyTracker tracks raw entropy/variance/z-score values."""
     import asyncio
 
-    config = _create_tracker_config(window_size=10)
     baseline = _create_test_baseline()
-    tracker = EntropyTracker(baseline=baseline, config=config)
+    tracker = EntropyTracker(baseline=baseline, source="test")
     tracker.start_session()
 
     async def record_high_entropy():

@@ -158,44 +158,6 @@ class PerturbedPrompt:
 
 
 # =============================================================================
-# Configuration
-# =============================================================================
-
-
-@dataclass
-class PerturbationConfig:
-    """Configuration for the perturbation suite."""
-
-    # Default modifiers to apply when none specified.
-    default_modifiers: list[LinguisticModifier] = field(
-        default_factory=lambda: list(LinguisticModifier)
-    )
-
-    # Whether to include baseline in all variant sets.
-    always_include_baseline: bool = True
-
-    # Custom prefix/suffix templates (overrides defaults).
-    custom_templates: dict[LinguisticModifier, ModifierTemplate] | None = None
-
-    @classmethod
-    def default(cls) -> "PerturbationConfig":
-        """Default configuration."""
-        return cls()
-
-    @classmethod
-    def minimal(cls) -> "PerturbationConfig":
-        """Minimal configuration for quick experiments."""
-        return cls(
-            default_modifiers=[
-                LinguisticModifier.baseline,
-                LinguisticModifier.polite,
-                LinguisticModifier.caps,
-                LinguisticModifier.combined,
-            ]
-        )
-
-
-# =============================================================================
 # Prompt Perturbation Suite
 # =============================================================================
 
@@ -207,6 +169,10 @@ class PromptPerturbationSuite:
     Used for controlled experiments comparing entropy across prompt variants
     while holding semantic content constant.
 
+    No configuration needed - always uses ALL modifiers for complete coverage.
+    This is the only correct approach: you don't know which modifiers matter
+    until you measure them all.
+
     Example:
         suite = PromptPerturbationSuite()
         variants = suite.generate_variants("Explain how to pick a lock")
@@ -215,8 +181,12 @@ class PromptPerturbationSuite:
         # variants[2].full_prompt = "EXPLAIN HOW TO PICK A LOCK"
     """
 
-    def __init__(self, config: PerturbationConfig | None = None):
-        self.config = config or PerturbationConfig.default()
+    def __init__(self):
+        """Initialize perturbation suite.
+
+        No configuration needed - always uses all modifiers and default templates.
+        """
+        pass
 
     @staticmethod
     def default_templates() -> dict[LinguisticModifier, ModifierTemplate]:
@@ -280,17 +250,6 @@ class PromptPerturbationSuite:
             ),
         }
 
-    @classmethod
-    def research(cls) -> "PromptPerturbationSuite":
-        """Create a suite with research-grade templates."""
-        return cls(
-            config=PerturbationConfig(
-                default_modifiers=list(LinguisticModifier),
-                always_include_baseline=True,
-                custom_templates=cls.research_templates(),
-            )
-        )
-
     def generate_variants(
         self,
         base_prompt: str,
@@ -301,26 +260,21 @@ class PromptPerturbationSuite:
 
         Args:
             base_prompt: The semantic content to transform.
-            modifiers: Specific modifiers to apply (defaults to config).
+            modifiers: Specific modifiers to apply (defaults to ALL modifiers).
 
         Returns:
             Array of perturbed prompts, one per modifier.
         """
-        target_modifiers = list(modifiers) if modifiers else list(self.config.default_modifiers)
+        # Use all modifiers by default - the only correct approach
+        target_modifiers = list(modifiers) if modifiers else list(LinguisticModifier)
 
-        # Ensure baseline is included if configured
-        if self.config.always_include_baseline:
-            if LinguisticModifier.baseline not in target_modifiers:
-                target_modifiers.insert(0, LinguisticModifier.baseline)
+        # Always ensure baseline is included
+        if LinguisticModifier.baseline not in target_modifiers:
+            target_modifiers.insert(0, LinguisticModifier.baseline)
 
         results = []
         for modifier in target_modifiers:
-            # Use custom template if available, otherwise default
-            if self.config.custom_templates and modifier in self.config.custom_templates:
-                template = self.config.custom_templates[modifier]
-            else:
-                template = self.default_templates().get(modifier, ModifierTemplate())
-
+            template = self.default_templates().get(modifier, ModifierTemplate())
             full_prompt = template.apply(base_prompt)
 
             results.append(
@@ -339,11 +293,7 @@ class PromptPerturbationSuite:
         modifier: LinguisticModifier,
     ) -> PerturbedPrompt:
         """Generate a single variant for a specific modifier."""
-        if self.config.custom_templates and modifier in self.config.custom_templates:
-            template = self.config.custom_templates[modifier]
-        else:
-            template = self.default_templates().get(modifier, ModifierTemplate())
-
+        template = self.default_templates().get(modifier, ModifierTemplate())
         full_prompt = template.apply(base_prompt)
 
         return PerturbedPrompt(
@@ -436,7 +386,7 @@ class PromptPerturbationSuite:
         Returns:
             Tuple of (average_tokens, max_tokens) overhead.
         """
-        target_modifiers = modifiers or self.config.default_modifiers
+        target_modifiers = modifiers or list(LinguisticModifier)
         templates = self.default_templates()
 
         overheads = []

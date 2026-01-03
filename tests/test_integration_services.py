@@ -103,7 +103,6 @@ class TestEntropyIntegration:
         """EntropyTracker can be imported and created with required baseline."""
         from modelcypher.core.domain.entropy.entropy_tracker import (
             EntropyTracker,
-            EntropyTrackerConfig,
         )
         from modelcypher.core.domain.entropy.model_state_classifier import (
             CalibratedBaseline,
@@ -120,13 +119,8 @@ class TestEntropyIntegration:
             sample_count=100,
             model_id="test-model",
         )
-        tracker_config = EntropyTrackerConfig(
-            top_k=10,
-            window_size=20,
-            emit_interval=1,
-            source="EntropyTracker",
-        )
-        tracker = EntropyTracker(baseline=baseline, config=tracker_config)
+        # No config needed - all parameters derived from baseline
+        tracker = EntropyTracker(baseline=baseline, source="test")
         assert tracker is not None
 
     def test_logit_entropy_calculator_import(self):

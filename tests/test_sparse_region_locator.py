@@ -26,18 +26,29 @@ from modelcypher.core.domain.geometry.sparse_region_locator import (
 def test_sparse_region_locator_analysis() -> None:
     # All parameters derived from data - no config needed
     locator = SparseRegionLocator()
+    # Create data with distinct sparsity values to enable threshold derivation:
+    # Layer 0: domain=0.2, baseline=1.0 → sparsity = 1 - 0.2/1.0 = 0.8 (sparse)
+    # Layer 1: domain=0.8, baseline=1.0 → sparsity = 1 - 0.8/1.0 = 0.2 (dense)
+    # Layer 2: domain=0.1, baseline=1.0 → sparsity = 1 - 0.1/1.0 = 0.9 (very sparse)
     domain_stats = [
         LayerActivationStats(
             layer_index=0,
-            mean_activation=0.5,
-            max_activation=0.5,
+            mean_activation=0.2,  # sparse relative to baseline
+            max_activation=0.2,
             activation_variance=0.0,
             prompt_count=2,
         ),
         LayerActivationStats(
             layer_index=1,
-            mean_activation=0.2,
-            max_activation=0.2,
+            mean_activation=0.8,  # dense relative to baseline
+            max_activation=0.8,
+            activation_variance=0.0,
+            prompt_count=2,
+        ),
+        LayerActivationStats(
+            layer_index=2,
+            mean_activation=0.1,  # very sparse relative to baseline
+            max_activation=0.1,
             activation_variance=0.0,
             prompt_count=2,
         ),
@@ -52,8 +63,15 @@ def test_sparse_region_locator_analysis() -> None:
         ),
         LayerActivationStats(
             layer_index=1,
-            mean_activation=0.4,
-            max_activation=0.4,
+            mean_activation=1.0,
+            max_activation=1.0,
+            activation_variance=0.0,
+            prompt_count=2,
+        ),
+        LayerActivationStats(
+            layer_index=2,
+            mean_activation=1.0,
+            max_activation=1.0,
             activation_variance=0.0,
             prompt_count=2,
         ),
@@ -62,15 +80,19 @@ def test_sparse_region_locator_analysis() -> None:
     result = locator.analyze(
         domain_stats=domain_stats, baseline_stats=baseline_stats, domain="test"
     )
-    # Both layers have sparsity > 0 (layer 0: 0.5, layer 1: 0.5)
-    # Threshold is derived from data (maximum gap)
+    # Sparsity values: [0.8, 0.2, 0.9] - gap between 0.2 and 0.8 is 0.6
+    # Threshold should be derived from the maximum gap
     assert len(result.sparse_layers) >= 0  # Depends on data-derived threshold
     assert result.skip_layers == []
     assert result.sparsity_threshold > 0  # Derived from data
 
+    # Test analyze_from_activations with data that has separable sparsity
+    # Layer 0: domain=0.2, baseline=1.0 → sparsity = 0.8
+    # Layer 1: domain=0.9, baseline=1.0 → sparsity = 0.1
+    # Layer 2: domain=0.3, baseline=1.0 → sparsity = 0.7
     from_activations = locator.analyze_from_activations(
-        domain_activations=[{0: 0.5, 1: 0.2}],
-        baseline_activations=[{0: 1.0, 1: 0.4}],
+        domain_activations=[{0: 0.2, 1: 0.9, 2: 0.3}],
+        baseline_activations=[{0: 1.0, 1: 1.0, 2: 1.0}],
         domain="test",
     )
     assert len(from_activations.sparse_layers) >= 0  # Depends on data

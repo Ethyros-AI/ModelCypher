@@ -78,9 +78,6 @@ def geometry_refinement_analyze(
             ConceptResponseMatrix,
         )
         from modelcypher.core.domain.geometry.dare_sparsity import (
-            Configuration as DAREConfig,
-        )
-        from modelcypher.core.domain.geometry.dare_sparsity import (
             DARESparsityAnalyzer,
         )
         from modelcypher.core.domain.geometry.dora_decomposition import (
@@ -107,9 +104,7 @@ def geometry_refinement_analyze(
             mx.eval(delta)
             delta_weights[name] = delta.flatten().tolist()
 
-        sparsity_analysis = DARESparsityAnalyzer.analyze(
-            delta_weights, DAREConfig(compute_per_layer_metrics=True)
-        )
+        sparsity_analysis = DARESparsityAnalyzer.analyze(delta_weights)
 
         # Compute DoRA decomposition
         base_mx = {}

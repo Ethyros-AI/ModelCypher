@@ -36,7 +36,6 @@ from modelcypher.core.domain.entropy import (
     CalibratedBaseline,
     EntropySample,
     EntropyTracker,
-    EntropyTrackerConfig,
     EntropyTransition,
     ExtractorConfig,
     HiddenStateExtractor,
@@ -62,15 +61,6 @@ def _create_test_baseline() -> CalibratedBaseline:
         vocab_size=32768,
         model_id="test-model",
         sample_count=100,
-    )
-
-
-def _create_tracker_config() -> EntropyTrackerConfig:
-    return EntropyTrackerConfig(
-        top_k=10,
-        window_size=20,
-        emit_interval=1,
-        source="EntropyTracker",
     )
 
 
@@ -105,7 +95,7 @@ class TestEntropyTracker:
 
     def test_session_lifecycle(self):
         baseline = _create_test_baseline()
-        tracker = EntropyTracker(baseline=baseline, config=_create_tracker_config())
+        tracker = EntropyTracker(baseline=baseline, source="test")
         assert not tracker.is_session_active
 
         tracker.start_session()

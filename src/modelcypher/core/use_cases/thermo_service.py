@@ -31,9 +31,6 @@ from modelcypher.core.domain.geometry.thermo_path_integration import (
     CombinedMeasurement,
     ThermoPathIntegration,
 )
-from modelcypher.core.domain.geometry.thermo_path_integration import (
-    Configuration as ThermoPathConfig,
-)
 from modelcypher.ports.embedding import EmbeddingProvider
 
 if TYPE_CHECKING:
@@ -325,48 +322,32 @@ class ThermoService:
         self,
         prompt: str,
         model_path: str,
-        gate_threshold: float | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
-        capture_trajectory: bool | None = None,
     ) -> ThermoPathIntegrationResult:
-        """Integrate entropy trajectories with gate detections for a response."""
-        base_config = ThermoPathConfig()
-        config = ThermoPathConfig(
-            gate_detection_threshold=(
-                gate_threshold
-                if gate_threshold is not None
-                else base_config.gate_detection_threshold
-            ),
-            capture_trajectory=(
-                capture_trajectory
-                if capture_trajectory is not None
-                else base_config.capture_trajectory
-            ),
-            max_tokens=max_tokens if max_tokens is not None else base_config.max_tokens,
-            temperature=temperature if temperature is not None else base_config.temperature,
-        )
+        """Integrate entropy trajectories with gate detections for a response.
 
+        All analysis parameters are derived from the data. Only inference
+        parameters (max_tokens, temperature) can be optionally overridden.
+        """
         if self._embedder is None:
             raise ValueError("Embedding provider required for thermo-path integration")
 
-        from modelcypher.core.domain.geometry.gate_detector import (
-            Configuration as GateConfig,
-        )
-        from modelcypher.core.domain.geometry.gate_detector import (
-            GateDetector,
-        )
+        from modelcypher.core.domain.geometry.gate_detector import GateDetector
 
         calorimeter = self._get_calorimeter(model_path)
-        measurement = calorimeter.measure_entropy(
-            prompt,
-            temperature=config.temperature,
-            max_tokens=config.max_tokens,
-        )
-        detector = GateDetector(
-            configuration=GateConfig(detection_threshold=config.gate_detection_threshold),
-            embedder=self._embedder,
-        )
+
+        # Use calorimeter defaults if not specified
+        entropy_kwargs: dict = {}
+        if temperature is not None:
+            entropy_kwargs["temperature"] = temperature
+        if max_tokens is not None:
+            entropy_kwargs["max_tokens"] = max_tokens
+
+        measurement = calorimeter.measure_entropy(prompt, **entropy_kwargs)
+
+        # GateDetector derives all thresholds from data
+        detector = GateDetector(embedder=self._embedder)
         model_id = Path(model_path).name if Path(model_path).exists() else model_path
         detection = detector.detect(
             text=measurement.generated_text,
@@ -375,7 +356,8 @@ class ThermoService:
             entropy_trace=measurement.entropy_trajectory,
         )
 
-        integration = ThermoPathIntegration(configuration=config)
+        # ThermoPathIntegration derives all analysis parameters from data
+        integration = ThermoPathIntegration()
         combined = integration.analyze_response(
             response_text=measurement.generated_text,
             entropy_trajectory=measurement.entropy_trajectory,

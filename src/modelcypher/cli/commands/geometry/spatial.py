@@ -24,7 +24,6 @@ encodes a geometrically consistent 3D world model.
 Commands:
     mc geometry spatial analyze <model_path>
     mc geometry spatial gravity <model_path>
-    mc geometry spatial euclidean <activations_file>  # 3D Euclidean probe
     mc geometry spatial anchors
 """
 
@@ -53,13 +52,11 @@ def _context(ctx: typer.Context) -> CLIContext:
 
 def _extract_activations_from_model(
     model_path: str,
-    layer: int = -1,
 ) -> dict:
     """Extract spatial anchor activations from a model.
 
     Args:
         model_path: Path to the model directory.
-        layer: Layer to analyze (default is last layer).
 
     Returns:
         Dictionary mapping anchor names to activation arrays.
@@ -79,7 +76,7 @@ def _extract_activations_from_model(
 
     embed_tokens, layers, norm = resolved
     num_layers = len(layers)
-    target_layer = layer if layer >= 0 else num_layers - 1
+    target_layer = num_layers - 1
     typer.echo(f"Architecture resolved: {num_layers} layers, probing layer {target_layer}")
 
     backend = MLXBackend()
@@ -190,65 +187,6 @@ def spatial_anchors(
     write_output(payload, context.output_format, context.pretty)
 
 
-@app.command("euclidean")
-def spatial_euclidean(
-    ctx: typer.Context,
-    activations_file: str = typer.Argument(
-        ..., help="JSON file with anchor_name -> activation_vector mapping"
-    ),
-) -> None:
-    """
-    Test 3D Euclidean consistency of spatial anchor representations.
-
-    Checks if the Pythagorean theorem holds in latent space:
-    dist(A,C)² ≈ dist(A,B)² + dist(B,C)² for right-angle triplets.
-
-    This is a 3D probe only; high-dimensional geometry remains geodesic.
-
-    Input: JSON file with {anchor_name: [activation_vector]} mapping.
-    """
-    context = _context(ctx)
-
-    from modelcypher.backends.mlx_backend import MLXBackend
-    from modelcypher.core.domain.geometry.spatial_3d import (
-        EuclideanConsistencyAnalyzer,
-    )
-
-    # Load activations
-    activations_data = json.loads(Path(activations_file).read_text())
-
-    backend = MLXBackend()
-    anchor_activations = {name: backend.array(vec) for name, vec in activations_data.items()}
-
-    analyzer = EuclideanConsistencyAnalyzer(backend=backend)
-    result = analyzer.analyze(anchor_activations)
-
-    payload = {
-        "_schema": "mc.geometry.spatial.euclidean.v1",
-        **result.to_dict(),
-        # Note: nextActions removed per No Vibes rule - return raw measurements only
-    }
-
-    if context.output_format == "text":
-        lines = [
-            "3D EUCLIDEAN CONSISTENCY PROBE",
-            "",
-            f"Consistency Score: {result.consistency_score:.2f}",
-            f"Pythagorean Error: {result.pythagorean_error:.4f}",
-            f"Triangle Inequality Violations: {result.triangle_inequality_violations}",
-            f"Dimensionality Estimate: {result.dimensionality_estimate:.1f}",
-            "",
-            "Axis Orthogonality:",
-        ]
-        for axis, score in result.axis_orthogonality.items():
-            lines.append(f"  {axis}: {score:.2%}")
-
-        write_output("\n".join(lines), context.output_format, context.pretty)
-        return
-
-    write_output(payload, context.output_format, context.pretty)
-
-
 @app.command("gravity")
 def spatial_gravity(
     ctx: typer.Context,
@@ -281,11 +219,10 @@ def spatial_gravity(
     )
 
     backend = MLXBackend()
-    layer = -1
 
     # Get activations from model or file
     if model:
-        anchor_activations = _extract_activations_from_model(model, layer=layer)
+        anchor_activations = _extract_activations_from_model(model)
     elif activations_file:
         activations_data = json.loads(Path(activations_file).read_text())
         anchor_activations = {name: backend.array(vec) for name, vec in activations_data.items()}
@@ -403,7 +340,7 @@ def spatial_analyze(
     Run full 3D world model analysis.
 
     Comprehensive analysis combining:
-    - 3D Euclidean consistency (Pythagorean constraint on right-angle triplets)
+    - Axis orthogonality (X ⟂ Y ⟂ Z in latent space)
     - Gravity gradient (mass -> down correlation)
     - Volumetric density (inverse-square law)
 
@@ -423,11 +360,10 @@ def spatial_analyze(
     )
 
     backend = MLXBackend()
-    layer = -1
 
     # Get activations from model or file
     if model:
-        anchor_activations = _extract_activations_from_model(model, layer=layer)
+        anchor_activations = _extract_activations_from_model(model)
     elif activations_file:
         activations_data = json.loads(Path(activations_file).read_text())
         anchor_activations = {name: backend.array(vec) for name, vec in activations_data.items()}
@@ -455,14 +391,6 @@ def spatial_analyze(
             f"World Model Score: {report.world_model_score:.2f}",
             "",
             "-" * 40,
-            "3D EUCLIDEAN CONSISTENCY",
-            "-" * 40,
-            f"  Consistency Score: {report.euclidean_consistency.consistency_score:.2f}",
-            f"  Pythagorean Error: {report.euclidean_consistency.pythagorean_error:.4f}",
-            f"  Triangle Violations: {report.euclidean_consistency.triangle_inequality_violations}",
-            f"  Intrinsic Dimension: {report.euclidean_consistency.dimensionality_estimate:.1f}",
-            "",
-            "-" * 40,
             "GRAVITY GRADIENT",
             "-" * 40,
             f"  Gravity Detected: {'Yes' if report.gravity_gradient.gravity_axis_detected else 'No'}",
@@ -476,6 +404,16 @@ def spatial_analyze(
             f"  Inverse-Square Compliance: {report.volumetric_density.inverse_square_compliance:.2f}",
             "",
         ]
+        if report.axis_orthogonality:
+            lines.extend(
+                [
+                    "-" * 40,
+                    "AXIS ORTHOGONALITY",
+                    "-" * 40,
+                ]
+            )
+            for axis, score in report.axis_orthogonality.items():
+                lines.append(f"  {axis}: {score:.2%}")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 
@@ -574,6 +512,11 @@ def spatial_probe_model(
     }
 
     if context.output_format == "text":
+        axis_mean = (
+            sum(report.axis_orthogonality.values()) / len(report.axis_orthogonality)
+            if report.axis_orthogonality
+            else None
+        )
         lines = [
             "=" * 60,
             f"3D WORLD MODEL ANALYSIS: {Path(model_path).name}",
@@ -586,10 +529,10 @@ def spatial_probe_model(
             "",
             "-" * 40,
             "Key Metrics:",
-            f"  3D Euclidean Consistency: {report.euclidean_consistency.consistency_score:.2f}",
             f"  Gravity Correlation: {report.gravity_gradient.mass_correlation:.2f}",
-            f"  Axis Orthogonality: {list(report.euclidean_consistency.axis_orthogonality.values())[0]:.2%}"
-            if report.euclidean_consistency.axis_orthogonality
+            f"  Inverse-Square Compliance: {report.volumetric_density.inverse_square_compliance:.2f}",
+            f"  Axis Orthogonality (mean): {axis_mean:.2%}"
+            if axis_mean is not None
             else "  Axis Orthogonality: N/A",
             "",
         ]

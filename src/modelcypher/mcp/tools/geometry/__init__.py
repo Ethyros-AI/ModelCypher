@@ -23,7 +23,7 @@ This package contains geometry-related MCP tools organized by functional area:
 - safety: Jailbreak testing, DARE sparsity, DoRA decomposition
 - primes: Semantic prime probing and comparison
 - crm: Concept Response Matrix building and comparison
-- spatial: 3D world model analysis (Euclidean, gravity, density)
+- spatial: 3D world model analysis (axis orthogonality, gravity, density)
 - interference: Interference prediction and null-space filtering
 - baseline: Domain geometry baseline extraction and validation
 - density: Knowledge density profiling and diffing

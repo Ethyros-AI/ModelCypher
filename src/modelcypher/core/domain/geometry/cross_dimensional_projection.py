@@ -40,11 +40,9 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
-    compute_shared_relational_rank,
     division_epsilon,
     exp_scalar,
     is_finite,
-    regularization_epsilon,
     svd_rank_threshold,
     svd_via_eigh,
 )
@@ -291,7 +289,6 @@ def _project_gram_transport(
             # before projection to preserve discrete token correspondence.
             from modelcypher.core.domain.geometry.low_rank_gw import (
                 LowRankGromovWasserstein,
-                LowRankGWConfig,
             )
 
             logger.info(
@@ -325,26 +322,8 @@ def _project_gram_transport(
                 G_target_row.shape[0], G_target_row.shape[1]
             )
 
-            # Configure low-rank GW using shared relational rank from spectra
-            svd_source = svd_via_eigh(b, projected, full_matrices=False)
-            svd_target = svd_via_eigh(b, target, full_matrices=False)
-            _, S_source, _ = svd_source
-            _, S_target, _ = svd_target
-            b.eval(S_source, S_target)
-            shared_rank, _ = compute_shared_relational_rank(
-                b,
-                S_source,
-                S_target,
-            )
-            rank = max(1, min(shared_rank, int(G_source_row.shape[0]), int(G_target_row.shape[0])))
-
-            lr_config = LowRankGWConfig(
-                rank=rank,
-                reg=float(regularization_epsilon(b, G_source_row)),
-            )
-
             lr_solver = LowRankGromovWasserstein(b)
-            row_result = lr_solver.compute(G_source_row, G_target_row, lr_config)
+            row_result = lr_solver.compute(G_source_row, G_target_row)
             row_coupling = row_result.coupling
             b.eval(row_coupling.Q, row_coupling.g, row_coupling.R)
 

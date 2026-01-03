@@ -20,8 +20,8 @@
 # modelcypher.core.domain.entropy.entropy_math.EntropyMath
 from .differential_entropy_detector import (
     BatchDetectionStatistics,
+    CalibrationThresholds,
     DetectionResult,
-    DifferentialEntropyConfig,
     DifferentialEntropyDetector,
     VariantMeasurement,
 )
@@ -30,7 +30,6 @@ from .prompt_perturbation_suite import (
     LinguisticModifier,
     ModifierMechanism,
     ModifierTemplate,
-    PerturbationConfig,
     PerturbedPrompt,
     PromptPerturbationSuite,
     TextTransform,
