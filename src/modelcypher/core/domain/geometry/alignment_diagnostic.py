@@ -122,7 +122,9 @@ def alignment_signal_from_matrices(
     else:
         diff = source_matrix - target_matrix
         distances = b.norm(diff, axis=1)
-    b.eval(distances)
+    mean_dist = b.mean(distances)
+    max_dist = b.max(distances)
+    b.eval(distances, mean_dist, max_dist)
     dist_list = b.tolist(distances)
 
     ranked = b.argsort(-distances)
@@ -146,8 +148,8 @@ def alignment_signal_from_matrices(
     tgt_norm_val = float(b.to_scalar(tgt_norm))
     scale_ratio = src_norm_val / (tgt_norm_val + div_eps)
 
-    mean_divergence = sum(dist_list) / len(dist_list) if dist_list else 0.0
-    max_divergence = max(dist_list) if dist_list else 0.0
+    mean_divergence = float(b.to_scalar(mean_dist)) if dist_list else 0.0
+    max_divergence = float(b.to_scalar(max_dist)) if dist_list else 0.0
     balance_ratio = max_divergence / (mean_divergence + div_eps)
 
     metadata = {

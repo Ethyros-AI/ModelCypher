@@ -177,10 +177,11 @@ class TestDensityEstimator:
         config = DensityConfiguration(normalize=True)
         result = estimator.compute(random_points_3d, config)
 
-        densities = backend.to_numpy(result.densities)
         eps = _eps(backend)
-        assert densities.min() >= -eps
-        assert densities.max() <= 1.0 + eps
+        min_val = float(backend.to_scalar(backend.min(result.densities)))
+        max_val = float(backend.to_scalar(backend.max(result.densities)))
+        assert min_val >= -eps
+        assert max_val <= 1.0 + eps
 
     def test_unnormalized_densities(
         self, backend: "Backend", random_points_3d: "Array"
@@ -190,9 +191,9 @@ class TestDensityEstimator:
         config = DensityConfiguration(normalize=False)
         result = estimator.compute(random_points_3d, config)
 
-        densities = backend.to_numpy(result.densities)
         # All densities should be positive
-        assert densities.min() > _eps(backend)
+        min_val = float(backend.to_scalar(backend.min(result.densities)))
+        assert min_val > _eps(backend)
 
     def test_radii_positive(
         self, backend: "Backend", random_points_3d: "Array"
@@ -201,8 +202,8 @@ class TestDensityEstimator:
         estimator = DensityEstimator(backend)
         result = estimator.compute(random_points_3d)
 
-        radii = backend.to_numpy(result.radii)
-        assert radii.min() > _eps(backend)
+        min_val = float(backend.to_scalar(backend.min(result.radii)))
+        assert min_val > _eps(backend)
 
     def test_clustered_density_variation(
         self, backend: "Backend", clustered_points: "Array"
@@ -212,9 +213,9 @@ class TestDensityEstimator:
         config = DensityConfiguration(k_neighbors=5, normalize=True)
         result = estimator.compute(clustered_points, config)
 
-        densities = backend.to_numpy(result.densities)
-        # Should have variation in density
-        assert densities.std() > _eps(backend)
+        # Should have variation in density - use backend std
+        std_val = float(backend.to_scalar(backend.std(result.densities)))
+        assert std_val > _eps(backend)
 
     def test_too_few_points_error(self, backend: "Backend") -> None:
         """Test error when too few points for k-NN."""
@@ -234,10 +235,11 @@ class TestDensityEstimator:
 
         assert densities.shape == (50,)
         # Should be normalized
-        d = backend.to_numpy(densities)
         eps = _eps(backend)
-        assert d.min() >= -eps
-        assert d.max() <= 1.0 + eps
+        min_val = float(backend.to_scalar(backend.min(densities)))
+        max_val = float(backend.to_scalar(backend.max(densities)))
+        assert min_val >= -eps
+        assert max_val <= 1.0 + eps
 
 
 # =============================================================================
@@ -286,8 +288,8 @@ class TestGridDensity:
             random_points_3d, grid_size=5
         )
 
-        d = backend.to_numpy(density)
-        assert d.min() > 0
+        min_val = float(backend.to_scalar(backend.min(density)))
+        assert min_val > 0
 
     def test_grid_density_non_3d_error(
         self, backend: "Backend", random_points_2d: "Array"
@@ -336,10 +338,11 @@ class TestDensityConsistency:
         result1 = estimator.compute(points)
         result2 = estimator.compute(points)
 
-        d1 = backend.to_numpy(result1.densities)
-        d2 = backend.to_numpy(result2.densities)
-
-        assert (d1 == d2).all()
+        # Use backend operations to compare
+        diff = backend.abs(result1.densities - result2.densities)
+        max_diff = backend.max(diff)
+        backend.eval(max_diff)
+        assert float(backend.to_scalar(max_diff)) == 0.0
 
     def test_different_dimensions(self, backend: "Backend") -> None:
         """Test density works for different dimensions."""

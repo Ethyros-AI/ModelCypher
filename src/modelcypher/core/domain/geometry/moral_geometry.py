@@ -467,46 +467,58 @@ class MoralGeometryAnalyzer:
 
         # Use cached Gram matrix for normalized vectors = cosine similarity matrix
         sim_matrix = _cache.get_or_compute_gram(matrix_normalized, backend)
-        sim_list = backend.tolist(sim_matrix)  # Convert once for fast indexing
 
-        def get_sim(i: int, j: int) -> float:
-            """Get pre-computed cosine similarity from matrix."""
-            return sim_list[i][j]
-
-        # Compute within-foundation similarity (using pre-computed matrix)
-        within_sims = []
+        # Compute within-foundation similarity (backend vectorized)
+        within_sum = 0.0
+        within_count = 0
         foundation_means: dict[str, float] = {}  # Compute once, reuse below
         for foundation, indices in foundation_indices.items():
-            if len(indices) < 2:
+            count = len(indices)
+            if count < 2:
                 continue
-            foundation_sims = []
-            for i in range(len(indices)):
-                for j in range(i + 1, len(indices)):
-                    sim = get_sim(indices[i], indices[j])
-                    within_sims.append(sim)
-                    foundation_sims.append(sim)
-            foundation_means[foundation] = (
-                sum(foundation_sims) / len(foundation_sims) if foundation_sims else 0.0
-            )
+            idx_arr = backend.array(indices)
+            sub = backend.take(sim_matrix, idx_arr, axis=0)
+            sub = backend.take(sub, idx_arr, axis=1)
+            off_diag = 1.0 - backend.eye(count)
+            sub_off = sub * off_diag
+            sub_sum_arr = backend.sum(sub_off)
+            backend.eval(sub_sum_arr)
+            sub_sum = float(backend.to_scalar(sub_sum_arr))
+            denom = count * (count - 1)
+            mean_val = sub_sum / denom if denom > 0 else 0.0
+            foundation_means[foundation] = mean_val
+            within_sum += sub_sum
+            within_count += denom
 
-        within_sim = sum(within_sims) / len(within_sims) if within_sims else 0.0
+        within_sim = within_sum / within_count if within_count > 0 else 0.0
 
-        # Compute between-foundation similarity (using pre-computed matrix)
-        between_sims = []
-        pair_sims: dict[tuple[str, str], list[float]] = {}
+        # Compute between-foundation similarity (backend vectorized)
+        between_sum = 0.0
+        between_count = 0
+        pair_means: dict[tuple[str, str], float] = {}
         foundations = list(foundation_indices.keys())
 
         for f1_idx, f1 in enumerate(foundations):
             for f2 in foundations[f1_idx + 1 :]:
+                indices_a = foundation_indices[f1]
+                indices_b = foundation_indices[f2]
+                if not indices_a or not indices_b:
+                    continue
+                idx_a = backend.array(indices_a)
+                idx_b = backend.array(indices_b)
+                sub = backend.take(sim_matrix, idx_a, axis=0)
+                sub = backend.take(sub, idx_b, axis=1)
+                sub_sum_arr = backend.sum(sub)
+                backend.eval(sub_sum_arr)
+                sub_sum = float(backend.to_scalar(sub_sum_arr))
+                denom = len(indices_a) * len(indices_b)
+                mean_val = sub_sum / denom if denom > 0 else 0.0
                 key = (f1, f2)
-                pair_sims[key] = []
-                for i1 in foundation_indices[f1]:
-                    for i2 in foundation_indices[f2]:
-                        sim = get_sim(i1, i2)
-                        between_sims.append(sim)
-                        pair_sims[key].append(sim)
+                pair_means[key] = mean_val
+                between_sum += sub_sum
+                between_count += denom
 
-        between_sim = sum(between_sims) / len(between_sims) if between_sims else 0.0
+        between_sim = between_sum / between_count if between_count > 0 else 0.0
 
         # Find most distinct (already computed in foundation_means above)
         most_distinct = (
@@ -516,8 +528,8 @@ class MoralGeometryAnalyzer:
         )
 
         most_overlapping = ("unknown", "unknown")
-        if pair_sims:
-            max_pair = max(pair_sims.keys(), key=lambda k: sum(pair_sims[k]) / len(pair_sims[k]) if pair_sims[k] else 0.0)
+        if pair_means:
+            max_pair = max(pair_means.keys(), key=lambda k: pair_means[k])
             most_overlapping = max_pair
 
         separation_eps = division_epsilon(backend, matrix)

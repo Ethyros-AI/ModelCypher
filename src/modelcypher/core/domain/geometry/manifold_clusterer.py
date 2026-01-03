@@ -306,13 +306,20 @@ class ManifoldClusterer:
         row = backend.take(geodesic_matrix, backend.array([point_index]), axis=0)
         row = backend.squeeze(row, axis=0)
         backend.eval(row)
-        # row is already 1D after squeeze; use directly as distances
-        mask = row <= epsilon
-        backend.eval(mask)
-        mask_list = backend.tolist(mask)
-        if not isinstance(mask_list, list):
+        # row is already 1D after squeeze; use backend sorting to select neighbors.
+        sorted_idx = backend.argsort(row)
+        sorted_dist = backend.take(row, sorted_idx, axis=0)
+        mask = sorted_dist <= epsilon
+        count_arr = backend.sum(backend.astype(mask, "int32"))
+        backend.eval(sorted_idx, sorted_dist, count_arr)
+        count = int(backend.to_scalar(count_arr))
+        if count <= 0:
             return []
-        return [i for i, is_neighbor in enumerate(mask_list) if is_neighbor]
+        prefix_idx = backend.arange(count)
+        neighbor_idx = backend.take(sorted_idx, prefix_idx, axis=0)
+        backend.eval(neighbor_idx)
+        neighbors = backend.tolist(neighbor_idx)
+        return [int(x) for x in neighbors]
 
     def _expand_cluster_geodesic(
         self,

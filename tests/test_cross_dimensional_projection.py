@@ -757,13 +757,14 @@ class TestProperties:
         result1 = run_projection()
         result2 = run_projection()
 
-        proj1_np = backend.to_numpy(result1.projected)
-        proj2_np = backend.to_numpy(result2.projected)
+        # Use backend operations to compare
+        diff = backend.abs(result1.projected - result2.projected)
+        max_diff = backend.max(diff)
+        backend.eval(max_diff)
+        diff_val = float(backend.to_scalar(max_diff))
 
-        # Should be identical
-        diff = abs(proj1_np - proj2_np).max()
         eps = division_epsilon(backend, result1.projected)
-        assert diff <= eps, f"Results differ by {diff}"
+        assert diff_val <= eps, f"Results differ by {diff_val}"
 
 
 # =============================================================================

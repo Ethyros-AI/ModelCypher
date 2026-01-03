@@ -290,8 +290,10 @@ class TestDimensionCascade:
         backend.eval(composite_result)
 
         # Results should be very close (not exact due to chain vs single matmul)
-        diff = backend.to_numpy(backend.abs(chain_result - composite_result))
-        assert diff.max() <= division_epsilon(backend, chain_result)
+        diff = backend.abs(chain_result - composite_result)
+        max_diff = backend.max(diff)
+        backend.eval(max_diff)
+        assert float(backend.to_scalar(max_diff)) <= division_epsilon(backend, chain_result)
 
     def test_geodesic_distortion_computed(
         self, backend: "Backend", random_activations: "Array"

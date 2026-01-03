@@ -262,8 +262,10 @@ class CrossCulturalGeometry:
         centered = (gram_arr - backend.reshape(row_means, (n, 1))) * mask
         row_var_sums = backend.sum(centered * centered, axis=1)
         backend.eval(row_var_sums)
+        row_vars = row_var_sums / off_diag_count
+        backend.eval(row_vars)
 
-        return [float(x) / off_diag_count for x in backend.tolist(row_var_sums)]
+        return [float(x) for x in backend.tolist(row_vars)]
 
     @staticmethod
     def _compute_row_correlations(gram_a: list[float], gram_b: list[float], n: int) -> list[float]:
@@ -293,20 +295,19 @@ class CrossCulturalGeometry:
         var_b_sums = backend.sum(centered_b * centered_b, axis=1)
         backend.eval(cov_sums, var_a_sums, var_b_sums)
 
-        eps = division_epsilon(backend, arr_a)
-        correlations: list[float] = []
-        cov_list = backend.tolist(cov_sums)
-        var_a_list = backend.tolist(var_a_sums)
-        var_b_list = backend.tolist(var_b_sums)
+        cov = cov_sums / off_diag_count
+        var_a = var_a_sums / off_diag_count
+        var_b = var_b_sums / off_diag_count
+        std_product = backend.sqrt(var_a * var_b)
 
-        for i in range(n):
-            cov = float(cov_list[i]) / off_diag_count
-            var_a = float(var_a_list[i]) / off_diag_count
-            var_b = float(var_b_list[i]) / off_diag_count
-            std_product = (var_a ** 0.5) * (var_b ** 0.5)
-            corr = cov / max(std_product, eps) if std_product > eps else 0.0
-            correlations.append(corr)
-        return correlations
+        eps = division_epsilon(backend, arr_a)
+        eps_arr = backend.full(std_product.shape, eps)
+        denom = backend.maximum(std_product, eps_arr)
+        corr = cov / denom
+        corr = backend.where(std_product > eps_arr, corr, backend.zeros_like(corr))
+        backend.eval(corr)
+
+        return [float(x) for x in backend.tolist(corr)]
 
     @staticmethod
     def _average_grams(gram_a: list[float], gram_b: list[float]) -> list[float]:
