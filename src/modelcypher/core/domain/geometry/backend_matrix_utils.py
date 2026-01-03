@@ -100,7 +100,7 @@ class BackendMatrixUtils:
             # Use cached Gram matrix
             return _cache.get_or_compute_gram(X, self.backend, kernel_type="linear")
         elif kernel == "rbf":
-            # Gaussian RBF kernel with median heuristic
+            # Gaussian RBF kernel with median bandwidth (data-derived)
             sq_dists = self.pairwise_squared_distances(X)
 
             # Compute median of non-zero distances for bandwidth
@@ -108,14 +108,21 @@ class BackendMatrixUtils:
             flat = self.backend.reshape(sq_dists, (-1,))
             sorted_dists = self.backend.sort(flat)
 
-            # Find median of positive values (approximate)
-            n = flat.shape[0] if hasattr(flat, "shape") else len(flat)
-            mid_idx = n // 2
-            median_val = self.backend.take(sorted_dists, self.backend.array([mid_idx]), axis=0)
+            # Find median of positive values (exclude near-zeros by dtype epsilon)
+            n = int(flat.shape[0]) if hasattr(flat, "shape") else len(flat)
+            div_eps = division_epsilon(self.backend, sq_dists)
+            zero_mask = flat <= div_eps
+            zero_count_arr = self.backend.sum(zero_mask)
+            self.backend.eval(zero_count_arr)
+            zero_count = int(self.backend.to_scalar(zero_count_arr))
+            non_zero_count = max(n - zero_count, 1)
+            median_idx = min(zero_count + (non_zero_count // 2), n - 1)
+            median_val = self.backend.take(
+                sorted_dists, self.backend.array([median_idx]), axis=0
+            )
             median_val = self.backend.squeeze(median_val)
             self.backend.eval(median_val)
             median_dist = float(self.backend.to_scalar(median_val))
-            div_eps = division_epsilon(self.backend, sq_dists)
             gamma = 1.0 / (2.0 * (median_dist + div_eps))
 
             # exp(-gamma * sq_dists)

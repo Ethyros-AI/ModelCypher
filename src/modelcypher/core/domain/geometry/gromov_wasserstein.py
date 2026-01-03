@@ -115,9 +115,9 @@ class Result:
 # Frank-Wolfe: 30 iterations with early stopping (triggers at 10-20 typically)
 _MAX_OUTER_ITERATIONS = 30
 _MIN_OUTER_ITERATIONS = 5
-# Sinkhorn: small epsilon approximates exact EMD, 50 iterations sufficient
-_SINKHORN_EPSILON = 0.001
+# Sinkhorn iterations - small epsilon approximates exact EMD
 _SINKHORN_ITERATIONS = 50
+# Sinkhorn epsilon is now derived from cost matrix scale (see _derive_sinkhorn_epsilon)
 # Random restarts to escape local minima (GW is non-convex)
 _NUM_RESTARTS = 10
 _RANDOM_SEED = 42
@@ -226,8 +226,11 @@ class GromovWassersteinDistance:
 
     def _random_coupling(self, n: int, m: int, backend: "Backend") -> "Array":
         """Generate a random valid coupling matrix with uniform marginals."""
-        # Random positive matrix using backend (range [0.1, 1.0])
-        coupling = backend.random_uniform(shape=(n, m)) * 0.9 + 0.1
+        # Random positive matrix - ensure all values are positive to avoid numerical issues
+        # Use tiny_value as floor to ensure strictly positive entries
+        coupling = backend.random_uniform(shape=(n, m))
+        floor = tiny_value(backend, coupling)
+        coupling = backend.maximum(coupling, backend.full(coupling.shape, floor))
 
         # Project onto transport polytope via Sinkhorn iterations
         for _ in range(20):
@@ -437,6 +440,43 @@ class GromovWassersteinDistance:
         """
         return 2.0 * self._tensor_product(constC, hC1, hC2, T)
 
+    def _derive_sinkhorn_epsilon(self, cost: "Array") -> float:
+        """
+        Derive Sinkhorn regularization epsilon from cost matrix scale.
+
+        Standard practice in OT: epsilon should be proportional to the scale
+        of the cost matrix. Using median(cost) * sqrt(machine_epsilon) provides
+        a principled balance between accuracy and numerical stability.
+
+        Returns:
+            Regularization parameter derived from cost matrix statistics.
+        """
+        backend = self._backend
+        # Flatten and find median of positive values
+        flat = backend.reshape(cost, (-1,))
+        sorted_vals = backend.sort(flat)
+        n = int(flat.shape[0])
+        if n == 0:
+            return float(division_epsilon(backend, cost))
+
+        # Take median
+        mid = n // 2
+        if n % 2 == 1:
+            median_arr = backend.take(sorted_vals, backend.array([mid]), axis=0)
+        else:
+            low = backend.take(sorted_vals, backend.array([mid - 1]), axis=0)
+            high = backend.take(sorted_vals, backend.array([mid]), axis=0)
+            median_arr = (low + high) * 0.5
+        median_arr = backend.squeeze(median_arr)
+        backend.eval(median_arr)
+        median_val = float(backend.to_scalar(median_arr))
+
+        # Epsilon = median * sqrt(machine_eps)
+        # This scales with cost and provides good numerical behavior
+        eps = float(machine_epsilon(backend, cost))
+        epsilon = max(median_val * (eps ** 0.5), eps)
+        return epsilon
+
     def _solve_linear_ot(
         self,
         cost: "Array",
@@ -642,11 +682,13 @@ class GromovWassersteinDistance:
 
             # Step 2: Solve linear OT to get descent direction
             # G = argmin_G <grad, G> subject to marginal constraints
+            # Derive epsilon from gradient (cost matrix) scale
+            sinkhorn_epsilon = self._derive_sinkhorn_epsilon(grad)
             G = self._solve_linear_ot(
                 grad,
                 p,
                 q,
-                epsilon=_SINKHORN_EPSILON,
+                epsilon=sinkhorn_epsilon,
                 max_iterations=_SINKHORN_ITERATIONS,
                 threshold=sink_threshold,
             )

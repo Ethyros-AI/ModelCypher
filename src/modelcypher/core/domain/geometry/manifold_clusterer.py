@@ -254,7 +254,7 @@ class ManifoldClusterer:
             return 0.0
         inf = float("inf")
         # Use where() to avoid 0 * inf = nan
-        eye_mask = backend.eye(n) > 0.5
+        eye_mask = backend.eye(n) > 0  # Diagonal is 1.0, off-diagonal is 0.0
         inf_mask = backend.where(eye_mask, backend.full((n, n), inf), backend.zeros((n, n)))
         masked = geodesic_matrix + inf_mask
         nearest = backend.min(masked, axis=1)
