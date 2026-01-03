@@ -51,6 +51,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_batch
 
 AtlasProbe: TypeAlias = AtlasProbeProtocol
 SequenceInvariant: TypeAlias = SequenceInvariantProtocol
@@ -845,15 +846,8 @@ class InvariantLayerMapper:
             return 0.0
         if backend.shape(arr_a)[0] != backend.shape(arr_b)[0]:
             raise ValueError("Cosine similarity requires matching dimensions")
-        norm_a = backend.norm(arr_a)
-        norm_b = backend.norm(arr_b)
-        backend.eval(norm_a, norm_b)
-        norm_a_val = float(backend.to_scalar(norm_a))
-        norm_b_val = float(backend.to_scalar(norm_b))
-        eps = division_epsilon(backend, arr_a)
-        if norm_a_val <= eps or norm_b_val <= eps:
-            return 0.0
-        dot = backend.dot(arr_a, arr_b)
-        backend.eval(dot)
-        dot_val = float(backend.to_scalar(dot))
-        return dot_val / (norm_a_val * norm_b_val)
+        cos_arr = geodesic_cosine_batch(
+            arr_a, backend.reshape(arr_b, (1, -1)), backend
+        )
+        backend.eval(cos_arr)
+        return float(backend.to_scalar(cos_arr))

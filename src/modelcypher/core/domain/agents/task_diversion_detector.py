@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_batch
 from modelcypher.ports.embedding import EmbeddingProvider
 
 
@@ -189,18 +189,11 @@ class TaskDiversionDetector:
             return 0.0
         if backend.shape(arr_lhs)[0] != backend.shape(arr_rhs)[0]:
             raise ValueError("Cosine similarity requires matching dimensions")
-        norm_lhs = backend.norm(arr_lhs)
-        norm_rhs = backend.norm(arr_rhs)
-        backend.eval(norm_lhs, norm_rhs)
-        norm_lhs_val = float(backend.to_scalar(norm_lhs))
-        norm_rhs_val = float(backend.to_scalar(norm_rhs))
-        eps = division_epsilon(backend, arr_lhs)
-        if norm_lhs_val <= eps or norm_rhs_val <= eps:
-            return 0.0
-        dot = backend.dot(arr_lhs, arr_rhs)
-        backend.eval(dot)
-        dot_val = float(backend.to_scalar(dot))
-        return dot_val / (norm_lhs_val * norm_rhs_val)
+        cos_arr = geodesic_cosine_batch(
+            arr_lhs, backend.reshape(arr_rhs, (1, -1)), backend
+        )
+        backend.eval(cos_arr)
+        return float(backend.to_scalar(cos_arr))
 
     def _lexical_jaccard_similarity(self, lhs: str, rhs: str) -> float:
         lhs_tokens = self._lexical_token_set(lhs)

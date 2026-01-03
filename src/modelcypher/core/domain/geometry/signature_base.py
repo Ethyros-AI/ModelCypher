@@ -38,6 +38,8 @@ from typing import TypeVar
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_batch
 
 # Type variable for self-referential return types
 T = TypeVar("T", bound="SignatureMixin")
@@ -66,14 +68,13 @@ class SignatureMixin:
     values: list[float]  # Required attribute
 
     def l2_norm(self) -> float | None:
-        """Compute L2 norm of this signature's values."""
+        """Compute geodesic L2 norm of this signature's values."""
         if not self.values:
             raise ValueError("Cannot compute L2 norm of empty vector")
         backend = get_default_backend()
         arr = backend.array(self.values)
-        norm = backend.norm(arr)
-        backend.eval(norm)
-        return max(0.0, float(backend.to_scalar(norm)))
+        norm = self._geodesic_norm_backend(arr)
+        return max(0.0, float(norm))
 
     def l2_normalized(self: T) -> T:
         """Return a copy of this signature with L2-normalized values.
@@ -85,13 +86,11 @@ class SignatureMixin:
             raise ValueError("Cannot compute L2 norm of empty vector")
         backend = get_default_backend()
         arr = backend.array(self.values)
-        norm = backend.norm(arr)
-        backend.eval(norm)
-        norm_val = float(backend.to_scalar(norm))
+        norm_val = float(self._geodesic_norm_backend(arr))
         eps = division_epsilon(backend, arr)
         if norm_val <= eps:
             return self._with_values(self.values)
-        normalized_arr = arr / norm
+        normalized_arr = arr / norm_val
         backend.eval(normalized_arr)
         normalized = backend.tolist(normalized_arr)
         if not isinstance(normalized, list):
@@ -136,18 +135,27 @@ class SignatureMixin:
             return 0.0
         if backend.shape(arr_a)[0] != backend.shape(arr_b)[0]:
             raise ValueError("Cosine similarity requires matching dimensions")
-        norm_a = backend.norm(arr_a)
-        norm_b = backend.norm(arr_b)
-        backend.eval(norm_a, norm_b)
-        norm_a_val = float(backend.to_scalar(norm_a))
-        norm_b_val = float(backend.to_scalar(norm_b))
-        eps = division_epsilon(backend, arr_a)
-        if norm_a_val <= eps or norm_b_val <= eps:
-            return 0.0
-        dot = backend.dot(arr_a, arr_b)
-        backend.eval(dot)
-        dot_val = float(backend.to_scalar(dot))
-        return dot_val / (norm_a_val * norm_b_val)
+        cos_arr = geodesic_cosine_batch(
+            arr_a, backend.reshape(arr_b, (1, -1)), backend
+        )
+        backend.eval(cos_arr)
+        return float(backend.to_scalar(cos_arr))
+
+    @staticmethod
+    def _geodesic_norm_backend(arr: object) -> float:
+        backend = get_default_backend()
+        vec = arr if hasattr(arr, "shape") else backend.array(arr)
+        if len(backend.shape(vec)) != 1:
+            vec = backend.reshape(vec, (-1,))
+        vec = backend.reshape(vec, (1, -1))
+        zero = backend.zeros_like(vec)
+        points = backend.concatenate([zero, vec], axis=0)
+        rg = RiemannianGeometry(backend)
+        point_count = int(backend.shape(points)[0])
+        geo_result = rg.geodesic_distances(points, k_neighbors=point_count - 1)
+        distances = geo_result.distances
+        backend.eval(distances)
+        return float(backend.to_scalar(distances[0, 1]))
 
     def _with_values(self: T, new_values: list[float]) -> T:
         """Create a copy of this signature with new values.

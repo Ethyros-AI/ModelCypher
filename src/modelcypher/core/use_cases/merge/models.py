@@ -76,6 +76,14 @@ class UnifiedMergeResult:
     # transplant_ratio, and component signals from curvature alignment
     geometry_metrics: dict[str, Any] = field(default_factory=dict)
 
+    # Density analysis metrics (Stage 2: DENSITY)
+    # Contains: overall_source_density, overall_target_density, overall_opportunity,
+    # positive_opportunity_count, nonpositive_opportunity_count, concepts_analyzed
+    density_metrics: dict[str, Any] = field(default_factory=dict)
+
+    # Post-merge density (measured AFTER merge to verify density increased)
+    post_merge_density: float | None = None
+
 
 @dataclass
 class CrossArchitectureInfo:

@@ -317,30 +317,24 @@ def primes_compare(
 
     prime_similarities = []
     if dim_a == dim_b:
-        # Same dimensions - use direct cosine similarity
-        from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+        # Same dimensions - use geodesic cosine similarity
+        from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_batch
 
         for prime in common_primes:
             vec_a = backend.array(acts_a[prime])
             vec_b = backend.array(acts_b[prime])
-            norm_a = backend.norm(vec_a)
-            norm_b = backend.norm(vec_b)
-            backend.eval(norm_a, norm_b)
-            norm_a_val = float(backend.to_scalar(norm_a))
-            norm_b_val = float(backend.to_scalar(norm_b))
-            eps = division_epsilon(backend, vec_a)
-            if norm_a_val <= eps or norm_b_val <= eps:
-                sim = 0.0
-            else:
-                dot = backend.dot(vec_a, vec_b)
-                backend.eval(dot)
-                dot_val = float(backend.to_scalar(dot))
-                sim = dot_val / (norm_a_val * norm_b_val)
+            cos_arr = geodesic_cosine_batch(
+                vec_a, backend.reshape(vec_b, (1, -1)), backend
+            )
+            backend.eval(cos_arr)
+            sim = float(backend.to_scalar(cos_arr))
             prime_similarities.append((prime, sim))
     else:
         # Different dimensions - use per-prime CKA via row correlation
         # Project to common space by computing normalized correlation
         # between the prime's position relative to other primes
+        from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_batch
+
         for i, prime in enumerate(common_primes):
             # Each prime's similarity is how correlated its relationships are
             # to other primes in both spaces
@@ -351,20 +345,19 @@ def primes_compare(
             centroid_a = X.mean(axis=0)
             centroid_b = Y.mean(axis=0)
 
-            # Use normalized dot product with centroid as proxy
-            import sys
-            eps = sys.float_info.epsilon
             row_a_arr = backend.array(row_a)
             row_b_arr = backend.array(row_b)
             centroid_a_arr = backend.array(centroid_a)
             centroid_b_arr = backend.array(centroid_b)
-            norm_row_a = backend.norm(row_a_arr)
-            norm_row_b = backend.norm(row_b_arr)
-            norm_cent_a = backend.norm(centroid_a_arr)
-            norm_cent_b = backend.norm(centroid_b_arr)
-            backend.eval(norm_row_a, norm_row_b, norm_cent_a, norm_cent_b)
-            norm_a = float((row_a @ centroid_a) / (backend.to_scalar(norm_row_a) * backend.to_scalar(norm_cent_a) + eps))
-            norm_b = float((row_b @ centroid_b) / (backend.to_scalar(norm_row_b) * backend.to_scalar(norm_cent_b) + eps))
+            norm_a_arr = geodesic_cosine_batch(
+                row_a_arr, backend.reshape(centroid_a_arr, (1, -1)), backend
+            )
+            norm_b_arr = geodesic_cosine_batch(
+                row_b_arr, backend.reshape(centroid_b_arr, (1, -1)), backend
+            )
+            backend.eval(norm_a_arr, norm_b_arr)
+            norm_a = float(backend.to_scalar(norm_a_arr))
+            norm_b = float(backend.to_scalar(norm_b_arr))
 
             # Similarity = how similarly positioned this prime is in both spaces
             sim = 1.0 - abs(norm_a - norm_b)

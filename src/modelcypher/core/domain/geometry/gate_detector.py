@@ -53,6 +53,11 @@ from typing import Iterable
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.riemannian_utils import (
+    RiemannianGeometry,
+    frechet_mean,
+)
+from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_batch
 from modelcypher.core.domain.geometry.atlas_protocols import ComputationalGateProtocol
 from modelcypher.core.domain.geometry.atlas_registry import get_gate_inventory
 from modelcypher.core.domain.geometry.path_geometry import PathNode, PathSignature
@@ -169,12 +174,8 @@ class GateDetector:
                 continue
             if self._gate_matrix is None or not self._gate_ids:
                 continue
-            normalized_window = self._normalize_vector(embeddings[0])
-            sims = self._backend.matmul(
-                self._gate_matrix,
-                self._backend.reshape(normalized_window, (-1, 1)),
-            )
-            sims = self._backend.reshape(sims, (self._backend.shape(self._gate_matrix)[0],))
+            window_vec = self._normalize_vector(embeddings[0])
+            sims = geodesic_cosine_batch(window_vec, self._gate_matrix, self._backend)
             best_idx_arr = self._backend.argmax(sims)
             self._backend.eval(best_idx_arr)
             best_idx = int(self._backend.to_scalar(best_idx_arr))
@@ -182,6 +183,10 @@ class GateDetector:
             self._backend.eval(best_sim_arr)
             best_similarity = float(self._backend.to_scalar(best_sim_arr))
             best_gate_id = self._gate_ids[best_idx]
+
+            eps = division_epsilon(self._backend, sims)
+            if best_similarity <= eps:
+                continue
 
             best_similarities.append(best_similarity)
             gate_meta = self.gate_metadata.get(best_gate_id)
@@ -240,7 +245,7 @@ class GateDetector:
             detections = candidates
         else:
             threshold = self._otsu_threshold(best_similarities)
-            detections = [c for c in candidates if c[2] > threshold]
+            detections = [c for c in candidates if c[2] >= threshold]
         detections.sort(key=lambda item: item[1])
         merged = self._collapse_consecutive([item[0] for item in detections])
 
@@ -274,7 +279,7 @@ class GateDetector:
                 continue
 
             embedding_arr = self._backend.array(embeddings)
-            centroid = self._backend.mean(embedding_arr, axis=0)
+            centroid = frechet_mean(embedding_arr, backend=self._backend)
             centroid = self._normalize_vector(centroid)
             self._backend.eval(centroid)
             centroid_list = self._backend.tolist(centroid)
@@ -359,9 +364,18 @@ class GateDetector:
 
     def _normalize_vector(self, vector: Iterable[float] | object) -> object:
         vec = vector if hasattr(vector, "shape") else self._backend.array(vector)
-        norm = self._backend.norm(vec)
+        if len(self._backend.shape(vec)) != 1:
+            vec = self._backend.reshape(vec, (-1,))
+        vec_row = self._backend.reshape(vec, (1, -1))
+        zero = self._backend.zeros_like(vec_row)
+        points = self._backend.concatenate([zero, vec_row], axis=0)
+        rg = RiemannianGeometry(self._backend)
+        point_count = int(self._backend.shape(points)[0])
+        geo_result = rg.geodesic_distances(points, k_neighbors=point_count - 1)
+        distances = geo_result.distances
+        self._backend.eval(distances)
+        norm_val = float(self._backend.to_scalar(distances[0, 1]))
         eps = division_epsilon(self._backend, vec)
-        safe_norm = self._backend.where(
-            norm > eps, norm, self._backend.ones_like(norm)
-        )
-        return vec / safe_norm
+        if norm_val <= eps:
+            return vec
+        return vec / norm_val

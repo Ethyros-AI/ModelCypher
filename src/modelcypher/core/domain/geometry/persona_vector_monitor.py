@@ -25,7 +25,11 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
+from modelcypher.core.domain.geometry.riemannian_utils import (
+    RiemannianGeometry,
+    frechet_mean,
+)
+from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_batch
 
 
 
@@ -238,9 +242,8 @@ class PersonaVectorMonitor:
         positive_mean = PersonaVectorMonitor._mean_vector(pos_arr)
         negative_mean = PersonaVectorMonitor._mean_vector(neg_arr)
         direction = positive_mean - negative_mean
-        norm_arr = backend.norm(direction)
-        backend.eval(norm_arr)
-        norm = float(backend.to_scalar(norm_arr))
+        backend.eval(direction)
+        norm = PersonaVectorMonitor._l2_norm(direction)
         eps = division_epsilon(backend, direction)
         if norm <= eps:
             return None
@@ -467,9 +470,8 @@ class PersonaVectorMonitor:
         if int(backend.shape(pos_arr)[0]) == 0 or int(backend.shape(neg_arr)[0]) == 0:
             return 0.0
 
-        direction_row = backend.reshape(dir_arr, (1, -1))
-        pos_proj = backend.sum(pos_arr * direction_row, axis=1)
-        neg_proj = backend.sum(neg_arr * direction_row, axis=1)
+        pos_proj = geodesic_cosine_batch(dir_arr, pos_arr, backend)
+        neg_proj = geodesic_cosine_batch(dir_arr, neg_arr, backend)
         backend.eval(pos_proj, neg_proj)
 
         pos_mean = backend.mean(pos_proj)
@@ -503,17 +505,30 @@ class PersonaVectorMonitor:
         dir_arr = direction if hasattr(direction, "shape") else backend.array(direction)
         if backend.shape(act_arr)[0] != backend.shape(dir_arr)[0]:
             return None
-        dot = backend.dot(act_arr, dir_arr)
-        backend.eval(dot)
-        return float(backend.to_scalar(dot))
+        cos_arr = geodesic_cosine_batch(
+            act_arr, backend.reshape(dir_arr, (1, -1)), backend
+        )
+        backend.eval(cos_arr)
+        cosine = float(backend.to_scalar(cos_arr))
+        activation_norm = PersonaVectorMonitor._l2_norm(act_arr)
+        direction_norm = PersonaVectorMonitor._l2_norm(dir_arr)
+        return activation_norm * direction_norm * cosine
 
     @staticmethod
     def _l2_norm(values: object) -> float:
         backend = get_default_backend()
         arr = values if hasattr(values, "shape") else backend.array(values)
-        norm = backend.norm(arr)
-        backend.eval(norm)
-        return max(0.0, float(backend.to_scalar(norm)))
+        if len(backend.shape(arr)) != 1:
+            arr = backend.reshape(arr, (-1,))
+        vec = backend.reshape(arr, (1, -1))
+        zero = backend.zeros_like(vec)
+        points = backend.concatenate([zero, vec], axis=0)
+        rg = RiemannianGeometry(backend)
+        point_count = int(backend.shape(points)[0])
+        geo_result = rg.geodesic_distances(points, k_neighbors=point_count - 1)
+        distances = geo_result.distances
+        backend.eval(distances)
+        return max(0.0, float(backend.to_scalar(distances[0, 1])))
 
     @staticmethod
     def _compute_correlation_stats(correlations: list[float]) -> tuple[float, float]:

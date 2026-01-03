@@ -24,6 +24,8 @@ from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
+from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_batch
 from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
 
 
@@ -171,9 +173,8 @@ class RefusalDirectionDetector:
         b.eval(harmful_mean, harmless_mean)
 
         direction_arr = harmful_mean - harmless_mean
-        norm_arr = b.norm(direction_arr)
-        b.eval(direction_arr, norm_arr)
-        norm = float(b.to_scalar(norm_arr))
+        b.eval(direction_arr)
+        norm = RefusalDirectionDetector._l2_norm(direction_arr, backend=b)
         eps = division_epsilon(b, direction_arr)
         if norm <= eps:
             return None
@@ -276,9 +277,8 @@ class RefusalDirectionDetector:
         if int(harmful_arr.shape[1]) != int(direction_arr.shape[0]):
             return 0.0
 
-        direction_row = b.reshape(direction_arr, (1, -1))
-        harmful_proj = b.sum(harmful_arr * direction_row, axis=1)
-        harmless_proj = b.sum(harmless_arr * direction_row, axis=1)
+        harmful_proj = geodesic_cosine_batch(direction_arr, harmful_arr, b)
+        harmless_proj = geodesic_cosine_batch(direction_arr, harmless_arr, b)
         b.eval(harmful_proj, harmless_proj)
 
         n_h = int(harmful_proj.shape[0])
@@ -308,9 +308,17 @@ class RefusalDirectionDetector:
     def _l2_norm(values: Any, backend: Any | None = None) -> float:
         b = backend or get_default_backend()
         arr = values if hasattr(values, "shape") else b.array(values)
-        norm = b.norm(arr)
-        b.eval(norm)
-        return max(0.0, float(b.to_scalar(norm)))
+        if len(b.shape(arr)) != 1:
+            arr = b.reshape(arr, (-1,))
+        vec = b.reshape(arr, (1, -1))
+        zero = b.zeros_like(vec)
+        points = b.concatenate([zero, vec], axis=0)
+        rg = RiemannianGeometry(b)
+        point_count = int(b.shape(points)[0])
+        geo_result = rg.geodesic_distances(points, k_neighbors=point_count - 1)
+        distances = geo_result.distances
+        b.eval(distances)
+        return max(0.0, float(b.to_scalar(distances[0, 1])))
 
     @staticmethod
     def _cosine_similarity(values_a: Any, values_b: Any, backend: Any | None = None) -> float:
@@ -321,18 +329,9 @@ class RefusalDirectionDetector:
             return 0.0
         if b.shape(arr_a)[0] != b.shape(arr_b)[0]:
             raise ValueError("Cosine similarity requires matching dimensions")
-        norm_a = b.norm(arr_a)
-        norm_b = b.norm(arr_b)
-        b.eval(norm_a, norm_b)
-        norm_a_val = float(b.to_scalar(norm_a))
-        norm_b_val = float(b.to_scalar(norm_b))
-        eps = division_epsilon(b, arr_a)
-        if norm_a_val <= eps or norm_b_val <= eps:
-            return 0.0
-        dot = b.dot(arr_a, arr_b)
-        b.eval(dot)
-        dot_val = float(b.to_scalar(dot))
-        return dot_val / (norm_a_val * norm_b_val)
+        cos_arr = geodesic_cosine_batch(arr_a, b.reshape(arr_b, (1, -1)), b)
+        b.eval(cos_arr)
+        return float(b.to_scalar(cos_arr))
 
 
 class MetricKey:

@@ -33,7 +33,11 @@ import logging
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.atlas_protocols import AtlasProbeProtocol
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
-from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
+from modelcypher.core.domain.geometry.riemannian_utils import (
+    RiemannianGeometry,
+    frechet_mean,
+)
+from modelcypher.core.domain.geometry.vector_math import geodesic_cosine_batch
 from modelcypher.utils.text import truncate
 
 if TYPE_CHECKING:
@@ -196,12 +200,10 @@ class ConceptDetector:
             if not embeddings:
                 continue
 
-            segment_embedding = self._normalize_vector(embeddings[0])
-            sims = self._backend.matmul(
-                self._probe_centroids,
-                self._backend.reshape(segment_embedding, (-1, 1)),
+            segment_embedding = self._ensure_array(embeddings[0])
+            sims = geodesic_cosine_batch(
+                segment_embedding, self._probe_centroids, self._backend
             )
-            sims = self._backend.reshape(sims, (self._probe_count,))
             best_idx_arr = self._backend.argmax(sims)
             self._backend.eval(best_idx_arr)
             best_idx = int(self._backend.to_scalar(best_idx_arr))
@@ -279,8 +281,8 @@ class ConceptDetector:
                 )
                 continue
 
-            support_matrix = self._normalize_rows(embeddings)
-            centroid = self._normalize_vector(self._frechet_centroid(embeddings))
+            support_matrix = self._backend.array(embeddings)
+            centroid = self._frechet_centroid(embeddings)
             cohesion_floor = self._cohesion_floor(centroid, support_matrix)
 
             probe_embeddings.append(
@@ -306,12 +308,35 @@ class ConceptDetector:
     def _compute_separation_floor(self) -> float:
         if self._probe_count < 2:
             return -1.0
-        centroids_t = self._backend.transpose(self._probe_centroids, axes=(1, 0))
-        similarities = self._backend.matmul(self._probe_centroids, centroids_t)
-        max_sim = self._backend.max(similarities)
-        eps = division_epsilon(self._backend, similarities)
+        zero = self._backend.zeros_like(self._probe_centroids[:1])
+        points = self._backend.concatenate([zero, self._probe_centroids], axis=0)
+        rg = RiemannianGeometry(self._backend)
+        point_count = int(self._backend.shape(points)[0])
+        geo_result = rg.geodesic_distances(points, k_neighbors=point_count - 1)
+        distances = geo_result.distances
+        self._backend.eval(distances)
+
+        d0 = distances[0, 1:]
+        dij = distances[1:, 1:]
+        d0_row = self._backend.reshape(d0, (1, -1))
+        d0_col = self._backend.reshape(d0, (-1, 1))
+
+        eps = division_epsilon(self._backend, distances)
+        denom = 2.0 * d0_col * d0_row
+        safe_denom = self._backend.maximum(
+            denom, self._backend.full(self._backend.shape(denom), eps)
+        )
+        cos_matrix = (d0_col * d0_col + d0_row * d0_row - dij * dij) / safe_denom
+        cos_matrix = self._backend.clip(cos_matrix, -1.0, 1.0)
+
+        valid = self._backend.minimum(d0_col > eps, d0_row > eps)
+        cos_matrix = self._backend.where(
+            valid, cos_matrix, self._backend.zeros_like(cos_matrix)
+        )
+
+        max_sim = self._backend.max(cos_matrix)
         shift = max_sim + eps
-        masked = similarities - (self._backend.eye(self._probe_count) * shift)
+        masked = cos_matrix - (self._backend.eye(self._probe_count) * shift)
         max_off_diag = self._backend.max(masked)
         self._backend.eval(max_off_diag)
         return float(self._backend.to_scalar(max_off_diag))
@@ -344,9 +369,7 @@ class ConceptDetector:
         support_count = self._backend.shape(support_matrix)[0]
         if support_count == 0:
             return None
-        sims = self._backend.matmul(
-            support_matrix, self._backend.reshape(segment_embedding, (-1, 1))
-        )
+        sims = geodesic_cosine_batch(segment_embedding, support_matrix, self._backend)
         mean_sim = self._backend.mean(sims)
         self._backend.eval(mean_sim)
         return float(self._backend.to_scalar(mean_sim))
@@ -356,33 +379,13 @@ class ConceptDetector:
             return value
         return self._backend.array(value)
 
-    def _normalize_rows(self, matrix: Any) -> Any:
-        matrix_arr = self._ensure_array(matrix)
-        norms = self._backend.norm(matrix_arr, axis=1, keepdims=True)
-        eps = division_epsilon(self._backend, matrix_arr)
-        safe_norms = self._backend.where(
-            norms > eps, norms, self._backend.ones_like(norms)
-        )
-        return matrix_arr / safe_norms
-
-    def _normalize_vector(self, vector: Any) -> Any:
-        vector_arr = self._ensure_array(vector)
-        norm = self._backend.norm(vector_arr)
-        eps = division_epsilon(self._backend, vector_arr)
-        safe_norm = self._backend.where(
-            norm > eps, norm, self._backend.ones_like(norm)
-        )
-        return vector_arr / safe_norm
-
     def _cohesion_floor(self, centroid: Any, support_matrix: Any) -> float:
         if support_matrix is None:
             return 0.0
         support_count = self._backend.shape(support_matrix)[0]
         if support_count == 0:
             return 0.0
-        sims = self._backend.matmul(
-            support_matrix, self._backend.reshape(centroid, (-1, 1))
-        )
+        sims = geodesic_cosine_batch(centroid, support_matrix, self._backend)
         min_sim = self._backend.min(sims)
         self._backend.eval(min_sim)
         return float(self._backend.to_scalar(min_sim))

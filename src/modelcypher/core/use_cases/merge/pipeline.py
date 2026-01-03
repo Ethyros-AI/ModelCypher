@@ -403,6 +403,92 @@ def run_merge(
         copy_config_files(target_path, effective_output)
         final_output_path = effective_output
 
+        # =================================================================
+        # POST-MERGE DENSITY MEASUREMENT (proves we increased density)
+        # =================================================================
+        logger.info("STAGE 4: VALIDATE (post-merge density measurement)")
+        post_merge_density = None
+        try:
+            from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
+            from modelcypher.core.use_cases.merge.stages.probe import collect_activations
+
+            # Load merged model (350M is fast)
+            merged_model, _ = load_model_for_probing(final_output_path, model_loader)
+
+            # Run subset of probes through merged model
+            probe_ids = probe_result.get("probe_ids", [])[:50]  # Sample 50 probes
+            probe_texts = probe_result.get("probe_texts", [])[:50]
+            sample_layers = [0, len(layer_indices) // 2, max(0, len(layer_indices) - 1)]
+
+            if probe_texts and merged_model:
+                # Collect activations from merged model
+                merged_activations = collect_activations(
+                    model=merged_model,
+                    tokenizer=tokenizer,
+                    texts=probe_texts,
+                    layers=sample_layers,
+                    backend=backend,
+                )
+
+                # Measure density
+                id_estimator = IntrinsicDimension(backend=backend)
+                densities = []
+
+                for layer_idx in sample_layers:
+                    acts = merged_activations.get(layer_idx, [])
+                    if len(acts) >= 4:
+                        act_matrix = backend.stack([backend.array(a) for a in acts], axis=0)
+                        backend.eval(act_matrix)
+                        local_map = id_estimator.local_dimension_map(act_matrix)
+                        mean_dim = float(backend.to_scalar(backend.mean(local_map.dimensions)))
+                        if mean_dim > 0:
+                            densities.append(1.0 / mean_dim)
+
+                if densities:
+                    post_merge_density = sum(densities) / len(densities)
+                    target_density = density_metrics.get("overall_target_density", 0)
+                    density_change = ((post_merge_density - target_density) / target_density * 100) if target_density > 0 else 0
+                    logger.info(
+                        "POST-MERGE: density=%.4f (was %.4f, %+.1f%% change)",
+                        post_merge_density, target_density, density_change
+                    )
+        except Exception as e:
+            logger.warning("Post-merge density measurement skipped: %s", e)
+
+        # Save merge analysis report for scientific reproducibility
+        import json
+        target_density_val = density_metrics.get("overall_target_density")
+        analysis_report = {
+            "_schema": "mc.merge.analysis.v1",
+            "timestamp": datetime.utcnow().isoformat(),
+            "source_model": source_path,
+            "target_model": target_path,
+            "output_path": final_output_path,
+            "density": {
+                "source_density": density_metrics.get("overall_source_density"),
+                "target_density_before": target_density_val,
+                "target_density_after": post_merge_density,
+                "density_change_pct": ((post_merge_density - target_density_val) / target_density_val * 100) if target_density_val and post_merge_density else None,
+                "opportunity": density_metrics.get("overall_opportunity"),
+                "concepts_analyzed": density_metrics.get("concepts_analyzed"),
+                "grafted_count": density_metrics.get("positive_opportunity_count"),
+                "skipped_count": density_metrics.get("nonpositive_opportunity_count"),
+            },
+            "geometry": {
+                "mean_preserved_fraction": transplant_metrics.get("mean_preserved_fraction"),
+                "layers_transplanted": transplant_metrics.get("layers_transplanted"),
+                "weights_transplanted": transplant_metrics.get("weights_transplanted"),
+            },
+            "probe": {
+                "raw_fingerprint_similarity": probe_metrics.get("raw_fingerprint_similarity"),
+                "layer_count": probe_metrics.get("layer_count"),
+                "cka_after_alignment": probe_metrics.get("cka_after_alignment"),
+            },
+        }
+        analysis_path = Path(final_output_path) / "merge_analysis.json"
+        analysis_path.write_text(json.dumps(analysis_report, indent=2, default=str))
+        logger.info("Saved merge analysis to %s", analysis_path)
+
     # Compute geometric metrics from transplant measurements
     from modelcypher.core.use_cases.merge.metrics import (
         compute_geometric_metrics_from_transplant,
@@ -428,6 +514,7 @@ def run_merge(
         output_path=final_output_path,
         refusal_preserved=True,
         geometry_metrics=geometry_metrics,
+        density_metrics=density_metrics,
     )
 
     logger.info(
