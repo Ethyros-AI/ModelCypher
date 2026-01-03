@@ -41,6 +41,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _array_to_list(backend: "Backend", array: "Any") -> list[float]:
+    """Convert backend array to Python list without NumPy."""
+    flat = backend.reshape(array, (-1,))
+    count = int(flat.shape[0])
+    return [float(backend.to_scalar(flat[i])) for i in range(count)]
+
+
 # ValidateConfig was REMOVED. Validation always runs all checks.
 # Ridge test prompts are internal test data.
 
@@ -477,13 +484,24 @@ def _compute_layer_condition_number(
             b.eval(val_arr)
             _, s, _ = svd_via_eigh(b, val_arr, full_matrices=False)
             b.eval(s)
-            s_np = b.to_numpy(s)
             # Use dtype-derived threshold for singular value significance
             sv_eps = float(machine_epsilon(b, s))
-            s_nz = s_np[s_np > sv_eps * s_np[0]]  # Relative to largest SV
-            if len(s_nz) > 1:
-                cond = float(s_nz[0] / s_nz[-1])
-                condition_numbers.append(cond)
+            s_max_arr = b.max(s)
+            b.eval(s_max_arr)
+            s_max = float(b.to_scalar(s_max_arr))
+            if s_max <= 0:
+                continue
+            threshold = sv_eps * s_max
+            mask = s > threshold
+            count = int(b.to_scalar(b.sum(b.astype(mask, "int32"))))
+            if count > 1:
+                pos_inf = b.full(s.shape, float("inf"))
+                min_nonzero_arr = b.min(b.where(mask, s, pos_inf))
+                b.eval(min_nonzero_arr)
+                min_nonzero = float(b.to_scalar(min_nonzero_arr))
+                if min_nonzero < float("inf"):
+                    cond = s_max / min_nonzero
+                    condition_numbers.append(cond)
         except Exception:
             pass
 
@@ -519,11 +537,13 @@ def _estimate_layer_intrinsic_dim(
             b.eval(val_arr)
             _, s, _ = svd_via_eigh(b, val_arr, full_matrices=False)
             b.eval(s)
-            s_np = b.to_numpy(s)
             # Use dtype-derived threshold - sqrt(eps) is standard numerical tolerance
             sv_eps = float(machine_epsilon(b, s))
-            threshold = s_np[0] * (sv_eps ** 0.5)
-            intrinsic = int((s_np > threshold).sum())
+            s_max_arr = b.max(s)
+            b.eval(s_max_arr)
+            s_max = float(b.to_scalar(s_max_arr))
+            threshold = s_max * (sv_eps ** 0.5)
+            intrinsic = int(b.to_scalar(b.sum(b.astype(s > threshold, "int32"))))
             intrinsic_dims.append(intrinsic)
         except Exception:
             pass
@@ -568,13 +588,13 @@ def _check_refusal_preservation(
             if mid_layer in harmful_acts:
                 act = harmful_acts[mid_layer]
                 b.eval(act)
-                harmful_activations.append(b.to_numpy(act).tolist())
+                harmful_activations.append(_array_to_list(b, act))
 
             harmless_acts = collect_activations_fn(target_model, tokenizer, pair.harmless)
             if mid_layer in harmless_acts:
                 act = harmless_acts[mid_layer]
                 b.eval(act)
-                harmless_activations.append(b.to_numpy(act).tolist())
+                harmless_activations.append(_array_to_list(b, act))
 
         except Exception as e:
             logger.debug("Refusal pair activation failed: %s", e)

@@ -654,7 +654,13 @@ def _probe_precise(
                                     tgt_layer, src_dim, shared_dim, src_dim, tgt_dim,
                                 )
 
-                            kv_transforms[tgt_layer] = b.to_numpy(combined_transform).tolist()
+                            # Convert to nested list using backend to_scalar - no NumPy
+                            rows = int(combined_transform.shape[0])
+                            cols = int(combined_transform.shape[1])
+                            kv_transforms[tgt_layer] = [
+                                [float(b.to_scalar(combined_transform[r, c])) for c in range(cols)]
+                                for r in range(rows)
+                            ]
 
                             if not kv_result.is_perfect:
                                 logger.warning(
@@ -887,18 +893,21 @@ def _extract_top_k_dims(
     top_indices_arr = b.argsort(neg_abs)[:k]
     b.eval(top_indices_arr)
 
-    # Convert to Python only at the very end (unavoidable for building dataclass list)
-    top_indices = b.to_numpy(top_indices_arr).tolist()
-    act_np = b.to_numpy(activation_vector)
-    abs_np = b.to_numpy(abs_vals)
+    # Convert to Python using backend to_scalar - no NumPy
+    n_top = int(top_indices_arr.shape[0])
+    top_indices = sorted([int(b.to_scalar(top_indices_arr[i])) for i in range(n_top)])
+    indices_arr = b.array(top_indices)
+    selected_acts = b.take(activation_vector, indices_arr, axis=0)
+    selected_abs = b.take(abs_vals, indices_arr, axis=0)
+    b.eval(selected_acts, selected_abs)
 
     return [
         ActivatedDimension(
             index=int(idx),
-            activation=float(act_np[idx]),
+            activation=float(b.to_scalar(selected_acts[i])),
         )
-        for idx in sorted(top_indices)
-        if abs_np[idx] > threshold
+        for i, idx in enumerate(top_indices)
+        if float(b.to_scalar(selected_abs[i])) > threshold
     ]
 
 

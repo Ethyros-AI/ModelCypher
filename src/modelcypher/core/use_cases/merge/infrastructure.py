@@ -67,7 +67,7 @@ def select_anchor_indices_by_coverage(
     k_neighbors = min(10, n - 1)
     norms = backend.norm(points, axis=1)
     backend.eval(norms)
-    seed_idx = int(backend.to_numpy(backend.argmax(norms)))
+    seed_idx = int(backend.to_scalar(backend.argmax(norms)))
 
     rg = RiemannianGeometry(backend)
     fps_result = rg.farthest_point_sampling(
@@ -105,8 +105,11 @@ def select_shared_full_rank_indices(
     combined = backend.concatenate([source_data, target_data], axis=1)
     norms = backend.norm(combined, axis=1)
     backend.eval(norms)
-    norm_list = backend.to_numpy(norms).tolist()
-    ranked = sorted(range(n), key=lambda idx: norm_list[idx], reverse=True)
+    # Sort by norm descending using backend argsort on negated values
+    neg_norms = -norms
+    sorted_indices = backend.argsort(neg_norms)
+    backend.eval(sorted_indices)
+    ranked = [int(backend.to_scalar(sorted_indices[i])) for i in range(n)]
 
     eps = machine_epsilon(backend, combined) * 100.0
 
@@ -174,8 +177,11 @@ def select_full_rank_indices(
 
     norms = backend.norm(data, axis=1)
     backend.eval(norms)
-    norm_list = backend.to_numpy(norms).tolist()
-    ranked = sorted(range(n), key=lambda idx: norm_list[idx], reverse=True)
+    # Sort by norm descending using backend argsort on negated values
+    neg_norms = -norms
+    sorted_indices = backend.argsort(neg_norms)
+    backend.eval(sorted_indices)
+    ranked = [int(backend.to_scalar(sorted_indices[i])) for i in range(n)]
 
     eps = machine_epsilon(backend, data) * 100.0
     selected: list[int] = []

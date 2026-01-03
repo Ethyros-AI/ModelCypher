@@ -219,6 +219,31 @@ class GeneralizedProcrustes:
 
     def __init__(self, backend: "Backend | None" = None) -> None:
         self._backend = backend or get_default_backend()
+
+    def _array_to_list(self, array: "Array") -> list[float]:
+        flat = self._backend.reshape(array, (-1,))
+        count = int(flat.shape[0])
+        return [self._backend.to_scalar(flat[i]) for i in range(count)]
+
+    def _array_to_2d_list(self, array: "Array") -> list[list[float]]:
+        rows = int(array.shape[0])
+        cols = int(array.shape[1])
+        return [
+            [self._backend.to_scalar(array[i, j]) for j in range(cols)]
+            for i in range(rows)
+        ]
+
+    def _array_to_3d_list(self, array: "Array") -> list[list[list[float]]]:
+        blocks = int(array.shape[0])
+        rows = int(array.shape[1])
+        cols = int(array.shape[2])
+        return [
+            [
+                [self._backend.to_scalar(array[b, i, j]) for j in range(cols)]
+                for i in range(rows)
+            ]
+            for b in range(blocks)
+        ]
         self._riemannian = None  # Lazy init for Fréchet mean
 
     def _compute_consensus(
@@ -375,14 +400,14 @@ class GeneralizedProcrustes:
             ratio = 1.0 - (current_error / total_var) if total_var > var_eps else 0.0
 
             return Result(
-                consensus=b.to_numpy(consensus).tolist(),
-                rotations=b.to_numpy(Rs).tolist(),
-                scales=b.to_numpy(scales).tolist(),
-                residuals=b.to_numpy(residuals).tolist(),
+                consensus=self._array_to_2d_list(consensus),
+                rotations=self._array_to_3d_list(Rs),
+                scales=self._array_to_list(scales),
+                residuals=self._array_to_3d_list(residuals),
                 converged=True,
                 iterations=1,
                 alignment_error=current_error,
-                per_model_errors=b.to_numpy(per_model_errors).tolist(),
+                per_model_errors=self._array_to_list(per_model_errors),
                 consensus_variance_ratio=ratio,
                 sample_count=n,
                 dimension=k,
@@ -465,14 +490,14 @@ class GeneralizedProcrustes:
         ratio = 1.0 - (residual_var / total_var) if total_var > var_eps else 0.0
 
         return Result(
-            consensus=self._backend.to_numpy(consensus).tolist(),
-            rotations=self._backend.to_numpy(Rs).tolist(),
-            scales=self._backend.to_numpy(scales).tolist(),
-            residuals=self._backend.to_numpy(residuals).tolist(),
+            consensus=self._array_to_2d_list(consensus),
+            rotations=self._array_to_3d_list(Rs),
+            scales=self._array_to_list(scales),
+            residuals=self._array_to_3d_list(residuals),
             converged=converged,
             iterations=iterations,
             alignment_error=current_error,
-            per_model_errors=self._backend.to_numpy(per_model_errors).tolist(),
+            per_model_errors=self._array_to_list(per_model_errors),
             consensus_variance_ratio=ratio,
             sample_count=n,
             dimension=k,
@@ -769,7 +794,7 @@ class RotationContinuityAnalyzer:
 
             # Convert rotation to list for result
             backend.eval(rotation)
-            rotation_list = backend.to_numpy(rotation).tolist()
+            rotation_list = self._array_to_2d_list(rotation)
 
             layer_results.append(
                 LayerRotationResult(

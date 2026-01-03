@@ -81,6 +81,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _array_to_list(backend: "Backend", array: "Array") -> list[float]:
+    flat = backend.reshape(array, (-1,))
+    count = int(flat.shape[0])
+    return [backend.to_scalar(flat[i]) for i in range(count)]
+
+
 class EmbeddingType(Enum):
     """Types of embeddings for prime sequence analysis."""
 
@@ -342,7 +348,7 @@ def time_delay_embedding(
     # Build embedding matrix
     rows = []
     # Convert sequence to list once outside loop for efficiency
-    seq_list = backend.to_numpy(sequence).tolist()
+    seq_list = _array_to_list(backend, sequence)
 
     for i in range(n_windows):
         indices = [i + j * delay for j in range(embedding_dim)]
@@ -381,7 +387,7 @@ def residue_embedding(
     if moduli is None:
         moduli = [2, 6, 30, 210]  # Primorials: 2, 2*3, 2*3*5, 2*3*5*7
 
-    primes_list = backend.to_numpy(primes).tolist()
+    primes_list = _array_to_list(backend, primes)
     rows = []
 
     for p in primes_list:
@@ -417,7 +423,7 @@ def digit_embedding(
     """
     backend = backend or get_default_backend()
 
-    seq_list = backend.to_numpy(sequence).tolist()
+    seq_list = _array_to_list(backend, sequence)
     rows = []
 
     for num in seq_list:
@@ -481,7 +487,7 @@ def shuffled_gaps(
     backend = backend or get_default_backend()
     backend.random_seed(seed)
 
-    gaps_list = backend.to_numpy(gaps).tolist()
+    gaps_list = _array_to_list(backend, gaps)
     n = len(gaps_list)
 
     # Fisher-Yates shuffle using backend random
@@ -540,17 +546,20 @@ def analyze_eigenvalues(
 
     # Sort descending
     eigenvalues = backend.sort(eigenvalues)
-    int(backend.shape(eigenvalues)[0])
+    n_eig = int(backend.shape(eigenvalues)[0])
     # Reverse for descending order
-    ev_list = backend.to_numpy(eigenvalues)
-    eigenvalues = backend.array(ev_list[::-1])
+    reverse_idx = backend.arange(n_eig - 1, -1, -1)
+    backend.eval(reverse_idx)
+    eigenvalues = backend.take(eigenvalues, reverse_idx, axis=0)
+    backend.eval(eigenvalues)
 
     # Filter positive eigenvalues for stability
     eps = machine_epsilon(backend, eigenvalues)
-    ev_list = backend.to_numpy(eigenvalues)
-    pos_eigenvalues = [e for e in ev_list if e > eps]
+    pos_mask = eigenvalues > eps
+    backend.eval(pos_mask)
+    pos_count = int(backend.to_scalar(backend.sum(backend.astype(pos_mask, "int32"))))
 
-    if len(pos_eigenvalues) < 2:
+    if pos_count < 2:
         # Degenerate case
         return EigenvalueDistribution(
             eigenvalues=eigenvalues,
@@ -560,27 +569,35 @@ def analyze_eigenvalues(
             top_k_ratio=1.0,
         )
 
-    pos_ev = backend.array(pos_eigenvalues)
+    pos_ev = eigenvalues[:pos_count]
 
     # Participation ratio: (sum(λ))^2 / sum(λ^2)
     # Measures effective number of significant eigenvalues
-    sum_ev = float(backend.sum(pos_ev))
-    sum_ev_sq = float(backend.sum(pos_ev * pos_ev))
+    sum_ev_arr = backend.sum(pos_ev)
+    sum_ev_sq_arr = backend.sum(pos_ev * pos_ev)
+    backend.eval(sum_ev_arr, sum_ev_sq_arr)
+    sum_ev = float(backend.to_scalar(sum_ev_arr))
+    sum_ev_sq = float(backend.to_scalar(sum_ev_sq_arr))
     participation_ratio = (sum_ev * sum_ev) / sum_ev_sq if sum_ev_sq > eps else 1.0
 
     # Spectral entropy: -sum(p * log(p)) where p = λ/sum(λ)
     # Measures how spread out the spectrum is
     p = pos_ev / sum_ev
-    p_list = backend.to_numpy(p)
-    log_p = [math.log(pi) if pi > eps else 0.0 for pi in p_list]
-    spectral_entropy = -sum(pi * lpi for pi, lpi in zip(p_list, log_p))
+    log_p = backend.where(p > eps, backend.log(p), backend.zeros_like(p))
+    entropy_arr = -backend.sum(p * log_p)
+    backend.eval(entropy_arr)
+    spectral_entropy = float(backend.to_scalar(entropy_arr))
 
     # Condition number
-    condition_number = pos_eigenvalues[0] / pos_eigenvalues[-1]
+    condition_number = float(backend.to_scalar(pos_ev[0])) / float(
+        backend.to_scalar(pos_ev[pos_count - 1])
+    )
 
     # Top-k ratio (top 10 or all if fewer)
-    k = min(10, len(pos_eigenvalues))
-    top_k_sum = sum(pos_eigenvalues[:k])
+    k = min(10, pos_count)
+    top_k_sum_arr = backend.sum(pos_ev[:k])
+    backend.eval(top_k_sum_arr)
+    top_k_sum = float(backend.to_scalar(top_k_sum_arr))
     top_k_ratio = top_k_sum / sum_ev
 
     return EigenvalueDistribution(
@@ -612,8 +629,8 @@ def compare_distributions(
     backend = backend or get_default_backend()
 
     # Normalize eigenvalues to probability distributions
-    ev1 = backend.to_numpy(dist1.eigenvalues)
-    ev2 = backend.to_numpy(dist2.eigenvalues)
+    ev1 = _array_to_list(backend, dist1.eigenvalues)
+    ev2 = _array_to_list(backend, dist2.eigenvalues)
 
     eps = machine_epsilon(backend, dist1.eigenvalues)
     ev1_pos = [e for e in ev1 if e > eps]
@@ -686,7 +703,8 @@ def generate_random_gaps(
     gaps = -mean_gap * backend.log(one_minus_u)
 
     # Round to integers (gaps are integers) and ensure >= 2 (min prime gap)
-    gaps_list = [max(2.0, round(float(g))) for g in backend.to_numpy(gaps)]
+    gaps_vals = _array_to_list(backend, gaps)
+    gaps_list = [max(2.0, round(float(g))) for g in gaps_vals]
     return backend.array(gaps_list)
 
 
@@ -713,7 +731,8 @@ def generate_uniform_gaps(
     backend.random_seed(seed)
 
     uniform = backend.random_uniform(low=min_gap, high=max_gap, shape=(n,))
-    gaps_list = [max(2.0, round(float(g))) for g in backend.to_numpy(uniform)]
+    gaps_vals = _array_to_list(backend, uniform)
+    gaps_list = [max(2.0, round(float(g))) for g in gaps_vals]
     return backend.array(gaps_list)
 
 
@@ -844,7 +863,7 @@ def generate_baseline(
         # For Cramér model, we need enough pseudo-primes
         _, gaps = generate_cramer_model(n + 1, backend, seed)
         # Trim to requested size
-        gaps_list = backend.to_numpy(gaps).tolist()[:n]
+        gaps_list = _array_to_list(backend, gaps)[:n]
         return backend.array(gaps_list)
 
     elif baseline_type == BaselineType.SHUFFLED:
@@ -1317,7 +1336,7 @@ def run_comprehensive_analysis(
             idx = min(idx, primes.gap_count - 1)
             indices.append(idx)
 
-        gaps_list = backend.to_numpy(primes.gaps).tolist()
+        gaps_list = _array_to_list(backend, primes.gaps)
         subsample = backend.array([gaps_list[idx] for idx in indices])
 
         if n_subsample >= embedding_dim + 1:
@@ -1500,7 +1519,7 @@ def run_perturbation_study(
             perturbed_pr = original_pr
         else:
             # Add Gaussian noise scaled to noise_level * mean_gap
-            gaps_list = backend.to_numpy(primes.gaps).tolist()
+            gaps_list = _array_to_list(backend, primes.gaps)
             perturbed_gaps = []
 
             for g in gaps_list:

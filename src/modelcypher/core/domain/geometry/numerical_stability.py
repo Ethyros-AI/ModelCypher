@@ -35,6 +35,9 @@ __all__ = [
     "log_scalar",
     "exp_scalar",
     "power_scalar",
+    "ceil_scalar",
+    "floor_scalar",
+    "ulp_scalar",
     # Epsilon and threshold utilities
     "machine_epsilon",
     "division_epsilon",
@@ -86,7 +89,7 @@ def is_finite(value: float, backend: "Backend") -> bool:
     arr = backend.array([value])
     result = backend.isfinite(arr)
     backend.eval(result)
-    return bool(backend.to_numpy(result)[0])
+    return bool(backend.to_scalar(result))
 
 
 def log_scalar(value: float, backend: "Backend") -> float:
@@ -122,7 +125,39 @@ def power_scalar(value: float, exponent: float, backend: "Backend") -> float:
     return float(backend.to_scalar(result))
 
 
-def machine_epsilon(backend: Backend, array: Array) -> float:
+def ceil_scalar(value: float, backend: "Backend") -> int:
+    """Compute ceil of scalar using backend.
+
+    Use instead of math.ceil(value).
+    """
+    arr = backend.array([value])
+    result = backend.ceil(arr)
+    backend.eval(result)
+    return int(backend.to_scalar(result))
+
+
+def floor_scalar(value: float, backend: "Backend") -> int:
+    """Compute floor of scalar using backend.
+
+    Use instead of math.floor(value).
+    """
+    arr = backend.array([value])
+    result = backend.floor(arr)
+    backend.eval(result)
+    return int(backend.to_scalar(result))
+
+
+def ulp_scalar(value: float, backend: "Backend") -> float:
+    """Compute unit in last place for scalar using backend.
+
+    Use instead of math.ulp(value).
+    For normalized floats, ulp(x) ≈ eps * abs(x).
+    """
+    eps = backend.finfo(backend.array([value]).dtype).eps
+    return eps * abs(value) if value != 0.0 else eps
+
+
+def machine_epsilon(backend: "Backend", array: "Array") -> float:
     """Get machine epsilon for the array's dtype.
 
     This is the smallest value such that 1.0 + epsilon != 1.0.
@@ -197,6 +232,7 @@ def safe_log_epsilon(backend: Backend, array: Array) -> float:
 def find_magnitude_gap_threshold(
     sorted_values: list[float],
     eps: float | None = None,
+    backend: "Backend | None" = None,
 ) -> float:
     """Find the natural break point in a sorted magnitude distribution.
 
@@ -208,14 +244,20 @@ def find_magnitude_gap_threshold(
         sorted_values: Magnitudes sorted in ascending order.
         eps: Minimum denominator for numerical stability. If None, derives
             epsilon from the float precision of the input scale.
+        backend: Backend for computation. If None, uses default backend.
 
     Returns:
         The value at which the largest relative gap occurs.
         Returns the median if no clear gap is found.
     """
+    if backend is None:
+        from modelcypher.core.domain._backend import get_default_backend
+
+        backend = get_default_backend()
+
     if eps is None:
         scale = max(1.0, max((abs(v) for v in sorted_values), default=0.0))
-        eps = math.ulp(scale)
+        eps = ulp_scalar(scale, backend)
 
     if len(sorted_values) < 3:
         return sorted_values[len(sorted_values) // 2] if sorted_values else 0.0
@@ -241,22 +283,28 @@ def compute_pearson_correlation(
     rhs: list[float],
     *,
     default: float | None = None,
+    backend: "Backend | None" = None,
 ) -> float:
     """Compute Pearson correlation coefficient between two lists.
 
     This is the canonical implementation for computing Pearson's r
-    across geometry modules. Uses pure Python math to avoid backend
-    dependencies for simple list operations.
+    across geometry modules.
 
     Args:
         lhs: First list of values.
         rhs: Second list of values (must be same length as lhs).
         default: Value to return on error (empty lists, mismatched lengths).
                  If None, returns float("nan") on error.
+        backend: Backend for computation. If None, uses default backend.
 
     Returns:
         Pearson correlation coefficient in [-1, 1], or default/nan on error.
     """
+    if backend is None:
+        from modelcypher.core.domain._backend import get_default_backend
+
+        backend = get_default_backend()
+
     error_value = default if default is not None else float("nan")
 
     if not lhs or len(lhs) != len(rhs):
@@ -277,7 +325,7 @@ def compute_pearson_correlation(
         den_l += diff_l * diff_l
         den_r += diff_r * diff_r
 
-    denom = math.sqrt(den_l) * math.sqrt(den_r)
+    denom = sqrt_scalar(den_l, backend) * sqrt_scalar(den_r, backend)
     if denom <= 0:
         return error_value
 
@@ -728,7 +776,7 @@ def _solve_underdetermined_qr(
 
     # Apply regularization if needed
     if rank < n_samples:
-        regularization = max_diag * math.sqrt(eps) * (n_samples - rank + 1)
+        regularization = max_diag * sqrt_scalar(eps, b) * (n_samples - rank + 1)
         R_reg = R + regularization * b.eye(n_samples)
         b.eval(R_reg)
         diagnostics["method"] = "qr_rank_deficient"
@@ -802,7 +850,7 @@ def _solve_overdetermined_qr(
 
     # Apply regularization if needed
     if rank < d_source:
-        regularization = max_diag * math.sqrt(eps) * (d_source - rank + 1)
+        regularization = max_diag * sqrt_scalar(eps, b) * (d_source - rank + 1)
         R_reg = R + regularization * b.eye(d_source)
         b.eval(R_reg)
         diagnostics["method"] = "qr_rank_deficient"
@@ -1070,7 +1118,7 @@ def _get_native_precision(backend: Backend, array: Array) -> str:
 
 
 def compute_entropy_effective_rank(
-    backend: Backend,
+    backend: "Backend",
     singular_values: list[float],
 ) -> float:
     """Compute entropy-based effective rank from singular values.
@@ -1086,8 +1134,6 @@ def compute_entropy_effective_rank(
     Returns:
         Effective rank as a float. Floor to get integer rank.
     """
-    import math
-
     sv_array = backend.array(singular_values or [1.0])
     eps = machine_epsilon(backend, sv_array)
     log_eps = safe_log_epsilon(backend, sv_array)
@@ -1104,10 +1150,10 @@ def compute_entropy_effective_rank(
     # Compute normalized probabilities
     probs = [s / total for s in positive_sv]
 
-    # Shannon entropy
-    entropy = -sum(p * math.log(p + log_eps) for p in probs if p > 0)
+    # Shannon entropy using backend
+    entropy = -sum(p * log_scalar(p + log_eps, backend) for p in probs if p > 0)
 
-    return math.exp(entropy)
+    return exp_scalar(entropy, backend)
 
 
 def compute_shared_relational_rank(
@@ -1493,7 +1539,7 @@ def solve_via_cca_procrustes(
         if erank <= 0:
             return None
 
-        k = max(1, min(max_components, int(math.ceil(erank))))
+        k = max(1, min(max_components, ceil_scalar(erank, b)))
 
         # Principal components: V = matrix.T @ U @ S^{-1}
         U_k = eigenvectors_sorted[:, :k]  # [n, k]
@@ -1604,7 +1650,7 @@ def solve_via_cca_procrustes(
     if erank <= 0:
         return None, diagnostics
 
-    k = max(1, min(len(signal_corrs), int(math.ceil(erank))))
+    k = max(1, min(len(signal_corrs), ceil_scalar(erank, b)))
 
     if k == 0:
         return None, diagnostics

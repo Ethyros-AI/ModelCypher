@@ -440,10 +440,8 @@ class RegimeStateDetector:
         var_arr = b.var(logits_f32)
         b.eval(mean_arr, var_arr)
 
-        mean_np = b.to_numpy(mean_arr)
-        var_np = b.to_numpy(var_arr)
-        mean_val = float(mean_np.item())
-        var_val = float(var_np.item())
+        mean_val = float(b.to_scalar(mean_arr))
+        var_val = float(b.to_scalar(var_arr))
         std_val = math.sqrt(var_val)
 
         return (mean_val, var_val, std_val)
@@ -495,15 +493,13 @@ class RegimeStateDetector:
         b = self._backend
         reduced = array if array.ndim == 0 else b.mean(array)
         b.eval(reduced)
-        reduced_np = b.to_numpy(reduced)
-        return float(reduced_np.item())
+        return float(b.to_scalar(reduced))
 
     def _scalar_mean_int(self, array: "Array") -> int:
         """Compute scalar mean as int from array."""
         b = self._backend
         if array.ndim == 0:
             b.eval(array)
-            arr_np = b.to_numpy(array)
-            return int(arr_np.item())
+            return int(b.to_scalar(array))
         mean_val = self._scalar_mean(b.astype(array, "float32"))
         return int(round(mean_val))

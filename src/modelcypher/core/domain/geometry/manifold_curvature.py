@@ -63,6 +63,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _array_to_list(backend: "Backend", array: "Array") -> list[float]:
+    flat = backend.reshape(array, (-1,))
+    count = int(flat.shape[0])
+    return [backend.to_scalar(flat[i]) for i in range(count)]
+
+
 class CurvatureSign(str, Enum):
     """Classification of local curvature."""
 
@@ -304,14 +310,16 @@ class ManifoldCurvatureProfile:
         nearest_indices_arr = sorted_idx[:k]
         nearest_dists = backend.take(row, nearest_indices_arr, axis=0)
         backend.eval(nearest_indices_arr, nearest_dists)
-        nearest_indices = [int(i) for i in backend.to_numpy(nearest_indices_arr).tolist()]
+        nearest_indices = [
+            int(val) for val in _array_to_list(backend, nearest_indices_arr)
+        ]
 
         # Weighted average by inverse geodesic distance
         eps = division_epsilon(backend, nearest_dists)
         weights_arr = 1.0 / (nearest_dists + eps)
         weights_arr = weights_arr / backend.sum(weights_arr)
         backend.eval(weights_arr)
-        weights = [float(w) for w in backend.to_numpy(weights_arr).tolist()]
+        weights = [float(w) for w in _array_to_list(backend, weights_arr)]
 
         # Interpolate curvature values
         mean_sectional = sum(
@@ -638,11 +646,10 @@ class SectionalCurvatureEstimator:
 
         # Extract upper triangle (excluding diagonal) for median
         backend.eval(dists)
-        dists_np = backend.to_numpy(dists)
         upper_tri = []
         for i in range(m):
             for j in range(i + 1, m):
-                upper_tri.append(float(dists_np[i, j]))
+                upper_tri.append(float(backend.to_scalar(dists[i, j])))
 
         if not upper_tri:
             return division_epsilon(backend, neighbors)
@@ -691,11 +698,11 @@ class SectionalCurvatureEstimator:
             g = metric_fn(point)
             # Initialize gradient tensor
             dg_list = []
+            point_vals = _array_to_list(backend, point)
             for k in range(d):
-                point_np = backend.to_numpy(point).flatten()
-                perturbed_plus = list(point_np)
+                perturbed_plus = list(point_vals)
                 perturbed_plus[k] += eps
-                perturbed_minus = list(point_np)
+                perturbed_minus = list(point_vals)
                 perturbed_minus[k] -= eps
 
                 g_plus = metric_fn(backend.array(perturbed_plus))
@@ -717,10 +724,8 @@ class SectionalCurvatureEstimator:
         g_reg = g + reg_scale * backend.eye(d)
         g_inv = backend.inv(g_reg)
 
-        # Build christoffel tensor using pure Python loops (convert to numpy for indexing)
+        # Build christoffel tensor using pure Python loops
         backend.eval(g_inv, dg)
-        g_inv_np = backend.to_numpy(g_inv)
-        dg_np = backend.to_numpy(dg)
 
         christoffel_list = []
         for k in range(d):
@@ -730,10 +735,11 @@ class SectionalCurvatureEstimator:
                 for j in range(d):
                     total = 0.0
                     for idx_l in range(d):
-                        if dg_np.ndim == 3:
-                            total += float(g_inv_np[k, idx_l]) * (
-                                float(dg_np[i, j, idx_l]) + float(dg_np[j, i, idx_l]) - float(dg_np[idx_l, i, j])
-                            )
+                        total += float(backend.to_scalar(g_inv[k, idx_l])) * (
+                            float(backend.to_scalar(dg[i, j, idx_l]))
+                            + float(backend.to_scalar(dg[j, i, idx_l]))
+                            - float(backend.to_scalar(dg[idx_l, i, j]))
+                        )
                     col_list.append(0.5 * total)
                 row_list.append(col_list)
             christoffel_list.append(row_list)
@@ -755,12 +761,9 @@ class SectionalCurvatureEstimator:
         where R is the Riemann curvature tensor.
         """
         backend.eval(u, v, metric, christoffel)
-        u_np = backend.to_numpy(u).flatten()
-        v_np = backend.to_numpy(v).flatten()
-        metric_np = backend.to_numpy(metric)
-        christoffel_np = backend.to_numpy(christoffel)
-
-        d = len(u_np)
+        u_vals = _array_to_list(backend, u)
+        v_vals = _array_to_list(backend, v)
+        d = len(u_vals)
 
         # Compute Riemann tensor R^l_ijk
         # Simplified: use approximate formula for nearly flat spaces
@@ -775,16 +778,25 @@ class SectionalCurvatureEstimator:
                         term1 = 0.0
                         term2 = 0.0
                         for m in range(d):
-                            term1 += float(christoffel_np[idx_l, i, m]) * float(christoffel_np[m, j, k])
-                            term2 += float(christoffel_np[idx_l, j, m]) * float(christoffel_np[m, i, k])
+                            term1 += float(backend.to_scalar(christoffel[idx_l, i, m])) * float(
+                                backend.to_scalar(christoffel[m, j, k])
+                            )
+                            term2 += float(backend.to_scalar(christoffel[idx_l, j, m])) * float(
+                                backend.to_scalar(christoffel[m, i, k])
+                            )
 
-                        riemann_component += (term1 - term2) * float(u_np[i]) * float(v_np[j]) * float(v_np[k]) * float(u_np[idx_l])
+                        riemann_component += (term1 - term2) * float(u_vals[i]) * float(
+                            v_vals[j]
+                        ) * float(v_vals[k]) * float(u_vals[idx_l])
 
         # Denominator: g(u,u)g(v,v) - g(u,v)^2
-        # Compute using pure Python
-        g_uu = sum(float(u_np[i]) * sum(float(metric_np[i, j]) * float(u_np[j]) for j in range(d)) for i in range(d))
-        g_vv = sum(float(v_np[i]) * sum(float(metric_np[i, j]) * float(v_np[j]) for j in range(d)) for i in range(d))
-        g_uv = sum(float(u_np[i]) * sum(float(metric_np[i, j]) * float(v_np[j]) for j in range(d)) for i in range(d))
+        u_vec = backend.reshape(u, (-1, 1))
+        v_vec = backend.reshape(v, (-1, 1))
+        g_u = backend.matmul(metric, u_vec)
+        g_v = backend.matmul(metric, v_vec)
+        g_uu = backend.to_scalar(backend.matmul(backend.transpose(u_vec), g_u))
+        g_vv = backend.to_scalar(backend.matmul(backend.transpose(v_vec), g_v))
+        g_uv = backend.to_scalar(backend.matmul(backend.transpose(u_vec), g_v))
 
         denom = g_uu * g_vv - g_uv * g_uv
 
@@ -818,8 +830,7 @@ class SectionalCurvatureEstimator:
             U, S, Vt = backend.svd(centered)
             backend.eval(S, Vt)
 
-            S_np = backend.to_numpy(S)
-            if len(S_np) < d:
+            if int(S.shape[0]) < d:
                 return None, None
 
             # Normal direction is smallest singular vector
@@ -832,18 +843,21 @@ class SectionalCurvatureEstimator:
             # For simplified version, estimate Hessian from centered data
             # Using backend operations
             backend.eval(heights, centered)
-            heights_np = backend.to_numpy(heights).flatten()
-            centered_np = backend.to_numpy(centered)
 
             # Build design matrix in Python
             d * (d + 1) // 2
             design_list = []
             for row_idx in range(n):
-                row = list(centered_np[row_idx])
+                row = [backend.to_scalar(centered[row_idx, j]) for j in range(d)]
                 # Add quadratic terms
                 for i in range(d):
                     for j in range(i, d):
-                        row.append(float(centered_np[row_idx, i] * centered_np[row_idx, j]))
+                        row.append(
+                            float(
+                                backend.to_scalar(centered[row_idx, i])
+                                * backend.to_scalar(centered[row_idx, j])
+                            )
+                        )
                 design_list.append(row)
 
             design = backend.array(design_list)
@@ -851,19 +865,19 @@ class SectionalCurvatureEstimator:
             # Solve least squares using backend
             # Use pinv for robust solution
             design_pinv = backend.pinv(design)
-            heights_arr = backend.array(heights_np)
+            heights_arr = backend.reshape(heights, (-1,))
             coeffs = backend.matmul(design_pinv, heights_arr)
             backend.eval(coeffs)
-            coeffs_np = backend.to_numpy(coeffs).flatten()
 
             # Extract Hessian (second fundamental form)
             hessian_list = [[0.0] * d for _ in range(d)]
             idx = d
             for i in range(d):
                 for j in range(i, d):
-                    if idx < len(coeffs_np):
-                        hessian_list[i][j] = float(coeffs_np[idx])
-                        hessian_list[j][i] = float(coeffs_np[idx])
+                    if idx < int(coeffs.shape[0]):
+                        coeff_val = backend.to_scalar(coeffs[idx])
+                        hessian_list[i][j] = float(coeff_val)
+                        hessian_list[j][i] = float(coeff_val)
                     idx += 1
 
             hessian = backend.array(hessian_list)
@@ -894,10 +908,10 @@ class SectionalCurvatureEstimator:
         curv_arr = backend.array(sectional_curvatures)
         backend.eval(curv_arr)
         eps = division_epsilon(backend, curv_arr)
-        curv_np = backend.to_numpy(curv_arr).flatten()
+        curv_vals = _array_to_list(backend, curv_arr)
 
-        has_pos = any(float(val) > eps for val in curv_np)
-        has_neg = any(float(val) < -eps for val in curv_np)
+        has_pos = any(float(val) > eps for val in curv_vals)
+        has_neg = any(float(val) < -eps for val in curv_vals)
 
         if has_pos and has_neg:
             return CurvatureSign.MIXED
@@ -1164,8 +1178,8 @@ class OllivierRicciCurvature:
             neighbors_arr = sorted_idx[:k]
             neighbor_dists = backend.take(row_masked, neighbors_arr, axis=0)
             backend.eval(neighbors_arr, neighbor_dists)
-            idx_list = backend.to_numpy(neighbors_arr).tolist()
-            dist_list = backend.to_numpy(neighbor_dists).tolist()
+            idx_list = _array_to_list(backend, neighbors_arr)
+            dist_list = _array_to_list(backend, neighbor_dists)
             neighbors = [
                 int(idx)
                 for idx, dist in zip(idx_list, dist_list)

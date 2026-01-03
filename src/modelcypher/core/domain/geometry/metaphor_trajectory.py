@@ -300,28 +300,21 @@ class MetaphorTrajectoryCollector:
             target_centroid = self.backend.mean(target_acts, axis=0)
 
             # Compute norms
-            source_norm = float(
-                self.backend.to_numpy(
-                    self.backend.sqrt(
-                        self.backend.sum(source_centroid * source_centroid)
-                    )
-                )
+            source_norm_arr = self.backend.sqrt(
+                self.backend.sum(source_centroid * source_centroid)
             )
-            target_norm = float(
-                self.backend.to_numpy(
-                    self.backend.sqrt(
-                        self.backend.sum(target_centroid * target_centroid)
-                    )
-                )
+            target_norm_arr = self.backend.sqrt(
+                self.backend.sum(target_centroid * target_centroid)
             )
+            self.backend.eval(source_norm_arr, target_norm_arr)
+            source_norm = float(self.backend.to_scalar(source_norm_arr))
+            target_norm = float(self.backend.to_scalar(target_norm_arr))
 
             # Compute cosine similarity
             eps = division_epsilon(self.backend, source_centroid)
-            dot_product = float(
-                self.backend.to_numpy(
-                    self.backend.sum(source_centroid * target_centroid)
-                )
-            )
+            dot_arr = self.backend.sum(source_centroid * target_centroid)
+            self.backend.eval(dot_arr)
+            dot_product = float(self.backend.to_scalar(dot_arr))
             denom = source_norm * target_norm + eps
             cosine_sim = dot_product / denom
 

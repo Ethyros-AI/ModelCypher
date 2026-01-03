@@ -54,7 +54,6 @@ Properties:
 from __future__ import annotations
 
 import logging
-import math
 import time
 from dataclasses import dataclass
 from enum import Enum
@@ -64,7 +63,9 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.cache import ComputationCache
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    is_finite,
     regularization_epsilon,
+    sqrt_scalar,
 )
 
 if TYPE_CHECKING:
@@ -123,7 +124,8 @@ class CKAResult:
     @property
     def is_valid(self) -> bool:
         """Check if result is valid (not NaN/Inf)."""
-        return math.isfinite(self.cka) and math.isfinite(self.hsic_xy) and 0.0 <= self.cka <= 1.0
+        backend = get_default_backend()
+        return is_finite(self.cka, backend) and is_finite(self.hsic_xy, backend) and 0.0 <= self.cka <= 1.0
 
     @property
     def best(self) -> float:
@@ -202,7 +204,7 @@ def _rbf_gram_matrix(
         backend.eval(median_elem)
         median_dist = float(backend.to_scalar(median_elem))
         if median_dist > 0:
-            sigma = math.sqrt(median_dist / 2)
+            sigma = sqrt_scalar(median_dist / 2, backend)
         else:
             sigma = 1.0
         # Use precision-aware minimum to avoid zero sigma
@@ -320,7 +322,7 @@ def _compute_hsic(
     # Normalize by (n-1)^2
     hsic = trace_val / ((n - 1) ** 2)
 
-    if not math.isfinite(hsic):
+    if not is_finite(hsic, backend):
         return 0.0
 
     return hsic
@@ -390,7 +392,7 @@ def _compute_hsic_unbiased(
     result = float(backend.to_scalar(hsic))
 
     # HSIC should be non-negative; clamp to avoid numerical issues
-    return max(0.0, result) if math.isfinite(result) else 0.0
+    return max(0.0, result) if is_finite(result, backend) else 0.0
 
 
 def _compute_hsic_dispatch(
@@ -453,7 +455,7 @@ def _participation_ratio(
     sum_val = float(backend.to_scalar(sum_vals))
     sum_sq_val = float(backend.to_scalar(sum_sq))
 
-    if not math.isfinite(sum_val) or not math.isfinite(sum_sq_val):
+    if not is_finite(sum_val, backend) or not is_finite(sum_sq_val, backend):
         return 0.0
     if sum_sq_val <= 0.0:
         return 0.0
@@ -483,8 +485,8 @@ def _feature_sampling_correction(
         return 1.0, gamma
 
     gamma = max(gamma, 1.0)
-    correction = math.sqrt(1.0 + (gamma - 1.0) / float(feature_dim))
-    if not math.isfinite(correction) or correction <= 0.0:
+    correction = sqrt_scalar(1.0 + (gamma - 1.0) / float(feature_dim), backend)
+    if not is_finite(correction, backend) or correction <= 0.0:
         return 1.0, gamma
     return correction, gamma
 
@@ -603,7 +605,7 @@ def compute_cka(
         hsic_yy = hsic_xx
 
     # CKA = HSIC(X,Y) / sqrt(HSIC(X,X) * HSIC(Y,Y))
-    denominator = math.sqrt(hsic_xx * hsic_yy)
+    denominator = sqrt_scalar(hsic_xx * hsic_yy, backend)
 
     # Use precision-aware threshold for near-zero detection
     eps = division_epsilon(backend, activations_x)
@@ -835,7 +837,7 @@ def compute_cka_backend(
     hsic_yy = float(backend.to_scalar(hsic_yy_arr))
 
     # CKA = HSIC(X,Y) / sqrt(HSIC(X,X) * HSIC(Y,Y))
-    denom = math.sqrt(hsic_xx * hsic_yy)
+    denom = sqrt_scalar(hsic_xx * hsic_yy, backend)
     # Use precision-aware threshold for near-zero detection
     eps = division_epsilon(backend, x)
     if denom < eps:
@@ -943,14 +945,14 @@ def compute_cka_from_grams(
     # Handle flattened inputs
     if len(arr_a.shape) == 1:
         if n is None:
-            n = int(math.sqrt(arr_a.shape[0]))
+            n = int(sqrt_scalar(float(arr_a.shape[0]), backend))
             if n * n != arr_a.shape[0]:
                 return 0.0
         arr_a = backend.reshape(arr_a, (n, n))
 
     if len(arr_b.shape) == 1:
         if n is None:
-            n = int(math.sqrt(arr_b.shape[0]))
+            n = int(sqrt_scalar(float(arr_b.shape[0]), backend))
             if n * n != arr_b.shape[0]:
                 return 0.0
         arr_b = backend.reshape(arr_b, (n, n))
@@ -1002,7 +1004,7 @@ def compute_cka_from_grams(
     )
 
     # CKA = HSIC(A,B) / sqrt(HSIC(A,A) * HSIC(B,B))
-    denom = math.sqrt(hsic_aa * hsic_bb)
+    denom = sqrt_scalar(hsic_aa * hsic_bb, backend)
     # Use precision-aware threshold for near-zero detection
     eps = division_epsilon(backend, arr_a)
     if denom < eps:
@@ -1017,7 +1019,7 @@ def compute_cka_from_grams(
         correction_a, _ = _feature_sampling_correction(centered_a, feature_dim_a, backend)
         correction_b, _ = _feature_sampling_correction(centered_b, feature_dim_b, backend)
         correction = correction_a * correction_b
-        if correction > 0.0 and math.isfinite(correction):
+        if correction > 0.0 and is_finite(correction, backend):
             cka = min(1.0, cka * correction)
             if cka >= 1.0 - eps:
                 cka = 1.0

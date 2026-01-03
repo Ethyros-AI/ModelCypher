@@ -39,10 +39,16 @@ For typical LLMs:
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from enum import Enum
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    exp_scalar,
+    log_scalar,
+    sqrt_scalar,
+    ulp_scalar,
+)
 from modelcypher.core.domain.thermo.linguistic_thermodynamics import AttractorBasin
 
 class Phase(str, Enum):
@@ -152,8 +158,9 @@ class BasinTopology:
         """
         if temperature <= 0:
             return 0.0
+        backend = get_default_backend()
         barrier = self.transition_ridge - self.caution_depth
-        return math.exp(-barrier / temperature)
+        return exp_scalar(-barrier / temperature, backend)
 
     def refusal_escape_probability(self, temperature: float) -> float:
         """Escape probability from refusal basin to solution basin.
@@ -168,8 +175,9 @@ class BasinTopology:
         """
         if temperature <= 0:
             return 0.0
+        backend = get_default_backend()
         barrier = self.transition_ridge - self.refusal_depth
-        return math.exp(-barrier / temperature)
+        return exp_scalar(-barrier / temperature, backend)
 
     def basin_weights(self, temperature: float) -> BasinWeights:
         """Boltzmann weights for each basin at given temperature.
@@ -187,9 +195,10 @@ class BasinTopology:
             # At T=0, all probability goes to deepest basin
             return BasinWeights(refusal=1.0, caution=0.0, solution=0.0)
 
-        z_refusal = math.exp(-self.refusal_depth / temperature)
-        z_caution = math.exp(-self.caution_depth / temperature)
-        z_solution = math.exp(-self.solution_depth / temperature)
+        backend = get_default_backend()
+        z_refusal = exp_scalar(-self.refusal_depth / temperature, backend)
+        z_caution = exp_scalar(-self.caution_depth / temperature, backend)
+        z_solution = exp_scalar(-self.solution_depth / temperature, backend)
         partition = z_refusal + z_caution + z_solution
 
         if partition <= 0:
@@ -284,7 +293,8 @@ class PhaseTransitionTheory:
         """
         if temperature <= 0:
             return 0.0
-        safe_temperature = max(temperature, math.ulp(temperature))
+        backend = get_default_backend()
+        safe_temperature = max(temperature, ulp_scalar(temperature, backend))
         variance = PhaseTransitionTheory.compute_logit_variance(
             logits, temperature=safe_temperature
         )
@@ -309,12 +319,13 @@ class PhaseTransitionTheory:
         """
         if temperature <= 0 or not logits:
             return 0.0
-        safe_temperature = max(temperature, math.ulp(temperature))
+        backend = get_default_backend()
+        safe_temperature = max(temperature, ulp_scalar(temperature, backend))
 
         # Temperature-scaled softmax
         scaled = [z / safe_temperature for z in logits]
         max_scaled = max(scaled)
-        exp_scaled = [math.exp(s - max_scaled) for s in scaled]  # Numerical stability
+        exp_scaled = [exp_scalar(s - max_scaled, backend) for s in scaled]  # Numerical stability
         partition = sum(exp_scaled)
         probs = [e / partition for e in exp_scaled]
 
@@ -347,8 +358,9 @@ class PhaseTransitionTheory:
         if n < 2:
             return LogitStatistics(mean=mean, variance=0.0, std_dev=0.0)
 
+        backend = get_default_backend()
         variance = sum((z - mean) ** 2 for z in logits) / (n - 1)
-        std_dev = math.sqrt(variance)
+        std_dev = sqrt_scalar(variance, backend)
         return LogitStatistics(mean=mean, variance=variance, std_dev=std_dev)
 
     @staticmethod

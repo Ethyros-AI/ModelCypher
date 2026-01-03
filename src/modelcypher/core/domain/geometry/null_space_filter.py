@@ -285,9 +285,21 @@ class NullSpaceFilter:
 
         # Determine threshold from machine epsilon - the ONLY correct threshold
         # Standard numerical rank: σ_i > ε * σ_max
-        S_np = [float(backend.to_scalar(S[i])) for i in range(int(S.shape[0]))]
         eps = machine_epsilon(backend, A)
-        effective_threshold, row_space_dim = _compute_numerical_rank(S_np, eps)
+        s_count = int(S.shape[0])
+        if s_count == 0:
+            effective_threshold = 0.0
+            row_space_dim = 0
+        else:
+            s_max_arr = backend.max(S)
+            backend.eval(s_max_arr)
+            s_max = float(backend.to_scalar(s_max_arr))
+            effective_threshold = eps * s_max
+            row_space_dim = int(
+                backend.to_scalar(
+                    backend.sum(backend.astype(S > effective_threshold, "int32"))
+                )
+            )
 
         # Null space vectors are rows of Vh beyond row_space_dim
         null_vectors = Vh[row_space_dim:]  # Shape: [null_dim, d]

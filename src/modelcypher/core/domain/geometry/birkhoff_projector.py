@@ -260,8 +260,8 @@ class BirkhoffProjector:
         # SVD method (required - no fallback)
         _, S, _ = svd_via_eigh(backend, matrix, full_matrices=False)
         backend.eval(S)
-        S_np = backend.to_numpy(S)
-        return float(S_np[0]) if len(S_np) > 0 else 0.0
+        count = int(S.shape[0])
+        return float(backend.to_scalar(S[0])) if count > 0 else 0.0
 
     def bound_spectral_norm(
         self,

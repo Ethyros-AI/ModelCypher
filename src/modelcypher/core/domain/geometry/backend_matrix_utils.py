@@ -389,34 +389,64 @@ class BackendMatrixUtils:
         """
         b = self.backend
         eig_flat = b.reshape(eigenvalues, (-1,))
-        mask = eig_flat > 0
-        b.eval(mask)
+        n = int(eig_flat.shape[0])
 
-        eig_np = b.to_numpy(eig_flat)
-        mask_np = b.to_numpy(mask)
-        eig_positive = sorted([float(x) for x in eig_np[mask_np]], reverse=True)
+        if n < 2:
+            # Count positive values
+            mask = eig_flat > 0
+            b.eval(mask)
+            count = int(b.to_scalar(b.sum(b.astype(mask, "float32"))))
+            return count
 
-        if len(eig_positive) < 2:
-            return len(eig_positive)
-
-        # Machine epsilon for numerical stability (derived from eigenvalue dtype)
+        # Machine epsilon for numerical stability
         eps = division_epsilon(b, eig_flat)
 
-        # Find the maximum relative drop: (λ_i - λ_{i+1}) / λ_i
-        max_gap = 0.0
-        gap_index = 1  # Keep at least 1 component
+        # Replace non-positive with -inf so they sort to the end
+        neg_inf = b.full(eig_flat.shape, float("-inf"))
+        eig_masked = b.where(eig_flat > 0, eig_flat, neg_inf)
 
-        for i in range(len(eig_positive) - 1):
-            if eig_positive[i] < eps:
-                break
-            relative_drop = (eig_positive[i] - eig_positive[i + 1]) / eig_positive[i]
-            if relative_drop > max_gap:
-                max_gap = relative_drop
-                gap_index = i + 1
+        # Sort ascending, then reverse to get descending
+        sorted_asc = b.sort(eig_masked)
+        reverse_idx = b.arange(n - 1, -1, -1)
+        b.eval(reverse_idx)
+        sorted_desc = b.take(sorted_asc, reverse_idx, axis=0)
+        b.eval(sorted_desc)
 
-        if max_gap <= 0.0:
-            return len(eig_positive)
-        return gap_index
+        # Count positive eigenvalues (those not -inf after sort)
+        is_positive = sorted_desc > float("-inf")
+        b.eval(is_positive)
+        positive_count = int(b.to_scalar(b.sum(b.astype(is_positive, "float32"))))
+
+        if positive_count < 2:
+            return positive_count
+
+        # Compute relative drops: (λ_i - λ_{i+1}) / λ_i for i in [0, positive_count-1)
+        # Use slicing via take
+        idx_i = b.arange(0, positive_count - 1)
+        idx_ip1 = b.arange(1, positive_count)
+        b.eval(idx_i, idx_ip1)
+
+        lambda_i = b.take(sorted_desc, idx_i, axis=0)
+        lambda_ip1 = b.take(sorted_desc, idx_ip1, axis=0)
+        b.eval(lambda_i, lambda_ip1)
+
+        # Floor lambda_i to avoid division by zero
+        eps_arr = b.full(lambda_i.shape, eps)
+        lambda_i_safe = b.maximum(lambda_i, eps_arr)
+
+        # Relative drop = (λ_i - λ_{i+1}) / λ_i
+        relative_drops = (lambda_i - lambda_ip1) / lambda_i_safe
+        b.eval(relative_drops)
+
+        # Find max gap using argmax
+        max_gap_idx = int(b.to_scalar(b.argmax(relative_drops)))
+        max_gap_val = float(b.to_scalar(b.max(relative_drops)))
+
+        if max_gap_val <= 0.0:
+            return positive_count
+
+        # gap_index is the number of components before the gap (1-indexed)
+        return max_gap_idx + 1
 
     def effective_rank(
         self,
@@ -442,17 +472,23 @@ class BackendMatrixUtils:
         # If variance threshold provided, use cumulative variance method
         b = self.backend
         eig_flat = b.reshape(eigenvalues, (-1,))
-        mask = eig_flat > 0
-        b.eval(mask)
+        n = int(eig_flat.shape[0])
 
-        eig_np = b.to_numpy(eig_flat)
-        mask_np = b.to_numpy(mask)
-        eig_positive = eig_np[mask_np]
-
-        if len(eig_positive) == 0:
+        if n == 0:
             return 0
 
-        eig_sorted = b.array([float(x) for x in sorted(eig_positive, reverse=True)])
+        # Replace non-positive with 0 for sorting
+        zeros = b.zeros_like(eig_flat)
+        eig_positive = b.where(eig_flat > 0, eig_flat, zeros)
+
+        # Sort descending
+        sorted_asc = b.sort(eig_positive)
+        reverse_idx = b.arange(n - 1, -1, -1)
+        b.eval(reverse_idx)
+        eig_sorted = b.take(sorted_asc, reverse_idx, axis=0)
+        b.eval(eig_sorted)
+
+        # Compute total
         total_arr = b.sum(eig_sorted)
         b.eval(total_arr)
         total = float(b.to_scalar(total_arr))
@@ -460,14 +496,29 @@ class BackendMatrixUtils:
         if total <= 0:
             return 0
 
-        cumsum_arr = b.cumsum(eig_sorted)
+        # Compute cumulative sum normalized by total
+        cumsum_arr = b.cumsum(eig_sorted) / total
         b.eval(cumsum_arr)
-        cumsum = b.to_numpy(cumsum_arr) / total
 
-        for i, val in enumerate(cumsum):
-            if val >= variance_threshold:
-                return i + 1
-        return len(cumsum)
+        # Find first index where cumsum >= threshold using backend
+        threshold_arr = b.full(cumsum_arr.shape, variance_threshold)
+        exceeds_threshold = cumsum_arr >= threshold_arr
+        b.eval(exceeds_threshold)
+
+        # Convert to float mask and find first True (argmax on boolean gives first 1)
+        exceeds_float = b.astype(exceeds_threshold, "float32")
+        # If no element exceeds threshold, argmax returns 0, so we check max
+        max_exceeds = float(b.to_scalar(b.max(exceeds_float)))
+
+        if max_exceeds < 0.5:
+            # No element exceeds threshold, return full count of positive eigenvalues
+            positive_mask = eig_sorted > 0
+            b.eval(positive_mask)
+            return int(b.to_scalar(b.sum(b.astype(positive_mask, "float32"))))
+
+        # argmax returns first index where value is max (which is 1.0 for True)
+        first_exceed_idx = int(b.to_scalar(b.argmax(exceeds_float)))
+        return first_exceed_idx + 1
 
     def entropy_effective_rank(self, eigenvalues: Array) -> float:
         """Compute entropy-based effective rank.
@@ -479,28 +530,43 @@ class BackendMatrixUtils:
 
         b = self.backend
         eig_flat = b.reshape(eigenvalues, (-1,))
-        mask = eig_flat > 0
-        b.eval(mask)
+        n = int(eig_flat.shape[0])
 
-        eig_np = b.to_numpy(eig_flat)
-        mask_np = b.to_numpy(mask)
-        eig_positive = eig_np[mask_np]
-
-        if len(eig_positive) == 0:
+        if n == 0:
             return 0.0
 
-        eig_arr = b.array([float(x) for x in eig_positive])
-        total_arr = b.sum(eig_arr)
+        # Replace non-positive with 0
+        zeros = b.zeros_like(eig_flat)
+        eig_positive = b.where(eig_flat > 0, eig_flat, zeros)
+        b.eval(eig_positive)
+
+        # Compute total
+        total_arr = b.sum(eig_positive)
         b.eval(total_arr)
         total = float(b.to_scalar(total_arr))
 
         if total <= 0:
             return 0.0
 
-        p = eig_arr / total
+        # Normalize to get probabilities
+        p = eig_positive / total
+
+        # For entropy, we only want non-zero p values
+        # Use safe_log_epsilon to handle zeros
         log_eps = safe_log_epsilon(b, p)
-        log_p = b.log(p + b.full(p.shape, log_eps))
-        entropy_arr = -b.sum(p * log_p)
+        # Add eps to avoid log(0)
+        p_safe = p + b.full(p.shape, log_eps)
+        log_p = b.log(p_safe)
+
+        # Entropy = -sum(p * log(p)), but we need to mask out zeros
+        # where p=0, p*log(p) should be 0 (limit as p->0)
+        # Since we added eps, p_safe > 0, but original p may be 0
+        # Use where to set contribution to 0 where original p was 0
+        is_positive = eig_flat > 0
+        p_log_p = p * log_p
+        p_log_p_masked = b.where(is_positive, p_log_p, zeros)
+
+        entropy_arr = -b.sum(p_log_p_masked)
         b.eval(entropy_arr)
         entropy = float(b.to_scalar(entropy_arr))
 
