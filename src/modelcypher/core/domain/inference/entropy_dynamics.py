@@ -119,13 +119,13 @@ class EntropyDeltaSample:
     base_entropy : float
         Shannon entropy of base model logits.
     base_top_k_variance : float
-        Variance of top-k base logits.
+        Variance of base logits (full vocabulary).
     base_top_token : int
         Token ID with highest base probability.
     adapter_entropy : float
         Shannon entropy of adapter logits.
     adapter_top_k_variance : float
-        Variance of top-k adapter logits.
+        Variance of adapter logits (full vocabulary).
     adapter_top_token : int
         Token ID with highest adapter probability.
     latency_ms : float

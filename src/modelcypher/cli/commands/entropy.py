@@ -409,15 +409,13 @@ def entropy_window(
     variances = [s[1] for s in parsed_samples]
     n = len(entropies)
 
-    import math
-
-    window_size = int(math.sqrt(n))
+    _b = get_default_backend()
+    window_size = max(1, int(sqrt_scalar(float(n), _b)))
     # Use window or full data if smaller
     window_data = entropies[-window_size:] if len(entropies) > window_size else entropies
     window_n = len(window_data)
 
     # Window statistics
-    _b = get_default_backend()
     window_mean = sum(window_data) / window_n
     window_std = sqrt_scalar(sum((e - window_mean) ** 2 for e in window_data) / window_n, _b) if window_n > 1 else 0.0
     window_min = min(window_data)

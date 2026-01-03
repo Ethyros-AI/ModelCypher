@@ -206,31 +206,23 @@ class SemanticPrimeActivationSummary:
     note: str | None
 
 
-@dataclass
-class AtlasConfiguration:
-    enabled: bool = True
-    max_characters_per_text: int = 4096
-    top_k: int = 8
-
-
 class SemanticPrimeAtlas:
-    """Embedding-based 'semantic primes' analyzer."""
+    """Embedding-based 'semantic primes' analyzer.
+
+    Returns ALL primes sorted by similarity. No configuration needed.
+    The geometry of the embedding space determines significance.
+    """
 
     def __init__(
         self,
         embedder: EmbeddingProvider | None = None,
-        configuration: AtlasConfiguration = AtlasConfiguration(),
         inventory: list[SemanticPrime] | None = None,
     ):
-        self.config = configuration
         self.inventory = inventory or SemanticPrimeInventory.english_2014()
         self.embedder = embedder
         self._cached_prime_embeddings: list[list[float]] | None = None
 
     async def signature(self, text: str) -> SemanticPrimeSignature | None:
-        if not self.config.enabled:
-            return None
-
         trimmed = text.strip()
         if not trimmed:
             return None
@@ -242,8 +234,8 @@ class SemanticPrimeAtlas:
             if len(prime_embeddings) != len(self.inventory):
                 return None
 
-            capped = trimmed[: self.config.max_characters_per_text]
-            embeddings = await self.embedder.embed([capped])
+            # Embedder handles any necessary truncation
+            embeddings = await self.embedder.embed([trimmed])
             if not embeddings:
                 return None
 
@@ -259,7 +251,6 @@ class SemanticPrimeAtlas:
                 prime_ids=[p.id for p in self.inventory], values=similarities
             )
         except Exception:
-            # print(f"Atlas signature failed: {e}")
             return None
 
     async def analyze(
@@ -272,10 +263,10 @@ class SemanticPrimeAtlas:
                 top_primes=[],
                 normalized_activation_entropy=None,
                 mean_top_k_similarity=None,
-                note="no_signature" if self.config.enabled else "disabled",
+                note="no_signature",
             )
 
-        # Summarize
+        # Return ALL primes sorted by similarity - geometry determines significance
         scored = []
         for i, prime in enumerate(self.inventory):
             similarity = sig.values[i]
@@ -286,19 +277,17 @@ class SemanticPrimeAtlas:
             )
 
         scored.sort(key=lambda x: x.similarity, reverse=True)
-        top_k = scored[: self.config.top_k]
 
-        mean_top_k = 0.0
-        if top_k:
-            mean_top_k = sum(p.similarity for p in top_k) / len(top_k)
+        # Mean of all similarities (not arbitrary top_k)
+        mean_similarity = sum(p.similarity for p in scored) / len(scored) if scored else 0.0
 
         normalized_entropy = self._normalized_entropy(sig.values)
 
         return sig, SemanticPrimeActivationSummary(
             method=SemanticPrimeActivationSummary.Method.EMBEDDINGS,
-            top_primes=top_k,
+            top_primes=scored,  # All primes, sorted
             normalized_activation_entropy=normalized_entropy,
-            mean_top_k_similarity=mean_top_k,
+            mean_top_k_similarity=mean_similarity,
             note=None,
         )
 

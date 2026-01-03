@@ -54,12 +54,13 @@ The core inference engine runs two models (base + adapter) in parallel, tracking
 
 ```python
 from modelcypher.core.domain.inference import (
-    DualPathGenerator,
-    DualPathGeneratorConfiguration,
+    get_dual_path_config_class,
+    get_dual_path_generator_class,
 )
 
 # Configure the generator (all parameters are operational, not tuning knobs)
-config = DualPathGeneratorConfiguration(
+config_class = get_dual_path_config_class()
+config = config_class(
     base_model_path="/path/to/base/model",
     adapter_path="/path/to/adapter",  # Optional
     max_tokens=512,
@@ -69,8 +70,12 @@ config = DualPathGeneratorConfiguration(
     stop_sequences=[],
 )
 
+DualPathGenerator = get_dual_path_generator_class()
 generator = DualPathGenerator(config)
 ```
+
+Note: platform-specific config classes may include additional required fields.
+Inspect `config_class` at runtime to confirm required inputs.
 
 ### Generation Loop
 
@@ -114,10 +119,10 @@ class EntropyDeltaSample:
     token_index: int
     generated_token: int
     base_entropy: float
-    base_top_k_variance: float
+    base_top_k_variance: float  # raw logit variance (full vocab)
     base_top_token: int
     adapter_entropy: float
-    adapter_top_k_variance: float
+    adapter_top_k_variance: float  # raw logit variance (full vocab)
     adapter_top_token: int
     latency_ms: float
 

@@ -316,9 +316,11 @@ def register_entropy_tools(ctx: ServiceContext) -> None:
                     "movingAverage": 0.0,
                 }
 
-            import math
+            from modelcypher.core.domain._backend import get_default_backend
+            from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 
-            window_size = int(math.sqrt(len(samples)))
+            backend = get_default_backend()
+            window_size = max(1, int(sqrt_scalar(float(len(samples)), backend)))
             window = EntropyWindow(window_size=window_size)
             for i, sample in enumerate(samples):
                 entropy, variance = sample[0], sample[1]
