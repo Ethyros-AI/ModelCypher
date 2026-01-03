@@ -36,11 +36,12 @@ Atlas implementations extend these base classes and provide:
 
 from __future__ import annotations
 
-import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Generic, Protocol, TypeVar, runtime_checkable
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import log_scalar
 from modelcypher.core.domain.geometry.signature_base import LabeledSignatureMixin
 from modelcypher.core.domain.geometry.vector_math import VectorMath
 
@@ -324,13 +325,14 @@ class BaseAtlas(ABC, Generic[C, S]):
 
         probs = [v / total for v in clamped]
         entropy = 0.0
+        _b = get_default_backend()
         for p in probs:
             if p > 0:
-                entropy -= p * math.log(p)
+                entropy -= p * log_scalar(p, _b)
 
         # Normalize by maximum entropy (uniform distribution)
         n = len([p for p in probs if p > 0])
         if n <= 1:
             return 0.0
-        max_entropy = math.log(n)
+        max_entropy = log_scalar(float(n), _b)
         return entropy / max_entropy if max_entropy > 0 else 0.0

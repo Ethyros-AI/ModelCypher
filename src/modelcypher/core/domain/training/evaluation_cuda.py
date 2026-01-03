@@ -38,8 +38,10 @@ References:
 from __future__ import annotations
 
 import logging
-import math
 import time
+
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import exp_scalar, log_scalar
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -243,9 +245,11 @@ class EvaluationEngineCUDA:
             if EvaluationMetricCUDA.LOSS in self.config.metrics:
                 metrics[EvaluationMetricCUDA.LOSS] = avg_loss
             if EvaluationMetricCUDA.PERPLEXITY in self.config.metrics:
-                metrics[EvaluationMetricCUDA.PERPLEXITY] = math.exp(avg_loss)
+                _b = get_default_backend()
+                metrics[EvaluationMetricCUDA.PERPLEXITY] = exp_scalar(avg_loss, _b)
             if EvaluationMetricCUDA.BITS_PER_CHARACTER in self.config.metrics:
-                metrics[EvaluationMetricCUDA.BITS_PER_CHARACTER] = avg_loss / math.log(2)
+                _b = get_default_backend()
+                metrics[EvaluationMetricCUDA.BITS_PER_CHARACTER] = avg_loss / log_scalar(2.0, _b)
 
         if needs_accuracy:
             metrics[EvaluationMetricCUDA.ACCURACY] = total_correct / total_tokens

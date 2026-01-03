@@ -25,9 +25,11 @@ ordering, arithmetic, and causality anchors for robust cross-domain alignment.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from enum import Enum
+
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import log_scalar
 
 
 class SequenceFamily(str, Enum):
@@ -1276,7 +1278,8 @@ class TriangulationScorer:
 
         base_score = sum(detected_domains.values()) / len(detected_domains)
         domain_count = len(detected_domains)
-        domain_multiplier = math.log(domain_count + 1) / math.log(2)
+        _b = get_default_backend()
+        domain_multiplier = log_scalar(float(domain_count + 1), _b) / log_scalar(2.0, _b)
         max_domains = len(ExpressionDomain)
         coherence_bonus = (
             (domain_count - 1) / max(1, max_domains - 1) if domain_count > 1 else 0.0

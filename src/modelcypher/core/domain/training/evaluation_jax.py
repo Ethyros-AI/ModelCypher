@@ -38,8 +38,10 @@ References:
 from __future__ import annotations
 
 import logging
-import math
 import time
+
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import exp_scalar, log_scalar
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -234,9 +236,11 @@ class EvaluationEngineJAX:
             if EvaluationMetricJAX.LOSS in self.config.metrics:
                 metrics[EvaluationMetricJAX.LOSS] = avg_loss
             if EvaluationMetricJAX.PERPLEXITY in self.config.metrics:
-                metrics[EvaluationMetricJAX.PERPLEXITY] = math.exp(avg_loss)
+                _b = get_default_backend()
+                metrics[EvaluationMetricJAX.PERPLEXITY] = exp_scalar(avg_loss, _b)
             if EvaluationMetricJAX.BITS_PER_CHARACTER in self.config.metrics:
-                metrics[EvaluationMetricJAX.BITS_PER_CHARACTER] = avg_loss / math.log(2)
+                _b = get_default_backend()
+                metrics[EvaluationMetricJAX.BITS_PER_CHARACTER] = avg_loss / log_scalar(2.0, _b)
 
         if needs_accuracy:
             metrics[EvaluationMetricJAX.ACCURACY] = total_correct / total_tokens

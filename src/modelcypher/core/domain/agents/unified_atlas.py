@@ -47,7 +47,6 @@ Total probe count: 507
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from enum import Enum
 
@@ -55,6 +54,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     find_magnitude_gap_threshold,
+    sqrt_scalar,
 )
 from modelcypher.core.domain.agents.computational_gate_atlas import (
     ComputationalGateCategory,
@@ -974,7 +974,8 @@ class MultiAtlasTriangulationScorer:
         domain_count = len(domains_detected)
         source_multiplier = max(1.0, float(source_count))
         domain_multiplier = max(1.0, float(domain_count))
-        combined_multiplier = math.sqrt(source_multiplier * domain_multiplier)
+        _b = get_default_backend()
+        combined_multiplier = sqrt_scalar(source_multiplier * domain_multiplier, _b)
 
         return MultiAtlasTriangulationScore(
             layer_index=-1,  # Set by caller

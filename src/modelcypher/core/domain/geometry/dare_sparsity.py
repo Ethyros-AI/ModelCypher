@@ -201,11 +201,11 @@ class DARESparsityAnalyzer:
             layer_non_zero = int(b.to_scalar(layer_non_zero_arr))
 
             if layer_non_zero > 0:
-                sorted_layer = b.sort(flat)
-                first_nz_idx = layer_count - layer_non_zero
-                layer_min_nz = sorted_layer[first_nz_idx : first_nz_idx + 1]
-                b.eval(layer_min_nz)
-                min_non_zero = min(min_non_zero, float(b.to_scalar(layer_min_nz)))
+                inf_val = float(b.finfo().max)
+                masked = b.where(flat > 0, flat, b.full(flat.shape, inf_val))
+                layer_min_nz_arr = b.min(masked)
+                b.eval(layer_min_nz_arr)
+                min_non_zero = min(min_non_zero, float(b.to_scalar(layer_min_nz_arr)))
 
             global_max = max(global_max, layer_max)
             total_count += layer_count

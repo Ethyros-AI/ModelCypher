@@ -30,21 +30,19 @@ Algorithms:
 
         where z_i are Rademacher random vectors (+1/-1 with equal probability).
         The estimator is unbiased: E[z^T H z] = tr(H).
-        Variance decreases as O(1/m), so m=5 gives ~5% standard error.
+        Variance decreases as O(1/m).
 
     Power Iteration for lambda_max(H):
         v_{k+1} = H v_k / ||H v_k||
         lambda_max = v^T H v  (Rayleigh quotient at convergence)
 
-        Converges at rate |lambda_2 / lambda_max|^k. For typical loss landscapes,
-        20 iterations converge within 1e-6 of the true eigenvalue.
+        Converges at rate |lambda_2 / lambda_max|^k.
 
     Hessian-Vector Products via Finite Differences:
         H @ v = (grad L(w + eps*v) - grad L(w - eps*v)) / (2*eps)
 
-        Central difference achieves O(eps^2) truncation error. The optimal
-        epsilon balances truncation error (O(eps^2)) against numerical rounding
-        (O(machine_eps / eps)). For float64, eps = 1e-4 is near-optimal.
+        Central difference achieves O(eps^2) truncation error. Epsilon balances
+        truncation error (O(eps^2)) against numerical rounding (O(machine_eps / eps)).
 
     Condition Number Proxy:
         cond(H) ~ lambda_max / (tr(H) / d)

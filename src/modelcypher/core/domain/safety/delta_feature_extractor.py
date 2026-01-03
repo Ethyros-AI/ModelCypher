@@ -135,16 +135,16 @@ class DeltaFeatureExtractor:
 
                 # Compute L2 norm
                 sum_sq = backend.sum(tensor_backend * tensor_backend)
-                backend.eval(sum_sq)
-                l2_norm = float(backend.to_scalar(backend.sqrt(sum_sq)))
-                l2_norms.append(l2_norm)
+                sqrt_sum_sq = backend.sqrt(sum_sq)
 
                 # Compute sparsity (fraction of near-zero elements)
                 # Derive threshold from tensor dtype using machine epsilon
                 sparsity_threshold = machine_epsilon(backend, tensor_backend)
                 abs_tensor = backend.abs(tensor_backend)
                 near_zero_count = backend.sum(abs_tensor < sparsity_threshold)
-                backend.eval(near_zero_count)
+                backend.eval(sqrt_sum_sq, near_zero_count)
+                l2_norm = float(backend.to_scalar(sqrt_sum_sq))
+                l2_norms.append(l2_norm)
                 shape = backend.shape(tensor_backend)
                 total_elements = 1
                 for dim in shape:

@@ -44,8 +44,10 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import re
+
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -97,7 +99,8 @@ class LoRAConfigCUDA:
     def scale(self) -> float:
         """LoRA scaling factor: alpha / rank (or sqrt(rank) for RSLoRA)."""
         if self.use_rslora:
-            return self.alpha / math.sqrt(max(self.rank, 1))
+            _b = get_default_backend()
+            return self.alpha / sqrt_scalar(float(max(self.rank, 1)), _b)
         return self.alpha / max(self.rank, 1)
 
     @classmethod
@@ -184,7 +187,8 @@ class LoRALinearCUDA(nn.Module):
 
         # Compute scaling factor
         if use_rslora:
-            self.scale = alpha / math.sqrt(max(rank, 1))
+            _b = get_default_backend()
+            self.scale = alpha / sqrt_scalar(float(max(rank, 1)), _b)
         else:
             self.scale = alpha / max(rank, 1)
 
@@ -201,7 +205,8 @@ class LoRALinearCUDA(nn.Module):
         self.lora_b = nn.Parameter(torch.zeros(out_features, rank))
 
         # Initialize lora_a with Kaiming uniform (as per PEFT best practices)
-        nn.init.kaiming_uniform_(self.lora_a, a=math.sqrt(5))
+        _b = get_default_backend()
+        nn.init.kaiming_uniform_(self.lora_a, a=sqrt_scalar(5.0, _b))
 
         # Dropout on input before LoRA path
         self.dropout = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
@@ -551,7 +556,8 @@ def compute_adapter_norm_cuda(adapters: dict[str, torch.Tensor]) -> float:
     total = 0.0
     for weight in adapters.values():
         total += float(torch.sum(weight**2).item())
-    return math.sqrt(total)
+    _b = get_default_backend()
+    return sqrt_scalar(total, _b)
 
 
 def compute_adapter_delta_norm_cuda(
@@ -564,7 +570,8 @@ def compute_adapter_delta_norm_cuda(
         if name in current:
             delta = current[name] - initial[name]
             total += float(torch.sum(delta**2).item())
-    return math.sqrt(total)
+    _b = get_default_backend()
+    return sqrt_scalar(total, _b)
 
 
 __all__ = [

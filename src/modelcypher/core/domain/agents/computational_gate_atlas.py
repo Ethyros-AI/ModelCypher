@@ -27,14 +27,16 @@ Ported from the reference Swift implementation.
 
 from __future__ import annotations
 
-import math
 import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    exp_scalar,
+    regularization_epsilon,
+)
 from modelcypher.core.domain.geometry.signature_base import LabeledSignatureMixin
 from modelcypher.core.domain.geometry.vector_math import VectorMath
 from modelcypher.data import load_json
@@ -942,7 +944,7 @@ class ComputationalGateAtlas:
                         float(volume.geodesic_radius),
                         regularization_epsilon(backend, text_vec),
                     )
-                    similarity = math.exp(-mahal_dist / scale)
+                    similarity = exp_scalar(-mahal_dist / scale, backend)
                 else:
                     # Use density at point as similarity
                     density = volume.density_at(text_vec)

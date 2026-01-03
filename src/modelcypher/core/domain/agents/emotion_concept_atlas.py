@@ -36,12 +36,16 @@ arxiv.org/html/2510.22042 - Emotional Latent Space in LLMs
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    exp_scalar,
+    log_scalar,
+    sqrt_scalar,
+)
 from modelcypher.core.domain.geometry.signature_base import LabeledSignatureMixin
 from modelcypher.core.domain.geometry.vector_math import VectorMath
 from modelcypher.ports.embedding import EmbeddingProvider
@@ -992,12 +996,13 @@ class OppositionPreservationScorer:
         id_to_value = dict(zip(signature.emotion_ids, signature.values))
         penalties = []
 
+        _b = get_default_backend()
         for cat_a, cat_b in OPPOSITION_PAIRS:
             val_a = max(0.0, id_to_value.get(cat_a.value, 0.0))
             val_b = max(0.0, id_to_value.get(cat_b.value, 0.0))
             # Penalty is geometric mean of both activations
             # High penalty only if BOTH are active
-            penalty = math.sqrt(val_a * val_b)
+            penalty = sqrt_scalar(val_a * val_b, _b)
             penalties.append(penalty)
 
         return sum(penalties) / len(penalties) if penalties else 0.0
@@ -1167,8 +1172,10 @@ class EmotionConceptAtlas:
         """
         vad_a = sig_a.vad_projection()
         vad_b = sig_b.vad_projection()
-        return math.sqrt(
-            (vad_a[0] - vad_b[0]) ** 2 + (vad_a[1] - vad_b[1]) ** 2 + (vad_a[2] - vad_b[2]) ** 2
+        _b = get_default_backend()
+        return sqrt_scalar(
+            (vad_a[0] - vad_b[0]) ** 2 + (vad_a[1] - vad_b[1]) ** 2 + (vad_a[2] - vad_b[2]) ** 2,
+            _b,
         )
 
     async def _get_or_create_emotion_embeddings(self) -> list[list[float]]:
@@ -1197,12 +1204,13 @@ class EmotionConceptAtlas:
 
         probs = [v / total for v in clamped]
         entropy = 0.0
+        _b = get_default_backend()
         for p in probs:
             if p > 0:
-                entropy -= p * math.log(p)
+                entropy -= p * log_scalar(p, _b)
 
         n = max(1, len(probs))
-        max_entropy = math.log(n)
+        max_entropy = log_scalar(float(n), _b)
         return entropy / max_entropy if max_entropy > 0 else None
 
     # =========================================================================
@@ -1324,7 +1332,7 @@ class EmotionConceptAtlas:
                     # Higher distance = lower similarity
                     mahal_dist = volume.mahalanobis_distance(text_vec)
                     # Use exponential decay: sim = exp(-dist/scale)
-                    similarity = math.exp(-mahal_dist / 3.0)
+                    similarity = exp_scalar(-mahal_dist / 3.0, backend)
                 else:
                     # Use density at point as similarity
                     density = volume.density_at(text_vec)

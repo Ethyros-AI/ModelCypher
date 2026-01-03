@@ -28,10 +28,11 @@ Ported from the reference Swift implementation.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from enum import Enum
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import log_scalar
 from modelcypher.core.domain.geometry.signature_base import LabeledSignatureMixin
 
 # Assuming VectorMath utility exists or we implement simple helpers
@@ -324,10 +325,11 @@ class SemanticPrimeAtlas:
 
         probs = [v / total for v in clamped]
         entropy = 0.0
+        _b = get_default_backend()
         for p in probs:
             if p > 0:
-                entropy -= p * math.log(p)
+                entropy -= p * log_scalar(p, _b)
 
         n = max(1, len(probs))
-        max_entropy = math.log(n)
+        max_entropy = log_scalar(float(n), _b)
         return entropy / max_entropy if max_entropy > 0 else None

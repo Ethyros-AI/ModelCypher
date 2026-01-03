@@ -248,16 +248,34 @@ class MLXBackend(Backend):
 
     def to_numpy(self, array: Array) -> Any:
         """Convert to a host numpy array - requires eval first."""
+        import numpy as np
+
         self.safe.eval(array)
         # Handle bfloat16 which host array protocols may not support
         if array.dtype == self.mx.bfloat16:
             array = array.astype(self.mx.float32)
             self.safe.eval(array)
         if hasattr(array, "to_numpy"):
-            return array.to_numpy()
+            try:
+                return array.to_numpy()
+            except Exception:
+                pass  # Fall through to fallback
         if hasattr(array, "__array__"):
-            return array.__array__()
-        raise TypeError("MLX array does not support numpy conversion")
+            try:
+                return array.__array__()
+            except Exception:
+                pass  # Fall through to fallback
+        # Fallback: convert via tolist() to numpy array, preserving dtype
+        dtype_map = {
+            self.mx.float32: np.float32,
+            self.mx.float16: np.float16,
+            self.mx.int32: np.int32,
+            self.mx.int64: np.int64,
+            self.mx.uint32: np.uint32,
+            self.mx.bool_: np.bool_,
+        }
+        np_dtype = dtype_map.get(array.dtype, np.float32)
+        return np.array(array.tolist(), dtype=np_dtype)
 
     def to_scalar(self, array: Array) -> float | int:
         """Extract a scalar from a 0-d or single-element array.
