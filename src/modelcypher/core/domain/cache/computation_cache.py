@@ -53,6 +53,8 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 import xxhash
 
+from modelcypher.core.domain.geometry.numerical_stability import geodesic_svd
+
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
@@ -488,11 +490,8 @@ class ComputationCache:
             return cached
 
         start = time.perf_counter()
-        # Some backends don't support full_matrices param - try without if needed
-        try:
-            u, s, vt = backend.svd(matrix, full_matrices=full_matrices)
-        except TypeError:
-            u, s, vt = backend.svd(matrix)
+        # Use geodesic SVD (GPU-only) - no full_matrices param needed
+        u, s, vt = geodesic_svd(backend, matrix)
         backend.eval(u, s, vt)
         elapsed_ms = (time.perf_counter() - start) * 1000
 

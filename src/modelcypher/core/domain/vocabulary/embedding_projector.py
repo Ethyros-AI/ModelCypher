@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
-    svd_via_eigh,
+    geodesic_svd,
 )
 from modelcypher.core.domain.geometry.vector_math import (
     geodesic_norms,
@@ -202,7 +202,8 @@ class EmbeddingProjector:
         target_centered = target - target_mean
 
         cross_cov = backend.matmul(backend.transpose(source_centered), target_centered)
-        U, _, Vt = svd_via_eigh(backend, cross_cov, full_matrices=False)
+        # Geodesic SVD (GPU-only)
+        U, _, Vt = geodesic_svd(self._backend, cross_cov)
         # MLX det() has unstable behavior for some sizes; use the raw orthogonal solution.
         rotation = backend.matmul(U, Vt)
         backend.eval(rotation)

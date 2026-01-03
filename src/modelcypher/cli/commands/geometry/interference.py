@@ -30,7 +30,10 @@ from modelcypher.cli.composition import get_domain_geometry_waypoint_service
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    power_iteration_eigh,
+)
 from modelcypher.core.support.array_utils import array_to_list
 
 if TYPE_CHECKING:
@@ -405,9 +408,10 @@ def compute_volume(
     estimator = RiemannianDensityEstimator()
     volume = estimator.estimate_concept_volume(concept, act_array)
 
-    # Compute eigenvalues using backend.eigh (returns eigenvalues, eigenvectors)
+    # Compute eigenvalues (geodesic - GPU-only)
     cov_arr = backend.array(volume.covariance)
-    eigenvalues, _ = backend.eigh(cov_arr)
+    n_cov = int(cov_arr.shape[0])
+    eigenvalues, _ = power_iteration_eigh(backend, cov_arr, k=n_cov)
     backend.eval(eigenvalues)
     eigenvalues_list = array_to_list(backend, eigenvalues)
     top_eigenvalues = sorted(eigenvalues_list, reverse=True)[:5]

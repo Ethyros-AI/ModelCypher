@@ -28,7 +28,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
-    svd_via_eigh,
+    geodesic_svd,
 )
 from modelcypher.core.domain.merging.exceptions import MergeError
 
@@ -212,7 +212,8 @@ class LoRAAdapterMerger:
         target_centered = target - target_mean
 
         cross_cov = backend.matmul(backend.transpose(source_centered), target_centered)
-        U, _, Vt = svd_via_eigh(backend, cross_cov, full_matrices=False)
+        # Geodesic SVD (GPU-only)
+        U, _, Vt = geodesic_svd(backend, cross_cov)
         # MLX det() has unstable behavior for some sizes; use the raw orthogonal solution.
         rotation = backend.matmul(U, Vt)
 
