@@ -319,7 +319,7 @@ class InvariantLayerMappingService:
             division_epsilon,
             log2_scalar,
         )
-        from modelcypher.ports.activation_provider import get_activation_provider
+        from modelcypher.infrastructure.activation_provider_factory import get_activation_provider
 
         model_loader, backend = self._ensure_dependencies()
 

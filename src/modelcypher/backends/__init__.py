@@ -17,8 +17,53 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from modelcypher.ports.backend import Backend
 from modelcypher.backends.lazy_backend import LazyBackend
+
+BackendType = Literal["mlx", "jax", "cuda", "numpy"]
+
+
+def get_backend(backend_type: BackendType) -> Backend:
+    """Get a specific backend by type.
+
+    Args:
+        backend_type: One of "mlx", "jax", "cuda", "numpy"
+
+    Returns:
+        The requested backend instance.
+
+    Raises:
+        ImportError: If the backend's dependencies are not installed.
+        ValueError: If the backend type is not recognized.
+    """
+    from modelcypher.core.domain._backend import probe_mlx_available, _mlx_probe_error
+
+    if backend_type == "mlx":
+        if not probe_mlx_available(explicit=True):
+            detail = _mlx_probe_error or "MLX probe failed"
+            raise RuntimeError(
+                "MLX backend requested but failed to initialize. "
+                f"{detail}. Set MC_DISABLE_MLX=1 to force fallback."
+            )
+        from modelcypher.backends.mlx_backend import MLXBackend
+
+        return MLXBackend()
+    elif backend_type == "jax":
+        from modelcypher.backends.jax_backend import JAXBackend
+
+        return JAXBackend()
+    elif backend_type == "cuda":
+        from modelcypher.backends.cuda_backend import CUDABackend
+
+        return CUDABackend()
+    elif backend_type == "numpy":
+        from modelcypher.backends.numpy_backend import NumpyBackend
+
+        return NumpyBackend()
+    else:
+        raise ValueError(f"Unknown backend type: {backend_type}")
 
 
 def default_backend() -> Backend:
@@ -30,7 +75,9 @@ def default_backend() -> Backend:
 
 __all__ = [
     "Backend",
+    "BackendType",
     "default_backend",
+    "get_backend",
     "LazyBackend",
     "MLXBackend",
     "JAXBackend",

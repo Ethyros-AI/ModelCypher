@@ -94,6 +94,9 @@ def probe_mlx_available(*, explicit: bool = False) -> bool:
 def get_backend(backend_type: BackendType) -> Backend:
     """Get a specific backend by type.
 
+    This function delegates to modelcypher.backends.get_backend() to avoid
+    importing concrete backend implementations in the domain layer.
+
     Args:
         backend_type: One of "mlx", "jax", "cuda", "numpy"
 
@@ -104,30 +107,9 @@ def get_backend(backend_type: BackendType) -> Backend:
         ImportError: If the backend's dependencies are not installed.
         ValueError: If the backend type is not recognized.
     """
-    if backend_type == "mlx":
-        if not probe_mlx_available(explicit=True):
-            detail = _mlx_probe_error or "MLX probe failed"
-            raise RuntimeError(
-                "MLX backend requested but failed to initialize. "
-                f"{detail}. Set MC_DISABLE_MLX=1 to force fallback."
-            )
-        from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.backends import get_backend as _get_backend
 
-        return MLXBackend()
-    elif backend_type == "jax":
-        from modelcypher.backends.jax_backend import JAXBackend
-
-        return JAXBackend()
-    elif backend_type == "cuda":
-        from modelcypher.backends.cuda_backend import CUDABackend
-
-        return CUDABackend()
-    elif backend_type == "numpy":
-        from modelcypher.backends.numpy_backend import NumpyBackend
-
-        return NumpyBackend()
-    else:
-        raise ValueError(f"Unknown backend type: {backend_type}")
+    return _get_backend(backend_type)
 
 
 def _detect_default_backend_type() -> BackendType:

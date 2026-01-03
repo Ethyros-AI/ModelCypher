@@ -22,41 +22,8 @@ import pytest
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.vocabulary.cross_vocab_merger import (
     AlignmentMethod,
-    CrossVocabMergeConfig,
     CrossVocabMerger,
 )
-from modelcypher.core.domain.vocabulary.embedding_projector import (
-    ProjectionConfig,
-    ProjectionStrategy,
-)
-
-
-class TestCrossVocabMergeConfig:
-    """Tests for CrossVocabMergeConfig dataclass."""
-
-    def test_defaults(self):
-        config = CrossVocabMergeConfig()
-        assert config.projection_strategy == ProjectionStrategy.PROCRUSTES
-
-    def test_custom_projection_strategy(self):
-        config = CrossVocabMergeConfig(projection_strategy=ProjectionStrategy.PCA)
-        assert config.projection_strategy == ProjectionStrategy.PCA
-
-
-class TestCrossVocabMergeConfigToProjectionConfig:
-    """Tests for to_projection_config method."""
-
-    def test_returns_projection_config(self):
-        merge_config = CrossVocabMergeConfig()
-        proj_config = merge_config.to_projection_config()
-
-        assert isinstance(proj_config, ProjectionConfig)
-
-    def test_strategy_transferred(self):
-        merge_config = CrossVocabMergeConfig(projection_strategy=ProjectionStrategy.PCA)
-        proj_config = merge_config.to_projection_config()
-
-        assert proj_config.strategy == ProjectionStrategy.PCA
 
 
 class TestCrossVocabMergerInit:
@@ -64,13 +31,7 @@ class TestCrossVocabMergerInit:
 
     def test_default_init(self):
         merger = CrossVocabMerger()
-        assert merger.config.projection_strategy == ProjectionStrategy.PROCRUSTES
         assert merger._backend is not None
-
-    def test_custom_config(self):
-        config = CrossVocabMergeConfig(projection_strategy=ProjectionStrategy.CCA)
-        merger = CrossVocabMerger(config=config)
-        assert merger.config.projection_strategy == ProjectionStrategy.CCA
 
     def test_custom_backend(self):
         backend = get_default_backend()

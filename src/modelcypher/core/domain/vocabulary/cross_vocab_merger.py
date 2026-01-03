@@ -33,7 +33,6 @@ from modelcypher.core.domain.vocabulary.alignment_map import (
 from modelcypher.core.domain.vocabulary.embedding_projector import (
     EmbeddingProjector,
     ProjectionResult,
-    ProjectionStrategy,
 )
 from modelcypher.core.domain.vocabulary.vocabulary_analyzer import (
     VocabularyAlignment,
@@ -87,13 +86,11 @@ class CrossVocabMerger:
 
     def __init__(
         self,
-        projection_strategy: ProjectionStrategy = ProjectionStrategy.PROCRUSTES,
         backend: "Backend | None" = None,
     ) -> None:
         self._backend = backend or get_default_backend()
         self._analyzer = VocabularyAnalyzer(backend=self._backend)
         self._projector = EmbeddingProjector(
-            strategy=projection_strategy,
             backend=self._backend,
         )
 

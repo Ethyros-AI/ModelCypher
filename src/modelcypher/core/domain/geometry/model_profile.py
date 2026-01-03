@@ -1063,7 +1063,7 @@ class ModelProfileExtractor:
 
         # Get activation provider (auto-detect if not provided)
         if self._activation_provider is None:
-            from modelcypher.ports.activation_provider import get_activation_provider
+            from modelcypher.infrastructure.activation_provider_factory import get_activation_provider
 
             self._activation_provider = get_activation_provider()
 

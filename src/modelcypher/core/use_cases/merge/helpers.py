@@ -44,10 +44,11 @@ def load_tokenizer(model_path: str) -> Any | None:
         pass
 
     try:
-        # Fall back to mlx_lm (loads both model and tokenizer)
-        from mlx_lm import load
+        # Fall back to ModelLoaderPort (hexagonal architecture)
+        from modelcypher.ports.model_loader import get_model_loader
 
-        _, tokenizer = load(model_path)
+        model_loader = get_model_loader()
+        _, tokenizer = model_loader.load_model_for_training(model_path)
         return tokenizer
     except Exception as exc:
         logger.warning("Failed to load tokenizer: %s", exc)
@@ -57,10 +58,11 @@ def load_tokenizer(model_path: str) -> Any | None:
 def load_model_for_probing(model_path: str) -> Any | None:
     """Load model for precise probe execution."""
     try:
-        from mlx_lm import load
+        from modelcypher.ports.model_loader import get_model_loader
 
+        model_loader = get_model_loader()
         logger.info("Loading model from %s for activation probing...", model_path)
-        model, _ = load(model_path)
+        model, _ = model_loader.load_model_for_training(model_path)
         logger.info("Model loaded successfully: %s", type(model).__name__)
         return model
     except Exception as exc:

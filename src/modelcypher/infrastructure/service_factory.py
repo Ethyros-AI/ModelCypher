@@ -180,3 +180,26 @@ class ServiceFactory:
         )
 
         return KnowledgeTransferService(inference_engine=self._registry.inference_engine)
+
+    # --- Merge Services ---
+
+    def merge_pipeline_service(self):
+        """Create MergePipelineService with injected dependencies."""
+        from modelcypher.core.domain.geometry.domain_geometry_waypoints import (
+            DomainGeometryWaypointService,
+        )
+        from modelcypher.core.use_cases.merge.merger import UnifiedGeometricMerger
+        from modelcypher.core.use_cases.merge.service import MergePipelineService
+
+        waypoint_service = DomainGeometryWaypointService(
+            backend=self._registry.backend,
+            model_loader=self._registry.model_loader,
+        )
+        geometric_merger = UnifiedGeometricMerger(
+            model_loader=self._registry.model_loader,
+        )
+        return MergePipelineService(
+            waypoint_service=waypoint_service,
+            geometric_merger=geometric_merger,
+            model_loader=self._registry.model_loader,
+        )

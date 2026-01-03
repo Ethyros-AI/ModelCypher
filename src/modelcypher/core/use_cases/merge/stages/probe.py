@@ -171,7 +171,7 @@ def stage_probe(
             activation_provider = LegacyActivationProvider(collect_activations_fn)
         else:
             # Auto-detect activation provider from platform
-            from modelcypher.ports.activation_provider import get_activation_provider
+            from modelcypher.infrastructure.activation_provider_factory import get_activation_provider
 
             activation_provider = get_activation_provider()
 
@@ -958,19 +958,3 @@ def _extract_top_k_dims(
         for i, idx in enumerate(top_indices)
         if float(selected_abs_list[i]) > threshold
     ]
-
-
-
-# Legacy compatibility: Export function reference for callers who use the old API
-# These are now implemented in modelcypher.adapters.mlx_activation_provider
-def collect_layer_activations_mlx(
-    model: Any,
-    tokenizer: Any,
-    text: str,
-    token_ids: list[int] | None = None,
-) -> dict[int, "Array"]:
-    """Legacy compatibility wrapper. Use ActivationProvider instead."""
-    from modelcypher.adapters.mlx_activation_provider import MLXActivationProvider
-
-    provider = MLXActivationProvider()
-    return provider.collect_hidden_activations(model, tokenizer, text, token_ids)

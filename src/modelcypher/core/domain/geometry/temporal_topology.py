@@ -462,7 +462,7 @@ def extract_temporal_activations(
     """
     # Get activation provider (auto-detect if not provided)
     if activation_provider is None:
-        from modelcypher.ports.activation_provider import get_activation_provider
+        from modelcypher.infrastructure.activation_provider_factory import get_activation_provider
 
         activation_provider = get_activation_provider()
 

@@ -37,6 +37,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from modelcypher.core.use_cases.evaluation_service import EvaluationService
     from modelcypher.ports import InferenceEngine
+    from modelcypher.ports.model_loader import ModelLoaderPort
 
 logger = logging.getLogger(__name__)
 
@@ -144,15 +145,18 @@ class MergeValidationService:
         self,
         inference_engine: "InferenceEngine",
         evaluation_service: "EvaluationService",
+        model_loader: "ModelLoaderPort | None" = None,
     ) -> None:
         """Initialize MergeValidationService with required dependencies.
 
         Args:
             inference_engine: Inference engine port implementation (REQUIRED).
             evaluation_service: Evaluation service (REQUIRED).
+            model_loader: Optional model loader (uses default if None).
         """
         self._inference_engine = inference_engine
         self._evaluation_service = evaluation_service
+        self._model_loader = model_loader
 
     def validate(
         self,
@@ -353,20 +357,20 @@ class MergeValidationService:
         from modelcypher.core.domain.geometry.refinement_density import (
             RefinementDensityAnalyzer,
         )
+        from modelcypher.core.domain._backend import get_default_backend
 
         try:
-            from mlx_lm import load as mlx_load
+            # Get model loader (use injected or default)
+            if self._model_loader is None:
+                from modelcypher.ports.model_loader import get_model_loader
 
-            from modelcypher.core.domain._backend import get_default_backend
+                self._model_loader = get_model_loader()
 
             b = get_default_backend()
 
-            # Load merged and source weights
-            _, merged_weights = mlx_load(merged_model, lazy=True)
-            _, source_weights = mlx_load(source_model, lazy=True)
-
-            merged_weights = dict(merged_weights)
-            source_weights = dict(source_weights)
+            # Load weights via ModelLoaderPort (hexagonal architecture)
+            merged_weights = self._model_loader.load_weights(merged_model)
+            source_weights = self._model_loader.load_weights(source_model)
 
             # Compute delta between merged and source
             delta_weights = {}
@@ -421,8 +425,8 @@ class MergeValidationService:
                 raw_analysis=result.to_dict(),
             )
 
-        except ImportError as e:
-            logger.warning(f"MLX not available for geometric diagnosis: {e}")
+        except (ImportError, RuntimeError) as e:
+            logger.warning(f"Model loader not available for geometric diagnosis: {e}")
             return GeometricDiagnosis(
                 layer_composite_scores={},
                 mean_drift=0.0,

@@ -20,7 +20,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -37,21 +36,12 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
 
 
-class ProjectionStrategy(str, Enum):
-    TRUNCATE = "truncate"
-    PCA = "pca"
-    PROCRUSTES = "procrustes"
-    CCA = "cca"
-    OPTIMAL_TRANSPORT = "optimal_transport"
-
-
 @dataclass
 class ProjectionResult:
     projected_embeddings: "Array"
     projection_matrix: "Array | None"
     reconstruction_error: float
     alignment_score: float
-    strategy_used: ProjectionStrategy
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -59,7 +49,6 @@ class ProjectionResult:
         payload = {
             "reconstruction_error": self.reconstruction_error,
             "alignment_score": self.alignment_score,
-            "strategy_used": self.strategy_used.value,
             "output_shape": output_shape,
             "has_projection_matrix": self.projection_matrix is not None,
         }
@@ -72,10 +61,8 @@ class EmbeddingProjector:
 
     def __init__(
         self,
-        strategy: ProjectionStrategy = ProjectionStrategy.PROCRUSTES,
         backend: "Backend | None" = None,
     ) -> None:
-        self.strategy = strategy
         self._backend = backend or get_default_backend()
 
     def project(
@@ -84,24 +71,9 @@ class EmbeddingProjector:
         target: "Array",
         shared_token_indices: tuple[list[int], list[int]] | None = None,
     ) -> ProjectionResult:
-        if self.strategy == ProjectionStrategy.TRUNCATE:
-            projected, meta = self._project_truncate(source, target)
-            projection_matrix = None
-        elif self.strategy == ProjectionStrategy.PCA:
-            projected, projection_matrix, meta = self._project_pca(source, target)
-        elif self.strategy == ProjectionStrategy.PROCRUSTES:
-            projected, projection_matrix, meta = self._project_procrustes(
-                source, target, shared_token_indices
-            )
-        elif self.strategy == ProjectionStrategy.CCA:
-            projected, projection_matrix, meta = self._project_cca(
-                source, target, shared_token_indices
-            )
-        elif self.strategy == ProjectionStrategy.OPTIMAL_TRANSPORT:
-            projected, meta = self._project_optimal_transport(source, target)
-            projection_matrix = meta.get("coupling")
-        else:
-            raise ValueError(f"Unknown projection strategy: {self.strategy}")
+        projected, projection_matrix, meta = self._project_procrustes(
+            source, target, shared_token_indices
+        )
 
         quality = self.compute_alignment_quality(
             source, projected, target, shared_indices=shared_token_indices
@@ -114,7 +86,6 @@ class EmbeddingProjector:
             projection_matrix=projection_matrix,
             reconstruction_error=reconstruction_error,
             alignment_score=alignment_score,
-            strategy_used=self.strategy,
             metadata=meta,
         )
 
@@ -168,63 +139,6 @@ class EmbeddingProjector:
             "n_samples_evaluated": int(sample_count),
         }
 
-    def _project_truncate(
-        self,
-        source: "Array",
-        target: "Array",
-    ) -> tuple["Array", dict[str, Any]]:
-        backend = self._backend
-        source_arr = backend.array(source)
-        target_arr = backend.array(target)
-        backend.eval(source_arr, target_arr)
-
-        projected = self._resize_features(source_arr, int(target_arr.shape[1]))
-        backend.eval(projected)
-
-        meta = {
-            "source_dim": int(source_arr.shape[1]),
-            "target_dim": int(target_arr.shape[1]),
-        }
-        return projected, meta
-
-    def _project_pca(
-        self,
-        source: "Array",
-        target: "Array",
-    ) -> tuple["Array", "Array", dict[str, Any]]:
-        backend = self._backend
-        source_arr = backend.array(source)
-        target_arr = backend.array(target)
-        backend.eval(source_arr, target_arr)
-
-        target_dim = int(target_arr.shape[1])
-        source_dim = int(source_arr.shape[1])
-        n_components = min(target_dim, source_dim)
-
-        mean = backend.mean(source_arr, axis=0, keepdims=True)
-        centered = source_arr - mean
-        cov = backend.matmul(backend.transpose(centered), centered)
-        U, S, _ = svd_via_eigh(backend, cov, full_matrices=False)
-        components = U[:, :n_components]
-        projected = backend.matmul(centered, components)
-
-        projected = self._resize_features(projected, target_dim)
-        backend.eval(projected)
-
-        total_variance = backend.sum(S)
-        explained = backend.sum(S[:n_components])
-        backend.eval(total_variance, explained)
-        eps = division_epsilon(backend, S)
-        explained_val = float(backend.to_scalar(explained))
-        total_variance_val = float(backend.to_scalar(total_variance))
-        ratio = explained_val / max(total_variance_val, eps)
-
-        meta = {
-            "n_components": n_components,
-            "explained_variance_ratio": ratio,
-        }
-        return projected, components, meta
-
     def _project_procrustes(
         self,
         source: "Array",
@@ -253,92 +167,6 @@ class EmbeddingProjector:
             "n_anchors": int(source_anchor.shape[0]),
         }
         return projected, rotation, meta
-
-    def _project_cca(
-        self,
-        source: "Array",
-        target: "Array",
-        shared_indices: tuple[list[int], list[int]] | None,
-    ) -> tuple["Array", "Array", dict[str, Any]]:
-        backend = self._backend
-        source_arr = backend.array(source)
-        target_arr = backend.array(target)
-        backend.eval(source_arr, target_arr)
-
-        target_dim = int(target_arr.shape[1])
-        source_resized = self._resize_features(source_arr, target_dim)
-
-        source_anchor, target_anchor = self._select_anchor_pairs(
-            source_resized, target_arr, shared_indices
-        )
-        source_mean = backend.mean(source_anchor, axis=0, keepdims=True)
-        target_mean = backend.mean(target_anchor, axis=0, keepdims=True)
-        source_centered = source_anchor - source_mean
-        target_centered = target_anchor - target_mean
-
-        cross_cov = backend.matmul(backend.transpose(source_centered), target_centered)
-        U, _, Vt = svd_via_eigh(backend, cross_cov, full_matrices=False)
-        rotation = backend.matmul(U, Vt)
-
-        centered = source_resized - source_mean
-        projected = backend.matmul(centered, rotation) + target_mean
-        backend.eval(projected)
-
-        canonical = self._compute_canonical_correlations(
-            source_centered,
-            target_centered,
-            U,
-            Vt,
-        )
-
-        meta = {
-            "canonical_correlations": canonical,
-            "n_components": len(canonical),
-        }
-        return projected, rotation, meta
-
-    def _project_optimal_transport(
-        self,
-        source: "Array",
-        target: "Array",
-    ) -> tuple["Array", dict[str, Any]]:
-        from modelcypher.core.domain.geometry.gromov_wasserstein import (
-            GromovWassersteinDistance,
-        )
-
-        backend = self._backend
-        source_arr = backend.array(source)
-        target_arr = backend.array(target)
-        backend.eval(source_arr, target_arr)
-
-        source_dim = int(source_arr.shape[1])
-        target_dim = int(target_arr.shape[1])
-
-        if source_dim == target_dim:
-            projected = source_arr
-            coupling = None
-            transport_cost = 0.0
-        else:
-            source_gram = backend.matmul(backend.transpose(source_arr), source_arr)
-            target_gram = backend.matmul(backend.transpose(target_arr), target_arr)
-            backend.eval(source_gram, target_gram)
-
-            gw = GromovWassersteinDistance(backend)
-            result = gw.compute(source_gram, target_gram)
-            coupling = result.coupling
-            projected = backend.matmul(source_arr, coupling)
-            backend.eval(projected)
-            transport_cost = float(result.distance)
-
-        meta = {
-            "n_source_samples": int(source_arr.shape[0]),
-            "n_target_samples": int(target_arr.shape[0]),
-            "shared_dim": min(source_dim, target_dim),
-            "transport_cost": transport_cost,
-        }
-        if coupling is not None:
-            meta["coupling"] = coupling
-        return projected, meta
 
     def _resize_features(self, array: "Array", target_dim: int) -> "Array":
         backend = self._backend
@@ -381,32 +209,3 @@ class EmbeddingProjector:
         rotation = backend.matmul(U, Vt)
         backend.eval(rotation)
         return rotation, source_mean, target_mean
-
-    def _compute_canonical_correlations(
-        self,
-        source: "Array",
-        target: "Array",
-        U: "Array",
-        Vt: "Array",
-    ) -> list[float]:
-        backend = self._backend
-        source_proj = backend.matmul(source, U)
-        target_proj = backend.matmul(target, backend.transpose(Vt))
-        backend.eval(source_proj, target_proj)
-
-        n_components = int(min(source_proj.shape[1], target_proj.shape[1]))
-        eps = division_epsilon(backend, source_proj)
-
-        # Vectorized: compute all correlations at once
-        # Column-wise dot products
-        dot_products = backend.sum(source_proj[:, :n_components] * target_proj[:, :n_components], axis=0)
-        # Column norms
-        s_norms = backend.sqrt(backend.sum(source_proj[:, :n_components] ** 2, axis=0))
-        t_norms = backend.sqrt(backend.sum(target_proj[:, :n_components] ** 2, axis=0))
-        # Safe division
-        denom = backend.maximum(s_norms * t_norms, eps)
-        corr_arr = dot_products / denom
-        backend.eval(corr_arr)
-
-        # O(1) extraction via tolist() instead of O(n) to_scalar() loop
-        return [float(x) for x in backend.tolist(corr_arr)]

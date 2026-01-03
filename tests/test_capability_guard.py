@@ -23,7 +23,6 @@ from uuid import uuid4
 
 from modelcypher.core.domain.safety.adapter_capability import (
     CapabilityCheckResult,
-    CapabilityGuardConfiguration,
     CapabilityViolation,
     EnforcementMode,
     ResourceCapability,
@@ -211,8 +210,7 @@ class TestCapabilityGuard:
 
     def test_monitor_mode(self) -> None:
         """Monitor mode allows but logs violations."""
-        config = CapabilityGuardConfiguration.monitoring()
-        guard = CapabilityGuard(configuration=config)
+        guard = CapabilityGuard(enforcement_mode=EnforcementMode.MONITOR)
         adapter_id = uuid4()
         guard.register_adapter(adapter_id, "test", frozenset())
 
@@ -222,8 +220,7 @@ class TestCapabilityGuard:
 
     def test_disabled_mode(self) -> None:
         """Disabled mode always allows."""
-        config = CapabilityGuardConfiguration.disabled()
-        guard = CapabilityGuard(configuration=config)
+        guard = CapabilityGuard(enforcement_mode=EnforcementMode.DISABLED)
         outcome = guard.check_access(uuid4(), ResourceCapability.CODE_EXEC)
         assert outcome.result == CapabilityCheckResult.ALLOWED
 
@@ -278,11 +275,11 @@ class TestCapabilityGuard:
         assert outcome.result == CapabilityCheckResult.DENIED
 
     def test_configure_updates_mode(self) -> None:
-        """configure() updates enforcement mode."""
+        """set_enforcement_mode() updates enforcement mode."""
         guard = CapabilityGuard()
         assert guard.enforcement_mode == EnforcementMode.ENFORCE
 
-        guard.configure(CapabilityGuardConfiguration.monitoring())
+        guard.set_enforcement_mode(EnforcementMode.MONITOR)
         assert guard.enforcement_mode == EnforcementMode.MONITOR
 
     def test_reset(self) -> None:

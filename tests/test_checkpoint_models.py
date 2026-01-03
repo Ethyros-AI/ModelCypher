@@ -26,7 +26,7 @@ from modelcypher.core.domain.training.checkpoint_models import (
     CheckpointErrorKind,
     CheckpointMetadataV2,
     FineTunedModelMetadata,
-    ModelArchitectureConfig,
+    ModelArchitectureSpec,
     OptimizerStateMetadata,
     RecoveryInfo,
 )
@@ -270,12 +270,12 @@ class TestFineTunedModelMetadata:
         assert meta.tokenizer_strategy == "default"
 
 
-class TestModelArchitectureConfig:
-    """Tests for ModelArchitectureConfig dataclass."""
+class TestModelArchitectureSpec:
+    """Tests for ModelArchitectureSpec dataclass."""
 
     def test_required_fields(self):
         """Test required fields."""
-        config = ModelArchitectureConfig(
+        config = ModelArchitectureSpec(
             model_type="llama",
             vocabulary_size=32000,
             hidden_size=4096,
@@ -291,7 +291,7 @@ class TestModelArchitectureConfig:
 
     def test_memory_overrides_default(self):
         """Test memory_overrides defaults to None."""
-        config = ModelArchitectureConfig(
+        config = ModelArchitectureSpec(
             model_type="llama",
             vocabulary_size=32000,
             hidden_size=4096,
@@ -303,7 +303,7 @@ class TestModelArchitectureConfig:
 
     def test_memory_overrides_set(self):
         """Test memory_overrides can be set."""
-        config = ModelArchitectureConfig(
+        config = ModelArchitectureSpec(
             model_type="llama",
             vocabulary_size=32000,
             hidden_size=4096,
@@ -316,7 +316,7 @@ class TestModelArchitectureConfig:
 
     def test_to_dict_minimal(self):
         """Test to_dict without memory_overrides."""
-        config = ModelArchitectureConfig(
+        config = ModelArchitectureSpec(
             model_type="mistral",
             vocabulary_size=32000,
             hidden_size=4096,
@@ -336,7 +336,7 @@ class TestModelArchitectureConfig:
 
     def test_to_dict_with_overrides(self):
         """Test to_dict with memory_overrides."""
-        config = ModelArchitectureConfig(
+        config = ModelArchitectureSpec(
             model_type="llama",
             vocabulary_size=32000,
             hidden_size=4096,
@@ -359,7 +359,7 @@ class TestModelArchitectureConfig:
             "num_heads": 28,
         }
 
-        config = ModelArchitectureConfig.from_dict(data)
+        config = ModelArchitectureSpec.from_dict(data)
 
         assert config.model_type == "qwen2"
         assert config.vocabulary_size == 152064
@@ -369,7 +369,7 @@ class TestModelArchitectureConfig:
         """Test from_dict uses defaults for missing fields."""
         data = {}
 
-        config = ModelArchitectureConfig.from_dict(data)
+        config = ModelArchitectureSpec.from_dict(data)
 
         assert config.model_type == "simple_transformer"
         assert config.vocabulary_size == 32000
@@ -415,7 +415,7 @@ class TestCheckpointMetadataV2:
 
     def test_optional_nested_configs(self):
         """Test optional nested configuration fields."""
-        model_config = ModelArchitectureConfig(
+        model_config = ModelArchitectureSpec(
             model_type="llama",
             vocabulary_size=32000,
             hidden_size=4096,
@@ -473,7 +473,7 @@ class TestCheckpointMetadataV2:
 
     def test_to_dict_with_nested(self):
         """Test to_dict includes nested configs."""
-        model_config = ModelArchitectureConfig(
+        model_config = ModelArchitectureSpec(
             model_type="llama",
             vocabulary_size=32000,
             hidden_size=4096,
@@ -564,7 +564,7 @@ class TestCheckpointMetadataV2:
 
     def test_roundtrip(self):
         """Test to_dict/from_dict roundtrip."""
-        model_config = ModelArchitectureConfig(
+        model_config = ModelArchitectureSpec(
             model_type="llama",
             vocabulary_size=32000,
             hidden_size=4096,

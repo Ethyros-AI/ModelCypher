@@ -193,6 +193,11 @@ def get_domain_geometry_waypoint_service():
     )
 
 
+def get_merge_pipeline_service():
+    """Get MergePipelineService with proper dependency injection."""
+    return _get_factory().merge_pipeline_service()
+
+
 def get_system_service():
     """Get SystemService with proper dependency injection."""
     from modelcypher.core.use_cases.system_service import SystemService

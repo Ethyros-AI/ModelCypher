@@ -23,7 +23,6 @@ from modelcypher.core.domain.geometry.numerical_stability import division_epsilo
 from modelcypher.core.domain.vocabulary.embedding_projector import (
     EmbeddingProjector,
     ProjectionResult,
-    ProjectionStrategy,
 )
 from modelcypher.core.domain.vocabulary.cross_vocab_merger import (
     AlignmentMethod,
@@ -63,7 +62,6 @@ class TestProjectionResult:
             projection_matrix=None,
             reconstruction_error=0.5,
             alignment_score=0.85,
-            strategy_used=ProjectionStrategy.TRUNCATE,
             metadata={"test_key": "test_value"},
         )
 
@@ -72,7 +70,6 @@ class TestProjectionResult:
         eps = _div_eps(d["reconstruction_error"], d["alignment_score"])
         assert abs(d["reconstruction_error"] - 0.5) < eps
         assert abs(d["alignment_score"] - 0.85) < eps
-        assert d["strategy_used"] == "truncate"
         assert d["output_shape"] == [100, 64]
         assert d["has_projection_matrix"] is False
         assert d["test_key"] == "test_value"

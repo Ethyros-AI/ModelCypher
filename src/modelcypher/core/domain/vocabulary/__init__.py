@@ -39,7 +39,6 @@ from .cross_vocab_merger import (
 from .embedding_projector import (
     EmbeddingProjector,
     ProjectionResult,
-    ProjectionStrategy,
 )
 from .vocabulary_analyzer import (
     TokenizerType,
@@ -64,7 +63,6 @@ __all__ = [
     # Projection
     "EmbeddingProjector",
     "ProjectionResult",
-    "ProjectionStrategy",
     # Merger
     "CrossVocabMerger",
     "CrossVocabMergeResult",

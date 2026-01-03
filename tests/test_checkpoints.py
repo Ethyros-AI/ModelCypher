@@ -55,8 +55,8 @@ from modelcypher.core.domain.training.types import (
     CheckpointMetadata,
     ComputePrecision,
     Hyperparameters,
-    LoRAConfig,
-    TrainingConfig,
+    LoRASettings,
+    TrainingSpec,
 )
 
 
@@ -79,9 +79,9 @@ def sample_weights() -> Dict[str, mx.array]:
 
 
 @pytest.fixture
-def sample_config() -> TrainingConfig:
+def sample_config() -> TrainingSpec:
     """Sample training config for testing."""
-    return TrainingConfig(
+    return TrainingSpec(
         model_id="test-model",
         dataset_path="/path/to/data",
         output_path="/path/to/output",
@@ -100,7 +100,7 @@ def sample_config() -> TrainingConfig:
             deterministic=True,
             optimizer_type="adamw",
         ),
-        lora_config=LoRAConfig(
+        lora_config=LoRASettings(
             rank=8,
             alpha=16.0,
             dropout=0.05,
@@ -835,7 +835,7 @@ class TestSerializeMetadata:
             version=2,
             step=100,
             total_steps=1000,
-            train_config=TrainingConfig(
+            train_config=TrainingSpec(
                 model_id="test",
                 dataset_path="/data",
                 output_path="/out",
@@ -874,7 +874,7 @@ class TestSerializeMetadata:
             version=2,
             step=100,
             total_steps=1000,
-            train_config=TrainingConfig(
+            train_config=TrainingSpec(
                 model_id="test",
                 dataset_path="/data",
                 output_path="/out",

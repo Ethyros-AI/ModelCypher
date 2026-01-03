@@ -43,7 +43,6 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from .probe import (
     ProbeResult,
-    collect_layer_activations_mlx,
     stage_probe as stage_probe_impl,
 )
 from .density import (
@@ -96,12 +95,7 @@ def stage_probe(
     dict[int, int] | None,  # layer_mapping
 ]:
     """Stage 1: Compute layer correspondences via CKA."""
-    collect_fn = (
-        collect_layer_activations_mlx
-        if source_model is not None and source_tokenizer and target_tokenizer
-        else None
-    )
-
+    # collect_activations_fn=None lets probe.py auto-detect ActivationProvider
     result = stage_probe_impl(
         source_weights=source_weights,
         target_weights=target_weights,
@@ -110,7 +104,7 @@ def stage_probe(
         target_model=target_model,
         source_tokenizer=source_tokenizer,
         target_tokenizer=target_tokenizer,
-        collect_activations_fn=collect_fn,
+        collect_activations_fn=None,
     )
 
     return (
@@ -278,7 +272,6 @@ __all__ = [
     # Stage 1: Probe (ProbeConfig REMOVED - always precise mode, all probes)
     "stage_probe",
     "ProbeResult",
-    "collect_layer_activations_mlx",
     # Stage 2a: Density
     "stage_density",
     "DensityStageResult",
