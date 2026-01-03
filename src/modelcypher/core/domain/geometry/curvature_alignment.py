@@ -23,7 +23,7 @@ fundamental incompatibility.
 
 This module provides:
 1. Curvature-weighted Procrustes alignment
-2. Layer-wise alignment effort estimation
+2. Layer-wise curvature and dimension deltas
 3. Intrinsic dimension scaling for projection
 4. Curvature-guided correspondence matching
 """
@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import division_epsilon, sqrt_scalar
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.geometry.curvature_profile import (
@@ -56,17 +56,17 @@ class AlignmentGuidance:
 
     layer_idx: int
 
-    # Effort required (0-1): higher = more transformation needed
-    alignment_effort: float
-
     # Dimension scaling factor: >1 = expand, <1 = compress
     dimension_scale: float
 
-    # Curvature correction factor: how much to adjust for curvature mismatch
-    curvature_correction: float
+    # Absolute intrinsic dimension delta (|target - source|)
+    intrinsic_dimension_diff: float
 
-    # Derived alignment weight (how much to trust this layer's alignment)
-    alignment_weight: float
+    # Ollivier-Ricci delta (target - source)
+    ollivier_ricci_delta: float
+
+    # Normalized Ollivier-Ricci mismatch ratio in [0, 1]
+    ollivier_ricci_relative_diff: float
 
 
 @dataclass(frozen=True)
@@ -79,9 +79,11 @@ class AlignmentPlan:
     # Per-layer guidance
     layer_guidance: list[AlignmentGuidance]
 
-    # Global statistics
-    total_alignment_effort: float  # Sum of per-layer efforts
+    # Global statistics (raw measurements)
     mean_dimension_scale: float
+    mean_intrinsic_dimension_diff: float
+    mean_ollivier_ricci_delta: float
+    mean_ollivier_ricci_relative_diff: float
 
 
 def compute_alignment_guidance(
@@ -100,7 +102,7 @@ def compute_alignment_guidance(
         target_profile: Curvature profile of target model
 
     Returns:
-        AlignmentPlan with per-layer guidance and global effort statistics
+        AlignmentPlan with per-layer guidance and global curvature/dimension statistics
     """
     # Build layer correspondence based on relative position
     source_layers = {lc.layer_idx: lc for lc in source_profile.layer_curvatures}
@@ -117,13 +119,15 @@ def compute_alignment_guidance(
 
         if tgt_lc is None:
             # No corresponding layer - use defaults
-            guidance_list.append(AlignmentGuidance(
-                layer_idx=src_idx,
-                alignment_effort=0.0,
-                dimension_scale=1.0,
-                curvature_correction=0.0,
-                alignment_weight=1.0,
-            ))
+            guidance_list.append(
+                AlignmentGuidance(
+                    layer_idx=src_idx,
+                    dimension_scale=1.0,
+                    intrinsic_dimension_diff=0.0,
+                    ollivier_ricci_delta=0.0,
+                    ollivier_ricci_relative_diff=0.0,
+                )
+            )
             continue
 
         # Compute guidance for this layer pair
@@ -131,18 +135,31 @@ def compute_alignment_guidance(
         guidance_list.append(guidance)
 
     # Compute global statistics
-    total_effort = sum(g.alignment_effort for g in guidance_list)
-    mean_scale = (
-        sum(g.dimension_scale for g in guidance_list) / len(guidance_list)
-        if guidance_list else 1.0
-    )
+    if guidance_list:
+        mean_scale = sum(g.dimension_scale for g in guidance_list) / len(guidance_list)
+        mean_dim_diff = sum(g.intrinsic_dimension_diff for g in guidance_list) / len(
+            guidance_list
+        )
+        mean_ricci_delta = sum(g.ollivier_ricci_delta for g in guidance_list) / len(
+            guidance_list
+        )
+        mean_ricci_rel = sum(g.ollivier_ricci_relative_diff for g in guidance_list) / len(
+            guidance_list
+        )
+    else:
+        mean_scale = 1.0
+        mean_dim_diff = 0.0
+        mean_ricci_delta = 0.0
+        mean_ricci_rel = 0.0
 
     return AlignmentPlan(
         source_model=source_profile.model_path,
         target_model=target_profile.model_path,
         layer_guidance=guidance_list,
-        total_alignment_effort=total_effort,
         mean_dimension_scale=mean_scale,
+        mean_intrinsic_dimension_diff=mean_dim_diff,
+        mean_ollivier_ricci_delta=mean_ricci_delta,
+        mean_ollivier_ricci_relative_diff=mean_ricci_rel,
     )
 
 
@@ -163,10 +180,10 @@ def _compute_layer_guidance(
     tgt_dim = float(tgt.intrinsic_dimension)
     if src_dim <= 0.0 or tgt_dim <= 0.0:
         dimension_scale = 1.0
-        dim_effort = 0.0
+        dim_diff = 0.0
     else:
         dimension_scale = tgt_dim / src_dim
-        dim_effort = abs(tgt_dim - src_dim) / max(src_dim, tgt_dim)
+        dim_diff = abs(tgt_dim - src_dim)
 
     # 2. Curvature correction
     # If curvatures have same sign, less correction needed
@@ -174,27 +191,16 @@ def _compute_layer_guidance(
     src_ricci = src.ollivier_ricci_mean
     tgt_ricci = tgt.ollivier_ricci_mean
 
-    curvature_diff = abs(src_ricci - tgt_ricci)
-    curvature_correction = curvature_diff / (abs(src_ricci) + abs(tgt_ricci) + eps)
-
-    # 3. Alignment effort (0-1)
-    # Higher effort = more transformation needed
-    curv_effort = curvature_correction
-
-    # Alignment effort: geometric mean of dimension and curvature effort
-    # (no arbitrary weights - both contribute equally)
-    alignment_effort = sqrt_scalar(dim_effort * curv_effort, get_default_backend())
-
-    # 4. Alignment weight = similarity (no artificial floor)
-    # Layers with similar curvature profiles are more reliable
-    alignment_weight = 1.0 - curvature_correction
+    ricci_delta = tgt_ricci - src_ricci
+    curvature_diff = abs(ricci_delta)
+    ricci_relative = curvature_diff / (abs(src_ricci) + abs(tgt_ricci) + eps)
 
     return AlignmentGuidance(
         layer_idx=layer_idx,
-        alignment_effort=alignment_effort,
         dimension_scale=dimension_scale,
-        curvature_correction=curvature_correction,
-        alignment_weight=alignment_weight,
+        intrinsic_dimension_diff=dim_diff,
+        ollivier_ricci_delta=ricci_delta,
+        ollivier_ricci_relative_diff=ricci_relative,
     )
 
 
@@ -266,8 +272,8 @@ def curvature_weighted_procrustes(
 
     # Step 4: Apply curvature correction
     # Dampen rotation based on curvature mismatch (hyperbolic decay, no arbitrary constants)
-    # correction=0 → damping=1.0 (full rotation), correction→∞ → damping→0 (identity)
-    damping = 1.0 / (1.0 + guidance.curvature_correction)
+    # relative_diff=0 → damping=1.0 (full rotation), relative_diff→∞ → damping→0 (identity)
+    damping = 1.0 / (1.0 + guidance.ollivier_ricci_relative_diff)
     R = R * damping + backend.eye(backend.shape(R)[0]) * (1 - damping)
 
     return R

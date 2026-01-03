@@ -317,7 +317,8 @@ class TestCompareProfiles:
         comparison = compare_profiles(source, target)
 
         assert comparison.topology_betti_diff == 1
-        assert comparison.topology_persistence_diff == 0.1
+        assert comparison.topology_persistence_diff is not None
+        assert abs(comparison.topology_persistence_diff - 0.1) <= _eps()
 
     def test_compare_with_semantic_signatures(self) -> None:
         """Should compute semantic cosine when available."""

@@ -171,28 +171,28 @@ class TestAlignmentGuidance:
         """AlignmentGuidance can be created with all fields."""
         guidance = AlignmentGuidance(
             layer_idx=0,
-            alignment_effort=0.5,
             dimension_scale=1.2,
-            curvature_correction=0.3,
-            alignment_weight=0.8,
+            intrinsic_dimension_diff=4.0,
+            ollivier_ricci_delta=-0.05,
+            ollivier_ricci_relative_diff=0.3,
         )
         assert guidance.layer_idx == 0
-        assert guidance.alignment_effort == 0.5
         assert guidance.dimension_scale == 1.2
-        assert guidance.curvature_correction == 0.3
-        assert guidance.alignment_weight == 0.8
+        assert guidance.intrinsic_dimension_diff == 4.0
+        assert guidance.ollivier_ricci_delta == -0.05
+        assert guidance.ollivier_ricci_relative_diff == 0.3
 
     def test_alignment_guidance_is_frozen(self):
         """AlignmentGuidance is immutable."""
         guidance = AlignmentGuidance(
             layer_idx=0,
-            alignment_effort=0.5,
             dimension_scale=1.0,
-            curvature_correction=0.3,
-            alignment_weight=0.8,
+            intrinsic_dimension_diff=0.0,
+            ollivier_ricci_delta=0.0,
+            ollivier_ricci_relative_diff=0.0,
         )
         with pytest.raises(AttributeError):
-            guidance.alignment_effort = 0.9
+            guidance.dimension_scale = 0.9
 
 
 # =============================================================================
@@ -207,17 +207,19 @@ class TestAlignmentPlan:
         """AlignmentPlan can be created with all fields."""
         guidance = AlignmentGuidance(
             layer_idx=0,
-            alignment_effort=0.5,
             dimension_scale=1.0,
-            curvature_correction=0.3,
-            alignment_weight=0.8,
+            intrinsic_dimension_diff=0.0,
+            ollivier_ricci_delta=0.0,
+            ollivier_ricci_relative_diff=0.3,
         )
         plan = AlignmentPlan(
             source_model="/path/source",
             target_model="/path/target",
             layer_guidance=[guidance],
-            total_alignment_effort=0.5,
             mean_dimension_scale=1.0,
+            mean_intrinsic_dimension_diff=0.0,
+            mean_ollivier_ricci_delta=0.0,
+            mean_ollivier_ricci_relative_diff=0.3,
         )
         assert plan.source_model == "/path/source"
         assert plan.target_model == "/path/target"
@@ -229,8 +231,10 @@ class TestAlignmentPlan:
             source_model="/path/source",
             target_model="/path/target",
             layer_guidance=[],
-            total_alignment_effort=0.0,
             mean_dimension_scale=1.0,
+            mean_intrinsic_dimension_diff=0.0,
+            mean_ollivier_ricci_delta=0.0,
+            mean_ollivier_ricci_relative_diff=0.0,
         )
         with pytest.raises(AttributeError):
             plan.mean_dimension_scale = 2.0

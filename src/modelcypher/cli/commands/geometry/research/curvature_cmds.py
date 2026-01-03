@@ -400,11 +400,9 @@ def register(app: typer.Typer) -> None:
         fundamental incompatibility.
 
         The output includes:
-        - Per-layer alignment effort (0-1, higher = more transformation needed)
-        - Dimension scaling factors
-        - Curvature correction factors
-        - Critical layers needing special attention
-        - Derived alignment strategy
+        - Per-layer dimension scales and curvature deltas
+        - Normalized Ollivier-Ricci mismatch ratios
+        - Layer correspondence by curvature similarity
         """
         from pathlib import Path
 
@@ -431,16 +429,18 @@ def register(app: typer.Typer) -> None:
         result = {
             "source_model": plan.source_model,
             "target_model": plan.target_model,
-            "total_alignment_effort": plan.total_alignment_effort,
             "mean_dimension_scale": plan.mean_dimension_scale,
+            "mean_intrinsic_dimension_diff": plan.mean_intrinsic_dimension_diff,
+            "mean_ollivier_ricci_delta": plan.mean_ollivier_ricci_delta,
+            "mean_ollivier_ricci_relative_diff": plan.mean_ollivier_ricci_relative_diff,
             "layer_correspondence": {str(k): v for k, v in correspondence.items()},
             "layer_guidance": [
                 {
                     "layer_idx": g.layer_idx,
-                    "alignment_effort": g.alignment_effort,
                     "dimension_scale": g.dimension_scale,
-                    "curvature_correction": g.curvature_correction,
-                    "alignment_weight": g.alignment_weight,
+                    "intrinsic_dimension_diff": g.intrinsic_dimension_diff,
+                    "ollivier_ricci_delta": g.ollivier_ricci_delta,
+                    "ollivier_ricci_relative_diff": g.ollivier_ricci_relative_diff,
                 }
                 for g in plan.layer_guidance
             ],
@@ -460,18 +460,20 @@ def register(app: typer.Typer) -> None:
                 f"Source: {Path(source_profile).name} ({src.model_family} {src.model_size})",
                 f"Target: {Path(target_profile).name} ({tgt.model_family} {tgt.model_size})",
                 "",
-                f"TOTAL ALIGNMENT EFFORT: {plan.total_alignment_effort:.2f}",
                 f"MEAN DIMENSION SCALE: {plan.mean_dimension_scale:.3f}",
+                f"MEAN INTRINSIC DIM DIFF: {plan.mean_intrinsic_dimension_diff:.3f}",
+                f"MEAN OLLIVIER-RICCI DELTA: {plan.mean_ollivier_ricci_delta:.3f}",
+                f"MEAN OLLIVIER-RICCI REL DIFF: {plan.mean_ollivier_ricci_relative_diff:.3f}",
                 "",
             ]
 
             lines.append("PER-LAYER GUIDANCE:")
             for g in plan.layer_guidance:
                 lines.append(
-                    f"  Layer {g.layer_idx}: effort={g.alignment_effort:.2f}, "
-                    f"dim_scale={g.dimension_scale:.3f}, "
-                    f"curvature_correction={g.curvature_correction:.3f}, "
-                    f"weight={g.alignment_weight:.2f}"
+                    f"  Layer {g.layer_idx}: dim_scale={g.dimension_scale:.3f}, "
+                    f"dim_diff={g.intrinsic_dimension_diff:.3f}, "
+                    f"ricci_delta={g.ollivier_ricci_delta:.3f}, "
+                    f"ricci_rel={g.ollivier_ricci_relative_diff:.3f}"
                 )
 
             write_output("\n".join(lines), context.output_format, context.pretty)
