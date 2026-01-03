@@ -192,7 +192,7 @@ class ConceptDetector:
             best_similarity = -1.0
 
             for probe in self._probe_embeddings:
-                similarity = VectorMath.dot(segment_embedding, probe.centroid) or 0.0
+                similarity = ConceptDetector._cosine_similarity(segment_embedding, probe.centroid)
                 if similarity > best_similarity:
                     best_similarity = similarity
                     best_probe = probe
@@ -275,7 +275,7 @@ class ConceptDetector:
             ]
             centroid = VectorMath.l2_normalized(self._frechet_centroid(embeddings))
             cohesion_floor = min(
-                VectorMath.dot(centroid, support) or 0.0
+                ConceptDetector._cosine_similarity(centroid, support)
                 for support in normalized_support
             )
 
@@ -307,7 +307,7 @@ class ConceptDetector:
         max_similarity = -1.0
         for index, probe_a in enumerate(self._probe_embeddings):
             for probe_b in self._probe_embeddings[index + 1 :]:
-                similarity = VectorMath.dot(probe_a.centroid, probe_b.centroid) or 0.0
+                similarity = ConceptDetector._cosine_similarity(probe_a.centroid, probe_b.centroid)
                 if similarity > max_similarity:
                     max_similarity = similarity
         return float(max_similarity)
@@ -339,8 +339,15 @@ class ConceptDetector:
             return None
         total = 0.0
         for support in support_embeddings:
-            total += VectorMath.dot(segment_embedding, support) or 0.0
+            total += ConceptDetector._cosine_similarity(segment_embedding, support)
         return total / float(len(support_embeddings))
+
+    @staticmethod
+    def _cosine_similarity(a: list[float], b: list[float]) -> float:
+        try:
+            return VectorMath.cosine_similarity(a, b)
+        except ValueError:
+            return 0.0
 
     @staticmethod
     def _collapse_consecutive(

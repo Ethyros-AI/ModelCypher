@@ -49,6 +49,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     sqrt_scalar,
 )
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.vector_math import VectorMath
 
 AtlasProbe: TypeAlias = AtlasProbeProtocol
 SequenceInvariant: TypeAlias = SequenceInvariantProtocol
@@ -757,24 +758,13 @@ class InvariantLayerMapper:
         count = min(len(a), len(b), len(weights))
         if count == 0:
             return 0.0
-
-        dot = 0.0
-        norm_a = 0.0
-        norm_b = 0.0
-
-        for i in range(count):
-            w = weights[i]
-            va = a[i] * w
-            vb = b[i] * w
-            dot += va * vb
-            norm_a += va * va
-            norm_b += vb * vb
-
-        if norm_a <= 0 or norm_b <= 0:
+        weighted_a = [a[i] * weights[i] for i in range(count)]
+        weighted_b = [b[i] * weights[i] for i in range(count)]
+        try:
+            similarity = VectorMath.cosine_similarity(weighted_a, weighted_b)
+        except ValueError:
             return 0.0
-
-        _b = get_default_backend()
-        return max(0.0, min(1.0, dot / (sqrt_scalar(norm_a, _b) * sqrt_scalar(norm_b, _b))))
+        return max(0.0, min(1.0, similarity))
 
     @staticmethod
     def _align_layers(
@@ -836,20 +826,8 @@ class InvariantLayerMapper:
         count = min(len(a), len(b))
         if count == 0:
             return 0.0
-
-        dot = 0.0
-        norm_a = 0.0
-        norm_b = 0.0
-
-        for i in range(count):
-            va = a[i]
-            vb = b[i]
-            dot += va * vb
-            norm_a += va * va
-            norm_b += vb * vb
-
-        if norm_a <= 0 or norm_b <= 0:
+        try:
+            similarity = VectorMath.cosine_similarity(a[:count], b[:count])
+        except ValueError:
             return 0.0
-
-        _b = get_default_backend()
-        return max(0.0, min(1.0, dot / (sqrt_scalar(norm_a, _b) * sqrt_scalar(norm_b, _b))))
+        return max(0.0, min(1.0, similarity))

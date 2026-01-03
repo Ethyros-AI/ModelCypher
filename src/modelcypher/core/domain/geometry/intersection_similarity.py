@@ -27,11 +27,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
-from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import (
-    division_epsilon,
-    machine_epsilon,
-)
+from modelcypher.core.domain.geometry.vector_math import SparseVectorMath
 
 if TYPE_CHECKING:
     from modelcypher.core.domain.geometry.manifold_stitcher import (
@@ -113,30 +109,10 @@ def compute_cosine_similarity(
     """
     Compute cosine similarity between sparse activation vectors.
     """
-    all_dims = set(source_activations.keys()) | set(target_activations.keys())
-    if not all_dims:
+    try:
+        return SparseVectorMath.cosine_similarity(source_activations, target_activations)
+    except ValueError:
         return 0.0
-
-    dot_product = 0.0
-    source_norm_sq = 0.0
-    target_norm_sq = 0.0
-
-    for dim in all_dims:
-        a = source_activations.get(dim, 0.0)
-        b = target_activations.get(dim, 0.0)
-        dot_product += a * b
-        source_norm_sq += a * a
-        target_norm_sq += b * b
-
-    # Use machine epsilon for the zero check - this is checking if vectors are
-    # effectively zero, not preventing division issues. Division epsilon is too
-    # strict and causes false negatives for small but valid vectors.
-    backend = get_default_backend()
-    eps = machine_epsilon(backend, backend.array([0.0]))
-    if source_norm_sq <= eps or target_norm_sq <= eps:
-        return 0.0
-    norm_product = (source_norm_sq**0.5) * (target_norm_sq**0.5)
-    return dot_product / norm_product
 
 
 def build_layer_correlations(

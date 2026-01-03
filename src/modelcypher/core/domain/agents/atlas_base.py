@@ -242,8 +242,11 @@ class BaseAtlas(ABC, Generic[C, S]):
             # Compute cosine similarities to each concept
             similarities = []
             for concept_vec in concept_embeddings:
-                dot = VectorMath.dot(concept_vec, text_vec)
-                similarities.append(max(0.0, dot))
+                try:
+                    similarity = VectorMath.cosine_similarity(concept_vec, text_vec)
+                except ValueError:
+                    similarity = 0.0
+                similarities.append(max(0.0, similarity))
 
             return self._create_signature(
                 concept_ids=[c.id for c in self.inventory],

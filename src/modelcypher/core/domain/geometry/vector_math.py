@@ -44,6 +44,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     sin_scalar,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 
 # math.pi is just a constant, no GPU acceleration needed
 _PI = 3.141592653589793
@@ -96,6 +97,42 @@ def _angle_epsilon_from_values(values: list[float]) -> float:
     return division_epsilon(backend, ref)
 
 
+def _geodesic_distance_from_origin(point: Any, backend: "Backend") -> float:
+    """Compute geodesic distance between a point and the origin."""
+    zero = backend.zeros_like(point)
+    rg = RiemannianGeometry(backend)
+    points = backend.stack([zero, point], axis=0)
+    geo_result = rg.geodesic_distances(points)
+    distances = geo_result.distances
+    backend.eval(distances)
+    return float(backend.to_scalar(distances[0, 1]))
+
+
+def _geodesic_cosine_from_origin(a: Any, b: Any, backend: "Backend") -> float:
+    """Compute cosine similarity using geodesic distances to the origin."""
+    zero = backend.zeros_like(a)
+    rg = RiemannianGeometry(backend)
+    points = backend.stack([zero, a, b], axis=0)
+    geo_result = rg.geodesic_distances(points)
+    distances = geo_result.distances
+    backend.eval(distances)
+
+    d0a = float(backend.to_scalar(distances[0, 1]))
+    d0b = float(backend.to_scalar(distances[0, 2]))
+    dab = float(backend.to_scalar(distances[1, 2]))
+
+    eps = division_epsilon(backend, distances)
+    if d0a <= eps or d0b <= eps:
+        raise ValueError("Cannot compute cosine similarity of zero vector")
+
+    denom = 2.0 * d0a * d0b
+    if denom <= eps:
+        raise ValueError("Cannot compute cosine similarity with degenerate distances")
+
+    cos_val = (d0a * d0a + d0b * d0b - dab * dab) / denom
+    return max(-1.0, min(1.0, cos_val))
+
+
 class VectorMath:
     """Vector math utilities for dense vectors."""
 
@@ -129,7 +166,7 @@ class VectorMath:
 
     @staticmethod
     def l2_norm(a: ArrayLike) -> float:
-        """Compute L2 norm of a vector.
+        """Compute geodesic norm of a vector.
 
         Args:
             a: Vector (list or MLX array)
@@ -144,9 +181,10 @@ class VectorMath:
             raise ValueError("Cannot compute L2 norm of empty vector")
 
         a_list = _to_list(a)
-        sum_squares = sum(x * x for x in a_list)
         _b = get_default_backend()
-        return sqrt_scalar(max(0.0, sum_squares), _b)
+        a_arr = _b.array(a_list)
+        norm = _geodesic_distance_from_origin(a_arr, _b)
+        return max(0.0, norm)
 
     @staticmethod
     def l2_normalized(a: ArrayLike) -> list[float]:
@@ -170,9 +208,7 @@ class VectorMath:
 
     @staticmethod
     def cosine_similarity(a: ArrayLike, b: ArrayLike) -> float:
-        """Compute cosine similarity between two vectors.
-
-        Uses single-pass computation for efficiency.
+        """Compute cosine similarity between two vectors using geodesic distances.
 
         Args:
             a: First vector (list or MLX array)
@@ -196,25 +232,10 @@ class VectorMath:
 
         a_list = _to_list(a)
         b_list = _to_list(b)
-
-        # Single-pass computation for efficiency
-        dot_product = 0.0
-        norm_a_sq = 0.0
-        norm_b_sq = 0.0
-
-        for i in range(len_a):
-            x = float(a_list[i])
-            y = float(b_list[i])
-            dot_product += x * y
-            norm_a_sq += x * x
-            norm_b_sq += y * y
-
-        eps = _angle_epsilon_from_values(a_list + b_list)
-        if norm_a_sq <= eps or norm_b_sq <= eps:
-            raise ValueError("Cannot compute cosine similarity of zero vector")
-
         _b = get_default_backend()
-        return dot_product / (sqrt_scalar(norm_a_sq, _b) * sqrt_scalar(norm_b_sq, _b))
+        a_arr = _b.array(a_list)
+        b_arr = _b.array(b_list)
+        return _geodesic_cosine_from_origin(a_arr, b_arr, _b)
 
     @staticmethod
     def cosine_similarity_clamped(a: ArrayLike, b: ArrayLike) -> float:
@@ -475,7 +496,7 @@ class SparseVectorMath:
 
     @staticmethod
     def l2_norm(vector: SparseVector) -> float:
-        """Compute L2 norm of a sparse vector.
+        """Compute geodesic norm of a sparse vector.
 
         Args:
             vector: Dict mapping keys to float values.
@@ -488,46 +509,25 @@ class SparseVectorMath:
         """
         if not vector:
             raise ValueError("Cannot compute L2 norm of empty sparse vector")
-        sum_squares = sum(v * v for v in vector.values())
-        _b = get_default_backend()
-        return sqrt_scalar(max(0.0, sum_squares), _b)
+        values = [float(v) for v in vector.values()]
+        return VectorMath.l2_norm(values)
 
     @staticmethod
     def cosine_similarity(a: SparseVector, b: SparseVector) -> float:
         """Compute cosine similarity between sparse vectors.
 
-        This is the canonical implementation for sparse cosine similarity.
-        Works with any hashable key type (str for labels, int for indices).
-        Sparse vectors with different key sets are valid - similarity is
-        computed on the intersection (non-overlapping dimensions contribute 0).
-
-        Args:
-            a: First sparse vector as dict.
-            b: Second sparse vector as dict.
-
-        Returns:
-            Cosine similarity in [-1, 1] (0.0 if no key overlap).
-
-        Raises:
-            ValueError: If either vector is empty or zero.
+        This uses geodesic cosine similarity on a dense union of keys.
         """
         if not a or not b:
             raise ValueError("Cannot compute cosine similarity of empty sparse vectors")
 
-        norm_a = SparseVectorMath.l2_norm(a)
-        norm_b = SparseVectorMath.l2_norm(b)
+        keys = sorted(set(a.keys()) | set(b.keys()))
+        if not keys:
+            raise ValueError("Cannot compute cosine similarity of empty sparse vectors")
 
-        if norm_a <= 0 or norm_b <= 0:
-            raise ValueError("Cannot compute cosine similarity of zero sparse vectors")
-
-        # Iterate over smaller dict for efficiency
-        smaller, larger = (a, b) if len(a) <= len(b) else (b, a)
-        dot = 0.0
-        for key, val in smaller.items():
-            if key in larger:
-                dot += val * larger[key]
-
-        return dot / (norm_a * norm_b)
+        vec_a = [float(a.get(key, 0.0)) for key in keys]
+        vec_b = [float(b.get(key, 0.0)) for key in keys]
+        return VectorMath.cosine_similarity(vec_a, vec_b)
 
 
 class BackendVectorMath:
@@ -589,7 +589,7 @@ class BackendVectorMath:
         return float(self.backend.to_scalar(result))
 
     def l2_norm(self, a: Any) -> float:
-        """Compute L2 norm using backend operations.
+        """Compute geodesic norm using backend operations.
 
         Args:
             a: Vector (Backend array or convertible)
@@ -610,9 +610,8 @@ class BackendVectorMath:
         if shape[0] == 0:
             raise ValueError("Cannot compute L2 norm of empty array")
 
-        result = self.backend.norm(a_arr)
-        self.backend.eval(result)
-        return max(0.0, float(self.backend.to_scalar(result)))
+        norm = _geodesic_distance_from_origin(a_arr, self.backend)
+        return max(0.0, float(norm))
 
     def l2_normalized(self, a: Any) -> Any:
         """Return L2-normalized vector using backend operations.
@@ -627,17 +626,15 @@ class BackendVectorMath:
         if a_arr is None:
             return a
 
-        norm = self.backend.norm(a_arr)
-        self.backend.eval(norm)
-        norm_val = float(self.backend.to_scalar(norm))
+        norm_val = self.l2_norm(a_arr)
 
         if norm_val <= self._finfo.eps:
             return a_arr
 
-        return a_arr / norm
+        return a_arr / norm_val
 
     def cosine_similarity(self, a: Any, b: Any) -> float:
-        """Compute cosine similarity using backend operations.
+        """Compute cosine similarity using geodesic distances.
 
         Args:
             a: First vector (Backend array or convertible)
@@ -668,23 +665,7 @@ class BackendVectorMath:
                 "For cross-dimensional comparison, use CKA on activation matrices."
             )
 
-        # Compute norms
-        norm_a = self.backend.norm(a_arr)
-        norm_b = self.backend.norm(b_arr)
-        self.backend.eval(norm_a, norm_b)
-
-        norm_a_val = float(self.backend.to_scalar(norm_a))
-        norm_b_val = float(self.backend.to_scalar(norm_b))
-
-        if norm_a_val <= self._finfo.eps or norm_b_val <= self._finfo.eps:
-            raise ValueError("Cannot compute cosine similarity of zero vector")
-
-        # Compute dot product
-        dot = self.backend.dot(a_arr, b_arr)
-        self.backend.eval(dot)
-        dot_val = float(self.backend.to_scalar(dot))
-
-        return dot_val / (norm_a_val * norm_b_val)
+        return _geodesic_cosine_from_origin(a_arr, b_arr, self.backend)
 
     def slerp(
         self,

@@ -244,8 +244,11 @@ class SemanticPrimeAtlas:
             # Compute similarities
             similarities = []
             for prime_vec in prime_embeddings:
-                dot = VectorMath.dot(prime_vec, text_vec)
-                similarities.append(max(0.0, dot))
+                try:
+                    similarity = VectorMath.cosine_similarity(prime_vec, text_vec)
+                except ValueError:
+                    similarity = 0.0
+                similarities.append(max(0.0, similarity))
 
             return SemanticPrimeSignature(
                 prime_ids=[p.id for p in self.inventory], values=similarities

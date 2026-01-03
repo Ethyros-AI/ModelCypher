@@ -167,7 +167,10 @@ class GateDetector:
             best_gate_id = None
             best_similarity = 0.0
             for gate_id, gate_embedding in self.gate_embeddings.items():
-                similarity = VectorMath.dot(normalized_window, gate_embedding) or 0.0
+                try:
+                    similarity = VectorMath.cosine_similarity(normalized_window, gate_embedding)
+                except ValueError:
+                    similarity = 0.0
                 if similarity > best_similarity:
                     best_similarity = similarity
                     best_gate_id = gate_id

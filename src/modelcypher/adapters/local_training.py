@@ -31,14 +31,14 @@ from modelcypher.core.domain.training import (
     Hyperparameters as DomainHyperparameters,
 )
 from modelcypher.core.domain.training import (
-    LoRAConfig as DomainLoRAConfig,
+    LoRASettings as DomainLoRASettings,
 )
 from modelcypher.core.domain.training import (
     PreflightResult,
     TrainingStatus,
 )
 from modelcypher.core.domain.training import (
-    TrainingConfig as DomainTrainingConfig,
+    TrainingSpec as DomainTrainingSpec,
 )
 from modelcypher.core.domain.training._platform import get_training_engine
 from modelcypher.core.domain.training import (
@@ -203,14 +203,14 @@ class LocalTrainingEngine(TrainingEngine):
         domain_lora = None
         lora = getattr(config, "lora_config", None)
         if lora:
-            domain_lora = DomainLoRAConfig(
+            domain_lora = DomainLoRASettings(
                 rank=lora.rank,
                 alpha=lora.alpha,
                 dropout=lora.dropout,
                 target_modules=lora.target_modules,
             )
 
-        domain_config = DomainTrainingConfig(
+        domain_config = DomainTrainingSpec(
             model_id=config.model_id,
             dataset_path=config.dataset_path,
             output_path=str(self.paths.base / "checkpoints"),

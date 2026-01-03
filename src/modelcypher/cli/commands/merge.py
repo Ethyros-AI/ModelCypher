@@ -179,7 +179,7 @@ def _run_merge(
             hint="Check model paths and merge parameters",
             trace_id=context.trace_id,
         )
-        write_error(error.as_dict(), context.output_format, context.pretty)
+        write_error(error.as_dict())
         raise typer.Exit(code=1)
 
 
