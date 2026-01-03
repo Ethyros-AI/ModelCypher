@@ -56,20 +56,21 @@ class TestPreMergeAnalysis:
             timestamp="2025-12-31T00:00:00",
             domains_analyzed=["spatial", "social"],
             domain_results={
-                "spatial": {"mean_overlap": 0.8, "mean_alignment": 0.9},
-                "social": {"mean_overlap": 0.7, "mean_alignment": 0.85},
+                "spatial": {"mean_overlap": 0.8, "mean_subspace_alignment": 0.9},
+                "social": {"mean_overlap": 0.7, "mean_subspace_alignment": 0.85},
             },
             mean_overlap=0.75,
-            mean_alignment=0.875,
+            mean_subspace_alignment=0.875,
             mean_curvature_divergence=0.05,
             mean_distance=0.15,
+            aligned_pairs=4,
         )
 
         assert analysis.source_model == "/path/to/source"
         assert analysis.target_model == "/path/to/target"
         assert len(analysis.domains_analyzed) == 2
         assert analysis.mean_overlap == 0.75
-        assert analysis.mean_alignment == 0.875
+        assert analysis.mean_subspace_alignment == 0.875
         assert analysis.mean_curvature_divergence == 0.05
 
     def test_pre_merge_analysis_is_frozen(self):
@@ -81,9 +82,10 @@ class TestPreMergeAnalysis:
             domains_analyzed=[],
             domain_results={},
             mean_overlap=0.0,
-            mean_alignment=0.0,
+            mean_subspace_alignment=0.0,
             mean_curvature_divergence=0.0,
             mean_distance=0.0,
+            aligned_pairs=0,
         )
 
         with pytest.raises(Exception):  # FrozenInstanceError
@@ -98,9 +100,10 @@ class TestPreMergeAnalysis:
             domains_analyzed=["spatial"],
             domain_results={"spatial": {"mean_overlap": 0.8}},
             mean_overlap=0.8,
-            mean_alignment=0.9,
+            mean_subspace_alignment=0.9,
             mean_curvature_divergence=0.0,
             mean_distance=0.0,
+            aligned_pairs=0,
         )
 
         d = asdict(analysis)
@@ -156,9 +159,10 @@ class TestPipelineResult:
             domains_analyzed=["spatial"],
             domain_results={},
             mean_overlap=0.8,
-            mean_alignment=0.9,
+            mean_subspace_alignment=0.9,
             mean_curvature_divergence=0.0,
             mean_distance=0.0,
+            aligned_pairs=0,
         )
 
         post_merge = PostMergeValidation(
@@ -200,9 +204,10 @@ class TestPipelineResult:
             domains_analyzed=[],
             domain_results={},
             mean_overlap=0.0,
-            mean_alignment=0.0,
+            mean_subspace_alignment=0.0,
             mean_curvature_divergence=0.0,
             mean_distance=0.0,
+            aligned_pairs=0,
         )
 
         post_merge = PostMergeValidation(
@@ -297,9 +302,10 @@ class TestPipelineTimingFields:
             domains_analyzed=[],
             domain_results={},
             mean_overlap=0.0,
-            mean_alignment=0.0,
+            mean_subspace_alignment=0.0,
             mean_curvature_divergence=0.0,
             mean_distance=0.0,
+            aligned_pairs=0,
         )
 
         post_merge = PostMergeValidation(

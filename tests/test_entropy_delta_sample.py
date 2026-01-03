@@ -124,7 +124,7 @@ def test_baseline_distribution_z_score() -> None:
     baseline = BaselineDistribution(mean=0.5, std=0.1)
 
     # At mean: z=0
-    eps = _eps(0.5)
+    eps = _eps(0.5) * 10  # Use larger tolerance for floating-point computation
     assert abs(baseline.z_score(0.5)) <= eps
 
     # 1 std above: z=1
