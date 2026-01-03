@@ -1068,10 +1068,7 @@ class ModelProfileExtractor:
         for probe in probes:
             try:
                 tokens = tokenizer.encode(probe)
-                if hasattr(tokens, "tolist"):
-                    token_ids = tokens.tolist()
-                else:
-                    token_ids = list(tokens)
+                token_ids = list(tokens)
 
                 for layer_idx in layers:
                     act = self._extract_layer_activation(model, token_ids, layer_idx)

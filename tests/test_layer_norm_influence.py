@@ -34,18 +34,14 @@ def test_layer_norm_spectral_norm():
     target_ln = backend.array([1.0, 1.0, 1.1])
     backend.eval(source_ln, target_ln)
 
-    # Convert to numpy for compute_spectral_metrics (expects numpy arrays)
-    source_np = backend.tolist(source_ln)
-    target_np = backend.tolist(target_ln)
-
     config = SpectralConfig()
-    metrics = compute_spectral_metrics(source_np, target_np, config=config)
+    metrics = compute_spectral_metrics(source_ln, target_ln, config=config)
 
     assert metrics.condition_number == 1.0
     # sqrt(3) for source, sqrt(1 + 1 + 1.21) for target
-    expected_source_norm = float(backend.tolist(backend.sqrt(backend.array(3.0))))
+    expected_source_norm = float(backend.to_scalar(backend.sqrt(backend.array(3.0))))
     expected_target_norm = float(
-        backend.tolist(backend.sqrt(backend.array(1.0**2 + 1.0**2 + 1.1**2)))
+        backend.to_scalar(backend.sqrt(backend.array(1.0**2 + 1.0**2 + 1.1**2)))
     )
     eps = machine_epsilon(backend, source_ln)
     assert abs(metrics.source_spectral_norm - expected_source_norm) <= eps
@@ -59,11 +55,8 @@ def test_layer_norm_mismatch_alignment():
     target_ln = backend.array([10.0, 0.0])
     backend.eval(source_ln, target_ln)
 
-    source_np = backend.tolist(source_ln)
-    target_np = backend.tolist(target_ln)
-
     config = SpectralConfig()
-    metrics = compute_spectral_metrics(source_np, target_np, config=config)
+    metrics = compute_spectral_metrics(source_ln, target_ln, config=config)
 
     # ratio = 1/10 = 0.1
     # alignment = min(0.1, 10.0) = 0.1
@@ -79,17 +72,14 @@ def test_layer_norm_zero_norm_stability():
     target_ln = backend.zeros((2,))
     backend.eval(source_ln, target_ln)
 
-    source_np = backend.tolist(source_ln)
-    target_np = backend.tolist(target_ln)
-
     config = SpectralConfig()
-    metrics = compute_spectral_metrics(source_np, target_np, config=config)
+    metrics = compute_spectral_metrics(source_ln, target_ln, config=config)
 
     # target_spectral_norm should be clamped to epsilon
     eps = division_epsilon(backend, target_ln)
     assert metrics.target_spectral_norm == eps
     # sqrt(5) / epsilon
-    expected_ratio = float(backend.tolist(backend.sqrt(backend.array(5.0)))) / eps
+    expected_ratio = float(backend.to_scalar(backend.sqrt(backend.array(5.0)))) / eps
     eps_ratio = machine_epsilon(backend, source_ln) * max(1.0, abs(expected_ratio))
     assert abs(metrics.spectral_ratio - expected_ratio) <= eps_ratio
 
