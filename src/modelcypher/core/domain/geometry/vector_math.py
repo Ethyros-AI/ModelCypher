@@ -99,10 +99,17 @@ def _angle_epsilon_from_values(values: list[float]) -> float:
 
 def _geodesic_distance_from_origin(point: Any, backend: "Backend") -> float:
     """Compute geodesic distance between a point and the origin."""
+    shape = backend.shape(point)
+    if len(shape) == 1:
+        # On a two-point discrete manifold, the geodesic is the direct edge.
+        dist_arr = backend.sqrt(backend.sum(point * point))
+        backend.eval(dist_arr)
+        return float(backend.to_scalar(dist_arr))
+
     zero = backend.zeros_like(point)
     rg = RiemannianGeometry(backend)
     points = backend.stack([zero, point], axis=0)
-    geo_result = rg.geodesic_distances(points)
+    geo_result = rg.geodesic_distances(points, k_neighbors=int(points.shape[0]) - 1)
     distances = geo_result.distances
     backend.eval(distances)
     return float(backend.to_scalar(distances[0, 1]))
@@ -113,7 +120,7 @@ def _geodesic_cosine_from_origin(a: Any, b: Any, backend: "Backend") -> float:
     zero = backend.zeros_like(a)
     rg = RiemannianGeometry(backend)
     points = backend.stack([zero, a, b], axis=0)
-    geo_result = rg.geodesic_distances(points)
+    geo_result = rg.geodesic_distances(points, k_neighbors=int(points.shape[0]) - 1)
     distances = geo_result.distances
     backend.eval(distances)
 
