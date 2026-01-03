@@ -114,7 +114,6 @@ def register_thermo_tools(ctx: ServiceContext) -> None:
                         "fromGate": item.from_gate,
                         "toGate": item.to_gate,
                         "entropyDelta": item.entropy_delta,
-                        "isSpike": item.is_spike,
                     }
                     for item in measurement.gate_transition_entropies
                 ],

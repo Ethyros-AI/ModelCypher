@@ -25,7 +25,7 @@ from mcp.server.fastmcp import FastMCP
 
 from modelcypher.infrastructure.container import PortRegistry
 from modelcypher.infrastructure.service_factory import ServiceFactory
-from modelcypher.mcp.security import ConfirmationManager, SecurityConfig
+from modelcypher.mcp.security import ConfirmationManager, load_security_environment
 from modelcypher.mcp.tools.adapter import register_adapter_tools
 from modelcypher.mcp.tools.agent import register_agent_tools
 from modelcypher.mcp.tools.common import ServiceContext
@@ -70,13 +70,23 @@ def build_server(profile: str | None = None) -> FastMCP:
     mcp = FastMCP("ModelCypher")
     registry = PortRegistry.create_production()
     factory = ServiceFactory(registry)
-    security_config = SecurityConfig.from_env()
-    confirmation_manager = ConfirmationManager(security_config)
+    (
+        _auth_enabled,
+        _issuer,
+        _audience,
+        _jwks_uri,
+        require_confirmation,
+        confirmation_timeout_seconds,
+    ) = load_security_environment()
+    confirmation_manager = ConfirmationManager(
+        require_confirmation=require_confirmation,
+        confirmation_timeout_seconds=confirmation_timeout_seconds,
+    )
     ctx = ServiceContext(
         mcp=mcp,
         tool_set=tool_set,
-        security_config=security_config,
         confirmation_manager=confirmation_manager,
+        confirmation_timeout_seconds=confirmation_timeout_seconds,
         registry=registry,
         factory=factory,
     )

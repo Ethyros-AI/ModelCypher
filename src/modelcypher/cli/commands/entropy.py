@@ -91,32 +91,59 @@ def entropy_analyze(
     variances = [s[1] for s in parsed_samples]
     n = len(entropies)
 
-    # Compute raw statistics from the data itself
+    # Compute raw statistics from the data itself (backend only)
     _b = get_default_backend()
-    entropy_mean = sum(entropies) / n
-    variance_mean = sum(variances) / n
-    entropy_std = sqrt_scalar(sum((e - entropy_mean) ** 2 for e in entropies) / n, _b) if n > 1 else 0.0
-    variance_std = sqrt_scalar(sum((v - variance_mean) ** 2 for v in variances) / n, _b) if n > 1 else 0.0
+    entropy_arr = _b.array(entropies)
+    variance_arr = _b.array(variances)
+    entropy_mean_arr = _b.mean(entropy_arr)
+    variance_mean_arr = _b.mean(variance_arr)
+    entropy_std_arr = _b.std(entropy_arr)
+    variance_std_arr = _b.std(variance_arr)
+    entropy_min_arr = _b.min(entropy_arr)
+    entropy_max_arr = _b.max(entropy_arr)
+    _b.eval(
+        entropy_mean_arr,
+        variance_mean_arr,
+        entropy_std_arr,
+        variance_std_arr,
+        entropy_min_arr,
+        entropy_max_arr,
+    )
+
+    entropy_mean = float(_b.to_scalar(entropy_mean_arr))
+    variance_mean = float(_b.to_scalar(variance_mean_arr))
+    entropy_std = float(_b.to_scalar(entropy_std_arr)) if n > 1 else 0.0
+    variance_std = float(_b.to_scalar(variance_std_arr)) if n > 1 else 0.0
+    entropy_min = float(_b.to_scalar(entropy_min_arr))
+    entropy_max = float(_b.to_scalar(entropy_max_arr))
 
     # Trend via linear regression slope
     if n > 1:
-        x_mean = (n - 1) / 2
-        numerator = sum((i - x_mean) * (e - entropy_mean) for i, e in enumerate(entropies))
-        denominator = sum((i - x_mean) ** 2 for i in range(n))
-        trend_slope = numerator / denominator if denominator > 0 else 0.0
+        x = _b.arange(0, n)
+        x_mean_arr = _b.mean(x)
+        numerator = _b.sum((x - x_mean_arr) * (entropy_arr - entropy_mean_arr))
+        denominator = _b.sum((x - x_mean_arr) * (x - x_mean_arr))
+        _b.eval(numerator, denominator)
+        denom_val = float(_b.to_scalar(denominator))
+        trend_slope = float(_b.to_scalar(numerator)) / denom_val if denom_val > 0 else 0.0
     else:
         trend_slope = 0.0
 
     # Z-scores for each sample (computed from the data's own distribution)
-    z_scores = [(e - entropy_mean) / entropy_std if entropy_std > 0 else 0.0 for e in entropies]
+    if entropy_std > 0:
+        z_scores_arr = (entropy_arr - entropy_mean_arr) / entropy_std_arr
+    else:
+        z_scores_arr = _b.zeros(entropy_arr.shape, dtype=getattr(entropy_arr, "dtype", None))
+    _b.eval(z_scores_arr)
+    z_scores = _b.tolist(z_scores_arr)
 
     payload = {
         "sampleCount": n,
         # Raw distribution statistics
         "entropyMean": entropy_mean,
         "entropyStdDev": entropy_std,
-        "entropyMin": min(entropies),
-        "entropyMax": max(entropies),
+        "entropyMin": entropy_min,
+        "entropyMax": entropy_max,
         "varianceMean": variance_mean,
         "varianceStdDev": variance_std,
         # Trend (slope of linear fit)
@@ -129,7 +156,7 @@ def entropy_analyze(
         lines = [
             "ENTROPY ANALYSIS (raw statistics)",
             f"Sample Count: {n}",
-            f"Entropy: mean={entropy_mean:.4f}, std={entropy_std:.4f}, min={min(entropies):.4f}, max={max(entropies):.4f}",
+            f"Entropy: mean={entropy_mean:.4f}, std={entropy_std:.4f}, min={entropy_min:.4f}, max={entropy_max:.4f}",
             f"Variance: mean={variance_mean:.4f}, std={variance_std:.4f}",
             f"Trend Slope: {trend_slope:.6f}",
         ]
@@ -183,41 +210,59 @@ def entropy_detect_distress(
     entropies = [s[0] for s in parsed_samples]
     variances = [s[1] for s in parsed_samples]
 
-    # Basic statistics
+    # Basic statistics (backend only)
     _b = get_default_backend()
-    entropy_mean = sum(entropies) / n
-    variance_mean = sum(variances) / n
-    entropy_std = sqrt_scalar(sum((e - entropy_mean) ** 2 for e in entropies) / n, _b) if n > 1 else 0.0
-    variance_std = sqrt_scalar(sum((v - variance_mean) ** 2 for v in variances) / n, _b) if n > 1 else 0.0
+    entropy_arr = _b.array(entropies)
+    variance_arr = _b.array(variances)
+    entropy_mean_arr = _b.mean(entropy_arr)
+    variance_mean_arr = _b.mean(variance_arr)
+    entropy_std_arr = _b.std(entropy_arr)
+    variance_std_arr = _b.std(variance_arr)
+    _b.eval(entropy_mean_arr, variance_mean_arr, entropy_std_arr, variance_std_arr)
+
+    entropy_mean = float(_b.to_scalar(entropy_mean_arr))
+    variance_mean = float(_b.to_scalar(variance_mean_arr))
+    entropy_std = float(_b.to_scalar(entropy_std_arr)) if n > 1 else 0.0
+    variance_std = float(_b.to_scalar(variance_std_arr)) if n > 1 else 0.0
 
     # Trend slope (linear regression on entropy)
     if n > 1:
-        x_mean = (n - 1) / 2
-        numerator = sum((i - x_mean) * (e - entropy_mean) for i, e in enumerate(entropies))
-        denominator = sum((i - x_mean) ** 2 for i in range(n))
-        trend_slope = numerator / denominator if denominator > 0 else 0.0
+        x = _b.arange(0, n)
+        x_mean_arr = _b.mean(x)
+        numerator = _b.sum((x - x_mean_arr) * (entropy_arr - entropy_mean_arr))
+        denominator = _b.sum((x - x_mean_arr) * (x - x_mean_arr))
+        _b.eval(numerator, denominator)
+        denom_val = float(_b.to_scalar(denominator))
+        trend_slope = float(_b.to_scalar(numerator)) / denom_val if denom_val > 0 else 0.0
     else:
         trend_slope = 0.0
 
     # Pearson correlation between entropy and variance
     if n > 1 and entropy_std > 0 and variance_std > 0:
-        covariance = sum(
-            (e - entropy_mean) * (v - variance_mean) for e, v in parsed_samples
-        ) / n
-        correlation = covariance / (entropy_std * variance_std)
+        centered_entropy = entropy_arr - entropy_mean_arr
+        centered_variance = variance_arr - variance_mean_arr
+        covariance = _b.mean(centered_entropy * centered_variance)
+        _b.eval(covariance)
+        correlation = float(_b.to_scalar(covariance)) / (entropy_std * variance_std)
     else:
         correlation = 0.0
 
     # Volatility (std of consecutive differences)
     if n > 1:
-        diffs = [entropies[i + 1] - entropies[i] for i in range(n - 1)]
-        diff_mean = sum(diffs) / len(diffs)
-        volatility = sqrt_scalar(sum((d - diff_mean) ** 2 for d in diffs) / len(diffs), _b)
+        diffs = entropy_arr[1:] - entropy_arr[:-1]
+        diff_std_arr = _b.std(diffs)
+        _b.eval(diff_std_arr)
+        volatility = float(_b.to_scalar(diff_std_arr))
     else:
         volatility = 0.0
 
     # Z-scores for each sample
-    z_scores = [(e - entropy_mean) / entropy_std if entropy_std > 0 else 0.0 for e in entropies]
+    if entropy_std > 0:
+        z_scores_arr = (entropy_arr - entropy_mean_arr) / entropy_std_arr
+    else:
+        z_scores_arr = _b.zeros(entropy_arr.shape, dtype=getattr(entropy_arr, "dtype", None))
+    _b.eval(z_scores_arr)
+    z_scores = _b.tolist(z_scores_arr)
 
     payload = {
         "sampleCount": n,
@@ -385,24 +430,44 @@ def entropy_window(
     n = len(entropies)
 
     _b = get_default_backend()
+    entropy_arr = _b.array(entropies)
+    variance_arr = _b.array(variances)
     window_size = max(1, int(sqrt_scalar(float(n), _b)))
     # Use window or full data if smaller
-    window_data = entropies[-window_size:] if len(entropies) > window_size else entropies
-    window_n = len(window_data)
+    window_arr = entropy_arr[-window_size:] if n > window_size else entropy_arr
+    window_n = int(window_arr.shape[0])
 
     # Window statistics
-    window_mean = sum(window_data) / window_n
-    window_std = sqrt_scalar(sum((e - window_mean) ** 2 for e in window_data) / window_n, _b) if window_n > 1 else 0.0
-    window_min = min(window_data)
-    window_max = max(window_data)
+    window_mean_arr = _b.mean(window_arr)
+    window_std_arr = _b.std(window_arr)
+    window_min_arr = _b.min(window_arr)
+    window_max_arr = _b.max(window_arr)
+    _b.eval(window_mean_arr, window_std_arr, window_min_arr, window_max_arr)
+
+    window_mean = float(_b.to_scalar(window_mean_arr))
+    window_std = float(_b.to_scalar(window_std_arr)) if window_n > 1 else 0.0
+    window_min = float(_b.to_scalar(window_min_arr))
+    window_max = float(_b.to_scalar(window_max_arr))
 
     # Z-scores for each sample in window
-    z_scores = [(e - window_mean) / window_std if window_std > 0 else 0.0 for e in window_data]
+    if window_std > 0:
+        z_scores_arr = (window_arr - window_mean_arr) / window_std_arr
+    else:
+        z_scores_arr = _b.zeros(window_arr.shape, dtype=getattr(window_arr, "dtype", None))
+    _b.eval(z_scores_arr)
+    z_scores = _b.tolist(z_scores_arr)
 
     # Current (most recent) values
-    current_entropy = entropies[-1] if entropies else 0.0
-    current_variance = variances[-1] if variances else 0.0
-    current_z = z_scores[-1] if z_scores else 0.0
+    if n > 0:
+        current_entropy_arr = entropy_arr[-1]
+        current_variance_arr = variance_arr[-1]
+        _b.eval(current_entropy_arr, current_variance_arr)
+        current_entropy = float(_b.to_scalar(current_entropy_arr))
+        current_variance = float(_b.to_scalar(current_variance_arr))
+    else:
+        current_entropy = 0.0
+        current_variance = 0.0
+    current_z = float(_b.to_scalar(z_scores_arr[-1])) if window_n > 0 else 0.0
 
     payload = {
         "windowSize": window_size,
@@ -517,42 +582,64 @@ def entropy_conversation_track(
 
     n = len(deltas)
 
-    # Basic statistics
+    # Basic statistics (backend only)
     _b = get_default_backend()
-    delta_mean = sum(deltas) / n
-    delta_std = sqrt_scalar(sum((d - delta_mean) ** 2 for d in deltas) / n, _b) if n > 1 else 0.0
+    deltas_arr = _b.array(deltas)
+    delta_mean_arr = _b.mean(deltas_arr)
+    delta_std_arr = _b.std(deltas_arr)
+    delta_min_arr = _b.min(deltas_arr)
+    delta_max_arr = _b.max(deltas_arr)
+    cumulative_drift_arr = _b.sum(deltas_arr)
+    _b.eval(delta_mean_arr, delta_std_arr, delta_min_arr, delta_max_arr, cumulative_drift_arr)
 
-    # Cumulative drift (sum of deltas)
-    cumulative_drift = sum(deltas)
+    delta_mean = float(_b.to_scalar(delta_mean_arr))
+    delta_std = float(_b.to_scalar(delta_std_arr)) if n > 1 else 0.0
+    delta_min = float(_b.to_scalar(delta_min_arr))
+    delta_max = float(_b.to_scalar(delta_max_arr))
+    cumulative_drift = float(_b.to_scalar(cumulative_drift_arr))
 
     # Turn-over-turn changes
-    turn_changes = [deltas[i + 1] - deltas[i] for i in range(n - 1)] if n > 1 else []
-    max_spike = max(abs(c) for c in turn_changes) if turn_changes else 0.0
+    if n > 1:
+        turn_changes_arr = deltas_arr[1:] - deltas_arr[:-1]
+        turn_changes = _b.tolist(turn_changes_arr)
+        max_spike_arr = _b.max(_b.abs(turn_changes_arr))
+        _b.eval(max_spike_arr)
+        max_spike = float(_b.to_scalar(max_spike_arr))
 
-    # Oscillation: count sign changes in turn_changes
-    sign_changes = 0
-    for i in range(len(turn_changes) - 1):
-        if turn_changes[i] * turn_changes[i + 1] < 0:
-            sign_changes += 1
-    oscillation_frequency = sign_changes / len(turn_changes) if turn_changes else 0.0
+        # Oscillation: count sign changes
+        signs = _b.sign(turn_changes_arr)
+        sign_products = signs[1:] * signs[:-1]
+        sign_change_mask = sign_products < 0
+        sign_changes_arr = _b.sum(_b.astype(sign_change_mask, "float32"))
+        _b.eval(sign_changes_arr)
+        sign_changes = float(_b.to_scalar(sign_changes_arr))
+        oscillation_frequency = sign_changes / len(turn_changes) if turn_changes else 0.0
 
-    # Oscillation amplitude: std of turn_changes
-    if turn_changes:
-        tc_mean = sum(turn_changes) / len(turn_changes)
-        oscillation_amplitude = sqrt_scalar(sum((c - tc_mean) ** 2 for c in turn_changes) / len(turn_changes), _b)
+        # Oscillation amplitude: std of turn_changes
+        oscillation_amplitude_arr = _b.std(turn_changes_arr)
+        _b.eval(oscillation_amplitude_arr)
+        oscillation_amplitude = float(_b.to_scalar(oscillation_amplitude_arr))
     else:
+        turn_changes = []
+        max_spike = 0.0
+        oscillation_frequency = 0.0
         oscillation_amplitude = 0.0
 
     # Z-scores for each turn
-    z_scores = [(d - delta_mean) / delta_std if delta_std > 0 else 0.0 for d in deltas]
+    if delta_std > 0:
+        z_scores_arr = (deltas_arr - delta_mean_arr) / delta_std_arr
+    else:
+        z_scores_arr = _b.zeros(deltas_arr.shape, dtype=getattr(deltas_arr, "dtype", None))
+    _b.eval(z_scores_arr)
+    z_scores = _b.tolist(z_scores_arr)
 
     payload = {
         "sessionPath": str(session_path),
         "turnCount": n,
         "deltaMean": delta_mean,
         "deltaStdDev": delta_std,
-        "deltaMin": min(deltas),
-        "deltaMax": max(deltas),
+        "deltaMin": delta_min,
+        "deltaMax": delta_max,
         "cumulativeDrift": cumulative_drift,
         "oscillationAmplitude": oscillation_amplitude,
         "oscillationFrequency": oscillation_frequency,
@@ -567,7 +654,7 @@ def entropy_conversation_track(
             f"Session: {session_path}",
             f"Turns Analyzed: {n}",
             "",
-            f"Delta: mean={delta_mean:.4f}, std={delta_std:.4f}, range=[{min(deltas):.4f}, {max(deltas):.4f}]",
+            f"Delta: mean={delta_mean:.4f}, std={delta_std:.4f}, range=[{delta_min:.4f}, {delta_max:.4f}]",
             f"Cumulative Drift: {cumulative_drift:.4f}",
             f"Oscillation Amplitude: {oscillation_amplitude:.4f}",
             f"Oscillation Frequency: {oscillation_frequency:.4f}",
@@ -645,25 +732,53 @@ def entropy_dual_path(
 
     n = len(deltas)
 
-    # Delta statistics
+    # Delta statistics (backend only)
     _b = get_default_backend()
-    delta_mean = sum(deltas) / n
-    delta_std = sqrt_scalar(sum((d - delta_mean) ** 2 for d in deltas) / n, _b) if n > 1 else 0.0
+    base_arr = _b.array(base_entropies)
+    adapter_arr = _b.array(adapter_entropies)
+    deltas_arr = adapter_arr - base_arr
+    delta_mean_arr = _b.mean(deltas_arr)
+    delta_std_arr = _b.std(deltas_arr)
+    delta_min_arr = _b.min(deltas_arr)
+    delta_max_arr = _b.max(deltas_arr)
+    base_mean_arr = _b.mean(base_arr)
+    adapter_mean_arr = _b.mean(adapter_arr)
+    _b.eval(
+        delta_mean_arr,
+        delta_std_arr,
+        delta_min_arr,
+        delta_max_arr,
+        base_mean_arr,
+        adapter_mean_arr,
+    )
+
+    delta_mean = float(_b.to_scalar(delta_mean_arr))
+    delta_std = float(_b.to_scalar(delta_std_arr)) if n > 1 else 0.0
+    delta_min = float(_b.to_scalar(delta_min_arr))
+    delta_max = float(_b.to_scalar(delta_max_arr))
+    base_mean = float(_b.to_scalar(base_mean_arr))
+    adapter_mean = float(_b.to_scalar(adapter_mean_arr))
 
     # Z-scores for each delta
-    z_scores = [(d - delta_mean) / delta_std if delta_std > 0 else 0.0 for d in deltas]
+    if delta_std > 0:
+        z_scores_arr = (deltas_arr - delta_mean_arr) / delta_std_arr
+    else:
+        z_scores_arr = _b.zeros(deltas_arr.shape, dtype=getattr(deltas_arr, "dtype", None))
+    _b.eval(z_scores_arr)
+    z_scores = _b.tolist(z_scores_arr)
 
     # Entropy reduction ratio: where adapter entropy < base entropy
     # (potential backdoor signature: model becomes more confident after adapter)
-    reductions = [(base_entropies[i] - adapter_entropies[i]) / base_entropies[i]
-                  if base_entropies[i] > 0 and adapter_entropies[i] < base_entropies[i]
-                  else 0.0
-                  for i in range(n)]
-    max_reduction = max(reductions) if reductions else 0.0
-
-    # Base and adapter statistics
-    base_mean = sum(base_entropies) / n
-    adapter_mean = sum(adapter_entropies) / n
+    reductions_mask = (base_arr > 0) & (adapter_arr < base_arr)
+    reductions_arr = _b.where(
+        reductions_mask,
+        (base_arr - adapter_arr) / base_arr,
+        _b.zeros(base_arr.shape, dtype=getattr(base_arr, "dtype", None)),
+    )
+    max_reduction_arr = _b.max(reductions_arr)
+    _b.eval(reductions_arr, max_reduction_arr)
+    reductions = _b.tolist(reductions_arr)
+    max_reduction = float(_b.to_scalar(max_reduction_arr)) if reductions else 0.0
 
     payload = {
         "sampleCount": n,
@@ -671,10 +786,10 @@ def entropy_dual_path(
         "adapterMean": adapter_mean,
         "deltaMean": delta_mean,
         "deltaStdDev": delta_std,
-        "deltaMin": min(deltas),
-        "deltaMax": max(deltas),
+        "deltaMin": delta_min,
+        "deltaMax": delta_max,
         "maxEntropyReduction": max_reduction,
-        "deltas": deltas,
+        "deltas": _b.tolist(deltas_arr),
         "zScores": z_scores,
         "reductions": reductions,
     }
@@ -688,7 +803,7 @@ def entropy_dual_path(
             f"Adapter Mean Entropy: {adapter_mean:.4f}",
             "",
             f"Delta (adapter-base): mean={delta_mean:.4f}, std={delta_std:.4f}",
-            f"Delta Range: [{min(deltas):.4f}, {max(deltas):.4f}]",
+            f"Delta Range: [{delta_min:.4f}, {delta_max:.4f}]",
             f"Max Entropy Reduction: {max_reduction:.4f}",
         ]
         write_output("\n".join(lines), context.output_format, context.pretty)

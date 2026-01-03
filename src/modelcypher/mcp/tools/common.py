@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
     from modelcypher.infrastructure.container import PortRegistry
     from modelcypher.infrastructure.service_factory import ServiceFactory
-    from modelcypher.mcp.security import ConfirmationManager, SecurityConfig
+    from modelcypher.mcp.security import ConfirmationManager
 
 # Tool annotations
 READ_ONLY_ANNOTATIONS = {"readOnlyHint": True, "idempotentHint": True, "openWorldHint": False}
@@ -118,8 +118,8 @@ class ServiceContext:
 
     mcp: "FastMCP"
     tool_set: set[str]
-    security_config: "SecurityConfig"
     confirmation_manager: "ConfirmationManager"
+    confirmation_timeout_seconds: int
     registry: "PortRegistry"
     factory: "ServiceFactory"
     idempotency_cache: dict[str, IdempotencyEntry] = field(default_factory=dict)

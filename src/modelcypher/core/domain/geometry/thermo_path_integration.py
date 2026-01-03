@@ -55,7 +55,6 @@ class GateTransitionEntropy:
     from_gate: str
     to_gate: str
     entropy_delta: float
-    is_spike: bool
 
 
 @dataclass(frozen=True)
@@ -102,7 +101,9 @@ class ThermoPathIntegration:
         for measurement in measurements:
             total_transitions += len(measurement.gate_transition_entropies)
             spike_transitions += sum(
-                1 for item in measurement.gate_transition_entropies if item.is_spike
+                1
+                for item in measurement.gate_transition_entropies
+                if abs(item.entropy_delta) > 0
             )
         spike_rate = (
             float(spike_transitions) / float(total_transitions) if total_transitions > 0 else 0.0
@@ -158,13 +159,11 @@ class ThermoPathIntegration:
                 continue
             delta = curr.local_entropy - prev.local_entropy
             # Any measurable change is a transition; magnitude is in entropy_delta
-            is_spike = abs(delta) > 0
             transitions.append(
                 GateTransitionEntropy(
                     from_gate=prev.gate_name,
                     to_gate=curr.gate_name,
                     entropy_delta=delta,
-                    is_spike=is_spike,
                 )
             )
 
@@ -180,7 +179,7 @@ class ThermoPathIntegration:
 
         assessment = self._assess_single_measurement(
             correlation=correlation,
-            spike_count=sum(1 for item in transitions if item.is_spike),
+            spike_count=sum(1 for item in transitions if abs(item.entropy_delta) > 0),
             gate_count=len(gate_details),
         )
 

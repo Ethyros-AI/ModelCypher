@@ -160,7 +160,6 @@ def thermo_path_integration(
                 "fromGate": item.from_gate,
                 "toGate": item.to_gate,
                 "entropyDelta": item.entropy_delta,
-                "isSpike": item.is_spike,
             }
             for item in measurement.gate_transition_entropies
         ],

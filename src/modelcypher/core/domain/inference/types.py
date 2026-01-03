@@ -36,17 +36,6 @@ class SecurityScanMetrics:
     conflict_rate: float  # % of tokens with high KL
 
 
-@dataclass
-class DualPathGeneratorConfiguration:
-    base_model_path: str
-    adapter_path: str | None
-    max_tokens: int
-    temperature: float
-    top_p: float
-    repetition_penalty: float
-    stop_sequences: list[str]
-
-
 # --- Comparison Types ---
 
 

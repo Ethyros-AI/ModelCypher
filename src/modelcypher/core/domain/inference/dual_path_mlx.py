@@ -130,17 +130,6 @@ class SecurityScanMetrics:
     tokens_per_second: float
 
 
-@dataclass
-class DualPathGeneratorConfiguration:
-    base_model_path: str
-    max_tokens: int
-    temperature: float
-    top_p: float
-    repetition_penalty: float
-    stop_sequences: list[str]
-    adapter_path: str | None = None
-
-
 class DualPathGenerator:
     """
     Orchestrates dual-path generation with entropy disagreement tracking.
@@ -159,13 +148,25 @@ class DualPathGenerator:
 
     def __init__(
         self,
-        config: DualPathGeneratorConfiguration,
+        base_model_path: str,
+        adapter_path: str | None,
+        max_tokens: int,
+        temperature: float,
+        top_p: float,
+        repetition_penalty: float,
+        stop_sequences: list[str],
         signal_router: Any = None,  # placeholder for signal system
         backend: "Backend | None" = None,
     ):
-        self.config = config
+        self.base_model_path = base_model_path
+        self.adapter_path = adapter_path
+        self.max_tokens = max_tokens
+        self.temperature = temperature
+        self.top_p = top_p
+        self.repetition_penalty = repetition_penalty
+        self.stop_sequences = stop_sequences
         self._backend = backend or get_default_backend()
-        source = Path(config.base_model_path).name
+        source = Path(base_model_path).name
         self.delta_tracker = EntropyDeltaTracker(source=source, router=signal_router)
 
         # Load model(s)
@@ -176,8 +177,8 @@ class DualPathGenerator:
         # For the ADAPTER path, we need to apply adapters.
         from mlx_lm import load
 
-        logger.info(f"Loading model from {config.base_model_path}")
-        self.model, self.tokenizer = load(config.base_model_path)
+        logger.info(f"Loading model from {base_model_path}")
+        self.model, self.tokenizer = load(base_model_path)
 
         # If adapter path is present, we need a way to apply it.
         # MLX-LM supports adapters via `load(..., adapter_path=...)`
@@ -190,12 +191,12 @@ class DualPathGenerator:
         # A 1:1 port of the Swift `applyAdapter` / `detachAdapter` logic requires access to the LoRA layers in Python.
 
         self.adapter_model = None
-        if config.adapter_path:
-            logger.info(f"Loading adapter model from {config.adapter_path}")
+        if adapter_path:
+            logger.info(f"Loading adapter model from {adapter_path}")
             # In MLX-LM, loading with adapter_path fuses? Or returns LoRA model?
             from mlx_lm import load
 
-            self.adapter_model, _ = load(config.base_model_path, adapter_path=config.adapter_path)
+            self.adapter_model, _ = load(base_model_path, adapter_path=adapter_path)
         else:
             self.adapter_model = self.model  # If no adapter, both paths are same (degenerate case)
 
@@ -244,7 +245,7 @@ class DualPathGenerator:
         curr_logits_adapter = logits_adapter[:, -1, :]
         curr_logits_base = logits_base[:, -1, :]
 
-        while token_count < self.config.max_tokens:
+        while token_count < self.max_tokens:
             # Analyze
             # Compute Entropy/Divergence
             # (Synchronous in Python, unlike Swift actor)
@@ -334,7 +335,7 @@ class DualPathGenerator:
             curr_logits_adapter = logits_adapter[:, -1, :]
 
             # Check output stop
-            if text in self.config.stop_sequences:
+            if text in self.stop_sequences:
                 break
 
         total_time = (time.time() - start_time) * 1000
@@ -350,11 +351,11 @@ class DualPathGenerator:
         """Simple sampling (greedy or temperature)."""
         b = self._backend
 
-        if self.config.temperature == 0:
+        if self.temperature == 0:
             return b.argmax(logits, axis=-1)
 
         # Apply temp
-        scaled_logits = logits / self.config.temperature
+        scaled_logits = logits / self.temperature
         # Use backend's random_categorical if available, otherwise argmax
         if hasattr(b, "random_categorical"):
             return b.random_categorical(scaled_logits)

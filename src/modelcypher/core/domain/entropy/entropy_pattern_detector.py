@@ -28,6 +28,7 @@ from dataclasses import dataclass
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
+    compute_pearson_correlation,
     division_epsilon,
     find_magnitude_gap_threshold,
     sqrt_scalar,
@@ -139,17 +140,28 @@ class _Statistics:
     def mean(values: list[float]) -> float:
         if not values:
             return 0.0
-        return sum(values) / len(values)
+        backend = get_default_backend()
+        values_arr = backend.array(values)
+        mean_arr = backend.mean(values_arr)
+        backend.eval(mean_arr)
+        return float(backend.to_scalar(mean_arr))
 
     @staticmethod
     def standard_deviation(values: list[float], mean: float | None = None) -> float:
         if len(values) < 2:
             return 0.0
-        if mean is None:
-            mean = _Statistics.mean(values)
-        variance = sum((v - mean) ** 2 for v in values) / (len(values) - 1)
-        _b = get_default_backend()
-        return sqrt_scalar(variance, _b)
+        backend = get_default_backend()
+        values_arr = backend.array(values)
+        mean_val = mean if mean is not None else None
+        if mean_val is None:
+            mean_arr = backend.mean(values_arr)
+        else:
+            mean_arr = backend.array([mean_val])
+        diff = values_arr - mean_arr
+        variance = backend.sum(diff * diff) / float(len(values) - 1)
+        std_arr = backend.sqrt(variance)
+        backend.eval(std_arr)
+        return float(backend.to_scalar(std_arr))
 
 
 class EntropyPatternAnalyzer:
@@ -168,14 +180,13 @@ class EntropyPatternAnalyzer:
         variance_mean = _Statistics.mean(variances)
         variance_std_dev = _Statistics.standard_deviation(variances, variance_mean)
 
+        backend = get_default_backend()
         trend = self._compute_trend(entropies)
-        correlation = self._pearson_correlation(
-            x=entropies,
-            y=variances,
-            x_mean=entropy_mean,
-            y_mean=variance_mean,
-            x_std_dev=entropy_std_dev,
-            y_std_dev=variance_std_dev,
+        correlation = compute_pearson_correlation(
+            entropies,
+            variances,
+            default=0.0,
+            backend=backend,
         )
 
         anomaly_indices = self._detect_anomalies(
@@ -184,10 +195,16 @@ class EntropyPatternAnalyzer:
             std_dev=entropy_std_dev,
         )
 
-        backend = get_default_backend()
         eps = division_epsilon(backend, backend.array([0.0]))
         high_threshold = entropy_mean + entropy_std_dev if entropy_std_dev > eps else entropy_mean
         sustained_high_count = self._count_sustained_high(entropies, high_threshold)
+
+        entropy_arr = backend.array(entropies)
+        peak_entropy_arr = backend.max(entropy_arr)
+        min_entropy_arr = backend.min(entropy_arr)
+        backend.eval(peak_entropy_arr, min_entropy_arr)
+        peak_entropy = float(backend.to_scalar(peak_entropy_arr)) if entropies else 0.0
+        min_entropy = float(backend.to_scalar(min_entropy_arr)) if entropies else 0.0
 
         return EntropyPattern(
             trend_slope=trend,
@@ -198,8 +215,8 @@ class EntropyPatternAnalyzer:
             variance_std_dev=variance_std_dev,
             entropy_variance_correlation=correlation,
             sustained_high_count=sustained_high_count,
-            peak_entropy=max(entropies) if entropies else 0.0,
-            min_entropy=min(entropies) if entropies else 0.0,
+            peak_entropy=peak_entropy,
+            min_entropy=min_entropy,
             anomaly_indices=tuple(anomaly_indices),
             sample_count=len(samples),
         )
@@ -223,13 +240,18 @@ class EntropyPatternAnalyzer:
             return 0.0
 
         n = len(values)
-        x_values = list(range(n))
-        x_mean = sum(x_values) / n
-        y_mean = sum(values) / n
-
-        numerator = sum((x - x_mean) * (y - y_mean) for x, y in zip(x_values, values))
-        denominator = sum((x - x_mean) ** 2 for x in x_values)
-        return numerator / denominator if denominator != 0 else 0.0
+        backend = get_default_backend()
+        x = backend.arange(0, n)
+        y = backend.array(values)
+        x_mean = backend.mean(x)
+        y_mean = backend.mean(y)
+        numerator = backend.sum((x - x_mean) * (y - y_mean))
+        denominator = backend.sum((x - x_mean) * (x - x_mean))
+        backend.eval(numerator, denominator)
+        denom_val = float(backend.to_scalar(denominator))
+        if denom_val == 0.0:
+            return 0.0
+        return float(backend.to_scalar(numerator)) / denom_val
 
     def _count_sustained_high(self, entropies: list[float], threshold: float) -> int:
         """Count consecutive samples above the threshold."""

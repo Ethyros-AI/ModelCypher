@@ -414,44 +414,6 @@ class MeasuredModifierEffect:
         """
         return abs(self.mean_delta_h)
 
-    @property
-    def effect_direction(self) -> str:
-        """Direction of the entropy effect.
-
-        Uses statistical significance: effect is significant if
-        |mean_delta_h| > 2σ (where σ is std_delta_h).
-
-        Returns
-        -------
-        str
-            "cooling" if delta_H significantly < 0, "heating" if significantly > 0,
-            "neutral" otherwise.
-        """
-        # Use 2σ as significance threshold (derived from measurement noise)
-        # If we don't have enough samples for reliable std, be conservative
-        if self.std_delta_h <= 0 or self.sample_count < 2:
-            # Can't determine significance without variance estimate
-            return "neutral"
-
-        # Check if effect is statistically significant (> 2 standard deviations)
-        significance_threshold = 2.0 * self.std_delta_h
-        if self.mean_delta_h < -significance_threshold:
-            return "cooling"
-        elif self.mean_delta_h > significance_threshold:
-            return "heating"
-        return "neutral"
-
-    @property
-    def confidence(self) -> float:
-        """Confidence in this measurement.
-
-        Returns
-        -------
-        float
-            Confidence score [0, 1].
-        """
-        return 1.0 - 1.0 / (1.0 + self.sample_count / 10.0)
-
 
 @dataclass
 class MeasuredModifierProfile:

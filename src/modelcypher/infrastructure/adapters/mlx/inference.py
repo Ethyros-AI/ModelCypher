@@ -32,7 +32,6 @@ from modelcypher.core.domain.inference.types import (
     AdapterSwapResult,
     ComparisonEvent,
     ComparisonTimeouts,
-    DualPathGeneratorConfiguration,
 )
 from modelcypher.ports.async_inference import InferenceEnginePort
 
@@ -43,24 +42,25 @@ class MLXInferenceAdapter(InferenceEnginePort):
         self.comparison_coordinator = CheckpointComparisonCoordinator()
 
     async def generate_dual_path(
-        self, prompt: str, config: DualPathGeneratorConfiguration
+        self,
+        prompt: str,
+        base_model_path: str,
+        adapter_path: str | None,
+        max_tokens: int,
+        temperature: float,
+        top_p: float,
+        repetition_penalty: float,
+        stop_sequences: list[str],
     ) -> AsyncGenerator[dict[str, Any], None]:
-        # Map port types to implementation types
-        from modelcypher.core.domain.inference.dual_path_mlx import (
-            DualPathGeneratorConfiguration as ImplConfig,
+        generator = DualPathGenerator(
+            base_model_path=base_model_path,
+            adapter_path=adapter_path,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            repetition_penalty=repetition_penalty,
+            stop_sequences=stop_sequences,
         )
-
-        impl_config = ImplConfig(
-            base_model_path=config.base_model_path,
-            adapter_path=config.adapter_path,
-            max_tokens=config.max_tokens,
-            temperature=config.temperature,
-            top_p=config.top_p,
-            repetition_penalty=config.repetition_penalty,
-            stop_sequences=config.stop_sequences,
-        )
-
-        generator = DualPathGenerator(impl_config)
         async for chunk in generator.generate(prompt):
             yield chunk
 
@@ -68,27 +68,25 @@ class MLXInferenceAdapter(InferenceEnginePort):
         self,
         checkpoints: list[str],
         prompt: str,
-        config: DualPathGeneratorConfiguration,
+        max_tokens: int,
+        temperature: float,
+        top_p: float,
+        repetition_penalty: float,
+        stop_sequences: list[str],
         timeouts: ComparisonTimeouts,
     ) -> AsyncGenerator[ComparisonEvent, None]:
-        # Map config
-        from modelcypher.core.domain.inference.dual_path_mlx import (
-            DualPathGeneratorConfiguration as ImplConfig,
-        )
-
-        impl_config = ImplConfig(
-            base_model_path=checkpoints[0],  # Dummy base? Or allow None?
-            adapter_path=None,
-            max_tokens=config.max_tokens,
-            temperature=config.temperature,
-            top_p=config.top_p,
-            repetition_penalty=config.repetition_penalty,
-            stop_sequences=config.stop_sequences,
-        )
         # Note: ComparisonCoordinator takes list of checkpoints and config.
         # It handles iteration.
 
-        async for evt in self.comparison_coordinator.compare(checkpoints, prompt, impl_config):
+        async for evt in self.comparison_coordinator.compare(
+            checkpoints,
+            prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            repetition_penalty=repetition_penalty,
+            stop_sequences=stop_sequences,
+        ):
             # Map internal Event to Port Event
             # They should be structurally identical if I copied fields correctly.
             # But technically different classes.

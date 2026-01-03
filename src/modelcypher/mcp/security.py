@@ -30,8 +30,24 @@ Usage:
     MC_MCP_REQUIRE_CONFIRMATION=1
 
     # Or programmatically:
-    config = SecurityConfig.from_env()
-    validator = TokenValidator(config)
+    (
+        auth_enabled,
+        issuer,
+        audience,
+        jwks_uri,
+        require_confirmation,
+        confirmation_timeout_seconds,
+    ) = load_security_environment()
+    validator = TokenValidator(
+        auth_enabled=auth_enabled,
+        issuer=issuer,
+        audience=audience,
+        jwks_uri=jwks_uri,
+    )
+    confirmation_manager = ConfirmationManager(
+        require_confirmation=require_confirmation,
+        confirmation_timeout_seconds=confirmation_timeout_seconds,
+    )
 """
 
 from __future__ import annotations
@@ -86,71 +102,58 @@ class TokenStatus(Enum):
     DISABLED = "disabled"  # Auth not enabled
 
 
-@dataclass(frozen=True)
-class SecurityConfig:
-    """Security configuration for MCP server.
+ALLOWED_ALGORITHMS_DEFAULT: tuple[str, ...] = ("RS256", "ES256")
 
-    Attributes:
-        auth_enabled: Whether OAuth token validation is enabled
-        issuer: Expected token issuer (iss claim)
-        audience: Expected token audience (aud claim) - should be MCP server URI
-        jwks_uri: URI to fetch JWKS for token verification
-        require_confirmation: Whether destructive operations require confirmation
-        confirmation_timeout_seconds: How long confirmation tokens are valid
-        allowed_algorithms: JWT algorithms to accept
-    """
 
-    auth_enabled: bool = False
-    issuer: str | None = None
-    audience: str | None = None
-    jwks_uri: str | None = None
-    require_confirmation: bool = False
-    confirmation_timeout_seconds: int = 300  # 5 minutes
-    allowed_algorithms: tuple[str, ...] = ("RS256", "ES256")
+def load_security_environment() -> tuple[
+    bool,
+    str | None,
+    str | None,
+    str | None,
+    bool,
+    int,
+]:
+    """Load security settings from environment variables."""
+    auth_enabled = os.environ.get("MC_MCP_AUTH_ENABLED", "").lower() in ("1", "true", "yes")
+    require_confirmation = os.environ.get("MC_MCP_REQUIRE_CONFIRMATION", "").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    confirmation_timeout_seconds = int(os.environ.get("MC_MCP_CONFIRMATION_TIMEOUT", "300"))
 
-    @classmethod
-    def from_env(cls) -> SecurityConfig:
-        """Load security configuration from environment variables.
+    issuer = os.environ.get("MC_MCP_AUTH_ISSUER")
+    audience = os.environ.get("MC_MCP_AUTH_AUDIENCE")
+    jwks_uri = os.environ.get("MC_MCP_AUTH_JWKS_URI")
 
-        Environment variables:
-            MC_MCP_AUTH_ENABLED: Set to "1" or "true" to enable OAuth
-            MC_MCP_AUTH_ISSUER: OAuth token issuer URL
-            MC_MCP_AUTH_AUDIENCE: Expected audience (your MCP server URI)
-            MC_MCP_AUTH_JWKS_URI: JWKS endpoint for token verification
-            MC_MCP_REQUIRE_CONFIRMATION: Set to "1" to require confirmation for destructive ops
-            MC_MCP_CONFIRMATION_TIMEOUT: Confirmation token timeout in seconds (default: 300)
-        """
-        auth_enabled = os.environ.get("MC_MCP_AUTH_ENABLED", "").lower() in ("1", "true", "yes")
-        require_confirmation = os.environ.get("MC_MCP_REQUIRE_CONFIRMATION", "").lower() in (
-            "1",
-            "true",
-            "yes",
-        )
+    return (
+        auth_enabled,
+        issuer,
+        audience,
+        jwks_uri,
+        require_confirmation,
+        confirmation_timeout_seconds,
+    )
 
-        return cls(
-            auth_enabled=auth_enabled,
-            issuer=os.environ.get("MC_MCP_AUTH_ISSUER"),
-            audience=os.environ.get("MC_MCP_AUTH_AUDIENCE"),
-            jwks_uri=os.environ.get("MC_MCP_AUTH_JWKS_URI"),
-            require_confirmation=require_confirmation,
-            confirmation_timeout_seconds=int(os.environ.get("MC_MCP_CONFIRMATION_TIMEOUT", "300")),
-        )
 
-    def validate(self) -> list[str]:
-        """Validate configuration and return list of issues."""
-        issues = []
-        if self.auth_enabled:
-            if not JWT_AVAILABLE:
-                issues.append(
-                    "OAuth enabled but PyJWT not installed. Run: pip install PyJWT[crypto]"
-                )
-            if not self.issuer:
-                issues.append("MC_MCP_AUTH_ISSUER required when auth is enabled")
-            if not self.audience:
-                issues.append("MC_MCP_AUTH_AUDIENCE required when auth is enabled")
-            if not self.jwks_uri:
-                issues.append("MC_MCP_AUTH_JWKS_URI required when auth is enabled")
-        return issues
+def validate_security_environment(
+    auth_enabled: bool,
+    issuer: str | None,
+    audience: str | None,
+    jwks_uri: str | None,
+) -> list[str]:
+    """Validate security settings and return a list of issues."""
+    issues = []
+    if auth_enabled:
+        if not JWT_AVAILABLE:
+            issues.append("OAuth enabled but PyJWT not installed. Run: pip install PyJWT[crypto]")
+        if not issuer:
+            issues.append("MC_MCP_AUTH_ISSUER required when auth is enabled")
+        if not audience:
+            issues.append("MC_MCP_AUTH_AUDIENCE required when auth is enabled")
+        if not jwks_uri:
+            issues.append("MC_MCP_AUTH_JWKS_URI required when auth is enabled")
+    return issues
 
 
 @dataclass
@@ -170,14 +173,25 @@ class TokenValidator:
     Implements RFC 8707 audience validation and standard JWT verification.
     """
 
-    def __init__(self, config: SecurityConfig):
-        self.config = config
+    def __init__(
+        self,
+        auth_enabled: bool,
+        issuer: str | None,
+        audience: str | None,
+        jwks_uri: str | None,
+        allowed_algorithms: tuple[str, ...] = ALLOWED_ALGORITHMS_DEFAULT,
+    ):
+        self.auth_enabled = auth_enabled
+        self.issuer = issuer
+        self.audience = audience
+        self.jwks_uri = jwks_uri
+        self.allowed_algorithms = allowed_algorithms
         self._jwks_client: Any = None
 
     def _get_jwks_client(self) -> Any:
         """Lazily initialize JWKS client."""
-        if self._jwks_client is None and self.config.jwks_uri and JWT_AVAILABLE:
-            self._jwks_client = PyJWKClient(self.config.jwks_uri)
+        if self._jwks_client is None and self.jwks_uri and JWT_AVAILABLE:
+            self._jwks_client = PyJWKClient(self.jwks_uri)
         return self._jwks_client
 
     def validate_token(self, token: str | None) -> TokenValidationResult:
@@ -189,7 +203,7 @@ class TokenValidator:
         Returns:
             TokenValidationResult with status and claims
         """
-        if not self.config.auth_enabled:
+        if not self.auth_enabled:
             return TokenValidationResult(status=TokenStatus.DISABLED)
 
         if not token:
@@ -215,9 +229,9 @@ class TokenValidator:
             claims = jwt.decode(
                 token,
                 signing_key.key,
-                algorithms=list(self.config.allowed_algorithms),
-                audience=self.config.audience,
-                issuer=self.config.issuer,
+                algorithms=list(self.allowed_algorithms),
+                audience=self.audience,
+                issuer=self.issuer,
                 options={
                     "require": ["exp", "iat", "iss", "aud"],
                     "verify_exp": True,
@@ -241,12 +255,12 @@ class TokenValidator:
         except jwt.InvalidAudienceError:
             return TokenValidationResult(
                 status=TokenStatus.INVALID_AUDIENCE,
-                error=f"Token audience does not match expected: {self.config.audience}",
+                error=f"Token audience does not match expected: {self.audience}",
             )
         except jwt.InvalidIssuerError:
             return TokenValidationResult(
                 status=TokenStatus.INVALID_ISSUER,
-                error=f"Token issuer does not match expected: {self.config.issuer}",
+                error=f"Token issuer does not match expected: {self.issuer}",
             )
         except jwt.InvalidSignatureError:
             return TokenValidationResult(
@@ -283,8 +297,14 @@ class ConfirmationManager:
     before destructive operations.
     """
 
-    def __init__(self, config: SecurityConfig, secret_key: str | None = None):
-        self.config = config
+    def __init__(
+        self,
+        require_confirmation: bool,
+        confirmation_timeout_seconds: int,
+        secret_key: str | None = None,
+    ):
+        self._require_confirmation = require_confirmation
+        self._confirmation_timeout_seconds = confirmation_timeout_seconds
         self._secret_key = secret_key or os.environ.get("MC_MCP_SECRET_KEY", os.urandom(32).hex())
         self._pending: dict[str, PendingConfirmation] = {}
 
@@ -330,7 +350,7 @@ class ConfirmationManager:
         Raises:
             ConfirmationError: If confirmation is required (contains token for retry)
         """
-        if not self.config.require_confirmation:
+        if not self._require_confirmation:
             return None
 
         # Clean expired confirmations
@@ -359,7 +379,7 @@ class ConfirmationManager:
             parameters=parameters,
             token=token,
             created_at=now,
-            expires_at=now + self.config.confirmation_timeout_seconds,
+            expires_at=now + self._confirmation_timeout_seconds,
             description=description,
         )
         self._pending[token] = pending
@@ -418,12 +438,13 @@ def create_confirmation_response(
 
 
 # Convenience function to check auth on server startup
-def validate_security_config() -> tuple[SecurityConfig, list[str]]:
-    """Load and validate security configuration.
-
-    Returns:
-        Tuple of (config, issues) where issues is empty if valid
-    """
-    config = SecurityConfig.from_env()
-    issues = config.validate()
-    return config, issues
+def load_and_validate_security_environment(
+) -> tuple[
+    tuple[bool, str | None, str | None, str | None, bool, int],
+    list[str],
+]:
+    """Load and validate security environment settings."""
+    settings = load_security_environment()
+    auth_enabled, issuer, audience, jwks_uri, _, _ = settings
+    issues = validate_security_environment(auth_enabled, issuer, audience, jwks_uri)
+    return settings, issues

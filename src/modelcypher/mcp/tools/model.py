@@ -110,7 +110,7 @@ def register_model_tools(ctx: ServiceContext) -> None:
                 return create_confirmation_response(
                     e,
                     description=f"Delete model '{modelId}' from local registry",
-                    timeout_seconds=ctx.security_config.confirmation_timeout_seconds,
+                    timeout_seconds=ctx.confirmation_timeout_seconds,
                 )
             ctx.model_service.delete_model(modelId)
             return {

@@ -491,26 +491,23 @@ def compute_pearson_correlation(
     if not lhs or len(lhs) != len(rhs):
         return error_value
 
-    n = len(lhs)
-    mean_l = sum(lhs) / n
-    mean_r = sum(rhs) / n
+    lhs_arr = backend.array(lhs)
+    rhs_arr = backend.array(rhs)
+    mean_l = backend.mean(lhs_arr)
+    mean_r = backend.mean(rhs_arr)
+    diff_l = lhs_arr - mean_l
+    diff_r = rhs_arr - mean_r
+    num = backend.sum(diff_l * diff_r)
+    den_l = backend.sum(diff_l * diff_l)
+    den_r = backend.sum(diff_r * diff_r)
+    denom = backend.sqrt(den_l) * backend.sqrt(den_r)
 
-    num = 0.0
-    den_l = 0.0
-    den_r = 0.0
-
-    for i in range(n):
-        diff_l = lhs[i] - mean_l
-        diff_r = rhs[i] - mean_r
-        num += diff_l * diff_r
-        den_l += diff_l * diff_l
-        den_r += diff_r * diff_r
-
-    denom = sqrt_scalar(den_l, backend) * sqrt_scalar(den_r, backend)
-    if denom <= 0:
+    backend.eval(num, denom)
+    denom_val = float(backend.to_scalar(denom))
+    if denom_val <= 0:
         return error_value
 
-    return num / denom
+    return float(backend.to_scalar(num)) / denom_val
 
 
 def svd_via_eigh(

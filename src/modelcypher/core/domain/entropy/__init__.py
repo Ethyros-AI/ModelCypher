@@ -23,8 +23,9 @@ from .baseline_verification_probe import (
     DeltaSample,
     EntropyBaseline,
     PromptResult,
-    VerificationConfiguration,
     VerificationResult,
+    adversarial_prompts,
+    default_test_prompts,
 )
 
 # Additional entropy modules (previously not exported)

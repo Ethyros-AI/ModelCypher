@@ -357,7 +357,7 @@ def register_training_tools(ctx: ServiceContext) -> None:
                 return create_confirmation_response(
                     e,
                     description=f"Delete training job '{jobId}' and all associated data",
-                    timeout_seconds=ctx.security_config.confirmation_timeout_seconds,
+                    timeout_seconds=ctx.confirmation_timeout_seconds,
                 )
             ctx.job_service.delete_job(jobId)
             return {
