@@ -29,9 +29,9 @@ so each backend provides its own implementation.
 from __future__ import annotations
 
 import logging
-import sys
 from typing import TYPE_CHECKING
 
+from modelcypher.infrastructure.model_probe_factory import get_model_probe
 from modelcypher.ports.model_probe import (
     AlignmentAnalysisResult,
     LayerDrift,
@@ -56,57 +56,6 @@ __all__ = [
     "ModelProbeService",
     "get_model_probe",
 ]
-
-
-def get_model_probe() -> ModelProbePort:
-    """
-    Get the appropriate model probe for the current platform.
-
-    Returns:
-        ModelProbePort implementation for the current backend.
-
-    Platform selection:
-        - macOS (Darwin): MLXModelProbe
-        - Linux + CUDA available: CUDAModelProbe
-        - Linux + JAX available: JAXModelProbe
-        - Fallback: CUDAModelProbe (requires PyTorch)
-
-    Raises:
-        RuntimeError: If no suitable backend is available.
-    """
-    if sys.platform == "darwin":
-        try:
-            from modelcypher.backends.mlx_model_probe import MLXModelProbe
-
-            return MLXModelProbe()
-        except ImportError as exc:
-            raise RuntimeError("MLX not available on macOS. Install with: pip install mlx") from exc
-
-    # Linux: try CUDA first, then JAX
-    try:
-        from modelcypher.backends.cuda_model_probe import CUDAModelProbe
-
-        probe = CUDAModelProbe()
-        if probe.available:
-            return probe
-    except ImportError:
-        pass
-
-    try:
-        from modelcypher.backends.jax_model_probe import JAXModelProbe
-
-        probe = JAXModelProbe()
-        if probe.available:
-            return probe
-    except ImportError:
-        pass
-
-    raise RuntimeError(
-        "No suitable backend available. Install one of:\n"
-        "  - macOS: pip install mlx\n"
-        "  - Linux/CUDA: pip install torch\n"
-        "  - Linux/TPU: pip install jax jaxlib"
-    )
 
 
 class ModelProbeService:

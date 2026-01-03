@@ -101,8 +101,8 @@ class PortRegistry:
             LocalManifoldProfileStore,
         )
         from modelcypher.adapters.local_training import LocalTrainingEngine
-        from modelcypher.adapters.mlx_model_loader import MLXModelLoader
         from modelcypher.backends import default_backend
+        from modelcypher.infrastructure.model_loader_factory import get_model_loader
         from modelcypher.backends.lazy_backend import LazyBackend
         from modelcypher.core.use_cases.atlas_bootstrap import register_default_atlas_inventories
 
@@ -128,7 +128,7 @@ class PortRegistry:
             exporter=LocalExporter(),
             # Specialized
             model_search=HfModelSearchAdapter(),
-            model_loader=MLXModelLoader(),
+            model_loader=get_model_loader(),
             hub_adapter=HfHubAdapter(),
             # Backend
             backend=LazyBackend(default_backend),

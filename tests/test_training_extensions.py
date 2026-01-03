@@ -38,7 +38,7 @@ except ImportError:
 # Skip all tests in this module if MLX unavailable
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 from modelcypher.core.domain.training.lora_mlx import (
-    LoRAConfig,
+    LoRASettings,
     LoRALinear,
 )
 from modelcypher.core.domain.training.loss_landscape_mlx import (
@@ -55,32 +55,32 @@ from modelcypher.core.domain.training.scheduling import (
 )
 
 
-class TestLoRAConfig:
+class TestLoRASettings:
     """Tests for LoRA configuration."""
 
     def test_default_config(self):
-        config = LoRAConfig.default()
+        config = LoRASettings.default()
         assert config.rank == 8
         assert config.alpha == 16.0
         assert "q_proj" in config.target_modules
         assert "v_proj" in config.target_modules
 
     def test_scale_calculation(self):
-        config = LoRAConfig(rank=8, alpha=16.0)
+        config = LoRASettings(rank=8, alpha=16.0)
         assert config.scale == 2.0
 
-        config = LoRAConfig(rank=16, alpha=32.0)
+        config = LoRASettings(rank=16, alpha=32.0)
         assert config.scale == 2.0
 
     def test_presets(self):
-        mistral = LoRAConfig.for_mistral()
+        mistral = LoRASettings.for_mistral()
         assert mistral.rank == 16
         assert "o_proj" in mistral.target_modules
 
-        llama = LoRAConfig.for_llama()
+        llama = LoRASettings.for_llama()
         assert llama.rank == 8
 
-        qwen = LoRAConfig.for_qwen()
+        qwen = LoRASettings.for_qwen()
         assert "gate_proj" in qwen.target_modules
 
 

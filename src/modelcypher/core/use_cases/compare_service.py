@@ -93,14 +93,12 @@ class CompareService:
         return session
 
     def _ensure_inference_engine(self) -> "InferenceEngine":
-        """Get or create inference engine."""
-        if self._inference_engine is not None:
-            return self._inference_engine
-
-        # Lazy import to avoid circular dependencies
-        from modelcypher.adapters.mlx_inference import MLXInferenceEngine
-
-        self._inference_engine = MLXInferenceEngine()
+        """Get the inference engine (must be injected via constructor)."""
+        if self._inference_engine is None:
+            raise RuntimeError(
+                "CompareService requires an inference_engine. "
+                "Use ServiceFactory.compare_service() for proper dependency injection."
+            )
         return self._inference_engine
 
     def run(

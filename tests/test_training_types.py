@@ -25,9 +25,9 @@ from modelcypher.core.domain.training.types import (
     CheckpointMetadata,
     ComputePrecision,
     Hyperparameters,
-    LoRAConfig,
+    LoRASettings,
     PreflightResult,
-    TrainingConfig,
+    TrainingSpec,
     TrainingProgress,
     TrainingStatus,
 )
@@ -153,21 +153,21 @@ class TestHyperparameters:
         assert hp.compute_precision == ComputePrecision.BFLOAT16
 
 
-class TestLoRAConfig:
-    """Tests for LoRAConfig dataclass."""
+class TestLoRASettings:
+    """Tests for LoRASettings dataclass."""
 
     def test_requires_explicit_values(self):
-        """LoRAConfig requires explicit values (no implicit defaults)."""
+        """LoRASettings requires explicit values (no implicit defaults)."""
         try:
-            LoRAConfig()
+            LoRASettings()
         except TypeError:
             assert True
         else:
-            assert False, "LoRAConfig should require explicit values."
+            assert False, "LoRASettings should require explicit values."
 
     def test_custom_values(self):
         """Test custom values override defaults."""
-        config = LoRAConfig(
+        config = LoRASettings(
             rank=16,
             alpha=32.0,
             dropout=0.1,
@@ -181,13 +181,13 @@ class TestLoRAConfig:
 
     def test_target_modules_is_mutable_default(self):
         """Test that target_modules is not shared across configs."""
-        config1 = LoRAConfig(
+        config1 = LoRASettings(
             rank=8,
             alpha=16.0,
             dropout=0.05,
             target_modules=["q_proj", "v_proj"],
         )
-        config2 = LoRAConfig(
+        config2 = LoRASettings(
             rank=8,
             alpha=16.0,
             dropout=0.05,
@@ -201,8 +201,8 @@ class TestLoRAConfig:
         assert config2.target_modules == ["q_proj", "v_proj"]
 
 
-class TestTrainingConfig:
-    """Tests for TrainingConfig dataclass."""
+class TestTrainingSpec:
+    """Tests for TrainingSpec dataclass."""
 
     def test_required_fields(self):
         """Test required fields."""
@@ -221,7 +221,7 @@ class TestTrainingConfig:
             deterministic=True,
             optimizer_type="adamw",
         )
-        config = TrainingConfig(
+        config = TrainingSpec(
             model_id="meta-llama/Llama-2-7b",
             dataset_path="/data/train.jsonl",
             output_path="/output/model",
@@ -250,13 +250,13 @@ class TestTrainingConfig:
             deterministic=True,
             optimizer_type="adamw",
         )
-        lora = LoRAConfig(
+        lora = LoRASettings(
             rank=8,
             alpha=16.0,
             dropout=0.05,
             target_modules=["q_proj", "v_proj"],
         )
-        config = TrainingConfig(
+        config = TrainingSpec(
             model_id="test-model",
             dataset_path="/data/train.jsonl",
             output_path="/output",
@@ -283,7 +283,7 @@ class TestTrainingConfig:
             deterministic=True,
             optimizer_type="adamw",
         )
-        config = TrainingConfig(
+        config = TrainingSpec(
             model_id="test-model",
             dataset_path="/data/train.jsonl",
             output_path="/output",
@@ -310,7 +310,7 @@ class TestTrainingConfig:
             deterministic=True,
             optimizer_type="adamw",
         )
-        config = TrainingConfig(
+        config = TrainingSpec(
             model_id="test-model",
             dataset_path="/data/train.jsonl",
             output_path="/output",
@@ -396,7 +396,7 @@ class TestCheckpointMetadata:
             deterministic=True,
             optimizer_type="adamw",
         )
-        train_config = TrainingConfig(
+        train_config = TrainingSpec(
             model_id="test-model",
             dataset_path="/data/train.jsonl",
             output_path="/output",
@@ -441,7 +441,7 @@ class TestCheckpointMetadata:
             deterministic=True,
             optimizer_type="adamw",
         )
-        train_config = TrainingConfig(
+        train_config = TrainingSpec(
             model_id="test-model",
             dataset_path="/data/train.jsonl",
             output_path="/output",
@@ -479,7 +479,7 @@ class TestCheckpointMetadata:
             deterministic=True,
             optimizer_type="adamw",
         )
-        train_config = TrainingConfig(
+        train_config = TrainingSpec(
             model_id="test-model",
             dataset_path="/data/train.jsonl",
             output_path="/output",

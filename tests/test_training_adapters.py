@@ -35,7 +35,7 @@ except ImportError:
 pytestmark = pytest.mark.skipif(not HAS_MLX, reason="MLX not available (requires Apple Silicon)")
 
 from modelcypher.adapters.model_loader import load_model_for_training
-from modelcypher.core.domain.training.lora_mlx import LoRAConfig
+from modelcypher.core.domain.training.lora_mlx import LoRASettings
 
 
 class MockModel(nn.Module):
@@ -59,10 +59,10 @@ def test_model_loader_lora_injection(mock_load):
     mock_tokenizer = MagicMock()
     mock_load.return_value = (mock_model, mock_tokenizer)
 
-    config = LoRAConfig(rank=4, alpha=8, target_modules=["q_proj", "v_proj"])
+    settings = LoRASettings(rank=4, alpha=8, target_modules=["q_proj", "v_proj"])
 
     with patch("modelcypher.core.domain.training.lora_mlx.logger"):
-        model, tokenizer = load_model_for_training("dummy-path", config)
+        model, tokenizer = load_model_for_training("dummy-path", settings)
 
     assert tokenizer == mock_tokenizer
     # Check that q_proj and v_proj are now LoRALinear (contains lora_a/b)

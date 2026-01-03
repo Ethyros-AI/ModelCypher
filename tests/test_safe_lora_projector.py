@@ -26,7 +26,6 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.support.array_utils import array_to_list
 
 from modelcypher.core.domain.safety.safe_lora_projector import (
-    SafeLoRAConfiguration,
     SafeLoRAProjectionResult,
     SafeLoRAProjectionStatus,
     SafeLoRAProjector,
@@ -208,28 +207,3 @@ class TestSafeLoRAProjector:
         assert lora_a == expected_a
 
 
-class TestSafeLoRAConfiguration:
-    """Tests for SafeLoRAConfiguration dataclass."""
-
-    def test_default_configuration(self) -> None:
-        """default() returns enabled configuration."""
-        config = SafeLoRAConfiguration.default()
-        assert config.enabled is True
-        assert config.skip_if_unavailable is True
-        assert config.resources_path is None
-
-    def test_disabled_configuration(self) -> None:
-        """disabled() returns disabled configuration."""
-        config = SafeLoRAConfiguration.disabled()
-        assert config.enabled is False
-
-    def test_custom_configuration(self, tmp_path: Path) -> None:
-        """Custom configuration with all fields."""
-        config = SafeLoRAConfiguration(
-            enabled=True,
-            resources_path=tmp_path,
-            skip_if_unavailable=False,
-        )
-        assert config.enabled is True
-        assert config.resources_path == tmp_path
-        assert config.skip_if_unavailable is False

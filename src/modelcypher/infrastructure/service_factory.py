@@ -75,12 +75,14 @@ class ServiceFactory:
         return EvaluationService(store=self._registry.evaluation_store)
 
     def compare_service(self):
-        """Create CompareService with injected CompareStore and JobStore."""
+        """Create CompareService with injected dependencies."""
         from modelcypher.core.use_cases.compare_service import CompareService
 
         return CompareService(
             store=self._registry.compare_store,
             job_store=self._registry.job_store,
+            inference_engine=self._registry.inference_engine,
+            model_loader=self._registry.model_loader,
         )
 
     def manifold_profile_service(self):

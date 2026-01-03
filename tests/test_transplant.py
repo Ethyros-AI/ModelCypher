@@ -38,7 +38,6 @@ from modelcypher.core.domain.geometry.transplant import (
     partition_core_boundary,
 )
 from modelcypher.core.use_cases.merge.stages.transplant import (
-    TransplantStageConfig,
     stage_transplant,
 )
 
@@ -281,10 +280,6 @@ def test_stage_transplant_emits_alignment_metrics() -> None:
         return None
 
     graft_mask = {probe_id: {0: True} for probe_id in probe_ids}
-    config = TransplantStageConfig(
-        core_domains=("math",),
-        graft_mask=graft_mask,
-    )
 
     result = stage_transplant(
         source_weights=source_weights,
@@ -294,7 +289,8 @@ def test_stage_transplant_emits_alignment_metrics() -> None:
         probe_domains=probe_domains,
         source_activations=source_activations,
         target_activations=target_activations,
-        config=config,
+        transplant_domains=("math",),
+        graft_mask=graft_mask,
         extract_layer_index_fn=extract_layer_index,
         backend=backend,
     )
@@ -329,11 +325,6 @@ def test_stage_transplant_requires_real_activations() -> None:
             return int(match.group(1))
         return None
 
-    config = TransplantStageConfig(
-        core_domains=("math",),
-        graft_mask={"p0": {0: True}},
-    )
-
     with pytest.raises(RuntimeError, match="requires real activations"):
         stage_transplant(
             source_weights=source_weights,
@@ -342,7 +333,8 @@ def test_stage_transplant_requires_real_activations() -> None:
             probe_ids=["p0"],
             probe_domains=["math"],
             target_activations=None,
-            config=config,
+            transplant_domains=("math",),
+            graft_mask={"p0": {0: True}},
             extract_layer_index_fn=extract_layer_index,
             backend=backend,
         )

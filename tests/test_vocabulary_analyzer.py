@@ -80,7 +80,6 @@ class TestVocabularyAlignment:
     def test_to_dict(self):
         """Test serialization."""
         alignment = VocabularyAlignment(
-            alignment_score=0.75,
             vocab_overlap_ratio=0.6,
             dimension_ratio=1.0,
             requires_projection=False,
@@ -92,7 +91,6 @@ class TestVocabularyAlignment:
 
         d = alignment.to_dict()
 
-        assert d["alignment_score"] == 0.75
         assert d["requires_projection"] is False
         assert d["requires_vocab_mapping"] is True
         assert d["shared_token_count"] == 19200

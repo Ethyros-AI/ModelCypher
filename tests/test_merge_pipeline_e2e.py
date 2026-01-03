@@ -74,18 +74,12 @@ def test_pipeline_forwards_graft_mask_to_transplant(monkeypatch) -> None:
     monkeypatch.setattr(pipeline, "stage_transplant", fake_stage_transplant)
     monkeypatch.setattr(pipeline, "infer_hidden_dim", fake_infer_hidden_dim)
 
-    config = UnifiedMergeConfig(
-        transplant_domains=("mathematical",),
-    )
-
     pipeline.run_merge(
         model_loader=object(),
         backend=pipeline.get_default_backend(),
-        default_config=config,
         source_path="/source",
         target_path="/target",
         dry_run=True,
-        config=config,
     )
 
     assert calls.get("density_called") is True

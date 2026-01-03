@@ -18,13 +18,13 @@
 from __future__ import annotations
 
 from modelcypher.core.use_cases.quantization_utils import (
-    quantization_config_from_payload,
     quantization_hint_for_key,
+    quantization_plan_from_payload,
     resolve_quantization,
 )
 
 
-def test_quantization_config_inherits_mode() -> None:
+def test_quantization_plan_inherits_mode() -> None:
     payload = {
         "quantization": {
             "group_size": 32,
@@ -33,12 +33,13 @@ def test_quantization_config_inherits_mode() -> None:
             "model.layers.0.mlp": {"group_size": 64, "bits": 8},
         }
     }
-    config = quantization_config_from_payload(payload)
-    assert config is not None
-    assert config.default is not None
-    assert config.default.mode == "mxfp4"
+    plan = quantization_plan_from_payload(payload)
+    assert plan is not None
+    default, overrides = plan
+    assert default is not None
+    assert default.mode == "mxfp4"
 
-    hint = quantization_hint_for_key("model.layers.0.mlp.weight", config)
+    hint = quantization_hint_for_key("model.layers.0.mlp.weight", plan)
     assert hint is not None
     assert hint.bits == 8
     assert hint.group_size == 64

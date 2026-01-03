@@ -31,7 +31,7 @@ from modelcypher.core.domain.training.checkpoint_models import (
     CheckpointErrorKind,
     CheckpointMetadataV2,
     FineTunedModelMetadata,
-    ModelArchitectureConfig,
+    ModelArchitectureSpec,
     OptimizerStateMetadata,
     RecoveryInfo,
 )
@@ -40,9 +40,9 @@ from modelcypher.core.domain.training.types import (
     CheckpointMetadata,
     ComputePrecision,
     Hyperparameters,
-    LoRAConfig,
+    LoRASettings,
     PreflightResult,
-    TrainingConfig,
+    TrainingSpec,
     TrainingProgress,
     TrainingStatus,
 )
@@ -110,17 +110,17 @@ class TestHyperparameters:
         assert hp.optimizer_type == "adam"
 
 
-class TestLoRAConfig:
-    """Tests for LoRAConfig dataclass."""
+class TestLoRASettings:
+    """Tests for LoRASettings dataclass."""
 
     def test_requires_explicit_values(self):
-        """LoRAConfig requires explicit values (no implicit defaults)."""
+        """LoRASettings requires explicit values (no implicit defaults)."""
         with pytest.raises(TypeError):
-            LoRAConfig()
+            LoRASettings()
 
     def test_custom_values(self):
         """Custom LoRA config should be preserved."""
-        cfg = LoRAConfig(
+        cfg = LoRASettings(
             rank=16,
             alpha=32.0,
             dropout=0.1,
@@ -133,8 +133,8 @@ class TestLoRAConfig:
         assert len(cfg.target_modules) == 4
 
 
-class TestTrainingConfig:
-    """Tests for TrainingConfig dataclass."""
+class TestTrainingSpec:
+    """Tests for TrainingSpec dataclass."""
 
     def test_minimal_config(self):
         """Training config with minimal required fields."""
@@ -153,7 +153,7 @@ class TestTrainingConfig:
             deterministic=True,
             optimizer_type="adamw",
         )
-        cfg = TrainingConfig(
+        cfg = TrainingSpec(
             model_id="meta-llama/Llama-2-7b",
             dataset_path="/path/to/dataset",
             output_path="/path/to/output",
@@ -181,13 +181,13 @@ class TestTrainingConfig:
             deterministic=True,
             optimizer_type="adamw",
         )
-        lora = LoRAConfig(
+        lora = LoRASettings(
             rank=32,
             alpha=16.0,
             dropout=0.05,
             target_modules=["q_proj", "v_proj"],
         )
-        cfg = TrainingConfig(
+        cfg = TrainingSpec(
             model_id="meta-llama/Llama-2-7b",
             dataset_path="/path/to/dataset",
             output_path="/path/to/output",
@@ -318,12 +318,12 @@ class TestOptimizerStateMetadata:
         assert restored.vector_hyperparameters == state.vector_hyperparameters
 
 
-class TestModelArchitectureConfig:
-    """Tests for ModelArchitectureConfig dataclass."""
+class TestModelArchitectureSpec:
+    """Tests for ModelArchitectureSpec dataclass."""
 
     def test_llama_config(self):
         """Typical LLaMA architecture config."""
-        cfg = ModelArchitectureConfig(
+        cfg = ModelArchitectureSpec(
             model_type="llama",
             vocabulary_size=32000,
             hidden_size=4096,
@@ -338,7 +338,7 @@ class TestModelArchitectureConfig:
 
     def test_to_dict_from_dict_roundtrip(self):
         """Serialization and deserialization should be consistent."""
-        cfg = ModelArchitectureConfig(
+        cfg = ModelArchitectureSpec(
             model_type="mistral",
             vocabulary_size=32000,
             hidden_size=4096,
@@ -348,7 +348,7 @@ class TestModelArchitectureConfig:
         )
 
         data = cfg.to_dict()
-        restored = ModelArchitectureConfig.from_dict(data)
+        restored = ModelArchitectureSpec.from_dict(data)
 
         assert restored.model_type == cfg.model_type
         assert restored.hidden_size == cfg.hidden_size
@@ -412,7 +412,7 @@ class TestCheckpointMetadataV2:
     def test_to_dict_from_dict_roundtrip(self):
         """Serialization and deserialization should be consistent."""
         now = datetime.now()
-        model_cfg = ModelArchitectureConfig(
+        model_cfg = ModelArchitectureSpec(
             model_type="llama",
             vocabulary_size=32000,
             hidden_size=4096,
