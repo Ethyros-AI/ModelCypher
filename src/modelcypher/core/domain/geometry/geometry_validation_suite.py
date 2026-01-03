@@ -501,7 +501,7 @@ class GeometryValidationSuite:
         max_col_error = backend.max(col_errors)
 
         backend.eval(max_row_error, max_col_error)
-        return float(backend.to_numpy(max_row_error)), float(backend.to_numpy(max_col_error))
+        return float(backend.to_scalar(max_row_error)), float(backend.to_scalar(max_col_error))
 
     def _validate_traversal_coherence(
         self,

@@ -27,6 +27,7 @@ Ported from the reference Swift implementation.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 from enum import Enum
@@ -941,14 +942,14 @@ class ComputationalGateAtlas:
                         float(volume.geodesic_radius),
                         regularization_epsilon(backend, text_vec),
                     )
-                    similarity = float(backend.to_numpy(backend.exp(-mahal_dist / scale)))
+                    similarity = math.exp(-mahal_dist / scale)
                 else:
                     # Use density at point as similarity
                     density = volume.density_at(text_vec)
                     # Normalize by density at centroid
                     max_density = volume.density_at(volume.centroid)
                     if max_density > 0:
-                        similarity = float(backend.to_numpy(density / max_density))
+                        similarity = density / max_density
                     else:
                         similarity = 0.0
 

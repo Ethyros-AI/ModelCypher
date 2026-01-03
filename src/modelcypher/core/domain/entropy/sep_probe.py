@@ -267,8 +267,7 @@ class SEPProbe:
             prediction = projection + probe.bias
             b.eval(prediction)
 
-            pred_np = b.to_numpy(prediction)
-            pred_value = float(pred_np.item())
+            pred_value = float(b.to_scalar(prediction))
             predictions[layer] = pred_value
         if not predictions:
             raise SEPProbeError("No matching hidden states for configured probe layers.")
@@ -311,8 +310,7 @@ class SEPProbe:
         prediction = projection + probe.bias
         b.eval(prediction)
 
-        pred_np = b.to_numpy(prediction)
-        return max(0.0, min(1.0, float(pred_np.item())))
+        return max(0.0, min(1.0, float(b.to_scalar(prediction))))
 
     def probe_info(self) -> list[tuple]:
         """Return info about loaded probes: [(layer, r2), ...]"""

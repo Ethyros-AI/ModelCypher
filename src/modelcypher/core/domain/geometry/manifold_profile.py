@@ -188,7 +188,7 @@ class ManifoldPoint:
         result = rg.geodesic_distances(features, k_neighbors=1)
         backend.eval(result.distances)
 
-        return float(backend.to_numpy(result.distances)[0, 1])
+        return float(backend.to_scalar(result.distances[0, 1]))
 
     @staticmethod
     def _compute_dominant_gate_category(gate_sequence: list[str]) -> float:

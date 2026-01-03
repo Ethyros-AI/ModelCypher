@@ -305,21 +305,16 @@ class LogitEntropyCalculator:
             # Use argsort to get top K indices (descending)
             indices = b.argsort(-flat_logits, axis=-1)
             top_k_indices = indices[:k]
-            # Gather top-K logits
-            top_k_logits_list = [flat_logits[int(b.to_numpy(top_k_indices[i]))] for i in range(k)]
-            top_k_logits = b.stack(top_k_logits_list)
+            top_k_logits = b.take(flat_logits, top_k_indices)
 
             mean_val = b.mean(top_k_logits, axis=-1, keepdims=True)
             squared_diff = (top_k_logits - mean_val) ** 2
             variance = b.mean(squared_diff, axis=-1)
             b.eval(entropy, variance)
-            entropy_np = b.to_numpy(entropy)
-            variance_np = b.to_numpy(variance)
-            return (float(entropy_np.item()), float(variance_np.item()))
+            return (float(b.to_scalar(entropy)), float(b.to_scalar(variance)))
 
         b.eval(entropy)
-        entropy_np = b.to_numpy(entropy)
-        return (float(entropy_np.item()), variance_val)
+        return (float(b.to_scalar(entropy)), variance_val)
 
 
 class LogitDivergenceCalculator:
@@ -358,8 +353,7 @@ class LogitDivergenceCalculator:
 
         kl = b.sum(p * (log_p - log_q), axis=-1)
         b.eval(kl)
-        kl_np = b.to_numpy(kl)
-        return max(0.0, float(kl_np.item()))
+        return max(0.0, float(b.to_scalar(kl)))
 
 
 class EntropyDeltaTracker:

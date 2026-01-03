@@ -192,7 +192,7 @@ class DensityEstimator:
 
             range_density = max_density - min_density
             range_eps = division_epsilon(b, range_density)
-            if float(b.to_numpy(range_density)) > range_eps:
+            if float(b.to_scalar(range_density)) > range_eps:
                 densities = (densities - min_density) / range_density
                 b.eval(densities)
             else:
@@ -244,19 +244,16 @@ class DensityEstimator:
         max_vals = b.max(points, axis=0)
         b.eval(min_vals, max_vals)
 
-        # Convert to numpy for grid construction
-        min_np = b.to_numpy(min_vals)
-        max_np = b.to_numpy(max_vals)
-
-        # Add 10% padding
-        padding = (max_np - min_np) * 0.1
-        min_np = min_np - padding
-        max_np = max_np + padding
+        # Add 10% padding in backend space
+        padding = (max_vals - min_vals) * 0.1
+        min_pad = min_vals - padding
+        max_pad = max_vals + padding
+        b.eval(min_pad, max_pad)
 
         # Create grid
-        x = b.linspace(float(min_np[0]), float(max_np[0]), grid_size)
-        y = b.linspace(float(min_np[1]), float(max_np[1]), grid_size)
-        z = b.linspace(float(min_np[2]), float(max_np[2]), grid_size)
+        x = b.linspace(float(b.to_scalar(min_pad[0])), float(b.to_scalar(max_pad[0])), grid_size)
+        y = b.linspace(float(b.to_scalar(min_pad[1])), float(b.to_scalar(max_pad[1])), grid_size)
+        z = b.linspace(float(b.to_scalar(min_pad[2])), float(b.to_scalar(max_pad[2])), grid_size)
         b.eval(x, y, z)
 
         # Meshgrid

@@ -308,7 +308,9 @@ class IntrinsicDimension:
 
         # Count valid points
         backend.eval(valid_mask)
-        valid_count = int(backend.to_numpy(backend.sum(backend.astype(valid_mask, r1_sq.dtype))))
+        valid_count = int(
+            backend.to_scalar(backend.sum(backend.astype(valid_mask, r1_sq.dtype)))
+        )
 
         if valid_count == 0:
             return backend.array([])
@@ -356,7 +358,7 @@ class IntrinsicDimension:
             # MLE form: d = 1 / mean(log(mu))
             mean_log_mu_arr = backend.mean(log_mu)
             backend.eval(mean_log_mu_arr)
-            mean_log_mu = float(backend.to_numpy(mean_log_mu_arr))
+            mean_log_mu = float(backend.to_scalar(mean_log_mu_arr))
             # Use machine epsilon for precision-aware threshold
             eps = machine_epsilon(backend, log_mu)
             if mean_log_mu < eps:
@@ -385,8 +387,8 @@ class IntrinsicDimension:
         sum_xy = backend.sum(x * y)
 
         backend.eval(sum_xx, sum_xy)
-        sum_xx_val = float(backend.to_numpy(sum_xx))
-        sum_xy_val = float(backend.to_numpy(sum_xy))
+        sum_xx_val = float(backend.to_scalar(sum_xx))
+        sum_xy_val = float(backend.to_scalar(sum_xy))
 
         # Use machine epsilon for degenerate check
         if sum_xx_val < eps:

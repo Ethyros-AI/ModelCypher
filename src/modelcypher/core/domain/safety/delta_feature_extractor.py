@@ -140,7 +140,7 @@ class DeltaFeatureExtractor:
                     # Compute L2 norm
                     sum_sq = backend.sum(tensor_backend * tensor_backend)
                     backend.eval(sum_sq)
-                    l2_norm = float(math.sqrt(float(backend.to_numpy(sum_sq))))
+                    l2_norm = float(backend.to_scalar(backend.sqrt(sum_sq)))
                     l2_norms.append(l2_norm)
 
                     # Compute sparsity (fraction of near-zero elements)
@@ -154,7 +154,7 @@ class DeltaFeatureExtractor:
                     for dim in shape:
                         total_elements *= int(dim)
                     sparsity = (
-                        float(backend.to_numpy(near_zero_count)) / total_elements
+                        float(backend.to_scalar(near_zero_count)) / total_elements
                         if total_elements > 0
                         else 0.0
                     )

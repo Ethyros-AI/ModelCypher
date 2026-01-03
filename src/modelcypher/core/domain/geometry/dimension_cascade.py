@@ -458,11 +458,11 @@ class DimensionCascade:
         projected = U_k * sqrt_S_k[None, :]  # [n, target_dim]
         b.eval(projected)
 
-        total_var = float(b.to_numpy(b.sum(S)))
+        total_var = float(b.to_scalar(b.sum(S)))
         eps = division_epsilon(b, S)
         logger.debug(
             "Isomap embedding: explained variance ratio = %.2f%%",
-            100.0 * float(b.to_numpy(b.sum(S_k))) / max(eps, total_var),
+            100.0 * float(b.to_scalar(b.sum(S_k))) / max(eps, total_var),
         )
 
         # Step 5: Derive linear coupling for streaming
@@ -478,7 +478,7 @@ class DimensionCascade:
 
         # MLX backend may return full U or Vt even with full_matrices=False
         # We need to slice to the reduced form based on min(n, d)
-        k = len(b.to_numpy(S_x))  # Number of singular values = min(n, d)
+        k = int(S_x.shape[0])  # Number of singular values = min(n, d)
         U_x = U_x_full[:, :k]  # [n, k]
         Vt_x = Vt_x_full[:k, :]  # [k, d]
         b.eval(U_x, Vt_x)
@@ -570,7 +570,7 @@ class DimensionCascade:
             correlation = numerator / (geo_std * euc_std + eps)
             b.eval(correlation)
 
-            corr_val = float(b.to_numpy(correlation))
+            corr_val = float(b.to_scalar(correlation))
 
             # Distortion = 1 - |correlation|
             # Perfect embedding has correlation ±1, distortion 0

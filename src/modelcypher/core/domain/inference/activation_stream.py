@@ -258,7 +258,7 @@ class ActivationStream:
         eps = division_epsilon(b, abs_hidden)
 
         # Avoid division by zero
-        if float(b.to_numpy(total)) < eps:
+        if float(b.to_scalar(total)) < eps:
             return 0.0
 
         probs = abs_hidden / total
@@ -269,7 +269,7 @@ class ActivationStream:
         entropy_tensor = -b.sum(probs * log_probs)
         b.eval(entropy_tensor)
 
-        return float(b.to_numpy(entropy_tensor))
+        return float(b.to_scalar(entropy_tensor))
 
     def capture(self, target_layers: set[int] | None = None) -> "_LayerCaptureContext":
         """

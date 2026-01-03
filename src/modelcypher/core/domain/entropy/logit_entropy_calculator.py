@@ -151,10 +151,7 @@ class LogitEntropyCalculator:
                 # Use argsort for top-K selection (sort descending, take first k)
                 sorted_indices = self._backend.argsort(-flat_logits)
                 top_k_indices = sorted_indices[:k]
-                # Index with numpy for cross-backend compatibility
-                flat_np = self._backend.to_numpy(flat_logits)
-                top_k_np = self._backend.to_numpy(top_k_indices)
-                top_k_logits = self._backend.array(flat_np[top_k_np])
+                top_k_logits = self._backend.take(flat_logits, top_k_indices)
 
             mean_val = self._backend.mean(top_k_logits)
             squared_diff = (top_k_logits - mean_val) ** 2
@@ -163,10 +160,7 @@ class LogitEntropyCalculator:
         # Evaluate and convert to Python floats
         self._backend.eval(entropy, variance)
 
-        entropy_np = self._backend.to_numpy(entropy)
-        variance_np = self._backend.to_numpy(variance)
-
-        return float(entropy_np.item()), float(variance_np.item())
+        return float(self._backend.to_scalar(entropy)), float(self._backend.to_scalar(variance))
 
     def compute_batch(
         self,
@@ -214,9 +208,7 @@ class LogitEntropyCalculator:
                 k = min(self.top_k, vocab_size)
                 sorted_indices = self._backend.argsort(-flat_logits)
                 top_k_indices = sorted_indices[:k]
-                flat_np = self._backend.to_numpy(flat_logits)
-                top_k_np = self._backend.to_numpy(top_k_indices)
-                top_k_logits = self._backend.array(flat_np[top_k_np])
+                top_k_logits = self._backend.take(flat_logits, top_k_indices)
             mean_val = self._backend.mean(top_k_logits)
             squared_diff = (top_k_logits - mean_val) ** 2
             variance = self._backend.mean(squared_diff)

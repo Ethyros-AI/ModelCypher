@@ -96,24 +96,12 @@ def _find_k_elbow(activations: "Array", backend: "Backend") -> int:
     backend.eval(dists)
 
     # For each k, compute mean of k-th nearest neighbor distances
-    # Sort distances for each point
-    dists_np = backend.to_numpy(dists)
-    mean_k_dists = []
+    # Sort distances for each point (rows), exclude self (col 0)
+    sorted_dists = backend.sort(dists, axis=1)
+    mean_k_dists = backend.mean(sorted_dists[:, 1:], axis=0)
+    backend.eval(mean_k_dists)
 
-    # Check all possible k values - the elbow tells us where to stop
-    max_k = n - 1
-
-    for k in range(1, max_k + 1):
-        # For each point, get k-th nearest neighbor distance
-        k_dists = []
-        for i in range(n):
-            # Sort distances from point i, exclude self (distance 0)
-            row = sorted(dists_np[i])
-            if k < len(row):
-                k_dists.append(row[k])  # k-th nearest (row[0] is self)
-        mean_k_dists.append(sum(k_dists) / len(k_dists) if k_dists else 0.0)
-
-    if len(mean_k_dists) < 3:
+    if int(mean_k_dists.shape[0]) < 3:
         # Not enough points to compute elbow - use all neighbors
         return n - 1
 
@@ -125,36 +113,23 @@ def _find_k_elbow(activations: "Array", backend: "Backend") -> int:
     # Derive tolerance from input array dtype
     div_eps = division_epsilon(backend, activations)
 
-    curvatures = []
-    for i in range(1, len(mean_k_dists) - 1):
-        y_prev = mean_k_dists[i - 1]
-        y_curr = mean_k_dists[i]
-        y_next = mean_k_dists[i + 1]
+    y_prev = mean_k_dists[:-2]
+    y_curr = mean_k_dists[1:-1]
+    y_next = mean_k_dists[2:]
 
-        # First derivative (central difference)
-        dy = (y_next - y_prev) / 2.0
+    dy = (y_next - y_prev) / 2.0
+    d2y = y_next - 2.0 * y_curr + y_prev
 
-        # Second derivative
-        d2y = y_next - 2 * y_curr + y_prev
-
-        # Curvature
-        denom = (1 + dy * dy) ** 1.5
-        if denom > div_eps:
-            curv = abs(d2y) / denom
-        else:
-            curv = 0.0
-
-        curvatures.append((i + 1, curv))  # k = i + 1 (1-indexed)
-
-    if not curvatures:
-        # Edge case: couldn't compute curvatures - use all neighbors
-        return n - 1
+    denom = backend.sqrt(1.0 + dy * dy)
+    denom = denom * denom * denom
+    denom = backend.maximum(denom, backend.full(denom.shape, div_eps))
+    curvatures = backend.abs(d2y) / denom
+    backend.eval(curvatures)
 
     # Find k with maximum curvature (the elbow)
-    # This is the geometric answer - no post-hoc adjustments
-    best_k, _ = max(curvatures, key=lambda x: x[1])
-
-    return best_k
+    # k corresponds to mean_k_dists index (offset by +2 for central differencing)
+    best_idx = int(backend.to_scalar(backend.argmax(curvatures)))
+    return best_idx + 2
 
 
 class InfluenceType(str, Enum):
@@ -265,12 +240,12 @@ class ConceptVolume:
             # slogdet returns (sign, logdet) - we compute via eigenvalues
             eigenvalues = backend.eigh(self.covariance)[0]
             backend.eval(eigenvalues)
-            eig_np = backend.to_numpy(eigenvalues)
-            # Sum of log eigenvalues = log(det)
-            if all(e > 0 for e in eig_np):
-                logdet = float(sum(math.log(e) for e in eig_np))
-            else:
+            min_eig = backend.min(eigenvalues)
+            backend.eval(min_eig)
+            if float(backend.to_scalar(min_eig)) <= 0.0:
                 logdet = -math.inf
+            else:
+                logdet = float(backend.to_scalar(backend.sum(backend.log(eigenvalues))))
             object.__setattr__(self, "_log_det_cov", logdet)
         return self._log_det_cov
 
@@ -302,13 +277,12 @@ class ConceptVolume:
         backend = get_default_backend()
         eigenvalues = backend.eigh(self.covariance)[0]
         backend.eval(eigenvalues)
-        eig_np = backend.to_numpy(eigenvalues)
         # Geometric mean via log: exp(mean(log(max(eig, tiny))))
-        # Use tiny_value to prevent log(0) while maintaining precision
         tiny = tiny_value(backend, eigenvalues)
-        log_eigs = [math.log(max(e, tiny)) for e in eig_np]
-        mean_log = sum(log_eigs) / len(log_eigs)
-        return math.exp(mean_log) ** 0.5
+        clamped = backend.maximum(eigenvalues, tiny)
+        mean_log = backend.mean(backend.log(clamped))
+        backend.eval(mean_log)
+        return math.exp(0.5 * float(backend.to_scalar(mean_log)))
 
     def _compute_tangent_vector(self, point: "Array") -> "Array":
         """Compute tangent vector from centroid to point using log map.
@@ -356,12 +330,12 @@ class ConceptVolume:
         total_dists = geo_from_centroid + geo_from_point
         geo_dist = backend.min(total_dists)
         backend.eval(geo_dist)
-        geo_dist_float = float(backend.to_numpy(geo_dist))
+        geo_dist_float = float(backend.to_scalar(geo_dist))
 
         # Euclidean distance
         euc_dist_sq = backend.sum(diff * diff)
         backend.eval(euc_dist_sq)
-        euc_dist = math.sqrt(float(backend.to_numpy(euc_dist_sq)))
+        euc_dist = float(backend.to_scalar(backend.sqrt(euc_dist_sq)))
 
         # Scale factor: geodesic / euclidean
         # Use machine_epsilon for near-zero check
@@ -392,7 +366,7 @@ class ConceptVolume:
         temp = backend.matmul(tangent, self.precision)
         mahal_sq_arr = backend.matmul(temp, tangent)
         backend.eval(mahal_sq_arr)
-        mahal_sq = float(backend.to_numpy(mahal_sq_arr))
+        mahal_sq = float(backend.to_scalar(mahal_sq_arr))
 
         d = self.dimension
 
@@ -435,7 +409,7 @@ class ConceptVolume:
         temp = backend.matmul(diff, self.precision)
         mahal_sq_arr = backend.matmul(temp, diff)
         backend.eval(mahal_sq_arr)
-        mahal_sq = float(backend.to_numpy(mahal_sq_arr))
+        mahal_sq = float(backend.to_scalar(mahal_sq_arr))
         return math.sqrt(mahal_sq)
 
     def geodesic_distance(self, point: "Array") -> float:
@@ -459,9 +433,7 @@ class ConceptVolume:
         # Compute geodesic distance
         geo_dist = geodesic_distance_matrix(points_arr, k_neighbors=1, backend=backend)
         backend.eval(geo_dist)
-        geo_dist_np = backend.to_numpy(geo_dist)
-
-        return float(geo_dist_np[0, 1])
+        return float(backend.to_scalar(geo_dist[0, 1]))
 
     def contains(self, point: "Array") -> bool:
         """Check if point is within concept volume.
@@ -551,13 +523,13 @@ class ConceptVolume:
             total_dists = geo_from_centroid + geo_from_point
             geo_dist = backend.min(total_dists)
             backend.eval(geo_dist)
-            geo_dist_float = float(backend.to_numpy(geo_dist))
+            geo_dist_float = float(backend.to_scalar(geo_dist))
 
             # Euclidean distance
             diff_i = diff[i]
             euc_dist_sq = backend.sum(diff_i * diff_i)
             backend.eval(euc_dist_sq)
-            euc_dist = math.sqrt(float(backend.to_numpy(euc_dist_sq)))
+            euc_dist = float(backend.to_scalar(backend.sqrt(euc_dist_sq)))
 
             # Scale factor (use machine_epsilon for near-zero check)
             if euc_dist < machine_epsilon(backend, diff_i):
@@ -840,7 +812,7 @@ class RiemannianDensityEstimator:
         diff = volume_a.centroid - volume_b.centroid
         diff_norm = backend.norm(diff)
         backend.eval(diff_norm)
-        centroid_diff = float(backend.to_numpy(diff_norm))
+        centroid_diff = float(backend.to_scalar(diff_norm))
         if centroid_diff < machine_epsilon(backend, diff):
             centroid_distance = 0.0
         else:
@@ -851,8 +823,7 @@ class RiemannianDensityEstimator:
 
             geo_dist = geodesic_distance_matrix(centroids_arr, k_neighbors=1, backend=backend)
             backend.eval(geo_dist)
-            geo_dist_np = backend.to_numpy(geo_dist)
-            centroid_distance = float(geo_dist_np[0, 1])
+            centroid_distance = float(backend.to_scalar(geo_dist[0, 1]))
 
         geodesic_centroid_distance = centroid_distance
 
@@ -1078,7 +1049,7 @@ class RiemannianDensityEstimator:
         trace_val = backend.trace(covariance)
         shape = covariance.shape
         backend.eval(trace_val)
-        r = math.sqrt(float(backend.to_numpy(trace_val)) / int(shape[0]))
+        r = float(backend.to_scalar(backend.sqrt(trace_val / int(shape[0]))))
 
         if K > 0:
             # Positive curvature - expand covariance
@@ -1116,16 +1087,14 @@ class RiemannianDensityEstimator:
         # Get geodesic distances from centroid (index 0) to all points
         k_neighbors = min(max(3, n // 3), n)
         geo_result = rg.geodesic_distances(points_arr, k_neighbors=k_neighbors)
-        geo_np = backend.to_numpy(geo_result.distances)
-
-        # Distances from centroid (row 0) to all activation points (rows 1:n+1)
-        centroid_to_points = list(geo_np[0, 1:])
-
-        # Use 95th percentile as radius (manual percentile calculation)
-        sorted_dists = sorted(centroid_to_points)
-        idx = int(len(sorted_dists) * 0.95)
-        idx = min(idx, len(sorted_dists) - 1)
-        return float(sorted_dists[idx])
+        centroid_to_points = geo_result.distances[0, 1:]
+        sorted_dists = backend.sort(centroid_to_points)
+        backend.eval(sorted_dists)
+        count = int(sorted_dists.shape[0])
+        if count == 0:
+            return 0.0
+        idx = min(int(count * 0.95), count - 1)
+        return float(backend.to_scalar(sorted_dists[idx]))
 
     def _bhattacharyya_coefficient(
         self,
@@ -1150,16 +1119,16 @@ class RiemannianDensityEstimator:
             temp = backend.matmul(diff, cov_avg_inv)
             term1_arr = backend.matmul(temp, diff)
             backend.eval(term1_arr)
-            term1 = 0.125 * float(backend.to_numpy(term1_arr))
+            term1 = 0.125 * float(backend.to_scalar(term1_arr))
 
             # Compute log det of cov_avg via eigenvalues
             eigenvalues = backend.eigh(cov_avg)[0]
             backend.eval(eigenvalues)
-            eig_np = backend.to_numpy(eigenvalues)
-            if all(e > 0 for e in eig_np):
-                logdet_avg = float(sum(math.log(e) for e in eig_np))
-            else:
+            min_eig = backend.min(eigenvalues)
+            backend.eval(min_eig)
+            if float(backend.to_scalar(min_eig)) <= 0.0:
                 return 0.0
+            logdet_avg = float(backend.to_scalar(backend.sum(backend.log(eigenvalues))))
 
             term2 = 0.5 * (
                 logdet_avg - 0.5 * (volume_a.log_det_covariance + volume_b.log_det_covariance)
@@ -1224,8 +1193,8 @@ class RiemannianDensityEstimator:
         b_in_a_sum = backend.sum(backend.astype(b_in_a_mask, "float32"))
         backend.eval(a_in_b_sum, b_in_a_sum)
 
-        a_in_b = int(backend.to_numpy(a_in_b_sum))
-        b_in_a = int(backend.to_numpy(b_in_a_sum))
+        a_in_b = int(backend.to_scalar(a_in_b_sum))
+        b_in_a = int(backend.to_scalar(b_in_a_sum))
 
         # Overlap coefficient
         return max(a_in_b, b_in_a) / n_samples
@@ -1299,7 +1268,7 @@ class RiemannianDensityEstimator:
             sq_vals = singular_values * singular_values
             alignment = backend.mean(sq_vals)
             backend.eval(alignment)
-            result = float(backend.to_numpy(alignment))
+            result = float(backend.to_scalar(alignment))
         else:
             # Cross-architecture: use CKA on Gram matrices (dimension-agnostic)
             # Gram matrix K = X @ X^T has shape [n_samples, n_samples]

@@ -431,38 +431,31 @@ class ChunkEntropyAnalyzer:
         rg = RiemannianGeometry(backend)
         geo_result = rg.geodesic_distances(points)
         backend.eval(geo_result.distances)
-        geo_np = backend.to_numpy(geo_result.distances)
+        dist = geo_result.distances
+        backend.eval(dist)
 
         n = len(projected)
-        finite_distances: list[float] = []
-        for i in range(n):
-            for j in range(n):
-                value = float(geo_np[i, j])
-                if math.isfinite(value):
-                    finite_distances.append(value)
+        if n == 0:
+            return []
 
-        if not finite_distances:
+        finite_mask = backend.isfinite(dist)
+        neg_inf = -float(backend.finfo().max)
+        finite_vals = backend.where(finite_mask, dist, backend.full(dist.shape, neg_inf))
+        max_distance_arr = backend.max(finite_vals)
+        backend.eval(max_distance_arr)
+        max_distance = float(backend.to_scalar(max_distance_arr))
+
+        if not math.isfinite(max_distance):
             logger.warning("Cross-reference scoring skipped: no finite distances")
             return [0.0] * n
-
-        max_distance = max(finite_distances)
-        if max_distance <= 0:
+        if max_distance <= 0.0:
             return [1.0] * n
 
-        mean_distances: list[float] = []
-        for i in range(n):
-            row = geo_np[i]
-            total = 0.0
-            count = 0
-            for j in range(n):
-                if i == j:
-                    continue
-                value = float(row[j])
-                if not math.isfinite(value):
-                    value = max_distance
-                total += value
-                count += 1
-            mean_distances.append(total / max(1, count))
-
-        scores = [1.0 - (d / max_distance) for d in mean_distances]
-        return [min(1.0, max(0.0, score)) for score in scores]
+        dist_filled = backend.where(finite_mask, dist, backend.full(dist.shape, max_distance))
+        off_diag = backend.ones_like(dist_filled) - backend.eye(n)
+        sum_rows = backend.sum(dist_filled * off_diag, axis=1)
+        mean_distances = sum_rows / max(1, n - 1)
+        scores = 1.0 - (mean_distances / max_distance)
+        scores = backend.maximum(backend.minimum(scores, backend.full(scores.shape, 1.0)), backend.zeros_like(scores))
+        backend.eval(scores)
+        return [float(v) for v in backend.to_numpy(scores).tolist()]

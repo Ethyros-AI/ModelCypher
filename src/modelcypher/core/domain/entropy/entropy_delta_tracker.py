@@ -404,8 +404,7 @@ class EntropyDeltaTracker:
         top_index = b.argmax(last_logits)
         b.eval(top_index)
 
-        top_index_np = b.to_numpy(top_index)
-        return int(top_index_np.item())
+        return int(b.to_scalar(top_index))
 
     def _create_empty_result(self) -> EntropyDeltaSessionResult:
         """Create an empty session result."""

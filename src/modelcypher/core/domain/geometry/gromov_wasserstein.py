@@ -169,7 +169,7 @@ class GromovWassersteinDistance:
             backend.eval(max_diff)
             # Use precision-aware threshold for identity check
             eps = division_epsilon(backend, C1)
-            if float(backend.to_numpy(max_diff)) < eps:
+            if float(backend.to_scalar(max_diff)) < eps:
                 # Identical - return identity coupling
                 coupling = backend.eye(n) / n
                 return Result(distance=0.0, coupling=coupling, converged=True, iterations=0)
@@ -295,9 +295,8 @@ class GromovWassersteinDistance:
 
         # Force evaluation and find minimum
         backend.eval(losses)
-        losses_np = backend.to_numpy(losses)
-        best_idx = int(losses_np.argmin())
-        best_loss = float(losses_np[best_idx])
+        best_idx = int(backend.to_scalar(backend.argmin(losses)))
+        best_loss = float(backend.to_scalar(losses[best_idx]))
         best_perm = perms[best_idx]
 
         # Build coupling matrix from best permutation
@@ -397,7 +396,7 @@ class GromovWassersteinDistance:
         tens = self._tensor_product(constC, hC1, hC2, T)
         loss_arr = backend.sum(tens * T)
         backend.eval(loss_arr)
-        return float(backend.to_numpy(loss_arr))
+        return float(backend.to_scalar(loss_arr))
 
     def _gw_gradient(
         self,
@@ -477,7 +476,10 @@ class GromovWassersteinDistance:
                 u_diff = backend.max(backend.abs(u_new - u))
                 v_diff = backend.max(backend.abs(v_new - v))
                 backend.eval(u_diff, v_diff)
-                if max(float(backend.to_numpy(u_diff)), float(backend.to_numpy(v_diff))) < threshold:
+                if max(
+                    float(backend.to_scalar(u_diff)),
+                    float(backend.to_scalar(v_diff)),
+                ) < threshold:
                     u = u_new
                     v = v_new
                     break
@@ -534,8 +536,8 @@ class GromovWassersteinDistance:
         c_arr = 2.0 * backend.sum(hessian_term * deltaT)
 
         backend.eval(b_arr, c_arr)
-        b = float(backend.to_numpy(b_arr))
-        c = float(backend.to_numpy(c_arr))
+        b = float(backend.to_scalar(b_arr))
+        c = float(backend.to_scalar(c_arr))
 
         # Optimal step: minimize b*α + c*α² subject to α ∈ [0, 1]
         # If c > 0 (convex), minimum at α = -b / (2c)
@@ -682,4 +684,3 @@ class GromovWassersteinDistance:
         rg = RiemannianGeometry(backend)
         result = rg.geodesic_distances(points, k_neighbors=k_neighbors)
         return result.distances
-

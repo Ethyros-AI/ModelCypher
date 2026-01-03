@@ -122,27 +122,24 @@ class SpectralSignature:
 
         # Local edges are Euclidean distances; on the k-NN graph these are exact
         # geodesic segments, and the global geodesic is the shortest path on this graph.
-        adjacency, euclidean_dist, inf_value, k_neighbors = self._build_knn_adjacency(
+        adjacency, euclidean_dist, inf_value, k_neighbors, neighbor_indices = self._build_knn_adjacency(
             points_arr, config.k_neighbors
         )
-        backend.eval(adjacency, euclidean_dist)
+        backend.eval(adjacency, euclidean_dist, neighbor_indices)
+        neighbor_indices_np = backend.to_numpy(neighbor_indices)
 
-        euclidean_np = backend.to_numpy(euclidean_dist)
-        adj_np = backend.to_numpy(adjacency)
+        edge_mask = adjacency < inf_value * 0.9
+        edge_count_total = int(
+            backend.to_scalar(backend.sum(backend.astype(edge_mask, "int32")))
+        )
+        edge_count = max(0, (edge_count_total - n) // 2)
 
-        edge_distances: list[float] = []
-        edge_count = 0
-        for i in range(n):
-            for j in range(i + 1, n):
-                if adj_np[i, j] < inf_value * 0.9:
-                    d = float(euclidean_np[i, j])
-                    if math.isfinite(d):
-                        edge_distances.append(d)
-                        edge_count += 1
+        neighbor_dists = backend.take(euclidean_dist, neighbor_indices, axis=1)
+        backend.eval(neighbor_dists)
 
         kernel_bandwidth = config.kernel_bandwidth
         if kernel_bandwidth is None:
-            kernel_bandwidth = _median(edge_distances)
+            kernel_bandwidth = _median_flattened(neighbor_dists, backend)
 
         bandwidth_floor = tiny_value(backend, euclidean_dist)
         if kernel_bandwidth <= bandwidth_floor:
@@ -175,7 +172,7 @@ class SpectralSignature:
 
         spectral_entropy = _spectral_entropy(eig_np, regularization_epsilon(backend, eigvals))
         algebraic_connectivity = eig_np[1] if len(eig_np) > 1 else 0.0
-        component_count = _count_components(adj_np, inf_value)
+        component_count = _count_components_from_neighbors(neighbor_indices_np, n)
         connected = component_count == 1
 
         eig_arr = backend.array(eig_np, dtype="float32")
@@ -219,7 +216,7 @@ class SpectralSignature:
         self,
         points: "Array",
         k_neighbors: int | None,
-    ) -> tuple["Array", "Array", float, int]:
+    ) -> tuple["Array", "Array", float, int, "Array"]:
         backend = self._backend
         n = int(points.shape[0])
         if k_neighbors is None:
@@ -231,27 +228,31 @@ class SpectralSignature:
             k_neighbors = geo_result.k_neighbors
         k_neighbors = max(1, min(k_neighbors, n - 1))
 
+        inf_val = float(backend.finfo().max) * 0.25
         euclidean_dist = self._euclidean_distance_matrix(points)
         backend.eval(euclidean_dist)
-        euclidean_np = backend.to_numpy(euclidean_dist)
 
-        inf_val = float(backend.finfo().max) * 0.25
+        self_mask = backend.eye(n) > 0.0
+        dist_no_self = backend.where(self_mask, inf_val, euclidean_dist)
+        neighbor_order = backend.argsort(dist_no_self, axis=1)
+        neighbor_indices = neighbor_order[:, :k_neighbors]
+        backend.eval(neighbor_indices)
+
         adj = backend.full((n, n), inf_val)
         for i in range(n):
             adj = _set_matrix_element(backend, adj, i, i, 0.0)
 
         edge_eps = float(division_epsilon(backend, euclidean_dist))
+        neighbor_indices_np = backend.to_numpy(neighbor_indices)
         for i in range(n):
-            dists = euclidean_np[i, :].tolist()
-            other_pairs = [(j, dists[j]) for j in range(n) if j != i]
-            sorted_pairs = sorted(other_pairs, key=lambda x: x[1])
-            nearest_indices = [p[0] for p in sorted_pairs[:k_neighbors]]
-            for j in nearest_indices:
-                edge_weight = max(dists[j], edge_eps)
-                adj = _set_matrix_element(backend, adj, i, j, edge_weight)
-                adj = _set_matrix_element(backend, adj, j, i, edge_weight)
+            for j in neighbor_indices_np[i]:
+                edge_weight = max(
+                    float(backend.to_scalar(euclidean_dist[i, int(j)])), edge_eps
+                )
+                adj = _set_matrix_element(backend, adj, i, int(j), edge_weight)
+                adj = _set_matrix_element(backend, adj, int(j), i, edge_weight)
 
-        return adj, euclidean_dist, inf_val, k_neighbors
+        return adj, euclidean_dist, inf_val, k_neighbors, neighbor_indices
 
     def _euclidean_distance_matrix(self, points: "Array") -> "Array":
         backend = self._backend
@@ -263,14 +264,19 @@ class SpectralSignature:
         return backend.sqrt(dist_sq)
 
 
-def _median(values: list[float]) -> float:
-    if not values:
+def _median_flattened(values: "Array", backend: "Backend") -> float:
+    flat = backend.reshape(values, (-1,))
+    count = int(flat.shape[0])
+    if count == 0:
         return 0.0
-    values_sorted = sorted(values)
-    mid = len(values_sorted) // 2
-    if len(values_sorted) % 2 == 1:
-        return values_sorted[mid]
-    return 0.5 * (values_sorted[mid - 1] + values_sorted[mid])
+    sorted_vals = backend.sort(flat)
+    backend.eval(sorted_vals)
+    mid = count // 2
+    if count % 2 == 1:
+        return float(backend.to_scalar(sorted_vals[mid]))
+    lower = float(backend.to_scalar(sorted_vals[mid - 1]))
+    upper = float(backend.to_scalar(sorted_vals[mid]))
+    return 0.5 * (lower + upper)
 
 
 def _spectral_entropy(eigenvalues: list[float], eps: float) -> float:
@@ -294,8 +300,14 @@ def _heat_trace(backend: "Backend", eigenvalues: "Array", times: list[float]) ->
     return trace_values
 
 
-def _count_components(adjacency: "Array", inf_value: float) -> int:
-    n = int(adjacency.shape[0])
+def _count_components_from_neighbors(neighbors: list[list[int]], n: int) -> int:
+    adjacency = [set() for _ in range(n)]
+    for i in range(n):
+        for j in neighbors[i]:
+            j_idx = int(j)
+            adjacency[i].add(j_idx)
+            adjacency[j_idx].add(i)
+
     visited = [False] * n
     components = 0
     for i in range(n):
@@ -306,8 +318,8 @@ def _count_components(adjacency: "Array", inf_value: float) -> int:
         visited[i] = True
         while stack:
             node = stack.pop()
-            for j in range(n):
-                if adjacency[node, j] < inf_value * 0.9 and not visited[j]:
+            for j in adjacency[node]:
+                if not visited[j]:
                     visited[j] = True
                     stack.append(j)
     return components

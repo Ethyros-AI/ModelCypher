@@ -1324,14 +1324,14 @@ class EmotionConceptAtlas:
                     # Higher distance = lower similarity
                     mahal_dist = volume.mahalanobis_distance(text_vec)
                     # Use exponential decay: sim = exp(-dist/scale)
-                    similarity = float(backend.to_numpy(backend.exp(-mahal_dist / 3.0)))
+                    similarity = math.exp(-mahal_dist / 3.0)
                 else:
                     # Use density at point as similarity
                     density = volume.density_at(text_vec)
                     # Normalize by density at centroid
                     max_density = volume.density_at(volume.centroid)
                     if max_density > 0:
-                        similarity = float(backend.to_numpy(density / max_density))
+                        similarity = density / max_density
                     else:
                         similarity = 0.0
 

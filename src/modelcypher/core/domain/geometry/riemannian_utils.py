@@ -93,6 +93,142 @@ if TYPE_CHECKING:
 _cache = ComputationCache.shared()
 
 
+# =============================================================================
+# Vectorized validation helpers (use backend ops instead of Python loops)
+# =============================================================================
+
+
+def count_nan(arr: "Array", backend: "Backend") -> int:
+    """Count NaN values in array using vectorized backend operation.
+
+    Replaces O(n*d) Python loops like:
+        sum(1 for row in arr_np for v in row if math.isnan(float(v)))
+
+    With O(1) backend operation:
+        int(backend.sum(backend.isnan(arr)))
+
+    Args:
+        arr: Backend array to check.
+        backend: Backend instance.
+
+    Returns:
+        Count of NaN values in the array.
+    """
+    nan_mask = backend.isnan(arr)
+    count = backend.sum(nan_mask)
+    backend.eval(count)
+    return int(float(backend.to_scalar(count)))
+
+
+def count_inf(arr: "Array", backend: "Backend") -> int:
+    """Count infinite values in array using vectorized backend operation.
+
+    Args:
+        arr: Backend array to check.
+        backend: Backend instance.
+
+    Returns:
+        Count of +/- infinity values in the array.
+    """
+    inf_mask = backend.isinf(arr)
+    count = backend.sum(inf_mask)
+    backend.eval(count)
+    return int(float(backend.to_scalar(count)))
+
+
+def count_finite(arr: "Array", backend: "Backend") -> int:
+    """Count finite values in array using vectorized backend operation.
+
+    Args:
+        arr: Backend array to check.
+        backend: Backend instance.
+
+    Returns:
+        Count of finite (not NaN, not Inf) values in the array.
+    """
+    finite_mask = backend.isfinite(arr)
+    count = backend.sum(finite_mask)
+    backend.eval(count)
+    return int(float(backend.to_scalar(count)))
+
+
+def count_nonfinite(arr: "Array", backend: "Backend") -> int:
+    """Count non-finite values (NaN or Inf) in array.
+
+    Args:
+        arr: Backend array to check.
+        backend: Backend instance.
+
+    Returns:
+        Count of NaN or infinite values.
+    """
+    finite_mask = backend.isfinite(arr)
+    # Count non-finite = total - finite
+    nonfinite_mask = backend.where(
+        finite_mask,
+        backend.zeros_like(finite_mask),
+        backend.ones_like(finite_mask),
+    )
+    count = backend.sum(nonfinite_mask)
+    backend.eval(count)
+    return int(float(backend.to_scalar(count)))
+
+
+def has_nan(arr: "Array", backend: "Backend") -> bool:
+    """Check if array contains any NaN values.
+
+    More efficient than count_nan() > 0 for early exit.
+
+    Args:
+        arr: Backend array to check.
+        backend: Backend instance.
+
+    Returns:
+        True if any NaN values present.
+    """
+    nan_mask = backend.isnan(arr)
+    any_nan = backend.max(nan_mask)  # max of bool array = any True
+    backend.eval(any_nan)
+    return bool(backend.to_scalar(any_nan))
+
+
+def has_inf(arr: "Array", backend: "Backend") -> bool:
+    """Check if array contains any infinite values.
+
+    Args:
+        arr: Backend array to check.
+        backend: Backend instance.
+
+    Returns:
+        True if any +/- infinity values present.
+    """
+    inf_mask = backend.isinf(arr)
+    any_inf = backend.max(inf_mask)
+    backend.eval(any_inf)
+    return bool(backend.to_scalar(any_inf))
+
+
+def all_finite(arr: "Array", backend: "Backend") -> bool:
+    """Check if all values in array are finite.
+
+    Args:
+        arr: Backend array to check.
+        backend: Backend instance.
+
+    Returns:
+        True if all values are finite (no NaN, no Inf).
+    """
+    finite_mask = backend.isfinite(arr)
+    all_ok = backend.min(finite_mask)  # min of bool array = all True
+    backend.eval(all_ok)
+    return bool(backend.to_scalar(all_ok))
+
+
+# =============================================================================
+# Scalar utilities
+# =============================================================================
+
+
 def safe_arithmetic_mean(values: "list[float] | tuple[float, ...]") -> float:
     """Compute arithmetic mean, returning 0.0 for empty sequences.
 
@@ -264,10 +400,9 @@ class RiemannianGeometry:
         points = backend.array(points)
         backend.eval(points)
 
-        # Validate input points for NaN (only when debugging - expensive O(n*d) check)
+        # Validate input points for NaN (vectorized - O(1) backend op)
         if logger.isEnabledFor(logging.DEBUG):
-            points_np = backend.to_numpy(points)
-            nan_count = sum(1 for row in points_np for v in row if math.isnan(float(v)))
+            nan_count = count_nan(points, backend)
             if nan_count > 0:
                 raise ValueError(
                     f"Input points contain {nan_count} NaN values. "
@@ -411,7 +546,7 @@ class RiemannianGeometry:
                     # Check convergence
                     diff = backend.sqrt(backend.sum((new_mu - mu) ** 2))
                     backend.eval(diff)
-                    diff_val = float(backend.to_numpy(diff))
+                    diff_val = float(backend.to_scalar(diff))
 
                     if diff_val < tol:
                         converged = True
@@ -432,8 +567,8 @@ class RiemannianGeometry:
                 raise
 
             backend.eval(mu)
-            mu_np = backend.to_numpy(mu).flatten()
-            non_finite = sum(1 for v in mu_np if not math.isfinite(float(v)))
+            # Vectorized count - O(1) vs O(d)
+            non_finite = count_nonfinite(mu, backend)
             if non_finite > 0:
                 exc = ValueError(
                     f"Frechet mean contains {non_finite} non-finite values."
@@ -605,25 +740,16 @@ class RiemannianGeometry:
         euclidean_dist = self._euclidean_distance_matrix(points)
         backend.eval(euclidean_dist)
 
-        # Diagnostic: check euclidean distance matrix for NaN (only when debugging)
+        # Diagnostic: check euclidean distance matrix for NaN (vectorized)
         if logger.isEnabledFor(logging.DEBUG):
-            euc_np = backend.to_numpy(euclidean_dist)
-            euc_nan_count = sum(1 for row in euc_np for v in row if math.isnan(float(v)))
+            euc_nan_count = count_nan(euclidean_dist, backend)
             if euc_nan_count > 0:
-                # Find which points have NaN or inf
-                points_np = backend.to_numpy(points)
-                nan_rows = []
-                inf_rows = []
-                for i, row in enumerate(points_np):
-                    row_nan = sum(1 for v in row if math.isnan(float(v)))
-                    row_inf = sum(1 for v in row if math.isinf(float(v)))
-                    if row_nan > 0:
-                        nan_rows.append((i, row_nan))
-                    if row_inf > 0:
-                        inf_rows.append((i, row_inf))
+                # Also check source points for issues
+                points_nan = count_nan(points, backend)
+                points_inf = count_inf(points, backend)
                 logger.warning(
                     f"Euclidean distance matrix has {euc_nan_count} NaN values! "
-                    f"Points shape: {points.shape}, NaN rows: {nan_rows[:5]}, inf rows: {inf_rows[:5]}"
+                    f"Points shape: {points.shape}, points NaN: {points_nan}, points Inf: {points_inf}"
                 )
 
         # Build k-NN adjacency and run Floyd-Warshall on backend (no scipy)
@@ -661,12 +787,18 @@ class RiemannianGeometry:
         adj = backend.minimum(adj, backend.transpose(adj))
         backend.eval(adj)
 
-        # Diagnostic: check adjacency matrix construction (only when debugging)
+        # Diagnostic: check adjacency matrix construction (vectorized)
         if logger.isEnabledFor(logging.DEBUG):
-            adj_np = backend.to_numpy(adj)
-            edge_count = sum(1 for row in adj_np for v in row if math.isfinite(float(v)) and v < inf_val * 0.9)
-            inf_count_adj = sum(1 for row in adj_np for v in row if v >= inf_val * 0.9)
-            nan_count_adj = sum(1 for row in adj_np for v in row if math.isnan(float(v)))
+            # Count edges (finite and below inf threshold)
+            finite_mask = backend.isfinite(adj)
+            below_inf = adj < inf_val * 0.9
+            edge_mask = finite_mask * below_inf  # element-wise AND
+            edge_count = int(float(backend.to_scalar(backend.sum(edge_mask))))
+            # Count inf entries (at or above inf threshold)
+            inf_mask = adj >= inf_val * 0.9
+            inf_count_adj = int(float(backend.to_scalar(backend.sum(inf_mask))))
+            # Count NaN entries
+            nan_count_adj = count_nan(adj, backend)
             logger.debug(
                 f"Adjacency matrix: n={n}, k={k_neighbors}, "
                 f"edges={edge_count}, inf_entries={inf_count_adj}, nan_entries={nan_count_adj}"
@@ -692,10 +824,12 @@ class RiemannianGeometry:
 
         # Diagnostic: check geodesic matrix after Floyd-Warshall (only when debugging)
         if logger.isEnabledFor(logging.DEBUG):
-            geo_fw_np = backend.to_numpy(geo_dist_arr)
-            fw_finite = sum(1 for row in geo_fw_np for v in row if math.isfinite(float(v)) and v < inf_val * 0.9)
-            fw_inf = sum(1 for row in geo_fw_np for v in row if v >= inf_val * 0.9)
-            fw_nan = sum(1 for row in geo_fw_np for v in row if math.isnan(float(v)))
+            # Vectorized counts - O(1) vs O(n²)
+            finite_mask = backend.isfinite(geo_dist_arr)
+            below_inf = geo_dist_arr < inf_val * 0.9
+            fw_finite = int(float(backend.to_scalar(backend.sum(finite_mask * below_inf))))
+            fw_inf = int(float(backend.to_scalar(backend.sum(geo_dist_arr >= inf_val * 0.9))))
+            fw_nan = count_nan(geo_dist_arr, backend)
             logger.debug(
                 f"After Floyd-Warshall: finite={fw_finite}, inf={fw_inf}, nan={fw_nan}"
             )
@@ -804,27 +938,25 @@ class RiemannianGeometry:
         # Compute precision-aware epsilon before numpy conversion
         eps = division_epsilon(backend, euclidean_dist)
 
-        geo_np = backend.to_numpy(geo_result.distances)
-        euc_np = backend.to_numpy(euclidean_dist)
-
         # Look at the k nearest neighbors of the center point
-        center_geo = geo_np[center_idx, :]
-        center_euc = euc_np[center_idx, :]
+        center_geo = geo_result.distances[center_idx]
+        center_euc = euclidean_dist[center_idx]
 
-        # Sort by Euclidean distance and take k nearest
-        # argsort manually
-        sorted_pairs = sorted(enumerate(center_euc), key=lambda x: x[1])
-        sorted_idx = [p[0] for p in sorted_pairs]
-        neighbors = sorted_idx[1 : k_neighbors + 1]  # Exclude self
+        sorted_idx = backend.argsort(center_euc)
+        neighbors = sorted_idx[1 : k_neighbors + 1]
+        backend.eval(neighbors)
+
+        center_geo_k = backend.take(center_geo, neighbors)
+        center_euc_k = backend.take(center_euc, neighbors)
+        backend.eval(center_geo_k, center_euc_k)
 
         # Compute geodesic defect: (geodesic - euclidean) / euclidean
-        defects = []
-        for j in neighbors:
-            if center_euc[j] > eps:
-                defect = (center_geo[j] - center_euc[j]) / center_euc[j]
-                defects.append(defect)
+        valid_mask = center_euc_k > eps
+        valid_count = backend.sum(backend.astype(valid_mask, "float32"))
+        backend.eval(valid_count)
+        valid_count_val = int(backend.to_scalar(valid_count))
 
-        if len(defects) == 0:
+        if valid_count_val == 0:
             return CurvatureEstimate(
                 sectional_curvature=0.0,
                 is_positive=False,
@@ -832,10 +964,19 @@ class RiemannianGeometry:
                 confidence=0.0,
             )
 
-        mean_defect = sum(defects) / len(defects)
-        if len(defects) > 1:
-            variance = sum((d - mean_defect) ** 2 for d in defects) / len(defects)
-            std_defect = math.sqrt(variance)
+        defects = (center_geo_k - center_euc_k) / center_euc_k
+        defects = backend.where(valid_mask, defects, backend.zeros_like(defects))
+        sum_defects = backend.sum(defects)
+        mean_defect_arr = sum_defects / max(valid_count_val, 1)
+        backend.eval(mean_defect_arr)
+        mean_defect = float(backend.to_scalar(mean_defect_arr))
+
+        if valid_count_val > 1:
+            diff = defects - mean_defect_arr
+            diff = backend.where(valid_mask, diff, backend.zeros_like(diff))
+            variance = backend.sum(diff * diff) / valid_count_val
+            backend.eval(variance)
+            std_defect = float(backend.to_scalar(backend.sqrt(variance)))
         else:
             std_defect = 0.0
 
@@ -1140,7 +1281,7 @@ class RiemannianGeometry:
             diff = p2 - p1
             dist = backend.sqrt(backend.sum(diff * diff))
             backend.eval(dist)
-            cumulative += float(backend.to_numpy(dist))
+            cumulative += float(backend.to_scalar(dist))
             arc_lengths.append(cumulative)
 
         return arc_lengths
@@ -1506,23 +1647,20 @@ class RiemannianGeometry:
         # Diagnostic: check intermediate values for NaN and inf (only when debugging)
         backend.eval(norms, dots, dist_sq)
         if logger.isEnabledFor(logging.DEBUG):
-            norms_np = backend.to_numpy(norms)
-            dots_np = backend.to_numpy(dots)
-            dist_sq_np = backend.to_numpy(dist_sq)
-
-            norms_nan = sum(1 for v in norms_np.flatten() if math.isnan(float(v)))
-            norms_inf = sum(1 for v in norms_np.flatten() if math.isinf(float(v)))
-            dots_nan = sum(1 for row in dots_np for v in row if math.isnan(float(v)))
-            dots_inf = sum(1 for row in dots_np for v in row if math.isinf(float(v)))
-            dist_sq_nan = sum(1 for row in dist_sq_np for v in row if math.isnan(float(v)))
+            # Vectorized counts - O(1) vs O(n²)
+            norms_nan = count_nan(norms, backend)
+            norms_inf = count_inf(norms, backend)
+            dots_nan = count_nan(dots, backend)
+            dots_inf = count_inf(dots, backend)
+            dist_sq_nan = count_nan(dist_sq, backend)
 
             if norms_nan > 0 or dots_nan > 0 or dist_sq_nan > 0 or norms_inf > 0 or dots_inf > 0:
-                # Find which entries are NaN
-                nan_entries = []
-                for i, row in enumerate(dist_sq_np):
-                    for j, v in enumerate(row):
-                        if math.isnan(float(v)):
-                            nan_entries.append((i, j))
+                # Find which entries are NaN (convert to numpy only when problem detected)
+                dist_sq_np = backend.to_numpy(dist_sq)
+                norms_np = backend.to_numpy(norms)
+                dots_np = backend.to_numpy(dots)
+                nan_mask = ~backend.to_numpy(backend.isfinite(dist_sq))
+                nan_entries = list(zip(*nan_mask.nonzero()))
 
                 # Identify problematic indices (columns that appear in NaN entries)
                 problem_cols = set(j for _, j in nan_entries)
@@ -1622,10 +1760,8 @@ class RiemannianGeometry:
 
             # Check if all points are reachable (no inf or nan values)
             backend.eval(geo_from_query)
-            geo_np = backend.to_numpy(geo_from_query)
-            nonfinite_count = sum(
-                1 for g in geo_np.flatten() if not math.isfinite(float(g))
-            )
+            # Vectorized count - O(1) vs O(n)
+            nonfinite_count = count_nonfinite(geo_from_query, backend)
 
             if nonfinite_count == 0:
                 # All points reachable with finite distances
@@ -1640,23 +1776,15 @@ class RiemannianGeometry:
         # If we get here with non-finite values even after using all points,
         # there's a fundamental issue with the geodesic matrix or query position
         backend.eval(geo_from_query)
-        geo_final_np = backend.to_numpy(geo_from_query)
-        final_nonfinite = sum(
-            1 for g in geo_final_np.flatten() if not math.isfinite(float(g))
-        )
+        # Vectorized counts - O(1) vs O(n) / O(n²)
+        final_nonfinite = count_nonfinite(geo_from_query, backend)
 
         if final_nonfinite > 0:
             # Check the underlying geodesic matrix for issues
-            geo_mat_np = backend.to_numpy(geo_result.distances)
-            mat_nonfinite = sum(
-                1 for row in geo_mat_np for g in row if not math.isfinite(float(g))
-            )
+            mat_nonfinite = count_nonfinite(geo_result.distances, backend)
 
             # Check euclidean distances for issues
-            euc_np = backend.to_numpy(euc_dist)
-            euc_nonfinite = sum(
-                1 for e in euc_np.flatten() if not math.isfinite(float(e))
-            )
+            euc_nonfinite = count_nonfinite(euc_dist, backend)
 
             logger.warning(
                 f"_geodesic_distances_from_query: {final_nonfinite}/{n} points unreachable "
@@ -1884,7 +2012,7 @@ class RiemannianGeometry:
         # Weighted sum of squared geodesic distances
         variance = backend.sum(geo_from_mean * geo_from_mean * weights)
         backend.eval(variance)
-        return float(backend.to_numpy(variance))
+        return float(backend.to_scalar(variance))
 
     def _log_map_approximate(
         self,
@@ -1926,11 +2054,10 @@ class RiemannianGeometry:
         # NO CLAMPING - use true geodesic/Euclidean ratio
         # See _frechet_mean_step for detailed explanation.
         backend.eval(scale)
-        scale_np = backend.to_numpy(scale)
 
-        # Check for numerical issues
-        inf_count = sum(1 for s in scale_np.flatten() if math.isinf(float(s)))
-        nan_count = sum(1 for s in scale_np.flatten() if math.isnan(float(s)))
+        # Check for numerical issues - vectorized O(1) vs O(n)
+        inf_count = count_inf(scale, backend)
+        nan_count = count_nan(scale, backend)
 
         if inf_count > 0 or nan_count > 0:
             raise ValueError(

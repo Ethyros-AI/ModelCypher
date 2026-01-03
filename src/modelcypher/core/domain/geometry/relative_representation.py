@@ -213,9 +213,10 @@ def align_relative_representations(
     det_val = backend.det(R)
     backend.eval(det_val)
     if backend.to_scalar(det_val) < 0:
-        U_np = backend.to_numpy(U)
-        U_np[:, -1] *= -1
-        U = backend.array(U_np)
+        sign = backend.ones((U.shape[1],))
+        idx = backend.arange(U.shape[1])
+        sign = backend.where(idx == (U.shape[1] - 1), backend.full(sign.shape, -1.0), sign)
+        U = U * sign
         R = backend.matmul(U, Vt)
         backend.eval(R)
 
