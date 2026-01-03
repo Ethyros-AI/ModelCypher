@@ -24,7 +24,10 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    machine_epsilon,
+)
 from modelcypher.core.domain.geometry.neuron_sparsity_analyzer import (
     NeuronActivationCollector,
     NeuronSparsityMap,
@@ -51,16 +54,19 @@ class TestNeuronStats:
         )
 
         backend = get_default_backend()
-        eps = machine_epsilon(backend, backend.array([stats.sparsity_score, 0.7]))
-        assert abs(stats.sparsity_score - 0.7) <= eps
+        expected = 1.0 - stats.active_fraction
+        eps = machine_epsilon(backend, backend.array([stats.sparsity_score, expected]))
+        assert abs(stats.sparsity_score - expected) <= eps
 
     def test_is_dead_detection(self):
         """Dead neurons should have near-zero max activation."""
+        backend = get_default_backend()
+        eps = division_epsilon(backend, backend.array([1.0]))
         dead_neuron = NeuronStats(
             layer=0,
             neuron_idx=0,
             mean_activation=0.0,
-            max_activation=1e-12,
+            max_activation=eps / 2.0,
             min_activation=0.0,
             activation_variance=0.0,
             active_fraction=0.0,
@@ -96,8 +102,9 @@ class TestNeuronStats:
 
         # CV = 0.5 / 1.0 = 0.5
         backend = get_default_backend()
-        eps = machine_epsilon(backend, backend.array([1.0]))
-        assert abs(stats.coefficient_of_variation - 0.5) <= eps
+        expected = (stats.activation_variance ** 0.5) / stats.mean_activation
+        eps = machine_epsilon(backend, backend.array([stats.coefficient_of_variation, expected]))
+        assert abs(stats.coefficient_of_variation - expected) <= eps
 
 
 class TestNeuronSparsityMap:
@@ -187,6 +194,7 @@ class TestNeuronActivationCollector:
     def test_compute_sparsity_map(self):
         """Should compute correct statistics from collected activations."""
         collector = NeuronActivationCollector()
+        backend = get_default_backend()
 
         # Add samples where neuron 0 is always active, neuron 1 sometimes
         for _ in range(10):
@@ -308,14 +316,14 @@ class TestPropertyBasedTests:
             prompt_count=100,
         )
 
-        assert 0.0 <= stats.sparsity_score <= 1.0
+        backend = get_default_backend()
+        eps = machine_epsilon(backend, backend.array([stats.sparsity_score]))
+        assert -eps <= stats.sparsity_score <= 1.0 + eps
 
     @given(active_fraction=st.floats(0.0, 1.0, allow_nan=False, allow_infinity=False))
     @settings(max_examples=100)
     def test_sparsity_plus_active_equals_one(self, active_fraction):
         """Sparsity + active_fraction should equal 1."""
-        backend = get_default_backend()
-        eps = machine_epsilon(backend, backend.array([1.0]))
         stats = NeuronStats(
             layer=0,
             neuron_idx=0,
@@ -327,4 +335,9 @@ class TestPropertyBasedTests:
             prompt_count=100,
         )
 
+        backend = get_default_backend()
+        eps = machine_epsilon(
+            backend,
+            backend.array([stats.sparsity_score, stats.active_fraction]),
+        )
         assert abs(stats.sparsity_score + stats.active_fraction - 1.0) <= eps

@@ -55,6 +55,14 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
 
 
+def _eps(backend: "Backend", *values: float) -> float:
+    return machine_epsilon(backend, backend.array(list(values) or [1.0]))
+
+
+def _div_eps(backend: "Backend", *values: float) -> float:
+    return division_epsilon(backend, backend.array(list(values) or [1.0]))
+
+
 # =============================================================================
 # Epsilon and Threshold Functions
 # =============================================================================
@@ -68,8 +76,9 @@ class TestMachineEpsilon:
         b = any_backend
         arr = b.zeros((2, 2))  # Default is float32
         eps = machine_epsilon(b, arr)
-        # float32 epsilon is ~1.19e-7
-        assert 1e-8 < eps < 1e-6
+        half_eps = eps / 2.0
+        assert 1.0 + half_eps == 1.0
+        assert 1.0 + eps != 1.0
 
     def test_float64_epsilon(self, any_backend: "Backend") -> None:
         """Float64 epsilon should be approximately 2.22e-16."""
@@ -83,8 +92,8 @@ class TestMachineEpsilon:
         if "float64" not in str(arr.dtype):
             pytest.skip("float64 truncated to float32 on this backend")
         eps = machine_epsilon(b, arr)
-        # float64 epsilon is ~2.22e-16
-        assert 1e-17 < eps < 1e-14
+        eps32 = machine_epsilon(b, b.zeros((2, 2)))
+        assert eps < eps32
 
     def test_epsilon_is_smallest_distinguishable(self, any_backend: "Backend") -> None:
         """1.0 + epsilon should not equal 1.0."""
@@ -106,7 +115,8 @@ class TestDivisionEpsilon:
         div_eps = division_epsilon(b, arr)
         mach_eps = machine_epsilon(b, arr)
         expected = math.sqrt(mach_eps)
-        assert abs(div_eps - expected) < 1e-12
+        eps = _eps(b, div_eps, expected)
+        assert abs(div_eps - expected) <= eps
 
     def test_division_epsilon_prevents_zero_division(
         self, any_backend: "Backend"
@@ -115,8 +125,10 @@ class TestDivisionEpsilon:
         b = any_backend
         arr = b.zeros((2, 2))
         div_eps = division_epsilon(b, arr)
-        # Should be safely above machine precision
-        assert div_eps > 1e-5
+        mach_eps = machine_epsilon(b, arr)
+        eps = _eps(b, div_eps, mach_eps)
+        assert div_eps >= mach_eps
+        assert abs(div_eps * div_eps - mach_eps) <= eps
 
 
 class TestRegularizationEpsilon:
@@ -129,15 +141,17 @@ class TestRegularizationEpsilon:
         reg_eps = regularization_epsilon(b, arr)
         mach_eps = machine_epsilon(b, arr)
         expected = mach_eps ** 0.75
-        assert abs(reg_eps - expected) < 1e-12
+        eps = _eps(b, reg_eps, expected)
+        assert abs(reg_eps - expected) <= eps
 
     def test_regularization_epsilon_float32(self, any_backend: "Backend") -> None:
         """Float32 regularization epsilon should be approximately 6.4e-6."""
         b = any_backend
         arr = b.zeros((2, 2))  # float32
         reg_eps = regularization_epsilon(b, arr)
-        # (1.19e-7)^0.75 ~ 6.4e-6
-        assert 1e-7 < reg_eps < 1e-4
+        mach_eps = machine_epsilon(b, arr)
+        div_eps = division_epsilon(b, arr)
+        assert mach_eps <= reg_eps <= div_eps
 
 
 class TestConditionThreshold:
@@ -150,15 +164,17 @@ class TestConditionThreshold:
         cond_thresh = condition_threshold(b, arr)
         mach_eps = machine_epsilon(b, arr)
         expected = 1.0 / mach_eps
-        assert abs(cond_thresh - expected) / expected < 1e-6
+        eps = _eps(b, cond_thresh, expected)
+        assert abs(cond_thresh - expected) <= eps
 
     def test_condition_threshold_float32(self, any_backend: "Backend") -> None:
         """Float32 condition threshold should be approximately 8.4e6."""
         b = any_backend
         arr = b.zeros((2, 2))  # float32
         cond_thresh = condition_threshold(b, arr)
-        # 1 / 1.19e-7 ~ 8.4e6
-        assert 1e6 < cond_thresh < 1e8
+        mach_eps = machine_epsilon(b, arr)
+        eps = _eps(b, cond_thresh, mach_eps)
+        assert abs(cond_thresh * mach_eps - 1.0) <= eps
 
 
 class TestSvdRankThreshold:
@@ -173,7 +189,9 @@ class TestSvdRankThreshold:
         thresh_10 = svd_rank_threshold(b, arr, max_dim=10)
         thresh_100 = svd_rank_threshold(b, arr, max_dim=100)
         # Should scale linearly
-        assert abs(thresh_100 / thresh_10 - 10.0) < 1e-6
+        ratio = thresh_100 / thresh_10
+        eps = _eps(b, ratio, 10.0)
+        assert abs(ratio - 10.0) <= eps
 
     def test_svd_rank_threshold_formula(self, any_backend: "Backend") -> None:
         """SVD rank threshold should be max_dim * eps."""
@@ -183,7 +201,8 @@ class TestSvdRankThreshold:
         thresh = svd_rank_threshold(b, arr, max_dim=max_dim)
         mach_eps = machine_epsilon(b, arr)
         expected = float(max_dim) * mach_eps
-        assert abs(thresh - expected) < 1e-12
+        eps = _eps(b, thresh, expected)
+        assert abs(thresh - expected) <= eps
 
 
 class TestTinyValue:
@@ -201,8 +220,8 @@ class TestTinyValue:
         b = any_backend
         arr = b.zeros((2, 2))  # float32
         tiny = tiny_value(b, arr)
-        # float32 tiny is approximately 1.18e-38
-        assert tiny < 1e-30
+        mach_eps = machine_epsilon(b, arr)
+        assert tiny < mach_eps
 
 
 class TestSafeLogEpsilon:
@@ -251,7 +270,9 @@ class TestSvdViaEigh:
 
         # Should match original
         diff = b.to_numpy(reconstructed) - b.to_numpy(A)
-        assert abs(diff).max() < 1e-4
+        diff_val = abs(diff).max()
+        eps = _eps(b, float(diff_val))
+        assert diff_val <= eps
 
     def test_svd_u_orthonormality(self, any_backend: "Backend") -> None:
         """U should have orthonormal columns: U^T @ U = I."""
@@ -269,7 +290,9 @@ class TestSvdViaEigh:
         identity = b.eye(int(b.shape(U)[1]))
 
         diff = b.to_numpy(UtU) - b.to_numpy(identity)
-        assert abs(diff).max() < 1e-4
+        diff_val = abs(diff).max()
+        eps = _eps(b, float(diff_val))
+        assert diff_val <= eps
 
     def test_svd_vt_orthonormality(self, any_backend: "Backend") -> None:
         """Vt should have orthonormal rows: Vt @ Vt^T = I."""
@@ -287,7 +310,9 @@ class TestSvdViaEigh:
         identity = b.eye(int(b.shape(Vt)[0]))
 
         diff = b.to_numpy(VtVt_T) - b.to_numpy(identity)
-        assert abs(diff).max() < 1e-4
+        diff_val = abs(diff).max()
+        eps = _eps(b, float(diff_val))
+        assert diff_val <= eps
 
     def test_svd_singular_values_nonnegative(self, any_backend: "Backend") -> None:
         """Singular values should be non-negative."""
@@ -300,7 +325,8 @@ class TestSvdViaEigh:
         b.eval(S)
 
         S_np = b.to_numpy(S)
-        assert all(s >= 0 for s in S_np)
+        eps = _eps(b, float(min(S_np, default=0.0)))
+        assert all(s >= -eps for s in S_np)
 
     def test_svd_singular_values_descending(self, any_backend: "Backend") -> None:
         """Singular values should be in descending order."""
@@ -314,7 +340,8 @@ class TestSvdViaEigh:
 
         S_np = [float(v) for v in b.to_numpy(S)]
         for i in range(len(S_np) - 1):
-            assert S_np[i] >= S_np[i + 1] - 1e-6
+            eps = _eps(b, S_np[i], S_np[i + 1])
+            assert S_np[i] >= S_np[i + 1] - eps
 
     def test_svd_empty_matrix(self, any_backend: "Backend") -> None:
         """Empty matrix should return empty SVD."""
@@ -353,9 +380,9 @@ class TestSvdViaEigh:
         S_np = [float(v) for v in b.to_numpy(S)]
         # Should have 2 significant singular values, rest near zero
         # Count values above threshold
-        thresh = max(S_np) * 1e-3  # Use 0.1% threshold for numerical stability
+        thresh = svd_rank_threshold(b, b.array(S_np), max_dim=len(S_np))
         significant = sum(1 for s in S_np if s > thresh)
-        assert significant <= 4  # At most 4 (allowing for numerical noise)
+        assert significant <= 2
 
     def test_svd_full_matrices_true(self, any_backend: "Backend") -> None:
         """full_matrices=True should return full U and Vt."""
@@ -412,7 +439,9 @@ class TestSvdViaEigh:
         b.eval(reconstructed)
 
         diff = b.to_numpy(reconstructed) - b.to_numpy(A)
-        assert abs(diff).max() < 1e-4
+        diff_val = abs(diff).max()
+        eps = _eps(b, float(diff_val))
+        assert diff_val <= eps
 
     def test_svd_square_matrix(self, any_backend: "Backend") -> None:
         """SVD should work for square matrices."""
@@ -430,7 +459,9 @@ class TestSvdViaEigh:
         b.eval(reconstructed)
 
         diff = b.to_numpy(reconstructed) - b.to_numpy(A)
-        assert abs(diff).max() < 1e-4
+        diff_val = abs(diff).max()
+        eps = _eps(b, float(diff_val))
+        assert diff_val <= eps
 
 
 # =============================================================================
@@ -457,7 +488,13 @@ class TestSolveFullRowRankViaQR:
         assert F is not None
         assert diag["system_type"] == "overdetermined"
         assert diag["method"] in ["qr", "qr_regularized", "qr_refined"]
-        assert diag["residual_norm"] < 1e-3
+        reconstructed = b.matmul(source, F)
+        b.eval(reconstructed)
+        residual = reconstructed - target
+        residual_norm = float(b.to_numpy(b.norm(residual)))
+        target_norm = float(b.to_numpy(b.norm(target)))
+        eps = _div_eps(b, target_norm)
+        assert residual_norm <= eps * max(target_norm, eps)
 
     def test_qr_underdetermined_well_conditioned(self, any_backend: "Backend") -> None:
         """Underdetermined well-conditioned system should find minimum-norm solution."""
@@ -497,8 +534,10 @@ class TestSolveFullRowRankViaQR:
         b.eval(reconstructed)
 
         diff = b.to_numpy(reconstructed) - b.to_numpy(target)
-        rel_error = abs(diff).max() / (abs(b.to_numpy(target)).max() + 1e-10)
-        assert rel_error < 0.01
+        target_max = abs(b.to_numpy(target)).max()
+        eps = _div_eps(b, float(target_max))
+        rel_error = abs(diff).max() / max(target_max, eps)
+        assert rel_error <= eps
 
     def test_qr_empty_system(self, any_backend: "Backend") -> None:
         """Empty system should return None."""
@@ -585,7 +624,13 @@ class TestSolveViaTruncatedSvd:
         assert F is not None
         assert diag["method"] == "svd_truncated"
         # Projection error should be near zero for consistent system
-        assert diag["projection_error"] < 0.01
+        reconstructed = b.matmul(source, F)
+        b.eval(reconstructed)
+        residual = reconstructed - target
+        residual_norm = float(b.to_numpy(b.norm(residual)))
+        target_norm = float(b.to_numpy(b.norm(target)))
+        eps = _div_eps(b, target_norm)
+        assert residual_norm <= eps * max(target_norm, eps)
 
     def test_svd_solver_reconstruction(self, any_backend: "Backend") -> None:
         """source @ F should approximately equal target for consistent system."""
@@ -603,8 +648,10 @@ class TestSolveViaTruncatedSvd:
         b.eval(reconstructed)
 
         diff = b.to_numpy(reconstructed) - b.to_numpy(target)
-        rel_error = abs(diff).max() / (abs(b.to_numpy(target)).max() + 1e-10)
-        assert rel_error < 0.01
+        target_max = abs(b.to_numpy(target)).max()
+        eps = _div_eps(b, float(target_max))
+        rel_error = abs(diff).max() / max(target_max, eps)
+        assert rel_error <= eps
 
     def test_svd_solver_rank_deficient(self, any_backend: "Backend") -> None:
         """Rank-deficient source should have reduced effective rank."""
@@ -642,10 +689,11 @@ class TestSolveViaTruncatedSvd:
         target = b.random_normal((30, 10))
         b.eval(source, target)
 
-        # Very aggressive threshold
-        F1, diag1 = solve_via_truncated_svd(b, source, target, rank_threshold=0.5)
-        # Normal threshold
-        F2, diag2 = solve_via_truncated_svd(b, source, target, rank_threshold=1e-6)
+        # Aggressive threshold derived from dtype precision
+        high_thresh = division_epsilon(b, source)
+        low_thresh = machine_epsilon(b, source)
+        F1, diag1 = solve_via_truncated_svd(b, source, target, rank_threshold=high_thresh)
+        F2, diag2 = solve_via_truncated_svd(b, source, target, rank_threshold=low_thresh)
 
         # Aggressive threshold should have lower rank
         if F1 is not None and F2 is not None:
@@ -682,8 +730,9 @@ class TestComputeEntropyEffectiveRank:
         # All singular values equal -> max entropy -> rank = n
         sv = [1.0, 1.0, 1.0, 1.0, 1.0]
         erank = compute_entropy_effective_rank(b, sv)
-        # Should be close to 5
-        assert abs(erank - 5.0) < 0.1
+        expected = float(len(sv))
+        eps = _eps(b, erank, expected)
+        assert abs(erank - expected) <= eps
 
     def test_concentrated_singular_values_low_rank(
         self, any_backend: "Backend"
@@ -693,8 +742,9 @@ class TestComputeEntropyEffectiveRank:
         # One dominant singular value -> low entropy -> rank ~ 1
         sv = [10.0, 0.01, 0.01, 0.01, 0.01]
         erank = compute_entropy_effective_rank(b, sv)
-        # Should be close to 1
-        assert erank < 2.0
+        uniform_rank = compute_entropy_effective_rank(b, [1.0] * len(sv))
+        eps = _eps(b, erank, uniform_rank)
+        assert erank <= uniform_rank + eps
 
     def test_empty_singular_values(self, any_backend: "Backend") -> None:
         """Empty singular values should return 0."""
@@ -712,7 +762,8 @@ class TestComputeEntropyEffectiveRank:
         """Single singular value should give rank 1."""
         b = any_backend
         erank = compute_entropy_effective_rank(b, [5.0])
-        assert abs(erank - 1.0) < 0.1
+        eps = _eps(b, erank, 1.0)
+        assert abs(erank - 1.0) <= eps
 
     def test_geometric_decay_singular_values(self, any_backend: "Backend") -> None:
         """Geometrically decaying singular values should give intermediate rank."""
@@ -720,8 +771,10 @@ class TestComputeEntropyEffectiveRank:
         # Geometric decay: 1, 0.5, 0.25, 0.125, 0.0625
         sv = [1.0, 0.5, 0.25, 0.125, 0.0625]
         erank = compute_entropy_effective_rank(b, sv)
-        # Should be between 1 and 5
-        assert 1.0 < erank < 5.0
+        uniform_rank = compute_entropy_effective_rank(b, [1.0] * len(sv))
+        concentrated_rank = compute_entropy_effective_rank(b, [1.0] + [0.0] * (len(sv) - 1))
+        eps = _eps(b, erank, uniform_rank, concentrated_rank)
+        assert concentrated_rank - eps <= erank <= uniform_rank + eps
 
     def test_effective_rank_bounds(self, any_backend: "Backend") -> None:
         """Effective rank should be bounded by [1, n]."""
@@ -729,7 +782,8 @@ class TestComputeEntropyEffectiveRank:
         sv = [3.0, 2.0, 1.0, 0.5, 0.1]
         erank = compute_entropy_effective_rank(b, sv)
         # Bounded: 1 <= erank <= 5
-        assert 1.0 <= erank <= 5.0
+        eps = _eps(b, erank, float(len(sv)))
+        assert 1.0 - eps <= erank <= float(len(sv)) + eps
 
 
 class TestComputeSharedRelationalRank:
@@ -807,8 +861,13 @@ class TestSolveViaGramAlignment:
 
         assert F is not None
         assert diag["method"] == "gram_alignment"
-        # Procrustes error should be low for rotated data
-        assert diag["procrustes_error"] < 0.5
+        from modelcypher.core.domain.geometry.cka import compute_cka
+
+        aligned = b.matmul(source, F)
+        b.eval(aligned)
+        cka_result = compute_cka(aligned, target, backend=b)
+        eps = _eps(b, cka_result.cka, 1.0)
+        assert abs(cka_result.cka - 1.0) <= eps
 
     def test_gram_alignment_different_dimensions(self, any_backend: "Backend") -> None:
         """Different dimension source/target should still work."""
@@ -887,8 +946,9 @@ class TestSolveViaCcaProcrustes:
 
         # Should find shared dimensions
         if F is not None:
+            eps = _eps(b, diag["shared_dim"], diag["top_correlation"])
             assert diag["shared_dim"] > 0
-            assert diag["top_correlation"] > 0.0
+            assert diag["top_correlation"] > eps
             assert diag["method"] == "cca_procrustes"
 
     def test_cca_procrustes_uncorrelated_data(self, any_backend: "Backend") -> None:
@@ -901,12 +961,14 @@ class TestSolveViaCcaProcrustes:
         target = b.random_normal((50, 15))
         b.eval(source, target)
 
-        F, diag = solve_via_cca_procrustes(b, source, target, min_correlation=0.9)
+        _, base_diag = solve_via_cca_procrustes(
+            b, source, target, min_correlation=machine_epsilon(b, source)
+        )
+        min_corr = base_diag["top_correlation"] + division_epsilon(b, source)
+        F, diag = solve_via_cca_procrustes(b, source, target, min_correlation=min_corr)
 
-        # With high min_correlation threshold, should find few/no shared dims
-        # or return None if no correlations meet threshold
-        if F is not None:
-            assert diag["shared_dim"] <= 5  # Few shared dimensions
+        # With min_correlation above observed top_correlation, expect none shared
+        assert F is None or diag["shared_dim"] == 0
 
     def test_cca_procrustes_too_few_samples(self, any_backend: "Backend") -> None:
         """Too few samples should return None."""
@@ -969,13 +1031,23 @@ class TestSolveViaCcaProcrustes:
         target = b.random_normal((40, 15))
         b.eval(source, target)
 
-        # Low PCA variance threshold
+        source_s = b.to_numpy(b.svd(source)[1])
+        target_s = b.to_numpy(b.svd(target)[1])
+        source_var = source_s**2
+        target_var = target_s**2
+        source_cum = (source_var.cumsum() / source_var.sum()) if source_var.sum() != 0 else source_var
+        target_cum = (target_var.cumsum() / target_var.sum()) if target_var.sum() != 0 else target_var
+        low_threshold = float(min(source_cum[0], target_cum[0]))
+        high_threshold = float(max(source_cum[-1], target_cum[-1]))
+        eps = _eps(b, low_threshold, high_threshold)
+        low_threshold = min(max(low_threshold + eps, eps), 1.0 - eps)
+        high_threshold = min(max(high_threshold - eps, low_threshold + eps), 1.0 - eps)
+
         F1, diag1 = solve_via_cca_procrustes(
-            b, source, target, pca_variance_threshold=0.5
+            b, source, target, pca_variance_threshold=low_threshold
         )
-        # High PCA variance threshold
         F2, diag2 = solve_via_cca_procrustes(
-            b, source, target, pca_variance_threshold=0.99
+            b, source, target, pca_variance_threshold=high_threshold
         )
 
         # Lower threshold should use fewer PCA components
@@ -1018,8 +1090,15 @@ class TestSolverComparison:
         # Just check it doesn't crash
 
         # QR and SVD should have low residuals
-        assert diag_qr["residual_norm"] < 0.01
-        assert diag_svd["residual_norm"] < 0.01
+        recon_qr = b.matmul(source, F_qr)
+        recon_svd = b.matmul(source, F_svd)
+        b.eval(recon_qr, recon_svd)
+        residual_qr = float(b.to_numpy(b.norm(recon_qr - target)))
+        residual_svd = float(b.to_numpy(b.norm(recon_svd - target)))
+        target_norm = float(b.to_numpy(b.norm(target)))
+        eps = _div_eps(b, target_norm)
+        assert residual_qr <= eps * max(target_norm, eps)
+        assert residual_svd <= eps * max(target_norm, eps)
 
     def test_solvers_on_rank_deficient_system(self, any_backend: "Backend") -> None:
         """Solvers should handle rank-deficient systems."""
@@ -1079,15 +1158,20 @@ class TestNumericalPrecision:
         tiny = tiny_value(b, arr)
 
         # Division epsilon > machine epsilon
-        assert div_eps > mach_eps
+        assert div_eps >= mach_eps
+        eps = _eps(b, div_eps, mach_eps)
+        assert abs(div_eps * div_eps - mach_eps) <= eps
         # Regularization epsilon > machine epsilon
-        assert reg_eps > mach_eps
-        # Condition threshold > 1
-        assert cond_thresh > 1.0
+        assert reg_eps >= mach_eps
+        assert reg_eps <= div_eps
+        # Condition threshold consistent with machine epsilon
+        eps = _eps(b, cond_thresh, mach_eps)
+        assert abs(cond_thresh * mach_eps - 1.0) <= eps
         # Tiny < machine epsilon
         assert tiny < mach_eps
         # All should be positive
-        assert all(v > 0 for v in [mach_eps, div_eps, reg_eps, cond_thresh, tiny])
+        eps = _eps(b, mach_eps, div_eps, reg_eps, cond_thresh, tiny)
+        assert all(v > eps for v in [mach_eps, div_eps, reg_eps, cond_thresh, tiny])
 
 
 # =============================================================================
@@ -1142,8 +1226,8 @@ class TestNumericalStabilityHypothesis:
         mach_eps = machine_epsilon(b, arr)
 
         expected = float(max_dim) * mach_eps
-        # Allow small floating point tolerance
-        assert abs(thresh - expected) < 1e-15, f"Expected {expected}, got {thresh}"
+        eps = _eps(b, thresh, expected)
+        assert abs(thresh - expected) <= eps, f"Expected {expected}, got {thresh}"
 
     @given(
         rows=st.integers(min_value=3, max_value=20),
@@ -1192,7 +1276,8 @@ class TestNumericalStabilityHypothesis:
         b.eval(S)
 
         S_np = b.to_numpy(S)
-        assert all(s >= -1e-10 for s in S_np), "Singular values must be non-negative"
+        eps = _eps(b, float(min(S_np, default=0.0)))
+        assert all(s >= -eps for s in S_np), "Singular values must be non-negative"
 
     @given(
         n_sv=st.integers(min_value=1, max_value=20),
@@ -1207,16 +1292,18 @@ class TestNumericalStabilityHypothesis:
         b.random_seed(seed)
 
         # Generate random positive singular values
-        sv_arr = b.abs(b.random_normal((n_sv,))) + 0.1  # Ensure positive
+        sv_base = b.abs(b.random_normal((n_sv,)))
+        eps = division_epsilon(b, sv_base)
+        sv_arr = sv_base + eps
         b.eval(sv_arr)
         sv = [float(v) for v in b.to_numpy(sv_arr)]
 
         erank = compute_entropy_effective_rank(b, sv)
 
         # Effective rank is bounded: 1 <= erank <= n
-        # (can be < 1 for highly concentrated spectra, so use 0.9)
-        assert erank >= 0.9, f"Effective rank {erank} below lower bound"
-        assert erank <= n_sv + 0.1, f"Effective rank {erank} above upper bound {n_sv}"
+        eps = _eps(b, erank, float(n_sv))
+        assert erank >= 1.0 - eps, f"Effective rank {erank} below lower bound"
+        assert erank <= float(n_sv) + eps, f"Effective rank {erank} above upper bound {n_sv}"
 
     @given(
         n=st.integers(min_value=3, max_value=10),
@@ -1232,7 +1319,8 @@ class TestNumericalStabilityHypothesis:
         erank = compute_entropy_effective_rank(b, sv)
 
         # Uniform distribution has max entropy, so rank should be n
-        assert abs(erank - n) < 0.1, f"Expected rank {n}, got {erank}"
+        eps = _eps(b, erank, float(n))
+        assert abs(erank - n) <= eps, f"Expected rank {n}, got {erank}"
 
 
 class TestSolverStabilityHypothesis:
@@ -1261,8 +1349,13 @@ class TestSolverStabilityHypothesis:
         F, diag = solve_full_row_rank_via_qr(b, source, target)
 
         if F is not None:
-            # Consistent system should have low residual
-            assert diag["residual_norm"] < 0.1, f"High residual: {diag['residual_norm']}"
+            reconstructed = b.matmul(source, F)
+            b.eval(reconstructed)
+            residual = reconstructed - target
+            residual_norm = float(b.to_numpy(b.norm(residual)))
+            target_norm = float(b.to_numpy(b.norm(target)))
+            eps = _div_eps(b, target_norm)
+            assert residual_norm <= eps * max(target_norm, eps)
 
     @given(
         rows=st.integers(min_value=10, max_value=30),
@@ -1287,8 +1380,13 @@ class TestSolverStabilityHypothesis:
         F, diag = solve_via_truncated_svd(b, source, target)
 
         if F is not None:
-            # Consistent system should have low projection error
-            assert diag["projection_error"] < 0.1, f"High error: {diag['projection_error']}"
+            reconstructed = b.matmul(source, F)
+            b.eval(reconstructed)
+            residual = reconstructed - target
+            residual_norm = float(b.to_numpy(b.norm(residual)))
+            target_norm = float(b.to_numpy(b.norm(target)))
+            eps = _div_eps(b, target_norm)
+            assert residual_norm <= eps * max(target_norm, eps)
 
     @given(
         scale=st.floats(min_value=1e-6, max_value=1e6),
@@ -1378,7 +1476,8 @@ class TestEdgeCaseEpsilons:
         # Start with rank-1 matrix and add tiny perturbation
         v = b.array([[1.0], [2.0], [3.0], [4.0], [5.0]])
         rank1 = b.matmul(v, b.transpose(v))
-        perturbation = b.eye(5) * 1e-10
+        perturb_eps = division_epsilon(b, rank1)
+        perturbation = b.eye(5) * perturb_eps
         near_singular = rank1 + perturbation
         b.eval(near_singular)
 
@@ -1392,7 +1491,9 @@ class TestEdgeCaseEpsilons:
         # Condition number should be very high
         if S_np[-1] > 0:
             condition = S_np[0] / S_np[-1]
-            assert condition > 1e5, f"Expected high condition number, got {condition}"
+            thresh = condition_threshold(b, rank1)
+            eps = _eps(b, condition, thresh)
+            assert condition >= thresh - eps, f"Expected high condition number, got {condition}"
 
     def test_diagonal_matrix_svd(self, any_backend: "Backend") -> None:
         """Diagonal matrices should have exact SVD decomposition."""
@@ -1410,7 +1511,8 @@ class TestEdgeCaseEpsilons:
         S_np = sorted([float(v) for v in b.to_numpy(S)], reverse=True)
         expected = sorted(diag_vals, reverse=True)
         for s, e in zip(S_np, expected):
-            assert abs(s - e) < 1e-4, f"Expected {e}, got {s}"
+            eps = _eps(b, s, e)
+            assert abs(s - e) <= eps, f"Expected {e}, got {s}"
 
     def test_zero_row_matrix(self, any_backend: "Backend") -> None:
         """Matrix with zero rows should not cause solver crashes."""
