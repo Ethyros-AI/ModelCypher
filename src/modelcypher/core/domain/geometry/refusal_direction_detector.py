@@ -26,7 +26,7 @@ from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
 
-from .vector_math import BackendVectorMath, VectorMath
+from .vector_math import BackendVectorMath
 
 if TYPE_CHECKING:
     pass
@@ -206,27 +206,21 @@ class RefusalDirectionDetector:
         token_index: int,
     ) -> DistanceMetrics | None:
         b = get_default_backend()
-        backend_math = BackendVectorMath(b)
-        try:
-            cosine = backend_math.cosine_similarity(activation, refusal_direction.direction)
-            activation_norm = backend_math.l2_norm(activation)
-            direction_norm = backend_math.l2_norm(refusal_direction.direction)
-            projection_magnitude = activation_norm * direction_norm * cosine
-            distance_to_refusal = float(1.0 - cosine)
-        except Exception:
-            activation_list = RefusalDirectionDetector._to_list_vector(activation)
-            if len(activation_list) != len(refusal_direction.direction):
-                return None
-            try:
-                cosine = VectorMath.cosine_similarity(
-                    activation_list, refusal_direction.direction
-                )
-            except ValueError:
-                return None
-            activation_norm = VectorMath.l2_norm(activation_list)
-            direction_norm = VectorMath.l2_norm(refusal_direction.direction)
-            projection_magnitude = activation_norm * direction_norm * cosine
-            distance_to_refusal = float(1.0 - cosine)
+        activation_arr = activation if hasattr(activation, "shape") else b.array(activation)
+        direction_arr = (
+            refusal_direction.direction
+            if hasattr(refusal_direction.direction, "shape")
+            else b.array(refusal_direction.direction)
+        )
+        if b.shape(activation_arr)[0] != b.shape(direction_arr)[0]:
+            return None
+        cosine = RefusalDirectionDetector._cosine_similarity(
+            activation_arr, direction_arr, backend=b
+        )
+        activation_norm = RefusalDirectionDetector._l2_norm(activation_arr, backend=b)
+        direction_norm = RefusalDirectionDetector._l2_norm(direction_arr, backend=b)
+        projection_magnitude = activation_norm * direction_norm * cosine
+        distance_to_refusal = float(1.0 - cosine)
 
         is_approaching = projection_magnitude > (previous_projection or 0.0)
         return DistanceMetrics(
@@ -312,22 +306,34 @@ class RefusalDirectionDetector:
         return float(b.to_scalar(ratio))
 
     @staticmethod
-    def _to_list_matrix(values: Any) -> list[list[float]]:
-        if isinstance(values, list):
-            return values
-        if hasattr(values, "shape") or hasattr(values, "tolist"):
-            backend = get_default_backend()
-            return backend.tolist(values)
-        return list(values)
+    def _l2_norm(values: Any, backend: Any | None = None) -> float:
+        b = backend or get_default_backend()
+        arr = values if hasattr(values, "shape") else b.array(values)
+        norm = b.norm(arr)
+        b.eval(norm)
+        return max(0.0, float(b.to_scalar(norm)))
 
     @staticmethod
-    def _to_list_vector(values: Any) -> list[float]:
-        if isinstance(values, list):
-            return values
-        if hasattr(values, "shape") or hasattr(values, "tolist"):
-            backend = get_default_backend()
-            return backend.tolist(values)
-        return list(values)
+    def _cosine_similarity(values_a: Any, values_b: Any, backend: Any | None = None) -> float:
+        b = backend or get_default_backend()
+        arr_a = values_a if hasattr(values_a, "shape") else b.array(values_a)
+        arr_b = values_b if hasattr(values_b, "shape") else b.array(values_b)
+        if b.shape(arr_a)[0] == 0 or b.shape(arr_b)[0] == 0:
+            return 0.0
+        if b.shape(arr_a)[0] != b.shape(arr_b)[0]:
+            raise ValueError("Cosine similarity requires matching dimensions")
+        norm_a = b.norm(arr_a)
+        norm_b = b.norm(arr_b)
+        b.eval(norm_a, norm_b)
+        norm_a_val = float(b.to_scalar(norm_a))
+        norm_b_val = float(b.to_scalar(norm_b))
+        eps = division_epsilon(b, arr_a)
+        if norm_a_val <= eps or norm_b_val <= eps:
+            return 0.0
+        dot = b.dot(arr_a, arr_b)
+        b.eval(dot)
+        dot_val = float(b.to_scalar(dot))
+        return dot_val / (norm_a_val * norm_b_val)
 
 
 class MetricKey:

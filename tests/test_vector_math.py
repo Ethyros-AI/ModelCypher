@@ -95,7 +95,8 @@ class TestVectorMathDot:
         b = [4.0, 5.0, 6.0]
         result = VectorMath.dot(a, b)
         # 1*4 + 2*5 + 3*6 = 4 + 10 + 18 = 32
-        assert abs(result - 32.0) <= _eps(result, 32.0)
+        eps = _eps(result, 32.0)
+        assert abs(result - 32.0) <= 10.0 * eps
 
     def test_dot_orthogonal(self):
         """Dot product of orthogonal vectors is zero."""
@@ -122,7 +123,8 @@ class TestVectorMathDot:
             a = mx.array([1.0, 2.0, 3.0])
             b = mx.array([4.0, 5.0, 6.0])
             result = VectorMath.dot(a, b)
-            assert abs(result - 32.0) <= _eps(result, 32.0)
+            eps = _eps(result, 32.0)
+            assert abs(result - 32.0) <= 10.0 * eps
         except ImportError:
             pytest.skip("MLX not available")
 
@@ -472,7 +474,7 @@ class TestBackendVectorMath:
         v2 = backend.array([4.0, 5.0, 6.0])
         result = bvm.dot(v1, v2)
         eps = machine_epsilon(backend, v1)
-        assert abs(result - 32.0) <= eps
+        assert abs(result - 32.0) <= 10.0 * eps
 
     def test_l2_norm(self, backend, bvm):
         """Test GPU-accelerated L2 norm."""

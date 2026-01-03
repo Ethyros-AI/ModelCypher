@@ -38,16 +38,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
     exp_scalar,
     log_scalar,
     sqrt_scalar,
 )
 from modelcypher.core.domain.geometry.signature_base import LabeledSignatureMixin
-from modelcypher.core.domain.geometry.vector_math import VectorMath
 from modelcypher.ports.embedding import EmbeddingProvider
 
 if TYPE_CHECKING:
@@ -978,18 +978,26 @@ class OppositionPreservationScorer:
         penalty (all opposites highly co-activated).
         """
         id_to_value = dict(zip(signature.emotion_ids, signature.values))
-        penalties = []
+        vals_a: list[float] = []
+        vals_b: list[float] = []
 
-        _b = get_default_backend()
+        backend = get_default_backend()
         for cat_a, cat_b in OPPOSITION_PAIRS:
-            val_a = max(0.0, id_to_value.get(cat_a.value, 0.0))
-            val_b = max(0.0, id_to_value.get(cat_b.value, 0.0))
-            # Penalty is geometric mean of both activations
-            # High penalty only if BOTH are active
-            penalty = sqrt_scalar(val_a * val_b, _b)
-            penalties.append(penalty)
+            vals_a.append(id_to_value.get(cat_a.value, 0.0))
+            vals_b.append(id_to_value.get(cat_b.value, 0.0))
 
-        return sum(penalties) / len(penalties) if penalties else 0.0
+        if not vals_a:
+            return 0.0
+
+        arr_a = backend.array(vals_a)
+        arr_b = backend.array(vals_b)
+        zeros = backend.zeros_like(arr_a)
+        clamped_a = backend.maximum(arr_a, zeros)
+        clamped_b = backend.maximum(arr_b, zeros)
+        penalties = backend.sqrt(clamped_a * clamped_b)
+        mean_penalty = backend.mean(penalties)
+        backend.eval(mean_penalty)
+        return float(backend.to_scalar(mean_penalty))
 
 
 class EmotionConceptAtlas:
@@ -1009,7 +1017,8 @@ class EmotionConceptAtlas:
         inventory: list[EmotionConcept] | None = None,
     ):
         self.embedder = embedder
-        self._cached_emotion_embeddings: list[list[float]] | None = None
+        self._backend = get_default_backend()
+        self._cached_emotion_embeddings: Any | None = None
         # Volume-based representation (CABE-4) - enabled when available
         self._cached_emotion_volumes: dict[str, "ConceptVolume"] | None = None
         self._density_estimator: "RiemannianDensityEstimator" | None = None
@@ -1043,7 +1052,7 @@ class EmotionConceptAtlas:
 
         try:
             emotion_embeddings = await self._get_or_create_emotion_embeddings()
-            if len(emotion_embeddings) != len(self.inventory):
+            if self._backend.shape(emotion_embeddings)[0] != len(self.inventory):
                 return None
 
             # Embedder handles truncation
@@ -1051,16 +1060,19 @@ class EmotionConceptAtlas:
             if not embeddings:
                 return None
 
-            text_vec = VectorMath.l2_normalized(embeddings[0])
-
-            # Compute similarities to each emotion
-            similarities = []
-            for emotion_vec in emotion_embeddings:
-                try:
-                    similarity = VectorMath.cosine_similarity(emotion_vec, text_vec)
-                except ValueError:
-                    similarity = 0.0
-                similarities.append(max(0.0, similarity))
+            text_vec = self._normalize_vector(embeddings[0])
+            sims = self._backend.matmul(
+                emotion_embeddings,
+                self._backend.reshape(text_vec, (-1, 1)),
+            )
+            sims = self._backend.reshape(
+                sims, (self._backend.shape(emotion_embeddings)[0],)
+            )
+            sims = self._backend.maximum(sims, self._backend.zeros_like(sims))
+            self._backend.eval(sims)
+            similarities = self._backend.tolist(sims)
+            if not isinstance(similarities, list):
+                similarities = [float(similarities)]
 
             return EmotionConceptSignature(
                 emotion_ids=[e.id for e in self.inventory],
@@ -1140,46 +1152,83 @@ class EmotionConceptAtlas:
         """
         vad_a = sig_a.vad_projection()
         vad_b = sig_b.vad_projection()
-        _b = get_default_backend()
-        return sqrt_scalar(
-            (vad_a[0] - vad_b[0]) ** 2 + (vad_a[1] - vad_b[1]) ** 2 + (vad_a[2] - vad_b[2]) ** 2,
-            _b,
-        )
+        backend = get_default_backend()
+        a = backend.array(vad_a)
+        b = backend.array(vad_b)
+        diff = a - b
+        dist_sq = backend.sum(diff * diff)
+        backend.eval(dist_sq)
+        return sqrt_scalar(float(backend.to_scalar(dist_sq)), backend)
 
-    async def _get_or_create_emotion_embeddings(self) -> list[list[float]]:
+    async def _get_or_create_emotion_embeddings(self) -> Any:
         """Get or create cached emotion embeddings using triangulation."""
-        if self._cached_emotion_embeddings:
+        if self._cached_emotion_embeddings is not None:
             return self._cached_emotion_embeddings
         if self.embedder is None:
-            return []
+            return self._backend.array([])
 
         # Triangulate: embed all support texts and average
         # For now, simplified: embed "name: description" as centroid
         texts = [f"{e.name}: {e.description}" for e in self.inventory]
         embeddings = await self.embedder.embed(texts)
+        if not embeddings:
+            return self._backend.array([])
 
-        normalized = [VectorMath.l2_normalized(vec) for vec in embeddings]
+        normalized = self._normalize_rows(embeddings)
         self._cached_emotion_embeddings = normalized
         return normalized
 
     @staticmethod
     def _normalized_entropy(values: list[float]) -> float | None:
         """Compute normalized entropy of activation distribution."""
-        clamped = [max(0.0, v) for v in values]
-        total = sum(clamped)
+        if not values:
+            return None
+        backend = get_default_backend()
+        arr = backend.array(values)
+        clamped = backend.maximum(arr, backend.zeros_like(arr))
+        total_arr = backend.sum(clamped)
+        backend.eval(total_arr)
+        total = float(backend.to_scalar(total_arr))
         if total <= 0:
             return None
 
-        probs = [v / total for v in clamped]
-        entropy = 0.0
-        _b = get_default_backend()
-        for p in probs:
-            if p > 0:
-                entropy -= p * log_scalar(p, _b)
+        probs = clamped / total
+        mask = probs > 0
+        safe_probs = backend.where(mask, probs, backend.ones_like(probs))
+        log_probs = backend.log(safe_probs)
+        entropy_arr = -backend.sum(probs * log_probs)
 
-        n = max(1, len(probs))
-        max_entropy = log_scalar(float(n), _b)
+        n_arr = backend.sum(mask)
+        backend.eval(entropy_arr, n_arr)
+        entropy = float(backend.to_scalar(entropy_arr))
+        n = int(backend.to_scalar(n_arr))
+        if n <= 1:
+            return 0.0
+        max_entropy = log_scalar(float(n), backend)
         return entropy / max_entropy if max_entropy > 0 else None
+
+    def _ensure_array(self, value: Any) -> Any:
+        if hasattr(value, "shape"):
+            return value
+        return self._backend.array(value)
+
+    def _normalize_rows(self, matrix: Any) -> Any:
+        matrix_arr = self._ensure_array(matrix)
+        norms = self._backend.norm(matrix_arr, axis=1, keepdims=True)
+        eps = division_epsilon(self._backend, matrix_arr)
+        safe_norms = self._backend.where(
+            norms > eps, norms, self._backend.ones_like(norms)
+        )
+        return matrix_arr / safe_norms
+
+    def _normalize_vector(self, vector: Any) -> Any:
+        vector_arr = self._ensure_array(vector)
+        norm = self._backend.norm(vector_arr)
+        eps = division_epsilon(self._backend, vector_arr)
+        safe_norm = self._backend.where(
+            norm > eps, norm, self._backend.ones_like(norm)
+        )
+        return vector_arr / safe_norm
 
     # =========================================================================
     # CABE-4: Volume-Based Emotion Representation

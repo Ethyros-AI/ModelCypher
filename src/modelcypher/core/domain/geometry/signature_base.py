@@ -36,7 +36,8 @@ from __future__ import annotations
 
 from typing import TypeVar
 
-from modelcypher.core.domain.geometry.vector_math import VectorMath
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 # Type variable for self-referential return types
 T = TypeVar("T", bound="SignatureMixin")
@@ -70,7 +71,13 @@ class SignatureMixin:
         Returns:
             L2 norm, or None if values are empty or all zeros.
         """
-        return VectorMath.l2_norm(self.values)
+        if not self.values:
+            raise ValueError("Cannot compute L2 norm of empty vector")
+        backend = get_default_backend()
+        arr = backend.array(self.values)
+        norm = backend.norm(arr)
+        backend.eval(norm)
+        return max(0.0, float(backend.to_scalar(norm)))
 
     def l2_normalized(self: T) -> T:
         """Return a copy of this signature with L2-normalized values.
@@ -78,7 +85,21 @@ class SignatureMixin:
         Returns:
             New signature instance with normalized values.
         """
-        normalized = VectorMath.l2_normalized(self.values)
+        if not self.values:
+            raise ValueError("Cannot compute L2 norm of empty vector")
+        backend = get_default_backend()
+        arr = backend.array(self.values)
+        norm = backend.norm(arr)
+        backend.eval(norm)
+        norm_val = float(backend.to_scalar(norm))
+        eps = division_epsilon(backend, arr)
+        if norm_val <= eps:
+            return self._with_values(self.values)
+        normalized_arr = arr / norm
+        backend.eval(normalized_arr)
+        normalized = backend.tolist(normalized_arr)
+        if not isinstance(normalized, list):
+            normalized = [float(normalized)]
         # Create new instance with same attributes but normalized values
         return self._with_values(normalized)
 
@@ -99,16 +120,40 @@ class SignatureMixin:
         """
         # Same dimension: fast cosine similarity
         if self._has_same_dimensions(other):
-            cos_sim = VectorMath.cosine_similarity(self.values, other.values)
+            cos_sim = self._cosine_similarity_backend(self.values, other.values)
             return cos_sim if cos_sim is not None else 0.0
 
         # Different dimensions: truncate to shared dimension
         # This preserves the geometry in the shared subspace
         min_dim = min(len(self.values), len(other.values))
-        truncated_self = self.values[:min_dim]
-        truncated_other = other.values[:min_dim]
-        cos_sim = VectorMath.cosine_similarity(truncated_self, truncated_other)
+        backend = get_default_backend()
+        idx = backend.arange(0, min_dim)
+        arr_self = backend.take(backend.array(self.values), idx)
+        arr_other = backend.take(backend.array(other.values), idx)
+        cos_sim = self._cosine_similarity_backend(arr_self, arr_other)
         return cos_sim if cos_sim is not None else 0.0
+
+    @staticmethod
+    def _cosine_similarity_backend(a: list[float] | object, b: list[float] | object) -> float:
+        backend = get_default_backend()
+        arr_a = a if hasattr(a, "shape") else backend.array(a)
+        arr_b = b if hasattr(b, "shape") else backend.array(b)
+        if backend.shape(arr_a)[0] == 0 or backend.shape(arr_b)[0] == 0:
+            raise ValueError("Cannot compute cosine similarity of empty vectors")
+        if backend.shape(arr_a)[0] != backend.shape(arr_b)[0]:
+            raise ValueError("Cosine similarity requires matching dimensions")
+        norm_a = backend.norm(arr_a)
+        norm_b = backend.norm(arr_b)
+        backend.eval(norm_a, norm_b)
+        norm_a_val = float(backend.to_scalar(norm_a))
+        norm_b_val = float(backend.to_scalar(norm_b))
+        eps = division_epsilon(backend, arr_a)
+        if norm_a_val <= eps or norm_b_val <= eps:
+            raise ValueError("Cannot compute cosine similarity of zero vector")
+        dot = backend.dot(arr_a, arr_b)
+        backend.eval(dot)
+        dot_val = float(backend.to_scalar(dot))
+        return dot_val / (norm_a_val * norm_b_val)
 
     def _with_values(self: T, new_values: list[float]) -> T:
         """Create a copy of this signature with new values.

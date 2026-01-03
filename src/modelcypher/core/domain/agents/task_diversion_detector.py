@@ -31,7 +31,8 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 
-from modelcypher.core.domain.geometry.vector_math import VectorMath
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 from modelcypher.ports.embedding import EmbeddingProvider
 
 
@@ -162,7 +163,7 @@ class TaskDiversionDetector:
         try:
             embeddings = await self.embedder.embed([expected_trimmed, observed_trimmed])
             if len(embeddings) == 2:
-                similarity = VectorMath.cosine_similarity(embeddings[0], embeddings[1]) or 0.0
+                similarity = self._cosine_similarity(embeddings[0], embeddings[1]) or 0.0
 
                 return TaskDiversionAssessment(
                     method=TaskDiversionMethod.EMBEDDINGS,
@@ -178,6 +179,28 @@ class TaskDiversionDetector:
             method=TaskDiversionMethod.LEXICAL_FALLBACK,
             lexical_jaccard_similarity=lexical_similarity,
         )
+
+    @staticmethod
+    def _cosine_similarity(lhs: list[float] | object, rhs: list[float] | object) -> float:
+        backend = get_default_backend()
+        arr_lhs = lhs if hasattr(lhs, "shape") else backend.array(lhs)
+        arr_rhs = rhs if hasattr(rhs, "shape") else backend.array(rhs)
+        if backend.shape(arr_lhs)[0] == 0 or backend.shape(arr_rhs)[0] == 0:
+            return 0.0
+        if backend.shape(arr_lhs)[0] != backend.shape(arr_rhs)[0]:
+            raise ValueError("Cosine similarity requires matching dimensions")
+        norm_lhs = backend.norm(arr_lhs)
+        norm_rhs = backend.norm(arr_rhs)
+        backend.eval(norm_lhs, norm_rhs)
+        norm_lhs_val = float(backend.to_scalar(norm_lhs))
+        norm_rhs_val = float(backend.to_scalar(norm_rhs))
+        eps = division_epsilon(backend, arr_lhs)
+        if norm_lhs_val <= eps or norm_rhs_val <= eps:
+            return 0.0
+        dot = backend.dot(arr_lhs, arr_rhs)
+        backend.eval(dot)
+        dot_val = float(backend.to_scalar(dot))
+        return dot_val / (norm_lhs_val * norm_rhs_val)
 
     def _lexical_jaccard_similarity(self, lhs: str, rhs: str) -> float:
         lhs_tokens = self._lexical_token_set(lhs)

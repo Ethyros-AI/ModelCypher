@@ -30,13 +30,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.numerical_stability import log_scalar
+from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
+    log_scalar,
+)
 from modelcypher.core.domain.geometry.signature_base import LabeledSignatureMixin
-
-# Assuming VectorMath utility exists or we implement simple helpers
-from modelcypher.core.domain.geometry.vector_math import VectorMath
 from modelcypher.ports.embedding import EmbeddingProvider
 
 
@@ -220,7 +221,8 @@ class SemanticPrimeAtlas:
     ):
         self.inventory = inventory or SemanticPrimeInventory.english_2014()
         self.embedder = embedder
-        self._cached_prime_embeddings: list[list[float]] | None = None
+        self._backend = get_default_backend()
+        self._cached_prime_embeddings: Any | None = None
 
     async def signature(self, text: str) -> SemanticPrimeSignature | None:
         trimmed = text.strip()
@@ -231,7 +233,7 @@ class SemanticPrimeAtlas:
 
         try:
             prime_embeddings = await self._get_or_create_prime_embeddings()
-            if len(prime_embeddings) != len(self.inventory):
+            if self._backend.shape(prime_embeddings)[0] != len(self.inventory):
                 return None
 
             # Embedder handles any necessary truncation
@@ -239,16 +241,19 @@ class SemanticPrimeAtlas:
             if not embeddings:
                 return None
 
-            text_vec = VectorMath.l2_normalized(embeddings[0])
-
-            # Compute similarities
-            similarities = []
-            for prime_vec in prime_embeddings:
-                try:
-                    similarity = VectorMath.cosine_similarity(prime_vec, text_vec)
-                except ValueError:
-                    similarity = 0.0
-                similarities.append(max(0.0, similarity))
+            text_vec = self._normalize_vector(embeddings[0])
+            sims = self._backend.matmul(
+                prime_embeddings,
+                self._backend.reshape(text_vec, (-1, 1)),
+            )
+            sims = self._backend.reshape(
+                sims, (self._backend.shape(prime_embeddings)[0],)
+            )
+            sims = self._backend.maximum(sims, self._backend.zeros_like(sims))
+            self._backend.eval(sims)
+            similarities = self._backend.tolist(sims)
+            if not isinstance(similarities, list):
+                similarities = [float(similarities)]
 
             return SemanticPrimeSignature(
                 prime_ids=[p.id for p in self.inventory], values=similarities
@@ -282,7 +287,7 @@ class SemanticPrimeAtlas:
         scored.sort(key=lambda x: x.similarity, reverse=True)
 
         # Mean of all similarities (not arbitrary top_k)
-        mean_similarity = sum(p.similarity for p in scored) / len(scored) if scored else 0.0
+        mean_similarity = self._mean_similarity(sig.values)
 
         normalized_entropy = self._normalized_entropy(sig.values)
 
@@ -294,34 +299,77 @@ class SemanticPrimeAtlas:
             note=None,
         )
 
-    async def _get_or_create_prime_embeddings(self) -> list[list[float]]:
-        if self._cached_prime_embeddings:
+    async def _get_or_create_prime_embeddings(self) -> Any:
+        if self._cached_prime_embeddings is not None:
             return self._cached_prime_embeddings
         if self.embedder is None:
-            return []
+            return self._backend.array([])
 
         # In Python port, we'll just embed canonical English for now (skipping complex triangulation)
         texts = [p.canonical_english for p in self.inventory]
         embeddings = await self.embedder.embed(texts)
+        if not embeddings:
+            return self._backend.array([])
 
-        normalized = [VectorMath.l2_normalized(vec) for vec in embeddings]
+        normalized = self._normalize_rows(embeddings)
         self._cached_prime_embeddings = normalized
         return normalized
 
     @staticmethod
     def _normalized_entropy(values: list[float]) -> float | None:
-        clamped = [max(0.0, v) for v in values]
-        total = sum(clamped)
+        if not values:
+            return None
+        backend = get_default_backend()
+        arr = backend.array(values)
+        clamped = backend.maximum(arr, backend.zeros_like(arr))
+        total_arr = backend.sum(clamped)
+        backend.eval(total_arr)
+        total = float(backend.to_scalar(total_arr))
         if total <= 0:
             return None
 
-        probs = [v / total for v in clamped]
-        entropy = 0.0
-        _b = get_default_backend()
-        for p in probs:
-            if p > 0:
-                entropy -= p * log_scalar(p, _b)
+        probs = clamped / total
+        mask = probs > 0
+        safe_probs = backend.where(mask, probs, backend.ones_like(probs))
+        log_probs = backend.log(safe_probs)
+        entropy_arr = -backend.sum(probs * log_probs)
 
-        n = max(1, len(probs))
-        max_entropy = log_scalar(float(n), _b)
+        n_arr = backend.sum(mask)
+        backend.eval(entropy_arr, n_arr)
+        entropy = float(backend.to_scalar(entropy_arr))
+        n = int(backend.to_scalar(n_arr))
+        if n <= 1:
+            return 0.0
+        max_entropy = log_scalar(float(n), backend)
         return entropy / max_entropy if max_entropy > 0 else None
+
+    def _ensure_array(self, value: Any) -> Any:
+        if hasattr(value, "shape"):
+            return value
+        return self._backend.array(value)
+
+    def _normalize_rows(self, matrix: Any) -> Any:
+        matrix_arr = self._ensure_array(matrix)
+        norms = self._backend.norm(matrix_arr, axis=1, keepdims=True)
+        eps = division_epsilon(self._backend, matrix_arr)
+        safe_norms = self._backend.where(
+            norms > eps, norms, self._backend.ones_like(norms)
+        )
+        return matrix_arr / safe_norms
+
+    def _normalize_vector(self, vector: Any) -> Any:
+        vector_arr = self._ensure_array(vector)
+        norm = self._backend.norm(vector_arr)
+        eps = division_epsilon(self._backend, vector_arr)
+        safe_norm = self._backend.where(
+            norm > eps, norm, self._backend.ones_like(norm)
+        )
+        return vector_arr / safe_norm
+
+    def _mean_similarity(self, values: list[float]) -> float:
+        if not values:
+            return 0.0
+        scores = self._backend.array(values)
+        mean_score = self._backend.mean(scores)
+        self._backend.eval(mean_score)
+        return float(self._backend.to_scalar(mean_score))

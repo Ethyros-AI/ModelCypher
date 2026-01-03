@@ -30,15 +30,15 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
+    division_epsilon,
     exp_scalar,
     regularization_epsilon,
 )
 from modelcypher.core.domain.geometry.signature_base import LabeledSignatureMixin
-from modelcypher.core.domain.geometry.vector_math import VectorMath
 from modelcypher.data import load_json
 from modelcypher.ports.embedding import EmbeddingProvider
 
@@ -663,7 +663,8 @@ class ComputationalGateAtlas:
         # All gates by default - geometry determines significance
         self.inventory = inventory or ComputationalGateInventory.all_gates()
         self.embedder = embedder
-        self._cached_gate_embeddings: list[list[float]] | None = None
+        self._backend = get_default_backend()
+        self._cached_gate_embeddings: Any | None = None
         # Volume-based representation (CABE-4) - enabled when available
         self._cached_gate_volumes: dict[str, "ConceptVolume"] | None = None
         self._density_estimator: "RiemannianDensityEstimator" | None = None
@@ -681,22 +682,26 @@ class ComputationalGateAtlas:
 
         try:
             gate_embeddings = await self._get_or_create_gate_embeddings()
-            if len(gate_embeddings) != len(self.inventory):
+            if self._backend.shape(gate_embeddings)[0] != len(self.inventory):
                 return None
 
             embeddings = await self.embedder.embed([trimmed])
             if not embeddings:
                 return None
 
-            text_vec = VectorMath.l2_normalized(embeddings[0])
-
-            similarities = []
-            for gate_vec in gate_embeddings:
-                try:
-                    similarity = VectorMath.cosine_similarity(gate_vec, text_vec)
-                except ValueError:
-                    similarity = 0.0
-                similarities.append(max(0.0, similarity))
+            text_vec = self._normalize_vector(embeddings[0])
+            sims = self._backend.matmul(
+                gate_embeddings,
+                self._backend.reshape(text_vec, (-1, 1)),
+            )
+            sims = self._backend.reshape(
+                sims, (self._backend.shape(gate_embeddings)[0],)
+            )
+            sims = self._backend.maximum(sims, self._backend.zeros_like(sims))
+            self._backend.eval(sims)
+            similarities = self._backend.tolist(sims)
+            if not isinstance(similarities, list):
+                similarities = [float(similarities)]
 
             return ComputationalGateSignature(
                 gate_ids=[g.id for g in self.inventory], values=similarities
@@ -787,8 +792,8 @@ class ComputationalGateAtlas:
 
         return f"# Implement {gate.name.lower().replace('_', ' ')}\n"
 
-    async def _get_or_create_gate_embeddings(self) -> list[list[float]]:
-        if self._cached_gate_embeddings:
+    async def _get_or_create_gate_embeddings(self) -> Any:
+        if self._cached_gate_embeddings is not None:
             return self._cached_gate_embeddings
 
         # Triangulation logic: definition + examples + polyglot
@@ -800,10 +805,35 @@ class ComputationalGateAtlas:
 
         descriptions = [f"{g.name}: {g.description}" for g in self.inventory]
         embeddings = await self.embedder.embed(descriptions)
+        if not embeddings:
+            return self._backend.array([])
 
-        normalized = [VectorMath.l2_normalized(vec) for vec in embeddings]
+        normalized = self._normalize_rows(embeddings)
         self._cached_gate_embeddings = normalized
         return normalized
+
+    def _ensure_array(self, value: Any) -> Any:
+        if hasattr(value, "shape"):
+            return value
+        return self._backend.array(value)
+
+    def _normalize_rows(self, matrix: Any) -> Any:
+        matrix_arr = self._ensure_array(matrix)
+        norms = self._backend.norm(matrix_arr, axis=1, keepdims=True)
+        eps = division_epsilon(self._backend, matrix_arr)
+        safe_norms = self._backend.where(
+            norms > eps, norms, self._backend.ones_like(norms)
+        )
+        return matrix_arr / safe_norms
+
+    def _normalize_vector(self, vector: Any) -> Any:
+        vector_arr = self._ensure_array(vector)
+        norm = self._backend.norm(vector_arr)
+        eps = division_epsilon(self._backend, vector_arr)
+        safe_norm = self._backend.where(
+            norm > eps, norm, self._backend.ones_like(norm)
+        )
+        return vector_arr / safe_norm
 
     # =========================================================================
     # CABE-4: Volume-Based Gate Representation

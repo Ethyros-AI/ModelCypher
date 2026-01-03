@@ -115,20 +115,27 @@ def _geodesic_distance_from_origin(point: Any, backend: "Backend") -> float:
     return float(backend.to_scalar(distances[0, 1]))
 
 
-def _geodesic_cosine_from_origin(a: Any, b: Any, backend: "Backend") -> float:
-    """Compute cosine similarity using geodesic distances to the origin."""
+def _geodesic_distances_from_origin(
+    a: Any, b: Any, backend: "Backend"
+) -> tuple[float, float, float]:
+    """Compute geodesic distances (origin->a, origin->b, a->b)."""
     zero = backend.zeros_like(a)
     rg = RiemannianGeometry(backend)
     points = backend.stack([zero, a, b], axis=0)
     geo_result = rg.geodesic_distances(points, k_neighbors=int(points.shape[0]) - 1)
     distances = geo_result.distances
     backend.eval(distances)
-
     d0a = float(backend.to_scalar(distances[0, 1]))
     d0b = float(backend.to_scalar(distances[0, 2]))
     dab = float(backend.to_scalar(distances[1, 2]))
+    return d0a, d0b, dab
 
-    eps = division_epsilon(backend, distances)
+
+def _geodesic_cosine_from_origin(a: Any, b: Any, backend: "Backend") -> float:
+    """Compute cosine similarity using geodesic distances to the origin."""
+    d0a, d0b, dab = _geodesic_distances_from_origin(a, b, backend)
+
+    eps = division_epsilon(backend, backend.array([d0a, d0b, dab]))
     if d0a <= eps or d0b <= eps:
         raise ValueError("Cannot compute cosine similarity of zero vector")
 
@@ -145,7 +152,7 @@ class VectorMath:
 
     @staticmethod
     def dot(a: ArrayLike, b: ArrayLike) -> float:
-        """Compute dot product of two vectors.
+        """Compute dot product of two vectors using geodesic geometry.
 
         Args:
             a: First vector (list or MLX array)
@@ -169,7 +176,14 @@ class VectorMath:
 
         a_list = _to_list(a)
         b_list = _to_list(b)
-        return sum(x * y for x, y in zip(a_list, b_list))
+        eps = _angle_epsilon_from_values(a_list + b_list)
+        _b = get_default_backend()
+        a_arr = _b.array(a_list)
+        b_arr = _b.array(b_list)
+        d0a, d0b, dab = _geodesic_distances_from_origin(a_arr, b_arr, _b)
+        if d0a <= eps or d0b <= eps:
+            return 0.0
+        return 0.5 * ((d0a * d0a) + (d0b * d0b) - (dab * dab))
 
     @staticmethod
     def l2_norm(a: ArrayLike) -> float:
@@ -331,8 +345,8 @@ class VectorMath:
         v0_unit = [x * inv_norm_v0 for x in v0_list]
         v1_unit = [x * inv_norm_v1 for x in v1_list]
 
-        # Compute dot product and clamp to [-1, 1] for numerical stability
-        dot = sum(a * b for a, b in zip(v0_unit, v1_unit))
+        # Compute cosine similarity on the unit sphere
+        dot = VectorMath.cosine_similarity(v0_unit, v1_unit)
         dot = max(-1.0, min(1.0, dot))
 
         # Compute angle between vectors
@@ -564,7 +578,7 @@ class BackendVectorMath:
         self._finfo = backend.finfo()
 
     def dot(self, a: Any, b: Any) -> float:
-        """Compute dot product using backend operations.
+        """Compute dot product using geodesic geometry.
 
         Args:
             a: First vector (Backend array or convertible)
@@ -596,9 +610,11 @@ class BackendVectorMath:
                 "For cross-dimensional comparison, use CKA on activation matrices."
             )
 
-        result = self.backend.dot(a_arr, b_arr)
-        self.backend.eval(result)
-        return float(self.backend.to_scalar(result))
+        eps = division_epsilon(self.backend, a_arr)
+        d0a, d0b, dab = _geodesic_distances_from_origin(a_arr, b_arr, self.backend)
+        if d0a <= eps or d0b <= eps:
+            return 0.0
+        return 0.5 * ((d0a * d0a) + (d0b * d0b) - (dab * dab))
 
     def l2_norm(self, a: Any) -> float:
         """Compute geodesic norm using backend operations.
@@ -736,11 +752,8 @@ class BackendVectorMath:
         v0_unit = v0_arr / norm_v0
         v1_unit = v1_arr / norm_v1
 
-        # Compute dot product and clamp to [-1, 1]
-        dot = self.backend.dot(v0_unit, v1_unit)
-        dot_clamped = self.backend.clip(dot, -1.0, 1.0)
-        self.backend.eval(dot_clamped)
-        dot_val = float(self.backend.to_scalar(dot_clamped))
+        dot_val = self.cosine_similarity(v0_unit, v1_unit)
+        dot_val = max(-1.0, min(1.0, dot_val))
 
         # Compute angle
         theta = acos_scalar(dot_val, self.backend)
@@ -837,11 +850,8 @@ class BackendVectorMath:
         v0_unit = v0 / norm_v0
         v1_unit = v1 / norm_v1
 
-        # Compute cosine similarity (dot product of unit vectors)
-        dot = self.backend.dot(v0_unit, v1_unit)
-        dot_clamped = self.backend.clip(dot, -1.0, 1.0)
-        self.backend.eval(dot_clamped)
-        dot_val = float(self.backend.to_scalar(dot_clamped))
+        dot_val = self.cosine_similarity(v0_unit, v1_unit)
+        dot_val = max(-1.0, min(1.0, dot_val))
 
         # Compute angle
         theta = acos_scalar(dot_val, self.backend)

@@ -27,7 +27,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from uuid import UUID
 
-from modelcypher.core.domain.geometry.vector_math import VectorMath
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
 
 
 @dataclass(frozen=True)
@@ -70,11 +71,11 @@ class SemanticPrimeSignature:
             return None
         if len(self.values) != len(other.values):
             return None
-        return VectorMath.cosine_similarity(list(self.values), list(other.values))
+        return self._cosine_similarity_backend(self.values, other.values)
 
     def l2_normalized(self) -> SemanticPrimeSignature:
         """Return L2-normalized version of this signature."""
-        normalized = VectorMath.l2_normalized(list(self.values))
+        normalized = self._l2_normalized_backend(self.values)
         return SemanticPrimeSignature(prime_ids=self.prime_ids, values=tuple(normalized))
 
     @classmethod
@@ -97,17 +98,57 @@ class SemanticPrimeSignature:
         ):
             return None
 
-        dim = len(first.values)
-        summed = [0.0] * dim
+        backend = get_default_backend()
+        matrix = backend.array([list(sig.values) for sig in signatures])
+        mean_arr = backend.mean(matrix, axis=0)
+        backend.eval(mean_arr)
+        mean_values = backend.tolist(mean_arr)
+        if not isinstance(mean_values, list):
+            mean_values = [float(mean_values)]
+        return SemanticPrimeSignature(
+            prime_ids=first.prime_ids, values=tuple(mean_values)
+        ).l2_normalized()
 
-        for sig in signatures:
-            for i, v in enumerate(sig.values):
-                summed[i] += v
+    @staticmethod
+    def _cosine_similarity_backend(
+        lhs: tuple[float, ...], rhs: tuple[float, ...]
+    ) -> float | None:
+        backend = get_default_backend()
+        arr_lhs = backend.array(list(lhs))
+        arr_rhs = backend.array(list(rhs))
+        if backend.shape(arr_lhs)[0] == 0 or backend.shape(arr_rhs)[0] == 0:
+            return None
+        if backend.shape(arr_lhs)[0] != backend.shape(arr_rhs)[0]:
+            return None
+        norm_lhs = backend.norm(arr_lhs)
+        norm_rhs = backend.norm(arr_rhs)
+        backend.eval(norm_lhs, norm_rhs)
+        norm_lhs_val = float(backend.to_scalar(norm_lhs))
+        norm_rhs_val = float(backend.to_scalar(norm_rhs))
+        eps = division_epsilon(backend, arr_lhs)
+        if norm_lhs_val <= eps or norm_rhs_val <= eps:
+            return None
+        dot = backend.dot(arr_lhs, arr_rhs)
+        backend.eval(dot)
+        dot_val = float(backend.to_scalar(dot))
+        return dot_val / (norm_lhs_val * norm_rhs_val)
 
-        inv_count = 1.0 / len(signatures)
-        mean_values = tuple(v * inv_count for v in summed)
-
-        return SemanticPrimeSignature(prime_ids=first.prime_ids, values=mean_values).l2_normalized()
+    @staticmethod
+    def _l2_normalized_backend(values: tuple[float, ...]) -> list[float]:
+        backend = get_default_backend()
+        arr = backend.array(list(values))
+        norm = backend.norm(arr)
+        backend.eval(norm)
+        norm_val = float(backend.to_scalar(norm))
+        eps = division_epsilon(backend, arr)
+        if norm_val <= eps:
+            return list(values)
+        normalized = arr / norm
+        backend.eval(normalized)
+        result = backend.tolist(normalized)
+        if not isinstance(result, list):
+            return [float(result)]
+        return result
 
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
