@@ -62,9 +62,6 @@ def register_geometry_visualize_tools(ctx: ServiceContext) -> None:
             model: str,
             prompt: str,
             output: str = "manifold.html",
-            layer: int = -1,
-            targetDims: str = "4,3",
-            computeCurvature: bool = True,
         ) -> dict:
             """Create 3D manifold visualization from model activations.
 
@@ -83,9 +80,6 @@ def register_geometry_visualize_tools(ctx: ServiceContext) -> None:
                 model: Path to the model directory
                 prompt: Prompt to analyze (captures activations during forward pass)
                 output: Output file path (.html for interactive, .json for data)
-                layer: Target layer for activation capture (-1 = last layer)
-                targetDims: Comma-separated target dimensions (e.g., "4,3")
-                computeCurvature: Whether to compute Ollivier-Ricci curvature
 
             Returns:
                 Visualization metadata including intrinsic dimension and file path
@@ -99,9 +93,7 @@ def register_geometry_visualize_tools(ctx: ServiceContext) -> None:
 
             model_path = require_existing_directory(model)
 
-            # Parse target dimensions
-            dims = [int(d.strip()) for d in targetDims.split(",")]
-            dims = sorted(dims, reverse=True)
+            dims = [4, 3]
 
             from modelcypher.adapters.model_loader import load_model_for_training
             from modelcypher.backends.mlx_backend import MLXBackend
@@ -122,7 +114,7 @@ def register_geometry_visualize_tools(ctx: ServiceContext) -> None:
 
             embed_tokens, layers, norm = resolved
             num_layers = len(layers)
-            target_layer = layer if layer >= 0 else num_layers - 1
+            target_layer = num_layers - 1
 
             backend = MLXBackend()
 
@@ -193,9 +185,6 @@ def register_geometry_visualize_tools(ctx: ServiceContext) -> None:
         def mc_geometry_visualize_from_activations(
             activationsFile: str,
             output: str = "manifold.html",
-            targetDims: str = "4,3",
-            computeCurvature: bool = True,
-            title: str | None = None,
         ) -> dict:
             """Create visualization from pre-computed activations.
 
@@ -209,9 +198,6 @@ def register_geometry_visualize_tools(ctx: ServiceContext) -> None:
             Args:
                 activationsFile: JSON file with activations array [n_points, hidden_dim]
                 output: Output file path (.html for interactive, .json for data)
-                targetDims: Comma-separated target dimensions (e.g., "4,3")
-                computeCurvature: Whether to compute Ollivier-Ricci curvature
-                title: Optional title for the visualization
 
             Returns:
                 Visualization metadata including intrinsic dimension and file path
@@ -227,9 +213,7 @@ def register_geometry_visualize_tools(ctx: ServiceContext) -> None:
 
             activations_path = require_existing_path(activationsFile)
 
-            # Parse target dimensions
-            dims = [int(d.strip()) for d in targetDims.split(",")]
-            dims = sorted(dims, reverse=True)
+            dims = [4, 3]
 
             from modelcypher.backends.mlx_backend import MLXBackend
             from modelcypher.core.domain.geometry.dimension_cascade import DimensionCascade
@@ -260,7 +244,7 @@ def register_geometry_visualize_tools(ctx: ServiceContext) -> None:
 
             # Create visualization
             viewer_config = ViewerConfiguration(
-                title=title or f"Manifold Geometry: {activations_path.stem}",
+                title=f"Manifold Geometry: {activations_path.stem}",
             )
             viewer = ManifoldViewer(backend, viewer_config)
 

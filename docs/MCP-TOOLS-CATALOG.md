@@ -598,10 +598,6 @@ Test dimension-constraint invariance.
 
 List sparse activation domains.
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `category` | string | No | Filter by category |
-
 ---
 
 ### mc_geometry_sparse_locate
@@ -780,10 +776,6 @@ List available CRM sequences.
 
 List geometry baseline profiles.
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `family` | string | No | Filter by family |
-
 ---
 
 ### mc_geometry_baseline_extract
@@ -881,10 +873,6 @@ Analyze DoRA magnitude/direction decomposition.
 
 List metaphor invariant atlases.
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `family` | string | No | Filter by family |
-
 ---
 
 ### mc_geometry_metaphor_trajectory
@@ -910,10 +898,6 @@ Measure metaphor representation convergence.
 ### mc_geometry_primes_list
 
 List semantic primes categories.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `category` | string | No | Filter by category |
 
 ---
 

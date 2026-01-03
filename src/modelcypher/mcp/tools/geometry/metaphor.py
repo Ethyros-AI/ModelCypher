@@ -32,7 +32,50 @@ from ..common import (
     ServiceContext,
     require_existing_directory,
 )
-from .safety import _forward_text_backbone, _resolve_text_backbone
+from .safety import _resolve_text_backbone
+
+
+def _collect_layer_means(input_ids, embed_tokens, layers, norm, backend):
+    hidden = embed_tokens(input_ids)
+    activations = []
+    last_idx = len(layers) - 1
+    for i, layer in enumerate(layers):
+        hidden = layer(hidden)
+        if norm is not None and i == last_idx:
+            hidden = norm(hidden)
+        activation = backend.mean(hidden[0], axis=0)
+        backend.async_eval(activation)
+        activations.append(activation)
+    return activations
+
+
+def _collect_exemplar_activations(exemplars, tokenizer, backend, embed_tokens, layers, norm):
+    num_layers = len(layers)
+    acts_by_layer: dict[int, list] = {i: [] for i in range(num_layers)}
+    for exemplar in exemplars:
+        try:
+            tokens = tokenizer.encode(exemplar)
+            input_ids = backend.array([tokens])
+            per_layer = _collect_layer_means(input_ids, embed_tokens, layers, norm, backend)
+            for i, activation in enumerate(per_layer):
+                acts_by_layer[i].append(activation)
+        except Exception:
+            pass  # Skip failed exemplars
+    return acts_by_layer
+
+
+def _stack_layer_activations(backend, source_acts_by_layer, target_acts_by_layer):
+    layer_activations = {}
+    for layer_idx, source_acts in source_acts_by_layer.items():
+        target_acts = target_acts_by_layer.get(layer_idx, [])
+        if source_acts and target_acts:
+            all_acts = source_acts + target_acts
+            backend.eval(*all_acts)
+            layer_activations[layer_idx] = (
+                backend.stack(source_acts),
+                backend.stack(target_acts),
+            )
+    return layer_activations
 
 
 def register_geometry_metaphor_tools(ctx: ServiceContext) -> None:
@@ -43,29 +86,17 @@ def register_geometry_metaphor_tools(ctx: ServiceContext) -> None:
     if "mc_geometry_metaphor_list" in tool_set:
 
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_geometry_metaphor_list(family: str | None = None) -> dict:
+        def mc_geometry_metaphor_list() -> dict:
             """List available Conceptual Metaphor Theory (CMT) mappings.
 
             Lists all 8 CMT metaphors from Lakoff & Johnson (1980) with their
             source and target domains.
-
-            Args:
-                family: Optional filter by CMT family (e.g., "time_as_resource").
             """
             from modelcypher.core.domain.agents.conceptual_metaphor_atlas import (
-                CMTFamily,
                 ConceptualMetaphorInventory,
             )
 
-            if family:
-                try:
-                    family_enum = CMTFamily(family)
-                    mappings = ConceptualMetaphorInventory.mappings_by_family(family_enum)
-                except ValueError:
-                    valid = ", ".join(f.value for f in CMTFamily)
-                    raise ValueError(f"Invalid family: {family}. Valid: {valid}")
-            else:
-                mappings = ConceptualMetaphorInventory.ALL_MAPPINGS
+            mappings = ConceptualMetaphorInventory.ALL_MAPPINGS
 
             return {
                 "_schema": "mc.geometry.metaphor.list.v1",
@@ -91,7 +122,6 @@ def register_geometry_metaphor_tools(ctx: ServiceContext) -> None:
         def mc_geometry_metaphor_trajectory(
             modelPath: str,
             metaphorId: str = "cmt_time_is_money",
-            layer: int = -1,
         ) -> dict:
             """Collect metaphor trajectory through model layers.
 
@@ -102,7 +132,6 @@ def register_geometry_metaphor_tools(ctx: ServiceContext) -> None:
             Args:
                 modelPath: Path to the model directory.
                 metaphorId: CMT mapping ID (default: "cmt_time_is_money").
-                layer: Layer to analyze (-1 for sampled layers).
             """
             from modelcypher.adapters.model_loader import load_model_for_training
             from modelcypher.backends.mlx_backend import MLXBackend
@@ -129,65 +158,31 @@ def register_geometry_metaphor_tools(ctx: ServiceContext) -> None:
             if not resolved:
                 raise ValueError("Could not resolve model architecture")
             embed_tokens, layers, norm = resolved
-            num_layers = len(layers)
-
-            if layer >= 0:
-                target_layers = [layer]
-            else:
-                # Sample layers: first, 25%, 50%, 75%, last
-                target_layers = [
-                    0,
-                    num_layers // 4,
-                    num_layers // 2,
-                    3 * num_layers // 4,
-                    num_layers - 1,
-                ]
-                target_layers = sorted(set(target_layers))
 
             # Collect activations for source domain
-            source_acts_by_layer: dict[int, list] = {l: [] for l in target_layers}
-            for exemplar in mapping.source_exemplars:
-                try:
-                    tokens = tokenizer.encode(exemplar)
-                    input_ids = backend.array([tokens])
-                    for target_layer in target_layers:
-                        hidden = _forward_text_backbone(
-                            input_ids, embed_tokens, layers, norm, target_layer, backend
-                        )
-                        activation = backend.mean(hidden[0], axis=0)
-                        backend.async_eval(activation)
-                        source_acts_by_layer[target_layer].append(activation)
-                except Exception:
-                    pass  # Skip failed exemplars
+            source_acts_by_layer = _collect_exemplar_activations(
+                mapping.source_exemplars,
+                tokenizer,
+                backend,
+                embed_tokens,
+                layers,
+                norm,
+            )
 
             # Collect activations for target domain
-            target_acts_by_layer: dict[int, list] = {l: [] for l in target_layers}
-            for exemplar in mapping.target_exemplars:
-                try:
-                    tokens = tokenizer.encode(exemplar)
-                    input_ids = backend.array([tokens])
-                    for target_layer in target_layers:
-                        hidden = _forward_text_backbone(
-                            input_ids, embed_tokens, layers, norm, target_layer, backend
-                        )
-                        activation = backend.mean(hidden[0], axis=0)
-                        backend.async_eval(activation)
-                        target_acts_by_layer[target_layer].append(activation)
-                except Exception:
-                    pass  # Skip failed exemplars
+            target_acts_by_layer = _collect_exemplar_activations(
+                mapping.target_exemplars,
+                tokenizer,
+                backend,
+                embed_tokens,
+                layers,
+                norm,
+            )
 
             # Stack and sync
-            layer_activations = {}
-            for target_layer in target_layers:
-                if source_acts_by_layer[target_layer] and target_acts_by_layer[target_layer]:
-                    all_acts = (
-                        source_acts_by_layer[target_layer] + target_acts_by_layer[target_layer]
-                    )
-                    backend.eval(*all_acts)
-
-                    source_stacked = backend.stack(source_acts_by_layer[target_layer])
-                    target_stacked = backend.stack(target_acts_by_layer[target_layer])
-                    layer_activations[target_layer] = (source_stacked, target_stacked)
+            layer_activations = _stack_layer_activations(
+                backend, source_acts_by_layer, target_acts_by_layer
+            )
 
             if not layer_activations:
                 raise ValueError("No activations extracted")
@@ -252,59 +247,26 @@ def register_geometry_metaphor_tools(ctx: ServiceContext) -> None:
                 if not resolved:
                     raise ValueError(f"Could not resolve architecture for {model_path}")
                 embed_tokens, layers, norm = resolved
-                num_layers = len(layers)
 
-                target_layers = [
-                    0,
-                    num_layers // 4,
-                    num_layers // 2,
-                    3 * num_layers // 4,
-                    num_layers - 1,
-                ]
-                target_layers = sorted(set(target_layers))
-
-                source_acts_by_layer: dict[int, list] = {l: [] for l in target_layers}
-                for exemplar in mapping.source_exemplars:
-                    try:
-                        tokens = tokenizer.encode(exemplar)
-                        input_ids = backend.array([tokens])
-                        for target_layer in target_layers:
-                            hidden = _forward_text_backbone(
-                                input_ids, embed_tokens, layers, norm, target_layer, backend
-                            )
-                            activation = backend.mean(hidden[0], axis=0)
-                            backend.async_eval(activation)
-                            source_acts_by_layer[target_layer].append(activation)
-                    except Exception:
-                        pass
-
-                target_acts_by_layer: dict[int, list] = {l: [] for l in target_layers}
-                for exemplar in mapping.target_exemplars:
-                    try:
-                        tokens = tokenizer.encode(exemplar)
-                        input_ids = backend.array([tokens])
-                        for target_layer in target_layers:
-                            hidden = _forward_text_backbone(
-                                input_ids, embed_tokens, layers, norm, target_layer, backend
-                            )
-                            activation = backend.mean(hidden[0], axis=0)
-                            backend.async_eval(activation)
-                            target_acts_by_layer[target_layer].append(activation)
-                    except Exception:
-                        pass
-
-                layer_activations = {}
-                for target_layer in target_layers:
-                    if source_acts_by_layer[target_layer] and target_acts_by_layer[target_layer]:
-                        all_acts = (
-                            source_acts_by_layer[target_layer]
-                            + target_acts_by_layer[target_layer]
-                        )
-                        backend.eval(*all_acts)
-
-                        source_stacked = backend.stack(source_acts_by_layer[target_layer])
-                        target_stacked = backend.stack(target_acts_by_layer[target_layer])
-                        layer_activations[target_layer] = (source_stacked, target_stacked)
+                source_acts_by_layer = _collect_exemplar_activations(
+                    mapping.source_exemplars,
+                    tokenizer,
+                    backend,
+                    embed_tokens,
+                    layers,
+                    norm,
+                )
+                target_acts_by_layer = _collect_exemplar_activations(
+                    mapping.target_exemplars,
+                    tokenizer,
+                    backend,
+                    embed_tokens,
+                    layers,
+                    norm,
+                )
+                layer_activations = _stack_layer_activations(
+                    backend, source_acts_by_layer, target_acts_by_layer
+                )
 
                 return collector.collect_from_activations(
                     mapping, Path(model_path).name, layer_activations
@@ -353,74 +315,30 @@ def register_geometry_metaphor_tools(ctx: ServiceContext) -> None:
             num_layers = len(layers)
             model_id = Path(model_path).name
 
-            target_layers = [
-                0,
-                num_layers // 4,
-                num_layers // 2,
-                3 * num_layers // 4,
-                num_layers - 1,
-            ]
-            target_layers = sorted(set(target_layers))
-
             collector = MetaphorTrajectoryCollector(backend)
             results = []
 
             for mapping in ConceptualMetaphorInventory.ALL_MAPPINGS:
                 try:
-                    source_acts_by_layer: dict[int, list] = {l: [] for l in target_layers}
-                    for exemplar in mapping.source_exemplars:
-                        try:
-                            tokens = tokenizer.encode(exemplar)
-                            input_ids = backend.array([tokens])
-                            for target_layer in target_layers:
-                                hidden = _forward_text_backbone(
-                                    input_ids,
-                                    embed_tokens,
-                                    layers,
-                                    norm,
-                                    target_layer,
-                                    backend,
-                                )
-                                activation = backend.mean(hidden[0], axis=0)
-                                backend.async_eval(activation)
-                                source_acts_by_layer[target_layer].append(activation)
-                        except Exception:
-                            pass
-
-                    target_acts_by_layer: dict[int, list] = {l: [] for l in target_layers}
-                    for exemplar in mapping.target_exemplars:
-                        try:
-                            tokens = tokenizer.encode(exemplar)
-                            input_ids = backend.array([tokens])
-                            for target_layer in target_layers:
-                                hidden = _forward_text_backbone(
-                                    input_ids,
-                                    embed_tokens,
-                                    layers,
-                                    norm,
-                                    target_layer,
-                                    backend,
-                                )
-                                activation = backend.mean(hidden[0], axis=0)
-                                backend.async_eval(activation)
-                                target_acts_by_layer[target_layer].append(activation)
-                        except Exception:
-                            pass
-
-                    layer_activations = {}
-                    for target_layer in target_layers:
-                        if (
-                            source_acts_by_layer[target_layer]
-                            and target_acts_by_layer[target_layer]
-                        ):
-                            all_acts = (
-                                source_acts_by_layer[target_layer]
-                                + target_acts_by_layer[target_layer]
-                            )
-                            backend.eval(*all_acts)
-                            source_stacked = backend.stack(source_acts_by_layer[target_layer])
-                            target_stacked = backend.stack(target_acts_by_layer[target_layer])
-                            layer_activations[target_layer] = (source_stacked, target_stacked)
+                    source_acts_by_layer = _collect_exemplar_activations(
+                        mapping.source_exemplars,
+                        tokenizer,
+                        backend,
+                        embed_tokens,
+                        layers,
+                        norm,
+                    )
+                    target_acts_by_layer = _collect_exemplar_activations(
+                        mapping.target_exemplars,
+                        tokenizer,
+                        backend,
+                        embed_tokens,
+                        layers,
+                        norm,
+                    )
+                    layer_activations = _stack_layer_activations(
+                        backend, source_acts_by_layer, target_acts_by_layer
+                    )
 
                     if layer_activations:
                         trajectory = collector.collect_from_activations(

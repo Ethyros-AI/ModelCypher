@@ -77,26 +77,8 @@ from .riemannian_density import (
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class CrossManifoldConfig:
-    """Configuration for cross-manifold projection.
-
-    Most parameters default to None and are derived from data at runtime:
-    - max_iterations: max(100, 5 * n_anchors)
-    - convergence_tolerance: sqrt(machine_epsilon)
-    - learning_rate: Derived from stress gradient scale
-    - min_anchors: 3 (statistical minimum for triangulation)
-    - distance_weight_decay: Derived from distance distribution
-    - stress_regularization: sqrt(machine_epsilon)
-    """
-
-    max_iterations: int | None = None
-    convergence_tolerance: float | None = None
-    learning_rate: float | None = None
-    min_anchors: int | None = None
-    distance_weight_decay: float | None = None
-    use_curvature_correction: bool = True
-    stress_regularization: float | None = None
+# Minimum number of anchors for statistical triangulation
+MIN_ANCHORS = 3
 
 
 @dataclass
@@ -274,11 +256,13 @@ class CrossManifoldProjector:
     - Distances are computed along geodesics (curvature-aware)
     - Stress is minimized via gradient descent
 
+    All numerical parameters (convergence tolerance, learning rate, etc.)
+    are derived from data. No configuration needed.
+
     See: de Silva & Tenenbaum (2004) for the landmark MDS framework.
     """
 
-    def __init__(self, config: CrossManifoldConfig | None = None):
-        self.config = config or CrossManifoldConfig()
+    def __init__(self) -> None:
         self.density_estimator = RiemannianDensityEstimator()
         self.curvature_estimator = SectionalCurvatureEstimator()
 
@@ -327,12 +311,10 @@ class CrossManifoldProjector:
                 backend.eval(centroid)
                 anchor_centroids.append(centroid)
 
-        # Derive min_anchors from config or use 3 (statistical minimum for triangulation)
-        min_anchors = self.config.min_anchors if self.config.min_anchors is not None else 3
-        if len(anchor_ids) < min_anchors:
+        if len(anchor_ids) < MIN_ANCHORS:
             logger.warning(
                 f"Only {len(anchor_ids)} anchors available, "
-                f"minimum {min_anchors} configured"
+                f"minimum {MIN_ANCHORS} required for triangulation"
             )
 
         # Build combined point matrix: [concept_centroid, anchor_0, anchor_1, ...]
@@ -353,8 +335,11 @@ class CrossManifoldProjector:
         anchor_indices = backend.arange(1, len(anchor_ids) + 1)
         distances = backend.take(row0, anchor_indices, axis=0)
 
+        # Derive distance weight decay from data (prevents division by zero)
+        dist_weight_decay = division_epsilon(backend, distances)
+
         # Weight by inverse distance (closer anchors more important)
-        weights = 1.0 / (distances + self.config.distance_weight_decay)
+        weights = 1.0 / (distances + dist_weight_decay)
         weight_sum = backend.sum(weights)
         backend.eval(weight_sum)
         weights = weights / weight_sum  # Normalize
@@ -424,9 +409,7 @@ class CrossManifoldProjector:
                     source_distances_list.append(float(dist_val))
                     weights_list.append(float(weight_val))
 
-        # Derive min_anchors from config or use 3 (statistical minimum)
-        min_anchors = self.config.min_anchors if self.config.min_anchors is not None else 3
-        if len(matching_anchor_ids) < min_anchors:
+        if len(matching_anchor_ids) < MIN_ANCHORS:
             logger.warning(
                 f"Only {len(matching_anchor_ids)} matching anchors, projection may be unreliable"
             )

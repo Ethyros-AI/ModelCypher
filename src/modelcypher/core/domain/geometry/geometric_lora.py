@@ -70,19 +70,8 @@ logger = logging.getLogger(__name__)
 
 # NOTE: AdaptationQuality enum removed - use mean_geometric_loss directly.
 
-
-@dataclass(frozen=True)
-class GeometricLoRAConfig:
-    """Configuration for geometric LoRA generation.
-
-    Rank is derived from SVD spectrum. No arbitrary thresholds.
-    """
-
-    auto_rank: bool = True
-    regularization: float | None = None
-    condition_threshold: float | None = None
-    target_layers: list[int] | None = None
-    target_projections: list[str] = field(default_factory=lambda: ["q_proj", "v_proj"])
+# Default attention projections for LoRA modification
+DEFAULT_PROJECTIONS = ["q_proj", "v_proj"]
 
 
 @dataclass
@@ -171,14 +160,12 @@ class GeometricLoRA:
     Attributes:
         transfer_point: The geometric specification.
         weights: List of per-layer LoRA weights.
-        config: Generation configuration.
         mean_geometric_loss: Average reconstruction error (lower indicates less error).
         total_rank: Sum of ranks across all layers.
     """
 
     transfer_point: TransferPoint
     weights: list[LayerLoRAWeights]
-    config: GeometricLoRAConfig
     mean_geometric_loss: float
     total_rank: int
 
@@ -243,16 +230,18 @@ class GeometricLoRAGenerator:
     The key insight is that LoRA weights can be computed analytically
     by solving for the perturbation that maps a representative input
     to the target activation, then applying rank truncation via SVD.
-    """
 
-    def __init__(self, config: GeometricLoRAConfig | None = None):
-        self.config = config or GeometricLoRAConfig()
+    All numerical parameters (regularization, condition threshold, rank)
+    are derived from the data. No configuration needed.
+    """
 
     def generate(
         self,
         transfer_point: TransferPoint,
         model_weights: dict[int, dict[str, "object"]],
         anchor_activations: dict[str, "object"],
+        target_layers: list[int] | None = None,
+        target_projections: list[str] | None = None,
     ) -> GeometricLoRA:
         """Generate geometric LoRA from transfer point specification.
 
@@ -260,15 +249,18 @@ class GeometricLoRAGenerator:
             transfer_point: The target geometry specification.
             model_weights: Current weights by layer/projection.
             anchor_activations: Anchor activations for input estimation.
+            target_layers: Which layers to modify (default: all in model_weights).
+            target_projections: Which projections to modify (default: q_proj, v_proj).
 
         Returns:
             GeometricLoRA with factored weight matrices.
         """
         weights_list = []
 
-        target_layers = self.config.target_layers
         if target_layers is None:
             target_layers = sorted(model_weights.keys())
+        if target_projections is None:
+            target_projections = DEFAULT_PROJECTIONS
 
         for layer_idx in target_layers:
             if layer_idx not in model_weights:
@@ -276,7 +268,7 @@ class GeometricLoRAGenerator:
 
             layer_weights = model_weights[layer_idx]
 
-            for proj_name in self.config.target_projections:
+            for proj_name in target_projections:
                 if proj_name not in layer_weights:
                     continue
 
@@ -304,7 +296,6 @@ class GeometricLoRAGenerator:
         return GeometricLoRA(
             transfer_point=transfer_point,
             weights=weights_list,
-            config=self.config,
             mean_geometric_loss=mean_loss,
             total_rank=total_rank,
         )
@@ -398,9 +389,8 @@ class GeometricLoRAGenerator:
         output_delta_col = backend.reshape(output_delta, (out_features, 1))
         rep_input_row = backend.reshape(representative_input, (1, in_features))
         delta_W_full = backend.matmul(output_delta_col, rep_input_row) / input_norm_sq
-        reg_value = self.config.regularization
-        if reg_value is None:
-            reg_value = regularization_epsilon(backend, current_weight)
+        # Regularization derived from data (Tikhonov)
+        reg_value = regularization_epsilon(backend, current_weight)
         reg_matrix = reg_value * backend.eye(out_features, in_features)
         delta_W_full = delta_W_full + reg_matrix
         backend.eval(delta_W_full)
@@ -464,10 +454,8 @@ class GeometricLoRAGenerator:
         if first_sv < division_epsilon(backend, singular_values):
             return 1
 
-        # Use condition number threshold (numerical stability)
-        cond_thresh = self.config.condition_threshold
-        if cond_thresh is None:
-            cond_thresh = condition_threshold(backend, singular_values)
+        # Condition threshold derived from data (numerical stability)
+        cond_thresh = condition_threshold(backend, singular_values)
         threshold = first_sv / cond_thresh
         significant_mask = singular_values > threshold
         rank = max(1, int(backend.sum(significant_mask)))
@@ -478,21 +466,32 @@ def generate_geometric_lora(
     transfer_point: TransferPoint,
     model_weights: dict[int, dict[str, "object"]],
     anchor_activations: dict[str, "object"],
-    config: GeometricLoRAConfig | None = None,
+    target_layers: list[int] | None = None,
+    target_projections: list[str] | None = None,
 ) -> GeometricLoRA:
     """Convenience function for geometric LoRA generation.
+
+    All numerical parameters (regularization, condition threshold, rank)
+    are derived from the data. No configuration needed.
 
     Args:
         transfer_point: Target geometry specification.
         model_weights: Model weights by layer/projection.
         anchor_activations: Anchor activations.
-        config: Optional configuration.
+        target_layers: Which layers to modify (default: all in model_weights).
+        target_projections: Which projections to modify (default: q_proj, v_proj).
 
     Returns:
         GeometricLoRA with factored weight matrices.
     """
-    generator = GeometricLoRAGenerator(config)
-    return generator.generate(transfer_point, model_weights, anchor_activations)
+    generator = GeometricLoRAGenerator()
+    return generator.generate(
+        transfer_point,
+        model_weights,
+        anchor_activations,
+        target_layers=target_layers,
+        target_projections=target_projections,
+    )
 
 
 def save_geometric_lora(

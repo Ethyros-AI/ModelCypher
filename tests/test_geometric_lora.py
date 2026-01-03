@@ -27,8 +27,8 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.geometric_lora import (
+    DEFAULT_PROJECTIONS,
     GeometricLoRA,
-    GeometricLoRAConfig,
     GeometricLoRAGenerator,
     LayerLoRAWeights,
     generate_geometric_lora,
@@ -54,34 +54,13 @@ def _div_eps(*values: float) -> float:
     return division_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
-class TestGeometricLoRAConfig:
-    """Tests for GeometricLoRAConfig."""
+class TestDefaultProjections:
+    """Tests for default projections constant."""
 
-    def test_default_config(self) -> None:
-        """Test default configuration values."""
-        config = GeometricLoRAConfig()
-
-        assert config.auto_rank is True
-        assert config.regularization is None
-        assert config.condition_threshold is None
-        assert "q_proj" in config.target_projections
-        assert "v_proj" in config.target_projections
-
-    def test_custom_config(self) -> None:
-        """Test custom configuration."""
-        backend = get_default_backend()
-        cond_thresh = condition_threshold(backend, backend.array([1.0, 0.5]))
-        config = GeometricLoRAConfig(
-            auto_rank=False,
-            condition_threshold=cond_thresh,
-            target_projections=["q_proj", "k_proj", "v_proj"],
-        )
-
-        assert config.auto_rank is False
-        assert abs(config.condition_threshold - cond_thresh) <= _eps(
-            config.condition_threshold, cond_thresh
-        )
-        assert len(config.target_projections) == 3
+    def test_default_projections(self) -> None:
+        """Test that default projections includes q_proj and v_proj."""
+        assert "q_proj" in DEFAULT_PROJECTIONS
+        assert "v_proj" in DEFAULT_PROJECTIONS
 
 
 class TestLayerLoRAWeights:
@@ -205,7 +184,6 @@ class TestGeometricLoRA:
         return GeometricLoRA(
             transfer_point=sample_transfer_point,
             weights=weights,
-            config=GeometricLoRAConfig(),
             mean_geometric_loss=0.05,
             total_rank=16,
         )
@@ -328,16 +306,16 @@ class TestGeometricLoRAGenerator:
         self,
         sample_inputs: tuple[TransferPoint, dict, dict],
     ) -> None:
-        """Test that target_layers config is respected."""
+        """Test that target_layers parameter is respected."""
         transfer_point, model_weights, anchor_activations = sample_inputs
 
-        config = GeometricLoRAConfig(target_layers=[0, 2])
-        generator = GeometricLoRAGenerator(config)
+        generator = GeometricLoRAGenerator()
 
         lora = generator.generate(
             transfer_point=transfer_point,
             model_weights=model_weights,
             anchor_activations=anchor_activations,
+            target_layers=[0, 2],
         )
 
         # Should only have weights for layers 0 and 2
@@ -348,16 +326,16 @@ class TestGeometricLoRAGenerator:
         self,
         sample_inputs: tuple[TransferPoint, dict, dict],
     ) -> None:
-        """Test that target_projections config is respected."""
+        """Test that target_projections parameter is respected."""
         transfer_point, model_weights, anchor_activations = sample_inputs
 
-        config = GeometricLoRAConfig(target_projections=["q_proj"])
-        generator = GeometricLoRAGenerator(config)
+        generator = GeometricLoRAGenerator()
 
         lora = generator.generate(
             transfer_point=transfer_point,
             model_weights=model_weights,
             anchor_activations=anchor_activations,
+            target_projections=["q_proj"],
         )
 
         # Should only have q_proj weights
@@ -383,17 +361,18 @@ class TestGeometricLoRAGenerator:
         expected = max(1, min(expected, int(backend.shape(sv)[0])))
         assert rank == expected
 
-    def test_determine_rank_with_tight_condition(self) -> None:
-        """Test rank determination with explicit condition threshold."""
+    def test_determine_rank_with_varied_spectrum(self) -> None:
+        """Test rank determination with varied singular value spectrum."""
         backend = get_default_backend()
-        sv = backend.array([1.0, 0.5, 0.1, 0.001])
+        # More pronounced gap in spectrum
+        sv = backend.array([10.0, 5.0, 0.1, 0.001])
         backend.eval(sv)
 
-        cond_thresh = condition_threshold(backend, sv)
-        config = GeometricLoRAConfig(condition_threshold=cond_thresh)
-        generator = GeometricLoRAGenerator(config)
-
+        generator = GeometricLoRAGenerator()
         rank = generator._determine_rank(sv, backend)
+
+        # Rank should be derived from condition threshold
+        cond_thresh = condition_threshold(backend, sv)
         threshold = float(backend.to_scalar(sv[0])) / cond_thresh
         above = sv > threshold
         expected = int(float(backend.to_scalar(backend.sum(above))))

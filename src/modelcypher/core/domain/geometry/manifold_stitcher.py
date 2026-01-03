@@ -105,9 +105,8 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 )
 
 __all__ = [
-    # Configuration
+    # Constants
     "StitchingConstants",
-    "TriangulatedProbingConfig",
     # Enums
     "ProbeSpace",
     # Core dataclasses
@@ -476,18 +475,6 @@ class TriangulatedProbeResult:
         return self.activation_score * self.triangulation_multiplier
 
 
-@dataclass
-class TriangulatedProbingConfig:
-    """Configuration for triangulated probing."""
-
-    include_sequence_invariants: bool = True
-    include_metaphor_invariants: bool = True
-    include_conceptual_genealogy: bool = True
-    triangulation_threshold: float = 0.0
-    cross_domain_bonus: float = 0.0
-    max_domains_for_full_bonus: int = 1
-
-
 _SOURCE_SEMANTIC_PRIME = "semantic_prime"
 _SOURCE_SEQUENCE_INVARIANT = "sequence_invariant"
 _SOURCE_COMPUTATIONAL_GATE = "computational_gate"
@@ -503,14 +490,23 @@ class TriangulatedProbeBuilder:
 
     Uses atlas registry probes instead of hardcoded probe lists. Outer layers
     register probe inventories so geometry can remain decoupled from agents.
+
+    No configuration needed - all probes are included by default for full
+    triangulation coverage. Use build_probes_for_sources() if specific
+    source filtering is required.
     """
 
     @staticmethod
-    def build_triangulated_probes(
-        config: TriangulatedProbingConfig | None = None,
-    ) -> list[AtlasProbeProtocol]:
+    def build_triangulated_probes() -> list[AtlasProbeProtocol]:
         """
-        Build probe set from the atlas registry.
+        Build complete probe set from the atlas registry.
+
+        Includes all sources for maximum triangulation coverage:
+        - Semantic primes
+        - Sequence invariants
+        - Metaphor invariants
+        - Conceptual genealogy (with moral/social foundations)
+        - Computational gates
 
         Returns list of AtlasProbe objects with:
         - probe_id: Unique identifier
@@ -519,30 +515,16 @@ class TriangulatedProbeBuilder:
         - domain: Triangulation domain
         - cross_domain_weight: Weight for cross-domain detection
         """
-        if config is None:
-            config = TriangulatedProbingConfig()
-
-        sources: set[str] = set()
-
-        # Semantic primes always included
-        sources.add(_SOURCE_SEMANTIC_PRIME)
-
-        # Add sequence invariants if enabled
-        if config.include_sequence_invariants:
-            sources.add(_SOURCE_SEQUENCE_INVARIANT)
-
-        # Add other sources based on config
-        if config.include_metaphor_invariants:
-            sources.add(_SOURCE_METAPHOR_INVARIANT)
-
-        if config.include_conceptual_genealogy:
-            # Conceptual genealogy probes plus moral/social foundations for lineage anchoring
-            sources.add(_SOURCE_CONCEPTUAL_GENEALOGY)
-            sources.add(_SOURCE_MORAL_CONCEPT)
-            sources.add(_SOURCE_SOCIAL_CONCEPT)
-
-        # Always include computational gates for cross-domain triangulation
-        sources.add(_SOURCE_COMPUTATIONAL_GATE)
+        # Include all sources for full triangulation
+        sources: set[str] = {
+            _SOURCE_SEMANTIC_PRIME,
+            _SOURCE_SEQUENCE_INVARIANT,
+            _SOURCE_METAPHOR_INVARIANT,
+            _SOURCE_CONCEPTUAL_GENEALOGY,
+            _SOURCE_MORAL_CONCEPT,
+            _SOURCE_SOCIAL_CONCEPT,
+            _SOURCE_COMPUTATIONAL_GATE,
+        }
 
         probes = list(get_atlas_probes())
         if not probes:
@@ -582,39 +564,28 @@ class TriangulatedProbeBuilder:
     @staticmethod
     def compute_triangulation_score(
         activations_by_domain: dict[str, float],
-        config: TriangulatedProbingConfig | None = None,
     ) -> tuple[float, float]:
         """
         Compute triangulation score from multi-domain activations.
 
+        No arbitrary thresholds or bonuses - returns raw mean of all
+        activations and multiplier of 1.0. The caller interprets significance.
+
         Args:
             activations_by_domain: Activation scores keyed by domain
-            config: Configuration
 
         Returns:
-            Tuple of (base_score, triangulation_multiplier)
+            Tuple of (base_score, triangulation_multiplier=1.0)
         """
-        if config is None:
-            config = TriangulatedProbingConfig()
-
         if not activations_by_domain:
             return 0.0, 1.0
 
-        # Base score is mean of significant activations
-        significant = [
-            v for v in activations_by_domain.values() if v >= config.triangulation_threshold
-        ]
-        if not significant:
-            return 0.0, 1.0
+        # Base score is mean of all activations (no arbitrary threshold filtering)
+        values = list(activations_by_domain.values())
+        base_score = sum(values) / len(values)
 
-        base_score = sum(significant) / len(significant)
-
-        # Triangulation bonus based on domain count
-        domain_count = len(significant)
-        bonus_domains = min(domain_count - 1, config.max_domains_for_full_bonus - 1)
-        multiplier = 1.0 + bonus_domains * config.cross_domain_bonus
-
-        return base_score, multiplier
+        # No arbitrary bonus multiplier - always 1.0
+        return base_score, 1.0
 
 
 def _compute_std(values: list[float]) -> float:

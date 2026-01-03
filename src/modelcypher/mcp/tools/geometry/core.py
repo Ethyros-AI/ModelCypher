@@ -453,12 +453,9 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
     if "mc_geometry_sparse_domains" in tool_set:
 
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_geometry_sparse_domains(category: str | None = None) -> dict:
+        def mc_geometry_sparse_domains() -> dict:
             """List built-in sparse region domains for LoRA targeting."""
-            if category:
-                domains = ctx.geometry_sparse_service.get_domains_by_category(category)
-            else:
-                domains = ctx.geometry_sparse_service.list_domains()
+            domains = ctx.geometry_sparse_service.list_domains()
             payload = ctx.geometry_sparse_service.domains_payload(domains)
             payload["_schema"] = "mc.geometry.sparse_domains.v1"
             return payload
@@ -490,10 +487,6 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_sparse_neurons(
             modelPath: str,
-            domain: str | None = None,
-            promptsFile: str | None = None,
-            layerStart: float = 0.0,
-            layerEnd: float = 1.0,
         ) -> dict:
             """Analyze per-neuron sparsity for fine-grained knowledge grafting.
 
@@ -502,41 +495,28 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
 
             Args:
                 modelPath: Path to model directory
-                domain: Use built-in domain probes (math, code, factual, reasoning)
-                promptsFile: Path to JSON file with custom prompts
-                layerStart: Start layer fraction (0.0-1.0)
-                layerEnd: End layer fraction (0.0-1.0)
             Returns:
                 Neuron sparsity map with graft candidates and dead neurons
             """
-            import json
-
             from modelcypher.core.domain.geometry.neuron_sparsity_analyzer import (
                 compute_neuron_sparsity_map,
             )
+            from modelcypher.core.domain.geometry.sparse_region_domains import (
+                SparseRegionDomains,
+            )
 
             model_path = require_existing_directory(modelPath)
+            layer_start = 0.0
+            layer_end = 1.0
+            domain_name = "all"
 
-            # Load prompts
             prompts: list[str] = []
-            if promptsFile:
-                prompts_path = Path(promptsFile)
-                if not prompts_path.exists():
-                    raise ValueError(f"Prompts file not found: {promptsFile}")
-                prompts = json.loads(prompts_path.read_text())
-            elif domain:
-                # Use built-in domain probes
-                domains_list = ctx.geometry_sparse_service.list_domains()
-                domain_def = next(
-                    (d for d in domains_list if d.name.lower() == domain.lower()), None
-                )
-                if domain_def is None:
-                    raise ValueError(
-                        f"Unknown domain: {domain}. Use mc_geometry_sparse_domains to list available domains."
-                    )
-                prompts = domain_def.probes
-            else:
-                raise ValueError("Provide either domain or promptsFile")
+            for domain in SparseRegionDomains.all_built_in:
+                prompts.extend(domain.probe_prompts)
+            if prompts:
+                prompts = list(dict.fromkeys(prompts))
+            if not prompts:
+                raise ValueError("Built-in sparse domain prompts are unavailable")
 
             # Collect activations via model inference
             from modelcypher.core.domain.entropy.hidden_state_extractor import (
@@ -553,8 +533,8 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             # Create extractor for neuron analysis in specified layer range
             extractor_config = ExtractorConfig.for_neuron_analysis_range(
                 total_layers,
-                start_fraction=layerStart,
-                end_fraction=layerEnd,
+                start_fraction=layer_start,
+                end_fraction=layer_end,
                 hidden_dim=model_info.hidden_size,
             )
             extractor = HiddenStateExtractor(extractor_config)
@@ -582,8 +562,8 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             return {
                 "_schema": "mc.geometry.sparse_neurons.v1",
                 "modelPath": str(model_path),
-                "domain": domain,
-                "layerRange": [layerStart, layerEnd],
+                "domain": domain_name,
+                "layerRange": [layer_start, layer_end],
                 "summary": summary,
                 "graftCandidates": sparsity_map.get_graft_candidates(),
                 "deadNeurons": sparsity_map.dead_neurons,
@@ -606,15 +586,15 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         def mc_geometry_refusal_detect(
             harmfulActivations: list[list[float]],
             harmlessActivations: list[list[float]],
-            layerIndex: int,
-            modelId: str,
         ) -> dict:
             """Detect refusal direction from contrastive activations."""
+            layer_index = -1
+            model_id = "unknown"
             result = ctx.geometry_sparse_service.detect_refusal_direction(
                 harmful_activations=harmfulActivations,
                 harmless_activations=harmlessActivations,
-                layer_index=layerIndex,
-                model_id=modelId,
+                layer_index=layer_index,
+                model_id=model_id,
             )
             if result is None:
                 return {
@@ -643,17 +623,17 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
             positiveActivations: list[list[float]],
             negativeActivations: list[list[float]],
             traitId: str,
-            layerIndex: int,
-            modelId: str,
-            normalize: bool = True,
         ) -> dict:
             """Extract a persona vector from contrastive activations."""
+            layer_index = -1
+            model_id = "unknown"
+            normalize = True
             vector = ctx.geometry_persona_service.extract_persona_vector(
                 positive_activations=positiveActivations,
                 negative_activations=negativeActivations,
                 trait_id=traitId,
-                layer_index=layerIndex,
-                model_id=modelId,
+                layer_index=layer_index,
+                model_id=model_id,
                 normalize=normalize,
             )
             if vector is None:

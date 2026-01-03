@@ -879,20 +879,21 @@ def compute_lowrank_gw(
 def project_via_lowrank_gw(
     source: "Array",
     target: "Array",
-    config: LowRankGWConfig = LowRankGWConfig(),
     backend: "Backend | None" = None,
+    seed: int | None = 42,
 ) -> tuple["Array", LowRankGWResult]:
     """
     Project source matrix to target shape using low-rank GW coupling.
 
     This is the main entry point for cross-architecture projection
     when dimensions exceed the standard GW tractability limit.
+    All parameters are derived from the data geometry.
 
     Args:
         source: Source weight matrix [m_s, d_s]
         target: Target weight matrix [m_t, d_t]
-        config: Algorithm configuration
         backend: Backend implementation
+        seed: Random seed for reproducibility (None = no seeding)
 
     Returns:
         Tuple of (projected matrix [m_t, d_t], GW result)
@@ -933,7 +934,7 @@ def project_via_lowrank_gw(
         else:
             # Use low-rank for large column dimensions too
             lr_solver = LowRankGromovWasserstein(b)
-            col_result = lr_solver.compute(G_source_col, G_target_col, config)
+            col_result = lr_solver.compute(G_source_col, G_target_col, seed=seed)
             col_coupling = col_result.coupling.to_dense(b)
 
         b.eval(col_coupling)
@@ -957,7 +958,7 @@ def project_via_lowrank_gw(
 
         # Use low-rank GW for row dimension
         lr_solver = LowRankGromovWasserstein(b)
-        row_result = lr_solver.compute(G_source_row, G_target_row, config)
+        row_result = lr_solver.compute(G_source_row, G_target_row, seed=seed)
 
         # Apply row coupling: P^T @ source
         projected = row_result.coupling.apply_left(projected, b)

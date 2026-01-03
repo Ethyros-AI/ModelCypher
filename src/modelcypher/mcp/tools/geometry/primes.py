@@ -44,15 +44,13 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
     if "mc_geometry_primes_list" in tool_set:
 
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_geometry_primes_list(category: str | None = None) -> dict:
+        def mc_geometry_primes_list() -> dict:
             """List all NSM semantic primes (Goddard & Wierzbicka 2014)."""
             from modelcypher.core.domain.agents.semantic_prime_atlas import (
                 SemanticPrimeInventory,
             )
 
             primes = SemanticPrimeInventory.english_2014()
-            if category:
-                primes = [p for p in primes if p.category.value == category]
             categories = sorted(set(p.category.value for p in primes))
             return {
                 "_schema": "mc.geometry.primes.list.v1",
@@ -69,7 +67,6 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_primes_probe(
             modelPath: str,
-            layer: int = -1,
             outputFile: str | None = None,
         ) -> dict:
             """Probe model for semantic prime representations using CKA."""
@@ -90,7 +87,7 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
                 raise ValueError("Could not resolve model architecture")
             embed_tokens, layers, norm = resolved
             num_layers = len(layers)
-            target_layer = layer if layer >= 0 else num_layers - 1
+            target_layer = num_layers - 1
 
             # Probe primes
             primes = SemanticPrimeInventory.english_2014()

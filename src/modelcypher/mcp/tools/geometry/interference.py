@@ -120,7 +120,6 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
         def mc_geometry_null_space_filter(
             weightDelta: list[list[float]],
             priorActivations: list[list[float]],
-            method: str = "svd",
         ) -> dict:
             """
             Filter weight delta to null space of prior activations.
@@ -133,7 +132,6 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
             Args:
                 weightDelta: Weight update to filter (2D array)
                 priorActivations: Activation matrix from prior task [n_samples, d]
-                method: Computation method: 'svd', 'qr', or 'eigenvalue'
 
             Returns:
                 Filtered delta with diagnostics
@@ -145,36 +143,11 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
             from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.domain.geometry.null_space_filter import (
                 NullSpaceFilter,
-                NullSpaceFilterConfig,
-                NullSpaceMethod,
-            )
-            from modelcypher.core.domain.geometry.numerical_stability import (
-                svd_rank_threshold,
             )
 
             backend = get_default_backend()
-            delta = backend.array(weightDelta)
-            activations = backend.array(priorActivations)
-            backend.eval(delta)
-            backend.eval(activations)
-
-            try:
-                method_enum = NullSpaceMethod(method.lower())
-            except ValueError:
-                method_enum = NullSpaceMethod.SVD
-
-            # Derive rank threshold from machine epsilon - no arbitrary defaults
-            rank_threshold = svd_rank_threshold(backend, activations)
-
-            config = NullSpaceFilterConfig(
-                rank_threshold=rank_threshold,
-                method=method_enum,
-            )
-
-            null_filter = NullSpaceFilter(config)
-            delta_flat = backend.reshape(delta, (-1,))
-            backend.eval(delta_flat)
-            result = null_filter.filter_delta(delta_flat, activations)
+            null_filter = NullSpaceFilter(backend)
+            result = null_filter.filter_delta(weightDelta, priorActivations)
 
             # Convert filtered_delta to list for JSON serialization
             if hasattr(result.filtered_delta, "shape"):
@@ -219,12 +192,10 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
             from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.domain.geometry.null_space_filter import (
                 NullSpaceFilter,
-                NullSpaceFilterConfig,
             )
 
             backend = get_default_backend()
-            config = NullSpaceFilterConfig()
-            null_filter = NullSpaceFilter(config)
+            null_filter = NullSpaceFilter(backend)
 
             layer_arrays = {}
             for k, v in layerActivations.items():
@@ -233,9 +204,7 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
                 layer_arrays[int(k)] = arr
 
             # Don't pass arbitrary threshold - compute raw measurements
-            profile = null_filter.compute_model_null_space_profile(
-                layer_arrays, graft_threshold=0.0  # Return all layers
-            )
+            profile = null_filter.compute_model_null_space_profile(layer_arrays)
 
             per_layer_info = {}
             null_fractions = []

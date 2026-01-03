@@ -40,12 +40,9 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
     if "mc_geometry_baseline_list" in tool_set:
 
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
-        def mc_geometry_baseline_list(family: str | None = None) -> dict:
+        def mc_geometry_baseline_list() -> dict:
             """
             List available model geometry profiles.
-
-            Args:
-                family: Optional model family filter (qwen, llama, mistral, etc.)
 
             Returns:
                 List of available profiles with their metadata
@@ -55,10 +52,7 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
             )
 
             repo = ProfileRepository()
-            if family:
-                profiles = repo.get_profiles_for_family(family)
-            else:
-                profiles = repo.get_all_profiles()
+            profiles = repo.get_all_profiles()
 
             return {
                 "_schema": "mc.geometry.profile.list.v1",
@@ -80,7 +74,6 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_baseline_extract(
             modelPath: str,
-            layer: int = -1,
         ) -> dict:
             """
             Extract geometry profile from a model.
@@ -90,7 +83,6 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
 
             Args:
                 modelPath: Path to the model directory
-                layer: Layer to analyze (-1 for sampled layers)
 
             Returns:
                 Extracted profile with curvature and dimension metrics
@@ -107,7 +99,7 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
             extractor = ModelProfileExtractor(model_loader=model_loader)
             profile = extractor.extract_profile(
                 model_path=model_path,
-                layers=[layer] if layer != -1 else None,
+                layers=None,
             )
 
             # Save profile
@@ -131,7 +123,6 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
         def mc_geometry_baseline_compare(
             model1Path: str,
             model2Path: str,
-            layer: int = -1,
         ) -> dict:
             """
             Compare geometry profiles of two models.
@@ -142,7 +133,6 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
             Args:
                 model1Path: Path to first model
                 model2Path: Path to second model
-                layer: Layer to analyze (-1 for sampled layers)
 
             Returns:
                 Comparison results with divergence metrics
@@ -160,11 +150,11 @@ def register_geometry_baseline_tools(ctx: ServiceContext) -> None:
 
             profile1 = extractor.extract_profile(
                 model_path=model1_path,
-                layers=[layer] if layer != -1 else None,
+                layers=None,
             )
             profile2 = extractor.extract_profile(
                 model_path=model2_path,
-                layers=[layer] if layer != -1 else None,
+                layers=None,
             )
 
             # Compute divergence - raw measurements only
