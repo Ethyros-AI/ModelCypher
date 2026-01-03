@@ -164,7 +164,7 @@ def atlas_dimensionality(
     context = _context(ctx)
 
     from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain._backend import get_default_backend
 
     model, tokenizer = load_model_for_training(model_path)
     model_type = getattr(model, "model_type", "unknown")
@@ -179,7 +179,7 @@ def atlas_dimensionality(
     probes = UnifiedAtlasInventory.all_probes()
     calibration_weights = {}
 
-    backend = MLXBackend()
+    backend = get_default_backend()
     provider = BackboneActivationProvider(
         tokenizer,
         embed_tokens,
@@ -257,7 +257,7 @@ def atlas_dimensionality_study(
     context = _context(ctx)
 
     from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain._backend import get_default_backend
 
     model, tokenizer = load_model_for_training(model_path)
     model_type = getattr(model, "model_type", "unknown")
@@ -272,7 +272,7 @@ def atlas_dimensionality_study(
     probes = UnifiedAtlasInventory.all_probes()
     calibration_weights = {}
 
-    backend = MLXBackend()
+    backend = get_default_backend()
     provider = BackboneActivationProvider(
         tokenizer,
         embed_tokens,

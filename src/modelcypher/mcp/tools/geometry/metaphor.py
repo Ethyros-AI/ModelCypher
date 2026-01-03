@@ -134,7 +134,7 @@ def register_geometry_metaphor_tools(ctx: ServiceContext) -> None:
                 metaphorId: CMT mapping ID (default: "cmt_time_is_money").
             """
             from modelcypher.adapters.model_loader import load_model_for_training
-            from modelcypher.backends.mlx_backend import MLXBackend
+            from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.domain.agents.conceptual_metaphor_atlas import (
                 ConceptualMetaphorInventory,
             )
@@ -151,7 +151,7 @@ def register_geometry_metaphor_tools(ctx: ServiceContext) -> None:
 
             model_path = require_existing_directory(modelPath)
             model, tokenizer = load_model_for_training(model_path)
-            backend = MLXBackend()
+            backend = get_default_backend()
 
             # Resolve architecture
             resolved = _resolve_text_backbone(model)
@@ -220,7 +220,7 @@ def register_geometry_metaphor_tools(ctx: ServiceContext) -> None:
                 metaphorId: CMT mapping ID to test.
             """
             from modelcypher.adapters.model_loader import load_model_for_training
-            from modelcypher.backends.mlx_backend import MLXBackend
+            from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.domain.agents.conceptual_metaphor_atlas import (
                 ConceptualMetaphorInventory,
             )
@@ -236,7 +236,7 @@ def register_geometry_metaphor_tools(ctx: ServiceContext) -> None:
             if not mapping:
                 raise ValueError(f"Unknown metaphor ID: {metaphorId}")
 
-            backend = MLXBackend()
+            backend = get_default_backend()
             collector = MetaphorTrajectoryCollector(backend)
 
             def collect_trajectory(model_path_str: str):
@@ -296,7 +296,7 @@ def register_geometry_metaphor_tools(ctx: ServiceContext) -> None:
                 modelPath: Path to the model directory.
             """
             from modelcypher.adapters.model_loader import load_model_for_training
-            from modelcypher.backends.mlx_backend import MLXBackend
+            from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.domain.agents.conceptual_metaphor_atlas import (
                 ConceptualMetaphorInventory,
             )
@@ -306,7 +306,7 @@ def register_geometry_metaphor_tools(ctx: ServiceContext) -> None:
 
             model_path = require_existing_directory(modelPath)
             model, tokenizer = load_model_for_training(model_path)
-            backend = MLXBackend()
+            backend = get_default_backend()
 
             resolved = _resolve_text_backbone(model)
             if not resolved:

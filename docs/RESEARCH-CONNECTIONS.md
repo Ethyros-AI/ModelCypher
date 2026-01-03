@@ -131,7 +131,8 @@ from modelcypher.core.domain.geometry.gromov_wasserstein import GromovWasserstei
 gw = GromovWassersteinDistance(backend)
 # Compare distance matrices directly (intrinsic geometry)
 result = gw.compute(distance_matrix_a, distance_matrix_b)
-alignment_score = result.alignment_score()  # [0, 1] normalized similarity
+normalized_distance = result.normalized_distance  # [0, 1] scale
+aligned = result.aligned  # True only at machine-precision zero distance
 ```
 
 **Key capability**: Optimal transport-based alignment that works across different embedding dimensions and coordinate systems.

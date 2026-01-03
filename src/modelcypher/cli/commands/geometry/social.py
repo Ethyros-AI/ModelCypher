@@ -109,7 +109,7 @@ def social_probe_model(
     context = _context(ctx)
 
     from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.agents.social_atlas import SocialConceptInventory
     from modelcypher.core.domain.geometry.social_geometry import SocialGeometryAnalyzer
     from modelcypher.core.support.array_utils import array_to_list
@@ -133,7 +133,7 @@ def social_probe_model(
     target_layer = num_layers - 1
     typer.echo(f"Architecture resolved: {num_layers} layers, probing layer {target_layer}")
 
-    backend = MLXBackend()
+    backend = get_default_backend()
     anchor_activations = {}
 
     anchors = SocialConceptInventory.all_concepts()
@@ -232,7 +232,7 @@ def social_analyze(
     """
     context = _context(ctx)
 
-    from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.social_geometry import SocialGeometryAnalyzer
 
     path = Path(activations_file)
@@ -243,7 +243,7 @@ def social_analyze(
     with open(path) as f:
         raw_activations = json.load(f)
 
-    backend = MLXBackend()
+    backend = get_default_backend()
     activations = {name: backend.array(vec) for name, vec in raw_activations.items()}
 
     analyzer = SocialGeometryAnalyzer(backend=backend)

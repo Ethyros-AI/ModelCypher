@@ -111,7 +111,7 @@ class BackboneActivationProvider:
 
 def _load_model_and_provider(model_path: str):
     from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain._backend import get_default_backend
 
     model, tokenizer = load_model_for_training(model_path)
     model_type = getattr(model, "model_type", "unknown")
@@ -122,7 +122,7 @@ def _load_model_and_provider(model_path: str):
     embed_tokens, layers, norm = resolved
     num_layers = len(layers)
 
-    backend = MLXBackend()
+    backend = get_default_backend()
     provider = BackboneActivationProvider(
         tokenizer,
         embed_tokens,

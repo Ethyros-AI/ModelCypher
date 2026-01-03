@@ -36,6 +36,15 @@ def _eps(*values: float) -> float:
     return machine_epsilon(backend, backend.array(list(values) or [1.0]))
 
 
+def _ops_eps(n_ops: int, *values: float) -> float:
+    """Error bound for n floating-point operations.
+
+    For a chain of n operations, error accumulates approximately as n * eps.
+    This is standard numerical analysis for multi-operation error propagation.
+    """
+    return n_ops * _eps(*values)
+
+
 def test_entropy_delta_sample_anomaly_metrics() -> None:
     """Test anomaly metrics with raw entropy values."""
     # High base entropy (uncertain), low adapter entropy (confident), token disagreement
@@ -123,15 +132,14 @@ def test_baseline_distribution_z_score() -> None:
     """Test z-score computation from baseline."""
     baseline = BaselineDistribution(mean=0.5, std=0.1)
 
-    # At mean: z=0
-    eps = _eps(0.5) * 10  # Use larger tolerance for floating-point computation
-    assert abs(baseline.z_score(0.5)) <= eps
+    # At mean: z=0 (use input scale since output is 0)
+    assert abs(baseline.z_score(0.5)) <= _eps(0.5)
 
-    # 1 std above: z=1
-    assert abs(baseline.z_score(0.6) - 1.0) <= eps
+    # 1 std above: z=1 (use eps relative to expected output)
+    assert abs(baseline.z_score(0.6) - 1.0) <= _eps(1.0)
 
-    # 3 std above: z=3 (outlier)
-    assert abs(baseline.z_score(0.8) - 3.0) <= eps
+    # 3 std above: z=3 (use eps relative to expected output)
+    assert abs(baseline.z_score(0.8) - 3.0) <= _eps(3.0)
 
 
 def test_baseline_distribution_from_samples() -> None:

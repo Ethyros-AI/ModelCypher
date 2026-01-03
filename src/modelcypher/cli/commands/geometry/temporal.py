@@ -119,7 +119,7 @@ def temporal_probe_model(
     context = _context(ctx)
 
     from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.agents.temporal_atlas import TemporalConceptInventory
     from modelcypher.core.domain.geometry.temporal_topology import TemporalTopologyAnalyzer
     from modelcypher.core.support.array_utils import array_to_list
@@ -143,7 +143,7 @@ def temporal_probe_model(
     target_layer = num_layers - 1
     typer.echo(f"Architecture resolved: {num_layers} layers, probing layer {target_layer}")
 
-    backend = MLXBackend()
+    backend = get_default_backend()
     anchor_activations = {}
 
     anchors = TemporalConceptInventory.all_concepts()
@@ -271,7 +271,7 @@ def temporal_analyze(
     """
     context = _context(ctx)
 
-    from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.temporal_topology import TemporalTopologyAnalyzer
 
     path = Path(activations_file)
@@ -283,7 +283,7 @@ def temporal_analyze(
         raw_activations = json.load(f)
 
     # Convert to backend arrays for analyzer
-    backend = MLXBackend()
+    backend = get_default_backend()
     activations = {name: backend.array(vec) for name, vec in raw_activations.items()}
 
     analyzer = TemporalTopologyAnalyzer(activations)

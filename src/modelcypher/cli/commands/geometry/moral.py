@@ -129,7 +129,7 @@ def moral_probe_model(
     context = _context(ctx)
 
     from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.agents.moral_atlas import MoralConceptInventory
     from modelcypher.core.domain.geometry.moral_geometry import MoralGeometryAnalyzer
     from modelcypher.core.support.array_utils import array_to_list
@@ -153,7 +153,7 @@ def moral_probe_model(
     target_layer = num_layers - 1
     typer.echo(f"Architecture resolved: {num_layers} layers, probing layer {target_layer}")
 
-    backend = MLXBackend()
+    backend = get_default_backend()
     anchor_activations = {}
 
     anchors = MoralConceptInventory.all_concepts()
@@ -264,7 +264,7 @@ def moral_analyze(
     """
     context = _context(ctx)
 
-    from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.moral_geometry import MoralGeometryAnalyzer
 
     path = Path(activations_file)
@@ -276,7 +276,7 @@ def moral_analyze(
         raw_activations = json.load(f)
 
     # Convert to backend arrays for analyzer
-    backend = MLXBackend()
+    backend = get_default_backend()
     activations = {name: backend.array(vec) for name, vec in raw_activations.items()}
 
     analyzer = MoralGeometryAnalyzer(backend=backend)

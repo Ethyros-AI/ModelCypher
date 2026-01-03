@@ -132,7 +132,7 @@ def primes_probe_model(
     context = _context(ctx)
 
     from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.agents.semantic_prime_atlas import (
         SemanticPrimeInventory,
     )
@@ -153,7 +153,7 @@ def primes_probe_model(
     target_layer = num_layers - 1
     typer.echo(f"Architecture resolved: {num_layers} layers, probing layer {target_layer}")
 
-    backend = MLXBackend()
+    backend = get_default_backend()
     primes = SemanticPrimeInventory.english_2014()
     prime_activations = {}
 

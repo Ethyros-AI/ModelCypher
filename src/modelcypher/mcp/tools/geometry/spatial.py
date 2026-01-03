@@ -107,10 +107,10 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             Returns:
                 Gravity gradient analysis with mass correlation
             """
-            from modelcypher.backends.mlx_backend import MLXBackend
+            from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.domain.geometry.spatial_3d import GravityGradientAnalyzer
 
-            backend = MLXBackend()
+            backend = get_default_backend()
             activations = {name: backend.array(vec) for name, vec in anchorActivations.items()}
 
             analyzer = GravityGradientAnalyzer(backend=backend)
@@ -140,10 +140,10 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             Returns:
                 Volumetric density analysis with inverse-square compliance
             """
-            from modelcypher.backends.mlx_backend import MLXBackend
+            from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.domain.geometry.spatial_3d import VolumetricDensityProber
 
-            backend = MLXBackend()
+            backend = get_default_backend()
             activations = {name: backend.array(vec) for name, vec in anchorActivations.items()}
 
             prober = VolumetricDensityProber(backend=backend)
@@ -178,10 +178,10 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             Returns:
                 Full 3D world model analysis
             """
-            from modelcypher.backends.mlx_backend import MLXBackend
+            from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.domain.geometry.spatial_3d import Spatial3DAnalyzer
 
-            backend = MLXBackend()
+            backend = get_default_backend()
             activations = {name: backend.array(vec) for name, vec in anchorActivations.items()}
 
             analyzer = Spatial3DAnalyzer(backend=backend)
@@ -218,14 +218,14 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             import mlx.core as mx
 
             from modelcypher.adapters.model_loader import load_model_for_training
-            from modelcypher.backends.mlx_backend import MLXBackend
+            from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.domain.agents.spatial_atlas import SpatialConceptInventory
             from modelcypher.core.domain.geometry.spatial_3d import Spatial3DAnalyzer
 
             model_path = require_existing_directory(modelPath)
             model, tokenizer = load_model_for_training(str(model_path))
 
-            backend = MLXBackend()
+            backend = get_default_backend()
             anchor_activations = {}
 
             target_layer = len(model.model.layers) - 1
@@ -296,12 +296,12 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             Returns:
             Feasibility assessment with rotation estimate
             """
-            from modelcypher.backends.mlx_backend import MLXBackend
+            from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.domain.geometry.cross_grounding_transfer import (
                 CrossGroundingTransferEngine,
             )
 
-            backend = MLXBackend()
+            backend = get_default_backend()
             source = {name: backend.array(vec) for name, vec in sourceAnchors.items()}
             target = {name: backend.array(vec) for name, vec in targetAnchors.items()}
 
@@ -333,12 +333,12 @@ def register_geometry_spatial_tools(ctx: ServiceContext) -> None:
             Returns:
                 Ghost Anchors with synthesized target positions
             """
-            from modelcypher.backends.mlx_backend import MLXBackend
+            from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.domain.geometry.cross_grounding_transfer import (
                 CrossGroundingTransferEngine,
             )
 
-            backend = MLXBackend()
+            backend = get_default_backend()
             source = {name: backend.array(vec) for name, vec in sourceAnchors.items()}
             target = {name: backend.array(vec) for name, vec in targetAnchors.items()}
 

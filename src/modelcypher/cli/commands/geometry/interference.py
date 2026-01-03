@@ -297,10 +297,10 @@ def _extract_domain_activations(
     """
 
     from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
 
-    backend = MLXBackend()
+    backend = get_default_backend()
     model, tokenizer = load_model_for_training(model_path)
 
     # Get ALL probes for this domain from the UnifiedAtlasInventory
@@ -340,7 +340,7 @@ def compute_volume(
     context = _context(ctx)
 
     from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.riemannian_density import (
         RiemannianDensityEstimator,
     )
@@ -348,7 +348,7 @@ def compute_volume(
     typer.echo(f"Computing volume for concept: {concept}")
     layer = -1
 
-    backend = MLXBackend()
+    backend = get_default_backend()
     model, tokenizer = load_model_for_training(model_path)
 
     # Generate prompt variations
@@ -485,13 +485,13 @@ def null_space_filter(
     context = _context(ctx)
 
     from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.null_space_filter import NullSpaceFilter
 
     typer.echo(f"Analyzing null space for: {model_path}")
     layer = -1
 
-    backend = MLXBackend()
+    backend = get_default_backend()
     model, tokenizer = load_model_for_training(model_path)
 
     # Use fixed set of diverse prompts for activation extraction

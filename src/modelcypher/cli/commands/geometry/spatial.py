@@ -62,7 +62,7 @@ def _extract_activations_from_model(
         Dictionary mapping anchor names to activation arrays.
     """
     from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.agents.spatial_atlas import SpatialConceptInventory
 
     typer.echo(f"Loading model from {model_path}...")
@@ -79,7 +79,7 @@ def _extract_activations_from_model(
     target_layer = num_layers - 1
     typer.echo(f"Architecture resolved: {num_layers} layers, probing layer {target_layer}")
 
-    backend = MLXBackend()
+    backend = get_default_backend()
     anchor_activations = {}
     pending_activations = []
 
@@ -213,12 +213,12 @@ def spatial_gravity(
     """
     context = _context(ctx)
 
-    from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.spatial_3d import (
         GravityGradientAnalyzer,
     )
 
-    backend = MLXBackend()
+    backend = get_default_backend()
 
     # Get activations from model or file
     if model:
@@ -288,7 +288,7 @@ def spatial_density(
     """
     context = _context(ctx)
 
-    from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.spatial_3d import (
         VolumetricDensityProber,
     )
@@ -296,7 +296,7 @@ def spatial_density(
     # Load activations
     activations_data = json.loads(Path(activations_file).read_text())
 
-    backend = MLXBackend()
+    backend = get_default_backend()
     anchor_activations = {name: backend.array(vec) for name, vec in activations_data.items()}
 
     prober = VolumetricDensityProber(backend=backend)
@@ -354,12 +354,12 @@ def spatial_analyze(
     """
     context = _context(ctx)
 
-    from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.spatial_3d import (
         Spatial3DAnalyzer,
     )
 
-    backend = MLXBackend()
+    backend = get_default_backend()
 
     # Get activations from model or file
     if model:
@@ -430,7 +430,7 @@ def spatial_probe_model(
     context = _context(ctx)
 
     from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.agents.spatial_atlas import SpatialConceptInventory
     from modelcypher.core.domain.geometry.spatial_3d import Spatial3DAnalyzer
     from modelcypher.core.support.array_utils import array_to_list
@@ -450,7 +450,7 @@ def spatial_probe_model(
     target_layer = num_layers - 1
     typer.echo(f"Architecture resolved: {num_layers} layers, probing layer {target_layer}")
 
-    backend = MLXBackend()
+    backend = get_default_backend()
     anchor_activations = {}
     pending_activations = []
 
@@ -565,7 +565,7 @@ def cross_grounding_feasibility(
     """
     context = _context(ctx)
 
-    from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.cross_grounding_transfer import (
         CrossGroundingTransferEngine,
     )
@@ -574,7 +574,7 @@ def cross_grounding_feasibility(
     source_data = json.loads(Path(source_activations_file).read_text())
     target_data = json.loads(Path(target_activations_file).read_text())
 
-    backend = MLXBackend()
+    backend = get_default_backend()
     source_anchors = {name: backend.array(vec) for name, vec in source_data.items()}
     target_anchors = {name: backend.array(vec) for name, vec in target_data.items()}
 
@@ -630,7 +630,7 @@ def cross_grounding_transfer(
     """
     context = _context(ctx)
 
-    from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.geometry.cross_grounding_transfer import (
         CrossGroundingTransferEngine,
     )
@@ -639,7 +639,7 @@ def cross_grounding_transfer(
     source_data = json.loads(Path(source_activations_file).read_text())
     target_data = json.loads(Path(target_activations_file).read_text())
 
-    backend = MLXBackend()
+    backend = get_default_backend()
     source_anchors = {name: backend.array(vec) for name, vec in source_data.items()}
     target_anchors = {name: backend.array(vec) for name, vec in target_data.items()}
 

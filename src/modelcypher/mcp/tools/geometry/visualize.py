@@ -96,7 +96,7 @@ def register_geometry_visualize_tools(ctx: ServiceContext) -> None:
             dims = [4, 3]
 
             from modelcypher.adapters.model_loader import load_model_for_training
-            from modelcypher.backends.mlx_backend import MLXBackend
+            from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.cli.commands.geometry.helpers import (
                 forward_through_backbone,
                 resolve_model_backbone,
@@ -116,7 +116,7 @@ def register_geometry_visualize_tools(ctx: ServiceContext) -> None:
             num_layers = len(layers)
             target_layer = num_layers - 1
 
-            backend = MLXBackend()
+            backend = get_default_backend()
 
             # Tokenize and capture activations
             tokens = tokenizer.encode(prompt)
@@ -215,14 +215,14 @@ def register_geometry_visualize_tools(ctx: ServiceContext) -> None:
 
             dims = [4, 3]
 
-            from modelcypher.backends.mlx_backend import MLXBackend
+            from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.domain.geometry.dimension_cascade import DimensionCascade
             from modelcypher.viz.manifold_viewer import ManifoldViewer
 
             # Load activations
             data = json_module.loads(activations_path.read_text())
 
-            backend = MLXBackend()
+            backend = get_default_backend()
 
             # Handle different JSON formats
             if isinstance(data, dict):

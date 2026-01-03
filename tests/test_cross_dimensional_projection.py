@@ -458,7 +458,7 @@ class TestGramTransport:
         result = project_cross_dimensional(
             source, target, method=ProjectionMethod.GRAM_TRANSPORT, backend=backend
         )
-        # Should have valid alignment score
+        # Should expose alignment flag
         assert isinstance(result.aligned, bool)
 
 
@@ -483,7 +483,7 @@ class TestProcrustes:
         result = project_cross_dimensional(
             source, target, method=ProjectionMethod.PROCRUSTES, backend=backend
         )
-        # Should achieve alignment for rotated data
+        # Should report aligned for rotated data
         assert result.aligned
 
     def test_handles_reflection(self, backend: "Backend") -> None:

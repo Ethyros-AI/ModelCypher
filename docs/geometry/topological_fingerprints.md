@@ -195,18 +195,20 @@ def greedy_bottleneck(diagram_a, diagram_b):
 
 ## Comparison and Alignment
 
-### Alignment Score
+### Alignment Signals
 
-Combined metric using bottleneck, Wasserstein, and Betti differences:
+Report raw topology metrics directly: bottleneck distance, Wasserstein distance,
+and Betti number differences. If a binary aligned flag is required, derive it
+from machine epsilon:
 
 ```python
-scale = max(fp_a.max_persistence, fp_b.max_persistence)
-alignment_score = exp(-bottleneck/scale) * exp(-wasserstein/scale) * (1 / (1 + betti_diff))
+eps = machine_epsilon(backend, backend.array([1.0]))
+aligned = (bottleneck <= eps and wasserstein <= eps and betti_diff == 0)
 ```
 
 ### Reporting Guidance
 
-Report raw metrics and alignment_score. Avoid pass/fail thresholds.
+Report raw metrics and aligned. Avoid pass/fail thresholds.
 If thresholds are required, derive them from baseline distributions for the
 model family and domain.
 

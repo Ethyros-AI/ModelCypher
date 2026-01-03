@@ -65,7 +65,7 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
             Interference prediction with safety scores.
             """
 
-            from modelcypher.backends.mlx_backend import MLXBackend
+            from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.domain.domains import AtlasDomain
             from modelcypher.core.domain.geometry.domain_geometry_waypoints import (
                 DomainGeometryWaypointService,
@@ -91,7 +91,7 @@ def register_geometry_interference_tools(ctx: ServiceContext) -> None:
             DomainGeometryWaypointService()
             RiemannianDensityEstimator()
             MergeAnalyzer()
-            MLXBackend()
+            get_default_backend()
 
             domain_results = {}
 

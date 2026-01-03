@@ -73,13 +73,13 @@ def register_geometry_primes_tools(ctx: ServiceContext) -> None:
             import json
 
             from modelcypher.adapters.model_loader import load_model_for_training
-            from modelcypher.backends.mlx_backend import MLXBackend
+            from modelcypher.core.domain._backend import get_default_backend
             from modelcypher.core.domain.agents.semantic_prime_atlas import SemanticPrimeInventory
             from modelcypher.core.domain.geometry.cka import HSICEstimator, compute_cka
 
             model_path = require_existing_directory(modelPath)
             model, tokenizer = load_model_for_training(model_path)
-            backend = MLXBackend()
+            backend = get_default_backend()
 
             # Resolve architecture
             resolved = _resolve_text_backbone(model)

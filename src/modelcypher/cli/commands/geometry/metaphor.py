@@ -68,7 +68,7 @@ def _extract_metaphor_activations(
         Dictionary mapping layer_index to (source_activations, target_activations).
     """
     from modelcypher.adapters.model_loader import load_model_for_training
-    from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.agents.conceptual_metaphor_atlas import (
         ConceptualMetaphorInventory,
     )
@@ -93,7 +93,7 @@ def _extract_metaphor_activations(
 
     typer.echo(f"Architecture resolved: {num_layers} layers, probing {len(target_layers)} layers")
 
-    backend = MLXBackend()
+    backend = get_default_backend()
     layer_activations: dict[int, tuple["Array", "Array"]] = {}
 
     # Get activations for source domain exemplars
@@ -247,7 +247,7 @@ def metaphor_trajectory(
     """
     context = _context(ctx)
 
-    from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.agents.conceptual_metaphor_atlas import (
         ConceptualMetaphorInventory,
     )
@@ -267,7 +267,7 @@ def metaphor_trajectory(
     layer_activations = _extract_metaphor_activations(model_path, metaphor)
 
     # Collect trajectory
-    backend = MLXBackend()
+    backend = get_default_backend()
     collector = MetaphorTrajectoryCollector(backend)
     model_id = Path(model_path).name
 
@@ -344,7 +344,7 @@ def metaphor_convergence(
     """
     context = _context(ctx)
 
-    from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.agents.conceptual_metaphor_atlas import (
         ConceptualMetaphorInventory,
     )
@@ -355,7 +355,7 @@ def metaphor_convergence(
         trajectory_to_dict,
     )
 
-    backend = MLXBackend()
+    backend = get_default_backend()
     collector = MetaphorTrajectoryCollector(backend)
     model_id = Path(model_path).name
 
@@ -469,7 +469,7 @@ def metaphor_invariance(
     """
     context = _context(ctx)
 
-    from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.agents.conceptual_metaphor_atlas import (
         ConceptualMetaphorInventory,
     )
@@ -486,7 +486,7 @@ def metaphor_invariance(
         typer.echo(f"Unknown metaphor ID: {metaphor}", err=True)
         raise typer.Exit(1)
 
-    backend = MLXBackend()
+    backend = get_default_backend()
     collector = MetaphorTrajectoryCollector(backend)
 
     # Collect trajectories for both models
@@ -567,7 +567,7 @@ def metaphor_invariance_batch(
     """
     context = _context(ctx)
 
-    from modelcypher.backends.mlx_backend import MLXBackend
+    from modelcypher.core.domain._backend import get_default_backend
     from modelcypher.core.domain.agents.conceptual_metaphor_atlas import (
         ConceptualMetaphorInventory,
     )
@@ -580,7 +580,7 @@ def metaphor_invariance_batch(
         MetaphorTrajectoryCollector,
     )
 
-    backend = MLXBackend()
+    backend = get_default_backend()
     collector = MetaphorTrajectoryCollector(backend)
 
     # Collect trajectories for all metaphors
