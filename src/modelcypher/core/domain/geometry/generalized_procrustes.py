@@ -77,23 +77,31 @@ class FrechetMeanConfig:
     IMPORTANT: Fréchet mean is enabled by default. Arithmetic mean is WRONG
     on curved manifolds and should only be used for specific edge cases.
 
-    Attributes:
-        enabled: Whether to use Fréchet mean instead of arithmetic mean.
-            Default True - use Fréchet mean. Only set False for debugging.
-        k_neighbors: Number of neighbors for geodesic distance (None = derive from geometry).
-        max_iterations: Maximum Fréchet mean iterations.
-        tolerance: Convergence tolerance for Fréchet mean (None = machine epsilon).
+    All numerical parameters are derived from data when None:
+    - k_neighbors: from intrinsic dimension
+    - max_iterations: from dimension (None = use 10 * d as safety limit)
+    - tolerance: from machine epsilon
     """
 
     enabled: bool = True  # Fréchet mean by default - arithmetic mean is wrong
     k_neighbors: int | None = None  # Derived from intrinsic dimension
-    max_iterations: int = 50
+    # Maximum iterations: None = derived from dimension (10 * d as safety limit)
+    # Convergence is checked at each step; this is just a safety bound
+    max_iterations: int | None = None
     tolerance: float | None = None  # Derived from machine epsilon
 
 
 @dataclass(frozen=True)
 class Config:
-    max_iterations: int = 100
+    """Configuration for Generalized Procrustes Analysis.
+
+    All numerical parameters are derived from data when None:
+    - max_iterations: from number of models (10 * k as safety limit)
+    - convergence_threshold: from machine epsilon
+    """
+
+    # Maximum GPA iterations: None = derived from number of models (10 * k as safety limit)
+    max_iterations: int | None = None
     convergence_threshold: float | None = None  # Derived from machine epsilon
     allow_reflections: bool = False
     min_models: int = 2
@@ -277,7 +285,7 @@ class GeneralizedProcrustes:
             self._riemannian = RiemannianGeometry(backend=self._backend)
 
         backend = self._backend
-        _M, N, _K = aligned_X.shape[0], aligned_X.shape[1], aligned_X.shape[2]
+        _M, N, K = aligned_X.shape[0], aligned_X.shape[1], aligned_X.shape[2]
 
         # For each sample point, compute Fréchet mean across M models
         # Each sample is a set of M points in K-dimensional space
@@ -294,10 +302,17 @@ class GeneralizedProcrustes:
             else:
                 tol = config.frechet_mean.tolerance
 
+            # Derive max_iterations from dimension if not specified
+            # Fréchet mean typically converges in O(d) iterations; use 10*K as safety
+            if config.frechet_mean.max_iterations is None:
+                frechet_max_iter = max(50, 10 * K)
+            else:
+                frechet_max_iter = config.frechet_mean.max_iterations
+
             # Compute Fréchet mean of these M points (uses geodesic distances)
             result = self._riemannian.frechet_mean(
                 sample_points,
-                max_iterations=config.frechet_mean.max_iterations,
+                max_iterations=frechet_max_iter,
                 tolerance=tol,
             )
             consensus_rows.append(result.mean)
@@ -450,12 +465,19 @@ class GeneralizedProcrustes:
 
         aligned_X = X  # Initially aligned is just centered X
 
+        # Derive max_iterations from number of models if not specified
+        # GPA typically converges in O(k) iterations; use 10*M as safety limit
+        if config.max_iterations is None:
+            gpa_max_iterations = max(100, 10 * model_count)
+        else:
+            gpa_max_iterations = config.max_iterations
+
         float("inf")
         converged = False
         iterations = 0
         current_error = 0.0
 
-        for iter_idx in range(config.max_iterations):
+        for iter_idx in range(gpa_max_iterations):
             iterations = iter_idx + 1
 
             X_t = self._backend.transpose(X, axes=(0, 2, 1))

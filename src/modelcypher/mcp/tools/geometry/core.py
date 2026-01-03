@@ -376,14 +376,16 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_intrinsic_dimension(
             points: list[list[float]],
-            useRegression: bool = True,
-            bootstrapSamples: int = 200,
         ) -> dict:
-            """Estimate intrinsic dimension using TwoNN."""
+            """Estimate intrinsic dimension using TwoNN.
+
+            All parameters are derived from data:
+            - k_neighbors: Connectivity-based (Berry & Sauer 2016)
+            - Method: Always regression (Facco et al., more robust)
+            - Bootstrap resamples: Derived from sample size
+            """
             result = ctx.geometry_metrics_service.estimate_intrinsic_dimension(
                 points=points,
-                use_regression=useRegression,
-                bootstrap_samples=bootstrapSamples,
             )
             payload = ctx.geometry_metrics_service.intrinsic_dimension_payload(result)
             payload["_schema"] = "mc.geometry.intrinsic_dimension.v1"
@@ -714,12 +716,13 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_manifold_dimension(
             points: list[list[float]],
-            useRegression: bool = True,
         ) -> dict:
-            """Estimate intrinsic dimension of a point cloud using TwoNN."""
+            """Estimate intrinsic dimension of a point cloud using TwoNN.
+
+            All parameters are derived from data - no configuration needed.
+            """
             result = ctx.geometry_persona_service.estimate_dimension(
                 points=points,
-                use_regression=useRegression,
             )
             payload = ctx.geometry_persona_service.dimension_payload(result)
             payload["_schema"] = "mc.geometry.manifold_dimension.v1"

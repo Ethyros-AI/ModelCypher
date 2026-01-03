@@ -293,7 +293,7 @@ class ConceptDimensionalityAnalyzer:
         if len(vectors) < MIN_SAMPLE_COUNT:
             return None
         # k_neighbors is NOT passed - it is derived from the geometry:
-        # 1. Euclidean TwoNN → ID
+        # 1. Geodesic TwoNN → ID
         # All parameters derived from data:
         # - k derived from connectivity (Berry & Sauer 2016)
         # - Uses regression variant (Facco et al.)

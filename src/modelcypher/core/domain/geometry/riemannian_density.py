@@ -56,7 +56,6 @@ if TYPE_CHECKING:
     from modelcypher.core.ports.backend import Array, Backend
 
 from .manifold_curvature import (
-    CurvatureConfig,
     LocalCurvature,
     SectionalCurvatureEstimator,
 )
@@ -160,23 +159,24 @@ class InfluenceType(str, Enum):
 class RiemannianDensityConfig:
     """Configuration for Riemannian density estimation.
 
-    All parameters are derived from observed data geometry.
-    Membership is determined by geodesic_radius (data-derived).
+    All parameters are derived from observed data geometry:
+    - student_t_df: from data kurtosis (df = 4 + 6/(kurtosis - 3))
+    - covariance_regularization: from machine epsilon
+    - k_neighbors: from elbow detection on k-NN distances
     """
 
     # Influence function type
     influence_type: InfluenceType = InfluenceType.GAUSSIAN
     # Degrees of freedom for Student-t (ignored for other types)
-    student_t_df: float = 3.0
+    # None = derived from data kurtosis: df = 4 + 6/(kurtosis - 3)
+    student_t_df: float | None = None
     # Regularization for covariance estimation (numerical precision floor)
     covariance_regularization: float | None = None
     # Whether to use curvature correction for covariance
     use_curvature_correction: bool = True
     # Number of neighbors for local density estimation
-    # None = derive from sqrt(n) scaling
+    # None = derive from elbow detection on k-NN distances
     k_neighbors: int | None = None
-    # Curvature estimation config
-    curvature_config: CurvatureConfig = field(default_factory=CurvatureConfig)
 
 
 @dataclass
@@ -682,7 +682,7 @@ class RiemannianDensityEstimator:
 
     def __init__(self, config: RiemannianDensityConfig | None = None):
         self.config = config or RiemannianDensityConfig()
-        self.curvature_estimator = SectionalCurvatureEstimator(self.config.curvature_config)
+        self.curvature_estimator = SectionalCurvatureEstimator()
 
     def estimate_concept_volume(
         self,
@@ -765,6 +765,32 @@ class RiemannianDensityEstimator:
         # Compute geodesic radius (extent of activations from centroid)
         geodesic_radius = self._compute_geodesic_radius(activations, centroid)
 
+        # Derive student_t_df from data kurtosis when not specified
+        # Formula: df = 4 + 6/(kurtosis - 3), where kurtosis > 3 for heavy tails
+        # Student-t with df=3 has kurtosis=inf, df→∞ approaches Gaussian (kurtosis=3)
+        if self.config.student_t_df is not None:
+            student_t_df = self.config.student_t_df
+        else:
+            # Compute excess kurtosis from centered activations
+            centered = activations - centroid
+            var = backend.mean(centered * centered)
+            fourth = backend.mean(centered * centered * centered * centered)
+            backend.eval(var, fourth)
+            var_val = float(backend.to_scalar(var))
+            fourth_val = float(backend.to_scalar(fourth))
+            div_eps = division_epsilon(backend, activations)
+            if var_val > div_eps:
+                kurtosis = fourth_val / (var_val * var_val)
+            else:
+                kurtosis = 3.0  # Default to Gaussian kurtosis
+            # df = 4 + 6/(kurtosis - 3), clamped to [2, 30]
+            # kurtosis=3 → Gaussian, kurtosis>3 → heavy tails → lower df
+            if kurtosis > 3.0 + div_eps:
+                student_t_df = 4.0 + 6.0 / (kurtosis - 3.0)
+                student_t_df = max(2.0, min(30.0, student_t_df))
+            else:
+                student_t_df = 30.0  # High df approaches Gaussian
+
         return ConceptVolume(
             concept_id=concept_id,
             centroid=centroid,
@@ -773,7 +799,7 @@ class RiemannianDensityEstimator:
             local_curvature=local_curvature,
             num_samples=n,
             influence_type=self.config.influence_type,
-            student_t_df=self.config.student_t_df,
+            student_t_df=student_t_df,
             raw_activations=activations if store_raw_activations else None,
             _geodesic_context=geodesic_context if store_raw_activations else None,
         )

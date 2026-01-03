@@ -101,25 +101,17 @@ def geometry_manifold_cluster(
 def geometry_manifold_dimension(
     ctx: typer.Context,
     points_file: Path = typer.Option(..., "--points", "-p", help="JSON file with point vectors"),
-    regression: bool = typer.Option(
-        True,
-        "--regression/--no-regression",
-        is_flag=True,
-        flag_value=True,
-        help="Use regression-based estimation",
-    ),
 ):
     """
     Estimate intrinsic dimension of a point cloud using TwoNN.
+
+    All parameters are derived from data - no configuration needed.
     """
     context = _context(ctx)
     service = GeometryPersonaService()
 
     points = json.loads(Path(points_file).read_text())
-    result = service.estimate_dimension(
-        points=points,
-        use_regression=regression,
-    )
+    result = service.estimate_dimension(points=points)
 
     payload = service.dimension_payload(result)
 
@@ -131,7 +123,6 @@ def geometry_manifold_dimension(
         if result.ci95_lower is not None and result.ci95_upper is not None:
             lines.append(f"95% CI: [{result.ci95_lower:.2f}, {result.ci95_upper:.2f}]")
         lines.append(f"Samples: {result.sample_count} ({result.usable_count} usable)")
-        lines.append(f"Method: {'Regression' if result.uses_regression else 'MLE'}")
         write_output("\n".join(lines), context.output_format, context.pretty)
         return
 

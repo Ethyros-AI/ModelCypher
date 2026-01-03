@@ -20,10 +20,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from modelcypher.core.domain._backend import get_default_backend
-from modelcypher.core.domain.geometry.dare_sparsity import (
-    Configuration,
-    DARESparsityAnalyzer,
-)
+from modelcypher.core.domain.geometry.dare_sparsity import DARESparsityAnalyzer
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
 
 
@@ -94,18 +91,19 @@ def test_analysis_derives_thresholds_from_data() -> None:
     assert abs(stats.median - 0.2) <= eps
 
 
-def test_analysis_layer_filtering() -> None:
+def test_analysis_all_layers() -> None:
+    """Test that analysis always processes all layers (no filtering)."""
     deltas = {
         "layer1": [0.0, 0.2, 0.5, 1.0],
         "layer2": [0.05, 0.0],
     }
-    config = Configuration(analysis_layers={"layer1"})
 
-    analysis = DARESparsityAnalyzer.analyze(deltas, configuration=config)
+    # No configuration - always analyzes all layers
+    analysis = DARESparsityAnalyzer.analyze(deltas)
 
-    assert analysis.total_parameters == 4
-    # Layer filtering should only analyze layer1
-    assert set(analysis.per_layer_sparsity.keys()) == {"layer1"}
+    assert analysis.total_parameters == 6
+    # All layers should be analyzed
+    assert set(analysis.per_layer_sparsity.keys()) == {"layer1", "layer2"}
     # Sparsity is derived from data, verify constraints
     eps = _eps(analysis.effective_sparsity)
     assert analysis.effective_sparsity >= -eps

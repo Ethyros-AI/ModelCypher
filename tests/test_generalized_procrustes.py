@@ -67,12 +67,13 @@ class TestFrechetMeanConfig:
     """Tests for FrechetMeanConfig dataclass."""
 
     def test_default_values(self) -> None:
-        """Default config should have Fréchet mean enabled."""
+        """Default config should have Fréchet mean enabled and params derived from data."""
         config = FrechetMeanConfig()
         assert config.enabled is True
         # k_neighbors is None by default - computed from intrinsic dimension
         assert config.k_neighbors is None
-        assert config.max_iterations > 0
+        # max_iterations is None by default - derived from dimension at runtime
+        assert config.max_iterations is None
         # tolerance is None by default - derived from machine epsilon at runtime
         assert config.tolerance is None
 
@@ -107,9 +108,10 @@ class TestConfig:
     """Tests for Config dataclass."""
 
     def test_default_values(self) -> None:
-        """Default config values - smoothness threshold must be explicitly set."""
+        """Default config values - all numerical params derived from data at runtime."""
         config = Config()
-        assert config.max_iterations > 0
+        # max_iterations is None by default - derived from number of models at runtime
+        assert config.max_iterations is None
         # convergence_threshold is None by default - derived from machine epsilon at runtime
         assert config.convergence_threshold is None
         assert config.allow_reflections is False

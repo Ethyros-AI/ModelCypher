@@ -52,12 +52,19 @@ if TYPE_CHECKING:
 class SweepConfig:
     """Configuration for manifold fidelity sweep.
 
-    Use with_parameters() to create with explicit values.
+    All parameters are derived from data geometry when None:
+    - ranks: geometric progression up to data dimension
+    - neighbor_count: sqrt(n) scaling
+    - min_anchor_count: based on smallest rank
+    - plateau_epsilon: from fidelity variance
     """
 
-    ranks: list[int] = field(default_factory=lambda: [4, 8, 16, 32])
-    neighbor_count: int = 8
-    min_anchor_count: int = 8
+    # Ranks to sweep: None = derive geometric progression [4, 8, 16, ...] up to dim
+    ranks: list[int] | None = None
+    # Number of neighbors for k-NN metrics: None = derive from sqrt(n)
+    neighbor_count: int | None = None
+    # Minimum anchors required: None = derive from smallest rank
+    min_anchor_count: int | None = None
     plateau_epsilon: float | None = None  # Derived from fidelity variance if not set
 
     @classmethod
@@ -65,30 +72,29 @@ class SweepConfig:
         cls,
         *,
         ranks: list[int] | None = None,
-        neighbor_count: int = 8,
-        min_anchor_count: int = 8,
+        neighbor_count: int | None = None,
+        min_anchor_count: int | None = None,
         plateau_epsilon: float | None = None,
     ) -> "SweepConfig":
         """Create configuration with explicit parameters.
 
         Args:
-            ranks: Rank levels to sweep (default: [4, 8, 16, 32]).
-            neighbor_count: Number of neighbors for k-NN metrics.
-            min_anchor_count: Minimum anchors required for sweep.
-            plateau_epsilon: Epsilon for plateau detection (derived from data if None).
+            ranks: Rank levels to sweep (None = derive from data dimension).
+            neighbor_count: Number of neighbors (None = derive from sqrt(n)).
+            min_anchor_count: Minimum anchors required (None = derive from min rank).
+            plateau_epsilon: Epsilon for plateau detection (None = derive from data).
 
         Returns:
             Configuration with specified parameters.
         """
-        if ranks is None:
-            ranks = [4, 8, 16, 32]
-        if len(ranks) == 0:
-            raise ValueError("ranks must have at least one value")
-        if any(r < 1 for r in ranks):
-            raise ValueError("All ranks must be >= 1")
-        if neighbor_count < 1:
+        if ranks is not None:
+            if len(ranks) == 0:
+                raise ValueError("ranks must have at least one value")
+            if any(r < 1 for r in ranks):
+                raise ValueError("All ranks must be >= 1")
+        if neighbor_count is not None and neighbor_count < 1:
             raise ValueError(f"neighbor_count must be >= 1, got {neighbor_count}")
-        if min_anchor_count < 2:
+        if min_anchor_count is not None and min_anchor_count < 2:
             raise ValueError(f"min_anchor_count must be >= 2, got {min_anchor_count}")
         if plateau_epsilon is not None and plateau_epsilon <= 0:
             raise ValueError(f"plateau_epsilon must be > 0, got {plateau_epsilon}")
@@ -192,8 +198,37 @@ class ManifoldFidelitySweep:
         Returns:
             LayerSweep with metrics at each rank level
         """
+        import math
+
         n_anchors = min(source_activations.shape[0], target_activations.shape[0])
-        if n_anchors < self.config.min_anchor_count:
+        dim = min(source_activations.shape[1], target_activations.shape[1])
+
+        # Derive ranks from data dimension when not specified
+        # Geometric progression [4, 8, 16, ...] up to dimension
+        if self.config.ranks is not None:
+            ranks = self.config.ranks
+        else:
+            ranks = []
+            r = 4
+            while r <= dim:
+                ranks.append(r)
+                r *= 2
+            if not ranks:
+                ranks = [min(4, dim)]
+
+        # Derive neighbor_count from sqrt(n) when not specified
+        if self.config.neighbor_count is not None:
+            neighbor_count = self.config.neighbor_count
+        else:
+            neighbor_count = max(2, int(math.sqrt(n_anchors)))
+
+        # Derive min_anchor_count from smallest rank when not specified
+        if self.config.min_anchor_count is not None:
+            min_anchor_count = self.config.min_anchor_count
+        else:
+            min_anchor_count = max(2, min(ranks) if ranks else 4)
+
+        if n_anchors < min_anchor_count:
             return None
 
         # Center matrices
@@ -213,9 +248,12 @@ class ManifoldFidelitySweep:
             n_anchors,
         )
 
-        valid_ranks = [r for r in self.config.ranks if r <= max_rank]
+        valid_ranks = [r for r in ranks if r <= max_rank]
         if not valid_ranks:
             return None
+
+        # Store derived neighbor_count for use in knn computation
+        self._derived_neighbor_count = neighbor_count
 
         metrics_list: list[RankMetrics] = []
 
@@ -352,7 +390,13 @@ class ManifoldFidelitySweep:
 
         b = self._backend
         if k is None:
-            k = min(self.config.neighbor_count, x.shape[0] - 1)
+            # Use derived neighbor count (set in run_sweep)
+            neighbor_count = getattr(self, "_derived_neighbor_count", None)
+            if neighbor_count is None:
+                # Fallback: derive from sqrt(n)
+                import math
+                neighbor_count = max(2, int(math.sqrt(x.shape[0])))
+            k = min(neighbor_count, x.shape[0] - 1)
 
         n = x.shape[0]
         if n < 2:
@@ -508,12 +552,13 @@ def find_optimal_rank(
         source_activations: Source activation matrix
         target_activations: Target activation matrix
         metric: Which metric to optimize ("cka", "procrustes", "knn", "distance")
-        ranks: Ranks to try (default: [4, 8, 16, 32, 64])
+        ranks: Ranks to try (None = derived from data dimension)
 
     Returns:
         Optimal rank or None if sweep fails
     """
-    config = SweepConfig(ranks=ranks or [4, 8, 16, 32, 64])
+    # Pass ranks as-is; None will be derived from data in run_sweep
+    config = SweepConfig(ranks=ranks)
     sweep = ManifoldFidelitySweep(config, backend=backend)
     result = sweep.run_sweep(source_activations, target_activations)
 

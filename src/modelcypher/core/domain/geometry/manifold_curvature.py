@@ -83,50 +83,19 @@ class CurvatureSign(str, Enum):
 
 
 
-@dataclass(frozen=True)
-class OllivierRicciConfig:
-    """Configuration for Ollivier-Ricci curvature computation.
-
-    The Ollivier-Ricci curvature uses optimal transport (Wasserstein-1 distance)
-    between lazy random walk distributions to measure discrete curvature.
-
-    Adaptive alpha: When enabled, alpha varies per node based on degree.
-    High-degree nodes get lower alpha (rely more on self, neighborhood is crowded).
-    Low-degree nodes get higher alpha (spread mass to sparse neighborhood).
-
-    All numerical parameters are derived from data when None:
-    - base_alpha: from graph density (1 / (1 + avg_degree))
-    - adaptive_strength: from degree variance
-    - sinkhorn_epsilon: from cost matrix scale
-    - sinkhorn_threshold: from machine epsilon
-    - k_neighbors: from intrinsic dimension
-    """
-
-    # Base lazy random walk parameter from Ollivier (2009)
-    # If None, derived from graph density: alpha = 1 / (1 + avg_degree)
-    base_alpha: float | None = None
-
-    # Adaptive alpha: varies per node based on degree
-    adaptive_alpha: bool = True
-
-    # How much degree affects alpha: alpha = base * (1 - degree/max_degree * strength)
-    # If None, derived from degree variance
-    adaptive_strength: float | None = None
-
-    # Sinkhorn regularization for W_1 approximation
-    # If None, derived from cost matrix scale
-    sinkhorn_epsilon: float | None = None
-    # Convergence threshold for Sinkhorn iterations
-    # If None, derived from machine epsilon
-    sinkhorn_threshold: float | None = None
-
-    # Number of neighbors for k-NN graph
-    # When None, derived from intrinsic dimension: k = max(3, 2 * ID)
-    k_neighbors: int | None = None
-
-    # Whether to symmetrize curvature: kappa(x,y) = (kappa(x,y) + kappa(y,x)) / 2
-    # Ollivier-Ricci is naturally asymmetric; averaging symmetrizes
-    symmetrize: bool = True
+# =============================================================================
+# NO OLLIVIER-RICCI CONFIGURATION
+# =============================================================================
+# All parameters are derived from the data:
+# - base_alpha: from graph density (1 / (1 + avg_degree))
+# - adaptive_strength: from degree variance
+# - sinkhorn_epsilon: from cost matrix scale
+# - sinkhorn_threshold: from machine epsilon
+# - k_neighbors: from intrinsic dimension (k = max(3, 2 * ID))
+#
+# Always uses adaptive alpha and symmetrization (geometrically correct).
+# There is exactly ONE correct way to compute Ollivier-Ricci curvature.
+# =============================================================================
 
 
 @dataclass(frozen=True)
@@ -176,29 +145,21 @@ class OllivierRicciResult:
     # Global node statistics
     mean_node_curvature: float
 
-    # Configuration used
-    config: OllivierRicciConfig
-    k_neighbors: int
+    # Derived parameters (from data, not configuration)
+    k_neighbors: int  # Derived from intrinsic dimension
     n_points: int
 
 
-@dataclass(frozen=True)
-class CurvatureConfig:
-    """Configuration for curvature estimation.
-
-    All numerical parameters are derived from data when None:
-    - epsilon: from data scale (mean neighbor distance)
-    - num_directions: from dimension d (at least d, at most d(d-1)/2 for full coverage)
-    """
-
-    # Finite difference step size for gradient estimation
-    # If None, epsilon is computed adaptively based on data scale
-    epsilon: float | None = None
-    # Number of random directions to sample for sectional curvature
-    # If None, derived from dimension: min(max(d, 5), d*(d-1)//2)
-    num_directions: int | None = None
-    # Whether to use parallel transport correction
-    use_parallel_transport: bool = True
+# =============================================================================
+# NO CONFIGURATION CLASSES
+# =============================================================================
+# All parameters are derived from the data:
+# - epsilon: from data scale (mean neighbor distance)
+# - num_directions: from dimension d (at least d, at most d(d-1)/2 for full coverage)
+# - use_parallel_transport: always True (geometrically correct)
+#
+# There is exactly ONE correct way to estimate curvature.
+# =============================================================================
 
 
 @dataclass
@@ -377,8 +338,9 @@ class SectionalCurvatureEstimator:
     5. Sectional curvature K(u,v) = R(u,v,v,u) / (|u|^2|v|^2 - <u,v>^2)
     """
 
-    def __init__(self, config: CurvatureConfig | None = None):
-        self.config = config or CurvatureConfig()
+    def __init__(self) -> None:
+        """Initialize curvature estimator. All parameters derived from data."""
+        pass
 
     def estimate_local_curvature(
         self,
@@ -427,14 +389,11 @@ class SectionalCurvatureEstimator:
         sectional_curvatures = []
         directions_used = []
 
-        # Derive num_directions from dimension if not specified
+        # Derive num_directions from dimension (data-derived)
         # For d dimensions, there are d(d-1)/2 possible 2-planes
         # Sample at least d directions for coverage, capped at full coverage
-        if self.config.num_directions is not None:
-            num_directions = self.config.num_directions
-        else:
-            max_planes = d * (d - 1) // 2 if d > 1 else 1
-            num_directions = min(max(d, 5), max_planes)
+        max_planes = d * (d - 1) // 2 if d > 1 else 1
+        num_directions = min(max(d, 5), max_planes)
 
         backend.random_seed(42)  # Reproducible random directions
         for _ in range(num_directions):
@@ -726,16 +685,13 @@ class SectionalCurvatureEstimator:
 
         Γ^k_ij = (1/2) g^kl (∂_i g_jl + ∂_j g_il - ∂_l g_ij)
 
-        Uses adaptive epsilon when config.epsilon is None.
+        Uses adaptive epsilon derived from neighbor distances.
         """
         backend.eval(point)
         d = int(point.shape[0])
 
-        # Use adaptive epsilon if not specified
-        if self.config.epsilon is None:
-            eps = self._compute_adaptive_epsilon(neighbors, backend)
-        else:
-            eps = self.config.epsilon
+        # Epsilon is always derived from data (no configuration)
+        eps = self._compute_adaptive_epsilon(neighbors, backend)
 
         # Get metric at point and perturbed points
         if metric_fn is not None:

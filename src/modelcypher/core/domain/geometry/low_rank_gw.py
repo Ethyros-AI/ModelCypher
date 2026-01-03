@@ -39,6 +39,7 @@ References:
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -116,11 +117,18 @@ class LowRankGWResult:
 
 @dataclass(frozen=True)
 class LowRankGWConfig:
-    """Configuration for low-rank GW solver."""
+    """Configuration for low-rank GW solver.
+
+    All parameters are derived from data geometry when None:
+    - rank: derived from min(n, m) with sqrt scaling
+    - reg: derived from cost matrix scale
+    - max_iterations: derived from problem size
+    - convergence_threshold: derived from machine epsilon
+    """
+
     # Rank of the coupling approximation
-    # Higher rank = lower approximation error but more memory/compute
-    # For cross-arch projection, r=100-200 is typically sufficient
-    rank: int = 100
+    # None = derived from sqrt(min(n, m)), clamped to [10, 500]
+    rank: int | None = None
 
     # Regularization strength (entropic regularization)
     # Smaller = closer to exact GW, larger = faster convergence
@@ -128,11 +136,13 @@ class LowRankGWConfig:
     reg: float | None = None
 
     # Outer iterations (GW loop)
-    max_iterations: int = 100
+    # None = derived from problem size: max(50, 2 * sqrt(n + m))
+    max_iterations: int | None = None
     convergence_threshold: float | None = None
 
     # Inner iterations (Sinkhorn-like for each GW step)
-    max_inner_iterations: int = 50
+    # None = derived from rank: max(20, rank)
+    max_inner_iterations: int | None = None
     inner_threshold: float | None = None
 
     # Initialization
@@ -195,7 +205,15 @@ class LowRankGromovWasserstein:
 
         n = int(C1.shape[0])
         m = int(C2.shape[0])
-        r = min(config.rank, n, m)
+
+        # Derive rank from problem size when not specified
+        # sqrt(min(n, m)) provides good approximation quality, clamped to [10, 500]
+        if config.rank is not None:
+            r = min(config.rank, n, m)
+        else:
+            derived_rank = int(math.sqrt(min(n, m)))
+            derived_rank = max(10, min(500, derived_rank))
+            r = min(derived_rank, n, m)
 
         if n == 0 or m == 0:
             return LowRankGWResult(
@@ -280,6 +298,19 @@ class LowRankGromovWasserstein:
         # Initialize low-rank factors using simple uniform + noise
         Q, g, R = self._initialize_factors(n, m, r, a, p, b)
 
+        # Derive max_iterations from problem size when not specified
+        # max(50, 2 * sqrt(n + m)) scales with problem complexity
+        if config.max_iterations is not None:
+            max_iterations = config.max_iterations
+        else:
+            max_iterations = max(50, int(2 * math.sqrt(n + m)))
+
+        # Derive inner iterations from rank when not specified
+        if config.max_inner_iterations is not None:
+            max_inner_iterations = config.max_inner_iterations
+        else:
+            max_inner_iterations = max(20, r)
+
         # GW iteration: alternating linearization and low-rank Sinkhorn
         prev_distance = float("inf")
         converged = False
@@ -295,7 +326,7 @@ class LowRankGromovWasserstein:
             else regularization_epsilon(b, C1)
         )
 
-        for it in range(config.max_iterations):
+        for it in range(max_iterations):
             iterations = it + 1
 
             # Compute linearized cost matrix for current coupling
@@ -306,7 +337,7 @@ class LowRankGromovWasserstein:
             # Solve low-rank OT with this cost using Sinkhorn
             Q_new, g_new, R_new = self._lowrank_sinkhorn(
                 cost, a, p, r, reg,
-                config.max_inner_iterations, inner_threshold, b
+                max_inner_iterations, inner_threshold, b
             )
             b.eval(Q_new, g_new, R_new)
 

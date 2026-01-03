@@ -77,7 +77,6 @@ def register(app: typer.Typer) -> None:
             IntrinsicDimension,
         )
         from modelcypher.core.domain.geometry.manifold_curvature import (
-            CurvatureConfig,
             OllivierRicciConfig,
             OllivierRicciCurvature,
             SectionalCurvatureEstimator,
@@ -105,7 +104,9 @@ def register(app: typer.Typer) -> None:
         logger.info(f"Computing curvature for {len(layer_indices)} layers with {len(probe_texts)} probes")
 
         # Initialize estimators
-        sectional_estimator = SectionalCurvatureEstimator(CurvatureConfig())
+        # SectionalCurvatureEstimator derives all parameters from data
+        sectional_estimator = SectionalCurvatureEstimator()
+        # OllivierRicciConfig: k_neighbors=None means derive from intrinsic dimension
         orc_config = OllivierRicciConfig(k_neighbors=k_neighbors, adaptive_alpha=True)
         orc_estimator = OllivierRicciCurvature(config=orc_config, backend=backend)
 

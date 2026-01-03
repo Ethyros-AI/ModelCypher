@@ -97,7 +97,7 @@ def test_manifold_regularity_intrinsic_dimension():
         for i in range(n)
     ]
 
-    summary = ManifoldDimensionality.estimate_id(points, use_regression=True)
+    summary = ManifoldDimensionality.estimate_id(points)
 
     backend = get_default_backend()
     eps = division_epsilon(backend, backend.array([1.0]))

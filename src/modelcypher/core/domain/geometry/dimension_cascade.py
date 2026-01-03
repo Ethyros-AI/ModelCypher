@@ -264,7 +264,7 @@ class DimensionCascade:
 
             # Measure geodesic distortion: how well does embedding preserve distances?
             # We compute correlation between original geodesic distances and
-            # embedded Euclidean distances
+            # embedded distances (Euclidean for 2D/3D, geodesic otherwise)
             geodesic_distortion[target_dim] = self._measure_geodesic_distortion(
                 current, projected
             )
@@ -526,7 +526,7 @@ class DimensionCascade:
         Measure how well embedding preserves geodesic distances.
 
         Computes 1 - correlation between original geodesic distances
-        and embedded Euclidean distances. Lower indicates less distortion.
+        and embedded distances (Euclidean for 2D/3D, geodesic otherwise).
 
         Returns:
             Distortion in [0, 1] where 0 = exact preservation
@@ -544,31 +544,41 @@ class DimensionCascade:
             geo_dist = geo_result.distances
             b.eval(geo_dist)
 
-            # Compute Euclidean distances in embedded space
-            # D_ij = ||y_i - y_j||
-            diff = projected[:, None, :] - projected[None, :, :]  # [n, n, d]
-            euc_dist = b.sqrt(b.sum(diff * diff, axis=2))  # [n, n]
-            b.eval(euc_dist)
+            # Compute distances in embedded space.
+            # Euclidean is valid for 2D/3D probes; higher dims use geodesic.
+            proj_dim = int(projected.shape[1]) if len(projected.shape) > 1 else 1
+            if proj_dim <= 3:
+                diff = projected[:, None, :] - projected[None, :, :]  # [n, n, d]
+                embed_dist = b.sqrt(b.sum(diff * diff, axis=2))  # [n, n]
+            else:
+                from modelcypher.core.domain.geometry.riemannian_utils import (
+                    geodesic_distance_matrix,
+                )
+
+                embed_dist = geodesic_distance_matrix(
+                    projected, k_neighbors=None, backend=b
+                )
+            b.eval(embed_dist)
 
             # Flatten and compute correlation
             geo_flat = b.reshape(geo_dist, (-1,))
-            euc_flat = b.reshape(euc_dist, (-1,))
-            b.eval(geo_flat, euc_flat)
+            embed_flat = b.reshape(embed_dist, (-1,))
+            b.eval(geo_flat, embed_flat)
 
             # Pearson correlation
             geo_mean = b.mean(geo_flat)
-            euc_mean = b.mean(euc_flat)
+            embed_mean = b.mean(embed_flat)
             geo_centered = geo_flat - geo_mean
-            euc_centered = euc_flat - euc_mean
-            b.eval(geo_centered, euc_centered)
+            embed_centered = embed_flat - embed_mean
+            b.eval(geo_centered, embed_centered)
 
-            numerator = b.sum(geo_centered * euc_centered)
+            numerator = b.sum(geo_centered * embed_centered)
             geo_std = b.sqrt(b.sum(geo_centered * geo_centered))
-            euc_std = b.sqrt(b.sum(euc_centered * euc_centered))
-            b.eval(numerator, geo_std, euc_std)
+            embed_std = b.sqrt(b.sum(embed_centered * embed_centered))
+            b.eval(numerator, geo_std, embed_std)
 
             eps = division_epsilon(b, geo_flat)
-            correlation = numerator / (geo_std * euc_std + eps)
+            correlation = numerator / (geo_std * embed_std + eps)
             b.eval(correlation)
 
             corr_val = float(b.to_scalar(correlation))

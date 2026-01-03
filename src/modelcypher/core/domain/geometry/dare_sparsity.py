@@ -31,19 +31,16 @@ if TYPE_CHECKING:
     from modelcypher.ports.backend import Backend
 
 
-@dataclass(frozen=True)
-class Configuration:
-    """Configuration for DARE sparsity analysis.
-
-    Thresholds are derived from data, not arbitrary constants:
-    - Zero threshold: machine epsilon relative to max magnitude
-    - Drop threshold: spectral gap in magnitude distribution (largest relative jump)
-
-    The only configurable parameters are which layers to analyze.
-    """
-
-    analysis_layers: set[str] | None = None
-    compute_per_layer_metrics: bool = True
+# =============================================================================
+# NO CONFIGURATION CLASSES
+# =============================================================================
+# All thresholds derived from data:
+# - Zero threshold: machine epsilon relative to max magnitude
+# - Drop threshold: spectral gap in magnitude distribution
+#
+# Always analyze ALL layers. Always compute per-layer metrics.
+# There is exactly ONE correct way to analyze sparsity.
+# =============================================================================
 
 
 @dataclass(frozen=True)
@@ -89,17 +86,11 @@ class SparsityAnalysis:
 class DARESparsityAnalyzer:
     @staticmethod
     def analyze(
-        delta_weights: dict[str, list[float]], configuration: Configuration = Configuration()
+        delta_weights: dict[str, list[float]],
     ) -> SparsityAnalysis:
-        filtered = (
-            {
-                name: values
-                for name, values in delta_weights.items()
-                if configuration.analysis_layers and name in configuration.analysis_layers
-            }
-            if configuration.analysis_layers
-            else delta_weights
-        )
+        """Analyze sparsity of delta weights. All layers, all metrics."""
+        # Always analyze all layers - no filtering
+        filtered = delta_weights
 
         all_magnitudes: list[float] = []
         per_layer_data: dict[str, tuple[list[float], int]] = {}
@@ -135,14 +126,14 @@ class DARESparsityAnalyzer:
         effective_sparsity = float(droppable_count) / float(total_count)
         essential_fraction = 1.0 - effective_sparsity
 
+        # Always compute per-layer metrics
         per_layer_metrics: dict[str, LayerSparsityMetrics] = {}
-        if configuration.compute_per_layer_metrics:
-            for name, (magnitudes, _) in per_layer_data.items():
-                per_layer_metrics[name] = DARESparsityAnalyzer._compute_layer_metrics(
-                    layer_name=name,
-                    magnitudes=magnitudes,
-                    drop_threshold=drop_threshold,
-                )
+        for name, (magnitudes, _) in per_layer_data.items():
+            per_layer_metrics[name] = DARESparsityAnalyzer._compute_layer_metrics(
+                layer_name=name,
+                magnitudes=magnitudes,
+                drop_threshold=drop_threshold,
+            )
 
         return SparsityAnalysis(
             total_parameters=total_count,
@@ -158,20 +149,12 @@ class DARESparsityAnalyzer:
     def analyze_with_backend(
         delta_weights: dict[str, Any],
         backend: "Backend | None" = None,
-        configuration: Configuration = Configuration(),
     ) -> SparsityAnalysis:
         """GPU-accelerated DARE sparsity analysis via Backend protocol."""
         b = backend or get_default_backend()
 
-        filtered = (
-            {
-                name: arr
-                for name, arr in delta_weights.items()
-                if configuration.analysis_layers and name in configuration.analysis_layers
-            }
-            if configuration.analysis_layers
-            else delta_weights
-        )
+        # Always analyze all layers - no filtering
+        filtered = delta_weights
 
         if not filtered:
             return DARESparsityAnalyzer._empty_analysis()
@@ -310,16 +293,16 @@ class DARESparsityAnalyzer:
             total_droppable += layer_droppable
             layer_sparsity = float(layer_droppable) / float(layer_count) if layer_count > 0 else 1.0
 
-            if configuration.compute_per_layer_metrics:
-                per_layer_metrics[name] = LayerSparsityMetrics(
-                    layer_name=name,
-                    parameter_count=layer_count,
-                    sparsity=layer_sparsity,
-                    mean_magnitude=layer_mean,
-                    max_magnitude=layer_max,
-                    essential_fraction=1.0 - layer_sparsity,
-                    has_non_zero_updates=layer_sparsity < 1.0,
-                )
+            # Always compute per-layer metrics
+            per_layer_metrics[name] = LayerSparsityMetrics(
+                layer_name=name,
+                parameter_count=layer_count,
+                sparsity=layer_sparsity,
+                mean_magnitude=layer_mean,
+                max_magnitude=layer_max,
+                essential_fraction=1.0 - layer_sparsity,
+                has_non_zero_updates=layer_sparsity < 1.0,
+            )
 
         effective_sparsity = float(total_droppable) / float(total_count)
 

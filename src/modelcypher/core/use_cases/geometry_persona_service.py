@@ -267,19 +267,19 @@ class GeometryPersonaService:
     def estimate_dimension(
         self,
         points: list[list[float]],
-        use_regression: bool = True,
     ) -> IDEstimateSummary:
         """
         Estimate intrinsic dimension of a point cloud.
 
+        All parameters are derived from data - no configuration needed.
+
         Args:
             points: List of feature vectors
-            use_regression: Use regression-based estimation
 
         Returns:
             IDEstimateSummary with dimension estimate and confidence
         """
-        return ManifoldDimensionality.estimate_id(points=points, use_regression=use_regression)
+        return ManifoldDimensionality.estimate_id(points=points)
 
     def query_region(
         self,
