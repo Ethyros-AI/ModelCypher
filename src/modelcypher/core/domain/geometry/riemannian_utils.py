@@ -754,14 +754,14 @@ class RiemannianGeometry:
                     f"Points shape: {points.shape}, points NaN: {points_nan}, points Inf: {points_inf}"
                 )
 
-        # Build k-NN adjacency and run Floyd-Warshall on backend (no scipy)
-        # Use a reasonable sentinel value that's:
-        # - Large enough to clearly indicate "no direct edge" in the k-NN graph
-        # - Small enough to not cause overflow when used in downstream computations
-        #   (like scale = geodesic / euclidean in Fréchet mean)
-        # 1e20 is a good balance: much larger than any reasonable geodesic distance
-        # but small enough that scale = 1e20 / 0.001 = 1e23 won't overflow
-        inf_val = 1e20
+        # Build k-NN adjacency and run Floyd-Warshall on backend (no scipy).
+        # Use a sentinel derived from data scale and dtype precision to avoid overflow.
+        max_dist_arr = backend.max(euclidean_dist)
+        backend.eval(max_dist_arr)
+        max_dist = float(backend.to_scalar(max_dist_arr))
+        eps = machine_epsilon(backend, euclidean_dist)
+        base = max(max_dist, eps)
+        inf_val = min(base / eps, backend.finfo(euclidean_dist.dtype).max)
         eye = backend.eye(n)
         dist_for_sort = euclidean_dist + eye * inf_val
 

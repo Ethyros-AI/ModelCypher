@@ -589,7 +589,8 @@ class TestHypothesisValidation:
         assert isinstance(result, HypothesisTest)
         assert result.hypothesis_id == "H_test"
         assert isinstance(result.passed, bool)
-        assert 0.0 <= result.p_value <= 1.0
+        # p_value is None when samples not provided
+        assert result.p_value is None
 
     def test_run_hypothesis_test_one_sided_less(self, backend):
         """When prime_value < baseline_value with samples, one_sided test should pass."""
@@ -620,7 +621,10 @@ class TestHypothesisValidation:
             backend=backend,
         )
         assert result.prime_value > result.baseline_value
-        assert 0.0 <= result.p_value <= 1.0
+        # p_value is None when samples not provided
+        assert result.p_value is None
+        # Test should fail because direction is wrong (prime > baseline for one_sided)
+        assert not result.passed
 
 
 # =============================================================================

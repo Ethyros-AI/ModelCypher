@@ -236,7 +236,7 @@ class HypothesisTest:
     hypothesis_id: str  # H1-H8
     description: str
     passed: bool
-    p_value: float
+    p_value: float | None  # None when samples unavailable for statistical test
     effect_size: EffectSize
     prime_value: float
     baseline_value: float
@@ -1286,20 +1286,27 @@ def run_hypothesis_test(
             backend=backend,
         )
     else:
-        # Single-value comparison
+        # Single-value comparison - no samples means no p-value
         diff = prime_value - baseline_value
         eps = division_epsilon(backend, backend.array([baseline_value]))
         effect = EffectSize.from_cohens_d(diff / (abs(baseline_value) + eps))
-        p_value = 0.05  # Placeholder without samples
+        p_value = None  # Cannot compute without samples
         ci = None
 
-    # Determine pass/fail using boundary values
-    if one_sided:
-        # For H1, H2: pass if prime < baseline with statistical significance
-        passed = prime_value < baseline_value and p_value < 0.05
+    # Determine pass/fail
+    # With samples: require statistical significance (p < 0.05)
+    # Without samples: rely on direction only (effect size still computed)
+    if p_value is not None:
+        if one_sided:
+            passed = prime_value < baseline_value and p_value < 0.05
+        else:
+            passed = prime_value != baseline_value and p_value < 0.05
     else:
-        # For H3, etc: pass if any measurable difference with statistical significance
-        passed = prime_value != baseline_value and p_value < 0.05
+        # No p-value: pass based on direction and non-trivial effect size
+        if one_sided:
+            passed = prime_value < baseline_value and abs(effect.d) > 0.2
+        else:
+            passed = prime_value != baseline_value and abs(effect.d) > 0.2
 
     return HypothesisTest(
         hypothesis_id=hypothesis_id,
@@ -1651,7 +1658,8 @@ def format_comprehensive_result(result: ComprehensiveResult) -> str:
         lines.append(f"  {test.description}")
         lines.append(f"  Prime: {test.prime_value:.3f}, Baseline: {test.baseline_value:.3f}")
         lines.append(f"  Effect size: {test.effect_size.d:.3f}")
-        lines.append(f"  p-value: {test.p_value:.4f}")
+        p_str = f"{test.p_value:.4f}" if test.p_value is not None else "N/A (no samples)"
+        lines.append(f"  p-value: {p_str}")
         lines.append("")
 
     # Summary

@@ -500,8 +500,8 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         ) -> dict:
             """Analyze per-neuron sparsity for fine-grained knowledge grafting.
 
-            Identifies individual neurons that are sparse enough to be
-            good candidates for knowledge transfer during model merging.
+            Identifies individual neurons that meet the derived sparsity
+            threshold for knowledge transfer during model merging.
 
             Args:
                 modelPath: Path to model directory

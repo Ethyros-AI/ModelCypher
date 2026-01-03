@@ -36,7 +36,7 @@ ModelCypher supports multiple compute backends for different platforms. This gui
 - Smaller ecosystem than PyTorch
 - Limited batch sizes on memory-constrained devices
 
-**Best for:** Local development on Mac, memory-efficient inference
+**Typical use cases:** Local development on Mac, memory-efficient inference
 
 **Key Pattern:**
 ```python
@@ -51,14 +51,14 @@ backend.eval(result)  # Forces computation
 - JIT compilation for optimized kernels
 - TPU support for large-scale training
 - Functional programming model
-- Excellent for research workflows
+- Common in research workflows due to JIT + TPU support
 
 **Weaknesses:**
 - Compilation overhead on first run
 - Debugging can be complex (traced execution)
 - Less intuitive for imperative code
 
-**Best for:** TPU training, research, large-scale experiments
+**Typical use cases:** TPU training, research, large-scale experiments
 
 **Key Pattern:**
 ```python
@@ -81,7 +81,7 @@ def compute(a, b):
 - Linux-focused ecosystem
 - No native quantization in this backend
 
-**Best for:** Production inference, large-scale training on NVIDIA hardware
+**Typical use cases:** Production inference, large-scale training on NVIDIA hardware
 
 **Key Pattern:**
 ```python
@@ -103,7 +103,7 @@ backend.eval()  # torch.cuda.synchronize()
 - Too slow for real models
 - Not suitable for production
 
-**Best for:** Unit tests, CI/CD, algorithm development
+**Typical use cases:** Unit tests, CI/CD, algorithm development
 
 ## Backend-Specific Notes
 

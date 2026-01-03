@@ -19,7 +19,8 @@
 Per-neuron sparsity analysis for fine-grained knowledge grafting.
 
 This module extends layer-level sparsity analysis to individual neurons,
-enabling identification of sparse neurons suitable for knowledge transfer.
+enabling identification of sparse neurons for knowledge transfer based on
+derived thresholds.
 
 Integrates with:
 - HiddenStateExtractor: Captures per-token, per-layer activations
@@ -71,8 +72,8 @@ def _gap_upper_threshold(values: list[float]) -> float:
 class NeuronStats:
     """Statistics for a single neuron across prompts.
 
-    Captures activation patterns to determine if a neuron is sparse
-    enough for knowledge grafting.
+    Captures activation patterns to determine whether a neuron meets
+    derived sparsity thresholds for knowledge grafting.
     """
 
     layer: int
@@ -125,8 +126,8 @@ class NeuronStats:
 class NeuronSparsityMap:
     """Per-neuron sparsity analysis across all layers.
 
-    Provides methods to identify sparse neurons suitable for knowledge grafting.
-    Thresholds are derived from the sparsity distribution.
+    Provides methods to identify neurons meeting derived sparsity thresholds
+    for knowledge grafting. Thresholds are derived from the sparsity distribution.
     """
 
     stats: dict[int, list[NeuronStats]]
@@ -174,7 +175,7 @@ class NeuronSparsityMap:
         return result
 
     def get_graft_candidates(self) -> dict[int, list[int]]:
-        """Return neurons sparse enough for knowledge grafting.
+        """Return neurons meeting the derived sparsity threshold.
 
         Returns:
             Dict mapping layer index to list of graftable neuron indices.
@@ -442,7 +443,7 @@ def compare_neuron_sparsity(
     """Compare neuron sparsity between source and target models.
 
     Identifies neurons that are:
-    - Sparse in source, active in target (good graft targets)
+    - Sparse in source, active in target (candidate graft targets)
     - Active in both (collision risk)
     - Sparse in both (unused in both)
 
@@ -451,7 +452,7 @@ def compare_neuron_sparsity(
         target_map: Sparsity analysis of target model.
 
     Returns:
-        Dict with comparison statistics and graft recommendations.
+        Dict with comparison statistics and graft candidate sets.
     """
     source_sparse = source_map.sparse_neurons
     target_sparse = target_map.sparse_neurons
@@ -467,7 +468,7 @@ def compare_neuron_sparsity(
         source_set = set(source_sparse.get(layer, []))
         target_set = set(target_sparse.get(layer, []))
 
-        # Sparse in target but not source = good for grafting from source
+        # Sparse in target but not source = candidate for grafting from source
         graft = list(target_set - source_set)
         if graft:
             graft_candidates[layer] = graft
@@ -496,6 +497,10 @@ def compare_neuron_sparsity(
     total_collision = sum(len(v) for v in collision_neurons.values())
     total_both_sparse = sum(len(v) for v in both_sparse.values())
 
+    backend = get_default_backend()
+    eps = division_epsilon(backend, backend.array([1.0]))
+    denom = total_graft + total_collision + eps
+
     return {
         "graft_candidates": graft_candidates,
         "collision_neurons": collision_neurons,
@@ -503,7 +508,7 @@ def compare_neuron_sparsity(
         "total_graft_candidates": total_graft,
         "total_collision_neurons": total_collision,
         "total_both_sparse": total_both_sparse,
-        "graft_potential": total_graft / (total_graft + total_collision + 1),
+        "graft_potential": total_graft / denom,
     }
 
 

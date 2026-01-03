@@ -125,8 +125,8 @@ Martin & Mahoney's **WeightWatcher** analyzes pre-trained models:
 ### Key Metrics
 
 1. **Alpha ($\alpha$)**: Power-law exponent of eigenvalue tail
-   - $\alpha < 2$: Heavy-tailed (good)
-   - $\alpha > 4$: Thin-tailed (concerning)
+   - $\alpha < 2$: Heavy-tailed
+   - $\alpha > 4$: Thin-tailed
 
 2. **Lambda ($\lambda$)**: Spectral norm / maximum eigenvalue
 

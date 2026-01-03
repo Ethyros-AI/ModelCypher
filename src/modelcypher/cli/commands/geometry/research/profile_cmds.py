@@ -73,8 +73,8 @@ def register(app: typer.Typer) -> None:
         - Domain strength rankings by layer
         - Overall model capability fingerprint
 
-        Use --checkpoint-dir to save progress incrementally (recommended for
-        large models). Use --resume to continue from last checkpoint.
+        Use --checkpoint-dir to save progress incrementally for large models.
+        Use --resume to continue from last checkpoint.
         """
         context = get_context(ctx)
 

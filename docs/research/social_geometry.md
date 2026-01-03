@@ -72,7 +72,7 @@ $$SMS = 0.30 \times \text{orthogonality} + 0.40 \times \text{gradient} + 0.30 \t
 
 ### The Monotonic Power Gradient
 
-Qwen2.5-3B-bf16 exhibits a **perfect monotonic power hierarchy**:
+Qwen2.5-3B-bf16 exhibits a **monotonic power hierarchy (r = 1.0)**:
 
 ```
 slave (level 1) < servant (level 2) < citizen (level 3) < noble (level 4) < emperor (level 5)
@@ -84,11 +84,11 @@ This ordering emerged from training on human text without explicit hierarchy lab
 
 ## Key Findings
 
-1. **All models encode social structure above chance** (SMS > 0.40, mean = 0.53)
-2. **Very high axis orthogonality** (94.8%) - Power, Kinship, Formality are computationally independent
-3. **Emergent power hierarchy** - Qwen2.5-3B learned slave→emperor ordering without supervision
-4. **Code models encode social structure** - Qwen2.5-Coder scores comparably (not domain-specific)
-5. **Perfect reproducibility** (CV = 0.00%) - Measurements are deterministic
+1. **SMS**: all models at SMS > 0.40 (mean = 0.53)
+2. **Axis orthogonality**: 94.8% for Power/Kinship/Formality axes
+3. **Power ordering**: Qwen2.5-3B shows monotonic slave→emperor ordering without supervision
+4. **Code model SMS**: Qwen2.5-Coder scores comparably (not domain-specific)
+5. **Reproducibility**: CV = 0.00% (deterministic)
 
 ## Comparison with Spatial Grounding
 
@@ -99,11 +99,11 @@ This ordering emerged from training on human text without explicit hierarchy lab
 | Gradient Monotonicity | Mixed | Detected |
 | Effect Size (d) | 5.89 | 2.39 |
 
-**Social geometry shows stronger signal than spatial grounding** - LLMs encode social relationships more robustly than physical spatial relationships. This is consistent with training primarily on human social discourse rather than physical world descriptions.
+**Social geometry vs spatial grounding**: mean score and axis orthogonality are higher for social geometry (0.53 vs 0.48; 94.8% vs 88%). This aligns with training dominated by human social discourse rather than physical world descriptions.
 
 ## Interpretation
 
-The **Latent Sociologist** hypothesis is supported: language models encode social relationships through geometric structure. The high axis orthogonality indicates the model separately encodes:
+The **Latent Sociologist** hypothesis is consistent with these measurements: language models encode social relationships through geometric structure. The axis orthogonality indicates the model separately encodes:
 
 - **Who has power over whom** (Power axis)
 - **Who is socially close to whom** (Kinship axis)

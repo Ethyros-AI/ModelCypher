@@ -139,8 +139,8 @@ def geometry_sparse_neurons(
     The sparsity threshold is derived from the activation distribution.
     No user-configurable threshold - the geometry determines it.
 
-    This identifies individual neurons that are sparse enough to be
-    good candidates for knowledge transfer during model merging.
+    This identifies individual neurons that meet the derived sparsity
+    threshold for knowledge transfer during model merging.
 
     Examples:
         mc geometry sparse neurons --model ./model --prompts ./prompts.json

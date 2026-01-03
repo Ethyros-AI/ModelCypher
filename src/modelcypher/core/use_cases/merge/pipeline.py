@@ -287,7 +287,7 @@ def run_merge(
     #
     # DENSITY-ONLY MODE: When transplant_domains is empty, ALL probes are
     # candidates and graft_mask decides what to transplant based on density.
-    # This is the recommended mode - geometry decides, not domain names.
+    # Default mode - geometry decides, not domain names.
     if merge_config.transplant_domains:
         logger.info(
             "TRANSPLANT: Domain-based mode - restricting to domains: %s",

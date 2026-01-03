@@ -330,7 +330,7 @@ class CrossManifoldProjector:
         if len(anchor_ids) < self.config.min_anchors:
             logger.warning(
                 f"Only {len(anchor_ids)} anchors available, "
-                f"minimum {self.config.min_anchors} recommended"
+                f"minimum {self.config.min_anchors} configured"
             )
 
         # Build combined point matrix: [concept_centroid, anchor_0, anchor_1, ...]

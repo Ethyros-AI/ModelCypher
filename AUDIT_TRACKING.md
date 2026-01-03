@@ -474,7 +474,7 @@ Files that are not imported or used anywhere:
 - Dependency injection via PortRegistry + ServiceFactory
 - MCP tools with ServiceContext for DI
 
-### Geometry System Quality:
-- **Merge pipeline**: Excellent - clean layer architecture
-- **Measure system**: Excellent - proper centralization
-- **Probe/domain modules**: Fair - many unused scaffolding items
+### Geometry System Notes:
+- **Merge pipeline**: layer architecture separated by stage
+- **Measure system**: centralized service entry points
+- **Probe/domain modules**: contains unused scaffolding items

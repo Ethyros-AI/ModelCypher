@@ -64,7 +64,7 @@ def run(
         "",
         "--transplant-domains",
         "-d",
-        help="Comma-separated domains to transplant. Empty = density-only mode (recommended)",
+        help="Comma-separated domains to transplant. Empty = density-only mode (default)",
     ),
     skip_pre_analysis: bool = typer.Option(
         False,
@@ -89,7 +89,7 @@ def run(
     TARGET's existing capabilities. The result is a denser model.
 
     Examples:
-        # Density-only mode (recommended) - geometry decides what to transplant
+        # Density-only mode (default) - geometry decides what to transplant
         mc merge -s ./qwen -t ./smol -o ./merged
 
         # Domain-based mode - transplant specific domains only
