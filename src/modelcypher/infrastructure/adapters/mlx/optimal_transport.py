@@ -18,6 +18,10 @@
 
 import mlx.core as mx
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.riemannian_utils import geodesic_distance_matrix
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+
 
 class GromovWassersteinSolver:
     """
@@ -94,7 +98,10 @@ class GromovWassersteinSolver:
             T = u.reshape(-1, 1) * K * v.reshape(1, -1)
 
             # Check convergence
-            diff = mx.linalg.norm(T - prev_T).item()
+            backend = get_default_backend()
+            diff_arr = geodesic_norms(backend.reshape(T - prev_T, (1, -1)), backend)
+            backend.eval(diff_arr)
+            diff = float(backend.to_scalar(diff_arr))
             if diff < threshold:
                 return T, diff, i
             prev_T = T
@@ -104,9 +111,9 @@ class GromovWassersteinSolver:
     @staticmethod
     def compute_pairwise_distances(X: mx.array) -> mx.array:
         """
-        Compute squared Euclidean distance matrix.
+        Compute squared geodesic distance matrix.
         """
-        # (x-y)^2 = x^2 + y^2 - 2xy
-        norm_sq = mx.sum(X**2, axis=1, keepdims=True)  # [N, 1]
-        dist = norm_sq + norm_sq.T - 2 * (X @ X.T)
-        return mx.maximum(dist, 0.0)  # Clip negs
+        backend = get_default_backend()
+        dist = geodesic_distance_matrix(X, backend=backend)
+        backend.eval(dist)
+        return dist * dist

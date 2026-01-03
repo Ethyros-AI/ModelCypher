@@ -227,17 +227,15 @@ class MLXConceptAdapter(ConceptDiscoveryPort):
 
         # Embed concepts (prototypes)
         # We take the mean embedding of expressions
+        backend = get_default_backend()
         prototypes = []
         for _, expressions in self.concepts:
             vecs = await self.embedder.embed(expressions)
             # vecs is [N, D]
             centroid = mx.mean(vecs, axis=0)  # [D]
-            norm_arr = geodesic_norms(
-                get_default_backend().reshape(centroid, (1, -1)),
-                get_default_backend(),
-            )
-            get_default_backend().eval(norm_arr)
-            norm_val = float(get_default_backend().to_scalar(norm_arr))
+            norm_arr = geodesic_norms(backend.reshape(centroid, (1, -1)), backend)
+            backend.eval(norm_arr)
+            norm_val = float(backend.to_scalar(norm_arr))
             if norm_val > 0.0:
                 centroid = centroid / norm_val
             prototypes.append(centroid)
@@ -423,33 +421,31 @@ class MLXConceptAdapter(ConceptDiscoveryPort):
         vec = await self.embedder.embed([text])  # [1, D]
         vec = vec[0]
 
-        # Cosine sim against concept prototypes
-        # concepts: [C, D]
-        # vec: [D]
-        sims = self._concept_embeddings @ vec  # [C]
-        if isinstance(sims, mx.array):
-            # Helper to get argmax and max
-            idx = mx.argmax(sims).item()
-            score = sims[idx].item()
+        backend = get_default_backend()
+        sims = geodesic_cosine_batch(vec, self._concept_embeddings, backend)  # [C]
+        idx_arr = backend.argmax(sims)
+        max_arr = backend.max(sims)
+        backend.eval(idx_arr, max_arr)
+        idx = int(backend.to_scalar(idx_arr))
+        score = float(backend.to_scalar(max_arr))
 
-            concept_id = self.concepts[idx][0]
+        concept_id = self.concepts[idx][0]
 
-            # Extract category from concept_id (format: "source:id")
-            # e.g., "semantic_prime:KNOW" -> category="semantic_prime"
-            # e.g., "computational_gate:3" -> category="computational_gate"
-            if ":" in concept_id:
-                category = concept_id.split(":")[0]
-            else:
-                category = "general"
+        # Extract category from concept_id (format: "source:id")
+        # e.g., "semantic_prime:KNOW" -> category="semantic_prime"
+        # e.g., "computational_gate:3" -> category="computational_gate"
+        if ":" in concept_id:
+            category = concept_id.split(":")[0]
+        else:
+            category = "general"
 
-            return DetectedConcept(
-                concept_id=concept_id,
-                category=category,
-                similarity=score,
-                character_span=slice(start, end),
-                trigger_text=text,
-            )
-        return None
+        return DetectedConcept(
+            concept_id=concept_id,
+            category=category,
+            similarity=score,
+            character_span=slice(start, end),
+            trigger_text=text,
+        )
 
     async def compare_results(
         self, result_a: DetectionResult, result_b: DetectionResult

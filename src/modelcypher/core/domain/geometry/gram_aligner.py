@@ -736,10 +736,12 @@ class GramAligner:
         K_s_t_c = b.matmul(b.matmul(H, K_s_transformed), H)
         b.eval(K_s_t_c)
 
-        # Error is Frobenius norm of difference (normalized)
+        # Error is geodesic norm of difference (normalized)
         diff = K_s_t_c - K_t_c
-        error_arr = b.sqrt(b.sum(diff * diff))
-        norm_t_arr = b.sqrt(b.sum(K_t_c * K_t_c))
+        diff_flat = b.reshape(diff, (1, -1))
+        K_t_flat = b.reshape(K_t_c, (1, -1))
+        error_arr = geodesic_norms(diff_flat, b)
+        norm_t_arr = geodesic_norms(K_t_flat, b)
         b.eval(error_arr, norm_t_arr)
         error = float(b.to_scalar(error_arr))
         norm_t = float(b.to_scalar(norm_t_arr))
@@ -1014,7 +1016,8 @@ class GramAligner:
             grad = b.matmul(b.transpose(source_centered), b.matmul(diff, source_transformed))
             b.eval(grad)
 
-            grad_norm = b.sqrt(b.sum(grad * grad))
+            grad_flat = b.reshape(grad, (1, -1))
+            grad_norm = geodesic_norms(grad_flat, b)
             b.eval(grad_norm)
             grad_norm_val = float(b.to_scalar(grad_norm))
             if grad_norm_val < eps:

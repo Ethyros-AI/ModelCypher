@@ -78,7 +78,10 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     sqrt_scalar,
 )
-from modelcypher.core.domain.geometry.vector_math import geodesic_norms
+from modelcypher.core.domain.geometry.vector_math import (
+    geodesic_norms,
+    geodesic_pairwise_metrics,
+)
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array
@@ -197,31 +200,20 @@ def trajectory(
         return None
 
     backend = get_default_backend()
-    divergence_sq = 0.0
-    dot_product = 0.0
-    current_norm_sq = 0.0
-    initial_norm_sq = 0.0
+    current_flat = _flatten_parameters(current_params, backend)
+    initial_flat = _flatten_parameters(initial_params, backend)
+    backend.eval(current_flat, initial_flat)
 
-    for key, current in current_params.items():
-        initial = initial_params.get(key)
-        if initial is None:
-            continue
-        current_arr = backend.array(current)
-        initial_arr = backend.array(initial)
-        backend.eval(current_arr, initial_arr)
-        delta = current_arr - initial_arr
-        divergence_sq += _sum_scalar(delta * delta, backend)
-        dot_product += _sum_scalar(current_arr * initial_arr, backend)
-        current_norm_sq += _sum_scalar(current_arr * current_arr, backend)
-        initial_norm_sq += _sum_scalar(initial_arr * initial_arr, backend)
-
-    eps_ref = _reference_array(current_params, backend)
-    divergence = float(sqrt_scalar(divergence_sq, backend))
-    current_norm = sqrt_scalar(current_norm_sq, backend)
-    initial_norm = sqrt_scalar(initial_norm_sq, backend)
-    norm_eps = division_epsilon(backend, eps_ref)
-    denom = max(current_norm * initial_norm, norm_eps)
-    cosine = float(dot_product / denom) if denom > 0 else 0.0
+    delta = current_flat - initial_flat
+    divergence_arr = geodesic_norms(backend.reshape(delta, (1, -1)), backend)
+    cos_arr, _ = geodesic_pairwise_metrics(
+        backend.reshape(current_flat, (1, -1)),
+        backend.reshape(initial_flat, (1, -1)),
+        backend,
+    )
+    backend.eval(divergence_arr, cos_arr)
+    divergence = float(backend.to_scalar(divergence_arr))
+    cosine = float(backend.to_scalar(cos_arr))
 
     return TrajectoryMetrics(divergence=divergence, cosine_similarity=cosine)
 

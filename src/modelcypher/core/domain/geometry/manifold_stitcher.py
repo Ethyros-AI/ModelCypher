@@ -799,11 +799,13 @@ class ManifoldStitcher:
             # Ensure proper rotation (det = +1), not reflection
             omega = _ensure_proper_rotation(u, vt, omega, b)
 
-            # Error
+            # Error using geodesic norms
             projected = b.matmul(s_centered, omega)
             error = projected - t_centered
-            error_norm_arr = b.sqrt(b.sum(error * error))
-            target_norm_arr = b.sqrt(b.sum(t_centered * t_centered))
+            error_flat = b.reshape(error, (1, -1))
+            target_flat = b.reshape(t_centered, (1, -1))
+            error_norm_arr = geodesic_norms(error_flat, b)
+            target_norm_arr = geodesic_norms(target_flat, b)
             b.eval(error_norm_arr, target_norm_arr)
             error_norm = float(b.to_scalar(error_norm_arr))
             target_norm = float(b.to_scalar(target_norm_arr))

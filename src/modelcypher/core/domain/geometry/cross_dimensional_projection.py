@@ -644,10 +644,12 @@ def _project_svd(
     source_k_aligned = b.matmul(source_k, R)
     b.eval(source_k_aligned)
 
-    # Log alignment quality in k-space
+    # Log alignment quality in k-space using geodesic norms
     residual_k = source_k_aligned - target_k
-    residual_norm_arr = b.sqrt(b.sum(residual_k ** 2))
-    target_k_norm_arr = b.sqrt(b.sum(target_k ** 2))
+    residual_flat = b.reshape(residual_k, (1, -1))
+    target_k_flat = b.reshape(target_k, (1, -1))
+    residual_norm_arr = geodesic_norms(residual_flat, b)
+    target_k_norm_arr = geodesic_norms(target_k_flat, b)
     b.eval(residual_norm_arr, target_k_norm_arr)
     residual_norm = float(b.to_scalar(residual_norm_arr))
     target_k_norm = float(b.to_scalar(target_k_norm_arr))
@@ -664,12 +666,14 @@ def _project_svd(
     b.eval(projected)
 
     # =========================================================================
-    # STEP 5.5: Scale projected weights to match target's Frobenius norm
+    # STEP 5.5: Scale projected weights to match target's geodesic norm
     # =========================================================================
     # Without scaling, SVD projection can produce weights with very different
     # magnitude than the target, causing activation explosion during inference.
-    target_fro = b.sqrt(b.sum(target ** 2))
-    proj_fro = b.sqrt(b.sum(projected ** 2))
+    target_flat = b.reshape(target, (1, -1))
+    proj_flat = b.reshape(projected, (1, -1))
+    target_fro = geodesic_norms(target_flat, b)
+    proj_fro = geodesic_norms(proj_flat, b)
     b.eval(target_fro, proj_fro)
     scale_eps = division_epsilon(b, projected)
     scale_factor = target_fro / (proj_fro + scale_eps)

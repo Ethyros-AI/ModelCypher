@@ -43,6 +43,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     machine_epsilon,
     sqrt_scalar,
 )
+from modelcypher.core.domain.geometry.vector_math import geodesic_norms
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -303,17 +304,20 @@ class ManifoldFidelitySweep:
             # Rotated source
             x_rotated = b.matmul(x, omega)
 
-            # Normalized error
+            # Normalized error using geodesic norms
             diff = x_rotated - y
-            error_arr = b.sum(diff**2)
-            norm_y_arr = b.sum(y**2)
-            b.eval(error_arr, norm_y_arr)
+            diff_flat = b.reshape(diff, (1, -1))
+            y_flat = b.reshape(y, (1, -1))
+            error_norm = geodesic_norms(diff_flat, b)
+            norm_y_arr = geodesic_norms(y_flat, b)
+            b.eval(error_norm, norm_y_arr)
 
-            error = float(b.to_scalar(error_arr))
+            error = float(b.to_scalar(error_norm))
             norm_y = float(b.to_scalar(norm_y_arr))
 
             eps = division_epsilon(b, y)
-            return sqrt_scalar(error / norm_y, b) if norm_y > eps else 0.0
+            # Return squared error ratio (geodesic norm squared)
+            return (error * error) / (norm_y * norm_y) if norm_y > eps else 0.0
 
         except Exception:
             return 0.0

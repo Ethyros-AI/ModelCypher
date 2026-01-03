@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import division_epsilon
+from modelcypher.core.domain.geometry.vector_math import geodesic_pairwise_metrics
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
@@ -98,16 +99,13 @@ def subspace_overlap(
     matrices yield 1.0 and orthogonal matrices yield 0.0.
     """
     b = backend or get_default_backend()
-    eps = division_epsilon(b, matrix_a)
-
-    dot = b.sum(matrix_a * matrix_b)
-    norm_a = b.sum(matrix_a * matrix_a)
-    norm_b = b.sum(matrix_b * matrix_b)
-    denom = b.sqrt(norm_a * norm_b) + eps
-    cosine = dot / denom
+    a_flat = b.reshape(matrix_a, (1, -1))
+    b_flat = b.reshape(matrix_b, (1, -1))
+    cos_arr, _ = geodesic_pairwise_metrics(a_flat, b_flat, b)
+    b.eval(cos_arr)
+    cosine = float(b.to_scalar(cos_arr))
     overlap = cosine * cosine
-    b.eval(overlap)
-    return float(b.to_scalar(overlap))
+    return overlap
 
 
 def compute_wudi_interference(

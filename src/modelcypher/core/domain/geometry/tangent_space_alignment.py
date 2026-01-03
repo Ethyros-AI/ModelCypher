@@ -209,7 +209,8 @@ class TangentSpaceAlignment:
             return []
 
         b = self._backend
-        # Compute pairwise squared distances
+        # Bootstrap k-NN graph using Euclidean (required - can't compute geodesic without graph).
+        # Once graph exists, geodesic distances are computed via shortest paths on graph edges.
         # ||a - b||^2 = ||a||^2 + ||b||^2 - 2 * a.b
         sq_norms = b.sum(points**2, axis=1, keepdims=True)
         dots = b.matmul(points, b.transpose(points))
