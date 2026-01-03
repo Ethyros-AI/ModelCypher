@@ -19,8 +19,6 @@
 
 from __future__ import annotations
 
-import math
-
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -39,6 +37,9 @@ def _eps(value: float) -> float:
     backend = get_default_backend()
     return machine_epsilon(backend, backend.array([value]))
 
+
+def _is_inf(value: float) -> bool:
+    return value in (float("inf"), float("-inf"))
 
 class TestEntropyTransition:
     """Tests for EntropyTransition dataclass."""
@@ -145,7 +146,7 @@ class TestCalibratedBaseline:
         )
 
         assert abs(baseline.z_score(2.5)) <= _eps(baseline.z_score(2.5))
-        assert math.isinf(baseline.z_score(3.0))
+        assert _is_inf(baseline.z_score(3.0))
 
 
 class TestModelStateSignals:

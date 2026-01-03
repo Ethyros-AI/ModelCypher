@@ -24,8 +24,6 @@ the data structures, helper methods, and callback patterns.
 """
 
 from __future__ import annotations
-
-import math
 import time
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
@@ -43,6 +41,10 @@ from modelcypher.core.domain.inference.activation_stream import (
 
 if TYPE_CHECKING:
     from modelcypher.ports.backend import Array, Backend
+
+
+def _is_finite(value: float) -> bool:
+    return value == value and value not in (float("inf"), float("-inf"))
 
 
 # =============================================================================
@@ -221,7 +223,7 @@ class TestActivationStream:
         entropy = stream._compute_entropy(hidden)
 
         eps = self._eps(backend)
-        assert math.isfinite(entropy)
+        assert _is_finite(entropy)
         assert entropy >= -eps
 
     def test_compute_entropy_zero(

@@ -26,14 +26,17 @@ Ported 1:1 from the reference Swift implementation.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    exp_scalar,
+    log_scalar,
+    machine_epsilon,
     safe_log_epsilon,
+    sqrt_scalar,
 )
 
 if TYPE_CHECKING:
@@ -141,9 +144,10 @@ class BasinTopology:
             return (weights[0], weights[1], weights[2])
 
         # Boltzmann factors: exp(-E/T)
-        z_refusal = math.exp(-self.refusal_depth / temperature)
-        z_caution = math.exp(-self.caution_depth / temperature)
-        z_solution = math.exp(-self.solution_depth / temperature)
+        _b = get_default_backend()
+        z_refusal = exp_scalar(-self.refusal_depth / temperature, _b)
+        z_caution = exp_scalar(-self.caution_depth / temperature, _b)
+        z_solution = exp_scalar(-self.solution_depth / temperature, _b)
         partition = z_refusal + z_caution + z_solution
 
         if partition <= 0:
@@ -244,7 +248,7 @@ class RegimeStateDetector:
         base_entropy = self.compute_entropy(logits, temperature)
 
         # Maximum possible entropy: log(V_eff)
-        max_entropy = math.log(max(1, v_eff))
+        max_entropy = log_scalar(float(max(1, v_eff)), get_default_backend())
 
         # Estimate T_c from logit statistics
         tc = self.estimate_critical_temperature(std_dev, v_eff)
@@ -311,12 +315,13 @@ class RegimeStateDetector:
         Returns:
             Critical tolerance (width of critical region).
         """
+        _b = get_default_backend()
         if critical_temperature <= 0:
-            return math.ulp(1.0)
+            return machine_epsilon(_b, _b.array([1.0]))
 
         # Coefficient of variation of logits determines tolerance
         # This is the natural width from the geometry
-        return math.sqrt(logit_variance) / critical_temperature
+        return sqrt_scalar(logit_variance, _b) / critical_temperature
 
     @staticmethod
     def predict_modifier_effect(
@@ -355,7 +360,8 @@ class RegimeStateDetector:
         distance_from_critical = abs(1.0 - temperature_ratio)
 
         # Coefficient of variation: uncertainty measure
-        cv = math.sqrt(logit_variance) / critical_temperature if critical_temperature > 0 else 1.0
+        _b = get_default_backend()
+        cv = sqrt_scalar(logit_variance, _b) / critical_temperature if critical_temperature > 0 else 1.0
 
         # The regime determines the sign of the effect
         # ratio < 1 (ordered): modifiers reduce entropy (cooling)
@@ -401,10 +407,11 @@ class RegimeStateDetector:
         """T_c = σ_z / √(2 × ln(V_eff))."""
         if effective_vocab_size <= 1:
             return 1.0
-        log_veff = math.log(effective_vocab_size)
+        _b = get_default_backend()
+        log_veff = log_scalar(float(effective_vocab_size), _b)
         if log_veff <= 0:
             return 1.0
-        return logit_std_dev / math.sqrt(2.0 * log_veff)
+        return logit_std_dev / sqrt_scalar(2.0 * log_veff, _b)
 
     def compute_logit_variance(self, logits: "Array", temperature: float) -> float:
         """Compute logit variance under temperature-scaled distribution."""
@@ -442,7 +449,7 @@ class RegimeStateDetector:
 
         mean_val = float(b.to_scalar(mean_arr))
         var_val = float(b.to_scalar(var_arr))
-        std_val = math.sqrt(var_val)
+        std_val = sqrt_scalar(var_val, b)
 
         return (mean_val, var_val, std_val)
 

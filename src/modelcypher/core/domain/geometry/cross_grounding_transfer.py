@@ -343,10 +343,8 @@ class RelationalStressComputer:
             top_idx = sorted_idx[:3]
             top_vals = b.take(eigenvalues, top_idx, axis=0)
             b.eval(top_vals)
-            eig_sorted = [
-                float(b.to_scalar(top_vals[i]))
-                for i in range(int(top_vals.shape[0]))
-            ]
+            # Use tolist() for O(1) extraction
+            eig_sorted = [float(x) for x in b.tolist(top_vals)]
             return tuple(eig_sorted)
         except Exception:
             return (0.0,)
@@ -505,9 +503,13 @@ class GroundingRotationEstimator:
             corr = b.abs(b.matmul(source_axes, b.transpose(target_axes)))
             b.eval(corr)
 
+            # Vectorized argmax: find best match for each source axis
+            best_matches = b.argmax(corr, axis=1)
+            b.eval(best_matches)
+            # Use tolist() for O(1) extraction instead of O(n) scalar extractions
+            match_list = b.tolist(best_matches)
             for i in range(n_axes):
-                best_match = int(b.to_scalar(b.argmax(corr[i])))
-                correspondence[f"source_axis_{i}"] = f"target_axis_{best_match}"
+                correspondence[f"source_axis_{i}"] = f"target_axis_{int(match_list[i])}"
 
             return correspondence
         except Exception:

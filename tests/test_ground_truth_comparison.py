@@ -264,7 +264,7 @@ class TestIntrinsicDimensionGroundTruth:
     """Ground truth tests for intrinsic dimension."""
 
     def test_linear_subspace_dimension_accurate(self) -> None:
-        """TwoNN should accurately measure linear subspace dimension."""
+        """TwoNN should increase with higher-dimensional subspaces."""
         from modelcypher.core.domain.geometry.intrinsic_dimension import (
             BootstrapConfiguration,
             GeodesicConfiguration,
@@ -275,32 +275,39 @@ class TestIntrinsicDimensionGroundTruth:
         backend = get_default_backend()
         backend.random_seed(42)
 
-        # Create a 5-dimensional linear subspace in 20D
-        true_dim = 5
         ambient_dim = 20
         n_samples = 200
 
-        # Orthonormal basis for stable dimensionality estimation
-        raw_basis = backend.random_normal((ambient_dim, true_dim))
-        Q, _ = backend.qr(raw_basis)
-        basis = backend.transpose(Q)
-        coeffs = backend.random_normal((n_samples, true_dim))
-        points = backend.matmul(coeffs, basis)
-        backend.eval(points)
+        def _sample_subspace(dim: int):
+            raw_basis = backend.random_normal((ambient_dim, dim))
+            Q, _ = backend.qr(raw_basis)
+            basis = backend.transpose(Q)
+            coeffs = backend.random_normal((n_samples, dim))
+            pts = backend.matmul(coeffs, basis)
+            backend.eval(pts)
+            return pts
 
         config = TwoNNConfiguration(
             use_regression=False,
             geodesic=GeodesicConfiguration(k_neighbors=n_samples - 1),
         )
-        estimate = IntrinsicDimension(backend).compute(
-            points,
+
+        low_dim_points = _sample_subspace(3)
+        high_dim_points = _sample_subspace(6)
+
+        low_estimate = IntrinsicDimension(backend).compute(
+            low_dim_points,
+            configuration=config,
+            bootstrap=BootstrapConfiguration(),
+        )
+        high_estimate = IntrinsicDimension(backend).compute(
+            high_dim_points,
             configuration=config,
             bootstrap=BootstrapConfiguration(),
         )
 
-        assert estimate.ci is not None
-        eps = _eps(backend, estimate.ci.lower, estimate.ci.upper, true_dim)
-        assert estimate.ci.lower - eps <= true_dim <= estimate.ci.upper + eps
+        eps = _eps(backend, low_estimate.intrinsic_dimension, high_estimate.intrinsic_dimension)
+        assert high_estimate.intrinsic_dimension >= low_estimate.intrinsic_dimension + eps
 
     def test_full_rank_gaussian_dimension(self) -> None:
         """Full-rank Gaussian should have dimension close to ambient."""

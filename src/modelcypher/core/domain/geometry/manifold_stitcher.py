@@ -933,10 +933,16 @@ class ManifoldStitcher:
             return b.stack(rows, axis=1)
 
         # K-Means++ Initialization using actual data points as initial centroids
-        first_idx = int(b.to_scalar(b.random_randint(0, n, shape=(1,))))
+        steps = min(k, n)
+        rand_uniforms = b.random_uniform(shape=(max(steps - 1, 1),))
+        rand_ints = b.random_randint(0, n, shape=(max(steps, 1),))
+        b.eval(rand_uniforms, rand_ints)
+        rand_uniforms_list = b.tolist(rand_uniforms) if steps > 1 else []
+        rand_ints_list = [int(x) for x in b.tolist(rand_ints)]
+        first_idx = rand_ints_list[0] if steps > 0 else 0
         centroid_indices = [first_idx]
 
-        for _ in range(1, min(k, n)):
+        for step_idx in range(1, steps):
             # Compute distances to nearest existing centroid
             dists = compute_distance_to_centroids(pts, centroid_indices)
             min_dists = b.min(dists, axis=1)
@@ -946,16 +952,18 @@ class ManifoldStitcher:
             prob_sum = b.sum(probs)
             b.eval(prob_sum)
             prob_eps = division_epsilon(b, probs)
-            if float(b.to_scalar(prob_sum)) <= prob_eps:
+            prob_sum_val = float(b.to_scalar(prob_sum))
+            if prob_sum_val <= prob_eps:
                 # All points are at centroids, pick randomly
-                next_idx = int(b.to_scalar(b.random_randint(0, n, shape=(1,))))
+                next_idx = rand_ints_list[step_idx]
             else:
                 probs = probs / prob_sum
                 cumsum = b.cumsum(probs)
-                r = b.random_uniform(shape=(1,))
-                next_idx = int(
-                    b.to_scalar(b.argmax(cumsum > float(b.to_scalar(r))))
-                )
+                r_val = float(rand_uniforms_list[step_idx - 1]) if rand_uniforms_list else 0.0
+                r_val = min(r_val, 1.0 - prob_eps)
+                next_idx_arr = b.argmax(cumsum > r_val)
+                b.eval(next_idx_arr)
+                next_idx = int(b.to_scalar(next_idx_arr))
             centroid_indices.append(next_idx)
 
         # Initialize centroids from selected points
@@ -1005,7 +1013,9 @@ class ManifoldStitcher:
                 # Find nearest data point using pure geodesic distance from old representative
                 col = b.take(geodesic_dist_matrix, b.array([old_rep]), axis=1)
                 col = b.squeeze(col, axis=1)
-                best_idx = int(b.to_scalar(b.argmin(col)))
+                best_idx_arr = b.argmin(col)
+                b.eval(best_idx_arr)
+                best_idx = int(b.to_scalar(best_idx_arr))
                 centroid_reps[ci] = best_idx
 
         return (_array_to_list(b, assignments), _array_to_2d_list(b, centroids))

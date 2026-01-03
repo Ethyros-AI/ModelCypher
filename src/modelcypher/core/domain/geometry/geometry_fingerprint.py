@@ -96,12 +96,14 @@ class GeometricFingerprint:
 
         lam = 0.0
         for _ in range(iterations):
+            # Use tolist() for O(1) extraction instead of O(n²) scalar extractions
+            backend.eval(v)
+            v_list = backend.tolist(v)
             w_values: list[float] = []
             for i in range(n):
                 row_sum = 0.0
                 for j in range(n):
-                    v_val = float(backend.to_scalar(v[j]))
-                    row_sum += float(gram[i * n + j]) * v_val
+                    row_sum += float(gram[i * n + j]) * float(v_list[j])
                 w_values.append(row_sum)
             w = backend.array(w_values)
             backend.eval(w)

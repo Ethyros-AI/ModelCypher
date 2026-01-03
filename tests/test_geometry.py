@@ -74,11 +74,16 @@ def test_procrustes_alignment_recovers_rotation():
     backend.random_seed(0)
     source = backend.random_normal((10, 4), dtype="float32")
     theta = 0.3
-    import math
+    angle = backend.array([theta], dtype="float32")
+    cos_val = backend.cos(angle)
+    sin_val = backend.sin(angle)
+    backend.eval(cos_val, sin_val)
+    c = float(backend.to_scalar(cos_val))
+    s = float(backend.to_scalar(sin_val))
     rot = backend.array(
         [
-            [math.cos(theta), -math.sin(theta), 0.0, 0.0],
-            [math.sin(theta), math.cos(theta), 0.0, 0.0],
+            [c, -s, 0.0, 0.0],
+            [s, c, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
             [0.0, 0.0, 0.0, 1.0],
         ],
@@ -95,8 +100,8 @@ def test_procrustes_alignment_recovers_rotation():
     rss = backend.sqrt(backend.sum(diff * diff))
     denom = backend.sqrt(backend.sum(target * target))
     backend.eval(rss, denom)
-    rss_val = float(backend.to_numpy(rss))
-    denom_val = float(backend.to_numpy(denom))
+    rss_val = float(backend.to_scalar(rss))
+    denom_val = float(backend.to_scalar(denom))
     eps = _eps(backend, rss_val, denom_val)
     ratio = rss_val / max(denom_val, eps)
     assert abs(result.error - ratio) <= eps
@@ -118,8 +123,11 @@ def test_sinkhorn_plan_marginals():
     diff_1 = backend.abs(marginal_1 - expected)
     eps = _eps(backend, result.marginal_error)
     tolerance = result.marginal_error + eps
-    assert backend.max(diff_0).item() <= tolerance
-    assert backend.max(diff_1).item() <= tolerance
+    max_diff_0 = backend.max(diff_0)
+    max_diff_1 = backend.max(diff_1)
+    backend.eval(max_diff_0, max_diff_1)
+    assert float(backend.to_scalar(max_diff_0)) <= tolerance
+    assert float(backend.to_scalar(max_diff_1)) <= tolerance
 
 
 def test_lora_geometry_metrics():

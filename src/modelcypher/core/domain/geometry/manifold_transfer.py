@@ -218,12 +218,12 @@ class TransferPoint:
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
         backend = get_default_backend()
+        # Use tolist() for O(1) extraction instead of O(n) scalar extractions
+        backend.eval(self.coordinates)
+        coords_list = backend.tolist(self.coordinates)
         return {
             "conceptId": self.concept_id,
-            "coordinates": [
-                float(backend.to_scalar(self.coordinates[i]))
-                for i in range(int(self.coordinates.shape[0]))
-            ],
+            "coordinates": [float(x) for x in coords_list],
             "stress": self.stress,
             "curvatureMismatch": self.curvature_mismatch,
             "stressFactor": self.confidence_components.stress_factor,

@@ -17,8 +17,6 @@
 
 """Property-based tests for entropy calculations (requires MLX)."""
 
-import math
-
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -46,6 +44,13 @@ def _eps(*values: float) -> float:
     backend = get_default_backend()
     return division_epsilon(backend, backend.array(list(values) or [1.0]))
 
+
+def _log_scalar(value: float) -> float:
+    backend = get_default_backend()
+    arr = backend.array([value])
+    log_val = backend.log(arr)
+    backend.eval(log_val)
+    return float(backend.to_scalar(log_val))
 
 # Strategy for generating valid logit arrays
 @st.composite
@@ -104,7 +109,7 @@ class TestEntropyProperties:
 
         # Maximum entropy for n outcomes is ln(n)
         n = logits.shape[0]
-        max_entropy = math.log(n)
+        max_entropy = _log_scalar(float(n))
 
         # Should be close to maximum
         eps = _eps(entropy, max_entropy)

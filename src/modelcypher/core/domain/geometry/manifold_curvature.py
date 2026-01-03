@@ -849,19 +849,16 @@ class SectionalCurvatureEstimator:
             backend.eval(heights, centered)
 
             # Build design matrix in Python
-            d * (d + 1) // 2
+            # Use tolist() for O(1) extraction instead of O(n*d) scalar extractions
+            centered_list = backend.tolist(centered)
             design_list = []
             for row_idx in range(n):
-                row = [backend.to_scalar(centered[row_idx, j]) for j in range(d)]
+                row_data = centered_list[row_idx]
+                row = [float(row_data[j]) for j in range(d)]
                 # Add quadratic terms
                 for i in range(d):
                     for j in range(i, d):
-                        row.append(
-                            float(
-                                backend.to_scalar(centered[row_idx, i])
-                                * backend.to_scalar(centered[row_idx, j])
-                            )
-                        )
+                        row.append(float(row_data[i]) * float(row_data[j]))
                 design_list.append(row)
 
             design = backend.array(design_list)
@@ -874,14 +871,16 @@ class SectionalCurvatureEstimator:
             backend.eval(coeffs)
 
             # Extract Hessian (second fundamental form)
+            # Use tolist() for O(1) extraction
+            coeffs_list = backend.tolist(coeffs)
             hessian_list = [[0.0] * d for _ in range(d)]
             idx = d
             for i in range(d):
                 for j in range(i, d):
-                    if idx < int(coeffs.shape[0]):
-                        coeff_val = backend.to_scalar(coeffs[idx])
-                        hessian_list[i][j] = float(coeff_val)
-                        hessian_list[j][i] = float(coeff_val)
+                    if idx < len(coeffs_list):
+                        coeff_val = float(coeffs_list[idx])
+                        hessian_list[i][j] = coeff_val
+                        hessian_list[j][i] = coeff_val
                     idx += 1
 
             hessian = backend.array(hessian_list)

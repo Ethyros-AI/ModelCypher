@@ -27,6 +27,8 @@ import math
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 from modelcypher.core.domain.thermo.linguistic_calorimeter import (
     LinguisticCalorimeter,
 )
@@ -239,7 +241,8 @@ class ThermoBenchmarkRunner:
         var2 = sum((x - mean2) ** 2 for x in treatment) / (n2 - 1)
 
         # Welch's t-statistic
-        se = math.sqrt(var1 / n1 + var2 / n2)
+        _b = get_default_backend()
+        se = sqrt_scalar(var1 / n1 + var2 / n2, _b)
         if se == 0:
             t_stat = 0.0
         else:
@@ -290,15 +293,16 @@ class ThermoBenchmarkRunner:
         var2 = sum((x - mean2) ** 2 for x in treatment) / (n2 - 1)
 
         # Pooled standard deviation
+        _b = get_default_backend()
         pooled_var = ((n1 - 1) * var1 + (n2 - 1) * var2) / (n1 + n2 - 2)
-        pooled_std = math.sqrt(pooled_var) if pooled_var > 0 else 1.0
+        pooled_std = sqrt_scalar(pooled_var, _b) if pooled_var > 0 else 1.0
 
         # Cohen's d
         d = (mean1 - mean2) / pooled_std if pooled_std > 0 else 0.0
 
         # Standard error for Cohen's d
         # SE(d) ≈ sqrt((n1+n2)/(n1*n2) + d^2/(2*(n1+n2)))
-        se_d = math.sqrt((n1 + n2) / (n1 * n2) + d**2 / (2 * (n1 + n2)))
+        se_d = sqrt_scalar((n1 + n2) / (n1 * n2) + d**2 / (2 * (n1 + n2)), _b)
 
         return EffectSizeResult(
             cohens_d=d,
@@ -399,8 +403,9 @@ class ThermoBenchmarkRunner:
             return 0.0
         mean = sum(values) / len(values)
         variance = sum((v - mean) ** 2 for v in values) / (len(values) - 1)
-        return math.sqrt(variance)
+        return sqrt_scalar(variance, get_default_backend())
 
     def _approximate_t_pvalue(self, t: float) -> float:
         """Approximate two-tailed p-value using normal approximation."""
-        return math.erfc(t / math.sqrt(2.0))
+        _b = get_default_backend()
+        return math.erfc(t / sqrt_scalar(2.0, _b))

@@ -36,8 +36,13 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-import math
 from typing import Awaitable, Callable
+
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    machine_epsilon,
+    sqrt_scalar,
+)
 
 # =============================================================================
 # LinguisticModifier
@@ -242,7 +247,8 @@ class DetectionResult:
         float
             |delta_h| / |threshold|. Values > 1.0 mean past threshold.
         """
-        if abs(delta_h_threshold) <= math.ulp(1.0):
+        _b = get_default_backend()
+        if abs(delta_h_threshold) <= machine_epsilon(_b, _b.array([1.0])):
             return 0.0
         return abs(self.delta_h) / abs(delta_h_threshold)
 
@@ -374,7 +380,7 @@ class BatchDetectionStatistics:
         delta_h_values = [r.delta_h for r in results]
         mean_delta_h = sum(delta_h_values) / total
         variance = sum((d - mean_delta_h) ** 2 for d in delta_h_values) / total
-        std_delta_h = math.sqrt(variance)
+        std_delta_h = sqrt_scalar(variance, get_default_backend())
         min_delta_h = min(delta_h_values)
         max_delta_h = max(delta_h_values)
         total_processing_time = sum(r.processing_time for r in results)

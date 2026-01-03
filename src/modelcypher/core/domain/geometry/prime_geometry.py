@@ -70,7 +70,6 @@ from typing import TYPE_CHECKING
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
-    cos_scalar,
     division_epsilon,
     exp_scalar,
     log_scalar,
@@ -89,6 +88,41 @@ def _array_to_list(backend: "Backend", array: "Array") -> list[float]:
     """Convert 1D array to Python list using native tolist() - O(1) vs O(n)."""
     flat = backend.reshape(array, (-1,))
     return backend.tolist(flat)
+
+
+def _uniform_list(backend: "Backend", count: int) -> list[float]:
+    """Draw uniform [0,1) samples via backend and return as Python list."""
+    if count <= 0:
+        return []
+    vals = backend.random_uniform(low=0.0, high=1.0, shape=(count,))
+    backend.eval(vals)
+    return [float(x) for x in backend.tolist(vals)]
+
+
+def _randint_list(backend: "Backend", low: int, high: int, count: int) -> list[int]:
+    """Draw integer samples via backend and return as Python list."""
+    if count <= 0:
+        return []
+    vals = backend.random_randint(low, high, shape=(count,))
+    backend.eval(vals)
+    return [int(x) for x in backend.tolist(vals)]
+
+
+def _uniform_sampler(backend: "Backend", batch_size: int = 1024):
+    """Return a callable that yields uniform samples from a buffered pool."""
+    pool: list[float] = []
+    idx = 0
+
+    def next_uniform() -> float:
+        nonlocal pool, idx
+        if idx >= len(pool):
+            pool = _uniform_list(backend, batch_size)
+            idx = 0
+        val = float(pool[idx])
+        idx += 1
+        return val
+
+    return next_uniform
 
 
 class EmbeddingType(Enum):
@@ -349,17 +383,13 @@ def time_delay_embedding(
             f"Sequence length {n} too short for embedding_dim={embedding_dim}, delay={delay}"
         )
 
-    # Build embedding matrix
-    rows = []
-    # Convert sequence to list once outside loop for efficiency
-    seq_list = _array_to_list(backend, sequence)
-
-    for i in range(n_windows):
-        indices = [i + j * delay for j in range(embedding_dim)]
-        window = backend.array([seq_list[idx] for idx in indices])
-        rows.append(window)
-
-    return backend.stack(rows, axis=0)
+    # Build embedding matrix with vectorized indexing
+    starts = backend.arange(n_windows)
+    offsets = backend.arange(0, embedding_dim * delay, delay)
+    starts_2d = backend.reshape(starts, (-1, 1))
+    offsets_2d = backend.reshape(offsets, (1, -1))
+    indices = starts_2d + offsets_2d
+    return backend.take(sequence, indices, axis=0)
 
 
 def residue_embedding(
@@ -601,9 +631,10 @@ def analyze_eigenvalues(
     spectral_entropy = float(backend.to_scalar(entropy_arr))
 
     # Condition number
-    condition_number = float(backend.to_scalar(pos_ev[0])) / float(
-        backend.to_scalar(pos_ev[pos_count - 1])
-    )
+    first_ev = backend.take(pos_ev, backend.array([0]), axis=0)
+    last_ev = backend.take(pos_ev, backend.array([pos_count - 1]), axis=0)
+    backend.eval(first_ev, last_ev)
+    condition_number = float(backend.to_scalar(first_ev)) / float(backend.to_scalar(last_ev))
 
     # Top-k ratio (top 10 or all if fewer)
     k = min(10, pos_count)
@@ -715,9 +746,9 @@ def generate_random_gaps(
     gaps = -mean_gap * backend.log(one_minus_u)
 
     # Round to integers (gaps are integers) and ensure >= 2 (min prime gap)
-    gaps_vals = _array_to_list(backend, gaps)
-    gaps_list = [max(2.0, round(float(g))) for g in gaps_vals]
-    return backend.array(gaps_list)
+    rounded = backend.floor(gaps + 0.5)
+    gaps_clamped = backend.maximum(rounded, backend.full((n,), 2.0))
+    return gaps_clamped
 
 
 def generate_uniform_gaps(
@@ -743,9 +774,9 @@ def generate_uniform_gaps(
     backend.random_seed(seed)
 
     uniform = backend.random_uniform(low=min_gap, high=max_gap, shape=(n,))
-    gaps_vals = _array_to_list(backend, uniform)
-    gaps_list = [max(2.0, round(float(g))) for g in gaps_vals]
-    return backend.array(gaps_list)
+    rounded = backend.floor(uniform + 0.5)
+    gaps_clamped = backend.maximum(rounded, backend.full((n,), 2.0))
+    return gaps_clamped
 
 
 def generate_poisson_gaps(
@@ -774,16 +805,16 @@ def generate_poisson_gaps(
     # Generate Poisson samples using inverse transform
     # For Poisson, we use the iterative method
     gaps_list = []
+    L = exp_scalar(-rate, backend)
+    next_uniform = _uniform_sampler(backend, batch_size=2048)
     for _ in range(n):
         # Generate a single Poisson sample
-        L = exp_scalar(-rate, backend)
         k = 0
         p = 1.0
 
         while p > L:
             k += 1
-            u2 = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
-            p *= float(backend.to_scalar(u2))
+            p *= next_uniform()
 
         gaps_list.append(max(2.0, float(k)))
 
@@ -813,12 +844,12 @@ def generate_cramer_model(
 
     pseudo_primes = [2]  # Start with 2
     current = 3
+    next_uniform = _uniform_sampler(backend, batch_size=2048)
 
     while len(pseudo_primes) < n_values:
         # P(m is "prime") = 1/ln(m)
         prob = 1.0 / log_scalar(float(current), backend) if current > 1 else 1.0
-        u = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
-        u_val = float(backend.to_scalar(u))
+        u_val = next_uniform()
 
         if u_val < prob:
             pseudo_primes.append(current)
@@ -913,7 +944,9 @@ def analyze_prime_geometry(
     logger.info(f"Prime gaps: {primes.gap_count}, max prime: {primes.max_prime}")
 
     # Compute mean gap for random baseline
-    mean_gap = float(backend.mean(primes.gaps))
+    mean_gap_arr = backend.mean(primes.gaps)
+    backend.eval(mean_gap_arr)
+    mean_gap = float(backend.to_scalar(mean_gap_arr))
     logger.info(f"Mean prime gap: {mean_gap:.2f}")
 
     # Time-delay embedding of prime gaps
@@ -1099,12 +1132,7 @@ def bootstrap_confidence_interval(
     bootstrap_means = []
     for _ in range(n_bootstrap):
         # Sample with replacement
-        indices = []
-        for _ in range(n):
-            u = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
-            idx = int(float(backend.to_scalar(u)) * n)
-            idx = min(idx, n - 1)
-            indices.append(idx)
+        indices = _randint_list(backend, 0, n, n)
 
         sample = [values[i] for i in indices]
         bootstrap_means.append(sum(sample) / len(sample))
@@ -1199,9 +1227,12 @@ def permutation_test(
     for _ in range(n_permutations):
         # Shuffle combined data
         shuffled = combined.copy()
+        rand_vals = _uniform_list(backend, n_total - 1)
+        rand_idx = 0
         for i in range(n_total - 1, 0, -1):
-            u = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
-            j = int(float(backend.to_scalar(u)) * (i + 1))
+            u_val = rand_vals[rand_idx]
+            rand_idx += 1
+            j = int(u_val * (i + 1))
             j = min(j, i)
             shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
 
@@ -1325,7 +1356,9 @@ def run_comprehensive_analysis(
     logger.info(f"Generating {n_primes} primes for comprehensive analysis...")
     primes = generate_primes(n_primes, backend)
     result.max_prime = primes.max_prime
-    mean_gap = float(backend.mean(primes.gaps))
+    mean_gap_arr = backend.mean(primes.gaps)
+    backend.eval(mean_gap_arr)
+    mean_gap = float(backend.to_scalar(mean_gap_arr))
 
     # Prime embeddings and eigenvalue analysis
     prime_embedded = time_delay_embedding(primes.gaps, embedding_dim, delay, backend)
@@ -1335,17 +1368,11 @@ def run_comprehensive_analysis(
 
     # Collect bootstrap samples for primes
     prime_participation_samples = []
-    for i in range(n_bootstrap):
+    gaps_list = _array_to_list(backend, primes.gaps)
+    n_subsample = int(primes.gap_count * 0.8)
+    for _ in range(n_bootstrap):
         # Subsample and re-analyze
-        n_subsample = int(primes.gap_count * 0.8)
-        indices = []
-        for _ in range(n_subsample):
-            u = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
-            idx = int(float(backend.to_scalar(u)) * primes.gap_count)
-            idx = min(idx, primes.gap_count - 1)
-            indices.append(idx)
-
-        gaps_list = _array_to_list(backend, primes.gaps)
+        indices = _randint_list(backend, 0, primes.gap_count, n_subsample)
         subsample = backend.array([gaps_list[idx] for idx in indices])
 
         if n_subsample >= embedding_dim + 1:
@@ -1514,7 +1541,9 @@ def run_perturbation_study(
 
     # Generate primes and compute baseline
     primes = generate_primes(n_primes, backend)
-    mean_gap = float(backend.mean(primes.gaps))
+    mean_gap_arr = backend.mean(primes.gaps)
+    backend.eval(mean_gap_arr)
+    mean_gap = float(backend.to_scalar(mean_gap_arr))
 
     prime_embedded = time_delay_embedding(primes.gaps, embedding_dim, 1, backend)
     prime_gram = compute_gram_matrix(prime_embedded, backend)
@@ -1528,24 +1557,20 @@ def run_perturbation_study(
             perturbed_pr = original_pr
         else:
             # Add Gaussian noise scaled to noise_level * mean_gap
-            gaps_list = _array_to_list(backend, primes.gaps)
-            perturbed_gaps = []
-
-            for g in gaps_list:
-                # Box-Muller for Gaussian noise
-                u1 = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
-                u2 = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
-                u1_eps = division_epsilon(backend, u1)
-                u1_val = max(float(backend.to_scalar(u1)), u1_eps)
-                u2_val = float(backend.to_scalar(u2))
-
-                pi = pi_value(backend)
-                z = sqrt_scalar(-2 * log_scalar(u1_val, backend), backend) * cos_scalar(2 * pi * u2_val, backend)
-                noise = z * noise_level * mean_gap
-                perturbed = max(2.0, g + noise)
-                perturbed_gaps.append(perturbed)
-
-            perturbed_arr = backend.array(perturbed_gaps)
+            gaps_arr = backend.astype(primes.gaps, "float32")
+            n_gaps = int(backend.shape(gaps_arr)[0])
+            u1 = backend.random_uniform(low=0.0, high=1.0, shape=(n_gaps,))
+            u2 = backend.random_uniform(low=0.0, high=1.0, shape=(n_gaps,))
+            u1_eps = division_epsilon(backend, u1)
+            u1_safe = backend.maximum(u1, backend.full((n_gaps,), u1_eps))
+            two_pi = 2.0 * pi_value(backend)
+            z = backend.sqrt(-2.0 * backend.log(u1_safe)) * backend.cos(two_pi * u2)
+            noise = z * noise_level * mean_gap
+            perturbed_arr = backend.maximum(
+                gaps_arr + noise,
+                backend.full((n_gaps,), 2.0),
+            )
+            backend.eval(perturbed_arr)
             perturbed_embedded = time_delay_embedding(perturbed_arr, embedding_dim, 1, backend)
             perturbed_gram = compute_gram_matrix(perturbed_embedded, backend)
             perturbed_ev = analyze_eigenvalues(perturbed_gram, backend)

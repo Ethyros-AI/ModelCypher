@@ -962,8 +962,11 @@ class ModelProfileExtractor:
         b = self._backend
         ricci_arr = b.array(ricci_values)
 
-        global_ricci_mean = float(b.mean(ricci_arr))
-        global_ricci_std = float(b.std(ricci_arr))
+        ricci_mean_arr = b.mean(ricci_arr)
+        ricci_std_arr = b.std(ricci_arr)
+        b.eval(ricci_mean_arr, ricci_std_arr)
+        global_ricci_mean = float(b.to_scalar(ricci_mean_arr))
+        global_ricci_std = float(b.to_scalar(ricci_std_arr))
         global_id_mean = float(sum(id_values) / len(id_values)) if id_values else 0.0
 
         return ModelProfile(

@@ -364,6 +364,40 @@ class GeneralizedProcrustes:
 
             X0 = X[0]
             X1 = X[1]
+
+            # Check for identical matrices (self-alignment case).
+            # When X0 = X1, the optimal rotation is identity and error is exactly 0.
+            # Skip SVD to avoid numerical errors in the null space.
+            diff = X0 - X1
+            diff_norm_arr = b.sum(diff ** 2)
+            x_norm_arr = b.sum(X0 ** 2)
+            b.eval(diff_norm_arr, x_norm_arr)
+            diff_norm = float(b.to_scalar(diff_norm_arr))
+            x_norm = float(b.to_scalar(x_norm_arr))
+            eps = float(division_epsilon(b, X0))
+
+            if diff_norm <= eps * max(x_norm, 1.0):
+                # Matrices are identical - return exact zero alignment error
+                Rs = b.stack([base_eye, base_eye], axis=0)
+                zero_residuals = b.zeros((2, n, k))
+                zero_errors = b.zeros((2,))
+                b.eval(Rs, zero_residuals, zero_errors)
+
+                return Result(
+                    consensus=self._array_to_2d_list(X0),
+                    rotations=self._array_to_3d_list(Rs),
+                    scales=self._array_to_list(scales),
+                    residuals=self._array_to_3d_list(zero_residuals),
+                    converged=True,
+                    iterations=1,
+                    alignment_error=0.0,
+                    per_model_errors=self._array_to_list(zero_errors),
+                    consensus_variance_ratio=1.0,
+                    sample_count=n,
+                    dimension=k,
+                    model_count=model_count,
+                )
+
             M = b.matmul(b.transpose(X1), X0)
             U, _, Vt = b.svd(M)
             R1 = b.matmul(U, Vt)

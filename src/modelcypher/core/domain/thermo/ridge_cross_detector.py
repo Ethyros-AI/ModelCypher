@@ -31,9 +31,10 @@ Key metric:
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 from modelcypher.core.domain.thermo.linguistic_thermodynamics import (
     AttractorBasin,
     BehavioralOutcome,
@@ -281,7 +282,8 @@ class RidgeCrossDetector:
 
             denominator = 1 + z * z / n
             center = (p + z * z / (2 * n)) / denominator
-            spread = z * math.sqrt((p * (1 - p) + z * z / (4 * n)) / n) / denominator
+            _b = get_default_backend()
+            spread = z * sqrt_scalar((p * (1 - p) + z * z / (4 * n)) / n, _b) / denominator
 
             lower_bound = max(0.0, center - spread)
             upper_bound = min(1.0, center + spread)
@@ -333,7 +335,8 @@ class RidgeCrossDetector:
         # Pooled standard deviation
         n1, n2 = len(group1), len(group2)
         pooled_var = ((n1 - 1) * var1 + (n2 - 1) * var2) / (n1 + n2 - 2)
-        pooled_std = math.sqrt(pooled_var) if pooled_var > 0 else 1.0
+        _b = get_default_backend()
+        pooled_std = sqrt_scalar(pooled_var, _b) if pooled_var > 0 else 1.0
 
         return (mean1 - mean2) / pooled_std
 

@@ -121,7 +121,7 @@ class TestHiddenStitchCorrectness:
         diff = backend.norm(F - I)
         backend.eval(diff)
 
-        diff_val = float(backend.to_numpy(diff))
+        diff_val = float(backend.to_scalar(diff))
         eps = _eps(backend, diff_val)
         assert diff_val <= eps, "Same activations should give identity F"
 
@@ -695,7 +695,7 @@ class TestDeterminism:
 
             diff = backend.norm(F0 - Fi)
             backend.eval(diff)
-            diff_val = float(backend.to_numpy(diff))
+            diff_val = float(backend.to_scalar(diff))
             eps = _eps(backend, diff_val)
             assert diff_val <= eps, "Alignment not deterministic"
 
@@ -737,6 +737,6 @@ class TestDeterminism:
         for i in range(1, len(folded_weights)):
             diff = backend.norm(folded_weights[i] - folded_weights[0])
             backend.eval(diff)
-            diff_val = float(backend.to_numpy(diff))
+            diff_val = float(backend.to_scalar(diff))
             eps = _eps(backend, diff_val)
             assert diff_val <= eps, "Weight folding not deterministic"

@@ -38,9 +38,15 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import sys
 from dataclasses import dataclass, field
+
+from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import (
+    exp_scalar,
+    log_scalar,
+    sqrt_scalar,
+)
 
 # Minimum positive float value for log safety
 _LOG_SAFE_MIN = sys.float_info.min
@@ -108,7 +114,8 @@ class MeasuredEnergy:
         p_ref = max(reference_probability, _LOG_SAFE_MIN)
 
         # E(x) - E(ref) = -T * log(p(x)/p(ref))
-        energy = -temperature * math.log(p / p_ref)
+        _b = get_default_backend()
+        energy = -temperature * log_scalar(p / p_ref, _b)
 
         return cls(
             value=energy,
@@ -246,7 +253,8 @@ class MeasuredBasinTopology:
             escape_rate = (p_attempted + p_solved)
 
         escape_rate = max(escape_rate, _LOG_SAFE_MIN)  # Log safety
-        barrier_height = -temperature * math.log(escape_rate)
+        _b = get_default_backend()
+        barrier_height = -temperature * log_scalar(escape_rate, _b)
         ridge_energy = caution.value + barrier_height
 
         ridge = MeasuredEnergy(
@@ -283,7 +291,7 @@ class MeasuredBasinTopology:
         if temperature <= 0:
             return 0.0
         barrier = self.transition_ridge.value - self.caution_energy.value
-        return math.exp(-barrier / temperature)
+        return exp_scalar(-barrier / temperature, get_default_backend())
 
     def basin_weights(self, temperature: float) -> list[float]:
         """Boltzmann weights for each basin at given temperature.
@@ -305,9 +313,10 @@ class MeasuredBasinTopology:
         if temperature <= 0:
             return [1.0, 0.0, 0.0]
 
-        w_0 = math.exp(-self.refusal_energy.value / temperature)
-        w_1 = math.exp(-self.caution_energy.value / temperature)
-        w_2 = math.exp(-self.solution_energy.value / temperature)
+        _b = get_default_backend()
+        w_0 = exp_scalar(-self.refusal_energy.value / temperature, _b)
+        w_1 = exp_scalar(-self.caution_energy.value / temperature, _b)
+        w_2 = exp_scalar(-self.solution_energy.value / temperature, _b)
         partition = w_0 + w_1 + w_2
 
         if partition <= 0:
@@ -495,7 +504,7 @@ class MeasuredModifierProfile:
             n = len(deltas)
             mean = sum(deltas) / n
             variance = sum((d - mean) ** 2 for d in deltas) / n if n > 1 else 0.0
-            std = math.sqrt(variance)
+            std = sqrt_scalar(variance, get_default_backend())
 
             effects[modifier] = MeasuredModifierEffect(
                 modifier=modifier,

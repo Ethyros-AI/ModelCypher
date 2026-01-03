@@ -36,8 +36,6 @@ NOTE: All tests use the Backend protocol exclusively. No numpy.
 
 from __future__ import annotations
 
-import math
-
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -60,6 +58,16 @@ def _random_matrix(backend, rows: int, cols: int, seed: int):
 
 def _scalar_tol(backend: Backend) -> float:
     return division_epsilon(backend, backend.array([1.0]))
+
+
+def _is_finite(value: float) -> bool:
+    return value == value and value not in (float("inf"), float("-inf"))
+
+
+def _mean_abs(backend: Backend, array) -> float:
+    mean_val = backend.mean(backend.abs(array))
+    backend.eval(mean_val)
+    return float(backend.to_scalar(mean_val))
 
 
 # =============================================================================
@@ -106,8 +114,7 @@ class TestCKADefaultBackend:
         result_base = compute_cka(x, y, backend)
 
         # Scale X by data-derived factors
-        x_np = backend.to_numpy(x)
-        scale = float(abs(x_np).mean())
+        scale = _mean_abs(backend, x)
         for factor in [scale, 1.0 / scale]:
             x_scaled = x * factor
             result_scaled = compute_cka(x_scaled, y, backend)
@@ -216,8 +223,7 @@ class TestCKAMultiBackend:
 
         cka_base = compute_cka_backend(x, y, any_backend)
 
-        x_np = any_backend.to_numpy(x)
-        scale = float(abs(x_np).mean())
+        scale = _mean_abs(any_backend, x)
         x_scaled = x * scale
         cka_scaled = compute_cka_backend(x_scaled, y, any_backend)
 
@@ -289,7 +295,7 @@ class TestCKAAccelerator:
 
         tol = _scalar_tol(accelerated_backend)
         assert -tol <= cka <= 1.0 + tol
-        assert math.isfinite(cka)
+        assert _is_finite(cka)
 
     def test_numerical_stability_extreme_values(self, accelerated_backend: Backend):
         """CKA should handle extreme activation magnitudes."""
@@ -301,7 +307,7 @@ class TestCKAAccelerator:
 
         cka = compute_cka_backend(x_large, y_large, accelerated_backend)
 
-        assert math.isfinite(cka), f"CKA is not finite: {cka}"
+        assert _is_finite(cka), f"CKA is not finite: {cka}"
         tol = _scalar_tol(accelerated_backend)
         assert -tol <= cka <= 1.0 + tol
 

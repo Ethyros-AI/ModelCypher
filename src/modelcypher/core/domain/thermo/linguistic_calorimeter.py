@@ -37,7 +37,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import math
 import sys
 import time
 from dataclasses import dataclass, field
@@ -47,6 +46,7 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from modelcypher.core.domain._backend import get_default_backend
+from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 
 # Machine epsilon for float64 (native Python float)
 _MACHINE_EPS = sys.float_info.epsilon
@@ -501,10 +501,11 @@ class LinguisticCalorimeter:
         mean_first = sum(first_entropies) / len(first_entropies)
         mean_gen = sum(mean_entropies) / len(mean_entropies)
 
-        std_first = math.sqrt(
-            sum((e - mean_first) ** 2 for e in first_entropies) / len(first_entropies)
-        )
-        std_gen = math.sqrt(sum((e - mean_gen) ** 2 for e in mean_entropies) / len(mean_entropies))
+        _b = get_default_backend()
+        var_first = sum((e - mean_first) ** 2 for e in first_entropies) / len(first_entropies)
+        std_first = sqrt_scalar(var_first, _b)
+        var_gen = sum((e - mean_gen) ** 2 for e in mean_entropies) / len(mean_entropies)
+        std_gen = sqrt_scalar(var_gen, _b)
 
         # Compute percentiles
         sorted_gen = sorted(mean_entropies)

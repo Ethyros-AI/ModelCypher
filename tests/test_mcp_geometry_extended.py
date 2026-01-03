@@ -136,8 +136,8 @@ class TestGromovWassersteinTool:
         target_points_arr = backend.random_normal((10, 3), dtype="float32")
         backend.eval(source_points_arr)
         backend.eval(target_points_arr)
-        source_points = backend.to_numpy(source_points_arr).tolist()
-        target_points = backend.to_numpy(target_points_arr).tolist()
+        source_points = backend.tolist(source_points_arr)
+        target_points = backend.tolist(target_points_arr)
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
@@ -164,8 +164,8 @@ class TestGromovWassersteinTool:
         target_points_arr = backend.random_normal((8, 4))
         backend.eval(source_points_arr)
         backend.eval(target_points_arr)
-        source_points = backend.to_numpy(source_points_arr).tolist()
-        target_points = backend.to_numpy(target_points_arr).tolist()
+        source_points = backend.tolist(source_points_arr)
+        target_points = backend.tolist(target_points_arr)
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
@@ -190,7 +190,7 @@ class TestGromovWassersteinTool:
         backend.random_seed(42)
         points_arr = backend.random_normal((10, 3))
         backend.eval(points_arr)
-        points = backend.to_numpy(points_arr).tolist()
+        points = backend.tolist(points_arr)
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
@@ -226,7 +226,7 @@ class TestIntrinsicDimensionTool:
         # 3D Gaussian (roughly 3D manifold)
         points_arr = backend.random_normal((50, 3))
         backend.eval(points_arr)
-        points = backend.to_numpy(points_arr).tolist()
+        points = backend.tolist(points_arr)
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
@@ -252,7 +252,7 @@ class TestIntrinsicDimensionTool:
         backend.random_seed(42)
         points_arr = backend.random_normal((50, 5))
         backend.eval(points_arr)
-        points = backend.to_numpy(points_arr).tolist()
+        points = backend.tolist(points_arr)
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
@@ -275,7 +275,7 @@ class TestIntrinsicDimensionTool:
         ambient_dim = 4
         points_arr = backend.random_normal((100, ambient_dim))
         backend.eval(points_arr)
-        points = backend.to_numpy(points_arr).tolist()
+        points = backend.tolist(points_arr)
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
@@ -306,7 +306,7 @@ class TestTopologicalFingerprintTool:
         backend.random_seed(42)
         points_arr = backend.random_normal((30, 3))
         backend.eval(points_arr)
-        points = backend.to_numpy(points_arr).tolist()
+        points = backend.tolist(points_arr)
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
@@ -340,7 +340,7 @@ class TestSpectralSignatureTool:
         backend.random_seed(42)
         points_arr = backend.random_normal((12, 3))
         backend.eval(points_arr)
-        points = backend.to_numpy(points_arr).tolist()
+        points = backend.tolist(points_arr)
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
@@ -480,7 +480,7 @@ class TestManifoldDimensionTool:
         backend.random_seed(42)
         points_arr = backend.random_normal((50, 3))
         backend.eval(points_arr)
-        points = backend.to_numpy(points_arr).tolist()
+        points = backend.tolist(points_arr)
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
@@ -504,7 +504,7 @@ class TestManifoldDimensionTool:
         backend.random_seed(42)
         points_arr = backend.random_normal((80, 5))
         backend.eval(points_arr)
-        points = backend.to_numpy(points_arr).tolist()
+        points = backend.tolist(points_arr)
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
@@ -651,8 +651,8 @@ class TestRefusalDetectTool:
         harmless_acts_arr = backend.random_normal((5, 10))
         backend.eval(harmful_acts_arr)
         backend.eval(harmless_acts_arr)
-        harmful_acts = backend.to_numpy(harmful_acts_arr).tolist()
-        harmless_acts = backend.to_numpy(harmless_acts_arr).tolist()
+        harmful_acts = backend.tolist(harmful_acts_arr)
+        harmless_acts = backend.tolist(harmless_acts_arr)
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
@@ -713,8 +713,8 @@ class TestPersonaExtractTool:
         negative_acts_arr = backend.random_normal((5, 10))
         backend.eval(positive_acts_arr)
         backend.eval(negative_acts_arr)
-        positive_acts = backend.to_numpy(positive_acts_arr).tolist()
-        negative_acts = backend.to_numpy(negative_acts_arr).tolist()
+        positive_acts = backend.tolist(positive_acts_arr)
+        negative_acts = backend.tolist(negative_acts_arr)
 
         async def runner(session: ClientSession):
             return await _await_with_timeout(
@@ -787,8 +787,8 @@ class TestGeometryToolInvariants:
         points_b_arr = backend.random_normal((8, 3))
         backend.eval(points_a_arr)
         backend.eval(points_b_arr)
-        points_a = backend.to_numpy(points_a_arr).tolist()
-        points_b = backend.to_numpy(points_b_arr).tolist()
+        points_a = backend.tolist(points_a_arr)
+        points_b = backend.tolist(points_b_arr)
 
         async def runner(session: ClientSession):
             result_ab = await _await_with_timeout(
@@ -826,7 +826,7 @@ class TestGeometryToolInvariants:
         backend.random_seed(seed)
         points_arr = backend.random_normal((60, 3))
         backend.eval(points_arr)
-        points = backend.to_numpy(points_arr).tolist()
+        points = backend.tolist(points_arr)
 
         async def runner(session: ClientSession):
             result_id = await _await_with_timeout(

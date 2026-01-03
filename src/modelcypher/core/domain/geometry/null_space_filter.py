@@ -502,17 +502,22 @@ class NullSpaceFilter:
             null_fraction = projection.null_dim / d if d > 0 else 0.0
 
             # Condition number
+            # Use tolist() for O(1) extraction instead of multiple scalar extractions
             S = projection.singular_values
-            if int(S.shape[0]) > 0 and float(backend.to_scalar(S[-1])) > 0:
-                condition_number = float(backend.to_scalar(S[0])) / float(
-                    backend.to_scalar(S[-1])
-                )
+            backend.eval(S)
+            s_count = int(S.shape[0])
+            if s_count > 0:
+                s_list = backend.tolist(S)
+                s_first = float(s_list[0])
+                s_last = float(s_list[-1])
+                if s_last > 0:
+                    condition_number = s_first / s_last
+                else:
+                    condition_number = float("inf")
+                mean_sv = sum(float(x) for x in s_list) / len(s_list)
             else:
                 condition_number = float("inf")
-
-            mean_sv = (
-                float(backend.to_scalar(backend.mean(S))) if int(S.shape[0]) > 0 else 0.0
-            )
+                mean_sv = 0.0
 
             profile = LayerNullSpaceProfile(
                 layer_idx=layer_idx,

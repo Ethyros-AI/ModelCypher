@@ -165,12 +165,12 @@ class TestGeometricMergeMatrices:
         )
 
         expected = backend.array([2.0, 3.0, 4.0])  # average
-        result_np = backend.to_numpy(result)
-        expected_np = backend.to_numpy(expected)
+        result_list = backend.tolist(result)
+        expected_list = backend.tolist(expected)
 
         assert result.shape == bias1.shape
         for i in range(3):
-            assert abs(result_np[i] - expected_np[i]) < _div_eps()
+            assert abs(result_list[i] - expected_list[i]) < _div_eps()
         eps = _div_eps()
         assert abs(error) < eps
         assert abs(quality - 1.0) < eps
@@ -238,13 +238,12 @@ class TestProcrustesAlign:
         rotated, error = LoRAAdapterMerger._procrustes_align(source, target, backend)
 
         # Result should be different from source (rotation applied)
-        source_np = backend.to_numpy(source)
-        rotated_np = backend.to_numpy(rotated)
-
         # They shouldn't be exactly equal
-        diff = abs(source_np - rotated_np).sum()
+        diff = backend.norm(source - rotated)
+        backend.eval(diff)
+        diff_val = float(backend.to_scalar(diff))
         eps = _div_eps()
-        assert diff > eps or error < eps  # Either different or perfectly aligned
+        assert diff_val > eps or error < eps  # Either different or perfectly aligned
 
 
 class TestMergeValidation:

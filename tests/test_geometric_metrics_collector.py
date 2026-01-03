@@ -94,7 +94,9 @@ class TestCaptureInitialParameters:
         # Check values match
         diff = backend.abs(collector.initial_parameters["layer1"] - params["layer1"])
         backend.eval(diff)
-        diff_max = float(backend.to_numpy(backend.max(diff)))
+        diff_max_arr = backend.max(diff)
+        backend.eval(diff_max_arr)
+        diff_max = float(backend.to_scalar(diff_max_arr))
         assert diff_max <= _eps(diff_max)
 
     def test_captures_copy_not_reference(self):
@@ -213,9 +215,12 @@ class TestComputeMetrics:
         metrics = collector.compute_metrics(params, gradients, learning_rate=0.01)
 
         assert metrics.parameter_divergence is not None
-        import math
-        expected_divergence = math.sqrt(3**2 + 3**2)  # sqrt(18)
-        eps = _eps(metrics.parameter_divergence, expected_divergence)
+        expected_vec = backend.array([3.0, 3.0])
+        expected_norm = backend.norm(expected_vec)
+        backend.eval(expected_norm)
+        expected_divergence = float(backend.to_scalar(expected_norm))
+        dim = int(expected_vec.shape[0])
+        eps = _eps(metrics.parameter_divergence, expected_divergence) * dim
         assert abs(metrics.parameter_divergence - expected_divergence) <= eps
 
     def test_computes_effective_step_ratio(self, collector):
@@ -266,7 +271,9 @@ class TestComputeMetrics:
 
         diff = backend.abs(collector.previous_parameters["layer1"] - params["layer1"])
         backend.eval(diff)
-        diff_max = float(backend.to_numpy(backend.max(diff)))
+        diff_max_arr = backend.max(diff)
+        backend.eval(diff_max_arr)
+        diff_max = float(backend.to_scalar(diff_max_arr))
         assert diff_max <= _eps(diff_max)
 
 
@@ -429,7 +436,9 @@ class TestCloneParams:
         backend.eval(expected)
         diff = backend.abs(cloned["layer1"] - expected)
         backend.eval(diff)
-        diff_max = float(backend.to_numpy(backend.max(diff)))
+        diff_max_arr = backend.max(diff)
+        backend.eval(diff_max_arr)
+        diff_max = float(backend.to_scalar(diff_max_arr))
         assert diff_max <= _eps(diff_max)
 
 

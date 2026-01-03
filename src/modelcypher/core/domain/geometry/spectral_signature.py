@@ -29,7 +29,6 @@ from typing import TYPE_CHECKING
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
-    log_scalar,
     regularization_epsilon,
     tiny_value,
 )
@@ -166,15 +165,13 @@ class SpectralSignature:
         backend.eval(eigvals)
         eig_list = sorted([float(x) for x in backend.tolist(eigvals)])
 
-        spectral_entropy = _spectral_entropy(eig_list, regularization_epsilon(backend, eigvals))
+        spectral_entropy = _spectral_entropy(backend, eigvals, regularization_epsilon(backend, eigvals))
         algebraic_connectivity = eig_list[1] if len(eig_list) > 1 else 0.0
         neighbor_indices_list = [[int(x) for x in row] for row in backend.tolist(neighbor_indices)]
         component_count = _count_components_from_neighbors(neighbor_indices_list, n)
         connected = component_count == 1
 
-        eig_arr = backend.array(eig_list, dtype="float32")
-        backend.eval(eig_arr)
-        heat_trace = _heat_trace(backend, eig_arr, heat_times)
+        heat_trace = _heat_trace(backend, eigvals, heat_times)
 
         return SpectralSignatureResult(
             eigenvalues=eig_list,
@@ -291,26 +288,28 @@ def _median_flattened(values: "Array", backend: "Backend") -> float:
     return 0.5 * (float(sorted_list[mid - 1]) + float(sorted_list[mid]))
 
 
-def _spectral_entropy(eigenvalues: list[float], eps: float) -> float:
-    total = sum(eigenvalues)
-    if total <= eps:
+def _spectral_entropy(backend: "Backend", eigenvalues: "Array", eps: float) -> float:
+    total = backend.sum(eigenvalues)
+    backend.eval(total)
+    total_val = float(backend.to_scalar(total))
+    if total_val <= eps:
         return 0.0
-    _b = get_default_backend()
-    entropy = 0.0
-    for value in eigenvalues:
-        if value > eps:
-            prob = value / total
-            entropy -= prob * log_scalar(prob, _b)
-    return entropy
+    probs = eigenvalues / total
+    log_probs = backend.where(probs > eps, backend.log(probs), backend.zeros_like(probs))
+    entropy_arr = -backend.sum(probs * log_probs)
+    backend.eval(entropy_arr)
+    return float(backend.to_scalar(entropy_arr))
 
 
 def _heat_trace(backend: "Backend", eigenvalues: "Array", times: list[float]) -> list[float]:
-    trace_values: list[float] = []
-    for t in times:
-        heat = backend.sum(backend.exp(-t * eigenvalues))
-        backend.eval(heat)
-        trace_values.append(float(backend.to_scalar(heat)))
-    return trace_values
+    if not times:
+        return []
+    times_arr = backend.array(times)
+    eig_row = backend.reshape(eigenvalues, (1, -1))
+    times_col = backend.reshape(times_arr, (-1, 1))
+    heat = backend.sum(backend.exp(-times_col * eig_row), axis=1)
+    backend.eval(heat)
+    return [float(x) for x in backend.tolist(heat)]
 
 
 def _count_components_from_neighbors(neighbors: list[list[int]], n: int) -> int:
