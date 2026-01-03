@@ -340,6 +340,15 @@ class TemporalTopologyAnalyzer:
         backend = get_default_backend()
         backend.eval(matrix)
 
+        # Extract first column once via O(1) tolist() instead of O(n) to_scalar() loop
+        shape = matrix.shape
+        if len(shape) > 1 and int(shape[1]) > 0:
+            col0_arr = matrix[:, 0]
+            backend.eval(col0_arr)
+            col0 = backend.tolist(col0_arr)
+        else:
+            col0 = [0.0] * len(concepts)
+
         def axis_correlation(axis: str) -> tuple[float, bool]:
             """Compute correlation for a specific axis."""
             levels = []
@@ -350,14 +359,7 @@ class TemporalTopologyAnalyzer:
                 if anchor is None or axis_key(anchor.axis) != axis:
                     continue
                 levels.append(anchor.level)
-                # Project onto first PC direction
-                shape = matrix.shape
-                if len(shape) > 1 and shape[1] > 0:
-                    proj_val = matrix[i, 0]
-                    backend.eval(proj_val)
-                    projections.append(float(backend.to_scalar(proj_val)))
-                else:
-                    projections.append(0.0)
+                projections.append(float(col0[i]))
 
             if len(levels) < 3:
                 return 0.0, False
@@ -390,6 +392,15 @@ class TemporalTopologyAnalyzer:
         backend = get_default_backend()
         backend.eval(matrix)
 
+        # Extract first column once via O(1) tolist() instead of O(n) to_scalar() loop
+        shape = matrix.shape
+        if len(shape) > 1 and int(shape[1]) > 0:
+            col0_arr = matrix[:, 0]
+            backend.eval(col0_arr)
+            col0 = backend.tolist(col0_arr)
+        else:
+            col0 = [0.0] * len(concepts)
+
         # Separate past and future anchors
         past_concepts = ["yesterday", "past", "birth", "beginning"]
         future_concepts = ["tomorrow", "future", "death", "ending"]
@@ -402,7 +413,8 @@ class TemporalTopologyAnalyzer:
         for i, concept in enumerate(concepts):
             anchor = self._anchor_lookup.get(concept)
             if anchor and axis_key(anchor.axis) == _AXIS_DIRECTION:
-                direction_anchors.append((concept, anchor.level, matrix[i]))
+                # Store (concept, level, projection_value) - projection already extracted
+                direction_anchors.append((concept, anchor.level, float(col0[i])))
 
         if len(direction_anchors) < 4:
             return ArrowOfTime(
@@ -414,11 +426,7 @@ class TemporalTopologyAnalyzer:
 
         # Compute correlation between level and first PC projection
         levels = [a[1] for a in direction_anchors]
-        projections = []
-        for a in direction_anchors:
-            proj_val = a[2][0]
-            backend.eval(proj_val)
-            projections.append(float(backend.to_scalar(proj_val)))
+        projections = [a[2] for a in direction_anchors]
 
         corr = VectorMath.spearman_correlation(levels, projections)
         if corr is None or is_nan(float(corr), backend):

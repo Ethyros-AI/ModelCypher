@@ -21,7 +21,6 @@ These tests verify the platform selection logic and dataclass configurations
 for the dual-path generator across MLX, CUDA, and JAX backends.
 """
 
-import math
 import os
 from unittest import mock
 
@@ -418,7 +417,7 @@ class TestEntropyDeltaSample:
         # delta = base - adapter
         backend = get_default_backend()
         eps = division_epsilon(backend, backend.array([0.0]))
-        assert math.isclose(sample.delta, 1.0, rel_tol=eps, abs_tol=eps)
+        assert abs(sample.delta - 1.0) <= eps * max(1.0, abs(sample.delta))
 
     def test_sample_top_token_disagreement(self):
         """EntropyDeltaSample detects top token disagreement."""
@@ -546,6 +545,8 @@ class TestLogitDivergenceCalculator:
         probs = calc.stable_softmax(large_logits)
 
         # Check probabilities sum to 1
-        prob_sum = float(backend.to_numpy(backend.sum(probs)))
+        prob_sum_arr = backend.sum(probs)
+        backend.eval(prob_sum_arr)
+        prob_sum = float(backend.to_scalar(prob_sum_arr))
         eps = division_epsilon(backend, backend.array([0.0]))
-        assert math.isclose(prob_sum, 1.0, rel_tol=eps, abs_tol=eps)
+        assert abs(prob_sum - 1.0) <= eps * max(1.0, abs(prob_sum))

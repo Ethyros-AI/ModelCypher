@@ -56,7 +56,8 @@ def register_safety_tools(ctx: ServiceContext) -> None:
             # Compute entropy statistics if deltas provided
             entropy_stats = {}
             if entropyDelta and len(entropyDelta) > 0:
-                import math
+                from modelcypher.core.domain._backend import get_default_backend
+                from modelcypher.core.domain.geometry.numerical_stability import sqrt_scalar
 
                 mean = sum(entropyDelta) / len(entropyDelta)
                 variance = (
@@ -64,7 +65,8 @@ def register_safety_tools(ctx: ServiceContext) -> None:
                     if len(entropyDelta) > 1
                     else 0.0
                 )
-                std_dev = math.sqrt(variance)
+                _b = get_default_backend()
+                std_dev = sqrt_scalar(variance, _b)
                 entropy_stats = {
                     "deltaMean": mean,
                     "deltaStdDev": std_dev,

@@ -26,8 +26,6 @@ Key properties tested:
 4. Convergence: Sinkhorn converges to dtype-derived tolerance
 """
 
-import math
-
 import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
@@ -36,6 +34,7 @@ from modelcypher.core.domain.geometry.birkhoff_projector import (
 )
 from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
+    is_finite,
     regularization_epsilon,
     svd_via_eigh,
     tiny_value,
@@ -87,7 +86,7 @@ class TestSinkhornKnopp:
         result = projector.project(M)
 
         assert result.iterations_used >= 1
-        assert math.isfinite(result.max_marginal_error)
+        assert is_finite(result.max_marginal_error, backend)
 
     def test_idempotent_projection(self) -> None:
         """Projecting a doubly stochastic matrix should return itself (approximately)."""
@@ -104,7 +103,9 @@ class TestSinkhornKnopp:
         # Should be very close to input
         diff = backend.abs(result.projected_matrix - uniform)
         backend.eval(diff)
-        max_diff = float(backend.to_numpy(backend.max(diff)))
+        max_arr = backend.max(diff)
+        backend.eval(max_arr)
+        max_diff = float(backend.to_scalar(max_arr))
 
         tol = regularization_epsilon(backend, result.projected_matrix)
         assert max_diff <= tol, f"Idempotent property violated: max diff = {max_diff}"
@@ -117,12 +118,12 @@ class TestSinkhornKnopp:
 
         # Create a permutation matrix (cycle)
         n = 4
-        perm = backend.zeros((n, n))
-        backend.eval(perm)
-        perm_np = backend.to_numpy(perm)
-        for i in range(n):
-            perm_np[i, (i + 1) % n] = 1.0
-        perm = backend.array(perm_np)
+        perm = backend.array(
+            [
+                [1.0 if j == ((i + 1) % n) else 0.0 for j in range(n)]
+                for i in range(n)
+            ]
+        )
         backend.eval(perm)
 
         # Project with ensure_positive=False since it's already positive
@@ -133,12 +134,12 @@ class TestSinkhornKnopp:
         col_sums = backend.sum(result.projected_matrix, axis=0)
         backend.eval(row_sums, col_sums)
 
-        row_sums_np = backend.to_numpy(row_sums)
-        col_sums_np = backend.to_numpy(col_sums)
+        row_sums_list = backend.tolist(row_sums)
+        col_sums_list = backend.tolist(col_sums)
 
         tol = regularization_epsilon(backend, result.projected_matrix)
-        assert all(abs(s - 1.0) <= tol for s in row_sums_np)
-        assert all(abs(s - 1.0) <= tol for s in col_sums_np)
+        assert all(abs(s - 1.0) <= tol for s in row_sums_list)
+        assert all(abs(s - 1.0) <= tol for s in col_sums_list)
 
     def test_all_entries_nonnegative(self) -> None:
         """All entries should be non-negative."""
@@ -153,7 +154,7 @@ class TestSinkhornKnopp:
 
         min_val = backend.min(result.projected_matrix)
         backend.eval(min_val)
-        min_val_float = float(backend.to_numpy(min_val))
+        min_val_float = float(backend.to_scalar(min_val))
 
         tol = division_epsilon(backend, result.projected_matrix)
         assert min_val_float >= -tol, f"Negative entry found: {min_val_float}"
@@ -177,8 +178,7 @@ class TestSpectralBounding:
         # Compute spectral norm of result
         _, S, _ = svd_via_eigh(backend, result.projected_matrix, full_matrices=False)
         backend.eval(S)
-        S_np = backend.to_numpy(S)
-        spectral_norm = float(S_np[0])
+        spectral_norm = float(backend.tolist(S)[0])
 
         tol = regularization_epsilon(backend, result.projected_matrix)
         assert spectral_norm <= 1.0 + tol, f"Spectral norm {spectral_norm} exceeds 1.0"
