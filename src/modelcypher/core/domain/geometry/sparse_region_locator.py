@@ -27,10 +27,13 @@ from modelcypher.core.domain.geometry.dare_sparsity import SparsityAnalysis
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class Configuration:
-    sparsity_threshold: float | None
-    use_dare_alignment: bool
+# =============================================================================
+# NO CONFIGURATION CLASSES
+# =============================================================================
+# All parameters are derived from data:
+# - sparsity_threshold: derived from maximum gap in sparsity distribution
+# - DARE alignment: always computed when dare_analysis is provided
+# =============================================================================
 
 
 @dataclass(frozen=True)
@@ -96,8 +99,13 @@ class AnalysisResult:
 
 
 class SparseRegionLocator:
-    def __init__(self, configuration: Configuration) -> None:
-        self.config = configuration
+    """Locates sparse regions in neural network layers.
+
+    All parameters are derived from data - no configuration needed.
+    """
+
+    def __init__(self) -> None:
+        pass
 
     @staticmethod
     def _derive_sparsity_threshold(values: list[float]) -> float:
@@ -139,10 +147,8 @@ class SparseRegionLocator:
         if not layer_sparsity:
             raise ValueError("No comparable layer statistics available for sparsity analysis")
 
-        if self.config.sparsity_threshold is None:
-            sparsity_threshold = self._derive_sparsity_threshold(list(layer_sparsity.values()))
-        else:
-            sparsity_threshold = self.config.sparsity_threshold
+        # Always derive sparsity threshold from data (maximum gap in distribution)
+        sparsity_threshold = self._derive_sparsity_threshold(list(layer_sparsity.values()))
 
         sparse_layers = sorted(
             layer
@@ -154,9 +160,10 @@ class SparseRegionLocator:
             layer for layer, sparsity in layer_sparsity.items() if sparsity <= eps
         )
 
+        # Always compute DARE alignment when dare_analysis is provided
         dare_alignment = (
             self._compute_dare_alignment(sparse_layers, dare_analysis)
-            if self.config.use_dare_alignment
+            if dare_analysis is not None
             else None
         )
 

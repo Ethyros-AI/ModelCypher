@@ -450,8 +450,6 @@ class TestManifoldClusterTool:
                     "mc_geometry_manifold_cluster",
                     arguments={
                         "points": points,
-                        "epsilon": 0.5,
-                        "computeDimension": False,
                     },
                 )
             )
@@ -541,7 +539,6 @@ class TestManifoldQueryTool:
                     arguments={
                         "point": point,
                         "regions": regions,
-                        "epsilon": 0.3,
                     },
                 )
             )

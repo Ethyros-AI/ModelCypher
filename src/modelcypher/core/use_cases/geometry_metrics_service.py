@@ -43,10 +43,7 @@ from modelcypher.core.domain.geometry.gromov_wasserstein import (
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
 from modelcypher.core.domain.geometry.cka import compute_cka_from_grams
 from modelcypher.core.domain.geometry.intrinsic_dimension import IntrinsicDimension
-from modelcypher.core.domain.geometry.spectral_signature import (
-    SpectralSignature,
-    SpectralSignatureConfig,
-)
+from modelcypher.core.domain.geometry.spectral_signature import SpectralSignature
 from modelcypher.core.domain.geometry.topological_fingerprint import (
     TopologicalFingerprint,
 )
@@ -344,41 +341,31 @@ class GeometryMetricsService:
     def compute_spectral_signature(
         self,
         points: list[list[float]],
-        k_neighbors: int | None = None,
-        kernel_bandwidth: float | None = None,
-        normalized_laplacian: bool = True,
-        heat_times: list[float] | None = None,
     ) -> SpectralSignatureResult:
         """
         Compute geodesic spectral signature from a point cloud.
 
         Builds a k-NN geodesic graph, constructs a Laplacian, and reports
         raw spectral metrics (eigenvalues, heat trace, entropy).
-        """
-        times = (
-            tuple(heat_times)
-            if heat_times is not None
-            else SpectralSignatureConfig().heat_trace_times
-        )
 
+        All parameters are derived from the geometry of the data:
+        - k_neighbors: derived from graph connectivity requirements
+        - kernel_bandwidth: derived from median neighbor distance
+        - heat_trace_times: derived from eigenvalue spectrum
+        - normalized_laplacian: always True (correct for graph Laplacians)
+        """
+        # Cache key uses None for all derived parameters since they're data-dependent
         cached = self._cache.get_spectral_result(
-            points, k_neighbors, kernel_bandwidth, normalized_laplacian, times
+            points, None, None, True, None
         )
         if cached is not None:
             return self._spectral_result_from_cached(cached)
-
-        config = SpectralSignatureConfig(
-            k_neighbors=k_neighbors,
-            kernel_bandwidth=kernel_bandwidth,
-            normalized_laplacian=normalized_laplacian,
-            heat_trace_times=times,
-        )
 
         from modelcypher.core.domain._backend import get_default_backend
 
         backend = get_default_backend()
         computer = SpectralSignature(backend=backend)
-        signature = computer.compute(points=points, config=config)
+        signature = computer.compute(points=points)
 
         cached_result = CachedSpectralResult(
             eigenvalues=signature.eigenvalues,
@@ -395,7 +382,7 @@ class GeometryMetricsService:
             connected=signature.connected,
         )
         self._cache.set_spectral_result(
-            points, k_neighbors, kernel_bandwidth, normalized_laplacian, times, cached_result
+            points, None, None, True, None, cached_result
         )
 
         return self._spectral_result_from_cached(cached_result)
@@ -423,10 +410,11 @@ class GeometryMetricsService:
         self,
         points: list[list[float]],
         padded_dimension: int,
-        k_neighbors: int | None = None,
-        heat_times: list[float] | None = None,
     ) -> DimensionConstraintInvarianceResult:
-        """Measure invariance under zero-padding dimension constraints."""
+        """Measure invariance under zero-padding dimension constraints.
+
+        All parameters are derived from the geometry of the data.
+        """
         if not points:
             raise ValueError("points must be non-empty")
 
@@ -451,9 +439,11 @@ class GeometryMetricsService:
         backend.eval(gram_base, gram_padded)
         gram_cka = compute_cka_from_grams(gram_base, gram_padded, backend=backend)
 
+        # k_neighbors derived from data by geodesic_distances()
         geometry = RiemannianGeometry(backend)
-        geo_base = geometry.geodesic_distances(points, k_neighbors=k_neighbors)
-        geo_padded = geometry.geodesic_distances(padded_points, k_neighbors=k_neighbors)
+        geo_base = geometry.geodesic_distances(points, k_neighbors=None)
+        geo_padded = geometry.geodesic_distances(padded_points, k_neighbors=None)
+        k_neighbors = geo_base.k_neighbors
 
         geo_diff = backend.abs(geo_base.distances - geo_padded.distances)
         geo_mean = backend.mean(geo_diff)
@@ -462,19 +452,10 @@ class GeometryMetricsService:
         geodesic_mean_abs_diff = float(backend.to_scalar(geo_mean))
         geodesic_max_abs_diff = float(backend.to_scalar(geo_max))
 
-        times = (
-            tuple(heat_times)
-            if heat_times is not None
-            else SpectralSignatureConfig().heat_trace_times
-        )
-        spectral_config = SpectralSignatureConfig(
-            k_neighbors=k_neighbors,
-            normalized_laplacian=True,
-            heat_trace_times=times,
-        )
+        # All spectral parameters derived from data
         spectral = SpectralSignature(backend)
-        sig_base = spectral.compute(points=points, config=spectral_config)
-        sig_padded = spectral.compute(points=padded_points, config=spectral_config)
+        sig_base = spectral.compute(points=points)
+        sig_padded = spectral.compute(points=padded_points)
 
         eigen_diffs = [
             abs(a - b) for a, b in zip(sig_base.eigenvalues, sig_padded.eigenvalues)

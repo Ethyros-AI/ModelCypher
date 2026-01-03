@@ -207,8 +207,8 @@ Spectra evolve during training:
 | Class/Function | Line | Description |
 |----------------|------|-------------|
 | `SpectralMetrics` | 62 | Core metrics dataclass (eigenvalues, effective rank, etc.) |
-| `SpectralConfig` | 95 | Configuration for spectral analysis |
-| `spectral_summary()` | 363 | Aggregate statistics across layers |
+| `compute_spectral_metrics()` | 103 | Compute spectral metrics (all params derived from data) |
+| `spectral_summary()` | 240 | Aggregate statistics across layers |
 
 ---
 

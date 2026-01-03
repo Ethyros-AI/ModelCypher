@@ -83,24 +83,14 @@ class SpectralMetrics:
     delta_frobenius: float
 
 
-@dataclass(frozen=True)
-class SpectralConfig:
-    """Configuration for spectral analysis.
-
-    All thresholds are derived from dtype precision when None.
-    """
-
-    # Epsilon for numerical stability (None = derived from dtype)
-    epsilon: float | None = None
-
-    # Maximum condition number before clamping (None = derived from dtype)
-    max_condition_number: float | None = None
-
-    # Whether to use full SVD (slower but more accurate) or just top-k
-    use_full_svd: bool = False
-
-    # Number of singular values to compute if not full
-    top_k: int = 10
+# =============================================================================
+# NO CONFIGURATION CLASSES
+# =============================================================================
+# All parameters are derived from data:
+# - epsilon: derived from dtype machine epsilon
+# - max_condition_number: derived from dtype precision
+# - SVD computation: always computes all singular values (needed for condition number)
+# =============================================================================
 
 
 def _to_float(val: Any) -> float:
@@ -113,16 +103,18 @@ def _to_float(val: Any) -> float:
 def compute_spectral_metrics(
     source_weight: "Array",
     target_weight: "Array",
-    config: SpectralConfig,
     backend: "Backend | None" = None,
 ) -> SpectralMetrics:
     """
     Compute spectral metrics for a weight matrix pair.
 
+    All parameters are derived from data:
+    - epsilon: from dtype machine epsilon
+    - max_condition_number: from dtype precision
+
     Args:
         source_weight: Source model weight matrix [out_dim, in_dim] or [dim]
         target_weight: Target model weight matrix (same shape)
-        config: Spectral analysis configuration (use with_parameters() to create).
         backend: Optional Backend for GPU-accelerated SVD.
 
     Returns:
@@ -130,12 +122,9 @@ def compute_spectral_metrics(
     """
 
     b = backend or get_default_backend()
-    eps = config.epsilon if config.epsilon is not None else division_epsilon(b, target_weight)
-    max_condition_number = (
-        config.max_condition_number
-        if config.max_condition_number is not None
-        else condition_threshold(b, target_weight)
-    )
+    # Derive all thresholds from dtype
+    eps = division_epsilon(b, target_weight)
+    max_condition_number = condition_threshold(b, target_weight)
 
     # Handle 1D weights (biases, layernorms)
     if source_weight.ndim == 1:
@@ -173,13 +162,9 @@ def compute_spectral_metrics(
 
     # SVD - compute only singular values (not U or Vt) to avoid 92GB allocation
     # For (vocab_size, hidden_dim) matrices, full U would be vocab_size^2
+    # We need all singular values for condition number (σ_max / σ_min)
     _, source_s, _ = svd_via_eigh(b, source_f32, full_matrices=False)
     _, target_s, _ = svd_via_eigh(b, target_f32, full_matrices=False)
-
-    # Limit to top_k if not using full SVD
-    if not config.use_full_svd:
-        source_s = source_s[: config.top_k]
-        target_s = target_s[: config.top_k]
 
     # Evaluate and extract values
     b.eval(source_s, target_s)

@@ -34,10 +34,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
 )
 from modelcypher.core.domain.geometry.path_geometry import PathGeometry, PathNode, PathSignature
 from modelcypher.core.domain.geometry.riemannian_utils import RiemannianGeometry
-from modelcypher.core.domain.geometry.spectral_signature import (
-    SpectralSignature,
-    SpectralSignatureConfig,
-)
+from modelcypher.core.domain.geometry.spectral_signature import SpectralSignature
 from modelcypher.core.domain.geometry.topological_fingerprint import TopologicalFingerprint
 from modelcypher.core.domain.geometry.traversal_coherence import Path as TraversalPath
 from modelcypher.core.domain.geometry.traversal_coherence import TraversalCoherence
@@ -560,13 +557,9 @@ class GeometryValidationSuite:
         fixture: SpectralSignatureFixture,
     ) -> SpectralSignatureValidation:
         backend = self._backend
-        config = SpectralSignatureConfig(
-            k_neighbors=fixture.k_neighbors,
-            normalized_laplacian=fixture.normalized_laplacian,
-            heat_trace_times=tuple(fixture.heat_times),
-        )
+        # All parameters derived from data - no config needed
         computer = SpectralSignature(backend)
-        signature = computer.compute(points=fixture.points, config=config)
+        signature = computer.compute(points=fixture.points)
 
         eig_min = min(signature.eigenvalues) if signature.eigenvalues else 0.0
         eig_max = max(signature.eigenvalues) if signature.eigenvalues else 0.0
@@ -574,9 +567,8 @@ class GeometryValidationSuite:
         eig_arr = backend.array(signature.eigenvalues or [0.0], dtype="float32")
         eig_eps = regularization_epsilon(backend, eig_arr)
 
-        eigen_bounds_ok = True
-        if fixture.normalized_laplacian:
-            eigen_bounds_ok = eig_min >= -eig_eps and eig_max <= 2.0 + eig_eps
+        # Normalized Laplacian is always used (it's the correct approach)
+        eigen_bounds_ok = eig_min >= -eig_eps and eig_max <= 2.0 + eig_eps
 
         heat_arr = backend.array(signature.heat_trace or [0.0], dtype="float32")
         heat_eps = regularization_epsilon(backend, heat_arr)
@@ -640,14 +632,10 @@ class GeometryValidationSuite:
 
         geo_eps = regularization_epsilon(backend, geo_base.distances)
 
-        spectral_config = SpectralSignatureConfig(
-            k_neighbors=fixture.k_neighbors,
-            normalized_laplacian=True,
-            heat_trace_times=tuple(fixture.heat_times),
-        )
+        # All parameters derived from data - no config needed
         spectral = SpectralSignature(backend)
-        sig_base = spectral.compute(points=points, config=spectral_config)
-        sig_padded = spectral.compute(points=padded_points, config=spectral_config)
+        sig_base = spectral.compute(points=points)
+        sig_padded = spectral.compute(points=padded_points)
 
         eigen_diffs = [
             abs(a - b) for a, b in zip(sig_base.eigenvalues, sig_padded.eigenvalues)

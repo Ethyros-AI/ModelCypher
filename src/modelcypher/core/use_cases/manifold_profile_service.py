@@ -42,10 +42,10 @@ class ManifoldProfileService:
     # ==========================================================================
     # NO CONFIGURATION CLASSES
     # ==========================================================================
-    # All parameters are derived from data or use fixed correct values.
-    # - Clustering threshold: 50 (minimum points before clustering)
-    # - Auto-cluster: always enabled
-    # - All clustering parameters: derived from data
+    # All parameters are derived from data:
+    # - Clustering: always attempted, algorithm determines if enough structure exists
+    # - Distance thresholds: derived from data distribution (percentiles)
+    # - All clustering parameters: derived from data by ManifoldClusterer
     # ==========================================================================
 
     def __init__(
@@ -55,7 +55,6 @@ class ManifoldProfileService:
         self.store = store
         self.clusterer = ManifoldClusterer()
         self._pending_points: dict[str, list[ManifoldPoint]] = {}
-        self._clustering_threshold = 50  # Fixed value - minimum points before clustering
 
     def record_observation(
         self,
@@ -104,8 +103,10 @@ class ManifoldProfileService:
             version=profile.version,
         )
 
-        # Auto-clustering always enabled when threshold is reached
-        if len(updated_profile.recent_points) >= self._clustering_threshold:
+        # Always attempt clustering - the algorithm determines if enough structure exists
+        # ManifoldClusterer derives all parameters from data (epsilon, min_samples, etc.)
+        # If insufficient points, clustering returns everything as noise - correct behavior
+        if updated_profile.recent_points:
             updated_profile = self._perform_clustering(updated_profile)
 
         self.store.save(updated_profile)
@@ -334,12 +335,14 @@ class ManifoldProfileService:
         point: ManifoldPoint,
         points: list[ManifoldPoint],
         max_results: int = 10,
-        threshold: float = 0.5,
     ) -> list[ManifoldPoint]:
         """Find similar points using geodesic distance.
 
         Computes geodesic distances from the query point to all candidates
         via k-NN graph. Geodesic is the correct metric on curved manifolds.
+
+        Threshold is derived from data: 25th percentile of the distance distribution.
+        This captures the "nearby" points relative to the actual data geometry.
         """
         if not points:
             return []
@@ -361,10 +364,15 @@ class ManifoldProfileService:
         row0 = result.distances[0, :]
         backend.eval(row0)
         row0_list = backend.tolist(row0)
-        distances = [
-            (points[i], float(row0_list[i + 1]))
-            for i in range(len(points))
-        ]
+        candidate_distances = [float(row0_list[i + 1]) for i in range(len(points))]
+
+        # Derive threshold from data: 25th percentile of distance distribution
+        # This captures "similar" relative to the actual data geometry
+        sorted_distances = sorted(candidate_distances)
+        percentile_idx = max(0, int(len(sorted_distances) * 0.25) - 1)
+        threshold = sorted_distances[percentile_idx] if sorted_distances else 0.0
+
+        distances = [(points[i], candidate_distances[i]) for i in range(len(points))]
         filtered = [item for item in distances if item[1] <= threshold]
         filtered.sort(key=lambda item: item[1])
         return [item[0] for item in filtered[:max_results]]

@@ -23,7 +23,6 @@ using landmark MDS with geodesic distance preservation.
 Commands:
     mc geometry transfer project --source <model> --target <model> --concept <name>
     mc geometry transfer profile --model <path> --concept <name>
-    mc geometry transfer lora --transfer <file> --target <model>
 """
 
 from __future__ import annotations
@@ -66,8 +65,7 @@ def transfer_project(
         mc geometry transfer project \\
             --source /models/instruct \\
             --target /models/base \\
-            --concept "chain_of_thought" \\
-            --probes cot_probes.json
+            --concept "chain_of_thought"
     """
     context = _context(ctx)
 
@@ -180,8 +178,7 @@ def transfer_profile(
     Example:
         mc geometry transfer profile \\
             --model /models/instruct \\
-            --concept "chain_of_thought" \\
-            --probes cot_probes.json
+            --concept "chain_of_thought"
     """
     context = _context(ctx)
 

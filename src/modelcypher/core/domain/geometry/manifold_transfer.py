@@ -81,20 +81,20 @@ logger = logging.getLogger(__name__)
 class CrossManifoldConfig:
     """Configuration for cross-manifold projection.
 
-    Attributes:
-        max_iterations: Maximum iterations for stress minimization.
-        convergence_tolerance: Stop when stress change < this value.
-        learning_rate: Step size for gradient descent (derived from data scale if None).
-        min_anchors: Minimum anchors required for reliable projection.
-        distance_weight_decay: Controls anchor weighting by distance (derived if None).
-        use_curvature_correction: Whether to apply curvature-aware adjustments.
+    Most parameters default to None and are derived from data at runtime:
+    - max_iterations: max(100, 5 * n_anchors)
+    - convergence_tolerance: sqrt(machine_epsilon)
+    - learning_rate: Derived from stress gradient scale
+    - min_anchors: 3 (statistical minimum for triangulation)
+    - distance_weight_decay: Derived from distance distribution
+    - stress_regularization: sqrt(machine_epsilon)
     """
 
-    max_iterations: int = 1000
+    max_iterations: int | None = None
     convergence_tolerance: float | None = None
-    learning_rate: float | None = None  # Derived from stress gradient scale
-    min_anchors: int = 10
-    distance_weight_decay: float | None = None  # Derived from distance distribution
+    learning_rate: float | None = None
+    min_anchors: int | None = None
+    distance_weight_decay: float | None = None
     use_curvature_correction: bool = True
     stress_regularization: float | None = None
 
@@ -327,10 +327,12 @@ class CrossManifoldProjector:
                 backend.eval(centroid)
                 anchor_centroids.append(centroid)
 
-        if len(anchor_ids) < self.config.min_anchors:
+        # Derive min_anchors from config or use 3 (statistical minimum for triangulation)
+        min_anchors = self.config.min_anchors if self.config.min_anchors is not None else 3
+        if len(anchor_ids) < min_anchors:
             logger.warning(
                 f"Only {len(anchor_ids)} anchors available, "
-                f"minimum {self.config.min_anchors} configured"
+                f"minimum {min_anchors} configured"
             )
 
         # Build combined point matrix: [concept_centroid, anchor_0, anchor_1, ...]
@@ -422,7 +424,9 @@ class CrossManifoldProjector:
                     source_distances_list.append(float(dist_val))
                     weights_list.append(float(weight_val))
 
-        if len(matching_anchor_ids) < self.config.min_anchors:
+        # Derive min_anchors from config or use 3 (statistical minimum)
+        min_anchors = self.config.min_anchors if self.config.min_anchors is not None else 3
+        if len(matching_anchor_ids) < min_anchors:
             logger.warning(
                 f"Only {len(matching_anchor_ids)} matching anchors, projection may be unreliable"
             )
@@ -469,7 +473,10 @@ class CrossManifoldProjector:
             # Use 1/n_anchors as initial learning rate - adaptive scaling
             learning_rate = 1.0 / max(1, n_anchors)
 
-        for iteration in range(self.config.max_iterations):
+        # Derive max_iterations from n_anchors when not specified
+        max_iterations = self.config.max_iterations if self.config.max_iterations is not None else max(100, 5 * n_anchors)
+
+        for iteration in range(max_iterations):
             # Build point matrix: [position, anchor_0, anchor_1, ...]
             position_reshaped = backend.reshape(position, (1, -1))
             all_points = backend.concatenate([position_reshaped, target_centroids_arr], axis=0)

@@ -31,10 +31,7 @@ import pytest
 
 from modelcypher.core.domain._backend import get_default_backend
 from modelcypher.core.domain.geometry.numerical_stability import machine_epsilon
-from modelcypher.core.domain.geometry.spectral_analysis import (
-    SpectralConfig,
-    compute_spectral_metrics,
-)
+from modelcypher.core.domain.geometry.spectral_analysis import compute_spectral_metrics
 
 # =============================================================================
 # Spectral Norm Invariants
@@ -42,7 +39,8 @@ from modelcypher.core.domain.geometry.spectral_analysis import (
 
 
 def _compute_metrics(source, target):
-    return compute_spectral_metrics(source, target, config=SpectralConfig())
+    # All parameters derived from data - no config needed
+    return compute_spectral_metrics(source, target)
 
 
 class TestSpectralNormInvariants:

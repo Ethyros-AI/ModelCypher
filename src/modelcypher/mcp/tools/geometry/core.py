@@ -698,14 +698,14 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         @mcp.tool(annotations=READ_ONLY_ANNOTATIONS)
         def mc_geometry_manifold_cluster(
             points: list[dict],
-            epsilon: float | None = None,
-            computeDimension: bool = True,
         ) -> dict:
-            """Cluster manifold points into regions using DBSCAN."""
+            """Cluster manifold points into regions using DBSCAN.
+
+            All clustering parameters are derived from the geometry of the data.
+            No configuration is accepted or needed.
+            """
             result = ctx.geometry_persona_service.cluster_points(
                 points=points,
-                epsilon=epsilon,
-                compute_dimension=computeDimension,
             )
             payload = ctx.geometry_persona_service.clustering_payload(result)
             payload["_schema"] = "mc.geometry.manifold_cluster.v1"
@@ -734,13 +734,15 @@ def register_geometry_tools(ctx: ServiceContext) -> None:
         def mc_geometry_manifold_query(
             point: dict,
             regions: list[dict],
-            epsilon: float = 0.3,
         ) -> dict:
-            """Query which region a point belongs to."""
+            """Query which region a point belongs to.
+
+            Distance thresholds are derived from region geometry (radii).
+            No configuration is accepted or needed.
+            """
             result = ctx.geometry_persona_service.query_region(
                 point=point,
                 regions=regions,
-                epsilon=epsilon,
             )
             payload = ctx.geometry_persona_service.region_query_payload(result)
             payload["_schema"] = "mc.geometry.manifold_query.v1"

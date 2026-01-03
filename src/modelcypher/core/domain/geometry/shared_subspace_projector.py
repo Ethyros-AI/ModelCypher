@@ -420,7 +420,7 @@ class SharedSubspaceProjector:
         )
 
         # shared_dim is the actual dimension we'll use (indices into u, v_t, etc.)
-        shared_dim = min(valid_count, config.max_shared_dimension)
+        shared_dim = min(valid_count, max_shared_dim)
         if shared_dim <= 0:
             return None
 
@@ -499,6 +499,9 @@ class SharedSubspaceProjector:
         target_centered, _ = SharedSubspaceProjector._center_array(target_array, weight_vector, backend=b)
         b.eval(source_centered, target_centered)
 
+        # Derive max_shared_dimension from min(source_dim, target_dim) when not specified
+        max_shared_dim = config.max_shared_dimension if config.max_shared_dimension is not None else min(d_source, d_target)
+
         # Compute Gram matrices using backend: G = X @ X^T
         source_centered_t = b.transpose(source_centered)
         target_centered_t = b.transpose(target_centered)
@@ -525,7 +528,7 @@ class SharedSubspaceProjector:
         target_rank = SharedSubspaceProjector._select_component_count(
             target_sorted, config.variance_threshold, backend=b
         )
-        shared_dim = min(source_rank, target_rank, config.max_shared_dimension, n)
+        shared_dim = min(source_rank, target_rank, max_shared_dim, n)
         if shared_dim <= 0:
             return None
 
@@ -534,12 +537,19 @@ class SharedSubspaceProjector:
         target_cov = b.matmul(target_centered_t, target_centered) / float(n)
         b.eval(source_cov, target_cov)
 
+        # Derive cca_regularization from sqrt(machine_epsilon) when not specified
+        if config.cca_regularization is not None:
+            cca_reg = config.cca_regularization
+        else:
+            from modelcypher.core.domain.geometry.numerical_stability import regularization_epsilon
+            cca_reg = regularization_epsilon(b, source_cov)
+
         # Regularize covariances
         source_cov = SharedSubspaceProjector._regularize_covariance(
-            source_cov, config.cca_regularization, backend=b
+            source_cov, cca_reg, backend=b
         )
         target_cov = SharedSubspaceProjector._regularize_covariance(
-            target_cov, config.cca_regularization, backend=b
+            target_cov, cca_reg, backend=b
         )
 
         # Eigendecomposition of covariance matrices
@@ -637,6 +647,9 @@ class SharedSubspaceProjector:
         b = backend or get_default_backend()
         d = d_source
 
+        # Derive max_shared_dimension when not specified
+        max_shared_dim = config.max_shared_dimension if config.max_shared_dimension is not None else d
+
         # Convert to backend arrays
         source_array = b.array(source_activations)
         target_array = b.array(target_activations)
@@ -702,7 +715,7 @@ class SharedSubspaceProjector:
             config.variance_threshold,
             backend=b,
         )
-        shared_dim = min(max(shared_dim, 1), config.max_shared_dimension, d)
+        shared_dim = min(max(shared_dim, 1), max_shared_dim, d)
 
         # Create identity matrix using backend
         identity = b.eye(d)

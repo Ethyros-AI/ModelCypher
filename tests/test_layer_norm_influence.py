@@ -20,10 +20,7 @@ from modelcypher.core.domain.geometry.numerical_stability import (
     division_epsilon,
     machine_epsilon,
 )
-from modelcypher.core.domain.geometry.spectral_analysis import (
-    SpectralConfig,
-    compute_spectral_metrics,
-)
+from modelcypher.core.domain.geometry.spectral_analysis import compute_spectral_metrics
 
 
 def test_layer_norm_spectral_norm():
@@ -34,8 +31,8 @@ def test_layer_norm_spectral_norm():
     target_ln = backend.array([1.0, 1.0, 1.1])
     backend.eval(source_ln, target_ln)
 
-    config = SpectralConfig()
-    metrics = compute_spectral_metrics(source_ln, target_ln, config=config)
+    # All parameters derived from data - no config needed
+    metrics = compute_spectral_metrics(source_ln, target_ln)
 
     assert metrics.condition_number == 1.0
     # sqrt(3) for source, sqrt(1 + 1 + 1.21) for target
@@ -55,8 +52,7 @@ def test_layer_norm_mismatch_alignment():
     target_ln = backend.array([10.0, 0.0])
     backend.eval(source_ln, target_ln)
 
-    config = SpectralConfig()
-    metrics = compute_spectral_metrics(source_ln, target_ln, config=config)
+    metrics = compute_spectral_metrics(source_ln, target_ln)
 
     # ratio = 1/10 = 0.1
     # alignment = min(0.1, 10.0) = 0.1
@@ -72,8 +68,7 @@ def test_layer_norm_zero_norm_stability():
     target_ln = backend.zeros((2,))
     backend.eval(source_ln, target_ln)
 
-    config = SpectralConfig()
-    metrics = compute_spectral_metrics(source_ln, target_ln, config=config)
+    metrics = compute_spectral_metrics(source_ln, target_ln)
 
     # target_spectral_norm should be clamped to epsilon
     eps = division_epsilon(backend, target_ln)
@@ -91,8 +86,7 @@ def test_layer_norm_identical_alignment():
     ln = backend.random_normal((128,))
     backend.eval(ln)
 
-    config = SpectralConfig()
-    metrics = compute_spectral_metrics(ln, ln, config=config)
+    metrics = compute_spectral_metrics(ln, ln)
 
     eps = machine_epsilon(backend, ln)
     assert abs(metrics.spectral_alignment - 1.0) <= eps

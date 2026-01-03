@@ -92,9 +92,12 @@ class TestDensityConfiguration:
     """Tests for DensityConfiguration dataclass."""
 
     def test_default_values(self) -> None:
-        """Test default configuration values."""
+        """Test default configuration values.
+
+        k_neighbors defaults to None (derived from sqrt(n) at runtime).
+        """
         config = DensityConfiguration()
-        assert config.k_neighbors == 10
+        assert config.k_neighbors is None  # Derived from sqrt(n) at runtime
         assert config.normalize is True
 
     def test_custom_values(self) -> None:

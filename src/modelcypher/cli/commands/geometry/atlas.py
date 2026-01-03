@@ -29,17 +29,12 @@ from modelcypher.cli.commands.geometry.helpers import (
 )
 from modelcypher.cli.context import CLIContext
 from modelcypher.cli.output import write_output
-from modelcypher.core.domain.agents.unified_atlas import (
-    AtlasDomain,
-    AtlasSource,
-    UnifiedAtlasInventory,
-)
+from modelcypher.core.domain.agents.unified_atlas import UnifiedAtlasInventory
 from modelcypher.core.domain.geometry.concept_dimensionality import (
     ConceptDimensionalityAnalyzer,
     ConceptDimensionalityReport,
     ConceptDimensionalityStudy,
 )
-from modelcypher.core.domain.geometry.probe_calibration import load_calibration_weights
 from modelcypher.core.domain.geometry.riemannian_utils import frechet_mean
 from modelcypher.core.support.array_utils import array_to_list
 
@@ -109,29 +104,6 @@ class BackboneActivationProvider:
         return [array_to_list(self._backend, vec) for vec in activations]
 
 
-def _parse_sources(values: list[str] | None) -> set[AtlasSource] | None:
-    if not values:
-        return None
-    allowed = {s.value for s in AtlasSource}
-    invalid = [value for value in values if value not in allowed]
-    if invalid:
-        raise typer.BadParameter(
-            f"Invalid sources: {', '.join(invalid)}. Allowed: {', '.join(sorted(allowed))}"
-        )
-    return {AtlasSource(value) for value in values}
-
-
-def _parse_domains(values: list[str] | None) -> set[AtlasDomain] | None:
-    if not values:
-        return None
-    allowed = {d.value for d in AtlasDomain}
-    invalid = [value for value in values if value not in allowed]
-    if invalid:
-        raise typer.BadParameter(
-            f"Invalid domains: {', '.join(invalid)}. Allowed: {', '.join(sorted(allowed))}"
-        )
-    return {AtlasDomain(value) for value in values}
-
 def _report_payload(report: ConceptDimensionalityReport) -> dict:
     return {
         "layer": report.layer,
@@ -188,16 +160,6 @@ def atlas_dimensionality(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to the model directory"),
     layer: int = typer.Option(-1, "--layer", help="Layer to analyze (default is last)"),
-    sources: list[str] | None = typer.Option(
-        None, "--source", "-s", help="Filter by atlas source (repeatable)"
-    ),
-    domains: list[str] | None = typer.Option(
-        None, "--domain", "-d", help="Filter by atlas domain (repeatable)"
-    ),
-    max_probes: int = typer.Option(0, "--max-probes", help="Limit probes (0 = all)"),
-    calibration_file: str | None = typer.Option(
-        None, "--calibration", help="Calibration JSON file for probe weights"
-    ),
 ) -> None:
     """Measure intrinsic dimension for UnifiedAtlas probes at a model layer."""
     context = _context(ctx)
@@ -215,20 +177,8 @@ def atlas_dimensionality(
     num_layers = len(layers)
     target_layer = layer if layer >= 0 else num_layers - 1
 
-    source_filter = _parse_sources(sources)
-    domain_filter = _parse_domains(domains)
-
     probes = UnifiedAtlasInventory.all_probes()
-    if source_filter:
-        probes = [probe for probe in probes if probe.source in source_filter]
-    if domain_filter:
-        probes = [probe for probe in probes if probe.domain in domain_filter]
-    if max_probes > 0 and max_probes < len(probes):
-        probes = probes[:max_probes]
-
-    calibration_weights = (
-        load_calibration_weights(calibration_file) if calibration_file else {}
-    )
+    calibration_weights = {}
 
     backend = MLXBackend()
     provider = BackboneActivationProvider(
@@ -298,26 +248,13 @@ def atlas_dimensionality(
 def atlas_dimensionality_study(
     ctx: typer.Context,
     model_path: str = typer.Argument(..., help="Path to the model directory"),
-    layers: list[int] | None = typer.Option(
-        None, "--layer", "-l", help="Layer to analyze (repeatable)"
-    ),
-    sources: list[str] | None = typer.Option(
-        None, "--source", "-s", help="Filter by atlas source (repeatable)"
-    ),
-    domains: list[str] | None = typer.Option(
-        None, "--domain", "-d", help="Filter by atlas domain (repeatable)"
-    ),
-    max_probes: int = typer.Option(0, "--max-probes", help="Limit probes (0 = all)"),
-    calibration_file: str | None = typer.Option(
-        None, "--calibration", help="Calibration JSON file for probe weights"
-    ),
     include_results: bool = typer.Option(
         False,
         "--include-results/--summary-only",
         help="Include per-probe results for each layer",
     ),
 ) -> None:
-    """Run atlas dimensionality across multiple layers and summarize structure."""
+    """Run atlas dimensionality across all layers and summarize structure."""
     context = _context(ctx)
 
     from modelcypher.adapters.model_loader import load_model_for_training
@@ -331,34 +268,10 @@ def atlas_dimensionality_study(
 
     embed_tokens, layers_module, norm = resolved
     num_layers = len(layers_module)
-    if not layers:
-        layers = list(range(num_layers))
-
-    resolved_layers: list[int] = []
-    for layer in layers:
-        layer_idx = layer if layer >= 0 else num_layers + layer
-        if layer_idx < 0 or layer_idx >= num_layers:
-            raise typer.BadParameter(
-                f"Layer {layer} is out of range for {num_layers} layers."
-            )
-        resolved_layers.append(layer_idx)
-
-    resolved_layers = sorted(set(resolved_layers))
-
-    source_filter = _parse_sources(sources)
-    domain_filter = _parse_domains(domains)
+    resolved_layers = list(range(num_layers))
 
     probes = UnifiedAtlasInventory.all_probes()
-    if source_filter:
-        probes = [probe for probe in probes if probe.source in source_filter]
-    if domain_filter:
-        probes = [probe for probe in probes if probe.domain in domain_filter]
-    if max_probes > 0 and max_probes < len(probes):
-        probes = probes[:max_probes]
-
-    calibration_weights = (
-        load_calibration_weights(calibration_file) if calibration_file else {}
-    )
+    calibration_weights = {}
 
     backend = MLXBackend()
     provider = BackboneActivationProvider(

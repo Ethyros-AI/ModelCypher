@@ -39,24 +39,6 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
-class SpectralSignatureConfig:
-    """Configuration for spectral signature computation.
-
-    All numerical parameters are derived from the data if not specified:
-    - k_neighbors: derived from graph connectivity requirements
-    - kernel_bandwidth: derived from median neighbor distance
-    - heat_trace_times: derived from eigenvalue spectrum (1/λ_max to 1/λ_1)
-    """
-
-    k_neighbors: int | None = None
-    kernel_bandwidth: float | None = None
-    normalized_laplacian: bool = True
-    # Heat trace times: None = derive from eigenvalue spectrum
-    # Characteristic time scales are 1/λ for each eigenvalue
-    heat_trace_times: tuple[float, ...] | None = None
-
-
-@dataclass(frozen=True)
 class SpectralSignatureResult:
     """Raw spectral signature metrics."""
 
@@ -83,11 +65,15 @@ class SpectralSignature:
     def compute(
         self,
         points: list[list[float]],
-        config: SpectralSignatureConfig | None = None,
     ) -> SpectralSignatureResult:
-        if config is None:
-            config = SpectralSignatureConfig()
+        """Compute spectral signature for a point cloud.
 
+        All parameters are derived from the geometry of the data:
+        - k_neighbors: derived from graph connectivity requirements
+        - kernel_bandwidth: derived from median neighbor distance
+        - heat_trace_times: derived from eigenvalue spectrum (1/λ_max to 1/λ_1)
+        - normalized_laplacian: always True (correct for graph Laplacians)
+        """
         backend = self._backend
         points_arr = backend.array(points)
         backend.eval(points_arr)
@@ -107,7 +93,7 @@ class SpectralSignature:
                 edge_count=0,
                 k_neighbors=0,
                 kernel_bandwidth=0.0,
-                normalized_laplacian=config.normalized_laplacian,
+                normalized_laplacian=True,
                 connected=True,
             )
 
@@ -123,13 +109,14 @@ class SpectralSignature:
                 edge_count=0,
                 k_neighbors=0,
                 kernel_bandwidth=0.0,
-                normalized_laplacian=config.normalized_laplacian,
+                normalized_laplacian=True,
                 connected=True,
             )
 
         # Build a k-NN graph using geodesic distances on the manifold.
+        # k_neighbors is derived from data by geodesic_distances()
         adjacency, geodesic_dist, inf_value, k_neighbors, neighbor_indices = self._build_knn_adjacency(
-            points_arr, config.k_neighbors
+            points_arr, None
         )
         backend.eval(adjacency, geodesic_dist, neighbor_indices)
 
@@ -144,9 +131,8 @@ class SpectralSignature:
         neighbor_dists = backend.take(geodesic_dist, neighbor_indices, axis=1)
         backend.eval(neighbor_dists)
 
-        kernel_bandwidth = config.kernel_bandwidth
-        if kernel_bandwidth is None:
-            kernel_bandwidth = _median_flattened(neighbor_dists, backend)
+        # kernel_bandwidth derived from median neighbor distance
+        kernel_bandwidth = _median_flattened(neighbor_dists, backend)
 
         bandwidth_floor = tiny_value(backend, geodesic_dist)
         if kernel_bandwidth <= bandwidth_floor:
@@ -169,7 +155,7 @@ class SpectralSignature:
         degree = backend.sum(weights_arr, axis=1)
         backend.eval(degree)
 
-        laplacian = self._build_laplacian(weights_arr, degree, normalized=config.normalized_laplacian)
+        laplacian = self._build_laplacian(weights_arr, degree, normalized=True)
         backend.eval(laplacian)
 
         eigvals, _ = backend.eigh(laplacian)
@@ -178,11 +164,8 @@ class SpectralSignature:
         backend.eval(eig_sorted)
         eig_list = [float(x) for x in backend.tolist(eig_sorted)]
 
-        # Derive heat trace times from eigenvalue spectrum if not specified
-        if config.heat_trace_times is not None:
-            heat_times = list(config.heat_trace_times)
-        else:
-            heat_times = _derive_heat_times_from_spectrum(eig_list)
+        # Derive heat trace times from eigenvalue spectrum
+        heat_times = _derive_heat_times_from_spectrum(eig_list)
 
         spectral_entropy = _spectral_entropy(backend, eigvals, regularization_epsilon(backend, eigvals))
         algebraic_connectivity = eig_list[1] if len(eig_list) > 1 else 0.0
@@ -203,7 +186,7 @@ class SpectralSignature:
             edge_count=edge_count,
             k_neighbors=k_neighbors,
             kernel_bandwidth=float(kernel_bandwidth),
-            normalized_laplacian=config.normalized_laplacian,
+            normalized_laplacian=True,
             connected=connected,
         )
 
