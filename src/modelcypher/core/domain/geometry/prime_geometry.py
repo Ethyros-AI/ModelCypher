@@ -496,10 +496,18 @@ def shuffled_gaps(
 
     # Fisher-Yates shuffle using backend random
     indices = list(range(n))
+    if n <= 1:
+        return backend.array(gaps_list)
+
+    rand_vals = backend.random_uniform(low=0.0, high=1.0, shape=(n - 1,))
+    backend.eval(rand_vals)
+    rand_list = backend.tolist(rand_vals)
+    rand_idx = 0
     for i in range(n - 1, 0, -1):
         # Generate random index from 0 to i
-        u = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
-        j = int(float(backend.to_scalar(u)) * (i + 1))
+        u_val = float(rand_list[rand_idx])
+        rand_idx += 1
+        j = int(u_val * (i + 1))
         j = min(j, i)  # Safety clamp
         indices[i], indices[j] = indices[j], indices[i]
 
@@ -768,9 +776,6 @@ def generate_poisson_gaps(
     gaps_list = []
     for _ in range(n):
         # Generate a single Poisson sample
-        u = backend.random_uniform(low=0.0, high=1.0, shape=(1,))
-        float(backend.to_scalar(u))
-
         L = exp_scalar(-rate, backend)
         k = 0
         p = 1.0

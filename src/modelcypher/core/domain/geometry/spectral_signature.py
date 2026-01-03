@@ -255,11 +255,23 @@ class SpectralSignature:
         return adj, euclidean_dist, inf_val, k_neighbors, neighbor_indices
 
     def _euclidean_distance_matrix(self, points: "Array") -> "Array":
+        """Compute pairwise distances using stable direct difference formula."""
         backend = self._backend
-        norms = backend.sum(points * points, axis=1, keepdims=True)
-        dist_sq = norms + backend.transpose(norms) - 2.0 * backend.matmul(
-            points, backend.transpose(points)
-        )
+
+        # Force float32 to avoid bfloat16 precision issues
+        if hasattr(backend, 'astype'):
+            points = backend.astype(points, "float32")
+
+        n = int(points.shape[0])
+        d = int(points.shape[1]) if len(points.shape) > 1 else 1
+
+        # Direct difference formula: ||a - b||² = Σ(aᵢ - bᵢ)²
+        # This is rotation-invariant and avoids catastrophic cancellation
+        points_i = backend.reshape(points, (n, 1, d))
+        points_j = backend.reshape(points, (1, n, d))
+        diffs = points_i - points_j
+        dist_sq = backend.sum(diffs * diffs, axis=2)
+        backend.eval(dist_sq)
         dist_sq = backend.maximum(dist_sq, 0.0)
         return backend.sqrt(dist_sq)
 

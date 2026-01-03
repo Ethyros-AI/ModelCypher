@@ -398,6 +398,13 @@ class CrossManifoldProjector:
         source_distances_list = []
         weights_list = []
 
+        distances_seq = profile.distances
+        weights_seq = profile.weights
+        if hasattr(distances_seq, "shape"):
+            distances_seq = backend.tolist(distances_seq)
+        if hasattr(weights_seq, "shape"):
+            weights_seq = backend.tolist(weights_seq)
+
         for i, anchor_id in enumerate(profile.anchor_ids):
             if anchor_id in target_anchor_activations:
                 target_acts = target_anchor_activations[anchor_id]
@@ -408,10 +415,10 @@ class CrossManifoldProjector:
                     backend.eval(centroid)
                     target_centroids.append(centroid)
                     # Extract scalar from backend array
-                    dist_val = profile.distances[i]
-                    weight_val = profile.weights[i]
-                    source_distances_list.append(float(backend.to_scalar(dist_val)) if hasattr(dist_val, 'shape') else float(dist_val))
-                    weights_list.append(float(backend.to_scalar(weight_val)) if hasattr(weight_val, 'shape') else float(weight_val))
+                    dist_val = distances_seq[i]
+                    weight_val = weights_seq[i]
+                    source_distances_list.append(float(dist_val))
+                    weights_list.append(float(weight_val))
 
         if len(matching_anchor_ids) < self.config.min_anchors:
             logger.warning(
@@ -510,14 +517,10 @@ class CrossManifoldProjector:
         anchor_indices = backend.arange(1, n_anchors + 1)
         final_distances = backend.take(row0, anchor_indices, axis=0)
 
+        final_list = backend.tolist(final_distances)
+        source_list = backend.tolist(source_distances)
         anchor_stress = {
-            anchor_id: float(
-                (
-                    float(backend.to_scalar(final_distances[i]))
-                    - float(backend.to_scalar(source_distances[i]))
-                )
-                ** 2
-            )
+            anchor_id: float((float(final_list[i]) - float(source_list[i])) ** 2)
             for i, anchor_id in enumerate(matching_anchor_ids)
         }
 

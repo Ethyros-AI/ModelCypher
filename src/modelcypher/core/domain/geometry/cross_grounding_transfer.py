@@ -218,8 +218,10 @@ class RelationalStressComputer:
         anchor_indices = b.arange(1, len(anchor_names) + 1)
         anchor_dists = b.take(row0, anchor_indices, axis=0)
         b.eval(anchor_dists)
+        # Use tolist() for O(1) extraction instead of O(n) scalar extractions
+        anchor_dists_list = b.tolist(anchor_dists)
         distances = {
-            name: float(b.to_scalar(anchor_dists[i]))
+            name: float(anchor_dists_list[i])
             for i, name in enumerate(anchor_names)
         }
 
@@ -297,8 +299,10 @@ class RelationalStressComputer:
         neighbor_indices = b.arange(1, len(neighbor_names) + 1)
         neighbor_dists = b.take(row0, neighbor_indices, axis=0)
         b.eval(neighbor_dists)
+        # Use tolist() for O(1) extraction
+        neighbor_dists_list = b.tolist(neighbor_dists)
         dists = [
-            (neighbor_names[i], float(b.to_scalar(neighbor_dists[i])))
+            (neighbor_names[i], float(neighbor_dists_list[i]))
             for i in range(len(neighbor_names))
         ]
         dists.sort(key=lambda x: x[1])
