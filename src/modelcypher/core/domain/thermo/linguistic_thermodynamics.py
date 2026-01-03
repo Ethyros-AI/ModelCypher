@@ -207,6 +207,7 @@ class AttractorBasin(str, Enum):
     TRANSITION = "transition"
     SOLUTION = "solution"
 
+
 class BehavioralOutcome(str, Enum):
     """Behavioral outcome classification for model responses.
 
@@ -251,30 +252,6 @@ class BehavioralOutcome(str, Enum):
         return names[self]
 
     @property
-    def is_ridge_crossed(self) -> bool:
-        """Whether this outcome represents successful ridge crossing.
-
-        Returns
-        -------
-        bool
-            True if outcome is attempted or solved.
-        """
-        return self in (BehavioralOutcome.ATTEMPTED, BehavioralOutcome.SOLVED)
-
-
-@dataclass(frozen=True)
-class ThermoGeometryMetrics:
-    """Hidden-state geometry measurements derived from activations."""
-
-    intrinsic_dimensions: dict[int, float]
-    ricci_curvatures: dict[int, float]
-    ricci_stds: dict[int, float]
-    sample_counts: dict[int, int]
-    mean_intrinsic_dimension: float | None
-    mean_ricci_curvature: float | None
-    mean_ricci_std: float | None
-
-    @property
     def basin(self) -> AttractorBasin:
         """Basin classification in thermodynamic model."""
         basins = {
@@ -297,6 +274,30 @@ class ThermoGeometryMetrics:
             BehavioralOutcome.SOLVED: "green",
         }
         return colors[self]
+
+    @property
+    def is_ridge_crossed(self) -> bool:
+        """Whether this outcome represents successful ridge crossing.
+
+        Returns
+        -------
+        bool
+            True if outcome is attempted or solved.
+        """
+        return self in (BehavioralOutcome.ATTEMPTED, BehavioralOutcome.SOLVED)
+
+
+@dataclass(frozen=True)
+class ThermoGeometryMetrics:
+    """Hidden-state geometry measurements derived from activations."""
+
+    intrinsic_dimensions: dict[int, float]
+    ricci_curvatures: dict[int, float]
+    ricci_stds: dict[int, float]
+    sample_counts: dict[int, int]
+    mean_intrinsic_dimension: float | None
+    mean_ricci_curvature: float | None
+    mean_ricci_std: float | None
 
 
 class LanguageResourceLevel(str, Enum):

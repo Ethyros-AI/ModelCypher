@@ -836,14 +836,14 @@ def thermo_calibrate(
     """Calibrate thermodynamic parameters from empirical measurement.
 
     This command measures actual entropy distributions and behavioral outcomes
-    to derive calibrated energy levels, modifier effects, and classification
-    thresholds. The result replaces hardcoded placeholder values with physics
-    derived from real observations.
+    to derive calibrated energy levels and modifier effects. The result
+    replaces hardcoded placeholder values with physics derived from real
+    observations.
 
     The calibration measures:
     - Basin energy levels: E(x) = -T * log(p(x)/p(ref))
     - Modifier intensity scores: measured delta_H for each modifier
-    - Classification thresholds: percentiles from baseline entropy distribution
+    - Entropy percentiles from baseline distributions
 
     Example:
         mc thermo calibrate --model /path/to/model -o calibration.json
@@ -974,7 +974,6 @@ def thermo_calibrate(
                     name: {
                         "meanDeltaH": effect.mean_delta_h,
                         "intensityScore": effect.intensity_score,
-                        "direction": effect.effect_direction,
                         "sampleCount": effect.sample_count,
                     }
                     for name, effect in calibration.modifier_profile.effects.items()
@@ -983,16 +982,7 @@ def thermo_calibrate(
             if calibration.modifier_profile
             else None
         ),
-        "thresholds": (
-            {
-                "refusedThreshold": calibration.thresholds.refused_threshold,
-                "hedgedThreshold": calibration.thresholds.hedged_threshold,
-                "attemptedThreshold": calibration.thresholds.attempted_threshold,
-                "percentiles": calibration.thresholds.percentiles,
-            }
-            if calibration.thresholds
-            else None
-        ),
+        "entropyPercentiles": calibration.thresholds.percentiles if calibration.thresholds else None,
         "timestamp": calibration.calibration_timestamp.isoformat(),
     }
 
@@ -1022,18 +1012,18 @@ def thermo_calibrate(
             for name, effect in calibration.modifier_profile.effects.items():
                 lines.append(
                     f"  {name}: delta_H = {effect.mean_delta_h:+.4f}, "
-                    f"intensity = {effect.intensity_score:.2f}, "
-                    f"direction = {effect.effect_direction}"
+                    f"intensity = {effect.intensity_score:.2f}"
                 )
             lines.append("")
 
         if calibration.thresholds:
-            th = calibration.thresholds
+            th = calibration.thresholds.percentiles
             lines.extend([
-                "Classification Thresholds (from baseline percentiles):",
-                f"  REFUSED threshold:  {th.refused_threshold:.4f} (p95)",
-                f"  HEDGED threshold:   {th.hedged_threshold:.4f} (p75)",
-                f"  ATTEMPTED threshold: {th.attempted_threshold:.4f} (p50)",
+                "Entropy Percentiles (measured):",
+                f"  p25: {th.get(25, 0.0):.4f}",
+                f"  p50: {th.get(50, 0.0):.4f}",
+                f"  p75: {th.get(75, 0.0):.4f}",
+                f"  p95: {th.get(95, 0.0):.4f}",
                 "",
             ])
 
